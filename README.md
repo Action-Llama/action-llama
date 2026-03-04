@@ -28,8 +28,8 @@ Commit your agents to github and share them.
 ## How to get started
 
 ```bash
-# 1. Create a new Action Llama project
-npx create-action-llama my-project
+# 1. Create a new Action Llama project ("yes" skips cache)
+npx --yes create-action-llama my-project
 
 # 2. Select 'dev' and enter any credentials you need
 #    (stored in ~/.action-llama-credentials)
