@@ -3,7 +3,7 @@ import { execFileSync } from "child_process";
 const NETWORK_NAME = "al-net";
 
 function docker(...args: string[]): string {
-  return execFileSync("docker", args, { encoding: "utf-8", timeout: 30000 }).trim();
+  return execFileSync("docker", args, { encoding: "utf-8", timeout: 30000, stdio: ["pipe", "pipe", "pipe"] }).trim();
 }
 
 export function ensureNetwork(): void {
