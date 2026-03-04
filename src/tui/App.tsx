@@ -45,8 +45,8 @@ function Header({ info, agentCount }: { info: SchedulerInfo | null; agentCount: 
         Action Llama ({modeLabel}) — {agentCount} agent{agentCount !== 1 ? "s" : ""}, {info.cronJobCount} cron job{info.cronJobCount !== 1 ? "s" : ""}
       </Text>
       <Text dimColor>
-        {info.brokerPort ? `Broker: :${info.brokerPort}` : ""}
-        {info.brokerPort && info.webhooksActive ? " | " : ""}
+        {info.gatewayPort ? `Gateway: :${info.gatewayPort}` : ""}
+        {info.gatewayPort && info.webhooksActive ? " | " : ""}
         {info.webhooksActive ? "Webhooks: active" : ""}
       </Text>
       {info.webhookUrls.map((url, i) => (

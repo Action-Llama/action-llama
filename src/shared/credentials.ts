@@ -12,7 +12,7 @@ export function requireCredential(name: string): string {
   const value = loadCredential(name);
   if (!value) {
     throw new Error(
-      `Credential "${name}" not found at ${resolve(CREDENTIALS_DIR, name)}. Run 'al init' first.`
+      `Credential "${name}" not found at ${resolve(CREDENTIALS_DIR, name)}. Run 'al new' first.`
     );
   }
   return value;

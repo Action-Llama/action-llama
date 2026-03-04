@@ -19,7 +19,7 @@ export interface DockerConfig {
   timeout?: number;
 }
 
-export interface BrokerConfig {
+export interface GatewayConfig {
   port?: number;
 }
 
@@ -29,7 +29,7 @@ export interface WebhooksGlobalConfig {
 
 export interface GlobalConfig {
   docker?: DockerConfig;
-  broker?: BrokerConfig;
+  gateway?: GatewayConfig;
   webhooks?: WebhooksGlobalConfig;
 }
 
@@ -54,7 +54,13 @@ export function loadGlobalConfig(projectPath: string): GlobalConfig {
     return {};
   }
   const raw = readFileSync(configPath, "utf-8");
-  return JSON.parse(raw) as GlobalConfig;
+  const parsed = JSON.parse(raw) as GlobalConfig & { broker?: GatewayConfig };
+  // Backward compat: read old "broker" field if "gateway" is missing
+  if (!parsed.gateway && parsed.broker) {
+    parsed.gateway = parsed.broker;
+    delete parsed.broker;
+  }
+  return parsed;
 }
 
 export function loadAgentConfig(projectPath: string, agentName: string): AgentConfig {

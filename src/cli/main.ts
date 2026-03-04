@@ -17,11 +17,11 @@ program
 // --- User-facing commands ---
 
 program
-  .command("init")
+  .command("new")
   .description("Interactive setup, creates project dir + credentials")
   .argument("<name>", "project name")
   .action(async (name: string) => {
-    const { execute } = await import("./commands/init.js");
+    const { execute } = await import("./commands/new.js");
     await execute(name);
   });
 

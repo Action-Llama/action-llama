@@ -26,7 +26,7 @@ async function main() {
   // Node must resolve from /app (WORKDIR at build time), so we chdir after startup.
   process.chdir("/workspace");
 
-  const brokerUrl = process.env.BROKER_URL;
+  const gatewayUrl = process.env.GATEWAY_URL;
   const shutdownSecret = process.env.SHUTDOWN_SECRET;
 
   // Parse agent config from env var
@@ -42,7 +42,7 @@ async function main() {
   const modelId = agentConfig.model.model;
   const modelThinking = agentConfig.model.thinkingLevel;
 
-  emitLog("info", "container starting", { agentName: agentConfig.name, modelId, brokerUrl });
+  emitLog("info", "container starting", { agentName: agentConfig.name, modelId, gatewayUrl });
 
   // Read Anthropic API key from credentials volume
   const anthropicKey = readCredential("anthropic-key");

@@ -4,46 +4,105 @@
 
 # Action Llama
 
-Have agents run instructions!  It's like a local lambda for agents.
+Run agents like scripts: triggered by cron or webhooks.
 
-Cron or webhooks trigger an agent "script": 
+Dev Experience:
 
 1. Either a webhook or cron wakes up the agent
 2. The agent runs according the instructions in AGENTS.md you define
 3. The agent shuts down
 
-BYOM: bring your own model.
+Key features:
 
-Agent runs are contained in a Docker container using only the credentials they need.
+- Agent runs are contained in a Docker container using only the credentials they need. Credentials are stored separately.
+- Define your agents in a git repo, add custom ones, and share them.
+- BYOM: bring your own model.
 
-Allows you to create:
+Philosophy:
+
+- AL is a thin wrapper around Claude or GPT. The models move so quickly, it's important to minimize the harness.
+
+Use cases:
 
 - A developer agent that watches for new Github issues and reacts
 - A reviewer agent that watches for new Github Pull Requests and reviews them then merges if all ok
 
 Have as many agents as you like. Customize the behaviour as you wish. The system is MIT licensed and fully extensible.
 
-Commit your agents to github and share them.
+Built on [pi.dev](https://github.com/badlogic/pi-mono) as the agent harness.
 
 ## How to get started
 
 ```bash
-# 1. Create a new Action Llama project ("yes" skips cache)
-npx --yes create-action-llama my-project
+npx @action-llama/action-llama@latest new my-project
+```
 
-# 2. Select 'dev' and enter any credentials you need
-#    (stored in ~/.action-llama-credentials)
+The setup wizard walks you through everything:
 
-# 3. Enter the directory and start
+**Step 1 — Agents:** Select which agents to create. Pick **dev** to start — this is the developer agent that implements issues and opens PRs.
+
+**Step 2 — Credentials:** Paste your GitHub PAT (needs `repo` + `workflow` scopes) and choose how to authenticate with Anthropic (existing pi auth, API key, or OAuth token). Tokens are validated against their APIs before continuing.
+
+**Step 3 — LLM Defaults:** Pick a model and thinking level. The defaults (`claude-sonnet-4-20250514`, `medium` thinking) are a good starting point.
+
+**Step 4 — Configure each agent:** For the dev agent you'll be asked:
+- **Repos** — which GitHub repos to monitor (fetched from your token)
+- **Trigger label** — the issue label that activates the agent (default: `agent`)
+- **Assignee** — only trigger on issues assigned to this user (default: your GitHub username)
+- **Webhooks** — say **no** for now (requires setting up a GitHub webhook endpoint)
+- **Schedule** — say **yes**, and accept the default `*/5 * * * *` (poll every 5 minutes)
+
+Once setup finishes:
+
+```bash
 cd my-project
 al start
 ```
 
-Built on [pi.dev](https://github.com/badlogic/pi-mono) as the agent harness.
+The dev agent will poll every 5 minutes looking for issues that match its filter: the issue must have the trigger label (default: `agent`) **and** be assigned to the configured user. When it finds a match, it clones the repo, creates a branch, implements the changes described in the issue, runs tests, and opens a PR.
+
+Edit `dev/AGENTS.md` to customize how the agent works — changes take effect on the next run.
+
+### Project structure
+
+The setup creates:
+
+```
+my-project/
+  package.json              # Includes @action-llama/action-llama as a dependency
+  config.json               # Global config: docker, gateway, webhooks (no secrets)
+  dev/                      # One directory per agent
+    config.json             # Agent config: repos, schedule, model, webhooks, etc.
+    AGENTS.md               # Agent instructions — edit this to customize behavior
+```
+
+Credentials are stored separately in `~/.action-llama-credentials/` (shared across projects, not committed to git).
+
+## CLI commands
+
+| Command | Description |
+|---------|-------------|
+| `al new <name>` | Create a new project (interactive setup for credentials, model, and agents) |
+| `al start` | Start the scheduler — runs agents on their cron schedule and/or webhook triggers |
+| `al status` | Show the current status of all agents |
+| `al logs <agent>` | View log entries for an agent |
+| `al agent add [definition]` | Add a new agent to an existing project (built-in name or custom definition path) |
+
+### Common options
+
+- `-p, --project <dir>` — specify the project directory (defaults to `.`)
+
+### `al logs` options
+
+- `-n, --lines <N>` — number of log entries to show (default: 50)
+- `-f, --follow` — tail mode, watch for new log entries
+- `-d, --date <YYYY-MM-DD>` — view a specific date's log file
+
+### `al start` options
+
+- `--dangerous-no-docker` — disable Docker container isolation and run agents directly on the host
 
 ## Built-in Agents
-
-The project includes a few default agents to get you started
 
 | Agent | Trigger | Action |
 |-------|---------|--------|
@@ -51,210 +110,28 @@ The project includes a few default agents to get you started
 | **PR Reviewer** | Webhook: PR opened/updated; or poll for open PRs | Reviews code for correctness, style, security; approves+merges or requests changes |
 | **DevOps** | Poll for CI failures/Sentry errors | Creates Github issues describing problem and potential fix |
 
-## Prerequisites
-
-- Node.js >= 20
-- Git
-- Docker
-- A GitHub Personal Access Token with `repo` and `workflow` scopes
-- Anthropic auth — one of:
-  - Existing pi auth (`pi /login`) or Claude Code auth (`claude setup-token`)
-  - An Anthropic API key (`sk-ant-api...`)
-  - An OAuth token (`sk-ant-oat...`)
-- (Optional) A Sentry auth token
-- (Optional) A GitHub webhook secret (for webhook-triggered agents)
-
-## Install
-
-```bash
-npx @action-llama/action-llama init my-project
-cd my-project
-```
-
-This creates a new project directory with a `package.json` (including `@action-llama/action-llama` as a dependency), agent configs, credentials, and runs `npm install` automatically.
-
-## Quick start
-
-```bash
-# 1. Initialize a project (interactive setup)
-npx @action-llama/action-llama init my-project
-
-# 2. Start the agents
-cd my-project
-al start
-```
-
-## Architecture
-
-Action Llama separates three concerns:
-
-| Directory | Purpose | Created by |
-|-----------|---------|------------|
-| `~/.action-llama-credentials/` | Secrets (shared across projects) | `al init` |
-| `./<project-name>/` | Per-project config, agent instructions, scratch space | `al init` |
-
-Agents run with credentials injected directly — `GITHUB_TOKEN`, `SENTRY_AUTH_TOKEN`, etc. are set as environment variables, and credential files are available at `/credentials/` in Docker mode. Agents use standard tools (`gh` CLI, `git`, `curl`) to interact with external services.
-
-## Setup walkthrough
-
-The setup CLI (`al init <name>`) walks through three steps:
-
-### Step 1: Credentials
-- Paste your GitHub PAT
-- (Optional) Paste your Sentry auth token
-- Choose your Anthropic authentication method:
-  - **Use existing pi auth** — if you already ran `pi /login` or `claude setup-token`
-  - **Enter an API key** — a standard `sk-ant-api...` key, validated against the API
-  - **Enter an OAuth token** — a `sk-ant-oat...` token from `claude setup-token`, format-checked
-
-### Step 2: LLM defaults
-- Select a model (default: `claude-sonnet-4-20250514`)
-- Select thinking level (default: `medium`)
-
-### Step 3: Agents
-- Select which built-in agents to enable (dev, reviewer, devops) and/or add custom agents
-- For each agent, configure:
-  - **Name** (allows multiple instances, e.g., `dev-frontend`, `dev-backend`)
-  - **Repos** to monitor
-  - Type-specific options: trigger label / assignee (dev), Sentry org / projects (devops)
-  - **Webhooks** — listen for GitHub events (default webhook filter per agent type)
-  - **Schedule** — poll on a cron interval (optional if webhooks are enabled)
-- If any agent uses webhooks, you'll be asked for a **GitHub webhook secret** (used to verify `x-hub-signature-256` on incoming payloads)
-
-## Running
-
-```bash
-# Start all agents (host mode, default)
-al start
-
-# Check agent status
-al status
-```
-
-The scheduler runs as a single Node.js process. Agents wake on incoming webhooks or their cron schedule (or both), do their work (or log `[SILENT]` if there's nothing to do), then wait for the next trigger. If any agent uses webhooks, a broker server starts automatically to receive `POST /webhooks/github` requests. Press `Ctrl+C` for graceful shutdown.
-
-### Docker mode (opt-in)
-
-When `docker.enabled` is set in `config.json`, agents run in isolated Docker containers with credentials mounted read-only at `/credentials/`. Containers have internet access and use standard tools (`gh`, `git`, `curl`) directly. A broker server provides a shutdown endpoint for the anti-exfiltration kill switch.
-
-```bash
-# Requires Docker installed and running
-# Enable in config.json: "docker": { "enabled": true }
-al start
-```
-
-See the [Docker mode](#docker-mode-1) section below for details.
-
-### Logs
-
-Structured JSON logs are written to daily files at `<project>/.al/logs/<agent>-<YYYY-MM-DD>.log` and also printed to stdout. In Docker mode, container logs are forwarded through the same pino logger — tool events and errors all appear in the standard log files.
-
-## CLI commands
-
-| Command | Description |
-|---------|-------------|
-| `npx @action-llama/action-llama init <name>` | Interactive setup, creates project dir + credentials |
-| `al start` | Start scheduler (cron + webhooks) |
-| `al status` | Show agent status |
-| `al logs` | View agent logs |
-| `al agent add` | Add a new agent to an existing project |
-
-## Using the developer agent
-
-1. Create an issue in one of your monitored repos
-2. Add the trigger label (default: `agent`) and assign it to the configured user
-3. The developer agent wakes (immediately via webhook, or on the next poll) and will:
-   - Find the issue via `gh issue list`
-   - Clone the repo and create a branch
-   - Read `AGENTS.md`/`CLAUDE.md` for project conventions
-   - Implement the changes, run tests
-   - Push and open a PR via `gh pr create`
-
-## Using the PR reviewer agent
-
-The reviewer automatically picks up open PRs on each poll. It:
-- Gets the diff via `gh pr diff`, checks CI status
-- Reviews for correctness, style, tests, and security
-- Approves and squash-merges clean PRs with green CI
-- Requests changes with specific feedback on problematic PRs
-- Skips PRs it has already reviewed at the same commit SHA
-
-## Using the DevOps agent
-
-The DevOps agent monitors for failures:
-- **GitHub Actions**: finds failed workflow runs via `gh run list`
-- **Sentry**: finds new unresolved error groups via `curl` to the Sentry API (if configured)
-
-For each new error, it creates a GitHub issue with the error details and a link to the source. Errors are deduplicated by fingerprint so the same failure is never filed twice.
-
-## Project structure
-
-```
-~/.action-llama-credentials/                  # Secrets (shared across projects)
-  github-token
-  sentry-token                      # (optional)
-  anthropic-key                     # (optional, if not using pi_auth)
-  github-webhook-secret             # (optional, for webhook-triggered agents)
-
-./<project-name>/                   # Per-project (created by npx @action-llama/action-llama init)
-  package.json                      # Includes @action-llama/action-llama as a dependency
-  config.json                       # Global config: docker, broker, webhooks (no secrets)
-  dev/                              # Agent directory (CWD for agent sessions)
-    config.json                     # Agent config: repos, webhooks, schedule, prompt, etc.
-    AGENTS.md                       # Instructions (written during init, edit to customize)
-  dev-backend/                      # Multiple instances are supported
-    config.json
-    AGENTS.md
-  reviewer/
-    config.json
-    AGENTS.md
-  devops/
-    config.json
-    AGENTS.md
-  node_modules/                     # Dependencies (after npm install)
-  .workspace/                       # Git clones and worktrees (gitignored)
-  .al/
-    state/{dev,dev-backend,...}/     # Dedup/tracking state per agent
-    logs/                           # Structured logs
-```
-
-## Security
-
-### Host mode
-
-Secrets are isolated from agent context:
-
-1. Credential files live in `~/.action-llama-credentials/` (mode 600, directory mode 700)
-2. The runner injects credentials as environment variables (`GITHUB_TOKEN`, etc.) — agents never see raw credential files
-3. Agents use standard tools (`gh` CLI, `git`, `curl`) which read credentials from env vars
-4. Agents have no extensions loaded (`noExtensions: true`) — only bash, read, edit, write tools for working in worktrees
-5. Anti-exfiltration policy is injected into agent prompts — agents are instructed to never output credentials in logs, comments, or PRs
-
-### Docker mode
-
-Docker mode adds stronger isolation:
-
-1. **Credentials mounted read-only** — credential files are symlinked into a temp staging dir and mounted at `/credentials/` (read-only)
-2. **Minimal privileges** — `--read-only` root FS, `--cap-drop ALL`, `--security-opt no-new-privileges`, non-root user, PID/memory/CPU limits
-3. **Kill switch** — each container gets a unique shutdown secret; if exfiltration is detected, the agent calls `POST /shutdown` to immediately kill the container
-4. **Tmpfs workspace** — all writable space is tmpfs (`/workspace`, `/tmp`), nothing persists after container exit
-5. **Standard tooling** — containers include `gh` CLI, `git`, and `curl`; no custom proxy or command routing
-
 ## Configuration
 
-Config is split between a global `config.json` and per-agent `config.json` files.
-
-**`<project>/config.json`** — global settings (Docker, broker, webhooks):
+### Global config (`config.json`)
 
 ```json
 {
   "docker": { "enabled": false },
-  "broker": { "port": 8080 },
+  "gateway": { "port": 8080 },
   "webhooks": { "githubSecretCredential": "github-webhook-secret" }
 }
 ```
 
-**`<project>/<agent>/config.json`** — per-agent (includes model):
+| Key | Default | Description |
+|-----|---------|-------------|
+| `docker.enabled` | `false` | Run agents in isolated Docker containers |
+| `docker.image` | `"al-agent:latest"` | Docker image for containers |
+| `docker.memory` | `"4g"` | Memory limit per container |
+| `docker.cpus` | `2` | CPU limit per container |
+| `docker.timeout` | `3600` | Max container runtime (seconds) |
+| `gateway.port` | `8080` | Gateway server listen port |
+
+### Agent config (`<agent>/config.json`)
 
 ```json
 {
@@ -262,12 +139,10 @@ Config is split between a global `config.json` and per-agent `config.json` files
   "model": { "provider": "anthropic", "model": "claude-sonnet-4-20250514", "thinkingLevel": "medium", "authType": "pi_auth" },
   "prompt": "An issue was just assigned to you. Implement the changes described in the issue.",
   "repos": ["acme/frontend"],
-  "triggerLabel": "agent",
-  "assignee": "bot-user",
+  "schedule": "*/5 * * * *",
   "webhooks": {
     "filters": [{
       "source": "github",
-      "repos": ["acme/frontend"],
       "events": ["issues"],
       "actions": ["labeled"],
       "labels": ["agent"],
@@ -277,189 +152,91 @@ Config is split between a global `config.json` and per-agent `config.json` files
 }
 ```
 
-Agents can use webhooks, a cron schedule, or both. Add a `"schedule"` field (e.g., `"*/5 * * * *"`) for polling. Each agent carries its own model config, so you can run different agents on different models (e.g., Opus for dev, Haiku for devops).
+Agents can use webhooks, a cron schedule, or both. Each agent carries its own model config, so you can run different models per agent (e.g., Opus for dev, Haiku for devops). Edit these files directly or re-run `al new` for guided reconfiguration.
 
-Edit these files directly to change triggers, add repos, or switch models. Re-run `al init` for a guided reconfiguration.
+### Webhooks
 
-### Docker config options
+To use webhooks instead of polling, enable them during `al new` and add a webhook in your GitHub repo settings:
 
-| Key | Default | Description |
-|-----|---------|-------------|
-| `docker.enabled` | `false` | Enable Docker container mode |
-| `docker.image` | `"al-agent:latest"` | Docker image for agent containers |
-| `docker.memory` | `"4g"` | Memory limit per container |
-| `docker.cpus` | `2` | CPU limit per container |
-| `docker.timeout` | `3600` | Max container runtime in seconds |
-| `broker.port` | `8080` | Broker server listen port |
-| `webhooks.githubSecretCredential` | `"github-webhook-secret"` | Credential name for the GitHub webhook HMAC secret |
+- **Payload URL**: `http://<your-host>:8080/webhooks/github`
+- **Content type**: `application/json`
+- **Secret**: the same secret you entered during setup
 
-## Webhooks
+Payloads are validated with HMAC-SHA256 (`x-hub-signature-256`). Webhook filters in `webhooks.filters` support matching on `source`, `repos`, `events`, `actions`, `labels`, `assignee`, `author`, and `branches` (AND logic; omitted fields are not checked).
 
-Agents can be triggered by GitHub webhooks for real-time responses instead of (or in addition to) polling. The setup wizard configures default webhook filters per agent type:
+### Docker mode
 
-| Agent | Default filter |
-|-------|---------------|
-| **Developer** | `issues` event, `labeled` action, matching trigger label + assignee |
-| **PR Reviewer** | `pull_request` event, `opened` / `synchronize` actions |
-| **DevOps** | `workflow_run` event, `completed` action |
+Set `"docker": { "enabled": true }` in `config.json`. Agents run in isolated containers with credentials mounted read-only at `/credentials/`, a read-only root FS, dropped capabilities, non-root user, and PID/memory/CPU limits. Each container gets a unique shutdown secret for the anti-exfiltration kill switch. The Docker image is built automatically on first run from `docker/Dockerfile`.
 
-### Setting up the GitHub webhook
+## Developing
 
-1. Run `al init` and enable webhooks for your agents — the wizard will ask for a webhook secret
-2. In your GitHub repo (or org) settings, add a webhook:
-   - **Payload URL**: `http://<your-host>:8080/webhooks/github`
-   - **Content type**: `application/json`
-   - **Secret**: the same secret you entered during `al init`
-   - **Events**: select the events your agents listen for (or "Send me everything")
-3. Start AL — the broker server listens for incoming webhooks automatically
+### Prerequisites
 
-Webhook payloads are validated using HMAC-SHA256 (`x-hub-signature-256`). If the signature doesn't match, the request is rejected with 401.
+- Node.js >= 20, Git, Docker
+- GitHub PAT with `repo` + `workflow` scopes
+- Anthropic auth (pi auth, API key, or OAuth token)
 
-### Webhook filter options
-
-Filters are configured in `<agent>/config.json` under `webhooks.filters`. Each filter can match on:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `source` | `"github"` | Required — the webhook source |
-| `repos` | `string[]` | Only match events from these repos |
-| `events` | `string[]` | GitHub event types (`issues`, `pull_request`, `push`, etc.) |
-| `actions` | `string[]` | Event actions (`opened`, `labeled`, `synchronize`, etc.) |
-| `labels` | `string[]` | Match if the issue/PR has any of these labels |
-| `assignee` | `string` | Match if assigned to this user |
-| `author` | `string` | Match if authored by this user |
-| `branches` | `string[]` | Match if targeting one of these branches |
-
-All specified fields must match (AND logic). Omitted fields are not checked.
-
-## Customizing agent behavior
-
-Each agent has an `AGENTS.md` file written during `al init`. Edit `<project>/<agent>/AGENTS.md` to customize agent behavior — changes take effect on the next run.
-
-Agent config values (repos, trigger label, etc.) are automatically injected into the prompt as an `<agent-config>` block, so AGENTS.md can reference them without hardcoding. When triggered by a webhook, a `<webhook-trigger>` block is also injected with event details (issue title, PR number, labels, etc.).
-
-## Testing
-
-Tests use [Vitest](https://vitest.dev/) with globals enabled and V8 coverage.
+### Setup
 
 ```bash
-# Run all tests once
+git clone <repo>
+cd action-llama
+npm install
+npm run build
 npm test
-
-# Watch mode (re-runs on file changes)
-npm run test:watch
-
-# Run with coverage report
-npm run test:coverage
 ```
 
-Test files live in `test/` mirroring the `src/` layout:
+### How it works
+
+`al start` runs a single Node.js process (the **scheduler**) that:
+
+1. Discovers agents in the project directory (each subdirectory with a `config.json`)
+2. Starts a **gateway** HTTP server if webhooks or Docker mode are enabled (health check, webhook receiver, shutdown kill switch)
+3. Creates a **runner** per agent — either `AgentRunner` (host mode) or `ContainerAgentRunner` (Docker mode)
+4. Wires up **cron jobs** and/or **webhook bindings** to trigger each runner
+5. On trigger, the runner builds a prompt (injecting `<agent-config>` and optionally `<webhook-trigger>` blocks), starts a [pi-coding-agent](https://github.com/badlogic/pi-mono) session, and streams output to the logger
+
+### Source layout
 
 ```
-test/
-  helpers.ts                        # Shared test utilities
-  shared/                           # Unit tests for shared modules
-  agents/                           # Agent runner, prompt builder, default agent tests
-  setup/                            # Setup validators + scaffolding tests
-  scheduler/                        # Scheduler, webhook integration tests
-  webhooks/                         # Webhook registry + GitHub provider tests
+src/
+  cli/              # Command definitions (new, start, status, logs, agent add)
+  setup/            # Interactive setup wizard (prompts, validators, scaffolding)
+  scheduler/        # Scheduler: discovers agents, starts gateway, wires cron + webhooks
+  agents/           # Agent runners (host + Docker), prompt builder, built-in definitions
+  gateway/          # HTTP server: router, health, shutdown, webhook routes
+  docker/           # Container lifecycle (launch, wait, logs, remove), image + network
+  webhooks/         # Webhook registry, provider interface, GitHub provider
+  tui/              # Ink-based terminal UI (App.tsx, status tracker)
+  shared/           # Config loader, credentials, logger, paths, git helpers
 ```
 
-Coverage is collected for all `src/**/*.ts` files, excluding entry points (`cli/main.ts`), interactive prompts (`setup/prompts.ts`), and pure type definitions (`scheduler/types.ts`).
+### Extension points
 
-## Docker mode
+- **New agent type** — add a definition under `src/agents/definitions/<name>/` with a `config-definition.json` (schema for params, default schedule, webhook filters) and an `AGENTS.md` template. It will appear in `al new` and `al agent add` automatically.
+- **New webhook provider** — implement the `WebhookProvider` interface in `src/webhooks/providers/` and register it in `src/scheduler/index.ts`. The registry handles routing by `source` field.
+- **Custom runner** — subclass or replace `AgentRunner` in `src/agents/runner.ts` to change how agent sessions are created (different model providers, tool sets, etc.).
+- **Gateway routes** — add routes in `src/gateway/routes/` and register them in `src/gateway/index.ts`.
 
-Docker mode runs each agent session in an isolated container. Credentials are mounted read-only at `/credentials/`, and the container has internet access to use standard tools directly.
-
-```
-HOST                                         DOCKER (al-net)
-┌──────────────────────────────────┐         ┌──────────────────────────────┐
-│  Scheduler                      │         │  Agent Container (per run)   │
-│    generates shutdown secret    │         │    pi-coding-agent session   │
-│    stages credentials           │         │    coding tools (bash,r/w)   │
-│    launches container           │         │    gh, git, curl             │
-│    waits for exit               │         │                              │
-│                                 │         │  /credentials/ (read-only)   │
-│  Broker (in-process)            │◄────────│    anthropic-key             │
-│    ● Health endpoint            │  HTTP   │    github-token              │
-│    ● Shutdown kill switch       │         │    sentry-token (optional)   │
-│    ● Webhook receiver           │         │                              │
-│                                 │         │  /workspace/ (tmpfs)         │
-│  Credentials (~/.al-creds/)     │         │  Internet access: yes        │
-│  Workspace (project/.workspace/)│         └──────────────────────────────┘
-└──────────────────────────────────┘
-```
-
-### Prerequisites
-
-- Docker installed and running
-- Set `"docker": { "enabled": true }` in `config.json`
-
-The agent Docker image is built automatically on first run from `docker/Dockerfile`.
-
-## Publishing to npm
-
-The package is configured for standard npm publishing under the `@action-llama` scope.
-
-### Prerequisites
-
-1. An [npm account](https://www.npmjs.com/signup) with access to the `@action-llama` org
-2. Login to npm:
-   ```bash
-   npm login
-   ```
-
-### Version and publish
-
-Use `npm version` to bump the version (updates `package.json`, creates a git tag, and pushes):
+### Tests
 
 ```bash
-# Patch release (0.1.0 → 0.1.1)
-npm version patch
-
-# Minor release (0.1.0 → 0.2.0)
-npm version minor
-
-# Major release (0.1.0 → 1.0.0)
-npm version major
+npm test              # run all 175 tests
+npm run test:watch    # watch mode
+npm run test:coverage # V8 coverage report
 ```
 
-Then publish:
+Tests live in `test/` mirroring `src/`. Coverage excludes entry points (`cli/main.ts`), interactive prompts (`setup/prompts.ts`), and type-only files.
+
+### Publishing
 
 ```bash
-npm publish --access public --tag latest
+npm login                            # need @action-llama org access
+npm version patch                    # or minor / major — bumps, tags, pushes
+npm publish --access public          # build + tests run automatically via prepublishOnly
 ```
 
-The `prepublishOnly` script automatically runs the build and tests before publishing. If either fails, the publish is aborted.
-
-### First-time publish
-
-For the very first publish of a scoped package:
-
-```bash
-npm publish --access public
-```
-
-The `--access public` flag is required for scoped packages on the first publish (subsequent publishes remember the setting).
-
-### What gets published
-
-Only these files are included in the npm tarball (controlled by the `files` field in `package.json`):
-
-- `dist/` — compiled JavaScript, source maps, and type declarations
-- `docker/` — Dockerfile for container mode
-- `README.md`
-- `LICENSE`
-- `package.json` (always included by npm)
-
-### Build scripts
-
-| Script | Description |
-|--------|-------------|
-| `npm run build` | Compile TypeScript to `dist/` and copy agent definition assets |
-| `npm run clean` | Remove the `dist/` directory |
-| `npm test` | Run all tests |
-| `npm version <patch\|minor\|major>` | Bump version, tag, and push |
+Published tarball includes `dist/`, `docker/`, `README.md`, `LICENSE`, and `package.json`.
 
 ## License
 

@@ -7,7 +7,7 @@ export interface ContainerOptions {
   agentName: string;
   agentConfig: string;
   shutdownSecret: string;
-  brokerUrl: string;
+  gatewayUrl: string;
   prompt: string;
   credentialsStagingDir: string;
   memory?: string;
@@ -43,7 +43,7 @@ export function launchContainer(opts: ContainerOptions): string {
     "--memory", memory,
     "--cpus", String(cpus),
     "-v", `${opts.credentialsStagingDir}:/credentials:ro`,
-    "-e", `BROKER_URL=${opts.brokerUrl}`,
+    "-e", `GATEWAY_URL=${opts.gatewayUrl}`,
     "-e", `SHUTDOWN_SECRET=${opts.shutdownSecret}`,
     "-e", `AGENT_CONFIG=${opts.agentConfig}`,
     "-e", `PROMPT=${opts.prompt}`,

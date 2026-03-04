@@ -19,7 +19,7 @@ export class ContainerAgentRunner {
   private agentConfig: AgentConfig;
   private logger: Logger;
   private registerContainer: (secret: string, containerName: string) => void;
-  private brokerUrl: string;
+  private gatewayUrl: string;
   private projectPath: string;
   private statusTracker?: StatusTracker;
 
@@ -28,7 +28,7 @@ export class ContainerAgentRunner {
     agentConfig: AgentConfig,
     logger: Logger,
     registerContainer: (secret: string, containerName: string) => void,
-    brokerUrl: string,
+    gatewayUrl: string,
     projectPath: string,
     statusTracker?: StatusTracker
   ) {
@@ -36,7 +36,7 @@ export class ContainerAgentRunner {
     this.agentConfig = agentConfig;
     this.logger = logger;
     this.registerContainer = registerContainer;
-    this.brokerUrl = brokerUrl;
+    this.gatewayUrl = gatewayUrl;
     this.projectPath = projectPath;
     this.statusTracker = statusTracker;
   }
@@ -192,7 +192,7 @@ export class ContainerAgentRunner {
         agentName: this.agentConfig.name,
         agentConfig: JSON.stringify(configWithMd),
         shutdownSecret,
-        brokerUrl: this.brokerUrl,
+        gatewayUrl: this.gatewayUrl,
         prompt,
         credentialsStagingDir: stagingDir,
         memory: this.globalConfig.docker?.memory,

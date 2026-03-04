@@ -11,7 +11,7 @@ export interface AgentStatus {
 
 export interface SchedulerInfo {
   mode: "docker" | "host";
-  brokerPort: number | null;
+  gatewayPort: number | null;
   cronJobCount: number;
   webhooksActive: boolean;
   webhookUrls: string[];

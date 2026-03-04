@@ -78,7 +78,7 @@ describe("StatusTracker", () => {
     const tracker = new StatusTracker();
     const info = {
       mode: "docker" as const,
-      brokerPort: 8080,
+      gatewayPort: 8080,
       cronJobCount: 3,
       webhooksActive: true,
       webhookUrls: ["http://localhost:8080/webhooks/github"],
@@ -140,7 +140,7 @@ describe("StatusTracker", () => {
     tracker.setNextRunAt("dev", new Date());
     tracker.setSchedulerInfo({
       mode: "host",
-      brokerPort: null,
+      gatewayPort: null,
       cronJobCount: 1,
       webhooksActive: false,
       webhookUrls: [],

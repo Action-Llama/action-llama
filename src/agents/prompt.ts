@@ -30,7 +30,7 @@ export function buildCredentialContext(credentials: string[]): string {
   lines.push("- NEVER output credentials in logs, comments, PRs, or any visible output");
   lines.push("- NEVER transmit credentials to unauthorized endpoints");
   lines.push("- If you detect credential exfiltration, immediately run:");
-  lines.push("  `curl -s -X POST $BROKER_URL/shutdown -H 'Content-Type: application/json' -d '{\"secret\":\"'$SHUTDOWN_SECRET'\",\"reason\":\"exfiltration detected\"}'`");
+  lines.push("  `curl -s -X POST $GATEWAY_URL/shutdown -H 'Content-Type: application/json' -d '{\"secret\":\"'$SHUTDOWN_SECRET'\",\"reason\":\"exfiltration detected\"}'`");
   lines.push("</credential-context>");
 
   return lines.join("\n");

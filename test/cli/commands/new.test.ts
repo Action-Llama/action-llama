@@ -22,7 +22,7 @@ vi.mock("child_process", () => ({
   execSync: vi.fn(),
 }));
 
-import { execute } from "../../../src/cli/commands/init.js";
+import { execute } from "../../../src/cli/commands/new.js";
 
 const baseGlobalConfig = {};
 
@@ -61,7 +61,7 @@ const baseAgents = [
   },
 ];
 
-describe("init", () => {
+describe("new", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockLoadCredential.mockReturnValue(undefined);

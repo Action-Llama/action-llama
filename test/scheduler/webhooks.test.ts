@@ -33,13 +33,13 @@ vi.mock("../../src/agents/runner.js", () => ({
   },
 }));
 
-// Mock broker
-const mockBrokerClose = vi.fn().mockResolvedValue(undefined);
-vi.mock("../../src/broker/index.js", () => ({
-  startBroker: vi.fn().mockResolvedValue({
+// Mock gateway
+const mockGatewayClose = vi.fn().mockResolvedValue(undefined);
+vi.mock("../../src/gateway/index.js", () => ({
+  startGateway: vi.fn().mockResolvedValue({
     server: {},
     registerContainer: vi.fn(),
-    close: mockBrokerClose,
+    close: mockGatewayClose,
   }),
 }));
 
@@ -147,10 +147,10 @@ describe("scheduler webhook support", () => {
     expect(webhookRegistry!.getProvider("github")).toBeDefined();
   });
 
-  it("starts broker for webhooks even without docker", async () => {
+  it("starts gateway for webhooks even without docker", async () => {
     setupProjectWithWebhooks(tmpDir);
-    const { broker } = await startScheduler(tmpDir);
-    expect(broker).toBeDefined();
+    const { gateway } = await startScheduler(tmpDir);
+    expect(gateway).toBeDefined();
   });
 
   it("creates cron job and webhook binding for hybrid agent", async () => {

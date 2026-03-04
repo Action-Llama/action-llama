@@ -20,7 +20,7 @@ export async function execute(opts: { project: string; definition?: string }): P
   const githubToken = loadCredential("github-token");
   if (!githubToken) {
     throw new Error(
-      `GitHub token not found. Run "al init" first or add ${CREDENTIALS_DIR}/github-token.`
+      `GitHub token not found. Run "al new" first or add ${CREDENTIALS_DIR}/github-token.`
     );
   }
 
@@ -32,7 +32,7 @@ export async function execute(opts: { project: string; definition?: string }): P
   const existingAgentNames = discoverAgents(projectPath);
   if (existingAgentNames.length === 0) {
     throw new Error(
-      `No existing agents found in ${projectPath}. Use "al init" to set up a new project.`
+      `No existing agents found in ${projectPath}. Use "al new" to set up a new project.`
     );
   }
 

@@ -272,7 +272,7 @@ async function promptSentryCredential(): Promise<{
   return { sentryToken, sentryOrg, sentryProjectSlugs };
 }
 
-// --- Full interactive setup (init command) ---
+// --- Full interactive setup (new command) ---
 
 export async function runSetup(): Promise<{
   globalConfig: GlobalConfig;

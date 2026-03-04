@@ -17,7 +17,7 @@ describe("App TUI", () => {
     tracker.registerAgent("dev");
     tracker.setSchedulerInfo({
       mode: "docker",
-      brokerPort: 8080,
+      gatewayPort: 8080,
       cronJobCount: 3,
       webhooksActive: true,
       webhookUrls: ["http://localhost:8080/webhooks/github"],
@@ -31,7 +31,7 @@ describe("App TUI", () => {
     expect(output).toContain("Docker mode");
     expect(output).toContain("1 agent");
     expect(output).toContain("3 cron jobs");
-    expect(output).toContain("Broker: :8080");
+    expect(output).toContain("Gateway: :8080");
     expect(output).toContain("Webhooks: active");
   });
 
@@ -41,7 +41,7 @@ describe("App TUI", () => {
     tracker.registerAgent("reviewer");
     tracker.setSchedulerInfo({
       mode: "host",
-      brokerPort: null,
+      gatewayPort: null,
       cronJobCount: 2,
       webhooksActive: false,
       webhookUrls: [],
@@ -66,7 +66,7 @@ describe("App TUI", () => {
     tracker.registerAgent("dev");
     tracker.setSchedulerInfo({
       mode: "host",
-      brokerPort: null,
+      gatewayPort: null,
       cronJobCount: 1,
       webhooksActive: false,
       webhookUrls: [],
@@ -87,7 +87,7 @@ describe("App TUI", () => {
     const tracker = new StatusTracker();
     tracker.setSchedulerInfo({
       mode: "host",
-      brokerPort: null,
+      gatewayPort: null,
       cronJobCount: 0,
       webhooksActive: false,
       webhookUrls: [],
@@ -105,7 +105,7 @@ describe("App TUI", () => {
     tracker.registerAgent("dev");
     tracker.setSchedulerInfo({
       mode: "host",
-      brokerPort: null,
+      gatewayPort: null,
       cronJobCount: 1,
       webhooksActive: false,
       webhookUrls: [],

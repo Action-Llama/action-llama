@@ -62,10 +62,10 @@ export class AgentRunner {
         }
       }
 
-      // AGENTS.md must exist on disk (written during al init)
+      // AGENTS.md must exist on disk (written during al new)
       if (!existsSync(agentsFile)) {
         throw new Error(
-          `AGENTS.md not found at ${agentsFile}. Run 'al init' to create it.`
+          `AGENTS.md not found at ${agentsFile}. Run 'al new' to create it.`
         );
       }
       const agentsContent = readFileSync(agentsFile, "utf-8");

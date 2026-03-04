@@ -20,13 +20,13 @@ export async function execute(opts: { project: string; dangerousNoDocker?: boole
 
   const statusTracker = new StatusTracker();
 
-  const { cronJobs, broker, webhookRegistry, webhookUrls } = await startScheduler(projectPath, globalConfig, statusTracker);
+  const { cronJobs, gateway, webhookRegistry, webhookUrls } = await startScheduler(projectPath, globalConfig, statusTracker);
 
-  const brokerPort = broker ? (globalConfig.broker?.port || 8080) : null;
+  const gatewayPort = gateway ? (globalConfig.gateway?.port || 8080) : null;
 
   statusTracker.setSchedulerInfo({
     mode,
-    brokerPort,
+    gatewayPort,
     cronJobCount: cronJobs.length,
     webhooksActive: !!webhookRegistry,
     webhookUrls: webhookUrls || [],

@@ -10,7 +10,7 @@ import type { StatusTracker } from "../tui/status-tracker.js";
 import { buildScheduledPrompt, buildWebhookPrompt } from "../agents/prompt.js";
 import { WebhookRegistry } from "../webhooks/registry.js";
 import { GitHubWebhookProvider } from "../webhooks/providers/github.js";
-import type { BrokerServer } from "../broker/index.js";
+import type { GatewayServer } from "../gateway/index.js";
 import type { WebhookContext } from "../webhooks/types.js";
 
 interface RunnerLike {
@@ -28,7 +28,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   // Discover all agents in the project
   const agentNames = discoverAgents(projectPath);
   if (agentNames.length === 0) {
-    throw new Error("No agents found. Run 'al init' to create a project with agents.");
+    throw new Error("No agents found. Run 'al new' to create a project with agents.");
   }
 
   const agentConfigs: AgentConfig[] = agentNames.map((name) => loadAgentConfig(projectPath, name));
@@ -66,7 +66,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     }
   }
 
-  let broker: BrokerServer | undefined;
+  let gateway: GatewayServer | undefined;
 
   if (dockerEnabled) {
     logger.info("Docker mode enabled — initializing docker infrastructure");
@@ -95,23 +95,23 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
     logger.info("Docker infrastructure ready");
 
-    // 4. Start broker (with webhook registry if configured)
-    const { startBroker } = await import("../broker/index.js");
-    const brokerPort = globalConfig.broker?.port || 8080;
-    broker = await startBroker({
-      port: brokerPort,
-      logger: mkLogger(projectPath, "broker"),
+    // 4. Start gateway (with webhook registry if configured)
+    const { startGateway } = await import("../gateway/index.js");
+    const gatewayPort = globalConfig.gateway?.port || 8080;
+    gateway = await startGateway({
+      port: gatewayPort,
+      logger: mkLogger(projectPath, "gateway"),
       webhookRegistry,
       webhookSecrets,
     });
   } else if (anyWebhooks) {
-    // Start broker even without docker when webhooks are configured
-    logger.info("Starting broker for webhook support (no docker)");
-    const { startBroker } = await import("../broker/index.js");
-    const brokerPort = globalConfig.broker?.port || 8080;
-    broker = await startBroker({
-      port: brokerPort,
-      logger: mkLogger(projectPath, "broker"),
+    // Start gateway even without docker when webhooks are configured
+    logger.info("Starting gateway for webhook support (no docker)");
+    const { startGateway } = await import("../gateway/index.js");
+    const gatewayPort = globalConfig.gateway?.port || 8080;
+    gateway = await startGateway({
+      port: gatewayPort,
+      logger: mkLogger(projectPath, "gateway"),
       webhookRegistry,
       webhookSecrets,
     });
@@ -120,10 +120,10 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   // Create runners for each agent
   const runners: Record<string, RunnerLike> = {};
 
-  if (dockerEnabled && broker) {
+  if (dockerEnabled && gateway) {
     const { ContainerAgentRunner } = await import("../agents/container-runner.js");
-    const brokerPort = globalConfig.broker?.port || 8080;
-    const brokerUrl = `http://host.docker.internal:${brokerPort}`;
+    const gatewayPort = globalConfig.gateway?.port || 8080;
+    const gatewayUrl = `http://host.docker.internal:${gatewayPort}`;
 
     for (const agentConfig of agentConfigs) {
       statusTracker?.registerAgent(agentConfig.name);
@@ -131,8 +131,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
         globalConfig,
         agentConfig,
         mkLogger(projectPath, agentConfig.name),
-        broker.registerContainer,
-        brokerUrl,
+        gateway.registerContainer,
+        gatewayUrl,
         projectPath,
         statusTracker
       );
@@ -206,13 +206,13 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   }
 
   const webhookUrls: string[] = [];
-  if (anyWebhooks && broker) {
-    const brokerPort = globalConfig.broker?.port || 8080;
+  if (anyWebhooks && gateway) {
+    const gatewayPort = globalConfig.gateway?.port || 8080;
     const sources = new Set(
       agentConfigs.flatMap((a) => a.webhooks?.filters?.map((f) => f.source) || [])
     );
     for (const source of sources) {
-      webhookUrls.push(`http://localhost:${brokerPort}/webhooks/${source}`);
+      webhookUrls.push(`http://localhost:${gatewayPort}/webhooks/${source}`);
     }
   }
 
@@ -235,9 +235,9 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     for (const job of cronJobs) {
       job.stop();
     }
-    if (broker) {
-      await broker.close();
-      logger.info("Broker server stopped");
+    if (gateway) {
+      await gateway.close();
+      logger.info("Gateway server stopped");
     }
     logger.info("All cron jobs stopped");
     process.exit(0);
@@ -246,5 +246,5 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  return { cronJobs, runners, broker, webhookRegistry, webhookUrls, statusTracker };
+  return { cronJobs, runners, gateway, webhookRegistry, webhookUrls, statusTracker };
 }

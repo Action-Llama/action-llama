@@ -6,20 +6,20 @@ import { registerWebhookRoutes } from "./routes/webhooks.js";
 import type { WebhookRegistry } from "../webhooks/registry.js";
 import type { Logger } from "../shared/logger.js";
 
-export interface BrokerOptions {
+export interface GatewayOptions {
   port: number;
   logger: Logger;
   webhookRegistry?: WebhookRegistry;
   webhookSecrets?: Record<string, string | undefined>;
 }
 
-export interface BrokerServer {
+export interface GatewayServer {
   server: Server;
   registerContainer: (secret: string, containerName: string) => void;
   close: () => Promise<void>;
 }
 
-export async function startBroker(opts: BrokerOptions): Promise<BrokerServer> {
+export async function startGateway(opts: GatewayOptions): Promise<GatewayServer> {
   const { port, logger, webhookRegistry, webhookSecrets } = opts;
   const router = new Router();
   const containerSecrets = new Map<string, string>();
@@ -40,14 +40,14 @@ export async function startBroker(opts: BrokerOptions): Promise<BrokerServer> {
   const server = createServer(async (req, res) => {
     const startTime = Date.now();
     try {
-      logger.info({ method: req.method, url: req.url }, "broker req");
+      logger.info({ method: req.method, url: req.url }, "gateway req");
 
       const handled = await router.handle(req, res);
       if (!handled) {
         sendError(res, 404, "Not found");
       }
     } catch (err: any) {
-      logger.error({ err, url: req.url }, "broker request error");
+      logger.error({ err, url: req.url }, "gateway request error");
       if (!res.headersSent) {
         sendError(res, 500, "Internal server error");
       }
@@ -55,14 +55,14 @@ export async function startBroker(opts: BrokerOptions): Promise<BrokerServer> {
       const elapsed = Date.now() - startTime;
       logger.info(
         { method: req.method, url: req.url, status: res.statusCode, ms: elapsed },
-        "broker res"
+        "gateway res"
       );
     }
   });
 
   await new Promise<void>((resolve) => {
     server.listen(port, "0.0.0.0", () => {
-      logger.info({ port }, "Broker server listening");
+      logger.info({ port }, "Gateway server listening");
       resolve();
     });
   });
