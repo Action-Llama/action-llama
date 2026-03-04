@@ -19,6 +19,20 @@ Allows you to create:
 
 Have as many agents as you like. Customize the behaviour as you wish. The system is MIT licensed and fully extensible.
 
+## How to get started
+
+```bash
+# 1. Create a new Action Llama project
+npx create-action-llama my-project
+
+# 2. Select 'dev' and enter any credentials you need
+#    (stored in ~/.action-llama-credentials)
+
+# 3. Enter the directory and start
+cd my-project
+al start
+```
+
 Built on [pi.dev](https://github.com/badlogic/pi-mono) as the agent harness.
 
 ## Built-in Agents
@@ -49,21 +63,19 @@ The project includes a few default agents to get you started
 ```bash
 npx @action-llama/action-llama init my-project
 cd my-project
-npm install
 ```
 
-This creates a new project directory with a `package.json` (including `@action-llama/action-llama` as a dependency), agent configs, and credentials.
+This creates a new project directory with a `package.json` (including `@action-llama/action-llama` as a dependency), agent configs, credentials, and runs `npm install` automatically.
 
 ## Quick start
 
 ```bash
 # 1. Initialize a project (interactive setup)
 npx @action-llama/action-llama init my-project
-cd my-project
-npm install
 
 # 2. Start the agents
-npx al start
+cd my-project
+al start
 ```
 
 ## Architecture
@@ -72,7 +84,7 @@ Action Llama separates three concerns:
 
 | Directory | Purpose | Created by |
 |-----------|---------|------------|
-| `~/.al-credentials/` | Secrets (shared across projects) | `al init` |
+| `~/.action-llama-credentials/` | Secrets (shared across projects) | `al init` |
 | `./<project-name>/` | Per-project config, agent instructions, scratch space | `al init` |
 
 Agents run with credentials injected directly — `GITHUB_TOKEN`, `SENTRY_AUTH_TOKEN`, etc. are set as environment variables, and credential files are available at `/credentials/` in Docker mode. Agents use standard tools (`gh` CLI, `git`, `curl`) to interact with external services.
@@ -107,10 +119,10 @@ The setup CLI (`al init <name>`) walks through three steps:
 
 ```bash
 # Start all agents (host mode, default)
-npx al start
+al start
 
 # Check agent status
-npx al status
+al status
 ```
 
 The scheduler runs as a single Node.js process. Agents wake on incoming webhooks or their cron schedule (or both), do their work (or log `[SILENT]` if there's nothing to do), then wait for the next trigger. If any agent uses webhooks, a broker server starts automatically to receive `POST /webhooks/github` requests. Press `Ctrl+C` for graceful shutdown.
@@ -122,7 +134,7 @@ When `docker.enabled` is set in `config.json`, agents run in isolated Docker con
 ```bash
 # Requires Docker installed and running
 # Enable in config.json: "docker": { "enabled": true }
-npx al start
+al start
 ```
 
 See the [Docker mode](#docker-mode-1) section below for details.
@@ -172,7 +184,7 @@ For each new error, it creates a GitHub issue with the error details and a link 
 ## Project structure
 
 ```
-~/.al-credentials/                  # Secrets (shared across projects)
+~/.action-llama-credentials/                  # Secrets (shared across projects)
   github-token
   sentry-token                      # (optional)
   anthropic-key                     # (optional, if not using pi_auth)
@@ -206,7 +218,7 @@ For each new error, it creates a GitHub issue with the error details and a link 
 
 Secrets are isolated from agent context:
 
-1. Credential files live in `~/.al-credentials/` (mode 600, directory mode 700)
+1. Credential files live in `~/.action-llama-credentials/` (mode 600, directory mode 700)
 2. The runner injects credentials as environment variables (`GITHUB_TOKEN`, etc.) — agents never see raw credential files
 3. Agents use standard tools (`gh` CLI, `git`, `curl`) which read credentials from env vars
 4. Agents have no extensions loaded (`noExtensions: true`) — only bash, read, edit, write tools for working in worktrees

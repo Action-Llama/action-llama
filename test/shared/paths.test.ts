@@ -17,7 +17,7 @@ describe("paths", () => {
   });
 
   it("CREDENTIALS_DIR is under homedir", () => {
-    expect(CREDENTIALS_DIR).toBe(resolve(homedir(), ".al-credentials"));
+    expect(CREDENTIALS_DIR).toBe(resolve(homedir(), ".action-llama-credentials"));
   });
 
   it("projectDir resolves the path", () => {

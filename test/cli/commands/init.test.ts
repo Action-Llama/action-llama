@@ -18,6 +18,10 @@ vi.mock("../../../src/setup/scaffold.js", () => ({
   scaffoldProject: vi.fn(),
 }));
 
+vi.mock("child_process", () => ({
+  execSync: vi.fn(),
+}));
+
 import { execute } from "../../../src/cli/commands/init.js";
 
 const baseGlobalConfig = {};

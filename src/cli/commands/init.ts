@@ -1,4 +1,5 @@
 import { resolve } from "path";
+import { execSync } from "child_process";
 import { runSetup } from "../../setup/prompts.js";
 import { writeCredential, loadCredential } from "../../shared/credentials.js";
 import { scaffoldProject } from "../../setup/scaffold.js";
@@ -62,6 +63,9 @@ export async function execute(name: string): Promise<void> {
   }
   console.log(`  Created state directories`);
 
+  console.log("\n--- Installing dependencies ---\n");
+  execSync("npm install", { cwd: projectPath, stdio: "inherit" });
+
   console.log(`
 Setup complete!
 
@@ -73,7 +77,6 @@ Setup complete!
 
 Next steps:
   cd ${name}
-  npm install
-  npx al start
+  al start
 `);
 }
