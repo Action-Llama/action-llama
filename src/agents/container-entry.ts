@@ -23,7 +23,7 @@ function readCredential(name: string): string | undefined {
 
 async function main() {
   // Switch CWD to /workspace so child processes (git, bash, etc.) default to it.
-  // tsx must resolve from /app (WORKDIR at build time), so we chdir after startup.
+  // Node must resolve from /app (WORKDIR at build time), so we chdir after startup.
   process.chdir("/workspace");
 
   const brokerUrl = process.env.BROKER_URL;
@@ -125,7 +125,7 @@ async function main() {
       }
       emitLog("debug", "event", extra);
     }
-    if (event.type === "error") {
+    if ((event as any).type === "error") {
       emitLog("error", "session error", { error: String((event as any).error || (event as any).message || JSON.stringify(event)) });
     }
     if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {

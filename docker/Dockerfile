@@ -17,15 +17,13 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o 
 WORKDIR /app
 COPY package.json ./
 RUN npm install --production
-COPY src/ ./src/
-COPY bin/ ./bin/
+COPY dist/ ./dist/
 
 # Make AL CLI available
-RUN chmod +x bin/al
-ENV PATH="/app/bin:${PATH}"
+ENV PATH="/app/dist/cli:${PATH}"
 ENV NODE_PATH="/app/node_modules"
 
 # Use the built-in node user (uid 1000) instead of root
 USER node
 
-ENTRYPOINT ["node", "--import", "tsx", "/app/src/agents/container-entry.ts"]
+ENTRYPOINT ["node", "/app/dist/agents/container-entry.js"]

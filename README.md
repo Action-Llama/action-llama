@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="action_llama.jpg" alt="Action Llama" />
+</p>
+
 # Action Llama
 
 It's like a Lambda that runs an agent. Triggered either by cron or webhooks.  BYOM- bring your own model.
@@ -374,6 +378,70 @@ HOST                                         DOCKER (al-net)
 - Set `"docker": { "enabled": true }` in `config.json`
 
 The agent Docker image is built automatically on first run from `docker/Dockerfile`.
+
+## Publishing to npm
+
+The package is configured for standard npm publishing under the `@action-llama` scope.
+
+### Prerequisites
+
+1. An [npm account](https://www.npmjs.com/signup) with access to the `@action-llama` org
+2. Login to npm:
+   ```bash
+   npm login
+   ```
+
+### Version and publish
+
+Use `npm version` to bump the version (updates `package.json`, creates a git tag, and pushes):
+
+```bash
+# Patch release (0.1.0 → 0.1.1)
+npm version patch
+
+# Minor release (0.1.0 → 0.2.0)
+npm version minor
+
+# Major release (0.1.0 → 1.0.0)
+npm version major
+```
+
+Then publish:
+
+```bash
+npm publish --access public
+```
+
+The `prepublishOnly` script automatically runs the build and tests before publishing. If either fails, the publish is aborted.
+
+### First-time publish
+
+For the very first publish of a scoped package:
+
+```bash
+npm publish --access public
+```
+
+The `--access public` flag is required for scoped packages on the first publish (subsequent publishes remember the setting).
+
+### What gets published
+
+Only these files are included in the npm tarball (controlled by the `files` field in `package.json`):
+
+- `dist/` — compiled JavaScript, source maps, and type declarations
+- `docker/` — Dockerfile for container mode
+- `README.md`
+- `LICENSE`
+- `package.json` (always included by npm)
+
+### Build scripts
+
+| Script | Description |
+|--------|-------------|
+| `npm run build` | Compile TypeScript to `dist/` and copy agent definition assets |
+| `npm run clean` | Remove the `dist/` directory |
+| `npm test` | Run all tests |
+| `npm version <patch\|minor\|major>` | Bump version, tag, and push |
 
 ## License
 

@@ -1,11 +1,18 @@
+#!/usr/bin/env node
 import { Command } from "commander";
+import { readFileSync } from "fs";
+import { dirname, resolve } from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(readFileSync(resolve(__dirname, "../../package.json"), "utf-8"));
 
 const program = new Command();
 
 program
   .name("al")
   .description("Action Llama — automated development agents")
-  .version("0.1.0");
+  .version(pkg.version);
 
 // --- User-facing commands ---
 
