@@ -56,7 +56,6 @@ Once setup finishes:
 
 ```bash
 cd my-project
-al start        # if installed globally
 npx al start    # if using local install
 ```
 
