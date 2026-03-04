@@ -56,7 +56,8 @@ Once setup finishes:
 
 ```bash
 cd my-project
-al start
+al start        # if installed globally
+npx al start    # if using local install
 ```
 
 The dev agent will poll every 5 minutes looking for issues that match its filter: the issue must have the trigger label (default: `agent`) **and** be assigned to the configured user. When it finds a match, it clones the repo, creates a branch, implements the changes described in the issue, runs tests, and opens a PR.
@@ -79,6 +80,8 @@ my-project/
 Credentials are stored separately in `~/.action-llama-credentials/` (shared across projects, not committed to git).
 
 ## CLI commands
+
+If you installed globally (`npm install -g @action-llama/action-llama`), you can use `al` directly. Otherwise, prefix commands with `npx` (e.g., `npx al start`).
 
 | Command | Description |
 |---------|-------------|
