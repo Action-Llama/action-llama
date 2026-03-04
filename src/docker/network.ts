@@ -1,0 +1,25 @@
+import { execFileSync } from "child_process";
+
+const NETWORK_NAME = "al-net";
+
+function docker(...args: string[]): string {
+  return execFileSync("docker", args, { encoding: "utf-8", timeout: 30000 }).trim();
+}
+
+export function ensureNetwork(): void {
+  try {
+    docker("network", "inspect", NETWORK_NAME);
+  } catch {
+    docker("network", "create", NETWORK_NAME);
+  }
+}
+
+export function removeNetwork(): void {
+  try {
+    docker("network", "rm", NETWORK_NAME);
+  } catch {
+    // Network may not exist or have active containers
+  }
+}
+
+export { NETWORK_NAME };

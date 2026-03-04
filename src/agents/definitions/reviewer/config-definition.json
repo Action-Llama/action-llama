@@ -1,0 +1,24 @@
+{
+  "name": "reviewer",
+  "label": "PR reviewer",
+  "description": "Reviews and merges pull requests",
+  "credentials": {
+    "required": ["anthropic-key", "github-token"],
+    "optional": []
+  },
+  "webhooks": {
+    "description": "Wake when a PR is opened or updated",
+    "events": ["pull_request"],
+    "actions": ["opened", "synchronize"]
+  },
+  "prompts": {
+    "webhook": "Review the pull request that just came in. Approve or request changes.",
+    "schedule": "Poll GitHub for open PRs that need review, review them, and merge if appropriate."
+  },
+  "defaultSchedule": "*/5 * * * *",
+  "state": {
+    "file": "reviewed-prs.json",
+    "initial": { "prs": {} }
+  },
+  "params": {}
+}

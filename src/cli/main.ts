@@ -1,0 +1,75 @@
+import { Command } from "commander";
+
+const program = new Command();
+
+program
+  .name("al")
+  .description("Action Llama — automated development agents")
+  .version("0.1.0");
+
+// --- User-facing commands ---
+
+program
+  .command("init")
+  .description("Interactive setup, creates project dir + credentials")
+  .argument("<name>", "project name")
+  .action(async (name: string) => {
+    const { execute } = await import("./commands/init.js");
+    await execute(name);
+  });
+
+program
+  .command("start")
+  .description("Start cron scheduler")
+  .option("-p, --project <dir>", "project directory", ".")
+  .option("--dangerous-no-docker", "disable Docker container isolation (run agents directly on host)")
+  .action(async (opts) => {
+    const { execute } = await import("./commands/start.js");
+    await execute(opts);
+  });
+
+program
+  .command("logs")
+  .description("View agent log files")
+  .argument("<agent>", "agent name")
+  .option("-p, --project <dir>", "project directory", ".")
+  .option("-n, --lines <N>", "number of log entries to show", "50")
+  .option("-f, --follow", "tail mode — watch for new log entries")
+  .option("-d, --date <YYYY-MM-DD>", "specific date's log file")
+  .action(async (agent: string, opts) => {
+    const { execute } = await import("./commands/logs.js");
+    await execute(agent, opts);
+  });
+
+program
+  .command("status")
+  .description("Show agent status")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(async (opts) => {
+    const { execute } = await import("./commands/status.js");
+    await execute(opts);
+  });
+
+// --- Agent management commands ---
+
+const agent = program.command("agent").description("Agent management commands");
+
+agent
+  .command("add")
+  .description("Add a new agent to an existing project")
+  .argument("[definition]", "built-in name (dev, reviewer, devops) or path to definition directory")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(async (definition: string | undefined, opts) => {
+    const { execute } = await import("./commands/agent/add.js");
+    await execute({ ...opts, definition });
+  });
+
+program.parseAsync().catch((err) => {
+  const detail: Record<string, unknown> = { error: err.message };
+  if (err.cause) detail.cause = String(err.cause);
+  if (err.code) detail.code = err.code;
+  if (err.status) detail.status = err.status;
+  if (err.stack) detail.stack = err.stack;
+  console.error(JSON.stringify(detail));
+  process.exit(1);
+});

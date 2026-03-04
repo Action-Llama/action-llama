@@ -1,0 +1,151 @@
+import { resolve } from "path";
+import { createReadStream, readdirSync, existsSync, statSync } from "fs";
+import { createInterface } from "readline";
+import { logsDir } from "../../shared/paths.js";
+
+const LEVEL_COLORS: Record<number, { label: string; color: string }> = {
+  10: { label: "TRACE", color: "\x1b[90m" },   // gray
+  20: { label: "DEBUG", color: "\x1b[36m" },   // cyan
+  30: { label: "INFO",  color: "\x1b[32m" },   // green
+  40: { label: "WARN",  color: "\x1b[33m" },   // yellow
+  50: { label: "ERROR", color: "\x1b[31m" },   // red
+};
+const RESET = "\x1b[0m";
+
+interface LogEntry {
+  level: number;
+  time: number;
+  msg: string;
+  name?: string;
+  pid?: number;
+  hostname?: string;
+  [key: string]: unknown;
+}
+
+function formatEntry(entry: LogEntry): string {
+  const date = new Date(entry.time);
+  const time = date.toLocaleTimeString("en-US", { hour12: false });
+  const levelInfo = LEVEL_COLORS[entry.level] || { label: `L${entry.level}`, color: "" };
+
+  // Collect extra fields (exclude standard pino fields)
+  const { level, time: _t, msg, name: _n, pid: _p, hostname: _h, ...extra } = entry;
+  const extraStr = Object.keys(extra).length > 0 ? ` ${JSON.stringify(extra)}` : "";
+
+  return `${levelInfo.color}${time} ${levelInfo.label.padEnd(5)} ${msg}${extraStr}${RESET}`;
+}
+
+function parseLine(line: string): LogEntry | null {
+  if (!line.trim()) return null;
+  try {
+    return JSON.parse(line) as LogEntry;
+  } catch {
+    return null;
+  }
+}
+
+function findLogFile(dir: string, agent: string, date?: string): string | null {
+  if (date) {
+    const file = resolve(dir, `${agent}-${date}.log`);
+    return existsSync(file) ? file : null;
+  }
+
+  // Default to today
+  const today = new Date().toISOString().slice(0, 10);
+  const todayFile = resolve(dir, `${agent}-${today}.log`);
+  if (existsSync(todayFile)) return todayFile;
+
+  // Find most recent log file for this agent
+  if (!existsSync(dir)) return null;
+  const files = readdirSync(dir)
+    .filter((f) => f.startsWith(`${agent}-`) && f.endsWith(".log"))
+    .sort()
+    .reverse();
+
+  return files.length > 0 ? resolve(dir, files[0]) : null;
+}
+
+async function readLastN(filePath: string, n: number): Promise<void> {
+  const entries: string[] = [];
+
+  const rl = createInterface({
+    input: createReadStream(filePath, { encoding: "utf-8" }),
+    crlfDelay: Infinity,
+  });
+
+  for await (const line of rl) {
+    const entry = parseLine(line);
+    if (entry) {
+      entries.push(formatEntry(entry));
+      if (entries.length > n) entries.shift();
+    }
+  }
+
+  for (const formatted of entries) {
+    console.log(formatted);
+  }
+}
+
+async function readNewData(filePath: string, start: number): Promise<{ newPosition: number }> {
+  const currentSize = statSync(filePath).size;
+  if (currentSize <= start) return { newPosition: start };
+
+  const stream = createReadStream(filePath, { encoding: "utf-8", start });
+  const rl = createInterface({ input: stream, crlfDelay: Infinity });
+
+  for await (const line of rl) {
+    const entry = parseLine(line);
+    if (entry) {
+      console.log(formatEntry(entry));
+    }
+  }
+
+  return { newPosition: currentSize };
+}
+
+async function followFile(filePath: string, lastN: number): Promise<void> {
+  // Print last N entries first
+  await readLastN(filePath, lastN);
+
+  // Start tailing from end of file
+  let position = statSync(filePath).size;
+
+  // Poll for new data every 500ms (more reliable than fs.watch)
+  const interval = setInterval(async () => {
+    try {
+      const { newPosition } = await readNewData(filePath, position);
+      position = newPosition;
+    } catch {
+      // File may have been rotated or removed — ignore
+    }
+  }, 500);
+
+  process.on("SIGINT", () => {
+    clearInterval(interval);
+    process.exit(0);
+  });
+
+  await new Promise(() => {});
+}
+
+export async function execute(
+  agent: string,
+  opts: { project: string; lines: string; follow?: boolean; date?: string }
+): Promise<void> {
+  const projectPath = resolve(opts.project);
+  const dir = logsDir(projectPath);
+  const n = parseInt(opts.lines, 10);
+
+  const logFile = findLogFile(dir, agent, opts.date);
+
+  if (!logFile) {
+    const dateStr = opts.date || "today";
+    console.error(`No log file found for agent "${agent}" (${dateStr}) in ${dir}`);
+    process.exit(1);
+  }
+
+  if (opts.follow) {
+    await followFile(logFile, n);
+  } else {
+    await readLastN(logFile, n);
+  }
+}

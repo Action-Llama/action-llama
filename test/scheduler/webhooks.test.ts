@@ -1,0 +1,173 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "fs";
+import { join, resolve } from "path";
+import { tmpdir } from "os";
+
+// Mock credentials
+vi.mock("../../src/shared/credentials.js", () => ({
+  loadCredential: () => "fake-token",
+  requireCredential: () => "fake-token",
+  writeCredential: () => {},
+}));
+
+// Mock croner — capture the callbacks
+const mockCronStop = vi.fn();
+const cronCallbacks: Function[] = [];
+vi.mock("croner", () => ({
+  Cron: class {
+    stop = mockCronStop;
+    nextRun = () => new Date(Date.now() + 300000);
+    constructor(_schedule: string, _opts: any, callback: Function) {
+      cronCallbacks.push(callback);
+    }
+  },
+}));
+
+// Mock AgentRunner
+const mockRun = vi.fn().mockResolvedValue(undefined);
+let mockIsRunning = false;
+vi.mock("../../src/agents/runner.js", () => ({
+  AgentRunner: class {
+    get isRunning() { return mockIsRunning; }
+    run = mockRun;
+  },
+}));
+
+// Mock broker
+const mockBrokerClose = vi.fn().mockResolvedValue(undefined);
+vi.mock("../../src/broker/index.js", () => ({
+  startBroker: vi.fn().mockResolvedValue({
+    server: {},
+    registerContainer: vi.fn(),
+    close: mockBrokerClose,
+  }),
+}));
+
+// Mock logger
+const mockLogger = () => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+});
+vi.mock("../../src/shared/logger.js", () => ({
+  createLogger: () => mockLogger(),
+  createFileOnlyLogger: () => mockLogger(),
+}));
+
+import { startScheduler } from "../../src/scheduler/index.js";
+
+const model = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" };
+
+function setupProjectWithWebhooks(tmpDir: string) {
+  writeFileSync(resolve(tmpDir, "config.json"), JSON.stringify({}));
+
+  // Webhook-only agent
+  const webhookAgent = {
+    credentials: ["github-token"],
+    model,
+    prompt: "Handle webhook events.",
+    repos: ["acme/app"],
+    webhooks: {
+      filters: [{ source: "github", events: ["issues"], actions: ["labeled"], labels: ["agent"] }],
+    },
+  };
+  const agentDir = resolve(tmpDir, "webhook-dev");
+  mkdirSync(agentDir, { recursive: true });
+  writeFileSync(resolve(agentDir, "config.json"), JSON.stringify(webhookAgent));
+  mkdirSync(resolve(tmpDir, ".al", "state", "webhook-dev"), { recursive: true });
+}
+
+function setupProjectWithHybrid(tmpDir: string) {
+  writeFileSync(resolve(tmpDir, "config.json"), JSON.stringify({}));
+
+  // Hybrid agent (schedule + webhooks)
+  const hybridAgent = {
+    credentials: ["github-token"],
+    model,
+    schedule: "*/15 * * * *",
+    prompt: "Review PRs.",
+    repos: ["acme/app"],
+    webhooks: {
+      filters: [{ source: "github", events: ["pull_request"], actions: ["opened"] }],
+    },
+  };
+  const agentDir = resolve(tmpDir, "hybrid");
+  mkdirSync(agentDir, { recursive: true });
+  writeFileSync(resolve(agentDir, "config.json"), JSON.stringify(hybridAgent));
+  mkdirSync(resolve(tmpDir, ".al", "state", "hybrid"), { recursive: true });
+}
+
+function setupProjectWithNoTrigger(tmpDir: string) {
+  writeFileSync(resolve(tmpDir, "config.json"), JSON.stringify({}));
+
+  // Agent with neither schedule nor webhooks
+  const badAgent = {
+    credentials: ["github-token"],
+    model,
+    prompt: "I have no trigger.",
+    repos: ["acme/app"],
+  };
+  const agentDir = resolve(tmpDir, "bad-agent");
+  mkdirSync(agentDir, { recursive: true });
+  writeFileSync(resolve(agentDir, "config.json"), JSON.stringify(badAgent));
+  mkdirSync(resolve(tmpDir, ".al", "state", "bad-agent"), { recursive: true });
+}
+
+describe("scheduler webhook support", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    cronCallbacks.length = 0;
+    mockIsRunning = false;
+    tmpDir = mkdtempSync(join(tmpdir(), "al-sched-wh-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("creates no cron jobs for webhook-only agent", async () => {
+    setupProjectWithWebhooks(tmpDir);
+    const { cronJobs } = await startScheduler(tmpDir);
+    expect(cronJobs).toHaveLength(0);
+  });
+
+  it("does not fire initial run for webhook-only agent", async () => {
+    setupProjectWithWebhooks(tmpDir);
+    await startScheduler(tmpDir);
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it("creates webhook registry for agents with webhooks", async () => {
+    setupProjectWithWebhooks(tmpDir);
+    const { webhookRegistry } = await startScheduler(tmpDir);
+    expect(webhookRegistry).toBeDefined();
+    expect(webhookRegistry!.getProvider("github")).toBeDefined();
+  });
+
+  it("starts broker for webhooks even without docker", async () => {
+    setupProjectWithWebhooks(tmpDir);
+    const { broker } = await startScheduler(tmpDir);
+    expect(broker).toBeDefined();
+  });
+
+  it("creates cron job and webhook binding for hybrid agent", async () => {
+    setupProjectWithHybrid(tmpDir);
+    const { cronJobs, webhookRegistry } = await startScheduler(tmpDir);
+    expect(cronJobs).toHaveLength(1);
+    expect(webhookRegistry).toBeDefined();
+  });
+
+  it("fires initial run for hybrid agent (has schedule)", async () => {
+    setupProjectWithHybrid(tmpDir);
+    await startScheduler(tmpDir);
+    expect(mockRun).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects agents with no schedule and no webhooks", async () => {
+    setupProjectWithNoTrigger(tmpDir);
+    await expect(startScheduler(tmpDir)).rejects.toThrow("must have a schedule, webhooks, or both");
+  });
+});

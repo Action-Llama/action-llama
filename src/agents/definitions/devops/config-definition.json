@@ -1,0 +1,37 @@
+{
+  "name": "devops",
+  "label": "DevOps monitor",
+  "description": "Detects errors, files issues",
+  "credentials": {
+    "required": ["anthropic-key", "github-token"],
+    "optional": ["sentry-token"]
+  },
+  "webhooks": {
+    "description": "Wake when a GitHub Actions workflow completes",
+    "events": ["workflow_run"],
+    "actions": ["completed"]
+  },
+  "prompts": {
+    "webhook": "A workflow run just completed. Check for failures and file issues for any new errors found.",
+    "schedule": "Poll for new errors from GitHub Actions failures and Sentry, file issues for any new ones found."
+  },
+  "defaultSchedule": "*/15 * * * *",
+  "state": {
+    "file": "known-errors.json",
+    "initial": { "errors": {} }
+  },
+  "params": {
+    "sentryOrg": {
+      "type": "string",
+      "description": "Sentry organization slug",
+      "required": false,
+      "credential": "sentry-token"
+    },
+    "sentryProjects": {
+      "type": "string[]",
+      "description": "Sentry project slugs to monitor",
+      "required": false,
+      "credential": "sentry-token"
+    }
+  }
+}
