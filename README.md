@@ -421,7 +421,7 @@ npm version major
 Then publish:
 
 ```bash
-npm publish --access public
+npm publish --access public --tag latest
 ```
 
 The `prepublishOnly` script automatically runs the build and tests before publishing. If either fails, the publish is aborted.
