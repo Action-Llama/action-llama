@@ -164,6 +164,30 @@ To use webhooks instead of polling, enable them during `al new` and add a webhoo
 
 Payloads are validated with HMAC-SHA256 (`x-hub-signature-256`). Webhook filters in `webhooks.filters` support matching on `source`, `repos`, `events`, `actions`, `labels`, `assignee`, `author`, and `branches` (AND logic; omitted fields are not checked).
 
+#### Local development with ngrok
+
+If you're developing locally and need GitHub to reach your machine, use [ngrok](https://ngrok.com) to create a public tunnel:
+
+```bash
+# Install ngrok (macOS)
+brew install ngrok
+
+# Start a tunnel pointing at the Action Llama gateway port
+ngrok http 8080
+```
+
+ngrok will print a forwarding URL like `https://a1b2c3d4.ngrok-free.app`. Use that as your GitHub webhook Payload URL:
+
+```
+https://a1b2c3d4.ngrok-free.app/webhooks/github
+```
+
+Keep the ngrok process running alongside `al start`. The tunnel stays active until you stop it. For a stable URL across restarts, sign up for a free ngrok account and use a static domain:
+
+```bash
+ngrok http 8080 --url=your-name.ngrok-free.app
+```
+
 ### Docker mode
 
 Set `"docker": { "enabled": true }` in `config.json`. Agents run in isolated containers with credentials mounted read-only at `/credentials/`, a read-only root FS, dropped capabilities, non-root user, and PID/memory/CPU limits. Each container gets a unique shutdown secret for the anti-exfiltration kill switch. The Docker image is built automatically on first run from `docker/Dockerfile`.
