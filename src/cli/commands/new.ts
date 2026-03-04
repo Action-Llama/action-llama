@@ -77,6 +77,6 @@ Setup complete!
 
 Next steps:
   cd ${name}
-  al start
+  npx al start
 `);
 }
