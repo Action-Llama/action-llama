@@ -4,13 +4,17 @@
 
 # Action Llama
 
-It's like a Lambda that runs an agent. Triggered either by cron or webhooks.  BYOM- bring your own model.
+Have agents run instructions!  It's like a local lambda for agents.
 
-It's a very simple wrapper around whatever your favourite flavour of LLM is:
+Cron or webhooks trigger an agent "script": 
 
 1. Either a webhook or cron wakes up the agent
 2. The agent runs according the instructions in AGENTS.md you define
 3. The agent shuts down
+
+BYOM: bring your own model.
+
+Agent runs are contained in a Docker container using only the credentials they need.
 
 Allows you to create:
 
@@ -18,6 +22,8 @@ Allows you to create:
 - A reviewer agent that watches for new Github Pull Requests and reviews them then merges if all ok
 
 Have as many agents as you like. Customize the behaviour as you wish. The system is MIT licensed and fully extensible.
+
+Commit your agents to github and share them.
 
 ## How to get started
 
