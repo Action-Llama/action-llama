@@ -50,7 +50,6 @@ describe("loadAgentConfig", () => {
       credentials: ["github-token"],
       model: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
       schedule: "*/5 * * * *",
-      prompt: "Do stuff",
       repos: ["acme/app"],
       params: { triggerLabel: "agent", assignee: "bot" },
     };

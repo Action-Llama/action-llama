@@ -6,7 +6,6 @@ const baseConfig: AgentConfig = {
   name: "test",
   credentials: [],
   model: { provider: "anthropic", model: "test", thinkingLevel: "off", authType: "api_key" },
-  prompt: "do stuff",
   repos: ["acme/app"],
 };
 

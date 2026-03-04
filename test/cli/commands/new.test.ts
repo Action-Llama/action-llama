@@ -42,7 +42,8 @@ const baseAgents = [
       credentials: ["github-token"],
       model: baseModel,
       schedule: "*/5 * * * *",
-      prompt: "Do dev stuff.",
+
+
       repos: ["acme/app"],
       params: { triggerLabel: "agent", assignee: "bot" },
     },
@@ -55,7 +56,8 @@ const baseAgents = [
       credentials: ["github-token"],
       model: baseModel,
       schedule: "*/5 * * * *",
-      prompt: "Do review stuff.",
+
+
       repos: ["acme/app"],
     },
   },
@@ -95,7 +97,7 @@ describe("new", () => {
 
   it("writes webhook secret credential", async () => {
     mockRunSetup.mockResolvedValue({
-      globalConfig: { webhooks: { githubSecretCredential: "github-webhook-secret" } },
+      globalConfig: { webhooks: { secretCredentials: { github: "github-webhook-secret" } } },
       agents: baseAgents,
       secrets: {
         githubToken: "ghp_new",

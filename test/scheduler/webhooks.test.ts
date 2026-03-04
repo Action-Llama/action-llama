@@ -66,7 +66,6 @@ function setupProjectWithWebhooks(tmpDir: string) {
   const webhookAgent = {
     credentials: ["github-token"],
     model,
-    prompt: "Handle webhook events.",
     repos: ["acme/app"],
     webhooks: {
       filters: [{ source: "github", events: ["issues"], actions: ["labeled"], labels: ["agent"] }],
@@ -86,7 +85,6 @@ function setupProjectWithHybrid(tmpDir: string) {
     credentials: ["github-token"],
     model,
     schedule: "*/15 * * * *",
-    prompt: "Review PRs.",
     repos: ["acme/app"],
     webhooks: {
       filters: [{ source: "github", events: ["pull_request"], actions: ["opened"] }],
@@ -105,7 +103,6 @@ function setupProjectWithNoTrigger(tmpDir: string) {
   const badAgent = {
     credentials: ["github-token"],
     model,
-    prompt: "I have no trigger.",
     repos: ["acme/app"],
   };
   const agentDir = resolve(tmpDir, "bad-agent");

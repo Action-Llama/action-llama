@@ -8,10 +8,6 @@ export function projectDir(projectPath: string): string {
   return resolve(projectPath);
 }
 
-export function stateDir(projectPath: string): string {
-  return resolve(projectPath, ".al", "state");
-}
-
 export function logsDir(projectPath: string): string {
   return resolve(projectPath, ".al", "logs");
 }

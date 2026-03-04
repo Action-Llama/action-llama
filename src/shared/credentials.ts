@@ -22,3 +22,21 @@ export function writeCredential(name: string, value: string): void {
   mkdirSync(CREDENTIALS_DIR, { recursive: true, mode: 0o700 });
   writeFileSync(resolve(CREDENTIALS_DIR, name), value + "\n", { mode: 0o600 });
 }
+
+// --- Structured credential support (multi-field, stored as JSON) ---
+
+export function loadStructuredCredential(name: string): Record<string, string> | undefined {
+  const filepath = resolve(CREDENTIALS_DIR, name);
+  if (!existsSync(filepath)) return undefined;
+  const raw = readFileSync(filepath, "utf-8").trim();
+  try {
+    return JSON.parse(raw) as Record<string, string>;
+  } catch {
+    return undefined;
+  }
+}
+
+export function writeStructuredCredential(name: string, fields: Record<string, string>): void {
+  mkdirSync(CREDENTIALS_DIR, { recursive: true, mode: 0o700 });
+  writeFileSync(resolve(CREDENTIALS_DIR, name), JSON.stringify(fields) + "\n", { mode: 0o600 });
+}

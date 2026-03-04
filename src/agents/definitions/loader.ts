@@ -24,7 +24,7 @@ export function loadDefinition(nameOrPath: string): AgentDefinition {
     defDir = resolve(nameOrPath);
   }
 
-  const jsonPath = resolve(defDir, "config-definition.json");
+  const jsonPath = resolve(defDir, "agent-definition.json");
   if (!existsSync(jsonPath)) {
     throw new Error(
       `Agent definition not found at ${jsonPath}. ` +

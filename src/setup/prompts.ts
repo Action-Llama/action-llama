@@ -1,14 +1,19 @@
 import { input, select, checkbox, confirm } from "@inquirer/prompts";
-import { existsSync, readFileSync } from "fs";
+import { existsSync } from "fs";
 import { resolve } from "path";
-import { validateGitHubToken, validateSentryToken, validateSentryProjects, validateAnthropicApiKey, validateOAuthTokenFormat } from "./validators.js";
-import { loadCredential } from "../shared/credentials.js";
+import { validateGitHubToken } from "./validators.js";
+import { loadCredential, writeCredential, writeStructuredCredential } from "../shared/credentials.js";
 import { CREDENTIALS_DIR } from "../shared/paths.js";
 import type { GlobalConfig, AgentConfig, ModelConfig } from "../shared/config.js";
 import type { ScaffoldAgent } from "./scaffold.js";
-import type { GitHubWebhookFilter, WebhookTriggerConfig } from "../webhooks/types.js";
+import type { WebhookFilter, WebhookTriggerConfig } from "../webhooks/types.js";
 import { listBuiltinDefinitions, loadDefinition } from "../agents/definitions/loader.js";
 import type { AgentDefinition } from "../agents/definitions/schema.js";
+import { resolveCredential } from "../credentials/registry.js";
+import { promptCredential } from "../credentials/prompter.js";
+import type { CredentialDefinition, CredentialPromptResult } from "../credentials/schema.js";
+import { listWebhookDefinitions } from "../webhooks/definitions/registry.js";
+import type { WebhookDefinition, FilterFieldSpec } from "../webhooks/definitions/schema.js";
 
 interface ConfigureAgentContext {
   availableRepos: Array<{ owner: string; repo: string; fullName: string }>;
@@ -22,8 +27,44 @@ interface ConfigureAgentResult {
   secrets: {
     sentryToken?: string;
     githubWebhookSecret?: string;
+    webhookSecrets?: Record<string, string>;
   };
   usesWebhooks: boolean;
+}
+
+/**
+ * Write credential values to disk based on the definition's field count.
+ * Single-field: plain text (backward compatible). Multi-field: JSON.
+ */
+function writeCredentialValues(def: CredentialDefinition, values: Record<string, string>): void {
+  if (Object.keys(values).length === 0) return; // e.g. pi_auth
+  if (def.fields.length === 1) {
+    const fieldName = def.fields[0].name;
+    writeCredential(def.filename, values[fieldName]);
+  } else {
+    writeStructuredCredential(def.filename, values);
+  }
+}
+
+/**
+ * Prompt for a credential and write it to disk.
+ * Returns the prompt result (values + optional params), or undefined if skipped.
+ */
+async function promptAndStoreCredential(
+  def: CredentialDefinition
+): Promise<CredentialPromptResult | undefined> {
+  const result = await promptCredential(def);
+  if (result && Object.keys(result.values).length > 0) {
+    writeCredentialValues(def, result.values);
+  }
+  return result;
+}
+
+function formatDefChoice(d: AgentDefinition): string {
+  const parts = [d.name];
+  if (d.label) parts.push(d.label);
+  if (d.description) parts.push(`(${d.description})`);
+  return parts.join(" — ");
 }
 
 // --- Shared: configure a single agent from a definition ---
@@ -59,17 +100,18 @@ export async function configureAgent(
   // Credentials — handle required and optional
   const credentials = [...definition.credentials.required];
   let sentryToken: string | undefined;
-  let sentryOrg: string | undefined;
-  let sentryProjectSlugs: string[] = [];
+  const credentialParams: Record<string, unknown> = {};
 
   for (const cred of definition.credentials.optional) {
-    if (cred === "sentry-token") {
-      const result = await promptSentryCredential();
-      sentryToken = result.sentryToken;
-      sentryOrg = result.sentryOrg;
-      sentryProjectSlugs = result.sentryProjectSlugs;
-      if (sentryToken) {
-        credentials.push("sentry-token");
+    const def = resolveCredential(cred, definition);
+    const result = await promptAndStoreCredential(def);
+    if (result) {
+      credentials.push(cred);
+      if (result.params) {
+        Object.assign(credentialParams, result.params);
+      }
+      if (cred === "sentry-token" && result.values.token) {
+        sentryToken = result.values.token;
       }
     }
   }
@@ -79,11 +121,9 @@ export async function configureAgent(
 
   for (const [key, paramDef] of Object.entries(definition.params)) {
     // Credential-linked params are populated by the credential handler above
-    if (paramDef.credential === "sentry-token") {
-      if (key === "sentryOrg" && sentryOrg) {
-        params[key] = sentryOrg;
-      } else if (key === "sentryProjects" && sentryProjectSlugs.length > 0) {
-        params[key] = sentryProjectSlugs;
+    if (paramDef.credential) {
+      if (credentialParams[key] !== undefined) {
+        params[key] = credentialParams[key];
       }
       continue;
     }
@@ -116,19 +156,35 @@ export async function configureAgent(
 
   // Webhook trigger
   const useWebhooks = await confirm({
-    message: `Listen for webhooks? (${definition.webhooks.description})`,
+    message: "Enable webhooks?",
     default: true,
   });
 
   let webhooks: WebhookTriggerConfig | undefined;
   if (useWebhooks) {
-    const filter = buildWebhookFilter(definition, repos, params);
-    webhooks = { filters: [filter] };
+    const allWebhookDefs = listWebhookDefinitions();
+    const selectedWebhookIds = await checkbox({
+      message: "Which webhook sources?",
+      choices: allWebhookDefs.map((d) => ({
+        name: `${d.label} — ${d.description}`,
+        value: d.id,
+      })),
+      validate: (v) => (v.length > 0 ? true : "Select at least one webhook source"),
+    });
+
+    const filters: WebhookFilter[] = [];
+    const selectedWebhookDefs: WebhookDefinition[] = [];
+    for (const whId of selectedWebhookIds) {
+      const whDef = allWebhookDefs.find((d) => d.id === whId)!;
+      selectedWebhookDefs.push(whDef);
+      filters.push(await buildFilterFromSpec(whDef, repos));
+    }
+    webhooks = { filters };
   }
 
   // Schedule trigger
   const useSchedule = await confirm({
-    message: "Also run on a schedule (polling)?",
+    message: "Run on a schedule?",
     default: !useWebhooks,
   });
 
@@ -136,22 +192,35 @@ export async function configureAgent(
   if (useSchedule) {
     schedule = await input({
       message: `${name} poll interval (cron):`,
-      default: definition.defaultSchedule,
+      default: "*/5 * * * *",
     });
   }
 
-  // Select prompt based on trigger mode
-  const prompt = useWebhooks ? definition.prompts.webhook : definition.prompts.schedule;
-
-  // Webhook secret
+  // Webhook secrets — prompt for each unique secretCredential from selected webhook definitions
   let githubWebhookSecret: string | undefined;
+  const webhookSecrets: Record<string, string> = {};
   if (useWebhooks) {
-    const existingSecret = loadCredential("github-webhook-secret");
-    if (!existingSecret) {
-      githubWebhookSecret = (await input({
-        message: "GitHub webhook secret (set this same value in your GitHub webhook settings):",
-        validate: (v) => (v.trim().length > 0 ? true : "Secret is required to verify webhook payloads"),
-      })).trim();
+    const allWebhookDefs = listWebhookDefinitions();
+    const selectedDefs = allWebhookDefs.filter((d) =>
+      webhooks?.filters.some((f) => f.source === d.id)
+    );
+    const seenCredentials = new Set<string>();
+    for (const whDef of selectedDefs) {
+      if (!whDef.secretCredential || seenCredentials.has(whDef.secretCredential)) continue;
+      seenCredentials.add(whDef.secretCredential);
+
+      const credDef = resolveCredential(whDef.secretCredential);
+      const existingSecret = loadCredential(credDef.filename);
+      if (!existingSecret) {
+        const value = (await input({
+          message: `${whDef.label} webhook secret (${credDef.description}):`,
+          validate: (v) => (v.trim().length > 0 ? true : "Secret is required to verify webhook payloads"),
+        })).trim();
+        webhookSecrets[whDef.secretCredential] = value;
+        if (whDef.secretCredential === "github-webhook-secret") {
+          githubWebhookSecret = value;
+        }
+      }
     }
   }
 
@@ -160,7 +229,6 @@ export async function configureAgent(
     name,
     credentials,
     model: context.modelConfig,
-    prompt,
     repos,
     ...(schedule ? { schedule } : {}),
     ...(webhooks ? { webhooks } : {}),
@@ -169,107 +237,76 @@ export async function configureAgent(
 
   return {
     agent: { name, template: definition.name, config },
-    secrets: { sentryToken, githubWebhookSecret },
+    secrets: { sentryToken, githubWebhookSecret, webhookSecrets },
     usesWebhooks: useWebhooks,
   };
 }
 
-// --- Build webhook filter from definition + params ---
+// --- Build webhook filter from a definition's filterSpec via prompts ---
 
-function buildWebhookFilter(
-  definition: AgentDefinition,
-  repos: string[],
-  params: Record<string, unknown>
-): GitHubWebhookFilter {
-  const filter: GitHubWebhookFilter = {
-    source: "github",
-    repos,
-    events: definition.webhooks.events,
-    actions: definition.webhooks.actions,
-  };
+async function buildFilterFromSpec(
+  def: WebhookDefinition,
+  repos: string[]
+): Promise<WebhookFilter> {
+  const filter: Record<string, unknown> = { source: def.id };
 
-  // Inject param values into filter via webhookFilter mappings
-  for (const [key, paramDef] of Object.entries(definition.params)) {
-    if (paramDef.webhookFilter && params[key] !== undefined) {
-      const value = params[key];
-      const field = paramDef.webhookFilter.field as keyof GitHubWebhookFilter;
-      if (paramDef.webhookFilter.wrap === "array") {
-        (filter as any)[field] = [value];
-      } else {
-        (filter as any)[field] = value;
-      }
+  // Only add repos for sources that use them (e.g. GitHub)
+  if (def.id === "github") {
+    filter.repos = repos;
+  }
+
+  for (const spec of def.filterSpec) {
+    const value = await promptFilterField(spec);
+    if (value !== undefined) {
+      filter[spec.field] = value;
     }
   }
 
-  return filter;
+  return filter as unknown as WebhookFilter;
 }
 
-// --- Sentry credential handler ---
-
-async function promptSentryCredential(): Promise<{
-  sentryToken?: string;
-  sentryOrg?: string;
-  sentryProjectSlugs: string[];
-}> {
-  let sentryToken: string | undefined;
-  let sentryOrg: string | undefined;
-  let sentryProjectSlugs: string[] = [];
-
-  const existingSentryToken = loadCredential("sentry-token");
-
-  if (existingSentryToken) {
-    const reuse = await confirm({
-      message: `Found existing Sentry token in ${CREDENTIALS_DIR}/sentry-token. Use it?`,
-      default: true,
+async function promptFilterField(
+  spec: FilterFieldSpec
+): Promise<string | string[] | undefined> {
+  if (spec.type === "multi-select" && spec.options) {
+    const choices = spec.options.map((o) => ({
+      name: o.label,
+      value: o.value,
+    }));
+    const selected = await checkbox({
+      message: `${spec.label}:`,
+      choices,
+      ...(spec.required
+        ? { validate: (v: readonly unknown[]) => (v.length > 0 ? true : `${spec.label} is required`) }
+        : {}),
     });
-    if (reuse) {
-      sentryToken = existingSentryToken;
-    }
+    return selected.length > 0 ? selected : undefined;
   }
 
-  if (!sentryToken) {
-    const useSentry = await confirm({
-      message: "Configure Sentry integration?",
-      default: false,
+  if (spec.type === "text[]") {
+    const value = await input({
+      message: `${spec.label} (comma-separated):`,
+      ...(spec.required
+        ? { validate: (v: string) => (v.trim().length > 0 ? true : `${spec.label} is required`) }
+        : {}),
     });
-    if (useSentry) {
-      sentryToken = (await input({
-        message: "Sentry auth token:",
-        validate: (v) => (v.trim().length > 0 ? true : "Token is required"),
-      })).trim();
+    if (value.trim()) {
+      return value.split(",").map((s) => s.trim()).filter(Boolean);
     }
+    return undefined;
   }
 
-  if (sentryToken) {
-    console.log("Validating Sentry token...");
-    try {
-      const { organizations } = await validateSentryToken(sentryToken);
-      if (organizations.length === 0) throw new Error("No organizations found");
-
-      if (organizations.length === 1) {
-        sentryOrg = organizations[0].slug;
-        console.log(`Organization: ${sentryOrg}\n`);
-      } else {
-        sentryOrg = await select({
-          message: "Select Sentry organization:",
-          choices: organizations.map((o) => ({ name: `${o.name} (${o.slug})`, value: o.slug })),
-        });
-      }
-
-      const { projects } = await validateSentryProjects(sentryToken, sentryOrg);
-      if (projects.length > 0) {
-        sentryProjectSlugs = await checkbox({
-          message: "Select Sentry projects to monitor:",
-          choices: projects.map((p) => ({ name: p.name, value: p.slug })),
-        });
-      }
-    } catch (err: any) {
-      console.log(`Sentry validation failed: ${err.message}. Skipping Sentry.\n`);
-      sentryToken = undefined;
-    }
+  if (spec.type === "text") {
+    const value = await input({
+      message: `${spec.label}:`,
+      ...(spec.required
+        ? { validate: (v: string) => (v.trim().length > 0 ? true : `${spec.label} is required`) }
+        : {}),
+    });
+    return value.trim() || undefined;
   }
 
-  return { sentryToken, sentryOrg, sentryProjectSlugs };
+  return undefined;
 }
 
 // --- Full interactive setup (new command) ---
@@ -294,7 +331,7 @@ export async function runSetup(): Promise<{
   const selectedDefNames = await checkbox({
     message: "Which agents do you want to create?",
     choices: builtinDefs.map((d) => ({
-      name: `${d.name} — ${d.label} (${d.description})`,
+      name: formatDefChoice(d),
       value: d.name,
     })),
     validate: (v) => (v.length > 0 ? true : "Select at least one agent"),
@@ -313,29 +350,11 @@ export async function runSetup(): Promise<{
   // Step 2: Credentials
   console.log("\n--- Step 2: Credentials ---\n");
 
-  // GitHub token (always required)
-  const existingGithubToken = loadCredential("github-token");
-  let githubToken: string;
-
-  if (existingGithubToken) {
-    const reuse = await confirm({
-      message: `Found existing GitHub token in ${CREDENTIALS_DIR}/github-token. Use it?`,
-      default: true,
-    });
-    if (reuse) {
-      githubToken = existingGithubToken;
-    } else {
-      githubToken = (await input({
-        message: "GitHub Personal Access Token (needs repo, workflow scopes):",
-        validate: (v) => (v.trim().length > 0 ? true : "Token is required"),
-      })).trim();
-    }
-  } else {
-    githubToken = (await input({
-      message: "GitHub Personal Access Token (needs repo, workflow scopes):",
-      validate: (v) => (v.trim().length > 0 ? true : "Token is required"),
-    })).trim();
-  }
+  // GitHub token (always required) — use definition-driven prompting
+  const githubTokenDef = resolveCredential("github-token");
+  const githubTokenResult = await promptAndStoreCredential(githubTokenDef);
+  if (!githubTokenResult) throw new Error("GitHub token is required");
+  const githubToken = githubTokenResult.values.token;
 
   console.log("Validating GitHub token...");
   let githubUser: string;
@@ -351,21 +370,9 @@ export async function runSetup(): Promise<{
 
   // SSH key
   console.log("--- Git SSH Key ---\n");
-
-  const existingSshKey = existsSync(resolve(CREDENTIALS_DIR, "id_rsa"));
-  let sshKey: string | undefined;
-
-  if (existingSshKey) {
-    const reuse = await confirm({
-      message: `Found existing SSH key in ${CREDENTIALS_DIR}/id_rsa. Use it?`,
-      default: true,
-    });
-    if (!reuse) {
-      sshKey = await promptSshKey();
-    }
-  } else {
-    sshKey = await promptSshKey();
-  }
+  const sshKeyDef = resolveCredential("id_rsa");
+  const sshKeyResult = await promptAndStoreCredential(sshKeyDef);
+  const sshKey = sshKeyResult?.values.key;
 
   // Sentry token (only if any selected definition has it as optional)
   let sentryToken: string | undefined;
@@ -374,86 +381,21 @@ export async function runSetup(): Promise<{
 
   if (allOptionalCredentials.has("sentry-token")) {
     console.log("\n--- Sentry ---\n");
-
-    const existingSentryToken = loadCredential("sentry-token");
-
-    if (existingSentryToken) {
-      const reuse = await confirm({
-        message: `Found existing Sentry token in ${CREDENTIALS_DIR}/sentry-token. Use it?`,
-        default: true,
-      });
-      if (reuse) {
-        sentryToken = existingSentryToken;
-      }
-    }
-
-    if (!sentryToken) {
-      const useSentry = await confirm({
-        message: "Configure Sentry integration?",
-        default: false,
-      });
-      if (useSentry) {
-        sentryToken = (await input({
-          message: "Sentry auth token:",
-          validate: (v) => (v.trim().length > 0 ? true : "Token is required"),
-        })).trim();
-      }
-    }
-
-    if (sentryToken) {
-      console.log("Validating Sentry token...");
-      try {
-        const { organizations } = await validateSentryToken(sentryToken);
-        if (organizations.length === 0) {
-          throw new Error("No organizations found");
-        }
-
-        if (organizations.length === 1) {
-          sentryOrg = organizations[0].slug;
-          console.log(`Organization: ${sentryOrg}\n`);
-        } else {
-          sentryOrg = await select({
-            message: "Select Sentry organization:",
-            choices: organizations.map((o) => ({ name: `${o.name} (${o.slug})`, value: o.slug })),
-          });
-        }
-
-        const { projects } = await validateSentryProjects(sentryToken, sentryOrg);
-        if (projects.length > 0) {
-          sentryProjectSlugs = await checkbox({
-            message: "Select Sentry projects to monitor:",
-            choices: projects.map((p) => ({ name: p.name, value: p.slug })),
-          });
-        }
-      } catch (err: any) {
-        console.log(`Sentry validation failed: ${err.message}. Skipping Sentry.\n`);
-        sentryToken = undefined;
-      }
+    const sentryDef = resolveCredential("sentry-token");
+    const sentryResult = await promptAndStoreCredential(sentryDef);
+    if (sentryResult) {
+      sentryToken = sentryResult.values.token;
+      sentryOrg = sentryResult.params?.sentryOrg as string | undefined;
+      sentryProjectSlugs = (sentryResult.params?.sentryProjects as string[] | undefined) || [];
     }
   }
 
   // Anthropic auth
   console.log("\n--- Anthropic Auth ---\n");
-
-  const existingAnthropicKey = loadCredential("anthropic-key");
-  let authType: "api_key" | "oauth_token" | "pi_auth";
-  let anthropicKey: string | undefined;
-
-  if (existingAnthropicKey) {
-    const reuse = await confirm({
-      message: `Found existing Anthropic credential in ${CREDENTIALS_DIR}/anthropic-key. Use it?`,
-      default: true,
-    });
-    if (reuse) {
-      anthropicKey = existingAnthropicKey;
-      authType = anthropicKey.includes("sk-ant-oat") ? "oauth_token" : "api_key";
-      console.log(`Using existing credential (detected type: ${authType}).\n`);
-    } else {
-      ({ authType, anthropicKey } = await promptAnthropicAuth());
-    }
-  } else {
-    ({ authType, anthropicKey } = await promptAnthropicAuth());
-  }
+  const anthropicDef = resolveCredential("anthropic-key");
+  const anthropicResult = await promptAndStoreCredential(anthropicDef);
+  const anthropicKey = anthropicResult?.values.token;
+  const authType = (anthropicResult?.params?.authType as "api_key" | "oauth_token" | "pi_auth") || "api_key";
 
   // Step 3: LLM defaults
   console.log("\n--- Step 3: LLM Defaults ---\n");
@@ -499,7 +441,6 @@ export async function runSetup(): Promise<{
 
     // For init flow, we pre-populate sentry params from the top-level credential gathering
     // so we skip the per-agent sentry prompt.
-    // We accomplish this by building params for credential-linked params here.
     const prePopulatedParams: Record<string, unknown> = {};
     for (const [key, paramDef] of Object.entries(def.params)) {
       if (paramDef.credential === "sentry-token") {
@@ -511,7 +452,6 @@ export async function runSetup(): Promise<{
       }
     }
 
-    // Use configureAgentInit for init flow (skips credential prompts done globally)
     const result = await configureAgentInit(def, {
       availableRepos,
       githubUser,
@@ -534,10 +474,11 @@ export async function runSetup(): Promise<{
   if (anyWebhooks && !githubWebhookSecret) {
     console.log("\n--- GitHub Webhook Secret ---\n");
 
-    const existingSecret = loadCredential("github-webhook-secret");
+    const webhookSecretDef = resolveCredential("github-webhook-secret");
+    const existingSecret = loadCredential(webhookSecretDef.filename);
     if (existingSecret) {
       const reuse = await confirm({
-        message: `Found existing webhook secret in ${CREDENTIALS_DIR}/github-webhook-secret. Use it?`,
+        message: `Found existing webhook secret in ${CREDENTIALS_DIR}/${webhookSecretDef.filename}. Use it?`,
         default: true,
       });
       if (reuse) {
@@ -556,7 +497,9 @@ export async function runSetup(): Promise<{
   // Build global config
   const globalConfig: GlobalConfig = {};
   if (githubWebhookSecret) {
-    globalConfig.webhooks = { githubSecretCredential: "github-webhook-secret" };
+    globalConfig.webhooks = {
+      secretCredentials: { github: "github-webhook-secret" },
+    };
   }
 
   return {
@@ -637,19 +580,33 @@ async function configureAgentInit(
 
   // Webhook trigger
   const useWebhooks = await confirm({
-    message: `Listen for webhooks? (${definition.webhooks.description})`,
+    message: "Enable webhooks?",
     default: true,
   });
 
   let webhooks: WebhookTriggerConfig | undefined;
   if (useWebhooks) {
-    const filter = buildWebhookFilter(definition, repos, params);
-    webhooks = { filters: [filter] };
+    const allWebhookDefs = listWebhookDefinitions();
+    const selectedWebhookIds = await checkbox({
+      message: "Which webhook sources?",
+      choices: allWebhookDefs.map((d) => ({
+        name: `${d.label} — ${d.description}`,
+        value: d.id,
+      })),
+      validate: (v) => (v.length > 0 ? true : "Select at least one webhook source"),
+    });
+
+    const filters: WebhookFilter[] = [];
+    for (const whId of selectedWebhookIds) {
+      const whDef = allWebhookDefs.find((d) => d.id === whId)!;
+      filters.push(await buildFilterFromSpec(whDef, repos));
+    }
+    webhooks = { filters };
   }
 
   // Schedule trigger
   const useSchedule = await confirm({
-    message: `Also run on a schedule (polling)?`,
+    message: "Run on a schedule?",
     default: !useWebhooks,
   });
 
@@ -657,18 +614,15 @@ async function configureAgentInit(
   if (useSchedule) {
     schedule = await input({
       message: `${name} poll interval (cron):`,
-      default: definition.defaultSchedule,
+      default: "*/5 * * * *",
     });
   }
-
-  const prompt = useWebhooks ? definition.prompts.webhook : definition.prompts.schedule;
 
   // Build agent config
   const config: AgentConfig = {
     name,
     credentials,
     model: context.modelConfig,
-    prompt,
     repos,
     ...(schedule ? { schedule } : {}),
     ...(webhooks ? { webhooks } : {}),
@@ -710,85 +664,4 @@ export async function runAddAgent(opts: {
     agent: result.agent,
     secrets: result.secrets,
   };
-}
-
-// --- SSH key prompt ---
-
-async function promptSshKey(): Promise<string | undefined> {
-  const defaultPath = resolve(process.env.HOME || "~", ".ssh", "id_rsa");
-  const keyPath = await input({
-    message: `Path to SSH private key for git operations (leave empty to use system default):`,
-    default: existsSync(defaultPath) ? defaultPath : "",
-  });
-
-  if (!keyPath.trim()) {
-    console.log("No SSH key configured — git will use your system SSH config.\n");
-    return undefined;
-  }
-
-  const resolvedPath = resolve(keyPath.trim());
-  if (!existsSync(resolvedPath)) {
-    throw new Error(`SSH key not found at ${resolvedPath}`);
-  }
-
-  const content = readFileSync(resolvedPath, "utf-8");
-  console.log("SSH key loaded.\n");
-  return content;
-}
-
-// --- Anthropic auth prompt ---
-
-async function promptAnthropicAuth(): Promise<{
-  authType: "api_key" | "oauth_token" | "pi_auth";
-  anthropicKey: string | undefined;
-}> {
-  const authMethod = await select({
-    message: "How do you want to authenticate with Anthropic?",
-    choices: [
-      { name: "Use existing pi auth (already ran `pi /login` or `claude setup-token`)", value: "pi_auth" as const },
-      { name: "Enter an API key (sk-ant-api...)", value: "api_key" as const },
-      { name: "Enter an OAuth token (sk-ant-oat...)", value: "oauth_token" as const },
-    ],
-  });
-
-  if (authMethod === "pi_auth") {
-    const { AuthStorage, ModelRegistry } = await import("@mariozechner/pi-coding-agent");
-    const authStorage = AuthStorage.create();
-    const registry = new ModelRegistry(authStorage);
-    const available = await registry.getAvailable();
-    const hasAnthropic = available.some((m: any) => m.provider === "anthropic");
-    if (!hasAnthropic) {
-      throw new Error(
-        "No Anthropic credentials found in pi auth storage (~/.pi/agent/auth.json). " +
-        "Run `pi /login` first, or choose a different auth method."
-      );
-    }
-    console.log("Found existing Anthropic credentials in pi auth storage.\n");
-    return { authType: "pi_auth", anthropicKey: undefined };
-  } else if (authMethod === "api_key") {
-    let anthropicKey = (await input({
-      message: "Anthropic API key:",
-      validate: (v) => (v.trim().length > 0 ? true : "Key is required"),
-    })).trim();
-    console.log("Validating API key...");
-    try {
-      await validateAnthropicApiKey(anthropicKey);
-      console.log("API key validated.\n");
-    } catch (err: any) {
-      throw new Error(`Anthropic validation failed: ${err.message}`);
-    }
-    return { authType: "api_key", anthropicKey };
-  } else {
-    let anthropicKey = (await input({
-      message: "Anthropic OAuth token (from `claude setup-token`):",
-      validate: (v) => (v.trim().length > 0 ? true : "Token is required"),
-    })).trim();
-    try {
-      validateOAuthTokenFormat(anthropicKey);
-      console.log("OAuth token format looks valid. It will be verified on first agent run.\n");
-    } catch (err: any) {
-      throw new Error(err.message);
-    }
-    return { authType: "oauth_token", anthropicKey };
-  }
 }

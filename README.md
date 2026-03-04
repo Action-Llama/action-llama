@@ -120,7 +120,7 @@ If you installed globally (`npm install -g @action-llama/action-llama`), you can
 {
   "docker": { "enabled": false },
   "gateway": { "port": 8080 },
-  "webhooks": { "githubSecretCredential": "github-webhook-secret" }
+  "webhooks": { "secretCredentials": { "github": "github-webhook-secret" } }
 }
 ```
 
@@ -139,7 +139,6 @@ If you installed globally (`npm install -g @action-llama/action-llama`), you can
 {
   "credentials": ["github-token", "anthropic-key"],
   "model": { "provider": "anthropic", "model": "claude-sonnet-4-20250514", "thinkingLevel": "medium", "authType": "pi_auth" },
-  "prompt": "An issue was just assigned to you. Implement the changes described in the issue.",
   "repos": ["acme/frontend"],
   "schedule": "*/5 * * * *",
   "webhooks": {
@@ -239,7 +238,7 @@ src/
 
 ### Extension points
 
-- **New agent type** — add a definition under `src/agents/definitions/<name>/` with a `config-definition.json` (schema for params, default schedule, webhook filters) and an `AGENTS.md` template. It will appear in `al new` and `al agent add` automatically.
+- **New agent type** — add a definition under `src/agents/definitions/<name>/` with an `agent-definition.json` (schema for credentials and params) and an `AGENTS.md` template. It will appear in `al new` and `al agent add` automatically.
 - **New webhook provider** — implement the `WebhookProvider` interface in `src/webhooks/providers/` and register it in `src/scheduler/index.ts`. The registry handles routing by `source` field.
 - **Custom runner** — subclass or replace `AgentRunner` in `src/agents/runner.ts` to change how agent sessions are created (different model providers, tool sets, etc.).
 - **Gateway routes** — add routes in `src/gateway/routes/` and register them in `src/gateway/index.ts`.

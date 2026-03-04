@@ -8,7 +8,6 @@ const agentConfig: AgentConfig = {
   credentials: ["github-token"],
   model: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
   schedule: "*/5 * * * *",
-  prompt: "Do development work.",
   repos: ["acme/app"],
   params: { triggerLabel: "agent", assignee: "bot" },
 };
@@ -36,7 +35,7 @@ describe("buildCredentialContext", () => {
 });
 
 describe("buildScheduledPrompt", () => {
-  it("includes agent-config block, credential context, and prompt", () => {
+  it("includes agent-config block, credential context, and trigger text", () => {
     const result = buildScheduledPrompt(agentConfig);
     expect(result).toContain("<agent-config>");
     expect(result).toContain("</agent-config>");
@@ -45,7 +44,7 @@ describe("buildScheduledPrompt", () => {
     expect(result).toContain('"assignee":"bot"');
     expect(result).toContain("<credential-context>");
     expect(result).toContain("GITHUB_TOKEN");
-    expect(result).toContain("Do development work.");
+    expect(result).toContain("running on a schedule");
   });
 
   it("omits optional fields when not present", () => {
@@ -53,7 +52,6 @@ describe("buildScheduledPrompt", () => {
       name: "test",
       credentials: [],
       model: { provider: "anthropic", model: "test", thinkingLevel: "off", authType: "api_key" },
-      prompt: "test prompt",
       repos: ["r/r"],
     };
     const result = buildScheduledPrompt(minimal);
@@ -85,7 +83,7 @@ describe("buildWebhookPrompt", () => {
     timestamp: "2025-01-01T00:00:00.000Z",
   };
 
-  it("includes agent-config, credential context, webhook-trigger, and prompt", () => {
+  it("includes agent-config, credential context, webhook-trigger, and trigger text", () => {
     const result = buildWebhookPrompt(agentConfig, webhookContext);
     expect(result).toContain("<agent-config>");
     expect(result).toContain("</agent-config>");
@@ -94,17 +92,17 @@ describe("buildWebhookPrompt", () => {
     expect(result).toContain("</webhook-trigger>");
     expect(result).toContain('"event":"issues"');
     expect(result).toContain('"number":42');
-    expect(result).toContain("Do development work.");
+    expect(result).toContain("webhook event just fired");
   });
 
-  it("has sections in correct order: config, credentials, trigger, prompt", () => {
+  it("has sections in correct order: config, credentials, trigger, instruction", () => {
     const result = buildWebhookPrompt(agentConfig, webhookContext);
     const configIdx = result.indexOf("<agent-config>");
     const credIdx = result.indexOf("<credential-context>");
     const triggerIdx = result.indexOf("<webhook-trigger>");
-    const promptIdx = result.indexOf("Do development work.");
+    const instructionIdx = result.indexOf("webhook event just fired");
     expect(configIdx).toBeLessThan(credIdx);
     expect(credIdx).toBeLessThan(triggerIdx);
-    expect(triggerIdx).toBeLessThan(promptIdx);
+    expect(triggerIdx).toBeLessThan(instructionIdx);
   });
 });

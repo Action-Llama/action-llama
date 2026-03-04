@@ -36,7 +36,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json && chmod +x dist/cli/main.js && npm run build:assets",
-    "build:assets": "mkdir -p dist/agents/definitions/{dev,reviewer,devops} && cp src/agents/definitions/dev/AGENTS.md src/agents/definitions/dev/config-definition.json dist/agents/definitions/dev/ && cp src/agents/definitions/reviewer/AGENTS.md src/agents/definitions/reviewer/config-definition.json dist/agents/definitions/reviewer/ && cp src/agents/definitions/devops/AGENTS.md src/agents/definitions/devops/config-definition.json dist/agents/definitions/devops/",
+    "build:assets": "mkdir -p dist/agents/definitions/{dev,reviewer,devops} && cp src/agents/definitions/dev/AGENTS.md src/agents/definitions/dev/agent-definition.json dist/agents/definitions/dev/ && cp src/agents/definitions/reviewer/AGENTS.md src/agents/definitions/reviewer/agent-definition.json dist/agents/definitions/reviewer/ && cp src/agents/definitions/devops/AGENTS.md src/agents/definitions/devops/agent-definition.json dist/agents/definitions/devops/",
     "clean": "rm -rf dist",
     "prebuild": "npm run clean",
     "prepublishOnly": "npm run build && npm test",

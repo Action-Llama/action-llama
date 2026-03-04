@@ -33,7 +33,12 @@ export interface GitHubWebhookFilter {
   branches?: string[];
 }
 
-export type WebhookFilter = GitHubWebhookFilter;
+export interface SentryWebhookFilter {
+  source: "sentry";
+  resources?: string[];  // event_alert, metric_alert, issue, error, comment
+}
+
+export type WebhookFilter = GitHubWebhookFilter | SentryWebhookFilter;
 
 // --- Agent config additions ---
 

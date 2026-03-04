@@ -6,9 +6,6 @@ const validDef = {
   label: "Test agent",
   description: "A test agent",
   credentials: { required: ["github-token"], optional: [] },
-  webhooks: { description: "Test webhook", events: ["issues"], actions: ["labeled"] },
-  prompts: { webhook: "webhook prompt", schedule: "schedule prompt" },
-  defaultSchedule: "*/5 * * * *",
   params: {},
 };
 
@@ -17,14 +14,6 @@ describe("validateDefinition", () => {
     const result = validateDefinition(validDef);
     expect(result.name).toBe("test");
     expect(result.label).toBe("Test agent");
-  });
-
-  it("accepts a definition with state", () => {
-    const result = validateDefinition({
-      ...validDef,
-      state: { file: "state.json", initial: { items: {} } },
-    });
-    expect(result.state?.file).toBe("state.json");
   });
 
   it("accepts a definition with params", () => {
@@ -45,22 +34,6 @@ describe("validateDefinition", () => {
       },
     });
     expect(Object.keys(result.params)).toEqual(["myParam", "listParam"]);
-  });
-
-  it("accepts a param with webhookFilter", () => {
-    const result = validateDefinition({
-      ...validDef,
-      params: {
-        label: {
-          type: "string",
-          description: "A label",
-          required: true,
-          webhookFilter: { field: "labels", wrap: "array" },
-        },
-      },
-    });
-    expect(result.params.label.webhookFilter?.field).toBe("labels");
-    expect(result.params.label.webhookFilter?.wrap).toBe("array");
   });
 
   it("accepts a param with credential", () => {
@@ -87,19 +60,17 @@ describe("validateDefinition", () => {
     expect(() => validateDefinition(rest)).toThrow("'name'");
   });
 
+  it("accepts definition without label and description", () => {
+    const { label, description, ...minimal } = validDef;
+    const result = validateDefinition(minimal);
+    expect(result.name).toBe("test");
+    expect(result.label).toBeUndefined();
+    expect(result.description).toBeUndefined();
+  });
+
   it("rejects missing credentials", () => {
     const { credentials, ...rest } = validDef;
     expect(() => validateDefinition(rest)).toThrow("'credentials'");
-  });
-
-  it("rejects missing webhooks", () => {
-    const { webhooks, ...rest } = validDef;
-    expect(() => validateDefinition(rest)).toThrow("'webhooks'");
-  });
-
-  it("rejects missing prompts", () => {
-    const { prompts, ...rest } = validDef;
-    expect(() => validateDefinition(rest)).toThrow("'prompts'");
   });
 
   it("rejects invalid param type", () => {

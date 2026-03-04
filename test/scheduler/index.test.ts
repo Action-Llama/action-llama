@@ -56,9 +56,9 @@ function setupProject(tmpDir: string) {
 
   const model = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" };
   const agents = [
-    { name: "dev", credentials: ["github-token"], model, schedule: "*/5 * * * *", prompt: "Do dev.", repos: ["acme/app"] },
-    { name: "reviewer", credentials: ["github-token"], model, schedule: "*/5 * * * *", prompt: "Do review.", repos: ["acme/app"] },
-    { name: "devops", credentials: ["github-token"], model, schedule: "*/15 * * * *", prompt: "Do devops.", repos: ["acme/app"] },
+    { name: "dev", credentials: ["github-token"], model, schedule: "*/5 * * * *", repos: ["acme/app"] },
+    { name: "reviewer", credentials: ["github-token"], model, schedule: "*/5 * * * *", repos: ["acme/app"] },
+    { name: "devops", credentials: ["github-token"], model, schedule: "*/15 * * * *", repos: ["acme/app"] },
   ];
 
   for (const agent of agents) {

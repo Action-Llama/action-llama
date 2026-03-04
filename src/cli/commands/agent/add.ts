@@ -48,7 +48,7 @@ export async function execute(opts: { project: string; definition?: string }): P
     const selectedName = await select({
       message: "Agent type:",
       choices: builtinDefs.map((d) => ({
-        name: `${d.name} — ${d.label} (${d.description})`,
+        name: [d.name, d.label, d.description ? `(${d.description})` : ""].filter(Boolean).join(" — "),
         value: d.name,
       })),
     });
@@ -80,8 +80,9 @@ export async function execute(opts: { project: string; definition?: string }): P
   // Update global config if agent uses webhooks and config doesn't reference the secret yet
   if (agent.config.webhooks) {
     const globalConfig = loadGlobalConfig(projectPath);
-    if (!globalConfig.webhooks?.githubSecretCredential) {
-      globalConfig.webhooks = { ...globalConfig.webhooks, githubSecretCredential: "github-webhook-secret" };
+    if (!globalConfig.webhooks?.secretCredentials?.github) {
+      const existing = globalConfig.webhooks?.secretCredentials || {};
+      globalConfig.webhooks = { ...globalConfig.webhooks, secretCredentials: { ...existing, github: "github-webhook-secret" } };
       writeFileSync(
         resolve(projectPath, "config.json"),
         JSON.stringify(globalConfig, null, 2) + "\n"

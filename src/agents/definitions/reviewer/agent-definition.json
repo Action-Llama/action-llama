@@ -1,0 +1,10 @@
+{
+  "name": "reviewer",
+  "label": "PR reviewer",
+  "description": "Reviews and merges pull requests",
+  "credentials": {
+    "required": ["anthropic-key", "github-token"],
+    "optional": []
+  },
+  "params": {}
+}

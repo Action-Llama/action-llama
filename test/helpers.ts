@@ -23,7 +23,6 @@ const DEFAULT_AGENTS: AgentConfig[] = [
     credentials: ["github-token"],
     model: DEFAULT_MODEL,
     schedule: "*/5 * * * *",
-    prompt: "Poll GitHub for new issues with the trigger label and implement any found.",
     repos: ["acme/app"],
     params: { triggerLabel: "agent", assignee: "bot" },
   },
@@ -32,7 +31,6 @@ const DEFAULT_AGENTS: AgentConfig[] = [
     credentials: ["github-token"],
     model: DEFAULT_MODEL,
     schedule: "*/5 * * * *",
-    prompt: "Poll GitHub for open PRs that need review, review them, and merge if appropriate.",
     repos: ["acme/app"],
   },
   {
@@ -40,7 +38,6 @@ const DEFAULT_AGENTS: AgentConfig[] = [
     credentials: ["github-token"],
     model: DEFAULT_MODEL,
     schedule: "*/15 * * * *",
-    prompt: "Poll for new errors from GitHub Actions failures and Sentry, file issues for any new ones found.",
     repos: ["acme/app"],
   },
 ];
@@ -66,23 +63,6 @@ export function makeTmpProject(opts?: TmpProjectOptions): string {
     // Strip name before writing (matches scaffold behavior)
     const { name: _, ...configToWrite } = agent;
     writeFileSync(resolve(agentPath, "config.json"), JSON.stringify(configToWrite));
-  }
-
-  // Create state dirs and default state files
-  const STATE_FILES: Record<string, { name: string; content: object }> = {
-    dev: { name: "active-issues.json", content: { issues: {} } },
-    reviewer: { name: "reviewed-prs.json", content: { prs: {} } },
-    devops: { name: "known-errors.json", content: { errors: {} } },
-  };
-
-  for (const agent of agents) {
-    const stateDir = resolve(dir, ".al", "state", agent.name!);
-    mkdirSync(stateDir, { recursive: true });
-    // Write default state files for known agent names
-    const stateInfo = STATE_FILES[agent.name!];
-    if (stateInfo) {
-      writeFileSync(resolve(stateDir, stateInfo.name), JSON.stringify(stateInfo.content));
-    }
   }
 
   return dir;

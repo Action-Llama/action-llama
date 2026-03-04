@@ -24,7 +24,7 @@ export interface GatewayConfig {
 }
 
 export interface WebhooksGlobalConfig {
-  githubSecretCredential?: string;
+  secretCredentials?: Record<string, string>;  // source → credential name
 }
 
 export interface GlobalConfig {
@@ -40,7 +40,6 @@ export interface AgentConfig {
   credentials: string[];
   model: ModelConfig;
   schedule?: string;
-  prompt: string;
   repos: string[];
   webhooks?: WebhookTriggerConfig;
   params?: Record<string, unknown>;

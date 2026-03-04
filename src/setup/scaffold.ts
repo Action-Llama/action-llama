@@ -3,8 +3,6 @@ import { resolve } from "path";
 import type { GlobalConfig, AgentConfig } from "../shared/config.js";
 import { writeCredential } from "../shared/credentials.js";
 import { loadDefinitionAgentsMd, isBuiltinDefinition } from "../agents/definitions/loader.js";
-import { loadDefinition } from "../agents/definitions/loader.js";
-import type { AgentDefinition } from "../agents/definitions/schema.js";
 
 export { writeCredential };
 
@@ -34,24 +32,6 @@ export function scaffoldAgent(projectPath: string, agent: ScaffoldAgent): void {
   }
   writeFileSync(resolve(agentPath, "AGENTS.md"), agentsMd);
 
-  // Create state directory
-  const stateDir = resolve(projectPath, ".al", "state", agent.name);
-  mkdirSync(stateDir, { recursive: true });
-
-  // Write initial state file from definition
-  let definition: AgentDefinition | undefined;
-  try {
-    definition = loadDefinition(agent.template);
-  } catch {
-    // Not a known definition — no state to scaffold
-  }
-
-  if (definition?.state) {
-    const statePath = resolve(stateDir, definition.state.file);
-    if (!existsSync(statePath)) {
-      writeFileSync(statePath, JSON.stringify(definition.state.initial, null, 2) + "\n");
-    }
-  }
 }
 
 export function scaffoldProject(
