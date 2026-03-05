@@ -6,8 +6,8 @@ Each agent has an `agent-config.toml` file in its directory. The agent name is d
 
 ```toml
 # Required: credential IDs the agent needs at runtime
-# These must exist in ~/.action-llama-credentials/
-credentials = ["anthropic-key", "github-token", "id_rsa", "sentry-token"]
+# These must exist in ~/.action-llama-credentials/<type>/<instance>/
+credentials = ["github_token:default", "git_ssh:default", "sentry_token:default"]
 
 # Required: GitHub repos the agent operates on (owner/repo format)
 repos = ["acme/app", "acme/api"]
@@ -47,7 +47,7 @@ sentryProjects = ["web-app", "api"]
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `credentials` | string[] | Yes | Credential IDs needed at runtime |
+| `credentials` | string[] | Yes | Credential refs as `"type:instance"` needed at runtime |
 | `repos` | string[] | Yes | GitHub repos (owner/repo) |
 | `schedule` | string | No* | Cron expression for polling |
 | `model` | table | Yes | LLM model configuration |

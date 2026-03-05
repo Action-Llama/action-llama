@@ -31,7 +31,7 @@ describe("scaffoldProject", () => {
         name: "dev",
         config: {
           name: "dev",
-          credentials: ["github-token"],
+          credentials: ["github_token:default"],
           model: defaultModel,
           schedule: "*/5 * * * *",
           repos: ["acme/app"],
@@ -42,7 +42,7 @@ describe("scaffoldProject", () => {
         name: "reviewer",
         config: {
           name: "reviewer",
-          credentials: ["github-token"],
+          credentials: ["github_token:default"],
           model: defaultModel,
           schedule: "*/5 * * * *",
           repos: ["acme/app"],
@@ -52,7 +52,7 @@ describe("scaffoldProject", () => {
         name: "devops",
         config: {
           name: "devops",
-          credentials: ["github-token"],
+          credentials: ["github_token:default"],
           model: defaultModel,
           schedule: "*/15 * * * *",
           repos: ["acme/app"],

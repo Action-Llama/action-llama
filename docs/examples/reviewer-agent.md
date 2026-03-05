@@ -5,7 +5,7 @@ A code review agent that reviews open pull requests, approves good ones, and req
 ## `agent-config.toml`
 
 ```toml
-credentials = ["anthropic-key", "github-token", "id_rsa"]
+credentials = ["github_token:default", "git_ssh:default"]
 repos = ["acme/app"]
 schedule = "*/5 * * * *"
 

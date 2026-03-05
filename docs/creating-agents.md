@@ -22,7 +22,7 @@ mkdir my-agent
 Create `my-agent/agent-config.toml`:
 
 ```toml
-credentials = ["anthropic-key", "github-token", "id_rsa"]
+credentials = ["github_token:default", "git_ssh:default"]
 repos = ["your-org/your-repo"]
 schedule = "*/5 * * * *"
 
@@ -75,6 +75,19 @@ al start -p .
 ```
 
 Your agent will run on its configured schedule and/or respond to webhooks.
+
+### 6. (Optional) Add a custom Dockerfile
+
+If your agent needs tools beyond the base image (git, curl, openssh), add a `Dockerfile` to the agent directory:
+
+```dockerfile
+FROM al-agent:latest
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends gh && rm -rf /var/lib/apt/lists/*
+USER node
+```
+
+This is only used in Docker mode (`"docker": { "enabled": true }` in `config.json`). See [Docker docs](docker.md) for the full reference.
 
 ## Tips
 

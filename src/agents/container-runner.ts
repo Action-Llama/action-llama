@@ -22,6 +22,7 @@ export class ContainerAgentRunner {
   private registerContainer: (secret: string, containerName: string) => void;
   private gatewayUrl: string;
   private projectPath: string;
+  private image: string;
   private statusTracker?: StatusTracker;
 
   constructor(
@@ -31,6 +32,7 @@ export class ContainerAgentRunner {
     registerContainer: (secret: string, containerName: string) => void,
     gatewayUrl: string,
     projectPath: string,
+    image: string,
     statusTracker?: StatusTracker
   ) {
     this.globalConfig = globalConfig;
@@ -39,6 +41,7 @@ export class ContainerAgentRunner {
     this.registerContainer = registerContainer;
     this.gatewayUrl = gatewayUrl;
     this.projectPath = projectPath;
+    this.image = image;
     this.statusTracker = statusTracker;
   }
 
@@ -180,12 +183,17 @@ export class ContainerAgentRunner {
     let logStream: { stop: () => void } | undefined;
 
     try {
-      const image = this.globalConfig.docker?.image || "al-agent:latest";
       const timeout = this.globalConfig.docker?.timeout || 3600;
 
       // Copy credentials into staging dir with directory-based layout
       // Layout: stagingDir/<type>/<instance>/<field>
-      for (const credRef of this.agentConfig.credentials) {
+      // Always include anthropic_key — the container entry reads it directly
+      const credRefs = new Set(this.agentConfig.credentials);
+      if (this.agentConfig.model.authType !== "pi_auth") {
+        credRefs.add("anthropic_key:default");
+      }
+
+      for (const credRef of credRefs) {
         const { type, instance } = parseCredentialRef(credRef);
         const srcDir = resolve(CREDENTIALS_DIR, type, instance);
         const dstDir = join(stagingDir, type, instance);
@@ -211,7 +219,7 @@ export class ContainerAgentRunner {
       const configWithMd = { ...this.agentConfig, _agentsMd: agentsMd };
 
       containerName = launchContainer({
-        image,
+        image: this.image,
         agentName: this.agentConfig.name,
         agentConfig: JSON.stringify(configWithMd),
         shutdownSecret,

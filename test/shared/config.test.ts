@@ -47,7 +47,7 @@ describe("loadAgentConfig", () => {
     mkdirSync(agentDir, { recursive: true });
     // config.json on disk does NOT contain name — it's injected by loadAgentConfig
     const agentOnDisk = {
-      credentials: ["github-token"],
+      credentials: ["github_token:default"],
       model: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
       schedule: "*/5 * * * *",
       repos: ["acme/app"],

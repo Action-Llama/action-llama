@@ -82,6 +82,19 @@ async function main() {
     }
   }
 
+  // Configure git credential helper so HTTPS clones can use GITHUB_TOKEN
+  if (process.env.GITHUB_TOKEN) {
+    process.env.GIT_ASKPASS = "/bin/echo";
+    process.env.GIT_TERMINAL_PROMPT = "0";
+    const { execSync } = await import("child_process");
+    try {
+      execSync('git config --global credential.helper "!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f"', { stdio: "ignore" });
+      emitLog("info", "git HTTPS credential helper configured");
+    } catch (err: any) {
+      emitLog("warn", "failed to configure git credential helper", { error: err.message });
+    }
+  }
+
   // Set up SSH key for git push/clone if git_ssh credential is available
   // Find the git_ssh instance from credentials
   const gitSshRef = agentConfig.credentials.find((ref) => parseCredentialRef(ref).type === "git_ssh");

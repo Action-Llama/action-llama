@@ -34,7 +34,7 @@ export function launchContainer(opts: ContainerOptions): string {
     "--network", NETWORK_NAME,
     "--user", "1000:1000",
     "--read-only",
-    "--tmpfs", "/tmp:rw,nosuid,uid=1000,gid=1000,size=512m",
+    "--tmpfs", "/tmp:rw,exec,nosuid,uid=1000,gid=1000,size=512m",
     "--tmpfs", "/workspace:rw,exec,nosuid,uid=1000,gid=1000,size=2g",
     "--tmpfs", "/home/node:rw,nosuid,uid=1000,gid=1000,size=64m",
     "--cap-drop", "ALL",

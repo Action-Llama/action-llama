@@ -5,7 +5,7 @@ A DevOps monitoring agent that detects errors from CI/CD failures and Sentry, th
 ## `agent-config.toml`
 
 ```toml
-credentials = ["anthropic-key", "github-token", "id_rsa", "sentry-token"]
+credentials = ["github_token:default", "git_ssh:default", "sentry_token:default"]
 repos = ["acme/app"]
 schedule = "*/15 * * * *"
 

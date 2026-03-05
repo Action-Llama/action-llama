@@ -36,7 +36,7 @@ An agent must have at least one of `schedule` or `webhooks` (or both).
 1. In your GitHub repo, go to **Settings > Webhooks > Add webhook**
 2. Set the payload URL to your Action Llama gateway (e.g. `https://your-server:3000/webhook`)
 3. Set content type to `application/json`
-4. Set the secret to match your `github-webhook-secret` credential
+4. Set the secret to match your `github_webhook_secret` credential
 5. Select the events you want to receive
 
 ### Using ngrok for Local Development
@@ -59,7 +59,7 @@ Use the ngrok URL as your webhook payload URL in GitHub.
 
 1. In Sentry, go to **Settings > Developer Settings > New Internal Integration**
 2. Set the webhook URL to your gateway
-3. Copy the client secret to `~/.action-llama-credentials/sentry-client-secret`
+3. Copy the client secret to `~/.action-llama-credentials/sentry_client_secret/default/secret`
 4. Select the resource types you want to receive
 
 ## Global Webhook Config
@@ -70,8 +70,8 @@ The project's `config.json` maps webhook sources to their secret credentials:
 {
   "webhooks": {
     "secretCredentials": {
-      "github": "github-webhook-secret",
-      "sentry": "sentry-client-secret"
+      "github": "github_webhook_secret:default",
+      "sentry": "sentry_client_secret:default"
     }
   }
 }

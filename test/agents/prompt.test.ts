@@ -26,10 +26,10 @@ describe("buildCredentialContext", () => {
     expect(result).toContain("curl");
   });
 
-  it("documents git author identity", () => {
-    const result = buildCredentialContext(["github_token:default"]);
+  it("documents git author identity when git_ssh credential present", () => {
+    const result = buildCredentialContext(["github_token:default", "git_ssh:default"]);
     expect(result).toContain("GIT_AUTHOR_NAME");
-    expect(result).toContain("git-name");
+    expect(result).toContain("GIT_SSH_COMMAND");
   });
 
   it("includes anti-exfiltration policy", () => {

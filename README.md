@@ -62,7 +62,7 @@ Once your agents are ready, run the gateway!
 npx al start
 ```
 
-If any credentials are missing, it will prompt you for them. Credentials are stored in `~/.action-llama-credentials/` (shared across projects, not committed to git).
+If any credentials are missing, it will prompt you for them. Credentials are stored in `~/.action-llama-credentials/` (shared across projects, not committed to git). See [credentials docs](docs/credentials.md) for details.
 
 If you want to set up credentials without starting the gateway:
 
@@ -80,6 +80,7 @@ my-project/
   dev/                      # One directory per agent
     agent-config.toml       # Agent config: credentials, repos, model, schedule, webhooks, params
     PLAYBOOK.md             # Agent instructions (system prompt) — edit to customize behavior
+    Dockerfile              # (optional) Custom Docker image for this agent
 ```
 
 ## CLI commands
@@ -95,15 +96,11 @@ If you installed globally (`npm install -g @action-llama/action-llama`), you can
 | `al status` | Show the current status of all agents |
 | `al logs <agent>` | View log entries for an agent |
 
+See [CLI command reference](docs/commands.md) for all options and flags.
+
 ### Common options
 
 - `-p, --project <dir>` — specify the project directory (defaults to `.`)
-
-### `al logs` options
-
-- `-n, --lines <N>` — number of log entries to show (default: 50)
-- `-f, --follow` — tail mode, watch for new log entries
-- `-d, --date <YYYY-MM-DD>` — view a specific date's log file
 
 ### `al start` options
 
@@ -117,14 +114,14 @@ If you installed globally (`npm install -g @action-llama/action-llama`), you can
 {
   "docker": { "enabled": false },
   "gateway": { "port": 8080 },
-  "webhooks": { "secretCredentials": { "github": "github-webhook-secret" } }
+  "webhooks": { "secretCredentials": { "github": "github_webhook_secret:default" } }
 }
 ```
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `docker.enabled` | `false` | Run agents in isolated Docker containers |
-| `docker.image` | `"al-agent:latest"` | Docker image for containers |
+| `docker.image` | `"al-agent:latest"` | Base Docker image for containers |
 | `docker.memory` | `"4g"` | Memory limit per container |
 | `docker.cpus` | `2` | CPU limit per container |
 | `docker.timeout` | `3600` | Max container runtime (seconds) |
@@ -133,6 +130,12 @@ If you installed globally (`npm install -g @action-llama/action-llama`), you can
 ### Agent config (`<agent>/agent-config.toml`)
 
 See the [agent-config.toml reference](docs/agent-config-reference.md) for all fields. Each agent carries its own model config, so you can run different models per agent (e.g., Opus for dev, Haiku for devops).
+
+### Credentials
+
+Credentials are stored in `~/.action-llama-credentials/<type>/<instance>/<field>` and referenced in agent configs as `"type:instance"` (e.g. `"github_token:default"`). Run `al setup` to configure them interactively.
+
+See [credentials docs](docs/credentials.md) for the full reference including built-in credential types, named instances, and manual setup.
 
 ### Webhooks
 
@@ -143,6 +146,8 @@ To use webhooks instead of polling, add webhook filters to your `agent-config.to
 - **Secret**: the same secret you entered during setup
 
 Payloads are validated with HMAC-SHA256 (`x-hub-signature-256`). Webhook filters in `webhooks.filters` support matching on `source`, `repos`, `events`, `actions`, `labels`, `assignee`, `author`, and `branches` (AND logic; omitted fields are not checked).
+
+See [webhooks docs](docs/webhooks.md) for filter fields, Sentry webhooks, and setup details.
 
 #### Local development with ngrok
 
@@ -170,7 +175,32 @@ ngrok http 8080 --url=your-name.ngrok-free.app
 
 ### Docker mode
 
-Set `"docker": { "enabled": true }` in `config.json`. Agents run in isolated containers with credentials mounted read-only at `/credentials/`, a read-only root FS, dropped capabilities, non-root user, and PID/memory/CPU limits. Each container gets a unique shutdown secret for the anti-exfiltration kill switch. The Docker image is built automatically on first run from `docker/Dockerfile`.
+Set `"docker": { "enabled": true }` in `config.json`. Agents run in isolated containers with credentials mounted read-only, a read-only root FS, dropped capabilities, non-root user, and PID/memory/CPU limits.
+
+The base image is built automatically on first run from `docker/Dockerfile`. Agents can extend it by adding a `Dockerfile` to their directory:
+
+```dockerfile
+FROM al-agent:latest
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends gh && rm -rf /var/lib/apt/lists/*
+USER node
+```
+
+See [Docker docs](docs/docker.md) for the full reference including base image contents, custom Dockerfiles, standalone images, and the container filesystem layout.
+
+## Documentation
+
+| Doc | Description |
+|-----|-------------|
+| [Creating Agents](docs/creating-agents.md) | Step-by-step guide to creating a new agent |
+| [agent-config.toml Reference](docs/agent-config-reference.md) | All config fields with examples |
+| [Credentials](docs/credentials.md) | Credential types, storage layout, named instances |
+| [Webhooks](docs/webhooks.md) | Webhook setup, filter fields, Sentry integration |
+| [Docker](docs/docker.md) | Container isolation, custom Dockerfiles, filesystem layout |
+| [CLI Commands](docs/commands.md) | All CLI commands with options and flags |
+| [Example: Dev Agent](docs/examples/dev-agent.md) | Developer agent that implements GitHub issues |
+| [Example: Reviewer Agent](docs/examples/reviewer-agent.md) | PR review agent |
+| [Example: DevOps Agent](docs/examples/devops-agent.md) | CI/CD and Sentry monitoring agent |
 
 ## Developing
 
@@ -225,7 +255,7 @@ src/
 ### Tests
 
 ```bash
-npm test              # run all 175 tests
+npm test              # run all 185 tests
 npm run test:watch    # watch mode
 npm run test:coverage # V8 coverage report
 ```

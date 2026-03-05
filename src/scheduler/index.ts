@@ -92,6 +92,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   }
 
   let gateway: GatewayServer | undefined;
+  let baseImage = "al-agent:latest";
+  const agentImages: Record<string, string> = {};
 
   if (dockerEnabled) {
     logger.info("Docker mode enabled — initializing docker infrastructure");
@@ -112,11 +114,20 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     const { ensureNetwork } = await import("../docker/network.js");
     ensureNetwork();
 
-    // 3. Ensure Docker image is built (may take a while on first run)
-    const image = globalConfig.docker?.image || "al-agent:latest";
-    logger.info({ image }, "Ensuring Docker image (this may take a few minutes on first run)...");
-    const { ensureImage } = await import("../docker/image.js");
-    ensureImage(image);
+    // 3. Ensure base Docker image is built (may take a while on first run)
+    baseImage = globalConfig.docker?.image || "al-agent:latest";
+    logger.info({ image: baseImage }, "Ensuring base Docker image (this may take a few minutes on first run)...");
+    const { ensureImage, ensureAgentImage } = await import("../docker/image.js");
+    ensureImage(baseImage);
+
+    // 4. Build per-agent images for agents with a custom Dockerfile
+    for (const agentConfig of agentConfigs) {
+      const image = ensureAgentImage(agentConfig.name, projectPath, baseImage);
+      agentImages[agentConfig.name] = image;
+      if (image !== baseImage) {
+        logger.info({ agent: agentConfig.name, image }, "Built custom agent image");
+      }
+    }
 
     logger.info("Docker infrastructure ready");
 
@@ -159,6 +170,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
         gateway.registerContainer,
         gatewayUrl,
         projectPath,
+        agentImages[agentConfig.name] || baseImage,
         statusTracker
       );
     }

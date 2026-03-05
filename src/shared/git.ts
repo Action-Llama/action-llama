@@ -3,7 +3,7 @@ import { existsSync } from "fs";
 import { resolve } from "path";
 import { CREDENTIALS_DIR } from "./paths.js";
 
-const SSH_KEY_PATH = resolve(CREDENTIALS_DIR, "id_rsa");
+const SSH_KEY_PATH = resolve(CREDENTIALS_DIR, "git_ssh", "default", "id_rsa");
 
 export function sshUrl(owner: string, repo: string): string {
   return `git@github.com:${owner}/${repo}.git`;

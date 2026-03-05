@@ -14,23 +14,49 @@ const gitSsh: CredentialDefinition = {
     { name: "email", label: "Git Author Email", description: "Email used for git commits", secret: false },
   ],
   // No envVars — SSH key is mounted as a file; git identity is injected by the runner via GIT_AUTHOR_NAME/EMAIL
+  agentContext: "`GIT_SSH_COMMAND` configured for SSH access; `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL`/`GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` set — `git clone`, `git push`, and `git commit` work directly",
 
   async prompt(existing) {
+    console.log("\n--- Git SSH Credential ---");
+    console.log("Agents need an SSH key, author name, and email to clone repos and push commits.\n");
+
+    // If all three fields exist, offer to reuse
+    if (existing?.id_rsa && existing?.username && existing?.email) {
+      const reuse = await confirm({
+        message: `Found existing: ${existing.username} <${existing.email}> with SSH key. Keep it?`,
+        default: true,
+      });
+      if (reuse) return { values: existing };
+    }
+
+    // 1. Git author name
+    const username = await input({
+      message: "Git author name:",
+      default: existing?.username || "",
+      validate: (v) => (v.trim().length > 0 ? true : "Name is required"),
+    });
+
+    // 2. Git author email
+    const email = await input({
+      message: "Git author email:",
+      default: existing?.email || "",
+      validate: (v) => (v.trim().length > 0 ? true : "Email is required"),
+    });
+
+    // 3. SSH key
     let keyContent: string | undefined;
 
     if (existing?.id_rsa) {
       const reuse = await confirm({
-        message: `Found existing SSH key in ${CREDENTIALS_DIR}/git_ssh/. Use it?`,
+        message: "Found existing SSH key. Keep it?",
         default: true,
       });
-      if (reuse) {
-        keyContent = existing.id_rsa;
-      }
+      if (reuse) keyContent = existing.id_rsa;
     }
 
     if (!keyContent) {
       const method = await select({
-        message: "How would you like to provide your SSH private key?",
+        message: "SSH private key:",
         choices: [
           { name: "Read from file", value: "file" as const },
           { name: "Paste key directly", value: "paste" as const },
@@ -39,13 +65,8 @@ const gitSsh: CredentialDefinition = {
       });
 
       if (method === "skip") {
-        console.log("No SSH key configured — git will use your system SSH config.\n");
-        // Still prompt for git identity — needed even without SSH key
-        const identity = await promptGitIdentity(existing);
-        if (identity) {
-          return { values: identity };
-        }
-        return undefined;
+        console.log(`\nGit identity set: ${username.trim()} <${email.trim()}> (no SSH key)\n`);
+        return { values: { username: username.trim(), email: email.trim() } };
       }
 
       if (method === "file") {
@@ -62,9 +83,7 @@ const gitSsh: CredentialDefinition = {
         }
 
         keyContent = readFileSync(resolvedPath, "utf-8");
-        console.log("SSH key loaded.\n");
       } else {
-        // paste
         keyContent = await input({
           message: "Paste your SSH private key (entire content, then press Enter):",
           validate: (v) => {
@@ -75,47 +94,12 @@ const gitSsh: CredentialDefinition = {
           },
         });
         keyContent = keyContent.trim();
-        console.log("SSH key loaded.\n");
       }
     }
 
-    const identity = await promptGitIdentity(existing);
-    const values: Record<string, string> = { id_rsa: keyContent };
-    if (identity?.username) values.username = identity.username;
-    if (identity?.email) values.email = identity.email;
-
-    return { values };
+    console.log(`\nGit identity set: ${username.trim()} <${email.trim()}> with SSH key\n`);
+    return { values: { id_rsa: keyContent, username: username.trim(), email: email.trim() } };
   },
 };
-
-async function promptGitIdentity(existing?: Record<string, string>): Promise<Record<string, string> | undefined> {
-  const existingName = existing?.username;
-  const existingEmail = existing?.email;
-
-  if (existingName && existingEmail) {
-    const reuse = await confirm({
-      message: `Git identity: ${existingName} <${existingEmail}>. Keep it?`,
-      default: true,
-    });
-    if (reuse) return { username: existingName, email: existingEmail };
-  }
-
-  console.log("\nGit author identity (used for commits):\n");
-
-  const name = await input({
-    message: "Git author name:",
-    default: existingName || "",
-    validate: (v) => (v.trim().length > 0 ? true : "Name is required"),
-  });
-
-  const email = await input({
-    message: "Git author email:",
-    default: existingEmail || "",
-    validate: (v) => (v.trim().length > 0 ? true : "Email is required"),
-  });
-
-  console.log(`Git identity set: ${name.trim()} <${email.trim()}>\n`);
-  return { username: name.trim(), email: email.trim() };
-}
 
 export default gitSsh;

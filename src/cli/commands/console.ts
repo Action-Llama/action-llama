@@ -16,14 +16,42 @@ This project has no agents yet. The user has just opened the console to create t
 
 Built-in agent templates:
 
-1. **dev** — Developer agent that picks up GitHub issues labeled with a trigger label, implements the changes, and opens PRs. Needs: anthropic-key, github-token, id_rsa. Config fields: repos, triggerLabel, assignee.
-2. **reviewer** — PR reviewer agent that reviews open pull requests, approves good ones, and requests changes on problematic ones. Needs: anthropic-key, github-token, id_rsa. Config fields: repos.
-3. **devops** — DevOps monitoring agent that detects CI failures and Sentry errors, then files GitHub issues. Needs: anthropic-key, github-token, id_rsa, sentry-token. Config fields: repos, sentryOrg, sentryProjects.
+1. **dev** — Developer agent that picks up GitHub issues labeled with a trigger label, implements the changes, and opens PRs. Needs: github_token:default, git_ssh:default. Config fields: repos, triggerLabel, assignee. Uses: \`gh\`, \`git\`, \`curl\`.
+2. **reviewer** — PR reviewer agent that reviews open pull requests, approves good ones, and requests changes on problematic ones. Needs: github_token:default, git_ssh:default. Config fields: repos. Uses: \`gh\`, \`git\`, \`curl\`.
+3. **devops** — DevOps monitoring agent that detects CI failures and Sentry errors, then files GitHub issues. Needs: github_token:default, git_ssh:default, sentry_token:default. Config fields: repos, sentryOrg, sentryProjects. Uses: \`git\`, \`curl\`.
 4. **custom** — Start from scratch with a blank PLAYBOOK.md.
+
+### Docker base image
+
+When Docker mode is enabled, agents run in an isolated container. The base image (\`al-agent:latest\`) includes ONLY these tools: **Node.js, git, curl, openssh-client, ca-certificates**. Nothing else — no \`gh\`, no \`python3\`, no \`jq\`, no language runtimes beyond Node.
+
+### When to create a custom Dockerfile
+
+After writing the agent's PLAYBOOK.md, analyze it to determine what CLI tools, language runtimes, or system packages the agent will need at runtime. If ANY tool is required that is not in the base image (git, curl, openssh-client, node), you MUST create a \`Dockerfile\` in the agent directory.
+
+Example — agent that needs \`gh\` CLI:
+
+\`\`\`dockerfile
+FROM al-agent:latest
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends gh && rm -rf /var/lib/apt/lists/*
+USER node
+\`\`\`
+
+Example — agent that needs Python:
+
+\`\`\`dockerfile
+FROM al-agent:latest
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip && rm -rf /var/lib/apt/lists/*
+USER node
+\`\`\`
+
+If the agent needs a fundamentally different base (e.g. a Python-heavy agent that should use \`python:3.12-slim\` instead of \`node:20-slim\`), you can use any base image — just make sure to install Node.js and set up the \`node\` user (uid 1000) since the container entry point requires them.
 
 When the user asks to create an agent:
 - Ask which template they want and walk them through configuring it
-- Create the agent directory with \`agent-config.toml\` and \`PLAYBOOK.md\`
+- Create the agent directory with \`agent-config.toml\`, \`PLAYBOOK.md\`, and a \`Dockerfile\` if the playbook requires tools not in the base image
 - **IMPORTANT:** Agent playbooks must be detailed and prescriptive with step-by-step commands. Copy the example playbook from the "Example Playbook" section above and customize it — do NOT write simplified or abbreviated instructions.
 `;
 

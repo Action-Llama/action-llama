@@ -1,45 +1,64 @@
 # Credentials
 
-Credentials are stored as files in `~/.action-llama-credentials/`. Each credential has a unique ID used in `agent-config.toml`.
+Credentials are stored in `~/.action-llama-credentials/<type>/<instance>/<field>`. Each credential type is a directory containing one file per field. Reference them in `agent-config.toml` as `"type:instance"` (e.g. `"github_token:default"`).
 
 ## Built-in Credentials
 
-| ID | File | Description | Env Var |
-|----|------|-------------|---------|
-| `github-token` | `github-token` | GitHub PAT with repo and workflow scopes | `GITHUB_TOKEN` |
-| `anthropic-key` | `anthropic-key` | Anthropic API key, OAuth token, or pi auth | _(read by SDK)_ |
-| `sentry-token` | `sentry-token` | Sentry auth token for error monitoring | `SENTRY_AUTH_TOKEN` |
-| `id_rsa` | `id_rsa`, `git-name`, `git-email` | SSH private key + git author identity | _(mounted as file)_. `git-name`/`git-email` set `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL` env vars. |
-| `github-webhook-secret` | `github-webhook-secret` | Shared secret for GitHub webhook verification | _(used by gateway)_ |
-| `sentry-client-secret` | `sentry-client-secret` | Client secret for Sentry webhook verification | _(used by gateway)_ |
+| Type | Fields | Description | Runtime Injection |
+|------|--------|-------------|-------------------|
+| `github_token` | `token` | GitHub PAT with repo and workflow scopes | `GITHUB_TOKEN` and `GH_TOKEN` env vars |
+| `anthropic_key` | `token` | Anthropic API key, OAuth token, or pi auth | _(read by SDK)_ |
+| `sentry_token` | `token` | Sentry auth token for error monitoring | `SENTRY_AUTH_TOKEN` env var |
+| `git_ssh` | `id_rsa`, `username`, `email` | SSH private key + git author identity | SSH key mounted as file; `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL`/`GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` set from `username`/`email` |
+| `github_webhook_secret` | `secret` | Shared secret for GitHub webhook verification | _(used by gateway)_ |
+| `sentry_client_secret` | `secret` | Client secret for Sentry webhook verification | _(used by gateway)_ |
 
 ## How Credentials Work
 
-1. **Configuration**: List credential IDs in your agent's `agent-config.toml`:
+1. **Configuration**: List credential refs in your agent's `agent-config.toml`:
    ```toml
-   credentials = ["anthropic-key", "github-token"]
+   credentials = ["github_token:default", "git_ssh:default"]
    ```
 
-2. **Storage**: Credential values live in `~/.action-llama-credentials/<filename>`. Single-value credentials are plain text files. Multi-value credentials are JSON.
+2. **Storage**: Credential values live in `~/.action-llama-credentials/<type>/<instance>/<field>`. Each field is a plain text file.
 
-3. **Injection**: At runtime, credentials with `envVars` are injected as environment variables into the agent's container/process.
+3. **Injection**: At runtime, credentials with env vars are injected as environment variables into the agent's container/process.
 
-4. **Git identity**: The `id_rsa` credential includes companion files `git-name` and `git-email` (prompted during `al new`/`al setup`). These are injected as `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL` and `GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` env vars at runtime, so `git commit` works without requiring `git config`.
+4. **Git identity**: The `git_ssh` credential includes `username` and `email` fields (prompted during `al new`/`al setup`). These are injected as `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL` and `GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` env vars at runtime, so `git commit` works without requiring `git config`.
+
+## Named Instances
+
+Each credential type supports named instances. For example, you could have multiple SSH keys:
+
+```
+~/.action-llama-credentials/git_ssh/default/id_rsa
+~/.action-llama-credentials/git_ssh/default/username
+~/.action-llama-credentials/git_ssh/botty/id_rsa
+~/.action-llama-credentials/git_ssh/botty/username
+```
+
+Reference them as `"git_ssh:default"` or `"git_ssh:botty"` in your agent config. If you omit the instance, it defaults to `"default"`.
 
 ## Setting Up Credentials
 
 ### During `al new`
 
-The `al new` command prompts for GitHub token, SSH key, and Anthropic auth during setup.
+The `al new` command prompts for the Anthropic credential during initial setup. Other credentials are configured per-agent by `al setup`.
+
+### Via `al setup`
+
+Run `al setup` to scan all agents and prompt for any missing credentials.
 
 ### Manually
 
 Write credential files directly:
 
 ```bash
-mkdir -p ~/.action-llama-credentials
-echo "ghp_your_token_here" > ~/.action-llama-credentials/github-token
-echo "sk-ant-api-your_key_here" > ~/.action-llama-credentials/anthropic-key
+mkdir -p ~/.action-llama-credentials/github_token/default
+echo "ghp_your_token_here" > ~/.action-llama-credentials/github_token/default/token
+
+mkdir -p ~/.action-llama-credentials/anthropic_key/default
+echo "sk-ant-api-your_key_here" > ~/.action-llama-credentials/anthropic_key/default/token
 ```
 
 ### Anthropic Auth Methods
@@ -58,8 +77,8 @@ Webhook secrets are configured in the project's global `config.json`:
 {
   "webhooks": {
     "secretCredentials": {
-      "github": "github-webhook-secret",
-      "sentry": "sentry-client-secret"
+      "github": "github_webhook_secret:default",
+      "sentry": "sentry_client_secret:default"
     }
   }
 }

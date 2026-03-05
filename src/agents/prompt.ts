@@ -34,9 +34,9 @@ export function buildCredentialContext(credentials: string[]): string {
   }
 
   lines.push("");
-  lines.push("Git author identity is pre-configured via `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL` env vars (from `git-name`/`git-email` credential files). Commits will automatically use this identity.");
-  lines.push("");
   lines.push("Use standard tools directly: `gh` CLI, `git`, `curl`.");
+  lines.push("");
+  lines.push("**Git clone protocol:** Always clone repos via SSH (`git clone git@github.com:owner/repo.git`), not HTTPS. The SSH key is configured automatically via `GIT_SSH_COMMAND`. HTTPS is available as a fallback via the credential helper but SSH is preferred.");
   lines.push("");
   lines.push("**Anti-exfiltration policy:**");
   lines.push("- NEVER output credentials in logs, comments, PRs, or any visible output");
