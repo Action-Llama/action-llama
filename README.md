@@ -33,50 +33,54 @@ Built on [pi.dev](https://github.com/badlogic/pi-mono) as the agent harness.
 
 ## How to get started
 
+### 1. Create a project
+
 ```bash
 npx @action-llama/action-llama@latest new my-project
+cd my-project
 ```
 
-The setup wizard walks you through everything:
+This scaffolds the project and sets up your Anthropic credential and default model.
 
-**Step 1 — Agents:** Select which agents to create. Pick **dev** to start — this is the developer agent that implements issues and opens PRs.
-
-**Step 2 — Credentials:** Paste your GitHub PAT (needs `repo` + `workflow` scopes) and choose how to authenticate with Anthropic (existing pi auth, API key, or OAuth token). Tokens are validated against their APIs before continuing.
-
-**Step 3 — LLM Defaults:** Pick a model and thinking level. The defaults (`claude-sonnet-4-20250514`, `medium` thinking) are a good starting point.
-
-**Step 4 — Configure each agent:** For the dev agent you'll be asked:
-- **Repos** — which GitHub repos to monitor (fetched from your token)
-- **Trigger label** — the issue label that activates the agent (default: `agent`)
-- **Assignee** — only trigger on issues assigned to this user (default: your GitHub username)
-- **Webhooks** — say **no** for now (requires setting up a GitHub webhook endpoint)
-- **Schedule** — say **yes**, and accept the default `*/5 * * * *` (poll every 5 minutes)
-
-Once setup finishes:
+### 2. Create and manage agents
 
 ```bash
-cd my-project
-npx al start    # if using local install
+npx al console
 ```
 
-The dev agent will poll every 5 minutes looking for issues that match its filter: the issue must have the trigger label (default: `agent`) **and** be assigned to the configured user. When it finds a match, it clones the repo, creates a branch, implements the changes described in the issue, runs tests, and opens a PR.
+The console is a TUI powered by [Pi](https://github.com/badlogic/pi-mono) that helps you create and manage agents. If no agents exist yet, it will offer to create one for you.
 
-Edit `dev/AGENTS.md` to customize how the agent works — changes take effect on the next run.
+You can also create agents manually — see the [creating agents guide](docs/creating-agents.md).
+
+Or, if you're using your own coding agent just make sure it reads the AGENTS.md in your project root. It should then have everything it needs to create agents.
+
+### 3. Set up remaining credentials
+
+Once your agents are ready, setup the credentials.
+
+```bash
+npx al setup
+```
+
+This scans your agents' `agent-config.toml` files, finds all required credentials, and prompts for any that are missing. Credentials are stored in `~/.action-llama-credentials/` (shared across projects, not committed to git).
+
+### 4. Run
+
+```bash
+npx al start
+```
 
 ### Project structure
-
-The setup creates:
 
 ```
 my-project/
   package.json              # Includes @action-llama/action-llama as a dependency
+  AGENTS.md                 # Project overview and agent creation guide
   config.json               # Global config: docker, gateway, webhooks (no secrets)
   dev/                      # One directory per agent
-    config.json             # Agent config: repos, schedule, model, webhooks, etc.
-    AGENTS.md               # Agent instructions — edit this to customize behavior
+    agent-config.toml       # Agent config: credentials, repos, model, schedule, webhooks, params
+    AGENTS.md               # Agent instructions (system prompt) — edit to customize behavior
 ```
-
-Credentials are stored separately in `~/.action-llama-credentials/` (shared across projects, not committed to git).
 
 ## CLI commands
 
@@ -84,11 +88,12 @@ If you installed globally (`npm install -g @action-llama/action-llama`), you can
 
 | Command | Description |
 |---------|-------------|
-| `al new <name>` | Create a new project (interactive setup for credentials, model, and agents) |
+| `al new <name>` | Scaffold a new project (sets up Anthropic credential and model defaults) |
+| `al console` | TUI for creating and managing agents |
+| `al setup` | Scan agents and prompt for any missing credentials |
 | `al start` | Start the scheduler — runs agents on their cron schedule and/or webhook triggers |
 | `al status` | Show the current status of all agents |
 | `al logs <agent>` | View log entries for an agent |
-| `al agent add [definition]` | Add a new agent to an existing project (built-in name or custom definition path) |
 
 ### Common options
 
@@ -103,14 +108,6 @@ If you installed globally (`npm install -g @action-llama/action-llama`), you can
 ### `al start` options
 
 - `--dangerous-no-docker` — disable Docker container isolation and run agents directly on the host
-
-## Built-in Agents
-
-| Agent | Trigger | Action |
-|-------|---------|--------|
-| **Developer** | Webhook: issue labeled; or poll for labeled issues | Checks out a worktree, implements the fix/feature, runs tests, opens a PR |
-| **PR Reviewer** | Webhook: PR opened/updated; or poll for open PRs | Reviews code for correctness, style, security; approves+merges or requests changes |
-| **DevOps** | Poll for CI failures/Sentry errors | Creates Github issues describing problem and potential fix |
 
 ## Configuration
 
@@ -133,31 +130,13 @@ If you installed globally (`npm install -g @action-llama/action-llama`), you can
 | `docker.timeout` | `3600` | Max container runtime (seconds) |
 | `gateway.port` | `8080` | Gateway server listen port |
 
-### Agent config (`<agent>/config.json`)
+### Agent config (`<agent>/agent-config.toml`)
 
-```json
-{
-  "credentials": ["github-token", "anthropic-key"],
-  "model": { "provider": "anthropic", "model": "claude-sonnet-4-20250514", "thinkingLevel": "medium", "authType": "pi_auth" },
-  "repos": ["acme/frontend"],
-  "schedule": "*/5 * * * *",
-  "webhooks": {
-    "filters": [{
-      "source": "github",
-      "events": ["issues"],
-      "actions": ["labeled"],
-      "labels": ["agent"],
-      "assignee": "bot-user"
-    }]
-  }
-}
-```
-
-Agents can use webhooks, a cron schedule, or both. Each agent carries its own model config, so you can run different models per agent (e.g., Opus for dev, Haiku for devops). Edit these files directly or re-run `al new` for guided reconfiguration.
+See the [agent-config.toml reference](docs/agent-config-reference.md) for all fields. Each agent carries its own model config, so you can run different models per agent (e.g., Opus for dev, Haiku for devops).
 
 ### Webhooks
 
-To use webhooks instead of polling, enable them during `al new` and add a webhook in your GitHub repo settings:
+To use webhooks instead of polling, add webhook filters to your `agent-config.toml` and add a webhook in your GitHub repo settings:
 
 - **Payload URL**: `http://<your-host>:8080/webhooks/github`
 - **Content type**: `application/json`
@@ -215,7 +194,7 @@ npm test
 
 `al start` runs a single Node.js process (the **scheduler**) that:
 
-1. Discovers agents in the project directory (each subdirectory with a `config.json`)
+1. Discovers agents in the project directory (each subdirectory with an `agent-config.toml`)
 2. Starts a **gateway** HTTP server if webhooks or Docker mode are enabled (health check, webhook receiver, shutdown kill switch)
 3. Creates a **runner** per agent — either `AgentRunner` (host mode) or `ContainerAgentRunner` (Docker mode)
 4. Wires up **cron jobs** and/or **webhook bindings** to trigger each runner
@@ -225,10 +204,10 @@ npm test
 
 ```
 src/
-  cli/              # Command definitions (new, start, status, logs, agent add)
-  setup/            # Interactive setup wizard (prompts, validators, scaffolding)
+  cli/              # Command definitions (new, setup, start, status, logs)
+  setup/            # Project scaffolding
   scheduler/        # Scheduler: discovers agents, starts gateway, wires cron + webhooks
-  agents/           # Agent runners (host + Docker), prompt builder, built-in definitions
+  agents/           # Agent runners (host + Docker), prompt builder
   gateway/          # HTTP server: router, health, shutdown, webhook routes
   docker/           # Container lifecycle (launch, wait, logs, remove), image + network
   webhooks/         # Webhook registry, provider interface, GitHub provider
@@ -238,7 +217,7 @@ src/
 
 ### Extension points
 
-- **New agent type** — add a definition under `src/agents/definitions/<name>/` with an `agent-definition.json` (schema for credentials and params) and an `AGENTS.md` template. It will appear in `al new` and `al agent add` automatically.
+- **New agent** — create a directory with an `agent-config.toml` and `AGENTS.md` in your project. See [creating agents](docs/creating-agents.md).
 - **New webhook provider** — implement the `WebhookProvider` interface in `src/webhooks/providers/` and register it in `src/scheduler/index.ts`. The registry handles routing by `source` field.
 - **Custom runner** — subclass or replace `AgentRunner` in `src/agents/runner.ts` to change how agent sessions are created (different model providers, tool sets, etc.).
 - **Gateway routes** — add routes in `src/gateway/routes/` and register them in `src/gateway/index.ts`.

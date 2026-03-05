@@ -1,6 +1,7 @@
 import { mkdtempSync, writeFileSync, mkdirSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
+import { stringify as stringifyTOML } from "smol-toml";
 import type { GlobalConfig, AgentConfig } from "../src/shared/config.js";
 
 export interface TmpProjectOptions {
@@ -62,7 +63,10 @@ export function makeTmpProject(opts?: TmpProjectOptions): string {
     mkdirSync(agentPath, { recursive: true });
     // Strip name before writing (matches scaffold behavior)
     const { name: _, ...configToWrite } = agent;
-    writeFileSync(resolve(agentPath, "config.json"), JSON.stringify(configToWrite));
+    writeFileSync(
+      resolve(agentPath, "agent-config.toml"),
+      stringifyTOML(configToWrite as Record<string, unknown>)
+    );
   }
 
   return dir;

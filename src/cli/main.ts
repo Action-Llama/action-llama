@@ -57,18 +57,13 @@ program
     await execute(opts);
   });
 
-// --- Agent management commands ---
-
-const agent = program.command("agent").description("Agent management commands");
-
-agent
-  .command("add")
-  .description("Add a new agent to an existing project")
-  .argument("[definition]", "built-in name (dev, reviewer, devops) or path to definition directory")
+program
+  .command("setup")
+  .description("Ensure all agent credentials exist")
   .option("-p, --project <dir>", "project directory", ".")
-  .action(async (definition: string | undefined, opts) => {
-    const { execute } = await import("./commands/agent/add.js");
-    await execute({ ...opts, definition });
+  .action(async (opts) => {
+    const { execute } = await import("./commands/setup.js");
+    await execute(opts);
   });
 
 program.parseAsync().catch((err) => {

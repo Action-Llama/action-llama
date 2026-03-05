@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
+import { stringify as stringifyTOML } from "smol-toml";
 
 // Mock credentials
 vi.mock("../../src/shared/credentials.js", () => ({
@@ -73,7 +74,7 @@ function setupProjectWithWebhooks(tmpDir: string) {
   };
   const agentDir = resolve(tmpDir, "webhook-dev");
   mkdirSync(agentDir, { recursive: true });
-  writeFileSync(resolve(agentDir, "config.json"), JSON.stringify(webhookAgent));
+  writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML(webhookAgent as Record<string, unknown>));
   mkdirSync(resolve(tmpDir, ".al", "state", "webhook-dev"), { recursive: true });
 }
 
@@ -92,7 +93,7 @@ function setupProjectWithHybrid(tmpDir: string) {
   };
   const agentDir = resolve(tmpDir, "hybrid");
   mkdirSync(agentDir, { recursive: true });
-  writeFileSync(resolve(agentDir, "config.json"), JSON.stringify(hybridAgent));
+  writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML(hybridAgent as Record<string, unknown>));
   mkdirSync(resolve(tmpDir, ".al", "state", "hybrid"), { recursive: true });
 }
 
@@ -107,7 +108,7 @@ function setupProjectWithNoTrigger(tmpDir: string) {
   };
   const agentDir = resolve(tmpDir, "bad-agent");
   mkdirSync(agentDir, { recursive: true });
-  writeFileSync(resolve(agentDir, "config.json"), JSON.stringify(badAgent));
+  writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML(badAgent as Record<string, unknown>));
   mkdirSync(resolve(tmpDir, ".al", "state", "bad-agent"), { recursive: true });
 }
 

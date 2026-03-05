@@ -8,7 +8,7 @@ import { CREDENTIALS_DIR } from "../../shared/paths.js";
 export async function execute(name: string): Promise<void> {
   const projectPath = resolve(process.cwd(), name);
 
-  const { globalConfig, agents, secrets } = await runSetup();
+  const { globalConfig, secrets } = await runSetup();
 
   console.log("\n--- Writing configuration ---\n");
 
@@ -18,13 +18,6 @@ export async function execute(name: string): Promise<void> {
     console.log(`  Wrote ${CREDENTIALS_DIR}/github-token`);
   } else {
     console.log(`  GitHub token unchanged`);
-  }
-
-  if (secrets.sentryToken && secrets.sentryToken !== loadCredential("sentry-token")) {
-    writeCredential("sentry-token", secrets.sentryToken);
-    console.log(`  Wrote ${CREDENTIALS_DIR}/sentry-token`);
-  } else if (secrets.sentryToken) {
-    console.log(`  Sentry token unchanged`);
   }
 
   if (secrets.anthropicKey && secrets.anthropicKey !== loadCredential("anthropic-key")) {
@@ -43,23 +36,12 @@ export async function execute(name: string): Promise<void> {
     console.log(`  SSH key unchanged`);
   }
 
-  if (secrets.githubWebhookSecret && secrets.githubWebhookSecret !== loadCredential("github-webhook-secret")) {
-    writeCredential("github-webhook-secret", secrets.githubWebhookSecret);
-    console.log(`  Wrote ${CREDENTIALS_DIR}/github-webhook-secret`);
-  } else if (secrets.githubWebhookSecret) {
-    console.log(`  GitHub webhook secret unchanged`);
-  }
+  scaffoldProject(projectPath, globalConfig, [], name);
 
-  scaffoldProject(projectPath, globalConfig, agents, name);
-
-  const agentNames = agents.map((a) => a.name);
   console.log(`  Wrote ${projectPath}/package.json`);
+  console.log(`  Wrote ${projectPath}/AGENTS.md`);
   if (Object.keys(globalConfig).length > 0) {
     console.log(`  Wrote ${projectPath}/config.json`);
-  }
-  for (const name of agentNames) {
-    console.log(`  Wrote ${projectPath}/${name}/config.json`);
-    console.log(`  Wrote ${projectPath}/${name}/AGENTS.md`);
   }
   console.log(`  Created state directories`);
 
@@ -71,12 +53,10 @@ Setup complete!
 
   Credentials: ${CREDENTIALS_DIR}/
   Project:     ${projectPath}/
-  Agents:      ${agentNames.join(", ")}
-
-  Edit <agent>/AGENTS.md to customize agent behavior.
 
 Next steps:
   cd ${name}
+  Create agents by following the docs: https://github.com/action-llama/action-llama/blob/main/docs/creating-agents.md
   npx al start
 `);
 }

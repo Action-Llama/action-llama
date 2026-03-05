@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
+import { stringify as stringifyTOML } from "smol-toml";
 
 // Mock credentials
 vi.mock("../../src/shared/credentials.js", () => ({
@@ -66,7 +67,7 @@ function setupProject(tmpDir: string) {
     mkdirSync(agentDir, { recursive: true });
     // Strip name before writing (matches scaffold behavior — name is injected at load time)
     const { name: _, ...configToWrite } = agent;
-    writeFileSync(resolve(agentDir, "config.json"), JSON.stringify(configToWrite));
+    writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML(configToWrite as Record<string, unknown>));
     mkdirSync(resolve(tmpDir, ".al", "state", agent.name), { recursive: true });
   }
 }
