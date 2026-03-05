@@ -11,7 +11,7 @@ import { readFileSync, existsSync } from "fs";
 import { resolve } from "path";
 import type { AgentConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
-import { loadCredential } from "../shared/credentials.js";
+import { loadCredentialField, parseCredentialRef } from "../shared/credentials.js";
 import { agentDir } from "../shared/paths.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 
@@ -43,10 +43,11 @@ export class AgentRunner {
     this.statusTracker?.setAgentState(this.agentConfig.name, "running");
     this.logger.info(`Starting ${this.agentConfig.name} run`);
     const runStartTime = Date.now();
+    let runError: string | undefined;
 
     try {
       const cwd = agentDir(this.projectPath, this.agentConfig.name);
-      const agentsFile = resolve(cwd, "AGENTS.md");
+      const agentsFile = resolve(cwd, "PLAYBOOK.md");
 
       const { model } = this.agentConfig;
       const llmModel = getModel(
@@ -56,16 +57,34 @@ export class AgentRunner {
 
       const authStorage = AuthStorage.create();
       if (model.authType !== "pi_auth") {
-        const credential = loadCredential("anthropic-key");
+        const credential = loadCredentialField("anthropic_key", "default", "token");
         if (credential) {
           authStorage.setRuntimeApiKey("anthropic", credential);
+        } else {
+          this.logger.warn("anthropic_key credential not found — agent may fail to authenticate. Run 'al setup' to configure it.");
         }
       }
 
-      // AGENTS.md must exist on disk (written during al new)
+      // Set git author identity from git_ssh credential
+      const gitSshRef = this.agentConfig.credentials.find((ref) => parseCredentialRef(ref).type === "git_ssh");
+      if (gitSshRef) {
+        const { instance } = parseCredentialRef(gitSshRef);
+        const gitName = loadCredentialField("git_ssh", instance, "username");
+        if (gitName) {
+          process.env.GIT_AUTHOR_NAME = gitName;
+          process.env.GIT_COMMITTER_NAME = gitName;
+        }
+        const gitEmail = loadCredentialField("git_ssh", instance, "email");
+        if (gitEmail) {
+          process.env.GIT_AUTHOR_EMAIL = gitEmail;
+          process.env.GIT_COMMITTER_EMAIL = gitEmail;
+        }
+      }
+
+      // PLAYBOOK.md must exist on disk (written during al new)
       if (!existsSync(agentsFile)) {
         throw new Error(
-          `AGENTS.md not found at ${agentsFile}. Run 'al new' to create it.`
+          `PLAYBOOK.md not found at ${agentsFile}. Run 'al new' to create it.`
         );
       }
       const agentsContent = readFileSync(agentsFile, "utf-8");
@@ -122,6 +141,7 @@ export class AgentRunner {
           const resultStr = typeof event.result === "string"
             ? event.result
             : JSON.stringify(event.result);
+          const originCmd = pendingCmds.get(event.toolCallId);
           pendingCmds.delete(event.toolCallId);
 
           if (event.isError) {
@@ -129,6 +149,18 @@ export class AgentRunner {
               { tool: event.toolName, result: resultStr.slice(0, 1000) },
               "tool error"
             );
+            // Extract a human-readable error message from the result
+            let errorMsg = resultStr;
+            try {
+              const parsed = JSON.parse(resultStr);
+              if (parsed?.content?.[0]?.text) {
+                errorMsg = parsed.content[0].text;
+              }
+            } catch { /* use raw string */ }
+            const cmdPrefix = originCmd ? `$ ${originCmd.slice(0, 80)} — ` : "";
+            const detail = `${cmdPrefix}${errorMsg.slice(0, 200)}`;
+            this.statusTracker?.setAgentError(this.agentConfig.name, detail);
+            this.statusTracker?.addLogLine(this.agentConfig.name, `ERROR: ${detail}`);
           } else {
             this.logger.debug({ tool: event.toolName, resultLength: resultStr.length }, "tool done");
           }
@@ -171,9 +203,10 @@ export class AgentRunner {
       session.dispose();
     } catch (err: any) {
       this.logger.error({ err }, `${this.agentConfig.name} run failed`);
+      runError = String(err?.message || err).slice(0, 200);
     } finally {
       const elapsed = Date.now() - runStartTime;
-      this.statusTracker?.completeRun(this.agentConfig.name, elapsed);
+      this.statusTracker?.completeRun(this.agentConfig.name, elapsed, runError);
       this.running = false;
     }
   }

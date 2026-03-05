@@ -5,7 +5,7 @@ A code review agent that reviews open pull requests, approves good ones, and req
 ## `agent-config.toml`
 
 ```toml
-credentials = ["anthropic-key", "github-token"]
+credentials = ["anthropic-key", "github-token", "id_rsa"]
 repos = ["acme/app"]
 schedule = "*/5 * * * *"
 
@@ -16,6 +16,6 @@ thinkingLevel = "medium"
 authType = "api_key"
 ```
 
-## `AGENTS.md`
+## `PLAYBOOK.md`
 
-See [reviewer-AGENTS.md](reviewer-AGENTS.md) for the complete system prompt to copy into your agent directory.
+See [reviewer-PLAYBOOK.md](reviewer-PLAYBOOK.md) for the complete system prompt to copy into your agent directory.

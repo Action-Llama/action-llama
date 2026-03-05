@@ -1,4 +1,5 @@
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, mkdirSync, writeFileSync, chmodSync, readdirSync } from "fs";
+import { resolve } from "path";
 import { getModel } from "@mariozechner/pi-ai";
 import {
   AuthStorage,
@@ -9,16 +10,27 @@ import {
   createCodingTools,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentConfig } from "../shared/config.js";
+import { parseCredentialRef } from "../shared/credentials.js";
 
 // Structured log line — written to stdout, parsed by ContainerAgentRunner on the host
 function emitLog(level: string, msg: string, data?: Record<string, any>) {
   console.log(JSON.stringify({ _log: true, level, msg, ...data, ts: Date.now() }));
 }
 
-function readCredential(name: string): string | undefined {
-  const path = `/credentials/${name}`;
+function readCredentialField(type: string, instance: string, field: string): string | undefined {
+  const path = `/credentials/${type}/${instance}/${field}`;
   if (!existsSync(path)) return undefined;
   return readFileSync(path, "utf-8").trim();
+}
+
+function readCredentialFields(type: string, instance: string): Record<string, string> {
+  const dir = `/credentials/${type}/${instance}`;
+  const result: Record<string, string> = {};
+  if (!existsSync(dir)) return result;
+  for (const file of readdirSync(dir)) {
+    result[file] = readFileSync(resolve(dir, file), "utf-8").trim();
+  }
+  return result;
 }
 
 async function main() {
@@ -44,46 +56,57 @@ async function main() {
 
   emitLog("info", "container starting", { agentName: agentConfig.name, modelId, gatewayUrl });
 
-  // Read Anthropic API key from credentials volume
-  const anthropicKey = readCredential("anthropic-key");
-  if (!anthropicKey) {
-    emitLog("error", "missing anthropic-key credential");
+  // Read Anthropic API key from credentials volume (not needed for pi_auth)
+  const anthropicKey = readCredentialField("anthropic_key", "default", "token");
+  if (!anthropicKey && agentConfig.model.authType !== "pi_auth") {
+    emitLog("error", "missing anthropic_key credential. Run 'al setup' to configure it.");
     process.exit(1);
   }
 
   // Generic credential → env var injection from credential definitions
   const { builtinCredentials } = await import("../credentials/builtins/index.js");
-  for (const credId of agentConfig.credentials) {
-    const def = builtinCredentials[credId];
+  for (const credRef of agentConfig.credentials) {
+    const { type, instance } = parseCredentialRef(credRef);
+    const def = builtinCredentials[type];
     if (!def?.envVars) continue;
 
-    if (def.fields.length === 1) {
-      // Single-field credential: read as plain text, map to env vars
-      const value = readCredential(def.filename);
-      if (value) {
-        for (const [fieldName, envVar] of Object.entries(def.envVars)) {
-          process.env[envVar] = value;
-        }
-        // Special case: github-token also sets GH_TOKEN alias
-        if (credId === "github-token") {
-          process.env.GH_TOKEN = value;
-        }
+    const fields = readCredentialFields(type, instance);
+    for (const [fieldName, envVar] of Object.entries(def.envVars)) {
+      if (fields[fieldName]) {
+        process.env[envVar] = fields[fieldName];
       }
-    } else {
-      // Structured credential: read as JSON, map each field
-      const raw = readCredential(def.filename);
-      if (raw) {
-        try {
-          const fields = JSON.parse(raw) as Record<string, string>;
-          for (const [fieldName, envVar] of Object.entries(def.envVars)) {
-            if (fields[fieldName]) {
-              process.env[envVar] = fields[fieldName];
-            }
-          }
-        } catch {
-          emitLog("warn", `failed to parse structured credential ${credId}`);
-        }
-      }
+    }
+    // Special case: github_token also sets GH_TOKEN alias
+    if (type === "github_token" && fields.token) {
+      process.env.GH_TOKEN = fields.token;
+    }
+  }
+
+  // Set up SSH key for git push/clone if git_ssh credential is available
+  // Find the git_ssh instance from credentials
+  const gitSshRef = agentConfig.credentials.find((ref) => parseCredentialRef(ref).type === "git_ssh");
+  if (gitSshRef) {
+    const { instance } = parseCredentialRef(gitSshRef);
+    const sshKey = readCredentialField("git_ssh", instance, "id_rsa");
+    if (sshKey) {
+      const sshDir = "/home/node/.ssh";
+      mkdirSync(sshDir, { recursive: true, mode: 0o700 });
+      const keyPath = `${sshDir}/id_rsa`;
+      writeFileSync(keyPath, sshKey + "\n", { mode: 0o600 });
+      process.env.GIT_SSH_COMMAND = `ssh -i "${keyPath}" -o StrictHostKeyChecking=accept-new -o IdentitiesOnly=yes`;
+      emitLog("info", "SSH key configured for git");
+    }
+
+    // Set git author identity
+    const gitName = readCredentialField("git_ssh", instance, "username");
+    if (gitName) {
+      process.env.GIT_AUTHOR_NAME = gitName;
+      process.env.GIT_COMMITTER_NAME = gitName;
+    }
+    const gitEmail = readCredentialField("git_ssh", instance, "email");
+    if (gitEmail) {
+      process.env.GIT_AUTHOR_EMAIL = gitEmail;
+      process.env.GIT_COMMITTER_EMAIL = gitEmail;
     }
   }
 
@@ -92,12 +115,14 @@ async function main() {
   const model = getModel("anthropic", modelId as any);
 
   const authStorage = AuthStorage.create();
-  authStorage.setRuntimeApiKey("anthropic", anthropicKey);
+  if (anthropicKey) {
+    authStorage.setRuntimeApiKey("anthropic", anthropicKey);
+  }
 
-  // AGENTS.md content is passed via the serialized config from the host
+  // PLAYBOOK.md content is passed via the serialized config from the host
   const agentsContent = agentsMd || `# ${agentConfig.name} Agent\n\nCustom agent.\n`;
 
-  const agentsFile = "/tmp/AGENTS.md";
+  const agentsFile = "/tmp/PLAYBOOK.md";
 
   const resourceLoader = new DefaultResourceLoader({
     noExtensions: true,

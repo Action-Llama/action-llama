@@ -1,15 +1,13 @@
 import type { CredentialDefinition, CredentialPromptResult } from "../schema.js";
 import { input, select, checkbox, confirm } from "@inquirer/prompts";
 import { validateSentryToken, validateSentryProjects } from "../../setup/validators.js";
-import { loadCredential } from "../../shared/credentials.js";
 import { CREDENTIALS_DIR } from "../../shared/paths.js";
 
 const sentryToken: CredentialDefinition = {
-  id: "sentry-token",
+  id: "sentry_token",
   label: "Sentry Auth Token",
   description: "For error monitoring integration",
   helpUrl: "https://sentry.io/settings/auth-tokens/",
-  filename: "sentry-token",
   fields: [
     { name: "token", label: "Auth Token", description: "Sentry auth token", secret: true },
   ],
@@ -22,7 +20,7 @@ const sentryToken: CredentialDefinition = {
 
     if (existing?.token) {
       const reuse = await confirm({
-        message: `Found existing Sentry token in ${CREDENTIALS_DIR}/sentry-token. Use it?`,
+        message: `Found existing Sentry token in ${CREDENTIALS_DIR}/sentry_token/. Use it?`,
         default: true,
       });
       if (reuse) {

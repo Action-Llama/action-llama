@@ -11,6 +11,7 @@ describe("StatusTracker", () => {
     expect(agents).toHaveLength(2);
     expect(agents[0].name).toBe("dev");
     expect(agents[0].state).toBe("idle");
+    expect(agents[0].lastError).toBeNull();
     expect(agents[1].name).toBe("reviewer");
   });
 
@@ -61,6 +62,40 @@ describe("StatusTracker", () => {
     expect(agent.lastRunDuration).toBe(45000);
     expect(agent.lastRunAt).toBeInstanceOf(Date);
     expect(agent.statusText).toBeNull();
+  });
+
+  it("completes run with error", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.setAgentState("dev", "running");
+
+    tracker.completeRun("dev", 5000, "Session failed");
+
+    const agent = tracker.getAllAgents()[0];
+    expect(agent.state).toBe("error");
+    expect(agent.lastError).toBe("Session failed");
+    expect(agent.lastRunDuration).toBe(5000);
+  });
+
+  it("sets agent error", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+
+    tracker.setAgentError("dev", "$ gh pr list — Resource not accessible");
+
+    const agent = tracker.getAllAgents()[0];
+    expect(agent.lastError).toBe("$ gh pr list — Resource not accessible");
+  });
+
+  it("clears error when state changes to running", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.setAgentError("dev", "previous error");
+
+    tracker.setAgentState("dev", "running");
+
+    const agent = tracker.getAllAgents()[0];
+    expect(agent.lastError).toBeNull();
   });
 
   it("sets next run time", () => {
@@ -136,6 +171,7 @@ describe("StatusTracker", () => {
     tracker.registerAgent("dev");
     tracker.setAgentState("dev", "running");
     tracker.setAgentStatusText("dev", "working");
+    tracker.setAgentError("dev", "some error");
     tracker.completeRun("dev", 1000);
     tracker.setNextRunAt("dev", new Date());
     tracker.setSchedulerInfo({
@@ -148,6 +184,6 @@ describe("StatusTracker", () => {
     });
     tracker.addLogLine("dev", "test");
 
-    expect(listener).toHaveBeenCalledTimes(7);
+    expect(listener).toHaveBeenCalledTimes(8);
   });
 });

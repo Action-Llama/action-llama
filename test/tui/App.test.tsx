@@ -100,6 +100,27 @@ describe("App TUI", () => {
     expect(output).toContain("Ctrl+C to stop");
   });
 
+  it("renders error state with detail", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.setSchedulerInfo({
+      mode: "host",
+      gatewayPort: null,
+      cronJobCount: 1,
+      webhooksActive: false,
+      webhookUrls: [],
+      startedAt: new Date(),
+    });
+
+    tracker.completeRun("dev", 5000, "$ gh pr list — Resource not accessible by personal access token");
+
+    instance = render(<App statusTracker={tracker} />);
+    const output = instance.lastFrame()!;
+
+    expect(output).toContain("Error");
+    expect(output).toContain("Resource not accessible");
+  });
+
   it("updates when tracker emits events", async () => {
     const tracker = new StatusTracker();
     tracker.registerAgent("dev");

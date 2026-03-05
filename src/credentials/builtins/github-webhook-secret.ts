@@ -1,10 +1,9 @@
 import type { CredentialDefinition } from "../schema.js";
 
 const githubWebhookSecret: CredentialDefinition = {
-  id: "github-webhook-secret",
+  id: "github_webhook_secret",
   label: "GitHub Webhook Secret",
   description: "Shared secret for verifying GitHub webhook payloads",
-  filename: "github-webhook-secret",
   fields: [
     { name: "secret", label: "Webhook Secret", description: "Set this same value in your GitHub webhook settings", secret: true },
   ],

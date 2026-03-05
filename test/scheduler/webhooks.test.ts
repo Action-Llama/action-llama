@@ -6,9 +6,16 @@ import { stringify as stringifyTOML } from "smol-toml";
 
 // Mock credentials
 vi.mock("../../src/shared/credentials.js", () => ({
-  loadCredential: () => "fake-token",
-  requireCredential: () => "fake-token",
-  writeCredential: () => {},
+  loadCredentialField: () => "fake-token",
+  requireCredentialRef: () => {},
+  parseCredentialRef: (ref: string) => {
+    const sep = ref.indexOf(":");
+    if (sep === -1) return { type: ref, instance: "default" };
+    return { type: ref.slice(0, sep).trim(), instance: ref.slice(sep + 1).trim() };
+  },
+  writeCredentialField: () => {},
+  writeCredentialFields: () => {},
+  credentialExists: () => true,
 }));
 
 // Mock croner — capture the callbacks
@@ -65,7 +72,7 @@ function setupProjectWithWebhooks(tmpDir: string) {
 
   // Webhook-only agent
   const webhookAgent = {
-    credentials: ["github-token"],
+    credentials: ["github_token:default"],
     model,
     repos: ["acme/app"],
     webhooks: {
@@ -83,7 +90,7 @@ function setupProjectWithHybrid(tmpDir: string) {
 
   // Hybrid agent (schedule + webhooks)
   const hybridAgent = {
-    credentials: ["github-token"],
+    credentials: ["github_token:default"],
     model,
     schedule: "*/15 * * * *",
     repos: ["acme/app"],
@@ -102,7 +109,7 @@ function setupProjectWithNoTrigger(tmpDir: string) {
 
   // Agent with neither schedule nor webhooks
   const badAgent = {
-    credentials: ["github-token"],
+    credentials: ["github_token:default"],
     model,
     repos: ["acme/app"],
   };

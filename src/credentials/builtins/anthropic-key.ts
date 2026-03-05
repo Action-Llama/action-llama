@@ -1,24 +1,22 @@
 import type { CredentialDefinition, CredentialPromptResult } from "../schema.js";
 import { input, select, confirm } from "@inquirer/prompts";
 import { validateAnthropicApiKey, validateOAuthTokenFormat } from "../../setup/validators.js";
-import { loadCredential } from "../../shared/credentials.js";
 import { CREDENTIALS_DIR } from "../../shared/paths.js";
 
 const anthropicKey: CredentialDefinition = {
-  id: "anthropic-key",
+  id: "anthropic_key",
   label: "Anthropic API Credential",
   description: "API key, OAuth token, or pi auth for Claude access",
-  filename: "anthropic-key",
   fields: [
     { name: "token", label: "API Key / OAuth Token", description: "Anthropic credential", secret: true },
   ],
-  // No envVars — anthropic-key is read directly by container-entry.ts via the SDK
+  // No envVars — anthropic_key is read directly by container-entry.ts via the SDK
 
   // Custom prompt: supports three auth methods (pi_auth, api_key, oauth_token)
   async prompt(existing) {
     if (existing?.token) {
       const reuse = await confirm({
-        message: `Found existing Anthropic credential in ${CREDENTIALS_DIR}/anthropic-key. Use it?`,
+        message: `Found existing Anthropic credential in ${CREDENTIALS_DIR}/anthropic_key/. Use it?`,
         default: true,
       });
       if (reuse) {

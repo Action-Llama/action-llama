@@ -1,5 +1,5 @@
 import { spawn } from "child_process";
-import { mkdtempSync, symlinkSync, rmSync } from "fs";
+import { mkdtempSync, copyFileSync, rmSync, mkdirSync, readdirSync, existsSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
 import { randomUUID } from "crypto";
@@ -7,6 +7,7 @@ import { readFileSync } from "fs";
 import type { GlobalConfig, AgentConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
 import { CREDENTIALS_DIR } from "../shared/paths.js";
+import { parseCredentialRef } from "../shared/credentials.js";
 import {
   launchContainer,
   removeContainer,
@@ -66,7 +67,19 @@ export class ContainerAgentRunner {
         }
         // Forward info-level log events to status tracker
         if (level !== "debug") {
-          this.statusTracker?.addLogLine(this.agentConfig.name, msg);
+          this.statusTracker?.addLogLine(this.agentConfig.name, level === "error" ? `ERROR: ${msg}` : msg);
+        }
+        // Surface tool errors to status tracker for TUI display
+        if (level === "error" && msg === "tool error" && data.result) {
+          let errorMsg = String(data.result);
+          try {
+            const parsed = JSON.parse(data.result);
+            if (parsed?.content?.[0]?.text) {
+              errorMsg = parsed.content[0].text;
+            }
+          } catch { /* use raw string */ }
+          const cmdPrefix = data.cmd ? `$ ${String(data.cmd).slice(0, 80)} — ` : "";
+          this.statusTracker?.setAgentError(this.agentConfig.name, `${cmdPrefix}${errorMsg.slice(0, 200)}`);
         }
         return;
       }
@@ -159,6 +172,7 @@ export class ContainerAgentRunner {
     this.statusTracker?.setAgentState(this.agentConfig.name, "running");
     this.logger.info(`Starting ${this.agentConfig.name} container run`);
     const runStartTime = Date.now();
+    let runError: string | undefined;
 
     const shutdownSecret = randomUUID();
     const stagingDir = mkdtempSync(join(tmpdir(), "al-creds-"));
@@ -169,21 +183,30 @@ export class ContainerAgentRunner {
       const image = this.globalConfig.docker?.image || "al-agent:latest";
       const timeout = this.globalConfig.docker?.timeout || 3600;
 
-      // Symlink credentials into staging dir
-      // Always include anthropic-key
-      const allCreds = new Set([...this.agentConfig.credentials, "anthropic-key"]);
-      for (const cred of allCreds) {
-        const src = resolve(CREDENTIALS_DIR, cred);
-        const dst = join(stagingDir, cred);
-        try {
-          symlinkSync(src, dst);
-        } catch (err: any) {
-          this.logger.warn({ cred, err: err.message }, "failed to symlink credential");
+      // Copy credentials into staging dir with directory-based layout
+      // Layout: stagingDir/<type>/<instance>/<field>
+      for (const credRef of this.agentConfig.credentials) {
+        const { type, instance } = parseCredentialRef(credRef);
+        const srcDir = resolve(CREDENTIALS_DIR, type, instance);
+        const dstDir = join(stagingDir, type, instance);
+
+        if (!existsSync(srcDir)) {
+          this.logger.warn({ cred: credRef }, "credential directory not found");
+          continue;
+        }
+
+        mkdirSync(dstDir, { recursive: true });
+        for (const file of readdirSync(srcDir)) {
+          try {
+            copyFileSync(resolve(srcDir, file), join(dstDir, file));
+          } catch (err: any) {
+            this.logger.warn({ cred: credRef, file, err: err.message }, "failed to copy credential file");
+          }
         }
       }
 
-      // Read AGENTS.md from disk and include it in the serialized config
-      const agentsMdPath = resolve(this.projectPath, this.agentConfig.name, "AGENTS.md");
+      // Read PLAYBOOK.md from disk and include it in the serialized config
+      const agentsMdPath = resolve(this.projectPath, this.agentConfig.name, "PLAYBOOK.md");
       const agentsMd = readFileSync(agentsMdPath, "utf-8");
       const configWithMd = { ...this.agentConfig, _agentsMd: agentsMd };
 
@@ -219,11 +242,13 @@ export class ContainerAgentRunner {
 
       if (exitCode !== 0) {
         this.logger.error({ exitCode, elapsed: `${elapsed}s` }, "container exited with error");
+        runError = `Container exited with code ${exitCode}`;
       } else {
         this.logger.info({ exitCode, elapsed: `${elapsed}s` }, "container finished");
       }
     } catch (err: any) {
       this.logger.error({ err }, `${this.agentConfig.name} container run failed`);
+      runError = String(err?.message || err).slice(0, 200);
     } finally {
       if (logStream) logStream.stop();
       // Clean up staging dir
@@ -234,7 +259,7 @@ export class ContainerAgentRunner {
         removeContainer(containerName);
       }
       const elapsed = Date.now() - runStartTime;
-      this.statusTracker?.completeRun(this.agentConfig.name, elapsed);
+      this.statusTracker?.completeRun(this.agentConfig.name, elapsed, runError);
       this._running = false;
     }
   }

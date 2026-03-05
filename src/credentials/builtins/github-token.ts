@@ -2,11 +2,10 @@ import type { CredentialDefinition } from "../schema.js";
 import { validateGitHubToken } from "../../setup/validators.js";
 
 const githubToken: CredentialDefinition = {
-  id: "github-token",
+  id: "github_token",
   label: "GitHub Personal Access Token",
   description: "Needs repo and workflow scopes",
   helpUrl: "https://github.com/settings/tokens",
-  filename: "github-token",
   fields: [
     { name: "token", label: "Token", description: "GitHub PAT (ghp_...)", secret: true },
   ],

@@ -9,7 +9,7 @@ Credentials are stored as files in `~/.action-llama-credentials/`. Each credenti
 | `github-token` | `github-token` | GitHub PAT with repo and workflow scopes | `GITHUB_TOKEN` |
 | `anthropic-key` | `anthropic-key` | Anthropic API key, OAuth token, or pi auth | _(read by SDK)_ |
 | `sentry-token` | `sentry-token` | Sentry auth token for error monitoring | `SENTRY_AUTH_TOKEN` |
-| `id_rsa` | `id_rsa` | SSH private key for git over SSH | _(mounted as file)_ |
+| `id_rsa` | `id_rsa`, `git-name`, `git-email` | SSH private key + git author identity | _(mounted as file)_. `git-name`/`git-email` set `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL` env vars. |
 | `github-webhook-secret` | `github-webhook-secret` | Shared secret for GitHub webhook verification | _(used by gateway)_ |
 | `sentry-client-secret` | `sentry-client-secret` | Client secret for Sentry webhook verification | _(used by gateway)_ |
 
@@ -23,6 +23,8 @@ Credentials are stored as files in `~/.action-llama-credentials/`. Each credenti
 2. **Storage**: Credential values live in `~/.action-llama-credentials/<filename>`. Single-value credentials are plain text files. Multi-value credentials are JSON.
 
 3. **Injection**: At runtime, credentials with `envVars` are injected as environment variables into the agent's container/process.
+
+4. **Git identity**: The `id_rsa` credential includes companion files `git-name` and `git-email` (prompted during `al new`/`al setup`). These are injected as `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL` and `GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` env vars at runtime, so `git commit` works without requiring `git config`.
 
 ## Setting Up Credentials
 

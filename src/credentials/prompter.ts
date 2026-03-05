@@ -1,18 +1,12 @@
 import { input, confirm } from "@inquirer/prompts";
 import type { CredentialDefinition, CredentialPromptResult } from "./schema.js";
-import { loadCredential } from "../shared/credentials.js";
-import { loadStructuredCredential } from "../shared/credentials.js";
+import { loadCredentialFields } from "../shared/credentials.js";
 
 /**
- * Load existing credential values from disk, respecting single vs structured storage.
+ * Load existing credential values from disk.
  */
-function loadExistingValues(def: CredentialDefinition): Record<string, string> | undefined {
-  if (def.fields.length === 1) {
-    const raw = loadCredential(def.filename);
-    if (!raw) return undefined;
-    return { [def.fields[0].name]: raw };
-  }
-  return loadStructuredCredential(def.filename);
+function loadExistingValues(def: CredentialDefinition, instance: string): Record<string, string> | undefined {
+  return loadCredentialFields(def.id, instance);
 }
 
 /**
@@ -27,9 +21,10 @@ function loadExistingValues(def: CredentialDefinition): Record<string, string> |
  * 6. Return field values (or undefined if user declined)
  */
 export async function promptCredential(
-  def: CredentialDefinition
+  def: CredentialDefinition,
+  instance: string = "default"
 ): Promise<CredentialPromptResult | undefined> {
-  const existing = loadExistingValues(def);
+  const existing = loadExistingValues(def, instance);
 
   // Custom prompt handler — delegates entirely
   if (def.prompt) {
@@ -56,9 +51,6 @@ export async function promptCredential(
   for (const field of def.fields) {
     const value = await input({
       message: `${field.label}:`,
-      // TODO: inquirer doesn't have a native "secret" mode in @inquirer/prompts input;
-      // for now we rely on terminal not echoing for password-type prompts.
-      // The `secret` field is available for future password-input support.
       validate: (v) => (v.trim().length > 0 ? true : `${field.label} is required`),
     });
     values[field.name] = value.trim();

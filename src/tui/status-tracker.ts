@@ -2,8 +2,9 @@ import { EventEmitter } from "events";
 
 export interface AgentStatus {
   name: string;
-  state: "idle" | "running";
+  state: "idle" | "running" | "error";
   statusText: string | null;
+  lastError: string | null;
   lastRunAt: Date | null;
   lastRunDuration: number | null; // ms
   nextRunAt: Date | null;
@@ -35,6 +36,7 @@ export class StatusTracker extends EventEmitter {
       name,
       state: "idle",
       statusText: null,
+      lastError: null,
       lastRunAt: null,
       lastRunDuration: null,
       nextRunAt: null,
@@ -42,12 +44,13 @@ export class StatusTracker extends EventEmitter {
     this.emit("update");
   }
 
-  setAgentState(name: string, state: "idle" | "running"): void {
+  setAgentState(name: string, state: "idle" | "running" | "error"): void {
     const agent = this.agents.get(name);
     if (!agent) return;
     agent.state = state;
     if (state === "running") {
       agent.statusText = null;
+      agent.lastError = null;
     }
     this.emit("update");
   }
@@ -59,13 +62,23 @@ export class StatusTracker extends EventEmitter {
     this.emit("update");
   }
 
-  completeRun(name: string, durationMs: number): void {
+  setAgentError(name: string, error: string): void {
     const agent = this.agents.get(name);
     if (!agent) return;
-    agent.state = "idle";
+    agent.lastError = error;
+    this.emit("update");
+  }
+
+  completeRun(name: string, durationMs: number, error?: string): void {
+    const agent = this.agents.get(name);
+    if (!agent) return;
+    agent.state = error ? "error" : "idle";
     agent.lastRunAt = new Date();
     agent.lastRunDuration = durationMs;
     agent.statusText = null;
+    if (error) {
+      agent.lastError = error;
+    }
     this.emit("update");
   }
 

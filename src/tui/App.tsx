@@ -58,34 +58,45 @@ function Header({ info, agentCount }: { info: SchedulerInfo | null; agentCount: 
 }
 
 function AgentRow({ agent }: { agent: AgentStatus }) {
-  const stateColor = agent.state === "running" ? "green" : "white";
-  const stateLabel = agent.state === "running" ? "Running" : "Idle";
+  const stateColor = agent.state === "running" ? "green" : agent.state === "error" ? "red" : "white";
+  const stateLabel = agent.state === "running" ? "Running" : agent.state === "error" ? "Error" : "Idle";
+
+  // Show status text, or last error for error state
+  const detail = agent.statusText
+    ? `"${agent.statusText}"`
+    : agent.state === "error" && agent.lastError
+      ? agent.lastError
+      : "";
 
   return (
-    <Box>
-      <Box width={12}>
-        <Text bold>{agent.name}</Text>
-      </Box>
-      <Box width={10}>
-        <Text color={stateColor}>{stateLabel}</Text>
-      </Box>
-      <Box width={30}>
-        <Text dimColor>
-          {agent.statusText ? `"${agent.statusText}"` : ""}
-        </Text>
-      </Box>
-      <Box width={20}>
-        <Text dimColor>
-          {agent.lastRunAt
-            ? `Last: ${formatRelativeTime(agent.lastRunAt)}${agent.lastRunDuration !== null ? ` (${formatDuration(agent.lastRunDuration)})` : ""}`
-            : ""}
-        </Text>
-      </Box>
+    <Box flexDirection="column">
       <Box>
-        <Text dimColor>
-          {agent.nextRunAt ? `Next: ${formatTimeUntil(agent.nextRunAt)}` : ""}
-        </Text>
+        <Box width={12}>
+          <Text bold>{agent.name}</Text>
+        </Box>
+        <Box width={10}>
+          <Text color={stateColor}>{stateLabel}</Text>
+        </Box>
+        <Box width={30}>
+          <Text dimColor>
+            {agent.lastRunAt
+              ? `Last: ${formatRelativeTime(agent.lastRunAt)}${agent.lastRunDuration !== null ? ` (${formatDuration(agent.lastRunDuration)})` : ""}`
+              : ""}
+          </Text>
+        </Box>
+        <Box>
+          <Text dimColor>
+            {agent.nextRunAt ? `Next: ${formatTimeUntil(agent.nextRunAt)}` : ""}
+          </Text>
+        </Box>
       </Box>
+      {detail ? (
+        <Box paddingLeft={2}>
+          <Text color={agent.state === "error" ? "red" : undefined} dimColor={agent.state !== "error"} wrap="truncate-end">
+            {detail.slice(0, 120)}
+          </Text>
+        </Box>
+      ) : null}
     </Box>
   );
 }

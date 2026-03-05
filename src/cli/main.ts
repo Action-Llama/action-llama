@@ -66,6 +66,15 @@ program
     await execute(opts);
   });
 
+program
+  .command("console")
+  .description("Open an interactive Pi coding console with project context")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(async (opts) => {
+    const { execute } = await import("./commands/console.js");
+    await execute(opts);
+  });
+
 program.parseAsync().catch((err) => {
   const detail: Record<string, unknown> = { error: err.message };
   if (err.cause) detail.cause = String(err.cause);

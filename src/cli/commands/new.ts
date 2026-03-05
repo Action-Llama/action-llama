@@ -1,48 +1,45 @@
 import { resolve } from "path";
 import { execSync } from "child_process";
-import { runSetup } from "../../setup/prompts.js";
-import { writeCredential, loadCredential } from "../../shared/credentials.js";
 import { scaffoldProject } from "../../setup/scaffold.js";
 import { CREDENTIALS_DIR } from "../../shared/paths.js";
+import { resolveCredential } from "../../credentials/registry.js";
+import { promptCredential } from "../../credentials/prompter.js";
+import { writeCredentialFields, loadCredentialField } from "../../shared/credentials.js";
+import type { GlobalConfig } from "../../shared/config.js";
 
 export async function execute(name: string): Promise<void> {
+  if (!name) throw new Error("Project name is required");
   const projectPath = resolve(process.cwd(), name);
 
-  const { globalConfig, secrets } = await runSetup();
+  console.log("\n=== Action Llama — New Project ===\n");
 
-  console.log("\n--- Writing configuration ---\n");
+  // Only prompt for the Anthropic credential; other credentials are
+  // handled per-agent by `al setup` (which runs automatically before `al start`).
+  console.log("--- Anthropic Auth ---\n");
+  const anthropicDef = resolveCredential("anthropic_key");
+  const result = await promptCredential(anthropicDef);
 
-  // Only write credentials if they're new or changed
-  if (secrets.githubToken && secrets.githubToken !== loadCredential("github-token")) {
-    writeCredential("github-token", secrets.githubToken);
-    console.log(`  Wrote ${CREDENTIALS_DIR}/github-token`);
-  } else {
-    console.log(`  GitHub token unchanged`);
-  }
-
-  if (secrets.anthropicKey && secrets.anthropicKey !== loadCredential("anthropic-key")) {
-    writeCredential("anthropic-key", secrets.anthropicKey);
-    console.log(`  Wrote ${CREDENTIALS_DIR}/anthropic-key`);
-  } else if (secrets.anthropicKey) {
-    console.log(`  Anthropic key unchanged`);
+  if (result && Object.keys(result.values).length > 0) {
+    const existing = loadCredentialField("anthropic_key", "default", "token");
+    const newValue = result.values.token;
+    if (newValue && newValue !== existing) {
+      writeCredentialFields("anthropic_key", "default", result.values);
+      console.log(`  Wrote ${CREDENTIALS_DIR}/anthropic_key/default/`);
+    } else {
+      console.log(`  Anthropic key unchanged`);
+    }
   } else {
     console.log("  Using existing pi auth (no key file needed)");
   }
 
-  if (secrets.sshKey && secrets.sshKey !== loadCredential("id_rsa")) {
-    writeCredential("id_rsa", secrets.sshKey.trimEnd());
-    console.log(`  Wrote ${CREDENTIALS_DIR}/id_rsa`);
-  } else if (loadCredential("id_rsa")) {
-    console.log(`  SSH key unchanged`);
-  }
+  console.log("\n--- Writing configuration ---\n");
+
+  const globalConfig: GlobalConfig = {};
 
   scaffoldProject(projectPath, globalConfig, [], name);
 
   console.log(`  Wrote ${projectPath}/package.json`);
   console.log(`  Wrote ${projectPath}/AGENTS.md`);
-  if (Object.keys(globalConfig).length > 0) {
-    console.log(`  Wrote ${projectPath}/config.json`);
-  }
   console.log(`  Created state directories`);
 
   console.log("\n--- Installing dependencies ---\n");

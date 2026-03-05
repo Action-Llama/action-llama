@@ -1,10 +1,9 @@
 // --- Credential definition schema ---
-// Each credential is defined as a code object implementing this interface.
-// Built-in credentials ship with action-llama; custom credentials can be
-// defined inline in agent definitions or as standalone modules.
+// Each credential type is a directory under CREDENTIALS_DIR/<type>/<instance>/
+// containing one file per field. Built-in credentials ship with action-llama.
 
 export interface CredentialField {
-  name: string;           // field key, e.g. "token", "clientId"
+  name: string;           // field key and filename on disk, e.g. "token", "id_rsa"
   label: string;          // human-readable, e.g. "Client ID"
   description: string;    // help text shown during prompting
   secret: boolean;        // mask input during prompting
@@ -16,18 +15,13 @@ export interface CredentialPromptResult {
 }
 
 export interface CredentialDefinition {
-  id: string;             // unique identifier, e.g. "github-token"
+  id: string;             // credential type, e.g. "github_token" — also the directory name
   label: string;          // "GitHub Personal Access Token"
   description: string;    // "Used for repo access and webhook management"
   helpUrl?: string;       // "https://github.com/settings/tokens"
 
-  // Storage
-  filename: string;       // file in ~/.action-llama-credentials/
-
-  // Shape: single value or structured
+  // Shape: one file per field under <type>/<instance>/
   fields: CredentialField[];
-  // single field → stored as plain text (backward compatible)
-  // multiple fields → stored as JSON object
 
   // Runtime injection
   envVars?: Record<string, string>;

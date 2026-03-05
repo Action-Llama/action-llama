@@ -5,7 +5,7 @@ import type { WebhookContext } from "../../src/webhooks/types.js";
 
 const agentConfig: AgentConfig = {
   name: "dev",
-  credentials: ["github-token"],
+  credentials: ["github_token:default"],
   model: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
   schedule: "*/5 * * * *",
   repos: ["acme/app"],
@@ -14,20 +14,26 @@ const agentConfig: AgentConfig = {
 
 describe("buildCredentialContext", () => {
   it("includes github token context when credential present", () => {
-    const result = buildCredentialContext(["github-token"]);
+    const result = buildCredentialContext(["github_token:default"]);
     expect(result).toContain("GITHUB_TOKEN");
     expect(result).toContain("gh");
     expect(result).toContain("credential-context");
   });
 
   it("includes sentry token context when credential present", () => {
-    const result = buildCredentialContext(["github-token", "sentry-token"]);
+    const result = buildCredentialContext(["github_token:default", "sentry_token:default"]);
     expect(result).toContain("SENTRY_AUTH_TOKEN");
     expect(result).toContain("curl");
   });
 
+  it("documents git author identity", () => {
+    const result = buildCredentialContext(["github_token:default"]);
+    expect(result).toContain("GIT_AUTHOR_NAME");
+    expect(result).toContain("git-name");
+  });
+
   it("includes anti-exfiltration policy", () => {
-    const result = buildCredentialContext(["github-token"]);
+    const result = buildCredentialContext(["github_token:default"]);
     expect(result).toContain("Anti-exfiltration");
     expect(result).toContain("NEVER output credentials");
     expect(result).toContain("/shutdown");

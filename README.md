@@ -9,7 +9,7 @@ Run agents like scripts: triggered by cron or webhooks.
 Dev Experience:
 
 1. Either a webhook or cron wakes up the agent
-2. The agent runs according the instructions in AGENTS.md you define
+2. The agent runs according to the instructions in PLAYBOOK.md you define
 3. The agent shuts down
 
 Key features:
@@ -52,7 +52,7 @@ The console is a TUI powered by [Pi](https://github.com/badlogic/pi-mono) that h
 
 You can also create agents manually — see the [creating agents guide](docs/creating-agents.md).
 
-Or, if you're using your own coding agent just make sure it reads the AGENTS.md in your project root. It should then have everything it needs to create agents.
+Or, if you're using your own coding agent just make sure it reads the AGENTS.md in your project root. It contains everything needed to create agents (including a complete example playbook).
 
 ### 3. Run
 
@@ -75,11 +75,11 @@ npx al setup
 ```
 my-project/
   package.json              # Includes @action-llama/action-llama as a dependency
-  AGENTS.md                 # Project overview and agent creation guide
+  AGENTS.md                 # Project overview, credential/webhook reference, example playbook
   config.json               # Global config: docker, gateway, webhooks (no secrets)
   dev/                      # One directory per agent
     agent-config.toml       # Agent config: credentials, repos, model, schedule, webhooks, params
-    AGENTS.md               # Agent instructions (system prompt) — edit to customize behavior
+    PLAYBOOK.md             # Agent instructions (system prompt) — edit to customize behavior
 ```
 
 ## CLI commands
@@ -217,7 +217,7 @@ src/
 
 ### Extension points
 
-- **New agent** — create a directory with an `agent-config.toml` and `AGENTS.md` in your project. See [creating agents](docs/creating-agents.md).
+- **New agent** — create a directory with an `agent-config.toml` and `PLAYBOOK.md` in your project. See [creating agents](docs/creating-agents.md).
 - **New webhook provider** — implement the `WebhookProvider` interface in `src/webhooks/providers/` and register it in `src/scheduler/index.ts`. The registry handles routing by `source` field.
 - **Custom runner** — subclass or replace `AgentRunner` in `src/agents/runner.ts` to change how agent sessions are created (different model providers, tool sets, etc.).
 - **Gateway routes** — add routes in `src/gateway/routes/` and register them in `src/gateway/index.ts`.

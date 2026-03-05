@@ -2,17 +2,8 @@ import { resolve } from "path";
 import { discoverAgents, loadAgentConfig, loadGlobalConfig } from "../../shared/config.js";
 import { resolveCredential } from "../../credentials/registry.js";
 import { promptCredential } from "../../credentials/prompter.js";
-import { loadCredential, writeCredential, writeStructuredCredential } from "../../shared/credentials.js";
+import { parseCredentialRef, credentialExists, writeCredentialFields } from "../../shared/credentials.js";
 import type { CredentialDefinition } from "../../credentials/schema.js";
-
-function writeCredentialValues(def: CredentialDefinition, values: Record<string, string>): void {
-  if (Object.keys(values).length === 0) return;
-  if (def.fields.length === 1) {
-    writeCredential(def.filename, values[def.fields[0].name]);
-  } else {
-    writeStructuredCredential(def.filename, values);
-  }
-}
 
 export async function execute(opts: { project: string }): Promise<void> {
   const projectPath = resolve(opts.project);
@@ -23,46 +14,46 @@ export async function execute(opts: { project: string }): Promise<void> {
     return;
   }
 
-  // Collect all credential IDs from agents and global config
-  const credentialIds = new Set<string>();
+  // Collect all credential refs from agents and global config
+  const credentialRefs = new Set<string>();
 
   for (const name of agents) {
     const config = loadAgentConfig(projectPath, name);
-    for (const id of config.credentials) {
-      credentialIds.add(id);
+    for (const ref of config.credentials) {
+      credentialRefs.add(ref);
     }
   }
 
   const globalConfig = loadGlobalConfig(projectPath);
   if (globalConfig.webhooks?.secretCredentials) {
-    for (const id of Object.values(globalConfig.webhooks.secretCredentials)) {
-      credentialIds.add(id);
+    for (const ref of Object.values(globalConfig.webhooks.secretCredentials)) {
+      credentialRefs.add(ref);
     }
   }
 
-  if (credentialIds.size === 0) {
+  if (credentialRefs.size === 0) {
     console.log("No credentials required by any agent.");
     return;
   }
 
-  console.log(`\nChecking ${credentialIds.size} credential(s)...\n`);
+  console.log(`\nChecking ${credentialRefs.size} credential(s)...\n`);
 
   let okCount = 0;
   let promptedCount = 0;
 
-  for (const id of credentialIds) {
-    const def = resolveCredential(id);
-    const existing = loadCredential(def.filename);
+  for (const ref of credentialRefs) {
+    const { type, instance } = parseCredentialRef(ref);
+    const def = resolveCredential(type);
 
-    if (existing) {
-      console.log(`  [ok] ${def.label}`);
+    if (credentialExists(type, instance)) {
+      console.log(`  [ok] ${def.label} (${ref})`);
       okCount++;
       continue;
     }
 
-    const result = await promptCredential(def);
+    const result = await promptCredential(def, instance);
     if (result && Object.keys(result.values).length > 0) {
-      writeCredentialValues(def, result.values);
+      writeCredentialFields(type, instance, result.values);
       promptedCount++;
     }
   }

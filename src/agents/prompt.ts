@@ -2,6 +2,7 @@ import type { AgentConfig } from "../shared/config.js";
 import type { WebhookContext } from "../webhooks/types.js";
 import type { CredentialDefinition } from "../credentials/schema.js";
 import { resolveCredential } from "../credentials/registry.js";
+import { parseCredentialRef } from "../shared/credentials.js";
 
 function buildConfigBlock(agentConfig: AgentConfig): string {
   return JSON.stringify({
@@ -18,10 +19,11 @@ export function buildCredentialContext(credentials: string[]): string {
     "Environment variables already set from credentials:",
   ];
 
-  for (const credId of credentials) {
+  for (const credRef of credentials) {
+    const { type } = parseCredentialRef(credRef);
     let def: CredentialDefinition | undefined;
     try {
-      def = resolveCredential(credId);
+      def = resolveCredential(type);
     } catch {
       // Unknown credential — skip context line
     }
@@ -31,11 +33,8 @@ export function buildCredentialContext(credentials: string[]): string {
     }
   }
 
-  // Also note GH_TOKEN alias when github-token is present
-  if (credentials.includes("github-token")) {
-    // agentContext already mentions GH_TOKEN, but ensure env var is documented
-  }
-
+  lines.push("");
+  lines.push("Git author identity is pre-configured via `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL` env vars (from `git-name`/`git-email` credential files). Commits will automatically use this identity.");
   lines.push("");
   lines.push("Use standard tools directly: `gh` CLI, `git`, `curl`.");
   lines.push("");

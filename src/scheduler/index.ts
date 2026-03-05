@@ -2,7 +2,7 @@ import { Cron } from "croner";
 import { mkdirSync } from "fs";
 import { loadGlobalConfig, loadAgentConfig, discoverAgents, validateAgentConfig } from "../shared/config.js";
 import type { GlobalConfig, AgentConfig } from "../shared/config.js";
-import { requireCredential, loadCredential } from "../shared/credentials.js";
+import { requireCredentialRef, parseCredentialRef, loadCredentialField } from "../shared/credentials.js";
 import { createLogger, createFileOnlyLogger } from "../shared/logger.js";
 import { agentDir } from "../shared/paths.js";
 import { AgentRunner } from "../agents/runner.js";
@@ -41,13 +41,25 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // Validate credentials exist for each agent
   const allCredentials = new Set(agentConfigs.flatMap((a) => a.credentials));
-  for (const cred of allCredentials) {
-    requireCredential(cred);
+  for (const credRef of allCredentials) {
+    requireCredentialRef(credRef);
   }
 
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const dockerEnabled = globalConfig.docker?.enabled === true;
   const anyWebhooks = agentConfigs.some((a) => a.webhooks?.filters?.length);
+
+  // Validate pi_auth is not used with Docker (containers can't access host auth storage)
+  if (dockerEnabled) {
+    for (const config of agentConfigs) {
+      if (config.model.authType === "pi_auth") {
+        throw new Error(
+          `Agent "${config.name}" uses pi_auth which is not supported in Docker mode. ` +
+          `Either switch to api_key/oauth_token (run 'al setup') or use --dangerous-no-docker.`
+        );
+      }
+    }
+  }
 
   // Set up webhook registry if any agents use webhooks
   let webhookRegistry: WebhookRegistry | undefined;
@@ -61,17 +73,19 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     webhookRegistry.registerProvider(new SentryWebhookProvider());
 
     // Load GitHub webhook secret from credentials (if configured)
-    const githubSecretCredName = globalConfig.webhooks?.secretCredentials?.github
-      || "github-webhook-secret";
-    const githubSecret = loadCredential(githubSecretCredName);
+    const githubSecretRef = globalConfig.webhooks?.secretCredentials?.github
+      || "github_webhook_secret:default";
+    const { type: ghType, instance: ghInst } = parseCredentialRef(githubSecretRef);
+    const githubSecret = loadCredentialField(ghType, ghInst, "secret");
     if (githubSecret) {
       webhookSecrets.github = githubSecret;
     }
 
     // Load Sentry webhook secret from credentials (if configured)
-    const sentrySecretCredName = globalConfig.webhooks?.secretCredentials?.sentry
-      || "sentry-client-secret";
-    const sentrySecret = loadCredential(sentrySecretCredName);
+    const sentrySecretRef = globalConfig.webhooks?.secretCredentials?.sentry
+      || "sentry_client_secret:default";
+    const { type: sType, instance: sInst } = parseCredentialRef(sentrySecretRef);
+    const sentrySecret = loadCredentialField(sType, sInst, "secret");
     if (sentrySecret) {
       webhookSecrets.sentry = sentrySecret;
     }

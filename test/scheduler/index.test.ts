@@ -6,9 +6,16 @@ import { stringify as stringifyTOML } from "smol-toml";
 
 // Mock credentials
 vi.mock("../../src/shared/credentials.js", () => ({
-  loadCredential: () => "fake-token",
-  requireCredential: () => "fake-token",
-  writeCredential: () => {},
+  loadCredentialField: () => "fake-token",
+  requireCredentialRef: () => {},
+  parseCredentialRef: (ref: string) => {
+    const sep = ref.indexOf(":");
+    if (sep === -1) return { type: ref, instance: "default" };
+    return { type: ref.slice(0, sep).trim(), instance: ref.slice(sep + 1).trim() };
+  },
+  writeCredentialField: () => {},
+  writeCredentialFields: () => {},
+  credentialExists: () => true,
 }));
 
 // Mock croner — capture the callbacks
@@ -57,9 +64,9 @@ function setupProject(tmpDir: string) {
 
   const model = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" };
   const agents = [
-    { name: "dev", credentials: ["github-token"], model, schedule: "*/5 * * * *", repos: ["acme/app"] },
-    { name: "reviewer", credentials: ["github-token"], model, schedule: "*/5 * * * *", repos: ["acme/app"] },
-    { name: "devops", credentials: ["github-token"], model, schedule: "*/15 * * * *", repos: ["acme/app"] },
+    { name: "dev", credentials: ["github_token:default"], model, schedule: "*/5 * * * *", repos: ["acme/app"] },
+    { name: "reviewer", credentials: ["github_token:default"], model, schedule: "*/5 * * * *", repos: ["acme/app"] },
+    { name: "devops", credentials: ["github_token:default"], model, schedule: "*/15 * * * *", repos: ["acme/app"] },
   ];
 
   for (const agent of agents) {

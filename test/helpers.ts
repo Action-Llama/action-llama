@@ -21,7 +21,7 @@ const DEFAULT_GLOBAL: GlobalConfig = {};
 const DEFAULT_AGENTS: AgentConfig[] = [
   {
     name: "dev",
-    credentials: ["github-token"],
+    credentials: ["github_token:default"],
     model: DEFAULT_MODEL,
     schedule: "*/5 * * * *",
     repos: ["acme/app"],
@@ -29,14 +29,14 @@ const DEFAULT_AGENTS: AgentConfig[] = [
   },
   {
     name: "reviewer",
-    credentials: ["github-token"],
+    credentials: ["github_token:default"],
     model: DEFAULT_MODEL,
     schedule: "*/5 * * * *",
     repos: ["acme/app"],
   },
   {
     name: "devops",
-    credentials: ["github-token"],
+    credentials: ["github_token:default"],
     model: DEFAULT_MODEL,
     schedule: "*/15 * * * *",
     repos: ["acme/app"],

@@ -5,7 +5,7 @@ A developer agent that picks up GitHub issues and implements the requested chang
 ## `agent-config.toml`
 
 ```toml
-credentials = ["anthropic-key", "github-token"]
+credentials = ["anthropic-key", "github-token", "id_rsa"]
 repos = ["acme/app"]
 schedule = "*/5 * * * *"
 
@@ -27,6 +27,6 @@ triggerLabel = "agent"
 assignee = "your-github-username"
 ```
 
-## `AGENTS.md`
+## `PLAYBOOK.md`
 
-See [dev-AGENTS.md](dev-AGENTS.md) for the complete system prompt to copy into your agent directory.
+See [dev-PLAYBOOK.md](dev-PLAYBOOK.md) for the complete system prompt to copy into your agent directory.

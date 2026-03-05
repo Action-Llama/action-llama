@@ -1,23 +1,17 @@
 import { input, select, confirm } from "@inquirer/prompts";
 import { validateGitHubToken } from "./validators.js";
-import { writeCredential, writeStructuredCredential } from "../shared/credentials.js";
+import { writeCredentialFields } from "../shared/credentials.js";
 import type { GlobalConfig, ModelConfig } from "../shared/config.js";
 import { resolveCredential } from "../credentials/registry.js";
 import { promptCredential } from "../credentials/prompter.js";
 import type { CredentialDefinition, CredentialPromptResult } from "../credentials/schema.js";
 
 /**
- * Write credential values to disk based on the definition's field count.
- * Single-field: plain text (backward compatible). Multi-field: JSON.
+ * Write credential values to disk using the directory-based layout.
  */
-function writeCredentialValues(def: CredentialDefinition, values: Record<string, string>): void {
+function writeCredentialValues(def: CredentialDefinition, values: Record<string, string>, instance: string = "default"): void {
   if (Object.keys(values).length === 0) return; // e.g. pi_auth
-  if (def.fields.length === 1) {
-    const fieldName = def.fields[0].name;
-    writeCredential(def.filename, values[fieldName]);
-  } else {
-    writeStructuredCredential(def.filename, values);
-  }
+  writeCredentialFields(def.id, instance, values);
 }
 
 /**
@@ -25,11 +19,12 @@ function writeCredentialValues(def: CredentialDefinition, values: Record<string,
  * Returns the prompt result (values + optional params), or undefined if skipped.
  */
 async function promptAndStoreCredential(
-  def: CredentialDefinition
+  def: CredentialDefinition,
+  instance: string = "default"
 ): Promise<CredentialPromptResult | undefined> {
-  const result = await promptCredential(def);
+  const result = await promptCredential(def, instance);
   if (result && Object.keys(result.values).length > 0) {
-    writeCredentialValues(def, result.values);
+    writeCredentialValues(def, result.values, instance);
   }
   return result;
 }
@@ -50,7 +45,7 @@ export async function runSetup(): Promise<{
   console.log("--- Step 1: Credentials ---\n");
 
   // GitHub token (always required)
-  const githubTokenDef = resolveCredential("github-token");
+  const githubTokenDef = resolveCredential("github_token");
   const githubTokenResult = await promptAndStoreCredential(githubTokenDef);
   if (!githubTokenResult) throw new Error("GitHub token is required");
   const githubToken = githubTokenResult.values.token;
@@ -63,15 +58,15 @@ export async function runSetup(): Promise<{
     throw new Error(`GitHub validation failed: ${err.message}`);
   }
 
-  // SSH key
-  console.log("--- Git SSH Key ---\n");
-  const sshKeyDef = resolveCredential("id_rsa");
-  const sshKeyResult = await promptAndStoreCredential(sshKeyDef);
-  const sshKey = sshKeyResult?.values.key;
+  // SSH key + git identity
+  console.log("--- Git SSH Key & Identity ---\n");
+  const gitSshDef = resolveCredential("git_ssh");
+  const sshKeyResult = await promptAndStoreCredential(gitSshDef);
+  const sshKey = sshKeyResult?.values.id_rsa;
 
   // Anthropic auth
   console.log("\n--- Anthropic Auth ---\n");
-  const anthropicDef = resolveCredential("anthropic-key");
+  const anthropicDef = resolveCredential("anthropic_key");
   const anthropicResult = await promptAndStoreCredential(anthropicDef);
   const anthropicKey = anthropicResult?.values.token;
 

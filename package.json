@@ -48,8 +48,8 @@
   },
   "dependencies": {
     "@inquirer/prompts": "^7",
-    "@mariozechner/pi-ai": "latest",
-    "@mariozechner/pi-coding-agent": "latest",
+    "@mariozechner/pi-ai": "^0.56.1",
+    "@mariozechner/pi-coding-agent": "^0.56.1",
     "commander": "^14.0.3",
     "croner": "latest",
     "ink": "^6.8.0",
