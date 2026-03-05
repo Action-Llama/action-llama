@@ -43,7 +43,7 @@ authType = "api_key"
 
 Credentials are managed by the user via \`al setup\` and stored in \`~/.action-llama-credentials/\`.
 
-**IMPORTANT:** Agents MUST NEVER ask users for credentials directly (API keys, tokens, passwords, etc.). Agents MUST NEVER run \`al setup\` or interact with the credential system on behalf of the user. If a credential is missing at runtime, the agent should report the error and stop — the user will run \`al setup\` themselves.
+**IMPORTANT:** Agents MUST NEVER ask users for credentials directly (API keys, tokens, passwords, etc.). Agents MUST NEVER run \`al setup\` or interact with the credential system on behalf of the user. If a credential is missing at runtime, the agent should report the error and stop — the user will run \`al setup\` and \`al start\` themselves.
 
 ## Documentation
 

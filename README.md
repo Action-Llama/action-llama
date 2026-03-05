@@ -54,20 +54,20 @@ You can also create agents manually — see the [creating agents guide](docs/cre
 
 Or, if you're using your own coding agent just make sure it reads the AGENTS.md in your project root. It should then have everything it needs to create agents.
 
-### 3. Set up remaining credentials
+### 3. Run
 
-Once your agents are ready, setup the credentials.
-
-```bash
-npx al setup
-```
-
-This scans your agents' `agent-config.toml` files, finds all required credentials, and prompts for any that are missing. Credentials are stored in `~/.action-llama-credentials/` (shared across projects, not committed to git).
-
-### 4. Run
+Once your agents are ready, run the gateway!
 
 ```bash
 npx al start
+```
+
+If any credentials are missing, it will prompt you for them. Credentials are stored in `~/.action-llama-credentials/` (shared across projects, not committed to git).
+
+If you want to set up credentials without starting the gateway:
+
+```bash
+npx al setup
 ```
 
 ### Project structure

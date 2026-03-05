@@ -56,7 +56,7 @@ Setup complete!
 
 Next steps:
   cd ${name}
-  Create agents by following the docs: https://github.com/action-llama/action-llama/blob/main/docs/creating-agents.md
-  npx al start
+  npx al console # Start an interactive console to create agents
+  npx al start # Start the gateway
 `);
 }
