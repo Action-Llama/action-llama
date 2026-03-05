@@ -1,5 +1,6 @@
 import { readFileSync, existsSync, readdirSync, statSync } from "fs";
 import { resolve, basename } from "path";
+import { parse as parseTOML } from "smol-toml";
 import type { WebhookTriggerConfig } from "../webhooks/types.js";
 
 // --- Global config (lives at <project>/config.json) ---
@@ -24,7 +25,7 @@ export interface GatewayConfig {
 }
 
 export interface WebhooksGlobalConfig {
-  githubSecretCredential?: string;
+  secretCredentials?: Record<string, string>;  // source → credential name
 }
 
 export interface GlobalConfig {
@@ -40,7 +41,6 @@ export interface AgentConfig {
   credentials: string[];
   model: ModelConfig;
   schedule?: string;
-  prompt: string;
   repos: string[];
   webhooks?: WebhookTriggerConfig;
   params?: Record<string, unknown>;
@@ -64,14 +64,23 @@ export function loadGlobalConfig(projectPath: string): GlobalConfig {
 }
 
 export function loadAgentConfig(projectPath: string, agentName: string): AgentConfig {
-  const configPath = resolve(projectPath, agentName, "config.json");
-  if (!existsSync(configPath)) {
+  const agentDir = resolve(projectPath, agentName);
+  const tomlPath = resolve(agentDir, "agent-config.toml");
+  const jsonPath = resolve(agentDir, "config.json");
+
+  let parsed: AgentConfig;
+  if (existsSync(tomlPath)) {
+    const raw = readFileSync(tomlPath, "utf-8");
+    parsed = parseTOML(raw) as unknown as AgentConfig;
+  } else if (existsSync(jsonPath)) {
+    const raw = readFileSync(jsonPath, "utf-8");
+    parsed = JSON.parse(raw) as AgentConfig;
+  } else {
     throw new Error(
-      `Agent config not found at ${configPath}.`
+      `Agent config not found at ${tomlPath} or ${jsonPath}.`
     );
   }
-  const raw = readFileSync(configPath, "utf-8");
-  const parsed = JSON.parse(raw) as AgentConfig;
+
   parsed.name = agentName;
   return parsed;
 }
@@ -95,7 +104,7 @@ export function discoverAgents(projectPath: string): string[] {
     if (entry.startsWith(".")) continue;
     const entryPath = resolve(projectPath, entry);
     if (!statSync(entryPath).isDirectory()) continue;
-    if (existsSync(resolve(entryPath, "config.json"))) {
+    if (existsSync(resolve(entryPath, "agent-config.toml")) || existsSync(resolve(entryPath, "config.json"))) {
       agents.push(entry);
     }
   }

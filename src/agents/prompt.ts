@@ -1,5 +1,7 @@
 import type { AgentConfig } from "../shared/config.js";
 import type { WebhookContext } from "../webhooks/types.js";
+import type { CredentialDefinition } from "../credentials/schema.js";
+import { resolveCredential } from "../credentials/registry.js";
 
 function buildConfigBlock(agentConfig: AgentConfig): string {
   return JSON.stringify({
@@ -16,11 +18,22 @@ export function buildCredentialContext(credentials: string[]): string {
     "Environment variables already set from credentials:",
   ];
 
-  if (credentials.includes("github-token")) {
-    lines.push("- `GITHUB_TOKEN` / `GH_TOKEN` — use `gh` CLI and `git` directly");
+  for (const credId of credentials) {
+    let def: CredentialDefinition | undefined;
+    try {
+      def = resolveCredential(credId);
+    } catch {
+      // Unknown credential — skip context line
+    }
+
+    if (def?.agentContext) {
+      lines.push(`- ${def.agentContext}`);
+    }
   }
-  if (credentials.includes("sentry-token")) {
-    lines.push("- `SENTRY_AUTH_TOKEN` — use `curl` for Sentry API requests");
+
+  // Also note GH_TOKEN alias when github-token is present
+  if (credentials.includes("github-token")) {
+    // agentContext already mentions GH_TOKEN, but ensure env var is documented
   }
 
   lines.push("");
@@ -39,12 +52,12 @@ export function buildCredentialContext(credentials: string[]): string {
 export function buildScheduledPrompt(agentConfig: AgentConfig): string {
   const configBlock = buildConfigBlock(agentConfig);
   const credentialBlock = buildCredentialContext(agentConfig.credentials);
-  return `<agent-config>\n${configBlock}\n</agent-config>\n\n${credentialBlock}\n\n${agentConfig.prompt}`;
+  return `<agent-config>\n${configBlock}\n</agent-config>\n\n${credentialBlock}\n\nYou are running on a schedule. Check for new work and act on anything you find.`;
 }
 
 export function buildWebhookPrompt(agentConfig: AgentConfig, context: WebhookContext): string {
   const configBlock = buildConfigBlock(agentConfig);
   const credentialBlock = buildCredentialContext(agentConfig.credentials);
   const webhookBlock = JSON.stringify(context);
-  return `<agent-config>\n${configBlock}\n</agent-config>\n\n${credentialBlock}\n\n<webhook-trigger>\n${webhookBlock}\n</webhook-trigger>\n\n${agentConfig.prompt}`;
+  return `<agent-config>\n${configBlock}\n</agent-config>\n\n${credentialBlock}\n\n<webhook-trigger>\n${webhookBlock}\n</webhook-trigger>\n\nA webhook event just fired. Review the trigger context above and take appropriate action.`;
 }

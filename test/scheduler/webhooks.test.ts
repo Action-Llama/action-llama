@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
+import { stringify as stringifyTOML } from "smol-toml";
 
 // Mock credentials
 vi.mock("../../src/shared/credentials.js", () => ({
@@ -66,7 +67,6 @@ function setupProjectWithWebhooks(tmpDir: string) {
   const webhookAgent = {
     credentials: ["github-token"],
     model,
-    prompt: "Handle webhook events.",
     repos: ["acme/app"],
     webhooks: {
       filters: [{ source: "github", events: ["issues"], actions: ["labeled"], labels: ["agent"] }],
@@ -74,7 +74,7 @@ function setupProjectWithWebhooks(tmpDir: string) {
   };
   const agentDir = resolve(tmpDir, "webhook-dev");
   mkdirSync(agentDir, { recursive: true });
-  writeFileSync(resolve(agentDir, "config.json"), JSON.stringify(webhookAgent));
+  writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML(webhookAgent as Record<string, unknown>));
   mkdirSync(resolve(tmpDir, ".al", "state", "webhook-dev"), { recursive: true });
 }
 
@@ -86,7 +86,6 @@ function setupProjectWithHybrid(tmpDir: string) {
     credentials: ["github-token"],
     model,
     schedule: "*/15 * * * *",
-    prompt: "Review PRs.",
     repos: ["acme/app"],
     webhooks: {
       filters: [{ source: "github", events: ["pull_request"], actions: ["opened"] }],
@@ -94,7 +93,7 @@ function setupProjectWithHybrid(tmpDir: string) {
   };
   const agentDir = resolve(tmpDir, "hybrid");
   mkdirSync(agentDir, { recursive: true });
-  writeFileSync(resolve(agentDir, "config.json"), JSON.stringify(hybridAgent));
+  writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML(hybridAgent as Record<string, unknown>));
   mkdirSync(resolve(tmpDir, ".al", "state", "hybrid"), { recursive: true });
 }
 
@@ -105,12 +104,11 @@ function setupProjectWithNoTrigger(tmpDir: string) {
   const badAgent = {
     credentials: ["github-token"],
     model,
-    prompt: "I have no trigger.",
     repos: ["acme/app"],
   };
   const agentDir = resolve(tmpDir, "bad-agent");
   mkdirSync(agentDir, { recursive: true });
-  writeFileSync(resolve(agentDir, "config.json"), JSON.stringify(badAgent));
+  writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML(badAgent as Record<string, unknown>));
   mkdirSync(resolve(tmpDir, ".al", "state", "bad-agent"), { recursive: true });
 }
 

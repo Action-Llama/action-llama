@@ -52,7 +52,6 @@ function makeAgentConfig(overrides?: Partial<AgentConfig>): AgentConfig {
       authType: "api_key",
     },
     schedule: "*/5 * * * *",
-    prompt: "Poll for issues.",
     repos: ["acme/app"],
     params: { triggerLabel: "agent", assignee: "bot" },
     ...overrides,

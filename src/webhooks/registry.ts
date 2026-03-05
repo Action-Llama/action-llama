@@ -42,7 +42,7 @@ export class WebhookRegistry {
     // Validate request signature
     if (!provider.validateRequest(headers, rawBody, secret)) {
       this.logger.warn(
-        { source, hasSecret: !!secret, hasSignatureHeader: !!headers["x-hub-signature-256"] },
+        { source, hasSecret: !!secret },
         "webhook signature validation failed"
       );
       return { ok: false, matched: 0, skipped: 0, errors: ["signature validation failed"] };
@@ -71,7 +71,7 @@ export class WebhookRegistry {
     const context = provider.parseEvent(headers, body);
     if (!context) {
       this.logger.warn(
-        { source, event: headers["x-github-event"], hasRepo: !!body.repository?.full_name },
+        { source },
         "webhook event could not be parsed (parseEvent returned null)"
       );
       return { ok: true, matched: 0, skipped: 0 };

@@ -5,7 +5,6 @@ import {
   AL_HOME,
   CREDENTIALS_DIR,
   projectDir,
-  stateDir,
   logsDir,
   eventsDir,
   agentDir,
@@ -22,10 +21,6 @@ describe("paths", () => {
 
   it("projectDir resolves the path", () => {
     expect(projectDir("/tmp/my-project")).toBe(resolve("/tmp/my-project"));
-  });
-
-  it("stateDir appends .al/state", () => {
-    expect(stateDir("/proj")).toBe(resolve("/proj", ".al", "state"));
   });
 
   it("logsDir appends .al/logs", () => {

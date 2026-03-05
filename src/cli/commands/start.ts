@@ -2,9 +2,14 @@ import { resolve } from "path";
 import { loadGlobalConfig } from "../../shared/config.js";
 import { startScheduler } from "../../scheduler/index.js";
 import { StatusTracker } from "../../tui/status-tracker.js";
+import { execute as runSetup } from "./setup.js";
 
 export async function execute(opts: { project: string; dangerousNoDocker?: boolean }): Promise<void> {
   const projectPath = resolve(opts.project);
+
+  // Ensure all credentials are present before starting
+  await runSetup({ project: opts.project });
+
   const globalConfig = loadGlobalConfig(projectPath);
 
   // Docker is on by default; --dangerous-no-docker disables it

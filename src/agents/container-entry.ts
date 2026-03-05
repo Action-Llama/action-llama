@@ -51,16 +51,40 @@ async function main() {
     process.exit(1);
   }
 
-  // Set GitHub and Sentry tokens in environment if available
-  const githubToken = readCredential("github-token");
-  if (githubToken) {
-    process.env.GITHUB_TOKEN = githubToken;
-    process.env.GH_TOKEN = githubToken;
-  }
+  // Generic credential → env var injection from credential definitions
+  const { builtinCredentials } = await import("../credentials/builtins/index.js");
+  for (const credId of agentConfig.credentials) {
+    const def = builtinCredentials[credId];
+    if (!def?.envVars) continue;
 
-  const sentryToken = readCredential("sentry-token");
-  if (sentryToken) {
-    process.env.SENTRY_AUTH_TOKEN = sentryToken;
+    if (def.fields.length === 1) {
+      // Single-field credential: read as plain text, map to env vars
+      const value = readCredential(def.filename);
+      if (value) {
+        for (const [fieldName, envVar] of Object.entries(def.envVars)) {
+          process.env[envVar] = value;
+        }
+        // Special case: github-token also sets GH_TOKEN alias
+        if (credId === "github-token") {
+          process.env.GH_TOKEN = value;
+        }
+      }
+    } else {
+      // Structured credential: read as JSON, map each field
+      const raw = readCredential(def.filename);
+      if (raw) {
+        try {
+          const fields = JSON.parse(raw) as Record<string, string>;
+          for (const [fieldName, envVar] of Object.entries(def.envVars)) {
+            if (fields[fieldName]) {
+              process.env[envVar] = fields[fieldName];
+            }
+          }
+        } catch {
+          emitLog("warn", `failed to parse structured credential ${credId}`);
+        }
+      }
+    }
   }
 
   const cwd = "/workspace";

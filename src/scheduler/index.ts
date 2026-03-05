@@ -10,6 +10,7 @@ import type { StatusTracker } from "../tui/status-tracker.js";
 import { buildScheduledPrompt, buildWebhookPrompt } from "../agents/prompt.js";
 import { WebhookRegistry } from "../webhooks/registry.js";
 import { GitHubWebhookProvider } from "../webhooks/providers/github.js";
+import { SentryWebhookProvider } from "../webhooks/providers/sentry.js";
 import type { GatewayServer } from "../gateway/index.js";
 import type { WebhookContext } from "../webhooks/types.js";
 
@@ -55,14 +56,24 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   if (anyWebhooks) {
     webhookRegistry = new WebhookRegistry(logger);
 
-    // Register GitHub provider
+    // Register providers
     webhookRegistry.registerProvider(new GitHubWebhookProvider());
+    webhookRegistry.registerProvider(new SentryWebhookProvider());
 
     // Load GitHub webhook secret from credentials (if configured)
-    const secretCredName = globalConfig.webhooks?.githubSecretCredential || "github-webhook-secret";
-    const githubSecret = loadCredential(secretCredName);
+    const githubSecretCredName = globalConfig.webhooks?.secretCredentials?.github
+      || "github-webhook-secret";
+    const githubSecret = loadCredential(githubSecretCredName);
     if (githubSecret) {
       webhookSecrets.github = githubSecret;
+    }
+
+    // Load Sentry webhook secret from credentials (if configured)
+    const sentrySecretCredName = globalConfig.webhooks?.secretCredentials?.sentry
+      || "sentry-client-secret";
+    const sentrySecret = loadCredential(sentrySecretCredName);
+    if (sentrySecret) {
+      webhookSecrets.sentry = sentrySecret;
     }
   }
 
@@ -193,7 +204,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
         logger.warn(`${agentConfig.name} is busy, skipping scheduled run`);
         return;
       }
-      logger.info(`Triggering ${agentConfig.name}: ${agentConfig.prompt}`);
+      logger.info(`Triggering ${agentConfig.name} (scheduled)`);
       await runner.run(buildScheduledPrompt(agentConfig));
     });
 
