@@ -4,7 +4,7 @@ export const github: WebhookDefinition = {
   id: "github",
   label: "GitHub",
   description: "GitHub webhook events",
-  secretCredential: "github_webhook_secret:default",
+  secretCredential: "github_webhook_secret",
   filterSpec: [
     {
       field: "events",

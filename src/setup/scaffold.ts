@@ -87,15 +87,16 @@ JSON object with the webhook event details. Only present when the agent is trigg
 ### How webhooks work
 
 1. The gateway receives an HTTP POST from GitHub or Sentry at \`/webhooks/github\` or \`/webhooks/sentry\`
-2. The payload is validated (HMAC-SHA256 for GitHub using \`github_webhook_secret\`, client secret for Sentry)
-3. The gateway matches the event against all agents' \`[[webhooks.filters]]\` entries (AND logic — all specified fields must match; omitted fields are not checked)
+2. The payload is validated using secrets loaded from the named credential instance (e.g. HMAC-SHA256 for GitHub using \`github_webhook_secret\`, client secret for Sentry using \`sentry_client_secret\`)
+3. The gateway matches the event against all agents' \`[[webhooks]]\` entries (AND logic — all specified fields must match; omitted fields are not checked)
 4. Matching agents are triggered with a \`<webhook-trigger>\` block injected into their prompt
 
-### GitHub webhook filter fields
+### GitHub webhook fields
 
 | Field | Type | Description |
 |-------|------|-------------|
-| \`source\` | string | Must be \`"github"\` |
+| \`type\` | string | Provider type — must be \`"github"\` (required) |
+| \`source\` | string | Credential instance name (optional, e.g. \`"MyOrg"\`) |
 | \`repos\` | string[] | Filter to specific repos (owner/repo format) |
 | \`events\` | string[] | Event types: \`issues\`, \`pull_request\`, \`push\`, \`issue_comment\`, etc. |
 | \`actions\` | string[] | Event actions: \`opened\`, \`labeled\`, \`closed\`, \`synchronize\`, etc. |
@@ -104,11 +105,12 @@ JSON object with the webhook event details. Only present when the agent is trigg
 | \`author\` | string | Only trigger for events by this author |
 | \`branches\` | string[] | Only trigger for pushes/PRs on these branches |
 
-### Sentry webhook filter fields
+### Sentry webhook fields
 
 | Field | Type | Description |
 |-------|------|-------------|
-| \`source\` | string | Must be \`"sentry"\` |
+| \`type\` | string | Provider type — must be \`"sentry"\` (required) |
+| \`source\` | string | Credential instance name (optional) |
 | \`resources\` | string[] | Resource types: \`error\`, \`event_alert\`, \`metric_alert\`, \`issue\`, \`comment\` |
 
 ### GitHub webhook setup
@@ -118,25 +120,31 @@ In your GitHub repo settings, add a webhook:
 - **Content type:** \`application/json\`
 - **Secret:** the same secret stored as the \`github_webhook_secret\` credential
 
-### TOML syntax for webhook filters
+### TOML syntax for webhooks
 
-Each filter is a separate \`[[webhooks.filters]]\` block (double brackets = array of tables):
+Each webhook is a separate \`[[webhooks]]\` block (double brackets = array of tables):
 
 \`\`\`toml
-# CORRECT — each [[webhooks.filters]] is a separate array entry
-[[webhooks.filters]]
-source = "github"
+# Each [[webhooks]] is a separate array entry
+[[webhooks]]
+type = "github"
 repos = ["acme/app"]
 events = ["issues"]
 actions = ["labeled"]
 labels = ["agent"]
 
-[[webhooks.filters]]
-source = "sentry"
+[[webhooks]]
+type = "github"
+source = "MyOrg"          # optional — credential instance name
+repos = ["my-org/other-repo"]
+events = ["pull_request"]
+
+[[webhooks]]
+type = "sentry"
 resources = ["error", "event_alert"]
 \`\`\`
 
-Do NOT use single brackets \`[webhooks.filters]\` — that creates a single table, not an array.
+\`type\` is the provider type (required). \`source\` is the credential instance name (optional — defaults to \`"default"\`).
 
 ## \`agent-config.toml\` Complete Reference
 
@@ -169,15 +177,15 @@ model = "claude-sonnet-4-20250514"
 thinkingLevel = "medium"
 authType = "api_key"
 
-[[webhooks.filters]]
-source = "github"
+[[webhooks]]
+type = "github"
 repos = ["acme/app"]
 events = ["issues"]
 actions = ["labeled"]
 labels = ["agent"]
 
-[[webhooks.filters]]
-source = "sentry"
+[[webhooks]]
+type = "sentry"
 resources = ["error", "event_alert"]
 
 [params]
@@ -198,12 +206,13 @@ sentryProjects = ["web-app", "api"]
 | \`model.model\` | string | Yes | Model ID (e.g. "claude-sonnet-4-20250514") |
 | \`model.thinkingLevel\` | string | Yes | off \\| minimal \\| low \\| medium \\| high \\| xhigh |
 | \`model.authType\` | string | Yes | api_key \\| oauth_token |
-| \`webhooks.filters[].source\` | string | Yes | "github" or "sentry" |
-| \`webhooks.filters[].repos\` | string[] | No | Filter to specific repos |
-| \`webhooks.filters[].events\` | string[] | No | GitHub event types: issues, pull_request, push |
-| \`webhooks.filters[].actions\` | string[] | No | GitHub actions: opened, labeled, closed |
-| \`webhooks.filters[].labels\` | string[] | No | Only trigger for issues/PRs with these labels |
-| \`webhooks.filters[].resources\` | string[] | No | Sentry resources: error, event_alert, metric_alert, issue, comment |
+| \`webhooks[].type\` | string | Yes | Provider type: "github" or "sentry" |
+| \`webhooks[].source\` | string | No | Credential instance name (defaults to "default") |
+| \`webhooks[].repos\` | string[] | No | Filter to specific repos |
+| \`webhooks[].events\` | string[] | No | GitHub event types: issues, pull_request, push |
+| \`webhooks[].actions\` | string[] | No | GitHub actions: opened, labeled, closed |
+| \`webhooks[].labels\` | string[] | No | Only trigger for issues/PRs with these labels |
+| \`webhooks[].resources\` | string[] | No | Sentry resources: error, event_alert, metric_alert, issue, comment |
 | \`params.*\` | any | No | Custom key-value pairs injected into the prompt |
 
 *At least one of \`schedule\` or \`webhooks\` is required.

@@ -18,9 +18,7 @@ describe("validateAgentConfig", () => {
     expect(() =>
       validateAgentConfig({
         ...baseConfig,
-        webhooks: {
-          filters: [{ source: "github", events: ["issues"] }],
-        },
+        webhooks: [{ type: "github", source: "MyOrg", events: ["issues"] }],
       })
     ).not.toThrow();
   });
@@ -30,15 +28,19 @@ describe("validateAgentConfig", () => {
       validateAgentConfig({
         ...baseConfig,
         schedule: "*/5 * * * *",
-        webhooks: {
-          filters: [{ source: "github", events: ["issues"] }],
-        },
+        webhooks: [{ type: "github", source: "MyOrg", events: ["issues"] }],
       })
     ).not.toThrow();
   });
 
   it("rejects agent with neither schedule nor webhooks", () => {
     expect(() => validateAgentConfig(baseConfig)).toThrow(
+      'Agent "test" must have a schedule, webhooks, or both.'
+    );
+  });
+
+  it("rejects agent with empty webhooks array", () => {
+    expect(() => validateAgentConfig({ ...baseConfig, webhooks: [] })).toThrow(
       'Agent "test" must have a schedule, webhooks, or both.'
     );
   });

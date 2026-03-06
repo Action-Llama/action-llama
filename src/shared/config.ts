@@ -1,7 +1,7 @@
 import { readFileSync, existsSync, readdirSync, statSync } from "fs";
 import { resolve } from "path";
 import { parse as parseTOML } from "smol-toml";
-import type { WebhookTriggerConfig } from "../webhooks/types.js";
+import type { WebhookTrigger } from "../webhooks/types.js";
 
 // --- Global config (lives at <project>/config.toml) ---
 
@@ -42,7 +42,7 @@ export interface AgentConfig {
   model: ModelConfig;
   schedule?: string;
   repos: string[];
-  webhooks?: WebhookTriggerConfig;
+  webhooks?: WebhookTrigger[];
   params?: Record<string, unknown>;
 }
 
@@ -72,7 +72,7 @@ export function loadAgentConfig(projectPath: string, agentName: string): AgentCo
 }
 
 export function validateAgentConfig(config: AgentConfig): void {
-  if (!config.schedule && !config.webhooks) {
+  if (!config.schedule && (!config.webhooks || config.webhooks.length === 0)) {
     throw new Error(
       `Agent "${config.name}" must have a schedule, webhooks, or both.`
     );

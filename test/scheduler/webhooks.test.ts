@@ -13,7 +13,10 @@ vi.mock("../../src/shared/credentials.js", () => ({
     if (sep === -1) return { type: ref, instance: "default" };
     return { type: ref.slice(0, sep).trim(), instance: ref.slice(sep + 1).trim() };
   },
-  listCredentialInstances: () => ["default"],
+  listCredentialInstances: (type: string) => {
+    if (type === "github_webhook_secret") return ["MyOrg"];
+    return [];
+  },
   writeCredentialField: () => {},
   writeCredentialFields: () => {},
   credentialExists: () => true,
@@ -76,9 +79,7 @@ function setupProjectWithWebhooks(tmpDir: string) {
     credentials: ["github_token:default"],
     model,
     repos: ["acme/app"],
-    webhooks: {
-      filters: [{ source: "github", events: ["issues"], actions: ["labeled"], labels: ["agent"] }],
-    },
+    webhooks: [{ type: "github", source: "MyOrg", events: ["issues"], actions: ["labeled"], labels: ["agent"] }],
   };
   const agentDir = resolve(tmpDir, "webhook-dev");
   mkdirSync(agentDir, { recursive: true });
@@ -95,9 +96,7 @@ function setupProjectWithHybrid(tmpDir: string) {
     model,
     schedule: "*/15 * * * *",
     repos: ["acme/app"],
-    webhooks: {
-      filters: [{ source: "github", events: ["pull_request"], actions: ["opened"] }],
-    },
+    webhooks: [{ type: "github", source: "MyOrg", events: ["pull_request"], actions: ["opened"] }],
   };
   const agentDir = resolve(tmpDir, "hybrid");
   mkdirSync(agentDir, { recursive: true });

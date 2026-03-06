@@ -15,8 +15,8 @@ model = "claude-sonnet-4-20250514"
 thinkingLevel = "medium"
 authType = "api_key"
 
-[[webhooks.filters]]
-source = "github"
+[[webhooks]]
+type = "github"
 repos = ["acme/app"]
 events = ["issues"]
 actions = ["labeled"]

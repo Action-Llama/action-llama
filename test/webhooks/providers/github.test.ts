@@ -13,42 +13,42 @@ describe("GitHubWebhookProvider", () => {
   describe("validateRequest", () => {
     const secret = "test-secret-123";
 
-    it("accepts valid HMAC signature", () => {
+    it("accepts valid HMAC signature and returns instance name", () => {
       const body = '{"action":"opened"}';
       const sig = sign(body, secret);
-      expect(provider.validateRequest({ "x-hub-signature-256": sig }, body, [secret])).toBe(true);
+      expect(provider.validateRequest({ "x-hub-signature-256": sig }, body, { MyOrg: secret })).toBe("MyOrg");
     });
 
     it("rejects invalid HMAC signature", () => {
       const body = '{"action":"opened"}';
       const sig = sign("different body", secret);
-      expect(provider.validateRequest({ "x-hub-signature-256": sig }, body, [secret])).toBe(false);
+      expect(provider.validateRequest({ "x-hub-signature-256": sig }, body, { MyOrg: secret })).toBeNull();
     });
 
     it("rejects missing signature when secret is configured", () => {
-      expect(provider.validateRequest({}, '{"action":"opened"}', [secret])).toBe(false);
+      expect(provider.validateRequest({}, '{"action":"opened"}', { MyOrg: secret })).toBeNull();
     });
 
     it("accepts any request when no secret is configured", () => {
-      expect(provider.validateRequest({}, '{"action":"opened"}')).toBe(true);
-      expect(provider.validateRequest({}, '{"action":"opened"}', undefined)).toBe(true);
-      expect(provider.validateRequest({}, '{"action":"opened"}', [])).toBe(true);
+      expect(provider.validateRequest({}, '{"action":"opened"}')).toBe("_unsigned");
+      expect(provider.validateRequest({}, '{"action":"opened"}', undefined)).toBe("_unsigned");
+      expect(provider.validateRequest({}, '{"action":"opened"}', {})).toBe("_unsigned");
     });
 
     it("rejects wrong-length signature", () => {
-      expect(provider.validateRequest({ "x-hub-signature-256": "sha256=abc" }, "{}", [secret])).toBe(false);
+      expect(provider.validateRequest({ "x-hub-signature-256": "sha256=abc" }, "{}", { MyOrg: secret })).toBeNull();
     });
 
-    it("accepts when any of multiple secrets matches", () => {
+    it("accepts when any of multiple secrets matches and returns correct instance", () => {
       const body = '{"action":"opened"}';
       const sig = sign(body, "second-secret");
-      expect(provider.validateRequest({ "x-hub-signature-256": sig }, body, ["wrong-secret", "second-secret"])).toBe(true);
+      expect(provider.validateRequest({ "x-hub-signature-256": sig }, body, { OrgA: "wrong-secret", OrgB: "second-secret" })).toBe("OrgB");
     });
 
     it("rejects when none of multiple secrets match", () => {
       const body = '{"action":"opened"}';
       const sig = sign(body, "actual-secret");
-      expect(provider.validateRequest({ "x-hub-signature-256": sig }, body, ["wrong1", "wrong2"])).toBe(false);
+      expect(provider.validateRequest({ "x-hub-signature-256": sig }, body, { OrgA: "wrong1", OrgB: "wrong2" })).toBeNull();
     });
   });
 
@@ -266,50 +266,49 @@ describe("GitHubWebhookProvider", () => {
     };
 
     it("matches when filter is empty (no constraints)", () => {
-      const filter: GitHubWebhookFilter = { source: "github" };
+      const filter: GitHubWebhookFilter = {};
       expect(provider.matchesFilter(baseContext, filter)).toBe(true);
     });
 
     it("matches on event type", () => {
-      expect(provider.matchesFilter(baseContext, { source: "github", events: ["issues"] })).toBe(true);
-      expect(provider.matchesFilter(baseContext, { source: "github", events: ["pull_request"] })).toBe(false);
+      expect(provider.matchesFilter(baseContext, { events: ["issues"] })).toBe(true);
+      expect(provider.matchesFilter(baseContext, { events: ["pull_request"] })).toBe(false);
     });
 
     it("matches on action", () => {
-      expect(provider.matchesFilter(baseContext, { source: "github", actions: ["labeled"] })).toBe(true);
-      expect(provider.matchesFilter(baseContext, { source: "github", actions: ["opened"] })).toBe(false);
+      expect(provider.matchesFilter(baseContext, { actions: ["labeled"] })).toBe(true);
+      expect(provider.matchesFilter(baseContext, { actions: ["opened"] })).toBe(false);
     });
 
     it("matches on repos", () => {
-      expect(provider.matchesFilter(baseContext, { source: "github", repos: ["acme/app"] })).toBe(true);
-      expect(provider.matchesFilter(baseContext, { source: "github", repos: ["other/repo"] })).toBe(false);
+      expect(provider.matchesFilter(baseContext, { repos: ["acme/app"] })).toBe(true);
+      expect(provider.matchesFilter(baseContext, { repos: ["other/repo"] })).toBe(false);
     });
 
     it("matches on labels (any match)", () => {
-      expect(provider.matchesFilter(baseContext, { source: "github", labels: ["agent"] })).toBe(true);
-      expect(provider.matchesFilter(baseContext, { source: "github", labels: ["nonexistent"] })).toBe(false);
-      expect(provider.matchesFilter(baseContext, { source: "github", labels: ["nonexistent", "bug"] })).toBe(true);
+      expect(provider.matchesFilter(baseContext, { labels: ["agent"] })).toBe(true);
+      expect(provider.matchesFilter(baseContext, { labels: ["nonexistent"] })).toBe(false);
+      expect(provider.matchesFilter(baseContext, { labels: ["nonexistent", "bug"] })).toBe(true);
     });
 
     it("matches on assignee", () => {
-      expect(provider.matchesFilter(baseContext, { source: "github", assignee: "bot" })).toBe(true);
-      expect(provider.matchesFilter(baseContext, { source: "github", assignee: "other" })).toBe(false);
+      expect(provider.matchesFilter(baseContext, { assignee: "bot" })).toBe(true);
+      expect(provider.matchesFilter(baseContext, { assignee: "other" })).toBe(false);
     });
 
     it("matches on author", () => {
-      expect(provider.matchesFilter(baseContext, { source: "github", author: "dev1" })).toBe(true);
-      expect(provider.matchesFilter(baseContext, { source: "github", author: "other" })).toBe(false);
+      expect(provider.matchesFilter(baseContext, { author: "dev1" })).toBe(true);
+      expect(provider.matchesFilter(baseContext, { author: "other" })).toBe(false);
     });
 
     it("matches on branches", () => {
       const prContext = { ...baseContext, branch: "main" };
-      expect(provider.matchesFilter(prContext, { source: "github", branches: ["main"] })).toBe(true);
-      expect(provider.matchesFilter(prContext, { source: "github", branches: ["develop"] })).toBe(false);
+      expect(provider.matchesFilter(prContext, { branches: ["main"] })).toBe(true);
+      expect(provider.matchesFilter(prContext, { branches: ["develop"] })).toBe(false);
     });
 
     it("matches with multiple filter criteria (AND logic)", () => {
       const filter: GitHubWebhookFilter = {
-        source: "github",
         events: ["issues"],
         actions: ["labeled"],
         labels: ["agent"],
@@ -324,7 +323,7 @@ describe("GitHubWebhookProvider", () => {
 
     it("skips action filter when context has no action", () => {
       const noActionCtx = { ...baseContext, action: undefined };
-      expect(provider.matchesFilter(noActionCtx, { source: "github", actions: ["opened"] })).toBe(false);
+      expect(provider.matchesFilter(noActionCtx, { actions: ["opened"] })).toBe(false);
     });
   });
 });

@@ -13,30 +13,30 @@ describe("SentryWebhookProvider", () => {
   describe("validateRequest", () => {
     const secret = "test-secret-123";
 
-    it("accepts valid HMAC signature", () => {
+    it("accepts valid HMAC signature and returns instance name", () => {
       const body = '{"action":"created"}';
       const sig = sign(body, secret);
-      expect(provider.validateRequest({ "sentry-hook-signature": sig }, body, [secret])).toBe(true);
+      expect(provider.validateRequest({ "sentry-hook-signature": sig }, body, { MySentryOrg: secret })).toBe("MySentryOrg");
     });
 
     it("rejects invalid HMAC signature", () => {
       const body = '{"action":"created"}';
       const sig = sign("different body", secret);
-      expect(provider.validateRequest({ "sentry-hook-signature": sig }, body, [secret])).toBe(false);
+      expect(provider.validateRequest({ "sentry-hook-signature": sig }, body, { MySentryOrg: secret })).toBeNull();
     });
 
     it("rejects missing signature when secret is configured", () => {
-      expect(provider.validateRequest({}, '{"action":"created"}', [secret])).toBe(false);
+      expect(provider.validateRequest({}, '{"action":"created"}', { MySentryOrg: secret })).toBeNull();
     });
 
     it("accepts any request when no secret is configured", () => {
-      expect(provider.validateRequest({}, '{"action":"created"}')).toBe(true);
-      expect(provider.validateRequest({}, '{"action":"created"}', undefined)).toBe(true);
-      expect(provider.validateRequest({}, '{"action":"created"}', [])).toBe(true);
+      expect(provider.validateRequest({}, '{"action":"created"}')).toBe("_unsigned");
+      expect(provider.validateRequest({}, '{"action":"created"}', undefined)).toBe("_unsigned");
+      expect(provider.validateRequest({}, '{"action":"created"}', {})).toBe("_unsigned");
     });
 
     it("rejects wrong-length signature", () => {
-      expect(provider.validateRequest({ "sentry-hook-signature": "abc" }, "{}", [secret])).toBe(false);
+      expect(provider.validateRequest({ "sentry-hook-signature": "abc" }, "{}", { MySentryOrg: secret })).toBeNull();
     });
   });
 
@@ -198,23 +198,23 @@ describe("SentryWebhookProvider", () => {
     };
 
     it("matches when filter has no resource constraint", () => {
-      const filter: SentryWebhookFilter = { source: "sentry" };
+      const filter: SentryWebhookFilter = {};
       expect(provider.matchesFilter(baseContext, filter)).toBe(true);
     });
 
     it("matches when event is in resources list", () => {
-      const filter: SentryWebhookFilter = { source: "sentry", resources: ["event_alert", "metric_alert"] };
+      const filter: SentryWebhookFilter = { resources: ["event_alert", "metric_alert"] };
       expect(provider.matchesFilter(baseContext, filter)).toBe(true);
     });
 
     it("does not match when event is not in resources list", () => {
-      const filter: SentryWebhookFilter = { source: "sentry", resources: ["issue", "comment"] };
+      const filter: SentryWebhookFilter = { resources: ["issue", "comment"] };
       expect(provider.matchesFilter(baseContext, filter)).toBe(false);
     });
 
     it("matches metric_alert events", () => {
       const ctx = { ...baseContext, event: "metric_alert" };
-      const filter: SentryWebhookFilter = { source: "sentry", resources: ["metric_alert"] };
+      const filter: SentryWebhookFilter = { resources: ["metric_alert"] };
       expect(provider.matchesFilter(ctx, filter)).toBe(true);
     });
   });

@@ -23,7 +23,6 @@ export interface WebhookContext {
 // --- Filters ---
 
 export interface GitHubWebhookFilter {
-  source: "github";
   repos?: string[];
   events?: string[];
   actions?: string[];
@@ -34,23 +33,31 @@ export interface GitHubWebhookFilter {
 }
 
 export interface SentryWebhookFilter {
-  source: "sentry";
   resources?: string[];  // event_alert, metric_alert, issue, error, comment
 }
 
 export type WebhookFilter = GitHubWebhookFilter | SentryWebhookFilter;
 
-// --- Agent config additions ---
+// --- Webhook trigger (used in agent config) ---
 
-export interface WebhookTriggerConfig {
-  filters: WebhookFilter[];
+export interface WebhookTrigger {
+  type: string;       // provider type: "github", "sentry"
+  source?: string;    // credential instance name, e.g. "GenerationSoftwareOrg" (optional)
+  events?: string[];
+  actions?: string[];
+  repos?: string[];
+  labels?: string[];
+  assignee?: string;
+  author?: string;
+  branches?: string[];
+  resources?: string[];
 }
 
 // --- Provider interface ---
 
 export interface WebhookProvider {
   source: string;
-  validateRequest(headers: Record<string, string | undefined>, rawBody: string, secrets?: string[]): boolean;
+  validateRequest(headers: Record<string, string | undefined>, rawBody: string, secrets?: Record<string, string>): string | null;
   parseEvent(headers: Record<string, string | undefined>, body: any): WebhookContext | null;
   matchesFilter(context: WebhookContext, filter: WebhookFilter): boolean;
 }
@@ -59,7 +66,9 @@ export interface WebhookProvider {
 
 export interface WebhookBinding {
   agentName: string;
-  filter: WebhookFilter;
+  type: string;       // provider type: "github", "sentry"
+  source?: string;    // credential instance name (optional — omit to match any source)
+  filter?: WebhookFilter;
   trigger: (context: WebhookContext) => void;
 }
 
@@ -70,4 +79,5 @@ export interface DispatchResult {
   matched: number;
   skipped: number;
   errors?: string[];
+  matchedSource?: string;
 }

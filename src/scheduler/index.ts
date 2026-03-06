@@ -2,7 +2,7 @@ import { Cron } from "croner";
 import { mkdirSync } from "fs";
 import { loadGlobalConfig, loadAgentConfig, discoverAgents, validateAgentConfig } from "../shared/config.js";
 import type { GlobalConfig, AgentConfig } from "../shared/config.js";
-import { requireCredentialRef, parseCredentialRef, loadCredentialField, listCredentialInstances } from "../shared/credentials.js";
+import { requireCredentialRef, loadCredentialField, listCredentialInstances } from "../shared/credentials.js";
 import { createLogger, createFileOnlyLogger } from "../shared/logger.js";
 import { agentDir } from "../shared/paths.js";
 import { AgentRunner } from "../agents/runner.js";
@@ -12,11 +12,38 @@ import { WebhookRegistry } from "../webhooks/registry.js";
 import { GitHubWebhookProvider } from "../webhooks/providers/github.js";
 import { SentryWebhookProvider } from "../webhooks/providers/sentry.js";
 import type { GatewayServer } from "../gateway/index.js";
-import type { WebhookContext } from "../webhooks/types.js";
+import type { WebhookContext, WebhookFilter, WebhookTrigger, GitHubWebhookFilter, SentryWebhookFilter } from "../webhooks/types.js";
 
 interface RunnerLike {
   isRunning: boolean;
   run(prompt: string): Promise<void>;
+}
+
+// Provider type → credential type for loading secrets
+const PROVIDER_TO_CREDENTIAL: Record<string, string> = {
+  github: "github_webhook_secret",
+  sentry: "sentry_client_secret",
+};
+
+function buildFilterFromTrigger(trigger: WebhookTrigger): WebhookFilter | undefined {
+  const providerType = trigger.type;
+  if (providerType === "github") {
+    const f: GitHubWebhookFilter = {};
+    if (trigger.events) f.events = trigger.events;
+    if (trigger.actions) f.actions = trigger.actions;
+    if (trigger.repos) f.repos = trigger.repos;
+    if (trigger.labels) f.labels = trigger.labels;
+    if (trigger.assignee) f.assignee = trigger.assignee;
+    if (trigger.author) f.author = trigger.author;
+    if (trigger.branches) f.branches = trigger.branches;
+    return Object.keys(f).length > 0 ? f : undefined;
+  }
+  if (providerType === "sentry") {
+    const f: SentryWebhookFilter = {};
+    if (trigger.resources) f.resources = trigger.resources;
+    return Object.keys(f).length > 0 ? f : undefined;
+  }
+  return undefined;
 }
 
 export async function startScheduler(projectPath: string, globalConfigOverride?: GlobalConfig, statusTracker?: StatusTracker) {
@@ -47,7 +74,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const dockerEnabled = globalConfig.docker?.enabled === true;
-  const anyWebhooks = agentConfigs.some((a) => a.webhooks?.filters?.length);
+  const anyWebhooks = agentConfigs.some((a) => a.webhooks?.length);
 
   // Validate pi_auth is not used with Docker (containers can't access host auth storage)
   if (dockerEnabled) {
@@ -63,7 +90,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // Set up webhook registry if any agents use webhooks
   let webhookRegistry: WebhookRegistry | undefined;
-  let webhookSecrets: Record<string, string[]> = {};
+  let webhookSecrets: Record<string, Record<string, string>> = {};
 
   if (anyWebhooks) {
     webhookRegistry = new WebhookRegistry(logger);
@@ -72,28 +99,28 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     webhookRegistry.registerProvider(new GitHubWebhookProvider());
     webhookRegistry.registerProvider(new SentryWebhookProvider());
 
-    // Load all GitHub webhook secrets (one per instance)
+    // Load all GitHub webhook secrets (instanceName → secret value)
     const ghInstances = listCredentialInstances("github_webhook_secret");
-    const ghSecrets: string[] = [];
+    const ghSecrets: Record<string, string> = {};
     for (const inst of ghInstances) {
       const secret = loadCredentialField("github_webhook_secret", inst, "secret");
-      if (secret) ghSecrets.push(secret);
+      if (secret) ghSecrets[inst] = secret;
     }
-    if (ghSecrets.length > 0) {
+    if (Object.keys(ghSecrets).length > 0) {
       webhookSecrets.github = ghSecrets;
-      logger.info({ count: ghSecrets.length }, "loaded GitHub webhook secrets");
+      logger.info({ count: Object.keys(ghSecrets).length }, "loaded GitHub webhook secrets");
     }
 
-    // Load all Sentry webhook secrets (one per instance)
+    // Load all Sentry webhook secrets (instanceName → secret value)
     const sentryInstances = listCredentialInstances("sentry_client_secret");
-    const sentrySecrets: string[] = [];
+    const sentrySecrets: Record<string, string> = {};
     for (const inst of sentryInstances) {
       const secret = loadCredentialField("sentry_client_secret", inst, "secret");
-      if (secret) sentrySecrets.push(secret);
+      if (secret) sentrySecrets[inst] = secret;
     }
-    if (sentrySecrets.length > 0) {
+    if (Object.keys(sentrySecrets).length > 0) {
       webhookSecrets.sentry = sentrySecrets;
-      logger.info({ count: sentrySecrets.length }, "loaded Sentry webhook secrets");
+      logger.info({ count: Object.keys(sentrySecrets).length }, "loaded Sentry webhook secrets");
     }
   }
 
@@ -145,6 +172,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       logger: mkLogger(projectPath, "gateway"),
       webhookRegistry,
       webhookSecrets,
+      statusTracker,
     });
   } else if (anyWebhooks) {
     // Start gateway even without docker when webhooks are configured
@@ -156,6 +184,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       logger: mkLogger(projectPath, "gateway"),
       webhookRegistry,
       webhookSecrets,
+      statusTracker,
     });
   }
 
@@ -196,13 +225,16 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   // Set up webhook bindings
   if (webhookRegistry) {
     for (const agentConfig of agentConfigs) {
-      if (!agentConfig.webhooks?.filters?.length) continue;
+      if (!agentConfig.webhooks?.length) continue;
 
       const runner = runners[agentConfig.name];
 
-      for (const filter of agentConfig.webhooks.filters) {
+      for (const trigger of agentConfig.webhooks) {
+        const filter = buildFilterFromTrigger(trigger);
         webhookRegistry.addBinding({
           agentName: agentConfig.name,
+          source: trigger.source,
+          type: trigger.type,
           filter,
           trigger: (context: WebhookContext) => {
             if (runner.isRunning) {
@@ -251,11 +283,11 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   const webhookUrls: string[] = [];
   if (anyWebhooks && gateway) {
     const gatewayPort = globalConfig.gateway?.port || 8080;
-    const sources = new Set(
-      agentConfigs.flatMap((a) => a.webhooks?.filters?.map((f) => f.source) || [])
+    const providerTypes = new Set(
+      agentConfigs.flatMap((a) => a.webhooks?.map((t) => t.type) || [])
     );
-    for (const source of sources) {
-      webhookUrls.push(`http://localhost:${gatewayPort}/webhooks/${source}`);
+    for (const pt of providerTypes) {
+      webhookUrls.push(`http://localhost:${gatewayPort}/webhooks/${pt}`);
     }
   }
 

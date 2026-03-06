@@ -28,7 +28,14 @@ Credentials are stored in `~/.action-llama-credentials/<type>/<instance>/<field>
 
 ## Named Instances
 
-Each credential type supports named instances. For example, you could have multiple SSH keys:
+Each credential type supports named instances. For example, you could have webhook secrets for multiple GitHub orgs:
+
+```
+~/.action-llama-credentials/github_webhook_secret/MyOrg/secret
+~/.action-llama-credentials/github_webhook_secret/OtherOrg/secret
+```
+
+Or multiple SSH keys:
 
 ```
 ~/.action-llama-credentials/git_ssh/default/id_rsa
@@ -71,17 +78,11 @@ Three auth methods are supported:
 
 ## Webhook Secrets
 
-Webhook secrets are configured in the project's global `config.json`:
+Webhook secrets use named credential instances. For example, to set up a GitHub webhook secret for your org:
 
-```json
-{
-  "webhooks": {
-    "secretCredentials": {
-      "github": "github_webhook_secret:default",
-      "sentry": "sentry_client_secret:default"
-    }
-  }
-}
+```bash
+mkdir -p ~/.action-llama-credentials/github_webhook_secret/MyOrg
+echo "your-webhook-secret" > ~/.action-llama-credentials/github_webhook_secret/MyOrg/secret
 ```
 
-The gateway reads these credentials to verify incoming webhook payloads.
+The gateway automatically loads secrets from all credential instances (e.g. `github_webhook_secret:MyOrg`, `sentry_client_secret:MyOrg`) and uses them to verify incoming webhook payloads. No global configuration is needed.

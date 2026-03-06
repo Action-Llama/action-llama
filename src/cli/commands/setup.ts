@@ -40,16 +40,17 @@ export async function execute(opts: { project: string }): Promise<void> {
     }
   }
 
-  // Detect which webhook sources are in use
-  const webhookSources = new Set<string>();
+  // Detect which webhook credential types are needed from trigger types
+  const neededWebhookCredTypes = new Set<string>();
   for (const name of agents) {
     const config = loadAgentConfig(projectPath, name);
-    for (const filter of config.webhooks?.filters || []) {
-      webhookSources.add(filter.source);
+    for (const trigger of config.webhooks || []) {
+      const credType = WEBHOOK_SECRET_TYPES[trigger.type];
+      if (credType) neededWebhookCredTypes.add(credType);
     }
   }
 
-  const totalItems = credentialRefs.size + webhookSources.size;
+  const totalItems = credentialRefs.size + neededWebhookCredTypes.size;
   if (totalItems === 0) {
     console.log("No credentials required by any agent.");
     return;
@@ -78,10 +79,7 @@ export async function execute(opts: { project: string }): Promise<void> {
   }
 
   // Handle webhook secrets separately — these support multiple named instances
-  for (const source of webhookSources) {
-    const credType = WEBHOOK_SECRET_TYPES[source];
-    if (!credType) continue;
-
+  for (const credType of neededWebhookCredTypes) {
     const def = resolveCredential(credType);
     const instances = listCredentialInstances(credType);
 
@@ -111,8 +109,7 @@ export async function execute(opts: { project: string }): Promise<void> {
 
 async function promptWebhookSecret(def: CredentialDefinition, credType: string): Promise<boolean> {
   const name = await input({
-    message: `${def.label} — name (e.g. "my-org", "default"):`,
-    default: "default",
+    message: `${def.label} — name (e.g. "MyOrg", "my-project"):`,
     validate: (v: string) => {
       const trimmed = v.trim();
       if (!trimmed) return "Name is required";

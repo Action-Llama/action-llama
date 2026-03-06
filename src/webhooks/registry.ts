@@ -1,4 +1,4 @@
-import type { WebhookProvider, WebhookBinding, WebhookFilter, WebhookContext, DispatchResult } from "./types.js";
+import type { WebhookProvider, WebhookBinding, WebhookContext, DispatchResult } from "./types.js";
 import type { Logger } from "../shared/logger.js";
 
 export class WebhookRegistry {
@@ -18,7 +18,7 @@ export class WebhookRegistry {
   addBinding(binding: WebhookBinding): void {
     this.bindings.push(binding);
     this.logger.info(
-      { agent: binding.agentName, source: binding.filter.source },
+      { agent: binding.agentName, type: binding.type, source: binding.source },
       "webhook binding added"
     );
   }
@@ -31,7 +31,7 @@ export class WebhookRegistry {
     source: string,
     headers: Record<string, string | undefined>,
     rawBody: string,
-    secrets?: string[]
+    secrets?: Record<string, string>
   ): DispatchResult {
     const provider = this.providers.get(source);
     if (!provider) {
@@ -39,10 +39,11 @@ export class WebhookRegistry {
       return { ok: false, matched: 0, skipped: 0, errors: [`unknown source: ${source}`] };
     }
 
-    // Validate request signature
-    if (!provider.validateRequest(headers, rawBody, secrets)) {
+    // Validate request signature — returns the matched instance name or null
+    const matchedSource = provider.validateRequest(headers, rawBody, secrets);
+    if (matchedSource === null) {
       this.logger.warn(
-        { source, secretCount: secrets?.length || 0 },
+        { source, secretCount: secrets ? Object.keys(secrets).length : 0 },
         "webhook signature validation failed"
       );
       return { ok: false, matched: 0, skipped: 0, errors: ["signature validation failed"] };
@@ -74,27 +75,32 @@ export class WebhookRegistry {
         { source },
         "webhook event could not be parsed (parseEvent returned null)"
       );
-      return { ok: true, matched: 0, skipped: 0 };
+      return { ok: true, matched: 0, skipped: 0, matchedSource };
     }
 
     this.logger.debug(
-      { source, event: context.event, action: context.action, repo: context.repo, sender: context.sender },
+      { source, event: context.event, action: context.action, repo: context.repo, sender: context.sender, matchedSource },
       "webhook event parsed"
     );
 
     // Match against bindings and trigger
     let matched = 0;
     let skipped = 0;
-    const bindingCount = this.bindings.filter(b => b.filter.source === source).length;
+    const bindingCount = this.bindings.filter(b => b.type === source).length;
 
-    this.logger.debug({ source, bindingCount }, "checking webhook bindings");
+    this.logger.debug({ source, matchedSource, bindingCount }, "checking webhook bindings");
 
     for (const binding of this.bindings) {
-      if (binding.filter.source !== source) continue;
+      // Binding must be for this provider type
+      if (binding.type !== source) continue;
+      // If binding specifies a source, it must match the validated credential instance
+      if (binding.source && binding.source !== matchedSource) continue;
 
-      const matches = provider.matchesFilter(context, binding.filter);
+      const matches = binding.filter
+        ? provider.matchesFilter(context, binding.filter)
+        : true;
       this.logger.debug(
-        { agent: binding.agentName, matches, filter: binding.filter },
+        { agent: binding.agentName, matches, source: binding.source, filter: binding.filter },
         "webhook binding check"
       );
 
@@ -116,6 +122,6 @@ export class WebhookRegistry {
       }
     }
 
-    return { ok: true, matched, skipped };
+    return { ok: true, matched, skipped, matchedSource };
   }
 }

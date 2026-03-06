@@ -135,13 +135,13 @@ describe("setup", () => {
     expect(output).toContain("1 credential(s)");
   });
 
-  it("discovers webhook secrets from agents with webhook filters", async () => {
+  it("discovers webhook secrets from agents with webhook triggers", async () => {
     mockDiscoverAgents.mockReturnValue(["dev"]);
     // loadAgentConfig is called twice: once for credentials, once for webhook sources
     mockLoadAgentConfig.mockReturnValue({
       name: "dev",
       credentials: ["github_token:default"],
-      webhooks: { filters: [{ source: "github", events: ["issues"] }] },
+      webhooks: [{ type: "github", source: "MyOrg", events: ["issues"] }],
     });
     mockResolveCredential.mockImplementation((id: string) => ({
       id,
@@ -149,7 +149,11 @@ describe("setup", () => {
       fields: [{ name: id === "github_token" ? "token" : "secret" }],
     }));
     mockCredentialExists.mockReturnValue(true);
-    mockListCredentialInstances.mockReturnValue(["default"]);
+    // MyOrg exists as an instance of github_webhook_secret
+    mockListCredentialInstances.mockImplementation((type: string) => {
+      if (type === "github_webhook_secret") return ["MyOrg"];
+      return [];
+    });
     mockConfirm.mockResolvedValue(false);
 
     const output = await captureLog(() => execute({ project: "." }));

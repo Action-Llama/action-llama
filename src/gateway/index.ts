@@ -5,12 +5,14 @@ import { registerShutdownRoute } from "./routes/shutdown.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
 import type { WebhookRegistry } from "../webhooks/registry.js";
 import type { Logger } from "../shared/logger.js";
+import type { StatusTracker } from "../tui/status-tracker.js";
 
 export interface GatewayOptions {
   port: number;
   logger: Logger;
   webhookRegistry?: WebhookRegistry;
-  webhookSecrets?: Record<string, string[]>;
+  webhookSecrets?: Record<string, Record<string, string>>;
+  statusTracker?: StatusTracker;
 }
 
 export interface GatewayServer {
@@ -20,7 +22,7 @@ export interface GatewayServer {
 }
 
 export async function startGateway(opts: GatewayOptions): Promise<GatewayServer> {
-  const { port, logger, webhookRegistry, webhookSecrets } = opts;
+  const { port, logger, webhookRegistry, webhookSecrets, statusTracker } = opts;
   const router = new Router();
   const containerSecrets = new Map<string, string>();
 
@@ -34,7 +36,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
 
   // Webhook routes
   if (webhookRegistry) {
-    registerWebhookRoutes(router, webhookRegistry, webhookSecrets || {}, logger);
+    registerWebhookRoutes(router, webhookRegistry, webhookSecrets || {}, logger, statusTracker);
   }
 
   const server = createServer(async (req, res) => {

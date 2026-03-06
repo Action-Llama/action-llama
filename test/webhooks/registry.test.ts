@@ -12,7 +12,7 @@ const mockLogger = {
 function makeProvider(opts?: Partial<WebhookProvider>): WebhookProvider {
   return {
     source: "github",
-    validateRequest: () => true,
+    validateRequest: () => "MyOrg",
     parseEvent: () => ({
       source: "github",
       event: "issues",
@@ -50,8 +50,8 @@ describe("WebhookRegistry", () => {
   });
 
   it("rejects dispatch when signature validation fails", () => {
-    registry.registerProvider(makeProvider({ validateRequest: () => false }));
-    const result = registry.dispatch("github", {}, "{}", "secret");
+    registry.registerProvider(makeProvider({ validateRequest: () => null }));
+    const result = registry.dispatch("github", {}, "{}", { MyOrg: "secret" });
     expect(result.ok).toBe(false);
     expect(result.errors).toContain("signature validation failed");
   });
@@ -70,18 +70,21 @@ describe("WebhookRegistry", () => {
     expect(result.matched).toBe(0);
   });
 
-  it("dispatches to matching binding", () => {
+  it("dispatches to matching binding by type and source", () => {
     registry.registerProvider(makeProvider());
     const trigger = vi.fn();
     registry.addBinding({
       agentName: "dev",
-      filter: { source: "github", events: ["issues"] } as GitHubWebhookFilter,
+      type: "github",
+      source: "MyOrg",
+      filter: { events: ["issues"] } as GitHubWebhookFilter,
       trigger,
     });
 
     const result = registry.dispatch("github", {}, '{"action":"labeled"}');
     expect(result.ok).toBe(true);
     expect(result.matched).toBe(1);
+    expect(result.matchedSource).toBe("MyOrg");
     expect(trigger).toHaveBeenCalledTimes(1);
     expect(trigger.mock.calls[0][0].event).toBe("issues");
   });
@@ -92,12 +95,14 @@ describe("WebhookRegistry", () => {
     const trigger2 = vi.fn();
     registry.addBinding({
       agentName: "dev",
-      filter: { source: "github" } as GitHubWebhookFilter,
+      type: "github",
+      source: "MyOrg",
       trigger: trigger1,
     });
     registry.addBinding({
       agentName: "reviewer",
-      filter: { source: "github" } as GitHubWebhookFilter,
+      type: "github",
+      source: "MyOrg",
       trigger: trigger2,
     });
 
@@ -112,7 +117,8 @@ describe("WebhookRegistry", () => {
     const trigger = vi.fn();
     registry.addBinding({
       agentName: "dev",
-      filter: { source: "sentry" } as any,
+      type: "github",
+      source: "OtherOrg",
       trigger,
     });
 
@@ -121,12 +127,58 @@ describe("WebhookRegistry", () => {
     expect(trigger).not.toHaveBeenCalled();
   });
 
+  it("matches binding with no source (triggers on any org)", () => {
+    registry.registerProvider(makeProvider());
+    const trigger = vi.fn();
+    registry.addBinding({
+      agentName: "dev",
+      type: "github",
+      // no source — matches any validated request
+      trigger,
+    });
+
+    const result = registry.dispatch("github", {}, '{}');
+    expect(result.matched).toBe(1);
+    expect(trigger).toHaveBeenCalledTimes(1);
+  });
+
   it("skips bindings that don't match filter", () => {
     registry.registerProvider(makeProvider({ matchesFilter: () => false }));
     const trigger = vi.fn();
     registry.addBinding({
       agentName: "dev",
-      filter: { source: "github" } as GitHubWebhookFilter,
+      type: "github",
+      source: "MyOrg",
+      filter: { events: ["pull_request"] } as GitHubWebhookFilter,
+      trigger,
+    });
+
+    const result = registry.dispatch("github", {}, '{}');
+    expect(result.matched).toBe(0);
+    expect(trigger).not.toHaveBeenCalled();
+  });
+
+  it("matches binding with no filter (triggers on everything)", () => {
+    registry.registerProvider(makeProvider());
+    const trigger = vi.fn();
+    registry.addBinding({
+      agentName: "dev",
+      type: "github",
+      source: "MyOrg",
+      trigger,
+    });
+
+    const result = registry.dispatch("github", {}, '{}');
+    expect(result.matched).toBe(1);
+    expect(trigger).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips bindings with non-matching type", () => {
+    registry.registerProvider(makeProvider());
+    const trigger = vi.fn();
+    registry.addBinding({
+      agentName: "dev",
+      type: "sentry",
       trigger,
     });
 
@@ -139,7 +191,8 @@ describe("WebhookRegistry", () => {
     registry.registerProvider(makeProvider());
     registry.addBinding({
       agentName: "dev",
-      filter: { source: "github" } as GitHubWebhookFilter,
+      type: "github",
+      source: "MyOrg",
       trigger: () => { throw new Error("boom"); },
     });
 

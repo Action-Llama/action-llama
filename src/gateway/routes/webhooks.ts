@@ -2,12 +2,14 @@ import type { Router } from "../router.js";
 import { readBody, sendJson, sendError } from "../router.js";
 import type { WebhookRegistry } from "../../webhooks/registry.js";
 import type { Logger } from "../../shared/logger.js";
+import type { StatusTracker } from "../../tui/status-tracker.js";
 
 export function registerWebhookRoutes(
   router: Router,
   registry: WebhookRegistry,
-  webhookSecrets: Record<string, string[]>,
-  logger: Logger
+  webhookSecrets: Record<string, Record<string, string>>,
+  logger: Logger,
+  statusTracker?: StatusTracker
 ): void {
   router.post("/webhooks/:source", async (req, res, params) => {
     const source = params.source;
@@ -16,6 +18,7 @@ export function registerWebhookRoutes(
     const provider = registry.getProvider(source);
     if (!provider) {
       logger.warn({ source }, "webhook rejected: unknown source");
+      statusTracker?.addLogLine("webhook", `Rejected: unknown source "${source}"`);
       sendError(res, 404, `unknown webhook source: ${source}`);
       return;
     }
@@ -25,6 +28,7 @@ export function registerWebhookRoutes(
       rawBody = await readBody(req);
     } catch (err: any) {
       logger.error({ err, source }, "webhook body read failed");
+      statusTracker?.addLogLine("webhook", `Failed to read body from ${source}: ${err.message}`);
       sendError(res, 400, "failed to read request body");
       return;
     }
@@ -53,11 +57,13 @@ export function registerWebhookRoutes(
 
     if (!result.ok) {
       const status = result.errors?.includes("signature validation failed") ? 401 : 400;
+      const errorMsg = result.errors?.[0] || "dispatch failed";
       logger.warn(
         { source, status, errors: result.errors },
         "webhook dispatch failed"
       );
-      sendError(res, status, result.errors?.[0] || "dispatch failed");
+      statusTracker?.addLogLine("webhook", `${source}: ${errorMsg}`);
+      sendError(res, status, errorMsg);
       return;
     }
 
@@ -65,6 +71,9 @@ export function registerWebhookRoutes(
       { source, matched: result.matched, skipped: result.skipped },
       "webhook dispatched"
     );
+    if (result.matched > 0) {
+      statusTracker?.addLogLine("webhook", `${source}: dispatched to ${result.matched} agent${result.matched !== 1 ? "s" : ""}`);
+    }
     sendJson(res, 200, {
       ok: true,
       matched: result.matched,

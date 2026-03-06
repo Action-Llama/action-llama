@@ -4,7 +4,7 @@ export const sentry: WebhookDefinition = {
   id: "sentry",
   label: "Sentry",
   description: "Sentry webhook events",
-  secretCredential: "sentry_client_secret:default",
+  secretCredential: "sentry_client_secret",
   filterSpec: [
     {
       field: "resources",

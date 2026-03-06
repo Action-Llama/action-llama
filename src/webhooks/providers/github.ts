@@ -14,23 +14,23 @@ export class GitHubWebhookProvider implements WebhookProvider {
   validateRequest(
     headers: Record<string, string | undefined>,
     rawBody: string,
-    secrets?: string[]
-  ): boolean {
+    secrets?: Record<string, string>
+  ): string | null {
     // If no secrets configured, skip validation (allow unsigned webhooks)
-    if (!secrets || secrets.length === 0) return true;
+    if (!secrets || Object.keys(secrets).length === 0) return "_unsigned";
 
     const signature = headers["x-hub-signature-256"];
-    if (!signature) return false;
+    if (!signature) return null;
 
     // Try each configured secret — different orgs/repos may use different secrets
-    for (const secret of secrets) {
+    for (const [instanceName, secret] of Object.entries(secrets)) {
       const expected = "sha256=" + createHmac("sha256", secret).update(rawBody).digest("hex");
       if (signature.length === expected.length && timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
-        return true;
+        return instanceName;
       }
     }
 
-    return false;
+    return null;
   }
 
   parseEvent(headers: Record<string, string | undefined>, body: any): WebhookContext | null {

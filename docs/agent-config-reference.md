@@ -24,16 +24,17 @@ thinkingLevel = "medium"                  # off | minimal | low | medium | high 
 authType = "api_key"                      # api_key | oauth_token | pi_auth
 
 # Optional: webhook triggers (instead of or in addition to schedule)
-[[webhooks.filters]]
-source = "github"
-repos = ["acme/app"]                      # Filter to specific repos
-events = ["issues"]                       # GitHub event types
-actions = ["labeled"]                     # GitHub event actions
-labels = ["agent"]                        # Only trigger on issues with these labels
+[[webhooks]]
+type = "github"                           # Required: provider type
+source = "MyOrg"                          # Optional: credential instance name for org scoping
+repos = ["acme/app"]                      # Filter to specific repos (optional)
+events = ["issues"]                       # GitHub event types (optional)
+actions = ["labeled"]                     # GitHub event actions (optional)
+labels = ["agent"]                        # Only trigger on issues with these labels (optional)
 
-[[webhooks.filters]]
-source = "sentry"
-resources = ["error", "event_alert"]      # Sentry resource types
+[[webhooks]]
+type = "sentry"                           # Required: provider type
+resources = ["error", "event_alert"]      # Sentry resource types (optional)
 
 # Optional: custom parameters injected into the agent prompt
 [params]
@@ -55,15 +56,23 @@ sentryProjects = ["web-app", "api"]
 | `model.model` | string | Yes | Model ID |
 | `model.thinkingLevel` | string | Yes | Thinking budget level |
 | `model.authType` | string | Yes | Auth method for the provider |
-| `webhooks` | table | No* | Webhook trigger configuration |
-| `webhooks.filters` | array | Yes (if webhooks) | Array of filter objects |
+| `webhooks` | array | No* | Array of webhook trigger objects |
 | `params` | table | No | Custom key-value params for the agent prompt |
 
 *At least one of `schedule` or `webhooks` is required.
 
-## Webhook Filter Fields
+## Webhook Trigger Fields
 
-### GitHub (`source = "github"`)
+Each `[[webhooks]]` entry has the following fields:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | string | Yes | Provider type: `"github"`, `"sentry"`, etc. |
+| `source` | string | No | Credential instance name (e.g. `"MyOrg"`) for org scoping |
+
+All filter fields below are optional. Omit all of them to trigger on everything from that type.
+
+### GitHub (`type = "github"`)
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -75,7 +84,7 @@ sentryProjects = ["web-app", "api"]
 | `author` | string | Only trigger for this author |
 | `branches` | string[] | Only trigger for these branches |
 
-### Sentry (`source = "sentry"`)
+### Sentry (`type = "sentry"`)
 
 | Field | Type | Description |
 |-------|------|-------------|
