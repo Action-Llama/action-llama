@@ -9,6 +9,7 @@ import sentryClientSecret from "./sentry-client-secret.js";
 import netlifyToken from "./netlify-token.js";
 import xTwitterApi from "./x-twitter-api.js";
 import aws from "./aws.js";
+import bugsnagToken from "./bugsnag-token.js";
 
 export const builtinCredentials: Record<string, CredentialDefinition> = {
   "github_token": githubToken,
@@ -21,4 +22,5 @@ export const builtinCredentials: Record<string, CredentialDefinition> = {
   "netlify_token": netlifyToken,
   "x_twitter_api": xTwitterApi,
   "aws": aws,
+  "bugsnag_token": bugsnagToken,
 };

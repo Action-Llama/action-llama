@@ -9,6 +9,7 @@ Credentials are stored in `~/.action-llama-credentials/<type>/<instance>/<field>
 | `github_token` | `token` | GitHub PAT with repo and workflow scopes | `GITHUB_TOKEN` and `GH_TOKEN` env vars |
 | `anthropic_key` | `token` | Anthropic API key, OAuth token, or pi auth | _(read by SDK)_ |
 | `sentry_token` | `token` | Sentry auth token for error monitoring | `SENTRY_AUTH_TOKEN` env var |
+| `bugsnag_token` | `token` | Bugsnag auth token for error monitoring and release management | `BUGSNAG_AUTH_TOKEN` env var |
 | `netlify_token` | `token` | Netlify Personal Access Token for site management | `NETLIFY_AUTH_TOKEN` env var |
 | `git_ssh` | `id_rsa`, `username`, `email` | SSH private key + git author identity | SSH key mounted as file; `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL`/`GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` set from `username`/`email` |
 | `github_webhook_secret` | `secret` | Shared secret for GitHub webhook verification | _(used by gateway)_ |
@@ -69,6 +70,9 @@ echo "ghp_your_token_here" > ~/.action-llama-credentials/github_token/default/to
 
 mkdir -p ~/.action-llama-credentials/anthropic_key/default
 echo "sk-ant-api-your_key_here" > ~/.action-llama-credentials/anthropic_key/default/token
+
+mkdir -p ~/.action-llama-credentials/bugsnag_token/default
+echo "your_bugsnag_token_here" > ~/.action-llama-credentials/bugsnag_token/default/token
 
 mkdir -p ~/.action-llama-credentials/netlify_token/default
 echo "your_netlify_token_here" > ~/.action-llama-credentials/netlify_token/default/token
