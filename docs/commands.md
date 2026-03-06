@@ -55,12 +55,45 @@ For each agent, it:
 
 Requires AWS CLI with IAM admin permissions. See [ECS docs](ecs.md) for full setup.
 
-## `al cloud init`
+## `al creds ls`
+
+Lists all stored credentials by type and instance, showing field names but not values. Useful for seeing what's configured without exposing secrets.
+
+```bash
+al creds ls
+```
+
+Example output:
+
+```
+  anthropic_key  (token)
+  github_token  (token)
+  github_webhook_secret:myapp  (secret)
+  github_webhook_secret:staging  (secret)
+```
+
+Default instances are shown without the `:default` suffix.
+
+## `al cloud setup`
 
 Interactive wizard for configuring cloud infrastructure. Prompts for provider selection and provider-specific fields, writes `[cloud]` to config.toml, pushes credentials, and provisions IAM — all in one shot.
 
+If an existing `[cloud]` config is found, you'll be prompted to tear down the old infrastructure first.
+
 ```bash
-al cloud init -p .
+al cloud setup -p .
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
+## `al cloud teardown`
+
+Deletes per-agent IAM resources (service accounts for Cloud Run, task roles for ECS) and removes the `[cloud]` section from config.toml.
+
+```bash
+al cloud teardown -p .
 ```
 
 | Option | Description |

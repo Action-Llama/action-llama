@@ -99,7 +99,7 @@ The gateway automatically loads secrets from all credential instances (e.g. `git
 
 ## Cloud Credential Sync
 
-When using cloud runtimes, credentials are automatically pushed to the cloud secret manager by `al doctor -c` or `al cloud init`. See [Cloud Run docs](cloud-run.md) and [ECS docs](ecs.md) for details.
+When using cloud runtimes, credentials are automatically pushed to the cloud secret manager by `al doctor -c` or `al cloud setup`. See [Cloud Run docs](cloud-run.md) and [ECS docs](ecs.md) for details.
 
 ### Google Secret Manager (GSM)
 

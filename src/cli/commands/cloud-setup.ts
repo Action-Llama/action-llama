@@ -1,16 +1,41 @@
 import { resolve } from "path";
 import { existsSync, readFileSync, writeFileSync } from "fs";
-import { select, input } from "@inquirer/prompts";
+import { select, input, confirm } from "@inquirer/prompts";
 import { parse as parseTOML, stringify as stringifyTOML } from "smol-toml";
 import type { CloudConfig } from "../../shared/config.js";
 import { createLocalBackend, createBackendFromCloudConfig } from "../../shared/remote.js";
 import { reconcileCloudIam } from "./doctor.js";
+import { teardownCloud } from "./cloud-teardown.js";
 
 export async function execute(opts: { project: string }): Promise<void> {
   const projectPath = resolve(opts.project);
   const configPath = resolve(projectPath, "config.toml");
 
-  console.log("\n=== Cloud Init ===\n");
+  console.log("\n=== Cloud Setup ===\n");
+
+  // Check for existing cloud config
+  if (existsSync(configPath)) {
+    const existing = parseTOML(readFileSync(configPath, "utf-8")) as Record<string, any>;
+    if (existing.cloud && existing.cloud.provider) {
+      console.log(`Existing cloud config found (provider: ${existing.cloud.provider}).`);
+      const proceed = await confirm({
+        message: "Tear down existing cloud infrastructure before re-configuring?",
+        default: true,
+      });
+      if (proceed) {
+        await teardownCloud(projectPath, existing.cloud as CloudConfig);
+      } else {
+        const skip = await confirm({
+          message: "Continue setup anyway (will overwrite [cloud] config)?",
+          default: false,
+        });
+        if (!skip) {
+          console.log("Aborted.");
+          return;
+        }
+      }
+    }
+  }
 
   // 1. Select provider
   const provider = await select({
@@ -98,5 +123,5 @@ export async function execute(opts: { project: string }): Promise<void> {
     console.log("You can retry later with: al doctor -c");
   }
 
-  console.log("\nCloud init complete.");
+  console.log("\nCloud setup complete.");
 }

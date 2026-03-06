@@ -161,16 +161,29 @@ describe("doctor", () => {
       fields: [{ name: id === "github_token" ? "token" : "secret" }],
     }));
     mockCredentialExists.mockReturnValue(true);
-    mockListCredentialInstances.mockImplementation((type: string) => {
-      if (type === "github_webhook_secret") return ["MyOrg"];
-      return [];
-    });
-    mockConfirm.mockResolvedValue(false);
 
     const output = await captureLog(() => execute({ project: "." }));
     expect(output).toContain("[ok] GitHub Token");
-    expect(output).toContain("[ok] GitHub Webhook Secret");
+    expect(output).toContain("[ok] GitHub Webhook Secret (github_webhook_secret:MyOrg)");
     expect(mockResolveCredential).toHaveBeenCalledWith("github_webhook_secret");
+  });
+
+  it("uses default instance for webhook secrets with no source", async () => {
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadAgentConfig.mockReturnValue({
+      name: "dev",
+      credentials: ["github_token:default"],
+      webhooks: [{ type: "github", events: ["issues"] }],
+    });
+    mockResolveCredential.mockImplementation((id: string) => ({
+      id,
+      label: id === "github_token" ? "GitHub Token" : "GitHub Webhook Secret",
+      fields: [{ name: id === "github_token" ? "token" : "secret" }],
+    }));
+    mockCredentialExists.mockReturnValue(true);
+
+    const output = await captureLog(() => execute({ project: "." }));
+    expect(output).toContain("[ok] GitHub Webhook Secret (github_webhook_secret:default)");
   });
 
   it("skips writing when promptCredential returns undefined", async () => {

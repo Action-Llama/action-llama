@@ -51,15 +51,15 @@ sentryProjects = ["web-app", "api"]
 | `credentials` | string[] | Yes | Credential refs as `"type:instance"` needed at runtime |
 | `repos` | string[] | Yes | GitHub repos (owner/repo) |
 | `schedule` | string | No* | Cron expression for polling |
-| `model` | table | Yes | LLM model configuration |
-| `model.provider` | string | Yes | LLM provider ("anthropic" or "openai") |
-| `model.model` | string | Yes | Model ID |
-| `model.thinkingLevel` | string | Yes | Thinking budget level |
-| `model.authType` | string | Yes | Auth method for the provider |
+| `model` | table | No | LLM model configuration (falls back to `[model]` in project `config.toml`) |
+| `model.provider` | string | Yes* | LLM provider ("anthropic" or "openai") |
+| `model.model` | string | Yes* | Model ID |
+| `model.thinkingLevel` | string | Yes* | Thinking budget level |
+| `model.authType` | string | Yes* | Auth method for the provider |
 | `webhooks` | array | No* | Array of webhook trigger objects |
 | `params` | table | No | Custom key-value params for the agent prompt |
 
-*At least one of `schedule` or `webhooks` is required.
+*At least one of `schedule` or `webhooks` is required. *Required within `[model]` if the agent defines its own model block (otherwise inherits from project `config.toml`).
 
 ## Webhook Trigger Fields
 

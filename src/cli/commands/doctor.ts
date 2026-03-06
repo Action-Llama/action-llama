@@ -1,12 +1,12 @@
 import { resolve } from "path";
 import { existsSync } from "fs";
-import { input, confirm } from "@inquirer/prompts";
+import { confirm } from "@inquirer/prompts";
 import { execFileSync } from "child_process";
 import { discoverAgents, loadAgentConfig, loadGlobalConfig } from "../../shared/config.js";
 import type { CloudConfig } from "../../shared/config.js";
 import { resolveCredential } from "../../credentials/registry.js";
 import { promptCredential } from "../../credentials/prompter.js";
-import { parseCredentialRef, credentialExists, listCredentialInstances, writeCredentialFields } from "../../shared/credentials.js";
+import { parseCredentialRef, credentialExists, writeCredentialFields } from "../../shared/credentials.js";
 import { createLocalBackend, createBackendFromCloudConfig } from "../../shared/remote.js";
 import type { CredentialDefinition } from "../../credentials/schema.js";
 
@@ -35,7 +35,7 @@ export async function execute(opts: { project: string; cloud?: boolean }): Promi
 
   // --- Local credential check ---
 
-  // Collect all credential refs from agents
+  // Collect all credential refs from agents (including webhook secrets)
   const credentialRefs = new Set<string>();
 
   for (const name of agents) {
@@ -43,20 +43,17 @@ export async function execute(opts: { project: string; cloud?: boolean }): Promi
     for (const ref of config.credentials) {
       credentialRefs.add(ref);
     }
-  }
-
-  // Detect which webhook credential types are needed from trigger types
-  const neededWebhookCredTypes = new Set<string>();
-  for (const name of agents) {
-    const config = loadAgentConfig(projectPath, name);
+    // Derive webhook secret credential refs from triggers
     for (const trigger of config.webhooks || []) {
       const credType = WEBHOOK_SECRET_TYPES[trigger.type];
-      if (credType) neededWebhookCredTypes.add(credType);
+      if (credType) {
+        const instance = trigger.source || "default";
+        credentialRefs.add(`${credType}:${instance}`);
+      }
     }
   }
 
-  const totalItems = credentialRefs.size + neededWebhookCredTypes.size;
-  if (totalItems === 0) {
+  if (credentialRefs.size === 0) {
     console.log("No credentials required by any agent.");
   } else {
     console.log(`\nChecking ${credentialRefs.size} credential(s)...\n`);
@@ -81,32 +78,6 @@ export async function execute(opts: { project: string; cloud?: boolean }): Promi
       }
     }
 
-    // Handle webhook secrets separately — these support multiple named instances
-    for (const credType of neededWebhookCredTypes) {
-      const def = resolveCredential(credType);
-      const instances = listCredentialInstances(credType);
-
-      if (instances.length > 0) {
-        for (const inst of instances) {
-          console.log(`  [ok] ${def.label} (${credType}:${inst})`);
-          okCount++;
-        }
-
-        const addMore = await confirm({
-          message: `Add another ${def.label}? (for a different org/project)`,
-          default: false,
-        });
-
-        if (addMore) {
-          const added = await promptWebhookSecret(def, credType);
-          if (added) promptedCount++;
-        }
-      } else {
-        const result = await promptWebhookSecret(def, credType);
-        if (result) promptedCount++;
-      }
-    }
-
     console.log(`\nDone. ${okCount} already present, ${promptedCount} configured.`);
   }
 
@@ -119,7 +90,7 @@ export async function execute(opts: { project: string; cloud?: boolean }): Promi
     if (!cloudConfig) {
       throw new Error(
         "No [cloud] section found in config.toml. " +
-        "Run 'al cloud init' to configure a cloud provider first."
+        "Run 'al cloud setup' to configure a cloud provider first."
       );
     }
 
@@ -147,26 +118,6 @@ export async function execute(opts: { project: string; cloud?: boolean }): Promi
     console.log(`\nReconciling cloud IAM...`);
     await reconcileCloudIam(projectPath, cloudConfig);
   }
-}
-
-async function promptWebhookSecret(def: CredentialDefinition, credType: string): Promise<boolean> {
-  const name = await input({
-    message: `${def.label} — name (e.g. "MyOrg", "my-project"):`,
-    validate: (v: string) => {
-      const trimmed = v.trim();
-      if (!trimmed) return "Name is required";
-      if (!/^[a-zA-Z0-9_-]+$/.test(trimmed)) return "Use only letters, numbers, hyphens, and underscores";
-      if (credentialExists(credType, trimmed)) return `"${trimmed}" already exists`;
-      return true;
-    },
-  });
-
-  const result = await promptCredential(def, name.trim());
-  if (result && Object.keys(result.values).length > 0) {
-    writeCredentialFields(credType, name.trim(), result.values);
-    return true;
-  }
-  return false;
 }
 
 // --- Cloud IAM reconciliation ---

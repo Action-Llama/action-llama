@@ -156,21 +156,18 @@ The config file uses TOML syntax. The agent name is derived from the directory n
 credentials = ["github_token:default", "git_ssh:default"]
 repos = ["your-org/your-repo"]
 schedule = "*/5 * * * *"
-
-[model]
-provider = "anthropic"
-model = "claude-sonnet-4-20250514"
-thinkingLevel = "medium"
-authType = "api_key"
 \`\`\`
 
-### Full example (schedule + webhooks + params)
+The \`[model]\` section is **optional** — agents inherit the default model from the project's \`config.toml\`. Only add \`[model]\` to an agent config if you want to override the default (e.g. use a different model or thinking level for that specific agent).
+
+### Full example (schedule + webhooks + params + model override)
 
 \`\`\`toml
 credentials = ["github_token:default", "git_ssh:default", "sentry_token:default"]
 repos = ["acme/app", "acme/api"]
 schedule = "*/5 * * * *"
 
+# Optional: override the project default model for this agent
 [model]
 provider = "anthropic"
 model = "claude-sonnet-4-20250514"
@@ -202,10 +199,11 @@ sentryProjects = ["web-app", "api"]
 | \`credentials\` | string[] | Yes | Credential refs as \`"type:instance"\` (see Credential Reference above) |
 | \`repos\` | string[] | Yes | GitHub repos in owner/repo format |
 | \`schedule\` | string | No* | Cron expression (e.g. "*/5 * * * *") |
-| \`model.provider\` | string | Yes | Always "anthropic" |
-| \`model.model\` | string | Yes | Model ID (e.g. "claude-sonnet-4-20250514") |
-| \`model.thinkingLevel\` | string | Yes | off \\| minimal \\| low \\| medium \\| high \\| xhigh |
-| \`model.authType\` | string | Yes | api_key \\| oauth_token |
+| \`model\` | table | No | LLM model config — omit to inherit from project \`config.toml\` |
+| \`model.provider\` | string | Yes* | "anthropic" or "openai" |
+| \`model.model\` | string | Yes* | Model ID (e.g. "claude-sonnet-4-20250514") |
+| \`model.thinkingLevel\` | string | Yes* | off \\| minimal \\| low \\| medium \\| high \\| xhigh |
+| \`model.authType\` | string | Yes* | api_key \\| oauth_token \\| pi_auth |
 | \`webhooks[].type\` | string | Yes | Provider type: "github" or "sentry" |
 | \`webhooks[].source\` | string | No | Credential instance name (defaults to "default") |
 | \`webhooks[].repos\` | string[] | No | Filter to specific repos |
@@ -215,7 +213,7 @@ sentryProjects = ["web-app", "api"]
 | \`webhooks[].resources\` | string[] | No | Sentry resources: error, event_alert, metric_alert, issue, comment |
 | \`params.*\` | any | No | Custom key-value pairs injected into the prompt |
 
-*At least one of \`schedule\` or \`webhooks\` is required.
+*At least one of \`schedule\` or \`webhooks\` is required. *Required within \`[model]\` if the agent defines its own model block.
 
 ### TOML syntax reminders
 
@@ -243,6 +241,16 @@ Use those values for repos, triggerLabel, and assignee.
 (Note: \\\`gh\\\` is not in the base Docker image — this agent needs a custom Dockerfile that installs it. See Docker Mode section.)
 
 **You MUST complete ALL steps below.** Do not stop after reading the issue — you must implement, commit, push, and open a PR.
+
+## Setup — ensure labels exist
+
+Before looking for work, ensure the required labels exist on each repo. Run the following for each repo (these are idempotent — they succeed silently if the label already exists):
+
+\\\`\\\`\\\`
+gh label create "<triggerLabel>" --repo <repo> --color 0E8A16 --description "Trigger label for dev agent" --force
+gh label create "in-progress" --repo <repo> --color FBCA04 --description "Agent is working on this" --force
+gh label create "agent-completed" --repo <repo> --color 1D76DB --description "Agent has opened a PR" --force
+\\\`\\\`\\\`
 
 ## Finding work
 

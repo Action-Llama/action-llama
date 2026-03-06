@@ -75,6 +75,46 @@ describe("loadAgentConfig", () => {
   it("throws when agent config is missing", () => {
     expect(() => loadAgentConfig(tmpDir, "nonexistent")).toThrow("Agent config not found");
   });
+
+  it("falls back to global [model] when agent has no [model]", () => {
+    // Write global config with [model]
+    const globalModel = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "high", authType: "api_key" };
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({ model: globalModel } as Record<string, unknown>));
+
+    // Write agent config without [model]
+    const agentDir = resolve(tmpDir, "dev");
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML({
+      credentials: ["github_token:default"],
+      schedule: "*/5 * * * *",
+      repos: ["acme/app"],
+    }));
+
+    const loaded = loadAgentConfig(tmpDir, "dev");
+    expect(loaded.model).toEqual(globalModel);
+  });
+
+  it("agent [model] takes precedence over global [model]", () => {
+    // Write global config with [model]
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      model: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "high", authType: "api_key" },
+    } as Record<string, unknown>));
+
+    // Write agent config with its own [model]
+    const agentDir = resolve(tmpDir, "dev");
+    mkdirSync(agentDir, { recursive: true });
+    const agentModel = { provider: "openai", model: "gpt-4o", thinkingLevel: "off", authType: "api_key" };
+    writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML({
+      credentials: ["github_token:default"],
+      model: agentModel,
+      schedule: "*/5 * * * *",
+      repos: ["acme/app"],
+    } as Record<string, unknown>));
+
+    const loaded = loadAgentConfig(tmpDir, "dev");
+    expect(loaded.model.provider).toBe("openai");
+    expect(loaded.model.model).toBe("gpt-4o");
+  });
 });
 
 describe("discoverAgents", () => {

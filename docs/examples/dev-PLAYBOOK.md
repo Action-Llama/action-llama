@@ -9,6 +9,16 @@ Use those values for repos, triggerLabel, and assignee.
 
 **You MUST complete ALL steps below.** Do not stop after reading the issue — you must implement, commit, push, and open a PR.
 
+## Setup — ensure labels exist
+
+Before looking for work, ensure the required labels exist on each repo. Run the following for each repo (these are idempotent — they succeed silently if the label already exists):
+
+```
+gh label create "<triggerLabel>" --repo <repo> --color 0E8A16 --description "Trigger label for dev agent" --force
+gh label create "in-progress" --repo <repo> --color FBCA04 --description "Agent is working on this" --force
+gh label create "agent-completed" --repo <repo> --color 1D76DB --description "Agent has opened a PR" --force
+```
+
 ## Finding work
 
 **Webhook trigger:** When you receive a `<webhook-trigger>` block, the issue details are already in the trigger context. Check the issue's labels and assignee against your `triggerLabel` and `assignee` params. If the issue matches (has your trigger label and is assigned to your assignee), proceed with implementation. If it does not match, respond `[SILENT]` and stop.

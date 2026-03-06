@@ -91,6 +91,20 @@ program
     await execute(opts);
   });
 
+// --- Credential management ---
+
+const credsCmd = program
+  .command("creds")
+  .description("Credential management");
+
+credsCmd
+  .command("ls")
+  .description("List stored credentials (names only, no secrets)")
+  .action(async () => {
+    const { list } = await import("./commands/creds.js");
+    await list();
+  });
+
 // --- Cloud management ---
 
 const cloudCmd = program
@@ -98,11 +112,20 @@ const cloudCmd = program
   .description("Cloud infrastructure management");
 
 cloudCmd
-  .command("init")
+  .command("setup")
   .description("Interactive wizard: pick provider, configure, push creds, provision IAM")
   .option("-p, --project <dir>", "project directory", ".")
   .action(async (opts) => {
-    const { execute } = await import("./commands/cloud-init.js");
+    const { execute } = await import("./commands/cloud-setup.js");
+    await execute(opts);
+  });
+
+cloudCmd
+  .command("teardown")
+  .description("Delete per-agent IAM resources and remove [cloud] config")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(async (opts) => {
+    const { execute } = await import("./commands/cloud-teardown.js");
     await execute(opts);
   });
 

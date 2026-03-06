@@ -32,7 +32,7 @@ export async function execute(opts: { project: string; noDocker?: boolean; cloud
   // Cloud mode: set up cloud backend
   if (opts.cloud) {
     if (!globalConfig.cloud) {
-      throw new Error("No [cloud] section found in config.toml. Run 'al cloud init' first.");
+      throw new Error("No [cloud] section found in config.toml. Run 'al cloud setup' first.");
     }
     const { setDefaultBackend } = await import("../../shared/credentials.js");
     const { createBackendFromCloudConfig } = await import("../../shared/remote.js");

@@ -1,8 +1,9 @@
 import { resolve, join } from "path";
-import { readFileSync, existsSync, mkdirSync, writeFileSync } from "fs";
+import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSync } from "fs";
 import { homedir } from "os";
 import { loadCredentialField } from "../../shared/credentials.js";
-import { discoverAgents, loadAgentConfig } from "../../shared/config.js";
+import { discoverAgents, loadAgentConfig, loadGlobalConfig } from "../../shared/config.js";
+import { CREDENTIALS_DIR } from "../../shared/paths.js";
 
 const AL_KEYBINDINGS = {
   newLine: ["shift+enter", "alt+enter"],
@@ -49,9 +50,23 @@ USER node
 
 If the agent needs a fundamentally different base (e.g. a Python-heavy agent that should use \`python:3.12-slim\` instead of \`node:20-slim\`), you can use any base image — just make sure to install Node.js and set up the \`node\` user (uid 1000) since the container entry point requires them.
 
+### Model configuration
+
+The project's \`config.toml\` defines a default \`[model]\` that all agents inherit. Do NOT add a \`[model]\` section to an agent's \`agent-config.toml\` unless the user specifically wants that agent to use a different model or thinking level than the project default. Omitting \`[model]\` from the agent config is correct — it will inherit from the project.
+
+### Credentials
+
+The available credentials are listed below under "Available Credentials". Use these when writing the agent's \`credentials\` array in \`agent-config.toml\`. Reference them as \`"type:instance"\` (e.g. \`"github_token:default"\`). For default instances, you can omit the \`:default\` suffix.
+
+When a credential type has **multiple instances** (e.g. \`github_webhook_secret:myapp\` and \`github_webhook_secret:staging\`), ask the user which instance they want to use for this agent. Do not guess.
+
+If a required credential is missing from the available list, tell the user to run \`al doctor\` to set it up, then re-open the console.
+
 When the user asks to create an agent:
 - Ask which template they want and walk them through configuring it
+- Check the available credentials and use what's there; ask the user to choose when there are multiple instances of a credential type
 - Create the agent directory with \`agent-config.toml\`, \`PLAYBOOK.md\`, and a \`Dockerfile\` if the playbook requires tools not in the base image
+- Do NOT include \`[model]\` in agent-config.toml unless the user asks for a different model than the project default
 - **IMPORTANT:** Agent playbooks must be detailed and prescriptive with step-by-step commands. Copy the example playbook from the "Example Playbook" section above and customize it — do NOT write simplified or abbreviated instructions.
 `;
 
@@ -126,13 +141,30 @@ export async function execute(opts: { project: string }): Promise<void> {
   } = await import("@mariozechner/pi-coding-agent");
   const { getModel } = await import("@mariozechner/pi-ai");
 
+  const globalConfig = loadGlobalConfig(projectPath);
+  const modelConfig = globalConfig.model || {
+    provider: "anthropic",
+    model: "claude-sonnet-4-20250514",
+    thinkingLevel: "medium" as const,
+    authType: "api_key" as const,
+  };
+
   const authStorage = AuthStorage.create();
-  const credential = loadCredentialField("anthropic_key", "default", "token");
-  if (credential) {
-    authStorage.setRuntimeApiKey("anthropic", credential);
+  if (modelConfig.authType !== "pi_auth") {
+    if (modelConfig.provider === "anthropic") {
+      const credential = loadCredentialField("anthropic_key", "default", "token");
+      if (credential) {
+        authStorage.setRuntimeApiKey("anthropic", credential);
+      }
+    } else if (modelConfig.provider === "openai") {
+      const credential = loadCredentialField("openai_key", "default", "token");
+      if (credential) {
+        authStorage.setRuntimeApiKey("openai", credential);
+      }
+    }
   }
 
-  const model = getModel("anthropic", "claude-sonnet-4-20250514" as any);
+  const model = getModel(modelConfig.provider as any, modelConfig.model as any);
 
   // Load AGENTS.md context, appending agent summaries or no-agents guidance
   let fullContext = agentsContent || "";
@@ -140,6 +172,14 @@ export async function execute(opts: { project: string }): Promise<void> {
     fullContext += NO_AGENTS_CONTEXT;
   } else if (agentSummaries.length > 0) {
     fullContext += `\n\n## Current Agents\n\n${agentSummaries.join("\n")}`;
+  }
+
+  // Append available credentials
+  const credInventory = collectCredentialInventory();
+  if (credInventory) {
+    fullContext += `\n\n## Available Credentials\n\nThese credentials are configured locally (from \`al creds ls\`):\n\n${credInventory}\n`;
+  } else {
+    fullContext += `\n\n## Available Credentials\n\nNo credentials configured yet. The user should run \`al doctor\` to set them up.\n`;
   }
 
   const resourceLoader = new DefaultResourceLoader({
@@ -164,7 +204,7 @@ export async function execute(opts: { project: string }): Promise<void> {
   const { session } = await createAgentSession({
     cwd: projectPath,
     model,
-    thinkingLevel: "medium",
+    thinkingLevel: modelConfig.thinkingLevel,
     authStorage,
     resourceLoader,
     tools: createCodingTools(projectPath),
@@ -196,4 +236,50 @@ function readKeybindings(): Record<string, string | string[]> {
   } catch {
     return {};
   }
+}
+
+/**
+ * Collect a credential inventory: type → instance[] → field[]
+ * Returns a formatted string like `al creds ls` output, or empty string if none.
+ */
+function collectCredentialInventory(): string {
+  let types: string[];
+  try {
+    types = readdirSync(CREDENTIALS_DIR).filter((e) => {
+      try { return statSync(resolve(CREDENTIALS_DIR, e)).isDirectory(); } catch { return false; }
+    }).sort();
+  } catch {
+    return "";
+  }
+
+  const lines: string[] = [];
+  for (const type of types) {
+    const typeDir = resolve(CREDENTIALS_DIR, type);
+    let instances: string[];
+    try {
+      instances = readdirSync(typeDir).filter((e) => {
+        try { return statSync(resolve(typeDir, e)).isDirectory(); } catch { return false; }
+      }).sort();
+    } catch {
+      continue;
+    }
+
+    for (const instance of instances) {
+      const instanceDir = resolve(typeDir, instance);
+      let fields: string[];
+      try {
+        fields = readdirSync(instanceDir).filter((e) => {
+          try { return statSync(resolve(instanceDir, e)).isFile(); } catch { return false; }
+        }).sort();
+      } catch {
+        fields = [];
+      }
+      if (fields.length === 0) continue;
+
+      const ref = instance === "default" ? type : `${type}:${instance}`;
+      lines.push(`  ${ref}  (${fields.join(", ")})`);
+    }
+  }
+
+  return lines.join("\n");
 }

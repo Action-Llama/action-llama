@@ -34,7 +34,14 @@ export async function execute(name: string): Promise<void> {
 
   console.log("\n--- Writing configuration ---\n");
 
-  const globalConfig: GlobalConfig = {};
+  const globalConfig: GlobalConfig = {
+    model: {
+      provider: "anthropic",
+      model: "claude-sonnet-4-20250514",
+      thinkingLevel: "medium",
+      authType: result ? "api_key" : "pi_auth",
+    },
+  };
 
   scaffoldProject(projectPath, globalConfig, [], name);
 

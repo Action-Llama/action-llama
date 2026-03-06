@@ -46,7 +46,7 @@ export async function execute(agent: string, opts: { project: string; noDocker?:
     // Cloud mode: use cloud runtime
     const cloud = globalConfig.cloud;
     if (!cloud) {
-      throw new Error("No [cloud] section found in config.toml. Run 'al cloud init' first.");
+      throw new Error("No [cloud] section found in config.toml. Run 'al cloud setup' first.");
     }
 
     const { setDefaultBackend } = await import("../../shared/credentials.js");

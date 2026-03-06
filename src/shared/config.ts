@@ -48,6 +48,7 @@ export interface WebhooksGlobalConfig {
 }
 
 export interface GlobalConfig {
+  model?: ModelConfig;
   local?: LocalConfig;
   cloud?: CloudConfig;
   gateway?: GatewayConfig;
@@ -88,6 +89,15 @@ export function loadAgentConfig(projectPath: string, agentName: string): AgentCo
   const raw = readFileSync(tomlPath, "utf-8");
   const parsed = parseTOML(raw) as unknown as AgentConfig;
   parsed.name = agentName;
+
+  // Fall back to global [model] if agent doesn't define its own
+  if (!parsed.model) {
+    const global = loadGlobalConfig(projectPath);
+    if (global.model) {
+      parsed.model = global.model;
+    }
+  }
+
   return parsed;
 }
 
