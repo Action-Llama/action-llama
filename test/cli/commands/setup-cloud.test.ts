@@ -25,6 +25,11 @@ vi.mock("child_process", () => ({
   execFileSync: (...args: any[]) => mockExecFileSync(...args),
 }));
 
+const mockConfirm = vi.fn();
+vi.mock("@inquirer/prompts", () => ({
+  confirm: (...args: any[]) => mockConfirm(...args),
+}));
+
 import { execute } from "../../../src/cli/commands/setup-cloud.js";
 
 describe("setup --cloud", () => {
@@ -81,14 +86,16 @@ describe("setup --cloud", () => {
 
       // Mock gcloud responses:
       // 1. auth print-access-token
-      // 2. iam service-accounts create
-      // 3. secrets list (for github_token:default)
-      // 4. secrets list (for anthropic_key:default)
-      // 5. secrets add-iam-policy-binding (github_token token)
-      // 6. secrets add-iam-policy-binding (anthropic_key token)
-      // 7. iam service-accounts add-iam-policy-binding
+      // 2. preflight secrets list (count check)
+      // 3. iam service-accounts create
+      // 4. secrets list (for github_token:default)
+      // 5. secrets list (for anthropic_key:default)
+      // 6. secrets add-iam-policy-binding (github_token token)
+      // 7. secrets add-iam-policy-binding (anthropic_key token)
+      // 8. iam service-accounts add-iam-policy-binding
       mockExecFileSync
         .mockReturnValueOnce("ya29.fake-token") // auth
+        .mockReturnValueOnce("action-llama--github_token--default--token") // preflight
         .mockReturnValueOnce("") // SA create
         .mockReturnValueOnce("projects/test-proj/secrets/action-llama--github_token--default--token") // secrets list
         .mockReturnValueOnce("projects/test-proj/secrets/action-llama--anthropic_key--default--token") // secrets list
@@ -126,13 +133,67 @@ describe("setup --cloud", () => {
         model: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "pi_auth" },
       });
 
-      // auth succeeds, SA create fails with "already exists"
+      // auth succeeds, preflight finds secrets, SA create fails with "already exists"
       mockExecFileSync
         .mockReturnValueOnce("ya29.fake-token")
+        .mockReturnValueOnce("action-llama--some--secret--field") // preflight
         .mockImplementationOnce(() => { throw new Error("already exists"); });
 
       const output = await captureLog(() => execute({ project: "." }));
       expect(output).toContain("already exists");
+    });
+
+    it("warns and prompts when no secrets found in GSM", async () => {
+      mockLoadGlobalConfig.mockReturnValue({
+        docker: {
+          enabled: true,
+          runtime: "cloud-run",
+          gcpProject: "test-proj",
+        },
+      });
+      mockDiscoverAgents.mockReturnValue(["dev"]);
+
+      // auth succeeds, preflight finds nothing
+      mockExecFileSync
+        .mockReturnValueOnce("ya29.fake-token")
+        .mockReturnValueOnce(""); // preflight: no secrets
+
+      // User declines
+      mockConfirm.mockResolvedValueOnce(false);
+
+      const output = await captureLog(() => execute({ project: "." }));
+      expect(output).toContain("No secrets found in GSM");
+      expect(output).toContain("al creds push");
+      expect(output).toContain("Aborted");
+    });
+
+    it("proceeds when user confirms despite no secrets", async () => {
+      mockLoadGlobalConfig.mockReturnValue({
+        docker: {
+          enabled: true,
+          runtime: "cloud-run",
+          gcpProject: "test-proj",
+        },
+      });
+      mockDiscoverAgents.mockReturnValue(["dev"]);
+      mockLoadAgentConfig.mockReturnValue({
+        name: "dev",
+        credentials: [],
+        model: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "pi_auth" },
+      });
+
+      // auth succeeds, preflight finds nothing
+      mockExecFileSync
+        .mockReturnValueOnce("ya29.fake-token")
+        .mockReturnValueOnce("") // preflight: no secrets
+        .mockReturnValueOnce(""); // SA create
+
+      // User confirms
+      mockConfirm.mockResolvedValueOnce(true);
+
+      const output = await captureLog(() => execute({ project: "." }));
+      expect(output).toContain("No secrets found in GSM");
+      expect(output).toContain("Setting up Cloud Run");
     });
   });
 

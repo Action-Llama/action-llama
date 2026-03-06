@@ -107,6 +107,8 @@ al setup --cloud -p .
 
 This creates a task role for each agent (`al-{agentName}-task-role`) and grants `secretsmanager:GetSecretValue` scoped to only that agent's declared secrets.
 
+**Note:** Unlike GCP Cloud Run, this step can be run before or after pushing credentials (step 5). The IAM policies use wildcard ARN patterns derived from the agent config, so the secrets don't need to exist yet.
+
 Alternatively, create roles manually:
 
 ```bash

@@ -69,6 +69,25 @@ async function executeGcp(
     return;
   }
 
+  // Pre-flight: check if any secrets exist in GSM with this prefix
+  const preflight = listGsmSecretCount(gcpProject, secretPrefix);
+  if (preflight === 0) {
+    console.log(
+      `\nWarning: No secrets found in GSM with prefix "${secretPrefix}".\n` +
+      `IAM bindings are created against existing secrets, so you should push credentials first:\n\n` +
+      `  al creds push <remote> -p .\n`
+    );
+    const { confirm } = await import("@inquirer/prompts");
+    const proceed = await confirm({
+      message: "Continue anyway? (Service accounts will be created but no secrets will be bound)",
+      default: false,
+    });
+    if (!proceed) {
+      console.log("Aborted. Push credentials first, then re-run.");
+      return;
+    }
+  }
+
   console.log(`\nSetting up Cloud Run service accounts for ${agents.length} agent(s)...\n`);
 
   for (const name of agents) {
@@ -296,6 +315,21 @@ function awsCli(args: string[]): string {
     timeout: 30_000,
     stdio: ["pipe", "pipe", "pipe"],
   }).trim();
+}
+
+function listGsmSecretCount(gcpProject: string, prefix: string): number {
+  try {
+    const output = gcloud([
+      "secrets", "list",
+      "--filter", `name:${prefix}--`,
+      "--format", "value(name)",
+      "--project", gcpProject,
+    ], gcpProject);
+    if (!output.trim()) return 0;
+    return output.trim().split("\n").length;
+  } catch {
+    return 0;
+  }
 }
 
 function listGsmFields(

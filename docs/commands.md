@@ -89,7 +89,7 @@ For each agent, it:
 2. Grants `secretmanager.secretAccessor` on that agent's declared credentials
 3. Grants `iam.serviceAccountUser` for Cloud Run execution
 
-Requires `gcloud` CLI with project admin permissions. See [Cloud Run docs](cloud-run.md) for full setup.
+Requires `gcloud` CLI with project admin permissions. **Must run after `al creds push`** — bindings are created against existing secrets in GSM. See [Cloud Run docs](cloud-run.md) for full setup.
 
 **ECS Fargate** (`docker.runtime = "ecs"`):
 
@@ -97,7 +97,7 @@ For each agent, it:
 1. Creates IAM role `al-{agentName}-task-role`
 2. Attaches an inline policy granting `secretsmanager:GetSecretValue` on that agent's declared credentials
 
-Requires AWS CLI with IAM admin permissions. See [ECS docs](ecs.md) for full setup.
+Requires AWS CLI with IAM admin permissions. Can run before or after `al creds push` — policies use wildcard ARN patterns. See [ECS docs](ecs.md) for full setup.
 
 ## `al remote`
 

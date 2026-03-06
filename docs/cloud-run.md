@@ -75,6 +75,8 @@ al creds push production -p .
 
 ### 5. Create per-agent service accounts
 
+**Important:** Run `al creds push` (step 4) before this step. The cloud setup reads which secrets exist in GSM to build the IAM bindings, so the secrets must already be present.
+
 ```bash
 al setup --cloud -p .
 ```
