@@ -51,7 +51,7 @@ export function makeTmpProject(opts?: TmpProjectOptions): string {
     ...opts?.global,
   };
   if (Object.keys(globalConfig).length > 0) {
-    writeFileSync(resolve(dir, "config.json"), JSON.stringify(globalConfig));
+    writeFileSync(resolve(dir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
   }
 
   const agents = opts?.agents

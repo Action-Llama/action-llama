@@ -13,6 +13,7 @@ vi.mock("../../src/shared/credentials.js", () => ({
     if (sep === -1) return { type: ref, instance: "default" };
     return { type: ref.slice(0, sep).trim(), instance: ref.slice(sep + 1).trim() };
   },
+  listCredentialInstances: () => ["default"],
   writeCredentialField: () => {},
   writeCredentialFields: () => {},
   credentialExists: () => true,
@@ -68,7 +69,7 @@ import { startScheduler } from "../../src/scheduler/index.js";
 const model = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" };
 
 function setupProjectWithWebhooks(tmpDir: string) {
-  writeFileSync(resolve(tmpDir, "config.json"), JSON.stringify({}));
+  writeFileSync(resolve(tmpDir, "config.toml"), "");
 
   // Webhook-only agent
   const webhookAgent = {
@@ -86,7 +87,7 @@ function setupProjectWithWebhooks(tmpDir: string) {
 }
 
 function setupProjectWithHybrid(tmpDir: string) {
-  writeFileSync(resolve(tmpDir, "config.json"), JSON.stringify({}));
+  writeFileSync(resolve(tmpDir, "config.toml"), "");
 
   // Hybrid agent (schedule + webhooks)
   const hybridAgent = {
@@ -105,7 +106,7 @@ function setupProjectWithHybrid(tmpDir: string) {
 }
 
 function setupProjectWithNoTrigger(tmpDir: string) {
-  writeFileSync(resolve(tmpDir, "config.json"), JSON.stringify({}));
+  writeFileSync(resolve(tmpDir, "config.toml"), "");
 
   // Agent with neither schedule nor webhooks
   const badAgent = {

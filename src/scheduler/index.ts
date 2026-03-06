@@ -2,7 +2,7 @@ import { Cron } from "croner";
 import { mkdirSync } from "fs";
 import { loadGlobalConfig, loadAgentConfig, discoverAgents, validateAgentConfig } from "../shared/config.js";
 import type { GlobalConfig, AgentConfig } from "../shared/config.js";
-import { requireCredentialRef, parseCredentialRef, loadCredentialField } from "../shared/credentials.js";
+import { requireCredentialRef, parseCredentialRef, loadCredentialField, listCredentialInstances } from "../shared/credentials.js";
 import { createLogger, createFileOnlyLogger } from "../shared/logger.js";
 import { agentDir } from "../shared/paths.js";
 import { AgentRunner } from "../agents/runner.js";
@@ -63,7 +63,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // Set up webhook registry if any agents use webhooks
   let webhookRegistry: WebhookRegistry | undefined;
-  let webhookSecrets: Record<string, string | undefined> = {};
+  let webhookSecrets: Record<string, string[]> = {};
 
   if (anyWebhooks) {
     webhookRegistry = new WebhookRegistry(logger);
@@ -72,22 +72,28 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     webhookRegistry.registerProvider(new GitHubWebhookProvider());
     webhookRegistry.registerProvider(new SentryWebhookProvider());
 
-    // Load GitHub webhook secret from credentials (if configured)
-    const githubSecretRef = globalConfig.webhooks?.secretCredentials?.github
-      || "github_webhook_secret:default";
-    const { type: ghType, instance: ghInst } = parseCredentialRef(githubSecretRef);
-    const githubSecret = loadCredentialField(ghType, ghInst, "secret");
-    if (githubSecret) {
-      webhookSecrets.github = githubSecret;
+    // Load all GitHub webhook secrets (one per instance)
+    const ghInstances = listCredentialInstances("github_webhook_secret");
+    const ghSecrets: string[] = [];
+    for (const inst of ghInstances) {
+      const secret = loadCredentialField("github_webhook_secret", inst, "secret");
+      if (secret) ghSecrets.push(secret);
+    }
+    if (ghSecrets.length > 0) {
+      webhookSecrets.github = ghSecrets;
+      logger.info({ count: ghSecrets.length }, "loaded GitHub webhook secrets");
     }
 
-    // Load Sentry webhook secret from credentials (if configured)
-    const sentrySecretRef = globalConfig.webhooks?.secretCredentials?.sentry
-      || "sentry_client_secret:default";
-    const { type: sType, instance: sInst } = parseCredentialRef(sentrySecretRef);
-    const sentrySecret = loadCredentialField(sType, sInst, "secret");
-    if (sentrySecret) {
-      webhookSecrets.sentry = sentrySecret;
+    // Load all Sentry webhook secrets (one per instance)
+    const sentryInstances = listCredentialInstances("sentry_client_secret");
+    const sentrySecrets: string[] = [];
+    for (const inst of sentryInstances) {
+      const secret = loadCredentialField("sentry_client_secret", inst, "secret");
+      if (secret) sentrySecrets.push(secret);
+    }
+    if (sentrySecrets.length > 0) {
+      webhookSecrets.sentry = sentrySecrets;
+      logger.info({ count: sentrySecrets.length }, "loaded Sentry webhook secrets");
     }
   }
 

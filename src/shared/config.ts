@@ -1,9 +1,9 @@
 import { readFileSync, existsSync, readdirSync, statSync } from "fs";
-import { resolve, basename } from "path";
+import { resolve } from "path";
 import { parse as parseTOML } from "smol-toml";
 import type { WebhookTriggerConfig } from "../webhooks/types.js";
 
-// --- Global config (lives at <project>/config.json) ---
+// --- Global config (lives at <project>/config.toml) ---
 
 export interface ModelConfig {
   provider: string;
@@ -34,7 +34,7 @@ export interface GlobalConfig {
   webhooks?: WebhooksGlobalConfig;
 }
 
-// --- Per-agent config (lives at <project>/<agent>/config.json) ---
+// --- Per-agent config (lives at <project>/<agent>/agent-config.toml) ---
 
 export interface AgentConfig {
   name: string;
@@ -49,38 +49,24 @@ export interface AgentConfig {
 // --- Loaders ---
 
 export function loadGlobalConfig(projectPath: string): GlobalConfig {
-  const configPath = resolve(projectPath, "config.json");
+  const configPath = resolve(projectPath, "config.toml");
   if (!existsSync(configPath)) {
     return {};
   }
   const raw = readFileSync(configPath, "utf-8");
-  const parsed = JSON.parse(raw) as GlobalConfig & { broker?: GatewayConfig };
-  // Backward compat: read old "broker" field if "gateway" is missing
-  if (!parsed.gateway && parsed.broker) {
-    parsed.gateway = parsed.broker;
-    delete parsed.broker;
-  }
-  return parsed;
+  return parseTOML(raw) as unknown as GlobalConfig;
 }
 
 export function loadAgentConfig(projectPath: string, agentName: string): AgentConfig {
   const agentDir = resolve(projectPath, agentName);
   const tomlPath = resolve(agentDir, "agent-config.toml");
-  const jsonPath = resolve(agentDir, "config.json");
 
-  let parsed: AgentConfig;
-  if (existsSync(tomlPath)) {
-    const raw = readFileSync(tomlPath, "utf-8");
-    parsed = parseTOML(raw) as unknown as AgentConfig;
-  } else if (existsSync(jsonPath)) {
-    const raw = readFileSync(jsonPath, "utf-8");
-    parsed = JSON.parse(raw) as AgentConfig;
-  } else {
-    throw new Error(
-      `Agent config not found at ${tomlPath} or ${jsonPath}.`
-    );
+  if (!existsSync(tomlPath)) {
+    throw new Error(`Agent config not found at ${tomlPath}.`);
   }
 
+  const raw = readFileSync(tomlPath, "utf-8");
+  const parsed = parseTOML(raw) as unknown as AgentConfig;
   parsed.name = agentName;
   return parsed;
 }
@@ -104,7 +90,7 @@ export function discoverAgents(projectPath: string): string[] {
     if (entry.startsWith(".")) continue;
     const entryPath = resolve(projectPath, entry);
     if (!statSync(entryPath).isDirectory()) continue;
-    if (existsSync(resolve(entryPath, "agent-config.toml")) || existsSync(resolve(entryPath, "config.json"))) {
+    if (existsSync(resolve(entryPath, "agent-config.toml"))) {
       agents.push(entry);
     }
   }

@@ -6,7 +6,7 @@ import type { Logger } from "../../shared/logger.js";
 export function registerWebhookRoutes(
   router: Router,
   registry: WebhookRegistry,
-  webhookSecrets: Record<string, string | undefined>,
+  webhookSecrets: Record<string, string[]>,
   logger: Logger
 ): void {
   router.post("/webhooks/:source", async (req, res, params) => {
@@ -48,8 +48,8 @@ export function registerWebhookRoutes(
       "webhook headers"
     );
 
-    const secret = webhookSecrets[source];
-    const result = registry.dispatch(source, headers, rawBody, secret);
+    const secrets = webhookSecrets[source];
+    const result = registry.dispatch(source, headers, rawBody, secrets);
 
     if (!result.ok) {
       const status = result.errors?.includes("signature validation failed") ? 401 : 400;

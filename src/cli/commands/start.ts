@@ -1,4 +1,5 @@
 import { resolve } from "path";
+import { existsSync } from "fs";
 import { loadGlobalConfig } from "../../shared/config.js";
 import { startScheduler } from "../../scheduler/index.js";
 import { StatusTracker } from "../../tui/status-tracker.js";
@@ -6,6 +7,14 @@ import { execute as runSetup } from "./setup.js";
 
 export async function execute(opts: { project: string; dangerousNoDocker?: boolean }): Promise<void> {
   const projectPath = resolve(opts.project);
+
+  // Guard: refuse to run if the project path looks like an agent directory
+  if (existsSync(resolve(projectPath, "agent-config.toml")) || existsSync(resolve(projectPath, "PLAYBOOK.md"))) {
+    throw new Error(
+      `"${projectPath}" looks like an agent directory, not a project directory. ` +
+      `Run 'al start' from the project root (the parent directory).`
+    );
+  }
 
   // Ensure all credentials are present before starting
   await runSetup({ project: opts.project });

@@ -10,7 +10,7 @@ export interface GatewayOptions {
   port: number;
   logger: Logger;
   webhookRegistry?: WebhookRegistry;
-  webhookSecrets?: Record<string, string | undefined>;
+  webhookSecrets?: Record<string, string[]>;
 }
 
 export interface GatewayServer {

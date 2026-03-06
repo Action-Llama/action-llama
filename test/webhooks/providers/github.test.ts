@@ -16,26 +16,39 @@ describe("GitHubWebhookProvider", () => {
     it("accepts valid HMAC signature", () => {
       const body = '{"action":"opened"}';
       const sig = sign(body, secret);
-      expect(provider.validateRequest({ "x-hub-signature-256": sig }, body, secret)).toBe(true);
+      expect(provider.validateRequest({ "x-hub-signature-256": sig }, body, [secret])).toBe(true);
     });
 
     it("rejects invalid HMAC signature", () => {
       const body = '{"action":"opened"}';
       const sig = sign("different body", secret);
-      expect(provider.validateRequest({ "x-hub-signature-256": sig }, body, secret)).toBe(false);
+      expect(provider.validateRequest({ "x-hub-signature-256": sig }, body, [secret])).toBe(false);
     });
 
     it("rejects missing signature when secret is configured", () => {
-      expect(provider.validateRequest({}, '{"action":"opened"}', secret)).toBe(false);
+      expect(provider.validateRequest({}, '{"action":"opened"}', [secret])).toBe(false);
     });
 
     it("accepts any request when no secret is configured", () => {
       expect(provider.validateRequest({}, '{"action":"opened"}')).toBe(true);
       expect(provider.validateRequest({}, '{"action":"opened"}', undefined)).toBe(true);
+      expect(provider.validateRequest({}, '{"action":"opened"}', [])).toBe(true);
     });
 
     it("rejects wrong-length signature", () => {
-      expect(provider.validateRequest({ "x-hub-signature-256": "sha256=abc" }, "{}", secret)).toBe(false);
+      expect(provider.validateRequest({ "x-hub-signature-256": "sha256=abc" }, "{}", [secret])).toBe(false);
+    });
+
+    it("accepts when any of multiple secrets matches", () => {
+      const body = '{"action":"opened"}';
+      const sig = sign(body, "second-secret");
+      expect(provider.validateRequest({ "x-hub-signature-256": sig }, body, ["wrong-secret", "second-secret"])).toBe(true);
+    });
+
+    it("rejects when none of multiple secrets match", () => {
+      const body = '{"action":"opened"}';
+      const sig = sign(body, "actual-secret");
+      expect(provider.validateRequest({ "x-hub-signature-256": sig }, body, ["wrong1", "wrong2"])).toBe(false);
     });
   });
 

@@ -60,7 +60,7 @@ import { startScheduler } from "../../src/scheduler/index.js";
 
 function setupProject(tmpDir: string) {
   const globalConfig = {};
-  writeFileSync(resolve(tmpDir, "config.json"), JSON.stringify(globalConfig));
+  writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
 
   const model = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" };
   const agents = [

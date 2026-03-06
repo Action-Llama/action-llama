@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "fs";
 import { resolve, join } from "path";
 import { tmpdir } from "os";
+import { stringify as stringifyTOML } from "smol-toml";
 import { loadGlobalConfig, loadAgentConfig, discoverAgents } from "../../src/shared/config.js";
 import type { GlobalConfig } from "../../src/shared/config.js";
 
@@ -16,16 +17,20 @@ describe("loadGlobalConfig", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("loads valid config.json", () => {
-    const config: GlobalConfig = {
-      docker: { enabled: false },
-    };
-    writeFileSync(resolve(tmpDir, "config.json"), JSON.stringify(config));
+  it("loads valid config.toml", () => {
+    const config = { docker: { enabled: false } };
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(config));
     const loaded = loadGlobalConfig(tmpDir);
     expect(loaded.docker?.enabled).toBe(false);
   });
 
-  it("returns empty config when config.json is missing", () => {
+  it("ignores config.json", () => {
+    writeFileSync(resolve(tmpDir, "config.json"), JSON.stringify({ docker: { enabled: true } }));
+    const loaded = loadGlobalConfig(tmpDir);
+    expect(loaded).toEqual({});
+  });
+
+  it("returns empty config when no config file exists", () => {
     const loaded = loadGlobalConfig(tmpDir);
     expect(loaded).toEqual({});
   });
@@ -42,10 +47,9 @@ describe("loadAgentConfig", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("loads agent config.json and injects name from directory", () => {
+  it("loads agent-config.toml and injects name from directory", () => {
     const agentDir = resolve(tmpDir, "dev");
     mkdirSync(agentDir, { recursive: true });
-    // config.json on disk does NOT contain name — it's injected by loadAgentConfig
     const agentOnDisk = {
       credentials: ["github_token:default"],
       model: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
@@ -53,7 +57,7 @@ describe("loadAgentConfig", () => {
       repos: ["acme/app"],
       params: { triggerLabel: "agent", assignee: "bot" },
     };
-    writeFileSync(resolve(agentDir, "config.json"), JSON.stringify(agentOnDisk));
+    writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML(agentOnDisk as Record<string, unknown>));
     const loaded = loadAgentConfig(tmpDir, "dev");
     expect(loaded.name).toBe("dev");
     expect(loaded.repos).toEqual(["acme/app"]);
@@ -76,11 +80,11 @@ describe("discoverAgents", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("discovers agents with config.json", () => {
+  it("discovers agents with agent-config.toml", () => {
     for (const name of ["dev", "reviewer"]) {
       const dir = resolve(tmpDir, name);
       mkdirSync(dir, { recursive: true });
-      writeFileSync(resolve(dir, "config.json"), "{}");
+      writeFileSync(resolve(dir, "agent-config.toml"), "");
     }
     const agents = discoverAgents(tmpDir);
     expect(agents).toEqual(["dev", "reviewer"]);
@@ -90,7 +94,7 @@ describe("discoverAgents", () => {
     for (const name of [".al", ".workspace", "dev"]) {
       const dir = resolve(tmpDir, name);
       mkdirSync(dir, { recursive: true });
-      writeFileSync(resolve(dir, "config.json"), "{}");
+      writeFileSync(resolve(dir, "agent-config.toml"), "");
     }
     const agents = discoverAgents(tmpDir);
     expect(agents).toEqual(["dev"]);
@@ -101,7 +105,7 @@ describe("discoverAgents", () => {
     expect(agents).toEqual([]);
   });
 
-  it("skips directories without config.json", () => {
+  it("skips directories without config files", () => {
     mkdirSync(resolve(tmpDir, "empty-dir"), { recursive: true });
     const agents = discoverAgents(tmpDir);
     expect(agents).toEqual([]);

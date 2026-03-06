@@ -276,7 +276,7 @@ Use those values for repos, triggerLabel, and assignee.
 
 ## Docker Mode
 
-Enable Docker container isolation by setting \`"docker": { "enabled": true }\` in your project's \`config.json\`. Each agent run launches an isolated container with a read-only root filesystem, dropped capabilities, non-root user, and resource limits.
+Enable Docker container isolation by adding \`[docker]\nenabled = true\` to your project's \`config.toml\`. Each agent run launches an isolated container with a read-only root filesystem, dropped capabilities, non-root user, and resource limits.
 
 ### Base image
 
@@ -380,8 +380,8 @@ export function scaffoldProject(
   // Write global config only if non-empty
   if (Object.keys(globalConfig).length > 0) {
     writeFileSync(
-      resolve(projectPath, "config.json"),
-      JSON.stringify(globalConfig, null, 2) + "\n"
+      resolve(projectPath, "config.toml"),
+      stringifyTOML(globalConfig as Record<string, unknown>) + "\n"
     );
   }
 

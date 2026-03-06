@@ -50,7 +50,7 @@ export interface WebhookTriggerConfig {
 
 export interface WebhookProvider {
   source: string;
-  validateRequest(headers: Record<string, string | undefined>, rawBody: string, secret?: string): boolean;
+  validateRequest(headers: Record<string, string | undefined>, rawBody: string, secrets?: string[]): boolean;
   parseEvent(headers: Record<string, string | undefined>, body: any): WebhookContext | null;
   matchesFilter(context: WebhookContext, filter: WebhookFilter): boolean;
 }

@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync } from "fs";
+import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, statSync } from "fs";
 import { resolve } from "path";
 import { CREDENTIALS_DIR } from "./paths.js";
 
@@ -69,6 +69,22 @@ export function credentialExists(type: string, instance: string): boolean {
   const dir = credentialDir(type, instance);
   if (!existsSync(dir)) return false;
   return readdirSync(dir).length > 0;
+}
+
+/**
+ * List all instances of a credential type.
+ * Returns an array of instance names (subdirectory names).
+ */
+export function listCredentialInstances(type: string): string[] {
+  const dir = resolve(CREDENTIALS_DIR, type);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir).filter((entry) => {
+    try {
+      return statSync(resolve(dir, entry)).isDirectory();
+    } catch {
+      return false;
+    }
+  });
 }
 
 /**

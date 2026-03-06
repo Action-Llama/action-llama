@@ -24,6 +24,7 @@ vi.mock("../../../src/credentials/prompter.js", () => ({
 
 const mockCredentialExists = vi.fn();
 const mockWriteCredentialFields = vi.fn();
+const mockListCredentialInstances = vi.fn();
 vi.mock("../../../src/shared/credentials.js", () => ({
   parseCredentialRef: (ref: string) => {
     const sep = ref.indexOf(":");
@@ -31,10 +32,18 @@ vi.mock("../../../src/shared/credentials.js", () => ({
     return { type: ref.slice(0, sep).trim(), instance: ref.slice(sep + 1).trim() };
   },
   credentialExists: (...args: any[]) => mockCredentialExists(...args),
+  listCredentialInstances: (...args: any[]) => mockListCredentialInstances(...args),
   writeCredentialFields: (...args: any[]) => mockWriteCredentialFields(...args),
   loadCredentialField: () => undefined,
   loadCredentialFields: () => undefined,
   writeCredentialField: () => {},
+}));
+
+const mockConfirm = vi.fn();
+vi.mock("@inquirer/prompts", () => ({
+  input: vi.fn(),
+  password: vi.fn(),
+  confirm: (...args: any[]) => mockConfirm(...args),
 }));
 
 import { execute } from "../../../src/cli/commands/setup.js";
@@ -44,6 +53,8 @@ describe("setup", () => {
     vi.clearAllMocks();
     mockLoadGlobalConfig.mockReturnValue({});
     mockCredentialExists.mockReturnValue(false);
+    mockListCredentialInstances.mockReturnValue([]);
+    mockConfirm.mockResolvedValue(false);
   });
 
   it("prints message when no agents found", async () => {
@@ -124,11 +135,13 @@ describe("setup", () => {
     expect(output).toContain("1 credential(s)");
   });
 
-  it("includes webhook secretCredentials from global config", async () => {
+  it("discovers webhook secrets from agents with webhook filters", async () => {
     mockDiscoverAgents.mockReturnValue(["dev"]);
-    mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["github_token:default"] });
-    mockLoadGlobalConfig.mockReturnValue({
-      webhooks: { secretCredentials: { github: "github_webhook_secret:default" } },
+    // loadAgentConfig is called twice: once for credentials, once for webhook sources
+    mockLoadAgentConfig.mockReturnValue({
+      name: "dev",
+      credentials: ["github_token:default"],
+      webhooks: { filters: [{ source: "github", events: ["issues"] }] },
     });
     mockResolveCredential.mockImplementation((id: string) => ({
       id,
@@ -136,10 +149,12 @@ describe("setup", () => {
       fields: [{ name: id === "github_token" ? "token" : "secret" }],
     }));
     mockCredentialExists.mockReturnValue(true);
+    mockListCredentialInstances.mockReturnValue(["default"]);
+    mockConfirm.mockResolvedValue(false);
 
     const output = await captureLog(() => execute({ project: "." }));
-    expect(output).toContain("2 credential(s)");
-    expect(mockResolveCredential).toHaveBeenCalledWith("github_token");
+    expect(output).toContain("[ok] GitHub Token");
+    expect(output).toContain("[ok] GitHub Webhook Secret");
     expect(mockResolveCredential).toHaveBeenCalledWith("github_webhook_secret");
   });
 

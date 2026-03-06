@@ -1,4 +1,4 @@
-import { input, confirm } from "@inquirer/prompts";
+import { input, password, confirm } from "@inquirer/prompts";
 import type { CredentialDefinition, CredentialPromptResult } from "./schema.js";
 import { loadCredentialFields } from "../shared/credentials.js";
 
@@ -41,18 +41,21 @@ export async function promptCredential(
   }
 
   // Show context
+  console.log(`\n  ${def.label}: ${def.description}`);
   if (def.helpUrl) {
-    console.log(`${def.label}: ${def.description}`);
-    console.log(`  → ${def.helpUrl}\n`);
+    console.log(`  → ${def.helpUrl}`);
   }
+  console.log();
 
   const values: Record<string, string> = {};
 
   for (const field of def.fields) {
-    const value = await input({
-      message: `${field.label}:`,
-      validate: (v) => (v.trim().length > 0 ? true : `${field.label} is required`),
-    });
+    const prompt = field.secret ? password : input;
+    const value = await prompt({
+      message: `${def.label} — ${field.label}:`,
+      mask: field.secret ? "*" : undefined,
+      validate: (v: string) => (v.trim().length > 0 ? true : `${field.label} is required`),
+    } as any);
     values[field.name] = value.trim();
   }
 

@@ -16,26 +16,27 @@ describe("SentryWebhookProvider", () => {
     it("accepts valid HMAC signature", () => {
       const body = '{"action":"created"}';
       const sig = sign(body, secret);
-      expect(provider.validateRequest({ "sentry-hook-signature": sig }, body, secret)).toBe(true);
+      expect(provider.validateRequest({ "sentry-hook-signature": sig }, body, [secret])).toBe(true);
     });
 
     it("rejects invalid HMAC signature", () => {
       const body = '{"action":"created"}';
       const sig = sign("different body", secret);
-      expect(provider.validateRequest({ "sentry-hook-signature": sig }, body, secret)).toBe(false);
+      expect(provider.validateRequest({ "sentry-hook-signature": sig }, body, [secret])).toBe(false);
     });
 
     it("rejects missing signature when secret is configured", () => {
-      expect(provider.validateRequest({}, '{"action":"created"}', secret)).toBe(false);
+      expect(provider.validateRequest({}, '{"action":"created"}', [secret])).toBe(false);
     });
 
     it("accepts any request when no secret is configured", () => {
       expect(provider.validateRequest({}, '{"action":"created"}')).toBe(true);
       expect(provider.validateRequest({}, '{"action":"created"}', undefined)).toBe(true);
+      expect(provider.validateRequest({}, '{"action":"created"}', [])).toBe(true);
     });
 
     it("rejects wrong-length signature", () => {
-      expect(provider.validateRequest({ "sentry-hook-signature": "abc" }, "{}", secret)).toBe(false);
+      expect(provider.validateRequest({ "sentry-hook-signature": "abc" }, "{}", [secret])).toBe(false);
     });
   });
 

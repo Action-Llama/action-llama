@@ -31,7 +31,7 @@ export class WebhookRegistry {
     source: string,
     headers: Record<string, string | undefined>,
     rawBody: string,
-    secret?: string
+    secrets?: string[]
   ): DispatchResult {
     const provider = this.providers.get(source);
     if (!provider) {
@@ -40,9 +40,9 @@ export class WebhookRegistry {
     }
 
     // Validate request signature
-    if (!provider.validateRequest(headers, rawBody, secret)) {
+    if (!provider.validateRequest(headers, rawBody, secrets)) {
       this.logger.warn(
-        { source, hasSecret: !!secret },
+        { source, secretCount: secrets?.length || 0 },
         "webhook signature validation failed"
       );
       return { ok: false, matched: 0, skipped: 0, errors: ["signature validation failed"] };

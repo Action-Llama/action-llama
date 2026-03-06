@@ -14,18 +14,22 @@ export class SentryWebhookProvider implements WebhookProvider {
   validateRequest(
     headers: Record<string, string | undefined>,
     rawBody: string,
-    secret?: string
+    secrets?: string[]
   ): boolean {
-    // If no secret configured, skip validation
-    if (!secret) return true;
+    // If no secrets configured, skip validation
+    if (!secrets || secrets.length === 0) return true;
 
     const signature = headers["sentry-hook-signature"];
     if (!signature) return false;
 
-    const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
-    if (signature.length !== expected.length) return false;
+    for (const secret of secrets) {
+      const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
+      if (signature.length === expected.length && timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+        return true;
+      }
+    }
 
-    return timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+    return false;
   }
 
   parseEvent(headers: Record<string, string | undefined>, body: any): WebhookContext | null {

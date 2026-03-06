@@ -61,24 +61,24 @@ describe("scaffoldProject", () => {
     ];
   }
 
-  it("skips global config.json when empty", () => {
+  it("skips global config.toml when empty", () => {
     tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
     const projDir = resolve(tmpDir, "my-project");
     scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
 
-    const configPath = resolve(projDir, "config.json");
-    expect(existsSync(configPath)).toBe(false);
+    expect(existsSync(resolve(projDir, "config.toml"))).toBe(false);
+    expect(existsSync(resolve(projDir, "config.json"))).toBe(false);
   });
 
-  it("creates global config.json when non-empty", () => {
+  it("creates global config.toml when non-empty", () => {
     tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
     const projDir = resolve(tmpDir, "my-project");
     scaffoldProject(projDir, { docker: { enabled: true } }, makeAgents());
 
-    const configPath = resolve(projDir, "config.json");
+    const configPath = resolve(projDir, "config.toml");
     expect(existsSync(configPath)).toBe(true);
-    const config = JSON.parse(readFileSync(configPath, "utf-8"));
-    expect(config.docker.enabled).toBe(true);
+    const config = parseTOML(readFileSync(configPath, "utf-8"));
+    expect((config.docker as any).enabled).toBe(true);
   });
 
   it("creates per-agent agent-config.toml without name", () => {
