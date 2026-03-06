@@ -12,6 +12,7 @@ Credentials are stored in `~/.action-llama-credentials/<type>/<instance>/<field>
 | `git_ssh` | `id_rsa`, `username`, `email` | SSH private key + git author identity | SSH key mounted as file; `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL`/`GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` set from `username`/`email` |
 | `github_webhook_secret` | `secret` | Shared secret for GitHub webhook verification | _(used by gateway)_ |
 | `sentry_client_secret` | `secret` | Client secret for Sentry webhook verification | _(used by gateway)_ |
+| `aws` | `access_key_id`, `secret_access_key`, `session_token` | AWS credentials for programmatic access | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` env vars |
 
 ## How Credentials Work
 
@@ -46,6 +47,17 @@ Or multiple SSH keys:
 
 Reference them as `"git_ssh:default"` or `"git_ssh:botty"` in your agent config. If you omit the instance, it defaults to `"default"`.
 
+You can also have multiple AWS credential instances for different accounts or roles:
+
+```
+~/.action-llama-credentials/aws/default/access_key_id
+~/.action-llama-credentials/aws/default/secret_access_key
+~/.action-llama-credentials/aws/production/access_key_id
+~/.action-llama-credentials/aws/production/secret_access_key
+```
+
+Reference them as `"aws:default"` or `"aws:production"` in your agent config.
+
 ## Setting Up Credentials
 
 ### During `al new`
@@ -66,6 +78,11 @@ echo "ghp_your_token_here" > ~/.action-llama-credentials/github_token/default/to
 
 mkdir -p ~/.action-llama-credentials/anthropic_key/default
 echo "sk-ant-api-your_key_here" > ~/.action-llama-credentials/anthropic_key/default/token
+
+mkdir -p ~/.action-llama-credentials/aws/default
+echo "AKIAIOSFODNN7EXAMPLE" > ~/.action-llama-credentials/aws/default/access_key_id
+echo "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" > ~/.action-llama-credentials/aws/default/secret_access_key
+# Optional: echo "temporary-session-token" > ~/.action-llama-credentials/aws/default/session_token
 ```
 
 ### Anthropic Auth Methods
