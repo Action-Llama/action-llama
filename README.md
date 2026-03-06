@@ -159,14 +159,14 @@ serviceAccount = "al-runner@my-gcp-project.iam.gserviceaccount.com"
 **2. Push credentials to Google Secret Manager**
 
 ```bash
-al remote add production --provider gsm --gcp-project my-gcp-project -p .
-al creds push production -p .
+al remote add production --provider gsm --gcp-project my-gcp-project
+al creds push production
 ```
 
 **3. Create per-agent service accounts**
 
 ```bash
-al setup --cloud -p .
+al setup --cloud
 ```
 
 This creates a GCP service account per agent and grants each one access to only its declared secrets.
@@ -174,7 +174,7 @@ This creates a GCP service account per agent and grants each one access to only 
 **4. Start**
 
 ```bash
-al start -p .
+al start
 ```
 
 See [Cloud Run docs](docs/cloud-run.md) for prerequisites, full setup walkthrough, and troubleshooting.
@@ -200,14 +200,14 @@ subnets = ["subnet-abc123"]
 **2. Push credentials to AWS Secrets Manager**
 
 ```bash
-al remote add aws-prod --provider asm --aws-region us-east-1 -p .
-al creds push aws-prod -p .
+al remote add aws-prod --provider asm --aws-region us-east-1
+al creds push aws-prod
 ```
 
 **3. Create per-agent IAM task roles**
 
 ```bash
-al setup --cloud -p .
+al setup --cloud
 ```
 
 This creates an IAM task role per agent and grants each one `secretsmanager:GetSecretValue` scoped to only its declared secrets.
@@ -215,7 +215,7 @@ This creates an IAM task role per agent and grants each one `secretsmanager:GetS
 **4. Start**
 
 ```bash
-al start -p .
+al start
 ```
 
 See [ECS docs](docs/ecs.md) for prerequisites, full setup walkthrough, and troubleshooting.
