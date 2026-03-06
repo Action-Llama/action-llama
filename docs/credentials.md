@@ -12,6 +12,7 @@ Credentials are stored in `~/.action-llama-credentials/<type>/<instance>/<field>
 | `git_ssh` | `id_rsa`, `username`, `email` | SSH private key + git author identity | SSH key mounted as file; `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL`/`GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` set from `username`/`email` |
 | `github_webhook_secret` | `secret` | Shared secret for GitHub webhook verification | _(used by gateway)_ |
 | `sentry_client_secret` | `secret` | Client secret for Sentry webhook verification | _(used by gateway)_ |
+| `aws` | `access_key_id`, `secret_access_key`, `session_token`, `region` | AWS access credentials for managing AWS resources | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_DEFAULT_REGION` env vars |
 
 ## How Credentials Work
 
@@ -66,6 +67,11 @@ echo "ghp_your_token_here" > ~/.action-llama-credentials/github_token/default/to
 
 mkdir -p ~/.action-llama-credentials/anthropic_key/default
 echo "sk-ant-api-your_key_here" > ~/.action-llama-credentials/anthropic_key/default/token
+
+mkdir -p ~/.action-llama-credentials/aws/default
+echo "AKIAIOSFODNN7EXAMPLE" > ~/.action-llama-credentials/aws/default/access_key_id
+echo "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" > ~/.action-llama-credentials/aws/default/secret_access_key
+echo "us-east-1" > ~/.action-llama-credentials/aws/default/region
 ```
 
 ### Anthropic Auth Methods
