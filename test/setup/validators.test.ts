@@ -10,6 +10,7 @@ import {
   validateSentryProjects,
   validateAnthropicApiKey,
   validateOAuthTokenFormat,
+  validateNetlifyToken,
 } from "../../src/setup/validators.js";
 
 describe("validateGitHubToken", () => {
@@ -109,5 +110,30 @@ describe("validateOAuthTokenFormat", () => {
     expect(() => validateOAuthTokenFormat("sk-ant-api-xyz")).toThrow(
       "does not look like an Anthropic OAuth token"
     );
+  });
+});
+
+describe("validateNetlifyToken", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns user info on success", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ email: "user@example.com", full_name: "John Doe" }),
+    });
+
+    const result = await validateNetlifyToken("netlify_test_token");
+    expect(result.user).toBe("user@example.com");
+    expect(result.fullName).toBe("John Doe");
+  });
+
+  it("throws on auth failure", async () => {
+    mockFetch.mockResolvedValue({ 
+      ok: false, 
+      status: 401,
+      text: () => Promise.resolve("Unauthorized")
+    });
+    
+    await expect(validateNetlifyToken("bad_token")).rejects.toThrow("Netlify auth failed (401): Unauthorized");
   });
 });
