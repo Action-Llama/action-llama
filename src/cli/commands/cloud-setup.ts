@@ -33,6 +33,8 @@ import {
   DescribeSecurityGroupsCommand,
 } from "@aws-sdk/client-ec2";
 
+import { AWS_CONSTANTS } from "../../shared/aws-constants.js";
+
 const CREATE_NEW = "__create_new__";
 const MANUAL_INPUT = "__manual_input__";
 
@@ -83,14 +85,14 @@ export async function execute(opts: { project: string }): Promise<void> {
     cloud.region = await input({ message: "Region:", default: "us-central1" });
     cloud.artifactRegistry = await input({
       message: "Artifact Registry repo:",
-      default: `${cloud.region}-docker.pkg.dev/${cloud.gcpProject}/al-images`,
+      default: `${cloud.region}-docker.pkg.dev/${cloud.gcpProject}/${AWS_CONSTANTS.DEFAULT_ECR_REPO}`,
     });
     cloud.serviceAccount = await input({
       message: "Service account email (for job creation):",
-      default: `al-runner@${cloud.gcpProject}.iam.gserviceaccount.com`,
+      default: AWS_CONSTANTS.defaultGcpRunner(cloud.gcpProject!),
     });
-    const prefix = await input({ message: "Secret prefix:", default: "action-llama" });
-    if (prefix !== "action-llama") cloud.secretPrefix = prefix;
+    const prefix = await input({ message: "Secret prefix:", default: AWS_CONSTANTS.DEFAULT_SECRET_PREFIX });
+    if (prefix !== AWS_CONSTANTS.DEFAULT_SECRET_PREFIX) cloud.secretPrefix = prefix;
   } else {
     const ok = await setupEcsCloud(cloud);
     if (!ok) return;
@@ -183,13 +185,13 @@ async function setupEcsCloud(cloud: CloudConfig): Promise<boolean> {
   cloud.executionRoleArn = await pickOrCreateEcsRole(
     iamClient,
     "Execution role (ECR pull + CloudWatch Logs)",
-    "al-ecs-execution-role",
+    AWS_CONSTANTS.EXECUTION_ROLE,
     ["arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"],
   );
   cloud.taskRoleArn = await pickOrCreateEcsRole(
     iamClient,
     "Default task role (Secrets Manager access)",
-    "al-default-task-role",
+    AWS_CONSTANTS.DEFAULT_TASK_ROLE,
     [],
   );
 
@@ -199,8 +201,8 @@ async function setupEcsCloud(cloud: CloudConfig): Promise<boolean> {
   const sgs = await pickSecurityGroups(ec2Client, result.vpcId);
   if (sgs.length > 0) cloud.securityGroups = sgs;
 
-  const prefix = await input({ message: "Secret prefix:", default: "action-llama" });
-  if (prefix !== "action-llama") cloud.awsSecretPrefix = prefix;
+  const prefix = await input({ message: "Secret prefix:", default: AWS_CONSTANTS.DEFAULT_SECRET_PREFIX });
+  if (prefix !== AWS_CONSTANTS.DEFAULT_SECRET_PREFIX) cloud.awsSecretPrefix = prefix;
   return true;
 }
 
@@ -228,7 +230,7 @@ async function pickOrCreateEcrRepo(ecrClient: ECRClient, region: string, account
     console.log("  Could not list ECR repositories.");
   }
 
-  const name = await input({ message: "New ECR repository name:", default: "al-images" });
+  const name = await input({ message: "New ECR repository name:", default: AWS_CONSTANTS.DEFAULT_ECR_REPO });
   try {
     const data = await ecrClient.send(new CreateRepositoryCommand({ repositoryName: name }));
     const uri = data.repository!.repositoryUri!;
@@ -277,7 +279,7 @@ async function pickOrCreateEcsCluster(ecsClient: ECSClient): Promise<string> {
     console.log("  Could not list ECS clusters.");
   }
 
-  const name = await input({ message: "New ECS cluster name:", default: "al-cluster" });
+  const name = await input({ message: "New ECS cluster name:", default: AWS_CONSTANTS.DEFAULT_CLUSTER });
   try {
     await ecsClient.send(new CreateClusterCommand({ clusterName: name }));
     console.log(`  Created cluster: ${name}`);

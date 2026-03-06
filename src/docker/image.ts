@@ -7,7 +7,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PACKAGE_ROOT = resolve(__dirname, "..", "..");
 
-const DEFAULT_IMAGE = "al-agent:latest";
+import { AWS_CONSTANTS } from "../shared/aws-constants.js";
+
+const DEFAULT_IMAGE = AWS_CONSTANTS.DEFAULT_IMAGE;
 
 function docker(args: string[], opts?: { quiet?: boolean; cwd?: string }): string {
   return execFileSync("docker", args, {
@@ -55,7 +57,7 @@ export function ensureAgentImage(agentName: string, projectPath: string, baseIma
     return baseImage;
   }
 
-  const agentImage = `al-${agentName}:latest`;
+  const agentImage = AWS_CONSTANTS.agentImage(agentName);
 
   // Always rebuild agent images — they're thin layers on top of the base
   // and the Dockerfile may have changed since last build

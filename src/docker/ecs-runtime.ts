@@ -1,4 +1,5 @@
 import { execFileSync } from "child_process";
+import { createReadStream } from "fs";
 import {
   ECSClient,
   RegisterTaskDefinitionCommand,
@@ -14,13 +15,23 @@ import {
 import {
   CloudWatchLogsClient,
   GetLogEventsCommand,
+  FilterLogEventsCommand,
 } from "@aws-sdk/client-cloudwatch-logs";
 import {
-  ECRClient,
-  GetAuthorizationTokenCommand,
-} from "@aws-sdk/client-ecr";
+  CodeBuildClient,
+  StartBuildCommand,
+  BatchGetBuildsCommand,
+  CreateProjectCommand,
+} from "@aws-sdk/client-codebuild";
+import {
+  S3Client,
+  PutObjectCommand,
+  CreateBucketCommand,
+  HeadBucketCommand,
+} from "@aws-sdk/client-s3";
 import type { ContainerRuntime, RuntimeLaunchOpts, RuntimeCredentials, SecretMount, BuildImageOpts, RunningAgent } from "./runtime.js";
 import { parseCredentialRef } from "../shared/credentials.js";
+import { AWS_CONSTANTS } from "../shared/aws-constants.js";
 
 export interface ECSFargateConfig {
   awsRegion: string;
@@ -30,7 +41,8 @@ export interface ECSFargateConfig {
   taskRoleArn: string;             // Default IAM role for the container (Secrets Manager access)
   subnets: string[];               // VPC subnet IDs for Fargate
   securityGroups?: string[];       // Security group IDs
-  secretPrefix?: string;           // Secrets Manager name prefix (default: "action-llama")
+  secretPrefix?: string;           // Secrets Manager name prefix
+  buildBucket?: string;            // S3 bucket for CodeBuild source (remote builds)
 }
 
 /**
@@ -60,25 +72,28 @@ export class ECSFargateRuntime implements ContainerRuntime {
   private ecsClient: ECSClient;
   private smClient: SecretsManagerClient;
   private logsClient: CloudWatchLogsClient;
-  private ecrClient: ECRClient;
+  private cbClient: CodeBuildClient;
+  private s3Client: S3Client;
 
   constructor(config: ECSFargateConfig) {
     this.config = config;
-    this.prefix = config.secretPrefix || "action-llama";
+    this.prefix = config.secretPrefix || AWS_CONSTANTS.DEFAULT_SECRET_PREFIX;
 
     const clientConfig = { region: config.awsRegion };
     this.ecsClient = new ECSClient(clientConfig);
     this.smClient = new SecretsManagerClient(clientConfig);
     this.logsClient = new CloudWatchLogsClient(clientConfig);
-    this.ecrClient = new ECRClient(clientConfig);
+    this.cbClient = new CodeBuildClient(clientConfig);
+    this.s3Client = new S3Client(clientConfig);
   }
 
-  private static readonly STARTED_BY_PREFIX = "action-llama";
+  private static readonly STARTED_BY_PREFIX = AWS_CONSTANTS.STARTED_BY;
+  static readonly LOG_GROUP = AWS_CONSTANTS.LOG_GROUP;
 
   // --- Agent tracking ---
 
   async isAgentRunning(agentName: string): Promise<boolean> {
-    const family = `al-${agentName}`;
+    const family = AWS_CONSTANTS.agentFamily(agentName);
     const res = await this.ecsClient.send(new ListTasksCommand({
       cluster: this.config.ecsCluster,
       family,
@@ -104,7 +119,7 @@ export class ECSFargateRuntime implements ContainerRuntime {
 
     return (desc.tasks ?? []).map((task) => {
       const family = task.taskDefinitionArn?.split("/").pop()?.split(":")[0] ?? "";
-      const agentName = family.startsWith("al-") ? family.slice(3) : family;
+      const agentName = AWS_CONSTANTS.agentNameFromFamily(family);
       return {
         agentName,
         taskId: task.taskArn?.split("/").pop() ?? task.taskArn ?? "unknown",
@@ -143,51 +158,157 @@ export class ECSFargateRuntime implements ContainerRuntime {
 
   async buildImage(opts: BuildImageOpts): Promise<string> {
     const remoteTag = `${this.config.ecrRepository}:${opts.tag.replace(":", "-")}`;
-
-    execFileSync("docker", [
-      "build", "-t", remoteTag,
-      "-f", opts.dockerfile, ".",
-    ], {
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "inherit"],
-      timeout: 300_000,
-      cwd: opts.contextDir,
-    });
-
-    await this.ecrLogin();
-
-    execFileSync("docker", ["push", remoteTag], {
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "inherit"],
-      timeout: 300_000,
-    });
-
-    return remoteTag;
+    return this.buildImageCodeBuild(opts, remoteTag);
   }
 
-  async pushImage(localImage: string): Promise<string> {
-    const remoteTag = `${this.config.ecrRepository}:${localImage.replace(":", "-")}`;
+  async pushImage(_localImage: string): Promise<string> {
+    // CodeBuild handles build + push in one step; the image is already in ECR
+    return `${this.config.ecrRepository}:${_localImage.replace(":", "-")}`;
+  }
 
-    execFileSync("docker", ["tag", localImage, remoteTag], {
-      encoding: "utf-8",
-      timeout: 30_000,
-    });
+  private async buildImageCodeBuild(opts: BuildImageOpts, remoteTag: string): Promise<string> {
+    const bucket = await this.ensureBuildBucket();
+    const projectName = AWS_CONSTANTS.CODEBUILD_PROJECT;
+    const registry = this.config.ecrRepository.split("/")[0];
 
-    await this.ecrLogin();
+    // Create tarball of build context
+    const { tmpdir } = await import("os");
+    const { join } = await import("path");
+    const { randomUUID } = await import("crypto");
+    const tarPath = join(tmpdir(), `${AWS_CONSTANTS.BUILD_S3_PREFIX}-${randomUUID().slice(0, 8)}.tar.gz`);
 
-    execFileSync("docker", ["push", remoteTag], {
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "inherit"],
-      timeout: 300_000,
-    });
+    execFileSync("tar", [
+      "czf", tarPath,
+      "-C", opts.contextDir,
+      ".",
+    ], { encoding: "utf-8", timeout: 60_000 });
 
-    return remoteTag;
+    // Upload to S3
+    const s3Key = `${AWS_CONSTANTS.BUILD_S3_PREFIX}/${opts.tag.replace(":", "-")}-${Date.now()}.tar.gz`;
+    await this.s3Client.send(new PutObjectCommand({
+      Bucket: bucket,
+      Key: s3Key,
+      Body: createReadStream(tarPath),
+    }));
+
+    // Clean up local tarball
+    try { const { rmSync } = await import("fs"); rmSync(tarPath); } catch {}
+
+    // Ensure CodeBuild project exists
+    await this.ensureCodeBuildProject(projectName, bucket);
+
+    // Start build
+    const buildRes = await this.cbClient.send(new StartBuildCommand({
+      projectName,
+      sourceTypeOverride: "S3",
+      sourceLocationOverride: `${bucket}/${s3Key}`,
+      environmentVariablesOverride: [
+        { name: "IMAGE_URI", value: remoteTag },
+        { name: "ECR_REGISTRY", value: registry },
+        { name: "DOCKERFILE", value: opts.dockerfile },
+      ],
+    }));
+
+    const buildId = buildRes.build?.id;
+    if (!buildId) throw new Error("CodeBuild did not return a build ID");
+
+    // Poll until complete
+    while (true) {
+      await sleep(10_000);
+
+      const status = await this.cbClient.send(new BatchGetBuildsCommand({ ids: [buildId] }));
+      const build = status.builds?.[0];
+      if (!build) throw new Error(`CodeBuild build ${buildId} not found`);
+
+      if (build.buildComplete) {
+        if (build.buildStatus !== "SUCCEEDED") {
+          const logs = build.logs?.deepLink || "";
+          throw new Error(`CodeBuild build failed (${build.buildStatus}). Logs: ${logs}`);
+        }
+        return remoteTag;
+      }
+    }
+  }
+
+  private async ensureBuildBucket(): Promise<string> {
+    if (this.config.buildBucket) {
+      return this.config.buildBucket;
+    }
+
+    // Derive bucket name from account ID + region
+    const accountId = this.getAccountId();
+    const bucket = AWS_CONSTANTS.buildBucket(accountId, this.config.awsRegion);
+
+    try {
+      await this.s3Client.send(new HeadBucketCommand({ Bucket: bucket }));
+    } catch (err: any) {
+      if (err.name === "NotFound" || err.$metadata?.httpStatusCode === 404) {
+        await this.s3Client.send(new CreateBucketCommand({ Bucket: bucket }));
+      } else if (err.name !== "Forbidden") {
+        // Forbidden means bucket exists but we don't own it — try anyway
+        throw err;
+      }
+    }
+
+    return bucket;
+  }
+
+  private async ensureCodeBuildProject(projectName: string, bucket: string): Promise<void> {
+    const accountId = this.getAccountId();
+    const region = this.config.awsRegion;
+
+    try {
+      const status = await this.cbClient.send(new BatchGetBuildsCommand({ ids: [`${projectName}:dummy`] }));
+      // If the project doesn't exist, BatchGetBuilds returns empty — but we need a better check
+      // Actually, just try to create and handle the conflict
+      void status;
+    } catch {}
+
+    const serviceRole = `arn:aws:iam::${accountId}:role/${AWS_CONSTANTS.CODEBUILD_ROLE}`;
+
+    try {
+      await this.cbClient.send(new CreateProjectCommand({
+        name: projectName,
+        source: {
+          type: "S3",
+          location: `${bucket}/`,
+          buildspec: [
+            "version: 0.2",
+            "phases:",
+            "  pre_build:",
+            "    commands:",
+            "      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY",
+            "  build:",
+            "    commands:",
+            "      - docker build -t $IMAGE_URI -f $DOCKERFILE .",
+            "      - docker push $IMAGE_URI",
+          ].join("\n"),
+        },
+        artifacts: { type: "NO_ARTIFACTS" },
+        environment: {
+          type: "LINUX_CONTAINER",
+          computeType: "BUILD_GENERAL1_MEDIUM",
+          image: "aws/codebuild/standard:7.0",
+          privilegedMode: true,
+          environmentVariables: [
+            { name: "IMAGE_URI", value: "placeholder" },
+            { name: "ECR_REGISTRY", value: "placeholder" },
+            { name: "DOCKERFILE", value: "Dockerfile" },
+          ],
+        },
+        serviceRole,
+      }));
+    } catch (err: any) {
+      if (err.name !== "ResourceAlreadyExistsException") {
+        throw err;
+      }
+    }
   }
 
   // --- Container lifecycle ---
 
   async launch(opts: RuntimeLaunchOpts): Promise<string> {
-    const family = `al-${opts.agentName}`;
+    const family = AWS_CONSTANTS.agentFamily(opts.agentName);
 
     const secretMounts = opts.credentials.strategy === "secrets-manager"
       ? opts.credentials.mounts
@@ -203,6 +324,7 @@ export class ECSFargateRuntime implements ContainerRuntime {
       memory: opts.memory || "4096",
       cpus: String((opts.cpus || 2) * 1024),
       taskRoleArn,
+      streamPrefix: family,
     });
 
     const taskArn = await this.runTask(taskDefArn);
@@ -219,8 +341,16 @@ export class ECSFargateRuntime implements ContainerRuntime {
 
     const poll = async () => {
       const taskId = taskArn.split("/").pop()!;
-      const logGroup = `/ecs/al-agent`;
-      const logStream = `al-agent/${taskId}`;
+      const logGroup = ECSFargateRuntime.LOG_GROUP;
+
+      // Describe the task to get the family (used as stream prefix)
+      const desc = await this.ecsClient.send(new DescribeTasksCommand({
+        cluster: this.config.ecsCluster,
+        tasks: [taskArn],
+      }));
+      const family = desc.tasks?.[0]?.taskDefinitionArn?.split("/").pop()?.split(":")[0] ?? AWS_CONSTANTS.agentFamily("agent");
+      // awslogs stream format: <prefix>/<container-name>/<task-id>
+      const logStream = `${family}/agent/${taskId}`;
 
       while (!stopped) {
         try {
@@ -274,7 +404,7 @@ export class ECSFargateRuntime implements ContainerRuntime {
       await this.ecsClient.send(new StopTaskCommand({
         cluster: this.config.ecsCluster,
         task: taskArn,
-        reason: "Action Llama timeout",
+        reason: "action-llama timeout",
       }));
     } catch {
       // Task may already be stopped
@@ -283,6 +413,18 @@ export class ECSFargateRuntime implements ContainerRuntime {
 
   async remove(_taskArn: string): Promise<void> {
     // ECS cleans up stopped tasks automatically
+  }
+
+  async fetchLogs(agentName: string, limit: number): Promise<string[]> {
+    const res = await this.logsClient.send(new FilterLogEventsCommand({
+      logGroupName: ECSFargateRuntime.LOG_GROUP,
+      logStreamNamePrefix: `${AWS_CONSTANTS.agentFamily(agentName)}/`,
+      limit,
+    }));
+
+    return (res.events ?? [])
+      .map((e) => e.message?.trimEnd() ?? "")
+      .filter(Boolean);
   }
 
   // --- Internal: Secret naming ---
@@ -320,6 +462,7 @@ export class ECSFargateRuntime implements ContainerRuntime {
       memory: string;
       cpus: string;
       taskRoleArn: string;
+      streamPrefix: string;
     }
   ): Promise<string> {
     const environment = Object.entries(opts.env).map(([name, value]) => ({ name, value }));
@@ -350,17 +493,15 @@ export class ECSFargateRuntime implements ContainerRuntime {
         logConfiguration: {
           logDriver: "awslogs",
           options: {
-            "awslogs-group": "/ecs/al-agent",
+            "awslogs-group": ECSFargateRuntime.LOG_GROUP,
             "awslogs-region": this.config.awsRegion,
-            "awslogs-stream-prefix": "al-agent",
+            "awslogs-stream-prefix": opts.streamPrefix,
             "awslogs-create-group": "true",
           },
         },
-        readonlyRootFilesystem: true,
         user: "1000:1000",
         linuxParameters: {
           initProcessEnabled: true,
-          maxSwap: 0,
         },
       }],
     }));
@@ -417,7 +558,7 @@ export class ECSFargateRuntime implements ContainerRuntime {
   private deriveTaskRoleArn(agentName: string): string | undefined {
     const accountId = this.getAccountId();
     if (!accountId) return undefined;
-    return `arn:aws:iam::${accountId}:role/al-${agentName}-task-role`;
+    return `arn:aws:iam::${accountId}:role/${AWS_CONSTANTS.taskRoleName(agentName)}`;
   }
 
   private getAccountId(): string {
@@ -425,29 +566,6 @@ export class ECSFargateRuntime implements ContainerRuntime {
     return match?.[1] || "";
   }
 
-  // --- Internal: ECR auth ---
-
-  private async ecrLogin(): Promise<void> {
-    const res = await this.ecrClient.send(new GetAuthorizationTokenCommand({}));
-    const authData = res.authorizationData?.[0];
-    if (!authData?.authorizationToken) {
-      throw new Error("Failed to get ECR authorization token");
-    }
-
-    // Token is base64-encoded "AWS:<password>"
-    const decoded = Buffer.from(authData.authorizationToken, "base64").toString();
-    const password = decoded.split(":")[1];
-
-    const registry = this.config.ecrRepository.split("/")[0];
-    execFileSync("docker", [
-      "login", "--username", "AWS", "--password-stdin", registry,
-    ], {
-      encoding: "utf-8",
-      input: password,
-      timeout: 15_000,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-  }
 }
 
 function sleep(ms: number): Promise<void> {

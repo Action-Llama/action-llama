@@ -15,7 +15,8 @@ vi.mock("../../src/shared/credentials.js", () => ({
 const mockEcsSend = vi.fn();
 const mockSmSend = vi.fn();
 const mockLogsSend = vi.fn();
-const mockEcrSend = vi.fn();
+const mockCbSend = vi.fn();
+const mockS3Send = vi.fn();
 
 vi.mock("@aws-sdk/client-ecs", () => {
   const ECSClient = vi.fn(function (this: any) { this.send = mockEcsSend; });
@@ -23,7 +24,8 @@ vi.mock("@aws-sdk/client-ecs", () => {
   const RunTaskCommand = vi.fn(function (this: any, input: any) { this._type = "RunTask"; this.input = input; });
   const DescribeTasksCommand = vi.fn(function (this: any, input: any) { this._type = "DescribeTasks"; this.input = input; });
   const StopTaskCommand = vi.fn(function (this: any, input: any) { this._type = "StopTask"; this.input = input; });
-  return { ECSClient, RegisterTaskDefinitionCommand, RunTaskCommand, DescribeTasksCommand, StopTaskCommand };
+  const ListTasksCommand = vi.fn(function (this: any, input: any) { this._type = "ListTasks"; this.input = input; });
+  return { ECSClient, RegisterTaskDefinitionCommand, RunTaskCommand, DescribeTasksCommand, StopTaskCommand, ListTasksCommand };
 });
 
 vi.mock("@aws-sdk/client-secrets-manager", () => {
@@ -35,19 +37,36 @@ vi.mock("@aws-sdk/client-secrets-manager", () => {
 vi.mock("@aws-sdk/client-cloudwatch-logs", () => {
   const CloudWatchLogsClient = vi.fn(function (this: any) { this.send = mockLogsSend; });
   const GetLogEventsCommand = vi.fn(function (this: any, input: any) { this._type = "GetLogEvents"; this.input = input; });
-  return { CloudWatchLogsClient, GetLogEventsCommand };
+  const FilterLogEventsCommand = vi.fn(function (this: any, input: any) { this._type = "FilterLogEvents"; this.input = input; });
+  return { CloudWatchLogsClient, GetLogEventsCommand, FilterLogEventsCommand };
 });
 
-vi.mock("@aws-sdk/client-ecr", () => {
-  const ECRClient = vi.fn(function (this: any) { this.send = mockEcrSend; });
-  const GetAuthorizationTokenCommand = vi.fn(function (this: any, input: any) { this._type = "GetAuthorizationToken"; this.input = input; });
-  return { ECRClient, GetAuthorizationTokenCommand };
+vi.mock("@aws-sdk/client-codebuild", () => {
+  const CodeBuildClient = vi.fn(function (this: any) { this.send = mockCbSend; });
+  const StartBuildCommand = vi.fn(function (this: any, input: any) { this._type = "StartBuild"; this.input = input; });
+  const BatchGetBuildsCommand = vi.fn(function (this: any, input: any) { this._type = "BatchGetBuilds"; this.input = input; });
+  const CreateProjectCommand = vi.fn(function (this: any, input: any) { this._type = "CreateProject"; this.input = input; });
+  return { CodeBuildClient, StartBuildCommand, BatchGetBuildsCommand, CreateProjectCommand };
 });
 
-// Mock child_process for docker commands
+vi.mock("@aws-sdk/client-s3", () => {
+  const S3Client = vi.fn(function (this: any) { this.send = mockS3Send; });
+  const PutObjectCommand = vi.fn(function (this: any, input: any) { this._type = "PutObject"; this.input = input; });
+  const CreateBucketCommand = vi.fn(function (this: any, input: any) { this._type = "CreateBucket"; this.input = input; });
+  const HeadBucketCommand = vi.fn(function (this: any, input: any) { this._type = "HeadBucket"; this.input = input; });
+  return { S3Client, PutObjectCommand, CreateBucketCommand, HeadBucketCommand };
+});
+
+// Mock child_process for tar commands
 vi.mock("child_process", () => ({
   execFileSync: vi.fn((_cmd: string, _args: string[]) => ""),
 }));
+
+// Mock fs for createReadStream
+vi.mock("fs", async () => {
+  const actual = await vi.importActual<typeof import("fs")>("fs");
+  return { ...actual, createReadStream: vi.fn(() => "mock-stream") };
+});
 
 const defaultConfig = {
   awsRegion: "us-east-1",
@@ -163,7 +182,7 @@ describe("ECSFargateRuntime", () => {
     expect(stopCalls[0][0]).toEqual({
       cluster: "al-cluster",
       task: taskArn,
-      reason: "Action Llama timeout",
+      reason: "action-llama timeout",
     });
   });
 

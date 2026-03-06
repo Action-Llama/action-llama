@@ -1,13 +1,14 @@
 import { execFileSync } from "child_process";
 import type { ContainerRuntime, RuntimeLaunchOpts, RuntimeCredentials, SecretMount, BuildImageOpts, RunningAgent } from "./runtime.js";
 import { parseCredentialRef } from "../shared/credentials.js";
+import { AWS_CONSTANTS } from "../shared/aws-constants.js";
 
 export interface CloudRunJobConfig {
   gcpProject: string;
   region: string;
   artifactRegistry: string;     // e.g. "us-central1-docker.pkg.dev/my-project/al-images"
   serviceAccount: string;       // Job SA for secret access + execution
-  secretPrefix?: string;        // GSM secret prefix (default: "action-llama")
+  secretPrefix?: string;        // GSM secret prefix
 }
 
 /**
@@ -39,13 +40,13 @@ export class CloudRunJobRuntime implements ContainerRuntime {
 
   constructor(config: CloudRunJobConfig) {
     this.config = config;
-    this.prefix = config.secretPrefix || "action-llama";
+    this.prefix = config.secretPrefix || AWS_CONSTANTS.DEFAULT_SECRET_PREFIX;
   }
 
   // --- Agent tracking ---
 
   async isAgentRunning(agentName: string): Promise<boolean> {
-    const jobName = `al-${agentName}`;
+    const jobName = AWS_CONSTANTS.agentFamily(agentName);
     const { gcpProject, region } = this.config;
     const fullName = `projects/${gcpProject}/locations/${region}/jobs/${jobName}`;
 
@@ -77,13 +78,13 @@ export class CloudRunJobRuntime implements ContainerRuntime {
     const jobsData = await jobsRes.json() as { jobs?: Array<{ name: string }> };
     const jobs = (jobsData.jobs ?? []).filter((j) => {
       const name = j.name.split("/").pop() ?? "";
-      return name.startsWith("al-");
+      return name.startsWith(AWS_CONSTANTS.CONTAINER_FILTER);
     });
 
     const running: RunningAgent[] = [];
     for (const job of jobs) {
       const jobName = job.name.split("/").pop()!;
-      const agentName = jobName.slice(3); // strip "al-"
+      const agentName = AWS_CONSTANTS.agentNameFromFamily(jobName);
 
       const execRes = await this.gcpRequest("GET",
         `https://run.googleapis.com/v2/${job.name}/executions?pageSize=1`
@@ -176,7 +177,7 @@ export class CloudRunJobRuntime implements ContainerRuntime {
   // --- Container lifecycle ---
 
   async launch(opts: RuntimeLaunchOpts): Promise<string> {
-    const jobName = `al-${opts.agentName}`;
+    const jobName = AWS_CONSTANTS.agentFamily(opts.agentName);
 
     // Build the job spec with secret volume mounts
     const secretMounts = opts.credentials.strategy === "secrets-manager"
@@ -185,7 +186,7 @@ export class CloudRunJobRuntime implements ContainerRuntime {
 
     // Use per-agent SA if available (created by `al doctor -c`),
     // otherwise fall back to the shared SA from config
-    const perAgentSa = `al-${opts.agentName}@${this.config.gcpProject}.iam.gserviceaccount.com`;
+    const perAgentSa = AWS_CONSTANTS.serviceAccountEmail(opts.agentName, this.config.gcpProject);
     const serviceAccount = opts.serviceAccount || perAgentSa;
 
     // Create or update the Cloud Run job
@@ -272,6 +273,39 @@ export class CloudRunJobRuntime implements ContainerRuntime {
 
   async remove(_executionName: string): Promise<void> {
     // Cloud Run auto-cleans up executions
+  }
+
+  async fetchLogs(agentName: string, limit: number): Promise<string[]> {
+    const jobName = AWS_CONSTANTS.agentFamily(agentName);
+    const token = await this.getAccessToken();
+
+    const res = await fetch("https://logging.googleapis.com/v2/entries:list", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        resourceNames: [`projects/${this.config.gcpProject}`],
+        filter: `resource.type="cloud_run_job" AND labels."run.googleapis.com/job_name"="${jobName}"`,
+        orderBy: "timestamp desc",
+        pageSize: limit,
+      }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Cloud Logging read failed: ${res.status} ${body}`);
+    }
+
+    const data = await res.json() as {
+      entries?: Array<{ textPayload?: string; jsonPayload?: unknown }>;
+    };
+
+    return (data.entries ?? [])
+      .reverse()
+      .map((e) => e.textPayload ?? (e.jsonPayload ? JSON.stringify(e.jsonPayload) : ""))
+      .filter(Boolean);
   }
 
   // --- Internal: GCP API helpers ---

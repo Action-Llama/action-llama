@@ -5,6 +5,7 @@ import { backendRequireCredentialRef } from "../../shared/credentials.js";
 import { createLogger } from "../../shared/logger.js";
 import { agentDir } from "../../shared/paths.js";
 import { AgentRunner } from "../../agents/runner.js";
+import { AWS_CONSTANTS } from "../../shared/aws-constants.js";
 import { buildManualPrompt } from "../../agents/prompt.js";
 import { execute as runDoctor } from "./doctor.js";
 
@@ -87,7 +88,7 @@ export async function execute(agent: string, opts: { project: string; noDocker?:
 
     const { ContainerAgentRunner } = await import("../../agents/container-runner.js");
 
-    const baseImage = globalConfig.local?.image || "al-agent:latest";
+    const baseImage = globalConfig.local?.image || AWS_CONSTANTS.DEFAULT_IMAGE;
     const image = await runtime.buildImage({ tag: baseImage, dockerfile: "docker/Dockerfile", contextDir: resolve(import.meta.dirname || ".", "../..") });
 
     const runner = new ContainerAgentRunner(
@@ -132,7 +133,7 @@ export async function execute(agent: string, opts: { project: string; noDocker?:
     const runtime = new LocalDockerRuntime();
     ensureNetwork();
 
-    const baseImage = globalConfig.local?.image || "al-agent:latest";
+    const baseImage = globalConfig.local?.image || AWS_CONSTANTS.DEFAULT_IMAGE;
     ensureImage(baseImage);
     const image = ensureAgentImage(agent, projectPath, baseImage);
 

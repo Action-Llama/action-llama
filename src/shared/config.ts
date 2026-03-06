@@ -14,7 +14,7 @@ export interface ModelConfig {
 
 export interface LocalConfig {
   enabled: boolean;        // Docker isolation (default true)
-  image?: string;          // Base Docker image (default: "al-agent:latest")
+  image?: string;          // Base Docker image (default: AWS_CONSTANTS.DEFAULT_IMAGE)
   memory?: string;         // e.g. "4g"
   cpus?: number;
   timeout?: number;        // Max container runtime in seconds
@@ -37,6 +37,7 @@ export interface CloudConfig {
   subnets?: string[];
   securityGroups?: string[];
   awsSecretPrefix?: string;
+  buildBucket?: string;             // S3 bucket for CodeBuild source (remote builds)
 }
 
 export interface GatewayConfig {

@@ -1,6 +1,7 @@
 import { execFileSync } from "child_process";
+import { AWS_CONSTANTS } from "../shared/aws-constants.js";
 
-const NETWORK_NAME = "al-net";
+const NETWORK_NAME = AWS_CONSTANTS.NETWORK_NAME;
 
 function docker(...args: string[]): string {
   return execFileSync("docker", args, { encoding: "utf-8", timeout: 30000, stdio: ["pipe", "pipe", "pipe"] }).trim();

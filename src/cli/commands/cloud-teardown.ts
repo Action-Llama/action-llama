@@ -7,6 +7,7 @@ import { discoverAgents } from "../../shared/config.js";
 import type { CloudConfig } from "../../shared/config.js";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 import { IAMClient, DeleteRolePolicyCommand, DeleteRoleCommand } from "@aws-sdk/client-iam";
+import { AWS_CONSTANTS } from "../../shared/aws-constants.js";
 
 export async function execute(opts: { project: string }): Promise<void> {
   const projectPath = resolve(opts.project);
@@ -59,7 +60,8 @@ export async function teardownCloud(projectPath: string, cloud: CloudConfig): Pr
 async function teardownGcp(projectPath: string, cloud: CloudConfig): Promise<void> {
   const { gcpProject } = cloud;
   if (!gcpProject) {
-    throw new Error("cloud.gcpProject is required in config.toml");
+    console.log("Incomplete GCP config (no project). Skipping IAM teardown.");
+    return;
   }
 
   try {
@@ -80,8 +82,8 @@ async function teardownGcp(projectPath: string, cloud: CloudConfig): Promise<voi
   console.log(`Removing Cloud Run service accounts for ${agents.length} agent(s)...\n`);
 
   for (const name of agents) {
-    const saName = `al-${name}`;
-    const saEmail = `${saName}@${gcpProject}.iam.gserviceaccount.com`;
+    const saName = AWS_CONSTANTS.serviceAccountName(name);
+    const saEmail = AWS_CONSTANTS.serviceAccountEmail(name, gcpProject);
 
     console.log(`  Agent: ${name}`);
     console.log(`    Deleting SA: ${saEmail}`);
@@ -107,7 +109,8 @@ async function teardownGcp(projectPath: string, cloud: CloudConfig): Promise<voi
 async function teardownAws(projectPath: string, cloud: CloudConfig): Promise<void> {
   const { awsRegion } = cloud;
   if (!awsRegion) {
-    throw new Error("cloud.awsRegion is required in config.toml");
+    console.log("Incomplete AWS config (no region). Skipping IAM teardown.");
+    return;
   }
 
   const stsClient = new STSClient({ region: awsRegion });
@@ -131,7 +134,7 @@ async function teardownAws(projectPath: string, cloud: CloudConfig): Promise<voi
   console.log(`Removing ECS task roles for ${agents.length} agent(s)...\n`);
 
   for (const name of agents) {
-    const roleName = `al-${name}-task-role`;
+    const roleName = AWS_CONSTANTS.taskRoleName(name);
 
     console.log(`  Agent: ${name}`);
     console.log(`    Deleting role: ${roleName}`);

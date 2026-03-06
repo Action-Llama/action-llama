@@ -6,7 +6,7 @@ Run agents as ECS Fargate tasks on AWS instead of local Docker containers. Agent
 
 - AWS account with ECS, ECR, Secrets Manager, and CloudWatch Logs access
 - AWS CLI configured (`aws configure`) or `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` env vars
-- Local Docker installed (for building and pushing images to ECR)
+- Docker is **not** required — images are built remotely via AWS CodeBuild and pushed directly to ECR
 
 ## Configuration
 
@@ -36,6 +36,7 @@ subnets = ["subnet-abc123"]
 | `cloud.subnets` | Yes | VPC subnet IDs for Fargate tasks |
 | `cloud.securityGroups` | No | Security group IDs for Fargate tasks |
 | `cloud.awsSecretPrefix` | No | Secrets Manager name prefix (default: `"action-llama"`) |
+| `cloud.buildBucket` | No | S3 bucket for CodeBuild source uploads (auto-created if omitted) |
 
 Local Docker settings (`[local]`) control resource limits:
 
@@ -166,7 +167,81 @@ The scheduler will:
 
 ### Image lifecycle
 
-Images are built locally with Docker and pushed to ECR. Each agent gets its own image tag (`al-{agentName}-latest`). The build and push happen on every `al start -c` to ensure the latest code is deployed.
+Images are built remotely via AWS CodeBuild and pushed directly to ECR — no local Docker required. This means the scheduler can run anywhere (your machine, Railway, EC2, etc.).
+
+Each agent gets its own image tag (`al-{agentName}-latest`). The build happens on every `al start -c` to ensure the latest code is deployed.
+
+### How CodeBuild works
+
+On each build, the ECS runtime:
+
+1. Creates a tarball of the build context
+2. Uploads it to S3 (bucket: `buildBucket` from config, or auto-created as `al-builds-<accountId>-<region>`)
+3. Creates a CodeBuild project (`al-image-builder`) if it doesn't exist
+4. Starts a build that produces and pushes the Docker image to ECR
+
+This requires:
+
+- An IAM role `al-codebuild-role` that CodeBuild can assume, with ECR push and S3 read permissions
+- The operator IAM policy must include CodeBuild and S3 permissions (see below)
+
+To create the CodeBuild service role:
+
+```bash
+# Trust policy
+aws iam create-role \
+  --role-name al-codebuild-role \
+  --assume-role-policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Principal": { "Service": "codebuild.amazonaws.com" },
+      "Action": "sts:AssumeRole"
+    }]
+  }'
+
+# ECR push permissions
+aws iam put-role-policy \
+  --role-name al-codebuild-role \
+  --policy-name ECRPush \
+  --policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": "ecr:GetAuthorizationToken",
+        "Resource": "*"
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:PutImage",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage"
+        ],
+        "Resource": "arn:aws:ecr:<REGION>:<ACCOUNT_ID>:repository/<REPO_NAME>"
+      },
+      {
+        "Effect": "Allow",
+        "Action": "s3:GetObject",
+        "Resource": "arn:aws:s3:::al-builds-<ACCOUNT_ID>-<REGION>/*"
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ],
+        "Resource": "*"
+      }
+    ]
+  }'
+```
 
 ### Secret injection
 
@@ -211,18 +286,140 @@ Logs are streamed from CloudWatch Logs by polling. There is a ~5-10 second delay
 
 ## AWS permissions summary
 
-### Your machine (scheduler)
+There are three IAM principals involved:
 
-The AWS credentials on your machine need:
+1. **Operator** — your machine or CI (runs `al` commands)
+2. **Execution role** — used by ECS itself to pull images, write logs, and inject secrets
+3. **Task role** — one per agent, used by the container to read its own secrets
 
-| Service | Actions |
-|---------|---------|
-| ECS | `RegisterTaskDefinition`, `RunTask`, `DescribeTasks`, `StopTask` |
-| ECR | `GetAuthorizationToken`, `BatchCheckLayerAvailability`, `PutImage`, `InitiateLayerUpload`, `UploadLayerPart`, `CompleteLayerUpload` |
-| CloudWatch Logs | `GetLogEvents` |
-| Secrets Manager | `ListSecrets` (for credential discovery during `prepareCredentials`) |
+### Operator IAM policy
+
+This is the minimum policy for the IAM user or role running `al` commands. Replace `<REGION>`, `<ACCOUNT_ID>`, and `<REPO_NAME>` with your values.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "Identity",
+      "Effect": "Allow",
+      "Action": "sts:GetCallerIdentity",
+      "Resource": "*"
+    },
+    {
+      "Sid": "ECSRuntime",
+      "Effect": "Allow",
+      "Action": [
+        "ecs:RegisterTaskDefinition",
+        "ecs:RunTask",
+        "ecs:DescribeTasks",
+        "ecs:ListTasks",
+        "ecs:StopTask"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "Logs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:GetLogEvents",
+        "logs:FilterLogEvents"
+      ],
+      "Resource": "arn:aws:logs:<REGION>:<ACCOUNT_ID>:log-group:/ecs/action-llama:*"
+    },
+    {
+      "Sid": "SecretsManager",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:ListSecrets",
+        "secretsmanager:CreateSecret",
+        "secretsmanager:PutSecretValue",
+        "secretsmanager:GetSecretValue"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "PassRoleToECS",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": [
+        "arn:aws:iam::<ACCOUNT_ID>:role/al-*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "ecs-tasks.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "IAMAgentRoles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:GetRole",
+        "iam:PutRolePolicy",
+        "iam:DeleteRole",
+        "iam:DeleteRolePolicy",
+        "iam:AttachRolePolicy",
+        "iam:ListRoles"
+      ],
+      "Resource": [
+        "arn:aws:iam::<ACCOUNT_ID>:role/al-*"
+      ]
+    },
+    {
+      "Sid": "SetupWizardReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:DescribeRepositories",
+        "ecr:CreateRepository",
+        "ecs:ListClusters",
+        "ecs:DescribeClusters",
+        "ecs:CreateCluster",
+        "ec2:DescribeVpcs",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeSecurityGroups"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "CodeBuild",
+      "Effect": "Allow",
+      "Action": [
+        "codebuild:StartBuild",
+        "codebuild:BatchGetBuilds",
+        "codebuild:CreateProject"
+      ],
+      "Resource": "arn:aws:codebuild:<REGION>:<ACCOUNT_ID>:project/al-image-builder"
+    },
+    {
+      "Sid": "S3BuildContext",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:CreateBucket",
+        "s3:HeadBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::al-builds-<ACCOUNT_ID>-<REGION>",
+        "arn:aws:s3:::al-builds-<ACCOUNT_ID>-<REGION>/*"
+      ]
+    }
+  ]
+}
+```
+
+The `SetupWizardReadOnly` statement is only needed for `al cloud setup`. You can remove it after initial setup if you prefer a tighter policy.
+
+The `CodeBuild` and `S3BuildContext` statements are required for image builds via CodeBuild.
+
+The `SecretsManager` statement can be scoped to `arn:aws:secretsmanager:<REGION>:<ACCOUNT_ID>:secret:action-llama/*` if you use the default secret prefix.
+
+The `IAMAgentRoles` statement is scoped to `al-*` roles, so it cannot modify unrelated IAM resources.
 
 ### Execution role (ECS infrastructure)
+
+Attach the AWS managed policy `AmazonECSTaskExecutionRolePolicy`, plus an inline policy for secret injection:
 
 | Service | Actions |
 |---------|---------|
@@ -231,6 +428,8 @@ The AWS credentials on your machine need:
 | Secrets Manager | `GetSecretValue` (on all agent secrets, so ECS can inject them) |
 
 ### Task role (container, per-agent)
+
+Created automatically by `al doctor -c`. Each agent gets its own role scoped to only its secrets:
 
 | Service | Actions |
 |---------|---------|
@@ -242,9 +441,11 @@ The AWS credentials on your machine need:
 
 **"No AWS credentials found"** — Set `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` env vars or run `aws configure`.
 
+**"Unable to assume the service linked role"** — ECS needs a service-linked role the first time it's used in an account. Run `aws iam create-service-linked-role --aws-service-name ecs.amazonaws.com`. This is a one-time setup; the command is safe to re-run (it'll error if the role already exists).
+
 **"Failed to start ECS task"** — Check that the ECS cluster exists, subnets have internet access, and the execution role has the required permissions.
 
-**Image push fails** — Verify ECR repository exists and your AWS credentials have ECR push permissions. Run `aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 123456789012.dkr.ecr.us-east-1.amazonaws.com` manually to test.
+**CodeBuild build fails** — Check the build logs linked in the error message. Common causes: the `al-codebuild-role` is missing or lacks ECR push permissions, or the S3 bucket doesn't exist. Verify the role exists and has the permissions listed in the "How CodeBuild works" section above.
 
 **Logs are delayed** — This is expected. CloudWatch Logs has a ~5-10 second ingestion delay. The TUI shows a warning when running in ECS mode.
 

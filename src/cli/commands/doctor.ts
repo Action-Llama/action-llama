@@ -11,6 +11,7 @@ import { promptCredential } from "../../credentials/prompter.js";
 import { parseCredentialRef, credentialExists, writeCredentialFields } from "../../shared/credentials.js";
 import { createLocalBackend, createBackendFromCloudConfig } from "../../shared/remote.js";
 import type { CredentialDefinition } from "../../credentials/schema.js";
+import { AWS_CONSTANTS } from "../../shared/aws-constants.js";
 
 // Webhook secret credential types — these support multiple named instances
 const WEBHOOK_SECRET_TYPES: Record<string, string> = {
@@ -140,7 +141,7 @@ async function reconcileGcp(projectPath: string, cloud: CloudConfig): Promise<vo
     throw new Error("cloud.gcpProject is required in config.toml");
   }
 
-  const secretPrefix = configPrefix || "action-llama";
+  const secretPrefix = configPrefix || AWS_CONSTANTS.DEFAULT_SECRET_PREFIX;
 
   // Verify gcloud is available and authenticated
   try {
@@ -179,8 +180,8 @@ async function reconcileGcp(projectPath: string, cloud: CloudConfig): Promise<vo
 
   for (const name of agents) {
     const config = loadAgentConfig(projectPath, name);
-    const saName = `al-${name}`;
-    const saEmail = `${saName}@${gcpProject}.iam.gserviceaccount.com`;
+    const saName = AWS_CONSTANTS.serviceAccountName(name);
+    const saEmail = AWS_CONSTANTS.serviceAccountEmail(name, gcpProject);
 
     console.log(`  Agent: ${name}`);
     console.log(`    SA: ${saEmail}`);
@@ -264,7 +265,7 @@ async function reconcileAws(projectPath: string, cloud: CloudConfig): Promise<vo
     throw new Error("cloud.ecrRepository is required in config.toml");
   }
 
-  const secretPrefix = awsSecretPrefix || "action-llama";
+  const secretPrefix = awsSecretPrefix || AWS_CONSTANTS.DEFAULT_SECRET_PREFIX;
 
   // Extract account ID from ECR repo URI
   const accountMatch = ecrRepository.match(/^(\d+)\.dkr\.ecr\./);
@@ -309,7 +310,7 @@ async function reconcileAws(projectPath: string, cloud: CloudConfig): Promise<vo
 
   for (const name of agents) {
     const config = loadAgentConfig(projectPath, name);
-    const roleName = `al-${name}-task-role`;
+    const roleName = AWS_CONSTANTS.taskRoleName(name);
 
     console.log(`  Agent: ${name}`);
     console.log(`    Role: ${roleName}`);

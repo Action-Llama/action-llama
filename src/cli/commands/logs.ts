@@ -3,7 +3,6 @@ import { createReadStream, readdirSync, existsSync, statSync } from "fs";
 import { createInterface } from "readline";
 import { logsDir } from "../../shared/paths.js";
 import { loadGlobalConfig } from "../../shared/config.js";
-import { CloudWatchLogsClient, FilterLogEventsCommand } from "@aws-sdk/client-cloudwatch-logs";
 
 const LEVEL_COLORS: Record<number, { label: string; color: string }> = {
   10: { label: "TRACE", color: "\x1b[90m" },   // gray
@@ -142,47 +141,34 @@ export async function execute(
       throw new Error("No [cloud] section found in config.toml. Run 'al cloud setup' first.");
     }
 
+    const limit = parseInt(opts.lines, 10) || 50;
+
+    let runtime: import("../../docker/runtime.js").ContainerRuntime;
     if (cloud.provider === "cloud-run") {
-      const { execFileSync } = await import("child_process");
-      const jobName = `al-${agent}`;
-      console.log(`Fetching Cloud Run logs for ${jobName}...`);
-      try {
-        execFileSync("gcloud", [
-          "logging", "read",
-          `resource.type="cloud_run_job" AND labels."run.googleapis.com/job_name"="${jobName}"`,
-          "--project", cloud.gcpProject!,
-          "--limit", opts.lines || "50",
-          "--format", "value(textPayload)",
-          "--order", "desc",
-        ], { stdio: "inherit", timeout: 30_000 });
-      } catch (err: any) {
-        throw new Error(`Failed to read Cloud Run logs: ${err.message}`);
-      }
+      const { CloudRunJobRuntime } = await import("../../docker/cloud-run-runtime.js");
+      runtime = new CloudRunJobRuntime(cloud as any);
     } else {
-      const logGroup = `/ecs/al-${agent}`;
-      const limit = parseInt(opts.lines, 10) || 50;
-      console.log(`Fetching ECS logs from ${logGroup}...`);
-      try {
-        const client = new CloudWatchLogsClient({ region: cloud.awsRegion! });
+      const { ECSFargateRuntime } = await import("../../docker/ecs-runtime.js");
+      runtime = new ECSFargateRuntime({
+        awsRegion: cloud.awsRegion!,
+        ecsCluster: cloud.ecsCluster!,
+        ecrRepository: cloud.ecrRepository!,
+        executionRoleArn: cloud.executionRoleArn!,
+        taskRoleArn: cloud.taskRoleArn!,
+        subnets: cloud.subnets!,
+        securityGroups: cloud.securityGroups,
+        secretPrefix: cloud.awsSecretPrefix,
+      });
+    }
 
-        const result = await client.send(new FilterLogEventsCommand({
-          logGroupName: logGroup,
-          limit,
-        }));
+    console.log(`Fetching cloud logs for ${agent}...`);
+    const lines = await runtime.fetchLogs(agent, limit);
 
-        const events = result.events ?? [];
-
-        if (events.length === 0) {
-          console.log("No log events found.");
-        } else {
-          for (const event of events) {
-            if (event.message) {
-              console.log(event.message.trim());
-            }
-          }
-        }
-      } catch (err: any) {
-        throw new Error(`Failed to read ECS logs: ${err.message}`);
+    if (lines.length === 0) {
+      console.log("No log events found.");
+    } else {
+      for (const line of lines) {
+        console.log(line);
       }
     }
     return;

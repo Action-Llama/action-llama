@@ -94,4 +94,7 @@ export interface ContainerRuntime {
    * For cloud runtimes: no-op.
    */
   cleanupCredentials(creds: RuntimeCredentials): void;
+
+  /** Fetch recent log entries for an agent. */
+  fetchLogs(agentName: string, limit: number): Promise<string[]>;
 }

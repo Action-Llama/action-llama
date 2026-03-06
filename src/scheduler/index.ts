@@ -13,6 +13,7 @@ import { GitHubWebhookProvider } from "../webhooks/providers/github.js";
 import { SentryWebhookProvider } from "../webhooks/providers/sentry.js";
 import type { GatewayServer } from "../gateway/index.js";
 import type { ContainerRuntime } from "../docker/runtime.js";
+import { AWS_CONSTANTS } from "../shared/aws-constants.js";
 import type { WebhookContext, WebhookFilter, WebhookTrigger, GitHubWebhookFilter, SentryWebhookFilter } from "../webhooks/types.js";
 
 interface RunnerLike {
@@ -127,7 +128,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   let gateway: GatewayServer | undefined;
   let runtime: ContainerRuntime | undefined;
-  let baseImage = "al-agent:latest";
+  let baseImage = AWS_CONSTANTS.DEFAULT_IMAGE;
   const agentImages: Record<string, string> = {};
 
   // Determine runtime type from cloud mode or local
@@ -195,7 +196,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     const { fileURLToPath } = await import("url");
     const packageRoot = resolvePath(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-    baseImage = globalConfig.local?.image || "al-agent:latest";
+    baseImage = globalConfig.local?.image || AWS_CONSTANTS.DEFAULT_IMAGE;
     logger.info({ image: baseImage }, "Building base image (this may take a few minutes on first run)...");
 
     if (runtimeType === "local") {
@@ -218,7 +219,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
         continue;
       }
 
-      const agentImageTag = `al-${agentConfig.name}:latest`;
+      const agentImageTag = AWS_CONSTANTS.agentImage(agentConfig.name);
       const image = await runtime.buildImage({
         tag: agentImageTag,
         dockerfile: agentDockerfile,

@@ -1,4 +1,5 @@
 import type { CredentialBackend, CredentialEntry } from "./credential-backend.js";
+import { AWS_CONSTANTS } from "./aws-constants.js";
 
 /**
  * Google Secret Manager credential backend.
@@ -19,7 +20,7 @@ export class GoogleSecretManagerBackend implements CredentialBackend {
   private accessToken: string | undefined;
   private tokenExpiry = 0;
 
-  constructor(gcpProject: string, secretPrefix = "action-llama") {
+  constructor(gcpProject: string, secretPrefix = AWS_CONSTANTS.DEFAULT_SECRET_PREFIX) {
     this.gcpProject = gcpProject;
     this.prefix = secretPrefix;
   }
