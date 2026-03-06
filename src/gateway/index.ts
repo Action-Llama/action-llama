@@ -2,14 +2,20 @@ import { createServer } from "http";
 import type { Server } from "http";
 import { Router, sendJson, sendError } from "./router.js";
 import { registerShutdownRoute } from "./routes/shutdown.js";
+import { registerCredentialRoute } from "./routes/credentials.js";
+import { registerLogRoute } from "./routes/logs.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
+import type { ContainerRegistration } from "./types.js";
 import type { WebhookRegistry } from "../webhooks/registry.js";
 import type { Logger } from "../shared/logger.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 
+export type { ContainerRegistration } from "./types.js";
+
 export interface GatewayOptions {
   port: number;
   logger: Logger;
+  killContainer?: (name: string) => Promise<void>;
   webhookRegistry?: WebhookRegistry;
   webhookSecrets?: Record<string, Record<string, string>>;
   statusTracker?: StatusTracker;
@@ -17,22 +23,26 @@ export interface GatewayOptions {
 
 export interface GatewayServer {
   server: Server;
-  registerContainer: (secret: string, containerName: string) => void;
+  registerContainer: (secret: string, reg: ContainerRegistration) => void;
+  unregisterContainer: (secret: string) => void;
   close: () => Promise<void>;
 }
 
 export async function startGateway(opts: GatewayOptions): Promise<GatewayServer> {
-  const { port, logger, webhookRegistry, webhookSecrets, statusTracker } = opts;
+  const { port, logger, killContainer, webhookRegistry, webhookSecrets, statusTracker } = opts;
   const router = new Router();
-  const containerSecrets = new Map<string, string>();
+  const containerRegistry = new Map<string, ContainerRegistration>();
 
   // Health check
   router.get("/health", async (_req, res) => {
     sendJson(res, 200, { status: "ok" });
   });
 
-  // Shutdown endpoint
-  registerShutdownRoute(router, containerSecrets, logger);
+  // Container management routes
+  const killFn = killContainer || (async () => {});
+  registerShutdownRoute(router, containerRegistry, killFn, logger);
+  registerCredentialRoute(router, containerRegistry, logger);
+  registerLogRoute(router, containerRegistry, logger);
 
   // Webhook routes
   if (webhookRegistry) {
@@ -69,8 +79,12 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     });
   });
 
-  const registerContainer = (secret: string, containerName: string) => {
-    containerSecrets.set(secret, containerName);
+  const registerContainer = (secret: string, reg: ContainerRegistration) => {
+    containerRegistry.set(secret, reg);
+  };
+
+  const unregisterContainer = (secret: string) => {
+    containerRegistry.delete(secret);
   };
 
   const close = () =>
@@ -78,5 +92,5 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
       server.close(() => resolve());
     });
 
-  return { server, registerContainer, close };
+  return { server, registerContainer, unregisterContainer, close };
 }

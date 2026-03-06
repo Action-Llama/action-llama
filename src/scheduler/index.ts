@@ -12,6 +12,7 @@ import { WebhookRegistry } from "../webhooks/registry.js";
 import { GitHubWebhookProvider } from "../webhooks/providers/github.js";
 import { SentryWebhookProvider } from "../webhooks/providers/sentry.js";
 import type { GatewayServer } from "../gateway/index.js";
+import type { ContainerRuntime } from "../docker/runtime.js";
 import type { WebhookContext, WebhookFilter, WebhookTrigger, GitHubWebhookFilter, SentryWebhookFilter } from "../webhooks/types.js";
 
 interface RunnerLike {
@@ -125,6 +126,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   }
 
   let gateway: GatewayServer | undefined;
+  let runtime: ContainerRuntime | undefined;
   let baseImage = "al-agent:latest";
   const agentImages: Record<string, string> = {};
 
@@ -142,18 +144,22 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       );
     }
 
-    // 2. Ensure Docker network exists
+    // 2. Create the container runtime
+    const { LocalDockerRuntime } = await import("../docker/local-runtime.js");
+    runtime = new LocalDockerRuntime();
+
+    // 3. Ensure Docker network exists
     logger.info("Ensuring Docker network...");
     const { ensureNetwork } = await import("../docker/network.js");
     ensureNetwork();
 
-    // 3. Ensure base Docker image is built (may take a while on first run)
+    // 4. Ensure base Docker image is built (may take a while on first run)
     baseImage = globalConfig.docker?.image || "al-agent:latest";
     logger.info({ image: baseImage }, "Ensuring base Docker image (this may take a few minutes on first run)...");
     const { ensureImage, ensureAgentImage } = await import("../docker/image.js");
     ensureImage(baseImage);
 
-    // 4. Build per-agent images for agents with a custom Dockerfile
+    // 5. Build per-agent images for agents with a custom Dockerfile
     for (const agentConfig of agentConfigs) {
       const image = ensureAgentImage(agentConfig.name, projectPath, baseImage);
       agentImages[agentConfig.name] = image;
@@ -164,12 +170,13 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
     logger.info("Docker infrastructure ready");
 
-    // 4. Start gateway (with webhook registry if configured)
+    // 6. Start gateway (with webhook registry and kill function for shutdown)
     const { startGateway } = await import("../gateway/index.js");
     const gatewayPort = globalConfig.gateway?.port || 8080;
     gateway = await startGateway({
       port: gatewayPort,
       logger: mkLogger(projectPath, "gateway"),
+      killContainer: (name) => runtime!.kill(name),
       webhookRegistry,
       webhookSecrets,
       statusTracker,
@@ -191,7 +198,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   // Create runners for each agent
   const runners: Record<string, RunnerLike> = {};
 
-  if (dockerEnabled && gateway) {
+  if (dockerEnabled && gateway && runtime) {
     const { ContainerAgentRunner } = await import("../agents/container-runner.js");
     const gatewayPort = globalConfig.gateway?.port || 8080;
     const gatewayUrl = `http://host.docker.internal:${gatewayPort}`;
@@ -199,10 +206,12 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     for (const agentConfig of agentConfigs) {
       statusTracker?.registerAgent(agentConfig.name);
       runners[agentConfig.name] = new ContainerAgentRunner(
+        runtime,
         globalConfig,
         agentConfig,
         mkLogger(projectPath, agentConfig.name),
         gateway.registerContainer,
+        gateway.unregisterContainer,
         gatewayUrl,
         projectPath,
         agentImages[agentConfig.name] || baseImage,
