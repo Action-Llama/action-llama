@@ -15,6 +15,23 @@ import { loadCredentialField, parseCredentialRef } from "../shared/credentials.j
 import { agentDir } from "../shared/paths.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 
+const UNRECOVERABLE_PATTERNS = [
+  "permission denied",
+  "could not read from remote repository",
+  "resource not accessible by personal access token",
+  "bad credentials",
+  "authentication failed",
+  "the requested url returned error: 403",
+  "denied to ",
+];
+
+function isUnrecoverableError(text: string): boolean {
+  const lower = text.toLowerCase();
+  return UNRECOVERABLE_PATTERNS.some((p) => lower.includes(p));
+}
+
+const UNRECOVERABLE_THRESHOLD = 3;
+
 export class AgentRunner {
   private running = false;
   private agentConfig: AgentConfig;
@@ -119,6 +136,7 @@ export class AgentRunner {
       // Track bash commands by toolCallId so we can correlate start→end
       const pendingCmds = new Map<string, string>();
       let outputText = "";
+      let unrecoverableErrors = 0;
       session.subscribe((event) => {
         if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
           outputText += event.assistantMessageEvent.delta;
@@ -161,6 +179,14 @@ export class AgentRunner {
             const detail = `${cmdPrefix}${errorMsg.slice(0, 200)}`;
             this.statusTracker?.setAgentError(this.agentConfig.name, detail);
             this.statusTracker?.addLogLine(this.agentConfig.name, `ERROR: ${detail}`);
+            if (isUnrecoverableError(errorMsg)) {
+              unrecoverableErrors++;
+              if (unrecoverableErrors >= UNRECOVERABLE_THRESHOLD) {
+                this.logger.error("Aborting: repeated auth/permission failures — check credentials");
+                this.statusTracker?.addLogLine(this.agentConfig.name, "ABORT: repeated auth/permission failures — check credentials");
+                session.dispose();
+              }
+            }
           } else {
             this.logger.debug({ tool: event.toolName, resultLength: resultStr.length }, "tool done");
           }

@@ -167,10 +167,24 @@ async function main() {
 
   emitLog("info", "session created, sending prompt");
 
+  const UNRECOVERABLE_PATTERNS = [
+    "permission denied",
+    "could not read from remote repository",
+    "resource not accessible by personal access token",
+    "bad credentials",
+    "authentication failed",
+    "the requested url returned error: 403",
+    "denied to ",
+  ];
+  const isUnrecoverableError = (text: string) =>
+    UNRECOVERABLE_PATTERNS.some((p) => text.toLowerCase().includes(p));
+  const UNRECOVERABLE_THRESHOLD = 3;
+
   // Mirror the host-mode AgentRunner's session event logging
   const pendingCmds = new Map<string, string>();
   let outputText = "";
   let eventCount = 0;
+  let unrecoverableErrors = 0;
   session.subscribe((event) => {
     eventCount++;
     // Log all event types for debugging
@@ -206,10 +220,25 @@ async function main() {
       const resultStr = typeof event.result === "string"
         ? event.result
         : JSON.stringify(event.result);
+      const originCmd = pendingCmds.get(event.toolCallId);
       pendingCmds.delete(event.toolCallId);
 
       if (event.isError) {
-        emitLog("error", "tool error", { tool: event.toolName, result: resultStr.slice(0, 1000) });
+        emitLog("error", "tool error", { tool: event.toolName, cmd: originCmd?.slice(0, 200), result: resultStr.slice(0, 1000) });
+        // Parse error text for unrecoverable pattern detection
+        let errorMsg = resultStr;
+        try {
+          const parsed = JSON.parse(resultStr);
+          if (parsed?.content?.[0]?.text) errorMsg = parsed.content[0].text;
+        } catch { /* use raw string */ }
+        if (isUnrecoverableError(errorMsg)) {
+          unrecoverableErrors++;
+          if (unrecoverableErrors >= UNRECOVERABLE_THRESHOLD) {
+            emitLog("error", "Aborting: repeated auth/permission failures — check credentials");
+            session.dispose();
+            process.exit(1);
+          }
+        }
       } else {
         emitLog("debug", "tool done", { tool: event.toolName, resultLength: resultStr.length });
       }
