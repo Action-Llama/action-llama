@@ -64,6 +64,27 @@ export function validateOAuthTokenFormat(token: string) {
   return true;
 }
 
+export async function validateNetlifyToken(token: string) {
+  const res = await fetch("https://api.netlify.com/api/v1/user", {
+    headers: { 
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+  });
+  
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Netlify auth failed (${res.status}): ${body}`);
+  }
+  
+  const user = (await res.json()) as { email: string; full_name?: string };
+  
+  return {
+    user: user.email,
+    fullName: user.full_name,
+  };
+}
+
 export async function validateXTwitterToken(bearerToken: string) {
   const res = await fetch("https://api.x.com/2/users/me", {
     headers: { 
