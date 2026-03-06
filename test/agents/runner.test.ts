@@ -5,7 +5,7 @@ import { tmpdir } from "os";
 
 // Mock dependencies
 vi.mock("@mariozechner/pi-ai", () => ({
-  getModel: vi.fn(() => ({ provider: "anthropic", model: "test" })),
+  getModel: vi.fn((provider: string, model: string) => ({ provider, model })),
 }));
 
 const mockSubscribe = vi.fn();
@@ -332,5 +332,58 @@ describe("AgentRunner", () => {
 
     await runner.run("Test");
     expect(mockPrompt).toHaveBeenCalled();
+  });
+
+  it("works with openai provider and api_key auth", async () => {
+    const agentConfig = makeAgentConfig({
+      model: {
+        provider: "openai",
+        model: "gpt-4",
+        thinkingLevel: "medium",
+        authType: "api_key",
+      },
+    });
+    const runner = new AgentRunner(agentConfig, makeLogger(), tmpDir);
+    mockPrompt.mockResolvedValue(undefined);
+    mockSubscribe.mockImplementation(() => {});
+
+    await runner.run("Test");
+    expect(mockPrompt).toHaveBeenCalled();
+  });
+
+  it("works with openai codex model", async () => {
+    const agentConfig = makeAgentConfig({
+      model: {
+        provider: "openai",
+        model: "gpt-4o",
+        thinkingLevel: "low",
+        authType: "api_key",
+      },
+    });
+    const runner = new AgentRunner(agentConfig, makeLogger(), tmpDir);
+    mockPrompt.mockResolvedValue(undefined);
+    mockSubscribe.mockImplementation(() => {});
+
+    await runner.run("Test");
+    expect(mockPrompt).toHaveBeenCalled();
+  });
+
+  it("warns on unsupported provider", async () => {
+    const logger = makeLogger();
+    const warnSpy = vi.spyOn(logger, "warn");
+    const agentConfig = makeAgentConfig({
+      model: {
+        provider: "unsupported",
+        model: "some-model",
+        thinkingLevel: "medium",
+        authType: "api_key",
+      },
+    });
+    const runner = new AgentRunner(agentConfig, logger, tmpDir);
+    mockPrompt.mockResolvedValue(undefined);
+    mockSubscribe.mockImplementation(() => {});
+
+    await runner.run("Test");
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Unsupported model provider"));
   });
 });
