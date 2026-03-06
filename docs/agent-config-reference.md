@@ -18,8 +18,8 @@ schedule = "*/5 * * * *"
 
 # Required: LLM model configuration
 [model]
-provider = "anthropic"                    # LLM provider
-model = "claude-sonnet-4-20250514"        # Model ID
+provider = "anthropic"                    # LLM provider: anthropic, openai
+model = "claude-sonnet-4-20250514"        # Model ID (e.g., claude-3-5-sonnet-20241022, gpt-4, o1-preview, codex-davinci-002)
 thinkingLevel = "medium"                  # off | minimal | low | medium | high | xhigh
 authType = "api_key"                      # api_key | oauth_token | pi_auth
 
@@ -52,7 +52,7 @@ sentryProjects = ["web-app", "api"]
 | `repos` | string[] | Yes | GitHub repos (owner/repo) |
 | `schedule` | string | No* | Cron expression for polling |
 | `model` | table | Yes | LLM model configuration |
-| `model.provider` | string | Yes | LLM provider (e.g. "anthropic") |
+| `model.provider` | string | Yes | LLM provider ("anthropic" or "openai") |
 | `model.model` | string | Yes | Model ID |
 | `model.thinkingLevel` | string | Yes | Thinking budget level |
 | `model.authType` | string | Yes | Auth method for the provider |
@@ -89,3 +89,37 @@ All filter fields below are optional. Omit all of them to trigger on everything 
 | Field | Type | Description |
 |-------|------|-------------|
 | `resources` | string[] | Resource types: event_alert, metric_alert, issue, error, comment |
+
+## Model Configuration Examples
+
+### Anthropic Claude
+
+```toml
+[model]
+provider = "anthropic"
+model = "claude-3-5-sonnet-20241022"      # or claude-3-opus-20240229, claude-3-haiku-20240307
+thinkingLevel = "medium"
+authType = "api_key"
+```
+
+### OpenAI GPT/Codex
+
+```toml
+[model]
+provider = "openai"
+model = "gpt-4o"                          # or gpt-4, o1-preview, gpt-3.5-turbo, codex-davinci-002
+thinkingLevel = "medium"
+authType = "api_key"
+```
+
+For OpenAI Codex specifically:
+
+```toml
+[model]
+provider = "openai"
+model = "codex-davinci-002"               # Legacy Codex model (note: deprecated by OpenAI)
+thinkingLevel = "low"                     # Codex works better with lower thinking levels
+authType = "api_key"
+```
+
+**Note:** OpenAI has deprecated the original Codex models. For code generation, consider using `gpt-4` or `gpt-4o` which have excellent coding capabilities.|
