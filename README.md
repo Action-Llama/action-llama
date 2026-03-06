@@ -92,6 +92,7 @@ If you installed globally (`npm install -g @action-llama/action-llama`), you can
 | `al new <name>` | Scaffold a new project (sets up Anthropic credential and model defaults) |
 | `al console` | TUI for creating and managing agents |
 | `al setup` | Scan agents and prompt for any missing credentials |
+| `al run <agent>` | Manually trigger a single agent run |
 | `al start` | Start the scheduler — runs agents on their cron schedule and/or webhook triggers |
 | `al status` | Show the current status of all agents |
 | `al logs <agent>` | View log entries for an agent |
@@ -101,6 +102,10 @@ See [CLI command reference](docs/commands.md) for all options and flags.
 ### Common options
 
 - `-p, --project <dir>` — specify the project directory (defaults to `.`)
+
+### `al run` options
+
+- `--dangerous-no-docker` — disable Docker container isolation and run the agent directly on the host
 
 ### `al start` options
 

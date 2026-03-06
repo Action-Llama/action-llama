@@ -26,6 +26,17 @@ program
   });
 
 program
+  .command("run")
+  .description("Manually run a single agent")
+  .argument("<agent>", "agent name")
+  .option("-p, --project <dir>", "project directory", ".")
+  .option("--dangerous-no-docker", "disable Docker container isolation (run agents directly on host)")
+  .action(async (agent: string, opts) => {
+    const { execute } = await import("./commands/run.js");
+    await execute(agent, opts);
+  });
+
+program
   .command("start")
   .description("Start cron scheduler")
   .option("-p, --project <dir>", "project directory", ".")

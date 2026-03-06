@@ -16,6 +16,21 @@ Creates:
 
 After setup, create agents by following [Creating Agents](creating-agents.md).
 
+## `al run <agent>`
+
+Manually triggers a single agent run. The agent runs once and the process exits when it completes. Useful for testing, debugging, or one-off runs without starting the full scheduler.
+
+```bash
+al run dev -p .
+al run reviewer -p ./my-project
+al run dev --dangerous-no-docker   # Skip Docker isolation
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `--dangerous-no-docker` | Disable Docker container isolation |
+
 ## `al start`
 
 Starts the scheduler. Runs all agents on their configured schedules and listens for webhooks.

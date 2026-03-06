@@ -54,6 +54,12 @@ export function buildScheduledPrompt(agentConfig: AgentConfig): string {
   return `<agent-config>\n${configBlock}\n</agent-config>\n\n${credentialBlock}\n\nYou are running on a schedule. Check for new work and act on anything you find.`;
 }
 
+export function buildManualPrompt(agentConfig: AgentConfig): string {
+  const configBlock = buildConfigBlock(agentConfig);
+  const credentialBlock = buildCredentialContext(agentConfig.credentials);
+  return `<agent-config>\n${configBlock}\n</agent-config>\n\n${credentialBlock}\n\nYou have been triggered manually. Check for new work and act on anything you find.`;
+}
+
 export function buildWebhookPrompt(agentConfig: AgentConfig, context: WebhookContext): string {
   const configBlock = buildConfigBlock(agentConfig);
   const credentialBlock = buildCredentialContext(agentConfig.credentials);

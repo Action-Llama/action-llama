@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildScheduledPrompt, buildWebhookPrompt, buildCredentialContext } from "../../src/agents/prompt.js";
+import { buildScheduledPrompt, buildWebhookPrompt, buildManualPrompt, buildCredentialContext } from "../../src/agents/prompt.js";
 import type { AgentConfig } from "../../src/shared/config.js";
 import type { WebhookContext } from "../../src/webhooks/types.js";
 
@@ -68,6 +68,21 @@ describe("buildScheduledPrompt", () => {
 
   it("does not include webhook-trigger block", () => {
     const result = buildScheduledPrompt(agentConfig);
+    expect(result).not.toContain("<webhook-trigger>");
+  });
+});
+
+describe("buildManualPrompt", () => {
+  it("includes agent-config block, credential context, and manual trigger text", () => {
+    const result = buildManualPrompt(agentConfig);
+    expect(result).toContain("<agent-config>");
+    expect(result).toContain("</agent-config>");
+    expect(result).toContain("<credential-context>");
+    expect(result).toContain("triggered manually");
+  });
+
+  it("does not include webhook-trigger block", () => {
+    const result = buildManualPrompt(agentConfig);
     expect(result).not.toContain("<webhook-trigger>");
   });
 });
