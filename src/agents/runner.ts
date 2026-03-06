@@ -68,17 +68,28 @@ export class AgentRunner {
 
       const { model } = this.agentConfig;
       const llmModel = getModel(
-        model.provider as "anthropic",
+        model.provider as any,
         model.model as any
       );
 
       const authStorage = AuthStorage.create();
       if (model.authType !== "pi_auth") {
-        const credential = loadCredentialField("anthropic_key", "default", "token");
-        if (credential) {
-          authStorage.setRuntimeApiKey("anthropic", credential);
+        if (model.provider === "anthropic") {
+          const credential = loadCredentialField("anthropic_key", "default", "token");
+          if (credential) {
+            authStorage.setRuntimeApiKey("anthropic", credential);
+          } else {
+            this.logger.warn("anthropic_key credential not found — agent may fail to authenticate. Run 'al setup' to configure it.");
+          }
+        } else if (model.provider === "openai") {
+          const credential = loadCredentialField("openai_key", "default", "token");
+          if (credential) {
+            authStorage.setRuntimeApiKey("openai", credential);
+          } else {
+            this.logger.warn("openai_key credential not found — agent may fail to authenticate. Run 'al setup' to configure it.");
+          }
         } else {
-          this.logger.warn("anthropic_key credential not found — agent may fail to authenticate. Run 'al setup' to configure it.");
+          this.logger.warn(`Unsupported model provider: ${model.provider}. Supported providers: anthropic, openai`);
         }
       }
 
