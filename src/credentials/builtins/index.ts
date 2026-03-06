@@ -6,6 +6,7 @@ import sentryToken from "./sentry-token.js";
 import gitSsh from "./id-rsa.js";
 import githubWebhookSecret from "./github-webhook-secret.js";
 import sentryClientSecret from "./sentry-client-secret.js";
+import xTwitterApi from "./x-twitter-api.js";
 import aws from "./aws.js";
 
 export const builtinCredentials: Record<string, CredentialDefinition> = {
@@ -16,5 +17,6 @@ export const builtinCredentials: Record<string, CredentialDefinition> = {
   "git_ssh": gitSsh,
   "github_webhook_secret": githubWebhookSecret,
   "sentry_client_secret": sentryClientSecret,
+  "x_twitter_api": xTwitterApi,
   "aws": aws,
 };
