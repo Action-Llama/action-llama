@@ -40,6 +40,7 @@ export async function execute(opts: { project: string; dangerousNoDocker?: boole
 
   statusTracker.setSchedulerInfo({
     mode,
+    runtime: dockerEnabled ? (globalConfig.docker?.runtime || "local") : undefined,
     gatewayPort,
     cronJobCount: cronJobs.length,
     webhooksActive: !!webhookRegistry,

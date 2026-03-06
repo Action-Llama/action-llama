@@ -130,57 +130,134 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   let baseImage = "al-agent:latest";
   const agentImages: Record<string, string> = {};
 
-  if (dockerEnabled) {
-    logger.info("Docker mode enabled — initializing docker infrastructure");
+  const runtimeType = globalConfig.docker?.runtime || "local";
 
-    // 1. Verify Docker is available and running
-    const { execFileSync } = await import("child_process");
-    try {
-      execFileSync("docker", ["info"], { stdio: "pipe", timeout: 10000 });
-    } catch {
-      throw new Error(
-        "Docker is not running. Start Docker Desktop (or the Docker daemon) and try again, " +
-        "or use --dangerous-no-docker to run without container isolation."
-      );
+  if (dockerEnabled) {
+    logger.info({ runtime: runtimeType }, "Docker mode enabled — initializing infrastructure");
+
+    // 1. Create the container runtime
+    if (runtimeType === "cloud-run") {
+      const { CloudRunJobRuntime } = await import("../docker/cloud-run-runtime.js");
+      const { gcpProject, region, artifactRegistry, serviceAccount, secretPrefix } = globalConfig.docker!;
+      if (!gcpProject || !region || !artifactRegistry || !serviceAccount) {
+        throw new Error(
+          "Cloud Run runtime requires docker.gcpProject, docker.region, " +
+          "docker.artifactRegistry, and docker.serviceAccount in config.toml"
+        );
+      }
+      runtime = new CloudRunJobRuntime({ gcpProject, region, artifactRegistry, serviceAccount, secretPrefix });
+      logger.info({ gcpProject, region }, "Using Cloud Run Jobs runtime");
+    } else if (runtimeType === "ecs") {
+      const { ECSFargateRuntime } = await import("../docker/ecs-runtime.js");
+      const dc = globalConfig.docker!;
+      if (!dc.awsRegion || !dc.ecsCluster || !dc.ecrRepository || !dc.executionRoleArn || !dc.taskRoleArn || !dc.subnets?.length) {
+        throw new Error(
+          "ECS runtime requires docker.awsRegion, docker.ecsCluster, docker.ecrRepository, " +
+          "docker.executionRoleArn, docker.taskRoleArn, and docker.subnets in config.toml"
+        );
+      }
+      runtime = new ECSFargateRuntime({
+        awsRegion: dc.awsRegion,
+        ecsCluster: dc.ecsCluster,
+        ecrRepository: dc.ecrRepository,
+        executionRoleArn: dc.executionRoleArn,
+        taskRoleArn: dc.taskRoleArn,
+        subnets: dc.subnets,
+        securityGroups: dc.securityGroups,
+        secretPrefix: dc.awsSecretPrefix,
+      });
+      logger.info({ region: dc.awsRegion, cluster: dc.ecsCluster }, "Using ECS Fargate runtime");
+    } else {
+      // Local runtime needs Docker running
+      const { execFileSync } = await import("child_process");
+      try {
+        execFileSync("docker", ["info"], { stdio: "pipe", timeout: 10000 });
+      } catch {
+        throw new Error(
+          "Docker is not running. Start Docker Desktop (or the Docker daemon) and try again, " +
+          "or use --dangerous-no-docker to run without container isolation."
+        );
+      }
+
+      const { LocalDockerRuntime } = await import("../docker/local-runtime.js");
+      runtime = new LocalDockerRuntime();
+
+      // Local-only: ensure Docker network
+      logger.info("Ensuring Docker network...");
+      const { ensureNetwork } = await import("../docker/network.js");
+      ensureNetwork();
     }
 
-    // 2. Create the container runtime
-    const { LocalDockerRuntime } = await import("../docker/local-runtime.js");
-    runtime = new LocalDockerRuntime();
+    // 2. Build base image via the runtime
+    const { resolve: resolvePath, dirname } = await import("path");
+    const { fileURLToPath } = await import("url");
+    const packageRoot = resolvePath(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-    // 3. Ensure Docker network exists
-    logger.info("Ensuring Docker network...");
-    const { ensureNetwork } = await import("../docker/network.js");
-    ensureNetwork();
-
-    // 4. Ensure base Docker image is built (may take a while on first run)
     baseImage = globalConfig.docker?.image || "al-agent:latest";
-    logger.info({ image: baseImage }, "Ensuring base Docker image (this may take a few minutes on first run)...");
-    const { ensureImage, ensureAgentImage } = await import("../docker/image.js");
-    ensureImage(baseImage);
+    logger.info({ image: baseImage }, "Building base image (this may take a few minutes on first run)...");
 
-    // 5. Build per-agent images for agents with a custom Dockerfile
+    if (runtimeType === "local") {
+      // Local: only build if image doesn't exist yet
+      const { imageExists } = await import("../docker/image.js");
+      if (!imageExists(baseImage)) {
+        await runtime.buildImage({ tag: baseImage, dockerfile: "docker/Dockerfile", contextDir: packageRoot });
+      }
+    } else {
+      // Cloud: always build (Cloud Build handles caching)
+      baseImage = await runtime.buildImage({ tag: baseImage, dockerfile: "docker/Dockerfile", contextDir: packageRoot });
+    }
+
+    // 3. Build per-agent images for agents with a custom Dockerfile
+    const { existsSync } = await import("fs");
     for (const agentConfig of agentConfigs) {
-      const image = ensureAgentImage(agentConfig.name, projectPath, baseImage);
+      const agentDockerfile = resolvePath(projectPath, agentConfig.name, "Dockerfile");
+      if (!existsSync(agentDockerfile)) {
+        agentImages[agentConfig.name] = baseImage;
+        continue;
+      }
+
+      const agentImageTag = `al-${agentConfig.name}:latest`;
+      const image = await runtime.buildImage({
+        tag: agentImageTag,
+        dockerfile: agentDockerfile,
+        contextDir: packageRoot,
+      });
       agentImages[agentConfig.name] = image;
-      if (image !== baseImage) {
-        logger.info({ agent: agentConfig.name, image }, "Built custom agent image");
+      logger.info({ agent: agentConfig.name, image }, "Built custom agent image");
+    }
+
+    // 4. Push images to remote registry if needed (no-op for local, tags+pushes for cloud)
+    if (runtimeType !== "local") {
+      // Cloud builds already push — pushImage handles the case where
+      // buildImage returned a remote URI (no-op) or a local tag (push needed)
+      for (const agentConfig of agentConfigs) {
+        const currentImage = agentImages[agentConfig.name] || baseImage;
+        // Cloud buildImage already returns remote URIs, so pushImage may be redundant
+        // but we call it for runtimes where build and push are separate steps
+        if (!currentImage.includes("/")) {
+          // Looks like a local tag — needs pushing
+          const remoteImage = await runtime.pushImage(currentImage);
+          agentImages[agentConfig.name] = remoteImage;
+          logger.info({ agent: agentConfig.name, image: remoteImage }, "Pushed image to registry");
+        }
       }
     }
 
     logger.info("Docker infrastructure ready");
 
-    // 6. Start gateway (with webhook registry and kill function for shutdown)
-    const { startGateway } = await import("../gateway/index.js");
-    const gatewayPort = globalConfig.gateway?.port || 8080;
-    gateway = await startGateway({
-      port: gatewayPort,
-      logger: mkLogger(projectPath, "gateway"),
-      killContainer: (name) => runtime!.kill(name),
-      webhookRegistry,
-      webhookSecrets,
-      statusTracker,
-    });
+    // 6. Start gateway if the runtime needs it or webhooks are configured
+    if (runtime.needsGateway || anyWebhooks) {
+      const { startGateway } = await import("../gateway/index.js");
+      const gatewayPort = globalConfig.gateway?.port || 8080;
+      gateway = await startGateway({
+        port: gatewayPort,
+        logger: mkLogger(projectPath, "gateway"),
+        killContainer: (name) => runtime!.kill(name),
+        webhookRegistry,
+        webhookSecrets,
+        statusTracker,
+      });
+    }
   } else if (anyWebhooks) {
     // Start gateway even without docker when webhooks are configured
     logger.info("Starting gateway for webhook support (no docker)");
@@ -198,10 +275,18 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   // Create runners for each agent
   const runners: Record<string, RunnerLike> = {};
 
-  if (dockerEnabled && gateway && runtime) {
+  if (dockerEnabled && runtime) {
     const { ContainerAgentRunner } = await import("../agents/container-runner.js");
     const gatewayPort = globalConfig.gateway?.port || 8080;
     const gatewayUrl = `http://host.docker.internal:${gatewayPort}`;
+
+    // Gateway callbacks — no-ops if gateway isn't running (remote runtimes)
+    const registerContainer = gateway
+      ? gateway.registerContainer
+      : (_secret: string, _reg: any) => {};
+    const unregisterContainer = gateway
+      ? gateway.unregisterContainer
+      : (_secret: string) => {};
 
     for (const agentConfig of agentConfigs) {
       statusTracker?.registerAgent(agentConfig.name);
@@ -210,8 +295,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
         globalConfig,
         agentConfig,
         mkLogger(projectPath, agentConfig.name),
-        gateway.registerContainer,
-        gateway.unregisterContainer,
+        registerContainer,
+        unregisterContainer,
         gatewayUrl,
         projectPath,
         agentImages[agentConfig.name] || baseImage,

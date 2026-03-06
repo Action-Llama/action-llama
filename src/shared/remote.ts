@@ -15,7 +15,15 @@ export async function createBackendForRemote(remote: RemoteConfig): Promise<Cred
     return new GoogleSecretManagerBackend(remote.gcpProject, remote.secretPrefix || "action-llama");
   }
 
-  throw new Error(`Unknown remote provider: "${remote.provider}". Supported providers: gsm`);
+  if (remote.provider === "asm") {
+    if (!remote.awsRegion) {
+      throw new Error("Remote provider 'asm' requires 'awsRegion' to be set.");
+    }
+    const { AwsSecretsManagerBackend } = await import("./asm-backend.js");
+    return new AwsSecretsManagerBackend(remote.awsRegion, remote.secretPrefix || "action-llama");
+  }
+
+  throw new Error(`Unknown remote provider: "${remote.provider}". Supported providers: gsm, asm`);
 }
 
 /**

@@ -1,14 +1,9 @@
-import { mkdtempSync, copyFileSync, rmSync, mkdirSync, readdirSync, existsSync, writeFileSync } from "fs";
-import { join, resolve } from "path";
-import { tmpdir } from "os";
-import { randomUUID } from "crypto";
 import { readFileSync } from "fs";
+import { resolve } from "path";
+import { randomUUID } from "crypto";
 import type { GlobalConfig, AgentConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
-import { CREDENTIALS_DIR } from "../shared/paths.js";
-import { parseCredentialRef, getDefaultBackend } from "../shared/credentials.js";
-import { FilesystemBackend } from "../shared/filesystem-backend.js";
-import type { ContainerRuntime } from "../docker/runtime.js";
+import type { ContainerRuntime, RuntimeCredentials } from "../docker/runtime.js";
 import type { ContainerRegistration } from "../gateway/types.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 
@@ -119,73 +114,57 @@ export class ContainerAgentRunner {
     let runError: string | undefined;
 
     const shutdownSecret = randomUUID();
-    const stagingDir = mkdtempSync(join(tmpdir(), "al-creds-"));
+    let credentials: RuntimeCredentials | undefined;
     let containerName: string | undefined;
     let logStream: { stop: () => void } | undefined;
 
     try {
       const timeout = this.globalConfig.docker?.timeout || 3600;
 
-      // Stage credentials into temp dir and build credential bundle for HTTP serving
-      // Layout: stagingDir/<type>/<instance>/<field>
-      // Always include anthropic_key — the container entry reads it directly
-      const credRefs = new Set(this.agentConfig.credentials);
+      // Resolve credential refs — always include anthropic_key for non-pi_auth
+      const credRefs = [...new Set(this.agentConfig.credentials)];
       if (this.agentConfig.model.authType !== "pi_auth") {
-        credRefs.add("anthropic_key:default");
-      }
-
-      const credentialBundle: Record<string, Record<string, Record<string, string>>> = {};
-      const backend = getDefaultBackend();
-
-      for (const credRef of credRefs) {
-        const { type, instance } = parseCredentialRef(credRef);
-        const fields = await backend.readAll(type, instance);
-
-        if (!fields) {
-          this.logger.warn({ cred: credRef }, "credential not found");
-          continue;
-        }
-
-        const dstDir = join(stagingDir, type, instance);
-        mkdirSync(dstDir, { recursive: true });
-        if (!credentialBundle[type]) credentialBundle[type] = {};
-        credentialBundle[type][instance] = {};
-
-        for (const [field, value] of Object.entries(fields)) {
-          try {
-            writeFileSync(join(dstDir, field), value + "\n", { mode: 0o600 });
-            credentialBundle[type][instance][field] = value;
-          } catch (err: any) {
-            this.logger.warn({ cred: credRef, file: field, err: err.message }, "failed to stage credential file");
-          }
+        if (!credRefs.includes("anthropic_key:default")) {
+          credRefs.push("anthropic_key:default");
         }
       }
+
+      // Let the runtime prepare credentials in its native way
+      credentials = await this.runtime.prepareCredentials(credRefs);
 
       // Read PLAYBOOK.md from disk and include it in the serialized config
       const agentsMdPath = resolve(this.projectPath, this.agentConfig.name, "PLAYBOOK.md");
       const agentsMd = readFileSync(agentsMdPath, "utf-8");
       const configWithMd = { ...this.agentConfig, _agentsMd: agentsMd };
 
+      // Build env vars — only include gateway info if the runtime needs it
+      const env: Record<string, string> = {
+        AGENT_CONFIG: JSON.stringify(configWithMd),
+        PROMPT: prompt,
+      };
+      if (this.runtime.needsGateway) {
+        env.GATEWAY_URL = this.gatewayUrl;
+        env.SHUTDOWN_SECRET = shutdownSecret;
+      }
+
       containerName = await this.runtime.launch({
         image: this.image,
         agentName: this.agentConfig.name,
-        env: {
-          GATEWAY_URL: this.gatewayUrl,
-          SHUTDOWN_SECRET: shutdownSecret,
-          AGENT_CONFIG: JSON.stringify(configWithMd),
-          PROMPT: prompt,
-        },
-        credentialsStagingDir: stagingDir,
+        env,
+        credentials,
         memory: this.globalConfig.docker?.memory,
         cpus: this.globalConfig.docker?.cpus,
       });
 
       // Register container with gateway for shutdown, credential serving, and log ingestion
-      this.registerContainer(shutdownSecret, {
-        containerName,
-        credentials: credentialBundle,
-        onLogLine: (line) => this.forwardLogLine(line),
-      });
+      if (this.runtime.needsGateway) {
+        const bundle = credentials.strategy === "volume" ? credentials.bundle : undefined;
+        this.registerContainer(shutdownSecret, {
+          containerName,
+          credentials: bundle,
+          onLogLine: (line) => this.forwardLogLine(line),
+        });
+      }
 
       this.logger.info({ container: containerName }, "container launched");
 
@@ -216,11 +195,12 @@ export class ContainerAgentRunner {
       runError = String(err?.message || err).slice(0, 200);
     } finally {
       if (logStream) logStream.stop();
-      this.unregisterContainer(shutdownSecret);
-      // Clean up staging dir
-      try {
-        rmSync(stagingDir, { recursive: true, force: true });
-      } catch { /* best effort */ }
+      if (this.runtime.needsGateway) {
+        this.unregisterContainer(shutdownSecret);
+      }
+      if (credentials) {
+        this.runtime.cleanupCredentials(credentials);
+      }
       if (containerName) {
         await this.runtime.remove(containerName);
       }

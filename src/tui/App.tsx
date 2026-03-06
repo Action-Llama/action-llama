@@ -38,7 +38,16 @@ function formatTime(date: Date): string {
 
 function Header({ info, agentCount }: { info: SchedulerInfo | null; agentCount: number }) {
   if (!info) return null;
-  const modeLabel = info.mode === "docker" ? "Docker mode" : "Host mode";
+  const isCloud = info.mode === "docker" && info.runtime && info.runtime !== "local";
+  const runtimeLabels: Record<string, string> = {
+    "cloud-run": "Cloud Run mode",
+    "ecs": "ECS Fargate mode",
+  };
+  const modeLabel = info.mode === "host"
+    ? "Host mode"
+    : isCloud
+      ? runtimeLabels[info.runtime!] || "Cloud mode"
+      : "Docker mode";
   return (
     <Box flexDirection="column">
       <Text bold>
@@ -52,6 +61,9 @@ function Header({ info, agentCount }: { info: SchedulerInfo | null; agentCount: 
       {info.webhookUrls.map((url, i) => (
         <Text key={i} dimColor>  {url}</Text>
       ))}
+      {isCloud ? (
+        <Text color="yellow">Logs may be delayed ~10s (Cloud Logging ingestion)</Text>
+      ) : null}
       <Text dimColor>{"─".repeat(50)}</Text>
     </Box>
   );

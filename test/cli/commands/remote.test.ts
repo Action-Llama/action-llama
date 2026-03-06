@@ -63,6 +63,28 @@ describe("remote commands", () => {
       ).rejects.toThrow("--gcp-project is required");
     });
 
+    it("adds an asm remote with awsRegion", async () => {
+      writeFileSync(resolve(tmpDir, "config.toml"), "");
+
+      await executeAdd("aws-prod", {
+        project: tmpDir,
+        provider: "asm",
+        awsRegion: "us-east-1",
+      });
+
+      const config = parseTOML(readFileSync(resolve(tmpDir, "config.toml"), "utf-8")) as any;
+      expect(config.remotes["aws-prod"].provider).toBe("asm");
+      expect(config.remotes["aws-prod"].awsRegion).toBe("us-east-1");
+    });
+
+    it("throws if asm provider missing awsRegion", async () => {
+      writeFileSync(resolve(tmpDir, "config.toml"), "");
+
+      await expect(
+        executeAdd("prod", { project: tmpDir, provider: "asm" })
+      ).rejects.toThrow("--aws-region is required");
+    });
+
     it("creates config.toml if it does not exist", async () => {
       await executeAdd("production", {
         project: tmpDir,

@@ -62,7 +62,7 @@ Displays each agent's schedule, repos, credentials, and webhook configuration.
 
 ## `al setup`
 
-Checks all agent credentials and interactively prompts for any that are missing. Discovers agents in the project, collects their credential requirements (plus any webhook secret credentials from `config.json`), and ensures each one exists on disk.
+Checks all agent credentials and interactively prompts for any that are missing. Discovers agents in the project, collects their credential requirements (plus any webhook secret credentials from `config.toml`), and ensures each one exists on disk.
 
 ```bash
 al setup -p .
@@ -72,6 +72,84 @@ al setup -p ./my-project
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
+| `--cloud` | Create per-agent IAM resources for cloud runtimes (Cloud Run or ECS) |
+
+### `al setup --cloud`
+
+Creates per-agent IAM resources for cloud runtimes. Detects the runtime from `docker.runtime` in `config.toml` and provisions accordingly.
+
+```bash
+al setup --cloud -p .
+```
+
+**Cloud Run** (`docker.runtime = "cloud-run"`):
+
+For each agent, it:
+1. Creates `al-{agentName}@{gcpProject}.iam.gserviceaccount.com`
+2. Grants `secretmanager.secretAccessor` on that agent's declared credentials
+3. Grants `iam.serviceAccountUser` for Cloud Run execution
+
+Requires `gcloud` CLI with project admin permissions. See [Cloud Run docs](cloud-run.md) for full setup.
+
+**ECS Fargate** (`docker.runtime = "ecs"`):
+
+For each agent, it:
+1. Creates IAM role `al-{agentName}-task-role`
+2. Attaches an inline policy granting `secretsmanager:GetSecretValue` on that agent's declared credentials
+
+Requires AWS CLI with IAM admin permissions. See [ECS docs](ecs.md) for full setup.
+
+## `al remote`
+
+Manage remote credential stores.
+
+### `al remote add <name>`
+
+```bash
+al remote add production --provider gsm --gcp-project my-gcp-project -p .
+al remote add aws-prod --provider asm --aws-region us-east-1 -p .
+al remote add staging --provider gsm --gcp-project staging-proj --secret-prefix al-staging -p .
+```
+
+| Option | Description |
+|--------|-------------|
+| `--provider <provider>` | Backend provider: `gsm` (Google Secret Manager) or `asm` (AWS Secrets Manager) |
+| `--gcp-project <id>` | GCP project ID (required for `gsm`) |
+| `--aws-region <region>` | AWS region (required for `asm`) |
+| `--secret-prefix <prefix>` | Secret name prefix (default: `action-llama`) |
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
+### `al remote list`
+
+```bash
+al remote list -p .
+```
+
+### `al remote remove <name>`
+
+```bash
+al remote remove production -p .
+```
+
+## `al creds`
+
+Push and pull credentials between local storage and remote stores.
+
+### `al creds push <remote>`
+
+```bash
+al creds push production -p .
+```
+
+Pushes all local credentials (`~/.action-llama-credentials/`) to the named remote.
+
+### `al creds pull <remote>`
+
+```bash
+al creds pull production -p .
+```
+
+Pulls all credentials from the named remote to local storage.
 
 ## `al logs <agent>`
 

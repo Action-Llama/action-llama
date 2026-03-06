@@ -14,10 +14,26 @@ export interface ModelConfig {
 
 export interface DockerConfig {
   enabled: boolean;
+  runtime?: "local" | "cloud-run" | "ecs";  // default: "local"
   image?: string;
   memory?: string;
   cpus?: number;
   timeout?: number;
+  // Cloud Run settings (required when runtime = "cloud-run")
+  gcpProject?: string;
+  region?: string;
+  artifactRegistry?: string;      // e.g. "us-central1-docker.pkg.dev/my-project/al-images"
+  serviceAccount?: string;        // Job SA for secret access + execution
+  secretPrefix?: string;          // GSM secret name prefix (default: "action-llama")
+  // ECS Fargate settings (required when runtime = "ecs")
+  awsRegion?: string;
+  ecsCluster?: string;            // ECS cluster name or ARN
+  ecrRepository?: string;         // ECR repo URI (e.g. "123456789.dkr.ecr.us-east-1.amazonaws.com/al-images")
+  executionRoleArn?: string;      // IAM role for ECS task execution (ECR pull + CW Logs)
+  taskRoleArn?: string;           // IAM role for the container (Secrets Manager access)
+  subnets?: string[];             // VPC subnet IDs for Fargate tasks
+  securityGroups?: string[];      // Security group IDs for Fargate tasks
+  awsSecretPrefix?: string;       // Secrets Manager name prefix (default: "action-llama")
 }
 
 export interface GatewayConfig {
@@ -29,8 +45,9 @@ export interface WebhooksGlobalConfig {
 }
 
 export interface RemoteConfig {
-  provider: string;       // "gsm" (Google Secret Manager), extensible for future providers
+  provider: string;       // "gsm" (Google Secret Manager) or "asm" (AWS Secrets Manager)
   gcpProject?: string;    // required for gsm
+  awsRegion?: string;     // required for asm
   secretPrefix?: string;  // prefix for secret names (default: "action-llama")
 }
 

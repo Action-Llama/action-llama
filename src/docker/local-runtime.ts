@@ -1,7 +1,11 @@
 import { execFileSync, spawn } from "child_process";
 import { randomUUID } from "crypto";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 import { NETWORK_NAME } from "./network.js";
-import type { ContainerRuntime, RuntimeLaunchOpts } from "./runtime.js";
+import type { ContainerRuntime, RuntimeLaunchOpts, RuntimeCredentials, CredentialBundle, BuildImageOpts } from "./runtime.js";
+import { parseCredentialRef, getDefaultBackend } from "../shared/credentials.js";
 
 function docker(...args: string[]): string {
   return execFileSync("docker", args, {
@@ -11,6 +15,64 @@ function docker(...args: string[]): string {
 }
 
 export class LocalDockerRuntime implements ContainerRuntime {
+  readonly needsGateway = true;
+
+  async prepareCredentials(credRefs: string[]): Promise<RuntimeCredentials> {
+    const stagingDir = mkdtempSync(join(tmpdir(), "al-creds-"));
+    const bundle: CredentialBundle = {};
+    const backend = getDefaultBackend();
+
+    for (const credRef of credRefs) {
+      const { type, instance } = parseCredentialRef(credRef);
+      const fields = await backend.readAll(type, instance);
+
+      if (!fields) continue;
+
+      const dstDir = join(stagingDir, type, instance);
+      mkdirSync(dstDir, { recursive: true });
+      if (!bundle[type]) bundle[type] = {};
+      bundle[type][instance] = {};
+
+      for (const [field, value] of Object.entries(fields)) {
+        try {
+          writeFileSync(join(dstDir, field), value + "\n", { mode: 0o600 });
+          bundle[type][instance][field] = value;
+        } catch {
+          // Skip unwritable fields
+        }
+      }
+    }
+
+    return { strategy: "volume", stagingDir, bundle };
+  }
+
+  cleanupCredentials(creds: RuntimeCredentials): void {
+    if (creds.strategy === "volume") {
+      try {
+        rmSync(creds.stagingDir, { recursive: true, force: true });
+      } catch { /* best effort */ }
+    }
+  }
+
+  async buildImage(opts: BuildImageOpts): Promise<string> {
+    execFileSync("docker", [
+      "build",
+      "-t", opts.tag,
+      "-f", opts.dockerfile,
+      ".",
+    ], {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "inherit"],
+      timeout: 300_000,
+      cwd: opts.contextDir,
+    });
+    return opts.tag;
+  }
+
+  async pushImage(localImage: string): Promise<string> {
+    return localImage;
+  }
+
   async launch(opts: RuntimeLaunchOpts): Promise<string> {
     const runId = randomUUID().slice(0, 8);
     const containerName = `al-${opts.agentName}-${runId}`;
@@ -33,8 +95,8 @@ export class LocalDockerRuntime implements ContainerRuntime {
       "--cpus", String(cpus),
     ];
 
-    if (opts.credentialsStagingDir) {
-      args.push("-v", `${opts.credentialsStagingDir}:/credentials:ro`);
+    if (opts.credentials.strategy === "volume") {
+      args.push("-v", `${opts.credentials.stagingDir}:/credentials:ro`);
     }
 
     for (const [key, value] of Object.entries(opts.env)) {

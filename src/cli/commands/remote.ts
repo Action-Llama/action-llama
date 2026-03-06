@@ -16,7 +16,7 @@ function saveConfig(projectPath: string, config: Record<string, any>): void {
 
 export async function executeAdd(
   name: string,
-  opts: { project: string; provider: string; gcpProject?: string; secretPrefix?: string }
+  opts: { project: string; provider: string; gcpProject?: string; awsRegion?: string; secretPrefix?: string }
 ): Promise<void> {
   const projectPath = resolve(opts.project);
   const config = loadRawConfig(projectPath);
@@ -30,8 +30,13 @@ export async function executeAdd(
     throw new Error("--gcp-project is required for the 'gsm' provider.");
   }
 
+  if (opts.provider === "asm" && !opts.awsRegion) {
+    throw new Error("--aws-region is required for the 'asm' provider.");
+  }
+
   const remote: Record<string, string> = { provider: opts.provider };
   if (opts.gcpProject) remote.gcpProject = opts.gcpProject;
+  if (opts.awsRegion) remote.awsRegion = opts.awsRegion;
   if (opts.secretPrefix) remote.secretPrefix = opts.secretPrefix;
 
   config.remotes[name] = remote;
@@ -45,13 +50,14 @@ export async function executeList(opts: { project: string }): Promise<void> {
   const remotes = config.remotes as Record<string, RemoteConfig> | undefined;
 
   if (!remotes || Object.keys(remotes).length === 0) {
-    console.log("No remotes configured. Add one with: al remote add <name> --provider gsm --gcp-project <id>");
+    console.log("No remotes configured. Add one with: al remote add <name> --provider <gsm|asm> [options]");
     return;
   }
 
   for (const [name, remote] of Object.entries(remotes)) {
     const details = [`provider: ${remote.provider}`];
     if (remote.gcpProject) details.push(`gcpProject: ${remote.gcpProject}`);
+    if (remote.awsRegion) details.push(`awsRegion: ${remote.awsRegion}`);
     if (remote.secretPrefix) details.push(`prefix: ${remote.secretPrefix}`);
     console.log(`  ${name}  (${details.join(", ")})`);
   }

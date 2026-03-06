@@ -96,3 +96,44 @@ echo "your-webhook-secret" > ~/.action-llama-credentials/github_webhook_secret/M
 ```
 
 The gateway automatically loads secrets from all credential instances (e.g. `github_webhook_secret:MyOrg`, `sentry_client_secret:MyOrg`) and uses them to verify incoming webhook payloads. No global configuration is needed.
+
+## Remote Credential Stores
+
+Credentials can be synced to cloud secret managers for use with cloud runtimes.
+
+### Google Secret Manager (GSM)
+
+```bash
+al remote add production --provider gsm --gcp-project my-gcp-project -p .
+al creds push production -p .
+al creds pull production -p .
+```
+
+Secret naming: `{prefix}--{type}--{instance}--{field}` (dashes, since GSM disallows slashes).
+
+### AWS Secrets Manager (ASM)
+
+```bash
+al remote add aws-prod --provider asm --aws-region us-east-1 -p .
+al creds push aws-prod -p .
+al creds pull aws-prod -p .
+```
+
+Secret naming: `{prefix}/{type}/{instance}/{field}` (slashes).
+
+Requires `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` env vars or a configured AWS CLI (`aws configure`).
+
+### Configuration
+
+Remotes are stored in `config.toml`:
+
+```toml
+[remotes.production]
+provider = "gsm"
+gcpProject = "my-gcp-project"
+
+[remotes.aws-prod]
+provider = "asm"
+awsRegion = "us-east-1"
+# secretPrefix = "action-llama"   # optional, default: "action-llama"
+```

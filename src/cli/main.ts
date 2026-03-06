@@ -82,9 +82,15 @@ program
   .command("setup")
   .description("Ensure all agent credentials exist")
   .option("-p, --project <dir>", "project directory", ".")
+  .option("--cloud", "create per-agent IAM resources for cloud runtimes (Cloud Run or ECS)")
   .action(async (opts) => {
-    const { execute } = await import("./commands/setup.js");
-    await execute(opts);
+    if (opts.cloud) {
+      const { execute } = await import("./commands/setup-cloud.js");
+      await execute(opts);
+    } else {
+      const { execute } = await import("./commands/setup.js");
+      await execute(opts);
+    }
   });
 
 program
@@ -106,8 +112,9 @@ remoteCmd
   .command("add")
   .description("Add a remote credential store")
   .argument("<name>", "remote name (e.g. production)")
-  .requiredOption("--provider <provider>", "backend provider (gsm)")
+  .requiredOption("--provider <provider>", "backend provider (gsm, asm)")
   .option("--gcp-project <id>", "GCP project ID (required for gsm)")
+  .option("--aws-region <region>", "AWS region (required for asm)")
   .option("--secret-prefix <prefix>", "secret name prefix (default: action-llama)")
   .option("-p, --project <dir>", "project directory", ".")
   .action(async (name: string, opts) => {

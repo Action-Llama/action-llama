@@ -76,7 +76,7 @@ npx al setup
 my-project/
   package.json              # Includes @action-llama/action-llama as a dependency
   AGENTS.md                 # Project overview, credential/webhook reference, example playbook
-  config.json               # Global config: docker, gateway, webhooks (no secrets)
+  config.toml               # Global config: docker, gateway, webhooks (no secrets)
   dev/                      # One directory per agent
     agent-config.toml       # Agent config: credentials, repos, model, schedule, webhooks, params
     PLAYBOOK.md             # Agent instructions (system prompt) — edit to customize behavior
@@ -92,10 +92,13 @@ If you installed globally (`npm install -g @action-llama/action-llama`), you can
 | `al new <name>` | Scaffold a new project (sets up Anthropic credential and model defaults) |
 | `al console` | TUI for creating and managing agents |
 | `al setup` | Scan agents and prompt for any missing credentials |
+| `al setup --cloud` | Create per-agent IAM resources for cloud runtimes (Cloud Run or ECS) |
 | `al run <agent>` | Manually trigger a single agent run |
 | `al start` | Start the scheduler — runs agents on their cron schedule and/or webhook triggers |
 | `al status` | Show the current status of all agents |
 | `al logs <agent>` | View log entries for an agent |
+| `al remote add/list/remove` | Manage remote credential stores (GSM, ASM) |
+| `al creds push/pull <remote>` | Sync credentials between local and remote stores |
 
 See [CLI command reference](docs/commands.md) for all options and flags.
 
@@ -113,14 +116,17 @@ See [CLI command reference](docs/commands.md) for all options and flags.
 
 ## Configuration
 
-### Global config (`config.json`)
+### Global config (`config.toml`)
 
-```json
-{
-  "docker": { "enabled": false },
-  "gateway": { "port": 8080 },
-  "webhooks": { "secretCredentials": { "github": "github_webhook_secret:default" } }
-}
+```toml
+[docker]
+enabled = false
+
+[gateway]
+port = 8080
+
+[webhooks.secretCredentials]
+github = "github_webhook_secret:default"
 ```
 
 | Key | Default | Description |
@@ -180,7 +186,7 @@ ngrok http 8080 --url=your-name.ngrok-free.app
 
 ### Docker mode
 
-Set `"docker": { "enabled": true }` in `config.json`. Agents run in isolated containers with credentials mounted read-only, a read-only root FS, dropped capabilities, non-root user, and PID/memory/CPU limits.
+Set `docker.enabled = true` in `config.toml`. Agents run in isolated containers with credentials mounted read-only, a read-only root FS, dropped capabilities, non-root user, and PID/memory/CPU limits.
 
 The base image is built automatically on first run from `docker/Dockerfile`. Agents can extend it by adding a `Dockerfile` to their directory:
 
@@ -193,6 +199,40 @@ USER node
 
 See [Docker docs](docs/docker.md) for the full reference including base image contents, custom Dockerfiles, standalone images, and the container filesystem layout.
 
+### Cloud Run mode
+
+Instead of running containers locally, you can run agents as Cloud Run Jobs on GCP:
+
+```toml
+[docker]
+enabled = true
+runtime = "cloud-run"
+gcpProject = "my-gcp-project"
+region = "us-central1"
+artifactRegistry = "us-central1-docker.pkg.dev/my-gcp-project/al-images"
+serviceAccount = "al-runner@my-gcp-project.iam.gserviceaccount.com"
+```
+
+Run `al setup --cloud` to create per-agent service accounts with isolated secret access. See [Cloud Run docs](docs/cloud-run.md) for the full setup guide.
+
+### ECS Fargate mode
+
+You can also run agents as ECS Fargate tasks on AWS:
+
+```toml
+[docker]
+enabled = true
+runtime = "ecs"
+awsRegion = "us-east-1"
+ecsCluster = "al-cluster"
+ecrRepository = "123456789012.dkr.ecr.us-east-1.amazonaws.com/al-images"
+executionRoleArn = "arn:aws:iam::123456789012:role/ecsTaskExecutionRole"
+taskRoleArn = "arn:aws:iam::123456789012:role/al-default-task-role"
+subnets = ["subnet-abc123"]
+```
+
+Per-agent task roles are derived automatically for IAM-enforced secret isolation. See [ECS docs](docs/ecs.md) for the full setup guide.
+
 ## Documentation
 
 | Doc | Description |
@@ -202,6 +242,8 @@ See [Docker docs](docs/docker.md) for the full reference including base image co
 | [Credentials](docs/credentials.md) | Credential types, storage layout, named instances |
 | [Webhooks](docs/webhooks.md) | Webhook setup, filter fields, Sentry integration |
 | [Docker](docs/docker.md) | Container isolation, custom Dockerfiles, filesystem layout |
+| [Cloud Run](docs/cloud-run.md) | Running agents on GCP Cloud Run Jobs |
+| [ECS Fargate](docs/ecs.md) | Running agents on AWS ECS Fargate |
 | [CLI Commands](docs/commands.md) | All CLI commands with options and flags |
 | [Example: Dev Agent](docs/examples/dev-agent.md) | Developer agent that implements GitHub issues |
 | [Example: Reviewer Agent](docs/examples/reviewer-agent.md) | PR review agent |
@@ -260,7 +302,7 @@ src/
 ### Tests
 
 ```bash
-npm test              # run all 185 tests
+npm test              # run all tests
 npm run test:watch    # watch mode
 npm run test:coverage # V8 coverage report
 ```

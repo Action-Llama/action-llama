@@ -127,10 +127,13 @@ The key requirement is that `/app/dist/agents/container-entry.js` exists and can
 | Key | Default | Description |
 |-----|---------|-------------|
 | `docker.enabled` | `false` | Enable Docker container isolation |
+| `docker.runtime` | `"local"` | Container runtime: `"local"` (Docker), `"cloud-run"` (GCP), or `"ecs"` (AWS) |
 | `docker.image` | `"al-agent:latest"` | Base Docker image name |
 | `docker.memory` | `"4g"` | Memory limit per container |
 | `docker.cpus` | `2` | CPU limit per container |
 | `docker.timeout` | `3600` | Max container runtime in seconds |
+
+For Cloud Run configuration, see [Cloud Run docs](cloud-run.md). For ECS Fargate configuration, see [ECS docs](ecs.md).
 
 ## Container filesystem layout
 

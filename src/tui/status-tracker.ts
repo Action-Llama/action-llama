@@ -12,6 +12,7 @@ export interface AgentStatus {
 
 export interface SchedulerInfo {
   mode: "docker" | "host";
+  runtime?: "local" | "cloud-run" | "ecs";  // only meaningful when mode === "docker"
   gatewayPort: number | null;
   cronJobCount: number;
   webhooksActive: boolean;

@@ -2,12 +2,39 @@ export interface RuntimeLaunchOpts {
   image: string;
   agentName: string;
   env: Record<string, string>;
-  credentialsStagingDir?: string;
+  credentials: RuntimeCredentials;
   memory?: string;
   cpus?: number;
+  serviceAccount?: string;
+}
+
+/** Opaque credential payload — each runtime produces and consumes its own variant. */
+export type RuntimeCredentials =
+  | { strategy: "volume"; stagingDir: string; bundle: CredentialBundle }
+  | { strategy: "secrets-manager"; mounts: SecretMount[] };
+
+export type CredentialBundle = Record<string, Record<string, Record<string, string>>>;
+
+export interface SecretMount {
+  /** Cloud-native secret identifier (e.g. GSM secret name, AWS ARN) */
+  secretId: string;
+  /** Path inside the container where the secret value will be mounted */
+  mountPath: string;
+}
+
+export interface BuildImageOpts {
+  /** Tag for the built image */
+  tag: string;
+  /** Dockerfile path relative to context */
+  dockerfile: string;
+  /** Build context directory */
+  contextDir: string;
 }
 
 export interface ContainerRuntime {
+  /** Whether containers launched by this runtime need a gateway URL */
+  readonly needsGateway: boolean;
+
   /** Launch a container and return its name/ID */
   launch(opts: RuntimeLaunchOpts): Promise<string>;
 
@@ -26,4 +53,32 @@ export interface ContainerRuntime {
 
   /** Remove a container */
   remove(containerName: string): Promise<void>;
+
+  /**
+   * Resolve credential refs into runtime-native credential specs.
+   * For local docker: stages files to a temp dir, returns volume mount path.
+   * For cloud runtimes: maps refs to cloud secret manager names.
+   */
+  prepareCredentials(credRefs: string[]): Promise<RuntimeCredentials>;
+
+  /**
+   * Build a Docker image.
+   * For local docker: runs `docker build` locally.
+   * For cloud runtimes: uses cloud build (e.g. Cloud Build).
+   * Returns the image tag/URI.
+   */
+  buildImage(opts: BuildImageOpts): Promise<string>;
+
+  /**
+   * Push a local Docker image to the runtime's registry.
+   * Returns the remote image URI. For local docker, returns the input unchanged.
+   */
+  pushImage(localImage: string): Promise<string>;
+
+  /**
+   * Clean up credentials prepared by prepareCredentials().
+   * For local docker: removes the staging directory.
+   * For cloud runtimes: no-op.
+   */
+  cleanupCredentials(creds: RuntimeCredentials): void;
 }

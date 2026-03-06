@@ -122,4 +122,14 @@ thinkingLevel = "low"                     # Codex works better with lower thinki
 authType = "api_key"
 ```
 
-**Note:** OpenAI has deprecated the original Codex models. For code generation, consider using `gpt-4` or `gpt-4o` which have excellent coding capabilities.|
+**Note:** OpenAI has deprecated the original Codex models. For code generation, consider using `gpt-4` or `gpt-4o` which have excellent coding capabilities.
+
+## Cloud Runtimes
+
+### Cloud Run (GCP)
+
+When using Cloud Run mode (`docker.runtime = "cloud-run"` in `config.toml`), each agent automatically gets a per-agent service account (`al-{agentName}@{gcpProject}.iam.gserviceaccount.com`) that only has access to the credentials listed in that agent's `credentials` array. Run `al setup --cloud` to create the service accounts and IAM bindings. See [Cloud Run docs](cloud-run.md) for details.
+
+### ECS Fargate (AWS)
+
+When using ECS mode (`docker.runtime = "ecs"` in `config.toml`), each agent automatically uses a per-agent IAM task role (`al-{agentName}-task-role`) that only has access to the credentials listed in that agent's `credentials` array. The task role ARN is derived from the ECR repository's account ID. See [ECS docs](ecs.md) for setup instructions including how to create the per-agent task roles.
