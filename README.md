@@ -67,7 +67,7 @@ If any credentials are missing, it will prompt you for them. Credentials are sto
 If you want to set up credentials without starting the gateway:
 
 ```bash
-npx al setup
+npx al doctor
 ```
 
 ### Project structure
@@ -76,7 +76,7 @@ npx al setup
 my-project/
   package.json              # Includes @action-llama/action-llama as a dependency
   AGENTS.md                 # Project overview, credential/webhook reference, example playbook
-  config.toml               # Global config: docker, gateway, webhooks (no secrets)
+  config.toml               # Global config: [local], [cloud], gateway, webhooks (no secrets)
   dev/                      # One directory per agent
     agent-config.toml       # Agent config: credentials, repos, model, schedule, webhooks, params
     PLAYBOOK.md             # Agent instructions (system prompt) — edit to customize behavior
@@ -89,42 +89,69 @@ If you installed globally (`npm install -g @action-llama/action-llama`), you can
 
 | Command | Description |
 |---------|-------------|
-| `al new <name>` | Scaffold a new project (sets up Anthropic credential and model defaults) |
-| `al console` | TUI for creating and managing agents |
-| `al setup` | Scan agents and prompt for any missing credentials |
-| `al setup --cloud` | Create per-agent IAM resources for cloud runtimes (Cloud Run or ECS) |
-| `al run <agent>` | Manually trigger a single agent run |
+| `al new <name>` | Interactive setup — creates project directory and credentials |
+| `al console` | Open an interactive Pi coding console with project context |
+| `al doctor` | Check agents, credentials, webhooks, and config — prompt to fix |
+| `al doctor -c` | Also push creds to cloud and reconcile per-agent IAM |
+| `al cloud init` | Interactive wizard: pick provider, configure, push creds, provision IAM |
+| `al run <agent>` | Manually run a single agent |
+| `al run <agent> -c` | Run agent on cloud infrastructure |
 | `al start` | Start the scheduler — runs agents on their cron schedule and/or webhook triggers |
-| `al status` | Show the current status of all agents |
-| `al logs <agent>` | View log entries for an agent |
-| `al remote add/list/remove` | Manage remote credential stores (GSM, ASM) |
-| `al creds push/pull <remote>` | Sync credentials between local and remote stores |
+| `al start -c` | Start the scheduler on cloud infrastructure |
+| `al status` | Show agent status |
+| `al status -c` | Show cloud infrastructure status |
+| `al logs <agent>` | View agent log files |
+| `al logs <agent> -c` | View cloud logs |
 
 See [CLI command reference](docs/commands.md) for all options and flags.
 
 ### Common options
 
 - `-p, --project <dir>` — specify the project directory (defaults to `.`)
+- `-c, --cloud` — use cloud infrastructure (available on doctor, run, start, status, logs)
 
 ### `al run` options
 
-- `--dangerous-no-docker` — disable Docker container isolation and run the agent directly on the host
+- `--no-docker` — disable Docker container isolation and run the agent directly on the host
 
 ### `al start` options
 
-- `--dangerous-no-docker` — disable Docker container isolation and run agents directly on the host
+- `--no-docker` — disable Docker container isolation and run agents directly on the host
+
+### `al logs` options
+
+- `-n, --lines <N>` — number of log entries to show (default: 50)
+- `-f, --follow` — tail mode — watch for new log entries
+- `-d, --date <YYYY-MM-DD>` — view a specific date's log file
 
 ## Configuration
 
 ### Global config (`config.toml`)
 
-Global settings live in `config.toml` at the project root. Docker container isolation is enabled by default — use `--dangerous-no-docker` to disable it for development.
+Global settings live in `config.toml` at the project root.
+
+```toml
+[local]
+enabled = true          # Docker isolation (default true)
+image = "al-agent:latest"
+memory = "4g"
+cpus = 2
+timeout = 3600
+
+[cloud]
+provider = "cloud-run"  # or "ecs"
+gcpProject = "my-project"
+region = "us-central1"
+artifactRegistry = "us-central1-docker.pkg.dev/my-project/al-images"
+serviceAccount = "al-runner@my-project.iam.gserviceaccount.com"
+secretPrefix = "action-llama"
+```
 
 See the [agent-config.toml reference](docs/agent-config-reference.md) for per-agent fields. Each agent carries its own model config, so you can run different models per agent (e.g., Opus for dev, Haiku for devops).
 
 ### Credentials
 
-Credentials are stored in `~/.action-llama-credentials/<type>/<instance>/<field>` and referenced in agent configs as `"type:instance"` (e.g. `"github_token:default"`). Run `al setup` to configure them interactively. See [credentials docs](docs/credentials.md) for the full reference.
+Credentials are stored in `~/.action-llama-credentials/<type>/<instance>/<field>` and referenced in agent configs as `"type:instance"` (e.g. `"github_token:default"`). Run `al doctor` to configure them interactively. See [credentials docs](docs/credentials.md) for the full reference.
 
 ### Webhooks
 
@@ -132,49 +159,39 @@ Add webhook triggers to your `agent-config.toml` and point your GitHub/Sentry we
 
 ### Docker
 
-Agents run in isolated containers by default — read-only root FS, dropped capabilities, non-root user, and resource limits. The base image is built automatically on first run. Agents can extend it with a custom `Dockerfile`. Use `--dangerous-no-docker` to run directly on the host during development. See [Docker docs](docs/docker.md) for the full reference.
+Agents run in isolated containers by default — read-only root FS, dropped capabilities, non-root user, and resource limits. The base image is built automatically on first run. Agents can extend it with a custom `Dockerfile`. Use `--no-docker` to run directly on the host during development. See [Docker docs](docs/docker.md) for the full reference.
 
 ## Cloud
 
 Running `al start` on your laptop works for development, but for production you want agents running 24/7 on managed infrastructure — no laptop required, automatic restarts, and IAM-enforced secret isolation so a compromised agent can only access its own credentials.
 
-Action Llama supports two cloud providers. Both use the same project structure and agent configs — the only difference is the `[docker]` section in `config.toml`. Both build on [Docker mode](docs/docker.md) for container isolation and the [remote credential system](docs/credentials.md#remote-credential-stores) for syncing secrets to cloud stores.
+Action Llama supports two cloud providers. Both use the same project structure and agent configs — the only difference is the `[cloud]` section in `config.toml`.
+
+### Quick start
+
+The fastest way to get cloud running:
+
+```bash
+al cloud init -p .   # Interactive wizard: pick provider, configure, push creds, provision IAM
+al start -c -p .     # Start on cloud
+```
 
 ### GCP (Cloud Run Jobs)
 
 Agents run as serverless Cloud Run Jobs. Images are built with Cloud Build (no local Docker needed). Credentials are stored in Google Secret Manager and mounted as files natively by Cloud Run.
 
-**1. Configure**
-
 ```toml
-[docker]
-enabled = true
-runtime = "cloud-run"
+[cloud]
+provider = "cloud-run"
 gcpProject = "my-gcp-project"
 region = "us-central1"
 artifactRegistry = "us-central1-docker.pkg.dev/my-gcp-project/al-images"
 serviceAccount = "al-runner@my-gcp-project.iam.gserviceaccount.com"
 ```
 
-**2. Push credentials to Google Secret Manager**
-
 ```bash
-al remote add production --provider gsm --gcp-project my-gcp-project
-al creds push production
-```
-
-**3. Create per-agent service accounts**
-
-```bash
-al setup --cloud
-```
-
-This creates a GCP service account per agent and grants each one access to only its declared secrets.
-
-**4. Start**
-
-```bash
-al start
+al doctor -c    # Push creds + create per-agent service accounts
+al start -c     # Start on Cloud Run
 ```
 
 See [Cloud Run docs](docs/cloud-run.md) for prerequisites, full setup walkthrough, and troubleshooting.
@@ -183,12 +200,9 @@ See [Cloud Run docs](docs/cloud-run.md) for prerequisites, full setup walkthroug
 
 Agents run as ECS Fargate tasks. Images are built locally and pushed to ECR. Credentials are stored in AWS Secrets Manager and injected as environment variables by ECS.
 
-**1. Configure**
-
 ```toml
-[docker]
-enabled = true
-runtime = "ecs"
+[cloud]
+provider = "ecs"
 awsRegion = "us-east-1"
 ecsCluster = "al-cluster"
 ecrRepository = "123456789012.dkr.ecr.us-east-1.amazonaws.com/al-images"
@@ -197,25 +211,9 @@ taskRoleArn = "arn:aws:iam::123456789012:role/al-default-task-role"
 subnets = ["subnet-abc123"]
 ```
 
-**2. Push credentials to AWS Secrets Manager**
-
 ```bash
-al remote add aws-prod --provider asm --aws-region us-east-1
-al creds push aws-prod
-```
-
-**3. Create per-agent IAM task roles**
-
-```bash
-al setup --cloud
-```
-
-This creates an IAM task role per agent and grants each one `secretsmanager:GetSecretValue` scoped to only its declared secrets.
-
-**4. Start**
-
-```bash
-al start
+al doctor -c    # Push creds + create per-agent IAM task roles
+al start -c     # Start on ECS Fargate
 ```
 
 See [ECS docs](docs/ecs.md) for prerequisites, full setup walkthrough, and troubleshooting.
@@ -228,7 +226,7 @@ See [ECS docs](docs/ecs.md) for prerequisites, full setup walkthrough, and troub
 | Credential store | Google Secret Manager | AWS Secrets Manager |
 | Credential delivery | File mount (native) | Env var injection |
 | Secret isolation | Per-agent service accounts | Per-agent IAM task roles |
-| Setup command | `al setup --cloud` | `al setup --cloud` |
+| Setup command | `al doctor -c` | `al doctor -c` |
 | Log latency | ~5-15s (Cloud Logging) | ~5-10s (CloudWatch) |
 
 ## Documentation
@@ -279,7 +277,7 @@ npm test
 
 ```
 src/
-  cli/              # Command definitions (new, setup, start, status, logs)
+  cli/              # Command definitions (new, doctor, cloud-init, start, status, logs)
   setup/            # Project scaffolding
   scheduler/        # Scheduler: discovers agents, starts gateway, wires cron + webhooks
   agents/           # Agent runners (host + Docker), prompt builder

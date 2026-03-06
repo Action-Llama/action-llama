@@ -6,7 +6,6 @@ Run agents as Cloud Run Jobs on GCP instead of local Docker containers. Agents g
 
 - GCP project with Cloud Run, Secret Manager, Artifact Registry, and Cloud Build APIs enabled
 - `gcloud` CLI authenticated (`gcloud auth login`)
-- Credentials pushed to Google Secret Manager (`al creds push <remote>`)
 
 Local Docker is **not required** — images are built using Cloud Build.
 
@@ -15,9 +14,8 @@ Local Docker is **not required** — images are built using Cloud Build.
 In your project's `config.toml`:
 
 ```toml
-[docker]
-enabled = true
-runtime = "cloud-run"
+[cloud]
+provider = "cloud-run"
 gcpProject = "my-gcp-project"
 region = "us-central1"
 artifactRegistry = "us-central1-docker.pkg.dev/my-gcp-project/al-images"
@@ -27,17 +25,32 @@ serviceAccount = "al-runner@my-gcp-project.iam.gserviceaccount.com"
 
 | Key | Required | Description |
 |-----|----------|-------------|
-| `docker.runtime` | Yes | Set to `"cloud-run"` |
-| `docker.gcpProject` | Yes | GCP project ID |
-| `docker.region` | Yes | Cloud Run region (e.g. `us-central1`) |
-| `docker.artifactRegistry` | Yes | Full Artifact Registry repo path |
-| `docker.serviceAccount` | No | Runtime SA (for job creation). Per-agent SAs are used for job execution. |
-| `docker.secretPrefix` | No | GSM secret name prefix (default: `"action-llama"`) |
-| `docker.memory` | No | Memory per job (default: `"4Gi"`) |
-| `docker.cpus` | No | CPUs per job (default: `2`) |
-| `docker.timeout` | No | Max execution time in seconds (default: `3600`) |
+| `cloud.provider` | Yes | Set to `"cloud-run"` |
+| `cloud.gcpProject` | Yes | GCP project ID |
+| `cloud.region` | Yes | Cloud Run region (e.g. `us-central1`) |
+| `cloud.artifactRegistry` | Yes | Full Artifact Registry repo path |
+| `cloud.serviceAccount` | No | Runtime SA (for job creation). Per-agent SAs are used for job execution. |
+| `cloud.secretPrefix` | No | GSM secret name prefix (default: `"action-llama"`) |
 
-## Setup
+Local Docker settings (`[local]`) control resource limits:
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `local.memory` | `"4Gi"` | Memory per job |
+| `local.cpus` | `2` | CPUs per job |
+| `local.timeout` | `3600` | Max execution time in seconds |
+
+## Quick Setup
+
+The fastest way to get started:
+
+```bash
+al cloud init -p .
+```
+
+This interactive wizard prompts for all required fields, writes the `[cloud]` config, pushes credentials, and provisions IAM in one step.
+
+## Manual Setup
 
 ### 1. Enable GCP APIs
 
@@ -64,29 +77,18 @@ gcloud artifacts repositories create al-images \
 gcloud auth configure-docker us-central1-docker.pkg.dev
 ```
 
-### 4. Push credentials to Secret Manager
-
-If you haven't already set up a remote, add one and push:
+### 4. Push credentials and create per-agent service accounts
 
 ```bash
-al remote add production --provider gsm --gcp-project my-gcp-project -p .
-al creds push production -p .
+al doctor -c -p .
 ```
 
-### 5. Create per-agent service accounts
+This pushes all local credentials to Google Secret Manager, then creates a service account for each agent (`al-{agentName}@{project}.iam.gserviceaccount.com`) and grants it `secretmanager.secretAccessor` on only the secrets that agent needs.
 
-**Important:** Run `al creds push` (step 4) before this step. The cloud setup reads which secrets exist in GSM to build the IAM bindings, so the secrets must already be present.
-
-```bash
-al setup --cloud -p .
-```
-
-This creates a service account for each agent (`al-{agentName}@{project}.iam.gserviceaccount.com`) and grants it `secretmanager.secretAccessor` on only the secrets that agent needs. This ensures that a compromised agent container cannot access other agents' secrets.
-
-### 6. Start
+### 5. Start
 
 ```bash
-al start -p .
+al start -c -p .
 ```
 
 The scheduler will:
@@ -106,15 +108,13 @@ Enable the Cloud Build API:
 gcloud services enable cloudbuild.googleapis.com --project my-gcp-project
 ```
 
-The scheduler automatically uses `gcloud builds submit` when `docker.runtime = "cloud-run"`. No additional configuration is needed.
-
-If you prefer to build locally (e.g. for faster iteration), you can build and push manually, then start with the local runtime pointed at the same Artifact Registry. But for CI/CD and environments without Docker (Railway, etc.), Cloud Build is the recommended approach.
+The scheduler automatically uses `gcloud builds submit` when the cloud provider is `cloud-run`. No additional configuration is needed.
 
 ## How it works
 
 ### Image lifecycle
 
-Images are built using Cloud Build and pushed to Artifact Registry. Each agent gets its own image tag (`al-{agentName}:latest`). The build happens on every `al start` to ensure the latest code is deployed. Cloud Build handles caching automatically.
+Images are built using Cloud Build and pushed to Artifact Registry. Each agent gets its own image tag (`al-{agentName}:latest`). The build happens on every `al start -c` to ensure the latest code is deployed. Cloud Build handles caching automatically.
 
 ### Secret mounting
 
@@ -134,7 +134,7 @@ al-devops@my-project.iam.gserviceaccount.com    → github_token, sentry_token, 
 
 Each SA only has `secretmanager.secretAccessor` on its declared secrets. Even if an agent container is compromised and accesses the GCP metadata server to obtain the SA's token, it can only read its own secrets.
 
-Run `al setup --cloud` to create these SAs and IAM bindings automatically.
+Run `al doctor -c` to create these SAs and IAM bindings automatically.
 
 ### Gateway
 
@@ -158,7 +158,7 @@ Logs are streamed from Cloud Logging by polling. There is a ~5-15 second ingesti
 
 ## Troubleshooting
 
-**"Cloud Run runtime requires docker.gcpProject..."** — Ensure all required fields are set in `config.toml` under `[docker]`.
+**"Cloud Run runtime requires cloud.gcpProject..."** — Ensure all required fields are set in `config.toml` under `[cloud]`.
 
 **"Failed to get GCP access token"** — Run `gcloud auth application-default login` or set `GCP_SERVICE_ACCOUNT_KEY` env var.
 
@@ -168,4 +168,4 @@ Logs are streamed from Cloud Logging by polling. There is a ~5-15 second ingesti
 
 **Logs are delayed** — This is expected. Cloud Logging has a ~5-15 second ingestion delay. The TUI shows a warning when running in Cloud Run mode.
 
-**Agent can't access secrets** — Run `al setup --cloud` to create per-agent SAs and IAM bindings. Verify with `gcloud secrets get-iam-policy <secret-name> --project <project>`.
+**Agent can't access secrets** — Run `al doctor -c` to create per-agent SAs and IAM bindings. Verify with `gcloud secrets get-iam-policy <secret-name> --project <project>`.

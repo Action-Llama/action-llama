@@ -3,8 +3,8 @@ import { writeFileSync, mkdirSync } from "fs";
 import { resolve } from "path";
 import { makeTmpProject, captureLog } from "../../helpers.js";
 
-// Mock setup to be a no-op
-vi.mock("../../../src/cli/commands/setup.js", () => ({
+// Mock doctor to be a no-op
+vi.mock("../../../src/cli/commands/doctor.js", () => ({
   execute: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -65,7 +65,7 @@ describe("run", () => {
     });
 
     const output = await captureLog(async () => {
-      await execute("dev", { project: dir, dangerousNoDocker: true });
+      await execute("dev", { project: dir, noDocker: true });
     });
 
     expect(mockRun).toHaveBeenCalledTimes(1);

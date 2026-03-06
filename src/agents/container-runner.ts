@@ -119,7 +119,7 @@ export class ContainerAgentRunner {
     let logStream: { stop: () => void } | undefined;
 
     try {
-      const timeout = this.globalConfig.docker?.timeout || 3600;
+      const timeout = this.globalConfig.local?.timeout || 3600;
 
       // Resolve credential refs — always include anthropic_key for non-pi_auth
       const credRefs = [...new Set(this.agentConfig.credentials)];
@@ -152,8 +152,8 @@ export class ContainerAgentRunner {
         agentName: this.agentConfig.name,
         env,
         credentials,
-        memory: this.globalConfig.docker?.memory,
-        cpus: this.globalConfig.docker?.cpus,
+        memory: this.globalConfig.local?.memory,
+        cpus: this.globalConfig.local?.cpus,
       });
 
       // Register container with gateway for shutdown, credential serving, and log ingestion

@@ -14,7 +14,7 @@ export async function execute(name: string): Promise<void> {
   console.log("\n=== Action Llama — New Project ===\n");
 
   // Only prompt for the Anthropic credential; other credentials are
-  // handled per-agent by `al setup` (which runs automatically before `al start`).
+  // handled per-agent by `al doctor` (which runs automatically before `al start`).
   console.log("--- Anthropic Auth ---\n");
   const anthropicDef = resolveCredential("anthropic_key");
   const result = await promptCredential(anthropicDef);

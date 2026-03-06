@@ -2,6 +2,7 @@ import { resolve } from "path";
 import { createReadStream, readdirSync, existsSync, statSync } from "fs";
 import { createInterface } from "readline";
 import { logsDir } from "../../shared/paths.js";
+import { loadGlobalConfig } from "../../shared/config.js";
 
 const LEVEL_COLORS: Record<number, { label: string; color: string }> = {
   10: { label: "TRACE", color: "\x1b[90m" },   // gray
@@ -129,9 +130,50 @@ async function followFile(filePath: string, lastN: number): Promise<void> {
 
 export async function execute(
   agent: string,
-  opts: { project: string; lines: string; follow?: boolean; date?: string }
+  opts: { project: string; lines: string; follow?: boolean; date?: string; cloud?: boolean }
 ): Promise<void> {
   const projectPath = resolve(opts.project);
+
+  if (opts.cloud) {
+    const globalConfig = loadGlobalConfig(projectPath);
+    const cloud = globalConfig.cloud;
+    if (!cloud) {
+      throw new Error("No [cloud] section found in config.toml. Run 'al cloud init' first.");
+    }
+
+    const { execFileSync } = await import("child_process");
+
+    if (cloud.provider === "cloud-run") {
+      const jobName = `al-${agent}`;
+      console.log(`Fetching Cloud Run logs for ${jobName}...`);
+      try {
+        execFileSync("gcloud", [
+          "logging", "read",
+          `resource.type="cloud_run_job" AND labels."run.googleapis.com/job_name"="${jobName}"`,
+          "--project", cloud.gcpProject!,
+          "--limit", opts.lines || "50",
+          "--format", "value(textPayload)",
+          "--order", "desc",
+        ], { stdio: "inherit", timeout: 30_000 });
+      } catch (err: any) {
+        throw new Error(`Failed to read Cloud Run logs: ${err.message}`);
+      }
+    } else {
+      const logGroup = `/ecs/al-${agent}`;
+      console.log(`Fetching ECS logs from ${logGroup}...`);
+      try {
+        execFileSync("aws", [
+          "logs", "tail", logGroup,
+          "--region", cloud.awsRegion!,
+          "--format", "short",
+        ], { stdio: "inherit", timeout: 30_000 });
+      } catch (err: any) {
+        throw new Error(`Failed to read ECS logs: ${err.message}`);
+      }
+    }
+    return;
+  }
+
   const dir = logsDir(projectPath);
   const n = parseInt(opts.lines, 10);
 

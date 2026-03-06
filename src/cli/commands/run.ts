@@ -6,9 +6,9 @@ import { createLogger } from "../../shared/logger.js";
 import { agentDir } from "../../shared/paths.js";
 import { AgentRunner } from "../../agents/runner.js";
 import { buildManualPrompt } from "../../agents/prompt.js";
-import { execute as runSetup } from "./setup.js";
+import { execute as runDoctor } from "./doctor.js";
 
-export async function execute(agent: string, opts: { project: string; dangerousNoDocker?: boolean }): Promise<void> {
+export async function execute(agent: string, opts: { project: string; noDocker?: boolean; cloud?: boolean }): Promise<void> {
   const projectPath = resolve(opts.project);
 
   // Guard: refuse to run if the project path looks like an agent directory
@@ -27,7 +27,7 @@ export async function execute(agent: string, opts: { project: string; dangerousN
   }
 
   // Ensure credentials are present
-  await runSetup({ project: opts.project });
+  await runDoctor({ project: opts.project });
 
   const globalConfig = loadGlobalConfig(projectPath);
   const agentConfig = loadAgentConfig(projectPath, agent);
@@ -37,16 +37,80 @@ export async function execute(agent: string, opts: { project: string; dangerousN
     await backendRequireCredentialRef(credRef);
   }
 
-  const dockerEnabled = !opts.dangerousNoDocker && globalConfig.docker?.enabled === true;
+  const dockerEnabled = !opts.noDocker && (globalConfig.local?.enabled ?? true);
+  const cloudMode = opts.cloud === true;
 
   const logger = createLogger(projectPath, agent);
 
-  if (dockerEnabled) {
+  if (cloudMode) {
+    // Cloud mode: use cloud runtime
+    const cloud = globalConfig.cloud;
+    if (!cloud) {
+      throw new Error("No [cloud] section found in config.toml. Run 'al cloud init' first.");
+    }
+
+    const { setDefaultBackend } = await import("../../shared/credentials.js");
+    const { createBackendFromCloudConfig } = await import("../../shared/remote.js");
+    const backend = await createBackendFromCloudConfig(cloud);
+    setDefaultBackend(backend);
+
+    let runtime;
+    if (cloud.provider === "cloud-run") {
+      const { CloudRunJobRuntime } = await import("../../docker/cloud-run-runtime.js");
+      const { gcpProject, region, artifactRegistry, serviceAccount, secretPrefix } = cloud;
+      if (!gcpProject || !region || !artifactRegistry || !serviceAccount) {
+        throw new Error(
+          "Cloud Run requires cloud.gcpProject, cloud.region, " +
+          "cloud.artifactRegistry, and cloud.serviceAccount in config.toml"
+        );
+      }
+      runtime = new CloudRunJobRuntime({ gcpProject, region, artifactRegistry, serviceAccount, secretPrefix });
+    } else {
+      const { ECSFargateRuntime } = await import("../../docker/ecs-runtime.js");
+      if (!cloud.awsRegion || !cloud.ecsCluster || !cloud.ecrRepository || !cloud.executionRoleArn || !cloud.taskRoleArn || !cloud.subnets?.length) {
+        throw new Error(
+          "ECS requires cloud.awsRegion, cloud.ecsCluster, cloud.ecrRepository, " +
+          "cloud.executionRoleArn, cloud.taskRoleArn, and cloud.subnets in config.toml"
+        );
+      }
+      runtime = new ECSFargateRuntime({
+        awsRegion: cloud.awsRegion,
+        ecsCluster: cloud.ecsCluster,
+        ecrRepository: cloud.ecrRepository,
+        executionRoleArn: cloud.executionRoleArn,
+        taskRoleArn: cloud.taskRoleArn,
+        subnets: cloud.subnets,
+        securityGroups: cloud.securityGroups,
+        secretPrefix: cloud.awsSecretPrefix,
+      });
+    }
+
+    const { ContainerAgentRunner } = await import("../../agents/container-runner.js");
+
+    const baseImage = globalConfig.local?.image || "al-agent:latest";
+    const image = await runtime.buildImage({ tag: baseImage, dockerfile: "docker/Dockerfile", contextDir: resolve(import.meta.dirname || ".", "../..") });
+
+    const runner = new ContainerAgentRunner(
+      runtime,
+      globalConfig,
+      agentConfig,
+      logger,
+      () => {},
+      () => {},
+      "",
+      projectPath,
+      image,
+    );
+
+    const prompt = buildManualPrompt(agentConfig);
+    console.log(`Running agent "${agent}" in cloud (${cloud.provider})...`);
+    await runner.run(prompt);
+  } else if (dockerEnabled) {
     // Docker mode: validate and run in container
     if (agentConfig.model.authType === "pi_auth") {
       throw new Error(
         `Agent "${agent}" uses pi_auth which is not supported in Docker mode. ` +
-        `Either switch to api_key/oauth_token (run 'al setup') or use --dangerous-no-docker.`
+        `Either switch to api_key/oauth_token (run 'al doctor') or use --no-docker.`
       );
     }
 
@@ -56,7 +120,7 @@ export async function execute(agent: string, opts: { project: string; dangerousN
     } catch {
       throw new Error(
         "Docker is not running. Start Docker Desktop (or the Docker daemon) and try again, " +
-        "or use --dangerous-no-docker to run without container isolation."
+        "or use --no-docker to run without container isolation."
       );
     }
 
@@ -68,7 +132,7 @@ export async function execute(agent: string, opts: { project: string; dangerousN
     const runtime = new LocalDockerRuntime();
     ensureNetwork();
 
-    const baseImage = globalConfig.docker?.image || "al-agent:latest";
+    const baseImage = globalConfig.local?.image || "al-agent:latest";
     ensureImage(baseImage);
     const image = ensureAgentImage(agent, projectPath, baseImage);
 

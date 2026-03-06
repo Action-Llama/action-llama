@@ -28,7 +28,7 @@ Credentials are stored in `~/.action-llama-credentials/<type>/<instance>/<field>
 
 3. **Injection**: At runtime, credentials with env vars are injected as environment variables into the agent's container/process.
 
-4. **Git identity**: The `git_ssh` credential includes `username` and `email` fields (prompted during `al new`/`al setup`). These are injected as `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL` and `GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` env vars at runtime, so `git commit` works without requiring `git config`.
+4. **Git identity**: The `git_ssh` credential includes `username` and `email` fields (prompted during `al new`/`al doctor`). These are injected as `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL` and `GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` env vars at runtime, so `git commit` works without requiring `git config`.
 
 ## Named Instances
 
@@ -54,11 +54,11 @@ Reference them as `"git_ssh:default"` or `"git_ssh:botty"` in your agent config.
 
 ### During `al new`
 
-The `al new` command prompts for the Anthropic credential during initial setup. Other credentials are configured per-agent by `al setup`.
+The `al new` command prompts for the Anthropic credential during initial setup. Other credentials are configured per-agent by `al doctor`.
 
-### Via `al setup`
+### Via `al doctor`
 
-Run `al setup` to scan all agents and prompt for any missing credentials.
+Run `al doctor` to scan all agents and prompt for any missing credentials.
 
 ### Manually
 
@@ -97,43 +97,16 @@ echo "your-webhook-secret" > ~/.action-llama-credentials/github_webhook_secret/M
 
 The gateway automatically loads secrets from all credential instances (e.g. `github_webhook_secret:MyOrg`, `sentry_client_secret:MyOrg`) and uses them to verify incoming webhook payloads. No global configuration is needed.
 
-## Remote Credential Stores
+## Cloud Credential Sync
 
-Credentials can be synced to cloud secret managers for use with cloud runtimes.
+When using cloud runtimes, credentials are automatically pushed to the cloud secret manager by `al doctor -c` or `al cloud init`. See [Cloud Run docs](cloud-run.md) and [ECS docs](ecs.md) for details.
 
 ### Google Secret Manager (GSM)
-
-```bash
-al remote add production --provider gsm --gcp-project my-gcp-project -p .
-al creds push production -p .
-al creds pull production -p .
-```
 
 Secret naming: `{prefix}--{type}--{instance}--{field}` (dashes, since GSM disallows slashes).
 
 ### AWS Secrets Manager (ASM)
 
-```bash
-al remote add aws-prod --provider asm --aws-region us-east-1 -p .
-al creds push aws-prod -p .
-al creds pull aws-prod -p .
-```
-
 Secret naming: `{prefix}/{type}/{instance}/{field}` (slashes).
 
 Requires `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` env vars or a configured AWS CLI (`aws configure`).
-
-### Configuration
-
-Remotes are stored in `config.toml`:
-
-```toml
-[remotes.production]
-provider = "gsm"
-gcpProject = "my-gcp-project"
-
-[remotes.aws-prod]
-provider = "asm"
-awsRegion = "us-east-1"
-# secretPrefix = "action-llama"   # optional, default: "action-llama"
-```

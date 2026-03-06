@@ -1,54 +1,190 @@
 import { resolve } from "path";
 import { existsSync } from "fs";
+import { input, confirm } from "@inquirer/prompts";
 import { execFileSync } from "child_process";
 import { discoverAgents, loadAgentConfig, loadGlobalConfig } from "../../shared/config.js";
-import { parseCredentialRef } from "../../shared/credentials.js";
+import type { CloudConfig } from "../../shared/config.js";
+import { resolveCredential } from "../../credentials/registry.js";
+import { promptCredential } from "../../credentials/prompter.js";
+import { parseCredentialRef, credentialExists, listCredentialInstances, writeCredentialFields } from "../../shared/credentials.js";
+import { createLocalBackend, createBackendFromCloudConfig } from "../../shared/remote.js";
+import type { CredentialDefinition } from "../../credentials/schema.js";
 
-/**
- * `al setup --cloud` — create per-agent IAM resources for cloud runtimes.
- *
- * For Cloud Run (GCP):
- *   Creates per-agent GCP service accounts with GSM secret isolation.
- *
- * For ECS Fargate (AWS):
- *   Creates per-agent IAM task roles with Secrets Manager access policies.
- */
-export async function execute(opts: { project: string }): Promise<void> {
+// Webhook secret credential types — these support multiple named instances
+const WEBHOOK_SECRET_TYPES: Record<string, string> = {
+  github: "github_webhook_secret",
+  sentry: "sentry_client_secret",
+};
+
+export async function execute(opts: { project: string; cloud?: boolean }): Promise<void> {
   const projectPath = resolve(opts.project);
 
+  // Guard: refuse to run if the project path looks like an agent directory
   if (existsSync(resolve(projectPath, "agent-config.toml")) || existsSync(resolve(projectPath, "PLAYBOOK.md"))) {
     throw new Error(
       `"${projectPath}" looks like an agent directory, not a project directory. ` +
-      `Run 'al setup --cloud' from the project root.`
+      `Run 'al doctor' from the project root (the parent directory).`
     );
   }
 
-  const globalConfig = loadGlobalConfig(projectPath);
-  const dockerConfig = globalConfig.docker;
-
-  if (!dockerConfig || (dockerConfig.runtime !== "cloud-run" && dockerConfig.runtime !== "ecs")) {
-    throw new Error(
-      "Cloud setup requires docker.runtime = \"cloud-run\" or \"ecs\" in config.toml. " +
-      "Set docker.runtime and the required provider-specific fields first."
-    );
+  const agents = discoverAgents(projectPath);
+  if (agents.length === 0) {
+    console.log("No agents found. Create agents first, then re-run doctor.");
+    return;
   }
 
-  if (dockerConfig.runtime === "cloud-run") {
-    await executeGcp(projectPath, dockerConfig);
+  // --- Local credential check ---
+
+  // Collect all credential refs from agents
+  const credentialRefs = new Set<string>();
+
+  for (const name of agents) {
+    const config = loadAgentConfig(projectPath, name);
+    for (const ref of config.credentials) {
+      credentialRefs.add(ref);
+    }
+  }
+
+  // Detect which webhook credential types are needed from trigger types
+  const neededWebhookCredTypes = new Set<string>();
+  for (const name of agents) {
+    const config = loadAgentConfig(projectPath, name);
+    for (const trigger of config.webhooks || []) {
+      const credType = WEBHOOK_SECRET_TYPES[trigger.type];
+      if (credType) neededWebhookCredTypes.add(credType);
+    }
+  }
+
+  const totalItems = credentialRefs.size + neededWebhookCredTypes.size;
+  if (totalItems === 0) {
+    console.log("No credentials required by any agent.");
   } else {
-    await executeAws(projectPath, dockerConfig);
+    console.log(`\nChecking ${credentialRefs.size} credential(s)...\n`);
+
+    let okCount = 0;
+    let promptedCount = 0;
+
+    for (const ref of credentialRefs) {
+      const { type, instance } = parseCredentialRef(ref);
+      const def = resolveCredential(type);
+
+      if (credentialExists(type, instance)) {
+        console.log(`  [ok] ${def.label} (${ref})`);
+        okCount++;
+        continue;
+      }
+
+      const result = await promptCredential(def, instance);
+      if (result && Object.keys(result.values).length > 0) {
+        writeCredentialFields(type, instance, result.values);
+        promptedCount++;
+      }
+    }
+
+    // Handle webhook secrets separately — these support multiple named instances
+    for (const credType of neededWebhookCredTypes) {
+      const def = resolveCredential(credType);
+      const instances = listCredentialInstances(credType);
+
+      if (instances.length > 0) {
+        for (const inst of instances) {
+          console.log(`  [ok] ${def.label} (${credType}:${inst})`);
+          okCount++;
+        }
+
+        const addMore = await confirm({
+          message: `Add another ${def.label}? (for a different org/project)`,
+          default: false,
+        });
+
+        if (addMore) {
+          const added = await promptWebhookSecret(def, credType);
+          if (added) promptedCount++;
+        }
+      } else {
+        const result = await promptWebhookSecret(def, credType);
+        if (result) promptedCount++;
+      }
+    }
+
+    console.log(`\nDone. ${okCount} already present, ${promptedCount} configured.`);
+  }
+
+  // --- Cloud mode ---
+
+  if (opts.cloud) {
+    const globalConfig = loadGlobalConfig(projectPath);
+    const cloudConfig = globalConfig.cloud;
+
+    if (!cloudConfig) {
+      throw new Error(
+        "No [cloud] section found in config.toml. " +
+        "Run 'al cloud init' to configure a cloud provider first."
+      );
+    }
+
+    // Push local creds to cloud
+    console.log(`\nPushing credentials to cloud (${cloudConfig.provider})...`);
+    const local = createLocalBackend();
+    const remote = await createBackendFromCloudConfig(cloudConfig);
+    const localEntries = await local.list();
+
+    if (localEntries.length === 0) {
+      console.log("No local credentials found. Run 'al doctor' first to configure them.");
+    } else {
+      let pushed = 0;
+      for (const entry of localEntries) {
+        const value = await local.read(entry.type, entry.instance, entry.field);
+        if (value !== undefined) {
+          await remote.write(entry.type, entry.instance, entry.field, value);
+          pushed++;
+        }
+      }
+      console.log(`Pushed ${pushed} credential field(s) to ${cloudConfig.provider}.`);
+    }
+
+    // Reconcile IAM
+    console.log(`\nReconciling cloud IAM...`);
+    await reconcileCloudIam(projectPath, cloudConfig);
   }
 }
 
-// --- GCP Cloud Run ---
+async function promptWebhookSecret(def: CredentialDefinition, credType: string): Promise<boolean> {
+  const name = await input({
+    message: `${def.label} — name (e.g. "MyOrg", "my-project"):`,
+    validate: (v: string) => {
+      const trimmed = v.trim();
+      if (!trimmed) return "Name is required";
+      if (!/^[a-zA-Z0-9_-]+$/.test(trimmed)) return "Use only letters, numbers, hyphens, and underscores";
+      if (credentialExists(credType, trimmed)) return `"${trimmed}" already exists`;
+      return true;
+    },
+  });
 
-async function executeGcp(
-  projectPath: string,
-  dockerConfig: { gcpProject?: string; secretPrefix?: string }
-): Promise<void> {
-  const { gcpProject, secretPrefix: configPrefix } = dockerConfig;
+  const result = await promptCredential(def, name.trim());
+  if (result && Object.keys(result.values).length > 0) {
+    writeCredentialFields(credType, name.trim(), result.values);
+    return true;
+  }
+  return false;
+}
+
+// --- Cloud IAM reconciliation ---
+
+export async function reconcileCloudIam(projectPath: string, cloud: CloudConfig): Promise<void> {
+  if (cloud.provider === "cloud-run") {
+    await reconcileGcp(projectPath, cloud);
+  } else if (cloud.provider === "ecs") {
+    await reconcileAws(projectPath, cloud);
+  } else {
+    throw new Error(`Unknown cloud provider: "${cloud.provider}"`);
+  }
+}
+
+async function reconcileGcp(projectPath: string, cloud: CloudConfig): Promise<void> {
+  const { gcpProject, secretPrefix: configPrefix } = cloud;
   if (!gcpProject) {
-    throw new Error("docker.gcpProject is required in config.toml");
+    throw new Error("cloud.gcpProject is required in config.toml");
   }
 
   const secretPrefix = configPrefix || "action-llama";
@@ -74,10 +210,8 @@ async function executeGcp(
   if (preflight === 0) {
     console.log(
       `\nWarning: No secrets found in GSM with prefix "${secretPrefix}".\n` +
-      `IAM bindings are created against existing secrets, so you should push credentials first:\n\n` +
-      `  al creds push <remote> -p .\n`
+      `IAM bindings are created against existing secrets, so you should push credentials first.\n`
     );
-    const { confirm } = await import("@inquirer/prompts");
     const proceed = await confirm({
       message: "Continue anyway? (Service accounts will be created but no secrets will be bound)",
       default: false,
@@ -123,7 +257,6 @@ async function executeGcp(
     const secretNames: string[] = [];
     for (const ref of credRefs) {
       const { type, instance } = parseCredentialRef(ref);
-      // List fields for this credential from GSM
       const fields = listGsmFields(gcpProject, secretPrefix, type, instance);
       for (const field of fields) {
         secretNames.push(`${secretPrefix}--${type}--${instance}--${field}`);
@@ -167,22 +300,15 @@ async function executeGcp(
   }
 
   console.log("Done. Each agent now has an isolated service account with access to only its declared secrets.");
-  console.log("\nTo use per-agent SAs, set docker.serviceAccount to the runtime SA (for job creation),");
-  console.log("and the per-agent SAs will be used automatically at launch time.");
 }
 
-// --- AWS ECS Fargate ---
-
-async function executeAws(
-  projectPath: string,
-  dockerConfig: { awsRegion?: string; ecrRepository?: string; awsSecretPrefix?: string }
-): Promise<void> {
-  const { awsRegion, ecrRepository, awsSecretPrefix } = dockerConfig;
+async function reconcileAws(projectPath: string, cloud: CloudConfig): Promise<void> {
+  const { awsRegion, ecrRepository, awsSecretPrefix } = cloud;
   if (!awsRegion) {
-    throw new Error("docker.awsRegion is required in config.toml");
+    throw new Error("cloud.awsRegion is required in config.toml");
   }
   if (!ecrRepository) {
-    throw new Error("docker.ecrRepository is required in config.toml");
+    throw new Error("cloud.ecrRepository is required in config.toml");
   }
 
   const secretPrefix = awsSecretPrefix || "action-llama";
@@ -191,7 +317,7 @@ async function executeAws(
   const accountMatch = ecrRepository.match(/^(\d+)\.dkr\.ecr\./);
   if (!accountMatch) {
     throw new Error(
-      `Cannot extract AWS account ID from docker.ecrRepository: "${ecrRepository}". ` +
+      `Cannot extract AWS account ID from cloud.ecrRepository: "${ecrRepository}". ` +
       `Expected format: 123456789012.dkr.ecr.<region>.amazonaws.com/<repo>`
     );
   }
@@ -258,7 +384,6 @@ async function executeAws(
     const secretArns: string[] = [];
     for (const ref of credRefs) {
       const { type, instance } = parseCredentialRef(ref);
-      // Wildcard for all fields of this credential
       secretArns.push(
         `arn:aws:secretsmanager:${awsRegion}:${accountId}:secret:${secretPrefix}/${type}/${instance}/*`
       );

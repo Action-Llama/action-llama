@@ -101,7 +101,7 @@ async function main() {
   // Read Anthropic API key from credentials (not needed for pi_auth)
   const anthropicKey = readCredentialField("anthropic_key", "default", "token");
   if (!anthropicKey && agentConfig.model.authType !== "pi_auth") {
-    emitLog("error", "missing anthropic_key credential. Run 'al setup' to configure it.");
+    emitLog("error", "missing anthropic_key credential. Run 'al doctor' to configure it.");
     process.exit(1);
   }
 

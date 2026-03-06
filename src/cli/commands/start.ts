@@ -3,9 +3,9 @@ import { existsSync } from "fs";
 import { loadGlobalConfig } from "../../shared/config.js";
 import { startScheduler } from "../../scheduler/index.js";
 import { StatusTracker } from "../../tui/status-tracker.js";
-import { execute as runSetup } from "./setup.js";
+import { execute as runDoctor } from "./doctor.js";
 
-export async function execute(opts: { project: string; dangerousNoDocker?: boolean }): Promise<void> {
+export async function execute(opts: { project: string; noDocker?: boolean; cloud?: boolean }): Promise<void> {
   const projectPath = resolve(opts.project);
 
   // Guard: refuse to run if the project path looks like an agent directory
@@ -17,30 +17,41 @@ export async function execute(opts: { project: string; dangerousNoDocker?: boole
   }
 
   // Ensure all credentials are present before starting
-  await runSetup({ project: opts.project });
+  await runDoctor({ project: opts.project });
 
   const globalConfig = loadGlobalConfig(projectPath);
 
-  // Docker is on by default; --dangerous-no-docker disables it
-  if (opts.dangerousNoDocker) {
-    if (!globalConfig.docker) globalConfig.docker = { enabled: false };
-    else globalConfig.docker.enabled = false;
-  } else if (!globalConfig.docker) {
-    globalConfig.docker = { enabled: true };
+  // Docker is on by default; --no-docker disables it
+  if (opts.noDocker) {
+    if (!globalConfig.local) globalConfig.local = { enabled: false };
+    else globalConfig.local.enabled = false;
+  } else if (!globalConfig.local) {
+    globalConfig.local = { enabled: true };
   }
 
-  const dockerEnabled = globalConfig.docker?.enabled === true;
+  // Cloud mode: set up cloud backend
+  if (opts.cloud) {
+    if (!globalConfig.cloud) {
+      throw new Error("No [cloud] section found in config.toml. Run 'al cloud init' first.");
+    }
+    const { setDefaultBackend } = await import("../../shared/credentials.js");
+    const { createBackendFromCloudConfig } = await import("../../shared/remote.js");
+    const backend = await createBackendFromCloudConfig(globalConfig.cloud);
+    setDefaultBackend(backend);
+  }
+
+  const dockerEnabled = globalConfig.local?.enabled === true;
   const mode = dockerEnabled ? "docker" : "host";
 
   const statusTracker = new StatusTracker();
 
-  const { cronJobs, gateway, webhookRegistry, webhookUrls } = await startScheduler(projectPath, globalConfig, statusTracker);
+  const { cronJobs, gateway, webhookRegistry, webhookUrls } = await startScheduler(projectPath, globalConfig, statusTracker, opts.cloud);
 
   const gatewayPort = gateway ? (globalConfig.gateway?.port || 8080) : null;
 
   statusTracker.setSchedulerInfo({
     mode,
-    runtime: dockerEnabled ? (globalConfig.docker?.runtime || "local") : undefined,
+    runtime: dockerEnabled ? (opts.cloud ? globalConfig.cloud?.provider : "local") : undefined,
     gatewayPort,
     cronJobCount: cronJobs.length,
     webhooksActive: !!webhookRegistry,

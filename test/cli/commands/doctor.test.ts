@@ -54,9 +54,14 @@ vi.mock("@inquirer/prompts", () => ({
   confirm: (...args: any[]) => mockConfirm(...args),
 }));
 
-import { execute } from "../../../src/cli/commands/setup.js";
+vi.mock("../../../src/shared/remote.js", () => ({
+  createLocalBackend: vi.fn().mockReturnValue({ list: vi.fn().mockResolvedValue([]) }),
+  createBackendFromCloudConfig: vi.fn().mockResolvedValue({}),
+}));
 
-describe("setup", () => {
+import { execute } from "../../../src/cli/commands/doctor.js";
+
+describe("doctor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockLoadGlobalConfig.mockReturnValue({});
@@ -145,7 +150,6 @@ describe("setup", () => {
 
   it("discovers webhook secrets from agents with webhook triggers", async () => {
     mockDiscoverAgents.mockReturnValue(["dev"]);
-    // loadAgentConfig is called twice: once for credentials, once for webhook sources
     mockLoadAgentConfig.mockReturnValue({
       name: "dev",
       credentials: ["github_token:default"],
@@ -157,7 +161,6 @@ describe("setup", () => {
       fields: [{ name: id === "github_token" ? "token" : "secret" }],
     }));
     mockCredentialExists.mockReturnValue(true);
-    // MyOrg exists as an instance of github_webhook_secret
     mockListCredentialInstances.mockImplementation((type: string) => {
       if (type === "github_webhook_secret") return ["MyOrg"];
       return [];

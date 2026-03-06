@@ -1,44 +1,27 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "fs";
-import { resolve, join } from "path";
-import { tmpdir } from "os";
-import { stringify as stringifyTOML } from "smol-toml";
-import { resolveRemote } from "../../src/shared/config.js";
+import { describe, it, expect } from "vitest";
+import { createBackendFromCloudConfig, createLocalBackend } from "../../src/shared/remote.js";
+import type { CloudConfig } from "../../src/shared/config.js";
 
-describe("resolveRemote", () => {
-  let tmpDir: string;
-
-  beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "al-remote-resolve-"));
+describe("createBackendFromCloudConfig", () => {
+  it("throws for cloud-run without gcpProject", async () => {
+    const cloud: CloudConfig = { provider: "cloud-run" };
+    await expect(createBackendFromCloudConfig(cloud)).rejects.toThrow("gcpProject");
   });
 
-  afterEach(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
+  it("throws for ecs without awsRegion", async () => {
+    const cloud: CloudConfig = { provider: "ecs" };
+    await expect(createBackendFromCloudConfig(cloud)).rejects.toThrow("awsRegion");
   });
 
-  it("resolves a configured remote", () => {
-    const config = {
-      remotes: {
-        production: { provider: "gsm", gcpProject: "my-project" },
-      },
-    };
-    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(config as any));
-
-    const remote = resolveRemote(tmpDir, "production");
-    expect(remote.provider).toBe("gsm");
-    expect(remote.gcpProject).toBe("my-project");
+  it("throws for unknown provider", async () => {
+    const cloud = { provider: "unknown" } as any;
+    await expect(createBackendFromCloudConfig(cloud)).rejects.toThrow("Unknown cloud provider");
   });
+});
 
-  it("throws for non-existent remote", () => {
-    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({}));
-    expect(() => resolveRemote(tmpDir, "nope")).toThrow("not found");
-  });
-
-  it("lists available remotes in error message", () => {
-    const config = {
-      remotes: { staging: { provider: "gsm", gcpProject: "s" } },
-    };
-    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(config as any));
-    expect(() => resolveRemote(tmpDir, "prod")).toThrow("staging");
+describe("createLocalBackend", () => {
+  it("returns a filesystem backend", () => {
+    const backend = createLocalBackend();
+    expect(backend).toBeDefined();
   });
 });

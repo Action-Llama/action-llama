@@ -29,7 +29,7 @@ Each agent is a directory containing:
 
 ## Credential Reference
 
-Credentials are managed by the user via \`al setup\` and stored in \`~/.action-llama-credentials/<type>/<instance>/<field>\`. Reference them in \`credentials\` arrays as \`"type:instance"\` (e.g. \`"github_token:default"\`). The \`:default\` instance suffix can be omitted.
+Credentials are managed by the user via \`al doctor\` and stored in \`~/.action-llama-credentials/<type>/<instance>/<field>\`. Reference them in \`credentials\` arrays as \`"type:instance"\` (e.g. \`"github_token:default"\`). The \`:default\` instance suffix can be omitted.
 
 | Type | What it is | Fields | Runtime injection | What it enables |
 |------|-----------|--------|-------------------|----------------|
@@ -40,7 +40,7 @@ Credentials are managed by the user via \`al setup\` and stored in \`~/.action-l
 | \`github_webhook_secret\` | Shared HMAC secret | \`secret\` | Used by gateway only (not injected into agents) | Validates GitHub webhook payloads |
 | \`sentry_client_secret\` | Sentry client secret | \`secret\` | Used by gateway only (not injected into agents) | Validates Sentry webhook payloads |
 
-**IMPORTANT:** Agents MUST NEVER ask users for credentials directly (API keys, tokens, passwords, etc.). Agents MUST NEVER run \`al setup\` or interact with the credential system on behalf of the user. If a credential is missing at runtime, the agent should report the error and stop — the user will run \`al setup\` and \`al start\` themselves.
+**IMPORTANT:** Agents MUST NEVER ask users for credentials directly (API keys, tokens, passwords, etc.). Agents MUST NEVER run \`al doctor\` or interact with the credential system on behalf of the user. If a credential is missing at runtime, the agent should report the error and stop — the user will run \`al doctor\` and \`al start\` themselves.
 
 ## Runtime Context
 
@@ -285,7 +285,7 @@ Use those values for repos, triggerLabel, and assignee.
 
 ## Docker Mode
 
-Docker container isolation is enabled by default. Each agent run launches an isolated container with a read-only root filesystem, dropped capabilities, non-root user, and resource limits. Use \`--dangerous-no-docker\` to disable it for development.
+Docker container isolation is enabled by default. Each agent run launches an isolated container with a read-only root filesystem, dropped capabilities, non-root user, and resource limits. Use \`--no-docker\` to disable it for development.
 
 ### Base image
 
@@ -318,11 +318,11 @@ Agent images are built automatically on startup. If no \`Dockerfile\` is present
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| \`docker.enabled\` | \`true\` | Enable Docker container isolation |
-| \`docker.image\` | \`"al-agent:latest"\` | Base Docker image name |
-| \`docker.memory\` | \`"4g"\` | Memory limit per container |
-| \`docker.cpus\` | \`2\` | CPU limit per container |
-| \`docker.timeout\` | \`3600\` | Max container runtime in seconds |
+| \`local.enabled\` | \`true\` | Enable Docker container isolation |
+| \`local.image\` | \`"al-agent:latest"\` | Base Docker image name |
+| \`local.memory\` | \`"4g"\` | Memory limit per container |
+| \`local.cpus\` | \`2\` | CPU limit per container |
+| \`local.timeout\` | \`3600\` | Max container runtime in seconds |
 
 ## Running Agents
 

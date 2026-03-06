@@ -7,16 +7,14 @@ Run agents as ECS Fargate tasks on AWS instead of local Docker containers. Agent
 - AWS account with ECS, ECR, Secrets Manager, and CloudWatch Logs access
 - AWS CLI configured (`aws configure`) or `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` env vars
 - Local Docker installed (for building and pushing images to ECR)
-- Credentials pushed to AWS Secrets Manager
 
 ## Configuration
 
 In your project's `config.toml`:
 
 ```toml
-[docker]
-enabled = true
-runtime = "ecs"
+[cloud]
+provider = "ecs"
 awsRegion = "us-east-1"
 ecsCluster = "al-cluster"
 ecrRepository = "123456789012.dkr.ecr.us-east-1.amazonaws.com/al-images"
@@ -29,20 +27,35 @@ subnets = ["subnet-abc123"]
 
 | Key | Required | Description |
 |-----|----------|-------------|
-| `docker.runtime` | Yes | Set to `"ecs"` |
-| `docker.awsRegion` | Yes | AWS region (e.g. `us-east-1`) |
-| `docker.ecsCluster` | Yes | ECS cluster name or ARN |
-| `docker.ecrRepository` | Yes | Full ECR repository URI |
-| `docker.executionRoleArn` | Yes | IAM role for task execution (ECR pull + CloudWatch Logs) |
-| `docker.taskRoleArn` | Yes | Default IAM task role (Secrets Manager access) |
-| `docker.subnets` | Yes | VPC subnet IDs for Fargate tasks |
-| `docker.securityGroups` | No | Security group IDs for Fargate tasks |
-| `docker.awsSecretPrefix` | No | Secrets Manager name prefix (default: `"action-llama"`) |
-| `docker.memory` | No | Memory per task in MiB (default: `"4096"`) |
-| `docker.cpus` | No | CPUs per task (default: `2`) |
-| `docker.timeout` | No | Max execution time in seconds (default: `3600`) |
+| `cloud.provider` | Yes | Set to `"ecs"` |
+| `cloud.awsRegion` | Yes | AWS region (e.g. `us-east-1`) |
+| `cloud.ecsCluster` | Yes | ECS cluster name or ARN |
+| `cloud.ecrRepository` | Yes | Full ECR repository URI |
+| `cloud.executionRoleArn` | Yes | IAM role for task execution (ECR pull + CloudWatch Logs) |
+| `cloud.taskRoleArn` | Yes | Default IAM task role (Secrets Manager access) |
+| `cloud.subnets` | Yes | VPC subnet IDs for Fargate tasks |
+| `cloud.securityGroups` | No | Security group IDs for Fargate tasks |
+| `cloud.awsSecretPrefix` | No | Secrets Manager name prefix (default: `"action-llama"`) |
 
-## Setup
+Local Docker settings (`[local]`) control resource limits:
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `local.memory` | `"4096"` | Memory per task in MiB |
+| `local.cpus` | `2` | CPUs per task |
+| `local.timeout` | `3600` | Max execution time in seconds |
+
+## Quick Setup
+
+The fastest way to get started:
+
+```bash
+al cloud init -p .
+```
+
+This interactive wizard prompts for all required fields, writes the `[cloud]` config, pushes credentials, and provisions IAM in one step.
+
+## Manual Setup
 
 ### 1. Create an ECS cluster
 
@@ -97,17 +110,13 @@ aws iam put-role-policy \
   }'
 ```
 
-### 4. Create per-agent task roles
-
-Run `al setup --cloud` to create per-agent IAM task roles automatically:
+### 4. Push credentials and create per-agent task roles
 
 ```bash
-al setup --cloud -p .
+al doctor -c -p .
 ```
 
-This creates a task role for each agent (`al-{agentName}-task-role`) and grants `secretsmanager:GetSecretValue` scoped to only that agent's declared secrets.
-
-**Note:** Unlike GCP Cloud Run, this step can be run before or after pushing credentials (step 5). The IAM policies use wildcard ARN patterns derived from the agent config, so the secrets don't need to exist yet.
+This pushes all local credentials to AWS Secrets Manager, then creates a task role for each agent (`al-{agentName}-task-role`) and grants `secretsmanager:GetSecretValue` scoped to only that agent's declared secrets.
 
 Alternatively, create roles manually:
 
@@ -136,34 +145,14 @@ aws iam put-role-policy \
 
 Repeat for each agent (`al-reviewer-task-role`, `al-devops-task-role`, etc.), scoping each role's policy to only that agent's credential paths.
 
-### 5. Push credentials to Secrets Manager
-
-Add an AWS Secrets Manager remote and push your local credentials:
-
-```bash
-al remote add aws-prod --provider asm --aws-region us-east-1 -p .
-al creds push aws-prod -p .
-```
-
-This pushes all local credentials to AWS Secrets Manager using the naming convention `{prefix}/{type}/{instance}/{field}` (e.g. `action-llama/github_token/default/token`).
-
-You can also create secrets manually:
-
-```bash
-aws secretsmanager create-secret \
-  --name "action-llama/github_token/default/token" \
-  --secret-string "ghp_your_token_here" \
-  --region us-east-1
-```
-
-### 6. Ensure VPC networking
+### 5. Ensure VPC networking
 
 Fargate tasks need a VPC subnet with internet access (for pulling images, calling APIs). Use a public subnet with `assignPublicIp: ENABLED` (the default) or a private subnet with a NAT gateway.
 
-### 7. Start
+### 6. Start
 
 ```bash
-al start -p .
+al start -c -p .
 ```
 
 The scheduler will:
@@ -177,7 +166,7 @@ The scheduler will:
 
 ### Image lifecycle
 
-Images are built locally with Docker and pushed to ECR. Each agent gets its own image tag (`al-{agentName}-latest`). The build and push happen on every `al start` to ensure the latest code is deployed.
+Images are built locally with Docker and pushed to ECR. Each agent gets its own image tag (`al-{agentName}-latest`). The build and push happen on every `al start -c` to ensure the latest code is deployed.
 
 ### Secret injection
 
@@ -249,7 +238,7 @@ The AWS credentials on your machine need:
 
 ## Troubleshooting
 
-**"ECS runtime requires docker.awsRegion..."** — Ensure all required fields are set in `config.toml` under `[docker]`.
+**"ECS runtime requires cloud.awsRegion..."** — Ensure all required fields are set in `config.toml` under `[cloud]`.
 
 **"No AWS credentials found"** — Set `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` env vars or run `aws configure`.
 

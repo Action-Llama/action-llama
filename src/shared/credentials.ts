@@ -123,7 +123,7 @@ export function requireCredentialRef(ref: string): void {
   const { type, instance } = parseCredentialRef(ref);
   if (!credentialExists(type, instance)) {
     throw new Error(
-      `Credential "${ref}" not found at ${credentialDir(type, instance)}. Run 'al setup' to configure it.`
+      `Credential "${ref}" not found at ${credentialDir(type, instance)}. Run 'al doctor' to configure it.`
     );
   }
 }
@@ -168,7 +168,7 @@ export async function backendRequireCredentialRef(ref: string): Promise<void> {
   const exists = await _defaultBackend.exists(type, instance);
   if (!exists) {
     throw new Error(
-      `Credential "${ref}" not found. Run 'al setup' to configure it.`
+      `Credential "${ref}" not found. Run 'al doctor' to configure it.`
     );
   }
 }

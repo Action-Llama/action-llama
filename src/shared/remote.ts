@@ -1,29 +1,28 @@
-import type { RemoteConfig } from "./config.js";
+import type { CloudConfig } from "./config.js";
 import type { CredentialBackend } from "./credential-backend.js";
 import { FilesystemBackend } from "./filesystem-backend.js";
 
 /**
- * Create a credential backend for the given remote config.
- * Returns a FilesystemBackend if no remote is specified.
+ * Create a credential backend from the [cloud] config section.
  */
-export async function createBackendForRemote(remote: RemoteConfig): Promise<CredentialBackend> {
-  if (remote.provider === "gsm") {
-    if (!remote.gcpProject) {
-      throw new Error("Remote provider 'gsm' requires 'gcpProject' to be set.");
+export async function createBackendFromCloudConfig(cloud: CloudConfig): Promise<CredentialBackend> {
+  if (cloud.provider === "cloud-run") {
+    if (!cloud.gcpProject) {
+      throw new Error("Cloud provider 'cloud-run' requires 'gcpProject' in [cloud] config.");
     }
     const { GoogleSecretManagerBackend } = await import("./gsm-backend.js");
-    return new GoogleSecretManagerBackend(remote.gcpProject, remote.secretPrefix || "action-llama");
+    return new GoogleSecretManagerBackend(cloud.gcpProject, cloud.secretPrefix || "action-llama");
   }
 
-  if (remote.provider === "asm") {
-    if (!remote.awsRegion) {
-      throw new Error("Remote provider 'asm' requires 'awsRegion' to be set.");
+  if (cloud.provider === "ecs") {
+    if (!cloud.awsRegion) {
+      throw new Error("Cloud provider 'ecs' requires 'awsRegion' in [cloud] config.");
     }
     const { AwsSecretsManagerBackend } = await import("./asm-backend.js");
-    return new AwsSecretsManagerBackend(remote.awsRegion, remote.secretPrefix || "action-llama");
+    return new AwsSecretsManagerBackend(cloud.awsRegion, cloud.awsSecretPrefix || "action-llama");
   }
 
-  throw new Error(`Unknown remote provider: "${remote.provider}". Supported providers: gsm, asm`);
+  throw new Error(`Unknown cloud provider: "${cloud.provider}". Supported providers: cloud-run, ecs`);
 }
 
 /**

@@ -1,6 +1,6 @@
 # Docker Mode
 
-Docker mode runs each agent in an isolated container. It is enabled by default — disable it with `--dangerous-no-docker` for development, or set `docker.enabled = false` in `config.toml`.
+Docker mode runs each agent in an isolated container. It is enabled by default — disable it with `--no-docker` for development, or set `local.enabled = false` in `config.toml`.
 
 ## How it works
 
@@ -120,12 +120,11 @@ The key requirement is that `/app/dist/agents/container-entry.js` exists and can
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `docker.enabled` | `true` | Enable Docker container isolation |
-| `docker.runtime` | `"local"` | Container runtime: `"local"` (Docker), `"cloud-run"` (GCP), or `"ecs"` (AWS) |
-| `docker.image` | `"al-agent:latest"` | Base Docker image name |
-| `docker.memory` | `"4g"` | Memory limit per container |
-| `docker.cpus` | `2` | CPU limit per container |
-| `docker.timeout` | `3600` | Max container runtime in seconds |
+| `local.enabled` | `true` | Enable Docker container isolation |
+| `local.image` | `"al-agent:latest"` | Base Docker image name |
+| `local.memory` | `"4g"` | Memory limit per container |
+| `local.cpus` | `2` | CPU limit per container |
+| `local.timeout` | `3600` | Max container runtime in seconds |
 
 For Cloud Run configuration, see [Cloud Run docs](cloud-run.md). For ECS Fargate configuration, see [ECS docs](ecs.md).
 

@@ -12,28 +12,31 @@ export interface ModelConfig {
   authType: "api_key" | "oauth_token" | "pi_auth";
 }
 
-export interface DockerConfig {
-  enabled: boolean;
-  runtime?: "local" | "cloud-run" | "ecs";  // default: "local"
-  image?: string;
-  memory?: string;
+export interface LocalConfig {
+  enabled: boolean;        // Docker isolation (default true)
+  image?: string;          // Base Docker image (default: "al-agent:latest")
+  memory?: string;         // e.g. "4g"
   cpus?: number;
-  timeout?: number;
-  // Cloud Run settings (required when runtime = "cloud-run")
+  timeout?: number;        // Max container runtime in seconds
+}
+
+export interface CloudConfig {
+  provider: "cloud-run" | "ecs";
+  // Cloud Run (GCP)
   gcpProject?: string;
   region?: string;
-  artifactRegistry?: string;      // e.g. "us-central1-docker.pkg.dev/my-project/al-images"
-  serviceAccount?: string;        // Job SA for secret access + execution
-  secretPrefix?: string;          // GSM secret name prefix (default: "action-llama")
-  // ECS Fargate settings (required when runtime = "ecs")
+  artifactRegistry?: string;
+  serviceAccount?: string;
+  secretPrefix?: string;
+  // ECS Fargate (AWS)
   awsRegion?: string;
-  ecsCluster?: string;            // ECS cluster name or ARN
-  ecrRepository?: string;         // ECR repo URI (e.g. "123456789.dkr.ecr.us-east-1.amazonaws.com/al-images")
-  executionRoleArn?: string;      // IAM role for ECS task execution (ECR pull + CW Logs)
-  taskRoleArn?: string;           // IAM role for the container (Secrets Manager access)
-  subnets?: string[];             // VPC subnet IDs for Fargate tasks
-  securityGroups?: string[];      // Security group IDs for Fargate tasks
-  awsSecretPrefix?: string;       // Secrets Manager name prefix (default: "action-llama")
+  ecsCluster?: string;
+  ecrRepository?: string;
+  executionRoleArn?: string;
+  taskRoleArn?: string;
+  subnets?: string[];
+  securityGroups?: string[];
+  awsSecretPrefix?: string;
 }
 
 export interface GatewayConfig {
@@ -44,18 +47,11 @@ export interface WebhooksGlobalConfig {
   secretCredentials?: Record<string, string>;  // source → credential name
 }
 
-export interface RemoteConfig {
-  provider: string;       // "gsm" (Google Secret Manager) or "asm" (AWS Secrets Manager)
-  gcpProject?: string;    // required for gsm
-  awsRegion?: string;     // required for asm
-  secretPrefix?: string;  // prefix for secret names (default: "action-llama")
-}
-
 export interface GlobalConfig {
-  docker?: DockerConfig;
+  local?: LocalConfig;
+  cloud?: CloudConfig;
   gateway?: GatewayConfig;
   webhooks?: WebhooksGlobalConfig;
-  remotes?: Record<string, RemoteConfig>;
 }
 
 // --- Per-agent config (lives at <project>/<agent>/agent-config.toml) ---
@@ -103,16 +99,6 @@ export function validateAgentConfig(config: AgentConfig): void {
   }
 }
 
-export function resolveRemote(projectPath: string, remoteName: string): RemoteConfig {
-  const globalConfig = loadGlobalConfig(projectPath);
-  const remote = globalConfig.remotes?.[remoteName];
-  if (!remote) {
-    const available = globalConfig.remotes ? Object.keys(globalConfig.remotes).join(", ") : "(none)";
-    throw new Error(`Remote "${remoteName}" not found in config.toml. Available remotes: ${available}`);
-  }
-  return remote;
-}
-
 export function discoverAgents(projectPath: string): string[] {
   const excluded = new Set(["node_modules"]);
   const agents: string[] = [];
@@ -131,4 +117,3 @@ export function discoverAgents(projectPath: string): string[] {
 
   return agents.sort();
 }
-

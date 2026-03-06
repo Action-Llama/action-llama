@@ -113,7 +113,7 @@ export class CloudRunJobRuntime implements ContainerRuntime {
       ? opts.credentials.mounts
       : [];
 
-    // Use per-agent SA if available (created by `al setup --cloud`),
+    // Use per-agent SA if available (created by `al doctor -c`),
     // otherwise fall back to the shared SA from config
     const perAgentSa = `al-${opts.agentName}@${this.config.gcpProject}.iam.gserviceaccount.com`;
     const serviceAccount = opts.serviceAccount || perAgentSa;

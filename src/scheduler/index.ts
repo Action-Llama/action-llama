@@ -47,7 +47,7 @@ function buildFilterFromTrigger(trigger: WebhookTrigger): WebhookFilter | undefi
   return undefined;
 }
 
-export async function startScheduler(projectPath: string, globalConfigOverride?: GlobalConfig, statusTracker?: StatusTracker) {
+export async function startScheduler(projectPath: string, globalConfigOverride?: GlobalConfig, statusTracker?: StatusTracker, cloudMode?: boolean) {
   const mkLogger = statusTracker ? createFileOnlyLogger : createLogger;
   const logger = mkLogger(projectPath, "scheduler");
   logger.info("Starting scheduler...");
@@ -74,7 +74,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   }
 
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const dockerEnabled = globalConfig.docker?.enabled === true;
+  const dockerEnabled = globalConfig.local?.enabled === true;
   const anyWebhooks = agentConfigs.some((a) => a.webhooks?.length);
 
   // Validate pi_auth is not used with Docker (containers can't access host auth storage)
@@ -83,7 +83,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       if (config.model.authType === "pi_auth") {
         throw new Error(
           `Agent "${config.name}" uses pi_auth which is not supported in Docker mode. ` +
-          `Either switch to api_key/oauth_token (run 'al setup') or use --dangerous-no-docker.`
+          `Either switch to api_key/oauth_token (run 'al doctor') or use --no-docker.`
         );
       }
     }
@@ -130,43 +130,45 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   let baseImage = "al-agent:latest";
   const agentImages: Record<string, string> = {};
 
-  const runtimeType = globalConfig.docker?.runtime || "local";
+  // Determine runtime type from cloud mode or local
+  const useCloudRuntime = cloudMode && globalConfig.cloud;
+  const runtimeType = useCloudRuntime ? globalConfig.cloud!.provider : "local";
 
   if (dockerEnabled) {
     logger.info({ runtime: runtimeType }, "Docker mode enabled — initializing infrastructure");
 
     // 1. Create the container runtime
-    if (runtimeType === "cloud-run") {
+    if (useCloudRuntime && globalConfig.cloud!.provider === "cloud-run") {
       const { CloudRunJobRuntime } = await import("../docker/cloud-run-runtime.js");
-      const { gcpProject, region, artifactRegistry, serviceAccount, secretPrefix } = globalConfig.docker!;
+      const { gcpProject, region, artifactRegistry, serviceAccount, secretPrefix } = globalConfig.cloud!;
       if (!gcpProject || !region || !artifactRegistry || !serviceAccount) {
         throw new Error(
-          "Cloud Run runtime requires docker.gcpProject, docker.region, " +
-          "docker.artifactRegistry, and docker.serviceAccount in config.toml"
+          "Cloud Run runtime requires cloud.gcpProject, cloud.region, " +
+          "cloud.artifactRegistry, and cloud.serviceAccount in config.toml"
         );
       }
       runtime = new CloudRunJobRuntime({ gcpProject, region, artifactRegistry, serviceAccount, secretPrefix });
       logger.info({ gcpProject, region }, "Using Cloud Run Jobs runtime");
-    } else if (runtimeType === "ecs") {
+    } else if (useCloudRuntime && globalConfig.cloud!.provider === "ecs") {
       const { ECSFargateRuntime } = await import("../docker/ecs-runtime.js");
-      const dc = globalConfig.docker!;
-      if (!dc.awsRegion || !dc.ecsCluster || !dc.ecrRepository || !dc.executionRoleArn || !dc.taskRoleArn || !dc.subnets?.length) {
+      const cc = globalConfig.cloud!;
+      if (!cc.awsRegion || !cc.ecsCluster || !cc.ecrRepository || !cc.executionRoleArn || !cc.taskRoleArn || !cc.subnets?.length) {
         throw new Error(
-          "ECS runtime requires docker.awsRegion, docker.ecsCluster, docker.ecrRepository, " +
-          "docker.executionRoleArn, docker.taskRoleArn, and docker.subnets in config.toml"
+          "ECS runtime requires cloud.awsRegion, cloud.ecsCluster, cloud.ecrRepository, " +
+          "cloud.executionRoleArn, cloud.taskRoleArn, and cloud.subnets in config.toml"
         );
       }
       runtime = new ECSFargateRuntime({
-        awsRegion: dc.awsRegion,
-        ecsCluster: dc.ecsCluster,
-        ecrRepository: dc.ecrRepository,
-        executionRoleArn: dc.executionRoleArn,
-        taskRoleArn: dc.taskRoleArn,
-        subnets: dc.subnets,
-        securityGroups: dc.securityGroups,
-        secretPrefix: dc.awsSecretPrefix,
+        awsRegion: cc.awsRegion,
+        ecsCluster: cc.ecsCluster,
+        ecrRepository: cc.ecrRepository,
+        executionRoleArn: cc.executionRoleArn,
+        taskRoleArn: cc.taskRoleArn,
+        subnets: cc.subnets,
+        securityGroups: cc.securityGroups,
+        secretPrefix: cc.awsSecretPrefix,
       });
-      logger.info({ region: dc.awsRegion, cluster: dc.ecsCluster }, "Using ECS Fargate runtime");
+      logger.info({ region: cc.awsRegion, cluster: cc.ecsCluster }, "Using ECS Fargate runtime");
     } else {
       // Local runtime needs Docker running
       const { execFileSync } = await import("child_process");
@@ -175,7 +177,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       } catch {
         throw new Error(
           "Docker is not running. Start Docker Desktop (or the Docker daemon) and try again, " +
-          "or use --dangerous-no-docker to run without container isolation."
+          "or use --no-docker to run without container isolation."
         );
       }
 
@@ -193,7 +195,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     const { fileURLToPath } = await import("url");
     const packageRoot = resolvePath(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-    baseImage = globalConfig.docker?.image || "al-agent:latest";
+    baseImage = globalConfig.local?.image || "al-agent:latest";
     logger.info({ image: baseImage }, "Building base image (this may take a few minutes on first run)...");
 
     if (runtimeType === "local") {
@@ -228,12 +230,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
     // 4. Push images to remote registry if needed (no-op for local, tags+pushes for cloud)
     if (runtimeType !== "local") {
-      // Cloud builds already push — pushImage handles the case where
-      // buildImage returned a remote URI (no-op) or a local tag (push needed)
       for (const agentConfig of agentConfigs) {
         const currentImage = agentImages[agentConfig.name] || baseImage;
-        // Cloud buildImage already returns remote URIs, so pushImage may be redundant
-        // but we call it for runtimes where build and push are separate steps
         if (!currentImage.includes("/")) {
           // Looks like a local tag — needs pushing
           const remoteImage = await runtime.pushImage(currentImage);

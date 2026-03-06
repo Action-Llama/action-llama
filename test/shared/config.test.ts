@@ -17,15 +17,23 @@ describe("loadGlobalConfig", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("loads valid config.toml", () => {
-    const config = { docker: { enabled: false } };
+  it("loads valid config.toml with [local]", () => {
+    const config = { local: { enabled: false } };
     writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(config));
     const loaded = loadGlobalConfig(tmpDir);
-    expect(loaded.docker?.enabled).toBe(false);
+    expect(loaded.local?.enabled).toBe(false);
+  });
+
+  it("loads valid config.toml with [cloud]", () => {
+    const config = { cloud: { provider: "cloud-run", gcpProject: "my-proj", region: "us-central1" } };
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(config as any));
+    const loaded = loadGlobalConfig(tmpDir);
+    expect(loaded.cloud?.provider).toBe("cloud-run");
+    expect(loaded.cloud?.gcpProject).toBe("my-proj");
   });
 
   it("ignores config.json", () => {
-    writeFileSync(resolve(tmpDir, "config.json"), JSON.stringify({ docker: { enabled: true } }));
+    writeFileSync(resolve(tmpDir, "config.json"), JSON.stringify({ local: { enabled: true } }));
     const loaded = loadGlobalConfig(tmpDir);
     expect(loaded).toEqual({});
   });

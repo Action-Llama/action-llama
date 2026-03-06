@@ -9,6 +9,11 @@ vi.mock("../../../src/shared/config.js", async () => {
   };
 });
 
+// Mock doctor to be a no-op
+vi.mock("../../../src/cli/commands/doctor.js", () => ({
+  execute: vi.fn().mockResolvedValue(undefined),
+}));
+
 // Mock the scheduler to not actually start
 vi.mock("../../../src/scheduler/index.js", () => ({
   startScheduler: vi.fn().mockResolvedValue({
@@ -36,7 +41,8 @@ describe("start", () => {
     expect(startScheduler).toHaveBeenCalledWith(
       expect.stringContaining("test"),
       expect.any(Object),
-      expect.any(StatusTracker)
+      expect.any(StatusTracker),
+      undefined
     );
 
     // We can't await the promise since it never resolves, so just verify it started
