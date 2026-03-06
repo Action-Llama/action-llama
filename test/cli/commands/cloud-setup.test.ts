@@ -254,6 +254,18 @@ describe("cloud setup", () => {
     expect(config.cloud.provider).toBe("ecs");
   });
 
+  it("aborts ECS setup when AWS credentials are missing", async () => {
+    mockSelect.mockResolvedValueOnce("ecs");
+    mockStsSend.mockRejectedValueOnce(new Error("Could not load credentials"));
+
+    await execute({ project: tmpDir });
+
+    // Config should NOT have a [cloud] section
+    const config = parseTOML(readFileSync(resolve(tmpDir, "config.toml"), "utf-8")) as any;
+    expect(config.cloud).toBeUndefined();
+    expect(config.local.enabled).toBe(true); // preserved
+  });
+
   it("aborts when user declines teardown and declines overwrite", async () => {
     writeFileSync(
       resolve(tmpDir, "config.toml"),

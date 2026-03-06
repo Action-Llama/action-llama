@@ -92,7 +92,8 @@ export async function execute(opts: { project: string }): Promise<void> {
     const prefix = await input({ message: "Secret prefix:", default: "action-llama" });
     if (prefix !== "action-llama") cloud.secretPrefix = prefix;
   } else {
-    await setupEcsCloud(cloud);
+    const ok = await setupEcsCloud(cloud);
+    if (!ok) return;
   }
 
   // 3. Write [cloud] to config.toml
@@ -145,7 +146,7 @@ export async function execute(opts: { project: string }): Promise<void> {
 
 // --- ECS auto-discovery setup ---
 
-async function setupEcsCloud(cloud: CloudConfig): Promise<void> {
+async function setupEcsCloud(cloud: CloudConfig): Promise<boolean> {
   // Check for AWS credentials before asking any questions
   console.log("Checking for AWS credentials...");
   const probe = new STSClient({});
@@ -159,7 +160,7 @@ async function setupEcsCloud(cloud: CloudConfig): Promise<void> {
     console.log("  2. Run: aws configure\n");
     console.log("  3. Then re-run: al cloud setup\n");
     console.log("  Alternatively, set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables.\n");
-    return;
+    return false;
   }
 
   cloud.awsRegion = await input({ message: "AWS region:", default: "us-east-1" });
@@ -200,6 +201,7 @@ async function setupEcsCloud(cloud: CloudConfig): Promise<void> {
 
   const prefix = await input({ message: "Secret prefix:", default: "action-llama" });
   if (prefix !== "action-llama") cloud.awsSecretPrefix = prefix;
+  return true;
 }
 
 // --- Resource pickers ---
