@@ -199,9 +199,17 @@ USER node
 
 See [Docker docs](docs/docker.md) for the full reference including base image contents, custom Dockerfiles, standalone images, and the container filesystem layout.
 
-### Cloud Run mode
+## Cloud
 
-Instead of running containers locally, you can run agents as Cloud Run Jobs on GCP:
+Running `al start` on your laptop works for development, but for production you want agents running 24/7 on managed infrastructure — no laptop required, automatic restarts, and IAM-enforced secret isolation so a compromised agent can only access its own credentials.
+
+Action Llama supports two cloud providers. Both use the same project structure and agent configs — the only difference is the `[docker]` section in `config.toml`. Both build on [Docker mode](docs/docker.md) for container isolation and the [remote credential system](docs/credentials.md#remote-credential-stores) for syncing secrets to cloud stores.
+
+### GCP (Cloud Run Jobs)
+
+Agents run as serverless Cloud Run Jobs. Images are built with Cloud Build (no local Docker needed). Credentials are stored in Google Secret Manager and mounted as files natively by Cloud Run.
+
+**1. Configure**
 
 ```toml
 [docker]
@@ -213,11 +221,34 @@ artifactRegistry = "us-central1-docker.pkg.dev/my-gcp-project/al-images"
 serviceAccount = "al-runner@my-gcp-project.iam.gserviceaccount.com"
 ```
 
-Run `al setup --cloud` to create per-agent service accounts with isolated secret access. See [Cloud Run docs](docs/cloud-run.md) for the full setup guide.
+**2. Push credentials to Google Secret Manager**
 
-### ECS Fargate mode
+```bash
+al remote add production --provider gsm --gcp-project my-gcp-project -p .
+al creds push production -p .
+```
 
-You can also run agents as ECS Fargate tasks on AWS:
+**3. Create per-agent service accounts**
+
+```bash
+al setup --cloud -p .
+```
+
+This creates a GCP service account per agent and grants each one access to only its declared secrets.
+
+**4. Start**
+
+```bash
+al start -p .
+```
+
+See [Cloud Run docs](docs/cloud-run.md) for prerequisites, full setup walkthrough, and troubleshooting.
+
+### AWS (ECS Fargate)
+
+Agents run as ECS Fargate tasks. Images are built locally and pushed to ECR. Credentials are stored in AWS Secrets Manager and injected as environment variables by ECS.
+
+**1. Configure**
 
 ```toml
 [docker]
@@ -231,7 +262,39 @@ taskRoleArn = "arn:aws:iam::123456789012:role/al-default-task-role"
 subnets = ["subnet-abc123"]
 ```
 
-Per-agent task roles are derived automatically for IAM-enforced secret isolation. See [ECS docs](docs/ecs.md) for the full setup guide.
+**2. Push credentials to AWS Secrets Manager**
+
+```bash
+al remote add aws-prod --provider asm --aws-region us-east-1 -p .
+al creds push aws-prod -p .
+```
+
+**3. Create per-agent IAM task roles**
+
+```bash
+al setup --cloud -p .
+```
+
+This creates an IAM task role per agent and grants each one `secretsmanager:GetSecretValue` scoped to only its declared secrets.
+
+**4. Start**
+
+```bash
+al start -p .
+```
+
+See [ECS docs](docs/ecs.md) for prerequisites, full setup walkthrough, and troubleshooting.
+
+### Cloud comparison
+
+| | GCP Cloud Run | AWS ECS Fargate |
+|---|---|---|
+| Image builds | Cloud Build (no local Docker) | Local Docker + ECR push |
+| Credential store | Google Secret Manager | AWS Secrets Manager |
+| Credential delivery | File mount (native) | Env var injection |
+| Secret isolation | Per-agent service accounts | Per-agent IAM task roles |
+| Setup command | `al setup --cloud` | `al setup --cloud` |
+| Log latency | ~5-15s (Cloud Logging) | ~5-10s (CloudWatch) |
 
 ## Documentation
 
