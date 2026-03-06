@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, mkdirSync, writeFileSync, chmodSync, readdirSync } from "fs";
+import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSync } from "fs";
 import { resolve } from "path";
 import { getModel } from "@mariozechner/pi-ai";
 import {
@@ -17,20 +17,50 @@ function emitLog(level: string, msg: string, data?: Record<string, any>) {
   console.log(JSON.stringify({ _log: true, level, msg, ...data, ts: Date.now() }));
 }
 
+// Credential bundle loaded from either mounted volume or gateway HTTP endpoint
+let credBundle: Record<string, Record<string, Record<string, string>>> = {};
+
+function hasLocalCredentials(): boolean {
+  try {
+    const entries = readdirSync("/credentials");
+    return entries.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function loadCredentialsFromVolume(): void {
+  for (const type of readdirSync("/credentials")) {
+    const typePath = `/credentials/${type}`;
+    try { if (!statSync(typePath).isDirectory()) continue; } catch { continue; }
+    credBundle[type] = {};
+    for (const instance of readdirSync(typePath)) {
+      const instPath = `${typePath}/${instance}`;
+      try { if (!statSync(instPath).isDirectory()) continue; } catch { continue; }
+      credBundle[type][instance] = {};
+      for (const field of readdirSync(instPath)) {
+        credBundle[type][instance][field] = readFileSync(`${instPath}/${field}`, "utf-8").trim();
+      }
+    }
+  }
+}
+
+async function loadCredentialsFromGateway(gatewayUrl: string, secret: string): Promise<void> {
+  emitLog("info", "fetching credentials from gateway");
+  const res = await fetch(`${gatewayUrl}/credentials/${secret}`);
+  if (!res.ok) {
+    emitLog("error", "failed to fetch credentials from gateway", { status: res.status });
+    process.exit(1);
+  }
+  credBundle = await res.json();
+}
+
 function readCredentialField(type: string, instance: string, field: string): string | undefined {
-  const path = `/credentials/${type}/${instance}/${field}`;
-  if (!existsSync(path)) return undefined;
-  return readFileSync(path, "utf-8").trim();
+  return credBundle[type]?.[instance]?.[field];
 }
 
 function readCredentialFields(type: string, instance: string): Record<string, string> {
-  const dir = `/credentials/${type}/${instance}`;
-  const result: Record<string, string> = {};
-  if (!existsSync(dir)) return result;
-  for (const file of readdirSync(dir)) {
-    result[file] = readFileSync(resolve(dir, file), "utf-8").trim();
-  }
-  return result;
+  return credBundle[type]?.[instance] || {};
 }
 
 async function main() {
@@ -56,7 +86,19 @@ async function main() {
 
   emitLog("info", "container starting", { agentName: agentConfig.name, modelId, gatewayUrl });
 
-  // Read Anthropic API key from credentials volume (not needed for pi_auth)
+  // Load credentials from mounted volume or via HTTP from gateway
+  if (hasLocalCredentials()) {
+    loadCredentialsFromVolume();
+    emitLog("info", "credentials loaded from volume");
+  } else if (gatewayUrl && shutdownSecret) {
+    await loadCredentialsFromGateway(gatewayUrl, shutdownSecret);
+    emitLog("info", "credentials loaded from gateway");
+  } else {
+    emitLog("error", "no credentials available — no volume mount and no gateway URL");
+    process.exit(1);
+  }
+
+  // Read Anthropic API key from credentials (not needed for pi_auth)
   const anthropicKey = readCredentialField("anthropic_key", "default", "token");
   if (!anthropicKey && agentConfig.model.authType !== "pi_auth") {
     emitLog("error", "missing anthropic_key credential. Run 'al setup' to configure it.");

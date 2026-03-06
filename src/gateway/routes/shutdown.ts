@@ -1,11 +1,12 @@
-import { execFileSync } from "child_process";
 import type { Router } from "../router.js";
 import { readBody, sendJson, sendError } from "../router.js";
+import type { ContainerRegistration } from "../types.js";
 import type { Logger } from "../../shared/logger.js";
 
 export function registerShutdownRoute(
   router: Router,
-  containerSecrets: Map<string, string>,
+  containerRegistry: Map<string, ContainerRegistration>,
+  killContainer: (name: string) => Promise<void>,
   logger: Logger
 ): void {
   router.post("/shutdown", async (req, res) => {
@@ -23,27 +24,20 @@ export function registerShutdownRoute(
       return;
     }
 
-    const containerName = containerSecrets.get(secret);
-    if (!containerName) {
+    const reg = containerRegistry.get(secret);
+    if (!reg) {
       sendError(res, 403, "invalid secret");
       return;
     }
 
     logger.error(
-      { container: containerName, reason, details },
+      { container: reg.containerName, reason, details },
       "shutdown requested — killing container"
     );
 
-    try {
-      execFileSync("docker", ["kill", containerName], {
-        encoding: "utf-8",
-        timeout: 10000,
-      });
-    } catch {
-      // Container may already be dead
-    }
+    await killContainer(reg.containerName);
 
-    containerSecrets.delete(secret);
-    sendJson(res, 200, { killed: true, container: containerName });
+    containerRegistry.delete(secret);
+    sendJson(res, 200, { killed: true, container: reg.containerName });
   });
 }
