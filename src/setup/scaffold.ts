@@ -36,6 +36,7 @@ Credentials are managed by the user via \`al setup\` and stored in \`~/.action-l
 | \`anthropic_key\` | Anthropic API key or OAuth token | \`token\` | Read directly by the agent SDK (not an env var) | LLM access — required for all agents |
 | \`github_token\` | GitHub PAT (repo + workflow scopes) | \`token\` | \`GITHUB_TOKEN\` and \`GH_TOKEN\` env vars | \`gh\` CLI, \`git\` over HTTPS, GitHub API |
 | \`git_ssh\` | SSH private key + git identity | \`id_rsa\`, \`username\`, \`email\` | SSH key mounted as file; \`GIT_SSH_COMMAND\` configured automatically; \`GIT_AUTHOR_NAME\`/\`GIT_AUTHOR_EMAIL\`/\`GIT_COMMITTER_NAME\`/\`GIT_COMMITTER_EMAIL\` set from \`username\`/\`email\` | \`git clone\`/\`push\` over SSH — **required for pushing to repos** |
+| \`aws_credentials\` | AWS access credentials and default region | \`access_key_id\`, \`secret_access_key\`, \`default_region\` | \`AWS_ACCESS_KEY_ID\`, \`AWS_SECRET_ACCESS_KEY\`, \`AWS_DEFAULT_REGION\` env vars | AWS CLI, AWS SDKs via standard env vars |
 | \`sentry_token\` | Sentry auth token | \`token\` | \`SENTRY_AUTH_TOKEN\` env var | Sentry API via \`curl\` |
 | \`github_webhook_secret\` | Shared HMAC secret | \`secret\` | Used by gateway only (not injected into agents) | Validates GitHub webhook payloads |
 | \`sentry_client_secret\` | Sentry client secret | \`secret\` | Used by gateway only (not injected into agents) | Validates Sentry webhook payloads |

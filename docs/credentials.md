@@ -9,6 +9,7 @@ Credentials are stored in `~/.action-llama-credentials/<type>/<instance>/<field>
 | `github_token` | `token` | GitHub PAT with repo and workflow scopes | `GITHUB_TOKEN` and `GH_TOKEN` env vars |
 | `anthropic_key` | `token` | Anthropic API key, OAuth token, or pi auth | _(read by SDK)_ |
 | `sentry_token` | `token` | Sentry auth token for error monitoring | `SENTRY_AUTH_TOKEN` env var |
+| `aws_credentials` | `access_key_id`, `secret_access_key`, `default_region` | AWS access credentials and default region | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION` env vars |
 | `git_ssh` | `id_rsa`, `username`, `email` | SSH private key + git author identity | SSH key mounted as file; `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL`/`GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` set from `username`/`email` |
 | `github_webhook_secret` | `secret` | Shared secret for GitHub webhook verification | _(used by gateway)_ |
 | `sentry_client_secret` | `secret` | Client secret for Sentry webhook verification | _(used by gateway)_ |
