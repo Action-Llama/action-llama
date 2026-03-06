@@ -16,6 +16,14 @@ vi.mock("../../../src/shared/credentials.js", async () => {
     requireCredentialRef: vi.fn(),
     loadCredentialField: vi.fn().mockReturnValue("mock-value"),
     parseCredentialRef: actual.parseCredentialRef,
+    backendLoadField: vi.fn().mockResolvedValue("mock-value"),
+    backendLoadFields: vi.fn().mockResolvedValue({}),
+    backendCredentialExists: vi.fn().mockResolvedValue(true),
+    backendListInstances: vi.fn().mockResolvedValue([]),
+    backendRequireCredentialRef: vi.fn().mockResolvedValue(undefined),
+    getDefaultBackend: vi.fn(),
+    setDefaultBackend: vi.fn(),
+    resetDefaultBackend: vi.fn(),
   };
 });
 

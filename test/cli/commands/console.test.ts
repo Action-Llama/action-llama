@@ -39,6 +39,14 @@ vi.mock("../../../src/shared/credentials.js", () => ({
   writeCredentialField: () => {},
   writeCredentialFields: () => {},
   credentialExists: () => true,
+  backendLoadField: () => Promise.resolve("sk-ant-api-test"),
+  backendLoadFields: () => Promise.resolve({}),
+  backendCredentialExists: () => Promise.resolve(true),
+  backendListInstances: () => Promise.resolve([]),
+  backendRequireCredentialRef: () => Promise.resolve(),
+  getDefaultBackend: () => {},
+  setDefaultBackend: () => {},
+  resetDefaultBackend: () => {},
 }));
 
 import { execute } from "../../../src/cli/commands/console.js";

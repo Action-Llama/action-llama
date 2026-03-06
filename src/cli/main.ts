@@ -30,8 +30,13 @@ program
   .description("Manually run a single agent")
   .argument("<agent>", "agent name")
   .option("-p, --project <dir>", "project directory", ".")
+  .option("--remote <name>", "use credentials from a remote store")
   .option("--dangerous-no-docker", "disable Docker container isolation (run agents directly on host)")
   .action(async (agent: string, opts) => {
+    if (opts.remote) {
+      const { initRemoteBackend } = await import("./remote-init.js");
+      await initRemoteBackend(opts.project || ".", opts.remote);
+    }
     const { execute } = await import("./commands/run.js");
     await execute(agent, opts);
   });
@@ -40,8 +45,13 @@ program
   .command("start")
   .description("Start cron scheduler")
   .option("-p, --project <dir>", "project directory", ".")
+  .option("--remote <name>", "use credentials from a remote store")
   .option("--dangerous-no-docker", "disable Docker container isolation (run agents directly on host)")
   .action(async (opts) => {
+    if (opts.remote) {
+      const { initRemoteBackend } = await import("./remote-init.js");
+      await initRemoteBackend(opts.project || ".", opts.remote);
+    }
     const { execute } = await import("./commands/start.js");
     await execute(opts);
   });
@@ -85,6 +95,72 @@ program
     const { execute } = await import("./commands/console.js");
     await execute(opts);
   });
+
+// --- Remote management ---
+
+const remoteCmd = program
+  .command("remote")
+  .description("Manage remote credential stores");
+
+remoteCmd
+  .command("add")
+  .description("Add a remote credential store")
+  .argument("<name>", "remote name (e.g. production)")
+  .requiredOption("--provider <provider>", "backend provider (gsm)")
+  .option("--gcp-project <id>", "GCP project ID (required for gsm)")
+  .option("--secret-prefix <prefix>", "secret name prefix (default: action-llama)")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(async (name: string, opts) => {
+    const { executeAdd } = await import("./commands/remote.js");
+    await executeAdd(name, opts);
+  });
+
+remoteCmd
+  .command("list")
+  .description("List configured remotes")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(async (opts) => {
+    const { executeList } = await import("./commands/remote.js");
+    await executeList(opts);
+  });
+
+remoteCmd
+  .command("remove")
+  .description("Remove a remote")
+  .argument("<name>", "remote name")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(async (name: string, opts) => {
+    const { executeRemove } = await import("./commands/remote.js");
+    await executeRemove(name, opts);
+  });
+
+// --- Credential push/pull ---
+
+const credsCmd = program
+  .command("creds")
+  .description("Manage credentials across local and remote stores");
+
+credsCmd
+  .command("push")
+  .description("Push local credentials to a remote store")
+  .argument("<remote>", "remote name")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(async (remote: string, opts) => {
+    const { executePush } = await import("./commands/creds.js");
+    await executePush(remote, opts);
+  });
+
+credsCmd
+  .command("pull")
+  .description("Pull credentials from a remote store to local")
+  .argument("<remote>", "remote name")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(async (remote: string, opts) => {
+    const { executePull } = await import("./commands/creds.js");
+    await executePull(remote, opts);
+  });
+
+// --- --remote flag on start and run ---
 
 program.parseAsync().catch((err) => {
   const detail: Record<string, unknown> = { error: err.message };

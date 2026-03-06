@@ -16,6 +16,14 @@ vi.mock("../../src/shared/credentials.js", () => ({
   writeCredentialField: () => {},
   writeCredentialFields: () => {},
   credentialExists: () => true,
+  backendLoadField: () => Promise.resolve("fake-token"),
+  backendLoadFields: () => Promise.resolve({}),
+  backendCredentialExists: () => Promise.resolve(true),
+  backendListInstances: () => Promise.resolve([]),
+  backendRequireCredentialRef: () => Promise.resolve(),
+  getDefaultBackend: () => {},
+  setDefaultBackend: () => {},
+  resetDefaultBackend: () => {},
 }));
 
 // Mock croner — capture the callbacks

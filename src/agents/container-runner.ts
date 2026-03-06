@@ -1,4 +1,4 @@
-import { mkdtempSync, copyFileSync, rmSync, mkdirSync, readdirSync, existsSync } from "fs";
+import { mkdtempSync, copyFileSync, rmSync, mkdirSync, readdirSync, existsSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
 import { randomUUID } from "crypto";
@@ -6,7 +6,8 @@ import { readFileSync } from "fs";
 import type { GlobalConfig, AgentConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
 import { CREDENTIALS_DIR } from "../shared/paths.js";
-import { parseCredentialRef } from "../shared/credentials.js";
+import { parseCredentialRef, getDefaultBackend } from "../shared/credentials.js";
+import { FilesystemBackend } from "../shared/filesystem-backend.js";
 import type { ContainerRuntime } from "../docker/runtime.js";
 import type { ContainerRegistration } from "../gateway/types.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
@@ -125,7 +126,7 @@ export class ContainerAgentRunner {
     try {
       const timeout = this.globalConfig.docker?.timeout || 3600;
 
-      // Copy credentials into staging dir and build credential bundle for HTTP serving
+      // Stage credentials into temp dir and build credential bundle for HTTP serving
       // Layout: stagingDir/<type>/<instance>/<field>
       // Always include anthropic_key — the container entry reads it directly
       const credRefs = new Set(this.agentConfig.credentials);
@@ -134,27 +135,28 @@ export class ContainerAgentRunner {
       }
 
       const credentialBundle: Record<string, Record<string, Record<string, string>>> = {};
+      const backend = getDefaultBackend();
 
       for (const credRef of credRefs) {
         const { type, instance } = parseCredentialRef(credRef);
-        const srcDir = resolve(CREDENTIALS_DIR, type, instance);
-        const dstDir = join(stagingDir, type, instance);
+        const fields = await backend.readAll(type, instance);
 
-        if (!existsSync(srcDir)) {
-          this.logger.warn({ cred: credRef }, "credential directory not found");
+        if (!fields) {
+          this.logger.warn({ cred: credRef }, "credential not found");
           continue;
         }
 
+        const dstDir = join(stagingDir, type, instance);
         mkdirSync(dstDir, { recursive: true });
         if (!credentialBundle[type]) credentialBundle[type] = {};
         credentialBundle[type][instance] = {};
 
-        for (const file of readdirSync(srcDir)) {
+        for (const [field, value] of Object.entries(fields)) {
           try {
-            copyFileSync(resolve(srcDir, file), join(dstDir, file));
-            credentialBundle[type][instance][file] = readFileSync(resolve(srcDir, file), "utf-8").trim();
+            writeFileSync(join(dstDir, field), value + "\n", { mode: 0o600 });
+            credentialBundle[type][instance][field] = value;
           } catch (err: any) {
-            this.logger.warn({ cred: credRef, file, err: err.message }, "failed to copy credential file");
+            this.logger.warn({ cred: credRef, file: field, err: err.message }, "failed to stage credential file");
           }
         }
       }

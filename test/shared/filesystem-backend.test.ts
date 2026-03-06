@@ -1,0 +1,112 @@
+import { describe, it, expect, afterEach } from "vitest";
+import { rmSync } from "fs";
+import { resolve } from "path";
+import { mkdtempSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { FilesystemBackend } from "../../src/shared/filesystem-backend.js";
+
+describe("FilesystemBackend", () => {
+  let tmpDir: string;
+  let backend: FilesystemBackend;
+
+  afterEach(() => {
+    try {
+      rmSync(tmpDir, { recursive: true, force: true });
+    } catch {}
+  });
+
+  function setup() {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-fs-backend-"));
+    backend = new FilesystemBackend(tmpDir);
+  }
+
+  describe("write + read roundtrip", () => {
+    it("writes and reads a single field", async () => {
+      setup();
+      await backend.write("github_token", "default", "token", "ghp_abc123");
+      const value = await backend.read("github_token", "default", "token");
+      expect(value).toBe("ghp_abc123");
+    });
+
+    it("returns undefined for non-existent field", async () => {
+      setup();
+      const value = await backend.read("nope", "nope", "nope");
+      expect(value).toBeUndefined();
+    });
+  });
+
+  describe("writeAll + readAll", () => {
+    it("writes and reads multiple fields", async () => {
+      setup();
+      await backend.writeAll("git_ssh", "default", {
+        id_rsa: "ssh-key-content",
+        username: "Bot",
+        email: "bot@example.com",
+      });
+      const fields = await backend.readAll("git_ssh", "default");
+      expect(fields).toEqual({
+        id_rsa: "ssh-key-content",
+        username: "Bot",
+        email: "bot@example.com",
+      });
+    });
+
+    it("returns undefined for non-existent instance", async () => {
+      setup();
+      const fields = await backend.readAll("nope", "nope");
+      expect(fields).toBeUndefined();
+    });
+  });
+
+  describe("exists", () => {
+    it("returns false for non-existent credential", async () => {
+      setup();
+      expect(await backend.exists("nope", "nope")).toBe(false);
+    });
+
+    it("returns true after writing", async () => {
+      setup();
+      await backend.write("test", "inst", "field", "val");
+      expect(await backend.exists("test", "inst")).toBe(true);
+    });
+  });
+
+  describe("list", () => {
+    it("returns empty for empty directory", async () => {
+      setup();
+      const entries = await backend.list();
+      expect(entries).toEqual([]);
+    });
+
+    it("lists all entries", async () => {
+      setup();
+      await backend.write("github_token", "default", "token", "ghp_abc");
+      await backend.write("git_ssh", "default", "id_rsa", "key");
+      await backend.write("git_ssh", "default", "username", "Bot");
+
+      const entries = await backend.list();
+      expect(entries).toHaveLength(3);
+      expect(entries).toContainEqual({ type: "github_token", instance: "default", field: "token" });
+      expect(entries).toContainEqual({ type: "git_ssh", instance: "default", field: "id_rsa" });
+      expect(entries).toContainEqual({ type: "git_ssh", instance: "default", field: "username" });
+    });
+  });
+
+  describe("listInstances", () => {
+    it("returns empty for non-existent type", async () => {
+      setup();
+      const instances = await backend.listInstances("nope");
+      expect(instances).toEqual([]);
+    });
+
+    it("lists instances after writing", async () => {
+      setup();
+      await backend.write("github_token", "default", "token", "t1");
+      await backend.write("github_token", "work", "token", "t2");
+
+      const instances = await backend.listInstances("github_token");
+      expect(instances.sort()).toEqual(["default", "work"]);
+    });
+  });
+});

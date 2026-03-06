@@ -27,6 +27,14 @@ vi.mock("../../../src/shared/credentials.js", () => ({
   requireCredentialRef: () => {},
   credentialExists: () => true,
   writeCredentialField: () => {},
+  backendLoadField: (...args: any[]) => Promise.resolve(mockLoadCredentialField(...args)),
+  backendLoadFields: () => Promise.resolve({}),
+  backendCredentialExists: () => Promise.resolve(true),
+  backendListInstances: () => Promise.resolve([]),
+  backendRequireCredentialRef: () => Promise.resolve(),
+  getDefaultBackend: () => {},
+  setDefaultBackend: () => {},
+  resetDefaultBackend: () => {},
 }));
 
 vi.mock("../../../src/setup/scaffold.js", () => ({

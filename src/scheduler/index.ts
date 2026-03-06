@@ -2,7 +2,7 @@ import { Cron } from "croner";
 import { mkdirSync } from "fs";
 import { loadGlobalConfig, loadAgentConfig, discoverAgents, validateAgentConfig } from "../shared/config.js";
 import type { GlobalConfig, AgentConfig } from "../shared/config.js";
-import { requireCredentialRef, loadCredentialField, listCredentialInstances } from "../shared/credentials.js";
+import { requireCredentialRef, loadCredentialField, listCredentialInstances, backendRequireCredentialRef, backendLoadField, backendListInstances } from "../shared/credentials.js";
 import { createLogger, createFileOnlyLogger } from "../shared/logger.js";
 import { agentDir } from "../shared/paths.js";
 import { AgentRunner } from "../agents/runner.js";
@@ -70,7 +70,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   // Validate credentials exist for each agent
   const allCredentials = new Set(agentConfigs.flatMap((a) => a.credentials));
   for (const credRef of allCredentials) {
-    requireCredentialRef(credRef);
+    await backendRequireCredentialRef(credRef);
   }
 
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -101,10 +101,10 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     webhookRegistry.registerProvider(new SentryWebhookProvider());
 
     // Load all GitHub webhook secrets (instanceName → secret value)
-    const ghInstances = listCredentialInstances("github_webhook_secret");
+    const ghInstances = await backendListInstances("github_webhook_secret");
     const ghSecrets: Record<string, string> = {};
     for (const inst of ghInstances) {
-      const secret = loadCredentialField("github_webhook_secret", inst, "secret");
+      const secret = await backendLoadField("github_webhook_secret", inst, "secret");
       if (secret) ghSecrets[inst] = secret;
     }
     if (Object.keys(ghSecrets).length > 0) {
@@ -113,10 +113,10 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     }
 
     // Load all Sentry webhook secrets (instanceName → secret value)
-    const sentryInstances = listCredentialInstances("sentry_client_secret");
+    const sentryInstances = await backendListInstances("sentry_client_secret");
     const sentrySecrets: Record<string, string> = {};
     for (const inst of sentryInstances) {
-      const secret = loadCredentialField("sentry_client_secret", inst, "secret");
+      const secret = await backendLoadField("sentry_client_secret", inst, "secret");
       if (secret) sentrySecrets[inst] = secret;
     }
     if (Object.keys(sentrySecrets).length > 0) {

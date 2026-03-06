@@ -1,7 +1,7 @@
 import { resolve } from "path";
 import { existsSync, mkdirSync } from "fs";
 import { loadGlobalConfig, loadAgentConfig, discoverAgents } from "../../shared/config.js";
-import { requireCredentialRef } from "../../shared/credentials.js";
+import { backendRequireCredentialRef } from "../../shared/credentials.js";
 import { createLogger } from "../../shared/logger.js";
 import { agentDir } from "../../shared/paths.js";
 import { AgentRunner } from "../../agents/runner.js";
@@ -34,7 +34,7 @@ export async function execute(agent: string, opts: { project: string; dangerousN
 
   // Validate credentials
   for (const credRef of agentConfig.credentials) {
-    requireCredentialRef(credRef);
+    await backendRequireCredentialRef(credRef);
   }
 
   const dockerEnabled = !opts.dangerousNoDocker && globalConfig.docker?.enabled === true;

@@ -28,10 +28,17 @@ export interface WebhooksGlobalConfig {
   secretCredentials?: Record<string, string>;  // source → credential name
 }
 
+export interface RemoteConfig {
+  provider: string;       // "gsm" (Google Secret Manager), extensible for future providers
+  gcpProject?: string;    // required for gsm
+  secretPrefix?: string;  // prefix for secret names (default: "action-llama")
+}
+
 export interface GlobalConfig {
   docker?: DockerConfig;
   gateway?: GatewayConfig;
   webhooks?: WebhooksGlobalConfig;
+  remotes?: Record<string, RemoteConfig>;
 }
 
 // --- Per-agent config (lives at <project>/<agent>/agent-config.toml) ---
@@ -77,6 +84,16 @@ export function validateAgentConfig(config: AgentConfig): void {
       `Agent "${config.name}" must have a schedule, webhooks, or both.`
     );
   }
+}
+
+export function resolveRemote(projectPath: string, remoteName: string): RemoteConfig {
+  const globalConfig = loadGlobalConfig(projectPath);
+  const remote = globalConfig.remotes?.[remoteName];
+  if (!remote) {
+    const available = globalConfig.remotes ? Object.keys(globalConfig.remotes).join(", ") : "(none)";
+    throw new Error(`Remote "${remoteName}" not found in config.toml. Available remotes: ${available}`);
+  }
+  return remote;
 }
 
 export function discoverAgents(projectPath: string): string[] {

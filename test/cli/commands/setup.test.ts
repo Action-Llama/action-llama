@@ -37,6 +37,14 @@ vi.mock("../../../src/shared/credentials.js", () => ({
   loadCredentialField: () => undefined,
   loadCredentialFields: () => undefined,
   writeCredentialField: () => {},
+  backendLoadField: () => Promise.resolve(undefined),
+  backendLoadFields: () => Promise.resolve(undefined),
+  backendCredentialExists: (...args: any[]) => Promise.resolve(mockCredentialExists(...args)),
+  backendListInstances: (...args: any[]) => Promise.resolve(mockListCredentialInstances(...args)),
+  backendRequireCredentialRef: () => Promise.resolve(),
+  getDefaultBackend: () => {},
+  setDefaultBackend: () => {},
+  resetDefaultBackend: () => {},
 }));
 
 const mockConfirm = vi.fn();
