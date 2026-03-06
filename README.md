@@ -56,7 +56,7 @@ Or, if you're using your own coding agent just make sure it reads the AGENTS.md 
 
 ### 3. Run
 
-Once your agents are ready, run the gateway!
+Once your agents are ready, start the scheduler!
 
 ```bash
 npx al start
@@ -82,6 +82,17 @@ my-project/
     PLAYBOOK.md             # Agent instructions (system prompt) — edit to customize behavior
     Dockerfile              # (optional) Custom Docker image for this agent
 ```
+
+## Cloud
+
+For production, run agents on managed cloud infrastructure — automatic restarts, IAM-enforced secret isolation, no laptop required. Action Llama supports **GCP Cloud Run Jobs** and **AWS ECS Fargate**.
+
+```bash
+al cloud setup    # Interactive wizard: pick provider, configure, push creds, provision IAM
+al start -c      # Start on cloud
+```
+
+See the [cloud docs](docs/cloud.md) for setup, provider comparison, and links to the [Cloud Run](docs/cloud-run.md) and [ECS](docs/ecs.md) guides.
 
 ## CLI commands
 
@@ -114,17 +125,6 @@ Credentials are stored outside the project in `~/.action-llama-credentials/` and
 Agents run in isolated Docker containers by default. Use `--no-docker` to run directly on the host during development.
 
 See the [agent-config.toml reference](docs/agent-config-reference.md), [credentials](docs/credentials.md), [webhooks](docs/webhooks.md), and [Docker](docs/docker.md) docs for details.
-
-## Cloud
-
-For production, run agents on managed cloud infrastructure — automatic restarts, IAM-enforced secret isolation, no laptop required. Action Llama supports **GCP Cloud Run Jobs** and **AWS ECS Fargate**.
-
-```bash
-al cloud setup    # Interactive wizard: pick provider, configure, push creds, provision IAM
-al start -c      # Start on cloud
-```
-
-See the [cloud docs](docs/cloud.md) for setup, provider comparison, and links to the [Cloud Run](docs/cloud-run.md) and [ECS](docs/ecs.md) guides.
 
 ## Documentation
 
