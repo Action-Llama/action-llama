@@ -16,7 +16,7 @@ Key features:
 
 - Agent runs are contained in a Docker container using only the credentials they need. Credentials are stored separately.
 - Define your agents in a git repo, add custom ones, and share them.
-- BYOM: bring your own model.
+- BYOM: bring your own model (supports Anthropic Claude and OpenAI GPT/Codex).
 
 Philosophy:
 
@@ -24,7 +24,7 @@ Philosophy:
 
 Use cases:
 
-- A developer agent that watches for new Github issues and reacts
+- A developer agent that watches for new Github issues and reacts (works great with OpenAI Codex for code generation)
 - A reviewer agent that watches for new Github Pull Requests and reviews them then merges if all ok
 
 Have as many agents as you like. Customize the behaviour as you wish. The system is MIT licensed and fully extensible.
@@ -40,7 +40,7 @@ npx @action-llama/action-llama@latest new my-project
 cd my-project
 ```
 
-This scaffolds the project and sets up your Anthropic credential and default model.
+This scaffolds the project and sets up your model credentials and defaults.
 
 ### 2. Create and manage agents
 
