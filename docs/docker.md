@@ -1,12 +1,6 @@
 # Docker Mode
 
-Docker mode runs each agent in an isolated container. Enable it in `config.json`:
-
-```json
-{
-  "docker": { "enabled": true }
-}
-```
+Docker mode runs each agent in an isolated container. It is enabled by default — disable it with `--dangerous-no-docker` for development, or set `docker.enabled = false` in `config.toml`.
 
 ## How it works
 
@@ -126,7 +120,7 @@ The key requirement is that `/app/dist/agents/container-entry.js` exists and can
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `docker.enabled` | `false` | Enable Docker container isolation |
+| `docker.enabled` | `true` | Enable Docker container isolation |
 | `docker.runtime` | `"local"` | Container runtime: `"local"` (Docker), `"cloud-run"` (GCP), or `"ecs"` (AWS) |
 | `docker.image` | `"al-agent:latest"` | Base Docker image name |
 | `docker.memory` | `"4g"` | Memory limit per container |

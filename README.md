@@ -118,86 +118,21 @@ See [CLI command reference](docs/commands.md) for all options and flags.
 
 ### Global config (`config.toml`)
 
-```toml
-[docker]
-enabled = false
+Global settings live in `config.toml` at the project root. Docker container isolation is enabled by default — use `--dangerous-no-docker` to disable it for development.
 
-[gateway]
-port = 8080
-
-[webhooks.secretCredentials]
-github = "github_webhook_secret:default"
-```
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `docker.enabled` | `false` | Run agents in isolated Docker containers |
-| `docker.image` | `"al-agent:latest"` | Base Docker image for containers |
-| `docker.memory` | `"4g"` | Memory limit per container |
-| `docker.cpus` | `2` | CPU limit per container |
-| `docker.timeout` | `3600` | Max container runtime (seconds) |
-| `gateway.port` | `8080` | Gateway server listen port |
-
-### Agent config (`<agent>/agent-config.toml`)
-
-See the [agent-config.toml reference](docs/agent-config-reference.md) for all fields. Each agent carries its own model config, so you can run different models per agent (e.g., Opus for dev, Haiku for devops).
+See the [agent-config.toml reference](docs/agent-config-reference.md) for per-agent fields. Each agent carries its own model config, so you can run different models per agent (e.g., Opus for dev, Haiku for devops).
 
 ### Credentials
 
-Credentials are stored in `~/.action-llama-credentials/<type>/<instance>/<field>` and referenced in agent configs as `"type:instance"` (e.g. `"github_token:default"`). Run `al setup` to configure them interactively.
-
-See [credentials docs](docs/credentials.md) for the full reference including built-in credential types, named instances, and manual setup.
+Credentials are stored in `~/.action-llama-credentials/<type>/<instance>/<field>` and referenced in agent configs as `"type:instance"` (e.g. `"github_token:default"`). Run `al setup` to configure them interactively. See [credentials docs](docs/credentials.md) for the full reference.
 
 ### Webhooks
 
-To use webhooks instead of polling, add webhook filters to your `agent-config.toml` and add a webhook in your GitHub repo settings:
+Add webhook triggers to your `agent-config.toml` and point your GitHub/Sentry webhook at `http://<your-host>:8080/webhooks/github`. Payloads are verified with HMAC-SHA256. See [webhooks docs](docs/webhooks.md) for filter fields, providers, and setup details.
 
-- **Payload URL**: `http://<your-host>:8080/webhooks/github`
-- **Content type**: `application/json`
-- **Secret**: the same secret you entered during setup
+### Docker
 
-Payloads are validated with HMAC-SHA256 (`x-hub-signature-256`). Webhook filters in `webhooks.filters` support matching on `source`, `repos`, `events`, `actions`, `labels`, `assignee`, `author`, and `branches` (AND logic; omitted fields are not checked).
-
-See [webhooks docs](docs/webhooks.md) for filter fields, Sentry webhooks, and setup details.
-
-#### Local development with ngrok
-
-If you're developing locally and need GitHub to reach your machine, use [ngrok](https://ngrok.com) to create a public tunnel:
-
-```bash
-# Install ngrok (macOS)
-brew install ngrok
-
-# Start a tunnel pointing at the Action Llama gateway port
-ngrok http 8080
-```
-
-ngrok will print a forwarding URL like `https://a1b2c3d4.ngrok-free.app`. Use that as your GitHub webhook Payload URL:
-
-```
-https://a1b2c3d4.ngrok-free.app/webhooks/github
-```
-
-Keep the ngrok process running alongside `al start`. The tunnel stays active until you stop it. For a stable URL across restarts, sign up for a free ngrok account and use a static domain:
-
-```bash
-ngrok http 8080 --url=your-name.ngrok-free.app
-```
-
-### Docker mode
-
-Set `docker.enabled = true` in `config.toml`. Agents run in isolated containers with credentials mounted read-only, a read-only root FS, dropped capabilities, non-root user, and PID/memory/CPU limits.
-
-The base image is built automatically on first run from `docker/Dockerfile`. Agents can extend it by adding a `Dockerfile` to their directory:
-
-```dockerfile
-FROM al-agent:latest
-USER root
-RUN apt-get update && apt-get install -y --no-install-recommends gh && rm -rf /var/lib/apt/lists/*
-USER node
-```
-
-See [Docker docs](docs/docker.md) for the full reference including base image contents, custom Dockerfiles, standalone images, and the container filesystem layout.
+Agents run in isolated containers by default — read-only root FS, dropped capabilities, non-root user, and resource limits. The base image is built automatically on first run. Agents can extend it with a custom `Dockerfile`. Use `--dangerous-no-docker` to run directly on the host during development. See [Docker docs](docs/docker.md) for the full reference.
 
 ## Cloud
 

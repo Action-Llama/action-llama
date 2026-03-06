@@ -285,7 +285,7 @@ Use those values for repos, triggerLabel, and assignee.
 
 ## Docker Mode
 
-Enable Docker container isolation by adding \`[docker]\nenabled = true\` to your project's \`config.toml\`. Each agent run launches an isolated container with a read-only root filesystem, dropped capabilities, non-root user, and resource limits.
+Docker container isolation is enabled by default. Each agent run launches an isolated container with a read-only root filesystem, dropped capabilities, non-root user, and resource limits. Use \`--dangerous-no-docker\` to disable it for development.
 
 ### Base image
 
@@ -318,7 +318,7 @@ Agent images are built automatically on startup. If no \`Dockerfile\` is present
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| \`docker.enabled\` | \`false\` | Enable Docker container isolation |
+| \`docker.enabled\` | \`true\` | Enable Docker container isolation |
 | \`docker.image\` | \`"al-agent:latest"\` | Base Docker image name |
 | \`docker.memory\` | \`"4g"\` | Memory limit per container |
 | \`docker.cpus\` | \`2\` | CPU limit per container |
