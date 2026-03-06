@@ -13,6 +13,7 @@ Credentials are stored in `~/.action-llama-credentials/<type>/<instance>/<field>
 | `git_ssh` | `id_rsa`, `username`, `email` | SSH private key + git author identity | SSH key mounted as file; `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL`/`GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` set from `username`/`email` |
 | `github_webhook_secret` | `secret` | Shared secret for GitHub webhook verification | _(used by gateway)_ |
 | `sentry_client_secret` | `secret` | Client secret for Sentry webhook verification | _(used by gateway)_ |
+| `x_twitter_api` | `api_key`, `api_secret`, `bearer_token`, `access_token`, `access_token_secret` | X (Twitter) API credentials for platform access | `X_API_KEY`, `X_API_SECRET`, `X_BEARER_TOKEN`, `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET` env vars |
 | `aws` | `access_key_id`, `secret_access_key`, `default_region` | AWS credentials for managing AWS resources | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION` env vars |
 
 ## How Credentials Work

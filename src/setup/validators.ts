@@ -84,3 +84,22 @@ export async function validateNetlifyToken(token: string) {
     fullName: user.full_name,
   };
 }
+
+export async function validateXTwitterToken(bearerToken: string) {
+  const res = await fetch("https://api.x.com/2/users/me", {
+    headers: { 
+      Authorization: `Bearer ${bearerToken}`,
+      "Content-Type": "application/json"
+    },
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`X (Twitter) API token validation failed (${res.status}): ${body}`);
+  }
+  const user = (await res.json()) as { data: { id: string; username: string; name: string } };
+  return {
+    user: user.data.username,
+    name: user.data.name,
+    id: user.data.id,
+  };
+}
