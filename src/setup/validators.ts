@@ -103,3 +103,25 @@ export async function validateXTwitterToken(bearerToken: string) {
     id: user.data.id,
   };
 }
+
+export async function validateBugsnagToken(token: string) {
+  const res = await fetch("https://api.bugsnag.com/user", {
+    headers: { 
+      Authorization: `token ${token}`,
+      "Content-Type": "application/json"
+    },
+  });
+  
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Bugsnag auth failed (${res.status}): ${body}`);
+  }
+  
+  const user = (await res.json()) as { id: string; name: string; email: string };
+  
+  return {
+    user: user.email,
+    name: user.name,
+    id: user.id,
+  };
+}
