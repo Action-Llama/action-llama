@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { NETWORK_NAME } from "./network.js";
-import type { ContainerRuntime, RuntimeLaunchOpts, RuntimeCredentials, CredentialBundle, BuildImageOpts } from "./runtime.js";
+import type { ContainerRuntime, RuntimeLaunchOpts, RuntimeCredentials, CredentialBundle, BuildImageOpts, RunningAgent } from "./runtime.js";
 import { parseCredentialRef, getDefaultBackend } from "../shared/credentials.js";
 
 function docker(...args: string[]): string {
@@ -16,6 +16,36 @@ function docker(...args: string[]): string {
 
 export class LocalDockerRuntime implements ContainerRuntime {
   readonly needsGateway = true;
+
+  async isAgentRunning(agentName: string): Promise<boolean> {
+    try {
+      const out = docker("ps", "--filter", `name=al-${agentName}-`, "--format", "{{.Names}}");
+      return out.length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  async listRunningAgents(): Promise<RunningAgent[]> {
+    try {
+      const out = docker("ps", "--filter", "name=al-", "--format", "{{.Names}}\t{{.Status}}\t{{.CreatedAt}}");
+      if (!out) return [];
+      return out.split("\n").filter(Boolean).map((line) => {
+        const [name, status, createdAt] = line.split("\t");
+        // Container name is "al-<agentName>-<runId>"
+        const parts = name.split("-");
+        const agentName = parts.slice(1, -1).join("-");
+        return {
+          agentName,
+          taskId: name,
+          status: status ?? "unknown",
+          startedAt: createdAt ? new Date(createdAt) : undefined,
+        };
+      });
+    } catch {
+      return [];
+    }
+  }
 
   async prepareCredentials(credRefs: string[]): Promise<RuntimeCredentials> {
     const stagingDir = mkdtempSync(join(tmpdir(), "al-creds-"));

@@ -33,6 +33,46 @@ vi.mock("../../../src/cli/commands/cloud-teardown.js", () => ({
   teardownCloud: (...args: any[]) => mockTeardownCloud(...args),
 }));
 
+// Mock AWS SDK clients
+const mockStsSend = vi.fn();
+const mockEcrSend = vi.fn();
+const mockEcsSend = vi.fn();
+const mockIamSend = vi.fn();
+const mockEc2Send = vi.fn();
+
+vi.mock("@aws-sdk/client-sts", () => ({
+  STSClient: vi.fn().mockImplementation(function () { this.send = mockStsSend; }),
+  GetCallerIdentityCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, input); }),
+}));
+
+vi.mock("@aws-sdk/client-ecr", () => ({
+  ECRClient: vi.fn().mockImplementation(function () { this.send = mockEcrSend; }),
+  DescribeRepositoriesCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "DescribeRepositories", ...input }); }),
+  CreateRepositoryCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "CreateRepository", ...input }); }),
+}));
+
+vi.mock("@aws-sdk/client-ecs", () => ({
+  ECSClient: vi.fn().mockImplementation(function () { this.send = mockEcsSend; }),
+  ListClustersCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "ListClusters", ...input }); }),
+  DescribeClustersCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "DescribeClusters", ...input }); }),
+  CreateClusterCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "CreateCluster", ...input }); }),
+}));
+
+vi.mock("@aws-sdk/client-iam", () => ({
+  IAMClient: vi.fn().mockImplementation(function () { this.send = mockIamSend; }),
+  ListRolesCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "ListRoles", ...input }); }),
+  CreateRoleCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "CreateRole", ...input }); }),
+  GetRoleCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "GetRole", ...input }); }),
+  AttachRolePolicyCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "AttachRolePolicy", ...input }); }),
+}));
+
+vi.mock("@aws-sdk/client-ec2", () => ({
+  EC2Client: vi.fn().mockImplementation(function () { this.send = mockEc2Send; }),
+  DescribeVpcsCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "DescribeVpcs", ...input }); }),
+  DescribeSubnetsCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "DescribeSubnets", ...input }); }),
+  DescribeSecurityGroupsCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "DescribeSecurityGroups", ...input }); }),
+}));
+
 import { execute } from "../../../src/cli/commands/cloud-setup.js";
 
 describe("cloud setup", () => {
@@ -67,16 +107,68 @@ describe("cloud setup", () => {
   });
 
   it("writes [cloud] section for ecs provider", async () => {
+    // Provider selection
     mockSelect.mockResolvedValueOnce("ecs");
+
+    // STS: early credential probe + later account ID fetch
+    mockStsSend
+      .mockResolvedValueOnce({ Account: "123456789012", Arn: "arn:aws:iam::123456789012:user/test" })
+      .mockResolvedValueOnce({ Account: "123456789012", Arn: "arn:aws:iam::123456789012:user/test" });
+
+    // Region input
+    mockInput.mockResolvedValueOnce("us-east-1");
+
+    // ECR: list returns empty -> create succeeds
+    mockEcrSend
+      .mockResolvedValueOnce({ repositories: [] })                    // DescribeRepositories
+      .mockResolvedValueOnce({                                         // CreateRepository
+        repository: { repositoryUri: "123456789012.dkr.ecr.us-east-1.amazonaws.com/al-images" },
+      });
+
+    // ECS: list returns empty -> create succeeds
+    mockEcsSend
+      .mockResolvedValueOnce({ clusterArns: [] })                     // ListClusters
+      .mockResolvedValueOnce({});                                      // CreateCluster
+
+    // IAM: execution role - list returns empty -> create succeeds
+    // IAM: task role - list returns empty -> create succeeds
+    mockIamSend
+      .mockResolvedValueOnce({ Roles: [] })                            // ListRoles (execution role)
+      .mockResolvedValueOnce({                                         // CreateRole (execution role)
+        Role: { Arn: "arn:aws:iam::123456789012:role/al-ecs-execution-role" },
+      })
+      .mockResolvedValueOnce({})                                       // AttachRolePolicy (execution role)
+      .mockResolvedValueOnce({ Roles: [] })                            // ListRoles (task role)
+      .mockResolvedValueOnce({                                         // CreateRole (task role)
+        Role: { Arn: "arn:aws:iam::123456789012:role/al-default-task-role" },
+      });
+
+    // EC2: single VPC (auto-selected), subnets, security groups
+    mockEc2Send
+      .mockResolvedValueOnce({                                         // DescribeVpcs
+        Vpcs: [{ VpcId: "vpc-123", CidrBlock: "10.0.0.0/16", IsDefault: true }],
+      })
+      .mockResolvedValueOnce({                                         // DescribeSubnets
+        Subnets: [{ SubnetId: "subnet-abc", AvailabilityZone: "us-east-1a", CidrBlock: "10.0.1.0/24" }],
+      })
+      .mockResolvedValueOnce({                                         // DescribeSecurityGroups
+        SecurityGroups: [{ GroupName: "default", GroupId: "sg-123", Description: "default VPC security group" }],
+      });
+
+    // Prompt responses for create-new paths:
+    // input: new ECR repo name, new ECS cluster name, new execution role name, new task role name, secret prefix
     mockInput
-      .mockResolvedValueOnce("us-east-1")       // awsRegion
-      .mockResolvedValueOnce("al-cluster")       // ecsCluster
-      .mockResolvedValueOnce("123.dkr.ecr.us-east-1.amazonaws.com/al") // ecrRepository
-      .mockResolvedValueOnce("arn:aws:iam::123:role/exec")  // executionRoleArn
-      .mockResolvedValueOnce("arn:aws:iam::123:role/task")  // taskRoleArn
-      .mockResolvedValueOnce("subnet-abc")       // subnets
-      .mockResolvedValueOnce("")                 // securityGroups
-      .mockResolvedValueOnce("action-llama");    // secretPrefix
+      .mockResolvedValueOnce("al-images")       // new ECR repository name
+      .mockResolvedValueOnce("al-cluster")       // new ECS cluster name
+      .mockResolvedValueOnce("al-ecs-execution-role")  // new execution role name
+      .mockResolvedValueOnce("al-default-task-role")   // new task role name
+      .mockResolvedValueOnce("action-llama");          // secret prefix
+
+    // confirm: use all subnets
+    mockConfirm.mockResolvedValueOnce(true);
+
+    // select: security group -> skip
+    mockSelect.mockResolvedValueOnce("");
 
     await execute({ project: tmpDir });
 
@@ -84,6 +176,9 @@ describe("cloud setup", () => {
     expect(config.cloud.provider).toBe("ecs");
     expect(config.cloud.awsRegion).toBe("us-east-1");
     expect(config.cloud.ecsCluster).toBe("al-cluster");
+    expect(config.cloud.ecrRepository).toBe("123456789012.dkr.ecr.us-east-1.amazonaws.com/al-images");
+    expect(config.cloud.executionRoleArn).toBe("arn:aws:iam::123456789012:role/al-ecs-execution-role");
+    expect(config.cloud.taskRoleArn).toBe("arn:aws:iam::123456789012:role/al-default-task-role");
     expect(config.cloud.subnets).toEqual(["subnet-abc"]);
   });
 
@@ -97,17 +192,56 @@ describe("cloud setup", () => {
     // Confirm teardown
     mockConfirm.mockResolvedValueOnce(true);
 
-    // Then proceed with new setup
+    // Then proceed with new setup (ECS with SDK mocks)
     mockSelect.mockResolvedValueOnce("ecs");
+
+    // STS: early credential probe + later account ID fetch
+    mockStsSend
+      .mockResolvedValueOnce({ Account: "123456789012", Arn: "arn:aws:iam::123456789012:user/test" })
+      .mockResolvedValueOnce({ Account: "123456789012", Arn: "arn:aws:iam::123456789012:user/test" });
+
+    // Region input
+    mockInput.mockResolvedValueOnce("us-east-1");
+
+    // ECR: list empty -> create
+    mockEcrSend
+      .mockResolvedValueOnce({ repositories: [] })
+      .mockResolvedValueOnce({
+        repository: { repositoryUri: "123456789012.dkr.ecr.us-east-1.amazonaws.com/al-images" },
+      });
+
+    // ECS: list empty -> create
+    mockEcsSend
+      .mockResolvedValueOnce({ clusterArns: [] })
+      .mockResolvedValueOnce({});
+
+    // IAM: two roles, list empty -> create each
+    mockIamSend
+      .mockResolvedValueOnce({ Roles: [] })
+      .mockResolvedValueOnce({ Role: { Arn: "arn:aws:iam::123456789012:role/al-ecs-execution-role" } })
+      .mockResolvedValueOnce({})  // AttachRolePolicy
+      .mockResolvedValueOnce({ Roles: [] })
+      .mockResolvedValueOnce({ Role: { Arn: "arn:aws:iam::123456789012:role/al-default-task-role" } });
+
+    // EC2: single VPC, subnets, security groups
+    mockEc2Send
+      .mockResolvedValueOnce({ Vpcs: [{ VpcId: "vpc-123", CidrBlock: "10.0.0.0/16", IsDefault: true }] })
+      .mockResolvedValueOnce({ Subnets: [{ SubnetId: "subnet-abc", AvailabilityZone: "us-east-1a", CidrBlock: "10.0.1.0/24" }] })
+      .mockResolvedValueOnce({ SecurityGroups: [{ GroupName: "default", GroupId: "sg-123", Description: "default" }] });
+
+    // Input prompts for create paths + secret prefix
     mockInput
-      .mockResolvedValueOnce("us-east-1")
+      .mockResolvedValueOnce("al-images")
       .mockResolvedValueOnce("al-cluster")
-      .mockResolvedValueOnce("123.dkr.ecr.us-east-1.amazonaws.com/al")
-      .mockResolvedValueOnce("arn:aws:iam::123:role/exec")
-      .mockResolvedValueOnce("arn:aws:iam::123:role/task")
-      .mockResolvedValueOnce("subnet-abc")
-      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("al-ecs-execution-role")
+      .mockResolvedValueOnce("al-default-task-role")
       .mockResolvedValueOnce("action-llama");
+
+    // Confirm: use all subnets
+    mockConfirm.mockResolvedValueOnce(true);
+
+    // Select: skip security group
+    mockSelect.mockResolvedValueOnce("");
 
     await execute({ project: tmpDir });
 

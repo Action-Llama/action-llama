@@ -10,7 +10,7 @@ vi.mock("@inquirer/prompts", () => ({
   confirm: (...args: any[]) => mockConfirm(...args),
 }));
 
-// Mock child_process (gcloud/aws CLI calls)
+// Mock child_process (still needed for gcloud CLI calls)
 const mockExecFileSync = vi.fn().mockReturnValue("");
 vi.mock("child_process", () => ({
   execFileSync: (...args: any[]) => mockExecFileSync(...args),
@@ -22,6 +22,21 @@ vi.mock("../../../src/shared/config.js", () => ({
   discoverAgents: (...args: any[]) => mockDiscoverAgents(...args),
 }));
 
+// Mock AWS SDK clients
+const mockStsSend = vi.fn();
+const mockIamSend = vi.fn();
+
+vi.mock("@aws-sdk/client-sts", () => ({
+  STSClient: vi.fn().mockImplementation(function () { this.send = mockStsSend; }),
+  GetCallerIdentityCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "GetCallerIdentity", input }); }),
+}));
+
+vi.mock("@aws-sdk/client-iam", () => ({
+  IAMClient: vi.fn().mockImplementation(function () { this.send = mockIamSend; }),
+  DeleteRolePolicyCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "DeleteRolePolicy", input }); }),
+  DeleteRoleCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "DeleteRole", input }); }),
+}));
+
 import { execute } from "../../../src/cli/commands/cloud-teardown.js";
 
 describe("cloud teardown", () => {
@@ -30,6 +45,8 @@ describe("cloud teardown", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     tmpDir = mkdtempSync(join(tmpdir(), "al-cloud-teardown-"));
+    mockStsSend.mockResolvedValue({});
+    mockIamSend.mockResolvedValue({});
   });
 
   afterEach(() => {
@@ -99,11 +116,21 @@ describe("cloud teardown", () => {
 
     await execute({ project: tmpDir });
 
-    // Should have called aws to delete role policy then delete role
-    const awsCalls = mockExecFileSync.mock.calls.filter(
-      (call: any[]) => call[0] === "aws" && (call[1]?.includes("delete-role") || call[1]?.includes("delete-role-policy"))
+    // Should have called IAM SDK to delete role policy and delete role
+    const deletePolicyCalls = mockIamSend.mock.calls.filter(
+      (call: any[]) => call[0]?._type === "DeleteRolePolicy"
     );
-    expect(awsCalls.length).toBeGreaterThanOrEqual(1);
+    const deleteRoleCalls = mockIamSend.mock.calls.filter(
+      (call: any[]) => call[0]?._type === "DeleteRole"
+    );
+    expect(deletePolicyCalls).toHaveLength(1);
+    expect(deleteRoleCalls).toHaveLength(1);
+
+    // Should NOT have called aws CLI
+    const awsCalls = mockExecFileSync.mock.calls.filter(
+      (call: any[]) => call[0] === "aws"
+    );
+    expect(awsCalls).toHaveLength(0);
 
     // [cloud] should be removed from config
     const config = parseTOML(readFileSync(resolve(tmpDir, "config.toml"), "utf-8")) as any;

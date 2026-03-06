@@ -3,6 +3,7 @@ import { createReadStream, readdirSync, existsSync, statSync } from "fs";
 import { createInterface } from "readline";
 import { logsDir } from "../../shared/paths.js";
 import { loadGlobalConfig } from "../../shared/config.js";
+import { CloudWatchLogsClient, FilterLogEventsCommand } from "@aws-sdk/client-cloudwatch-logs";
 
 const LEVEL_COLORS: Record<number, { label: string; color: string }> = {
   10: { label: "TRACE", color: "\x1b[90m" },   // gray
@@ -141,9 +142,8 @@ export async function execute(
       throw new Error("No [cloud] section found in config.toml. Run 'al cloud setup' first.");
     }
 
-    const { execFileSync } = await import("child_process");
-
     if (cloud.provider === "cloud-run") {
+      const { execFileSync } = await import("child_process");
       const jobName = `al-${agent}`;
       console.log(`Fetching Cloud Run logs for ${jobName}...`);
       try {
@@ -160,13 +160,27 @@ export async function execute(
       }
     } else {
       const logGroup = `/ecs/al-${agent}`;
+      const limit = parseInt(opts.lines, 10) || 50;
       console.log(`Fetching ECS logs from ${logGroup}...`);
       try {
-        execFileSync("aws", [
-          "logs", "tail", logGroup,
-          "--region", cloud.awsRegion!,
-          "--format", "short",
-        ], { stdio: "inherit", timeout: 30_000 });
+        const client = new CloudWatchLogsClient({ region: cloud.awsRegion! });
+
+        const result = await client.send(new FilterLogEventsCommand({
+          logGroupName: logGroup,
+          limit,
+        }));
+
+        const events = result.events ?? [];
+
+        if (events.length === 0) {
+          console.log("No log events found.");
+        } else {
+          for (const event of events) {
+            if (event.message) {
+              console.log(event.message.trim());
+            }
+          }
+        }
       } catch (err: any) {
         throw new Error(`Failed to read ECS logs: ${err.message}`);
       }

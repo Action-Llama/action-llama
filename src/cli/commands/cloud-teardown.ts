@@ -5,6 +5,8 @@ import { execFileSync } from "child_process";
 import { parse as parseTOML, stringify as stringifyTOML } from "smol-toml";
 import { discoverAgents } from "../../shared/config.js";
 import type { CloudConfig } from "../../shared/config.js";
+import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
+import { IAMClient, DeleteRolePolicyCommand, DeleteRoleCommand } from "@aws-sdk/client-iam";
 
 export async function execute(opts: { project: string }): Promise<void> {
   const projectPath = resolve(opts.project);
@@ -108,8 +110,11 @@ async function teardownAws(projectPath: string, cloud: CloudConfig): Promise<voi
     throw new Error("cloud.awsRegion is required in config.toml");
   }
 
+  const stsClient = new STSClient({ region: awsRegion });
+  const iamClient = new IAMClient({ region: awsRegion });
+
   try {
-    awsCli(["sts", "get-caller-identity", "--region", awsRegion]);
+    await stsClient.send(new GetCallerIdentityCommand({}));
   } catch (err: any) {
     throw new Error(
       "AWS CLI is not authenticated. Run 'aws configure' or set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY.\n" +
@@ -133,25 +138,21 @@ async function teardownAws(projectPath: string, cloud: CloudConfig): Promise<voi
 
     // Must delete inline policies before deleting the role
     try {
-      awsCli([
-        "iam", "delete-role-policy",
-        "--role-name", roleName,
-        "--policy-name", "SecretsAccess",
-        "--region", awsRegion,
-      ]);
+      await iamClient.send(new DeleteRolePolicyCommand({
+        RoleName: roleName,
+        PolicyName: "SecretsAccess",
+      }));
     } catch {
       // Policy may not exist
     }
 
     try {
-      awsCli([
-        "iam", "delete-role",
-        "--role-name", roleName,
-        "--region", awsRegion,
-      ]);
+      await iamClient.send(new DeleteRoleCommand({
+        RoleName: roleName,
+      }));
       console.log(`    Deleted`);
     } catch (err: any) {
-      if (err.message?.includes("NoSuchEntity")) {
+      if (err.name === "NoSuchEntityException") {
         console.log(`    Not found (already deleted)`);
       } else {
         console.log(`    Warning: ${err.message}`);
@@ -163,14 +164,6 @@ async function teardownAws(projectPath: string, cloud: CloudConfig): Promise<voi
 
 function gcloud(args: string[], _project: string): string {
   return execFileSync("gcloud", args, {
-    encoding: "utf-8",
-    timeout: 30_000,
-    stdio: ["pipe", "pipe", "pipe"],
-  }).trim();
-}
-
-function awsCli(args: string[]): string {
-  return execFileSync("aws", args, {
     encoding: "utf-8",
     timeout: 30_000,
     stdio: ["pipe", "pipe", "pipe"],

@@ -107,6 +107,16 @@ export class ContainerAgentRunner {
       return;
     }
 
+    // Check if this agent already has a running container (e.g. orphan from a previous scheduler)
+    try {
+      if (await this.runtime.isAgentRunning(this.agentConfig.name)) {
+        this.logger.warn(`${this.agentConfig.name} is already running in the runtime, skipping`);
+        return;
+      }
+    } catch {
+      // Best-effort check — proceed if it fails
+    }
+
     this._running = true;
     this.statusTracker?.setAgentState(this.agentConfig.name, "running");
     this.logger.info(`Starting ${this.agentConfig.name} container run`);
@@ -141,6 +151,7 @@ export class ContainerAgentRunner {
       const env: Record<string, string> = {
         AGENT_CONFIG: JSON.stringify(configWithMd),
         PROMPT: prompt,
+        TIMEOUT_SECONDS: String(timeout),
       };
       if (this.runtime.needsGateway) {
         env.GATEWAY_URL = this.gatewayUrl;

@@ -31,9 +31,22 @@ export interface BuildImageOpts {
   contextDir: string;
 }
 
+export interface RunningAgent {
+  agentName: string;
+  taskId: string;
+  status: string;
+  startedAt?: Date;
+}
+
 export interface ContainerRuntime {
   /** Whether containers launched by this runtime need a gateway URL */
   readonly needsGateway: boolean;
+
+  /** Check if a specific agent is already running. */
+  isAgentRunning(agentName: string): Promise<boolean>;
+
+  /** List all running agent containers managed by this runtime. */
+  listRunningAgents(): Promise<RunningAgent[]>;
 
   /** Launch a container and return its name/ID */
   launch(opts: RuntimeLaunchOpts): Promise<string>;

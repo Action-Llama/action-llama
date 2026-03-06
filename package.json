@@ -47,6 +47,13 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@aws-sdk/client-cloudwatch-logs": "^3.1003.0",
+    "@aws-sdk/client-ec2": "^3.1003.0",
+    "@aws-sdk/client-ecr": "^3.1003.0",
+    "@aws-sdk/client-ecs": "^3.1003.0",
+    "@aws-sdk/client-iam": "^3.1003.0",
+    "@aws-sdk/client-secrets-manager": "^3.1003.0",
+    "@aws-sdk/client-sts": "^3.1003.0",
     "@inquirer/prompts": "^7",
     "@mariozechner/pi-ai": "^0.56.1",
     "@mariozechner/pi-coding-agent": "^0.56.1",

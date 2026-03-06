@@ -1,5 +1,5 @@
 import { execFileSync } from "child_process";
-import type { ContainerRuntime, RuntimeLaunchOpts, RuntimeCredentials, SecretMount, BuildImageOpts } from "./runtime.js";
+import type { ContainerRuntime, RuntimeLaunchOpts, RuntimeCredentials, SecretMount, BuildImageOpts, RunningAgent } from "./runtime.js";
 import { parseCredentialRef } from "../shared/credentials.js";
 
 export interface CloudRunJobConfig {
@@ -40,6 +40,76 @@ export class CloudRunJobRuntime implements ContainerRuntime {
   constructor(config: CloudRunJobConfig) {
     this.config = config;
     this.prefix = config.secretPrefix || "action-llama";
+  }
+
+  // --- Agent tracking ---
+
+  async isAgentRunning(agentName: string): Promise<boolean> {
+    const jobName = `al-${agentName}`;
+    const { gcpProject, region } = this.config;
+    const fullName = `projects/${gcpProject}/locations/${region}/jobs/${jobName}`;
+
+    try {
+      // List recent executions for this job
+      const res = await this.gcpRequest("GET",
+        `https://run.googleapis.com/v2/${fullName}/executions?pageSize=1`
+      );
+      if (!res.ok) return false;
+
+      const data = await res.json() as { executions?: Array<{ completionTime?: string }> };
+      const latest = data.executions?.[0];
+      // If the latest execution has no completionTime, it's still running
+      return !!latest && !latest.completionTime;
+    } catch {
+      return false;
+    }
+  }
+
+  async listRunningAgents(): Promise<RunningAgent[]> {
+    const { gcpProject, region } = this.config;
+    const parent = `projects/${gcpProject}/locations/${region}`;
+
+    const jobsRes = await this.gcpRequest("GET",
+      `https://run.googleapis.com/v2/${parent}/jobs?pageSize=100`
+    );
+    if (!jobsRes.ok) return [];
+
+    const jobsData = await jobsRes.json() as { jobs?: Array<{ name: string }> };
+    const jobs = (jobsData.jobs ?? []).filter((j) => {
+      const name = j.name.split("/").pop() ?? "";
+      return name.startsWith("al-");
+    });
+
+    const running: RunningAgent[] = [];
+    for (const job of jobs) {
+      const jobName = job.name.split("/").pop()!;
+      const agentName = jobName.slice(3); // strip "al-"
+
+      const execRes = await this.gcpRequest("GET",
+        `https://run.googleapis.com/v2/${job.name}/executions?pageSize=1`
+      );
+      if (!execRes.ok) continue;
+
+      const execData = await execRes.json() as {
+        executions?: Array<{
+          name: string;
+          createTime?: string;
+          completionTime?: string;
+        }>;
+      };
+
+      const latest = execData.executions?.[0];
+      if (latest && !latest.completionTime) {
+        running.push({
+          agentName,
+          taskId: latest.name.split("/").pop() ?? "unknown",
+          status: "RUNNING",
+          startedAt: latest.createTime ? new Date(latest.createTime) : undefined,
+        });
+      }
+    }
+
+    return running;
   }
 
   // --- Credential preparation ---
@@ -304,6 +374,9 @@ export class CloudRunJobRuntime implements ContainerRuntime {
 
     const envVars = Object.entries(opts.env).map(([name, value]) => ({ name, value }));
 
+    // Derive timeout from TIMEOUT_SECONDS env var (set by container-runner)
+    const timeoutSeconds = opts.env.TIMEOUT_SECONDS || "3600";
+
     const jobSpec = {
       template: {
         template: {
@@ -320,6 +393,7 @@ export class CloudRunJobRuntime implements ContainerRuntime {
           }],
           volumes,
           serviceAccount: opts.serviceAccount,
+          timeout: `${timeoutSeconds}s`,
           maxRetries: 0,
         },
       },

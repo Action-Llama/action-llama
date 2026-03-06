@@ -11,18 +11,43 @@ vi.mock("../../src/shared/credentials.js", () => ({
   },
 }));
 
-// Mock fetch for AWS API calls
-const mockFetch = vi.fn();
-vi.stubGlobal("fetch", mockFetch);
+// Mock AWS SDK clients
+const mockEcsSend = vi.fn();
+const mockSmSend = vi.fn();
+const mockLogsSend = vi.fn();
+const mockEcrSend = vi.fn();
 
-// Mock child_process for aws cli and docker
+vi.mock("@aws-sdk/client-ecs", () => {
+  const ECSClient = vi.fn(function (this: any) { this.send = mockEcsSend; });
+  const RegisterTaskDefinitionCommand = vi.fn(function (this: any, input: any) { this._type = "RegisterTaskDefinition"; this.input = input; });
+  const RunTaskCommand = vi.fn(function (this: any, input: any) { this._type = "RunTask"; this.input = input; });
+  const DescribeTasksCommand = vi.fn(function (this: any, input: any) { this._type = "DescribeTasks"; this.input = input; });
+  const StopTaskCommand = vi.fn(function (this: any, input: any) { this._type = "StopTask"; this.input = input; });
+  return { ECSClient, RegisterTaskDefinitionCommand, RunTaskCommand, DescribeTasksCommand, StopTaskCommand };
+});
+
+vi.mock("@aws-sdk/client-secrets-manager", () => {
+  const SecretsManagerClient = vi.fn(function (this: any) { this.send = mockSmSend; });
+  const ListSecretsCommand = vi.fn(function (this: any, input: any) { this._type = "ListSecrets"; this.input = input; });
+  return { SecretsManagerClient, ListSecretsCommand };
+});
+
+vi.mock("@aws-sdk/client-cloudwatch-logs", () => {
+  const CloudWatchLogsClient = vi.fn(function (this: any) { this.send = mockLogsSend; });
+  const GetLogEventsCommand = vi.fn(function (this: any, input: any) { this._type = "GetLogEvents"; this.input = input; });
+  return { CloudWatchLogsClient, GetLogEventsCommand };
+});
+
+vi.mock("@aws-sdk/client-ecr", () => {
+  const ECRClient = vi.fn(function (this: any) { this.send = mockEcrSend; });
+  const GetAuthorizationTokenCommand = vi.fn(function (this: any, input: any) { this._type = "GetAuthorizationToken"; this.input = input; });
+  return { ECRClient, GetAuthorizationTokenCommand };
+});
+
+// Mock child_process for docker commands
 vi.mock("child_process", () => ({
   execFileSync: vi.fn((_cmd: string, _args: string[]) => ""),
 }));
-
-// Set AWS credentials for tests
-process.env.AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE";
-process.env.AWS_SECRET_ACCESS_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
 
 const defaultConfig = {
   awsRegion: "us-east-1",
@@ -56,14 +81,10 @@ describe("ECSFargateRuntime", () => {
   it("prepareCredentials maps credential refs to AWS Secrets Manager names", async () => {
     const runtime = new ECSFargateRuntime(defaultConfig);
 
-    // Mock the Secrets Manager ListSecrets API
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({
-        SecretList: [
-          { Name: "action-llama/github_token/default/token" },
-        ],
-      }),
+    mockSmSend.mockResolvedValueOnce({
+      SecretList: [
+        { Name: "action-llama/github_token/default/token" },
+      ],
     });
 
     const creds = await runtime.prepareCredentials(["github_token:default"]);
@@ -78,13 +99,10 @@ describe("ECSFargateRuntime", () => {
   it("prepareCredentials uses custom secret prefix", async () => {
     const runtime = new ECSFargateRuntime({ ...defaultConfig, secretPrefix: "myapp" });
 
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({
-        SecretList: [
-          { Name: "myapp/github_token/default/token" },
-        ],
-      }),
+    mockSmSend.mockResolvedValueOnce({
+      SecretList: [
+        { Name: "myapp/github_token/default/token" },
+      ],
     });
 
     const creds = await runtime.prepareCredentials(["github_token:default"]);
@@ -96,22 +114,16 @@ describe("ECSFargateRuntime", () => {
   it("prepareCredentials handles multiple credential refs", async () => {
     const runtime = new ECSFargateRuntime(defaultConfig);
 
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({
-        SecretList: [
-          { Name: "action-llama/github_token/default/token" },
-        ],
-      }),
+    mockSmSend.mockResolvedValueOnce({
+      SecretList: [
+        { Name: "action-llama/github_token/default/token" },
+      ],
     });
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({
-        SecretList: [
-          { Name: "action-llama/git_ssh/default/id_rsa" },
-          { Name: "action-llama/git_ssh/default/username" },
-        ],
-      }),
+    mockSmSend.mockResolvedValueOnce({
+      SecretList: [
+        { Name: "action-llama/git_ssh/default/id_rsa" },
+        { Name: "action-llama/git_ssh/default/username" },
+      ],
     });
 
     const creds = await runtime.prepareCredentials(["github_token:default", "git_ssh:default"]);
@@ -139,43 +151,36 @@ describe("ECSFargateRuntime", () => {
     const runtime = new ECSFargateRuntime(defaultConfig);
     const taskArn = "arn:aws:ecs:us-east-1:123456789012:task/al-cluster/abc123";
 
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({}),
-    });
+    mockEcsSend.mockResolvedValueOnce({});
 
     await runtime.kill(taskArn);
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-    const [url, opts] = mockFetch.mock.calls[0];
-    expect(url).toBe("https://ecs.us-east-1.amazonaws.com/");
-    expect(opts.method).toBe("POST");
-    expect(opts.headers["X-Amz-Target"]).toContain("StopTask");
-    expect(opts.body).toContain(taskArn);
+
+    expect(mockEcsSend).toHaveBeenCalledTimes(1);
+
+    const { StopTaskCommand } = await import("@aws-sdk/client-ecs");
+    const stopCalls = vi.mocked(StopTaskCommand).mock.calls;
+    expect(stopCalls).toHaveLength(1);
+    expect(stopCalls[0][0]).toEqual({
+      cluster: "al-cluster",
+      task: taskArn,
+      reason: "Action Llama timeout",
+    });
   });
 
   it("derives per-agent task role ARN from ECR repo account ID", async () => {
     const runtime = new ECSFargateRuntime(defaultConfig);
 
-    // Mock Secrets Manager (no secrets)
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({ SecretList: [] }),
-    });
+    // Mock Secrets Manager — no secrets for anthropic_key
+    mockSmSend.mockResolvedValueOnce({ SecretList: [] });
 
     // Mock RegisterTaskDefinition
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({
-        taskDefinition: { taskDefinitionArn: "arn:aws:ecs:us-east-1:123456789012:task-definition/al-dev:1" },
-      }),
+    mockEcsSend.mockResolvedValueOnce({
+      taskDefinition: { taskDefinitionArn: "arn:aws:ecs:us-east-1:123456789012:task-definition/al-dev:1" },
     });
 
     // Mock RunTask
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({
-        tasks: [{ taskArn: "arn:aws:ecs:us-east-1:123456789012:task/al-cluster/abc123" }],
-      }),
+    mockEcsSend.mockResolvedValueOnce({
+      tasks: [{ taskArn: "arn:aws:ecs:us-east-1:123456789012:task/al-cluster/abc123" }],
     });
 
     const creds = await runtime.prepareCredentials(["anthropic_key:default"]);
@@ -186,12 +191,10 @@ describe("ECSFargateRuntime", () => {
       credentials: creds,
     });
 
-    // Check the RegisterTaskDefinition call includes the per-agent task role
-    const registerCall = mockFetch.mock.calls.find(
-      (c) => c[1]?.headers?.["X-Amz-Target"]?.includes("RegisterTaskDefinition")
-    );
-    expect(registerCall).toBeTruthy();
-    const body = JSON.parse(registerCall![1].body);
-    expect(body.taskRoleArn).toBe("arn:aws:iam::123456789012:role/al-dev-task-role");
+    // Verify RegisterTaskDefinitionCommand was constructed with the per-agent task role
+    const { RegisterTaskDefinitionCommand } = await import("@aws-sdk/client-ecs");
+    const registerCalls = vi.mocked(RegisterTaskDefinitionCommand).mock.calls;
+    expect(registerCalls).toHaveLength(1);
+    expect(registerCalls[0][0].taskRoleArn).toBe("arn:aws:iam::123456789012:role/al-dev-task-role");
   });
 });

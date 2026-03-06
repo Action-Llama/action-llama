@@ -1,54 +1,44 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock fetch for AWS API calls
-const mockFetch = vi.fn();
-vi.stubGlobal("fetch", mockFetch);
-
-// Set AWS credentials for tests
-const origAccessKey = process.env.AWS_ACCESS_KEY_ID;
-const origSecretKey = process.env.AWS_SECRET_ACCESS_KEY;
+// Mock the entire SDK module
+const mockSend = vi.fn();
+vi.mock("@aws-sdk/client-secrets-manager", () => {
+  return {
+    SecretsManagerClient: vi.fn().mockImplementation(function (this: any) { this.send = mockSend; }),
+    GetSecretValueCommand: vi.fn().mockImplementation(function (this: any, input: any) { this._type = "GetSecretValue"; this.input = input; }),
+    CreateSecretCommand: vi.fn().mockImplementation(function (this: any, input: any) { this._type = "CreateSecret"; this.input = input; }),
+    PutSecretValueCommand: vi.fn().mockImplementation(function (this: any, input: any) { this._type = "PutSecretValue"; this.input = input; }),
+    ListSecretsCommand: vi.fn().mockImplementation(function (this: any, input: any) { this._type = "ListSecrets"; this.input = input; }),
+  };
+});
 
 import { AwsSecretsManagerBackend } from "../../src/shared/asm-backend.js";
 
 describe("AwsSecretsManagerBackend", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    process.env.AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE";
-    process.env.AWS_SECRET_ACCESS_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
-  });
-
-  afterEach(() => {
-    if (origAccessKey) process.env.AWS_ACCESS_KEY_ID = origAccessKey;
-    else delete process.env.AWS_ACCESS_KEY_ID;
-    if (origSecretKey) process.env.AWS_SECRET_ACCESS_KEY = origSecretKey;
-    else delete process.env.AWS_SECRET_ACCESS_KEY;
   });
 
   it("read returns secret value", async () => {
     const backend = new AwsSecretsManagerBackend("us-east-1");
 
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({ SecretString: "ghp_abc123" }),
-    });
+    mockSend.mockResolvedValueOnce({ SecretString: "ghp_abc123" });
 
     const value = await backend.read("github_token", "default", "token");
     expect(value).toBe("ghp_abc123");
 
-    const [url, opts] = mockFetch.mock.calls[0];
-    expect(url).toBe("https://secretsmanager.us-east-1.amazonaws.com/");
-    expect(opts.headers["X-Amz-Target"]).toBe("secretsmanager.GetSecretValue");
-    expect(opts.body).toContain("action-llama/github_token/default/token");
+    expect(mockSend).toHaveBeenCalledTimes(1);
+    const command = mockSend.mock.calls[0][0];
+    expect(command._type).toBe("GetSecretValue");
+    expect(command.input.SecretId).toBe("action-llama/github_token/default/token");
   });
 
   it("read returns undefined for non-existent secret", async () => {
     const backend = new AwsSecretsManagerBackend("us-east-1");
 
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 400,
-      text: () => Promise.resolve("ResourceNotFoundException"),
-    });
+    const err = new Error("not found");
+    err.name = "ResourceNotFoundException";
+    mockSend.mockRejectedValueOnce(err);
 
     const value = await backend.read("github_token", "default", "token");
     expect(value).toBeUndefined();
@@ -57,55 +47,52 @@ describe("AwsSecretsManagerBackend", () => {
   it("write creates a new secret", async () => {
     const backend = new AwsSecretsManagerBackend("us-east-1");
 
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({ Name: "action-llama/github_token/default/token" }),
-    });
+    mockSend.mockResolvedValueOnce({ Name: "action-llama/github_token/default/token" });
 
     await backend.write("github_token", "default", "token", "ghp_abc123");
 
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-    const [, opts] = mockFetch.mock.calls[0];
-    expect(opts.headers["X-Amz-Target"]).toBe("secretsmanager.CreateSecret");
-    const body = JSON.parse(opts.body);
-    expect(body.Name).toBe("action-llama/github_token/default/token");
-    expect(body.SecretString).toBe("ghp_abc123");
+    expect(mockSend).toHaveBeenCalledTimes(1);
+    const command = mockSend.mock.calls[0][0];
+    expect(command._type).toBe("CreateSecret");
+    expect(command.input.Name).toBe("action-llama/github_token/default/token");
+    expect(command.input.SecretString).toBe("ghp_abc123");
   });
 
   it("write updates existing secret on ResourceExistsException", async () => {
     const backend = new AwsSecretsManagerBackend("us-east-1");
 
-    // CreateSecret fails
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 400,
-      text: () => Promise.resolve("ResourceExistsException"),
-    });
+    // CreateSecret fails with ResourceExistsException
+    const err = new Error("already exists");
+    err.name = "ResourceExistsException";
+    mockSend.mockRejectedValueOnce(err);
+
     // PutSecretValue succeeds
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({}),
-    });
+    mockSend.mockResolvedValueOnce({});
 
     await backend.write("github_token", "default", "token", "ghp_new");
 
-    expect(mockFetch).toHaveBeenCalledTimes(2);
-    expect(mockFetch.mock.calls[1][1].headers["X-Amz-Target"]).toBe("secretsmanager.PutSecretValue");
+    expect(mockSend).toHaveBeenCalledTimes(2);
+
+    const createCmd = mockSend.mock.calls[0][0];
+    expect(createCmd._type).toBe("CreateSecret");
+
+    const putCmd = mockSend.mock.calls[1][0];
+    expect(putCmd._type).toBe("PutSecretValue");
+    expect(putCmd.input.SecretId).toBe("action-llama/github_token/default/token");
+    expect(putCmd.input.SecretString).toBe("ghp_new");
   });
 
   it("list returns credential entries matching prefix", async () => {
     const backend = new AwsSecretsManagerBackend("us-east-1");
 
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({
-        SecretList: [
-          { Name: "action-llama/github_token/default/token" },
-          { Name: "action-llama/git_ssh/default/id_rsa" },
-          { Name: "action-llama/git_ssh/default/username" },
-          { Name: "other-prefix/something/else/field" },
-        ],
-      }),
+    mockSend.mockResolvedValueOnce({
+      SecretList: [
+        { Name: "action-llama/github_token/default/token" },
+        { Name: "action-llama/git_ssh/default/id_rsa" },
+        { Name: "action-llama/git_ssh/default/username" },
+        { Name: "other-prefix/something/else/field" },
+      ],
+      NextToken: undefined,
     });
 
     const entries = await backend.list();
@@ -117,49 +104,30 @@ describe("AwsSecretsManagerBackend", () => {
   it("uses custom secret prefix", async () => {
     const backend = new AwsSecretsManagerBackend("eu-west-1", "myapp");
 
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({ SecretString: "value" }),
-    });
+    mockSend.mockResolvedValueOnce({ SecretString: "value" });
 
     await backend.read("github_token", "default", "token");
 
-    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.SecretId).toBe("myapp/github_token/default/token");
+    const command = mockSend.mock.calls[0][0];
+    expect(command._type).toBe("GetSecretValue");
+    expect(command.input.SecretId).toBe("myapp/github_token/default/token");
   });
 
   it("listInstances returns unique instances for a type", async () => {
     const backend = new AwsSecretsManagerBackend("us-east-1");
 
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({
-        SecretList: [
-          { Name: "action-llama/git_ssh/default/id_rsa" },
-          { Name: "action-llama/git_ssh/default/username" },
-          { Name: "action-llama/git_ssh/botty/id_rsa" },
-          { Name: "action-llama/github_token/default/token" },
-        ],
-      }),
+    mockSend.mockResolvedValueOnce({
+      SecretList: [
+        { Name: "action-llama/git_ssh/default/id_rsa" },
+        { Name: "action-llama/git_ssh/default/username" },
+        { Name: "action-llama/git_ssh/botty/id_rsa" },
+        { Name: "action-llama/github_token/default/token" },
+      ],
+      NextToken: undefined,
     });
 
     const instances = await backend.listInstances("git_ssh");
     expect(instances).toEqual(expect.arrayContaining(["default", "botty"]));
     expect(instances).toHaveLength(2);
-  });
-
-  it("includes Authorization header with Sigv4 signature", async () => {
-    const backend = new AwsSecretsManagerBackend("us-east-1");
-
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({ SecretString: "val" }),
-    });
-
-    await backend.read("github_token", "default", "token");
-
-    const headers = mockFetch.mock.calls[0][1].headers;
-    expect(headers.Authorization).toMatch(/^AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/);
-    expect(headers["X-Amz-Date"]).toMatch(/^\d{8}T\d{6}Z$/);
   });
 });

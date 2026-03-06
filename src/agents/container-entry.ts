@@ -64,6 +64,14 @@ function readCredentialFields(type: string, instance: string): Record<string, st
 }
 
 async function main() {
+  // Container-level timeout — self-terminates even if scheduler dies
+  const timeoutSeconds = parseInt(process.env.TIMEOUT_SECONDS || "3600", 10);
+  const timer = setTimeout(() => {
+    emitLog("error", "container timeout reached, self-terminating", { timeoutSeconds });
+    process.exit(124);
+  }, timeoutSeconds * 1000);
+  timer.unref();
+
   // Switch CWD to /workspace so child processes (git, bash, etc.) default to it.
   // Node must resolve from /app (WORKDIR at build time), so we chdir after startup.
   process.chdir("/workspace");

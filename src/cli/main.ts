@@ -130,11 +130,8 @@ cloudCmd
   });
 
 program.parseAsync().catch((err) => {
-  const detail: Record<string, unknown> = { error: err.message };
-  if (err.cause) detail.cause = String(err.cause);
-  if (err.code) detail.code = err.code;
-  if (err.status) detail.status = err.status;
-  if (err.stack) detail.stack = err.stack;
-  console.error(JSON.stringify(detail));
+  console.error(`\nError: ${err.message}`);
+  if (err.cause) console.error(`Cause: ${err.cause}`);
+  if (process.env.DEBUG) console.error(err.stack);
   process.exit(1);
 });

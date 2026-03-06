@@ -2,6 +2,8 @@ import { resolve } from "path";
 import { existsSync } from "fs";
 import { confirm } from "@inquirer/prompts";
 import { execFileSync } from "child_process";
+import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
+import { IAMClient, CreateRoleCommand, PutRolePolicyCommand } from "@aws-sdk/client-iam";
 import { discoverAgents, loadAgentConfig, loadGlobalConfig } from "../../shared/config.js";
 import type { CloudConfig } from "../../shared/config.js";
 import { resolveCredential } from "../../credentials/registry.js";
@@ -274,9 +276,10 @@ async function reconcileAws(projectPath: string, cloud: CloudConfig): Promise<vo
   }
   const accountId = accountMatch[1];
 
-  // Verify AWS CLI is available
+  // Verify AWS credentials are valid
+  const stsClient = new STSClient({ region: awsRegion });
   try {
-    awsCli(["sts", "get-caller-identity", "--region", awsRegion]);
+    await stsClient.send(new GetCallerIdentityCommand({}));
   } catch (err: any) {
     throw new Error(
       "AWS CLI is not authenticated. Run 'aws configure' or set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY.\n" +
@@ -302,6 +305,8 @@ async function reconcileAws(projectPath: string, cloud: CloudConfig): Promise<vo
 
   console.log(`\nSetting up ECS task roles for ${agents.length} agent(s)...\n`);
 
+  const iamClient = new IAMClient({ region: awsRegion });
+
   for (const name of agents) {
     const config = loadAgentConfig(projectPath, name);
     const roleName = `al-${name}-task-role`;
@@ -311,15 +316,13 @@ async function reconcileAws(projectPath: string, cloud: CloudConfig): Promise<vo
 
     // 1. Create IAM role (idempotent)
     try {
-      awsCli([
-        "iam", "create-role",
-        "--role-name", roleName,
-        "--assume-role-policy-document", trustPolicy,
-        "--region", awsRegion,
-      ]);
+      await iamClient.send(new CreateRoleCommand({
+        RoleName: roleName,
+        AssumeRolePolicyDocument: trustPolicy,
+      }));
       console.log(`    Created IAM role`);
     } catch (err: any) {
-      if (err.message?.includes("EntityAlreadyExists")) {
+      if (err.name === "EntityAlreadyExistsException") {
         console.log(`    IAM role already exists`);
       } else {
         throw err;
@@ -352,13 +355,11 @@ async function reconcileAws(projectPath: string, cloud: CloudConfig): Promise<vo
       });
 
       try {
-        awsCli([
-          "iam", "put-role-policy",
-          "--role-name", roleName,
-          "--policy-name", "SecretsAccess",
-          "--policy-document", policy,
-          "--region", awsRegion,
-        ]);
+        await iamClient.send(new PutRolePolicyCommand({
+          RoleName: roleName,
+          PolicyName: "SecretsAccess",
+          PolicyDocument: policy,
+        }));
         console.log(`    Bound ${secretArns.length} secret path(s)`);
       } catch (err: any) {
         console.log(`    Warning: failed to put policy: ${err.message}`);
@@ -379,14 +380,6 @@ async function reconcileAws(projectPath: string, cloud: CloudConfig): Promise<vo
 
 function gcloud(args: string[], _project: string): string {
   return execFileSync("gcloud", args, {
-    encoding: "utf-8",
-    timeout: 30_000,
-    stdio: ["pipe", "pipe", "pipe"],
-  }).trim();
-}
-
-function awsCli(args: string[]): string {
-  return execFileSync("aws", args, {
     encoding: "utf-8",
     timeout: 30_000,
     stdio: ["pipe", "pipe", "pipe"],
