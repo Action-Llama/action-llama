@@ -5,7 +5,7 @@ import { startScheduler } from "../../scheduler/index.js";
 import { StatusTracker } from "../../tui/status-tracker.js";
 import { execute as runDoctor } from "./doctor.js";
 
-export async function execute(opts: { project: string; noDocker?: boolean; cloud?: boolean; tui?: boolean }): Promise<void> {
+export async function execute(opts: { project: string; noDocker?: boolean; cloud?: boolean; headless?: boolean }): Promise<void> {
   const projectPath = resolve(opts.project);
 
   // Guard: refuse to run if the project path looks like an agent directory
@@ -17,7 +17,7 @@ export async function execute(opts: { project: string; noDocker?: boolean; cloud
   }
 
   // Ensure all credentials are present before starting
-  await runDoctor({ project: opts.project, cloud: opts.cloud });
+  await runDoctor({ project: opts.project, cloud: opts.cloud, checkOnly: opts.headless });
 
   const globalConfig = loadGlobalConfig(projectPath);
 
@@ -58,7 +58,7 @@ export async function execute(opts: { project: string; noDocker?: boolean; cloud
 
   let cleanup: () => void;
 
-  if (opts.tui === false) {
+  if (opts.headless) {
     const { attachPlainLogger } = await import("../../tui/plain-logger.js");
     const { detach } = attachPlainLogger(statusTracker);
     cleanup = detach;

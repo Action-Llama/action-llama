@@ -9,7 +9,7 @@ import { AWS_CONSTANTS } from "../../shared/aws-constants.js";
 import { buildManualPrompt } from "../../agents/prompt.js";
 import { execute as runDoctor } from "./doctor.js";
 
-export async function execute(agent: string, opts: { project: string; noDocker?: boolean; cloud?: boolean }): Promise<void> {
+export async function execute(agent: string, opts: { project: string; noDocker?: boolean; cloud?: boolean; headless?: boolean }): Promise<void> {
   const projectPath = resolve(opts.project);
 
   // Guard: refuse to run if the project path looks like an agent directory
@@ -28,7 +28,7 @@ export async function execute(agent: string, opts: { project: string; noDocker?:
   }
 
   // Ensure credentials are present
-  await runDoctor({ project: opts.project });
+  await runDoctor({ project: opts.project, cloud: opts.cloud, checkOnly: opts.headless });
 
   const globalConfig = loadGlobalConfig(projectPath);
   const agentConfig = loadAgentConfig(projectPath, agent);

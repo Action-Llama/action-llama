@@ -19,7 +19,7 @@ const WEBHOOK_SECRET_TYPES: Record<string, string> = {
   sentry: "sentry_client_secret",
 };
 
-export async function execute(opts: { project: string; cloud?: boolean }): Promise<void> {
+export async function execute(opts: { project: string; cloud?: boolean; checkOnly?: boolean }): Promise<void> {
   const projectPath = resolve(opts.project);
 
   // Guard: refuse to run if the project path looks like an agent directory
@@ -35,8 +35,6 @@ export async function execute(opts: { project: string; cloud?: boolean }): Promi
     console.log("No agents found. Create agents first, then re-run doctor.");
     return;
   }
-
-  // --- Local credential check ---
 
   // Collect all credential refs from agents (including webhook secrets)
   const credentialRefs = new Set<string>();
@@ -58,7 +56,74 @@ export async function execute(opts: { project: string; cloud?: boolean }): Promi
 
   if (credentialRefs.size === 0) {
     console.log("No credentials required by any agent.");
+  } else if (opts.checkOnly) {
+    // --- Non-interactive credential check (headless mode) ---
+    let okCount = 0;
+    const missing: string[] = [];
+
+    if (opts.cloud) {
+      // Check cloud backend
+      const globalConfig = loadGlobalConfig(projectPath);
+      const cloudConfig = globalConfig.cloud;
+      if (!cloudConfig) {
+        throw new Error(
+          "No [cloud] section found in config.toml. " +
+          "Run 'al cloud setup' to configure a cloud provider first."
+        );
+      }
+
+      const remote = await createBackendFromCloudConfig(cloudConfig);
+      console.log(`Checking ${credentialRefs.size} credential(s) in ${cloudConfig.provider}...`);
+
+      for (const ref of credentialRefs) {
+        const { type, instance } = parseCredentialRef(ref);
+        const def = resolveCredential(type);
+
+        if (await remote.exists(type, instance)) {
+          console.log(`  [ok] ${def.label} (${ref})`);
+          okCount++;
+        } else {
+          console.log(`  [MISSING] ${def.label} (${ref})`);
+          missing.push(ref);
+        }
+      }
+
+      if (missing.length > 0) {
+        throw new Error(
+          `${missing.length} credential(s) missing from ${cloudConfig.provider}: ${missing.join(", ")}.\n` +
+          `Push them with 'al doctor -c' first.`
+        );
+      }
+
+      console.log(`${okCount} credential(s) verified in ${cloudConfig.provider}.`);
+    } else {
+      // Check local filesystem (no prompts)
+      console.log(`Checking ${credentialRefs.size} credential(s)...`);
+
+      for (const ref of credentialRefs) {
+        const { type, instance } = parseCredentialRef(ref);
+        const def = resolveCredential(type);
+
+        if (credentialExists(type, instance)) {
+          console.log(`  [ok] ${def.label} (${ref})`);
+          okCount++;
+        } else {
+          console.log(`  [MISSING] ${def.label} (${ref})`);
+          missing.push(ref);
+        }
+      }
+
+      if (missing.length > 0) {
+        throw new Error(
+          `${missing.length} credential(s) missing: ${missing.join(", ")}.\n` +
+          `Run 'al doctor' interactively to configure them.`
+        );
+      }
+
+      console.log(`${okCount} credential(s) verified.`);
+    }
   } else {
+    // --- Interactive credential check (used by `al doctor` and `al doctor -c`) ---
     console.log(`\nChecking ${credentialRefs.size} credential(s)...\n`);
 
     let okCount = 0;
@@ -84,9 +149,9 @@ export async function execute(opts: { project: string; cloud?: boolean }): Promi
     console.log(`\nDone. ${okCount} already present, ${promptedCount} configured.`);
   }
 
-  // --- Cloud mode ---
+  // --- Cloud mode: push creds + reconcile IAM (interactive only) ---
 
-  if (opts.cloud) {
+  if (opts.cloud && !opts.checkOnly) {
     const globalConfig = loadGlobalConfig(projectPath);
     const cloudConfig = globalConfig.cloud;
 
