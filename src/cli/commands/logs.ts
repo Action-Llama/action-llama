@@ -161,14 +161,52 @@ export async function execute(
       });
     }
 
-    console.log(`Fetching cloud logs for ${agent}...`);
-    const lines = await runtime.fetchLogs(agent, limit);
+    if (opts.follow) {
+      // Find running agent container to follow
+      console.log(`Looking for running ${agent} agent...`);
+      const runningAgents = await runtime.listRunningAgents();
+      const targetAgent = runningAgents.find(a => a.agentName === agent);
+      
+      if (!targetAgent) {
+        console.error(`No running agent found for "${agent}". Start the agent first to follow its logs.`);
+        process.exit(1);
+      }
 
-    if (lines.length === 0) {
-      console.log("No log events found.");
-    } else {
-      for (const line of lines) {
+      console.log(`Following logs for ${agent} (${targetAgent.taskId})...`);
+      
+      // Show last N entries first
+      const recentLines = await runtime.fetchLogs(agent, limit);
+      for (const line of recentLines) {
         console.log(line);
+      }
+
+      // Start following new logs
+      const { stop } = runtime.streamLogs(
+        targetAgent.taskId,
+        (line: string) => console.log(line),
+        (stderr: string) => console.error(stderr)
+      );
+
+      // Handle Ctrl+C to stop following
+      process.on("SIGINT", () => {
+        console.log("\nStopping log follow...");
+        stop();
+        process.exit(0);
+      });
+
+      // Keep the process alive
+      await new Promise(() => {});
+    } else {
+      // Static log fetch (original behavior)
+      console.log(`Fetching cloud logs for ${agent}...`);
+      const lines = await runtime.fetchLogs(agent, limit);
+
+      if (lines.length === 0) {
+        console.log("No log events found.");
+      } else {
+        for (const line of lines) {
+          console.log(line);
+        }
       }
     }
     return;
