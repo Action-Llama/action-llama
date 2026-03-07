@@ -95,19 +95,26 @@ aws iam attach-role-policy \
   --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
 ```
 
-The execution role also needs `secretsmanager:GetSecretValue` so ECS can inject secrets into the container at launch:
+The execution role also needs `secretsmanager:GetSecretValue` (so ECS can inject secrets at launch) and `logs:CreateLogGroup` (so ECS can create the CloudWatch log group on first run):
 
 ```bash
 aws iam put-role-policy \
   --role-name ecsTaskExecutionRole \
-  --policy-name SecretsManagerRead \
+  --policy-name ActionLlamaExecution \
   --policy-document '{
     "Version": "2012-10-17",
-    "Statement": [{
-      "Effect": "Allow",
-      "Action": "secretsmanager:GetSecretValue",
-      "Resource": "arn:aws:secretsmanager:us-east-1:123456789012:secret:action-llama/*"
-    }]
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": "secretsmanager:GetSecretValue",
+        "Resource": "arn:aws:secretsmanager:us-east-1:123456789012:secret:action-llama/*"
+      },
+      {
+        "Effect": "Allow",
+        "Action": "logs:CreateLogGroup",
+        "Resource": "arn:aws:logs:us-east-1:123456789012:log-group:/ecs/action-llama*"
+      }
+    ]
   }'
 ```
 
@@ -157,8 +164,8 @@ al start -c -p .
 ```
 
 The scheduler will:
-1. Build agent images locally
-2. Push them to ECR
+1. Build agent images remotely via CodeBuild and push to ECR
+2. Create the CloudWatch log group if it doesn't exist
 3. Register ECS task definitions with Secrets Manager secret injection
 4. Run Fargate tasks on schedule or webhook trigger
 5. Stream logs from CloudWatch Logs
@@ -280,7 +287,7 @@ Logs are streamed from CloudWatch Logs by polling. There is a ~5-10 second delay
 | Secret isolation | Mount-level (same trust boundary) | IAM-enforced per-agent task roles |
 | Gateway needed | Yes (kill switch, cred serving) | No (optional for webhooks) |
 | Log latency | Real-time | ~5-10s delay |
-| Image builds | Local Docker | Local Docker + ECR push |
+| Image builds | Local Docker | Remote via CodeBuild |
 | Scaling | Limited by host resources | Managed, serverless |
 | Cost | Free (your hardware) | Pay per task execution |
 
@@ -322,10 +329,11 @@ This is the minimum policy for the IAM user or role running `al` commands. Repla
       "Sid": "Logs",
       "Effect": "Allow",
       "Action": [
+        "logs:CreateLogGroup",
         "logs:GetLogEvents",
         "logs:FilterLogEvents"
       ],
-      "Resource": "arn:aws:logs:<REGION>:<ACCOUNT_ID>:log-group:/ecs/action-llama:*"
+      "Resource": "arn:aws:logs:<REGION>:<ACCOUNT_ID>:log-group:/ecs/action-llama*"
     },
     {
       "Sid": "SecretsManager",
@@ -339,7 +347,7 @@ This is the minimum policy for the IAM user or role running `al` commands. Repla
       "Resource": "*"
     },
     {
-      "Sid": "PassRoleToECS",
+      "Sid": "PassRole",
       "Effect": "Allow",
       "Action": "iam:PassRole",
       "Resource": [
@@ -347,7 +355,10 @@ This is the minimum policy for the IAM user or role running `al` commands. Repla
       ],
       "Condition": {
         "StringEquals": {
-          "iam:PassedToService": "ecs-tasks.amazonaws.com"
+          "iam:PassedToService": [
+            "ecs-tasks.amazonaws.com",
+            "codebuild.amazonaws.com"
+          ]
         }
       }
     },
@@ -357,15 +368,27 @@ This is the minimum policy for the IAM user or role running `al` commands. Repla
       "Action": [
         "iam:CreateRole",
         "iam:GetRole",
+        "iam:GetRolePolicy",
         "iam:PutRolePolicy",
         "iam:DeleteRole",
         "iam:DeleteRolePolicy",
-        "iam:AttachRolePolicy",
-        "iam:ListRoles"
+        "iam:AttachRolePolicy"
       ],
       "Resource": [
         "arn:aws:iam::<ACCOUNT_ID>:role/al-*"
       ]
+    },
+    {
+      "Sid": "IAMListRoles",
+      "Effect": "Allow",
+      "Action": "iam:ListRoles",
+      "Resource": "*"
+    },
+    {
+      "Sid": "ECRImageCheck",
+      "Effect": "Allow",
+      "Action": "ecr:BatchGetImage",
+      "Resource": "arn:aws:ecr:<REGION>:<ACCOUNT_ID>:repository/<REPO_NAME>"
     },
     {
       "Sid": "SetupWizardReadOnly",
@@ -396,14 +419,11 @@ This is the minimum policy for the IAM user or role running `al` commands. Repla
       "Sid": "S3BuildContext",
       "Effect": "Allow",
       "Action": [
-        "s3:PutObject",
         "s3:CreateBucket",
-        "s3:HeadBucket"
+        "s3:PutObject",
+        "s3:ListBucket"
       ],
-      "Resource": [
-        "arn:aws:s3:::al-builds-<ACCOUNT_ID>-<REGION>",
-        "arn:aws:s3:::al-builds-<ACCOUNT_ID>-<REGION>/*"
-      ]
+      "Resource": "*"
     }
   ]
 }
@@ -446,6 +466,14 @@ Created automatically by `al doctor -c`. Each agent gets its own role scoped to 
 **"Failed to start ECS task"** — Check that the ECS cluster exists, subnets have internet access, and the execution role has the required permissions.
 
 **CodeBuild build fails** — Check the build logs linked in the error message. Common causes: the `al-codebuild-role` is missing or lacks ECR push permissions, or the S3 bucket doesn't exist. Verify the role exists and has the permissions listed in the "How CodeBuild works" section above.
+
+**"The specified log group does not exist"** — The CloudWatch log group `/ecs/action-llama` hasn't been created. The runtime creates it automatically on first launch, but the operator IAM user needs `logs:CreateLogGroup` permission. Either re-run `al cloud setup` (which creates it), or create it manually:
+
+```bash
+aws logs create-log-group --log-group-name /ecs/action-llama --region us-east-1
+```
+
+If you get `AccessDeniedException`, add the `logs:CreateLogGroup` action to your operator IAM policy (see the operator policy above).
 
 **Logs are delayed** — This is expected. CloudWatch Logs has a ~5-10 second ingestion delay. The TUI shows a warning when running in ECS mode.
 

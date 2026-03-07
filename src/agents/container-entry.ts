@@ -45,6 +45,23 @@ function loadCredentialsFromVolume(): void {
   }
 }
 
+/** ECS injects secrets as env vars named AL_SECRET_{type}__{instance}__{field}. */
+function hasEnvCredentials(): boolean {
+  return Object.keys(process.env).some((k) => k.startsWith("AL_SECRET_"));
+}
+
+function loadCredentialsFromEnv(): void {
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!key.startsWith("AL_SECRET_") || !value) continue;
+    const parts = key.slice("AL_SECRET_".length).split("__");
+    if (parts.length !== 3) continue;
+    const [type, instance, field] = parts;
+    credBundle[type] ??= {};
+    credBundle[type][instance] ??= {};
+    credBundle[type][instance][field] = value;
+  }
+}
+
 async function loadCredentialsFromGateway(gatewayUrl: string, secret: string): Promise<void> {
   emitLog("info", "fetching credentials from gateway");
   const res = await fetch(`${gatewayUrl}/credentials/${secret}`);
@@ -94,15 +111,18 @@ async function main() {
 
   emitLog("info", "container starting", { agentName: agentConfig.name, modelId, gatewayUrl });
 
-  // Load credentials from mounted volume or via HTTP from gateway
+  // Load credentials from mounted volume, env vars (ECS secrets), or gateway
   if (hasLocalCredentials()) {
     loadCredentialsFromVolume();
     emitLog("info", "credentials loaded from volume");
+  } else if (hasEnvCredentials()) {
+    loadCredentialsFromEnv();
+    emitLog("info", "credentials loaded from env vars");
   } else if (gatewayUrl && shutdownSecret) {
     await loadCredentialsFromGateway(gatewayUrl, shutdownSecret);
     emitLog("info", "credentials loaded from gateway");
   } else {
-    emitLog("error", "no credentials available — no volume mount and no gateway URL");
+    emitLog("error", "no credentials available — no volume mount, env vars, or gateway URL");
     process.exit(1);
   }
 

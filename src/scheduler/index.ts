@@ -135,6 +135,11 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   const useCloudRuntime = cloudMode && globalConfig.cloud;
   const runtimeType = useCloudRuntime ? globalConfig.cloud!.provider : "local";
 
+  // Register agents early so the TUI shows them during image builds
+  for (const agentConfig of agentConfigs) {
+    statusTracker?.registerAgent(agentConfig.name);
+  }
+
   if (dockerEnabled) {
     logger.info({ runtime: runtimeType }, "Docker mode enabled — initializing infrastructure");
 
@@ -199,15 +204,32 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     baseImage = globalConfig.local?.image || AWS_CONSTANTS.DEFAULT_IMAGE;
     logger.info({ image: baseImage }, "Building base image (this may take a few minutes on first run)...");
 
+    // Show all agents as "building" during the base image build
+    const setBuildProgress = (message: string) => {
+      for (const ac of agentConfigs) {
+        statusTracker?.setAgentStatusText(ac.name, message);
+      }
+    };
+    for (const ac of agentConfigs) {
+      statusTracker?.setAgentState(ac.name, "building");
+    }
+
     if (runtimeType === "local") {
       // Local: only build if image doesn't exist yet
       const { imageExists } = await import("../docker/image.js");
       if (!imageExists(baseImage)) {
-        await runtime.buildImage({ tag: baseImage, dockerfile: "docker/Dockerfile", contextDir: packageRoot });
+        setBuildProgress("Building base image");
+        await runtime.buildImage({
+          tag: baseImage, dockerfile: "docker/Dockerfile", contextDir: packageRoot,
+          onProgress: setBuildProgress,
+        });
       }
     } else {
       // Cloud: always build (Cloud Build handles caching)
-      baseImage = await runtime.buildImage({ tag: baseImage, dockerfile: "docker/Dockerfile", contextDir: packageRoot });
+      baseImage = await runtime.buildImage({
+        tag: baseImage, dockerfile: "docker/Dockerfile", contextDir: packageRoot,
+        onProgress: setBuildProgress,
+      });
     }
 
     // 3. Build per-agent images for agents with a custom Dockerfile
@@ -219,11 +241,15 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
         continue;
       }
 
+      statusTracker?.setAgentState(agentConfig.name, "building");
+      statusTracker?.setAgentStatusText(agentConfig.name, "Building custom image");
       const agentImageTag = AWS_CONSTANTS.agentImage(agentConfig.name);
       const image = await runtime.buildImage({
         tag: agentImageTag,
         dockerfile: agentDockerfile,
         contextDir: packageRoot,
+        baseImage,
+        onProgress: (msg) => statusTracker?.setAgentStatusText(agentConfig.name, msg),
       });
       agentImages[agentConfig.name] = image;
       logger.info({ agent: agentConfig.name, image }, "Built custom agent image");
@@ -235,11 +261,17 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
         const currentImage = agentImages[agentConfig.name] || baseImage;
         if (!currentImage.includes("/")) {
           // Looks like a local tag — needs pushing
+          statusTracker?.setAgentStatusText(agentConfig.name, "Pushing image to registry");
           const remoteImage = await runtime.pushImage(currentImage);
           agentImages[agentConfig.name] = remoteImage;
           logger.info({ agent: agentConfig.name, image: remoteImage }, "Pushed image to registry");
         }
       }
+    }
+
+    // Reset all agents back to idle after builds complete
+    for (const ac of agentConfigs) {
+      statusTracker?.setAgentState(ac.name, "idle");
     }
 
     logger.info("Docker infrastructure ready");
@@ -288,7 +320,6 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       : (_secret: string) => {};
 
     for (const agentConfig of agentConfigs) {
-      statusTracker?.registerAgent(agentConfig.name);
       runners[agentConfig.name] = new ContainerAgentRunner(
         runtime,
         globalConfig,
@@ -305,7 +336,6 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   } else {
     for (const agentConfig of agentConfigs) {
       mkdirSync(agentDir(projectPath, agentConfig.name), { recursive: true });
-      statusTracker?.registerAgent(agentConfig.name);
       runners[agentConfig.name] = new AgentRunner(
         agentConfig,
         mkLogger(projectPath, agentConfig.name),

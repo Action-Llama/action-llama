@@ -25,6 +25,7 @@ import {
   CreateRoleCommand,
   GetRoleCommand,
   AttachRolePolicyCommand,
+  PutRolePolicyCommand,
 } from "@aws-sdk/client-iam";
 import {
   EC2Client,
@@ -32,6 +33,10 @@ import {
   DescribeSubnetsCommand,
   DescribeSecurityGroupsCommand,
 } from "@aws-sdk/client-ec2";
+import {
+  CloudWatchLogsClient,
+  CreateLogGroupCommand,
+} from "@aws-sdk/client-cloudwatch-logs";
 
 import { AWS_CONSTANTS } from "../../shared/aws-constants.js";
 
@@ -193,7 +198,56 @@ async function setupEcsCloud(cloud: CloudConfig): Promise<boolean> {
     "Default task role (Secrets Manager access)",
     AWS_CONSTANTS.DEFAULT_TASK_ROLE,
     [],
+    [cloud.executionRoleArn!],
   );
+
+  // Add Secrets Manager + CloudWatch Logs inline policy to execution role
+  const executionRoleName = cloud.executionRoleArn!.split("/").pop()!;
+  const secretPrefix = AWS_CONSTANTS.DEFAULT_SECRET_PREFIX;
+  try {
+    await iamClient.send(new PutRolePolicyCommand({
+      RoleName: executionRoleName,
+      PolicyName: "ActionLlamaExecution",
+      PolicyDocument: JSON.stringify({
+        Version: "2012-10-17",
+        Statement: [
+          {
+            Effect: "Allow",
+            Action: "secretsmanager:GetSecretValue",
+            Resource: `arn:aws:secretsmanager:${region}:${accountId}:secret:${secretPrefix}/*`,
+          },
+          {
+            Effect: "Allow",
+            Action: "logs:CreateLogGroup",
+            Resource: `arn:aws:logs:${region}:${accountId}:log-group:${AWS_CONSTANTS.LOG_GROUP}*`,
+          },
+        ],
+      }),
+    }));
+    console.log(`  Attached ActionLlamaExecution policy to ${executionRoleName}`);
+  } catch (err: any) {
+    throw new Error(
+      `Failed to attach ActionLlamaExecution policy to ${executionRoleName}: ${err.message}\n` +
+      `The execution role needs secretsmanager:GetSecretValue and logs:CreateLogGroup permissions.\n` +
+      `Either grant your IAM user iam:PutRolePolicy on this role, or attach the policy manually in the AWS Console.`
+    );
+  }
+
+  // Create CloudWatch log group for ECS task logs
+  const cwlClient = new CloudWatchLogsClient({ region });
+  try {
+    await cwlClient.send(new CreateLogGroupCommand({ logGroupName: AWS_CONSTANTS.LOG_GROUP }));
+    console.log(`  Created log group: ${AWS_CONSTANTS.LOG_GROUP}`);
+  } catch (err: any) {
+    if (err.name === "ResourceAlreadyExistsException") {
+      console.log(`  Log group already exists: ${AWS_CONSTANTS.LOG_GROUP}`);
+    } else {
+      console.log(`  Warning: could not create log group: ${err.message}`);
+    }
+  }
+
+  // Create CodeBuild service role for remote image builds
+  await ensureCodeBuildRole(iamClient, accountId, region, cloud.ecrRepository!);
 
   const result = await pickVpcAndSubnets(ec2Client);
   cloud.subnets = result.subnets;
@@ -299,11 +353,12 @@ const ECS_TRUST_POLICY = JSON.stringify({
   }],
 });
 
-async function pickOrCreateEcsRole(iamClient: IAMClient, label: string, defaultName: string, managedPolicies: string[]): Promise<string> {
+async function pickOrCreateEcsRole(iamClient: IAMClient, label: string, defaultName: string, managedPolicies: string[], excludeArns?: string[]): Promise<string> {
   console.log(`\nLooking for IAM roles (${label})...`);
   try {
     const data = await iamClient.send(new ListRolesCommand({ MaxItems: 200 }));
     const ecsRoles = (data.Roles || []).filter((r) => {
+      if (excludeArns?.includes(r.Arn!)) return false;
       try {
         const doc = typeof r.AssumeRolePolicyDocument === "string"
           ? JSON.parse(decodeURIComponent(r.AssumeRolePolicyDocument))
@@ -331,10 +386,35 @@ async function pickOrCreateEcsRole(iamClient: IAMClient, label: string, defaultN
       console.log("  No ECS-compatible IAM roles found.");
     }
   } catch {
-    console.log("  Could not list IAM roles.");
+    // iam:ListRoles not available — try to find the default role directly
+    try {
+      const data = await iamClient.send(new GetRoleCommand({ RoleName: defaultName }));
+      const arn = data.Role!.Arn!;
+      console.log(`  Found existing role: ${arn}`);
+      const choices = [
+        { name: `Use ${defaultName}`, value: arn },
+        { name: "Enter ARN manually", value: MANUAL_INPUT },
+      ];
+      const choice = await select({ message: `${label}:`, choices });
+      if (choice === MANUAL_INPUT) return input({ message: `${label} ARN:` });
+      return choice;
+    } catch {
+      console.log("  No existing role found.");
+    }
   }
 
   const name = await input({ message: "New role name:", default: defaultName });
+
+  // Check if the role already exists before trying to create
+  try {
+    const data = await iamClient.send(new GetRoleCommand({ RoleName: name }));
+    const arn = data.Role!.Arn!;
+    console.log(`  Role already exists: ${arn}`);
+    return arn;
+  } catch {
+    // Role doesn't exist — create it
+  }
+
   try {
     const data = await iamClient.send(new CreateRoleCommand({
       RoleName: name,
@@ -357,19 +437,88 @@ async function pickOrCreateEcsRole(iamClient: IAMClient, label: string, defaultN
 
     return arn;
   } catch (err: any) {
-    if (err.name === "EntityAlreadyExistsException") {
-      try {
-        const data = await iamClient.send(new GetRoleCommand({ RoleName: name }));
-        const arn = data.Role!.Arn!;
-        console.log(`  Role already exists: ${arn}`);
-        return arn;
-      } catch {
-        console.log(`  Role "${name}" exists but could not retrieve ARN.`);
-      }
-    } else {
-      console.log(`  Failed to create role: ${err.message}`);
-    }
+    console.log(`  Failed to create role: ${err.message}`);
     return input({ message: `${label} ARN:` });
+  }
+}
+
+async function ensureCodeBuildRole(iamClient: IAMClient, accountId: string, region: string, ecrRepository: string): Promise<void> {
+  const roleName = AWS_CONSTANTS.CODEBUILD_ROLE;
+  console.log(`\nEnsuring CodeBuild service role (${roleName})...`);
+
+  const trustPolicy = JSON.stringify({
+    Version: "2012-10-17",
+    Statement: [{
+      Effect: "Allow",
+      Principal: { Service: "codebuild.amazonaws.com" },
+      Action: "sts:AssumeRole",
+    }],
+  });
+
+  try {
+    await iamClient.send(new CreateRoleCommand({
+      RoleName: roleName,
+      AssumeRolePolicyDocument: trustPolicy,
+    }));
+    console.log(`  Created role: ${roleName}`);
+  } catch (err: any) {
+    if (err.name === "EntityAlreadyExistsException") {
+      console.log(`  Role already exists`);
+    } else {
+      console.log(`  Warning: could not create ${roleName}: ${err.message}`);
+      return;
+    }
+  }
+
+  // ECR push + S3 read + CloudWatch Logs
+  const repoArn = `arn:aws:ecr:${region}:${accountId}:repository/${ecrRepository.split("/").pop()}`;
+  const bucketName = AWS_CONSTANTS.buildBucket(accountId, region);
+
+  try {
+    await iamClient.send(new PutRolePolicyCommand({
+      RoleName: roleName,
+      PolicyName: "CodeBuildPermissions",
+      PolicyDocument: JSON.stringify({
+        Version: "2012-10-17",
+        Statement: [
+          {
+            Effect: "Allow",
+            Action: "ecr:GetAuthorizationToken",
+            Resource: "*",
+          },
+          {
+            Effect: "Allow",
+            Action: [
+              "ecr:BatchCheckLayerAvailability",
+              "ecr:PutImage",
+              "ecr:InitiateLayerUpload",
+              "ecr:UploadLayerPart",
+              "ecr:CompleteLayerUpload",
+              "ecr:GetDownloadUrlForLayer",
+              "ecr:BatchGetImage",
+            ],
+            Resource: repoArn,
+          },
+          {
+            Effect: "Allow",
+            Action: "s3:GetObject",
+            Resource: `arn:aws:s3:::${bucketName}/*`,
+          },
+          {
+            Effect: "Allow",
+            Action: [
+              "logs:CreateLogGroup",
+              "logs:CreateLogStream",
+              "logs:PutLogEvents",
+            ],
+            Resource: "*",
+          },
+        ],
+      }),
+    }));
+    console.log(`  Attached CodeBuildPermissions policy`);
+  } catch (err: any) {
+    console.log(`  Warning: could not attach policy to ${roleName}: ${err.message}`);
   }
 }
 

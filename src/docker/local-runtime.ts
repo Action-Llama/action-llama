@@ -86,6 +86,7 @@ export class LocalDockerRuntime implements ContainerRuntime {
   }
 
   async buildImage(opts: BuildImageOpts): Promise<string> {
+    opts.onProgress?.("Building image locally");
     execFileSync("docker", [
       "build",
       "-t", opts.tag,

@@ -70,8 +70,8 @@ function Header({ info, agentCount }: { info: SchedulerInfo | null; agentCount: 
 }
 
 function AgentRow({ agent }: { agent: AgentStatus }) {
-  const stateColor = agent.state === "running" ? "green" : agent.state === "error" ? "red" : "white";
-  const stateLabel = agent.state === "running" ? "Running" : agent.state === "error" ? "Error" : "Idle";
+  const stateColor = agent.state === "running" ? "green" : agent.state === "building" ? "yellow" : agent.state === "error" ? "red" : "white";
+  const stateLabel = agent.state === "running" ? "Running" : agent.state === "building" ? "Building" : agent.state === "error" ? "Error" : "Idle";
 
   // Show status text, or last error for error state
   const detail = agent.statusText

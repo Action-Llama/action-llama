@@ -147,6 +147,7 @@ export class CloudRunJobRuntime implements ContainerRuntime {
 
     // Use Cloud Build — no local Docker needed
     // Submits the build context to Cloud Build which builds and pushes in one step
+    opts.onProgress?.("Submitting to Cloud Build");
     execFileSync("gcloud", [
       "builds", "submit",
       "--tag", remoteTag,

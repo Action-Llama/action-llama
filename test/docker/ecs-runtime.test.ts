@@ -17,6 +17,7 @@ const mockSmSend = vi.fn();
 const mockLogsSend = vi.fn();
 const mockCbSend = vi.fn();
 const mockS3Send = vi.fn();
+const mockEcrSend = vi.fn();
 
 vi.mock("@aws-sdk/client-ecs", () => {
   const ECSClient = vi.fn(function (this: any) { this.send = mockEcsSend; });
@@ -38,7 +39,8 @@ vi.mock("@aws-sdk/client-cloudwatch-logs", () => {
   const CloudWatchLogsClient = vi.fn(function (this: any) { this.send = mockLogsSend; });
   const GetLogEventsCommand = vi.fn(function (this: any, input: any) { this._type = "GetLogEvents"; this.input = input; });
   const FilterLogEventsCommand = vi.fn(function (this: any, input: any) { this._type = "FilterLogEvents"; this.input = input; });
-  return { CloudWatchLogsClient, GetLogEventsCommand, FilterLogEventsCommand };
+  const CreateLogGroupCommand = vi.fn(function (this: any, input: any) { this._type = "CreateLogGroup"; this.input = input; });
+  return { CloudWatchLogsClient, GetLogEventsCommand, FilterLogEventsCommand, CreateLogGroupCommand };
 });
 
 vi.mock("@aws-sdk/client-codebuild", () => {
@@ -57,6 +59,14 @@ vi.mock("@aws-sdk/client-s3", () => {
   return { S3Client, PutObjectCommand, CreateBucketCommand, HeadBucketCommand };
 });
 
+vi.mock("@aws-sdk/client-ecr", () => {
+  const ECRClient = vi.fn(function (this: any) { this.send = mockEcrSend; });
+  const BatchGetImageCommand = vi.fn(function (this: any, input: any) { this._type = "BatchGetImage"; this.input = input; });
+  const PutImageCommand = vi.fn(function (this: any, input: any) { this._type = "PutImage"; this.input = input; });
+  const GetAuthorizationTokenCommand = vi.fn(function (this: any, input: any) { this._type = "GetAuthorizationToken"; this.input = input; });
+  return { ECRClient, BatchGetImageCommand, PutImageCommand, GetAuthorizationTokenCommand };
+});
+
 // Mock child_process for tar commands
 vi.mock("child_process", () => ({
   execFileSync: vi.fn((_cmd: string, _args: string[]) => ""),
@@ -67,6 +77,11 @@ vi.mock("fs", async () => {
   const actual = await vi.importActual<typeof import("fs")>("fs");
   return { ...actual, createReadStream: vi.fn(() => "mock-stream") };
 });
+
+// Helpers for buildImage test
+import { mkdtempSync, writeFileSync, mkdirSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 
 const defaultConfig = {
   awsRegion: "us-east-1",
@@ -186,11 +201,44 @@ describe("ECSFargateRuntime", () => {
     });
   });
 
+  it("buildImage with baseImage rewrite hashes temp Dockerfile before cleanup", async () => {
+    const runtime = new ECSFargateRuntime(defaultConfig);
+
+    // Set up a real temp context dir with the files buildImage expects
+    const contextDir = mkdtempSync(join(tmpdir(), "al-build-test-"));
+    writeFileSync(join(contextDir, "Dockerfile"), "FROM al-agent:latest\nRUN echo hello\n");
+    writeFileSync(join(contextDir, "package.json"), '{"name":"test"}');
+    mkdirSync(join(contextDir, "dist"));
+    writeFileSync(join(contextDir, "dist", "index.js"), "console.log('hi')");
+
+    // Mock S3 HeadBucket (ensureBuildBucket)
+    mockS3Send.mockResolvedValueOnce({});
+
+    // Mock ECR BatchGetImage — image exists (cache hit), so we skip the actual CodeBuild
+    mockEcrSend.mockResolvedValueOnce({
+      images: [{ imageId: { imageTag: "cached" } }],
+    });
+
+    // This would throw ENOENT before the fix because the temp Dockerfile
+    // was deleted before hashing
+    const tag = await runtime.buildImage({
+      tag: "al-dev:latest",
+      dockerfile: "Dockerfile",
+      contextDir,
+      baseImage: "123456789012.dkr.ecr.us-east-1.amazonaws.com/al-images:base",
+    });
+
+    expect(tag).toContain("123456789012.dkr.ecr.us-east-1.amazonaws.com/al-images:");
+  });
+
   it("derives per-agent task role ARN from ECR repo account ID", async () => {
     const runtime = new ECSFargateRuntime(defaultConfig);
 
     // Mock Secrets Manager — no secrets for anthropic_key
     mockSmSend.mockResolvedValueOnce({ SecretList: [] });
+
+    // Mock CreateLogGroup (ensureLogGroup)
+    mockLogsSend.mockResolvedValueOnce({});
 
     // Mock RegisterTaskDefinition
     mockEcsSend.mockResolvedValueOnce({

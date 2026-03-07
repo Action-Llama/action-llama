@@ -45,10 +45,25 @@ export async function execute(opts: { project: string; noDocker?: boolean; cloud
 
   const statusTracker = new StatusTracker();
 
+  // Render TUI early so build progress is visible
+  statusTracker.setSchedulerInfo({
+    mode,
+    runtime: dockerEnabled ? (opts.cloud ? globalConfig.cloud?.provider : "local") : undefined,
+    gatewayPort: null,
+    cronJobCount: 0,
+    webhooksActive: false,
+    webhookUrls: [],
+    startedAt: new Date(),
+  });
+
+  const { renderTUI } = await import("../../tui/render.js");
+  const { unmount } = await renderTUI(statusTracker);
+
   const { cronJobs, gateway, webhookRegistry, webhookUrls } = await startScheduler(projectPath, globalConfig, statusTracker, opts.cloud);
 
   const gatewayPort = gateway ? (globalConfig.gateway?.port || 8080) : null;
 
+  // Update scheduler info now that startup is complete
   statusTracker.setSchedulerInfo({
     mode,
     runtime: dockerEnabled ? (opts.cloud ? globalConfig.cloud?.provider : "local") : undefined,
@@ -58,10 +73,6 @@ export async function execute(opts: { project: string; noDocker?: boolean; cloud
     webhookUrls: webhookUrls || [],
     startedAt: new Date(),
   });
-
-  // Lazy-import TUI to avoid loading React unless needed
-  const { renderTUI } = await import("../../tui/render.js");
-  const { unmount } = await renderTUI(statusTracker);
 
   // Coordinate SIGINT: unmount Ink, then exit
   const shutdown = () => {

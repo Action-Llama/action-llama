@@ -2,7 +2,7 @@ import { EventEmitter } from "events";
 
 export interface AgentStatus {
   name: string;
-  state: "idle" | "running" | "error";
+  state: "idle" | "running" | "building" | "error";
   statusText: string | null;
   lastError: string | null;
   lastRunAt: Date | null;
@@ -45,7 +45,7 @@ export class StatusTracker extends EventEmitter {
     this.emit("update");
   }
 
-  setAgentState(name: string, state: "idle" | "running" | "error"): void {
+  setAgentState(name: string, state: "idle" | "running" | "building" | "error"): void {
     const agent = this.agents.get(name);
     if (!agent) return;
     agent.state = state;

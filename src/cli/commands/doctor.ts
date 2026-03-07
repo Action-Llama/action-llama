@@ -304,9 +304,42 @@ async function reconcileAws(projectPath: string, cloud: CloudConfig): Promise<vo
     }],
   });
 
-  console.log(`\nSetting up ECS task roles for ${agents.length} agent(s)...\n`);
-
   const iamClient = new IAMClient({ region: awsRegion });
+
+  // Ensure execution role has Secrets Manager access (ECS uses this role to inject secrets)
+  if (cloud.executionRoleArn) {
+    const executionRoleName = cloud.executionRoleArn.split("/").pop()!;
+    try {
+      await iamClient.send(new PutRolePolicyCommand({
+        RoleName: executionRoleName,
+        PolicyName: "ActionLlamaExecution",
+        PolicyDocument: JSON.stringify({
+          Version: "2012-10-17",
+          Statement: [
+            {
+              Effect: "Allow",
+              Action: "secretsmanager:GetSecretValue",
+              Resource: `arn:aws:secretsmanager:${awsRegion}:${accountId}:secret:${secretPrefix}/*`,
+            },
+            {
+              Effect: "Allow",
+              Action: "logs:CreateLogGroup",
+              Resource: `arn:aws:logs:${awsRegion}:${accountId}:log-group:${AWS_CONSTANTS.LOG_GROUP}*`,
+            },
+          ],
+        }),
+      }));
+      console.log(`Execution role (${executionRoleName}): Secrets Manager + CloudWatch policy applied`);
+    } catch (err: any) {
+      throw new Error(
+        `Failed to attach ActionLlamaExecution policy to ${executionRoleName}: ${err.message}\n` +
+        `The execution role needs secretsmanager:GetSecretValue and logs:CreateLogGroup permissions.\n` +
+        `Either grant your IAM user iam:PutRolePolicy on this role, or attach the policy manually in the AWS Console.`
+      );
+    }
+  }
+
+  console.log(`\nSetting up ECS task roles for ${agents.length} agent(s)...\n`);
 
   for (const name of agents) {
     const config = loadAgentConfig(projectPath, name);

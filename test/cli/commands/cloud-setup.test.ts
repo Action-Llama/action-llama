@@ -64,6 +64,7 @@ vi.mock("@aws-sdk/client-iam", () => ({
   CreateRoleCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "CreateRole", ...input }); }),
   GetRoleCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "GetRole", ...input }); }),
   AttachRolePolicyCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "AttachRolePolicy", ...input }); }),
+  PutRolePolicyCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "PutRolePolicy", ...input }); }),
 }));
 
 vi.mock("@aws-sdk/client-ec2", () => ({
@@ -141,7 +142,8 @@ describe("cloud setup", () => {
       .mockResolvedValueOnce({ Roles: [] })                            // ListRoles (task role)
       .mockResolvedValueOnce({                                         // CreateRole (task role)
         Role: { Arn: "arn:aws:iam::123456789012:role/al-default-task-role" },
-      });
+      })
+      .mockResolvedValueOnce({});                                      // PutRolePolicy (execution role)
 
     // EC2: single VPC (auto-selected), subnets, security groups
     mockEc2Send
@@ -221,7 +223,8 @@ describe("cloud setup", () => {
       .mockResolvedValueOnce({ Role: { Arn: "arn:aws:iam::123456789012:role/al-ecs-execution-role" } })
       .mockResolvedValueOnce({})  // AttachRolePolicy
       .mockResolvedValueOnce({ Roles: [] })
-      .mockResolvedValueOnce({ Role: { Arn: "arn:aws:iam::123456789012:role/al-default-task-role" } });
+      .mockResolvedValueOnce({ Role: { Arn: "arn:aws:iam::123456789012:role/al-default-task-role" } })
+      .mockResolvedValueOnce({});  // PutRolePolicy
 
     // EC2: single VPC, subnets, security groups
     mockEc2Send

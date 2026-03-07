@@ -29,6 +29,10 @@ export interface BuildImageOpts {
   dockerfile: string;
   /** Build context directory */
   contextDir: string;
+  /** Optional callback for progress updates during the build */
+  onProgress?: (message: string) => void;
+  /** Remote URI of the base image — used to rewrite FROM in cloud builds */
+  baseImage?: string;
 }
 
 export interface RunningAgent {
