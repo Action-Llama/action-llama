@@ -24,6 +24,7 @@ export interface WebhookContext {
 
 export interface GitHubWebhookFilter {
   repos?: string[];
+  orgs?: string[];
   events?: string[];
   actions?: string[];
   labels?: string[];
@@ -46,6 +47,7 @@ export interface WebhookTrigger {
   events?: string[];
   actions?: string[];
   repos?: string[];
+  orgs?: string[];
   labels?: string[];
   assignee?: string;
   author?: string;

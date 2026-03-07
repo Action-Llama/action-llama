@@ -32,6 +32,8 @@ export const github: WebhookDefinition = {
         { value: "created", label: "Created" },
       ],
     },
+    { field: "repos", label: "Repositories", type: "text[]" },
+    { field: "orgs", label: "Organizations", type: "text[]" },
     { field: "labels", label: "Labels", type: "text[]" },
     { field: "assignee", label: "Assignee", type: "text" },
     { field: "branches", label: "Branches", type: "text[]" },
