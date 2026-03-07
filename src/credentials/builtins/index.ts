@@ -2,6 +2,12 @@ import type { CredentialDefinition } from "../schema.js";
 import githubToken from "./github-token.js";
 import anthropicKey from "./anthropic-key.js";
 import openaiKey from "./openai-key.js";
+import groqKey from "./groq-key.js";
+import googleKey from "./google-key.js";
+import xaiKey from "./xai-key.js";
+import mistralKey from "./mistral-key.js";
+import openrouterKey from "./openrouter-key.js";
+import customKey from "./custom-key.js";
 import sentryToken from "./sentry-token.js";
 import gitSsh from "./id-rsa.js";
 import githubWebhookSecret from "./github-webhook-secret.js";
@@ -15,6 +21,12 @@ export const builtinCredentials: Record<string, CredentialDefinition> = {
   "github_token": githubToken,
   "anthropic_key": anthropicKey,
   "openai_key": openaiKey,
+  "groq_key": groqKey,
+  "google_key": googleKey,
+  "xai_key": xaiKey,
+  "mistral_key": mistralKey,
+  "openrouter_key": openrouterKey,
+  "custom_key": customKey,
   "sentry_token": sentryToken,
   "git_ssh": gitSsh,
   "github_webhook_secret": githubWebhookSecret,
