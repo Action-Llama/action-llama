@@ -43,6 +43,7 @@ program
   .option("-p, --project <dir>", "project directory", ".")
   .option("--no-docker", "disable Docker container isolation (run agents directly on host)")
   .option("-c, --cloud", "run on cloud infrastructure")
+  .option("--no-tui", "disable interactive TUI, log status changes to stdout")
   .action(async (opts) => {
     const { execute } = await import("./commands/start.js");
     await execute(opts);

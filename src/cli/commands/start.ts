@@ -5,7 +5,7 @@ import { startScheduler } from "../../scheduler/index.js";
 import { StatusTracker } from "../../tui/status-tracker.js";
 import { execute as runDoctor } from "./doctor.js";
 
-export async function execute(opts: { project: string; noDocker?: boolean; cloud?: boolean }): Promise<void> {
+export async function execute(opts: { project: string; noDocker?: boolean; cloud?: boolean; tui?: boolean }): Promise<void> {
   const projectPath = resolve(opts.project);
 
   // Guard: refuse to run if the project path looks like an agent directory
@@ -56,8 +56,17 @@ export async function execute(opts: { project: string; noDocker?: boolean; cloud
     startedAt: new Date(),
   });
 
-  const { renderTUI } = await import("../../tui/render.js");
-  const { unmount } = await renderTUI(statusTracker);
+  let cleanup: () => void;
+
+  if (opts.tui === false) {
+    const { attachPlainLogger } = await import("../../tui/plain-logger.js");
+    const { detach } = attachPlainLogger(statusTracker);
+    cleanup = detach;
+  } else {
+    const { renderTUI } = await import("../../tui/render.js");
+    const { unmount } = await renderTUI(statusTracker);
+    cleanup = unmount;
+  }
 
   const { cronJobs, gateway, webhookRegistry, webhookUrls } = await startScheduler(projectPath, globalConfig, statusTracker, opts.cloud);
 
@@ -74,9 +83,9 @@ export async function execute(opts: { project: string; noDocker?: boolean; cloud
     startedAt: new Date(),
   });
 
-  // Coordinate SIGINT: unmount Ink, then exit
+  // Coordinate SIGINT: cleanup, then exit
   const shutdown = () => {
-    unmount();
+    cleanup();
     process.exit(0);
   };
 
