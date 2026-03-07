@@ -1,5 +1,6 @@
 import { resolve } from "path";
 import { execSync } from "child_process";
+import { select } from "@inquirer/prompts";
 import { scaffoldProject } from "../../setup/scaffold.js";
 import { CREDENTIALS_DIR } from "../../shared/paths.js";
 import { resolveCredential } from "../../credentials/registry.js";
@@ -13,33 +14,83 @@ export async function execute(name: string): Promise<void> {
 
   console.log("\n=== Action Llama — New Project ===\n");
 
-  // Only prompt for the Anthropic credential; other credentials are
-  // handled per-agent by `al doctor` (which runs automatically before `al start`).
-  console.log("--- Anthropic Auth ---\n");
-  const anthropicDef = resolveCredential("anthropic_key");
-  const result = await promptCredential(anthropicDef);
+  // Step 1: Choose model provider
+  console.log("--- Model Provider ---\n");
+  const provider = await select({
+    message: "Select model provider:",
+    choices: [
+      { name: "Anthropic Claude (recommended)", value: "anthropic" },
+      { name: "OpenAI GPT/Codex", value: "openai" },
+    ],
+    default: "anthropic",
+  });
+
+  // Step 2: Choose model based on provider
+  let model: string;
+  let thinkingLevel: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
+  if (provider === "openai") {
+    console.log("\n--- OpenAI Model ---\n");
+    model = await select({
+      message: "Select OpenAI model:",
+      choices: [
+        { name: "gpt-4o (recommended for coding)", value: "gpt-4o" },
+        { name: "gpt-4", value: "gpt-4" },
+        { name: "o1-preview", value: "o1-preview" },
+        { name: "gpt-3.5-turbo", value: "gpt-3.5-turbo" },
+      ],
+      default: "gpt-4o",
+    });
+
+    thinkingLevel = "low"; // OpenAI models work better with lower thinking levels
+  } else {
+    console.log("\n--- Anthropic Model ---\n");
+    model = await select({
+      message: "Select Claude model:",
+      choices: [
+        { name: "claude-sonnet-4-20250514 (recommended)", value: "claude-sonnet-4-20250514" },
+        { name: "claude-opus-4-20250514", value: "claude-opus-4-20250514" },
+        { name: "claude-haiku-3-5-20241022", value: "claude-haiku-3-5-20241022" },
+      ],
+      default: "claude-sonnet-4-20250514",
+    });
+
+    thinkingLevel = "medium";
+  }
+
+  // Step 3: Set up credentials
+  console.log(`\n--- ${provider === "anthropic" ? "Anthropic" : "OpenAI"} Auth ---\n`);
+  
+  const credentialType = provider === "anthropic" ? "anthropic_key" : "openai_key";
+  const credentialDef = resolveCredential(credentialType);
+  const result = await promptCredential(credentialDef);
 
   if (result && Object.keys(result.values).length > 0) {
-    const existing = loadCredentialField("anthropic_key", "default", "token");
+    const existing = loadCredentialField(credentialType, "default", "token");
     const newValue = result.values.token;
     if (newValue && newValue !== existing) {
-      writeCredentialFields("anthropic_key", "default", result.values);
-      console.log(`  Wrote ${CREDENTIALS_DIR}/anthropic_key/default/`);
+      writeCredentialFields(credentialType, "default", result.values);
+      console.log(`  Wrote ${CREDENTIALS_DIR}/${credentialType}/default/`);
     } else {
-      console.log(`  Anthropic key unchanged`);
+      console.log(`  ${provider === "anthropic" ? "Anthropic" : "OpenAI"} key unchanged`);
     }
   } else {
-    console.log("  Using existing pi auth (no key file needed)");
+    if (provider === "anthropic") {
+      console.log("  Using existing pi auth (no key file needed)");
+    } else {
+      console.log("  No API key provided - you'll need to configure it later with 'al doctor'");
+    }
   }
 
   console.log("\n--- Writing configuration ---\n");
 
   const globalConfig: GlobalConfig = {
     model: {
-      provider: "anthropic",
-      model: "claude-sonnet-4-20250514",
-      thinkingLevel: "medium",
-      authType: result ? "api_key" : "pi_auth",
+      provider,
+      model,
+      thinkingLevel,
+      authType: result && Object.keys(result.values).length > 0 ? "api_key" : 
+                (provider === "anthropic" ? "pi_auth" : "api_key"),
     },
   };
 
@@ -55,6 +106,8 @@ export async function execute(name: string): Promise<void> {
   console.log(`
 Setup complete!
 
+  Provider:    ${provider}
+  Model:       ${model}
   Credentials: ${CREDENTIALS_DIR}/
   Project:     ${projectPath}/
 
