@@ -18,7 +18,7 @@ import type { WebhookContext, WebhookFilter, WebhookTrigger, GitHubWebhookFilter
 
 interface RunnerLike {
   isRunning: boolean;
-  run(prompt: string): Promise<RunOutcome>;
+  run(prompt: string, triggerInfo?: { type: 'schedule' | 'webhook' | 'agent'; source?: string }): Promise<RunOutcome>;
 }
 
 // Provider type → credential type for loading secrets
@@ -100,7 +100,7 @@ async function runTriggered(
   depth: number,
   ctx: SchedulerContext
 ): Promise<void> {
-  const { result, triggers } = await runner.run(prompt);
+  const { result, triggers } = await runner.run(prompt, { type: 'agent', source: sourceAgent });
   if (triggers.length > 0) {
     dispatchTriggers(triggers, agentConfig.name, depth, ctx);
   }
@@ -116,7 +116,7 @@ async function runWithReruns(
   depth: number,
   ctx: SchedulerContext
 ): Promise<void> {
-  let { result, triggers } = await runner.run(buildScheduledPrompt(agentConfig));
+  let { result, triggers } = await runner.run(buildScheduledPrompt(agentConfig), { type: 'schedule' });
   if (triggers.length > 0) {
     dispatchTriggers(triggers, agentConfig.name, depth, ctx);
   }
@@ -124,7 +124,7 @@ async function runWithReruns(
   while (result === "completed" && reruns < ctx.maxReruns) {
     reruns++;
     ctx.logger.info({ rerun: reruns, maxReruns: ctx.maxReruns }, `${agentConfig.name} did work, re-running immediately`);
-    ({ result, triggers } = await runner.run(buildScheduledPrompt(agentConfig)));
+    ({ result, triggers } = await runner.run(buildScheduledPrompt(agentConfig), { type: 'schedule' }));
     if (triggers.length > 0) {
       dispatchTriggers(triggers, agentConfig.name, depth, ctx);
     }
@@ -322,37 +322,54 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
     // 3. Build per-agent images for agents with a custom Dockerfile
     const { existsSync } = await import("fs");
-    for (const agentConfig of agentConfigs) {
+    const agentsWithCustomImages = agentConfigs.filter(ac => 
+      existsSync(resolvePath(projectPath, ac.name, "Dockerfile"))
+    );
+    const totalCustomImages = agentsWithCustomImages.length;
+    
+    for (const [index, agentConfig] of agentConfigs.entries()) {
       const agentDockerfile = resolvePath(projectPath, agentConfig.name, "Dockerfile");
       if (!existsSync(agentDockerfile)) {
         agentImages[agentConfig.name] = baseImage;
         continue;
       }
 
+      const customImageIndex = agentsWithCustomImages.findIndex(ac => ac.name === agentConfig.name) + 1;
+      const progressIndicator = totalCustomImages > 1 ? ` (${customImageIndex}/${totalCustomImages})` : "";
+      
       statusTracker?.setAgentState(agentConfig.name, "building");
-      statusTracker?.setAgentStatusText(agentConfig.name, "Building custom image");
+      statusTracker?.setAgentStatusText(agentConfig.name, `Building custom image${progressIndicator}`);
       const agentImageTag = AWS_CONSTANTS.agentImage(agentConfig.name);
       const image = await runtime.buildImage({
         tag: agentImageTag,
         dockerfile: agentDockerfile,
         contextDir: packageRoot,
         baseImage,
-        onProgress: (msg) => statusTracker?.setAgentStatusText(agentConfig.name, msg),
+        onProgress: (msg) => statusTracker?.setAgentStatusText(agentConfig.name, `${msg}${progressIndicator}`),
       });
       agentImages[agentConfig.name] = image;
-      logger.info({ agent: agentConfig.name, image }, "Built custom agent image");
+      logger.info({ agent: agentConfig.name, image, progress: `${customImageIndex}/${totalCustomImages}` }, "Built custom agent image");
     }
 
     // 4. Push images to remote registry if needed (no-op for local, tags+pushes for cloud)
     if (runtimeType !== "local") {
+      const imagesToPush = agentConfigs.filter(ac => {
+        const currentImage = agentImages[ac.name] || baseImage;
+        return !currentImage.includes("/");
+      });
+      const totalImagesToPush = imagesToPush.length;
+      
+      let pushIndex = 0;
       for (const agentConfig of agentConfigs) {
         const currentImage = agentImages[agentConfig.name] || baseImage;
         if (!currentImage.includes("/")) {
           // Looks like a local tag — needs pushing
-          statusTracker?.setAgentStatusText(agentConfig.name, "Pushing image to registry");
+          pushIndex++;
+          const progressIndicator = totalImagesToPush > 1 ? ` (${pushIndex}/${totalImagesToPush})` : "";
+          statusTracker?.setAgentStatusText(agentConfig.name, `Pushing image to registry${progressIndicator}`);
           const remoteImage = await runtime.pushImage(currentImage);
           agentImages[agentConfig.name] = remoteImage;
-          logger.info({ agent: agentConfig.name, image: remoteImage }, "Pushed image to registry");
+          logger.info({ agent: agentConfig.name, image: remoteImage, progress: `${pushIndex}/${totalImagesToPush}` }, "Pushed image to registry");
         }
       }
     }
@@ -459,7 +476,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
               "webhook triggering agent"
             );
             const prompt = buildWebhookPrompt(agentConfig, context);
-            runner.run(prompt).then(({ triggers }) => {
+            runner.run(prompt, { type: 'webhook', source: context.event }).then(({ triggers }) => {
               if (triggers.length > 0) {
                 dispatchTriggers(triggers, agentConfig.name, 0, schedulerCtx);
               }

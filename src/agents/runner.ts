@@ -73,7 +73,7 @@ export class AgentRunner {
     return this.running;
   }
 
-  async run(prompt: string): Promise<RunOutcome> {
+  async run(prompt: string, triggerInfo?: { type: 'schedule' | 'webhook' | 'agent'; source?: string }): Promise<RunOutcome> {
     if (this.running) {
       this.logger.warn(`${this.agentConfig.name} is already running, skipping`);
       return { result: "error", triggers: [] };
@@ -81,7 +81,15 @@ export class AgentRunner {
 
     this.running = true;
     this.statusTracker?.setAgentState(this.agentConfig.name, "running");
-    this.logger.info(`Starting ${this.agentConfig.name} run`);
+    
+    if (triggerInfo) {
+      const triggerDetails = triggerInfo.type === 'agent' && triggerInfo.source 
+        ? `${triggerInfo.type} (${triggerInfo.source})` 
+        : triggerInfo.type;
+      this.logger.info(`Starting ${this.agentConfig.name} run (triggered by ${triggerDetails})`);
+    } else {
+      this.logger.info(`Starting ${this.agentConfig.name} run`);
+    }
     const runStartTime = Date.now();
     let runError: string | undefined;
 
