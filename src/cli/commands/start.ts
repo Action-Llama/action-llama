@@ -17,7 +17,7 @@ export async function execute(opts: { project: string; noDocker?: boolean; cloud
   }
 
   // Ensure all credentials are present before starting
-  await runDoctor({ project: opts.project });
+  await runDoctor({ project: opts.project, cloud: opts.cloud });
 
   const globalConfig = loadGlobalConfig(projectPath);
 

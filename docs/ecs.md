@@ -455,6 +455,32 @@ Created automatically by `al doctor -c`. Each agent gets its own role scoped to 
 |---------|---------|
 | Secrets Manager | `GetSecretValue` (scoped to only that agent's secrets) |
 
+## Deploying the scheduler
+
+The scheduler is a plain Node.js process — it doesn't need Docker locally. You can deploy it to any platform that runs Node.js (Railway, Fly, EC2, etc.). The scheduler orchestrates remote ECS tasks and reads credentials from Secrets Manager.
+
+**Required environment variables:**
+
+| Env var | Description |
+|---------|-------------|
+| `AWS_ACCESS_KEY_ID` | AWS access key for the operator IAM user/role |
+| `AWS_SECRET_ACCESS_KEY` | AWS secret key |
+
+These provide the scheduler with the same permissions as running `al` locally. Use the [operator IAM policy](#operator-iam-policy) below to scope the access.
+
+**Start command:**
+
+```
+al start -c
+```
+
+**What needs to be in the deploy:**
+
+- Your project repo (with `config.toml`, agent directories containing `agent-config.toml` and `PLAYBOOK.md`)
+- `@action-llama/action-llama` as a dependency in `package.json`
+
+The scheduler builds images via CodeBuild, launches containers on ECS Fargate, and streams logs from CloudWatch — all remotely. No local Docker is needed.
+
 ## Troubleshooting
 
 **"ECS runtime requires cloud.awsRegion..."** — Ensure all required fields are set in `config.toml` under `[cloud]`.
