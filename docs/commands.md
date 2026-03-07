@@ -143,7 +143,7 @@ al status -p .
 al status -c                  # Show cloud status
 ```
 
-Displays each agent's schedule, repos, credentials, and webhook configuration.
+Displays each agent's schedule, credentials, and webhook configuration.
 
 | Option | Description |
 |--------|-------------|

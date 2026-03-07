@@ -339,6 +339,18 @@ Agent images are built automatically on startup. If no \`Dockerfile\` is present
 
 Start all agents with \`al start\` (or \`npx al start\`). This starts the scheduler which runs all discovered agents on their configured schedules/webhooks. There is no per-agent start command — \`al start\` always starts the entire project.
 
+### Automatic re-runs
+
+When a scheduled agent completes productive work (i.e. it does not respond with \`[SILENT]\`), the scheduler immediately re-runs it. This continues until the agent reports \`[SILENT]\` (no more work), hits an error, or reaches the \`maxReruns\` limit. This way an agent drains its work queue without waiting for the next cron tick.
+
+Set \`maxReruns\` in \`config.toml\` to control the limit (default: 10):
+
+\`\`\`toml
+maxReruns = 5
+\`\`\`
+
+Webhook-triggered runs do not re-run — they respond to a single event.
+
 ## Further Documentation
 
 Full documentation is available on GitHub:

@@ -117,7 +117,7 @@ Most commands accept `-p <dir>` to set the project directory and `-c` to target 
 
 Configuration lives in two places:
 
-- **`config.toml`** (project root) — global settings: default model (`[model]`), local Docker options (`[local]`), and cloud provider config (`[cloud]`).
+- **`config.toml`** (project root) — global settings: default model (`[model]`), local Docker options (`[local]`), cloud provider config (`[cloud]`), and scheduler options like `maxReruns`.
 - **`agent-config.toml`** (per agent) — model, credentials, schedule, webhooks, and parameters. Each agent can use a different model (e.g., Opus for dev, Haiku for devops).
 
 Credentials are stored outside the project in `~/.action-llama-credentials/` and referenced by name in agent configs. Run `al doctor` to configure them interactively.

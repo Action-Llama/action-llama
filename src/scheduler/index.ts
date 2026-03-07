@@ -5,7 +5,7 @@ import type { GlobalConfig, AgentConfig } from "../shared/config.js";
 import { requireCredentialRef, loadCredentialField, listCredentialInstances, backendRequireCredentialRef, backendLoadField, backendListInstances } from "../shared/credentials.js";
 import { createLogger, createFileOnlyLogger } from "../shared/logger.js";
 import { agentDir } from "../shared/paths.js";
-import { AgentRunner } from "../agents/runner.js";
+import { AgentRunner, type RunResult } from "../agents/runner.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import { buildScheduledPrompt, buildWebhookPrompt } from "../agents/prompt.js";
 import { WebhookRegistry } from "../webhooks/registry.js";
@@ -18,7 +18,7 @@ import type { WebhookContext, WebhookFilter, WebhookTrigger, GitHubWebhookFilter
 
 interface RunnerLike {
   isRunning: boolean;
-  run(prompt: string): Promise<void>;
+  run(prompt: string): Promise<RunResult>;
 }
 
 // Provider type → credential type for loading secrets
@@ -48,6 +48,26 @@ function buildFilterFromTrigger(trigger: WebhookTrigger): WebhookFilter | undefi
   return undefined;
 }
 
+const DEFAULT_MAX_RERUNS = 10;
+
+async function runWithReruns(
+  runner: RunnerLike,
+  agentConfig: AgentConfig,
+  maxReruns: number,
+  logger: ReturnType<typeof createLogger>
+): Promise<void> {
+  let result = await runner.run(buildScheduledPrompt(agentConfig));
+  let reruns = 0;
+  while (result === "completed" && reruns < maxReruns) {
+    reruns++;
+    logger.info({ rerun: reruns, maxReruns }, `${agentConfig.name} did work, re-running immediately`);
+    result = await runner.run(buildScheduledPrompt(agentConfig));
+  }
+  if (result === "completed" && reruns >= maxReruns) {
+    logger.warn({ maxReruns }, `${agentConfig.name} hit max reruns limit`);
+  }
+}
+
 export async function startScheduler(projectPath: string, globalConfigOverride?: GlobalConfig, statusTracker?: StatusTracker, cloudMode?: boolean) {
   const mkLogger = statusTracker ? createFileOnlyLogger : createLogger;
   const logger = mkLogger(projectPath, "scheduler");
@@ -74,6 +94,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     await backendRequireCredentialRef(credRef);
   }
 
+  const maxReruns = globalConfig.maxReruns ?? DEFAULT_MAX_RERUNS;
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const dockerEnabled = globalConfig.local?.enabled === true;
   const anyWebhooks = agentConfigs.some((a) => a.webhooks?.length);
@@ -392,7 +413,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
         return;
       }
       logger.info(`Triggering ${agentConfig.name} (scheduled)`);
-      await runner.run(buildScheduledPrompt(agentConfig));
+      await runWithReruns(runner, agentConfig, maxReruns, logger);
     });
 
     cronJobs.push(job);
@@ -422,7 +443,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
     const runner = runners[agentConfig.name];
     logger.info(`Initial run for ${agentConfig.name}`);
-    runner.run(buildScheduledPrompt(agentConfig)).catch((err) => {
+    runWithReruns(runner, agentConfig, maxReruns, logger).catch((err) => {
       logger.error({ err }, `Initial ${agentConfig.name} run failed`);
     });
   }

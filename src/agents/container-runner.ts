@@ -6,9 +6,11 @@ import type { Logger } from "../shared/logger.js";
 import type { ContainerRuntime, RuntimeCredentials } from "../docker/runtime.js";
 import type { ContainerRegistration } from "../gateway/types.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
+import type { RunResult } from "./runner.js";
 
 export class ContainerAgentRunner {
   private _running = false;
+  private _wasSilent = false;
   private runtime: ContainerRuntime;
   private globalConfig: GlobalConfig;
   private agentConfig: AgentConfig;
@@ -96,32 +98,35 @@ export class ContainerAgentRunner {
     }
 
     if (line === "[SILENT]") {
+      this._wasSilent = true;
       this.logger.info("no work to do");
       this.statusTracker?.addLogLine(this.agentConfig.name, "no work to do");
     }
   }
 
-  async run(prompt: string): Promise<void> {
+  async run(prompt: string): Promise<RunResult> {
     if (this._running) {
       this.logger.warn(`${this.agentConfig.name} is already running, skipping`);
-      return;
+      return "error";
     }
 
     // Check if this agent already has a running container (e.g. orphan from a previous scheduler)
     try {
       if (await this.runtime.isAgentRunning(this.agentConfig.name)) {
         this.logger.warn(`${this.agentConfig.name} is already running in the runtime, skipping`);
-        return;
+        return "error";
       }
     } catch {
       // Best-effort check — proceed if it fails
     }
 
     this._running = true;
+    this._wasSilent = false;
     this.statusTracker?.setAgentState(this.agentConfig.name, "running");
     this.logger.info(`Starting ${this.agentConfig.name} container run`);
     const runStartTime = Date.now();
     let runError: string | undefined;
+    let runResult: RunResult = "error";
 
     const shutdownSecret = randomUUID();
     let credentials: RuntimeCredentials | undefined;
@@ -198,8 +203,10 @@ export class ContainerAgentRunner {
       if (exitCode !== 0) {
         this.logger.error({ exitCode, elapsed: `${elapsed}s` }, "container exited with error");
         runError = `Container exited with code ${exitCode}`;
+        runResult = "error";
       } else {
         this.logger.info({ exitCode, elapsed: `${elapsed}s` }, "container finished");
+        runResult = this._wasSilent ? "silent" : "completed";
       }
     } catch (err: any) {
       this.logger.error({ err }, `${this.agentConfig.name} container run failed`);
@@ -219,5 +226,6 @@ export class ContainerAgentRunner {
       this.statusTracker?.completeRun(this.agentConfig.name, elapsed, runError);
       this._running = false;
     }
+    return runResult;
   }
 }

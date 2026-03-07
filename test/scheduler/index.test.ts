@@ -40,7 +40,7 @@ vi.mock("croner", () => ({
 }));
 
 // Mock AgentRunner
-const mockRun = vi.fn().mockResolvedValue(undefined);
+const mockRun = vi.fn().mockResolvedValue("silent");
 let mockIsRunning = false;
 vi.mock("../../src/agents/runner.js", () => ({
   AgentRunner: class {
@@ -141,5 +141,50 @@ describe("startScheduler", () => {
     await startScheduler(tmpDir);
     // Should have logged the error (the run catches and logs)
     // The key thing is startScheduler doesn't throw
+  });
+
+  it("re-runs agent immediately when it did work", async () => {
+    // First call returns "completed", second returns "silent"
+    mockRun
+      .mockResolvedValueOnce("completed")
+      .mockResolvedValueOnce("silent")
+      .mockResolvedValue("silent");
+    await startScheduler(tmpDir);
+
+    // Wait for the initial rerun loop of the first agent to settle
+    await new Promise((r) => setTimeout(r, 50));
+
+    // dev agent: 1 initial + 1 rerun = 2 calls
+    // reviewer + devops: 1 each (silent, no rerun)
+    // Total: 4
+    expect(mockRun).toHaveBeenCalledTimes(4);
+  });
+
+  it("stops re-running after max reruns", async () => {
+    // Always returns "completed" — should stop at maxReruns
+    mockRun.mockResolvedValue("completed");
+
+    // Use a small maxReruns via global config
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({ maxReruns: 2 } as Record<string, unknown>));
+    await startScheduler(tmpDir);
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Each agent: 1 initial + 2 reruns = 3 calls, x3 agents = 9
+    expect(mockRun).toHaveBeenCalledTimes(9);
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      { maxReruns: 2 },
+      expect.stringContaining("hit max reruns limit")
+    );
+  });
+
+  it("does not re-run on error", async () => {
+    mockRun.mockResolvedValue("error");
+    await startScheduler(tmpDir);
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    // 3 agents, each runs once (error, no rerun)
+    expect(mockRun).toHaveBeenCalledTimes(3);
   });
 });

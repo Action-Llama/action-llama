@@ -32,6 +32,8 @@ function isUnrecoverableError(text: string): boolean {
 
 const UNRECOVERABLE_THRESHOLD = 3;
 
+export type RunResult = "completed" | "silent" | "error";
+
 export class AgentRunner {
   private running = false;
   private agentConfig: AgentConfig;
@@ -50,10 +52,10 @@ export class AgentRunner {
     return this.running;
   }
 
-  async run(prompt: string): Promise<void> {
+  async run(prompt: string): Promise<RunResult> {
     if (this.running) {
       this.logger.warn(`${this.agentConfig.name} is already running, skipping`);
-      return;
+      return "error";
     }
 
     this.running = true;
@@ -230,17 +232,22 @@ export class AgentRunner {
         }
       }
 
+      let result: RunResult;
       if (outputText.includes("[SILENT]")) {
         this.logger.info("no work to do");
         this.statusTracker?.addLogLine(this.agentConfig.name, "no work to do");
+        result = "silent";
       } else {
         this.logger.info({ outputLength: outputText.length }, "run completed");
+        result = "completed";
       }
 
       session.dispose();
+      return result;
     } catch (err: any) {
       this.logger.error({ err }, `${this.agentConfig.name} run failed`);
       runError = String(err?.message || err).slice(0, 200);
+      return "error";
     } finally {
       const elapsed = Date.now() - runStartTime;
       this.statusTracker?.completeRun(this.agentConfig.name, elapsed, runError);

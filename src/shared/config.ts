@@ -54,6 +54,7 @@ export interface GlobalConfig {
   cloud?: CloudConfig;
   gateway?: GatewayConfig;
   webhooks?: WebhooksGlobalConfig;
+  maxReruns?: number;
 }
 
 // --- Per-agent config (lives at <project>/<agent>/agent-config.toml) ---

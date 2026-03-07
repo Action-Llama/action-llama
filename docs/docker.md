@@ -17,6 +17,106 @@ When `al start` runs in Docker mode:
    - Non-root user (uid 1000)
    - A unique shutdown secret for the anti-exfiltration kill switch
 
+## Container runtime
+
+Each agent run is a short-lived container that boots, runs a single LLM session, and exits. The entry point is `node /app/dist/agents/container-entry.js`.
+
+### Environment
+
+The container receives everything it needs via environment variables and mounts:
+
+| Env var | Description |
+|---------|-------------|
+| `AGENT_CONFIG` | JSON-serialized agent config (model, credentials, params) plus `PLAYBOOK.md` content |
+| `PROMPT` | The fully assembled prompt (`<agent-config>` + `<credential-context>` + trigger text) |
+| `TIMEOUT_SECONDS` | Max runtime in seconds (default: 3600). The container self-terminates if exceeded |
+| `GATEWAY_URL` | HTTP URL of the host gateway (local Docker only — used for credential fetch and shutdown) |
+| `SHUTDOWN_SECRET` | Unique per-run secret for the anti-exfiltration kill switch (local Docker only) |
+
+Credentials are injected in one of three ways depending on the runtime:
+
+| Runtime | Strategy | How it works |
+|---------|----------|--------------|
+| Local Docker | Volume mount | Files staged to a temp dir, mounted read-only at `/credentials/<type>/<instance>/<field>` |
+| Cloud Run | Gateway fetch | Container fetches credentials from `GATEWAY_URL/credentials/<secret>` on startup |
+| ECS Fargate | Env vars | Secrets Manager values injected as `AL_SECRET_<type>__<instance>__<field>` env vars |
+
+The container tries each strategy in order: volume mount, env vars, gateway. The first one that has data wins.
+
+### Startup sequence
+
+1. **Set working directory** — `chdir("/workspace")`
+2. **Start self-termination timer** — kills the process with exit code 124 if `TIMEOUT_SECONDS` is exceeded
+3. **Parse config** — reads `AGENT_CONFIG`, extracts `PLAYBOOK.md` content
+4. **Load credentials** — from volume, env vars, or gateway (see table above)
+5. **Inject env vars from credentials:**
+   - `GITHUB_TOKEN` / `GH_TOKEN` from `github_token` credential
+   - `SENTRY_AUTH_TOKEN` from `sentry_token` credential
+   - `GIT_SSH_COMMAND` pointing to the mounted SSH key from `git_ssh` credential
+   - `GIT_AUTHOR_NAME` / `GIT_AUTHOR_EMAIL` / `GIT_COMMITTER_NAME` / `GIT_COMMITTER_EMAIL` from `git_ssh` credential
+   - Git HTTPS credential helper configured if `GITHUB_TOKEN` is set
+6. **Create pi-coding-agent session** — initializes the LLM model, tools, and settings
+7. **Send prompt** — delivers the pre-built prompt to the session
+
+### Agent session
+
+The prompt is sent to the LLM with rate-limit retry (up to 5 attempts with exponential backoff, 30s to 5min). The LLM runs autonomously — reading files, executing commands, making API calls — until it finishes or hits an error.
+
+**Unrecoverable error detection:** The container watches for repeated auth/permission failures (e.g. "bad credentials", "permission denied", "resource not accessible by personal access token"). After 3 such errors, it aborts early rather than burning through retries.
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success — agent completed its work |
+| 1 | Error — missing config, credential failure, unrecoverable errors, or uncaught exception |
+| 124 | Timeout — `TIMEOUT_SECONDS` exceeded, container self-terminated |
+
+### Log protocol
+
+The container communicates with the scheduler via structured JSON lines on stdout. This is how the scheduler tracks progress, surfaces errors in the TUI, and writes log files.
+
+**Structured log lines** have the format:
+
+```json
+{"_log": true, "level": "info", "msg": "bash", "cmd": "git clone ...", "ts": 1234567890}
+```
+
+The `_log: true` field distinguishes structured logs from plain text output. The scheduler parses these and forwards them to the logger at the appropriate level.
+
+| Field | Description |
+|-------|-------------|
+| `_log` | Always `true` — marker for structured log lines |
+| `level` | `"debug"`, `"info"`, `"warn"`, or `"error"` |
+| `msg` | Log message (e.g. `"bash"`, `"tool error"`, `"credentials loaded from volume"`) |
+| `ts` | Unix timestamp in milliseconds |
+| `...` | Additional fields vary by message (e.g. `cmd`, `tool`, `error`, `result`) |
+
+Key log messages emitted during a run:
+
+| Message | Level | When |
+|---------|-------|------|
+| `"container starting"` | info | Boot, includes `agentName` and `modelId` |
+| `"credentials loaded from ..."` | info | After credential loading (`volume`, `env vars`, or `gateway`) |
+| `"SSH key configured for git"` | info | After SSH key setup |
+| `"creating agent session"` | info | Before LLM session creation |
+| `"session created, sending prompt"` | info | Prompt delivery |
+| `"bash"` | info | Every bash tool call, with `cmd` field |
+| `"tool error"` | error | Failed tool call, with `tool`, `cmd`, and `result` fields |
+| `"rate limited, retrying prompt"` | warn | Rate limit hit, with `attempt` and `delayMs` |
+| `"run completed"` | info | Agent finished successfully |
+| `"no work to do"` | info | Agent found nothing to act on |
+| `"container timeout reached, self-terminating"` | error | Timeout exceeded |
+
+**Special plain-text signals:**
+
+| Signal | Description |
+|--------|-------------|
+| `[SILENT]` | The agent found no work to do. The scheduler logs "no work to do" and skips further output. Use this in your `PLAYBOOK.md` to tell the agent to respond with `[SILENT]` when idle |
+| `[STATUS: <text>]` | Status update shown in the TUI. Can appear anywhere in the agent's text output. Example: `[STATUS: reviewing PR #42]` |
+
+Any stdout line that is not valid JSON with `_log: true` and does not match a special signal is treated as plain agent output (the LLM's final text response).
+
 ## Base image
 
 The base image (`docker/Dockerfile`) includes the minimum needed for any agent:
