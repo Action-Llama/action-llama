@@ -6,8 +6,10 @@ A code review agent that reviews open pull requests, approves good ones, and req
 
 ```toml
 credentials = ["github_token:default", "git_ssh:default"]
-repos = ["acme/app"]
 schedule = "*/5 * * * *"
+
+[params]
+repos = ["acme/app"]
 
 [model]
 provider = "anthropic"

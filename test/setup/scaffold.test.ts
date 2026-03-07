@@ -34,8 +34,7 @@ describe("scaffoldProject", () => {
           credentials: ["github_token:default"],
           model: defaultModel,
           schedule: "*/5 * * * *",
-          repos: ["acme/app"],
-          params: { triggerLabel: "agent", assignee: "bot" },
+          params: { repos: ["acme/app"], triggerLabel: "agent", assignee: "bot" },
         },
       },
       {
@@ -45,7 +44,7 @@ describe("scaffoldProject", () => {
           credentials: ["github_token:default"],
           model: defaultModel,
           schedule: "*/5 * * * *",
-          repos: ["acme/app"],
+          params: { repos: ["acme/app"] },
         },
       },
       {
@@ -55,7 +54,7 @@ describe("scaffoldProject", () => {
           credentials: ["github_token:default"],
           model: defaultModel,
           schedule: "*/15 * * * *",
-          repos: ["acme/app"],
+          params: { repos: ["acme/app"] },
         },
       },
     ];

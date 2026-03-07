@@ -62,13 +62,12 @@ describe("loadAgentConfig", () => {
       credentials: ["github_token:default"],
       model: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
       schedule: "*/5 * * * *",
-      repos: ["acme/app"],
-      params: { triggerLabel: "agent", assignee: "bot" },
+      params: { repos: ["acme/app"], triggerLabel: "agent", assignee: "bot" },
     };
     writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML(agentOnDisk as Record<string, unknown>));
     const loaded = loadAgentConfig(tmpDir, "dev");
     expect(loaded.name).toBe("dev");
-    expect(loaded.repos).toEqual(["acme/app"]);
+    expect((loaded.params as any).repos).toEqual(["acme/app"]);
     expect(loaded.model.model).toBe("claude-sonnet-4-20250514");
   });
 
@@ -87,7 +86,6 @@ describe("loadAgentConfig", () => {
     writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML({
       credentials: ["github_token:default"],
       schedule: "*/5 * * * *",
-      repos: ["acme/app"],
     }));
 
     const loaded = loadAgentConfig(tmpDir, "dev");
@@ -108,7 +106,6 @@ describe("loadAgentConfig", () => {
       credentials: ["github_token:default"],
       model: agentModel,
       schedule: "*/5 * * * *",
-      repos: ["acme/app"],
     } as Record<string, unknown>));
 
     const loaded = loadAgentConfig(tmpDir, "dev");

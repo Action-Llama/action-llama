@@ -6,7 +6,6 @@ const baseConfig: AgentConfig = {
   name: "test",
   credentials: [],
   model: { provider: "anthropic", model: "test", thinkingLevel: "off", authType: "api_key" },
-  repos: ["acme/app"],
 };
 
 describe("validateAgentConfig", () => {

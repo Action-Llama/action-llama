@@ -85,7 +85,7 @@ export async function execute(opts: { project: string }): Promise<void> {
   const agentSummaries = agents.map((name) => {
     try {
       const config = loadAgentConfig(projectPath, name);
-      return `- ${name}: repos=${config.repos.join(",")}, schedule=${config.schedule || "webhook-only"}`;
+      return `- ${name}: schedule=${config.schedule || "webhook-only"}`;
     } catch {
       return `- ${name}: (could not load config)`;
     }

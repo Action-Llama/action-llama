@@ -89,7 +89,6 @@ function setupProjectWithWebhooks(tmpDir: string) {
   const webhookAgent = {
     credentials: ["github_token:default"],
     model,
-    repos: ["acme/app"],
     webhooks: [{ type: "github", source: "MyOrg", events: ["issues"], actions: ["labeled"], labels: ["agent"] }],
   };
   const agentDir = resolve(tmpDir, "webhook-dev");
@@ -106,7 +105,6 @@ function setupProjectWithHybrid(tmpDir: string) {
     credentials: ["github_token:default"],
     model,
     schedule: "*/15 * * * *",
-    repos: ["acme/app"],
     webhooks: [{ type: "github", source: "MyOrg", events: ["pull_request"], actions: ["opened"] }],
   };
   const agentDir = resolve(tmpDir, "hybrid");
@@ -122,7 +120,6 @@ function setupProjectWithNoTrigger(tmpDir: string) {
   const badAgent = {
     credentials: ["github_token:default"],
     model,
-    repos: ["acme/app"],
   };
   const agentDir = resolve(tmpDir, "bad-agent");
   mkdirSync(agentDir, { recursive: true });

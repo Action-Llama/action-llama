@@ -16,10 +16,9 @@ describe("status", () => {
     expect(output).toContain("devops:");
   });
 
-  it("shows schedule and repos", async () => {
+  it("shows schedule", async () => {
     tmpDir = makeTmpProject();
     const output = await captureLog(() => execute({ project: tmpDir }));
     expect(output).toContain("Schedule:");
-    expect(output).toContain("Repos:");
   });
 });

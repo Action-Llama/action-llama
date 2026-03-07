@@ -14,14 +14,14 @@ This is an Action Llama project. It runs automated development agents triggered 
 
 Each agent is a directory containing:
 
-- \`agent-config.toml\` — credentials, repos, model, schedule, webhooks, params
+- \`agent-config.toml\` — credentials, model, schedule, webhooks, params
 - \`PLAYBOOK.md\` — the system prompt (playbook) that defines what the agent does
 - \`Dockerfile\` (optional) — custom Docker image extending the base \`al-agent:latest\` (e.g. to install extra tools like \`gh\`)
 
 ## Creating an Agent
 
 1. Create a directory for your agent (e.g. \`my-agent/\`)
-2. Add \`agent-config.toml\` with credentials, repos, model config, and a schedule or webhook trigger
+2. Add \`agent-config.toml\` with credentials, model config, and a schedule or webhook trigger
 3. Add \`PLAYBOOK.md\` with the playbook — step-by-step instructions the LLM follows each run
 4. If running in Docker mode and your agent needs tools beyond what the base image provides (git, curl, openssh-client, node), add a \`Dockerfile\` — see Docker Mode section below
 5. Verify with \`npx al status\`
@@ -48,11 +48,13 @@ Every agent prompt has these XML blocks injected automatically at runtime:
 
 ### \`<agent-config>\`
 
-JSON object containing the agent's \`repos\` array and any custom \`[params]\` from \`agent-config.toml\`. Example:
+JSON object containing the agent's custom \`[params]\` from \`agent-config.toml\`. Example:
 
 \`\`\`json
 {"repos":["acme/app"],"triggerLabel":"agent","assignee":"bot-user"}
 \`\`\`
+
+(In this example, \`repos\` is a custom param defined in \`[params]\` — not a built-in field.)
 
 ### \`<credential-context>\`
 
@@ -154,8 +156,10 @@ The config file uses TOML syntax. The agent name is derived from the directory n
 
 \`\`\`toml
 credentials = ["github_token:default", "git_ssh:default"]
-repos = ["your-org/your-repo"]
 schedule = "*/5 * * * *"
+
+[params]
+repos = ["your-org/your-repo"]
 \`\`\`
 
 The \`[model]\` section is **optional** — agents inherit the default model from the project's \`config.toml\`. Only add \`[model]\` to an agent config if you want to override the default (e.g. use a different model or thinking level for that specific agent).
@@ -164,7 +168,6 @@ The \`[model]\` section is **optional** — agents inherit the default model fro
 
 \`\`\`toml
 credentials = ["github_token:default", "git_ssh:default", "sentry_token:default"]
-repos = ["acme/app", "acme/api"]
 schedule = "*/5 * * * *"
 
 # Optional: override the project default model for this agent
@@ -186,6 +189,7 @@ type = "sentry"
 resources = ["error", "event_alert"]
 
 [params]
+repos = ["acme/app", "acme/api"]
 triggerLabel = "agent"
 assignee = "bot-user"
 sentryOrg = "acme"
@@ -197,7 +201,6 @@ sentryProjects = ["web-app", "api"]
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | \`credentials\` | string[] | Yes | Credential refs as \`"type:instance"\` (see Credential Reference above) |
-| \`repos\` | string[] | Yes | GitHub repos in owner/repo format |
 | \`schedule\` | string | No* | Cron expression (e.g. "*/5 * * * *") |
 | \`model\` | table | No | LLM model config — omit to inherit from project \`config.toml\` |
 | \`model.provider\` | string | Yes* | "anthropic" or "openai" |

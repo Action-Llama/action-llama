@@ -6,7 +6,6 @@ A developer agent that picks up GitHub issues and implements the requested chang
 
 ```toml
 credentials = ["github_token:default", "git_ssh:default"]
-repos = ["acme/app"]
 schedule = "*/5 * * * *"
 
 [model]
@@ -23,6 +22,7 @@ actions = ["labeled"]
 labels = ["agent"]
 
 [params]
+repos = ["acme/app"]
 triggerLabel = "agent"
 assignee = "your-github-username"
 ```

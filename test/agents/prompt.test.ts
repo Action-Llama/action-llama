@@ -8,8 +8,7 @@ const agentConfig: AgentConfig = {
   credentials: ["github_token:default"],
   model: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
   schedule: "*/5 * * * *",
-  repos: ["acme/app"],
-  params: { triggerLabel: "agent", assignee: "bot" },
+  params: { repos: ["acme/app"], triggerLabel: "agent", assignee: "bot" },
 };
 
 describe("buildCredentialContext", () => {
@@ -58,7 +57,6 @@ describe("buildScheduledPrompt", () => {
       name: "test",
       credentials: [],
       model: { provider: "anthropic", model: "test", thinkingLevel: "off", authType: "api_key" },
-      repos: ["r/r"],
     };
     const result = buildScheduledPrompt(minimal);
     expect(result).not.toContain("triggerLabel");

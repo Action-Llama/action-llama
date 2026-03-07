@@ -5,10 +5,7 @@ import { resolveCredential } from "../credentials/registry.js";
 import { parseCredentialRef } from "../shared/credentials.js";
 
 function buildConfigBlock(agentConfig: AgentConfig): string {
-  return JSON.stringify({
-    repos: agentConfig.repos,
-    ...agentConfig.params,
-  });
+  return JSON.stringify(agentConfig.params ?? {});
 }
 
 export function buildCredentialContext(credentials: string[]): string {

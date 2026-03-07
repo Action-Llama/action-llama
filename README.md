@@ -78,7 +78,7 @@ my-project/
   AGENTS.md                 # Project overview, credential/webhook reference, example playbook
   config.toml               # Global config: [local], [cloud], gateway, webhooks (no secrets)
   dev/                      # One directory per agent
-    agent-config.toml       # Agent config: credentials, repos, model, schedule, webhooks, params
+    agent-config.toml       # Agent config: credentials, model, schedule, webhooks, params
     PLAYBOOK.md             # Agent instructions (system prompt) — edit to customize behavior
     Dockerfile              # (optional) Custom Docker image for this agent
 ```

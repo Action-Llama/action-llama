@@ -24,22 +24,21 @@ const DEFAULT_AGENTS: AgentConfig[] = [
     credentials: ["github_token:default"],
     model: DEFAULT_MODEL,
     schedule: "*/5 * * * *",
-    repos: ["acme/app"],
-    params: { triggerLabel: "agent", assignee: "bot" },
+    params: { repos: ["acme/app"], triggerLabel: "agent", assignee: "bot" },
   },
   {
     name: "reviewer",
     credentials: ["github_token:default"],
     model: DEFAULT_MODEL,
     schedule: "*/5 * * * *",
-    repos: ["acme/app"],
+    params: { repos: ["acme/app"] },
   },
   {
     name: "devops",
     credentials: ["github_token:default"],
     model: DEFAULT_MODEL,
     schedule: "*/15 * * * *",
-    repos: ["acme/app"],
+    params: { repos: ["acme/app"] },
   },
 ];
 

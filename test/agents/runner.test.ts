@@ -67,8 +67,7 @@ function makeAgentConfig(overrides?: Partial<AgentConfig>): AgentConfig {
       authType: "api_key",
     },
     schedule: "*/5 * * * *",
-    repos: ["acme/app"],
-    params: { triggerLabel: "agent", assignee: "bot" },
+    params: { repos: ["acme/app"], triggerLabel: "agent", assignee: "bot" },
     ...overrides,
   };
 }

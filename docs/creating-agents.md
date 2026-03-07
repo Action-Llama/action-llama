@@ -23,8 +23,10 @@ Create `my-agent/agent-config.toml`:
 
 ```toml
 credentials = ["github_token:default", "git_ssh:default"]
-repos = ["your-org/your-repo"]
 schedule = "*/5 * * * *"
+
+[params]
+repos = ["your-org/your-repo"]
 
 [model]
 provider = "anthropic"
@@ -66,7 +68,7 @@ The PLAYBOOK.md is injected as the agent's system prompt at runtime. Write it as
 al status -p .
 ```
 
-This should show your agent with its schedule, repos, and credentials.
+This should show your agent with its schedule and credentials.
 
 ### 5. Run with `al start`
 

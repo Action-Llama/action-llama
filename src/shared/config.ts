@@ -63,7 +63,6 @@ export interface AgentConfig {
   credentials: string[];
   model: ModelConfig;
   schedule?: string;
-  repos: string[];
   webhooks?: WebhookTrigger[];
   params?: Record<string, unknown>;
 }

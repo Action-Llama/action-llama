@@ -6,7 +6,6 @@ A DevOps monitoring agent that detects errors from CI/CD failures and Sentry, th
 
 ```toml
 credentials = ["github_token:default", "git_ssh:default", "sentry_token:default"]
-repos = ["acme/app"]
 schedule = "*/15 * * * *"
 
 [model]
@@ -16,6 +15,7 @@ thinkingLevel = "medium"
 authType = "api_key"
 
 [params]
+repos = ["acme/app"]
 sentryOrg = "acme"
 sentryProjects = ["web-app", "api"]
 ```

@@ -57,7 +57,6 @@ export async function execute(opts: { project: string; cloud?: boolean }): Promi
   for (const name of agentNames) {
     const agentConfig = loadAgentConfig(projectPath, name);
     console.log(`${name}:`);
-    console.log(`  Repos:    ${agentConfig.repos.join(", ")}`);
     console.log(`  Schedule: ${agentConfig.schedule || "(none)"}`);
     console.log("");
   }

@@ -9,9 +9,6 @@ Each agent has an `agent-config.toml` file in its directory. The agent name is d
 # These must exist in ~/.action-llama-credentials/<type>/<instance>/
 credentials = ["github_token:default", "git_ssh:default", "sentry_token:default"]
 
-# Required: GitHub repos the agent operates on (owner/repo format)
-repos = ["acme/app", "acme/api"]
-
 # Optional: cron schedule (standard cron syntax)
 # Agent must have at least one of: schedule, webhooks
 schedule = "*/5 * * * *"
@@ -38,6 +35,7 @@ resources = ["error", "event_alert"]      # Sentry resource types (optional)
 
 # Optional: custom parameters injected into the agent prompt
 [params]
+repos = ["acme/app", "acme/api"]
 triggerLabel = "agent"
 assignee = "bot-user"
 sentryOrg = "acme"
@@ -49,7 +47,6 @@ sentryProjects = ["web-app", "api"]
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `credentials` | string[] | Yes | Credential refs as `"type:instance"` needed at runtime |
-| `repos` | string[] | Yes | GitHub repos (owner/repo) |
 | `schedule` | string | No* | Cron expression for polling |
 | `model` | table | No | LLM model configuration (falls back to `[model]` in project `config.toml`) |
 | `model.provider` | string | Yes* | LLM provider ("anthropic" or "openai") |
