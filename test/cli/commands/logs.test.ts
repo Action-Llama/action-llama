@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
@@ -173,5 +173,78 @@ describe("logs command", () => {
     console.log = origLog;
 
     expect(output[0]).toContain("al foo");
+  });
+
+  it("follows cloud logs when --follow is used", async () => {
+    // Create minimal config for cloud mode
+    const configContent = `
+[cloud]
+provider = "ecs"
+awsRegion = "us-east-1"
+ecsCluster = "test-cluster"
+ecrRepository = "test.dkr.ecr.us-east-1.amazonaws.com/test"
+executionRoleArn = "arn:aws:iam::123456789:role/test-exec"
+taskRoleArn = "arn:aws:iam::123456789:role/test-task"
+subnets = ["subnet-123"]
+`;
+    writeFileSync(resolve(tmpDir, "config.toml"), configContent);
+
+    const output: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: any[]) => output.push(args.join(" "));
+
+    try {
+      // This will fail because we don't have real AWS credentials
+      // But we can verify it attempts to follow cloud logs
+      await execute("dev", { 
+        project: tmpDir, 
+        lines: "10", 
+        follow: true, 
+        cloud: true 
+      });
+    } catch (e: any) {
+      // Expected - will fail when trying to contact AWS
+    }
+
+    console.log = origLog;
+    
+    // Verify that it tried to look for running agents (our new cloud follow code)
+    expect(output.some(line => line.includes("Looking for running dev agent"))).toBe(true);
+  });
+
+  it("fetches static cloud logs when --follow is not used", async () => {
+    // Create minimal config for cloud mode
+    const configContent = `
+[cloud]
+provider = "ecs"
+awsRegion = "us-east-1"
+ecsCluster = "test-cluster"
+ecrRepository = "test.dkr.ecr.us-east-1.amazonaws.com/test"
+executionRoleArn = "arn:aws:iam::123456789:role/test-exec"
+taskRoleArn = "arn:aws:iam::123456789:role/test-task"
+subnets = ["subnet-123"]
+`;
+    writeFileSync(resolve(tmpDir, "config.toml"), configContent);
+
+    const output: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: any[]) => output.push(args.join(" "));
+
+    try {
+      // This will fail because we don't have real AWS credentials
+      // But we can verify it attempts to fetch static logs (original behavior)
+      await execute("dev", { 
+        project: tmpDir, 
+        lines: "10", 
+        cloud: true 
+      });
+    } catch (e: any) {
+      // Expected - will fail when trying to contact AWS
+    }
+
+    console.log = origLog;
+    
+    // Verify that it tried to fetch cloud logs (original behavior, not follow)
+    expect(output.some(line => line.includes("Fetching cloud logs for dev"))).toBe(true);
   });
 });
