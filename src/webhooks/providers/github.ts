@@ -175,6 +175,14 @@ export class GitHubWebhookProvider implements WebhookProvider {
       return false;
     }
 
+    // Check organization matching - extract org from repo name (e.g., "acme/app" -> "acme")
+    if (f.orgs?.length) {
+      const org = context.repo.split('/')[0];
+      if (!f.orgs.includes(org)) {
+        return false;
+      }
+    }
+
     if (f.labels?.length) {
       const contextLabels = context.labels || [];
       const hasMatchingLabel = f.labels.some((l) => contextLabels.includes(l));
