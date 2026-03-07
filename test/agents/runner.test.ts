@@ -375,13 +375,14 @@ describe("AgentRunner", () => {
     expect(mockPrompt).toHaveBeenCalled();
   });
 
-  it("warns on unsupported provider", async () => {
+  it("supports arbitrary LLM providers", async () => {
     const logger = makeLogger();
-    const warnSpy = vi.spyOn(logger, "warn");
+    const debugSpy = vi.spyOn(logger, "debug");
+    
     const agentConfig = makeAgentConfig({
       model: {
-        provider: "unsupported",
-        model: "some-model",
+        provider: "groq",
+        model: "llama-3.3-70b-versatile",
         thinkingLevel: "medium",
         authType: "api_key",
       },
@@ -391,6 +392,8 @@ describe("AgentRunner", () => {
     mockSubscribe.mockImplementation(() => {});
 
     await runner.run("Test");
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Unsupported model provider"));
+    // Should successfully load groq_key credential and run without warnings
+    expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining("Loaded groq_key credential for groq"));
+    expect(mockPrompt).toHaveBeenCalled();
   });
 });

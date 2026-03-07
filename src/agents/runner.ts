@@ -105,22 +105,18 @@ export class AgentRunner {
 
       const authStorage = AuthStorage.create();
       if (model.authType !== "pi_auth") {
-        if (model.provider === "anthropic") {
-          const credential = await backendLoadField("anthropic_key", "default", "token");
+        // Try to load API key using provider-specific credential type
+        const credentialType = `${model.provider}_key`;
+        try {
+          const credential = await backendLoadField(credentialType, "default", "token");
           if (credential) {
-            authStorage.setRuntimeApiKey("anthropic", credential);
+            authStorage.setRuntimeApiKey(model.provider, credential);
+            this.logger.debug(`Loaded ${credentialType} credential for ${model.provider}`);
           } else {
-            this.logger.warn("anthropic_key credential not found — agent may fail to authenticate. Run 'al doctor' to configure it.");
+            this.logger.warn(`${credentialType} credential not found — agent may fail to authenticate. Run 'al doctor' to configure it.`);
           }
-        } else if (model.provider === "openai") {
-          const credential = await backendLoadField("openai_key", "default", "token");
-          if (credential) {
-            authStorage.setRuntimeApiKey("openai", credential);
-          } else {
-            this.logger.warn("openai_key credential not found — agent may fail to authenticate. Run 'al doctor' to configure it.");
-          }
-        } else {
-          this.logger.warn(`Unsupported model provider: ${model.provider}. Supported providers: anthropic, openai`);
+        } catch (err) {
+          this.logger.warn(`Failed to load credential for provider ${model.provider}: ${credentialType} credential type may not be configured.`);
         }
       }
 
