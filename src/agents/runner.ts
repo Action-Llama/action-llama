@@ -34,6 +34,27 @@ const UNRECOVERABLE_THRESHOLD = 3;
 
 export type RunResult = "completed" | "silent" | "error";
 
+export interface TriggerRequest {
+  agent: string;
+  context: string;
+}
+
+export interface RunOutcome {
+  result: RunResult;
+  triggers: TriggerRequest[];
+}
+
+const TRIGGER_PATTERN = /\[TRIGGER:\s*(\S+)\]([\s\S]*?)\[\/TRIGGER\]/g;
+
+function extractTriggers(text: string): TriggerRequest[] {
+  const triggers: TriggerRequest[] = [];
+  let match;
+  while ((match = TRIGGER_PATTERN.exec(text)) !== null) {
+    triggers.push({ agent: match[1], context: match[2].trim() });
+  }
+  return triggers;
+}
+
 export class AgentRunner {
   private running = false;
   private agentConfig: AgentConfig;
@@ -52,10 +73,10 @@ export class AgentRunner {
     return this.running;
   }
 
-  async run(prompt: string): Promise<RunResult> {
+  async run(prompt: string): Promise<RunOutcome> {
     if (this.running) {
       this.logger.warn(`${this.agentConfig.name} is already running, skipping`);
-      return "error";
+      return { result: "error", triggers: [] };
     }
 
     this.running = true;
@@ -232,6 +253,7 @@ export class AgentRunner {
         }
       }
 
+      const triggers = extractTriggers(outputText);
       let result: RunResult;
       if (outputText.includes("[SILENT]")) {
         this.logger.info("no work to do");
@@ -243,11 +265,11 @@ export class AgentRunner {
       }
 
       session.dispose();
-      return result;
+      return { result, triggers };
     } catch (err: any) {
       this.logger.error({ err }, `${this.agentConfig.name} run failed`);
       runError = String(err?.message || err).slice(0, 200);
-      return "error";
+      return { result: "error", triggers: [] };
     } finally {
       const elapsed = Date.now() - runStartTime;
       this.statusTracker?.completeRun(this.agentConfig.name, elapsed, runError);

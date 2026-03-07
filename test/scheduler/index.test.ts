@@ -40,7 +40,7 @@ vi.mock("croner", () => ({
 }));
 
 // Mock AgentRunner
-const mockRun = vi.fn().mockResolvedValue("silent");
+const mockRun = vi.fn().mockResolvedValue({ result: "silent", triggers: [] });
 let mockIsRunning = false;
 vi.mock("../../src/agents/runner.js", () => ({
   AgentRunner: class {
@@ -146,9 +146,9 @@ describe("startScheduler", () => {
   it("re-runs agent immediately when it did work", async () => {
     // First call returns "completed", second returns "silent"
     mockRun
-      .mockResolvedValueOnce("completed")
-      .mockResolvedValueOnce("silent")
-      .mockResolvedValue("silent");
+      .mockResolvedValueOnce({ result: "completed", triggers: [] })
+      .mockResolvedValueOnce({ result: "silent", triggers: [] })
+      .mockResolvedValue({ result: "silent", triggers: [] });
     await startScheduler(tmpDir);
 
     // Wait for the initial rerun loop of the first agent to settle
@@ -162,7 +162,7 @@ describe("startScheduler", () => {
 
   it("stops re-running after max reruns", async () => {
     // Always returns "completed" — should stop at maxReruns
-    mockRun.mockResolvedValue("completed");
+    mockRun.mockResolvedValue({ result: "completed", triggers: [] });
 
     // Use a small maxReruns via global config
     writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({ maxReruns: 2 } as Record<string, unknown>));
@@ -179,12 +179,72 @@ describe("startScheduler", () => {
   });
 
   it("does not re-run on error", async () => {
-    mockRun.mockResolvedValue("error");
+    mockRun.mockResolvedValue({ result: "error", triggers: [] });
     await startScheduler(tmpDir);
 
     await new Promise((r) => setTimeout(r, 50));
 
     // 3 agents, each runs once (error, no rerun)
     expect(mockRun).toHaveBeenCalledTimes(3);
+  });
+
+  it("dispatches triggers to other agents", async () => {
+    // dev agent returns a trigger for reviewer
+    mockRun
+      .mockResolvedValueOnce({ result: "silent", triggers: [{ agent: "reviewer", context: "Please review PR #42" }] })
+      .mockResolvedValue({ result: "silent", triggers: [] });
+    await startScheduler(tmpDir);
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    // 3 initial runs + 1 triggered run for reviewer = 4
+    expect(mockRun).toHaveBeenCalledTimes(4);
+    // The triggered run prompt should contain "agent-trigger"
+    const triggeredCall = mockRun.mock.calls[3];
+    expect(triggeredCall[0]).toContain("<agent-trigger>");
+    expect(triggeredCall[0]).toContain("dev");
+    expect(triggeredCall[0]).toContain("Please review PR #42");
+  });
+
+  it("skips self-triggers", async () => {
+    mockRun
+      .mockResolvedValueOnce({ result: "silent", triggers: [{ agent: "dev", context: "self" }] })
+      .mockResolvedValue({ result: "silent", triggers: [] });
+    await startScheduler(tmpDir);
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    // 3 initial runs only — self-trigger skipped
+    expect(mockRun).toHaveBeenCalledTimes(3);
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      { source: "dev" },
+      expect.stringContaining("cannot trigger itself")
+    );
+  });
+
+  it("respects trigger depth limit", async () => {
+    // dev triggers reviewer at depth 0 → reviewer triggers devops at depth 1 → blocked at depth 1 (maxTriggerDepth=1)
+    let callCount = 0;
+    mockRun.mockImplementation(() => {
+      callCount++;
+      // 1st call: dev initial → triggers reviewer
+      if (callCount === 1) return Promise.resolve({ result: "silent", triggers: [{ agent: "reviewer", context: "chain1" }] });
+      // 4th call: triggered reviewer → tries to trigger devops (will be blocked by depth)
+      if (callCount === 4) return Promise.resolve({ result: "silent", triggers: [{ agent: "devops", context: "chain2" }] });
+      // All others: no triggers
+      return Promise.resolve({ result: "silent", triggers: [] });
+    });
+
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({ maxTriggerDepth: 1 } as Record<string, unknown>));
+    await startScheduler(tmpDir);
+    await new Promise((r) => setTimeout(r, 100));
+
+    // 3 initial + 1 triggered reviewer = 4
+    // reviewer's trigger of devops is blocked (depth 1 >= maxTriggerDepth 1)
+    expect(mockRun).toHaveBeenCalledTimes(4);
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.objectContaining({ depth: 1, maxTriggerDepth: 1 }),
+      expect.stringContaining("trigger depth limit reached")
+    );
   });
 });

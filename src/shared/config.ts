@@ -55,6 +55,7 @@ export interface GlobalConfig {
   gateway?: GatewayConfig;
   webhooks?: WebhooksGlobalConfig;
   maxReruns?: number;
+  maxTriggerDepth?: number;
 }
 
 // --- Per-agent config (lives at <project>/<agent>/agent-config.toml) ---

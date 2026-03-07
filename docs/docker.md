@@ -114,6 +114,27 @@ Key log messages emitted during a run:
 |--------|-------------|
 | `[SILENT]` | The agent found no work to do. The scheduler logs "no work to do" and skips further output. Use this in your `PLAYBOOK.md` to tell the agent to respond with `[SILENT]` when idle |
 | `[STATUS: <text>]` | Status update shown in the TUI. Can appear anywhere in the agent's text output. Example: `[STATUS: reviewing PR #42]` |
+| `[TRIGGER: <agent>]...[/TRIGGER]` | Trigger another agent with context. See below |
+
+**Agent triggers:**
+
+An agent can trigger another agent by emitting a `[TRIGGER]` block in its output:
+
+```
+[TRIGGER: reviewer]
+I just opened PR #42 on acme/app. Please review it.
+URL: https://github.com/acme/app/pull/42
+Branch: agent/42
+[/TRIGGER]
+```
+
+The scheduler detects this signal, looks up the target agent, and runs it with a `<agent-trigger>` block containing the source agent name and context. The target agent receives a prompt similar to a webhook trigger.
+
+Rules:
+- An agent cannot trigger itself (self-triggers are skipped)
+- If the target agent is already running or doesn't exist, the trigger is skipped
+- Trigger chains are allowed (agent A triggers B, B triggers C) up to a configurable depth limit (`maxTriggerDepth` in `config.toml`, default: 3)
+- Triggered runs do not re-run — they respond to the single trigger event
 
 Any stdout line that is not valid JSON with `_log: true` and does not match a special signal is treated as plain agent output (the LLM's final text response).
 

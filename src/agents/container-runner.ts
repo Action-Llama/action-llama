@@ -6,11 +6,13 @@ import type { Logger } from "../shared/logger.js";
 import type { ContainerRuntime, RuntimeCredentials } from "../docker/runtime.js";
 import type { ContainerRegistration } from "../gateway/types.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
-import type { RunResult } from "./runner.js";
+import type { RunResult, RunOutcome, TriggerRequest } from "./runner.js";
 
 export class ContainerAgentRunner {
   private _running = false;
   private _wasSilent = false;
+  private _triggers: TriggerRequest[] = [];
+  private _triggerAccum: { agent: string; lines: string[] } | null = null;
   private runtime: ContainerRuntime;
   private globalConfig: GlobalConfig;
   private agentConfig: AgentConfig;
@@ -102,19 +104,34 @@ export class ContainerAgentRunner {
       this.logger.info("no work to do");
       this.statusTracker?.addLogLine(this.agentConfig.name, "no work to do");
     }
+
+    // Accumulate [TRIGGER: agent]...[/TRIGGER] blocks across lines
+    const triggerOpen = line.match(/^\[TRIGGER:\s*(\S+)\]$/);
+    if (triggerOpen) {
+      this._triggerAccum = { agent: triggerOpen[1], lines: [] };
+      return;
+    }
+    if (this._triggerAccum) {
+      if (line === "[/TRIGGER]") {
+        this._triggers.push({ agent: this._triggerAccum.agent, context: this._triggerAccum.lines.join("\n").trim() });
+        this._triggerAccum = null;
+      } else {
+        this._triggerAccum.lines.push(line);
+      }
+    }
   }
 
-  async run(prompt: string): Promise<RunResult> {
+  async run(prompt: string): Promise<RunOutcome> {
     if (this._running) {
       this.logger.warn(`${this.agentConfig.name} is already running, skipping`);
-      return "error";
+      return { result: "error", triggers: [] };
     }
 
     // Check if this agent already has a running container (e.g. orphan from a previous scheduler)
     try {
       if (await this.runtime.isAgentRunning(this.agentConfig.name)) {
         this.logger.warn(`${this.agentConfig.name} is already running in the runtime, skipping`);
-        return "error";
+        return { result: "error", triggers: [] };
       }
     } catch {
       // Best-effort check — proceed if it fails
@@ -122,6 +139,8 @@ export class ContainerAgentRunner {
 
     this._running = true;
     this._wasSilent = false;
+    this._triggers = [];
+    this._triggerAccum = null;
     this.statusTracker?.setAgentState(this.agentConfig.name, "running");
     this.logger.info(`Starting ${this.agentConfig.name} container run`);
     const runStartTime = Date.now();
@@ -226,6 +245,6 @@ export class ContainerAgentRunner {
       this.statusTracker?.completeRun(this.agentConfig.name, elapsed, runError);
       this._running = false;
     }
-    return runResult;
+    return { result: runResult, triggers: this._triggers };
   }
 }

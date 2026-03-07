@@ -57,6 +57,13 @@ export function buildManualPrompt(agentConfig: AgentConfig): string {
   return `<agent-config>\n${configBlock}\n</agent-config>\n\n${credentialBlock}\n\nYou have been triggered manually. Check for new work and act on anything you find.`;
 }
 
+export function buildTriggeredPrompt(agentConfig: AgentConfig, sourceAgent: string, context: string): string {
+  const configBlock = buildConfigBlock(agentConfig);
+  const credentialBlock = buildCredentialContext(agentConfig.credentials);
+  const triggerBlock = JSON.stringify({ source: sourceAgent, context });
+  return `<agent-config>\n${configBlock}\n</agent-config>\n\n${credentialBlock}\n\n<agent-trigger>\n${triggerBlock}\n</agent-trigger>\n\nYou were triggered by the "${sourceAgent}" agent. Review the trigger context above and take appropriate action.`;
+}
+
 export function buildWebhookPrompt(agentConfig: AgentConfig, context: WebhookContext): string {
   const configBlock = buildConfigBlock(agentConfig);
   const credentialBlock = buildCredentialContext(agentConfig.credentials);

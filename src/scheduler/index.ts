@@ -5,9 +5,9 @@ import type { GlobalConfig, AgentConfig } from "../shared/config.js";
 import { requireCredentialRef, loadCredentialField, listCredentialInstances, backendRequireCredentialRef, backendLoadField, backendListInstances } from "../shared/credentials.js";
 import { createLogger, createFileOnlyLogger } from "../shared/logger.js";
 import { agentDir } from "../shared/paths.js";
-import { AgentRunner, type RunResult } from "../agents/runner.js";
+import { AgentRunner, type RunOutcome } from "../agents/runner.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
-import { buildScheduledPrompt, buildWebhookPrompt } from "../agents/prompt.js";
+import { buildScheduledPrompt, buildWebhookPrompt, buildTriggeredPrompt } from "../agents/prompt.js";
 import { WebhookRegistry } from "../webhooks/registry.js";
 import { GitHubWebhookProvider } from "../webhooks/providers/github.js";
 import { SentryWebhookProvider } from "../webhooks/providers/sentry.js";
@@ -18,7 +18,7 @@ import type { WebhookContext, WebhookFilter, WebhookTrigger, GitHubWebhookFilter
 
 interface RunnerLike {
   isRunning: boolean;
-  run(prompt: string): Promise<RunResult>;
+  run(prompt: string): Promise<RunOutcome>;
 }
 
 // Provider type → credential type for loading secrets
@@ -49,22 +49,88 @@ function buildFilterFromTrigger(trigger: WebhookTrigger): WebhookFilter | undefi
 }
 
 const DEFAULT_MAX_RERUNS = 10;
+const DEFAULT_MAX_TRIGGER_DEPTH = 3;
+
+interface SchedulerContext {
+  runners: Record<string, RunnerLike>;
+  agentConfigs: AgentConfig[];
+  maxReruns: number;
+  maxTriggerDepth: number;
+  logger: ReturnType<typeof createLogger>;
+}
+
+function dispatchTriggers(
+  triggers: Array<{ agent: string; context: string }>,
+  sourceAgent: string,
+  depth: number,
+  ctx: SchedulerContext
+): void {
+  for (const { agent, context } of triggers) {
+    if (agent === sourceAgent) {
+      ctx.logger.warn({ source: sourceAgent }, "agent cannot trigger itself, skipping");
+      continue;
+    }
+    if (depth >= ctx.maxTriggerDepth) {
+      ctx.logger.warn({ source: sourceAgent, target: agent, depth, maxTriggerDepth: ctx.maxTriggerDepth }, "trigger depth limit reached, skipping");
+      continue;
+    }
+    const targetConfig = ctx.agentConfigs.find((a) => a.name === agent);
+    if (!targetConfig) {
+      ctx.logger.warn({ source: sourceAgent, target: agent }, "trigger target agent not found, skipping");
+      continue;
+    }
+    const runner = ctx.runners[agent];
+    if (runner.isRunning) {
+      ctx.logger.warn({ source: sourceAgent, target: agent }, "trigger target agent is busy, skipping");
+      continue;
+    }
+    ctx.logger.info({ source: sourceAgent, target: agent, depth }, "agent trigger firing");
+    const prompt = buildTriggeredPrompt(targetConfig, sourceAgent, context);
+    runTriggered(runner, targetConfig, prompt, sourceAgent, depth + 1, ctx).catch((err) => {
+      ctx.logger.error({ err, target: agent }, "triggered run failed");
+    });
+  }
+}
+
+async function runTriggered(
+  runner: RunnerLike,
+  agentConfig: AgentConfig,
+  prompt: string,
+  sourceAgent: string,
+  depth: number,
+  ctx: SchedulerContext
+): Promise<void> {
+  const { result, triggers } = await runner.run(prompt);
+  if (triggers.length > 0) {
+    dispatchTriggers(triggers, agentConfig.name, depth, ctx);
+  }
+  // No reruns for triggered runs — they respond to a specific event
+  if (result === "completed") {
+    ctx.logger.info(`${agentConfig.name} triggered run completed`);
+  }
+}
 
 async function runWithReruns(
   runner: RunnerLike,
   agentConfig: AgentConfig,
-  maxReruns: number,
-  logger: ReturnType<typeof createLogger>
+  depth: number,
+  ctx: SchedulerContext
 ): Promise<void> {
-  let result = await runner.run(buildScheduledPrompt(agentConfig));
-  let reruns = 0;
-  while (result === "completed" && reruns < maxReruns) {
-    reruns++;
-    logger.info({ rerun: reruns, maxReruns }, `${agentConfig.name} did work, re-running immediately`);
-    result = await runner.run(buildScheduledPrompt(agentConfig));
+  let { result, triggers } = await runner.run(buildScheduledPrompt(agentConfig));
+  if (triggers.length > 0) {
+    dispatchTriggers(triggers, agentConfig.name, depth, ctx);
   }
-  if (result === "completed" && reruns >= maxReruns) {
-    logger.warn({ maxReruns }, `${agentConfig.name} hit max reruns limit`);
+  let reruns = 0;
+  while (result === "completed" && reruns < ctx.maxReruns) {
+    reruns++;
+    ctx.logger.info({ rerun: reruns, maxReruns: ctx.maxReruns }, `${agentConfig.name} did work, re-running immediately`);
+    ({ result, triggers } = await runner.run(buildScheduledPrompt(agentConfig)));
+    if (triggers.length > 0) {
+      dispatchTriggers(triggers, agentConfig.name, depth, ctx);
+    }
+  }
+  if (result === "completed" && reruns >= ctx.maxReruns) {
+    ctx.logger.warn({ maxReruns: ctx.maxReruns }, `${agentConfig.name} hit max reruns limit`);
   }
 }
 
@@ -95,6 +161,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   }
 
   const maxReruns = globalConfig.maxReruns ?? DEFAULT_MAX_RERUNS;
+  const maxTriggerDepth = globalConfig.maxTriggerDepth ?? DEFAULT_MAX_TRIGGER_DEPTH;
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const dockerEnabled = globalConfig.local?.enabled === true;
   const anyWebhooks = agentConfigs.some((a) => a.webhooks?.length);
@@ -366,6 +433,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     }
   }
 
+  const schedulerCtx: SchedulerContext = { runners, agentConfigs, maxReruns, maxTriggerDepth, logger };
+
   // Set up webhook bindings
   if (webhookRegistry) {
     for (const agentConfig of agentConfigs) {
@@ -390,7 +459,11 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
               "webhook triggering agent"
             );
             const prompt = buildWebhookPrompt(agentConfig, context);
-            runner.run(prompt).catch((err) => {
+            runner.run(prompt).then(({ triggers }) => {
+              if (triggers.length > 0) {
+                dispatchTriggers(triggers, agentConfig.name, 0, schedulerCtx);
+              }
+            }).catch((err) => {
               logger.error({ err }, `${agentConfig.name} webhook run failed`);
             });
           },
@@ -413,7 +486,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
         return;
       }
       logger.info(`Triggering ${agentConfig.name} (scheduled)`);
-      await runWithReruns(runner, agentConfig, maxReruns, logger);
+      await runWithReruns(runner, agentConfig, 0, schedulerCtx);
     });
 
     cronJobs.push(job);
@@ -443,7 +516,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
     const runner = runners[agentConfig.name];
     logger.info(`Initial run for ${agentConfig.name}`);
-    runWithReruns(runner, agentConfig, maxReruns, logger).catch((err) => {
+    runWithReruns(runner, agentConfig, 0, schedulerCtx).catch((err) => {
       logger.error({ err }, `Initial ${agentConfig.name} run failed`);
     });
   }

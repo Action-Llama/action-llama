@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildScheduledPrompt, buildWebhookPrompt, buildManualPrompt, buildCredentialContext } from "../../src/agents/prompt.js";
+import { buildScheduledPrompt, buildWebhookPrompt, buildManualPrompt, buildTriggeredPrompt, buildCredentialContext } from "../../src/agents/prompt.js";
 import type { AgentConfig } from "../../src/shared/config.js";
 import type { WebhookContext } from "../../src/webhooks/types.js";
 
@@ -123,5 +123,19 @@ describe("buildWebhookPrompt", () => {
     expect(configIdx).toBeLessThan(credIdx);
     expect(credIdx).toBeLessThan(triggerIdx);
     expect(triggerIdx).toBeLessThan(instructionIdx);
+  });
+});
+
+describe("buildTriggeredPrompt", () => {
+  it("includes agent-config, credential context, agent-trigger, and instruction", () => {
+    const result = buildTriggeredPrompt(agentConfig, "dev", "Please review PR #42");
+    expect(result).toContain("<agent-config>");
+    expect(result).toContain("</agent-config>");
+    expect(result).toContain("<credential-context>");
+    expect(result).toContain("<agent-trigger>");
+    expect(result).toContain("</agent-trigger>");
+    expect(result).toContain('"source":"dev"');
+    expect(result).toContain("Please review PR #42");
+    expect(result).toContain('triggered by the "dev" agent');
   });
 });

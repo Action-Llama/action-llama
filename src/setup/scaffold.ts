@@ -84,6 +84,33 @@ JSON object with the webhook event details. Only present when the agent is trigg
 }
 \`\`\`
 
+### \`<agent-trigger>\` (agent-triggered runs only)
+
+JSON object with the source agent name and context. Only present when the agent was triggered by another agent via a \`[TRIGGER]\` signal. Schema:
+
+\`\`\`json
+{
+  "source": "dev",
+  "context": "I just opened PR #42 on acme/app. Please review it."
+}
+\`\`\`
+
+### Triggering other agents
+
+An agent can trigger another agent by including a \`[TRIGGER]\` block in its output:
+
+\`\`\`
+[TRIGGER: reviewer]
+I just opened PR #42. Please review it.
+URL: https://github.com/acme/app/pull/42
+[/TRIGGER]
+\`\`\`
+
+The scheduler will run the target agent with the context injected as an \`<agent-trigger>\` block. Rules:
+- An agent cannot trigger itself
+- If the target is busy or does not exist, the trigger is skipped
+- Trigger chains are limited by \`maxTriggerDepth\` in \`config.toml\` (default: 3)
+
 ## Webhook Reference
 
 ### How webhooks work
@@ -347,9 +374,10 @@ Set \`maxReruns\` in \`config.toml\` to control the limit (default: 10):
 
 \`\`\`toml
 maxReruns = 5
+maxTriggerDepth = 3   # max depth for agent-to-agent trigger chains (default: 3)
 \`\`\`
 
-Webhook-triggered runs do not re-run — they respond to a single event.
+Webhook-triggered and agent-triggered runs do not re-run — they respond to a single event.
 
 ## Further Documentation
 
