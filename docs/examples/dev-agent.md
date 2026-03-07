@@ -6,7 +6,6 @@ A developer agent that picks up GitHub issues and implements the requested chang
 
 ```toml
 credentials = ["github_token:default", "git_ssh:default"]
-schedule = "*/5 * * * *"
 
 [model]
 provider = "anthropic"
@@ -16,15 +15,14 @@ authType = "api_key"
 
 [[webhooks]]
 type = "github"
-repos = ["acme/app"]
 events = ["issues"]
 actions = ["labeled"]
 labels = ["agent"]
 
 [params]
-repos = ["acme/app"]
 triggerLabel = "agent"
 assignee = "your-github-username"
+# repos = ["fallback/repo"]  # Optional: only needed for scheduled mode without webhooks
 ```
 
 ## `Dockerfile`
