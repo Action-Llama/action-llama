@@ -216,3 +216,5 @@ Published tarball includes `dist/`, `docker/`, `README.md`, `LICENSE`, and `pack
 ## License
 
 MIT
+
+Hello world
