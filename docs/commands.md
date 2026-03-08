@@ -57,7 +57,7 @@ Requires AWS CLI with IAM admin permissions. See [ECS docs](ecs.md) for full set
 
 ## `al creds ls`
 
-Lists all stored credentials by type and instance, showing field names but not values. Useful for seeing what's configured without exposing secrets.
+Lists all stored credentials grouped by type, showing field names but not values.
 
 ```bash
 al creds ls
@@ -66,13 +66,41 @@ al creds ls
 Example output:
 
 ```
-  anthropic_key  (token)
-  github_token  (token)
-  github_webhook_secret:myapp  (secret)
-  github_webhook_secret:staging  (secret)
+  Anthropic API Key (anthropic_key)
+    anthropic_key  (token)
+
+  GitHub Token (github_token)
+    github_token  (token)
+
+  GitHub Webhook Secret (github_webhook_secret)
+    github_webhook_secret:myapp  (secret)
+    github_webhook_secret:staging  (secret)
 ```
 
 Default instances are shown without the `:default` suffix.
+
+## `al creds add <ref>`
+
+Add or update a credential. Runs the interactive prompter with validation for the credential type.
+
+```bash
+al creds add github_token              # adds github_token:default
+al creds add github_webhook_secret:myapp
+al creds add git_ssh:prod
+```
+
+The `<ref>` format is `type` or `type:instance`. If no instance is specified, defaults to `default`. If the credential already exists, you'll be prompted to update it.
+
+## `al creds rm <ref>`
+
+Remove a credential from disk.
+
+```bash
+al creds rm github_token               # removes github_token:default
+al creds rm github_webhook_secret:myapp
+```
+
+Removes all field files for the credential instance. If the type directory becomes empty, it is also removed.
 
 ## `al cloud setup`
 

@@ -102,10 +102,26 @@ const credsCmd = program
 
 credsCmd
   .command("ls")
-  .description("List stored credentials (names only, no secrets)")
+  .description("List stored credentials grouped by type (no secrets)")
   .action(async () => {
     const { list } = await import("./commands/creds.js");
     await list();
+  });
+
+credsCmd
+  .command("add <ref>")
+  .description("Add or update a credential (e.g. github_token:default)")
+  .action(async (ref: string) => {
+    const { add } = await import("./commands/creds.js");
+    await add(ref);
+  });
+
+credsCmd
+  .command("rm <ref>")
+  .description("Remove a credential (e.g. github_token:default)")
+  .action(async (ref: string) => {
+    const { rm } = await import("./commands/creds.js");
+    await rm(ref);
   });
 
 // --- Cloud management ---

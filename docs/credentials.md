@@ -57,15 +57,46 @@ Or multiple SSH keys:
 
 Reference them as `"git_ssh:default"` or `"git_ssh:botty"` in your agent config. If you omit the instance, it defaults to `"default"`.
 
-## Setting Up Credentials
+## Managing Credentials
+
+### `al creds add`
+
+Add or update a credential interactively. Runs validation for the credential type (e.g. API key format, GitHub API check):
+
+```bash
+al creds add github_token              # adds github_token:default
+al creds add github_webhook_secret:myapp
+al creds add git_ssh:prod
+```
+
+### `al creds rm`
+
+Remove a credential:
+
+```bash
+al creds rm github_token               # removes github_token:default
+al creds rm github_webhook_secret:myapp
+```
+
+### `al creds ls`
+
+List all stored credentials grouped by type:
+
+```bash
+al creds ls
+```
+
+### `al doctor`
+
+Scan all agents in a project and prompt for any missing credentials:
+
+```bash
+al doctor -p .
+```
 
 ### During `al new`
 
-The `al new` command prompts for the Anthropic credential during initial setup. Other credentials are configured per-agent by `al doctor`.
-
-### Via `al doctor`
-
-Run `al doctor` to scan all agents and prompt for any missing credentials.
+The `al new` command prompts for the Anthropic credential during initial setup. Other credentials are configured per-agent by `al doctor` or `al creds add`.
 
 ### Manually
 
