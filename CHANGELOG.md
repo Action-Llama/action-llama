@@ -1,5 +1,13 @@
 # @action-llama/action-llama
 
+## 0.4.7
+
+### Patch Changes
+
+- [`5bb4b98`](https://github.com/Action-Llama/action-llama/commit/5bb4b98b06aba75779c2d7c63a6f45aa20aeb231) Thanks [@asselstine](https://github.com/asselstine)! - Fixed daily release workflow: configured changelog-github plugin with repo name,
+  switched to fully automatic publishing (no PR step), and adopted npm trusted
+  publishing with OIDC and build provenance.
+
 ## 0.4.6
 
 ### Patch Changes
