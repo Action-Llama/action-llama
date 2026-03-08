@@ -6,7 +6,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/action-llama/action-llama.git"
+    "url": "https://github.com/action-llama/action-llama"
   },
   "keywords": [
     "llm",
