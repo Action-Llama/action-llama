@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync, readFileSync } from "fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync, lstatSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
 import { parse as parseTOML } from "smol-toml";
@@ -117,13 +117,14 @@ describe("scaffoldProject", () => {
     }
   });
 
-  it("creates project-level AGENTS.md", () => {
+  it("creates project-level AGENTS.md as symlink", () => {
     tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
     const projDir = resolve(tmpDir, "my-project");
     scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
 
     const agentsMdPath = resolve(projDir, "AGENTS.md");
     expect(existsSync(agentsMdPath)).toBe(true);
+    expect(lstatSync(agentsMdPath).isSymbolicLink()).toBe(true);
     const content = readFileSync(agentsMdPath, "utf-8");
     expect(content).toContain("Action Llama Project");
     expect(content).toContain("agent-config.toml");
