@@ -24,7 +24,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           registry-url: "https://registry.npmjs.org"
 
       - run: npm ci
@@ -55,6 +55,4 @@ jobs:
 
       - name: Publish to npm
         if: steps.has-changesets.outputs.has_changesets == 'true'
-        run: |
-          sed -i '/:_authToken/d' "$NPM_CONFIG_USERCONFIG"
-          npm publish --access public --tag next --provenance
+        run: npm publish --access public --tag next
