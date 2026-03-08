@@ -85,6 +85,8 @@ al doctor -c -p .
 
 This pushes all local credentials to Google Secret Manager, then creates a service account for each agent (`al-{agentName}@{project}.iam.gserviceaccount.com`) and grants it `secretmanager.secretAccessor` on only the secrets that agent needs.
 
+> **Re-run after adding agents:** Whenever you add a new agent to your project, re-run `al doctor -c` to create the service account for the new agent. Without this, the new agent will fail to access its credentials at runtime.
+
 ### 5. Start
 
 ```bash

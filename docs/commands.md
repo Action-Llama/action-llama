@@ -55,6 +55,8 @@ For each agent, it:
 
 Requires AWS CLI with IAM admin permissions. See [ECS docs](ecs.md) for full setup.
 
+**Re-run after adding agents:** Whenever you add a new agent to your project, re-run `al doctor -c` to create IAM resources for the new agent. Without this, the new agent won't have access to its credentials at runtime.
+
 ## `al creds ls`
 
 Lists all stored credentials grouped by type, showing field names but not values.

@@ -126,6 +126,8 @@ al doctor -c -p .
 
 This pushes all local credentials to AWS Secrets Manager, then creates a task role for each agent (`al-{agentName}-task-role`) and grants `secretsmanager:GetSecretValue` scoped to only that agent's declared secrets.
 
+> **Re-run after adding agents:** Whenever you add a new agent to your project, re-run `al doctor -c` to create the task role for the new agent. Without this, the new agent will fail to access its credentials at runtime.
+
 Alternatively, create roles manually:
 
 ```bash

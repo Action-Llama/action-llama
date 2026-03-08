@@ -31,6 +31,8 @@ al doctor -c    # Push creds + create per-agent service accounts
 al start -c     # Start on Cloud Run
 ```
 
+If you add a new agent later, re-run `al doctor -c` to create its service account and IAM bindings.
+
 See [Cloud Run docs](cloud-run.md) for prerequisites, full setup walkthrough, and troubleshooting.
 
 ### AWS (ECS Fargate)
@@ -52,6 +54,8 @@ subnets = ["subnet-abc123"]
 al doctor -c    # Push creds + create per-agent IAM task roles
 al start -c     # Start on ECS Fargate
 ```
+
+If you add a new agent later, re-run `al doctor -c` to create its task role and IAM policy.
 
 See [ECS docs](ecs.md) for prerequisites, full setup walkthrough, and troubleshooting.
 

@@ -91,6 +91,16 @@ USER node
 
 This is only used in Docker mode (`"docker": { "enabled": true }` in `config.json`). See [Docker docs](docker.md) for the full reference.
 
+### 7. (Cloud only) Re-run `al doctor -c`
+
+If you're running agents on cloud infrastructure, re-run `al doctor -c` after adding a new agent. This creates the per-agent IAM resources (service account for Cloud Run, task role for ECS) and grants the new agent access to its declared secrets.
+
+```bash
+al doctor -c -p .
+```
+
+Without this step, the new agent will fail to access its credentials at runtime.
+
 ## Tips
 
 - Agent name is derived from the directory name — no need to put it in the config
