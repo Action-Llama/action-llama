@@ -23,6 +23,8 @@ This project uses **conventional commits** and **changesets** for versioning.
 
 ### Commit message format
 
+Do **not** add `Co-Authored-By` or any trailer lines to commits. Commits should be authored solely by the committer.
+
 ```
 <type>: <short description>
 
