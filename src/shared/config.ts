@@ -69,6 +69,7 @@ export interface AgentConfig {
   schedule?: string;
   webhooks?: WebhookTrigger[];
   params?: Record<string, unknown>;
+  parallelism?: number; // Number of concurrent runs allowed (default: 1)
 }
 
 // --- Loaders ---

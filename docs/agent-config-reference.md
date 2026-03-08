@@ -13,6 +13,9 @@ credentials = ["github_token:default", "git_ssh:default", "sentry_token:default"
 # Agent must have at least one of: schedule, webhooks
 schedule = "*/5 * * * *"
 
+# Optional: number of concurrent runs allowed (default: 1)
+parallelism = 2
+
 # Required: LLM model configuration
 [model]
 provider = "anthropic"                    # LLM provider: anthropic, openai, groq, google, xai, mistral, openrouter, or custom
@@ -48,6 +51,7 @@ sentryProjects = ["web-app", "api"]
 |-------|------|----------|-------------|
 | `credentials` | string[] | Yes | Credential refs as `"type:instance"` needed at runtime |
 | `schedule` | string | No* | Cron expression for polling |
+| `parallelism` | number | No | Number of concurrent runs allowed (default: 1) |
 | `model` | table | No | LLM model configuration (falls back to `[model]` in project `config.toml`) |
 | `model.provider` | string | Yes* | LLM provider ("anthropic", "openai", "groq", "google", "xai", "mistral", "openrouter", or "custom") |
 | `model.model` | string | Yes* | Model ID |
@@ -57,6 +61,34 @@ sentryProjects = ["web-app", "api"]
 | `params` | table | No | Custom key-value params for the agent prompt |
 
 *At least one of `schedule` or `webhooks` is required. *Required within `[model]` if the agent defines its own model block (otherwise inherits from project `config.toml`).
+
+## Parallelism
+
+The `parallelism` field controls how many instances of an agent can run concurrently. This is useful for agents that handle high-volume workloads or when you want to process multiple tasks simultaneously.
+
+- **Default**: 1 (only one instance can run at a time)
+- **Minimum**: 1 
+- **Maximum**: No hard limit, but consider system resources and model API rate limits
+
+### How it works
+
+1. **Scheduled runs**: If a cron trigger fires but all agent instances are busy, the scheduled run is skipped with a warning
+2. **Webhook events**: If a webhook arrives but all instances are busy, the event is queued (up to `webhookQueueSize` limit in global config)
+3. **Agent triggers**: If one agent tries to trigger another but the target has no available instances, the trigger is skipped with a warning
+
+### Example use cases
+
+- **Dev agent** with `parallelism = 3`: Handle multiple GitHub issues simultaneously
+- **Review agent** with `parallelism = 2`: Review multiple PRs in parallel
+- **Monitoring agent** with `parallelism = 1`: Ensure only one instance processes alerts at a time
+
+### Resource considerations
+
+Each parallel instance:
+- Uses separate Docker containers (in Docker mode)
+- Has independent logging streams
+- May consume LLM API quota concurrently
+- Uses system memory and CPU
 
 ## Webhook Trigger Fields
 

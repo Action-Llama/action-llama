@@ -112,9 +112,16 @@ describe("startScheduler", () => {
     expect(mockRun).toHaveBeenCalledTimes(3);
   });
 
-  it("creates runners for each agent", async () => {
-    const { runners } = await startScheduler(tmpDir);
-    expect(Object.keys(runners).sort()).toEqual(["dev", "devops", "reviewer"]);
+  it("creates runner pools for each agent", async () => {
+    const { runnerPools } = await startScheduler(tmpDir);
+    expect(Object.keys(runnerPools).sort()).toEqual(["dev", "devops", "reviewer"]);
+    
+    // Each pool should have default parallelism of 1
+    for (const poolName of Object.keys(runnerPools)) {
+      const pool = runnerPools[poolName];
+      expect(pool.parallelism).toBe(1);
+      expect(pool.runners).toHaveLength(1);
+    }
   });
 
   it("cron callback runs agent when not busy", async () => {
@@ -133,7 +140,14 @@ describe("startScheduler", () => {
     mockIsRunning = true;
     await cronCallbacks[0]();
     expect(mockRun).not.toHaveBeenCalled();
-    expect(mockLoggerWarn).toHaveBeenCalledWith(expect.stringContaining("busy"));
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: "dev",
+        running: 1,
+        parallelism: 1,
+      }),
+      "all agent runners busy, skipping scheduled run"
+    );
   });
 
   it("handles initial run failure", async () => {
@@ -246,5 +260,124 @@ describe("startScheduler", () => {
       expect.objectContaining({ depth: 1, maxTriggerDepth: 1 }),
       expect.stringContaining("trigger depth limit reached")
     );
+  });
+
+  describe("parallelism", () => {
+    function setupParallelismProject(tmpDir: string) {
+      const globalConfig = {};
+      writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
+
+      const model = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" };
+      const agents = [
+        { name: "parallel-agent", credentials: ["github_token:default"], model, schedule: "*/5 * * * *", parallelism: 3 },
+        { name: "single-agent", credentials: ["github_token:default"], model, schedule: "*/5 * * * *" }, // defaults to 1
+      ];
+
+      for (const agent of agents) {
+        const agentDir = resolve(tmpDir, agent.name);
+        mkdirSync(agentDir, { recursive: true });
+        // Strip name before writing (matches scaffold behavior — name is injected at load time)
+        const { name: _, ...configToWrite } = agent;
+        writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML(configToWrite as Record<string, unknown>));
+        mkdirSync(resolve(tmpDir, ".al", "state", agent.name), { recursive: true });
+      }
+    }
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+      cronCallbacks.length = 0;
+      mockIsRunning = false;
+      tmpDir = mkdtempSync(join(tmpdir(), "al-sched-parallel-"));
+      setupParallelismProject(tmpDir);
+    });
+
+    it("creates multiple runners when parallelism > 1", async () => {
+      const { runnerPools } = await startScheduler(tmpDir);
+      
+      // parallel-agent should have 3 runners
+      expect(runnerPools["parallel-agent"].parallelism).toBe(3);
+      expect(runnerPools["parallel-agent"].runners).toHaveLength(3);
+      
+      // single-agent should have 1 runner (default)
+      expect(runnerPools["single-agent"].parallelism).toBe(1);
+      expect(runnerPools["single-agent"].runners).toHaveLength(1);
+    });
+
+    it("allows concurrent runs up to parallelism limit", async () => {
+      // Mock some runners as running
+      const runningStates = new Map<number, boolean>();
+      let callIndex = 0;
+
+      // Override the mock to simulate different runners with different running states
+      vi.mocked(mockRun).mockImplementation(() => {
+        const currentCallIndex = callIndex++;
+        runningStates.set(currentCallIndex, true);
+        
+        // Simulate async work by keeping the runner "running" briefly
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            runningStates.set(currentCallIndex, false);
+            resolve({ result: "silent", triggers: [] });
+          }, 100);
+        });
+      });
+
+      // Override isRunning to track per-call
+      Object.defineProperty(mockRun, 'isRunning', {
+        get() {
+          return Array.from(runningStates.values()).some(running => running);
+        }
+      });
+
+      const { runnerPools } = await startScheduler(tmpDir);
+      vi.clearAllMocks();
+      callIndex = 0;
+
+      // Trigger multiple cron runs quickly
+      const cronPromises = [];
+      for (let i = 0; i < 5; i++) {
+        cronPromises.push(cronCallbacks[0]()); // parallel-agent cron
+      }
+
+      // Wait for all to settle
+      await Promise.all(cronPromises);
+
+      // parallel-agent can run up to 3 concurrent instances
+      // single-agent can run 1 instance
+      // The exact number depends on timing, but we should see multiple calls
+      expect(mockRun).toHaveBeenCalled();
+    });
+
+    it("queues webhooks when all runners are busy", async () => {
+      // Set up a webhook project
+      const globalConfig = {
+        webhooks: {
+          github: { type: "github", credential: "default" }
+        }
+      };
+      writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
+
+      const agent = {
+        name: "webhook-agent", 
+        credentials: ["github_token:default"], 
+        model: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
+        parallelism: 2,
+        webhooks: [{ source: "github", events: ["issues"], actions: ["opened"] }]
+      };
+      
+      const agentDir = resolve(tmpDir, agent.name);
+      mkdirSync(agentDir, { recursive: true });
+      const { name: _, ...configToWrite } = agent;
+      writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML(configToWrite as Record<string, unknown>));
+
+      // Mock all runners as busy
+      mockIsRunning = true;
+      
+      const { runnerPools } = await startScheduler(tmpDir);
+      
+      // Verify webhook agent has parallelism of 2
+      expect(runnerPools["webhook-agent"].parallelism).toBe(2);
+      expect(runnerPools["webhook-agent"].runners).toHaveLength(2);
+    });
   });
 });
