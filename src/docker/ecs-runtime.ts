@@ -492,12 +492,25 @@ export class ECSFargateRuntime implements ContainerRuntime {
       if (err.message?.includes("Unable to assume the service linked role") || 
           err.message?.includes("Unable to assume the role")) {
         const roleName = AWS_CONSTANTS.taskRoleName(opts.agentName);
-        const betterMessage = `Failed to start ECS task for agent "${opts.agentName}". ` +
-          `The IAM task role "${roleName}" either doesn't exist or can't be assumed by ECS.\n\n` +
-          `To fix this issue:\n` +
-          `1. Run 'al doctor -c' to create per-agent IAM roles\n` +
-          `2. Or manually create the role with ECS task trust policy:\n` +
-          `   aws iam create-role --role-name ${roleName} --assume-role-policy-document file://ecs-trust.json\n\n` +
+        const accountId = this.getAccountId();
+        const roleArn = `arn:aws:iam::${accountId}:role/${roleName}`;
+        
+        const betterMessage = `❌ Failed to start ECS task for agent "${opts.agentName}"\n\n` +
+          `🔍 Problem: ECS cannot assume the IAM task role "${roleName}"\n` +
+          `   Expected role ARN: ${roleArn}\n\n` +
+          `This typically happens with the second agent in a project when the role wasn't ` +
+          `created during initial setup, or the trust policy is incorrect.\n\n` +
+          `🔧 Recommended solution:\n` +
+          `   al doctor -c\n\n` +
+          `This validates and creates missing IAM roles with correct permissions.\n\n` +
+          `🔍 Manual diagnosis:\n` +
+          `   1. Check if role exists: aws iam get-role --role-name ${roleName}\n` +
+          `   2. If it exists, verify trust policy allows "ecs-tasks.amazonaws.com"\n` +
+          `   3. If missing, role will be created by 'al doctor -c'\n\n` +
+          `💡 Common causes:\n` +
+          `   • Role doesn't exist (most common for 2nd+ agents)\n` +
+          `   • Role exists but trust policy doesn't allow ECS\n` +
+          `   • Permissions on the role are insufficient\n\n` +
           `Original error: ${err.message}`;
         throw new Error(betterMessage);
       }
@@ -711,13 +724,28 @@ export class ECSFargateRuntime implements ContainerRuntime {
       // Provide specific guidance for role assumption failures
       if (reason.includes("Unable to assume the role") || 
           reason.includes("arn:aws:iam::") && reason.includes("role/al-")) {
+        
+        const roleName = AWS_CONSTANTS.taskRoleName(agentName);
+        const accountId = this.getAccountId();
+        const roleArn = `arn:aws:iam::${accountId}:role/${roleName}`;
+        
         throw new Error(
-          `ECS failed to start task for agent "${agentName}": ${reason}\n\n` +
-          `This usually means the IAM task role doesn't exist or has incorrect permissions.\n` +
-          `To fix:\n` +
-          `1. Run 'al doctor -c' to create/update per-agent IAM roles\n` +
-          `2. Verify the role ${AWS_CONSTANTS.taskRoleName(agentName)} exists in your AWS account\n` +
-          `3. Check that the role has the correct ECS task trust policy`
+          `❌ ECS failed to start task for agent "${agentName}"\n\n` +
+          `🔍 Root cause: ECS cannot assume IAM role "${roleName}"\n` +
+          `   Role ARN: ${roleArn}\n\n` +
+          `This is a common issue when setting up multiple agents. The second (and subsequent) ` +
+          `agents often fail because their IAM roles weren't created during initial setup.\n\n` +
+          `🔧 Quick fix (recommended):\n` +
+          `   al doctor -c\n\n` +
+          `This will create the missing role and set up proper permissions.\n\n` +
+          `🔧 Alternative manual fix:\n` +
+          `   1. Create the role:\n` +
+          `      aws iam create-role --role-name ${roleName} --assume-role-policy-document file://ecs-trust.json\n` +
+          `   2. Add secrets access policy:\n` +
+          `      aws iam put-role-policy --role-name ${roleName} --policy-name SecretsAccess --policy-document file://secrets-policy.json\n\n` +
+          `🔍 To diagnose the exact issue:\n` +
+          `   aws iam get-role --role-name ${roleName}\n\n` +
+          `Original ECS error: ${reason}`
         );
       }
       

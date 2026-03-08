@@ -205,6 +205,24 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     await backendRequireCredentialRef(credRef);
   }
 
+  // Validate ECS IAM roles exist if using cloud ECS mode
+  if (cloudMode && globalConfig.cloud?.provider === "ecs") {
+    logger.info("Validating ECS IAM task roles...");
+    const { validateEcsRoles } = await import("../cli/commands/doctor.js");
+    try {
+      await validateEcsRoles(projectPath, globalConfig.cloud);
+      logger.info("All ECS IAM task roles validated successfully");
+    } catch (err: any) {
+      logger.error("ECS IAM role validation failed");
+      throw new Error(
+        `❌ ECS IAM role validation failed\n\n` +
+        `${err.message}\n\n` +
+        `This validation prevents runtime failures when agents try to start.\n` +
+        `Fix the IAM roles before starting the scheduler.`
+      );
+    }
+  }
+
   const maxReruns = globalConfig.maxReruns ?? DEFAULT_MAX_RERUNS;
   const maxTriggerDepth = globalConfig.maxTriggerDepth ?? DEFAULT_MAX_TRIGGER_DEPTH;
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
