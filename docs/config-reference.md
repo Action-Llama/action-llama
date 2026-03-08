@@ -34,7 +34,7 @@ port = 8080                 # Gateway port (default: 8080)
 github = "github_webhook_secret:default"
 
 # Scheduler settings
-maxReruns = 10              # Max retries for failed agent runs (default: 10)
+maxReruns = 10              # Max consecutive reruns for successful agent runs (default: 10)
 maxTriggerDepth = 3         # Max depth for agent-to-agent trigger chains (default: 3)
 ```
 
@@ -44,7 +44,7 @@ maxTriggerDepth = 3         # Max depth for agent-to-agent trigger chains (defau
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `maxReruns` | number | `10` | Maximum retry attempts for a failed agent run before giving up |
+| `maxReruns` | number | `10` | Maximum consecutive reruns when an agent completes productive work (non-`[SILENT]`) before stopping |
 | `maxTriggerDepth` | number | `3` | Maximum depth for agent-to-agent `[TRIGGER]` chains (A triggers B triggers C = depth 2) |
 
 ### `[model]` — Default LLM
