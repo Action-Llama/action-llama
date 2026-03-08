@@ -484,8 +484,25 @@ export class ECSFargateRuntime implements ContainerRuntime {
       streamPrefix: family,
     });
 
-    const taskArn = await this.runTask(taskDefArn);
-    return taskArn;
+    try {
+      const taskArn = await this.runTask(taskDefArn);
+      return taskArn;
+    } catch (err: any) {
+      // Improve error message for common IAM role issues
+      if (err.message?.includes("Unable to assume the service linked role") || 
+          err.message?.includes("Unable to assume the role")) {
+        const roleName = AWS_CONSTANTS.taskRoleName(opts.agentName);
+        const betterMessage = `Failed to start ECS task for agent "${opts.agentName}". ` +
+          `The IAM task role "${roleName}" either doesn't exist or can't be assumed by ECS.\n\n` +
+          `To fix this issue:\n` +
+          `1. Run 'al doctor -c' to create per-agent IAM roles\n` +
+          `2. Or manually create the role with ECS task trust policy:\n` +
+          `   aws iam create-role --role-name ${roleName} --assume-role-policy-document file://ecs-trust.json\n\n` +
+          `Original error: ${err.message}`;
+        throw new Error(betterMessage);
+      }
+      throw err;
+    }
   }
 
   streamLogs(
@@ -686,6 +703,24 @@ export class ECSFargateRuntime implements ContainerRuntime {
     if (tasks.length === 0) {
       const failures = res.failures || [];
       const reason = failures[0]?.reason || "unknown";
+      
+      // Extract agent name from task definition ARN for better error messages
+      const family = taskDefinitionArn.split("/").pop()?.split(":")[0] ?? "";
+      const agentName = AWS_CONSTANTS.agentNameFromFamily(family);
+      
+      // Provide specific guidance for role assumption failures
+      if (reason.includes("Unable to assume the role") || 
+          reason.includes("arn:aws:iam::") && reason.includes("role/al-")) {
+        throw new Error(
+          `ECS failed to start task for agent "${agentName}": ${reason}\n\n` +
+          `This usually means the IAM task role doesn't exist or has incorrect permissions.\n` +
+          `To fix:\n` +
+          `1. Run 'al doctor -c' to create/update per-agent IAM roles\n` +
+          `2. Verify the role ${AWS_CONSTANTS.taskRoleName(agentName)} exists in your AWS account\n` +
+          `3. Check that the role has the correct ECS task trust policy`
+        );
+      }
+      
       throw new Error(`Failed to start ECS task: ${reason}`);
     }
 
