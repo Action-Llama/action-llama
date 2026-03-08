@@ -93,6 +93,18 @@ export class AgentRunner {
     const runStartTime = Date.now();
     let runError: string | undefined;
 
+    // Declared outside try so the finally block can restore them.
+    const GIT_ENV_KEYS = [
+      "GIT_AUTHOR_NAME",
+      "GIT_COMMITTER_NAME",
+      "GIT_AUTHOR_EMAIL",
+      "GIT_COMMITTER_EMAIL",
+    ] as const;
+    const savedGitEnv: Record<string, string | undefined> = {};
+    for (const key of GIT_ENV_KEYS) {
+      savedGitEnv[key] = process.env[key];
+    }
+
     try {
       const cwd = agentDir(this.projectPath, this.agentConfig.name);
       const agentsFile = resolve(cwd, "PLAYBOOK.md");
@@ -120,7 +132,7 @@ export class AgentRunner {
         }
       }
 
-      // Set git author identity from git_ssh credential
+      // Set git author identity from git_ssh credential (scoped to this run)
       const gitSshRef = this.agentConfig.credentials.find((ref) => parseCredentialRef(ref).type === "git_ssh");
       if (gitSshRef) {
         const { instance } = parseCredentialRef(gitSshRef);
@@ -275,6 +287,16 @@ export class AgentRunner {
       runError = String(err?.message || err).slice(0, 200);
       return { result: "error", triggers: [] };
     } finally {
+      // Restore the git env vars we may have overwritten so other
+      // agents running in the same process get a clean slate.
+      for (const key of GIT_ENV_KEYS) {
+        if (savedGitEnv[key] === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = savedGitEnv[key];
+        }
+      }
+
       const elapsed = Date.now() - runStartTime;
       this.statusTracker?.completeRun(this.agentConfig.name, elapsed, runError);
       this.running = false;
