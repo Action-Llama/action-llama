@@ -96,7 +96,7 @@ The agent can emit these signals in its text output:
 |--------|--------|
 | `[SILENT]` | Tells the scheduler the agent found no work. Logged as "no work to do" and further output is skipped. |
 | `[STATUS: <text>]` | Status update shown in the TUI (e.g. `[STATUS: reviewing PR #42]`). |
-| `[TRIGGER: <agent>]...[/TRIGGER]` | Triggers another agent with the enclosed context. See [Docker docs](docker.md#agent-triggers). |
+| `[TRIGGER: <agent>]...[/TRIGGER]` | Triggers another agent with the enclosed context. The target receives a `<agent-trigger>` prompt with the source agent name and context. Self-triggers are skipped; chains are bounded by `maxTriggerDepth`. |
 
 ## Runtime lifecycle
 
