@@ -87,84 +87,11 @@ All filter fields below are optional. Omit all of them to trigger on everything 
 |-------|------|-------------|
 | `resources` | string[] | Resource types: event_alert, metric_alert, issue, error, comment |
 
-## Model Configuration Examples
+## Model Configuration
 
-### Anthropic Claude
+The `[model]` section is optional — agents inherit the default model from the project's `config.toml`. Only add `[model]` to an agent config if you want to override the default for that specific agent.
 
-```toml
-[model]
-provider = "anthropic"
-model = "claude-sonnet-4-20250514"        # or claude-opus-4-20250514, claude-haiku-3-5-20241022
-thinkingLevel = "medium"
-authType = "api_key"
-```
-
-### OpenAI GPT
-
-```toml
-[model]
-provider = "openai"
-model = "gpt-4o"                          # or gpt-4o-mini, gpt-4-turbo, o1-preview, o1-mini
-authType = "api_key"
-```
-
-### Groq
-
-```toml
-[model]
-provider = "groq"
-model = "llama-3.3-70b-versatile"
-authType = "api_key"
-```
-
-### Google Gemini
-
-```toml
-[model]
-provider = "google"
-model = "gemini-2.0-flash-exp"
-authType = "api_key"
-```
-
-### xAI Grok
-
-```toml
-[model]
-provider = "xai"
-model = "grok-beta"
-authType = "api_key"
-```
-
-### Mistral
-
-```toml
-[model]
-provider = "mistral"
-model = "mistral-large-2411"
-authType = "api_key"
-```
-
-### OpenRouter
-
-```toml
-[model]
-provider = "openrouter"
-model = "anthropic/claude-3.5-sonnet"     # Any model available on OpenRouter
-authType = "api_key"
-```
-
-### Custom Provider
-
-```toml
-[model]
-provider = "custom"
-model = "your-model-name"
-authType = "api_key"
-```
-
-For custom providers, store the API key as `custom_key:default` credential.
-
-**Note:** `thinkingLevel` is optional and only relevant for models with reasoning support (e.g. Claude Sonnet/Opus). If omitted, a sensible default is used. For models without reasoning, it is ignored.
+See [Models](models.md) for all supported providers, model IDs, auth types, thinking levels, and credential setup.
 
 ## Cloud Runtimes
 

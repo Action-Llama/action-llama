@@ -130,9 +130,12 @@ See the [agent-config.toml reference](docs/agent-config-reference.md), [credenti
 
 | Doc | Description |
 |-----|-------------|
+| [Agents](docs/agents.md) | What an agent is: config, PLAYBOOK.md, Dockerfile, runtime prompt |
 | [CLI Commands](docs/commands.md) | All CLI commands with options and flags |
 | [Creating Agents](docs/creating-agents.md) | Step-by-step guide to creating a new agent |
-| [agent-config.toml Reference](docs/agent-config-reference.md) | All config fields with examples |
+| [config.toml Reference](docs/config-reference.md) | Project-level config: model, Docker, cloud, gateway, webhooks |
+| [agent-config.toml Reference](docs/agent-config-reference.md) | Per-agent config fields with examples |
+| [Models](docs/models.md) | Supported LLM providers, model IDs, auth types, thinking levels |
 | [Credentials](docs/credentials.md) | Credential types, storage layout, named instances |
 | [Webhooks](docs/webhooks.md) | Webhook setup, filter fields, Sentry integration |
 | [Docker](docs/docker.md) | Container isolation, custom Dockerfiles, filesystem layout |
@@ -185,13 +188,6 @@ src/
   tui/              # Ink-based terminal UI (App.tsx, status tracker)
   shared/           # Config loader, credentials, logger, paths, git helpers
 ```
-
-### Extension points
-
-- **New agent** — create a directory with an `agent-config.toml` and `PLAYBOOK.md` in your project. See [creating agents](docs/creating-agents.md).
-- **New webhook provider** — implement the `WebhookProvider` interface in `src/webhooks/providers/` and register it in `src/scheduler/index.ts`. The registry handles routing by `source` field.
-- **Custom runner** — subclass or replace `AgentRunner` in `src/agents/runner.ts` to change how agent sessions are created (different model providers, tool sets, etc.).
-- **Gateway routes** — add routes in `src/gateway/routes/` and register them in `src/gateway/index.ts`.
 
 ### Tests
 
