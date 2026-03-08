@@ -3,6 +3,7 @@ import { EventEmitter } from "events";
 export interface AgentStatus {
   name: string;
   state: "idle" | "running" | "building" | "error";
+  enabled: boolean;
   statusText: string | null;
   lastError: string | null;
   lastRunAt: Date | null;
@@ -38,6 +39,7 @@ export class StatusTracker extends EventEmitter {
     this.agents.set(name, {
       name,
       state: "idle",
+      enabled: true,
       statusText: null,
       lastError: null,
       lastRunAt: null,
@@ -98,6 +100,28 @@ export class StatusTracker extends EventEmitter {
     if (!agent) return;
     agent.nextRunAt = nextRunAt;
     this.emit("update");
+  }
+
+  enableAgent(name: string): void {
+    const agent = this.agents.get(name);
+    if (!agent) return;
+    agent.enabled = true;
+    this.emit("update");
+    this.emit("agent-enabled", name);
+  }
+
+  disableAgent(name: string): void {
+    const agent = this.agents.get(name);
+    if (!agent) return;
+    agent.enabled = false;
+    agent.nextRunAt = null; // Clear next run time when disabled
+    this.emit("update");
+    this.emit("agent-disabled", name);
+  }
+
+  isAgentEnabled(name: string): boolean {
+    const agent = this.agents.get(name);
+    return agent ? agent.enabled : false;
   }
 
   setSchedulerInfo(info: SchedulerInfo): void {
