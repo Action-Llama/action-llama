@@ -285,6 +285,12 @@ describe("GitHubWebhookProvider", () => {
       expect(provider.matchesFilter(baseContext, { repos: ["other/repo"] })).toBe(false);
     });
 
+    it("matches on orgs", () => {
+      expect(provider.matchesFilter(baseContext, { orgs: ["acme"] })).toBe(true);
+      expect(provider.matchesFilter(baseContext, { orgs: ["other"] })).toBe(false);
+      expect(provider.matchesFilter(baseContext, { orgs: ["acme", "other"] })).toBe(true);
+    });
+
     it("matches on labels (any match)", () => {
       expect(provider.matchesFilter(baseContext, { labels: ["agent"] })).toBe(true);
       expect(provider.matchesFilter(baseContext, { labels: ["nonexistent"] })).toBe(false);
@@ -319,6 +325,23 @@ describe("GitHubWebhookProvider", () => {
       // Fail one criterion
       const filter2: GitHubWebhookFilter = { ...filter, assignee: "wrong" };
       expect(provider.matchesFilter(baseContext, filter2)).toBe(false);
+    });
+
+    it("matches with both repos and orgs criteria", () => {
+      const filter: GitHubWebhookFilter = {
+        repos: ["acme/app"],
+        orgs: ["acme"],
+      };
+      expect(provider.matchesFilter(baseContext, filter)).toBe(true);
+
+      // Test with different repos in same org
+      const otherRepoContext = { ...baseContext, repo: "acme/other" };
+      expect(provider.matchesFilter(otherRepoContext, { orgs: ["acme"] })).toBe(true);
+      expect(provider.matchesFilter(otherRepoContext, { repos: ["acme/app"] })).toBe(false);
+
+      // Test with different org
+      const differentOrgContext = { ...baseContext, repo: "other-org/app" };
+      expect(provider.matchesFilter(differentOrgContext, { orgs: ["acme"] })).toBe(false);
     });
 
     it("skips action filter when context has no action", () => {
