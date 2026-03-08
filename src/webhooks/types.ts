@@ -42,8 +42,7 @@ export type WebhookFilter = GitHubWebhookFilter | SentryWebhookFilter;
 // --- Webhook trigger (used in agent config) ---
 
 export interface WebhookTrigger {
-  type: string;       // provider type: "github", "sentry"
-  source?: string;    // credential instance name, e.g. "GenerationSoftwareOrg" (optional)
+  source: string;     // references a named webhook in config.toml [webhooks.<name>]
   events?: string[];
   actions?: string[];
   repos?: string[];

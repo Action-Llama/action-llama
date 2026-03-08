@@ -122,17 +122,36 @@ The scheduler will run the target agent with the context injected as an \`<agent
 
 ### How webhooks work
 
-1. The gateway receives an HTTP POST from GitHub or Sentry at \`/webhooks/github\` or \`/webhooks/sentry\`
-2. The payload is validated using secrets loaded from the named credential instance (e.g. HMAC-SHA256 for GitHub using \`github_webhook_secret\`, client secret for Sentry using \`sentry_client_secret\`)
-3. The gateway matches the event against all agents' \`[[webhooks]]\` entries (AND logic — all specified fields must match; omitted fields are not checked)
-4. Matching agents are triggered with a \`<webhook-trigger>\` block injected into their prompt
+1. Webhook sources are defined in the project's \`config.toml\` under \`[webhooks.<name>]\` with a provider type and optional credential
+2. The gateway receives an HTTP POST at \`/webhooks/github\` or \`/webhooks/sentry\`
+3. The payload is validated using the credential's HMAC secret (e.g. \`github_webhook_secret\` for GitHub)
+4. The gateway matches the event against all agents' \`[[webhooks]]\` entries (AND logic — all specified fields must match; omitted fields are not checked)
+5. Matching agents are triggered with a \`<webhook-trigger>\` block injected into their prompt
 
-### GitHub webhook fields
+### Defining webhook sources in \`config.toml\`
+
+Webhook sources are defined once at the project level. Each source has a name, provider type, and optional credential instance for HMAC validation:
+
+\`\`\`toml
+[webhooks.my-github]
+type = "github"
+credential = "MyOrg"          # credential instance name (github_webhook_secret:MyOrg)
+
+[webhooks.my-sentry]
+type = "sentry"
+credential = "SentryProd"     # credential instance name (sentry_client_secret:SentryProd)
+
+[webhooks.unsigned-github]
+type = "github"               # no credential — accepts unsigned webhooks
+\`\`\`
+
+### Agent webhook filters
+
+Agents reference a webhook source by name and add filters:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| \`type\` | string | Provider type — must be \`"github"\` (required) |
-| \`source\` | string | Credential instance name (optional, e.g. \`"MyOrg"\`) |
+| \`source\` | string | Name of a webhook source from \`config.toml\` (required) |
 | \`repos\` | string[] | Filter to specific repos (owner/repo format) |
 | \`events\` | string[] | Event types: \`issues\`, \`pull_request\`, \`push\`, \`issue_comment\`, etc. |
 | \`actions\` | string[] | Event actions: \`opened\`, \`labeled\`, \`closed\`, \`synchronize\`, etc. |
@@ -140,14 +159,7 @@ The scheduler will run the target agent with the context injected as an \`<agent
 | \`assignee\` | string | Only trigger when assigned to this user |
 | \`author\` | string | Only trigger for events by this author |
 | \`branches\` | string[] | Only trigger for pushes/PRs on these branches |
-
-### Sentry webhook fields
-
-| Field | Type | Description |
-|-------|------|-------------|
-| \`type\` | string | Provider type — must be \`"sentry"\` (required) |
-| \`source\` | string | Credential instance name (optional) |
-| \`resources\` | string[] | Resource types: \`error\`, \`event_alert\`, \`metric_alert\`, \`issue\`, \`comment\` |
+| \`resources\` | string[] | Sentry: \`error\`, \`event_alert\`, \`metric_alert\`, \`issue\`, \`comment\` |
 
 ### GitHub webhook setup
 
@@ -158,28 +170,25 @@ In your GitHub repo settings, add a webhook:
 
 ### TOML syntax for webhooks
 
-Each webhook is a separate \`[[webhooks]]\` block (double brackets = array of tables):
+Each webhook is a separate \`[[webhooks]]\` block (double brackets = array of tables). The \`source\` field references a webhook source defined in \`config.toml\`:
 
 \`\`\`toml
-# Each [[webhooks]] is a separate array entry
+# Each [[webhooks]] references a source from config.toml
 [[webhooks]]
-type = "github"
+source = "my-github"
 events = ["issues"]
 actions = ["labeled"]
 labels = ["agent"]
 
 [[webhooks]]
-type = "github"
-source = "MyOrg"          # optional — credential instance name
+source = "my-github"
 events = ["pull_request"]
 # repos = ["my-org/specific-repo"]  # optional — filter to specific repos
 
 [[webhooks]]
-type = "sentry"
+source = "my-sentry"
 resources = ["error", "event_alert"]
 \`\`\`
-
-\`type\` is the provider type (required). \`source\` is the credential instance name (optional — defaults to \`"default"\`).
 
 ## \`agent-config.toml\` Complete Reference
 
@@ -191,7 +200,7 @@ The config file uses TOML syntax. The agent name is derived from the directory n
 credentials = ["github_token:default", "git_ssh:default"]
 
 [[webhooks]]
-type = "github"
+source = "my-github"
 events = ["issues"]
 actions = ["labeled"]
 labels = ["agent"]
@@ -217,13 +226,13 @@ thinkingLevel = "medium"
 authType = "api_key"
 
 [[webhooks]]
-type = "github"
+source = "my-github"
 events = ["issues"]
 actions = ["labeled"]
 labels = ["agent"]
 
 [[webhooks]]
-type = "sentry"
+source = "my-sentry"
 resources = ["error", "event_alert"]
 
 [params]
@@ -245,8 +254,7 @@ sentryProjects = ["web-app", "api"]
 | \`model.model\` | string | Yes* | Model ID (e.g. "claude-sonnet-4-20250514") |
 | \`model.thinkingLevel\` | string | No | off \\| minimal \\| low \\| medium \\| high \\| xhigh (only relevant for models with reasoning support, e.g. Claude Sonnet/Opus; omit for other models) |
 | \`model.authType\` | string | Yes* | api_key \\| oauth_token \\| pi_auth |
-| \`webhooks[].type\` | string | Yes | Provider type: "github" or "sentry" |
-| \`webhooks[].source\` | string | No | Credential instance name (defaults to "default") |
+| \`webhooks[].source\` | string | Yes | Name of a webhook source from \`config.toml\` |
 | \`webhooks[].repos\` | string[] | No | Filter to specific repos |
 | \`webhooks[].events\` | string[] | No | GitHub event types: issues, pull_request, push |
 | \`webhooks[].actions\` | string[] | No | GitHub actions: opened, labeled, closed |

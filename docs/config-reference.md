@@ -29,9 +29,10 @@ provider = "cloud-run"      # "cloud-run" or "ecs"
 [gateway]
 port = 8080                 # Gateway port (default: 8080)
 
-# Global webhook credential mappings
-[webhooks.secretCredentials]
-github = "github_webhook_secret:default"
+# Webhook sources — named webhook endpoints with provider type and credential
+[webhooks.my-github]
+type = "github"
+credential = "MyOrg"              # credential instance for HMAC validation
 
 # Scheduler settings
 maxReruns = 10              # Max consecutive reruns for successful agent runs (default: 10)
@@ -116,22 +117,35 @@ The gateway starts automatically when Docker mode or webhooks are enabled. It ha
 |-------|------|---------|-------------|
 | `port` | number | `8080` | Port for the gateway HTTP server |
 
-### `[webhooks]` — Global Webhook Settings
+### `[webhooks.*]` — Webhook Sources
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `secretCredentials` | table | Maps webhook source names to credential references for signature verification |
+Named webhook sources that agents can reference in their `[[webhooks]]` triggers. Each source defines a provider type and an optional credential for signature validation.
 
-The `secretCredentials` table maps source identifiers to credential names. This tells the gateway which credential to use when verifying incoming webhook signatures.
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | string | Yes | Provider type: `"github"` or `"sentry"` |
+| `credential` | string | No | Credential instance name for HMAC signature validation (e.g. `"MyOrg"` maps to `github_webhook_secret:MyOrg`). Omit for unsigned webhooks. |
 
 ```toml
-[webhooks.secretCredentials]
-github = "github_webhook_secret:default"
-MyOrg = "github_webhook_secret:MyOrg"
-sentry = "sentry_client_secret:default"
+[webhooks.my-github]
+type = "github"
+credential = "MyOrg"              # uses github_webhook_secret:MyOrg for HMAC validation
+
+[webhooks.my-sentry]
+type = "sentry"
+credential = "SentryProd"         # uses sentry_client_secret:SentryProd
+
+[webhooks.unsigned-github]
+type = "github"                   # no credential — accepts unsigned webhooks
 ```
 
-In most cases, the gateway auto-discovers webhook secrets from all credential instances in `~/.action-llama-credentials/`. This section is only needed if you want to override the default mapping.
+Agents reference these sources by name in their `agent-config.toml`:
+
+```toml
+[[webhooks]]
+source = "my-github"
+events = ["issues"]
+```
 
 ## Minimal Examples
 

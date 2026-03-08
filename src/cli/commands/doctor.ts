@@ -38,18 +38,21 @@ export async function execute(opts: { project: string; cloud?: boolean; checkOnl
 
   // Collect all credential refs from agents (including webhook secrets)
   const credentialRefs = new Set<string>();
+  const globalConfig = loadGlobalConfig(projectPath);
+  const webhookSources = globalConfig.webhooks ?? {};
 
   for (const name of agents) {
     const config = loadAgentConfig(projectPath, name);
     for (const ref of config.credentials) {
       credentialRefs.add(ref);
     }
-    // Derive webhook secret credential refs from triggers
+    // Derive webhook secret credential refs from global webhook sources
     for (const trigger of config.webhooks || []) {
-      const credType = WEBHOOK_SECRET_TYPES[trigger.type];
-      if (credType) {
-        const instance = trigger.source || "default";
-        credentialRefs.add(`${credType}:${instance}`);
+      const sourceConfig = webhookSources[trigger.source];
+      if (!sourceConfig) continue;
+      const credType = WEBHOOK_SECRET_TYPES[sourceConfig.type];
+      if (credType && sourceConfig.credential) {
+        credentialRefs.add(`${credType}:${sourceConfig.credential}`);
       }
     }
   }

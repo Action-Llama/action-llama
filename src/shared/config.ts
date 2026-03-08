@@ -44,8 +44,9 @@ export interface GatewayConfig {
   port?: number;
 }
 
-export interface WebhooksGlobalConfig {
-  secretCredentials?: Record<string, string>;  // source → credential name
+export interface WebhookSourceConfig {
+  type: string;           // provider type: "github", "sentry"
+  credential?: string;    // credential instance name for HMAC validation (optional — omit for unsigned)
 }
 
 export interface GlobalConfig {
@@ -53,7 +54,7 @@ export interface GlobalConfig {
   local?: LocalConfig;
   cloud?: CloudConfig;
   gateway?: GatewayConfig;
-  webhooks?: WebhooksGlobalConfig;
+  webhooks?: Record<string, WebhookSourceConfig>;
   maxReruns?: number;
   maxTriggerDepth?: number;
   webhookQueueSize?: number;

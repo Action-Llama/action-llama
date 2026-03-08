@@ -82,14 +82,20 @@ import { startScheduler } from "../../src/scheduler/index.js";
 
 const model = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" };
 
+const globalConfigWithWebhooks = stringifyTOML({
+  webhooks: {
+    "my-github": { type: "github", credential: "MyOrg" },
+  },
+} as Record<string, unknown>);
+
 function setupProjectWithWebhooks(tmpDir: string) {
-  writeFileSync(resolve(tmpDir, "config.toml"), "");
+  writeFileSync(resolve(tmpDir, "config.toml"), globalConfigWithWebhooks);
 
   // Webhook-only agent
   const webhookAgent = {
     credentials: ["github_token:default"],
     model,
-    webhooks: [{ type: "github", source: "MyOrg", events: ["issues"], actions: ["labeled"], labels: ["agent"] }],
+    webhooks: [{ source: "my-github", events: ["issues"], actions: ["labeled"], labels: ["agent"] }],
   };
   const agentDir = resolve(tmpDir, "webhook-dev");
   mkdirSync(agentDir, { recursive: true });
@@ -98,14 +104,14 @@ function setupProjectWithWebhooks(tmpDir: string) {
 }
 
 function setupProjectWithHybrid(tmpDir: string) {
-  writeFileSync(resolve(tmpDir, "config.toml"), "");
+  writeFileSync(resolve(tmpDir, "config.toml"), globalConfigWithWebhooks);
 
   // Hybrid agent (schedule + webhooks)
   const hybridAgent = {
     credentials: ["github_token:default"],
     model,
     schedule: "*/15 * * * *",
-    webhooks: [{ type: "github", source: "MyOrg", events: ["pull_request"], actions: ["opened"] }],
+    webhooks: [{ source: "my-github", events: ["pull_request"], actions: ["opened"] }],
   };
   const agentDir = resolve(tmpDir, "hybrid");
   mkdirSync(agentDir, { recursive: true });

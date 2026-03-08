@@ -17,7 +17,7 @@ describe("validateAgentConfig", () => {
     expect(() =>
       validateAgentConfig({
         ...baseConfig,
-        webhooks: [{ type: "github", source: "MyOrg", events: ["issues"] }],
+        webhooks: [{ source: "my-github", events: ["issues"] }],
       })
     ).not.toThrow();
   });
@@ -27,7 +27,7 @@ describe("validateAgentConfig", () => {
       validateAgentConfig({
         ...baseConfig,
         schedule: "*/5 * * * *",
-        webhooks: [{ type: "github", source: "MyOrg", events: ["issues"] }],
+        webhooks: [{ source: "my-github", events: ["issues"] }],
       })
     ).not.toThrow();
   });

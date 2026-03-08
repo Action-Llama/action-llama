@@ -21,16 +21,16 @@ thinkingLevel = "medium"                  # Optional: off | minimal | low | medi
 authType = "api_key"                      # api_key | oauth_token | pi_auth
 
 # Optional: webhook triggers (instead of or in addition to schedule)
+# Each source references a named webhook defined in the project's config.toml
 [[webhooks]]
-type = "github"                           # Required: provider type
-source = "MyOrg"                          # Optional: credential instance name for org scoping
+source = "my-github"                      # Required: references [webhooks.my-github] in config.toml
 repos = ["acme/app"]                      # Filter to specific repos (optional)
 events = ["issues"]                       # GitHub event types (optional)
 actions = ["labeled"]                     # GitHub event actions (optional)
 labels = ["agent"]                        # Only trigger on issues with these labels (optional)
 
 [[webhooks]]
-type = "sentry"                           # Required: provider type
+source = "my-sentry"                      # Required: references [webhooks.my-sentry] in config.toml
 resources = ["error", "event_alert"]      # Sentry resource types (optional)
 
 # Optional: custom parameters injected into the agent prompt
@@ -64,12 +64,11 @@ Each `[[webhooks]]` entry has the following fields:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `type` | string | Yes | Provider type: `"github"`, `"sentry"`, etc. |
-| `source` | string | No | Credential instance name (e.g. `"MyOrg"`) for org scoping |
+| `source` | string | Yes | Name of a webhook source from the project's `config.toml` (e.g. `"my-github"`) |
 
-All filter fields below are optional. Omit all of them to trigger on everything from that type.
+All filter fields below are optional. Omit all of them to trigger on everything from that source.
 
-### GitHub (`type = "github"`)
+### GitHub filter fields
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -81,7 +80,7 @@ All filter fields below are optional. Omit all of them to trigger on everything 
 | `author` | string | Only trigger for this author |
 | `branches` | string[] | Only trigger for these branches |
 
-### Sentry (`type = "sentry"`)
+### Sentry filter fields
 
 | Field | Type | Description |
 |-------|------|-------------|

@@ -150,10 +150,13 @@ describe("doctor", () => {
 
   it("discovers webhook secrets from agents with webhook triggers", async () => {
     mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadGlobalConfig.mockReturnValue({
+      webhooks: { "my-github": { type: "github", credential: "MyOrg" } },
+    });
     mockLoadAgentConfig.mockReturnValue({
       name: "dev",
       credentials: ["github_token:default"],
-      webhooks: [{ type: "github", source: "MyOrg", events: ["issues"] }],
+      webhooks: [{ source: "my-github", events: ["issues"] }],
     });
     mockResolveCredential.mockImplementation((id: string) => ({
       id,
@@ -168,12 +171,15 @@ describe("doctor", () => {
     expect(mockResolveCredential).toHaveBeenCalledWith("github_webhook_secret");
   });
 
-  it("uses default instance for webhook secrets with no source", async () => {
+  it("skips webhook secret check when source has no credential", async () => {
     mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadGlobalConfig.mockReturnValue({
+      webhooks: { "my-github": { type: "github" } },  // no credential — unsigned
+    });
     mockLoadAgentConfig.mockReturnValue({
       name: "dev",
       credentials: ["github_token:default"],
-      webhooks: [{ type: "github", events: ["issues"] }],
+      webhooks: [{ source: "my-github", events: ["issues"] }],
     });
     mockResolveCredential.mockImplementation((id: string) => ({
       id,
@@ -183,7 +189,9 @@ describe("doctor", () => {
     mockCredentialExists.mockReturnValue(true);
 
     const output = await captureLog(() => execute({ project: "." }));
-    expect(output).toContain("[ok] GitHub Webhook Secret (github_webhook_secret:default)");
+    expect(output).toContain("[ok] GitHub Token");
+    // Should only have 1 credential check (github_token), not webhook secret
+    expect(output).toContain("1 credential(s)");
   });
 
   it("headless mode checks local creds without prompting and throws on missing", async () => {

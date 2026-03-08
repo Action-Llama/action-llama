@@ -14,7 +14,7 @@ thinkingLevel = "medium"
 authType = "api_key"
 
 [[webhooks]]
-type = "github"
+source = "my-github"
 events = ["issues"]
 actions = ["labeled"]
 labels = ["agent"]
