@@ -15,7 +15,7 @@ schedule = "*/5 * * * *"
 
 # Required: LLM model configuration
 [model]
-provider = "anthropic"                    # LLM provider: anthropic, openai
+provider = "anthropic"                    # LLM provider: anthropic, openai, groq, google, xai, mistral, openrouter, or custom
 model = "claude-sonnet-4-20250514"        # Model ID (e.g., claude-3-5-sonnet-20241022, gpt-4, o1-preview, codex-davinci-002)
 thinkingLevel = "medium"                  # off | minimal | low | medium | high | xhigh
 authType = "api_key"                      # api_key | oauth_token | pi_auth
@@ -49,7 +49,7 @@ sentryProjects = ["web-app", "api"]
 | `credentials` | string[] | Yes | Credential refs as `"type:instance"` needed at runtime |
 | `schedule` | string | No* | Cron expression for polling |
 | `model` | table | No | LLM model configuration (falls back to `[model]` in project `config.toml`) |
-| `model.provider` | string | Yes* | LLM provider ("anthropic" or "openai") |
+| `model.provider` | string | Yes* | LLM provider ("anthropic", "openai", "groq", "google", "xai", "mistral", "openrouter", or "custom") |
 | `model.model` | string | Yes* | Model ID |
 | `model.thinkingLevel` | string | Yes* | Thinking budget level |
 | `model.authType` | string | Yes* | Auth method for the provider |
@@ -94,32 +94,82 @@ All filter fields below are optional. Omit all of them to trigger on everything 
 ```toml
 [model]
 provider = "anthropic"
-model = "claude-3-5-sonnet-20241022"      # or claude-3-opus-20240229, claude-3-haiku-20240307
+model = "claude-sonnet-4-20250514"        # or claude-opus-4-20250514, claude-haiku-3-5-20241022
 thinkingLevel = "medium"
 authType = "api_key"
 ```
 
-### OpenAI GPT/Codex
+### OpenAI GPT
 
 ```toml
 [model]
 provider = "openai"
-model = "gpt-4o"                          # or gpt-4, o1-preview, gpt-3.5-turbo, codex-davinci-002
+model = "gpt-4o"                          # or gpt-4o-mini, gpt-4-turbo, o1-preview, o1-mini
 thinkingLevel = "medium"
 authType = "api_key"
 ```
 
-For OpenAI Codex specifically:
+### Groq
 
 ```toml
 [model]
-provider = "openai"
-model = "codex-davinci-002"               # Legacy Codex model (note: deprecated by OpenAI)
-thinkingLevel = "low"                     # Codex works better with lower thinking levels
+provider = "groq"
+model = "llama-3.3-70b-versatile"
+thinkingLevel = "medium"
 authType = "api_key"
 ```
 
-**Note:** OpenAI has deprecated the original Codex models. For code generation, consider using `gpt-4` or `gpt-4o` which have excellent coding capabilities.
+### Google Gemini
+
+```toml
+[model]
+provider = "google"
+model = "gemini-2.0-flash-exp"
+thinkingLevel = "medium"
+authType = "api_key"
+```
+
+### xAI Grok
+
+```toml
+[model]
+provider = "xai"
+model = "grok-beta"
+thinkingLevel = "medium"
+authType = "api_key"
+```
+
+### Mistral
+
+```toml
+[model]
+provider = "mistral"
+model = "mistral-large-2411"
+thinkingLevel = "medium"
+authType = "api_key"
+```
+
+### OpenRouter
+
+```toml
+[model]
+provider = "openrouter"
+model = "anthropic/claude-3.5-sonnet"     # Any model available on OpenRouter
+thinkingLevel = "medium"
+authType = "api_key"
+```
+
+### Custom Provider
+
+```toml
+[model]
+provider = "custom"
+model = "your-model-name"
+thinkingLevel = "medium"
+authType = "api_key"
+```
+
+For custom providers, store the API key as `custom_key:default` credential.
 
 ## Cloud Runtimes
 

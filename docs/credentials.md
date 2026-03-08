@@ -8,6 +8,13 @@ Credentials are stored in `~/.action-llama-credentials/<type>/<instance>/<field>
 |------|--------|-------------|-------------------|
 | `github_token` | `token` | GitHub PAT with repo and workflow scopes | `GITHUB_TOKEN` and `GH_TOKEN` env vars |
 | `anthropic_key` | `token` | Anthropic API key, OAuth token, or pi auth | _(read by SDK)_ |
+| `openai_key` | `token` | OpenAI API key | _(read by SDK)_ |
+| `groq_key` | `token` | Groq API key | _(read by SDK)_ |
+| `google_key` | `token` | Google Gemini API key | _(read by SDK)_ |
+| `xai_key` | `token` | xAI API key | _(read by SDK)_ |
+| `mistral_key` | `token` | Mistral API key | _(read by SDK)_ |
+| `openrouter_key` | `token` | OpenRouter API key | _(read by SDK)_ |
+| `custom_key` | `token` | Custom provider API key | _(read by SDK)_ |
 | `sentry_token` | `token` | Sentry auth token for error monitoring | `SENTRY_AUTH_TOKEN` env var |
 | `bugsnag_token` | `token` | Bugsnag auth token for error monitoring and release management | `BUGSNAG_AUTH_TOKEN` env var |
 | `netlify_token` | `token` | Netlify Personal Access Token for site management | `NETLIFY_AUTH_TOKEN` env var |
@@ -26,7 +33,7 @@ Credentials are stored in `~/.action-llama-credentials/<type>/<instance>/<field>
 
 2. **Storage**: Credential values live in `~/.action-llama-credentials/<type>/<instance>/<field>`. Each field is a plain text file.
 
-3. **Injection**: At runtime, credentials with env vars are injected as environment variables into the agent's container/process.
+3. **Injection**: When an agent runs, the credentials it requires are injected into the container.
 
 4. **Git identity**: The `git_ssh` credential includes `username` and `email` fields (prompted during `al new`/`al doctor`). These are injected as `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL` and `GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` env vars at runtime, so `git commit` works without requiring `git config`.
 
@@ -70,6 +77,12 @@ echo "ghp_your_token_here" > ~/.action-llama-credentials/github_token/default/to
 
 mkdir -p ~/.action-llama-credentials/anthropic_key/default
 echo "sk-ant-api-your_key_here" > ~/.action-llama-credentials/anthropic_key/default/token
+
+mkdir -p ~/.action-llama-credentials/openai_key/default
+echo "sk-your_openai_key_here" > ~/.action-llama-credentials/openai_key/default/token
+
+mkdir -p ~/.action-llama-credentials/groq_key/default
+echo "gsk_your_groq_key_here" > ~/.action-llama-credentials/groq_key/default/token
 
 mkdir -p ~/.action-llama-credentials/bugsnag_token/default
 echo "your_bugsnag_token_here" > ~/.action-llama-credentials/bugsnag_token/default/token

@@ -35,7 +35,7 @@ thinkingLevel = "medium"
 authType = "api_key"
 ```
 
-See [agent-config.toml Reference](agent-config-reference.md) for all available fields.
+Supported providers: `anthropic`, `openai`, `groq`, `google`, `xai`, `mistral`, `openrouter`, `custom`. See [agent-config.toml Reference](agent-config-reference.md) for all available fields and provider examples.
 
 ### 3. Write `PLAYBOOK.md`
 

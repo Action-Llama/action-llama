@@ -16,7 +16,7 @@ Key features:
 
 - Agent runs are contained in a Docker container using only the credentials they need. Credentials are stored separately.
 - Define your agents in a git repo, add custom ones, and share them.
-- BYOM: bring your own model (supports Anthropic Claude and OpenAI GPT/Codex).
+- BYOM: bring your own model (Anthropic, OpenAI, Groq, Google Gemini, xAI, Mistral, OpenRouter, or any custom provider).
 
 Philosophy:
 
@@ -118,7 +118,7 @@ Most commands accept `-p <dir>` to set the project directory and `-c` to target 
 Configuration lives in two places:
 
 - **`config.toml`** (project root) — global settings: default model (`[model]`), local Docker options (`[local]`), cloud provider config (`[cloud]`), and scheduler options like `maxReruns`.
-- **`agent-config.toml`** (per agent) — model, credentials, schedule, webhooks, and parameters. Each agent can use a different model (e.g., Opus for dev, Haiku for devops).
+- **`agent-config.toml`** (per agent) — model, credentials, schedule, webhooks, and parameters. Each agent can use a different model or provider (e.g., Claude Opus for dev, GPT-4o for review, Gemini for devops).
 
 Credentials are stored outside the project in `~/.action-llama-credentials/` and referenced by name in agent configs. Run `al doctor` to configure them interactively.
 

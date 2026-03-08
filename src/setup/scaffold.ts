@@ -33,7 +33,14 @@ Credentials are managed by the user via \`al doctor\` and stored in \`~/.action-
 
 | Type | What it is | Fields | Runtime injection | What it enables |
 |------|-----------|--------|-------------------|----------------|
-| \`anthropic_key\` | Anthropic API key or OAuth token | \`token\` | Read directly by the agent SDK (not an env var) | LLM access — required for all agents |
+| \`anthropic_key\` | Anthropic API key or OAuth token | \`token\` | Read directly by the agent SDK (not an env var) | LLM access (Anthropic models) |
+| \`openai_key\` | OpenAI API key | \`token\` | Read directly by the agent SDK | LLM access (OpenAI models) |
+| \`groq_key\` | Groq API key | \`token\` | Read directly by the agent SDK | LLM access (Groq models) |
+| \`google_key\` | Google Gemini API key | \`token\` | Read directly by the agent SDK | LLM access (Gemini models) |
+| \`xai_key\` | xAI API key | \`token\` | Read directly by the agent SDK | LLM access (Grok models) |
+| \`mistral_key\` | Mistral API key | \`token\` | Read directly by the agent SDK | LLM access (Mistral models) |
+| \`openrouter_key\` | OpenRouter API key | \`token\` | Read directly by the agent SDK | LLM access (OpenRouter multi-provider) |
+| \`custom_key\` | Custom provider API key | \`token\` | Read directly by the agent SDK | LLM access (custom providers) |
 | \`github_token\` | GitHub PAT (repo + workflow scopes) | \`token\` | \`GITHUB_TOKEN\` and \`GH_TOKEN\` env vars | \`gh\` CLI, \`git\` over HTTPS, GitHub API |
 | \`git_ssh\` | SSH private key + git identity | \`id_rsa\`, \`username\`, \`email\` | SSH key mounted as file; \`GIT_SSH_COMMAND\` configured automatically; \`GIT_AUTHOR_NAME\`/\`GIT_AUTHOR_EMAIL\`/\`GIT_COMMITTER_NAME\`/\`GIT_COMMITTER_EMAIL\` set from \`username\`/\`email\` | \`git clone\`/\`push\` over SSH — **required for pushing to repos** |
 | \`sentry_token\` | Sentry auth token | \`token\` | \`SENTRY_AUTH_TOKEN\` env var | Sentry API via \`curl\` |
@@ -234,7 +241,7 @@ sentryProjects = ["web-app", "api"]
 | \`credentials\` | string[] | Yes | Credential refs as \`"type:instance"\` (see Credential Reference above) |
 | \`schedule\` | string | No* | Cron expression (e.g. "*/5 * * * *") |
 | \`model\` | table | No | LLM model config — omit to inherit from project \`config.toml\` |
-| \`model.provider\` | string | Yes* | "anthropic" or "openai" |
+| \`model.provider\` | string | Yes* | "anthropic", "openai", "groq", "google", "xai", "mistral", "openrouter", or "custom" |
 | \`model.model\` | string | Yes* | Model ID (e.g. "claude-sonnet-4-20250514") |
 | \`model.thinkingLevel\` | string | Yes* | off \\| minimal \\| low \\| medium \\| high \\| xhigh |
 | \`model.authType\` | string | Yes* | api_key \\| oauth_token \\| pi_auth |
