@@ -25,6 +25,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          registry-url: "https://registry.npmjs.org"
 
       - run: npm ci
 
@@ -55,3 +56,5 @@ jobs:
       - name: Publish to npm
         if: steps.has-changesets.outputs.has_changesets == 'true'
         run: npm publish --access public --tag next --provenance
+        env:
+          NODE_AUTH_TOKEN: ""
