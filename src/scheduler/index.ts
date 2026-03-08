@@ -575,6 +575,12 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
           type: providerType,
           filter,
           trigger: (context: WebhookContext) => {
+            // Skip if agent is disabled
+            if (statusTracker && !statusTracker.isAgentEnabled(agentConfig.name)) {
+              logger.info({ agent: agentConfig.name, event: context.event }, "agent is disabled, ignoring webhook event");
+              return;
+            }
+            
             const availableRunner = pool.getAvailableRunner();
             if (!availableRunner) {
               const { accepted, dropped } = webhookQueue.enqueue(agentConfig.name, context);
@@ -601,7 +607,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
               if (triggers.length > 0) {
                 dispatchTriggers(triggers, agentConfig.name, 0, schedulerCtx);
               }
-              // Drain any events that queued while this webhook run was executing
+              // Drain any events that queued while this webhook run was executed
               return drainWebhookQueue(agentConfig, schedulerCtx);
             }).catch((err) => {
               logger.error({ err }, `${agentConfig.name} webhook run failed`);
@@ -621,6 +627,12 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     const pool = runnerPools[agentConfig.name];
 
     const job = new Cron(agentConfig.schedule, { timezone }, async () => {
+      // Skip if agent is disabled
+      if (statusTracker && !statusTracker.isAgentEnabled(agentConfig.name)) {
+        logger.info({ agent: agentConfig.name }, "agent is disabled, skipping scheduled run");
+        return;
+      }
+      
       const availableRunner = pool.getAvailableRunner();
       if (!availableRunner) {
         logger.warn({ agent: agentConfig.name, running: pool.countRunning(), parallelism: pool.parallelism }, "all agent runners busy, skipping scheduled run");
@@ -655,6 +667,39 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     logger.info({ url }, "Webhook endpoint registered");
   }
   logger.info(`Scheduler running with ${cronJobs.length} scheduled jobs`);
+
+  // Handle agent enable/disable events
+  if (statusTracker) {
+    // Create a map of agent name to cron job for easy lookup
+    const agentCronJobs = new Map<string, Cron>();
+    for (let i = 0; i < agentConfigs.length; i++) {
+      const config = agentConfigs[i];
+      if (config.schedule && cronJobs[i]) {
+        agentCronJobs.set(config.name, cronJobs[i]);
+      }
+    }
+
+    statusTracker.on("agent-enabled", (agentName: string) => {
+      const job = agentCronJobs.get(agentName);
+      if (job) {
+        job.resume();
+        const nextRun = job.nextRun();
+        if (nextRun) {
+          statusTracker.setNextRunAt(agentName, nextRun);
+        }
+        logger.info({ agent: agentName }, "agent enabled, cron job resumed");
+      }
+    });
+
+    statusTracker.on("agent-disabled", (agentName: string) => {
+      const job = agentCronJobs.get(agentName);
+      if (job) {
+        job.pause();
+        statusTracker.setNextRunAt(agentName, null);
+        logger.info({ agent: agentName }, "agent disabled, cron job paused");
+      }
+    });
+  }
 
   // Fire initial run for scheduled agents
   for (const agentConfig of agentConfigs) {

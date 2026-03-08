@@ -97,7 +97,7 @@ describe("App TUI", () => {
     instance = render(<App statusTracker={tracker} />);
     const output = instance.lastFrame()!;
 
-    expect(output).toContain("Ctrl+C to stop");
+    expect(output).toContain("Ctrl+C: Stop");
   });
 
   it("renders error state with detail", () => {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Box, Text } from "ink";
+import { Box, Text, useInput } from "ink";
 import type { StatusTracker, AgentStatus, SchedulerInfo, LogLine } from "./status-tracker.js";
 
 function formatRelativeTime(date: Date | null): string {
@@ -36,7 +36,7 @@ function formatTime(date: Date): string {
   return date.toLocaleTimeString("en-US", { hour12: false });
 }
 
-function Header({ info, agentCount }: { info: SchedulerInfo | null; agentCount: number }) {
+function Header({ info, agentCount, agents }: { info: SchedulerInfo | null; agentCount: number; agents: AgentStatus[] }) {
   if (!info) return null;
   const isCloud = info.mode === "docker" && info.runtime && info.runtime !== "local";
   const runtimeLabels: Record<string, string> = {
@@ -48,10 +48,15 @@ function Header({ info, agentCount }: { info: SchedulerInfo | null; agentCount: 
     : isCloud
       ? runtimeLabels[info.runtime!] || "Cloud mode"
       : "Docker mode";
+  
+  const enabledCount = agents.filter(a => a.enabled).length;
+  const disabledCount = agentCount - enabledCount;
+  
   return (
     <Box flexDirection="column">
       <Text bold>
-        Action Llama ({modeLabel}) — {agentCount} agent{agentCount !== 1 ? "s" : ""}, {info.cronJobCount} cron job{info.cronJobCount !== 1 ? "s" : ""}
+        Action Llama ({modeLabel}) — {agentCount} agent{agentCount !== 1 ? "s" : ""} 
+        ({enabledCount} enabled{disabledCount > 0 ? `, ${disabledCount} disabled` : ""}), {info.cronJobCount} cron job{info.cronJobCount !== 1 ? "s" : ""}
       </Text>
       <Text dimColor>
         {info.gatewayPort ? `Gateway: :${info.gatewayPort}` : ""}
@@ -72,7 +77,7 @@ function Header({ info, agentCount }: { info: SchedulerInfo | null; agentCount: 
   );
 }
 
-function AgentRow({ agent }: { agent: AgentStatus }) {
+function AgentRow({ agent, isSelected }: { agent: AgentStatus; isSelected: boolean }) {
   const stateColor = agent.state === "running" ? "green" : agent.state === "building" ? "yellow" : agent.state === "error" ? "red" : "white";
   const stateLabel = agent.state === "running" ? "Running" : agent.state === "building" ? "Building" : agent.state === "error" ? "Error" : "Idle";
 
@@ -83,31 +88,39 @@ function AgentRow({ agent }: { agent: AgentStatus }) {
       ? agent.lastError
       : "";
 
+  const enabledLabel = agent.enabled ? "Enabled" : "Disabled";
+  const enabledColor = agent.enabled ? "green" : "yellow";
+
   return (
     <Box flexDirection="column">
-      <Box>
+      <Box backgroundColor={isSelected ? "blue" : undefined}>
         <Box width={12}>
-          <Text bold>{agent.name}</Text>
+          <Text bold color={isSelected ? "white" : undefined}>
+            {isSelected ? "▶ " : "  "}{agent.name}
+          </Text>
         </Box>
         <Box width={10}>
-          <Text color={stateColor}>{stateLabel}</Text>
+          <Text color={isSelected ? "white" : stateColor}>{stateLabel}</Text>
+        </Box>
+        <Box width={10}>
+          <Text color={isSelected ? "white" : enabledColor}>{enabledLabel}</Text>
         </Box>
         <Box width={30}>
-          <Text dimColor>
+          <Text dimColor={!isSelected}>
             {agent.lastRunAt
               ? `Last: ${formatRelativeTime(agent.lastRunAt)}${agent.lastRunDuration !== null ? ` (${formatDuration(agent.lastRunDuration)})` : ""}`
               : ""}
           </Text>
         </Box>
         <Box>
-          <Text dimColor>
+          <Text dimColor={!isSelected}>
             {agent.nextRunAt ? `Next: ${formatTimeUntil(agent.nextRunAt)}` : ""}
           </Text>
         </Box>
       </Box>
       {detail ? (
         <Box paddingLeft={2}>
-          <Text color={agent.state === "error" ? "red" : undefined} dimColor={agent.state !== "error"} wrap="truncate-end">
+          <Text color={agent.state === "error" ? "red" : undefined} dimColor={agent.state !== "error" || isSelected} wrap="truncate-end">
             {detail.slice(0, 120)}
           </Text>
         </Box>
@@ -135,7 +148,7 @@ function Footer() {
   return (
     <Box flexDirection="column">
       <Text dimColor>{"─".repeat(50)}</Text>
-      <Text dimColor>Ctrl+C to stop</Text>
+      <Text dimColor>↑/↓: Select agent • Space: Enable/Disable • Ctrl+C: Stop</Text>
     </Box>
   );
 }
@@ -144,13 +157,38 @@ export default function App({ statusTracker }: { statusTracker: StatusTracker })
   const [agents, setAgents] = useState<AgentStatus[]>(() => statusTracker.getAllAgents());
   const [info, setInfo] = useState<SchedulerInfo | null>(() => statusTracker.getSchedulerInfo());
   const [logs, setLogs] = useState<LogLine[]>(() => statusTracker.getRecentLogs(5));
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const [, setTick] = useState(0);
+
+  useInput((input, key) => {
+    if (key.upArrow) {
+      setSelectedIndex((prev) => Math.max(0, prev - 1));
+    } else if (key.downArrow) {
+      setSelectedIndex((prev) => Math.min(agents.length - 1, prev + 1));
+    } else if (input === " " && agents.length > 0) {
+      // Toggle agent enabled/disabled state
+      const selectedAgent = agents[selectedIndex];
+      if (selectedAgent) {
+        if (selectedAgent.enabled) {
+          statusTracker.disableAgent(selectedAgent.name);
+        } else {
+          statusTracker.enableAgent(selectedAgent.name);
+        }
+      }
+    }
+  });
 
   useEffect(() => {
     const update = () => {
-      setAgents(statusTracker.getAllAgents());
+      const newAgents = statusTracker.getAllAgents();
+      setAgents(newAgents);
       setInfo(statusTracker.getSchedulerInfo());
       setLogs(statusTracker.getRecentLogs(5));
+      
+      // Adjust selection if agents list changed
+      if (selectedIndex >= newAgents.length) {
+        setSelectedIndex(Math.max(0, newAgents.length - 1));
+      }
     };
 
     statusTracker.on("update", update);
@@ -163,14 +201,14 @@ export default function App({ statusTracker }: { statusTracker: StatusTracker })
       statusTracker.off("update", update);
       clearInterval(timer);
     };
-  }, [statusTracker]);
+  }, [statusTracker, selectedIndex]);
 
   return (
     <Box flexDirection="column" paddingTop={1}>
-      <Header info={info} agentCount={agents.length} />
+      <Header info={info} agentCount={agents.length} agents={agents} />
       <Box flexDirection="column" paddingTop={1} paddingBottom={1}>
-        {agents.map((agent) => (
-          <AgentRow key={agent.name} agent={agent} />
+        {agents.map((agent, index) => (
+          <AgentRow key={agent.name} agent={agent} isSelected={index === selectedIndex} />
         ))}
       </Box>
       <RecentActivity logs={logs} />
