@@ -40,7 +40,7 @@ export class WebhookEventQueue<T> {
     this.maxSize = maxSize;
   }
 
-  enqueue(agentName: string, context: T): EnqueueResult<T> {
+  enqueue(agentName: string, context: T, receivedAt?: Date): EnqueueResult<T> {
     let queue = this.queues.get(agentName);
     if (!queue) {
       queue = [];
@@ -50,7 +50,7 @@ export class WebhookEventQueue<T> {
     if (queue.length >= this.maxSize) {
       dropped = queue.shift();
     }
-    queue.push({ context, receivedAt: new Date() });
+    queue.push({ context, receivedAt: receivedAt || new Date() });
     return { accepted: true, dropped };
   }
 
