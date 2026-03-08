@@ -3,7 +3,7 @@ import { existsSync } from "fs";
 import { confirm } from "@inquirer/prompts";
 import { execFileSync } from "child_process";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
-import { IAMClient, CreateRoleCommand, PutRolePolicyCommand } from "@aws-sdk/client-iam";
+import { IAMClient, CreateRoleCommand, PutRolePolicyCommand, GetRoleCommand } from "@aws-sdk/client-iam";
 import { discoverAgents, loadAgentConfig, loadGlobalConfig } from "../../shared/config.js";
 import type { CloudConfig } from "../../shared/config.js";
 import { resolveCredential } from "../../credentials/registry.js";
@@ -188,6 +188,12 @@ export async function execute(opts: { project: string; cloud?: boolean; checkOnl
     // Reconcile IAM
     console.log(`\nReconciling cloud IAM...`);
     await reconcileCloudIam(projectPath, cloudConfig);
+    
+    // Validate IAM roles exist for ECS mode
+    if (cloudConfig.provider === "ecs") {
+      console.log(`\nValidating ECS IAM roles...`);
+      await validateEcsRoles(projectPath, cloudConfig);
+    }
   }
 }
 
@@ -531,5 +537,54 @@ function listGsmFields(
     return fields;
   } catch {
     return [];
+  }
+}
+
+async function validateEcsRoles(projectPath: string, cloud: CloudConfig): Promise<void> {
+  const { awsRegion } = cloud;
+  if (!awsRegion) {
+    throw new Error("cloud.awsRegion is required for ECS validation");
+  }
+
+  const agents = discoverAgents(projectPath);
+  if (agents.length === 0) return;
+
+  const iamClient = new IAMClient({ region: awsRegion });
+  const missing: string[] = [];
+
+  for (const name of agents) {
+    const roleName = AWS_CONSTANTS.taskRoleName(name);
+    
+    try {
+      await iamClient.send(new GetRoleCommand({ RoleName: roleName }));
+      console.log(`  [ok] ${roleName}`);
+    } catch (err: any) {
+      if (err.name === "NoSuchEntityException") {
+        missing.push(roleName);
+        console.log(`  [MISSING] ${roleName}`);
+      } else {
+        console.log(`  [ERROR] ${roleName}: ${err.message}`);
+      }
+    }
+  }
+
+  if (missing.length > 0) {
+    console.log(`\n${missing.length} IAM task role(s) are missing.`);
+    console.log("These roles are automatically created when you run 'al doctor -c'.");
+    console.log("If they're still missing, you may need to create them manually:");
+    for (const role of missing) {
+      console.log(`  aws iam create-role --role-name ${role} --assume-role-policy-document file://ecs-trust.json`);
+    }
+    console.log("\nECS task trust policy (save as ecs-trust.json):");
+    console.log(JSON.stringify({
+      Version: "2012-10-17",
+      Statement: [{
+        Effect: "Allow",
+        Principal: { Service: "ecs-tasks.amazonaws.com" },
+        Action: "sts:AssumeRole",
+      }],
+    }, null, 2));
+  } else {
+    console.log(`All ${agents.length} IAM task role(s) exist.`);
   }
 }
