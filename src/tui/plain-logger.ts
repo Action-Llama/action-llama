@@ -51,21 +51,33 @@ export function attachPlainLogger(statusTracker: StatusTracker): { detach: () =>
 
   let lastLogKey = "";
 
-  // Log scheduler info once on first update
-  let schedulerLogged = false;
+  // Log scheduler info, re-log when it changes (e.g. webhook URLs populated after startup)
+  let lastSchedulerKey = "";
   const onSchedulerInfo = () => {
-    if (schedulerLogged) return;
     const info = statusTracker.getSchedulerInfo();
     if (!info) return;
-    schedulerLogged = true;
 
     const parts = [`mode=${info.mode}`];
     if (info.runtime) parts.push(`runtime=${info.runtime}`);
     if (info.gatewayPort) parts.push(`gateway=:${info.gatewayPort}`);
     parts.push(`cron_jobs=${info.cronJobCount}`);
     if (info.webhooksActive) parts.push(`webhooks=active`);
-    if (info.dashboardUrl) parts.push(`dashboard=${info.dashboardUrl}`);
-    console.log(`[${new Date().toISOString()}] scheduler started (${parts.join(", ")})`);
+
+    // Build a key to detect meaningful changes
+    const key = parts.join(",") + "|" + info.webhookUrls.join(",") + "|" + (info.dashboardUrl || "");
+    if (key === lastSchedulerKey) return;
+    lastSchedulerKey = key;
+
+    const ts = new Date().toISOString();
+    console.log(`[${ts}] scheduler started (${parts.join(", ")})`);
+
+    // Log each listening endpoint
+    for (const url of info.webhookUrls) {
+      console.log(`[${ts}] listening: ${url}`);
+    }
+    if (info.dashboardUrl) {
+      console.log(`[${ts}] dashboard: ${info.dashboardUrl}`);
+    }
   };
 
   const handler = () => {

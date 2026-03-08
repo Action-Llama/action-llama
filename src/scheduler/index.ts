@@ -529,6 +529,9 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     }
   }
 
+  for (const url of webhookUrls) {
+    logger.info({ url }, "Webhook endpoint registered");
+  }
   logger.info(`Scheduler running with ${cronJobs.length} scheduled jobs`);
 
   // Fire initial run for scheduled agents
