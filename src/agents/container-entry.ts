@@ -126,10 +126,12 @@ async function main() {
     process.exit(1);
   }
 
-  // Read Anthropic API key from credentials (not needed for pi_auth)
-  const anthropicKey = readCredentialField("anthropic_key", "default", "token");
-  if (!anthropicKey && agentConfig.model.authType !== "pi_auth") {
-    emitLog("error", "missing anthropic_key credential. Run 'al doctor' to configure it.");
+  // Read provider API key from credentials (not needed for pi_auth)
+  const modelProvider = agentConfig.model.provider;
+  const credentialType = `${modelProvider}_key`;
+  const providerApiKey = readCredentialField(credentialType, "default", "token");
+  if (!providerApiKey && agentConfig.model.authType !== "pi_auth") {
+    emitLog("error", `missing ${credentialType} credential. Run 'al doctor' to configure it.`);
     process.exit(1);
   }
 
@@ -195,11 +197,11 @@ async function main() {
 
   const cwd = "/workspace";
 
-  const model = getModel("anthropic", modelId as any);
+  const model = getModel(modelProvider as any, modelId as any);
 
   const authStorage = AuthStorage.create();
-  if (anthropicKey) {
-    authStorage.setRuntimeApiKey("anthropic", anthropicKey);
+  if (providerApiKey) {
+    authStorage.setRuntimeApiKey(modelProvider, providerApiKey);
   }
 
   // PLAYBOOK.md content is passed via the serialized config from the host

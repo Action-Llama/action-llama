@@ -16,8 +16,8 @@ schedule = "*/5 * * * *"
 # Required: LLM model configuration
 [model]
 provider = "anthropic"                    # LLM provider: anthropic, openai, groq, google, xai, mistral, openrouter, or custom
-model = "claude-sonnet-4-20250514"        # Model ID (e.g., claude-3-5-sonnet-20241022, gpt-4, o1-preview, codex-davinci-002)
-thinkingLevel = "medium"                  # off | minimal | low | medium | high | xhigh
+model = "claude-sonnet-4-20250514"        # Model ID (e.g., claude-sonnet-4-20250514, gpt-4o, gemini-2.0-flash-exp)
+thinkingLevel = "medium"                  # Optional: off | minimal | low | medium | high | xhigh (for models with reasoning support)
 authType = "api_key"                      # api_key | oauth_token | pi_auth
 
 # Optional: webhook triggers (instead of or in addition to schedule)
@@ -51,7 +51,7 @@ sentryProjects = ["web-app", "api"]
 | `model` | table | No | LLM model configuration (falls back to `[model]` in project `config.toml`) |
 | `model.provider` | string | Yes* | LLM provider ("anthropic", "openai", "groq", "google", "xai", "mistral", "openrouter", or "custom") |
 | `model.model` | string | Yes* | Model ID |
-| `model.thinkingLevel` | string | Yes* | Thinking budget level |
+| `model.thinkingLevel` | string | No | Thinking budget level: off, minimal, low, medium, high, xhigh. Only relevant for models with reasoning support (e.g. Claude Sonnet/Opus). Omit for other models. |
 | `model.authType` | string | Yes* | Auth method for the provider |
 | `webhooks` | array | No* | Array of webhook trigger objects |
 | `params` | table | No | Custom key-value params for the agent prompt |
@@ -105,7 +105,6 @@ authType = "api_key"
 [model]
 provider = "openai"
 model = "gpt-4o"                          # or gpt-4o-mini, gpt-4-turbo, o1-preview, o1-mini
-thinkingLevel = "medium"
 authType = "api_key"
 ```
 
@@ -115,7 +114,6 @@ authType = "api_key"
 [model]
 provider = "groq"
 model = "llama-3.3-70b-versatile"
-thinkingLevel = "medium"
 authType = "api_key"
 ```
 
@@ -125,7 +123,6 @@ authType = "api_key"
 [model]
 provider = "google"
 model = "gemini-2.0-flash-exp"
-thinkingLevel = "medium"
 authType = "api_key"
 ```
 
@@ -135,7 +132,6 @@ authType = "api_key"
 [model]
 provider = "xai"
 model = "grok-beta"
-thinkingLevel = "medium"
 authType = "api_key"
 ```
 
@@ -145,7 +141,6 @@ authType = "api_key"
 [model]
 provider = "mistral"
 model = "mistral-large-2411"
-thinkingLevel = "medium"
 authType = "api_key"
 ```
 
@@ -155,7 +150,6 @@ authType = "api_key"
 [model]
 provider = "openrouter"
 model = "anthropic/claude-3.5-sonnet"     # Any model available on OpenRouter
-thinkingLevel = "medium"
 authType = "api_key"
 ```
 
@@ -165,11 +159,12 @@ authType = "api_key"
 [model]
 provider = "custom"
 model = "your-model-name"
-thinkingLevel = "medium"
 authType = "api_key"
 ```
 
 For custom providers, store the API key as `custom_key:default` credential.
+
+**Note:** `thinkingLevel` is optional and only relevant for models with reasoning support (e.g. Claude Sonnet/Opus). If omitted, a sensible default is used. For models without reasoning, it is ignored.
 
 ## Cloud Runtimes
 

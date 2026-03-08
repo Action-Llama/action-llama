@@ -243,7 +243,7 @@ sentryProjects = ["web-app", "api"]
 | \`model\` | table | No | LLM model config — omit to inherit from project \`config.toml\` |
 | \`model.provider\` | string | Yes* | "anthropic", "openai", "groq", "google", "xai", "mistral", "openrouter", or "custom" |
 | \`model.model\` | string | Yes* | Model ID (e.g. "claude-sonnet-4-20250514") |
-| \`model.thinkingLevel\` | string | Yes* | off \\| minimal \\| low \\| medium \\| high \\| xhigh |
+| \`model.thinkingLevel\` | string | No | off \\| minimal \\| low \\| medium \\| high \\| xhigh (only relevant for models with reasoning support, e.g. Claude Sonnet/Opus; omit for other models) |
 | \`model.authType\` | string | Yes* | api_key \\| oauth_token \\| pi_auth |
 | \`webhooks[].type\` | string | Yes | Provider type: "github" or "sentry" |
 | \`webhooks[].source\` | string | No | Credential instance name (defaults to "default") |

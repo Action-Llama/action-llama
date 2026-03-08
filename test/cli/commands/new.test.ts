@@ -127,7 +127,6 @@ describe("new", () => {
         model: expect.objectContaining({
           provider: "openai",
           model: "gpt-4o",
-          thinkingLevel: "low",
           authType: "api_key",
         }),
       }),

@@ -27,7 +27,7 @@ export async function execute(name: string): Promise<void> {
 
   // Step 2: Choose model based on provider
   let model: string;
-  let thinkingLevel: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  let thinkingLevel: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined;
 
   if (provider === "openai") {
     console.log("\n--- OpenAI Model ---\n");
@@ -42,7 +42,7 @@ export async function execute(name: string): Promise<void> {
       default: "gpt-4o",
     });
 
-    thinkingLevel = "low"; // OpenAI models work better with lower thinking levels
+    // OpenAI models don't support extended thinking — omit thinkingLevel
   } else {
     console.log("\n--- Anthropic Model ---\n");
     model = await select({
@@ -88,8 +88,8 @@ export async function execute(name: string): Promise<void> {
     model: {
       provider,
       model,
-      thinkingLevel,
-      authType: result && Object.keys(result.values).length > 0 ? "api_key" : 
+      ...(thinkingLevel ? { thinkingLevel } : {}),
+      authType: result && Object.keys(result.values).length > 0 ? "api_key" :
                 (provider === "anthropic" ? "pi_auth" : "api_key"),
     },
   };

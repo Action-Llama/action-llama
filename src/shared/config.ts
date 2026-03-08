@@ -8,7 +8,7 @@ import type { WebhookTrigger } from "../webhooks/types.js";
 export interface ModelConfig {
   provider: string;
   model: string;
-  thinkingLevel: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
   authType: "api_key" | "oauth_token" | "pi_auth";
 }
 

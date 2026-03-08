@@ -123,17 +123,22 @@ export async function runSetup(): Promise<{
     });
   }
 
-  const thinkingLevel = await select({
-    message: "Thinking level:",
-    choices: [
-      { name: "off", value: "off" as const },
-      { name: "minimal", value: "minimal" as const },
-      { name: "low", value: "low" as const },
-      { name: "medium (recommended)", value: "medium" as const },
-      { name: "high", value: "high" as const },
-    ],
-    default: "medium" as const,
-  });
+  // Only prompt for thinking level for providers that support reasoning
+  const providersWithReasoning = ["anthropic"];
+  let thinkingLevel: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined;
+  if (providersWithReasoning.includes(provider)) {
+    thinkingLevel = await select({
+      message: "Thinking level:",
+      choices: [
+        { name: "off", value: "off" as const },
+        { name: "minimal", value: "minimal" as const },
+        { name: "low", value: "low" as const },
+        { name: "medium (recommended)", value: "medium" as const },
+        { name: "high", value: "high" as const },
+      ],
+      default: "medium" as const,
+    });
+  }
 
   // Prompt for provider-specific credentials
   if (provider !== "anthropic" && provider !== "openai") {
@@ -157,7 +162,7 @@ export async function runSetup(): Promise<{
     model: {
       provider,
       model: modelName,
-      thinkingLevel,
+      ...(thinkingLevel ? { thinkingLevel } : {}),
       authType: "api_key",
     },
   };
