@@ -40,8 +40,10 @@
     "clean": "rm -rf dist",
     "prebuild": "npm run clean",
     "prepublishOnly": "npm run build && npm test",
-    "preversion": "npm test",
-    "postversion": "git push && git push --tags",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "changeset publish --tag next",
+    "promote": "npm dist-tag add @action-llama/action-llama@$(npm view @action-llama/action-llama dist-tags.next) latest",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
@@ -70,6 +72,8 @@
     "smol-toml": "^1.6.0"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^0.6.0",
+    "@changesets/cli": "^2.30.0",
     "@types/react": "^19.2.14",
     "@vitest/coverage-v8": "^4.0.18",
     "ink-testing-library": "^4.0.0",

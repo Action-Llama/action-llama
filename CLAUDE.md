@@ -1,0 +1,135 @@
+# CLAUDE.md
+
+## Project
+
+Action Llama — CLI tool for running LLM agents as scripts (cron/webhook triggered).
+
+Package: `@action-llama/action-llama`, CLI binary: `al`.
+
+## Build & Test
+
+```bash
+npm run build          # TypeScript build
+npm test               # vitest (all tests)
+npm run test:watch     # watch mode
+npm run test:coverage  # V8 coverage
+```
+
+Tests live in `test/` mirroring `src/`. Run the full suite before committing.
+
+## Commits & Changesets
+
+This project uses **conventional commits** and **changesets** for versioning.
+
+### Commit message format
+
+```
+<type>: <short description>
+
+[optional body with more detail]
+```
+
+Types: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`, `perf`, `ci`
+
+Examples:
+- `feat: add organization-level webhook filtering`
+- `fix: handle missing credentials in cloud mode`
+- `refactor: extract prompt builder into separate module`
+- `chore: update AWS SDK dependencies`
+
+### Changesets (required for every PR with user-facing changes)
+
+Every PR that changes behavior, fixes a bug, or adds a feature **must** include a changeset file. Changesets are how we track what changed between versions and generate the changelog.
+
+**How to create a changeset:**
+
+Create a new markdown file in `.changeset/` with a random short name (e.g., `.changeset/cool-dogs-fly.md`). The file format is:
+
+```markdown
+---
+"@action-llama/action-llama": patch
+---
+
+Short human-readable description of what changed and why.
+Include enough context that someone reading the changelog understands
+the change without looking at the diff.
+```
+
+**Bump type rules (pre-1.0):**
+
+- `patch` — bug fixes, small features, internal improvements, dependency updates
+- `minor` — breaking changes, significant new features, API changes
+
+We are pre-1.0 (`0.x.y`), so `minor` = what would be `major` post-1.0. Most changes are `patch`.
+
+**What to write in the description:**
+
+- Lead with what changed from a user's perspective
+- Mention new config fields, CLI flags, or behavioral changes
+- Reference the issue number if applicable (e.g., "Closes #42")
+- Keep it to 1-3 sentences
+
+Good:
+```markdown
+---
+"@action-llama/action-llama": patch
+---
+
+Added support for custom LLM providers. Set `provider: "custom"` in agent-config.toml
+with a `baseUrl` pointing to any OpenAI-compatible endpoint. Closes #27.
+```
+
+Bad:
+```markdown
+---
+"@action-llama/action-llama": patch
+---
+
+Updated code.
+```
+
+**When to skip a changeset:**
+
+- Pure internal refactors with zero behavior change
+- Test-only changes
+- CI/docs-only changes
+- Changes to `.gitignore`, `CLAUDE.md`, etc.
+
+### PR workflow summary
+
+1. Make changes on a branch
+2. Write conventional commit messages
+3. Add a `.changeset/<name>.md` file describing the change
+4. Open PR — CI runs build + tests
+5. On merge to main, the daily release workflow picks up changesets
+
+## Versioning & Releases
+
+- Pre-1.0: `0.MINOR.PATCH`
+- **Daily releases** publish to the `next` dist-tag on npm (not `latest`)
+- The daily workflow (`release.yml`) runs at 08:00 UTC — if changesets exist, it opens a release PR; when merged, it publishes to `next`
+- **Promoting to `latest`**: run `npm run promote` locally, or trigger the "Promote to latest" workflow in GitHub Actions
+- Users on `npm install @action-llama/action-llama` get the last promoted stable version
+- Users on `npm install @action-llama/action-llama@next` get the latest daily build
+
+## Source Layout
+
+```
+src/
+  cli/              # Command definitions
+  setup/            # Project scaffolding
+  scheduler/        # Scheduler: agent discovery, cron + webhooks
+  agents/           # Agent runners (host + Docker), prompt builder
+  gateway/          # HTTP server: router, health, shutdown, webhook routes
+  docker/           # Container lifecycle, image + network
+  webhooks/         # Webhook registry, provider interface
+  tui/              # Ink-based terminal UI
+  shared/           # Config, credentials, logger, paths, git helpers
+```
+
+## Key Conventions
+
+- Config format: TOML (`config.toml`, `agent-config.toml`)
+- Credentials: `~/.action-llama-credentials/<type>/<instance>/<field>`
+- Cloud is opt-in via `-c`/`--cloud` flag
+- Tests use vitest with `test/` mirroring `src/`
