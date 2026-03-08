@@ -61,6 +61,9 @@ function Header({ info, agentCount }: { info: SchedulerInfo | null; agentCount: 
       {info.webhookUrls.map((url, i) => (
         <Text key={i} dimColor>  {url}</Text>
       ))}
+      {info.dashboardUrl ? (
+        <Text dimColor>Dashboard: {info.dashboardUrl}</Text>
+      ) : null}
       {isCloud ? (
         <Text color="yellow">Logs may be delayed ~10s (Cloud Logging ingestion)</Text>
       ) : null}

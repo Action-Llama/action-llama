@@ -1,10 +1,11 @@
-import { createServer } from "http";
+import { Hono } from "hono";
+import { serve } from "@hono/node-server";
 import type { Server } from "http";
-import { Router, sendJson, sendError } from "./router.js";
 import { registerShutdownRoute } from "./routes/shutdown.js";
 import { registerCredentialRoute } from "./routes/credentials.js";
 import { registerLogRoute } from "./routes/logs.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
+import { registerDashboardRoutes } from "./routes/dashboard.js";
 import type { ContainerRegistration } from "./types.js";
 import type { WebhookRegistry } from "../webhooks/registry.js";
 import type { Logger } from "../shared/logger.js";
@@ -19,6 +20,8 @@ export interface GatewayOptions {
   webhookRegistry?: WebhookRegistry;
   webhookSecrets?: Record<string, Record<string, string>>;
   statusTracker?: StatusTracker;
+  projectPath?: string;
+  webUI?: boolean;
 }
 
 export interface GatewayServer {
@@ -29,55 +32,40 @@ export interface GatewayServer {
 }
 
 export async function startGateway(opts: GatewayOptions): Promise<GatewayServer> {
-  const { port, logger, killContainer, webhookRegistry, webhookSecrets, statusTracker } = opts;
-  const router = new Router();
+  const { port, logger, killContainer, webhookRegistry, webhookSecrets, statusTracker, projectPath, webUI } = opts;
+  const app = new Hono();
   const containerRegistry = new Map<string, ContainerRegistration>();
 
   // Health check
-  router.get("/health", async (_req, res) => {
-    sendJson(res, 200, { status: "ok" });
-  });
+  app.get("/health", (c) => c.json({ status: "ok" }));
 
   // Container management routes
   const killFn = killContainer || (async () => {});
-  registerShutdownRoute(router, containerRegistry, killFn, logger);
-  registerCredentialRoute(router, containerRegistry, logger);
-  registerLogRoute(router, containerRegistry, logger);
+  registerShutdownRoute(app, containerRegistry, killFn, logger);
+  registerCredentialRoute(app, containerRegistry, logger);
+  registerLogRoute(app, containerRegistry, logger);
 
   // Webhook routes
   if (webhookRegistry) {
-    registerWebhookRoutes(router, webhookRegistry, webhookSecrets || {}, logger, statusTracker);
+    registerWebhookRoutes(app, webhookRegistry, webhookSecrets || {}, logger, statusTracker);
   }
 
-  const server = createServer(async (req, res) => {
-    const startTime = Date.now();
-    try {
-      logger.info({ method: req.method, url: req.url }, "gateway req");
+  // Dashboard routes
+  if (webUI && statusTracker) {
+    registerDashboardRoutes(app, statusTracker, projectPath);
+  }
 
-      const handled = await router.handle(req, res);
-      if (!handled) {
-        sendError(res, 404, "Not found");
-      }
-    } catch (err: any) {
-      logger.error({ err, url: req.url }, "gateway request error");
-      if (!res.headersSent) {
-        sendError(res, 500, "Internal server error");
-      }
-    } finally {
-      const elapsed = Date.now() - startTime;
-      logger.info(
-        { method: req.method, url: req.url, status: res.statusCode, ms: elapsed },
-        "gateway res"
-      );
-    }
-  });
+  const server = serve({
+    fetch: app.fetch,
+    port,
+    hostname: "0.0.0.0",
+  }) as Server;
 
   await new Promise<void>((resolve) => {
-    server.listen(port, "0.0.0.0", () => {
-      logger.info({ port }, "Gateway server listening");
-      resolve();
-    });
+    server.on("listening", resolve);
   });
+
+  logger.info({ port }, "Gateway server listening");
 
   const registerContainer = (secret: string, reg: ContainerRegistration) => {
     containerRegistry.set(secret, reg);

@@ -1,0 +1,181 @@
+import type { AgentStatus, SchedulerInfo, LogLine } from "../../tui/status-tracker.js";
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function stateColor(state: AgentStatus["state"]): string {
+  switch (state) {
+    case "running": return "#22c55e";
+    case "building": return "#eab308";
+    case "error": return "#ef4444";
+    case "idle": return "#6b7280";
+  }
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m ${s % 60}s`;
+}
+
+function formatTime(date: Date | null): string {
+  if (!date) return "—";
+  return date.toLocaleTimeString();
+}
+
+function formatLogLine(log: LogLine): string {
+  const time = log.timestamp.toLocaleTimeString();
+  return `<span class="log-time">${escapeHtml(time)}</span> <span class="log-agent">[${escapeHtml(log.agent)}]</span> ${escapeHtml(log.message)}`;
+}
+
+function renderAgentRow(agent: AgentStatus): string {
+  const color = stateColor(agent.state);
+  const statusText = agent.statusText || agent.lastError || "—";
+  return `<tr>
+    <td><a href="/dashboard/agents/${escapeHtml(agent.name)}/logs">${escapeHtml(agent.name)}</a></td>
+    <td><span class="state-dot" style="background:${color}"></span> ${escapeHtml(agent.state)}</td>
+    <td class="status-text">${escapeHtml(statusText)}</td>
+    <td>${formatTime(agent.lastRunAt)}</td>
+    <td>${agent.lastRunDuration != null ? formatDuration(agent.lastRunDuration) : "—"}</td>
+    <td>${formatTime(agent.nextRunAt)}</td>
+  </tr>`;
+}
+
+export function renderDashboardPage(agents: AgentStatus[], schedulerInfo: SchedulerInfo | null, recentLogs: LogLine[]): string {
+  const mode = schedulerInfo?.mode || "host";
+  const runtime = schedulerInfo?.runtime || "—";
+  const uptime = schedulerInfo ? formatDuration(Date.now() - schedulerInfo.startedAt.getTime()) : "—";
+  const cronCount = schedulerInfo?.cronJobCount || 0;
+  const webhooks = schedulerInfo?.webhooksActive ? "active" : "inactive";
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Action Llama Dashboard</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; padding: 24px; }
+  h1 { font-size: 1.5rem; margin-bottom: 8px; color: #f8fafc; }
+  .header { display: flex; align-items: baseline; gap: 24px; margin-bottom: 24px; flex-wrap: wrap; }
+  .header-stat { font-size: 0.85rem; color: #94a3b8; }
+  .header-stat strong { color: #cbd5e1; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 32px; }
+  th { text-align: left; padding: 8px 12px; border-bottom: 2px solid #334155; color: #94a3b8; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  td { padding: 8px 12px; border-bottom: 1px solid #1e293b; font-size: 0.9rem; }
+  td a { color: #60a5fa; text-decoration: none; }
+  td a:hover { text-decoration: underline; }
+  .state-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .status-text { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #94a3b8; }
+  h2 { font-size: 1.1rem; margin-bottom: 12px; color: #f8fafc; }
+  .logs { background: #1e293b; border-radius: 8px; padding: 16px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.8rem; line-height: 1.6; max-height: 300px; overflow-y: auto; }
+  .log-line { white-space: pre-wrap; word-break: break-all; }
+  .log-time { color: #64748b; }
+  .log-agent { color: #818cf8; }
+  .empty { color: #475569; font-style: italic; }
+  tr:hover { background: #1e293b; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <h1>Action Llama</h1>
+    <span class="header-stat">Mode: <strong>${escapeHtml(mode)}</strong></span>
+    <span class="header-stat">Runtime: <strong>${escapeHtml(runtime)}</strong></span>
+    <span class="header-stat">Agents: <strong>${agents.length}</strong></span>
+    <span class="header-stat">Cron jobs: <strong>${cronCount}</strong></span>
+    <span class="header-stat">Webhooks: <strong>${escapeHtml(webhooks)}</strong></span>
+    <span class="header-stat">Uptime: <strong id="uptime">${escapeHtml(uptime)}</strong></span>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Agent</th>
+        <th>State</th>
+        <th>Status</th>
+        <th>Last Run</th>
+        <th>Duration</th>
+        <th>Next Run</th>
+      </tr>
+    </thead>
+    <tbody id="agent-table">
+      ${agents.length > 0 ? agents.map(renderAgentRow).join("\n      ") : '<tr><td colspan="6" class="empty">No agents registered</td></tr>'}
+    </tbody>
+  </table>
+
+  <h2>Recent Activity</h2>
+  <div class="logs" id="recent-logs">
+    ${recentLogs.length > 0 ? recentLogs.map((l) => `<div class="log-line">${formatLogLine(l)}</div>`).join("\n    ") : '<div class="empty">No recent activity</div>'}
+  </div>
+
+  <script>
+    const stateColors = { running: "#22c55e", building: "#eab308", error: "#ef4444", idle: "#6b7280" };
+
+    function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+
+    function fmtDur(ms) {
+      if (ms < 1000) return ms + "ms";
+      const s = Math.floor(ms / 1000);
+      if (s < 60) return s + "s";
+      return Math.floor(s / 60) + "m " + (s % 60) + "s";
+    }
+
+    function fmtTime(iso) {
+      if (!iso) return "\\u2014";
+      return new Date(iso).toLocaleTimeString();
+    }
+
+    function renderRow(a) {
+      const color = stateColors[a.state] || "#6b7280";
+      const status = a.statusText || a.lastError || "\\u2014";
+      return '<tr>' +
+        '<td><a href="/dashboard/agents/' + esc(a.name) + '/logs">' + esc(a.name) + '</a></td>' +
+        '<td><span class="state-dot" style="background:' + color + '"></span> ' + esc(a.state) + '</td>' +
+        '<td class="status-text">' + esc(status) + '</td>' +
+        '<td>' + fmtTime(a.lastRunAt) + '</td>' +
+        '<td>' + (a.lastRunDuration != null ? fmtDur(a.lastRunDuration) : "\\u2014") + '</td>' +
+        '<td>' + fmtTime(a.nextRunAt) + '</td>' +
+        '</tr>';
+    }
+
+    function renderLog(l) {
+      const t = new Date(l.timestamp).toLocaleTimeString();
+      return '<div class="log-line"><span class="log-time">' + esc(t) + '</span> <span class="log-agent">[' + esc(l.agent) + ']</span> ' + esc(l.message) + '</div>';
+    }
+
+    const es = new EventSource("/dashboard/api/status-stream");
+    es.onmessage = function(e) {
+      const data = JSON.parse(e.data);
+
+      // Update agent table
+      const tbody = document.getElementById("agent-table");
+      if (data.agents && data.agents.length > 0) {
+        tbody.innerHTML = data.agents.map(renderRow).join("");
+      } else {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty">No agents registered</td></tr>';
+      }
+
+      // Update recent logs
+      const logsDiv = document.getElementById("recent-logs");
+      if (data.recentLogs && data.recentLogs.length > 0) {
+        logsDiv.innerHTML = data.recentLogs.map(renderLog).join("");
+        logsDiv.scrollTop = logsDiv.scrollHeight;
+      }
+
+      // Update uptime
+      if (data.schedulerInfo && data.schedulerInfo.startedAt) {
+        document.getElementById("uptime").textContent = fmtDur(Date.now() - new Date(data.schedulerInfo.startedAt).getTime());
+      }
+    };
+  </script>
+</body>
+</html>`;
+}

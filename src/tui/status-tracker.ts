@@ -17,6 +17,7 @@ export interface SchedulerInfo {
   cronJobCount: number;
   webhooksActive: boolean;
   webhookUrls: string[];
+  dashboardUrl?: string;
   startedAt: Date;
 }
 

@@ -64,6 +64,7 @@ export function attachPlainLogger(statusTracker: StatusTracker): { detach: () =>
     if (info.gatewayPort) parts.push(`gateway=:${info.gatewayPort}`);
     parts.push(`cron_jobs=${info.cronJobCount}`);
     if (info.webhooksActive) parts.push(`webhooks=active`);
+    if (info.dashboardUrl) parts.push(`dashboard=${info.dashboardUrl}`);
     console.log(`[${new Date().toISOString()}] scheduler started (${parts.join(", ")})`);
   };
 

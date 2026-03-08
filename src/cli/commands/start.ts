@@ -5,7 +5,7 @@ import { startScheduler } from "../../scheduler/index.js";
 import { StatusTracker } from "../../tui/status-tracker.js";
 import { execute as runDoctor } from "./doctor.js";
 
-export async function execute(opts: { project: string; noDocker?: boolean; cloud?: boolean; headless?: boolean }): Promise<void> {
+export async function execute(opts: { project: string; noDocker?: boolean; cloud?: boolean; headless?: boolean; webUi?: boolean }): Promise<void> {
   const projectPath = resolve(opts.project);
 
   // Guard: refuse to run if the project path looks like an agent directory
@@ -68,7 +68,9 @@ export async function execute(opts: { project: string; noDocker?: boolean; cloud
     cleanup = unmount;
   }
 
-  const { cronJobs, gateway, webhookRegistry, webhookUrls } = await startScheduler(projectPath, globalConfig, statusTracker, opts.cloud);
+  const { cronJobs, gateway, webhookRegistry, webhookUrls } = await startScheduler(
+    projectPath, globalConfig, statusTracker, opts.cloud, opts.webUi
+  );
 
   const gatewayPort = gateway ? (globalConfig.gateway?.port || 8080) : null;
 
@@ -80,6 +82,7 @@ export async function execute(opts: { project: string; noDocker?: boolean; cloud
     cronJobCount: cronJobs.length,
     webhooksActive: !!webhookRegistry,
     webhookUrls: webhookUrls || [],
+    dashboardUrl: (opts.webUi && gatewayPort) ? `http://localhost:${gatewayPort}/dashboard` : undefined,
     startedAt: new Date(),
   });
 

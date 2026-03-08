@@ -42,6 +42,7 @@ describe("start", () => {
       expect.stringContaining("test"),
       expect.any(Object),
       expect.any(StatusTracker),
+      undefined,
       undefined
     );
 

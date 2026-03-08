@@ -126,6 +126,7 @@ al start -p .
 al start -p ./my-project
 al start --no-docker          # Skip Docker isolation (dev only)
 al start -c                   # Run on cloud
+al start -w                   # Enable web dashboard
 ```
 
 | Option | Description |
@@ -133,6 +134,7 @@ al start -c                   # Run on cloud
 | `-p, --project <dir>` | Project directory (default: `.`) |
 | `--no-docker` | Disable Docker container isolation |
 | `-c, --cloud` | Run on cloud infrastructure |
+| `-w, --web-ui` | Enable web dashboard (see [Web Dashboard](web-dashboard.md)) |
 
 ## `al status`
 

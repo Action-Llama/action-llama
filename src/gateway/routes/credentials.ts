@@ -1,26 +1,24 @@
-import type { Router } from "../router.js";
-import { sendJson, sendError } from "../router.js";
+import type { Hono } from "hono";
 import type { ContainerRegistration } from "../types.js";
 import type { Logger } from "../../shared/logger.js";
 
 export function registerCredentialRoute(
-  router: Router,
+  app: Hono,
   containerRegistry: Map<string, ContainerRegistration>,
   logger: Logger
 ): void {
-  router.get("/credentials/:secret", async (_req, res, params) => {
-    const reg = containerRegistry.get(params.secret);
+  app.get("/credentials/:secret", (c) => {
+    const secret = c.req.param("secret");
+    const reg = containerRegistry.get(secret);
     if (!reg) {
-      sendError(res, 403, "invalid secret");
-      return;
+      return c.json({ error: "invalid secret" }, 403);
     }
 
     if (!reg.credentials) {
-      sendError(res, 404, "no credentials registered for this container");
-      return;
+      return c.json({ error: "no credentials registered for this container" }, 404);
     }
 
     logger.debug({ container: reg.containerName }, "serving credentials");
-    sendJson(res, 200, reg.credentials);
+    return c.json(reg.credentials);
   });
 }

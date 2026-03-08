@@ -45,6 +45,7 @@ program
   .option("--no-docker", "disable Docker container isolation (run agents directly on host)")
   .option("-c, --cloud", "run on cloud infrastructure")
   .option("-H, --headless", "non-interactive mode (no TUI, no credential prompts, for CI/deploy environments)")
+  .option("-w, --web-ui", "enable web dashboard at http://localhost:<port>/dashboard")
   .action(async (opts) => {
     const { execute } = await import("./commands/start.js");
     await execute(opts);

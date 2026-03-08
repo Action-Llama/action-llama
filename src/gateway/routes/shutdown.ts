@@ -1,33 +1,29 @@
-import type { Router } from "../router.js";
-import { readBody, sendJson, sendError } from "../router.js";
+import type { Hono } from "hono";
 import type { ContainerRegistration } from "../types.js";
 import type { Logger } from "../../shared/logger.js";
 
 export function registerShutdownRoute(
-  router: Router,
+  app: Hono,
   containerRegistry: Map<string, ContainerRegistration>,
   killContainer: (name: string) => Promise<void>,
   logger: Logger
 ): void {
-  router.post("/shutdown", async (req, res) => {
+  app.post("/shutdown", async (c) => {
     let body: { secret?: string; reason?: string; details?: string };
     try {
-      body = JSON.parse(await readBody(req));
+      body = await c.req.json();
     } catch {
-      sendError(res, 400, "invalid JSON body");
-      return;
+      return c.json({ error: "invalid JSON body" }, 400);
     }
 
     const { secret, reason, details } = body;
     if (!secret || typeof secret !== "string") {
-      sendError(res, 400, "missing secret");
-      return;
+      return c.json({ error: "missing secret" }, 400);
     }
 
     const reg = containerRegistry.get(secret);
     if (!reg) {
-      sendError(res, 403, "invalid secret");
-      return;
+      return c.json({ error: "invalid secret" }, 403);
     }
 
     logger.error(
@@ -38,6 +34,6 @@ export function registerShutdownRoute(
     await killContainer(reg.containerName);
 
     containerRegistry.delete(secret);
-    sendJson(res, 200, { killed: true, container: reg.containerName });
+    return c.json({ killed: true, container: reg.containerName });
   });
 }

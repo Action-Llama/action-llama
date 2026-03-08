@@ -134,7 +134,7 @@ async function runWithReruns(
   }
 }
 
-export async function startScheduler(projectPath: string, globalConfigOverride?: GlobalConfig, statusTracker?: StatusTracker, cloudMode?: boolean) {
+export async function startScheduler(projectPath: string, globalConfigOverride?: GlobalConfig, statusTracker?: StatusTracker, cloudMode?: boolean, webUI?: boolean) {
   const mkLogger = statusTracker ? createFileOnlyLogger : createLogger;
   const logger = mkLogger(projectPath, "scheduler");
   logger.info("Starting scheduler...");
@@ -381,8 +381,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
     logger.info("Docker infrastructure ready");
 
-    // 6. Start gateway if the runtime needs it or webhooks are configured
-    if (runtime.needsGateway || anyWebhooks) {
+    // 6. Start gateway if the runtime needs it, webhooks are configured, or web UI is enabled
+    if (runtime.needsGateway || anyWebhooks || webUI) {
       const { startGateway } = await import("../gateway/index.js");
       const gatewayPort = globalConfig.gateway?.port || 8080;
       gateway = await startGateway({
@@ -392,10 +392,12 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
         webhookRegistry,
         webhookSecrets,
         statusTracker,
+        projectPath,
+        webUI,
       });
     }
-  } else if (anyWebhooks) {
-    // Start gateway even without docker when webhooks are configured
+  } else if (anyWebhooks || webUI) {
+    // Start gateway even without docker when webhooks are configured or web UI is enabled
     logger.info("Starting gateway for webhook support (no docker)");
     const { startGateway } = await import("../gateway/index.js");
     const gatewayPort = globalConfig.gateway?.port || 8080;
@@ -405,6 +407,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       webhookRegistry,
       webhookSecrets,
       statusTracker,
+      projectPath,
+      webUI,
     });
   }
 

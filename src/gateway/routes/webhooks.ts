@@ -1,44 +1,41 @@
-import type { Router } from "../router.js";
-import { readBody, sendJson, sendError } from "../router.js";
+import type { Hono } from "hono";
 import type { WebhookRegistry } from "../../webhooks/registry.js";
 import type { Logger } from "../../shared/logger.js";
 import type { StatusTracker } from "../../tui/status-tracker.js";
 
 export function registerWebhookRoutes(
-  router: Router,
+  app: Hono,
   registry: WebhookRegistry,
   webhookSecrets: Record<string, Record<string, string>>,
   logger: Logger,
   statusTracker?: StatusTracker
 ): void {
-  router.post("/webhooks/:source", async (req, res, params) => {
-    const source = params.source;
+  app.post("/webhooks/:source", async (c) => {
+    const source = c.req.param("source");
     logger.debug({ source }, "webhook request received");
 
     const provider = registry.getProvider(source);
     if (!provider) {
       logger.warn({ source }, "webhook rejected: unknown source");
       statusTracker?.addLogLine("webhook", `Rejected: unknown source "${source}"`);
-      sendError(res, 404, `unknown webhook source: ${source}`);
-      return;
+      return c.json({ error: `unknown webhook source: ${source}` }, 404);
     }
 
     let rawBody: string;
     try {
-      rawBody = await readBody(req);
+      rawBody = await c.req.text();
     } catch (err: any) {
       logger.error({ err, source }, "webhook body read failed");
       statusTracker?.addLogLine("webhook", `Failed to read body from ${source}: ${err.message}`);
-      sendError(res, 400, "failed to read request body");
-      return;
+      return c.json({ error: "failed to read request body" }, 400);
     }
 
     logger.debug({ source, bodyLength: rawBody.length }, "webhook body read ok");
 
     // Extract headers as a flat map
     const headers: Record<string, string | undefined> = {};
-    for (const [key, value] of Object.entries(req.headers)) {
-      headers[key] = Array.isArray(value) ? value[0] : value;
+    for (const [key, value] of c.req.raw.headers.entries()) {
+      headers[key] = value;
     }
 
     logger.debug(
@@ -63,8 +60,7 @@ export function registerWebhookRoutes(
         "webhook dispatch failed"
       );
       statusTracker?.addLogLine("webhook", `${source}: ${errorMsg}`);
-      sendError(res, status, errorMsg);
-      return;
+      return c.json({ error: errorMsg }, status);
     }
 
     logger.info(
@@ -74,7 +70,7 @@ export function registerWebhookRoutes(
     if (result.matched > 0) {
       statusTracker?.addLogLine("webhook", `${source}: dispatched to ${result.matched} agent${result.matched !== 1 ? "s" : ""}`);
     }
-    sendJson(res, 200, {
+    return c.json({
       ok: true,
       matched: result.matched,
       skipped: result.skipped,

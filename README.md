@@ -117,14 +117,14 @@ Most commands accept `-p <dir>` to set the project directory and `-c` to target 
 
 Configuration lives in two places:
 
-- **`config.toml`** (project root) — global settings: default model (`[model]`), local Docker options (`[local]`), cloud provider config (`[cloud]`), and scheduler options like `maxReruns`.
-- **`agent-config.toml`** (per agent) — model, credentials, schedule, webhooks, and parameters. Each agent can use a different model or provider (e.g., Claude Opus for dev, GPT-4o for review, Gemini for devops).
+- [**`config.toml`**](docs/config-reference.md) (project root) — global settings: default model (`[model]`), local Docker options (`[local]`), cloud provider config (`[cloud]`), and scheduler options like `maxReruns`.
+- [**`agent-config.toml`**](docs/agent-config-reference.md) (per agent) — model, credentials, schedule, webhooks, and parameters. Each agent can use a different model or provider (e.g., Claude Opus for dev, GPT-4o for review, Gemini for devops).
 
 Credentials are stored outside the project in `~/.action-llama-credentials/` and referenced by name in agent configs. Run `al doctor` to configure them interactively.
 
 Agents run in isolated Docker containers by default. Use `--no-docker` to run directly on the host during development.
 
-See the [agent-config.toml reference](docs/agent-config-reference.md), [credentials](docs/credentials.md), [webhooks](docs/webhooks.md), and [Docker](docs/docker.md) docs for details.
+See also the [credentials](docs/credentials.md), [webhooks](docs/webhooks.md), and [Docker](docs/docker.md) docs for details.
 
 ## Documentation
 

@@ -1,31 +1,28 @@
-import type { Router } from "../router.js";
-import { readBody, sendJson, sendError } from "../router.js";
+import type { Hono } from "hono";
 import type { ContainerRegistration } from "../types.js";
 import type { Logger } from "../../shared/logger.js";
 
 export function registerLogRoute(
-  router: Router,
+  app: Hono,
   containerRegistry: Map<string, ContainerRegistration>,
   logger: Logger
 ): void {
-  router.post("/logs/:secret", async (req, res, params) => {
-    const reg = containerRegistry.get(params.secret);
+  app.post("/logs/:secret", async (c) => {
+    const secret = c.req.param("secret");
+    const reg = containerRegistry.get(secret);
     if (!reg) {
-      sendError(res, 403, "invalid secret");
-      return;
+      return c.json({ error: "invalid secret" }, 403);
     }
 
     if (!reg.onLogLine) {
-      sendJson(res, 200, { ok: true, forwarded: 0 });
-      return;
+      return c.json({ ok: true, forwarded: 0 });
     }
 
     let body: string;
     try {
-      body = await readBody(req);
+      body = await c.req.text();
     } catch {
-      sendError(res, 400, "failed to read request body");
-      return;
+      return c.json({ error: "failed to read request body" }, 400);
     }
 
     let forwarded = 0;
@@ -36,6 +33,6 @@ export function registerLogRoute(
       }
     }
 
-    sendJson(res, 200, { ok: true, forwarded });
+    return c.json({ ok: true, forwarded });
   });
 }
