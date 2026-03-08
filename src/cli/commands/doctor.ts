@@ -540,7 +540,7 @@ function listGsmFields(
   }
 }
 
-async function validateEcsRoles(projectPath: string, cloud: CloudConfig): Promise<void> {
+export async function validateEcsRoles(projectPath: string, cloud: CloudConfig): Promise<void> {
   const { awsRegion } = cloud;
   if (!awsRegion) {
     throw new Error("cloud.awsRegion is required for ECS validation");
@@ -551,13 +551,28 @@ async function validateEcsRoles(projectPath: string, cloud: CloudConfig): Promis
 
   const iamClient = new IAMClient({ region: awsRegion });
   const missing: string[] = [];
+  const hasIncorrectTrust: string[] = [];
 
   for (const name of agents) {
     const roleName = AWS_CONSTANTS.taskRoleName(name);
     
     try {
-      await iamClient.send(new GetRoleCommand({ RoleName: roleName }));
-      console.log(`  [ok] ${roleName}`);
+      const role = await iamClient.send(new GetRoleCommand({ RoleName: roleName }));
+      
+      // Check if the role has the correct trust policy for ECS tasks
+      const trustPolicy = JSON.parse(decodeURIComponent(role.Role!.AssumeRolePolicyDocument!));
+      const hasEcsTrust = trustPolicy.Statement?.some((stmt: any) =>
+        stmt.Effect === "Allow" &&
+        stmt.Principal?.Service === "ecs-tasks.amazonaws.com" &&
+        (stmt.Action === "sts:AssumeRole" || stmt.Action?.includes("sts:AssumeRole"))
+      );
+      
+      if (!hasEcsTrust) {
+        hasIncorrectTrust.push(roleName);
+        console.log(`  [TRUST ISSUE] ${roleName} - missing ECS task trust policy`);
+      } else {
+        console.log(`  [ok] ${roleName}`);
+      }
     } catch (err: any) {
       if (err.name === "NoSuchEntityException") {
         missing.push(roleName);
@@ -568,14 +583,24 @@ async function validateEcsRoles(projectPath: string, cloud: CloudConfig): Promis
     }
   }
 
-  if (missing.length > 0) {
-    console.log(`\n${missing.length} IAM task role(s) are missing.`);
-    console.log("These roles are automatically created when you run 'al doctor -c'.");
-    console.log("If they're still missing, you may need to create them manually:");
-    for (const role of missing) {
-      console.log(`  aws iam create-role --role-name ${role} --assume-role-policy-document file://ecs-trust.json`);
+  if (missing.length > 0 || hasIncorrectTrust.length > 0) {
+    console.log(`\n⚠️  Found IAM role issues that will cause ECS task failures:`);
+    
+    if (missing.length > 0) {
+      console.log(`\n${missing.length} IAM task role(s) are missing:`);
+      missing.forEach(role => console.log(`  - ${role}`));
+      console.log(`\n🔧 Fix: Run 'al doctor -c' to create missing roles automatically.`);
     }
-    console.log("\nECS task trust policy (save as ecs-trust.json):");
+    
+    if (hasIncorrectTrust.length > 0) {
+      console.log(`\n${hasIncorrectTrust.length} IAM role(s) have incorrect trust policies:`);
+      hasIncorrectTrust.forEach(role => console.log(`  - ${role}`));
+      console.log(`\n🔧 Fix: Update trust policy to allow ECS tasks to assume the role:`);
+      console.log(`For each role above, run:`);
+      console.log(`  aws iam update-assume-role-policy --role-name ROLE_NAME --policy-document file://ecs-trust.json`);
+    }
+    
+    console.log(`\nECS task trust policy (save as ecs-trust.json):`);
     console.log(JSON.stringify({
       Version: "2012-10-17",
       Statement: [{
@@ -584,7 +609,13 @@ async function validateEcsRoles(projectPath: string, cloud: CloudConfig): Promis
         Action: "sts:AssumeRole",
       }],
     }, null, 2));
+    
+    console.log(`\n💡 Alternatively, re-run the cloud setup to fix all issues:`);
+    console.log(`  al cloud setup`);
+    
+    // Throw error to prevent proceeding with invalid configuration
+    throw new Error(`${missing.length + hasIncorrectTrust.length} IAM task role(s) have issues that will prevent ECS tasks from starting. Fix the roles above before proceeding.`);
   } else {
-    console.log(`All ${agents.length} IAM task role(s) exist.`);
+    console.log(`All ${agents.length} IAM task role(s) exist and have correct trust policies.`);
   }
 }

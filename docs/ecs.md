@@ -489,6 +489,19 @@ The scheduler builds images via CodeBuild, launches containers on ECS Fargate, a
 
 **"Unable to assume the service linked role"** — ECS needs a service-linked role the first time it's used in an account. Run `aws iam create-service-linked-role --aws-service-name ecs.amazonaws.com`. This is a one-time setup; the command is safe to re-run (it'll error if the role already exists).
 
+**"ECS was unable to assume the role 'arn:aws:iam::...:role/al-AGENT-task-role'"** — This is the most common issue with multiple agents. It means the IAM task role for your second (or subsequent) agent doesn't exist or has incorrect permissions. This typically happens because:
+
+1. You ran `al cloud setup` with only one agent, then added more agents later
+2. The per-agent role creation failed during setup
+3. The role exists but has an incorrect trust policy
+
+**Solutions:**
+- **Quick fix:** Run `al doctor -c` to validate and create missing roles
+- **Verify setup:** Run `al doctor -c --check-only` to see what's missing without making changes
+- **Manual check:** Run `aws iam get-role --role-name al-AGENT-task-role` to see if the role exists
+
+**Prevention:** Always run `al doctor -c` after adding new agents to ensure their IAM roles are created.
+
 **"Failed to start ECS task"** — Check that the ECS cluster exists, subnets have internet access, and the execution role has the required permissions.
 
 **CodeBuild build fails** — Check the build logs linked in the error message. Common causes: the `al-codebuild-role` is missing or lacks ECR push permissions, or the S3 bucket doesn't exist. Verify the role exists and has the permissions listed in the "How CodeBuild works" section above.
