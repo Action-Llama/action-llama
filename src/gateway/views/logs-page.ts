@@ -15,19 +15,19 @@ export function renderLogsPage(agentName: string): string {
 <title>${escapeHtml(agentName)} — Logs — Action Llama</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; padding: 24px; display: flex; flex-direction: column; height: 100vh; }
-  .top-bar { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; flex-shrink: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; padding: 16px; display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+  .top-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-shrink: 0; flex-wrap: wrap; }
   .top-bar a { color: #60a5fa; text-decoration: none; font-size: 0.9rem; }
   .top-bar a:hover { text-decoration: underline; }
-  h1 { font-size: 1.3rem; color: #f8fafc; }
+  h1 { font-size: 1.2rem; color: #f8fafc; }
   .agent-state { font-size: 0.85rem; color: #94a3b8; }
   .state-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
-  .controls { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; flex-shrink: 0; }
-  .controls button { background: #334155; color: #e2e8f0; border: 1px solid #475569; border-radius: 4px; padding: 4px 12px; cursor: pointer; font-size: 0.8rem; }
+  .controls { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-shrink: 0; flex-wrap: wrap; }
+  .controls button { background: #334155; color: #e2e8f0; border: 1px solid #475569; border-radius: 4px; padding: 6px 14px; cursor: pointer; font-size: 0.8rem; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
   .controls button:hover { background: #475569; }
   .controls button.active { background: #3b82f6; border-color: #3b82f6; }
   .controls .status { font-size: 0.8rem; color: #64748b; }
-  .log-container { flex: 1; background: #1e293b; border-radius: 8px; padding: 16px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.8rem; line-height: 1.6; overflow-y: auto; min-height: 0; }
+  .log-container { flex: 1; background: #1e293b; border-radius: 8px; padding: 12px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.75rem; line-height: 1.5; overflow-y: auto; min-height: 0; -webkit-overflow-scrolling: touch; }
   .log-line { white-space: pre-wrap; word-break: break-all; }
   .log-time { color: #64748b; }
   .log-level { font-weight: 600; }
@@ -40,6 +40,21 @@ export function renderLogsPage(agentName: string): string {
   .connection-status { font-size: 0.75rem; padding: 2px 8px; border-radius: 3px; }
   .connection-status.connected { color: #22c55e; }
   .connection-status.disconnected { color: #ef4444; }
+
+  @media (max-width: 640px) {
+    body { padding: 10px; }
+    h1 { font-size: 1.05rem; }
+    .top-bar { gap: 8px; margin-bottom: 8px; }
+    .top-bar a { font-size: 0.8rem; }
+    .controls button { padding: 8px 14px; font-size: 0.8rem; }
+    .log-container { padding: 10px; font-size: 0.65rem; line-height: 1.45; border-radius: 6px; }
+    .agent-state { font-size: 0.75rem; }
+  }
+
+  @media (min-width: 641px) {
+    body { padding: 24px; }
+    .log-container { padding: 16px; font-size: 0.8rem; line-height: 1.6; }
+  }
 </style>
 </head>
 <body>

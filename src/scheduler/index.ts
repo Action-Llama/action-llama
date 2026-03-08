@@ -320,57 +320,59 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       });
     }
 
-    // 3. Build per-agent images for agents with a custom Dockerfile
+    // 3. Build per-agent custom images in parallel
     const { existsSync } = await import("fs");
-    const agentsWithCustomImages = agentConfigs.filter(ac => 
+    const agentsWithCustomImages = agentConfigs.filter(ac =>
       existsSync(resolvePath(projectPath, ac.name, "Dockerfile"))
     );
     const totalCustomImages = agentsWithCustomImages.length;
-    
-    for (const [index, agentConfig] of agentConfigs.entries()) {
-      const agentDockerfile = resolvePath(projectPath, agentConfig.name, "Dockerfile");
-      if (!existsSync(agentDockerfile)) {
-        agentImages[agentConfig.name] = baseImage;
-        continue;
-      }
 
-      const customImageIndex = agentsWithCustomImages.findIndex(ac => ac.name === agentConfig.name) + 1;
-      const progressIndicator = totalCustomImages > 1 ? ` (${customImageIndex}/${totalCustomImages})` : "";
-      
-      statusTracker?.setAgentState(agentConfig.name, "building");
-      statusTracker?.setAgentStatusText(agentConfig.name, `Building custom image${progressIndicator}`);
-      const agentImageTag = AWS_CONSTANTS.agentImage(agentConfig.name);
-      const image = await runtime.buildImage({
-        tag: agentImageTag,
-        dockerfile: agentDockerfile,
-        contextDir: packageRoot,
-        baseImage,
-        onProgress: (msg) => statusTracker?.setAgentStatusText(agentConfig.name, `${msg}${progressIndicator}`),
-      });
-      agentImages[agentConfig.name] = image;
-      logger.info({ agent: agentConfig.name, image, progress: `${customImageIndex}/${totalCustomImages}` }, "Built custom agent image");
+    // Agents without custom Dockerfiles use the base image
+    for (const ac of agentConfigs) {
+      if (!agentsWithCustomImages.includes(ac)) {
+        agentImages[ac.name] = baseImage;
+      }
     }
 
-    // 4. Push images to remote registry if needed (no-op for local, tags+pushes for cloud)
+    // Build all custom images concurrently
+    if (totalCustomImages > 0) {
+      await Promise.all(agentsWithCustomImages.map(async (agentConfig, idx) => {
+        const customImageIndex = idx + 1;
+        const progressIndicator = totalCustomImages > 1 ? ` (${customImageIndex}/${totalCustomImages})` : "";
+
+        statusTracker?.setAgentState(agentConfig.name, "building");
+        statusTracker?.setAgentStatusText(agentConfig.name, `Building custom image${progressIndicator}`);
+
+        const agentDockerfile = resolvePath(projectPath, agentConfig.name, "Dockerfile");
+        const agentImageTag = AWS_CONSTANTS.agentImage(agentConfig.name);
+        const image = await runtime!.buildImage({
+          tag: agentImageTag,
+          dockerfile: agentDockerfile,
+          contextDir: packageRoot,
+          baseImage,
+          onProgress: (msg) => statusTracker?.setAgentStatusText(agentConfig.name, `${msg}${progressIndicator}`),
+        });
+        agentImages[agentConfig.name] = image;
+        logger.info({ agent: agentConfig.name, image, progress: `${customImageIndex}/${totalCustomImages}` }, "Built custom agent image");
+      }));
+    }
+
+    // 4. Push images to remote registry in parallel (no-op for local, tags+pushes for cloud)
     if (runtimeType !== "local") {
       const imagesToPush = agentConfigs.filter(ac => {
         const currentImage = agentImages[ac.name] || baseImage;
         return !currentImage.includes("/");
       });
-      const totalImagesToPush = imagesToPush.length;
-      
-      let pushIndex = 0;
-      for (const agentConfig of agentConfigs) {
-        const currentImage = agentImages[agentConfig.name] || baseImage;
-        if (!currentImage.includes("/")) {
-          // Looks like a local tag — needs pushing
-          pushIndex++;
-          const progressIndicator = totalImagesToPush > 1 ? ` (${pushIndex}/${totalImagesToPush})` : "";
+
+      if (imagesToPush.length > 0) {
+        await Promise.all(imagesToPush.map(async (agentConfig, idx) => {
+          const currentImage = agentImages[agentConfig.name] || baseImage;
+          const progressIndicator = imagesToPush.length > 1 ? ` (${idx + 1}/${imagesToPush.length})` : "";
           statusTracker?.setAgentStatusText(agentConfig.name, `Pushing image to registry${progressIndicator}`);
-          const remoteImage = await runtime.pushImage(currentImage);
+          const remoteImage = await runtime!.pushImage(currentImage);
           agentImages[agentConfig.name] = remoteImage;
-          logger.info({ agent: agentConfig.name, image: remoteImage, progress: `${pushIndex}/${totalImagesToPush}` }, "Pushed image to registry");
-        }
+          logger.info({ agent: agentConfig.name, image: remoteImage, progress: `${idx + 1}/${imagesToPush.length}` }, "Pushed image to registry");
+        }));
       }
     }
 
