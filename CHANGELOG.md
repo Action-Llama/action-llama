@@ -1,5 +1,20 @@
 # @action-llama/action-llama
 
+## 0.5.1
+
+### Patch Changes
+
+- [`e83e163`](https://github.com/Action-Llama/action-llama/commit/e83e163fdedecd027de3737aae9c25f0408b890b) Thanks [@asselstine](https://github.com/asselstine)! - Ship `AGENTS.md` as part of the npm package. New projects created with `al new`
+  now get a symlink to the installed package's `AGENTS.md` instead of an inline
+  copy, so the reference stays up to date when the package is upgraded.
+
+- [`56fcc66`](https://github.com/Action-Llama/action-llama/commit/56fcc662e758b4819406bcbd0021c5138cc1e692) Thanks [@asselstine](https://github.com/asselstine)! - Added HTTP basic auth support for the web dashboard. Set the `AL_DASHBOARD_SECRET`
+  environment variable to require authentication on all `/dashboard` routes. Uses
+  timing-safe comparison to prevent timing attacks. When the env var is not set, the
+  dashboard remains open (no auth required).
+
+- [#35](https://github.com/Action-Llama/action-llama/pull/35) [`8759418`](https://github.com/Action-Llama/action-llama/commit/875941840fd0a32681803c8a74886e0c2a486692) Thanks [@asselstine](https://github.com/asselstine)! - Improved error messages for ECS IAM role assumption failures. When an agent fails to start because its task role doesn't exist or can't be assumed, Action Llama now provides clear instructions to run 'al doctor -c' to create the missing per-agent IAM roles. Closes [#34](https://github.com/Action-Llama/action-llama/issues/34).
+
 ## 0.5.0
 
 ### Minor Changes
