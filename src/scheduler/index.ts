@@ -284,7 +284,6 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     }
   }
 
-  let gateway: GatewayServer | undefined;
   let runtime: ContainerRuntime | undefined;
   let baseImage = AWS_CONSTANTS.DEFAULT_IMAGE;
   const agentImages: Record<string, string> = {};
@@ -296,6 +295,26 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   // Register agents early so the TUI shows them during image builds
   for (const agentConfig of agentConfigs) {
     statusTracker?.registerAgent(agentConfig.name);
+  }
+
+  // Start gateway early if needed (before Docker builds) so users can see build status
+  let gateway: GatewayServer | undefined;
+  const shouldStartGateway = anyWebhooks || webUI || dockerEnabled;
+  
+  if (shouldStartGateway) {
+    const { startGateway } = await import("../gateway/index.js");
+    const gatewayPort = globalConfig.gateway?.port || 8080;
+    gateway = await startGateway({
+      port: gatewayPort,
+      logger: mkLogger(projectPath, "gateway"),
+      killContainer: undefined, // Runtime not ready yet, will handle container ops later
+      webhookRegistry,
+      webhookSecrets,
+      statusTracker,
+      projectPath,
+      webUI,
+    });
+    logger.info({ port: gatewayPort }, "Gateway started early to show build progress");
   }
 
   if (dockerEnabled) {
@@ -452,36 +471,6 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     }
 
     logger.info("Docker infrastructure ready");
-
-    // 6. Start gateway if the runtime needs it, webhooks are configured, or web UI is enabled
-    if (runtime.needsGateway || anyWebhooks || webUI) {
-      const { startGateway } = await import("../gateway/index.js");
-      const gatewayPort = globalConfig.gateway?.port || 8080;
-      gateway = await startGateway({
-        port: gatewayPort,
-        logger: mkLogger(projectPath, "gateway"),
-        killContainer: (name) => runtime!.kill(name),
-        webhookRegistry,
-        webhookSecrets,
-        statusTracker,
-        projectPath,
-        webUI,
-      });
-    }
-  } else if (anyWebhooks || webUI) {
-    // Start gateway even without docker when webhooks are configured or web UI is enabled
-    logger.info("Starting gateway for webhook support (no docker)");
-    const { startGateway } = await import("../gateway/index.js");
-    const gatewayPort = globalConfig.gateway?.port || 8080;
-    gateway = await startGateway({
-      port: gatewayPort,
-      logger: mkLogger(projectPath, "gateway"),
-      webhookRegistry,
-      webhookSecrets,
-      statusTracker,
-      projectPath,
-      webUI,
-    });
   }
 
   // Create runners for each agent
