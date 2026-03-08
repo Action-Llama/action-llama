@@ -1,5 +1,18 @@
 # @action-llama/action-llama
 
+## 0.5.0
+
+### Minor Changes
+
+- [`14a1301`](https://github.com/Action-Llama/action-llama/commit/14a13019b7e3dfc59d98ffd3d261bfc3ac064e8b) Thanks [@asselstine](https://github.com/asselstine)! - Webhook sources are now defined in the project's `config.toml` under `[webhooks.<name>]` instead of inline in each agent's `agent-config.toml`. Each source specifies a provider `type` and optional `credential` for HMAC validation. Agent webhook triggers now use `source = "<name>"` to reference a top-level webhook definition, replacing the old `type` and `source` (credential instance) fields. This is a breaking change to webhook configuration format.
+
+### Patch Changes
+
+- [`488e02c`](https://github.com/Action-Llama/action-llama/commit/488e02c6b2d23c83fe09dea8f383ec54e6998b0a) Thanks [@asselstine](https://github.com/asselstine)! - Added `al creds add <ref>` and `al creds rm <ref>` commands for managing individual
+  credentials. `add` runs the interactive prompter with validation; `rm` deletes the
+  credential from disk. Also improved `al creds ls` to group credentials by type with
+  a human-readable label header.
+
 ## 0.4.12
 
 ### Patch Changes
