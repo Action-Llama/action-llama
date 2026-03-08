@@ -1,10 +1,11 @@
-import type { Hono } from "hono";
+import type { Hono, Context, Next } from "hono";
 import { streamSSE } from "hono/streaming";
 import { renderDashboardPage } from "../views/dashboard-page.js";
 import { renderLogsPage } from "../views/logs-page.js";
 import type { StatusTracker } from "../../tui/status-tracker.js";
 import { readFileSync, readdirSync, statSync } from "fs";
 import { resolve } from "path";
+import { timingSafeEqual } from "crypto";
 
 function logsDir(projectPath: string): string {
   return resolve(projectPath, ".al", "logs");
@@ -32,11 +33,44 @@ function readLastNLines(filePath: string, n: number): string[] {
   }
 }
 
+function safeCompare(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
+}
+
+function basicAuthMiddleware(secret: string) {
+  return async (c: Context, next: Next) => {
+    const header = c.req.header("Authorization");
+    if (header && header.startsWith("Basic ")) {
+      const decoded = Buffer.from(header.slice(6), "base64").toString("utf-8");
+      const sep = decoded.indexOf(":");
+      if (sep !== -1) {
+        const password = decoded.slice(sep + 1);
+        if (safeCompare(password, secret)) {
+          await next();
+          return;
+        }
+      }
+    }
+    c.header("WWW-Authenticate", 'Basic realm="Action Llama Dashboard"');
+    return c.text("Unauthorized", 401);
+  };
+}
+
 export function registerDashboardRoutes(
   app: Hono,
   statusTracker: StatusTracker,
   projectPath?: string
 ): void {
+  // Apply basic auth if AL_DASHBOARD_SECRET is set
+  const dashboardSecret = process.env.AL_DASHBOARD_SECRET;
+  if (dashboardSecret) {
+    app.use("/dashboard/*", basicAuthMiddleware(dashboardSecret));
+    app.use("/dashboard", basicAuthMiddleware(dashboardSecret));
+  }
+
   // Main dashboard page
   app.get("/dashboard", (c) => {
     const agents = statusTracker.getAllAgents();

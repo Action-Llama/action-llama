@@ -20,6 +20,18 @@ Dashboard: http://localhost:8080/dashboard
 
 The port is controlled by the `[gateway].port` setting in `config.toml` (default: `8080`).
 
+## Authentication
+
+Set the `AL_DASHBOARD_SECRET` environment variable to enable HTTP basic auth on all dashboard routes:
+
+```bash
+AL_DASHBOARD_SECRET=my-secret al start -w
+```
+
+When set, the browser will prompt for credentials. Use any username and the secret as the password. When not set, the dashboard is open (suitable for local development).
+
+Only the `/dashboard` routes are protected — health checks, webhook endpoints, and container management routes are unaffected.
+
 ## Dashboard Pages
 
 ### Main Page — `/dashboard`
