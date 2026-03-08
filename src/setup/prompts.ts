@@ -1,4 +1,4 @@
-import { input, select, confirm } from "@inquirer/prompts";
+import { input, select, confirm, password } from "@inquirer/prompts";
 import { validateGitHubToken } from "./validators.js";
 import { writeCredentialFields } from "../shared/credentials.js";
 import type { GlobalConfig, ModelConfig } from "../shared/config.js";
@@ -73,17 +73,57 @@ export async function runSetup(): Promise<{
   // Step 2: LLM defaults
   console.log("\n--- Step 2: LLM Defaults ---\n");
 
-  const modelName = await select({
-    message: "Select model:",
+  const provider = await select({
+    message: "Select LLM provider:",
     choices: [
-      { name: "claude-sonnet-4-20250514 (recommended)", value: "claude-sonnet-4-20250514" },
-      { name: "claude-opus-4-20250514", value: "claude-opus-4-20250514" },
-      { name: "claude-haiku-3-5-20241022", value: "claude-haiku-3-5-20241022" },
+      { name: "Anthropic Claude (recommended)", value: "anthropic" },
+      { name: "OpenAI GPT", value: "openai" },
+      { name: "Groq", value: "groq" },
+      { name: "Google Gemini", value: "google" },
+      { name: "xAI Grok", value: "xai" },
+      { name: "Mistral", value: "mistral" },
+      { name: "OpenRouter (multi-provider)", value: "openrouter" },
+      { name: "Other (custom provider)", value: "custom" },
     ],
-    default: "claude-sonnet-4-20250514",
+    default: "anthropic",
   });
 
-  await select({
+  let modelName: string;
+  if (provider === "anthropic") {
+    modelName = await select({
+      message: "Select Anthropic model:",
+      choices: [
+        { name: "claude-sonnet-4-20250514 (recommended)", value: "claude-sonnet-4-20250514" },
+        { name: "claude-opus-4-20250514", value: "claude-opus-4-20250514" },
+        { name: "claude-haiku-3-5-20241022", value: "claude-haiku-3-5-20241022" },
+      ],
+      default: "claude-sonnet-4-20250514",
+    });
+  } else if (provider === "openai") {
+    modelName = await select({
+      message: "Select OpenAI model:",
+      choices: [
+        { name: "gpt-4o (recommended)", value: "gpt-4o" },
+        { name: "gpt-4o-mini", value: "gpt-4o-mini" },
+        { name: "gpt-4-turbo", value: "gpt-4-turbo" },
+        { name: "o1-preview", value: "o1-preview" },
+        { name: "o1-mini", value: "o1-mini" },
+      ],
+      default: "gpt-4o",
+    });
+  } else {
+    modelName = await input({
+      message: `Enter ${provider} model name:`,
+      default: provider === "groq" ? "llama-3.3-70b-versatile" :
+                provider === "google" ? "gemini-2.0-flash-exp" :
+                provider === "xai" ? "grok-beta" :
+                provider === "mistral" ? "mistral-large-2411" :
+                provider === "openrouter" ? "anthropic/claude-3.5-sonnet" :
+                "model-name",
+    });
+  }
+
+  const thinkingLevel = await select({
     message: "Thinking level:",
     choices: [
       { name: "off", value: "off" as const },
@@ -95,8 +135,32 @@ export async function runSetup(): Promise<{
     default: "medium" as const,
   });
 
+  // Prompt for provider-specific credentials
+  if (provider !== "anthropic" && provider !== "openai") {
+    const credentialType = `${provider}_key`;
+    try {
+      const existingCred = resolveCredential(credentialType);
+      await promptAndStoreCredential(existingCred);
+    } catch {
+      // If credential type doesn't exist in registry, prompt manually
+      const apiKey = await password({
+        message: `Enter ${provider} API key:`,
+      });
+      if (apiKey) {
+        writeCredentialFields(credentialType, "default", { token: apiKey });
+      }
+    }
+  }
+
   // Build global config
-  const globalConfig: GlobalConfig = {};
+  const globalConfig: GlobalConfig = {
+    model: {
+      provider,
+      model: modelName,
+      thinkingLevel,
+      authType: "api_key",
+    },
+  };
 
   return {
     globalConfig,
