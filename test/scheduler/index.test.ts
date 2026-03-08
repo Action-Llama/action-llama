@@ -112,9 +112,9 @@ describe("startScheduler", () => {
     expect(mockRun).toHaveBeenCalledTimes(3);
   });
 
-  it("creates runners for each agent", async () => {
-    const { runners } = await startScheduler(tmpDir);
-    expect(Object.keys(runners).sort()).toEqual(["dev", "devops", "reviewer"]);
+  it("creates runner pools for each agent", async () => {
+    const { runnerPools } = await startScheduler(tmpDir);
+    expect(Object.keys(runnerPools).sort()).toEqual(["dev", "devops", "reviewer"]);
   });
 
   it("cron callback runs agent when not busy", async () => {
@@ -133,7 +133,10 @@ describe("startScheduler", () => {
     mockIsRunning = true;
     await cronCallbacks[0]();
     expect(mockRun).not.toHaveBeenCalled();
-    expect(mockLoggerWarn).toHaveBeenCalledWith(expect.stringContaining("busy"));
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "dev", running: 1, total: 1 }),
+      expect.stringContaining("agent pool busy")
+    );
   });
 
   it("handles initial run failure", async () => {
@@ -246,5 +249,85 @@ describe("startScheduler", () => {
       expect.objectContaining({ depth: 1, maxTriggerDepth: 1 }),
       expect.stringContaining("trigger depth limit reached")
     );
+  });
+
+  describe("parallelism", () => {
+    it("creates single runner when parallelism is undefined", async () => {
+      const { runnerPools } = await startScheduler(tmpDir);
+      expect(runnerPools.dev.size).toBe(1);
+      expect(runnerPools.reviewer.size).toBe(1);
+      expect(runnerPools.devops.size).toBe(1);
+    });
+
+    it("creates multiple runners when parallelism > 1", async () => {
+      // Set up agent with parallelism = 3
+      const model = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" };
+      const agentConfig = {
+        credentials: ["github_token:default"],
+        model,
+        schedule: "*/5 * * * *",
+        parallelism: 3
+      };
+
+      const parallelAgentDir = resolve(tmpDir, "parallel-agent");
+      mkdirSync(parallelAgentDir, { recursive: true });
+      writeFileSync(resolve(parallelAgentDir, "agent-config.toml"), stringifyTOML(agentConfig as Record<string, unknown>));
+      mkdirSync(resolve(tmpDir, ".al", "state", "parallel-agent"), { recursive: true });
+
+      const { runnerPools } = await startScheduler(tmpDir);
+      expect(runnerPools["parallel-agent"].size).toBe(3);
+      
+      // Original agents should still have single runners
+      expect(runnerPools.dev.size).toBe(1);
+      expect(runnerPools.reviewer.size).toBe(1);
+      expect(runnerPools.devops.size).toBe(1);
+    });
+
+    it("handles busy runners with parallelism", async () => {
+      // Set up agent with parallelism = 2
+      const model = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" };
+      const agentConfig = {
+        credentials: ["github_token:default"],
+        model,
+        schedule: "*/5 * * * *",
+        parallelism: 2
+      };
+
+      const parallelAgentDir = resolve(tmpDir, "parallel-agent");
+      mkdirSync(parallelAgentDir, { recursive: true });
+      writeFileSync(resolve(parallelAgentDir, "agent-config.toml"), stringifyTOML(agentConfig as Record<string, unknown>));
+      mkdirSync(resolve(tmpDir, ".al", "state", "parallel-agent"), { recursive: true });
+
+      const { runnerPools } = await startScheduler(tmpDir);
+      
+      expect(runnerPools["parallel-agent"].size).toBe(2);
+      
+      // Test that pool correctly reports running status
+      expect(runnerPools["parallel-agent"].hasRunningJobs).toBe(false);
+      expect(runnerPools["parallel-agent"].runningJobCount).toBe(0);
+    });
+
+    it("logs parallelism configuration", async () => {
+      const model = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" };
+      const agentConfig = {
+        credentials: ["github_token:default"],
+        model,
+        schedule: "*/5 * * * *",
+        parallelism: 2
+      };
+
+      const parallelAgentDir = resolve(tmpDir, "parallel-agent");
+      mkdirSync(parallelAgentDir, { recursive: true });
+      writeFileSync(resolve(parallelAgentDir, "agent-config.toml"), stringifyTOML(agentConfig as Record<string, unknown>));
+      mkdirSync(resolve(tmpDir, ".al", "state", "parallel-agent"), { recursive: true });
+
+      await startScheduler(tmpDir);
+      
+      // Should log the creation of runner pool with parallelism
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        { agent: "parallel-agent", parallelism: 2 },
+        "Created runner pool"
+      );
+    });
   });
 });

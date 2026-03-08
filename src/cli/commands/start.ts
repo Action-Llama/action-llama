@@ -68,7 +68,7 @@ export async function execute(opts: { project: string; noDocker?: boolean; cloud
     cleanup = unmount;
   }
 
-  const { cronJobs, gateway, webhookRegistry, webhookUrls } = await startScheduler(
+  const { cronJobs, runnerPools, gateway, webhookRegistry, webhookUrls } = await startScheduler(
     projectPath, globalConfig, statusTracker, opts.cloud, opts.webUi
   );
 

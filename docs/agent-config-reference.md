@@ -13,6 +13,10 @@ credentials = ["github_token:default", "git_ssh:default", "sentry_token:default"
 # Agent must have at least one of: schedule, webhooks
 schedule = "*/5 * * * *"
 
+# Optional: number of parallel instances (default: 1)
+# Allows the agent to handle multiple tasks simultaneously
+parallelism = 2
+
 # Required: LLM model configuration
 [model]
 provider = "anthropic"                    # LLM provider: anthropic, openai, groq, google, xai, mistral, openrouter, or custom
@@ -48,6 +52,7 @@ sentryProjects = ["web-app", "api"]
 |-------|------|----------|-------------|
 | `credentials` | string[] | Yes | Credential refs as `"type:instance"` needed at runtime |
 | `schedule` | string | No* | Cron expression for polling |
+| `parallelism` | number | No | Number of parallel instances for concurrent execution (default: 1) |
 | `model` | table | No | LLM model configuration (falls back to `[model]` in project `config.toml`) |
 | `model.provider` | string | Yes* | LLM provider ("anthropic", "openai", "groq", "google", "xai", "mistral", "openrouter", or "custom") |
 | `model.model` | string | Yes* | Model ID |
