@@ -8,6 +8,7 @@ export interface AgentStatus {
   lastRunAt: Date | null;
   lastRunDuration: number | null; // ms
   nextRunAt: Date | null;
+  queuedWebhooks: number;
 }
 
 export interface SchedulerInfo {
@@ -42,6 +43,7 @@ export class StatusTracker extends EventEmitter {
       lastRunAt: null,
       lastRunDuration: null,
       nextRunAt: null,
+      queuedWebhooks: 0,
     });
     this.emit("update");
   }
@@ -81,6 +83,13 @@ export class StatusTracker extends EventEmitter {
     if (error) {
       agent.lastError = error;
     }
+    this.emit("update");
+  }
+
+  setQueuedWebhooks(name: string, count: number): void {
+    const agent = this.agents.get(name);
+    if (!agent) return;
+    agent.queuedWebhooks = count;
     this.emit("update");
   }
 

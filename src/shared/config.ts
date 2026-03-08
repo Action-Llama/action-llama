@@ -56,6 +56,7 @@ export interface GlobalConfig {
   webhooks?: WebhooksGlobalConfig;
   maxReruns?: number;
   maxTriggerDepth?: number;
+  webhookQueueSize?: number;
 }
 
 // --- Per-agent config (lives at <project>/<agent>/agent-config.toml) ---

@@ -15,6 +15,7 @@ import type { GatewayServer } from "../gateway/index.js";
 import type { ContainerRuntime } from "../docker/runtime.js";
 import { AWS_CONSTANTS } from "../shared/aws-constants.js";
 import type { WebhookContext, WebhookFilter, WebhookTrigger, GitHubWebhookFilter, SentryWebhookFilter } from "../webhooks/types.js";
+import { WebhookEventQueue } from "./event-queue.js";
 
 interface RunnerLike {
   isRunning: boolean;
@@ -57,6 +58,8 @@ interface SchedulerContext {
   maxReruns: number;
   maxTriggerDepth: number;
   logger: ReturnType<typeof createLogger>;
+  webhookQueue: WebhookEventQueue<WebhookContext>;
+  shuttingDown: boolean;
 }
 
 function dispatchTriggers(
@@ -110,6 +113,30 @@ async function runTriggered(
   }
 }
 
+async function drainWebhookQueue(
+  runner: RunnerLike,
+  agentConfig: AgentConfig,
+  ctx: SchedulerContext
+): Promise<void> {
+  let event;
+  while (!ctx.shuttingDown && (event = ctx.webhookQueue.dequeue(agentConfig.name)) !== undefined) {
+    const ageMs = Date.now() - event.receivedAt.getTime();
+    ctx.logger.info(
+      { agent: agentConfig.name, event: event.context.event, ageMs, remaining: ctx.webhookQueue.size(agentConfig.name) },
+      "processing queued webhook event"
+    );
+    try {
+      const prompt = buildWebhookPrompt(agentConfig, event.context);
+      const { triggers } = await runner.run(prompt, { type: 'webhook', source: event.context.event });
+      if (triggers.length > 0) {
+        dispatchTriggers(triggers, agentConfig.name, 0, ctx);
+      }
+    } catch (err) {
+      ctx.logger.error({ err, agent: agentConfig.name }, "queued webhook run failed");
+    }
+  }
+}
+
 async function runWithReruns(
   runner: RunnerLike,
   agentConfig: AgentConfig,
@@ -132,6 +159,9 @@ async function runWithReruns(
   if (result === "completed" && reruns >= ctx.maxReruns) {
     ctx.logger.warn({ maxReruns: ctx.maxReruns }, `${agentConfig.name} hit max reruns limit`);
   }
+
+  // Drain any webhook events that arrived during the rerun cycle
+  await drainWebhookQueue(runner, agentConfig, ctx);
 }
 
 export async function startScheduler(projectPath: string, globalConfigOverride?: GlobalConfig, statusTracker?: StatusTracker, cloudMode?: boolean, webUI?: boolean) {
@@ -456,7 +486,9 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     }
   }
 
-  const schedulerCtx: SchedulerContext = { runners, agentConfigs, maxReruns, maxTriggerDepth, logger };
+  const webhookQueueSize = globalConfig.webhookQueueSize ?? 20;
+  const webhookQueue = new WebhookEventQueue<WebhookContext>(webhookQueueSize);
+  const schedulerCtx: SchedulerContext = { runners, agentConfigs, maxReruns, maxTriggerDepth, logger, webhookQueue, shuttingDown: false };
 
   // Set up webhook bindings
   if (webhookRegistry) {
@@ -474,7 +506,19 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
           filter,
           trigger: (context: WebhookContext) => {
             if (runner.isRunning) {
-              logger.warn(`${agentConfig.name} is busy, skipping webhook trigger`);
+              const { accepted, dropped } = webhookQueue.enqueue(agentConfig.name, context);
+              if (accepted) {
+                logger.info(
+                  { agent: agentConfig.name, event: context.event, queueSize: webhookQueue.size(agentConfig.name) },
+                  "agent busy, webhook event queued"
+                );
+              }
+              if (dropped) {
+                logger.warn(
+                  { agent: agentConfig.name, droppedEvent: dropped.context.event },
+                  "webhook queue full, oldest event dropped"
+                );
+              }
               return;
             }
             logger.info(
@@ -486,6 +530,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
               if (triggers.length > 0) {
                 dispatchTriggers(triggers, agentConfig.name, 0, schedulerCtx);
               }
+              // Drain any events that queued while this webhook run was executing
+              return drainWebhookQueue(runner, agentConfig, schedulerCtx);
             }).catch((err) => {
               logger.error({ err }, `${agentConfig.name} webhook run failed`);
             });
@@ -550,6 +596,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   // Graceful shutdown
   const shutdown = async () => {
     logger.info("Shutting down scheduler...");
+    schedulerCtx.shuttingDown = true;
+    webhookQueue.clearAll();
     for (const job of cronJobs) {
       job.stop();
     }
