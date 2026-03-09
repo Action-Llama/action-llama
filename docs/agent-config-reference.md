@@ -57,7 +57,7 @@ sentryProjects = ["web-app", "api"]
 | `model` | table | No | LLM model configuration (falls back to `[model]` in project `config.toml`) |
 | `model.provider` | string | Yes* | LLM provider ("anthropic", "openai", "groq", "google", "xai", "mistral", "openrouter", or "custom") |
 | `model.model` | string | Yes* | Model ID |
-| `model.thinkingLevel` | string | No | Thinking budget level: off, minimal, low, medium, high, xhigh. Only relevant for models with reasoning support (e.g. Claude Sonnet/Opus). Omit for other models. |
+| `model.thinkingLevel` | string | No | Thinking budget level: off, minimal, low, medium, high, xhigh. Only relevant for Claude Sonnet/Opus. Omit for other models. |
 | `model.authType` | string | Yes* | Auth method for the provider |
 | `webhooks` | array | No* | Array of webhook trigger objects |
 | `params` | table | No | Custom key-value params for the agent prompt |
