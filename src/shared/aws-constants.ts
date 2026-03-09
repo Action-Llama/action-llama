@@ -82,6 +82,9 @@ export const AWS_CONSTANTS = {
   /** Maximum timeout for Lambda functions (seconds) */
   LAMBDA_MAX_TIMEOUT: 900,
 
+  /** Maximum memory for Lambda functions (MB) */
+  LAMBDA_MAX_MEMORY: 3008,
+
   /** CloudWatch log group for Lambda functions */
   LAMBDA_LOG_GROUP: "/aws/lambda",
 

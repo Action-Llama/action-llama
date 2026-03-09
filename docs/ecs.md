@@ -203,6 +203,17 @@ timeout = 3600   # 1 hour — will use ECS Fargate
 
 If an agent doesn't set `timeout`, it falls back to `[local].timeout` in `config.toml`, then to the default of 900s. Since 900s is the Lambda maximum, agents without an explicit timeout default to Lambda.
 
+### Lambda memory
+
+Lambda functions default to 512 MB of memory, which is sufficient for typical LLM agent workloads (HTTP calls to LLM APIs). Lambda's maximum is 3008 MB — the `local.memory` config value is clamped to this limit for Lambda-routed agents.
+
+To increase memory for a specific agent, set `memory` in project `config.toml`:
+
+```toml
+[local]
+memory = "2048"  # 2 GB — clamped to 3008 for Lambda, used as-is for ECS
+```
+
 ### Why Lambda is faster
 
 Lambda keeps container images warm in pre-provisioned execution environments. When invoked, Lambda starts executing in ~1-2 seconds. ECS Fargate must provision a fresh VM, pull the image, and start the container — taking 30-60 seconds.

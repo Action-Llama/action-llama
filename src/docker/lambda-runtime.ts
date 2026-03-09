@@ -85,7 +85,10 @@ export class LambdaRuntime implements ContainerRuntime {
   async launch(opts: RuntimeLaunchOpts): Promise<string> {
     const functionName = AWS_CONSTANTS.lambdaFunction(opts.agentName);
     const timeout = parseInt(opts.env.TIMEOUT_SECONDS || "900", 10);
-    const memoryMb = parseInt(opts.memory || "4096", 10);
+    const memoryMb = Math.min(
+      parseInt(opts.memory || "512", 10),
+      AWS_CONSTANTS.LAMBDA_MAX_MEMORY,
+    );
 
     // Resolve secrets from Secrets Manager and pass as env vars
     const credRefs = opts.credentials.strategy === "secrets-manager"
