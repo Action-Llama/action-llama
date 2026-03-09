@@ -10,7 +10,7 @@ import {
   createCodingTools,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentConfig } from "../shared/config.js";
-import { parseCredentialRef } from "../shared/credentials.js";
+import { parseCredentialRef, unsanitizeEnvPart } from "../shared/credentials.js";
 
 // Structured log line — written to stdout, parsed by ContainerAgentRunner on the host
 function emitLog(level: string, msg: string, data?: Record<string, any>) {
@@ -45,7 +45,7 @@ function loadCredentialsFromVolume(): void {
   }
 }
 
-/** ECS injects secrets as env vars named AL_SECRET_{type}__{instance}__{field}. */
+/** ECS/Lambda inject secrets as env vars named AL_SECRET_{type}__{instance}__{field}. */
 function hasEnvCredentials(): boolean {
   return Object.keys(process.env).some((k) => k.startsWith("AL_SECRET_"));
 }
@@ -55,7 +55,7 @@ function loadCredentialsFromEnv(): void {
     if (!key.startsWith("AL_SECRET_") || !value) continue;
     const parts = key.slice("AL_SECRET_".length).split("__");
     if (parts.length !== 3) continue;
-    const [type, instance, field] = parts;
+    const [type, instance, field] = parts.map(unsanitizeEnvPart);
     credBundle[type] ??= {};
     credBundle[type][instance] ??= {};
     credBundle[type][instance][field] = value;

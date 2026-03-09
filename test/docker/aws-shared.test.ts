@@ -8,6 +8,8 @@ vi.mock("../../src/shared/credentials.js", () => ({
     if (sep === -1) return { type: ref, instance: "default" };
     return { type: ref.slice(0, sep).trim(), instance: ref.slice(sep + 1).trim() };
   },
+  sanitizeEnvPart: (part: string) => part.replace(/[^a-zA-Z0-9_]/g, (ch: string) =>
+    `_x${ch.charCodeAt(0).toString(16).padStart(2, "0")}`),
 }));
 
 const mockSmSend = vi.fn();

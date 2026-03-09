@@ -9,6 +9,7 @@ import {
 import type { ContainerRuntime, RuntimeLaunchOpts, RuntimeCredentials, SecretMount, BuildImageOpts, RunningAgent } from "./runtime.js";
 import { AwsSharedUtils } from "./aws-shared.js";
 import { AWS_CONSTANTS } from "../shared/aws-constants.js";
+import { sanitizeEnvPart } from "../shared/credentials.js";
 
 export interface ECSFargateConfig {
   awsRegion: string;
@@ -305,7 +306,7 @@ export class ECSFargateRuntime implements ContainerRuntime {
 
     const secrets = opts.secretMounts.map((mount) => {
       const parts = mount.mountPath.replace("/credentials/", "").split("/");
-      const envName = `AL_SECRET_${parts.join("__")}`;
+      const envName = `AL_SECRET_${parts.map(sanitizeEnvPart).join("__")}`;
       return {
         name: envName,
         valueFrom: `arn:aws:secretsmanager:${this.config.awsRegion}:${this.shared.getAccountId()}:secret:${mount.secretId}`,

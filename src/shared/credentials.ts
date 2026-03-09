@@ -128,6 +128,30 @@ export function requireCredentialRef(ref: string): void {
   }
 }
 
+// --- Env-var-safe encoding for credential parts ---
+// AWS Lambda (and ECS) require env var keys to match [a-zA-Z][a-zA-Z0-9_]+.
+// Credential instance names may contain hyphens or dots, so we encode them.
+
+/**
+ * Encode a credential part (type, instance, or field) for use in an env var name.
+ * Replaces any character that isn't [a-zA-Z0-9_] with _xHH (hex code).
+ */
+export function sanitizeEnvPart(part: string): string {
+  return part.replace(/[^a-zA-Z0-9_]/g, (ch) => {
+    return `_x${ch.charCodeAt(0).toString(16).padStart(2, "0")}`;
+  });
+}
+
+/**
+ * Decode an env-var-safe credential part back to the original string.
+ * Reverses the encoding done by sanitizeEnvPart.
+ */
+export function unsanitizeEnvPart(encoded: string): string {
+  return encoded.replace(/_x([0-9a-f]{2})/g, (_, hex) => {
+    return String.fromCharCode(parseInt(hex, 16));
+  });
+}
+
 // --- Async backend-aware functions ---
 // These delegate to the default backend (local filesystem or remote).
 // Use these in code paths that support --remote.

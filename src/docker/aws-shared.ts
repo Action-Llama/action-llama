@@ -34,7 +34,7 @@ import {
   ECRClient,
   BatchGetImageCommand,
 } from "@aws-sdk/client-ecr";
-import { parseCredentialRef } from "../shared/credentials.js";
+import { parseCredentialRef, sanitizeEnvPart } from "../shared/credentials.js";
 import { AWS_CONSTANTS } from "../shared/aws-constants.js";
 import type { RuntimeCredentials, SecretMount, BuildImageOpts } from "./runtime.js";
 
@@ -129,7 +129,7 @@ export class AwsSharedUtils {
 
       for (const field of fields) {
         const secretName = this.awsSecretName(type, instance, field);
-        const envName = `AL_SECRET_${type}__${instance}__${field}`;
+        const envName = `AL_SECRET_${sanitizeEnvPart(type)}__${sanitizeEnvPart(instance)}__${sanitizeEnvPart(field)}`;
         try {
           const res = await this.smClient.send(new GetSecretValueCommand({
             SecretId: secretName,
