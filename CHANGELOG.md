@@ -1,5 +1,13 @@
 # @action-llama/action-llama
 
+## 0.6.4
+
+### Patch Changes
+
+- [`32756b2`](https://github.com/Action-Llama/action-llama/commit/32756b2c4e0cec2bc827d2dcc32127987123d80b) Thanks [@asselstine](https://github.com/asselstine)! - Fixed cloud agents (ECS/Cloud Run) not receiving GATEWAY_URL and SHUTDOWN_SECRET
+  env vars, which prevented locking and coordination. Cloud containers can now reach
+  the gateway by setting `gateway.url` in config.toml to the public gateway URL.
+
 ## 0.6.3
 
 ### Patch Changes
