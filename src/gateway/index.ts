@@ -80,9 +80,9 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
   const unregisterContainer = (secret: string) => {
     const reg = containerRegistry.get(secret);
     if (reg) {
-      const released = lockStore.releaseAll(reg.agentName);
+      const released = lockStore.releaseAll(reg.instanceId);
       if (released > 0) {
-        logger.info({ agent: reg.agentName, released }, "released locks on container cleanup");
+        logger.info({ agent: reg.agentName, instance: reg.instanceId, released }, "released locks on container cleanup");
       }
     }
     containerRegistry.delete(secret);

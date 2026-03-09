@@ -30,7 +30,7 @@ export function registerLockRoutes(
       return c.json({ error: "invalid secret" }, 403);
     }
 
-    const result = lockStore.acquire(resourceKey, reg.agentName, ttl);
+    const result = lockStore.acquire(resourceKey, reg.instanceId, ttl);
 
     if (result.ok) {
       logger.debug({ agent: reg.agentName, resourceKey }, "lock acquired");
@@ -74,7 +74,7 @@ export function registerLockRoutes(
       return c.json({ error: "invalid secret" }, 403);
     }
 
-    const result = lockStore.release(resourceKey, reg.agentName);
+    const result = lockStore.release(resourceKey, reg.instanceId);
 
     if (result.ok) {
       logger.debug({ agent: reg.agentName, resourceKey }, "lock released");
@@ -106,7 +106,7 @@ export function registerLockRoutes(
       return c.json({ error: "invalid secret" }, 403);
     }
 
-    const result = lockStore.heartbeat(resourceKey, reg.agentName, ttl);
+    const result = lockStore.heartbeat(resourceKey, reg.instanceId, ttl);
 
     if (result.ok) {
       logger.debug({ agent: reg.agentName, resourceKey }, "lock heartbeat");

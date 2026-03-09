@@ -493,7 +493,11 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   const gatewayUrl = useCloudRuntime
     ? (globalConfig.gateway?.url || "")
     : `http://host.docker.internal:${gatewayPort}`;
-  
+
+  if (useCloudRuntime && !globalConfig.gateway?.url) {
+    logger.warn("Cloud mode is active but gateway.url is not set in config.toml — resource locking and shutdown will not work for cloud containers");
+  }
+
   // Gateway callbacks — no-ops if gateway isn't running (remote runtimes)
   const registerContainer = gateway
     ? gateway.registerContainer
@@ -506,25 +510,31 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     const scale = agentConfig.scale ?? 1;
     const runners: PoolRunner[] = [];
 
+    if (!dockerEnabled && scale > 1) {
+      logger.warn({ agent: agentConfig.name, scale }, "scale > 1 has no effect without Docker — only one instance will run at a time");
+    }
+
     for (let i = 0; i < scale; i++) {
+      const instanceId = `${agentConfig.name}-${i + 1}`;
       if (dockerEnabled && runtime && ContainerAgentRunnerClass) {
         runners.push(new ContainerAgentRunnerClass(
           runtime,
           globalConfig,
           agentConfig,
-          mkLogger(projectPath, `${agentConfig.name}-${i + 1}`),
+          mkLogger(projectPath, instanceId),
           registerContainer,
           unregisterContainer,
           gatewayUrl,
           projectPath,
           agentImages[agentConfig.name] || baseImage,
-          statusTracker
+          statusTracker,
+          instanceId
         ));
       } else {
         mkdirSync(agentDir(projectPath, agentConfig.name), { recursive: true });
         runners.push(new AgentRunner(
           agentConfig,
-          mkLogger(projectPath, `${agentConfig.name}-${i + 1}`),
+          mkLogger(projectPath, instanceId),
           projectPath,
           statusTracker
         ));

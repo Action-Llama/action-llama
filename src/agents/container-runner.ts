@@ -20,6 +20,7 @@ export class ContainerAgentRunner {
   private registerContainer: (secret: string, reg: ContainerRegistration) => void;
   private unregisterContainer: (secret: string) => void;
   private gatewayUrl: string;
+  private instanceId: string;
   private projectPath: string;
   private image: string;
   private statusTracker?: StatusTracker;
@@ -34,7 +35,8 @@ export class ContainerAgentRunner {
     gatewayUrl: string,
     projectPath: string,
     image: string,
-    statusTracker?: StatusTracker
+    statusTracker?: StatusTracker,
+    instanceId?: string
   ) {
     this.runtime = runtime;
     this.globalConfig = globalConfig;
@@ -43,6 +45,7 @@ export class ContainerAgentRunner {
     this.registerContainer = registerContainer;
     this.unregisterContainer = unregisterContainer;
     this.gatewayUrl = gatewayUrl;
+    this.instanceId = instanceId || agentConfig.name;
     this.projectPath = projectPath;
     this.image = image;
     this.statusTracker = statusTracker;
@@ -199,12 +202,14 @@ export class ContainerAgentRunner {
         cpus: this.globalConfig.local?.cpus,
       });
 
-      // Register container with gateway for shutdown, credential serving, and log ingestion
-      if (this.runtime.needsGateway) {
+      // Register container with gateway for shutdown, credential serving, locking, and log ingestion.
+      // Register whenever a gateway URL is configured (not just local Docker).
+      if (this.gatewayUrl) {
         const bundle = credentials.strategy === "volume" ? credentials.bundle : undefined;
         this.registerContainer(shutdownSecret, {
           containerName,
           agentName: this.agentConfig.name,
+          instanceId: this.instanceId,
           credentials: bundle,
           onLogLine: (line) => this.forwardLogLine(line),
         });
@@ -247,7 +252,7 @@ export class ContainerAgentRunner {
       runError = String(err?.message || err).slice(0, 200);
     } finally {
       if (logStream) logStream.stop();
-      if (this.runtime.needsGateway) {
+      if (this.gatewayUrl) {
         this.unregisterContainer(shutdownSecret);
       }
       if (credentials) {

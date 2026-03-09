@@ -14,8 +14,8 @@ function setup() {
   return { app, registry, lockStore };
 }
 
-function register(registry: Map<string, ContainerRegistration>, secret: string, agentName: string) {
-  registry.set(secret, { containerName: `al-${agentName}-1234`, agentName });
+function register(registry: Map<string, ContainerRegistration>, secret: string, agentName: string, instanceId?: string) {
+  registry.set(secret, { containerName: `al-${agentName}-1234`, agentName, instanceId: instanceId || agentName });
 }
 
 async function acquire(app: Hono, body: Record<string, unknown>) {
@@ -97,6 +97,28 @@ describe("POST /locks/acquire", () => {
     await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#42" });
     const res = await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#42" });
     expect(res.status).toBe(200);
+  });
+
+  it("allows different instances of the same agent to each hold one lock", async () => {
+    register(registry, "secret-inst-1", "my-agent", "my-agent-1");
+    register(registry, "secret-inst-2", "my-agent", "my-agent-2");
+
+    const res1 = await acquire(app, { secret: "secret-inst-1", resourceKey: "github issue #1" });
+    expect(res1.status).toBe(200);
+
+    const res2 = await acquire(app, { secret: "secret-inst-2", resourceKey: "github issue #2" });
+    expect(res2.status).toBe(200);
+  });
+
+  it("prevents different instances of the same agent from locking the same resource", async () => {
+    register(registry, "secret-inst-1", "my-agent", "my-agent-1");
+    register(registry, "secret-inst-2", "my-agent", "my-agent-2");
+
+    await acquire(app, { secret: "secret-inst-1", resourceKey: "github issue #1" });
+    const res = await acquire(app, { secret: "secret-inst-2", resourceKey: "github issue #1" });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.holder).toBe("my-agent-1");
   });
 });
 
