@@ -3,7 +3,7 @@ import { existsSync } from "fs";
 import { confirm } from "@inquirer/prompts";
 import { execFileSync } from "child_process";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
-import { IAMClient, CreateRoleCommand, PutRolePolicyCommand, GetRoleCommand } from "@aws-sdk/client-iam";
+import { IAMClient, CreateRoleCommand, PutRolePolicyCommand, PutUserPolicyCommand, GetRoleCommand } from "@aws-sdk/client-iam";
 import { discoverAgents, loadAgentConfig, loadGlobalConfig } from "../../shared/config.js";
 import type { CloudConfig } from "../../shared/config.js";
 import { resolveCredential } from "../../credentials/registry.js";
@@ -483,12 +483,79 @@ async function reconcileAws(projectPath: string, cloud: CloudConfig): Promise<vo
     console.log("");
   }
 
+  // Grant iam:PassRole on ECS task roles + execution role to the calling identity
+  const taskRoleArns = agents.map(
+    (name) => `arn:aws:iam::${accountId}:role/${AWS_CONSTANTS.taskRoleName(name)}`
+  );
+  if (cloud.executionRoleArn) {
+    taskRoleArns.push(cloud.executionRoleArn);
+  }
+  if (taskRoleArns.length > 0) {
+    await grantPassRole(awsRegion, iamClient, taskRoleArns, "ActionLlamaEcsPassRole");
+  }
+
   console.log("Done. Each agent now has an isolated IAM task role with access to only its declared secrets.");
   console.log(`\nTask roles follow the convention: al-{agentName}-task-role`);
   console.log("The ECS runtime will use them automatically at launch time.");
 }
 
 // --- Helpers ---
+
+/**
+ * Grant iam:PassRole on the given role ARNs to the calling IAM user.
+ * Required so the CLI can assign roles to ECS tasks and Lambda functions.
+ */
+async function grantPassRole(
+  awsRegion: string,
+  iamClient: IAMClient,
+  roleArns: string[],
+  policyName: string,
+): Promise<void> {
+  const stsClient = new STSClient({ region: awsRegion });
+  const identity = await stsClient.send(new GetCallerIdentityCommand({}));
+  const callerArn = identity.Arn!;
+
+  // Extract user name from ARN (arn:aws:iam::ACCOUNT:user/USERNAME)
+  const userMatch = callerArn.match(/:user\/(.+)$/);
+  if (!userMatch) {
+    console.log(`\n  Note: Caller ${callerArn} is not an IAM user — skipping iam:PassRole auto-grant.`);
+    console.log(`  If you get PassRole errors, add this policy to your IAM identity:`);
+    console.log(JSON.stringify({
+      Version: "2012-10-17",
+      Statement: [{
+        Effect: "Allow",
+        Action: "iam:PassRole",
+        Resource: roleArns,
+      }],
+    }, null, 2));
+    return;
+  }
+
+  const userName = userMatch[1];
+  const policy = JSON.stringify({
+    Version: "2012-10-17",
+    Statement: [{
+      Effect: "Allow",
+      Action: "iam:PassRole",
+      Resource: roleArns,
+    }],
+  });
+
+  try {
+    await iamClient.send(new PutUserPolicyCommand({
+      UserName: userName,
+      PolicyName: policyName,
+      PolicyDocument: policy,
+    }));
+    console.log(`  Granted iam:PassRole on ${roleArns.length} role(s) to user ${userName}`);
+  } catch (err: any) {
+    console.log(`  Warning: could not grant iam:PassRole to user ${userName}: ${err.message}`);
+    console.log(`  You may need to manually add iam:PassRole permission for these roles:`);
+    for (const arn of roleArns) {
+      console.log(`    - ${arn}`);
+    }
+  }
+}
 
 function gcloud(args: string[], _project: string): string {
   return execFileSync("gcloud", args, {
@@ -733,5 +800,18 @@ async function reconcileLambdaRoles(projectPath: string, cloud: CloudConfig): Pr
     console.log(`Created ${created} Lambda execution role(s).`);
   } else {
     console.log(`All Lambda roles up to date.`);
+  }
+
+  // Grant iam:PassRole on Lambda roles to the calling identity
+  const lambdaRoleArns = agents
+    .filter((name) => {
+      const config = loadAgentConfig(projectPath, name);
+      const effectiveTimeout = config.timeout ?? globalConfig.local?.timeout ?? 900;
+      return effectiveTimeout <= AWS_CONSTANTS.LAMBDA_MAX_TIMEOUT;
+    })
+    .map((name) => `arn:aws:iam::${accountId}:role/${AWS_CONSTANTS.lambdaRoleName(name)}`);
+
+  if (lambdaRoleArns.length > 0) {
+    await grantPassRole(awsRegion, iamClient, lambdaRoleArns, "ActionLlamaLambdaPassRole");
   }
 }
