@@ -14,7 +14,7 @@ credentials = ["github_token:default", "git_ssh:default", "sentry_token:default"
 schedule = "*/5 * * * *"
 
 # Optional: number of concurrent runs allowed (default: 1)
-parallelism = 2
+scale = 2
 
 # Required: LLM model configuration
 [model]
@@ -51,7 +51,7 @@ sentryProjects = ["web-app", "api"]
 |-------|------|----------|-------------|
 | `credentials` | string[] | Yes | Credential refs as `"type:instance"` needed at runtime |
 | `schedule` | string | No* | Cron expression for polling |
-| `parallelism` | number | No | Number of concurrent runs allowed (default: 1) |
+| `scale` | number | No | Number of concurrent runs allowed (default: 1) |
 | `model` | table | No | LLM model configuration (falls back to `[model]` in project `config.toml`) |
 | `model.provider` | string | Yes* | LLM provider ("anthropic", "openai", "groq", "google", "xai", "mistral", "openrouter", or "custom") |
 | `model.model` | string | Yes* | Model ID |
@@ -62,9 +62,9 @@ sentryProjects = ["web-app", "api"]
 
 *At least one of `schedule` or `webhooks` is required. *Required within `[model]` if the agent defines its own model block (otherwise inherits from project `config.toml`).
 
-## Parallelism
+## Scale
 
-The `parallelism` field controls how many instances of an agent can run concurrently. This is useful for agents that handle high-volume workloads or when you want to process multiple tasks simultaneously.
+The `scale` field controls how many instances of an agent can run concurrently. This is useful for agents that handle high-volume workloads or when you want to process multiple tasks simultaneously.
 
 - **Default**: 1 (only one instance can run at a time)
 - **Minimum**: 1 
@@ -78,9 +78,9 @@ The `parallelism` field controls how many instances of an agent can run concurre
 
 ### Example use cases
 
-- **Dev agent** with `parallelism = 3`: Handle multiple GitHub issues simultaneously
-- **Review agent** with `parallelism = 2`: Review multiple PRs in parallel
-- **Monitoring agent** with `parallelism = 1`: Ensure only one instance processes alerts at a time
+- **Dev agent** with `scale = 3`: Handle multiple GitHub issues simultaneously
+- **Review agent** with `scale = 2`: Review multiple PRs in parallel
+- **Monitoring agent** with `scale = 1`: Ensure only one instance processes alerts at a time
 
 ### Resource considerations
 
