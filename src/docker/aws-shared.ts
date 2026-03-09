@@ -274,7 +274,10 @@ export class AwsSharedUtils {
       }
     };
 
-    hashFile(dockerfileTar);
+    // Use a stable name for the Dockerfile hash key so temp filenames
+    // (which contain a random UUID) don't bust the cache.
+    hash.update("Dockerfile");
+    hash.update(readFileSyncBuf(join(opts.contextDir, dockerfileTar)));
     hashFile("package.json");
     hashDir("dist");
 
@@ -295,6 +298,8 @@ export class AwsSharedUtils {
       onProgress?.("Image unchanged — reusing cached build");
       return remoteTag;
     }
+
+    onProgress?.("Cache miss — building image");
 
     if (needsCopy || needsRewrite) {
       tempDockerfile = join(opts.contextDir, `.Dockerfile.${randomUUID().slice(0, 8)}`);

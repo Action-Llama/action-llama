@@ -233,4 +233,63 @@ describe("AwsSharedUtils", () => {
     expect(bucket).toBe("al-builds-123456789012-us-east-1");
     expect(mockS3Send).toHaveBeenCalledTimes(2);
   });
+
+  describe("buildImageCodeBuild cache hash stability", () => {
+    let contextDir: string;
+
+    beforeEach(async () => {
+      const { mkdtempSync, mkdirSync, writeFileSync: wfs } = await import("fs");
+      const { join } = await import("path");
+      const os = await import("os");
+      contextDir = mkdtempSync(join(os.tmpdir(), "al-cache-test-"));
+      wfs(join(contextDir, "Dockerfile"), "FROM al-agent:latest\nRUN echo hello\n");
+      wfs(join(contextDir, "package.json"), '{"name":"test"}');
+      mkdirSync(join(contextDir, "dist"));
+      wfs(join(contextDir, "dist", "index.js"), "console.log('hi')");
+    });
+
+    it("produces the same hash tag across repeated calls with baseImage", async () => {
+      const utils = new AwsSharedUtils(defaultConfig);
+
+      // Both calls: ECR returns cache hit so we get back the tag without needing
+      // S3/CodeBuild mocks
+      mockEcrSend.mockResolvedValue({ images: [{ imageId: { imageTag: "x" } }] });
+
+      const opts = {
+        tag: "al-agent:latest",
+        dockerfile: "Dockerfile",
+        contextDir,
+        baseImage: "123456789012.dkr.ecr.us-east-1.amazonaws.com/al-images:base",
+      };
+
+      const tag1 = await utils.buildImageCodeBuild(opts);
+      const tag2 = await utils.buildImageCodeBuild(opts);
+
+      expect(tag1).toBe(tag2);
+    });
+
+    it("produces different hash tags when file content changes", async () => {
+      const utils = new AwsSharedUtils(defaultConfig);
+      const { writeFileSync: wfs } = await import("fs");
+      const { join } = await import("path");
+
+      mockEcrSend.mockResolvedValue({ images: [{ imageId: { imageTag: "x" } }] });
+
+      const opts = {
+        tag: "al-agent:latest",
+        dockerfile: "Dockerfile",
+        contextDir,
+        baseImage: "123456789012.dkr.ecr.us-east-1.amazonaws.com/al-images:base",
+      };
+
+      const tag1 = await utils.buildImageCodeBuild(opts);
+
+      // Change a file
+      wfs(join(contextDir, "dist", "index.js"), "console.log('changed')");
+
+      const tag2 = await utils.buildImageCodeBuild(opts);
+
+      expect(tag1).not.toBe(tag2);
+    });
+  });
 });
