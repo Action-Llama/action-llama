@@ -309,6 +309,19 @@ export class CloudRunJobRuntime implements ContainerRuntime {
       .filter(Boolean);
   }
 
+  getTaskUrl(executionName: string): string | null {
+    // executionName format: projects/{project}/locations/{region}/jobs/{jobName}/executions/{executionId}
+    const parts = executionName.split("/");
+    if (parts.length >= 8) {
+      const project = parts[1];
+      const region = parts[3];
+      const jobName = parts[5];
+      const executionId = parts[7];
+      return `https://console.cloud.google.com/run/jobs/executions/details/${region}/${jobName}/${executionId}?project=${project}`;
+    }
+    return null;
+  }
+
   // --- Internal: GCP API helpers ---
 
   private gsmSecretName(type: string, instance: string, field: string): string {

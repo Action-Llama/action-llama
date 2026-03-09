@@ -210,6 +210,12 @@ export class ContainerAgentRunner {
         });
       }
 
+      // Set cloud console URL for TUI display
+      const taskUrl = this.runtime.getTaskUrl(containerName);
+      if (taskUrl) {
+        this.statusTracker?.setTaskUrl(this.agentConfig.name, taskUrl);
+      }
+
       this.logger.info({ container: containerName }, "container launched");
 
       // Stream logs in real-time via runtime

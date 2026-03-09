@@ -614,6 +614,21 @@ export class ECSFargateRuntime implements ContainerRuntime {
       .filter(Boolean);
   }
 
+  getTaskUrl(taskArn: string): string | null {
+    // taskArn format: arn:aws:ecs:{region}:{account}:task/{cluster}/{taskId}
+    const arnParts = taskArn.split(":");
+    if (arnParts.length >= 6) {
+      const region = arnParts[3];
+      const resourceParts = arnParts[5].split("/"); // task/{cluster}/{taskId}
+      if (resourceParts.length >= 3) {
+        const cluster = resourceParts[1];
+        const taskId = resourceParts[2];
+        return `https://${region}.console.aws.amazon.com/ecs/v2/clusters/${cluster}/tasks/${taskId}?region=${region}`;
+      }
+    }
+    return null;
+  }
+
   // --- Internal: Secret naming ---
 
   private awsSecretName(type: string, instance: string, field: string): string {

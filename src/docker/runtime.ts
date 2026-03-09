@@ -101,4 +101,7 @@ export interface ContainerRuntime {
 
   /** Fetch recent log entries for an agent. */
   fetchLogs(agentName: string, limit: number): Promise<string[]>;
+
+  /** Return a URL to the cloud console for this task/execution, or null for local runtimes. */
+  getTaskUrl(containerName: string): string | null;
 }

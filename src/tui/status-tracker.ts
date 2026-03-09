@@ -12,6 +12,7 @@ export interface AgentStatus {
   queuedWebhooks: number;
   scale: number;        // total runner pool size
   runningCount: number; // how many runners are currently active
+  taskUrl: string | null; // link to cloud task/execution (ECS or Cloud Run console)
 }
 
 export interface SchedulerInfo {
@@ -50,6 +51,7 @@ export class StatusTracker extends EventEmitter {
       queuedWebhooks: 0,
       scale,
       runningCount: 0,
+      taskUrl: null,
     });
     this.emit("update");
   }
@@ -73,6 +75,7 @@ export class StatusTracker extends EventEmitter {
     agent.state = "running";
     agent.statusText = null;
     agent.lastError = null;
+    agent.taskUrl = null;
     this.emit("update");
   }
 
@@ -84,6 +87,7 @@ export class StatusTracker extends EventEmitter {
     agent.lastRunAt = new Date();
     agent.lastRunDuration = durationMs;
     agent.statusText = null;
+    agent.taskUrl = null;
     if (error) {
       agent.lastError = error;
       agent.state = "error";
@@ -91,6 +95,13 @@ export class StatusTracker extends EventEmitter {
       agent.state = "idle";
     }
     // If still running instances, keep state as "running"
+    this.emit("update");
+  }
+
+  setTaskUrl(name: string, url: string | null): void {
+    const agent = this.agents.get(name);
+    if (!agent) return;
+    agent.taskUrl = url;
     this.emit("update");
   }
 

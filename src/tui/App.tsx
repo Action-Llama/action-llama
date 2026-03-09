@@ -129,6 +129,11 @@ function AgentRow({ agent, isSelected }: { agent: AgentStatus; isSelected: boole
           </Text>
         </Box>
       ) : null}
+      {agent.taskUrl ? (
+        <Box paddingLeft={2}>
+          <Text dimColor wrap="truncate-end">Logs: {agent.taskUrl}</Text>
+        </Box>
+      ) : null}
     </Box>
   );
 }

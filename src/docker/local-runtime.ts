@@ -233,4 +233,8 @@ export class LocalDockerRuntime implements ContainerRuntime {
       return [];
     }
   }
+
+  getTaskUrl(): string | null {
+    return null;
+  }
 }
