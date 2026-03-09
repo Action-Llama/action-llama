@@ -53,7 +53,7 @@ sentryProjects = ["web-app", "api"]
 |-------|------|----------|-------------|
 | `credentials` | string[] | Yes | Credential refs as `"type:instance"` needed at runtime |
 | `schedule` | string | No* | Cron expression for polling |
-| `scale` | number | No | Number of concurrent runs allowed (default: 1). Use lock skills in your playbook to coordinate instances. See [Agents — Lock skills](agents.md#lock-skills). |
+| `scale` | number | No | Number of concurrent runs allowed (default: 1). Use lock skills in your playbook to coordinate instances. See [Resource Locks](agents.md#resource-locks). |
 | `model` | table | No | LLM model configuration (falls back to `[model]` in project `config.toml`) |
 | `model.provider` | string | Yes* | LLM provider ("anthropic", "openai", "groq", "google", "xai", "mistral", "openrouter", or "custom") |
 | `model.model` | string | Yes* | Model ID |
