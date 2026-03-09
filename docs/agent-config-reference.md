@@ -14,6 +14,8 @@ credentials = ["github_token:default", "git_ssh:default", "sentry_token:default"
 schedule = "*/5 * * * *"
 
 # Optional: number of concurrent runs allowed (default: 1)
+# When scale > 1, use LOCK/UNLOCK in your playbook to coordinate
+# and prevent instances from working on the same resource.
 scale = 2
 
 # Required: LLM model configuration
@@ -51,7 +53,7 @@ sentryProjects = ["web-app", "api"]
 |-------|------|----------|-------------|
 | `credentials` | string[] | Yes | Credential refs as `"type:instance"` needed at runtime |
 | `schedule` | string | No* | Cron expression for polling |
-| `scale` | number | No | Number of concurrent runs allowed (default: 1) |
+| `scale` | number | No | Number of concurrent runs allowed (default: 1). Use lock skills in your playbook to coordinate instances. See [Agents — Lock skills](agents.md#lock-skills). |
 | `model` | table | No | LLM model configuration (falls back to `[model]` in project `config.toml`) |
 | `model.provider` | string | Yes* | LLM provider ("anthropic", "openai", "groq", "google", "xai", "mistral", "openrouter", or "custom") |
 | `model.model` | string | Yes* | Model ID |

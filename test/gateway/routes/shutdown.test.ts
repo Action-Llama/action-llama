@@ -18,7 +18,7 @@ describe("POST /shutdown", () => {
   it("kills container and returns success for valid secret", async () => {
     const killFn = vi.fn().mockResolvedValue(undefined);
     const registry = new Map<string, ContainerRegistration>();
-    registry.set("test-secret", { containerName: "al-dev-1234" });
+    registry.set("test-secret", { containerName: "al-dev-1234", agentName: "dev" });
 
     const app = createTestApp(registry, killFn);
     const res = await app.request("/shutdown", {

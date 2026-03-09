@@ -4,8 +4,10 @@ import type { Server } from "http";
 import { registerShutdownRoute } from "./routes/shutdown.js";
 import { registerCredentialRoute } from "./routes/credentials.js";
 import { registerLogRoute } from "./routes/logs.js";
+import { registerLockRoutes } from "./routes/locks.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
 import { registerDashboardRoutes } from "./routes/dashboard.js";
+import { LockStore } from "./lock-store.js";
 import type { ContainerRegistration } from "./types.js";
 import type { WebhookRegistry } from "../webhooks/registry.js";
 import type { Logger } from "../shared/logger.js";
@@ -22,19 +24,22 @@ export interface GatewayOptions {
   statusTracker?: StatusTracker;
   projectPath?: string;
   webUI?: boolean;
+  lockTimeout?: number;
 }
 
 export interface GatewayServer {
   server: Server;
   registerContainer: (secret: string, reg: ContainerRegistration) => void;
   unregisterContainer: (secret: string) => void;
+  lockStore: LockStore;
   close: () => Promise<void>;
 }
 
 export async function startGateway(opts: GatewayOptions): Promise<GatewayServer> {
-  const { port, logger, killContainer, webhookRegistry, webhookSecrets, statusTracker, projectPath, webUI } = opts;
+  const { port, logger, killContainer, webhookRegistry, webhookSecrets, statusTracker, projectPath, webUI, lockTimeout } = opts;
   const app = new Hono();
   const containerRegistry = new Map<string, ContainerRegistration>();
+  const lockStore = new LockStore(lockTimeout);
 
   // Health check
   app.get("/health", (c) => c.json({ status: "ok" }));
@@ -44,6 +49,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
   registerShutdownRoute(app, containerRegistry, killFn, logger);
   registerCredentialRoute(app, containerRegistry, logger);
   registerLogRoute(app, containerRegistry, logger);
+  registerLockRoutes(app, containerRegistry, lockStore, logger);
 
   // Webhook routes
   if (webhookRegistry) {
@@ -72,13 +78,21 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
   };
 
   const unregisterContainer = (secret: string) => {
+    const reg = containerRegistry.get(secret);
+    if (reg) {
+      const released = lockStore.releaseAll(reg.agentName);
+      if (released > 0) {
+        logger.info({ agent: reg.agentName, released }, "released locks on container cleanup");
+      }
+    }
     containerRegistry.delete(secret);
   };
 
   const close = () =>
     new Promise<void>((resolve) => {
+      lockStore.dispose();
       server.close(() => resolve());
     });
 
-  return { server, registerContainer, unregisterContainer, close };
+  return { server, registerContainer, unregisterContainer, lockStore, close };
 }

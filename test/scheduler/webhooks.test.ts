@@ -62,6 +62,8 @@ vi.mock("../../src/gateway/index.js", () => ({
   startGateway: vi.fn().mockResolvedValue({
     server: {},
     registerContainer: vi.fn(),
+    unregisterContainer: vi.fn(),
+    lockStore: { releaseAll: vi.fn(), dispose: vi.fn() },
     close: mockGatewayClose,
   }),
 }));

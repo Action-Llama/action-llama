@@ -15,7 +15,7 @@ describe("GET /credentials/:secret", () => {
   it("returns credentials for a valid secret", async () => {
     const registry = new Map<string, ContainerRegistration>();
     registry.set("test-secret", {
-      containerName: "al-dev-1234",
+      containerName: "al-dev-1234", agentName: "dev",
       credentials: {
         github_token: { default: { token: "ghp_abc123" } },
         git_ssh: { default: { id_rsa: "ssh-key-data", username: "bot", email: "bot@test.com" } },

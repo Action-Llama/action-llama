@@ -7,7 +7,7 @@ import { createLogger, createFileOnlyLogger } from "../shared/logger.js";
 import { agentDir } from "../shared/paths.js";
 import { AgentRunner, type RunOutcome } from "../agents/runner.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
-import { buildScheduledPrompt, buildWebhookPrompt, buildTriggeredPrompt } from "../agents/prompt.js";
+import { buildScheduledPrompt, buildWebhookPrompt, buildTriggeredPrompt, type PromptSkills } from "../agents/prompt.js";
 import { WebhookRegistry } from "../webhooks/registry.js";
 import { GitHubWebhookProvider } from "../webhooks/providers/github.js";
 import { SentryWebhookProvider } from "../webhooks/providers/sentry.js";
@@ -71,6 +71,7 @@ interface SchedulerContext {
   logger: ReturnType<typeof createLogger>;
   webhookQueue: WebhookEventQueue<WebhookContext>;
   shuttingDown: boolean;
+  skills?: PromptSkills;
 }
 
 function dispatchTriggers(
@@ -100,7 +101,7 @@ function dispatchTriggers(
       continue;
     }
     ctx.logger.info({ source: sourceAgent, target: agent, depth, running: pool.runningJobCount, scale: pool.size }, "agent trigger firing");
-    const prompt = buildTriggeredPrompt(targetConfig, sourceAgent, context);
+    const prompt = buildTriggeredPrompt(targetConfig, sourceAgent, context, ctx.skills);
     runTriggered(availableRunner, targetConfig, prompt, sourceAgent, depth + 1, ctx).catch((err) => {
       ctx.logger.error({ err, target: agent }, "triggered run failed");
     });
@@ -144,7 +145,7 @@ async function drainWebhookQueue(
       "processing queued webhook event"
     );
     try {
-      const prompt = buildWebhookPrompt(agentConfig, event.context);
+      const prompt = buildWebhookPrompt(agentConfig, event.context, ctx.skills);
       const { triggers } = await runner.run(prompt, { type: 'webhook', source: event.context.event });
       if (triggers.length > 0) {
         dispatchTriggers(triggers, agentConfig.name, 0, ctx);
@@ -161,7 +162,7 @@ async function runWithReruns(
   depth: number,
   ctx: SchedulerContext
 ): Promise<void> {
-  let { result, triggers } = await runner.run(buildScheduledPrompt(agentConfig), { type: 'schedule' });
+  let { result, triggers } = await runner.run(buildScheduledPrompt(agentConfig, ctx.skills), { type: 'schedule' });
   if (triggers.length > 0) {
     dispatchTriggers(triggers, agentConfig.name, depth, ctx);
   }
@@ -169,7 +170,7 @@ async function runWithReruns(
   while (result === "completed" && reruns < ctx.maxReruns) {
     reruns++;
     ctx.logger.info({ rerun: reruns, maxReruns: ctx.maxReruns }, `${agentConfig.name} did work, re-running immediately`);
-    ({ result, triggers } = await runner.run(buildScheduledPrompt(agentConfig), { type: 'schedule' }));
+    ({ result, triggers } = await runner.run(buildScheduledPrompt(agentConfig, ctx.skills), { type: 'schedule' }));
     if (triggers.length > 0) {
       dispatchTriggers(triggers, agentConfig.name, depth, ctx);
     }
@@ -316,6 +317,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       statusTracker,
       projectPath,
       webUI,
+      lockTimeout: globalConfig.gateway?.lockTimeout,
     });
     logger.info({ port: gatewayPort }, "Gateway started early to show build progress");
   }
@@ -527,7 +529,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   const webhookQueueSize = globalConfig.webhookQueueSize ?? 20;
   const webhookQueue = new WebhookEventQueue<WebhookContext>(webhookQueueSize);
-  const schedulerCtx: SchedulerContext = { runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, webhookQueue, shuttingDown: false };
+  const skills: PromptSkills | undefined = dockerEnabled ? { locking: true } : undefined;
+  const schedulerCtx: SchedulerContext = { runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, webhookQueue, shuttingDown: false, skills };
 
   // Set up webhook bindings
   if (webhookRegistry) {
@@ -573,7 +576,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
               { agent: agentConfig.name, event: context.event, action: context.action, running: pool.runningJobCount, scale: pool.size },
               "webhook triggering agent"
             );
-            const prompt = buildWebhookPrompt(agentConfig, context);
+            const prompt = buildWebhookPrompt(agentConfig, context, schedulerCtx.skills);
             availableRunner.run(prompt, { type: 'webhook', source: context.event }).then(({ triggers }) => {
               if (triggers.length > 0) {
                 dispatchTriggers(triggers, agentConfig.name, 0, schedulerCtx);

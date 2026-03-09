@@ -16,7 +16,7 @@ describe("POST /logs/:secret", () => {
     const lines: string[] = [];
     const registry = new Map<string, ContainerRegistration>();
     registry.set("test-secret", {
-      containerName: "al-dev-1234",
+      containerName: "al-dev-1234", agentName: "dev",
       onLogLine: (line) => lines.push(line),
     });
 
@@ -67,7 +67,7 @@ describe("POST /logs/:secret", () => {
     const lines: string[] = [];
     const registry = new Map<string, ContainerRegistration>();
     registry.set("test-secret", {
-      containerName: "al-dev-1234",
+      containerName: "al-dev-1234", agentName: "dev",
       onLogLine: (line) => lines.push(line),
     });
 

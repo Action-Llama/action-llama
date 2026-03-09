@@ -28,6 +28,7 @@ provider = "cloud-run"      # "cloud-run" or "ecs"
 # Gateway HTTP server settings
 [gateway]
 port = 8080                 # Gateway port (default: 8080)
+lockTimeout = 1800          # Lock TTL in seconds (default: 1800 / 30 minutes)
 
 # Webhook sources — named webhook endpoints with provider type and credential
 [webhooks.my-github]
@@ -111,11 +112,12 @@ See [ECS docs](ecs.md) for full setup.
 
 ### `[gateway]` — HTTP Server
 
-The gateway starts automatically when Docker mode or webhooks are enabled. It handles health checks, webhook reception, credential serving (local Docker only), and the shutdown kill switch.
+The gateway starts automatically when Docker mode or webhooks are enabled. It handles health checks, webhook reception, credential serving (local Docker only), resource locking, and the shutdown kill switch.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `port` | number | `8080` | Port for the gateway HTTP server |
+| `lockTimeout` | number | `1800` | Default lock TTL in seconds. Locks expire automatically after this duration unless refreshed via heartbeat. |
 
 ### `[webhooks.*]` — Webhook Sources
 

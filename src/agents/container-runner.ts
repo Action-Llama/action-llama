@@ -204,6 +204,7 @@ export class ContainerAgentRunner {
         const bundle = credentials.strategy === "volume" ? credentials.bundle : undefined;
         this.registerContainer(shutdownSecret, {
           containerName,
+          agentName: this.agentConfig.name,
           credentials: bundle,
           onLogLine: (line) => this.forwardLogLine(line),
         });

@@ -88,7 +88,11 @@ The PLAYBOOK.md is set as the LLM's system prompt. The scheduler then sends a us
 
 Your PLAYBOOK.md should reference `<agent-config>` for parameter values and handle both scheduled and webhook triggers if the agent uses both.
 
-### Special signals
+### Language skills
+
+Before the PLAYBOOK.md runs, the agent receives a preamble that teaches it a set of **language skills** — shorthand operations the playbook can reference naturally. The preamble explains the underlying mechanics (curl commands, env vars) so playbook authors never need to think about them.
+
+#### Signal skills
 
 The agent can emit these signals in its text output:
 
@@ -97,6 +101,36 @@ The agent can emit these signals in its text output:
 | `[SILENT]` | Tells the scheduler the agent found no work. Logged as "no work to do" and further output is skipped. |
 | `[STATUS: <text>]` | Status update shown in the TUI (e.g. `[STATUS: reviewing PR #42]`). |
 | `[TRIGGER: <agent>]...[/TRIGGER]` | Triggers another agent with the enclosed context. The target receives a `<agent-trigger>` prompt with the source agent name and context. Self-triggers are skipped; chains are bounded by `maxTriggerDepth`. |
+
+#### Lock skills
+
+When Docker mode is enabled, agents learn lock skills for coordinating with parallel instances. This prevents two instances from working on the same issue, PR, or deployment simultaneously.
+
+| Skill | Description |
+|-------|-------------|
+| `LOCK(resource, key)` | Acquire an exclusive lock. Returns success or the name of the holder on conflict. |
+| `UNLOCK(resource, key)` | Release a held lock. |
+| `HEARTBEAT(resource, key)` | Extend the TTL on a held lock during long-running work. |
+
+Properties:
+- **One lock at a time** — each agent instance can hold at most one lock. It must release the current lock before acquiring another.
+- **Owner-authenticated** — only the lock holder can release or heartbeat a lock. Each container authenticates with a per-run secret.
+- **TTL with heartbeat** — locks expire automatically after 30 minutes (configurable via `gateway.lockTimeout`). Use `HEARTBEAT` during long operations to keep the lock alive.
+- **Auto-release** — all locks held by a container are released automatically when the container exits, whether it finishes normally or crashes.
+
+Playbook authors use the shorthand naturally:
+
+```markdown
+## Workflow
+
+1. List open issues labeled "agent"
+2. For each issue, LOCK("githubIssue", "acme/app#42")
+   - If the lock fails, skip — another instance is already on it
+3. Do the work
+4. UNLOCK("githubIssue", "acme/app#42")
+```
+
+The preamble teaches the agent that `LOCK(...)` means "call the scheduler's lock API via curl." The agent sees immediate feedback: success or conflict with the holder's name.
 
 ## Runtime lifecycle
 
@@ -111,7 +145,7 @@ Each agent run is an isolated, short-lived container (or host process with `--no
 5. **Agent runs autonomously** — the LLM executes tools (bash, file I/O, API calls) until it finishes or hits an error. Rate-limited API calls are retried automatically (up to 5 attempts with exponential backoff).
 6. **Error detection** — the container watches for repeated auth/permission failures (e.g. "bad credentials", "permission denied"). After 3 such errors, it aborts early.
 7. **Signals are processed** — as the agent produces output, the scheduler scans for `[SILENT]`, `[STATUS]`, and `[TRIGGER]` signals.
-8. **Container exits** — exit code 0 (success), 1 (error), or 124 (timeout). The scheduler logs the result and the container is removed.
+8. **Container exits** — exit code 0 (success), 1 (error), or 124 (timeout). Any held locks are released automatically. The scheduler logs the result and the container is removed.
 
 ### Timeout
 

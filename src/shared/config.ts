@@ -42,6 +42,7 @@ export interface CloudConfig {
 
 export interface GatewayConfig {
   port?: number;
+  lockTimeout?: number;
 }
 
 export interface WebhookSourceConfig {
