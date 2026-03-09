@@ -1,0 +1,15 @@
+node_modules
+.git
+test
+src
+coverage
+.changeset
+.github
+docs
+*.md
+.env
+.env.*
+.eslintrc*
+.prettierrc*
+tsconfig*.json
+vitest.config.*

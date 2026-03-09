@@ -97,6 +97,7 @@ export class LocalDockerRuntime implements ContainerRuntime {
       stdio: ["pipe", "pipe", "inherit"],
       timeout: 300_000,
       cwd: opts.contextDir,
+      env: { ...process.env, DOCKER_BUILDKIT: "1" },
     });
     return opts.tag;
   }

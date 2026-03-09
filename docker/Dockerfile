@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM public.ecr.aws/docker/library/node:20-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -10,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy application
 WORKDIR /app
 COPY package.json ./
-RUN npm install --production
+RUN --mount=type=cache,target=/root/.npm npm install --production
 COPY dist/ ./dist/
 
 # Create /workspace so container-entry can chdir into it regardless of runtime

@@ -17,6 +17,7 @@ function docker(args: string[], opts?: { quiet?: boolean; cwd?: string }): strin
     stdio: opts?.quiet ? ["pipe", "pipe", "pipe"] : ["pipe", "pipe", "inherit"],
     timeout: 300000, // 5 min for builds
     cwd: opts?.cwd || PACKAGE_ROOT,
+    env: { ...process.env, DOCKER_BUILDKIT: "1" },
   }).trim();
 }
 
