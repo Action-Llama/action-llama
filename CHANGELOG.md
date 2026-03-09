@@ -1,5 +1,11 @@
 # @action-llama/action-llama
 
+## 0.6.1
+
+### Patch Changes
+
+- [`8f597f9`](https://github.com/Action-Llama/action-llama/commit/8f597f94282987620fce637de1fab6367069d59c) Thanks [@asselstine](https://github.com/asselstine)! - Added LLM-audience skills documentation at `skills/` covering credentials, signals, resource locks, and environment context. These ship with the published package so agents can reference them. AGENTS.md now links to the skills directory.
+
 ## 0.6.0
 
 ### Minor Changes
