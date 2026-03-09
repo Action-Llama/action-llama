@@ -1,5 +1,18 @@
 # @action-llama/action-llama
 
+## 0.6.3
+
+### Patch Changes
+
+- [`ef15a89`](https://github.com/Action-Llama/action-llama/commit/ef15a89b0e27a06c6f8f39d160a49e07e237a87b) Thanks [@asselstine](https://github.com/asselstine)! - Improved local Docker build caching. Added `.dockerignore` to exclude `node_modules`,
+  `.git`, `src/`, `test/`, and other non-build files from the build context. Enabled
+  BuildKit explicitly and added an npm cache mount so `npm install` layers are reused
+  even when `package.json` changes.
+
+- [`9911cb8`](https://github.com/Action-Llama/action-llama/commit/9911cb84ab22aabf9523749ea869ee835c983d76) Thanks [@asselstine](https://github.com/asselstine)! - Show clickable cloud console links in the TUI dashboard for running agents. When the
+  scheduler runs in Cloud Run or ECS mode, each agent row displays a direct URL to the
+  execution or task in the GCP/AWS console for full log inspection.
+
 ## 0.6.2
 
 ### Patch Changes
