@@ -1,5 +1,17 @@
 # @action-llama/action-llama
 
+## 0.6.2
+
+### Patch Changes
+
+- [`532ec69`](https://github.com/Action-Llama/action-llama/commit/532ec698edaef0964f53e1a38dfdf6beb3fd3083) Thanks [@asselstine](https://github.com/asselstine)! - TUI and web dashboard now display agent scale and running instance count. Agents with
+  `scale > 1` show "Running 2/3" when active and "Idle (×3)" when idle, giving visibility
+  into how many parallel runners are busy. Scale-1 agents display as before.
+
+- [`1d53297`](https://github.com/Action-Llama/action-llama/commit/1d532970a9779290062350a6e4f38d865976bc3f) Thanks [@asselstine](https://github.com/asselstine)! - New projects created with `al new` now include a `CLAUDE.md` symlink alongside `AGENTS.md`,
+  both pointing to the shipped AGENTS.md in node_modules. This allows Claude Code (which looks
+  for CLAUDE.md) to automatically pick up agent instructions without extra setup.
+
 ## 0.6.1
 
 ### Patch Changes
