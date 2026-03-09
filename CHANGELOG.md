@@ -1,5 +1,23 @@
 # @action-llama/action-llama
 
+## 0.6.6
+
+### Patch Changes
+
+- [`f80da66`](https://github.com/Action-Llama/action-llama/commit/f80da6664d5fa99ce50a4bbc2a16500af76ecc08) Thanks [@asselstine](https://github.com/asselstine)! - Fixed resource locking across all execution modes. Cloud containers (ECS/Cloud Run)
+  now register with the gateway for lock coordination — previously all lock requests
+  from cloud containers returned 403. Lock holders are now instance-specific (e.g.
+  "my-agent-1", "my-agent-2") so agents with scale > 1 can each hold their own lock
+  instead of conflicting on a shared agent name. Added startup warnings when cloud mode
+  is missing `gateway.url` and when `scale > 1` is used without Docker.
+
+- [`02fe95f`](https://github.com/Action-Llama/action-llama/commit/02fe95ff534382bbba708e991a8f4bf5a40e0eb7) Thanks [@asselstine](https://github.com/asselstine)! - Added per-agent timeout support and automatic AWS Lambda routing. Agents can now set
+  `timeout` in `agent-config.toml` (falls back to global `[local].timeout`, then 900s).
+  For the ECS cloud provider, agents with timeout <= 900s automatically route to Lambda
+  for faster cold starts and lower cost, while longer-running agents stay on ECS Fargate.
+  New config fields: `lambdaRoleArn`, `lambdaSubnets`, `lambdaSecurityGroups` in `[cloud]`.
+  `al doctor -c` now creates Lambda execution roles for short-timeout agents.
+
 ## 0.6.5
 
 ### Patch Changes
