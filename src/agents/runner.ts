@@ -80,7 +80,7 @@ export class AgentRunner {
     }
 
     this.running = true;
-    this.statusTracker?.setAgentState(this.agentConfig.name, "running");
+    this.statusTracker?.startRun(this.agentConfig.name);
     
     if (triggerInfo) {
       const triggerDetails = triggerInfo.type === 'agent' && triggerInfo.source 
@@ -298,7 +298,7 @@ export class AgentRunner {
       }
 
       const elapsed = Date.now() - runStartTime;
-      this.statusTracker?.completeRun(this.agentConfig.name, elapsed, runError);
+      this.statusTracker?.endRun(this.agentConfig.name, elapsed, runError);
       this.running = false;
     }
   }

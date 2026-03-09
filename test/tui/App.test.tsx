@@ -121,6 +121,64 @@ describe("App TUI", () => {
     expect(output).toContain("Resource not accessible");
   });
 
+  it("shows scale info for scaled agents when running", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev", 3);
+    tracker.setSchedulerInfo({
+      mode: "host",
+      gatewayPort: null,
+      cronJobCount: 1,
+      webhooksActive: false,
+      webhookUrls: [],
+      startedAt: new Date(),
+    });
+
+    tracker.startRun("dev");
+    tracker.startRun("dev");
+
+    instance = render(<App statusTracker={tracker} />);
+    const output = instance.lastFrame()!;
+
+    expect(output).toContain("Running 2/3");
+  });
+
+  it("shows scale multiplier for idle scaled agents", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev", 3);
+    tracker.setSchedulerInfo({
+      mode: "host",
+      gatewayPort: null,
+      cronJobCount: 1,
+      webhooksActive: false,
+      webhookUrls: [],
+      startedAt: new Date(),
+    });
+
+    instance = render(<App statusTracker={tracker} />);
+    const output = instance.lastFrame()!;
+
+    expect(output).toContain("Idle (\u00d73)");
+  });
+
+  it("shows plain state for scale=1 agents", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.setSchedulerInfo({
+      mode: "host",
+      gatewayPort: null,
+      cronJobCount: 1,
+      webhooksActive: false,
+      webhookUrls: [],
+      startedAt: new Date(),
+    });
+
+    instance = render(<App statusTracker={tracker} />);
+    const output = instance.lastFrame()!;
+
+    expect(output).toContain("Idle");
+    expect(output).not.toContain("\u00d7");
+  });
+
   it("updates when tracker emits events", async () => {
     const tracker = new StatusTracker();
     tracker.registerAgent("dev");

@@ -35,12 +35,18 @@ function formatLogLine(log: LogLine): string {
   return `<span class="log-time">${escapeHtml(time)}</span> <span class="log-agent">[${escapeHtml(log.agent)}]</span> ${escapeHtml(log.message)}`;
 }
 
+function formatScale(agent: AgentStatus): string {
+  if (agent.state === "running" && agent.scale > 1) return `running ${agent.runningCount}/${agent.scale}`;
+  if (agent.scale > 1) return `${agent.state} (\u00d7${agent.scale})`;
+  return agent.state;
+}
+
 function renderAgentRow(agent: AgentStatus): string {
   const color = stateColor(agent.state);
   const statusText = agent.statusText || agent.lastError || "\u2014";
   return `<tr>
     <td><a href="/dashboard/agents/${escapeHtml(agent.name)}/logs">${escapeHtml(agent.name)}</a></td>
-    <td><span class="state-dot" style="background:${color}"></span> ${escapeHtml(agent.state)}</td>
+    <td><span class="state-dot" style="background:${color}"></span> ${escapeHtml(formatScale(agent))}</td>
     <td class="status-text">${escapeHtml(statusText)}</td>
     <td>${formatTime(agent.lastRunAt)}</td>
     <td>${agent.lastRunDuration != null ? formatDuration(agent.lastRunDuration) : "\u2014"}</td>
@@ -54,7 +60,7 @@ function renderAgentCard(agent: AgentStatus): string {
   return `<a href="/dashboard/agents/${escapeHtml(agent.name)}/logs" class="agent-card">
     <div class="card-header">
       <span class="card-name">${escapeHtml(agent.name)}</span>
-      <span><span class="state-dot" style="background:${color}"></span>${escapeHtml(agent.state)}</span>
+      <span><span class="state-dot" style="background:${color}"></span>${escapeHtml(formatScale(agent))}</span>
     </div>
     <div class="card-status">${escapeHtml(statusText)}</div>
     <div class="card-meta">
@@ -182,12 +188,18 @@ export function renderDashboardPage(agents: AgentStatus[], schedulerInfo: Schedu
       return new Date(iso).toLocaleTimeString();
     }
 
+    function fmtScale(a) {
+      if (a.state === "running" && a.scale > 1) return "running " + a.runningCount + "/" + a.scale;
+      if (a.scale > 1) return a.state + " (\\u00d7" + a.scale + ")";
+      return a.state;
+    }
+
     function renderRow(a) {
       const color = stateColors[a.state] || "#6b7280";
       const status = a.statusText || a.lastError || "\\u2014";
       return '<tr>' +
         '<td><a href="/dashboard/agents/' + esc(a.name) + '/logs">' + esc(a.name) + '</a></td>' +
-        '<td><span class="state-dot" style="background:' + color + '"></span> ' + esc(a.state) + '</td>' +
+        '<td><span class="state-dot" style="background:' + color + '"></span> ' + esc(fmtScale(a)) + '</td>' +
         '<td class="status-text">' + esc(status) + '</td>' +
         '<td>' + fmtTime(a.lastRunAt) + '</td>' +
         '<td>' + (a.lastRunDuration != null ? fmtDur(a.lastRunDuration) : "\\u2014") + '</td>' +
@@ -200,7 +212,7 @@ export function renderDashboardPage(agents: AgentStatus[], schedulerInfo: Schedu
       const status = a.statusText || a.lastError || "\\u2014";
       return '<a href="/dashboard/agents/' + esc(a.name) + '/logs" class="agent-card">' +
         '<div class="card-header"><span class="card-name">' + esc(a.name) + '</span>' +
-        '<span><span class="state-dot" style="background:' + color + '"></span>' + esc(a.state) + '</span></div>' +
+        '<span><span class="state-dot" style="background:' + color + '"></span>' + esc(fmtScale(a)) + '</span></div>' +
         '<div class="card-status">' + esc(status) + '</div>' +
         '<div class="card-meta"><span>Last: ' + fmtTime(a.lastRunAt) + '</span>' +
         '<span>' + (a.lastRunDuration != null ? fmtDur(a.lastRunDuration) : "") + '</span>' +

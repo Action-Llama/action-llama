@@ -186,4 +186,70 @@ describe("StatusTracker", () => {
 
     expect(listener).toHaveBeenCalledTimes(8);
   });
+
+  it("registers agent with scale", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev", 3);
+
+    const agent = tracker.getAllAgents()[0];
+    expect(agent.scale).toBe(3);
+    expect(agent.runningCount).toBe(0);
+  });
+
+  it("defaults scale to 1", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+
+    const agent = tracker.getAllAgents()[0];
+    expect(agent.scale).toBe(1);
+    expect(agent.runningCount).toBe(0);
+  });
+
+  it("startRun increments running count and sets state", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev", 3);
+
+    tracker.startRun("dev");
+    let agent = tracker.getAllAgents()[0];
+    expect(agent.runningCount).toBe(1);
+    expect(agent.state).toBe("running");
+
+    tracker.startRun("dev");
+    agent = tracker.getAllAgents()[0];
+    expect(agent.runningCount).toBe(2);
+    expect(agent.state).toBe("running");
+  });
+
+  it("endRun decrements running count and transitions to idle when zero", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev", 2);
+
+    tracker.startRun("dev");
+    tracker.startRun("dev");
+
+    tracker.endRun("dev", 5000);
+    let agent = tracker.getAllAgents()[0];
+    expect(agent.runningCount).toBe(1);
+    expect(agent.state).toBe("running"); // still one running
+
+    tracker.endRun("dev", 3000);
+    agent = tracker.getAllAgents()[0];
+    expect(agent.runningCount).toBe(0);
+    expect(agent.state).toBe("idle");
+    expect(agent.lastRunDuration).toBe(3000);
+  });
+
+  it("endRun with error sets error state even if other instances running", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev", 2);
+
+    tracker.startRun("dev");
+    tracker.startRun("dev");
+
+    tracker.endRun("dev", 5000, "Session failed");
+    const agent = tracker.getAllAgents()[0];
+    expect(agent.runningCount).toBe(1);
+    expect(agent.state).toBe("error");
+    expect(agent.lastError).toBe("Session failed");
+  });
 });

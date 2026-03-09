@@ -10,6 +10,8 @@ export interface AgentStatus {
   lastRunDuration: number | null; // ms
   nextRunAt: Date | null;
   queuedWebhooks: number;
+  scale: number;        // total runner pool size
+  runningCount: number; // how many runners are currently active
 }
 
 export interface SchedulerInfo {
@@ -35,7 +37,7 @@ export class StatusTracker extends EventEmitter {
   private recentLogs: LogLine[] = [];
   private maxLogs = 100;
 
-  registerAgent(name: string): void {
+  registerAgent(name: string, scale = 1): void {
     this.agents.set(name, {
       name,
       state: "idle",
@@ -46,6 +48,8 @@ export class StatusTracker extends EventEmitter {
       lastRunDuration: null,
       nextRunAt: null,
       queuedWebhooks: 0,
+      scale,
+      runningCount: 0,
     });
     this.emit("update");
   }
@@ -58,6 +62,35 @@ export class StatusTracker extends EventEmitter {
       agent.statusText = null;
       agent.lastError = null;
     }
+    this.emit("update");
+  }
+
+  /** Increment running count and set state to running */
+  startRun(name: string): void {
+    const agent = this.agents.get(name);
+    if (!agent) return;
+    agent.runningCount = Math.min(agent.runningCount + 1, agent.scale);
+    agent.state = "running";
+    agent.statusText = null;
+    agent.lastError = null;
+    this.emit("update");
+  }
+
+  /** Decrement running count and update state accordingly */
+  endRun(name: string, durationMs: number, error?: string): void {
+    const agent = this.agents.get(name);
+    if (!agent) return;
+    agent.runningCount = Math.max(agent.runningCount - 1, 0);
+    agent.lastRunAt = new Date();
+    agent.lastRunDuration = durationMs;
+    agent.statusText = null;
+    if (error) {
+      agent.lastError = error;
+      agent.state = "error";
+    } else if (agent.runningCount === 0) {
+      agent.state = "idle";
+    }
+    // If still running instances, keep state as "running"
     this.emit("update");
   }
 

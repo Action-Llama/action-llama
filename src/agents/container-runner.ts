@@ -141,7 +141,7 @@ export class ContainerAgentRunner {
     this._wasSilent = false;
     this._triggers = [];
     this._triggerAccum = null;
-    this.statusTracker?.setAgentState(this.agentConfig.name, "running");
+    this.statusTracker?.startRun(this.agentConfig.name);
     
     if (triggerInfo) {
       const triggerDetails = triggerInfo.type === 'agent' && triggerInfo.source 
@@ -251,7 +251,7 @@ export class ContainerAgentRunner {
         await this.runtime.remove(containerName);
       }
       const elapsed = Date.now() - runStartTime;
-      this.statusTracker?.completeRun(this.agentConfig.name, elapsed, runError);
+      this.statusTracker?.endRun(this.agentConfig.name, elapsed, runError);
       this._running = false;
     }
     return { result: runResult, triggers: this._triggers };

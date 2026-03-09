@@ -79,7 +79,11 @@ function Header({ info, agentCount, agents }: { info: SchedulerInfo | null; agen
 
 function AgentRow({ agent, isSelected }: { agent: AgentStatus; isSelected: boolean }) {
   const stateColor = agent.state === "running" ? "green" : agent.state === "building" ? "yellow" : agent.state === "error" ? "red" : "white";
-  const stateLabel = agent.state === "running" ? "Running" : agent.state === "building" ? "Building" : agent.state === "error" ? "Error" : "Idle";
+  const stateLabel = agent.state === "running"
+    ? agent.scale > 1 ? `Running ${agent.runningCount}/${agent.scale}` : "Running"
+    : agent.state === "building" ? "Building"
+    : agent.state === "error" ? "Error"
+    : agent.scale > 1 ? `Idle (×${agent.scale})` : "Idle";
 
   // Show status text, or last error for error state
   const detail = agent.statusText
@@ -99,7 +103,7 @@ function AgentRow({ agent, isSelected }: { agent: AgentStatus; isSelected: boole
             {isSelected ? "▶ " : "  "}{agent.name}
           </Text>
         </Box>
-        <Box width={10}>
+        <Box width={16}>
           <Text color={isSelected ? "white" : stateColor}>{stateLabel}</Text>
         </Box>
         <Box width={10}>
