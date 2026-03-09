@@ -115,12 +115,11 @@ describe("startScheduler", () => {
   it("creates runner pools for each agent", async () => {
     const { runnerPools } = await startScheduler(tmpDir);
     expect(Object.keys(runnerPools).sort()).toEqual(["dev", "devops", "reviewer"]);
-    
+
     // Each pool should have default scale of 1
     for (const poolName of Object.keys(runnerPools)) {
       const pool = runnerPools[poolName];
-      expect(pool.scale).toBe(1);
-      expect(pool.runners).toHaveLength(1);
+      expect(pool.size).toBe(1);
     }
   });
 
@@ -276,7 +275,6 @@ describe("startScheduler", () => {
       for (const agent of agents) {
         const agentDir = resolve(tmpDir, agent.name);
         mkdirSync(agentDir, { recursive: true });
-        // Strip name before writing (matches scaffold behavior — name is injected at load time)
         const { name: _, ...configToWrite } = agent;
         writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML(configToWrite as Record<string, unknown>));
         mkdirSync(resolve(tmpDir, ".al", "state", agent.name), { recursive: true });
@@ -293,91 +291,33 @@ describe("startScheduler", () => {
 
     it("creates multiple runners when scale > 1", async () => {
       const { runnerPools } = await startScheduler(tmpDir);
-      
+
       // scaled-agent should have 3 runners
-      expect(runnerPools["scaled-agent"].scale).toBe(3);
-      expect(runnerPools["scaled-agent"].runners).toHaveLength(3);
-      
+      expect(runnerPools["scaled-agent"].size).toBe(3);
+
       // single-agent should have 1 runner (default)
-      expect(runnerPools["single-agent"].scale).toBe(1);
-      expect(runnerPools["single-agent"].runners).toHaveLength(1);
+      expect(runnerPools["single-agent"].size).toBe(1);
     });
 
-    it("allows concurrent runs up to scale limit", async () => {
-      // Mock some runners as running
-      const runningStates = new Map<number, boolean>();
-      let callIndex = 0;
-
-      // Override the mock to simulate different runners with different running states
-      vi.mocked(mockRun).mockImplementation(() => {
-        const currentCallIndex = callIndex++;
-        runningStates.set(currentCallIndex, true);
-        
-        // Simulate async work by keeping the runner "running" briefly
-        return new Promise((resolve) => {
-          setTimeout(() => {
-            runningStates.set(currentCallIndex, false);
-            resolve({ result: "silent", triggers: [] });
-          }, 100);
-        });
-      });
-
-      // Override isRunning to track per-call
-      Object.defineProperty(mockRun, 'isRunning', {
-        get() {
-          return Array.from(runningStates.values()).some(running => running);
-        }
-      });
-
+    it("handles busy runners with scale", async () => {
       const { runnerPools } = await startScheduler(tmpDir);
-      vi.clearAllMocks();
-      callIndex = 0;
 
-      // Trigger multiple cron runs quickly
-      const cronPromises = [];
-      for (let i = 0; i < 5; i++) {
-        cronPromises.push(cronCallbacks[0]()); // scaled-agent cron
-      }
-
-      // Wait for all to settle
-      await Promise.all(cronPromises);
-
-      // scaled-agent can run up to 3 concurrent instances
-      // single-agent can run 1 instance
-      // The exact number depends on timing, but we should see multiple calls
-      expect(mockRun).toHaveBeenCalled();
+      expect(runnerPools["scaled-agent"].size).toBe(3);
+      expect(runnerPools["scaled-agent"].hasRunningJobs).toBe(false);
+      expect(runnerPools["scaled-agent"].runningJobCount).toBe(0);
     });
 
-    it("queues webhooks when all runners are busy", async () => {
-      // Set up a webhook project
-      const globalConfig = {
-        webhooks: {
-          github: { type: "github", credential: "default" }
-        }
-      };
-      writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
+    it("logs scale configuration", async () => {
+      await startScheduler(tmpDir);
 
-      const agent = {
-        name: "webhook-agent", 
-        credentials: ["github_token:default"], 
-        model: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
-        scale: 2,
-        webhooks: [{ source: "github", events: ["issues"], actions: ["opened"] }]
-      };
-      
-      const agentDir = resolve(tmpDir, agent.name);
-      mkdirSync(agentDir, { recursive: true });
-      const { name: _, ...configToWrite } = agent;
-      writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML(configToWrite as Record<string, unknown>));
-
-      // Mock all runners as busy
-      mockIsRunning = true;
-      
-      const { runnerPools } = await startScheduler(tmpDir);
-      
-      // Verify webhook agent has scale of 2
-      expect(runnerPools["webhook-agent"].scale).toBe(2);
-      expect(runnerPools["webhook-agent"].runners).toHaveLength(2);
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        { agent: "scaled-agent", scale: 3 },
+        "Created runner pool"
+      );
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        { agent: "single-agent", scale: 1 },
+        "Created runner pool"
+      );
     });
   });
 });

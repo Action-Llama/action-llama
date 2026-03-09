@@ -1,0 +1,140 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { RunnerPool } from "../../src/scheduler/runner-pool.js";
+
+interface MockRunner {
+  isRunning: boolean;
+  run: Function;
+}
+
+describe("RunnerPool", () => {
+  let pool: RunnerPool;
+  let runner1: MockRunner;
+  let runner2: MockRunner;
+  let runner3: MockRunner;
+
+  beforeEach(() => {
+    runner1 = { isRunning: false, run: vi.fn() };
+    runner2 = { isRunning: false, run: vi.fn() };
+    runner3 = { isRunning: false, run: vi.fn() };
+  });
+
+  describe("constructor", () => {
+    it("throws if no runners provided", () => {
+      expect(() => new RunnerPool([])).toThrow("RunnerPool requires at least one runner");
+    });
+
+    it("creates pool with single runner", () => {
+      pool = new RunnerPool([runner1]);
+      expect(pool.size).toBe(1);
+    });
+
+    it("creates pool with multiple runners", () => {
+      pool = new RunnerPool([runner1, runner2, runner3]);
+      expect(pool.size).toBe(3);
+    });
+  });
+
+  describe("getAvailableRunner", () => {
+    beforeEach(() => {
+      pool = new RunnerPool([runner1, runner2, runner3]);
+    });
+
+    it("returns available runner when all are idle", () => {
+      const available = pool.getAvailableRunner();
+      expect(available).toBeTruthy();
+      expect([runner1, runner2, runner3]).toContain(available);
+    });
+
+    it("returns available runner when some are busy", () => {
+      runner1.isRunning = true;
+      runner2.isRunning = true;
+
+      const available = pool.getAvailableRunner();
+      expect(available).toBe(runner3);
+    });
+
+    it("returns null when all runners are busy", () => {
+      runner1.isRunning = true;
+      runner2.isRunning = true;
+      runner3.isRunning = true;
+
+      const available = pool.getAvailableRunner();
+      expect(available).toBeNull();
+    });
+  });
+
+  describe("getNextRunner", () => {
+    beforeEach(() => {
+      pool = new RunnerPool([runner1, runner2, runner3]);
+    });
+
+    it("returns runners in round-robin order", () => {
+      expect(pool.getNextRunner()).toBe(runner1);
+      expect(pool.getNextRunner()).toBe(runner2);
+      expect(pool.getNextRunner()).toBe(runner3);
+      expect(pool.getNextRunner()).toBe(runner1); // wraps around
+    });
+
+    it("returns busy runners if they are next in rotation", () => {
+      runner2.isRunning = true;
+      
+      expect(pool.getNextRunner()).toBe(runner1);
+      expect(pool.getNextRunner()).toBe(runner2); // still returns busy runner
+      expect(pool.getNextRunner()).toBe(runner3);
+    });
+  });
+
+  describe("status properties", () => {
+    beforeEach(() => {
+      pool = new RunnerPool([runner1, runner2, runner3]);
+    });
+
+    it("hasRunningJobs returns false when all idle", () => {
+      expect(pool.hasRunningJobs).toBe(false);
+    });
+
+    it("hasRunningJobs returns true when any running", () => {
+      runner2.isRunning = true;
+      expect(pool.hasRunningJobs).toBe(true);
+    });
+
+    it("runningJobCount returns correct count", () => {
+      expect(pool.runningJobCount).toBe(0);
+      
+      runner1.isRunning = true;
+      expect(pool.runningJobCount).toBe(1);
+      
+      runner3.isRunning = true;
+      expect(pool.runningJobCount).toBe(2);
+    });
+
+    it("size returns total runner count", () => {
+      expect(pool.size).toBe(3);
+    });
+
+    it("allRunners returns copy of runners array", () => {
+      const runners = pool.allRunners;
+      expect(runners).toEqual([runner1, runner2, runner3]);
+      expect(runners).not.toBe(pool.allRunners); // should be a new array each time
+    });
+  });
+
+  describe("single runner pool", () => {
+    beforeEach(() => {
+      pool = new RunnerPool([runner1]);
+    });
+
+    it("getAvailableRunner works with single runner", () => {
+      expect(pool.getAvailableRunner()).toBe(runner1);
+      
+      runner1.isRunning = true;
+      expect(pool.getAvailableRunner()).toBeNull();
+    });
+
+    it("getNextRunner always returns the same runner", () => {
+      expect(pool.getNextRunner()).toBe(runner1);
+      expect(pool.getNextRunner()).toBe(runner1);
+      expect(pool.getNextRunner()).toBe(runner1);
+    });
+  });
+});
