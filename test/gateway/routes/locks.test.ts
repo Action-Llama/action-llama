@@ -53,15 +53,15 @@ describe("POST /locks/acquire", () => {
   afterEach(() => lockStore.dispose());
 
   it("acquires a free lock and returns 200", async () => {
-    const res = await acquire(app, { secret: "secret-a", resource: "githubIssue", key: "acme/app#42" });
+    const res = await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#42" });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ ok: true, resource: "githubIssue", key: "acme/app#42" });
+    expect(body).toEqual({ ok: true, resourceKey: "github issue acme/app#42" });
   });
 
   it("returns 409 when lock is held by another agent", async () => {
-    await acquire(app, { secret: "secret-a", resource: "githubIssue", key: "acme/app#42" });
-    const res = await acquire(app, { secret: "secret-b", resource: "githubIssue", key: "acme/app#42" });
+    await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#42" });
+    const res = await acquire(app, { secret: "secret-b", resourceKey: "github issue acme/app#42" });
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.ok).toBe(false);
@@ -70,8 +70,8 @@ describe("POST /locks/acquire", () => {
   });
 
   it("returns 409 when agent already holds a different lock", async () => {
-    await acquire(app, { secret: "secret-a", resource: "githubIssue", key: "acme/app#1" });
-    const res = await acquire(app, { secret: "secret-a", resource: "githubIssue", key: "acme/app#2" });
+    await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#1" });
+    const res = await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#2" });
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.ok).toBe(false);
@@ -79,7 +79,7 @@ describe("POST /locks/acquire", () => {
   });
 
   it("returns 403 for invalid secret", async () => {
-    const res = await acquire(app, { secret: "bad", resource: "githubIssue", key: "x" });
+    const res = await acquire(app, { secret: "bad", resourceKey: "github issue x" });
     expect(res.status).toBe(403);
   });
 
@@ -89,13 +89,13 @@ describe("POST /locks/acquire", () => {
   });
 
   it("returns 400 for missing secret", async () => {
-    const res = await acquire(app, { resource: "githubIssue", key: "x" });
+    const res = await acquire(app, { resourceKey: "github issue x" });
     expect(res.status).toBe(400);
   });
 
   it("allows same agent to re-acquire its own lock", async () => {
-    await acquire(app, { secret: "secret-a", resource: "githubIssue", key: "acme/app#42" });
-    const res = await acquire(app, { secret: "secret-a", resource: "githubIssue", key: "acme/app#42" });
+    await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#42" });
+    const res = await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#42" });
     expect(res.status).toBe(200);
   });
 });
@@ -111,15 +111,15 @@ describe("POST /locks/release", () => {
   afterEach(() => lockStore.dispose());
 
   it("releases a lock held by the caller", async () => {
-    await acquire(app, { secret: "secret-a", resource: "githubIssue", key: "acme/app#42" });
-    const res = await release(app, { secret: "secret-a", resource: "githubIssue", key: "acme/app#42" });
+    await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#42" });
+    const res = await release(app, { secret: "secret-a", resourceKey: "github issue acme/app#42" });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
   });
 
   it("returns 409 when lock is held by another agent", async () => {
-    await acquire(app, { secret: "secret-a", resource: "githubIssue", key: "acme/app#42" });
-    const res = await release(app, { secret: "secret-b", resource: "githubIssue", key: "acme/app#42" });
+    await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#42" });
+    const res = await release(app, { secret: "secret-b", resourceKey: "github issue acme/app#42" });
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.ok).toBe(false);
@@ -127,12 +127,12 @@ describe("POST /locks/release", () => {
   });
 
   it("returns 404 for non-existent lock", async () => {
-    const res = await release(app, { secret: "secret-a", resource: "githubIssue", key: "nope" });
+    const res = await release(app, { secret: "secret-a", resourceKey: "github issue nope" });
     expect(res.status).toBe(404);
   });
 
   it("returns 403 for invalid secret", async () => {
-    const res = await release(app, { secret: "bad", resource: "githubIssue", key: "x" });
+    const res = await release(app, { secret: "bad", resourceKey: "github issue x" });
     expect(res.status).toBe(403);
   });
 });
@@ -148,8 +148,8 @@ describe("POST /locks/heartbeat", () => {
   afterEach(() => lockStore.dispose());
 
   it("extends TTL on a held lock", async () => {
-    await acquire(app, { secret: "secret-a", resource: "githubIssue", key: "acme/app#42" });
-    const res = await heartbeat(app, { secret: "secret-a", resource: "githubIssue", key: "acme/app#42" });
+    await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#42" });
+    const res = await heartbeat(app, { secret: "secret-a", resourceKey: "github issue acme/app#42" });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ok).toBe(true);
@@ -157,18 +157,18 @@ describe("POST /locks/heartbeat", () => {
   });
 
   it("returns 409 for lock held by another agent", async () => {
-    await acquire(app, { secret: "secret-a", resource: "githubIssue", key: "acme/app#42" });
-    const res = await heartbeat(app, { secret: "secret-b", resource: "githubIssue", key: "acme/app#42" });
+    await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#42" });
+    const res = await heartbeat(app, { secret: "secret-b", resourceKey: "github issue acme/app#42" });
     expect(res.status).toBe(409);
   });
 
   it("returns 404 for non-existent lock", async () => {
-    const res = await heartbeat(app, { secret: "secret-a", resource: "githubIssue", key: "nope" });
+    const res = await heartbeat(app, { secret: "secret-a", resourceKey: "github issue nope" });
     expect(res.status).toBe(404);
   });
 
   it("returns 403 for invalid secret", async () => {
-    const res = await heartbeat(app, { secret: "bad", resource: "githubIssue", key: "x" });
+    const res = await heartbeat(app, { secret: "bad", resourceKey: "github issue x" });
     expect(res.status).toBe(403);
   });
 
@@ -189,8 +189,8 @@ describe("GET /locks/list", () => {
   afterEach(() => lockStore.dispose());
 
   it("returns all active locks", async () => {
-    await acquire(app, { secret: "secret-a", resource: "githubIssue", key: "acme/app#1" });
-    await acquire(app, { secret: "secret-b", resource: "githubPR", key: "acme/app#2" });
+    await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#1" });
+    await acquire(app, { secret: "secret-b", resourceKey: "github pr acme/app#2" });
     const res = await app.request("/locks/list?secret=secret-a");
     expect(res.status).toBe(200);
     const body = await res.json();

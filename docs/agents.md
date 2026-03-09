@@ -100,7 +100,7 @@ Skills currently taught to agents:
 | **Locks** | `LOCK(...)`, `UNLOCK(...)`, `HEARTBEAT(...)` | Resource locking for parallel coordination. See [Resource locks](#resource-locks). |
 | **Credentials** | `GITHUB_TOKEN`, `gh`, `git`, etc. | Credential access and tool usage. See [Credentials](credentials.md). |
 
-Playbook authors write the shorthand naturally (e.g. `LOCK("githubIssue", "acme/app#42")`). The agent learns what it means from the preamble — no need to document curl commands or API endpoints in your playbook.
+Playbook authors write the shorthand naturally (e.g. `LOCK("github issue acme/app#42")`). The agent learns what it means from the preamble — no need to document curl commands or API endpoints in your playbook.
 
 ### Signals
 
@@ -141,16 +141,16 @@ See [Docker docs](docker.md) for the full container reference including the star
 
 ## Resource locks
 
-When you set `parallelism > 1` on an agent, multiple instances run concurrently. Without coordination, two instances might pick up the same GitHub issue, review the same PR, or deploy the same service at the same time. Resource locks prevent this.
+When you set `scale > 1` on an agent, multiple instances run concurrently. Without coordination, two instances might pick up the same GitHub issue, review the same PR, or deploy the same service at the same time. Resource locks prevent this.
 
-Locks are managed by the scheduler and available to all agents running in Docker mode. Each lock is identified by a **resource type** and a **key** — for example, `LOCK("githubIssue", "acme/app#42")`.
+Locks are managed by the scheduler and available to all agents running in Docker mode. Each lock is identified by a **resource key** — for example, `LOCK("github issue acme/app#42")`.
 
 ### How it works
 
-1. Before working on a shared resource, the agent calls `LOCK("resource", "key")`.
+1. Before working on a shared resource, the agent calls `LOCK("resource key")`.
 2. If the lock is free, the agent gets it and proceeds.
 3. If another instance already holds the lock, the agent gets back the holder's name and skips that resource.
-4. When done, the agent calls `UNLOCK("resource", "key")`.
+4. When done, the agent calls `UNLOCK("resource key")`.
 
 The agent learns the lock API from a preamble injected before the playbook runs. Playbook authors just write the shorthand — no need to think about HTTP endpoints or authentication.
 
@@ -158,9 +158,9 @@ The agent learns the lock API from a preamble injected before the playbook runs.
 
 | Operation | Description |
 |-----------|-------------|
-| `LOCK(resource, key)` | Acquire an exclusive lock on a resource. Fails if another instance holds it. |
-| `UNLOCK(resource, key)` | Release a lock. Only the holder can release. |
-| `HEARTBEAT(resource, key)` | Reset the TTL on a held lock. Use during long-running work to prevent expiry. |
+| `LOCK(resourceKey)` | Acquire an exclusive lock on a resource. Fails if another instance holds it. |
+| `UNLOCK(resourceKey)` | Release a lock. Only the holder can release. |
+| `HEARTBEAT(resourceKey)` | Reset the TTL on a held lock. Use during long-running work to prevent expiry. |
 
 ### One lock at a time
 
@@ -187,23 +187,23 @@ When a container exits — whether it finishes successfully, hits an error, or t
 
 1. List open issues labeled "agent" in repos from `<agent-config>`
 2. For each issue:
-   - LOCK("githubIssue", "owner/repo#123")
+   - LOCK("github issue owner/repo#123")
    - If the lock fails, skip this issue — another instance is handling it
    - Clone the repo, create a branch, implement the fix
    - Open a PR and link it to the issue
-   - UNLOCK("githubIssue", "owner/repo#123")
+   - UNLOCK("github issue owner/repo#123")
 3. If there are no issues to work on, respond with [SILENT]
 ```
 
-### Resource naming conventions
+### Resource key conventions
 
-Use descriptive resource types and unique keys:
+Use descriptive, unique keys:
 
-| Resource | Key format | Example |
-|----------|-----------|---------|
-| `githubIssue` | `owner/repo#number` | `LOCK("githubIssue", "acme/app#42")` |
-| `githubPR` | `owner/repo#number` | `LOCK("githubPR", "acme/app#17")` |
-| `deployment` | `service-name` | `LOCK("deployment", "api-prod")` |
+| Resource key | Example |
+|-------------|---------|
+| `github issue owner/repo#number` | `LOCK("github issue acme/app#42")` |
+| `github pr owner/repo#number` | `LOCK("github pr acme/app#17")` |
+| `deploy service-name` | `LOCK("deploy api-prod")` |
 
 ### Configuration
 

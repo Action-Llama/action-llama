@@ -15,30 +15,30 @@ describe("LockStore", () => {
 
   describe("acquire", () => {
     it("succeeds when lock is free", () => {
-      const result = store.acquire("githubIssue", "acme/app#42", "agent-a");
+      const result = store.acquire("github issue acme/app#42", "agent-a");
       expect(result).toEqual({ ok: true });
     });
 
     it("returns conflict when lock is held by another agent", () => {
-      store.acquire("githubIssue", "acme/app#42", "agent-a");
-      const result = store.acquire("githubIssue", "acme/app#42", "agent-b");
+      store.acquire("github issue acme/app#42", "agent-a");
+      const result = store.acquire("github issue acme/app#42", "agent-b");
       expect(result.ok).toBe(false);
       expect(result.holder).toBe("agent-a");
       expect(result.heldSince).toBeTypeOf("number");
     });
 
     it("allows same holder to re-acquire (idempotent)", () => {
-      store.acquire("githubIssue", "acme/app#42", "agent-a");
-      const result = store.acquire("githubIssue", "acme/app#42", "agent-a");
+      store.acquire("github issue acme/app#42", "agent-a");
+      const result = store.acquire("github issue acme/app#42", "agent-a");
       expect(result).toEqual({ ok: true });
     });
 
     it("allows acquire after lock expires", () => {
       vi.useFakeTimers();
       try {
-        store.acquire("githubIssue", "acme/app#42", "agent-a", 1);
+        store.acquire("github issue acme/app#42", "agent-a", 1);
         vi.advanceTimersByTime(1500);
-        const result = store.acquire("githubIssue", "acme/app#42", "agent-b");
+        const result = store.acquire("github issue acme/app#42", "agent-b");
         expect(result).toEqual({ ok: true });
       } finally {
         vi.useRealTimers();
@@ -48,55 +48,55 @@ describe("LockStore", () => {
     it("uses custom TTL when provided", () => {
       vi.useFakeTimers();
       try {
-        store.acquire("githubIssue", "acme/app#42", "agent-a", 2);
+        store.acquire("github issue acme/app#42", "agent-a", 2);
         vi.advanceTimersByTime(1500);
         // Still locked at 1.5s
-        const conflict = store.acquire("githubIssue", "acme/app#42", "agent-b");
+        const conflict = store.acquire("github issue acme/app#42", "agent-b");
         expect(conflict.ok).toBe(false);
         vi.advanceTimersByTime(1000);
         // Expired at 2.5s
-        const success = store.acquire("githubIssue", "acme/app#42", "agent-b");
+        const success = store.acquire("github issue acme/app#42", "agent-b");
         expect(success.ok).toBe(true);
       } finally {
         vi.useRealTimers();
       }
     });
 
-    it("treats different resources independently", () => {
-      store.acquire("githubIssue", "acme/app#42", "agent-a");
+    it("treats different resource keys independently", () => {
+      store.acquire("github issue acme/app#42", "agent-a");
       // Different agent can lock a different resource
-      const result = store.acquire("githubPR", "acme/app#42", "agent-b");
+      const result = store.acquire("github pr acme/app#42", "agent-b");
       expect(result).toEqual({ ok: true });
     });
 
     it("treats different keys independently", () => {
-      store.acquire("githubIssue", "acme/app#42", "agent-a");
+      store.acquire("github issue acme/app#42", "agent-a");
       // Different agent can lock a different key
-      const result = store.acquire("githubIssue", "acme/app#99", "agent-b");
+      const result = store.acquire("github issue acme/app#99", "agent-b");
       expect(result).toEqual({ ok: true });
     });
 
     it("rejects when holder already holds a different lock", () => {
-      store.acquire("githubIssue", "acme/app#1", "agent-a");
-      const result = store.acquire("githubIssue", "acme/app#2", "agent-a");
+      store.acquire("github issue acme/app#1", "agent-a");
+      const result = store.acquire("github issue acme/app#2", "agent-a");
       expect(result.ok).toBe(false);
       expect(result.reason).toContain("already holding lock");
       expect(result.reason).toContain("acme/app#1");
     });
 
     it("allows acquiring a different lock after releasing the first", () => {
-      store.acquire("githubIssue", "acme/app#1", "agent-a");
-      store.release("githubIssue", "acme/app#1", "agent-a");
-      const result = store.acquire("githubIssue", "acme/app#2", "agent-a");
+      store.acquire("github issue acme/app#1", "agent-a");
+      store.release("github issue acme/app#1", "agent-a");
+      const result = store.acquire("github issue acme/app#2", "agent-a");
       expect(result).toEqual({ ok: true });
     });
 
     it("allows acquiring a different lock after the first expires", () => {
       vi.useFakeTimers();
       try {
-        store.acquire("githubIssue", "acme/app#1", "agent-a", 1);
+        store.acquire("github issue acme/app#1", "agent-a", 1);
         vi.advanceTimersByTime(1500);
-        const result = store.acquire("githubIssue", "acme/app#2", "agent-a");
+        const result = store.acquire("github issue acme/app#2", "agent-a");
         expect(result).toEqual({ ok: true });
       } finally {
         vi.useRealTimers();
@@ -106,28 +106,28 @@ describe("LockStore", () => {
 
   describe("release", () => {
     it("succeeds for the lock owner", () => {
-      store.acquire("githubIssue", "acme/app#42", "agent-a");
-      const result = store.release("githubIssue", "acme/app#42", "agent-a");
+      store.acquire("github issue acme/app#42", "agent-a");
+      const result = store.release("github issue acme/app#42", "agent-a");
       expect(result).toEqual({ ok: true });
     });
 
     it("fails for non-owner", () => {
-      store.acquire("githubIssue", "acme/app#42", "agent-a");
-      const result = store.release("githubIssue", "acme/app#42", "agent-b");
+      store.acquire("github issue acme/app#42", "agent-a");
+      const result = store.release("github issue acme/app#42", "agent-b");
       expect(result.ok).toBe(false);
       expect(result.reason).toContain("agent-a");
     });
 
     it("fails for non-existent lock", () => {
-      const result = store.release("githubIssue", "acme/app#99", "agent-a");
+      const result = store.release("github issue acme/app#99", "agent-a");
       expect(result.ok).toBe(false);
       expect(result.reason).toBe("lock not found");
     });
 
     it("allows re-acquire after release", () => {
-      store.acquire("githubIssue", "acme/app#42", "agent-a");
-      store.release("githubIssue", "acme/app#42", "agent-a");
-      const result = store.acquire("githubIssue", "acme/app#42", "agent-b");
+      store.acquire("github issue acme/app#42", "agent-a");
+      store.release("github issue acme/app#42", "agent-a");
+      const result = store.acquire("github issue acme/app#42", "agent-b");
       expect(result).toEqual({ ok: true });
     });
   });
@@ -136,15 +136,15 @@ describe("LockStore", () => {
     it("extends the TTL on a held lock", () => {
       vi.useFakeTimers();
       try {
-        store.acquire("githubIssue", "acme/app#42", "agent-a", 2);
+        store.acquire("github issue acme/app#42", "agent-a", 2);
         vi.advanceTimersByTime(1500);
         // Heartbeat resets TTL
-        const result = store.heartbeat("githubIssue", "acme/app#42", "agent-a", 5);
+        const result = store.heartbeat("github issue acme/app#42", "agent-a", 5);
         expect(result.ok).toBe(true);
         expect(result.expiresAt).toBeTypeOf("number");
         // Should still be locked 3 seconds later (within new 5s TTL)
         vi.advanceTimersByTime(3000);
-        const conflict = store.acquire("githubIssue", "acme/app#42", "agent-b");
+        const conflict = store.acquire("github issue acme/app#42", "agent-b");
         expect(conflict.ok).toBe(false);
       } finally {
         vi.useRealTimers();
@@ -152,14 +152,14 @@ describe("LockStore", () => {
     });
 
     it("fails for non-owner", () => {
-      store.acquire("githubIssue", "acme/app#42", "agent-a");
-      const result = store.heartbeat("githubIssue", "acme/app#42", "agent-b");
+      store.acquire("github issue acme/app#42", "agent-a");
+      const result = store.heartbeat("github issue acme/app#42", "agent-b");
       expect(result.ok).toBe(false);
       expect(result.reason).toContain("agent-a");
     });
 
     it("fails for non-existent lock", () => {
-      const result = store.heartbeat("githubIssue", "acme/app#42", "agent-a");
+      const result = store.heartbeat("github issue acme/app#42", "agent-a");
       expect(result.ok).toBe(false);
       expect(result.reason).toBe("lock not found");
     });
@@ -167,9 +167,9 @@ describe("LockStore", () => {
     it("fails for expired lock", () => {
       vi.useFakeTimers();
       try {
-        store.acquire("githubIssue", "acme/app#42", "agent-a", 1);
+        store.acquire("github issue acme/app#42", "agent-a", 1);
         vi.advanceTimersByTime(1500);
-        const result = store.heartbeat("githubIssue", "acme/app#42", "agent-a");
+        const result = store.heartbeat("github issue acme/app#42", "agent-a");
         expect(result.ok).toBe(false);
         expect(result.reason).toBe("lock not found");
       } finally {
@@ -180,17 +180,17 @@ describe("LockStore", () => {
 
   describe("releaseAll", () => {
     it("releases the lock held by an agent", () => {
-      store.acquire("githubIssue", "acme/app#1", "agent-a");
+      store.acquire("github issue acme/app#1", "agent-a");
       const count = store.releaseAll("agent-a");
       expect(count).toBe(1);
-      expect(store.acquire("githubIssue", "acme/app#1", "agent-b").ok).toBe(true);
+      expect(store.acquire("github issue acme/app#1", "agent-b").ok).toBe(true);
     });
 
     it("does not release locks held by other agents", () => {
-      store.acquire("githubIssue", "acme/app#1", "agent-a");
-      store.acquire("githubIssue", "acme/app#2", "agent-b");
+      store.acquire("github issue acme/app#1", "agent-a");
+      store.acquire("github issue acme/app#2", "agent-b");
       store.releaseAll("agent-a");
-      const conflict = store.acquire("githubIssue", "acme/app#2", "agent-a");
+      const conflict = store.acquire("github issue acme/app#2", "agent-a");
       expect(conflict.ok).toBe(false);
       expect(conflict.holder).toBe("agent-b");
     });
@@ -200,24 +200,24 @@ describe("LockStore", () => {
     });
 
     it("allows holder to acquire a new lock after releaseAll", () => {
-      store.acquire("githubIssue", "acme/app#1", "agent-a");
+      store.acquire("github issue acme/app#1", "agent-a");
       store.releaseAll("agent-a");
-      const result = store.acquire("githubIssue", "acme/app#2", "agent-a");
+      const result = store.acquire("github issue acme/app#2", "agent-a");
       expect(result).toEqual({ ok: true });
     });
   });
 
   describe("list", () => {
     it("returns all active locks", () => {
-      store.acquire("githubIssue", "acme/app#1", "agent-a");
-      store.acquire("githubPR", "acme/app#2", "agent-b");
+      store.acquire("github issue acme/app#1", "agent-a");
+      store.acquire("github pr acme/app#2", "agent-b");
       const all = store.list();
       expect(all).toHaveLength(2);
     });
 
     it("filters by holder", () => {
-      store.acquire("githubIssue", "acme/app#1", "agent-a");
-      store.acquire("githubPR", "acme/app#2", "agent-b");
+      store.acquire("github issue acme/app#1", "agent-a");
+      store.acquire("github pr acme/app#2", "agent-b");
       const filtered = store.list("agent-a");
       expect(filtered).toHaveLength(1);
       expect(filtered[0].holder).toBe("agent-a");
@@ -226,19 +226,19 @@ describe("LockStore", () => {
     it("excludes expired locks", () => {
       vi.useFakeTimers();
       try {
-        store.acquire("githubIssue", "acme/app#1", "agent-a", 1);
-        store.acquire("githubPR", "acme/app#2", "agent-b", 60);
+        store.acquire("github issue acme/app#1", "agent-a", 1);
+        store.acquire("github pr acme/app#2", "agent-b", 60);
         vi.advanceTimersByTime(1500);
         const all = store.list();
         expect(all).toHaveLength(1);
-        expect(all[0].resource).toBe("githubPR");
+        expect(all[0].resourceKey).toBe("github pr acme/app#2");
       } finally {
         vi.useRealTimers();
       }
     });
 
     it("returns copies, not references", () => {
-      store.acquire("githubIssue", "acme/app#1", "agent-a");
+      store.acquire("github issue acme/app#1", "agent-a");
       const [entry] = store.list();
       entry.holder = "tampered";
       const [fresh] = store.list();
@@ -248,7 +248,7 @@ describe("LockStore", () => {
 
   describe("dispose", () => {
     it("clears all locks", () => {
-      store.acquire("githubIssue", "acme/app#1", "agent-a");
+      store.acquire("github issue acme/app#1", "agent-a");
       store.dispose();
       expect(store.list()).toHaveLength(0);
     });

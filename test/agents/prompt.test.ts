@@ -149,8 +149,8 @@ describe("buildLockSkill", () => {
 
   it("documents LOCK and UNLOCK operations", () => {
     const result = buildLockSkill();
-    expect(result).toContain("LOCK(resource, key)");
-    expect(result).toContain("UNLOCK(resource, key)");
+    expect(result).toContain("LOCK(resourceKey)");
+    expect(result).toContain("UNLOCK(resourceKey)");
   });
 
   it("includes curl examples with gateway vars", () => {
@@ -168,7 +168,7 @@ describe("buildLockSkill", () => {
 
   it("documents HEARTBEAT operation", () => {
     const result = buildLockSkill();
-    expect(result).toContain("HEARTBEAT(resource, key)");
+    expect(result).toContain("HEARTBEAT(resourceKey)");
     expect(result).toContain("$GATEWAY_URL/locks/heartbeat");
   });
 
@@ -182,7 +182,7 @@ describe("prompt skills integration", () => {
   it("includes lock skill in scheduled prompt when enabled", () => {
     const result = buildScheduledPrompt(agentConfig, { locking: true });
     expect(result).toContain("<skill-lock>");
-    expect(result).toContain("LOCK(resource, key)");
+    expect(result).toContain("LOCK(resourceKey)");
   });
 
   it("does not include lock skill when not enabled", () => {

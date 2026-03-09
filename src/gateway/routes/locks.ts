@@ -10,22 +10,19 @@ export function registerLockRoutes(
   logger: Logger
 ): void {
   app.post("/locks/acquire", async (c) => {
-    let body: { secret?: string; resource?: string; key?: string; ttl?: number };
+    let body: { secret?: string; resourceKey?: string; ttl?: number };
     try {
       body = await c.req.json();
     } catch {
       return c.json({ error: "invalid JSON body" }, 400);
     }
 
-    const { secret, resource, key, ttl } = body;
+    const { secret, resourceKey, ttl } = body;
     if (!secret || typeof secret !== "string") {
       return c.json({ error: "missing secret" }, 400);
     }
-    if (!resource || typeof resource !== "string") {
-      return c.json({ error: "missing resource" }, 400);
-    }
-    if (!key || typeof key !== "string") {
-      return c.json({ error: "missing key" }, 400);
+    if (!resourceKey || typeof resourceKey !== "string") {
+      return c.json({ error: "missing resourceKey" }, 400);
     }
 
     const reg = containerRegistry.get(secret);
@@ -33,21 +30,21 @@ export function registerLockRoutes(
       return c.json({ error: "invalid secret" }, 403);
     }
 
-    const result = lockStore.acquire(resource, key, reg.agentName, ttl);
+    const result = lockStore.acquire(resourceKey, reg.agentName, ttl);
 
     if (result.ok) {
-      logger.debug({ agent: reg.agentName, resource, key }, "lock acquired");
-      return c.json({ ok: true, resource, key });
+      logger.debug({ agent: reg.agentName, resourceKey }, "lock acquired");
+      return c.json({ ok: true, resourceKey });
     }
 
     // Distinguish "already holding another lock" from "someone else holds this lock"
     if (result.reason) {
-      logger.debug({ agent: reg.agentName, resource, key }, "lock rejected: " + result.reason);
+      logger.debug({ agent: reg.agentName, resourceKey }, "lock rejected: " + result.reason);
       return c.json({ ok: false, reason: result.reason }, 409);
     }
 
     logger.debug(
-      { agent: reg.agentName, resource, key, holder: result.holder },
+      { agent: reg.agentName, resourceKey, holder: result.holder },
       "lock conflict"
     );
     return c.json(
@@ -57,22 +54,19 @@ export function registerLockRoutes(
   });
 
   app.post("/locks/release", async (c) => {
-    let body: { secret?: string; resource?: string; key?: string };
+    let body: { secret?: string; resourceKey?: string };
     try {
       body = await c.req.json();
     } catch {
       return c.json({ error: "invalid JSON body" }, 400);
     }
 
-    const { secret, resource, key } = body;
+    const { secret, resourceKey } = body;
     if (!secret || typeof secret !== "string") {
       return c.json({ error: "missing secret" }, 400);
     }
-    if (!resource || typeof resource !== "string") {
-      return c.json({ error: "missing resource" }, 400);
-    }
-    if (!key || typeof key !== "string") {
-      return c.json({ error: "missing key" }, 400);
+    if (!resourceKey || typeof resourceKey !== "string") {
+      return c.json({ error: "missing resourceKey" }, 400);
     }
 
     const reg = containerRegistry.get(secret);
@@ -80,10 +74,10 @@ export function registerLockRoutes(
       return c.json({ error: "invalid secret" }, 403);
     }
 
-    const result = lockStore.release(resource, key, reg.agentName);
+    const result = lockStore.release(resourceKey, reg.agentName);
 
     if (result.ok) {
-      logger.debug({ agent: reg.agentName, resource, key }, "lock released");
+      logger.debug({ agent: reg.agentName, resourceKey }, "lock released");
       return c.json({ ok: true });
     }
 
@@ -92,22 +86,19 @@ export function registerLockRoutes(
   });
 
   app.post("/locks/heartbeat", async (c) => {
-    let body: { secret?: string; resource?: string; key?: string; ttl?: number };
+    let body: { secret?: string; resourceKey?: string; ttl?: number };
     try {
       body = await c.req.json();
     } catch {
       return c.json({ error: "invalid JSON body" }, 400);
     }
 
-    const { secret, resource, key, ttl } = body;
+    const { secret, resourceKey, ttl } = body;
     if (!secret || typeof secret !== "string") {
       return c.json({ error: "missing secret" }, 400);
     }
-    if (!resource || typeof resource !== "string") {
-      return c.json({ error: "missing resource" }, 400);
-    }
-    if (!key || typeof key !== "string") {
-      return c.json({ error: "missing key" }, 400);
+    if (!resourceKey || typeof resourceKey !== "string") {
+      return c.json({ error: "missing resourceKey" }, 400);
     }
 
     const reg = containerRegistry.get(secret);
@@ -115,10 +106,10 @@ export function registerLockRoutes(
       return c.json({ error: "invalid secret" }, 403);
     }
 
-    const result = lockStore.heartbeat(resource, key, reg.agentName, ttl);
+    const result = lockStore.heartbeat(resourceKey, reg.agentName, ttl);
 
     if (result.ok) {
-      logger.debug({ agent: reg.agentName, resource, key }, "lock heartbeat");
+      logger.debug({ agent: reg.agentName, resourceKey }, "lock heartbeat");
       return c.json({ ok: true, expiresAt: result.expiresAt });
     }
 

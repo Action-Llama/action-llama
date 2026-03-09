@@ -1,6 +1,5 @@
 export interface LockEntry {
-  resource: string;
-  key: string;
+  resourceKey: string;
   holder: string;
   heldSince: number;
   expiresAt: number;
@@ -26,7 +25,7 @@ export interface HeartbeatResult {
 
 export class LockStore {
   private locks = new Map<string, LockEntry>();
-  private holderLocks = new Map<string, string>(); // holder -> compound key
+  private holderLocks = new Map<string, string>(); // holder -> resourceKey
   private sweepTimer: ReturnType<typeof setInterval> | undefined;
   private defaultTTL: number;
 
@@ -36,26 +35,21 @@ export class LockStore {
     if (this.sweepTimer.unref) this.sweepTimer.unref();
   }
 
-  private compoundKey(resource: string, key: string): string {
-    return `${resource}:${key}`;
-  }
-
-  acquire(resource: string, key: string, holder: string, ttlSeconds?: number): AcquireResult {
-    const ck = this.compoundKey(resource, key);
-    const existing = this.locks.get(ck);
+  acquire(resourceKey: string, holder: string, ttlSeconds?: number): AcquireResult {
+    const existing = this.locks.get(resourceKey);
 
     // Check if this holder already holds a different lock
-    const existingHolderCk = this.holderLocks.get(holder);
-    if (existingHolderCk && existingHolderCk !== ck) {
-      const existingHolderLock = this.locks.get(existingHolderCk);
+    const existingHolderKey = this.holderLocks.get(holder);
+    if (existingHolderKey && existingHolderKey !== resourceKey) {
+      const existingHolderLock = this.locks.get(existingHolderKey);
       if (existingHolderLock && Date.now() < existingHolderLock.expiresAt) {
         return {
           ok: false,
-          reason: `already holding lock on ${existingHolderLock.resource}:${existingHolderLock.key} — release it first`,
+          reason: `already holding lock on ${existingHolderLock.resourceKey} — release it first`,
         };
       }
       // Expired — clean up
-      this.locks.delete(existingHolderCk);
+      this.locks.delete(existingHolderKey);
       this.holderLocks.delete(holder);
     }
 
@@ -63,7 +57,7 @@ export class LockStore {
       if (Date.now() >= existing.expiresAt) {
         // Expired — evict
         this.holderLocks.delete(existing.holder);
-        this.locks.delete(ck);
+        this.locks.delete(resourceKey);
       } else if (existing.holder !== holder) {
         return { ok: false, holder: existing.holder, heldSince: existing.heldSince };
       }
@@ -72,24 +66,22 @@ export class LockStore {
 
     const now = Date.now();
     const ttl = ttlSeconds ? ttlSeconds * 1000 : this.defaultTTL;
-    this.locks.set(ck, {
-      resource,
-      key,
+    this.locks.set(resourceKey, {
+      resourceKey,
       holder,
       heldSince: now,
       expiresAt: now + ttl,
     });
-    this.holderLocks.set(holder, ck);
+    this.holderLocks.set(holder, resourceKey);
     return { ok: true };
   }
 
-  release(resource: string, key: string, holder: string): ReleaseResult {
-    const ck = this.compoundKey(resource, key);
-    const existing = this.locks.get(ck);
+  release(resourceKey: string, holder: string): ReleaseResult {
+    const existing = this.locks.get(resourceKey);
 
     if (!existing || Date.now() >= existing.expiresAt) {
-      this.locks.delete(ck);
-      if (this.holderLocks.get(holder) === ck) this.holderLocks.delete(holder);
+      this.locks.delete(resourceKey);
+      if (this.holderLocks.get(holder) === resourceKey) this.holderLocks.delete(holder);
       return { ok: false, reason: "lock not found" };
     }
 
@@ -97,17 +89,16 @@ export class LockStore {
       return { ok: false, reason: `held by ${existing.holder}` };
     }
 
-    this.locks.delete(ck);
+    this.locks.delete(resourceKey);
     this.holderLocks.delete(holder);
     return { ok: true };
   }
 
-  heartbeat(resource: string, key: string, holder: string, ttlSeconds?: number): HeartbeatResult {
-    const ck = this.compoundKey(resource, key);
-    const existing = this.locks.get(ck);
+  heartbeat(resourceKey: string, holder: string, ttlSeconds?: number): HeartbeatResult {
+    const existing = this.locks.get(resourceKey);
 
     if (!existing || Date.now() >= existing.expiresAt) {
-      this.locks.delete(ck);
+      this.locks.delete(resourceKey);
       return { ok: false, reason: "lock not found" };
     }
 
@@ -122,9 +113,9 @@ export class LockStore {
 
   releaseAll(holder: string): number {
     let count = 0;
-    for (const [ck, entry] of this.locks) {
+    for (const [rk, entry] of this.locks) {
       if (entry.holder === holder) {
-        this.locks.delete(ck);
+        this.locks.delete(rk);
         count++;
       }
     }
@@ -145,10 +136,10 @@ export class LockStore {
 
   private sweep(): void {
     const now = Date.now();
-    for (const [ck, entry] of this.locks) {
+    for (const [rk, entry] of this.locks) {
       if (now >= entry.expiresAt) {
         this.holderLocks.delete(entry.holder);
-        this.locks.delete(ck);
+        this.locks.delete(rk);
       }
     }
   }
