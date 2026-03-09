@@ -19,8 +19,13 @@ describe("RunnerPool", () => {
   });
 
   describe("constructor", () => {
-    it("throws if no runners provided", () => {
-      expect(() => new RunnerPool([])).toThrow("RunnerPool requires at least one runner");
+    it("allows empty pool for disabled agents (scale = 0)", () => {
+      pool = new RunnerPool([]);
+      expect(pool.size).toBe(0);
+      expect(pool.getAvailableRunner()).toBeNull();
+      expect(pool.getNextRunner()).toBeNull();
+      expect(pool.hasRunningJobs).toBe(false);
+      expect(pool.runningJobCount).toBe(0);
     });
 
     it("creates pool with single runner", () => {

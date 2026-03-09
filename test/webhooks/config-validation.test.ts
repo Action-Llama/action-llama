@@ -43,4 +43,12 @@ describe("validateAgentConfig", () => {
       'Agent "test" must have a schedule, webhooks, or both.'
     );
   });
+
+  it("accepts agent with scale = 0 and no schedule or webhooks", () => {
+    expect(() => validateAgentConfig({ ...baseConfig, scale: 0 })).not.toThrow();
+  });
+
+  it("accepts agent with scale = 0 and a schedule", () => {
+    expect(() => validateAgentConfig({ ...baseConfig, scale: 0, schedule: "*/5 * * * *" })).not.toThrow();
+  });
 });

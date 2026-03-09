@@ -53,7 +53,7 @@ sentryProjects = ["web-app", "api"]
 |-------|------|----------|-------------|
 | `credentials` | string[] | Yes | Credential refs as `"type:instance"` needed at runtime |
 | `schedule` | string | No* | Cron expression for polling |
-| `scale` | number | No | Number of concurrent runs allowed (default: 1). Use lock skills in your playbook to coordinate instances. See [Resource Locks](agents.md#resource-locks). |
+| `scale` | number | No | Number of concurrent runs allowed (default: 1). Set to `0` to disable the agent. Use lock skills in your playbook to coordinate instances. See [Resource Locks](agents.md#resource-locks). |
 | `model` | table | No | LLM model configuration (falls back to `[model]` in project `config.toml`) |
 | `model.provider` | string | Yes* | LLM provider ("anthropic", "openai", "groq", "google", "xai", "mistral", "openrouter", or "custom") |
 | `model.model` | string | Yes* | Model ID |
@@ -62,14 +62,14 @@ sentryProjects = ["web-app", "api"]
 | `webhooks` | array | No* | Array of webhook trigger objects |
 | `params` | table | No | Custom key-value params for the agent prompt |
 
-*At least one of `schedule` or `webhooks` is required. *Required within `[model]` if the agent defines its own model block (otherwise inherits from project `config.toml`).
+*At least one of `schedule` or `webhooks` is required (unless `scale = 0`). *Required within `[model]` if the agent defines its own model block (otherwise inherits from project `config.toml`).
 
 ## Scale
 
 The `scale` field controls how many instances of an agent can run concurrently. This is useful for agents that handle high-volume workloads or when you want to process multiple tasks simultaneously.
 
 - **Default**: 1 (only one instance can run at a time)
-- **Minimum**: 1 
+- **Minimum**: 0 (disables the agent — no runners, cron jobs, or webhook bindings are created)
 - **Maximum**: No hard limit, but consider system resources and model API rate limits
 
 ### How it works
@@ -83,6 +83,7 @@ The `scale` field controls how many instances of an agent can run concurrently. 
 - **Dev agent** with `scale = 3`: Handle multiple GitHub issues simultaneously
 - **Review agent** with `scale = 2`: Review multiple PRs in parallel
 - **Monitoring agent** with `scale = 1`: Ensure only one instance processes alerts at a time
+- **Disabled agent** with `scale = 0`: Keep the config in the project but don't run it
 
 ### Resource considerations
 

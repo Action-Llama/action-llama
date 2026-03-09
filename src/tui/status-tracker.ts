@@ -42,7 +42,7 @@ export class StatusTracker extends EventEmitter {
     this.agents.set(name, {
       name,
       state: "idle",
-      enabled: true,
+      enabled: scale > 0,
       statusText: null,
       lastError: null,
       lastRunAt: null,

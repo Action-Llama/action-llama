@@ -205,6 +205,15 @@ describe("StatusTracker", () => {
     expect(agent.runningCount).toBe(0);
   });
 
+  it("registers scale = 0 agent as disabled", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev", 0);
+
+    const agent = tracker.getAllAgents()[0];
+    expect(agent.scale).toBe(0);
+    expect(agent.enabled).toBe(false);
+  });
+
   it("startRun increments running count and sets state", () => {
     const tracker = new StatusTracker();
     tracker.registerAgent("dev", 3);

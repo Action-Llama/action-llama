@@ -109,6 +109,9 @@ export function loadAgentConfig(projectPath: string, agentName: string): AgentCo
 }
 
 export function validateAgentConfig(config: AgentConfig): void {
+  // scale = 0 disables the agent — skip schedule/webhook requirement
+  if (config.scale === 0) return;
+
   if (!config.schedule && (!config.webhooks || config.webhooks.length === 0)) {
     throw new Error(
       `Agent "${config.name}" must have a schedule, webhooks, or both.`

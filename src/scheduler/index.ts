@@ -95,6 +95,10 @@ function dispatchTriggers(
       continue;
     }
     const pool = ctx.runnerPools[agent];
+    if (pool.size === 0) {
+      ctx.logger.info({ source: sourceAgent, target: agent }, "agent is disabled (scale=0), skipping trigger");
+      continue;
+    }
     const availableRunner = pool.getAvailableRunner();
     if (!availableRunner) {
       ctx.logger.warn({ source: sourceAgent, target: agent, running: pool.runningJobCount, scale: pool.size }, "all agent runners busy, skipping trigger");
@@ -203,8 +207,10 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     validateAgentConfig(config);
   }
 
-  // Validate credentials exist for each agent
-  const allCredentials = new Set(agentConfigs.flatMap((a) => a.credentials));
+  const activeAgentConfigs = agentConfigs.filter((a) => (a.scale ?? 1) > 0);
+
+  // Validate credentials exist for each active agent
+  const allCredentials = new Set(activeAgentConfigs.flatMap((a) => a.credentials));
   for (const credRef of allCredentials) {
     await backendRequireCredentialRef(credRef);
   }
@@ -231,11 +237,11 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   const maxTriggerDepth = globalConfig.maxTriggerDepth ?? DEFAULT_MAX_TRIGGER_DEPTH;
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const dockerEnabled = globalConfig.local?.enabled === true;
-  const anyWebhooks = agentConfigs.some((a) => a.webhooks?.length);
+  const anyWebhooks = activeAgentConfigs.some((a) => a.webhooks?.length);
 
   // Validate pi_auth is not used with Docker (containers can't access host auth storage)
   if (dockerEnabled) {
-    for (const config of agentConfigs) {
+    for (const config of activeAgentConfigs) {
       if (config.model.authType === "pi_auth") {
         throw new Error(
           `Agent "${config.name}" uses pi_auth which is not supported in Docker mode. ` +
@@ -250,7 +256,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // Validate all agent webhook sources reference valid global config entries
   if (anyWebhooks) {
-    for (const config of agentConfigs) {
+    for (const config of activeAgentConfigs) {
       for (const trigger of config.webhooks ?? []) {
         resolveWebhookSource(trigger.source, config.name, webhookSources);
       }
@@ -298,7 +304,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // Register agents early so the TUI shows them during image builds
   for (const agentConfig of agentConfigs) {
-    statusTracker?.registerAgent(agentConfig.name, agentConfig.scale || 1);
+    statusTracker?.registerAgent(agentConfig.name, agentConfig.scale ?? 1);
   }
 
   // Start gateway early if needed (before Docker builds) so users can see build status
@@ -386,13 +392,13 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     baseImage = globalConfig.local?.image || AWS_CONSTANTS.DEFAULT_IMAGE;
     logger.info({ image: baseImage }, "Building base image (this may take a few minutes on first run)...");
 
-    // Show all agents as "building" during the base image build
+    // Show all active agents as "building" during the base image build
     const setBuildProgress = (message: string) => {
-      for (const ac of agentConfigs) {
+      for (const ac of activeAgentConfigs) {
         statusTracker?.setAgentStatusText(ac.name, message);
       }
     };
-    for (const ac of agentConfigs) {
+    for (const ac of activeAgentConfigs) {
       statusTracker?.setAgentState(ac.name, "building");
     }
 
@@ -416,13 +422,13 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
     // 3. Build per-agent custom images in parallel
     const { existsSync } = await import("fs");
-    const agentsWithCustomImages = agentConfigs.filter(ac =>
+    const agentsWithCustomImages = activeAgentConfigs.filter(ac =>
       existsSync(resolvePath(projectPath, ac.name, "Dockerfile"))
     );
     const totalCustomImages = agentsWithCustomImages.length;
 
     // Agents without custom Dockerfiles use the base image
-    for (const ac of agentConfigs) {
+    for (const ac of activeAgentConfigs) {
       if (!agentsWithCustomImages.includes(ac)) {
         agentImages[ac.name] = baseImage;
       }
@@ -453,7 +459,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
     // 4. Push images to remote registry in parallel (no-op for local, tags+pushes for cloud)
     if (runtimeType !== "local") {
-      const imagesToPush = agentConfigs.filter(ac => {
+      const imagesToPush = activeAgentConfigs.filter(ac => {
         const currentImage = agentImages[ac.name] || baseImage;
         return !currentImage.includes("/");
       });
@@ -497,7 +503,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     : (_secret: string) => {};
 
   for (const agentConfig of agentConfigs) {
-    const scale = agentConfig.scale || 1;
+    const scale = agentConfig.scale ?? 1;
     const runners: PoolRunner[] = [];
 
     for (let i = 0; i < scale; i++) {
@@ -536,7 +542,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // Set up webhook bindings
   if (webhookRegistry) {
-    for (const agentConfig of agentConfigs) {
+    for (const agentConfig of activeAgentConfigs) {
       if (!agentConfig.webhooks?.length) continue;
 
       const pool = runnerPools[agentConfig.name];
@@ -597,7 +603,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   // Set up cron jobs (only for agents with a schedule)
   const cronJobs: Cron[] = [];
 
-  for (const agentConfig of agentConfigs) {
+  for (const agentConfig of activeAgentConfigs) {
     if (!agentConfig.schedule) continue;
 
     const pool = runnerPools[agentConfig.name];

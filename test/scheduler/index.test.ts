@@ -320,4 +320,61 @@ describe("startScheduler", () => {
       );
     });
   });
+
+  describe("scale = 0 (disabled agent)", () => {
+    function setupDisabledProject(tmpDir: string) {
+      const globalConfig = {};
+      writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
+
+      const model = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" };
+      const agents = [
+        { name: "active-agent", credentials: ["github_token:default"], model, schedule: "*/5 * * * *" },
+        { name: "disabled-agent", credentials: ["github_token:default"], model, schedule: "*/5 * * * *", scale: 0 },
+      ];
+
+      for (const agent of agents) {
+        const agentDir = resolve(tmpDir, agent.name);
+        mkdirSync(agentDir, { recursive: true });
+        const { name: _, ...configToWrite } = agent;
+        writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML(configToWrite as Record<string, unknown>));
+        mkdirSync(resolve(tmpDir, ".al", "state", agent.name), { recursive: true });
+      }
+    }
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+      cronCallbacks.length = 0;
+      mockIsRunning = false;
+      tmpDir = mkdtempSync(join(tmpdir(), "al-sched-disabled-"));
+      setupDisabledProject(tmpDir);
+    });
+
+    it("creates an empty runner pool for scale = 0 agents", async () => {
+      const { runnerPools } = await startScheduler(tmpDir);
+
+      expect(runnerPools["disabled-agent"].size).toBe(0);
+      expect(runnerPools["active-agent"].size).toBe(1);
+    });
+
+    it("does not create cron jobs for scale = 0 agents", async () => {
+      await startScheduler(tmpDir);
+
+      // Only the active agent should have a cron job
+      expect(cronCallbacks).toHaveLength(1);
+    });
+
+    it("allows scale = 0 agent without schedule or webhooks", async () => {
+      // Overwrite disabled-agent config to have no schedule
+      const model = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" };
+      const agentDir = resolve(tmpDir, "disabled-agent");
+      writeFileSync(
+        resolve(agentDir, "agent-config.toml"),
+        stringifyTOML({ credentials: ["github_token:default"], model, scale: 0 } as Record<string, unknown>)
+      );
+
+      // Should not throw — scale=0 skips schedule/webhook validation
+      const { runnerPools } = await startScheduler(tmpDir);
+      expect(runnerPools["disabled-agent"].size).toBe(0);
+    });
+  });
 });

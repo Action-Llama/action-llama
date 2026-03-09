@@ -240,6 +240,7 @@ sentryProjects = ["web-app", "api"]
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `credentials` | string[] | Yes | Credential refs as `"type:instance"` (see Credential Reference above) |
+| `scale` | number | No | Number of concurrent runners (default: 1). Set to `0` to disable the agent |
 | `schedule` | string | No* | Cron expression (e.g. "*/5 * * * *") |
 | `model` | table | No | LLM model config — omit to inherit from project `config.toml` |
 | `model.provider` | string | Yes* | "anthropic", "openai", "groq", "google", "xai", "mistral", "openrouter", or "custom" |

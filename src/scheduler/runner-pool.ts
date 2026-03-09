@@ -13,9 +13,6 @@ export class RunnerPool {
   private roundRobinIndex = 0;
 
   constructor(runners: PoolRunner[]) {
-    if (runners.length === 0) {
-      throw new Error("RunnerPool requires at least one runner");
-    }
     this.runners = runners;
   }
 
@@ -35,7 +32,8 @@ export class RunnerPool {
    * Get the next runner using round-robin, regardless of availability
    * Used for scheduled runs where we want to distribute evenly
    */
-  getNextRunner(): PoolRunner {
+  getNextRunner(): PoolRunner | null {
+    if (this.runners.length === 0) return null;
     const runner = this.runners[this.roundRobinIndex];
     this.roundRobinIndex = (this.roundRobinIndex + 1) % this.runners.length;
     return runner;
