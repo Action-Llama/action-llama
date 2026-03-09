@@ -179,13 +179,13 @@ export class ContainerAgentRunner {
       const agentsMd = readFileSync(agentsMdPath, "utf-8");
       const configWithMd = { ...this.agentConfig, _agentsMd: agentsMd };
 
-      // Build env vars — only include gateway info if the runtime needs it
+      // Build env vars — include gateway info whenever a URL is configured
       const env: Record<string, string> = {
         AGENT_CONFIG: JSON.stringify(configWithMd),
         PROMPT: prompt,
         TIMEOUT_SECONDS: String(timeout),
       };
-      if (this.runtime.needsGateway) {
+      if (this.gatewayUrl) {
         env.GATEWAY_URL = this.gatewayUrl;
         env.SHUTDOWN_SECRET = shutdownSecret;
       }

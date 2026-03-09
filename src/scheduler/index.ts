@@ -484,7 +484,9 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   // Import necessary classes once if docker is enabled
   const ContainerAgentRunnerClass = dockerEnabled && runtime ? (await import("../agents/container-runner.js")).ContainerAgentRunner : null;
   const gatewayPort = globalConfig.gateway?.port || 8080;
-  const gatewayUrl = `http://host.docker.internal:${gatewayPort}`;
+  const gatewayUrl = useCloudRuntime
+    ? (globalConfig.gateway?.url || "")
+    : `http://host.docker.internal:${gatewayPort}`;
   
   // Gateway callbacks — no-ops if gateway isn't running (remote runtimes)
   const registerContainer = gateway
