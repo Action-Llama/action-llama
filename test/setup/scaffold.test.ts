@@ -130,6 +130,19 @@ describe("scaffoldProject", () => {
     expect(content).toContain("agent-config.toml");
   });
 
+  it("creates CLAUDE.md symlink pointing to same AGENTS.md", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
+    const projDir = resolve(tmpDir, "my-project");
+    scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
+
+    const claudeMdPath = resolve(projDir, "CLAUDE.md");
+    expect(existsSync(claudeMdPath)).toBe(true);
+    expect(lstatSync(claudeMdPath).isSymbolicLink()).toBe(true);
+    const content = readFileSync(claudeMdPath, "utf-8");
+    expect(content).toContain("Action Llama Project");
+    expect(content).toContain("agent-config.toml");
+  });
+
   it("creates .workspace directory and .gitignore", () => {
     tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
     const projDir = resolve(tmpDir, "my-project");

@@ -74,15 +74,18 @@ export function scaffoldProject(
     scaffoldAgent(projectPath, agent);
   }
 
-  // Symlink project-level AGENTS.md to the shipped copy in node_modules
-  const agentsMdPath = resolve(projectPath, "AGENTS.md");
-  if (!existsSync(agentsMdPath)) {
-    try {
-      const packageAgentsMd = resolvePackageAgentsMd();
-      symlinkSync(packageAgentsMd, agentsMdPath);
-    } catch {
-      // Fallback: if the package can't be resolved (e.g. running from source
-      // before npm install), skip the symlink — the user can create it later.
+  // Symlink project-level AGENTS.md and CLAUDE.md to the shipped copy in node_modules.
+  // Both point to the same file so that Claude Code and other LLM tools pick it up.
+  const packageAgentsMd = resolvePackageAgentsMd();
+  for (const name of ["AGENTS.md", "CLAUDE.md"]) {
+    const dest = resolve(projectPath, name);
+    if (!existsSync(dest)) {
+      try {
+        symlinkSync(packageAgentsMd, dest);
+      } catch {
+        // Fallback: if the package can't be resolved (e.g. running from source
+        // before npm install), skip the symlink — the user can create it later.
+      }
     }
   }
 
