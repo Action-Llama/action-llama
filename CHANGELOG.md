@@ -1,5 +1,14 @@
 # @action-llama/action-llama
 
+## 0.6.5
+
+### Patch Changes
+
+- [`b4eaeb9`](https://github.com/Action-Llama/action-llama/commit/b4eaeb91b8249edbf364f5ef9558e9f43e914fcd) Thanks [@asselstine](https://github.com/asselstine)! - Allow `scale = 0` in agent-config.toml to disable an agent. Disabled agents skip
+  credential validation, Docker image builds, cron jobs, and webhook bindings while
+  remaining visible (as disabled) in the TUI. This lets users keep agent configs in
+  the project without running them.
+
 ## 0.6.4
 
 ### Patch Changes
