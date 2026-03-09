@@ -92,7 +92,17 @@ Your PLAYBOOK.md should reference `<agent-config>` for parameter values and hand
 
 Before the PLAYBOOK.md runs, the agent receives a preamble that teaches it a set of **language skills** — shorthand operations the playbook can reference naturally. The preamble explains the underlying mechanics (curl commands, env vars) so playbook authors never need to think about them.
 
-#### Signal skills
+Skills currently taught to agents:
+
+| Category | Skills | Description |
+|----------|--------|-------------|
+| **Signals** | `[SILENT]`, `[STATUS: ...]`, `[TRIGGER: ...]` | Text-based signals the agent emits in its output. See [Signals](#signals). |
+| **Locks** | `LOCK(...)`, `UNLOCK(...)`, `HEARTBEAT(...)` | Resource locking for parallel coordination. See [Resource locks](#resource-locks). |
+| **Credentials** | `GITHUB_TOKEN`, `gh`, `git`, etc. | Credential access and tool usage. See [Credentials](credentials.md). |
+
+Playbook authors write the shorthand naturally (e.g. `LOCK("githubIssue", "acme/app#42")`). The agent learns what it means from the preamble — no need to document curl commands or API endpoints in your playbook.
+
+### Signals
 
 The agent can emit these signals in its text output:
 
@@ -101,36 +111,6 @@ The agent can emit these signals in its text output:
 | `[SILENT]` | Tells the scheduler the agent found no work. Logged as "no work to do" and further output is skipped. |
 | `[STATUS: <text>]` | Status update shown in the TUI (e.g. `[STATUS: reviewing PR #42]`). |
 | `[TRIGGER: <agent>]...[/TRIGGER]` | Triggers another agent with the enclosed context. The target receives a `<agent-trigger>` prompt with the source agent name and context. Self-triggers are skipped; chains are bounded by `maxTriggerDepth`. |
-
-#### Lock skills
-
-When Docker mode is enabled, agents learn lock skills for coordinating with parallel instances. This prevents two instances from working on the same issue, PR, or deployment simultaneously.
-
-| Skill | Description |
-|-------|-------------|
-| `LOCK(resource, key)` | Acquire an exclusive lock. Returns success or the name of the holder on conflict. |
-| `UNLOCK(resource, key)` | Release a held lock. |
-| `HEARTBEAT(resource, key)` | Extend the TTL on a held lock during long-running work. |
-
-Properties:
-- **One lock at a time** — each agent instance can hold at most one lock. It must release the current lock before acquiring another.
-- **Owner-authenticated** — only the lock holder can release or heartbeat a lock. Each container authenticates with a per-run secret.
-- **TTL with heartbeat** — locks expire automatically after 30 minutes (configurable via `gateway.lockTimeout`). Use `HEARTBEAT` during long operations to keep the lock alive.
-- **Auto-release** — all locks held by a container are released automatically when the container exits, whether it finishes normally or crashes.
-
-Playbook authors use the shorthand naturally:
-
-```markdown
-## Workflow
-
-1. List open issues labeled "agent"
-2. For each issue, LOCK("githubIssue", "acme/app#42")
-   - If the lock fails, skip — another instance is already on it
-3. Do the work
-4. UNLOCK("githubIssue", "acme/app#42")
-```
-
-The preamble teaches the agent that `LOCK(...)` means "call the scheduler's lock API via curl." The agent sees immediate feedback: success or conflict with the holder's name.
 
 ## Runtime lifecycle
 
@@ -158,6 +138,78 @@ When a scheduled agent completes productive work (i.e. it does not respond with 
 Webhook-triggered and agent-triggered runs do not re-run — they respond to a single event.
 
 See [Docker docs](docker.md) for the full container reference including the startup sequence, log protocol, filesystem layout, and exit codes.
+
+## Resource locks
+
+When you set `parallelism > 1` on an agent, multiple instances run concurrently. Without coordination, two instances might pick up the same GitHub issue, review the same PR, or deploy the same service at the same time. Resource locks prevent this.
+
+Locks are managed by the scheduler and available to all agents running in Docker mode. Each lock is identified by a **resource type** and a **key** — for example, `LOCK("githubIssue", "acme/app#42")`.
+
+### How it works
+
+1. Before working on a shared resource, the agent calls `LOCK("resource", "key")`.
+2. If the lock is free, the agent gets it and proceeds.
+3. If another instance already holds the lock, the agent gets back the holder's name and skips that resource.
+4. When done, the agent calls `UNLOCK("resource", "key")`.
+
+The agent learns the lock API from a preamble injected before the playbook runs. Playbook authors just write the shorthand — no need to think about HTTP endpoints or authentication.
+
+### Operations
+
+| Operation | Description |
+|-----------|-------------|
+| `LOCK(resource, key)` | Acquire an exclusive lock on a resource. Fails if another instance holds it. |
+| `UNLOCK(resource, key)` | Release a lock. Only the holder can release. |
+| `HEARTBEAT(resource, key)` | Reset the TTL on a held lock. Use during long-running work to prevent expiry. |
+
+### One lock at a time
+
+Each agent instance can hold **at most one lock**. This keeps the model simple — the agent locks a resource, does the work, unlocks, then moves to the next item. If it tries to acquire a second lock without releasing the first, the request is rejected with a clear error message.
+
+### Timeout (TTL)
+
+Locks expire automatically after **30 minutes** by default. This prevents deadlocks if an agent crashes or hangs without releasing its lock. The timeout is configurable via `gateway.lockTimeout` in `config.toml` (value in seconds).
+
+For work that takes longer than the timeout, use `HEARTBEAT` to extend the TTL. Each heartbeat resets the clock to another full TTL period. If the agent forgets to heartbeat and the lock expires, another instance can claim it.
+
+### Authentication
+
+Each container gets a unique per-run secret (the same one used for the shutdown API). Lock requests are authenticated with this secret, so only the container that acquired a lock can release or heartbeat it. There is no way for one agent instance to release another's lock — it must wait for the TTL to expire.
+
+### Auto-release on exit
+
+When a container exits — whether it finishes successfully, hits an error, or times out — all of its locks are released automatically by the scheduler. You don't need to worry about cleanup in error paths.
+
+### Example playbook usage
+
+```markdown
+## Workflow
+
+1. List open issues labeled "agent" in repos from `<agent-config>`
+2. For each issue:
+   - LOCK("githubIssue", "owner/repo#123")
+   - If the lock fails, skip this issue — another instance is handling it
+   - Clone the repo, create a branch, implement the fix
+   - Open a PR and link it to the issue
+   - UNLOCK("githubIssue", "owner/repo#123")
+3. If there are no issues to work on, respond with [SILENT]
+```
+
+### Resource naming conventions
+
+Use descriptive resource types and unique keys:
+
+| Resource | Key format | Example |
+|----------|-----------|---------|
+| `githubIssue` | `owner/repo#number` | `LOCK("githubIssue", "acme/app#42")` |
+| `githubPR` | `owner/repo#number` | `LOCK("githubPR", "acme/app#17")` |
+| `deployment` | `service-name` | `LOCK("deployment", "api-prod")` |
+
+### Configuration
+
+| Setting | Location | Default | Description |
+|---------|----------|---------|-------------|
+| `gateway.lockTimeout` | `config.toml` | `1800` (30 min) | Default TTL for locks in seconds |
 
 ## `Dockerfile` (optional)
 
