@@ -164,7 +164,7 @@ export class ContainerAgentRunner {
     let logStream: { stop: () => void } | undefined;
 
     try {
-      const timeout = this.globalConfig.local?.timeout || 3600;
+      const timeout = this.agentConfig.timeout ?? this.globalConfig.local?.timeout ?? 900;
 
       // Resolve credential refs — always include anthropic_key for non-pi_auth
       const credRefs = [...new Set(this.agentConfig.credentials)];

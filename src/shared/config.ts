@@ -38,6 +38,10 @@ export interface CloudConfig {
   securityGroups?: string[];
   awsSecretPrefix?: string;
   buildBucket?: string;             // S3 bucket for CodeBuild source (remote builds)
+  // Lambda (auto-routed for ECS agents with timeout <= 900)
+  lambdaRoleArn?: string;            // Lambda execution role ARN (or derived per-agent)
+  lambdaSubnets?: string[];          // VPC subnets for Lambda (optional)
+  lambdaSecurityGroups?: string[];   // Security groups for Lambda (optional)
 }
 
 export interface GatewayConfig {
@@ -72,6 +76,7 @@ export interface AgentConfig {
   webhooks?: WebhookTrigger[];
   params?: Record<string, unknown>;
   scale?: number; // Number of concurrent runs allowed (default: 1)
+  timeout?: number; // Max runtime in seconds (falls back to global local.timeout, then 900)
 }
 
 // --- Loaders ---

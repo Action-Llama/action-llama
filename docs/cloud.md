@@ -61,11 +61,14 @@ See [ECS docs](ecs.md) for prerequisites, full setup walkthrough, and troublesho
 
 ## Provider comparison
 
-| | GCP Cloud Run | AWS ECS Fargate |
+| | GCP Cloud Run | AWS ECS (Fargate + Lambda) |
 |---|---|---|
-| Image builds | Cloud Build (no local Docker) | Local Docker + ECR push |
+| Image builds | Cloud Build (no local Docker) | CodeBuild (no local Docker) |
 | Credential store | Google Secret Manager | AWS Secrets Manager |
 | Credential delivery | File mount (native) | Env var injection |
-| Secret isolation | Per-agent service accounts | Per-agent IAM task roles |
+| Secret isolation | Per-agent service accounts | Per-agent IAM task/Lambda roles |
 | Setup command | `al doctor -c` | `al doctor -c` |
 | Log latency | ~5-15s (Cloud Logging) | ~5-10s (CloudWatch) |
+| Cold start | ~10-30s | ~1-2s (Lambda, timeout<=900s) / ~30-60s (Fargate) |
+
+On AWS, agents with `timeout <= 900` automatically route to Lambda for faster cold starts. Agents with longer timeouts use ECS Fargate. See [ECS docs](ecs.md#per-agent-timeout-and-lambda-routing) for details.

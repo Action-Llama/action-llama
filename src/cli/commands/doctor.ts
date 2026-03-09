@@ -193,6 +193,10 @@ export async function execute(opts: { project: string; cloud?: boolean; checkOnl
     if (cloudConfig.provider === "ecs") {
       console.log(`\nValidating ECS IAM roles...`);
       await validateEcsRoles(projectPath, cloudConfig);
+
+      // Create Lambda execution roles for short-timeout agents
+      console.log(`\nReconciling Lambda roles for short-timeout agents...`);
+      await reconcileLambdaRoles(projectPath, cloudConfig);
     }
   }
 }
@@ -617,5 +621,117 @@ export async function validateEcsRoles(projectPath: string, cloud: CloudConfig):
     throw new Error(`${missing.length + hasIncorrectTrust.length} IAM task role(s) have issues that will prevent ECS tasks from starting. Fix the roles above before proceeding.`);
   } else {
     console.log(`All ${agents.length} IAM task role(s) exist and have correct trust policies.`);
+  }
+}
+
+async function reconcileLambdaRoles(projectPath: string, cloud: CloudConfig): Promise<void> {
+  const { awsRegion, ecrRepository, awsSecretPrefix } = cloud;
+  if (!awsRegion || !ecrRepository) return;
+
+  const secretPrefix = awsSecretPrefix || AWS_CONSTANTS.DEFAULT_SECRET_PREFIX;
+  const accountMatch = ecrRepository.match(/^(\d+)\.dkr\.ecr\./);
+  if (!accountMatch) return;
+  const accountId = accountMatch[1];
+
+  const globalConfig = loadGlobalConfig(projectPath);
+  const agents = discoverAgents(projectPath);
+  const iamClient = new IAMClient({ region: awsRegion });
+
+  // Trust policy for Lambda
+  const trustPolicy = JSON.stringify({
+    Version: "2012-10-17",
+    Statement: [{
+      Effect: "Allow",
+      Principal: { Service: "lambda.amazonaws.com" },
+      Action: "sts:AssumeRole",
+    }],
+  });
+
+  let created = 0;
+  for (const name of agents) {
+    const config = loadAgentConfig(projectPath, name);
+    const effectiveTimeout = config.timeout ?? globalConfig.local?.timeout ?? 900;
+
+    // Only create Lambda roles for agents that will route to Lambda
+    if (effectiveTimeout > AWS_CONSTANTS.LAMBDA_MAX_TIMEOUT) continue;
+
+    const roleName = AWS_CONSTANTS.lambdaRoleName(name);
+
+    // Create role
+    try {
+      await iamClient.send(new CreateRoleCommand({
+        RoleName: roleName,
+        AssumeRolePolicyDocument: trustPolicy,
+      }));
+      console.log(`  Created Lambda role: ${roleName}`);
+      created++;
+    } catch (err: any) {
+      if (err.name === "EntityAlreadyExistsException") {
+        console.log(`  [ok] ${roleName}`);
+      } else {
+        console.log(`  [ERROR] ${roleName}: ${err.message}`);
+        continue;
+      }
+    }
+
+    // Add secrets + ECR + logs policy
+    const credRefs = [...new Set(config.credentials)];
+    if (config.model.authType !== "pi_auth" && !credRefs.includes("anthropic_key:default")) {
+      credRefs.push("anthropic_key:default");
+    }
+
+    const secretArns: string[] = credRefs.map((ref) => {
+      const { type, instance } = parseCredentialRef(ref);
+      return `arn:aws:secretsmanager:${awsRegion}:${accountId}:secret:${secretPrefix}/${type}/${instance}/*`;
+    });
+
+    const policy = JSON.stringify({
+      Version: "2012-10-17",
+      Statement: [
+        {
+          Effect: "Allow",
+          Action: "secretsmanager:GetSecretValue",
+          Resource: secretArns,
+        },
+        {
+          Effect: "Allow",
+          Action: [
+            "logs:CreateLogGroup",
+            "logs:CreateLogStream",
+            "logs:PutLogEvents",
+          ],
+          Resource: `arn:aws:logs:${awsRegion}:${accountId}:*`,
+        },
+        {
+          Effect: "Allow",
+          Action: "ecr:GetAuthorizationToken",
+          Resource: "*",
+        },
+        {
+          Effect: "Allow",
+          Action: [
+            "ecr:BatchGetImage",
+            "ecr:GetDownloadUrlForLayer",
+          ],
+          Resource: `arn:aws:ecr:${awsRegion}:${accountId}:repository/*`,
+        },
+      ],
+    });
+
+    try {
+      await iamClient.send(new PutRolePolicyCommand({
+        RoleName: roleName,
+        PolicyName: "LambdaExecution",
+        PolicyDocument: policy,
+      }));
+    } catch (err: any) {
+      console.log(`  Warning: failed to put policy on ${roleName}: ${err.message}`);
+    }
+  }
+
+  if (created > 0) {
+    console.log(`Created ${created} Lambda execution role(s).`);
+  } else {
+    console.log(`All Lambda roles up to date.`);
   }
 }

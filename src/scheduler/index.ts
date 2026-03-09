@@ -295,6 +295,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   }
 
   let runtime: ContainerRuntime | undefined;
+  let agentRuntimeOverrides: Record<string, ContainerRuntime> = {};
   let baseImage = AWS_CONSTANTS.DEFAULT_IMAGE;
   const agentImages: Record<string, string> = {};
 
@@ -362,6 +363,29 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
         securityGroups: cc.securityGroups,
         secretPrefix: cc.awsSecretPrefix,
       });
+
+      // Create Lambda runtime for short-running agents (timeout <= 900s)
+      const { LambdaRuntime } = await import("../docker/lambda-runtime.js");
+      const lambdaRuntime = new LambdaRuntime({
+        awsRegion: cc.awsRegion,
+        ecrRepository: cc.ecrRepository,
+        secretPrefix: cc.awsSecretPrefix,
+        buildBucket: cc.buildBucket,
+        lambdaRoleArn: cc.lambdaRoleArn,
+        lambdaSubnets: cc.lambdaSubnets,
+        lambdaSecurityGroups: cc.lambdaSecurityGroups,
+      });
+
+      // Per-agent runtime selection: Lambda for short agents, ECS for long ones
+      agentRuntimeOverrides = {};
+      for (const ac of activeAgentConfigs) {
+        const effectiveTimeout = ac.timeout ?? globalConfig.local?.timeout ?? 900;
+        if (effectiveTimeout <= AWS_CONSTANTS.LAMBDA_MAX_TIMEOUT) {
+          agentRuntimeOverrides[ac.name] = lambdaRuntime;
+          logger.info({ agent: ac.name, timeout: effectiveTimeout }, "Routing to Lambda (timeout <= 900s)");
+        }
+      }
+
       logger.info({ region: cc.awsRegion, cluster: cc.ecsCluster }, "Using ECS Fargate runtime");
     } else {
       // Local runtime needs Docker running
@@ -517,8 +541,9 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     for (let i = 0; i < scale; i++) {
       const instanceId = `${agentConfig.name}-${i + 1}`;
       if (dockerEnabled && runtime && ContainerAgentRunnerClass) {
+        const agentRuntime = agentRuntimeOverrides[agentConfig.name] || runtime;
         runners.push(new ContainerAgentRunnerClass(
-          runtime,
+          agentRuntime,
           globalConfig,
           agentConfig,
           mkLogger(projectPath, instanceId),

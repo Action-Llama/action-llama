@@ -75,4 +75,19 @@ export const AWS_CONSTANTS = {
 
   /** Default GCP Cloud Run service account */
   defaultGcpRunner: (gcpProject: string) => `al-runner@${gcpProject}.iam.gserviceaccount.com`,
-} satisfies Record<string, string | ((...args: any[]) => string)>;
+
+  /** Lambda function name for an agent */
+  lambdaFunction: (agentName: string) => `al-${agentName}`,
+
+  /** Maximum timeout for Lambda functions (seconds) */
+  LAMBDA_MAX_TIMEOUT: 900,
+
+  /** CloudWatch log group for Lambda functions */
+  LAMBDA_LOG_GROUP: "/aws/lambda",
+
+  /** Lambda execution role name */
+  LAMBDA_EXECUTION_ROLE: "al-lambda-execution-role",
+
+  /** Per-agent Lambda execution role name */
+  lambdaRoleName: (agentName: string) => `al-${agentName}-lambda-role`,
+} satisfies Record<string, string | number | ((...args: any[]) => string)>;

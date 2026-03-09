@@ -377,4 +377,50 @@ describe("startScheduler", () => {
       expect(runnerPools["disabled-agent"].size).toBe(0);
     });
   });
+
+  describe("per-agent timeout", () => {
+    function setupTimeoutProject(tmpDir: string) {
+      const globalConfig = {};
+      writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
+
+      const model = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" };
+      const agents = [
+        { name: "fast-agent", credentials: ["github_token:default"], model, schedule: "*/5 * * * *", timeout: 300 },
+        { name: "slow-agent", credentials: ["github_token:default"], model, schedule: "*/5 * * * *", timeout: 1800 },
+        { name: "default-agent", credentials: ["github_token:default"], model, schedule: "*/5 * * * *" },
+      ];
+
+      for (const agent of agents) {
+        const agentDir = resolve(tmpDir, agent.name);
+        mkdirSync(agentDir, { recursive: true });
+        const { name: _, ...configToWrite } = agent;
+        writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML(configToWrite as Record<string, unknown>));
+        mkdirSync(resolve(tmpDir, ".al", "state", agent.name), { recursive: true });
+      }
+    }
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+      cronCallbacks.length = 0;
+      mockIsRunning = false;
+      tmpDir = mkdtempSync(join(tmpdir(), "al-sched-timeout-"));
+      setupTimeoutProject(tmpDir);
+    });
+
+    it("loads agents with per-agent timeout", async () => {
+      const { runnerPools } = await startScheduler(tmpDir);
+      expect(Object.keys(runnerPools).sort()).toEqual(["default-agent", "fast-agent", "slow-agent"]);
+    });
+
+    it("per-agent timeout is present in loaded agent config", async () => {
+      const { loadAgentConfig } = await import("../../src/shared/config.js");
+      const fast = loadAgentConfig(tmpDir, "fast-agent");
+      const slow = loadAgentConfig(tmpDir, "slow-agent");
+      const dflt = loadAgentConfig(tmpDir, "default-agent");
+
+      expect(fast.timeout).toBe(300);
+      expect(slow.timeout).toBe(1800);
+      expect(dflt.timeout).toBeUndefined();
+    });
+  });
 });

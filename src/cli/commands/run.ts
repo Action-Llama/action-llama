@@ -67,23 +67,40 @@ export async function execute(agent: string, opts: { project: string; noDocker?:
       }
       runtime = new CloudRunJobRuntime({ gcpProject, region, artifactRegistry, serviceAccount, secretPrefix });
     } else {
-      const { ECSFargateRuntime } = await import("../../docker/ecs-runtime.js");
-      if (!cloud.awsRegion || !cloud.ecsCluster || !cloud.ecrRepository || !cloud.executionRoleArn || !cloud.taskRoleArn || !cloud.subnets?.length) {
-        throw new Error(
-          "ECS requires cloud.awsRegion, cloud.ecsCluster, cloud.ecrRepository, " +
-          "cloud.executionRoleArn, cloud.taskRoleArn, and cloud.subnets in config.toml"
-        );
+      // ECS provider: route to Lambda for short-timeout agents, ECS for long ones
+      const effectiveTimeout = agentConfig.timeout ?? globalConfig.local?.timeout ?? 900;
+
+      if (effectiveTimeout <= AWS_CONSTANTS.LAMBDA_MAX_TIMEOUT) {
+        const { LambdaRuntime } = await import("../../docker/lambda-runtime.js");
+        runtime = new LambdaRuntime({
+          awsRegion: cloud.awsRegion!,
+          ecrRepository: cloud.ecrRepository!,
+          secretPrefix: cloud.awsSecretPrefix,
+          buildBucket: cloud.buildBucket,
+          lambdaRoleArn: cloud.lambdaRoleArn,
+          lambdaSubnets: cloud.lambdaSubnets,
+          lambdaSecurityGroups: cloud.lambdaSecurityGroups,
+        });
+        console.log(`Agent "${agent}" has timeout ${effectiveTimeout}s — routing to Lambda`);
+      } else {
+        const { ECSFargateRuntime } = await import("../../docker/ecs-runtime.js");
+        if (!cloud.awsRegion || !cloud.ecsCluster || !cloud.ecrRepository || !cloud.executionRoleArn || !cloud.taskRoleArn || !cloud.subnets?.length) {
+          throw new Error(
+            "ECS requires cloud.awsRegion, cloud.ecsCluster, cloud.ecrRepository, " +
+            "cloud.executionRoleArn, cloud.taskRoleArn, and cloud.subnets in config.toml"
+          );
+        }
+        runtime = new ECSFargateRuntime({
+          awsRegion: cloud.awsRegion,
+          ecsCluster: cloud.ecsCluster,
+          ecrRepository: cloud.ecrRepository,
+          executionRoleArn: cloud.executionRoleArn,
+          taskRoleArn: cloud.taskRoleArn,
+          subnets: cloud.subnets,
+          securityGroups: cloud.securityGroups,
+          secretPrefix: cloud.awsSecretPrefix,
+        });
       }
-      runtime = new ECSFargateRuntime({
-        awsRegion: cloud.awsRegion,
-        ecsCluster: cloud.ecsCluster,
-        ecrRepository: cloud.ecrRepository,
-        executionRoleArn: cloud.executionRoleArn,
-        taskRoleArn: cloud.taskRoleArn,
-        subnets: cloud.subnets,
-        securityGroups: cloud.securityGroups,
-        secretPrefix: cloud.awsSecretPrefix,
-      });
     }
 
     const { ContainerAgentRunner } = await import("../../agents/container-runner.js");

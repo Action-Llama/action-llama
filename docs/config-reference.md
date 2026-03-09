@@ -18,7 +18,7 @@ enabled = true              # Enable Docker isolation (default: true)
 image = "al-agent:latest"   # Base image name (default: "al-agent:latest")
 memory = "4g"               # Memory limit per container (default: "4g")
 cpus = 2                    # CPU limit per container (default: 2)
-timeout = 3600              # Max container runtime in seconds (default: 3600)
+timeout = 900               # Default max container runtime in seconds (default: 900, overridable per-agent)
 
 # Cloud provider config (optional — only needed for `al start -c`)
 [cloud]
@@ -72,7 +72,7 @@ Controls local Docker container isolation. These settings also apply as resource
 | `image` | string | `"al-agent:latest"` | Base Docker image name |
 | `memory` | string | `"4g"` | Memory limit per container (e.g. `"4g"`, `"8g"`, `"4096"` for ECS in MiB) |
 | `cpus` | number | `2` | CPU limit per container |
-| `timeout` | number | `3600` | Max container runtime in seconds. The container self-terminates with exit code 124 if exceeded. |
+| `timeout` | number | `900` | Default max container runtime in seconds. Individual agents can override this with `timeout` in their `agent-config.toml`. On AWS ECS, agents with effective timeout <= 900s automatically route to Lambda for faster cold starts. See [agent timeout docs](agent-config-reference.md#timeout). |
 
 ### `[cloud]` — Cloud Provider
 
@@ -107,6 +107,9 @@ See [Cloud Run docs](cloud-run.md) for full setup.
 | `securityGroups` | string[] | No | — | Security group IDs for Fargate tasks |
 | `awsSecretPrefix` | string | No | `"action-llama"` | AWS Secrets Manager name prefix |
 | `buildBucket` | string | No | auto-created | S3 bucket for CodeBuild source uploads |
+| `lambdaRoleArn` | string | No | auto-derived | Lambda execution role ARN. If omitted, per-agent roles (`al-{agentName}-lambda-role`) are derived automatically. |
+| `lambdaSubnets` | string[] | No | — | VPC subnet IDs for Lambda functions (only needed if Lambda must access VPC resources) |
+| `lambdaSecurityGroups` | string[] | No | — | Security group IDs for Lambda functions (only needed with `lambdaSubnets`) |
 
 See [ECS docs](ecs.md) for full setup.
 
@@ -161,7 +164,7 @@ thinkingLevel = "medium"
 authType = "api_key"
 ```
 
-Everything else uses defaults: Docker enabled, 4GB memory, 2 CPUs, 1h timeout, gateway on port 8080.
+Everything else uses defaults: Docker enabled, 4GB memory, 2 CPUs, 15min timeout, gateway on port 8080.
 
 ### OpenAI without Docker
 

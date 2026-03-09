@@ -44,7 +44,17 @@ Local Docker settings (`[local]`) control resource limits:
 |-----|---------|-------------|
 | `local.memory` | `"4096"` | Memory per task in MiB |
 | `local.cpus` | `2` | CPUs per task |
-| `local.timeout` | `3600` | Max execution time in seconds |
+| `local.timeout` | `900` | Default max execution time in seconds (overridable per-agent) |
+
+Individual agents can override the timeout in their `agent-config.toml` with the `timeout` field. On ECS, agents with effective timeout <= 900s automatically route to Lambda for faster startup. See [Per-agent timeout](#per-agent-timeout-and-lambda-routing).
+
+Optional Lambda configuration (for agents that auto-route to Lambda):
+
+| Key | Required | Default | Description |
+|-----|----------|---------|-------------|
+| `cloud.lambdaRoleArn` | No | auto-derived | Lambda execution role ARN (overrides per-agent role derivation) |
+| `cloud.lambdaSubnets` | No | — | VPC subnet IDs for Lambda (only if Lambda needs VPC access) |
+| `cloud.lambdaSecurityGroups` | No | — | Security groups for Lambda (only with `lambdaSubnets`) |
 
 ## Quick Setup
 
@@ -172,6 +182,84 @@ The scheduler will:
 4. Run Fargate tasks on schedule or webhook trigger
 5. Stream logs from CloudWatch Logs
 
+## Per-agent timeout and Lambda routing
+
+When using the ECS provider, agents are automatically routed to the most efficient AWS compute service based on their timeout:
+
+- **Timeout <= 900s (15 min):** Routes to **AWS Lambda** — cold starts in ~1-2 seconds, pay-per-100ms pricing
+- **Timeout > 900s:** Routes to **ECS Fargate** — cold starts in ~30-60 seconds, pay-per-second pricing
+
+This happens automatically. You control it by setting `timeout` in each agent's `agent-config.toml`:
+
+```toml
+# agent-config.toml for a fast webhook responder
+timeout = 300    # 5 minutes — will use Lambda on AWS
+```
+
+```toml
+# agent-config.toml for a long-running refactoring agent
+timeout = 3600   # 1 hour — will use ECS Fargate
+```
+
+If an agent doesn't set `timeout`, it falls back to `[local].timeout` in `config.toml`, then to the default of 900s. Since 900s is the Lambda maximum, agents without an explicit timeout default to Lambda.
+
+### Why Lambda is faster
+
+Lambda keeps container images warm in pre-provisioned execution environments. When invoked, Lambda starts executing in ~1-2 seconds. ECS Fargate must provision a fresh VM, pull the image, and start the container — taking 30-60 seconds.
+
+For agents that respond to webhooks (e.g., triaging issues, reviewing PRs, responding to alerts), this means the agent starts working almost immediately after the event arrives.
+
+### Shared infrastructure
+
+Both Lambda and ECS Fargate use the same infrastructure:
+
+- **Same ECR images** — built once via CodeBuild, referenced by both runtimes
+- **Same Secrets Manager credentials** — Lambda resolves secrets at invocation time and passes them as environment variables using the same `AL_SECRET_*` naming convention
+- **Same CodeBuild pipeline** — no separate build step needed
+
+### Lambda IAM roles
+
+`al doctor -c` automatically creates Lambda execution roles (`al-{agentName}-lambda-role`) for agents with timeout <= 900s. These roles include:
+
+- `secretsmanager:GetSecretValue` scoped to the agent's declared secrets
+- `logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents` for CloudWatch
+- `ecr:BatchGetImage`, `ecr:GetDownloadUrlForLayer` for pulling images
+
+To use a shared role instead of per-agent roles, set `cloud.lambdaRoleArn` in `config.toml`.
+
+### Operator IAM additions for Lambda
+
+If your agents route to Lambda, add these permissions to your operator IAM policy:
+
+```json
+{
+  "Sid": "Lambda",
+  "Effect": "Allow",
+  "Action": [
+    "lambda:GetFunction",
+    "lambda:CreateFunction",
+    "lambda:UpdateFunctionCode",
+    "lambda:UpdateFunctionConfiguration",
+    "lambda:InvokeFunction"
+  ],
+  "Resource": "arn:aws:iam::<ACCOUNT_ID>:function:al-*"
+}
+```
+
+And extend the `PassRole` condition to include `lambda.amazonaws.com`:
+
+```json
+"Condition": {
+  "StringEquals": {
+    "iam:PassedToService": [
+      "ecs-tasks.amazonaws.com",
+      "codebuild.amazonaws.com",
+      "lambda.amazonaws.com"
+    ]
+  }
+}
+```
+
 ## How it works
 
 ### Image lifecycle
@@ -282,24 +370,25 @@ Logs are streamed from CloudWatch Logs by polling. There is a ~5-10 second delay
 
 ## Comparison with local Docker
 
-| Aspect | Local Docker | ECS Fargate |
-|--------|-------------|-------------|
-| Where containers run | Your machine | AWS |
-| Credential delivery | Volume mount from temp dir | Secrets Manager env var injection |
-| Secret isolation | Mount-level (same trust boundary) | IAM-enforced per-agent task roles |
-| Gateway needed | Yes (kill switch, cred serving) | No (optional for webhooks) |
-| Log latency | Real-time | ~5-10s delay |
-| Image builds | Local Docker | Remote via CodeBuild |
-| Scaling | Limited by host resources | Managed, serverless |
-| Cost | Free (your hardware) | Pay per task execution |
+| Aspect | Local Docker | ECS Fargate | Lambda (auto, <=900s) |
+|--------|-------------|-------------|----------------------|
+| Where containers run | Your machine | AWS | AWS |
+| Cold start | Instant (image cached) | ~30-60s | ~1-2s |
+| Max runtime | Unlimited | Unlimited | 15 minutes |
+| Credential delivery | Volume mount | Secrets Manager env vars | Secrets Manager env vars |
+| Secret isolation | Mount-level | IAM task roles | IAM Lambda roles |
+| Log latency | Real-time | ~5-10s | ~5-10s |
+| Image builds | Local Docker | Remote via CodeBuild | Remote via CodeBuild |
+| Cost | Free (your hardware) | Pay per second | Pay per 100ms |
 
 ## AWS permissions summary
 
-There are three IAM principals involved:
+There are four IAM principals involved:
 
 1. **Operator** — your machine or CI (runs `al` commands)
 2. **Execution role** — used by ECS itself to pull images, write logs, and inject secrets
-3. **Task role** — one per agent, used by the container to read its own secrets
+3. **Task role** — one per agent on ECS Fargate, used by the container to read its own secrets
+4. **Lambda execution role** — one per short-timeout agent, used by Lambda to read secrets and write logs
 
 ### Operator IAM policy
 
@@ -335,7 +424,10 @@ This is the minimum policy for the IAM user or role running `al` commands. Repla
         "logs:GetLogEvents",
         "logs:FilterLogEvents"
       ],
-      "Resource": "arn:aws:logs:<REGION>:<ACCOUNT_ID>:log-group:/ecs/action-llama*"
+      "Resource": [
+        "arn:aws:logs:<REGION>:<ACCOUNT_ID>:log-group:/ecs/action-llama*",
+        "arn:aws:logs:<REGION>:<ACCOUNT_ID>:log-group:/aws/lambda/al-*"
+      ]
     },
     {
       "Sid": "SecretsManager",
@@ -359,7 +451,8 @@ This is the minimum policy for the IAM user or role running `al` commands. Repla
         "StringEquals": {
           "iam:PassedToService": [
             "ecs-tasks.amazonaws.com",
-            "codebuild.amazonaws.com"
+            "codebuild.amazonaws.com",
+            "lambda.amazonaws.com"
           ]
         }
       }
@@ -416,6 +509,18 @@ This is the minimum policy for the IAM user or role running `al` commands. Repla
         "codebuild:CreateProject"
       ],
       "Resource": "arn:aws:codebuild:<REGION>:<ACCOUNT_ID>:project/al-image-builder"
+    },
+    {
+      "Sid": "Lambda",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:GetFunction",
+        "lambda:CreateFunction",
+        "lambda:UpdateFunctionCode",
+        "lambda:UpdateFunctionConfiguration",
+        "lambda:InvokeFunction"
+      ],
+      "Resource": "arn:aws:lambda:<REGION>:<ACCOUNT_ID>:function:al-*"
     },
     {
       "Sid": "S3BuildContext",
