@@ -263,13 +263,13 @@ describe("startScheduler", () => {
   });
 
   describe("scale", () => {
-    function setupParallelismProject(tmpDir: string) {
+    function setupScaleProject(tmpDir: string) {
       const globalConfig = {};
       writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
 
       const model = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" };
       const agents = [
-        { name: "parallel-agent", credentials: ["github_token:default"], model, schedule: "*/5 * * * *", scale: 3 },
+        { name: "scaled-agent", credentials: ["github_token:default"], model, schedule: "*/5 * * * *", scale: 3 },
         { name: "single-agent", credentials: ["github_token:default"], model, schedule: "*/5 * * * *" }, // defaults to 1
       ];
 
@@ -287,16 +287,16 @@ describe("startScheduler", () => {
       vi.clearAllMocks();
       cronCallbacks.length = 0;
       mockIsRunning = false;
-      tmpDir = mkdtempSync(join(tmpdir(), "al-sched-parallel-"));
-      setupParallelismProject(tmpDir);
+      tmpDir = mkdtempSync(join(tmpdir(), "al-sched-scale-"));
+      setupScaleProject(tmpDir);
     });
 
     it("creates multiple runners when scale > 1", async () => {
       const { runnerPools } = await startScheduler(tmpDir);
       
-      // parallel-agent should have 3 runners
-      expect(runnerPools["parallel-agent"].scale).toBe(3);
-      expect(runnerPools["parallel-agent"].runners).toHaveLength(3);
+      // scaled-agent should have 3 runners
+      expect(runnerPools["scaled-agent"].scale).toBe(3);
+      expect(runnerPools["scaled-agent"].runners).toHaveLength(3);
       
       // single-agent should have 1 runner (default)
       expect(runnerPools["single-agent"].scale).toBe(1);
@@ -336,13 +336,13 @@ describe("startScheduler", () => {
       // Trigger multiple cron runs quickly
       const cronPromises = [];
       for (let i = 0; i < 5; i++) {
-        cronPromises.push(cronCallbacks[0]()); // parallel-agent cron
+        cronPromises.push(cronCallbacks[0]()); // scaled-agent cron
       }
 
       // Wait for all to settle
       await Promise.all(cronPromises);
 
-      // parallel-agent can run up to 3 concurrent instances
+      // scaled-agent can run up to 3 concurrent instances
       // single-agent can run 1 instance
       // The exact number depends on timing, but we should see multiple calls
       expect(mockRun).toHaveBeenCalled();
