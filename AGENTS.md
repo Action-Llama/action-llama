@@ -407,6 +407,16 @@ maxTriggerDepth = 3   # max depth for agent-to-agent trigger chains (default: 3)
 
 Webhook-triggered and agent-triggered runs do not re-run — they respond to a single event.
 
+## Skills Reference
+
+Agents have access to runtime skills — capabilities taught via a preamble before the playbook runs. Each skill is documented for LLM consumption:
+
+- [Skills Overview](skills/README.md)
+- [Credentials](skills/credentials.md) — env vars, tools, and access patterns from mounted credentials
+- [Signals](skills/signals.md) — `[SILENT]`, `[STATUS]`, `[TRIGGER]` output signals
+- [Resource Locks](skills/resource-locks.md) — `LOCK`, `UNLOCK`, `HEARTBEAT` for parallel coordination
+- [Environment](skills/environment.md) — trigger types, context blocks, container filesystem
+
 ## Further Documentation
 
 Full documentation is available on GitHub:
