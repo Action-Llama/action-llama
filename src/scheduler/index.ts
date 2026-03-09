@@ -489,7 +489,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     logger.info("Docker infrastructure ready");
   }
 
-  // Create runner pools for each agent with configurable parallelism
+  // Create runner pools for each agent with configurable scale
   const runnerPools: Record<string, AgentRunnerPool> = {};
 
   // Import necessary classes once if docker is enabled
