@@ -116,10 +116,10 @@ describe("startScheduler", () => {
     const { runnerPools } = await startScheduler(tmpDir);
     expect(Object.keys(runnerPools).sort()).toEqual(["dev", "devops", "reviewer"]);
     
-    // Each pool should have default parallelism of 1
+    // Each pool should have default scale of 1
     for (const poolName of Object.keys(runnerPools)) {
       const pool = runnerPools[poolName];
-      expect(pool.parallelism).toBe(1);
+      expect(pool.scale).toBe(1);
       expect(pool.runners).toHaveLength(1);
     }
   });
@@ -144,7 +144,7 @@ describe("startScheduler", () => {
       expect.objectContaining({
         agent: "dev",
         running: 1,
-        parallelism: 1,
+        scale: 1,
       }),
       "all agent runners busy, skipping scheduled run"
     );
@@ -262,14 +262,14 @@ describe("startScheduler", () => {
     );
   });
 
-  describe("parallelism", () => {
-    function setupParallelismProject(tmpDir: string) {
+  describe("scale", () => {
+    function setupScaleProject(tmpDir: string) {
       const globalConfig = {};
       writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
 
       const model = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" };
       const agents = [
-        { name: "parallel-agent", credentials: ["github_token:default"], model, schedule: "*/5 * * * *", parallelism: 3 },
+        { name: "scaled-agent", credentials: ["github_token:default"], model, schedule: "*/5 * * * *", scale: 3 },
         { name: "single-agent", credentials: ["github_token:default"], model, schedule: "*/5 * * * *" }, // defaults to 1
       ];
 
@@ -287,23 +287,23 @@ describe("startScheduler", () => {
       vi.clearAllMocks();
       cronCallbacks.length = 0;
       mockIsRunning = false;
-      tmpDir = mkdtempSync(join(tmpdir(), "al-sched-parallel-"));
-      setupParallelismProject(tmpDir);
+      tmpDir = mkdtempSync(join(tmpdir(), "al-sched-scale-"));
+      setupScaleProject(tmpDir);
     });
 
-    it("creates multiple runners when parallelism > 1", async () => {
+    it("creates multiple runners when scale > 1", async () => {
       const { runnerPools } = await startScheduler(tmpDir);
       
-      // parallel-agent should have 3 runners
-      expect(runnerPools["parallel-agent"].parallelism).toBe(3);
-      expect(runnerPools["parallel-agent"].runners).toHaveLength(3);
+      // scaled-agent should have 3 runners
+      expect(runnerPools["scaled-agent"].scale).toBe(3);
+      expect(runnerPools["scaled-agent"].runners).toHaveLength(3);
       
       // single-agent should have 1 runner (default)
-      expect(runnerPools["single-agent"].parallelism).toBe(1);
+      expect(runnerPools["single-agent"].scale).toBe(1);
       expect(runnerPools["single-agent"].runners).toHaveLength(1);
     });
 
-    it("allows concurrent runs up to parallelism limit", async () => {
+    it("allows concurrent runs up to scale limit", async () => {
       // Mock some runners as running
       const runningStates = new Map<number, boolean>();
       let callIndex = 0;
@@ -336,13 +336,13 @@ describe("startScheduler", () => {
       // Trigger multiple cron runs quickly
       const cronPromises = [];
       for (let i = 0; i < 5; i++) {
-        cronPromises.push(cronCallbacks[0]()); // parallel-agent cron
+        cronPromises.push(cronCallbacks[0]()); // scaled-agent cron
       }
 
       // Wait for all to settle
       await Promise.all(cronPromises);
 
-      // parallel-agent can run up to 3 concurrent instances
+      // scaled-agent can run up to 3 concurrent instances
       // single-agent can run 1 instance
       // The exact number depends on timing, but we should see multiple calls
       expect(mockRun).toHaveBeenCalled();
@@ -361,7 +361,7 @@ describe("startScheduler", () => {
         name: "webhook-agent", 
         credentials: ["github_token:default"], 
         model: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
-        parallelism: 2,
+        scale: 2,
         webhooks: [{ source: "github", events: ["issues"], actions: ["opened"] }]
       };
       
@@ -375,8 +375,8 @@ describe("startScheduler", () => {
       
       const { runnerPools } = await startScheduler(tmpDir);
       
-      // Verify webhook agent has parallelism of 2
-      expect(runnerPools["webhook-agent"].parallelism).toBe(2);
+      // Verify webhook agent has scale of 2
+      expect(runnerPools["webhook-agent"].scale).toBe(2);
       expect(runnerPools["webhook-agent"].runners).toHaveLength(2);
     });
   });
