@@ -24,7 +24,7 @@ interface RunnerLike {
 
 interface AgentRunnerPool {
   runners: RunnerLike[];
-  parallelism: number;
+  scale: number;
   getAvailableRunner(): RunnerLike | null;
   isAllRunning(): boolean;
   countRunning(): number;
@@ -108,10 +108,10 @@ function dispatchTriggers(
     const pool = ctx.runnerPools[agent];
     const availableRunner = pool.getAvailableRunner();
     if (!availableRunner) {
-      ctx.logger.warn({ source: sourceAgent, target: agent, running: pool.countRunning(), parallelism: pool.parallelism }, "all agent runners busy, skipping trigger");
+      ctx.logger.warn({ source: sourceAgent, target: agent, running: pool.countRunning(), scale: pool.scale }, "all agent runners busy, skipping trigger");
       continue;
     }
-    ctx.logger.info({ source: sourceAgent, target: agent, depth, running: pool.countRunning(), parallelism: pool.parallelism }, "agent trigger firing");
+    ctx.logger.info({ source: sourceAgent, target: agent, depth, running: pool.countRunning(), scale: pool.scale }, "agent trigger firing");
     const prompt = buildTriggeredPrompt(targetConfig, sourceAgent, context);
     runTriggered(availableRunner, targetConfig, prompt, sourceAgent, depth + 1, ctx).catch((err) => {
       ctx.logger.error({ err, target: agent }, "triggered run failed");
@@ -153,7 +153,7 @@ async function drainWebhookQueue(
     
     const ageMs = Date.now() - event.receivedAt.getTime();
     ctx.logger.info(
-      { agent: agentConfig.name, event: event.context.event, ageMs, remaining: ctx.webhookQueue.size(agentConfig.name), running: pool.countRunning(), parallelism: pool.parallelism },
+      { agent: agentConfig.name, event: event.context.event, ageMs, remaining: ctx.webhookQueue.size(agentConfig.name), running: pool.countRunning(), scale: pool.scale },
       "processing queued webhook event"
     );
     try {
@@ -489,7 +489,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     logger.info("Docker infrastructure ready");
   }
 
-  // Create runner pools for each agent with configurable parallelism
+  // Create runner pools for each agent with configurable scale
   const runnerPools: Record<string, AgentRunnerPool> = {};
 
   // Import necessary classes once if docker is enabled
@@ -506,10 +506,10 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     : (_secret: string) => {};
 
   function createAgentRunnerPool(agentConfig: AgentConfig): AgentRunnerPool {
-    const parallelism = agentConfig.parallelism || 1;
+    const scale = agentConfig.scale || 1;
     const runners: RunnerLike[] = [];
     
-    for (let i = 0; i < parallelism; i++) {
+    for (let i = 0; i < scale; i++) {
       if (dockerEnabled && runtime && ContainerAgentRunnerClass) {
         runners.push(new ContainerAgentRunnerClass(
           runtime,
@@ -536,7 +536,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
     return {
       runners,
-      parallelism,
+      scale,
       getAvailableRunner(): RunnerLike | null {
         return runners.find(r => !r.isRunning) || null;
       },
@@ -551,7 +551,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   for (const agentConfig of agentConfigs) {
     runnerPools[agentConfig.name] = createAgentRunnerPool(agentConfig);
-    logger.info({ agent: agentConfig.name, parallelism: agentConfig.parallelism || 1 }, "Created agent runner pool");
+    logger.info({ agent: agentConfig.name, scale: agentConfig.scale || 1 }, "Created agent runner pool");
   }
 
   const webhookQueueSize = globalConfig.webhookQueueSize ?? 20;
@@ -586,7 +586,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
               const { accepted, dropped } = webhookQueue.enqueue(agentConfig.name, context);
               if (accepted) {
                 logger.info(
-                  { agent: agentConfig.name, event: context.event, queueSize: webhookQueue.size(agentConfig.name), running: pool.countRunning(), parallelism: pool.parallelism },
+                  { agent: agentConfig.name, event: context.event, queueSize: webhookQueue.size(agentConfig.name), running: pool.countRunning(), scale: pool.scale },
                   "all agent runners busy, webhook event queued"
                 );
               }
@@ -599,7 +599,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
               return;
             }
             logger.info(
-              { agent: agentConfig.name, event: context.event, action: context.action, running: pool.countRunning(), parallelism: pool.parallelism },
+              { agent: agentConfig.name, event: context.event, action: context.action, running: pool.countRunning(), scale: pool.scale },
               "webhook triggering agent"
             );
             const prompt = buildWebhookPrompt(agentConfig, context);
@@ -635,10 +635,10 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       
       const availableRunner = pool.getAvailableRunner();
       if (!availableRunner) {
-        logger.warn({ agent: agentConfig.name, running: pool.countRunning(), parallelism: pool.parallelism }, "all agent runners busy, skipping scheduled run");
+        logger.warn({ agent: agentConfig.name, running: pool.countRunning(), scale: pool.scale }, "all agent runners busy, skipping scheduled run");
         return;
       }
-      logger.info({ agent: agentConfig.name, running: pool.countRunning(), parallelism: pool.parallelism }, "triggering scheduled run");
+      logger.info({ agent: agentConfig.name, running: pool.countRunning(), scale: pool.scale }, "triggering scheduled run");
       await runWithReruns(availableRunner, agentConfig, 0, schedulerCtx);
     });
 
