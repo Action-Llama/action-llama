@@ -1,5 +1,32 @@
 # @action-llama/action-llama
 
+## 0.6.0
+
+### Minor Changes
+
+- [`104a802`](https://github.com/Action-Llama/action-llama/commit/104a80270cce0e313119fd916cd32fb25d0f5d72) Thanks [@asselstine](https://github.com/asselstine)! - Added configurable parallelism for agents. Set `parallelism = N` in agent-config.toml to run multiple instances of the same agent concurrently. Allows dev agents to tackle issues in parallel and reviewers to handle multiple PRs simultaneously. Defaults to 1 for backward compatibility. Closes [#39](https://github.com/Action-Llama/action-llama/issues/39).
+
+### Patch Changes
+
+- [#44](https://github.com/Action-Llama/action-llama/pull/44) [`a91d1d5`](https://github.com/Action-Llama/action-llama/commit/a91d1d58b5cf609885a9519af56d844e346fa231) Thanks [@asselstine](https://github.com/asselstine)! - Added ability to stop and start agents in the TUI. Use ↑/↓ arrow keys to select agents and
+  Space to enable/disable them. Disabled agents skip scheduled runs and ignore webhook events.
+  The TUI shows enabled/disabled state and tracks counts in the header. Closes [#43](https://github.com/Action-Llama/action-llama/issues/43).
+
+- [#49](https://github.com/Action-Llama/action-llama/pull/49) [`6f60c7c`](https://github.com/Action-Llama/action-llama/commit/6f60c7c106396d85d23964acfe29955d9a9d10ae) Thanks [@asselstine](https://github.com/asselstine)! - Added configurable scale for agents. Set `scale` in agent-config.toml to control concurrent runs per agent (defaults to 1). This allows dev agents to tackle multiple issues in parallel and reviewers to handle multiple PRs simultaneously. Includes full test coverage and documentation. Closes [#39](https://github.com/Action-Llama/action-llama/issues/39).
+
+- [#36](https://github.com/Action-Llama/action-llama/pull/36) [`0f8fb18`](https://github.com/Action-Llama/action-llama/commit/0f8fb1846b9ef053a6b5a7d627f700d1f8b6cc90) Thanks [@asselstine](https://github.com/asselstine)! - Fixed second agent ECS role assumption failures with improved validation and error handling. The scheduler now validates IAM task roles exist before starting, and provides better error messages when ECS cannot assume roles. Closes [#34](https://github.com/Action-Llama/action-llama/issues/34).
+
+- [#46](https://github.com/Action-Llama/action-llama/pull/46) [`16ded1c`](https://github.com/Action-Llama/action-llama/commit/16ded1c5434998bd30d7a9e6e1f56c7b1beb7736) Thanks [@asselstine](https://github.com/asselstine)! - Renamed `parallelism` to `scale` in agent config. Update your agent-config.toml files to use `scale` instead of `parallelism`. The functionality remains the same - it controls how many instances of an agent can run concurrently. Closes [#45](https://github.com/Action-Llama/action-llama/issues/45).
+
+- [`2255f61`](https://github.com/Action-Llama/action-llama/commit/2255f61f1a4b9dd8cf393e9925a863ff492b4f09) Thanks [@asselstine](https://github.com/asselstine)! - Added resource locking for agents running with `scale > 1`. Agents can use LOCK/UNLOCK
+  skills in their playbook to coordinate concurrent instances and prevent them from working
+  on the same resource. The gateway exposes lock endpoints and accepts a configurable
+  `gateway.lockTimeout` in `config.toml`.
+
+- [`6840c9a`](https://github.com/Action-Llama/action-llama/commit/6840c9a1ac75f80ce04e5c502fd941a1d80c838a) Thanks [@asselstine](https://github.com/asselstine)! - Simplified the resource lock API from two parameters to one. `LOCK("resource", "key")` is now `LOCK("resourceKey")` — e.g. `LOCK("github issue acme/app#42")`. The same change applies to `UNLOCK()` and `HEARTBEAT()`. The HTTP endpoints now accept a single `resourceKey` field instead of separate `resource` and `key` fields.
+
+- [#38](https://github.com/Action-Llama/action-llama/pull/38) [`19ad85b`](https://github.com/Action-Llama/action-llama/commit/19ad85b913705c03e78602ca68f850d8510af505) Thanks [@asselstine](https://github.com/asselstine)! - Fixed gateway startup timing to show build status instead of 502 errors. When running `al start -c -H -w` (cloud mode with headless and web UI), the gateway now starts before Docker images are built, allowing users to see build progress on the dashboard instead of getting 502 errors. Closes [#37](https://github.com/Action-Llama/action-llama/issues/37).
+
 ## 0.5.1
 
 ### Patch Changes
