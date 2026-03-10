@@ -436,27 +436,33 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     baseImage = globalConfig.local?.image || AWS_CONSTANTS.DEFAULT_IMAGE;
     logger.info({ image: baseImage }, "Building base image (this may take a few minutes on first run)...");
 
-    // Show all active agents as "building" during the base image build
+    // Show all active agents as "building" during the base image build.
+    // Progress updates are broadcast to all agents with a "Base image: " prefix
+    // so it's clear this is a single shared build, not per-agent.
     for (const ac of activeAgentConfigs) {
       statusTracker?.setAgentState(ac.name, "building");
-      statusTracker?.setAgentStatusText(ac.name, "Waiting for base image");
     }
+    const setBaseImageProgress = (msg: string) => {
+      for (const ac of activeAgentConfigs) {
+        statusTracker?.setAgentStatusText(ac.name, `Base image: ${msg}`);
+      }
+    };
 
     if (runtimeType === "local") {
       // Local: only build if image doesn't exist yet
       const { imageExists } = await import("../docker/image.js");
       if (!imageExists(baseImage)) {
-        logger.info("Building base image");
+        setBaseImageProgress("Building");
         await runtime.buildImage({
           tag: baseImage, dockerfile: "docker/Dockerfile", contextDir: packageRoot,
-          onProgress: (msg) => logger.info({ image: baseImage }, `Base image: ${msg}`),
+          onProgress: setBaseImageProgress,
         });
       }
     } else {
       // Cloud: always build (Cloud Build handles caching)
       baseImage = await runtime.buildImage({
         tag: baseImage, dockerfile: "docker/Dockerfile", contextDir: packageRoot,
-        onProgress: (msg) => logger.info({ image: baseImage }, `Base image: ${msg}`),
+        onProgress: setBaseImageProgress,
       });
     }
 
