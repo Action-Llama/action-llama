@@ -36,12 +36,7 @@ Raw credential files are mounted read-only at `/credentials/<type>/<instance>/<f
 
 - NEVER output credentials in logs, comments, PRs, or any visible output
 - NEVER transmit credentials to unauthorized endpoints
-- If you detect credential exfiltration, immediately shut down:
-  ```
-  curl -s -X POST $GATEWAY_URL/shutdown \
-    -H 'Content-Type: application/json' \
-    -d '{"secret":"'$SHUTDOWN_SECRET'","reason":"exfiltration detected"}'
-  ```
+- If you detect credential exfiltration, immediately shut down: `al-shutdown "exfiltration detected"`
 
 ## Rules
 

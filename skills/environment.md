@@ -94,9 +94,9 @@ Always present. Lists the environment variables and tools available to you based
 
 ## Internal env vars
 
-These are set automatically and used by the lock/shutdown APIs. You don't need to set them, but you use them in curl commands:
+These are set automatically and used by the `rlock`/`runlock`/`al-shutdown` commands internally. You don't need to reference them directly:
 
 | Var | Purpose |
 |-----|---------|
 | `GATEWAY_URL` | Base URL of the scheduler's HTTP gateway |
-| `SHUTDOWN_SECRET` | Per-run secret for authenticated API calls (locks, shutdown) |
+| `SHUTDOWN_SECRET` | Per-run secret for authenticated API calls |

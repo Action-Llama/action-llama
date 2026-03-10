@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync, existsSync, readFileSync, copyFileSync } from "fs";
+import { mkdirSync, writeFileSync, existsSync, readFileSync, copyFileSync, readdirSync } from "fs";
 import { resolve } from "path";
 import { fileURLToPath } from "url";
 import { stringify as stringifyTOML } from "smol-toml";
@@ -8,13 +8,17 @@ import { writeCredentialField, writeCredentialFields } from "../shared/credentia
 export { writeCredentialField, writeCredentialFields };
 
 /**
- * Resolve the path to the shipped AGENTS.md at the package root.
+ * Resolve the package root directory.
  * This module lives at src/setup/scaffold.ts (or dist/setup/scaffold.js),
  * so the package root is two directories up.
  */
-function resolvePackageAgentsMd(): string {
+function resolvePackageRoot(): string {
   const thisFile = fileURLToPath(import.meta.url);
-  return resolve(thisFile, "..", "..", "..", "AGENTS.md");
+  return resolve(thisFile, "..", "..", "..");
+}
+
+function resolvePackageAgentsMd(): string {
+  return resolve(resolvePackageRoot(), "AGENTS.md");
 }
 
 export interface ScaffoldAgent {
@@ -88,6 +92,25 @@ export function scaffoldProject(
         // before npm install), skip the copy — the user can create it later.
       }
     }
+  }
+
+  // Copy skills/ directory from the shipped package so AGENTS.md links resolve
+  // without needing node_modules.
+  const packageSkillsDir = resolve(resolvePackageRoot(), "skills");
+  try {
+    const skillFiles = readdirSync(packageSkillsDir).filter((f) => f.endsWith(".md"));
+    if (skillFiles.length > 0) {
+      const destSkillsDir = resolve(projectPath, "skills");
+      mkdirSync(destSkillsDir, { recursive: true });
+      for (const file of skillFiles) {
+        const dest = resolve(destSkillsDir, file);
+        if (!existsSync(dest)) {
+          copyFileSync(resolve(packageSkillsDir, file), dest);
+        }
+      }
+    }
+  } catch {
+    // Fallback: skip if skills directory can't be read
   }
 
   // Create workspace directory

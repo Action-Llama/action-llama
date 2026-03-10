@@ -143,6 +143,19 @@ describe("scaffoldProject", () => {
     expect(content).toContain("agent-config.toml");
   });
 
+  it("copies skills/ directory with markdown files", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
+    const projDir = resolve(tmpDir, "my-project");
+    scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
+
+    const skillsDir = resolve(projDir, "skills");
+    expect(existsSync(skillsDir)).toBe(true);
+    expect(existsSync(resolve(skillsDir, "README.md"))).toBe(true);
+    expect(existsSync(resolve(skillsDir, "resource-locks.md"))).toBe(true);
+    const content = readFileSync(resolve(skillsDir, "resource-locks.md"), "utf-8");
+    expect(content).toContain("rlock");
+  });
+
   it("creates .workspace directory and .gitignore", () => {
     tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
     const projDir = resolve(tmpDir, "my-project");
