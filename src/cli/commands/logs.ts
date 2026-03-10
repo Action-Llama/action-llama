@@ -2,7 +2,8 @@ import { resolve } from "path";
 import { createReadStream, readdirSync, existsSync, statSync } from "fs";
 import { createInterface } from "readline";
 import { logsDir } from "../../shared/paths.js";
-import { loadGlobalConfig } from "../../shared/config.js";
+import { loadGlobalConfig, loadAgentConfig } from "../../shared/config.js";
+import { AWS_CONSTANTS } from "../../shared/aws-constants.js";
 
 const LEVEL_COLORS: Record<number, { label: string; color: string }> = {
   10: { label: "TRACE", color: "\x1b[90m" },   // gray
@@ -148,17 +149,39 @@ export async function execute(
       const { CloudRunJobRuntime } = await import("../../docker/cloud-run-runtime.js");
       runtime = new CloudRunJobRuntime(cloud as any);
     } else {
-      const { ECSFargateRuntime } = await import("../../docker/ecs-runtime.js");
-      runtime = new ECSFargateRuntime({
-        awsRegion: cloud.awsRegion!,
-        ecsCluster: cloud.ecsCluster!,
-        ecrRepository: cloud.ecrRepository!,
-        executionRoleArn: cloud.executionRoleArn!,
-        taskRoleArn: cloud.taskRoleArn!,
-        subnets: cloud.subnets!,
-        securityGroups: cloud.securityGroups,
-        secretPrefix: cloud.awsSecretPrefix,
-      });
+      // Route to Lambda runtime for short-timeout agents (same logic as scheduler)
+      let effectiveTimeout = globalConfig.local?.timeout ?? 900;
+      try {
+        const agentConfig = loadAgentConfig(projectPath, agent);
+        effectiveTimeout = agentConfig.timeout ?? effectiveTimeout;
+      } catch {
+        // Agent config not found — fall back to default timeout
+      }
+
+      if (effectiveTimeout <= AWS_CONSTANTS.LAMBDA_MAX_TIMEOUT) {
+        const { LambdaRuntime } = await import("../../docker/lambda-runtime.js");
+        runtime = new LambdaRuntime({
+          awsRegion: cloud.awsRegion!,
+          ecrRepository: cloud.ecrRepository!,
+          secretPrefix: cloud.awsSecretPrefix,
+          buildBucket: cloud.buildBucket,
+          lambdaRoleArn: cloud.lambdaRoleArn,
+          lambdaSubnets: cloud.lambdaSubnets,
+          lambdaSecurityGroups: cloud.lambdaSecurityGroups,
+        });
+      } else {
+        const { ECSFargateRuntime } = await import("../../docker/ecs-runtime.js");
+        runtime = new ECSFargateRuntime({
+          awsRegion: cloud.awsRegion!,
+          ecsCluster: cloud.ecsCluster!,
+          ecrRepository: cloud.ecrRepository!,
+          executionRoleArn: cloud.executionRoleArn!,
+          taskRoleArn: cloud.taskRoleArn!,
+          subnets: cloud.subnets!,
+          securityGroups: cloud.securityGroups,
+          secretPrefix: cloud.awsSecretPrefix,
+        });
+      }
     }
 
     if (opts.follow) {
