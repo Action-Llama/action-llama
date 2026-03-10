@@ -37,9 +37,9 @@ authType = "api_key"
 
 Supported providers: `anthropic`, `openai`, `groq`, `google`, `xai`, `mistral`, `openrouter`, `custom`. See [agent-config.toml Reference](agent-config-reference.md) for all available fields and provider examples.
 
-### 3. Write `PLAYBOOK.md`
+### 3. Write `ACTIONS.md`
 
-Create `my-agent/PLAYBOOK.md` — this is the system prompt that defines your agent's behavior:
+Create `my-agent/ACTIONS.md` — this is the system prompt that defines your agent's behavior:
 
 ```markdown
 # My Agent
@@ -60,7 +60,7 @@ Your configuration is in the `<agent-config>` block at the start of your prompt.
 - ...
 ```
 
-The PLAYBOOK.md is injected as the agent's system prompt at runtime. Write it as instructions to the LLM.
+The ACTIONS.md is injected as the agent's system prompt at runtime. Write it as instructions to the LLM.
 
 ### 4. Verify with `al status`
 
@@ -104,6 +104,6 @@ Without this step, the new agent will fail to access its credentials at runtime.
 ## Tips
 
 - Agent name is derived from the directory name — no need to put it in the config
-- Use `[RERUN]` in your PLAYBOOK.md to tell the agent to respond with `[RERUN]` when it did work and there may be more in the backlog
+- Use `[RERUN]` in your ACTIONS.md to tell the agent to respond with `[RERUN]` when it did work and there may be more in the backlog
 - Params in the config are injected into the agent prompt as an `<agent-config>` XML block
 - See [Examples](examples/dev-agent.md) for complete working agents

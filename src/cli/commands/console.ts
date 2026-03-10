@@ -20,7 +20,7 @@ Built-in agent templates:
 1. **dev** — Developer agent that picks up GitHub issues labeled with a trigger label, implements the changes, and opens PRs. Needs: github_token:default, git_ssh:default. Config fields: repos, triggerLabel, assignee. Uses: \`gh\`, \`git\`, \`curl\`.
 2. **reviewer** — PR reviewer agent that reviews open pull requests, approves good ones, and requests changes on problematic ones. Needs: github_token:default, git_ssh:default. Config fields: repos. Uses: \`gh\`, \`git\`, \`curl\`.
 3. **devops** — DevOps monitoring agent that detects CI failures and Sentry errors, then files GitHub issues. Needs: github_token:default, git_ssh:default, sentry_token:default. Config fields: repos, sentryOrg, sentryProjects. Uses: \`git\`, \`curl\`.
-4. **custom** — Start from scratch with a blank PLAYBOOK.md.
+4. **custom** — Start from scratch with a blank ACTIONS.md.
 
 ### Docker base image
 
@@ -28,7 +28,7 @@ When Docker mode is enabled, agents run in an isolated container. The base image
 
 ### When to create a custom Dockerfile
 
-After writing the agent's PLAYBOOK.md, analyze it to determine what CLI tools, language runtimes, or system packages the agent will need at runtime. If ANY tool is required that is not in the base image (git, curl, openssh-client, node), you MUST create a \`Dockerfile\` in the agent directory.
+After writing the agent's ACTIONS.md, analyze it to determine what CLI tools, language runtimes, or system packages the agent will need at runtime. If ANY tool is required that is not in the base image (git, curl, openssh-client, node), you MUST create a \`Dockerfile\` in the agent directory.
 
 Example — agent that needs \`gh\` CLI:
 
@@ -65,9 +65,9 @@ If a required credential is missing from the available list, tell the user to ru
 When the user asks to create an agent:
 - Ask which template they want and walk them through configuring it
 - Check the available credentials and use what's there; ask the user to choose when there are multiple instances of a credential type
-- Create the agent directory with \`agent-config.toml\`, \`PLAYBOOK.md\`, and a \`Dockerfile\` if the playbook requires tools not in the base image
+- Create the agent directory with \`agent-config.toml\`, \`ACTIONS.md\`, and a \`Dockerfile\` if the actions require tools not in the base image
 - Do NOT include \`[model]\` in agent-config.toml unless the user asks for a different model than the project default
-- **IMPORTANT:** Agent playbooks must be detailed and prescriptive with step-by-step commands. Copy the example playbook from the "Example Playbook" section above and customize it — do NOT write simplified or abbreviated instructions.
+- **IMPORTANT:** Agent actions must be detailed and prescriptive with step-by-step commands. Copy the example agent from the "Example Agent" section above and customize it — do NOT write simplified or abbreviated instructions.
 `;
 
 const NO_AGENTS_INITIAL_MESSAGE = `Help me create my first agent.`;

@@ -20,6 +20,6 @@ sentryOrg = "acme"
 sentryProjects = ["web-app", "api"]
 ```
 
-## `PLAYBOOK.md`
+## `ACTIONS.md`
 
-See [devops-PLAYBOOK.md](devops-PLAYBOOK.md) for the complete system prompt to copy into your agent directory.
+See [devops-ACTIONS.md](devops-ACTIONS.md) for the complete system prompt to copy into your agent directory.

@@ -7,7 +7,7 @@ An agent is a directory inside your project that contains instructions and confi
 ```
 my-agent/
   agent-config.toml    # Required — credentials, model, schedule, webhooks, params
-  PLAYBOOK.md          # Required — system prompt (the agent's instructions)
+  ACTIONS.md          # Required — system prompt (the agent's instructions)
   Dockerfile           # Optional — custom Docker image for this agent
 ```
 
@@ -43,11 +43,11 @@ Key points:
 - **`credentials`** — list of credential refs (`"type:instance"`) the agent needs at runtime. These are mounted into the container and injected as environment variables. See [Credentials](credentials.md).
 - **`schedule`** and/or **`webhooks`** — at least one trigger is required. Agents can have both.
 - **`[model]`** — optional. If omitted, the agent inherits the default model from the project's `config.toml`. See [Models](models.md).
-- **`[params]`** — optional key-value pairs injected into the agent's prompt as an `<agent-config>` JSON block. Use these for repo names, label names, org identifiers, or anything else your PLAYBOOK.md references.
+- **`[params]`** — optional key-value pairs injected into the agent's prompt as an `<agent-config>` JSON block. Use these for repo names, label names, org identifiers, or anything else your ACTIONS.md references.
 
 See [agent-config.toml Reference](agent-config-reference.md) for the full field reference.
 
-## `PLAYBOOK.md`
+## `ACTIONS.md`
 
 The system prompt that defines the agent's behavior. This is the most important file — it tells the LLM what to do, step by step.
 
@@ -76,7 +76,7 @@ Your configuration is in the `<agent-config>` block at the start of your prompt.
 
 ### How it's used at runtime
 
-The PLAYBOOK.md is set as the LLM's system prompt. The scheduler then sends a user-message prompt assembled from several blocks:
+The ACTIONS.md is set as the LLM's system prompt. The scheduler then sends a user-message prompt assembled from several blocks:
 
 1. **`<agent-config>`** — JSON of the `[params]` table from `agent-config.toml`
 2. **`<credential-context>`** — describes which environment variables and tools are available (e.g. `GITHUB_TOKEN`, `git`, `gh`, SSH config)
@@ -86,11 +86,11 @@ The PLAYBOOK.md is set as the LLM's system prompt. The scheduler then sends a us
    - *Webhook:* `<webhook-trigger>` block with the full event payload (source, event, action, repo, etc.)
    - *Agent trigger:* `<agent-trigger>` block with the source agent name and context
 
-Your PLAYBOOK.md should reference `<agent-config>` for parameter values and handle both scheduled and webhook triggers if the agent uses both.
+Your ACTIONS.md should reference `<agent-config>` for parameter values and handle both scheduled and webhook triggers if the agent uses both.
 
 ### Language skills
 
-Before the PLAYBOOK.md runs, the agent receives a preamble that teaches it a set of **language skills** — shorthand operations the playbook can reference naturally. The preamble explains the underlying mechanics (curl commands, env vars) so playbook authors never need to think about them.
+Before the ACTIONS.md runs, the agent receives a preamble that teaches it a set of **language skills** — shorthand operations the actions can reference naturally. The preamble explains the underlying mechanics (curl commands, env vars) so agent authors never need to think about them.
 
 Skills currently taught to agents:
 
@@ -100,7 +100,7 @@ Skills currently taught to agents:
 | **Locks** | `LOCK(...)`, `UNLOCK(...)`, `HEARTBEAT(...)` | Resource locking for parallel coordination. See [Resource locks](#resource-locks). |
 | **Credentials** | `GITHUB_TOKEN`, `gh`, `git`, etc. | Credential access and tool usage. See [Credentials](credentials.md). |
 
-Playbook authors write the shorthand naturally (e.g. `LOCK("github issue acme/app#42")`). The agent learns what it means from the preamble — no need to document curl commands or API endpoints in your playbook.
+Agent authors write the shorthand naturally (e.g. `LOCK("github issue acme/app#42")`). The agent learns what it means from the preamble — no need to document curl commands or API endpoints in your actions.
 
 ### Signals
 
@@ -120,7 +120,7 @@ Each agent run is an isolated, short-lived container (or host process with `--no
 2. **Container launches** — a fresh container starts with credentials and config passed via environment variables and volume mounts.
 3. **Credentials are loaded** — the entry point reads credential files from `/credentials/<type>/<instance>/<field>` (local Docker and Cloud Run) or from `AL_SECRET_*` environment variables (ECS). Key credentials are injected as env vars the LLM can use directly: `GITHUB_TOKEN`, `GH_TOKEN`, `SENTRY_AUTH_TOKEN`, `GIT_SSH_COMMAND`, git author identity, etc.
 4. **LLM session starts** — the model is initialized and receives two inputs:
-   - **System prompt:** the contents of `PLAYBOOK.md`
+   - **System prompt:** the contents of `ACTIONS.md`
    - **User prompt:** `<agent-config>` (params JSON) + `<credential-context>` (available env vars, tools, and security policy) + trigger context (schedule, webhook payload, or agent trigger)
 5. **Agent runs autonomously** — the LLM executes tools (bash, file I/O, API calls) until it finishes or hits an error. Rate-limited API calls are retried automatically (up to 5 attempts with exponential backoff).
 6. **Error detection** — the container watches for repeated auth/permission failures (e.g. "bad credentials", "permission denied"). After 3 such errors, it aborts early.
@@ -152,7 +152,7 @@ Locks are managed by the scheduler and available to all agents running in Docker
 3. If another instance already holds the lock, the agent gets back the holder's name and skips that resource.
 4. When done, the agent calls `UNLOCK("resource key")`.
 
-The agent learns the lock API from a preamble injected before the playbook runs. Playbook authors just write the shorthand — no need to think about HTTP endpoints or authentication.
+The agent learns the lock API from a preamble injected before the actions run. Agent authors just write the shorthand — no need to think about HTTP endpoints or authentication.
 
 ### Operations
 
@@ -180,7 +180,7 @@ Each container gets a unique per-run secret (the same one used for the shutdown 
 
 When a container exits — whether it finishes successfully, hits an error, or times out — all of its locks are released automatically by the scheduler. You don't need to worry about cleanup in error paths.
 
-### Example playbook usage
+### Example agents
 
 ```markdown
 ## Workflow

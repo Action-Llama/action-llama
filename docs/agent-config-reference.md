@@ -14,7 +14,7 @@ credentials = ["github_token:default", "git_ssh:default", "sentry_token:default"
 schedule = "*/5 * * * *"
 
 # Optional: number of concurrent runs allowed (default: 1)
-# When scale > 1, use LOCK/UNLOCK in your playbook to coordinate
+# When scale > 1, use LOCK/UNLOCK in your actions to coordinate
 # and prevent instances from working on the same resource.
 scale = 2
 
@@ -59,7 +59,7 @@ sentryProjects = ["web-app", "api"]
 |-------|------|----------|-------------|
 | `credentials` | string[] | Yes | Credential refs as `"type:instance"` needed at runtime |
 | `schedule` | string | No* | Cron expression for polling |
-| `scale` | number | No | Number of concurrent runs allowed (default: 1). Set to `0` to disable the agent. Use lock skills in your playbook to coordinate instances. See [Resource Locks](agents.md#resource-locks). |
+| `scale` | number | No | Number of concurrent runs allowed (default: 1). Set to `0` to disable the agent. Use lock skills in your actions to coordinate instances. See [Resource Locks](agents.md#resource-locks). |
 | `timeout` | number | No | Max runtime in seconds. Falls back to `[local].timeout` in project config, then `900`. On AWS ECS, agents with timeout <= 900 auto-route to Lambda for faster startup. See [Timeout](#timeout). |
 | `model` | table | No | LLM model configuration (falls back to `[model]` in project `config.toml`) |
 | `model.provider` | string | Yes* | LLM provider ("anthropic", "openai", "groq", "google", "xai", "mistral", "openrouter", or "custom") |

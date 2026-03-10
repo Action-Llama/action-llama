@@ -480,7 +480,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
     // 3. Build per-agent images in parallel
     //    Every agent gets its own image with static files baked in (agent config,
-    //    PLAYBOOK.md, prompt skeleton). This avoids passing large payloads as env
+    //    ACTIONS.md, prompt skeleton). This avoids passing large payloads as env
     //    vars at runtime, which exceeds Lambda's 4KB env var limit.
     const { existsSync, readFileSync: readFs } = await import("fs");
 
@@ -493,14 +493,14 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
       const hasCustomDockerfile = existsSync(resolvePath(projectPath, agentConfig.name, "Dockerfile"));
 
-      // Read PLAYBOOK.md and build static files to bake into the image
-      const playbookPath = resolvePath(projectPath, agentConfig.name, "PLAYBOOK.md");
-      const playbookMd = existsSync(playbookPath) ? readFs(playbookPath, "utf-8") : "";
+      // Read ACTIONS.md and build static files to bake into the image
+      const actionsPath = resolvePath(projectPath, agentConfig.name, "ACTIONS.md");
+      const actionsMd = existsSync(actionsPath) ? readFs(actionsPath, "utf-8") : "";
       const timeout = String(agentConfig.timeout ?? globalConfig.local?.timeout ?? 900);
 
       const extraFiles: Record<string, string> = {
         "agent-config.json": JSON.stringify(agentConfig),
-        "PLAYBOOK.md": playbookMd,
+        "ACTIONS.md": actionsMd,
         "prompt-static.txt": buildPromptSkeleton(agentConfig, buildSkills),
         "timeout": timeout,
       };

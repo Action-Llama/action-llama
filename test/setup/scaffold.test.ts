@@ -94,15 +94,15 @@ describe("scaffoldProject", () => {
     }
   });
 
-  it("writes PLAYBOOK.md for each agent", () => {
+  it("writes ACTIONS.md for each agent", () => {
     tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
     const projDir = resolve(tmpDir, "my-project");
     scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
 
     for (const name of ["dev", "reviewer", "devops"]) {
-      const playbookPath = resolve(projDir, name, "PLAYBOOK.md");
-      expect(existsSync(playbookPath)).toBe(true);
-      const content = readFileSync(playbookPath, "utf-8");
+      const actionsPath = resolve(projDir, name, "ACTIONS.md");
+      expect(existsSync(actionsPath)).toBe(true);
+      const content = readFileSync(actionsPath, "utf-8");
       expect(content.length).toBeGreaterThan(0);
     }
   });

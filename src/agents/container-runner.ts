@@ -181,7 +181,7 @@ export class ContainerAgentRunner {
       credentials = await this.runtime.prepareCredentials(credRefs);
 
       // Build env vars — only pass the dynamic prompt suffix.
-      // Static content (agent config, PLAYBOOK.md, prompt skeleton, timeout)
+      // Static content (agent config, ACTIONS.md, prompt skeleton, timeout)
       // is baked into the image at /app/static/ during build.
       // The container-entry reads from files if available, falling back to env vars.
       const env: Record<string, string> = {

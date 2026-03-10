@@ -40,6 +40,6 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o 
 USER node
 ```
 
-## `PLAYBOOK.md`
+## `ACTIONS.md`
 
-See [dev-PLAYBOOK.md](dev-PLAYBOOK.md) for the complete system prompt to copy into your agent directory.
+See [dev-ACTIONS.md](dev-ACTIONS.md) for the complete system prompt to copy into your agent directory.

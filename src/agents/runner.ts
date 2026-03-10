@@ -112,7 +112,7 @@ export class AgentRunner {
 
     try {
       const cwd = agentDir(this.projectPath, this.agentConfig.name);
-      const agentsFile = resolve(cwd, "PLAYBOOK.md");
+      const agentsFile = resolve(cwd, "ACTIONS.md");
 
       const { model } = this.agentConfig;
       const llmModel = getModel(
@@ -153,10 +153,10 @@ export class AgentRunner {
         }
       }
 
-      // PLAYBOOK.md must exist on disk (written during al new)
+      // ACTIONS.md must exist on disk (written during al new)
       if (!existsSync(agentsFile)) {
         throw new Error(
-          `PLAYBOOK.md not found at ${agentsFile}. Run 'al new' to create it.`
+          `ACTIONS.md not found at ${agentsFile}. Run 'al new' to create it.`
         );
       }
       const agentsContent = readFileSync(agentsFile, "utf-8");

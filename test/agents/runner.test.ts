@@ -86,8 +86,8 @@ describe("AgentRunner", () => {
     // Create needed directories
     mkdirSync(resolve(tmpDir, "dev"), { recursive: true });
     mkdirSync(resolve(tmpDir, ".al", "logs"), { recursive: true });
-    // Write PLAYBOOK.md (required on disk now)
-    writeFileSync(resolve(tmpDir, "dev", "PLAYBOOK.md"), "# Dev Agent\nDefault instructions.");
+    // Write ACTIONS.md (required on disk now)
+    writeFileSync(resolve(tmpDir, "dev", "ACTIONS.md"), "# Dev Agent\nDefault instructions.");
   });
 
   afterEach(() => {
@@ -282,12 +282,12 @@ describe("AgentRunner", () => {
     );
   });
 
-  it("throws when PLAYBOOK.md is missing", async () => {
-    // Create a separate agent dir without PLAYBOOK.md
+  it("throws when ACTIONS.md is missing", async () => {
+    // Create a separate agent dir without ACTIONS.md
     const noMdDir = mkdtempSync(join(tmpdir(), "al-runner-nomd-"));
     mkdirSync(resolve(noMdDir, "dev"), { recursive: true });
     mkdirSync(resolve(noMdDir, ".al", "logs"), { recursive: true });
-    // No PLAYBOOK.md written
+    // No ACTIONS.md written
 
     const logger = makeLogger();
     const errorSpy = vi.spyOn(logger, "error");
@@ -297,14 +297,14 @@ describe("AgentRunner", () => {
 
     await runner.run("Test");
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ err: expect.objectContaining({ message: expect.stringContaining("PLAYBOOK.md not found") }) }),
+      expect.objectContaining({ err: expect.objectContaining({ message: expect.stringContaining("ACTIONS.md not found") }) }),
       expect.any(String)
     );
 
     rmSync(noMdDir, { recursive: true, force: true });
   });
 
-  it("reads PLAYBOOK.md from disk", async () => {
+  it("reads ACTIONS.md from disk", async () => {
     const runner = new AgentRunner(makeAgentConfig(), makeLogger(), tmpDir);
     mockPrompt.mockResolvedValue(undefined);
     mockSubscribe.mockImplementation(() => {});
@@ -313,9 +313,9 @@ describe("AgentRunner", () => {
     expect(mockPrompt).toHaveBeenCalled();
   });
 
-  it("uses custom PLAYBOOK.md when present", async () => {
-    // Overwrite with a custom PLAYBOOK.md
-    writeFileSync(resolve(tmpDir, "dev", "PLAYBOOK.md"), "# Custom Agent\nDo custom things.");
+  it("uses custom ACTIONS.md when present", async () => {
+    // Overwrite with a custom ACTIONS.md
+    writeFileSync(resolve(tmpDir, "dev", "ACTIONS.md"), "# Custom Agent\nDo custom things.");
 
     const runner = new AgentRunner(makeAgentConfig(), makeLogger(), tmpDir);
     mockPrompt.mockResolvedValue(undefined);

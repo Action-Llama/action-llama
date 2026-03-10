@@ -37,10 +37,10 @@ export function scaffoldAgent(projectPath: string, agent: ScaffoldAgent): void {
     stringifyTOML(configToWrite as Record<string, unknown>) + "\n"
   );
 
-  // Write a stub PLAYBOOK.md if none exists
-  const playbookPath = resolve(agentPath, "PLAYBOOK.md");
-  if (!existsSync(playbookPath)) {
-    writeFileSync(playbookPath, `# ${agent.name} Agent\n\nCustom agent.\n`);
+  // Write a stub ACTIONS.md if none exists
+  const actionsPath = resolve(agentPath, "ACTIONS.md");
+  if (!existsSync(actionsPath)) {
+    writeFileSync(actionsPath, `# ${agent.name} Agent\n\nCustom agent.\n`);
   }
 }
 

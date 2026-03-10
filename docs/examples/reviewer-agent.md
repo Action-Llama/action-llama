@@ -18,6 +18,6 @@ thinkingLevel = "medium"
 authType = "api_key"
 ```
 
-## `PLAYBOOK.md`
+## `ACTIONS.md`
 
-See [reviewer-PLAYBOOK.md](reviewer-PLAYBOOK.md) for the complete system prompt to copy into your agent directory.
+See [reviewer-ACTIONS.md](reviewer-ACTIONS.md) for the complete system prompt to copy into your agent directory.

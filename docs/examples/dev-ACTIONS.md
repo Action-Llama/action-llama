@@ -50,7 +50,7 @@ gh label create "agent-completed" --repo <determined-repo> --color 1D76DB --desc
 
 3. **Understand the issue** — read the title, body, and comments. Note file paths, acceptance criteria, and linked issues.
 
-4. **Read project conventions** — in the repo, read `PLAYBOOK.md`, `CLAUDE.md`, `CONTRIBUTING.md`, and `README.md` if they exist. Follow any conventions found there.
+4. **Read project conventions** — in the repo, read `ACTIONS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, and `README.md` if they exist. Follow any conventions found there.
 
 5. **Implement changes** — work in the repo. Make the minimum necessary changes, follow existing patterns, and write or update tests if the project has a test suite.
 

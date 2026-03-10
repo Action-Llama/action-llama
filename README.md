@@ -9,7 +9,7 @@ Run agents like scripts: triggered by cron or webhooks.
 Dev Experience:
 
 1. Either a webhook or cron wakes up the agent
-2. The agent runs according to the instructions in PLAYBOOK.md you define
+2. The agent runs according to the instructions in ACTIONS.md you define
 3. The agent shuts down
 
 Key features:
@@ -52,7 +52,7 @@ The console is a TUI powered by [Pi](https://github.com/badlogic/pi-mono) that h
 
 You can also create agents manually — see the [creating agents guide](docs/creating-agents.md).
 
-Or, if you're using your own coding agent just make sure it reads the AGENTS.md in your project root. It contains everything needed to create agents (including a complete example playbook).
+Or, if you're using your own coding agent just make sure it reads the AGENTS.md in your project root. It contains everything needed to create agents (including a complete example agent).
 
 ### 3. Run
 
@@ -75,11 +75,11 @@ npx al doctor
 ```
 my-project/
   package.json              # Includes @action-llama/action-llama as a dependency
-  AGENTS.md                 # Project overview, credential/webhook reference, example playbook
+  AGENTS.md                 # Project overview, credential/webhook reference, example agent
   config.toml               # Global config: [local], [cloud], gateway, webhooks (no secrets)
   dev/                      # One directory per agent
     agent-config.toml       # Agent config: credentials, model, schedule, webhooks, params
-    PLAYBOOK.md             # Agent instructions (system prompt) — edit to customize behavior
+    ACTIONS.md             # Agent instructions (system prompt) — edit to customize behavior
     Dockerfile              # (optional) Custom Docker image for this agent
 ```
 
@@ -130,7 +130,7 @@ See also the [credentials](docs/credentials.md), [webhooks](docs/webhooks.md), a
 
 | Doc | Description |
 |-----|-------------|
-| [Agents](docs/agents.md) | What an agent is: config, PLAYBOOK.md, Dockerfile, runtime prompt |
+| [Agents](docs/agents.md) | What an agent is: config, ACTIONS.md, Dockerfile, runtime prompt |
 | [CLI Commands](docs/commands.md) | All CLI commands with options and flags |
 | [Creating Agents](docs/creating-agents.md) | Step-by-step guide to creating a new agent |
 | [config.toml Reference](docs/config-reference.md) | Project-level config: model, Docker, cloud, gateway, webhooks |

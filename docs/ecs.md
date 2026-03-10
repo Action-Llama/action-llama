@@ -599,7 +599,7 @@ al start -c
 
 **What needs to be in the deploy:**
 
-- Your project repo (with `config.toml`, agent directories containing `agent-config.toml` and `PLAYBOOK.md`)
+- Your project repo (with `config.toml`, agent directories containing `agent-config.toml` and `ACTIONS.md`)
 - `@action-llama/action-llama` as a dependency in `package.json`
 
 The scheduler builds images via CodeBuild, launches containers on ECS Fargate, and streams logs from CloudWatch — all remotely. No local Docker is needed.
@@ -643,4 +643,4 @@ If you get `AccessDeniedException`, add the `logs:CreateLogGroup` action to your
 
 **Agent can't access secrets** — Verify the per-agent task role has `secretsmanager:GetSecretValue` on the correct secret ARNs. Check with `aws iam get-role-policy --role-name al-dev-task-role --policy-name SecretsAccess`.
 
-**Task stops immediately with exit code 1** — Check CloudWatch Logs for the error. Common causes: missing credentials in Secrets Manager, missing `PLAYBOOK.md`, invalid model config.
+**Task stops immediately with exit code 1** — Check CloudWatch Logs for the error. Common causes: missing credentials in Secrets Manager, missing `ACTIONS.md`, invalid model config.

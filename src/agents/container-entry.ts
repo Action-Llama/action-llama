@@ -122,7 +122,7 @@ curl -s -X POST "$GATEWAY_URL/shutdown" \\
   writeFileSync("/tmp/bin/al-shutdown", alShutdownScript, { mode: 0o755 });
   process.env.PATH = `/tmp/bin:${process.env.PATH || ""}`;
 
-  // Load agent config and PLAYBOOK.md from baked-in files or env vars.
+  // Load agent config and ACTIONS.md from baked-in files or env vars.
   // Images built with extraFiles have static content at /app/static/.
   const STATIC_DIR = "/app/static";
   const hasBakedFiles = existsSync(`${STATIC_DIR}/agent-config.json`);
@@ -133,7 +133,7 @@ curl -s -X POST "$GATEWAY_URL/shutdown" \\
 
   if (hasBakedFiles) {
     agentConfig = JSON.parse(readFileSync(`${STATIC_DIR}/agent-config.json`, "utf-8"));
-    agentsMd = readFileSync(`${STATIC_DIR}/PLAYBOOK.md`, "utf-8");
+    agentsMd = readFileSync(`${STATIC_DIR}/ACTIONS.md`, "utf-8");
     timeoutSeconds = parseInt(readFileSync(`${STATIC_DIR}/timeout`, "utf-8").trim(), 10) || 3600;
     emitLog("info", "loaded static files from image");
   } else {
@@ -248,10 +248,10 @@ curl -s -X POST "$GATEWAY_URL/shutdown" \\
     authStorage.setRuntimeApiKey(modelProvider, providerApiKey);
   }
 
-  // PLAYBOOK.md content is passed via the serialized config from the host
+  // ACTIONS.md content is passed via the serialized config from the host
   const agentsContent = agentsMd || `# ${agentConfig.name} Agent\n\nCustom agent.\n`;
 
-  const agentsFile = "/tmp/PLAYBOOK.md";
+  const agentsFile = "/tmp/ACTIONS.md";
 
   const resourceLoader = new DefaultResourceLoader({
     noExtensions: true,

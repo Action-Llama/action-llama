@@ -27,7 +27,7 @@ The container receives everything it needs via environment variables and mounts:
 
 | Env var | Description |
 |---------|-------------|
-| `AGENT_CONFIG` | JSON-serialized agent config (model, credentials, params) plus `PLAYBOOK.md` content |
+| `AGENT_CONFIG` | JSON-serialized agent config (model, credentials, params) plus `ACTIONS.md` content |
 | `PROMPT` | The fully assembled prompt (`<agent-config>` + `<credential-context>` + trigger text) |
 | `TIMEOUT_SECONDS` | Max runtime in seconds (default: 3600). The container self-terminates if exceeded |
 | `GATEWAY_URL` | HTTP URL of the host gateway (local Docker only — used for credential fetch and shutdown) |
@@ -47,7 +47,7 @@ The container tries each strategy in order: volume mount, env vars, gateway. The
 
 1. **Set working directory** — `chdir("/tmp")`
 2. **Start self-termination timer** — kills the process with exit code 124 if `TIMEOUT_SECONDS` is exceeded
-3. **Parse config** — reads `AGENT_CONFIG`, extracts `PLAYBOOK.md` content
+3. **Parse config** — reads `AGENT_CONFIG`, extracts `ACTIONS.md` content
 4. **Load credentials** — from volume, env vars, or gateway (see table above)
 5. **Inject env vars from credentials:**
    - `GITHUB_TOKEN` / `GH_TOKEN` from `github_token` credential
@@ -160,11 +160,11 @@ Agents that need extra tools can add a `Dockerfile` to their directory. The simp
 my-project/
   dev/
     agent-config.toml
-    PLAYBOOK.md
+    ACTIONS.md
     Dockerfile          <-- custom image for this agent
   reviewer/
     agent-config.toml
-    PLAYBOOK.md
+    ACTIONS.md
                         <-- no Dockerfile, uses base image
 ```
 
@@ -265,4 +265,4 @@ For Cloud Run configuration, see [Cloud Run docs](cloud-run.md). For ECS Fargate
 
 **Agent image build fails** — Check that your agent's `Dockerfile` starts with `FROM al-agent:latest` (the base must exist first) and that any `apt-get install` packages are spelled correctly.
 
-**Container exits immediately** — Check `al logs <agent>` for the error. Common causes: missing credentials, missing `PLAYBOOK.md`, invalid model config.
+**Container exits immediately** — Check `al logs <agent>` for the error. Common causes: missing credentials, missing `ACTIONS.md`, invalid model config.

@@ -1,9 +1,9 @@
 
 Run agents like infrastructure. Versioned, deployable, repeatable.
 
-First define a playbook for an agent:
+First define actions for an agent:
 
-```dev/PLAYBOOK.md
+```dev/ACTIONS.md
 You are a developer. Your job is to pick up GitHub issues and implement the requested changes.
 
 1. **Claim the issue** — run `gh issue edit <number> --repo <repo> --add-label in-progress` to mark it as claimed.

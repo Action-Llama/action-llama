@@ -7,14 +7,14 @@ This is an Action Llama project. It runs automated development agents triggered 
 Each agent is a directory containing:
 
 - `agent-config.toml` — credentials, model, schedule, webhooks, params
-- `PLAYBOOK.md` — the system prompt (playbook) that defines what the agent does
+- `ACTIONS.md` — the system prompt that defines what the agent does
 - `Dockerfile` (optional) — custom Docker image extending the base `al-agent:latest` (e.g. to install extra tools like `gh`)
 
 ## Creating an Agent
 
 1. Create a directory for your agent (e.g. `my-agent/`)
 2. Add `agent-config.toml` with credentials, model config, and a schedule or webhook trigger
-3. Add `PLAYBOOK.md` with the playbook — step-by-step instructions the LLM follows each run
+3. Add `ACTIONS.md` with the actions — step-by-step instructions the LLM follows each run
 4. If running in Docker mode and your agent needs tools beyond what the base image provides (git, curl, openssh-client, node), add a `Dockerfile` — see Docker Mode section below
 5. Verify with `npx al status`
 6. Run with `npx al start`
@@ -294,11 +294,11 @@ sentryProjects = ["web-app", "api"]
 - Array of tables: `[[arrayName]]` on its own line — each block is one entry in the array
 - Comments: `# comment`
 
-## Example Playbook
+## Example Agent
 
-**Agent playbooks must be detailed and prescriptive with step-by-step commands. Copy this example and customize rather than writing from scratch.**
+**Agent actions must be detailed and prescriptive with step-by-step commands. Copy this example and customize rather than writing from scratch.**
 
-The following is a complete, working PLAYBOOK.md for a developer agent. Use it as a template for all new agents:
+The following is a complete, working ACTIONS.md for a developer agent. Use it as a template for all new agents:
 
 ```markdown
 # Developer Agent
@@ -354,7 +354,7 @@ gh label create "agent-completed" --repo <determined-repo> --color 1D76DB --desc
 
 3. **Understand the issue** — read the title, body, and comments. Note file paths, acceptance criteria, and linked issues.
 
-4. **Read project conventions** — in the repo, read \`PLAYBOOK.md\`, \`CLAUDE.md\`, \`CONTRIBUTING.md\`, and \`README.md\` if they exist. Follow any conventions found there.
+4. **Read project conventions** — in the repo, read \`ACTIONS.md\`, \`CLAUDE.md\`, \`CONTRIBUTING.md\`, and \`README.md\` if they exist. Follow any conventions found there.
 
 5. **Implement changes** — work in the repo. Make the minimum necessary changes, follow existing patterns, and write or update tests if the project has a test suite.
 
@@ -439,7 +439,7 @@ Webhook-triggered and agent-triggered runs do not re-run — they respond to a s
 
 ## Skills Reference
 
-Agents have access to runtime skills — capabilities taught via a preamble before the playbook runs. Each skill is documented for LLM consumption:
+Agents have access to runtime skills — capabilities taught via a preamble before the actions run. Each skill is documented for LLM consumption:
 
 - [Skills Overview](skills/README.md)
 - [Credentials](skills/credentials.md) — env vars, tools, and access patterns from mounted credentials
