@@ -9,8 +9,8 @@
  * Entrypoint: `node dist/cli/main.js start -p /app/project -c --headless --gateway`
  */
 
-import { existsSync, readFileSync, readdirSync, statSync } from "fs";
-import { resolve as resolvePath, dirname, relative, join } from "path";
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from "fs";
+import { resolve as resolvePath, dirname, join } from "path";
 import { fileURLToPath } from "url";
 import type { GlobalConfig } from "../shared/config.js";
 import type { ContainerRuntime } from "../docker/runtime.js";
@@ -103,20 +103,29 @@ export async function buildSchedulerImage(opts: SchedulerImageOpts): Promise<str
   const projectFiles = collectProjectFiles(projectPath);
   const dockerfileContent = generateDockerfile();
 
-  // The extraFiles map puts project files under the "project/" prefix so that
-  // COPY project/ ./project/ in the Dockerfile picks them up.
+  // The extraFiles map puts project files under the "project/" prefix.
+  // The build pipeline writes them to static/project/ and auto-injects
+  // COPY static/ /app/static/.
   const extraFiles: Record<string, string> = {};
   for (const [relPath, content] of Object.entries(projectFiles)) {
     extraFiles[join("project", relPath)] = content;
   }
 
+  // Write the Dockerfile to a temp file rather than using dockerfileContent,
+  // so that buildImageCodeBuild includes package.json + dist/ in the content
+  // hash and build context. This ensures AL code changes bust the cache.
+  const { tmpdir } = await import("os");
+  const { randomUUID } = await import("crypto");
+  const tmpDockerfile = join(tmpdir(), `al-scheduler-dockerfile-${randomUUID().slice(0, 8)}`);
+  mkdirSync(dirname(tmpDockerfile), { recursive: true });
+  writeFileSync(tmpDockerfile, dockerfileContent);
+
   const tag = AWS_CONSTANTS.SCHEDULER_IMAGE;
 
   const image = await runtime.buildImage({
     tag,
-    dockerfile: "Dockerfile",
+    dockerfile: tmpDockerfile,
     contextDir: packageRoot,
-    dockerfileContent,
     extraFiles,
     onProgress,
   });
