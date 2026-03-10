@@ -137,6 +137,9 @@ export class LambdaRuntime implements ContainerRuntime {
         Timeout: Math.min(timeout, AWS_CONSTANTS.LAMBDA_MAX_TIMEOUT),
         MemorySize: memoryMb,
         Environment: environment,
+        ImageConfig: {
+          EntryPoint: ["node", "/app/dist/agents/lambda-handler.js"],
+        },
         ...(this.config.lambdaSubnets?.length ? {
           VpcConfig: {
             SubnetIds: this.config.lambdaSubnets,
@@ -145,7 +148,8 @@ export class LambdaRuntime implements ContainerRuntime {
         } : {}),
       }));
     } else {
-      // Create new function
+      // Create new function — override ENTRYPOINT to use the Lambda Runtime
+      // API handler instead of the default container-entry.js direct runner.
       await this.lambdaClient.send(new CreateFunctionCommand({
         FunctionName: functionName,
         PackageType: "Image",
@@ -154,6 +158,9 @@ export class LambdaRuntime implements ContainerRuntime {
         Timeout: Math.min(timeout, AWS_CONSTANTS.LAMBDA_MAX_TIMEOUT),
         MemorySize: memoryMb,
         Environment: environment,
+        ImageConfig: {
+          EntryPoint: ["node", "/app/dist/agents/lambda-handler.js"],
+        },
         ...(this.config.lambdaSubnets?.length ? {
           VpcConfig: {
             SubnetIds: this.config.lambdaSubnets,

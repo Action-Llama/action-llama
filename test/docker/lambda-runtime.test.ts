@@ -161,6 +161,9 @@ describe("LambdaRuntime", () => {
     expect(createCalls[0][0].FunctionName).toBe("al-fast-agent");
     expect(createCalls[0][0].PackageType).toBe("Image");
     expect(createCalls[0][0].Timeout).toBe(300);
+    expect(createCalls[0][0].ImageConfig).toEqual({
+      EntryPoint: ["node", "/app/dist/agents/lambda-handler.js"],
+    });
   });
 
   it("updates existing Lambda function", async () => {
@@ -210,6 +213,9 @@ describe("LambdaRuntime", () => {
     expect(vi.mocked(UpdateFunctionCodeCommand).mock.calls).toHaveLength(1);
     expect(vi.mocked(UpdateFunctionConfigurationCommand).mock.calls).toHaveLength(1);
     expect(vi.mocked(UpdateFunctionConfigurationCommand).mock.calls[0][0].Timeout).toBe(600);
+    expect(vi.mocked(UpdateFunctionConfigurationCommand).mock.calls[0][0].ImageConfig).toEqual({
+      EntryPoint: ["node", "/app/dist/agents/lambda-handler.js"],
+    });
   });
 
   it("caps timeout at LAMBDA_MAX_TIMEOUT (900s)", async () => {

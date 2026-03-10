@@ -66,8 +66,7 @@ async function loadCredentialsFromGateway(gatewayUrl: string, secret: string): P
   emitLog("info", "fetching credentials from gateway");
   const res = await fetch(`${gatewayUrl}/credentials/${secret}`);
   if (!res.ok) {
-    emitLog("error", "failed to fetch credentials from gateway", { status: res.status });
-    process.exit(1);
+    throw new Error(`failed to fetch credentials from gateway (status ${res.status})`);
   }
   credBundle = await res.json();
 }
@@ -80,7 +79,7 @@ function readCredentialFields(type: string, instance: string): Record<string, st
   return credBundle[type]?.[instance] || {};
 }
 
-async function main() {
+export async function runAgent(): Promise<number> {
   // Point HOME to /tmp so that tools writing to $HOME (e.g. git config --global)
   // work on read-only filesystems like Lambda where /home/node is not writable.
   process.env.HOME = "/tmp";
@@ -111,8 +110,7 @@ async function main() {
     // Legacy env var path (for images built without extraFiles)
     const agentConfigStr = process.env.AGENT_CONFIG;
     if (!agentConfigStr) {
-      emitLog("error", "missing AGENT_CONFIG env var and no baked-in files at /app/static/");
-      process.exit(1);
+      throw new Error("missing AGENT_CONFIG env var and no baked-in files at /app/static/");
     }
     const parsed = JSON.parse(agentConfigStr);
     agentsMd = parsed._agentsMd;
@@ -146,8 +144,7 @@ async function main() {
     await loadCredentialsFromGateway(gatewayUrl, shutdownSecret);
     emitLog("info", "credentials loaded from gateway");
   } else {
-    emitLog("error", "no credentials available — no volume mount, env vars, or gateway URL");
-    process.exit(1);
+    throw new Error("no credentials available — no volume mount, env vars, or gateway URL");
   }
 
   // Read provider API key from credentials (not needed for pi_auth)
@@ -155,8 +152,7 @@ async function main() {
   const credentialType = `${modelProvider}_key`;
   const providerApiKey = readCredentialField(credentialType, "default", "token");
   if (!providerApiKey && agentConfig.model.authType !== "pi_auth") {
-    emitLog("error", `missing ${credentialType} credential. Run 'al doctor' to configure it.`);
-    process.exit(1);
+    throw new Error(`missing ${credentialType} credential. Run 'al doctor' to configure it.`);
   }
 
   // Generic credential → env var injection from credential definitions
@@ -280,6 +276,7 @@ async function main() {
   let outputText = "";
   let eventCount = 0;
   let unrecoverableErrors = 0;
+  let abortedDueToErrors = false;
   session.subscribe((event) => {
     eventCount++;
     // Log all event types for debugging
@@ -330,8 +327,8 @@ async function main() {
           unrecoverableErrors++;
           if (unrecoverableErrors >= UNRECOVERABLE_THRESHOLD) {
             emitLog("error", "Aborting: repeated auth/permission failures — check credentials");
+            abortedDueToErrors = true;
             session.dispose();
-            process.exit(1);
           }
         }
       } else {
@@ -350,8 +347,7 @@ async function main() {
   } else {
     const envPrompt = process.env.PROMPT;
     if (!envPrompt) {
-      emitLog("error", "missing PROMPT env var and no baked-in prompt skeleton");
-      process.exit(1);
+      throw new Error("missing PROMPT env var and no baked-in prompt skeleton");
     }
     fullPrompt = envPrompt;
   }
@@ -380,22 +376,33 @@ async function main() {
 
   emitLog("info", "prompt returned", { eventCount, resultType: typeof result, resultKeys: result ? Object.keys(result) : [] });
 
+  session.dispose();
+  clearTimeout(timer);
+
+  if (abortedDueToErrors) {
+    return 1;
+  }
+
   if (outputText.includes("[RERUN]")) {
     emitLog("info", "run completed, rerun requested", { outputLength: outputText.length });
     console.log(outputText.slice(0, 2000));
     console.log("[RERUN]");
-    session.dispose();
-    process.exit(42);
-  } else {
-    emitLog("info", "run completed", { outputLength: outputText.length });
-    console.log(outputText.slice(0, 2000));
+    return 42;
   }
 
-  session.dispose();
-  process.exit(0);
+  emitLog("info", "run completed", { outputLength: outputText.length });
+  console.log(outputText.slice(0, 2000));
+  return 0;
 }
 
-main().catch((err) => {
-  emitLog("error", "container entry error", { error: err.message, stack: err.stack?.split("\n").slice(0, 5).join("\n") });
-  process.exit(1);
-});
+// Auto-run when executed directly (not as a Lambda handler).
+// On Lambda, AWS_LAMBDA_RUNTIME_API is set and lambda-handler.ts drives execution.
+if (!process.env.AWS_LAMBDA_RUNTIME_API) {
+  runAgent().then(
+    (code) => process.exit(code),
+    (err) => {
+      emitLog("error", "container entry error", { error: err.message, stack: err.stack?.split("\n").slice(0, 5).join("\n") });
+      process.exit(1);
+    },
+  );
+}
