@@ -99,21 +99,21 @@ curl -s -X POST "$GATEWAY_URL/locks/acquire" \\
 if [ -z "$GATEWAY_URL" ]; then echo '{"ok":true}'; exit 0; fi
 curl -s -X POST "$GATEWAY_URL/locks/release" \\
   -H 'Content-Type: application/json' \\
-  -d '{"secret":"'"$SHUTDOWN_SECRET"'","resourceKey":"'"$1"'"}'
+  -d '{"secret":"'"$SHUTDOWN_SECRET"'","resourceKey":"'"$1"'"}' || echo '{"ok":true,"note":"gateway unreachable, lock will expire"}'
 `;
 
   const rlockHeartbeatScript = `#!/bin/sh
 if [ -z "$GATEWAY_URL" ]; then echo '{"ok":true}'; exit 0; fi
 curl -s -X POST "$GATEWAY_URL/locks/heartbeat" \\
   -H 'Content-Type: application/json' \\
-  -d '{"secret":"'"$SHUTDOWN_SECRET"'","resourceKey":"'"$1"'"}'
+  -d '{"secret":"'"$SHUTDOWN_SECRET"'","resourceKey":"'"$1"'"}' || echo '{"ok":true,"note":"gateway unreachable"}'
 `;
 
   const alShutdownScript = `#!/bin/sh
 if [ -z "$GATEWAY_URL" ]; then exit 0; fi
 curl -s -X POST "$GATEWAY_URL/shutdown" \\
   -H 'Content-Type: application/json' \\
-  -d '{"secret":"'"$SHUTDOWN_SECRET"'","reason":"'"$\{1:-agent requested shutdown\}"'"}'
+  -d '{"secret":"'"$SHUTDOWN_SECRET"'","reason":"'"$\{1:-agent requested shutdown\}"'"}' || true
 `;
 
   writeFileSync("/tmp/bin/rlock", rlockScript, { mode: 0o755 });
