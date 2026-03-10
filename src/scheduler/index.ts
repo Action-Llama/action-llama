@@ -7,7 +7,11 @@ import { createLogger, createFileOnlyLogger } from "../shared/logger.js";
 import { agentDir } from "../shared/paths.js";
 import { AgentRunner, type RunOutcome } from "../agents/runner.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
-import { buildScheduledPrompt, buildWebhookPrompt, buildTriggeredPrompt, type PromptSkills } from "../agents/prompt.js";
+import {
+  buildScheduledPrompt, buildWebhookPrompt, buildTriggeredPrompt, buildPromptSkeleton,
+  buildScheduledSuffix, buildWebhookSuffix, buildTriggeredSuffix,
+  type PromptSkills,
+} from "../agents/prompt.js";
 import { WebhookRegistry } from "../webhooks/registry.js";
 import { GitHubWebhookProvider } from "../webhooks/providers/github.js";
 import { SentryWebhookProvider } from "../webhooks/providers/sentry.js";
@@ -72,6 +76,22 @@ interface SchedulerContext {
   webhookQueue: WebhookEventQueue<WebhookContext>;
   shuttingDown: boolean;
   skills?: PromptSkills;
+  /** When true, images have baked-in static files; only pass dynamic suffix as prompt. */
+  useBakedImages: boolean;
+}
+
+// Prompt helpers: when images have baked-in static files, only pass the dynamic suffix.
+// Otherwise, pass the full prompt (for non-Docker or legacy images).
+function makeScheduledPrompt(agentConfig: AgentConfig, ctx: SchedulerContext): string {
+  return ctx.useBakedImages ? buildScheduledSuffix() : buildScheduledPrompt(agentConfig, ctx.skills);
+}
+
+function makeWebhookPrompt(agentConfig: AgentConfig, context: WebhookContext, ctx: SchedulerContext): string {
+  return ctx.useBakedImages ? buildWebhookSuffix(context) : buildWebhookPrompt(agentConfig, context, ctx.skills);
+}
+
+function makeTriggeredPrompt(agentConfig: AgentConfig, sourceAgent: string, context: string, ctx: SchedulerContext): string {
+  return ctx.useBakedImages ? buildTriggeredSuffix(sourceAgent, context) : buildTriggeredPrompt(agentConfig, sourceAgent, context, ctx.skills);
 }
 
 function dispatchTriggers(
@@ -105,7 +125,7 @@ function dispatchTriggers(
       continue;
     }
     ctx.logger.info({ source: sourceAgent, target: agent, depth, running: pool.runningJobCount, scale: pool.size }, "agent trigger firing");
-    const prompt = buildTriggeredPrompt(targetConfig, sourceAgent, context, ctx.skills);
+    const prompt = makeTriggeredPrompt(targetConfig, sourceAgent, context, ctx);
     runTriggered(availableRunner, targetConfig, prompt, sourceAgent, depth + 1, ctx).catch((err) => {
       ctx.logger.error({ err, target: agent }, "triggered run failed");
     });
@@ -149,7 +169,7 @@ async function drainWebhookQueue(
       "processing queued webhook event"
     );
     try {
-      const prompt = buildWebhookPrompt(agentConfig, event.context, ctx.skills);
+      const prompt = makeWebhookPrompt(agentConfig, event.context, ctx);
       const { triggers } = await runner.run(prompt, { type: 'webhook', source: event.context.event });
       if (triggers.length > 0) {
         dispatchTriggers(triggers, agentConfig.name, 0, ctx);
@@ -166,7 +186,7 @@ async function runWithReruns(
   depth: number,
   ctx: SchedulerContext
 ): Promise<void> {
-  let { result, triggers } = await runner.run(buildScheduledPrompt(agentConfig, ctx.skills), { type: 'schedule' });
+  let { result, triggers } = await runner.run(makeScheduledPrompt(agentConfig, ctx), { type: 'schedule' });
   if (triggers.length > 0) {
     dispatchTriggers(triggers, agentConfig.name, depth, ctx);
   }
@@ -174,7 +194,7 @@ async function runWithReruns(
   while (result === "completed" && reruns < ctx.maxReruns) {
     reruns++;
     ctx.logger.info({ rerun: reruns, maxReruns: ctx.maxReruns }, `${agentConfig.name} did work, re-running immediately`);
-    ({ result, triggers } = await runner.run(buildScheduledPrompt(agentConfig, ctx.skills), { type: 'schedule' }));
+    ({ result, triggers } = await runner.run(makeScheduledPrompt(agentConfig, ctx), { type: 'schedule' }));
     if (triggers.length > 0) {
       dispatchTriggers(triggers, agentConfig.name, depth, ctx);
     }
@@ -444,42 +464,65 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       });
     }
 
-    // 3. Build per-agent custom images in parallel
-    const { existsSync } = await import("fs");
-    const agentsWithCustomImages = activeAgentConfigs.filter(ac =>
-      existsSync(resolvePath(projectPath, ac.name, "Dockerfile"))
-    );
-    const totalCustomImages = agentsWithCustomImages.length;
+    // 3. Build per-agent images in parallel
+    //    Every agent gets its own image with static files baked in (agent config,
+    //    PLAYBOOK.md, prompt skeleton). This avoids passing large payloads as env
+    //    vars at runtime, which exceeds Lambda's 4KB env var limit.
+    const { existsSync, readFileSync: readFs } = await import("fs");
 
-    // Agents without custom Dockerfiles use the base image
-    for (const ac of activeAgentConfigs) {
-      if (!agentsWithCustomImages.includes(ac)) {
-        agentImages[ac.name] = baseImage;
-      }
-    }
+    // Determine skills early so we can bake the prompt skeleton
+    const buildSkills: PromptSkills | undefined = dockerEnabled ? { locking: true } : undefined;
 
-    // Build all custom images concurrently
-    if (totalCustomImages > 0) {
-      await Promise.all(agentsWithCustomImages.map(async (agentConfig, idx) => {
-        const customImageIndex = idx + 1;
-        const progressIndicator = totalCustomImages > 1 ? ` (${customImageIndex}/${totalCustomImages})` : "";
+    await Promise.all(activeAgentConfigs.map(async (agentConfig, idx) => {
+      const progressIndicator = activeAgentConfigs.length > 1 ? ` (${idx + 1}/${activeAgentConfigs.length})` : "";
 
-        statusTracker?.setAgentState(agentConfig.name, "building");
-        statusTracker?.setAgentStatusText(agentConfig.name, `Building custom image${progressIndicator}`);
+      statusTracker?.setAgentState(agentConfig.name, "building");
+      statusTracker?.setAgentStatusText(agentConfig.name, `Building agent image${progressIndicator}`);
 
-        const agentDockerfile = resolvePath(projectPath, agentConfig.name, "Dockerfile");
-        const agentImageTag = AWS_CONSTANTS.agentImage(agentConfig.name);
-        const image = await runtime!.buildImage({
+      const hasCustomDockerfile = existsSync(resolvePath(projectPath, agentConfig.name, "Dockerfile"));
+
+      // Read PLAYBOOK.md and build static files to bake into the image
+      const playbookPath = resolvePath(projectPath, agentConfig.name, "PLAYBOOK.md");
+      const playbookMd = existsSync(playbookPath) ? readFs(playbookPath, "utf-8") : "";
+      const timeout = String(agentConfig.timeout ?? globalConfig.local?.timeout ?? 900);
+
+      const extraFiles: Record<string, string> = {
+        "agent-config.json": JSON.stringify(agentConfig),
+        "PLAYBOOK.md": playbookMd,
+        "prompt-static.txt": buildPromptSkeleton(agentConfig, buildSkills),
+        "timeout": timeout,
+      };
+
+      const agentImageTag = AWS_CONSTANTS.agentImage(agentConfig.name);
+
+      let image: string;
+      if (hasCustomDockerfile) {
+        // Custom Dockerfile: use extraFiles to inject static content,
+        // and baseImage to rewrite FROM al-agent:latest → built base URI.
+        image = await runtime!.buildImage({
           tag: agentImageTag,
-          dockerfile: agentDockerfile,
+          dockerfile: resolvePath(projectPath, agentConfig.name, "Dockerfile"),
           contextDir: packageRoot,
           baseImage,
+          extraFiles,
           onProgress: (msg) => statusTracker?.setAgentStatusText(agentConfig.name, `${msg}${progressIndicator}`),
         });
-        agentImages[agentConfig.name] = image;
-        logger.info({ agent: agentConfig.name, image, progress: `${customImageIndex}/${totalCustomImages}` }, "Built custom agent image");
-      }));
-    }
+      } else {
+        // No custom Dockerfile: generate a minimal Dockerfile that layers
+        // static files on top of the already-built base image. This is a
+        // thin layer (just text files) — no apt-get, no npm install.
+        image = await runtime!.buildImage({
+          tag: agentImageTag,
+          dockerfile: "Dockerfile",  // not used when dockerfileContent is set
+          contextDir: packageRoot,
+          dockerfileContent: `FROM ${baseImage}\nCOPY static/ /app/static/\n`,
+          extraFiles,
+          onProgress: (msg) => statusTracker?.setAgentStatusText(agentConfig.name, `${msg}${progressIndicator}`),
+        });
+      }
+      agentImages[agentConfig.name] = image;
+      logger.info({ agent: agentConfig.name, image, progress: `${idx + 1}/${activeAgentConfigs.length}` }, "Built agent image");
+    }));
 
     // 4. Push images to remote registry in parallel (no-op for local, tags+pushes for cloud)
     if (runtimeType !== "local") {
@@ -573,7 +616,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   const webhookQueueSize = globalConfig.webhookQueueSize ?? 20;
   const webhookQueue = new WebhookEventQueue<WebhookContext>(webhookQueueSize);
   const skills: PromptSkills | undefined = dockerEnabled ? { locking: true } : undefined;
-  const schedulerCtx: SchedulerContext = { runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, webhookQueue, shuttingDown: false, skills };
+  const schedulerCtx: SchedulerContext = { runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, webhookQueue, shuttingDown: false, skills, useBakedImages: dockerEnabled };
 
   // Set up webhook bindings
   if (webhookRegistry) {
@@ -619,7 +662,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
               { agent: agentConfig.name, event: context.event, action: context.action, running: pool.runningJobCount, scale: pool.size },
               "webhook triggering agent"
             );
-            const prompt = buildWebhookPrompt(agentConfig, context, schedulerCtx.skills);
+            const prompt = makeWebhookPrompt(agentConfig, context, schedulerCtx);
             availableRunner.run(prompt, { type: 'webhook', source: context.event }).then(({ triggers }) => {
               if (triggers.length > 0) {
                 dispatchTriggers(triggers, agentConfig.name, 0, schedulerCtx);

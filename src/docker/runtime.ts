@@ -33,6 +33,19 @@ export interface BuildImageOpts {
   onProgress?: (message: string) => void;
   /** Remote URI of the base image — used to rewrite FROM in cloud builds */
   baseImage?: string;
+  /**
+   * Extra files to bake into the image at /app/static/.
+   * Keys are filenames (e.g. "agent-config.json"), values are file contents.
+   * Used to embed agent config and prompt skeleton so they don't need to be
+   * passed as env vars at runtime (avoids Lambda's 4KB env var limit).
+   */
+  extraFiles?: Record<string, string>;
+  /**
+   * Inline Dockerfile content. When set, this is used instead of reading from
+   * opts.dockerfile. Useful for generating minimal layered Dockerfiles that
+   * add static files on top of an existing base image.
+   */
+  dockerfileContent?: string;
 }
 
 export interface RunningAgent {

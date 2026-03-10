@@ -112,32 +112,52 @@ function buildSkillsBlock(skills?: PromptSkills): string {
   return blocks.length > 0 ? "\n\n" + blocks.join("\n\n") : "";
 }
 
-export function buildScheduledPrompt(agentConfig: AgentConfig, skills?: PromptSkills): string {
+/**
+ * Build the static portion of the prompt that is identical across all trigger types.
+ * Contains agent config params, credential context, and skill blocks.
+ * This can be baked into the Docker image at build time.
+ */
+export function buildPromptSkeleton(agentConfig: AgentConfig, skills?: PromptSkills): string {
   const configBlock = buildConfigBlock(agentConfig);
   const credentialBlock = buildCredentialContext(agentConfig.credentials);
   const skillsBlock = buildSkillsBlock(skills);
-  return `<agent-config>\n${configBlock}\n</agent-config>\n\n${credentialBlock}${skillsBlock}\n\nYou are running on a schedule. Check for new work and act on anything you find.`;
+  return `<agent-config>\n${configBlock}\n</agent-config>\n\n${credentialBlock}${skillsBlock}`;
+}
+
+/**
+ * Build the dynamic suffix for a specific trigger type.
+ * This is the only part that needs to be passed at runtime.
+ */
+export function buildScheduledSuffix(): string {
+  return "You are running on a schedule. Check for new work and act on anything you find.";
+}
+
+export function buildManualSuffix(): string {
+  return "You have been triggered manually. Check for new work and act on anything you find.";
+}
+
+export function buildTriggeredSuffix(sourceAgent: string, context: string): string {
+  const triggerBlock = JSON.stringify({ source: sourceAgent, context });
+  return `<agent-trigger>\n${triggerBlock}\n</agent-trigger>\n\nYou were triggered by the "${sourceAgent}" agent. Review the trigger context above and take appropriate action.`;
+}
+
+export function buildWebhookSuffix(context: WebhookContext): string {
+  const webhookBlock = JSON.stringify(context);
+  return `<webhook-trigger>\n${webhookBlock}\n</webhook-trigger>\n\nA webhook event just fired. Review the trigger context above and take appropriate action.`;
+}
+
+export function buildScheduledPrompt(agentConfig: AgentConfig, skills?: PromptSkills): string {
+  return `${buildPromptSkeleton(agentConfig, skills)}\n\n${buildScheduledSuffix()}`;
 }
 
 export function buildManualPrompt(agentConfig: AgentConfig, skills?: PromptSkills): string {
-  const configBlock = buildConfigBlock(agentConfig);
-  const credentialBlock = buildCredentialContext(agentConfig.credentials);
-  const skillsBlock = buildSkillsBlock(skills);
-  return `<agent-config>\n${configBlock}\n</agent-config>\n\n${credentialBlock}${skillsBlock}\n\nYou have been triggered manually. Check for new work and act on anything you find.`;
+  return `${buildPromptSkeleton(agentConfig, skills)}\n\n${buildManualSuffix()}`;
 }
 
 export function buildTriggeredPrompt(agentConfig: AgentConfig, sourceAgent: string, context: string, skills?: PromptSkills): string {
-  const configBlock = buildConfigBlock(agentConfig);
-  const credentialBlock = buildCredentialContext(agentConfig.credentials);
-  const skillsBlock = buildSkillsBlock(skills);
-  const triggerBlock = JSON.stringify({ source: sourceAgent, context });
-  return `<agent-config>\n${configBlock}\n</agent-config>\n\n${credentialBlock}${skillsBlock}\n\n<agent-trigger>\n${triggerBlock}\n</agent-trigger>\n\nYou were triggered by the "${sourceAgent}" agent. Review the trigger context above and take appropriate action.`;
+  return `${buildPromptSkeleton(agentConfig, skills)}\n\n${buildTriggeredSuffix(sourceAgent, context)}`;
 }
 
 export function buildWebhookPrompt(agentConfig: AgentConfig, context: WebhookContext, skills?: PromptSkills): string {
-  const configBlock = buildConfigBlock(agentConfig);
-  const credentialBlock = buildCredentialContext(agentConfig.credentials);
-  const skillsBlock = buildSkillsBlock(skills);
-  const webhookBlock = JSON.stringify(context);
-  return `<agent-config>\n${configBlock}\n</agent-config>\n\n${credentialBlock}${skillsBlock}\n\n<webhook-trigger>\n${webhookBlock}\n</webhook-trigger>\n\nA webhook event just fired. Review the trigger context above and take appropriate action.`;
+  return `${buildPromptSkeleton(agentConfig, skills)}\n\n${buildWebhookSuffix(context)}`;
 }

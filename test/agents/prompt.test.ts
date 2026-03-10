@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { buildScheduledPrompt, buildWebhookPrompt, buildManualPrompt, buildTriggeredPrompt, buildCredentialContext, buildLockSkill } from "../../src/agents/prompt.js";
+import {
+  buildScheduledPrompt, buildWebhookPrompt, buildManualPrompt, buildTriggeredPrompt,
+  buildCredentialContext, buildLockSkill, buildPromptSkeleton,
+  buildScheduledSuffix, buildManualSuffix, buildTriggeredSuffix, buildWebhookSuffix,
+} from "../../src/agents/prompt.js";
 import type { AgentConfig } from "../../src/shared/config.js";
 import type { WebhookContext } from "../../src/webhooks/types.js";
 
@@ -219,5 +223,65 @@ describe("prompt skills integration", () => {
     const instructionIdx = result.indexOf("running on a schedule");
     expect(credIdx).toBeLessThan(skillIdx);
     expect(skillIdx).toBeLessThan(instructionIdx);
+  });
+});
+
+describe("buildPromptSkeleton", () => {
+  it("contains agent-config and credential-context blocks", () => {
+    const result = buildPromptSkeleton(agentConfig);
+    expect(result).toContain("<agent-config>");
+    expect(result).toContain("</agent-config>");
+    expect(result).toContain("<credential-context>");
+    expect(result).toContain("</credential-context>");
+  });
+
+  it("does not contain trigger-specific text", () => {
+    const result = buildPromptSkeleton(agentConfig);
+    expect(result).not.toContain("running on a schedule");
+    expect(result).not.toContain("triggered manually");
+    expect(result).not.toContain("<webhook-trigger>");
+    expect(result).not.toContain("<agent-trigger>");
+  });
+
+  it("includes skills when provided", () => {
+    const result = buildPromptSkeleton(agentConfig, { locking: true });
+    expect(result).toContain("<skill-lock>");
+  });
+
+  it("full prompt equals skeleton + suffix", () => {
+    const skeleton = buildPromptSkeleton(agentConfig);
+    const suffix = buildScheduledSuffix();
+    const full = buildScheduledPrompt(agentConfig);
+    expect(full).toBe(`${skeleton}\n\n${suffix}`);
+  });
+});
+
+describe("prompt suffix functions", () => {
+  it("buildScheduledSuffix returns schedule text", () => {
+    expect(buildScheduledSuffix()).toContain("running on a schedule");
+  });
+
+  it("buildManualSuffix returns manual text", () => {
+    expect(buildManualSuffix()).toContain("triggered manually");
+  });
+
+  it("buildTriggeredSuffix includes agent-trigger block", () => {
+    const result = buildTriggeredSuffix("dev", "Please review PR #42");
+    expect(result).toContain("<agent-trigger>");
+    expect(result).toContain('"source":"dev"');
+    expect(result).toContain("Please review PR #42");
+  });
+
+  it("buildWebhookSuffix includes webhook-trigger block", () => {
+    const context: WebhookContext = {
+      source: "github", event: "issues", action: "labeled",
+      repo: "acme/app", number: 42, title: "Fix", body: "",
+      url: "https://github.com/acme/app/issues/42",
+      author: "dev1", assignee: "bot", labels: ["agent"],
+      sender: "user1", timestamp: "2025-01-01T00:00:00.000Z",
+    };
+    const result = buildWebhookSuffix(context);
+    expect(result).toContain("<webhook-trigger>");
+    expect(result).toContain('"event":"issues"');
   });
 });

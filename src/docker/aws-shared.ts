@@ -229,32 +229,61 @@ export class AwsSharedUtils {
     onProgress?.("Preparing build context");
 
     const { join, relative, isAbsolute } = await import("path");
-    const { readFileSync, writeFileSync } = await import("fs");
+    const { readFileSync, writeFileSync, mkdirSync } = await import("fs");
     const { randomUUID, createHash } = await import("crypto");
 
-    const resolvedDockerfile = isAbsolute(opts.dockerfile)
-      ? opts.dockerfile
-      : join(opts.contextDir, opts.dockerfile);
-    const relPath = relative(opts.contextDir, resolvedDockerfile);
-
+    const hasExtraFiles = opts.extraFiles && Object.keys(opts.extraFiles).length > 0;
     let dockerfileTar: string;
     let tempDockerfile: string | undefined;
-    const needsCopy = relPath.startsWith("..");
-    const needsRewrite = !!opts.baseImage;
 
-    if (needsCopy || needsRewrite) {
+    if (opts.dockerfileContent) {
+      // Inline Dockerfile content — write directly to a temp file
       tempDockerfile = join(opts.contextDir, `.Dockerfile.${randomUUID().slice(0, 8)}`);
-      let content = readFileSync(resolvedDockerfile, "utf-8");
-      if (needsRewrite && opts.baseImage) {
-        content = content.replace(
-          /^FROM\s+\S+/m,
-          `FROM ${opts.baseImage}`,
-        );
-      }
-      writeFileSync(tempDockerfile, content);
+      writeFileSync(tempDockerfile, opts.dockerfileContent);
       dockerfileTar = relative(opts.contextDir, tempDockerfile);
     } else {
-      dockerfileTar = relPath;
+      const resolvedDockerfile = isAbsolute(opts.dockerfile)
+        ? opts.dockerfile
+        : join(opts.contextDir, opts.dockerfile);
+      const relPath = relative(opts.contextDir, resolvedDockerfile);
+
+      const needsCopy = relPath.startsWith("..");
+      const needsRewrite = !!opts.baseImage;
+
+      // Extra files require a temp Dockerfile to add COPY instructions
+      if (needsCopy || needsRewrite || hasExtraFiles) {
+        tempDockerfile = join(opts.contextDir, `.Dockerfile.${randomUUID().slice(0, 8)}`);
+        let content = readFileSync(resolvedDockerfile, "utf-8");
+        if (needsRewrite && opts.baseImage) {
+          content = content.replace(
+            /^FROM\s+\S+/m,
+            `FROM ${opts.baseImage}`,
+          );
+        }
+        if (hasExtraFiles) {
+          // Insert COPY before USER directive so files are owned by root (readable by node)
+          const copyLine = "COPY static/ /app/static/";
+          const userIdx = content.indexOf("\nUSER ");
+          if (userIdx !== -1) {
+            content = content.slice(0, userIdx) + "\n" + copyLine + content.slice(userIdx);
+          } else {
+            content += "\n" + copyLine + "\n";
+          }
+        }
+        writeFileSync(tempDockerfile, content);
+        dockerfileTar = relative(opts.contextDir, tempDockerfile);
+      } else {
+        dockerfileTar = relPath;
+      }
+    }
+
+    // Write extra files to static/ directory in the build context
+    const staticDir = join(opts.contextDir, "static");
+    if (hasExtraFiles) {
+      mkdirSync(staticDir, { recursive: true });
+      for (const [filename, content] of Object.entries(opts.extraFiles!)) {
+        writeFileSync(join(staticDir, filename), content);
+      }
     }
 
     const { readdirSync, readFileSync: readFileSyncBuf } = await import("fs");
@@ -278,12 +307,25 @@ export class AwsSharedUtils {
     // (which contain a random UUID) don't bust the cache.
     hash.update("Dockerfile");
     hash.update(readFileSyncBuf(join(opts.contextDir, dockerfileTar)));
-    hashFile("package.json");
-    hashDir("dist");
-
-    if (tempDockerfile) {
-      try { const { rmSync } = await import("fs"); rmSync(tempDockerfile); } catch {}
+    if (!opts.dockerfileContent) {
+      // Full image build: hash the application files
+      hashFile("package.json");
+      hashDir("dist");
     }
+    if (hasExtraFiles) {
+      hashDir("static");
+    }
+
+    const cleanupTempFiles = async () => {
+      if (tempDockerfile) {
+        try { const { rmSync } = await import("fs"); rmSync(tempDockerfile); } catch {}
+      }
+      if (hasExtraFiles) {
+        try { const { rmSync } = await import("fs"); rmSync(staticDir, { recursive: true }); } catch {}
+      }
+    };
+
+    await cleanupTempFiles();
 
     const contentHash = hash.digest("hex").slice(0, 16);
     const nameTag = opts.tag.replace(":", "-");
@@ -301,27 +343,66 @@ export class AwsSharedUtils {
 
     onProgress?.("Cache miss — building image");
 
-    if (needsCopy || needsRewrite) {
+    // Re-create temp files for the actual build (they were cleaned up after hashing)
+    if (opts.dockerfileContent) {
       tempDockerfile = join(opts.contextDir, `.Dockerfile.${randomUUID().slice(0, 8)}`);
-      let content = readFileSync(resolvedDockerfile, "utf-8");
-      if (needsRewrite && opts.baseImage) {
-        content = content.replace(
-          /^FROM\s+\S+/m,
-          `FROM ${opts.baseImage}`,
-        );
-      }
-      writeFileSync(tempDockerfile, content);
+      writeFileSync(tempDockerfile, opts.dockerfileContent);
       dockerfileTar = relative(opts.contextDir, tempDockerfile);
+    } else {
+      const resolvedDockerfile2 = isAbsolute(opts.dockerfile)
+        ? opts.dockerfile
+        : join(opts.contextDir, opts.dockerfile);
+      const relPath2 = relative(opts.contextDir, resolvedDockerfile2);
+      const needsCopy2 = relPath2.startsWith("..");
+      const needsRewrite2 = !!opts.baseImage;
+
+      if (needsCopy2 || needsRewrite2 || hasExtraFiles) {
+        tempDockerfile = join(opts.contextDir, `.Dockerfile.${randomUUID().slice(0, 8)}`);
+        let content = readFileSync(resolvedDockerfile2, "utf-8");
+        if (needsRewrite2 && opts.baseImage) {
+          content = content.replace(
+            /^FROM\s+\S+/m,
+            `FROM ${opts.baseImage}`,
+          );
+        }
+        if (hasExtraFiles) {
+          const copyLine = "COPY static/ /app/static/";
+          const userIdx = content.indexOf("\nUSER ");
+          if (userIdx !== -1) {
+            content = content.slice(0, userIdx) + "\n" + copyLine + content.slice(userIdx);
+          } else {
+            content += "\n" + copyLine + "\n";
+          }
+        }
+        writeFileSync(tempDockerfile, content);
+        dockerfileTar = relative(opts.contextDir, tempDockerfile);
+      }
+    }
+
+    if (hasExtraFiles) {
+      mkdirSync(staticDir, { recursive: true });
+      for (const [filename, content] of Object.entries(opts.extraFiles!)) {
+        writeFileSync(join(staticDir, filename), content);
+      }
     }
 
     const { tmpdir } = await import("os");
     const tarPath = join(tmpdir(), `${AWS_CONSTANTS.BUILD_S3_PREFIX}-${randomUUID().slice(0, 8)}.tar.gz`);
 
+    const tarEntries = [dockerfileTar];
+    if (!opts.dockerfileContent) {
+      // Full image build: include application files
+      tarEntries.push("package.json", "dist");
+    }
+    if (hasExtraFiles) {
+      tarEntries.push("static");
+    }
+
     try {
       execFileSync("tar", [
         "czf", tarPath,
         "-C", opts.contextDir,
-        dockerfileTar, "package.json", "dist",
+        ...tarEntries,
       ], {
         encoding: "utf-8",
         timeout: 60_000,
@@ -330,6 +411,9 @@ export class AwsSharedUtils {
     } finally {
       if (tempDockerfile) {
         try { const { rmSync } = await import("fs"); rmSync(tempDockerfile); } catch {}
+      }
+      if (hasExtraFiles) {
+        try { const { rmSync } = await import("fs"); rmSync(staticDir, { recursive: true }); } catch {}
       }
     }
 

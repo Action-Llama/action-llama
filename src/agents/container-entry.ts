@@ -81,14 +81,6 @@ function readCredentialFields(type: string, instance: string): Record<string, st
 }
 
 async function main() {
-  // Container-level timeout — self-terminates even if scheduler dies
-  const timeoutSeconds = parseInt(process.env.TIMEOUT_SECONDS || "3600", 10);
-  const timer = setTimeout(() => {
-    emitLog("error", "container timeout reached, self-terminating", { timeoutSeconds });
-    process.exit(124);
-  }, timeoutSeconds * 1000);
-  timer.unref();
-
   // Switch CWD to /workspace so child processes (git, bash, etc.) default to it.
   // Node must resolve from /app (WORKDIR at build time), so we chdir after startup.
   process.chdir("/workspace");
@@ -96,16 +88,41 @@ async function main() {
   const gatewayUrl = process.env.GATEWAY_URL;
   const shutdownSecret = process.env.SHUTDOWN_SECRET;
 
-  // Parse agent config from env var
-  const agentConfigStr = process.env.AGENT_CONFIG;
-  if (!agentConfigStr) {
-    emitLog("error", "missing AGENT_CONFIG env var");
-    process.exit(1);
+  // Load agent config and PLAYBOOK.md from baked-in files or env vars.
+  // Images built with extraFiles have static content at /app/static/.
+  const STATIC_DIR = "/app/static";
+  const hasBakedFiles = existsSync(`${STATIC_DIR}/agent-config.json`);
+
+  let agentConfig: AgentConfig;
+  let agentsMd: string;
+  let timeoutSeconds: number;
+
+  if (hasBakedFiles) {
+    agentConfig = JSON.parse(readFileSync(`${STATIC_DIR}/agent-config.json`, "utf-8"));
+    agentsMd = readFileSync(`${STATIC_DIR}/PLAYBOOK.md`, "utf-8");
+    timeoutSeconds = parseInt(readFileSync(`${STATIC_DIR}/timeout`, "utf-8").trim(), 10) || 3600;
+    emitLog("info", "loaded static files from image");
+  } else {
+    // Legacy env var path (for images built without extraFiles)
+    const agentConfigStr = process.env.AGENT_CONFIG;
+    if (!agentConfigStr) {
+      emitLog("error", "missing AGENT_CONFIG env var and no baked-in files at /app/static/");
+      process.exit(1);
+    }
+    const parsed = JSON.parse(agentConfigStr);
+    agentsMd = parsed._agentsMd;
+    delete parsed._agentsMd;
+    agentConfig = parsed;
+    timeoutSeconds = parseInt(process.env.TIMEOUT_SECONDS || "3600", 10);
   }
-  const parsed = JSON.parse(agentConfigStr);
-  const agentsMd: string = parsed._agentsMd;
-  delete parsed._agentsMd;
-  const agentConfig: AgentConfig = parsed;
+
+  // Container-level timeout — self-terminates even if scheduler dies
+  const timer = setTimeout(() => {
+    emitLog("error", "container timeout reached, self-terminating", { timeoutSeconds });
+    process.exit(124);
+  }, timeoutSeconds * 1000);
+  timer.unref();
+
   const modelId = agentConfig.model.model;
   const modelThinking = agentConfig.model.thinkingLevel;
 
@@ -317,11 +334,20 @@ async function main() {
     }
   });
 
-  // Prompt is pre-built by the scheduler and passed via PROMPT env var
-  const fullPrompt = process.env.PROMPT;
-  if (!fullPrompt) {
-    emitLog("error", "missing PROMPT env var");
-    process.exit(1);
+  // Build full prompt: static skeleton (from image) + dynamic suffix (from env var)
+  let fullPrompt: string;
+  const promptStaticPath = `${STATIC_DIR}/prompt-static.txt`;
+  if (hasBakedFiles && existsSync(promptStaticPath)) {
+    const skeleton = readFileSync(promptStaticPath, "utf-8");
+    const dynamicSuffix = process.env.PROMPT || "";
+    fullPrompt = dynamicSuffix ? `${skeleton}\n\n${dynamicSuffix}` : skeleton;
+  } else {
+    const envPrompt = process.env.PROMPT;
+    if (!envPrompt) {
+      emitLog("error", "missing PROMPT env var and no baked-in prompt skeleton");
+      process.exit(1);
+    }
+    fullPrompt = envPrompt;
   }
 
   // Retry on rate limit errors with exponential backoff

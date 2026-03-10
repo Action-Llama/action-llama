@@ -1,5 +1,3 @@
-import { readFileSync } from "fs";
-import { resolve } from "path";
 import { randomUUID } from "crypto";
 import type { GlobalConfig, AgentConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
@@ -177,16 +175,12 @@ export class ContainerAgentRunner {
       // Let the runtime prepare credentials in its native way
       credentials = await this.runtime.prepareCredentials(credRefs);
 
-      // Read PLAYBOOK.md from disk and include it in the serialized config
-      const agentsMdPath = resolve(this.projectPath, this.agentConfig.name, "PLAYBOOK.md");
-      const agentsMd = readFileSync(agentsMdPath, "utf-8");
-      const configWithMd = { ...this.agentConfig, _agentsMd: agentsMd };
-
-      // Build env vars — include gateway info whenever a URL is configured
+      // Build env vars — only pass the dynamic prompt suffix.
+      // Static content (agent config, PLAYBOOK.md, prompt skeleton, timeout)
+      // is baked into the image at /app/static/ during build.
+      // The container-entry reads from files if available, falling back to env vars.
       const env: Record<string, string> = {
-        AGENT_CONFIG: JSON.stringify(configWithMd),
         PROMPT: prompt,
-        TIMEOUT_SECONDS: String(timeout),
       };
       if (this.gatewayUrl) {
         env.GATEWAY_URL = this.gatewayUrl;
