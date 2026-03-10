@@ -72,6 +72,7 @@ program
   .option("-d, --date <YYYY-MM-DD>", "specific date's log file")
   .option("-r, --raw", "show raw JSON log entries instead of conversation view")
   .option("-c, --cloud", "view cloud logs")
+  .option("-i, --instance <N>", "instance number (for agents with scale > 1)")
   .action(async (agent: string, opts) => {
     const { execute } = await import("./commands/logs.js");
     await execute(agent, opts);

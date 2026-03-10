@@ -17,7 +17,6 @@ import {
   GetLogEventsCommand,
   FilterLogEventsCommand,
   CreateLogGroupCommand,
-  DescribeLogStreamsCommand,
 } from "@aws-sdk/client-cloudwatch-logs";
 import {
   CodeBuildClient,
@@ -524,45 +523,11 @@ export class AwsSharedUtils {
   }
 
   /**
-   * Tail the most recent log events using GetLogEvents with startFromHead: false.
-   * Finds the latest log stream(s) and reads from the end — true tail behavior.
+   * Tail the most recent log events using FilterLogEvents.
+   * Returns the last `limit` events in chronological order.
    */
   async tailLogEvents(logGroupName: string, logStreamPrefix: string, limit: number): Promise<string[]> {
-    // Find the most recent log streams
-    const streamsRes = await this.logsClient.send(new DescribeLogStreamsCommand({
-      logGroupName,
-      ...(logStreamPrefix ? { logStreamNamePrefix: logStreamPrefix } : {}),
-      orderBy: "LastEventTime",
-      descending: true,
-      limit: 5,
-    }));
-
-    const streams = streamsRes.logStreams ?? [];
-    if (streams.length === 0) return [];
-
-    // Read from the most recent stream first; if we don't get enough
-    // events, pull from older streams.
-    const allEvents: string[] = [];
-    for (const stream of streams) {
-      if (!stream.logStreamName || allEvents.length >= limit) break;
-
-      const remaining = limit - allEvents.length;
-      const res = await this.logsClient.send(new GetLogEventsCommand({
-        logGroupName,
-        logStreamName: stream.logStreamName,
-        startFromHead: false,
-        limit: remaining,
-      }));
-
-      const events = (res.events ?? [])
-        .map((e) => e.message?.trimEnd() ?? "")
-        .filter(Boolean);
-
-      // Prepend since we're reading newest streams first but want chronological order
-      allEvents.unshift(...events);
-    }
-
-    return allEvents.slice(-limit);
+    return this.filterLogEvents(logGroupName, logStreamPrefix, limit);
   }
 }
 

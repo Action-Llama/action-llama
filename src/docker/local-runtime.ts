@@ -281,8 +281,25 @@ export class LocalDockerRuntime implements ContainerRuntime {
 
   async fetchLogs(agentName: string, limit: number): Promise<string[]> {
     try {
-      const out = docker("logs", "--tail", String(limit), AWS_CONSTANTS.agentFamily(agentName));
-      return out.split("\n").filter(Boolean);
+      // List all containers matching this agent (handles scale > 1)
+      const names = docker(
+        "ps", "-a",
+        "--filter", `name=al-${agentName}-`,
+        "--format", "{{.Names}}",
+      );
+      if (!names) return [];
+
+      // Collect logs from all matching containers, most recent first
+      const allLines: string[] = [];
+      for (const name of names.split("\n").filter(Boolean)) {
+        try {
+          const out = docker("logs", "--tail", String(limit), name);
+          allLines.push(...out.split("\n").filter(Boolean));
+        } catch {
+          // Container may have been removed
+        }
+      }
+      return allLines.slice(-limit);
     } catch {
       // No running container — local logs are in the log files, not Docker
       return [];

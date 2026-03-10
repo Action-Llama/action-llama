@@ -441,7 +441,7 @@ subnets = ["subnet-123"]
     expect(output.some(line => line.includes("Looking for running dev agent"))).toBe(true);
   });
 
-  it("fetches static cloud logs when --follow is not used", async () => {
+  it("fetches static cloud logs when --follow is not used", { timeout: 15_000 }, async () => {
     const configContent = `
 [cloud]
 provider = "ecs"

@@ -177,10 +177,36 @@ function formatRunHeader(entry: LogEntry): string | null {
 
 // ── Shared parsing & file helpers ─────────────────────────────────────────────
 
+// ── Log level mapping ────────────────────────────────────────────────────────
+
+const LEVEL_NAME_TO_NUM: Record<string, number> = {
+  trace: 10, debug: 20, info: 30, warn: 40, error: 50,
+};
+
+// Lambda/ECS platform lines that should be filtered in conversation mode
+const PLATFORM_LINE_RE = /^(START |END |REPORT |INIT_START |EXTENSION )/;
+
+/**
+ * Parse a log line into a normalized LogEntry.
+ * Handles both pino format ({level: 30, time, msg}) and container format
+ * ({_log: true, level: "info", msg, ts}).
+ */
 function parseLine(line: string): LogEntry | null {
   if (!line.trim()) return null;
+  // Skip Lambda/CloudWatch platform lines
+  if (PLATFORM_LINE_RE.test(line)) return null;
   try {
-    return JSON.parse(line) as LogEntry;
+    const obj = JSON.parse(line);
+    // Container format: { _log: true, level: "info", msg: "...", ts: 1234 }
+    if (obj._log && typeof obj.level === "string") {
+      const { _log, level: levelStr, ts, ...rest } = obj;
+      return {
+        ...rest,
+        level: LEVEL_NAME_TO_NUM[levelStr] ?? 30,
+        time: ts ?? Date.now(),
+      } as LogEntry;
+    }
+    return obj as LogEntry;
   } catch {
     return null;
   }
@@ -284,10 +310,11 @@ async function followFile(filePath: string, lastN: number, fmt: Formatter): Prom
 
 export async function execute(
   agent: string,
-  opts: { project: string; lines: string; follow?: boolean; date?: string; raw?: boolean; cloud?: boolean }
+  opts: { project: string; lines: string; follow?: boolean; date?: string; raw?: boolean; cloud?: boolean; instance?: string }
 ): Promise<void> {
   const projectPath = resolve(opts.project);
   const fmt: Formatter = opts.raw ? formatRawEntry : formatConversationEntry;
+  const instanceNum = opts.instance ? parseInt(opts.instance, 10) : undefined;
 
   if (opts.cloud) {
     const globalConfig = loadGlobalConfig(projectPath);
@@ -338,26 +365,61 @@ export async function execute(
       }
     }
 
+    const formatCloudLine = (line: string): void => {
+      const entry = parseLine(line);
+      if (!entry) return;
+      if (fmt === formatConversationEntry) {
+        const header = formatRunHeader(entry);
+        if (header) console.log(header);
+      }
+      const formatted = fmt(entry);
+      if (formatted) console.log(formatted);
+    };
+
     if (opts.follow) {
       console.log(`Looking for running ${agent} agent...`);
       const runningAgents = await runtime.listRunningAgents();
-      const targetAgent = runningAgents.find(a => a.agentName === agent);
+      const matching = runningAgents.filter(a => a.agentName === agent);
 
-      if (!targetAgent) {
+      if (matching.length === 0) {
         console.error(`No running agent found for "${agent}". Start the agent first to follow its logs.`);
         process.exit(1);
+      }
+
+      let targetAgent: typeof matching[0];
+
+      if (matching.length > 1 && instanceNum === undefined) {
+        // Multiple instances running — list them and ask user to pick
+        console.error(`Multiple running instances of "${agent}" found. Use --instance to select one:\n`);
+        for (let i = 0; i < matching.length; i++) {
+          const a = matching[i];
+          const started = a.startedAt ? ` (started ${a.startedAt.toISOString()})` : "";
+          console.error(`  ${i + 1}. ${a.taskId}${started}`);
+        }
+        console.error(`\nExample: al logs -cf --instance 1 ${agent}`);
+        process.exit(1);
+      }
+
+      if (instanceNum !== undefined) {
+        if (instanceNum < 1 || instanceNum > matching.length) {
+          console.error(`Instance ${instanceNum} out of range. ${matching.length} instance(s) running.`);
+          process.exit(1);
+        }
+        targetAgent = matching[instanceNum - 1];
+      } else {
+        targetAgent = matching[0];
       }
 
       console.log(`Following logs for ${agent} (${targetAgent.taskId})...`);
 
       const recentLines = await runtime.fetchLogs(agent, limit);
       for (const line of recentLines) {
-        console.log(line);
+        formatCloudLine(line);
       }
 
       const { stop } = runtime.streamLogs(
         targetAgent.taskId,
-        (line: string) => console.log(line),
+        (line: string) => formatCloudLine(line),
         (stderr: string) => console.error(stderr)
       );
 
@@ -376,21 +438,30 @@ export async function execute(
         console.log("No log events found.");
       } else {
         for (const line of lines) {
-          console.log(line);
+          formatCloudLine(line);
         }
       }
     }
     return;
   }
 
+  // ── Local mode ──
+
   const dir = logsDir(projectPath);
   const n = parseInt(opts.lines, 10);
 
-  const logFile = findLogFile(dir, agent, opts.date);
+  // With --instance, look for the specific instance log file (e.g. dev-2-YYYY-MM-DD.log)
+  // Without --instance, look for the agent name directly then fall back to instance files
+  const logName = instanceNum !== undefined ? `${agent}-${instanceNum}` : agent;
+  const logFile = findLogFile(dir, logName, opts.date);
 
   if (!logFile) {
     const dateStr = opts.date || "today";
-    console.error(`No log file found for agent "${agent}" (${dateStr}) in ${dir}`);
+    if (instanceNum !== undefined) {
+      console.error(`No log file found for agent "${agent}" instance ${instanceNum} (${dateStr}) in ${dir}`);
+    } else {
+      console.error(`No log file found for agent "${agent}" (${dateStr}) in ${dir}`);
+    }
     process.exit(1);
   }
 
