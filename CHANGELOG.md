@@ -1,5 +1,48 @@
 # @action-llama/action-llama
 
+## 0.8.0
+
+### Minor Changes
+
+- [#50](https://github.com/Action-Llama/action-llama/pull/50) [`c65a240`](https://github.com/Action-Llama/action-llama/commit/c65a240219f8b03383b9eb5a7a344cbb69794d52) Thanks [@asselstine](https://github.com/asselstine)! - Add Linear credentials and webhooks integration
+
+  This adds comprehensive Linear support to Action Llama:
+
+  **New credential types:**
+
+  - `linear_token` - Personal API token authentication
+  - `linear_oauth` - OAuth2 authentication (client ID, secret, access/refresh tokens)
+  - `linear_webhook_secret` - Webhook signature validation secret
+
+  **New webhook provider:**
+
+  - `linear` webhook type for receiving Linear organization-level webhooks
+  - Support for issues and comment events with filtering by organization, labels, assignee, and author
+  - HMAC signature validation using Linear webhook secrets
+
+  **Features:**
+
+  - OAuth2 as the default authentication method with personal token fallback
+  - Organization-level webhook configuration
+  - Comprehensive filtering for Linear issues and comment events
+  - Full test coverage for both credential validation and webhook handling
+  - Complete documentation with setup guides and examples
+
+  This enables agents to authenticate with Linear workspaces and respond to Linear webhook events like issue creation, updates, and comments.
+
+### Patch Changes
+
+- [`7106a26`](https://github.com/Action-Llama/action-llama/commit/7106a26bb73b097df0adfa8049e2e157856b2a94) Thanks [@asselstine](https://github.com/asselstine)! - `al logs` now defaults to a colorful conversation view that shows assistant text,
+  bash commands, tool usage, and errors in a readable format. Pass `-r`/`--raw` to
+  see the original JSON structured logs. Agent text output is now logged per-turn
+  so it appears in the conversation view.
+
+- [`b3f189d`](https://github.com/Action-Llama/action-llama/commit/b3f189dc3ec6bef92c14bc8c1daa4f08210e982c) Thanks [@asselstine](https://github.com/asselstine)! - Renamed `al console` command to `al chat`. The command behavior is unchanged.
+
+- [`0aed2bf`](https://github.com/Action-Llama/action-llama/commit/0aed2bfd05926b8dc725b1136ffe34fa057c2af6) Thanks [@asselstine](https://github.com/asselstine)! - Renamed `PLAYBOOK.md` to `ACTIONS.md` as the agent system prompt file. All references
+  in source code, docs, and examples updated. Existing agents will need to rename
+  their `PLAYBOOK.md` files to `ACTIONS.md`.
+
 ## 0.7.2
 
 ### Patch Changes
