@@ -1,5 +1,14 @@
 # @action-llama/action-llama
 
+## 0.8.2
+
+### Patch Changes
+
+- [`a38fb0a`](https://github.com/Action-Llama/action-llama/commit/a38fb0abab640e70f52bc5e26e797f5af23d1e5f) Thanks [@asselstine](https://github.com/asselstine)! - Fix Lambda agents failing with "Request must be smaller than 5120 bytes" on
+  UpdateFunctionConfiguration. Secrets are now passed in the invoke payload
+  (256 KB limit) instead of as environment variables (4 KB limit), which also
+  ensures each agent can only see its own configured credentials.
+
 ## 0.8.1
 
 ### Patch Changes
