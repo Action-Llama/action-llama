@@ -37,6 +37,7 @@ export class StatusTracker extends EventEmitter {
   private schedulerInfo: SchedulerInfo | null = null;
   private recentLogs: LogLine[] = [];
   private maxLogs = 100;
+  private _baseImageStatus: string | null = null;
 
   registerAgent(name: string, scale = 1): void {
     this.agents.set(name, {
@@ -187,6 +188,15 @@ export class StatusTracker extends EventEmitter {
 
   getSchedulerInfo(): SchedulerInfo | null {
     return this.schedulerInfo;
+  }
+
+  setBaseImageStatus(text: string | null): void {
+    this._baseImageStatus = text;
+    this.emit("update");
+  }
+
+  getBaseImageStatus(): string | null {
+    return this._baseImageStatus;
   }
 
   getRecentLogs(n = 10): LogLine[] {

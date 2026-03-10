@@ -166,6 +166,7 @@ export default function App({ statusTracker }: { statusTracker: StatusTracker })
   const [agents, setAgents] = useState<AgentStatus[]>(() => statusTracker.getAllAgents());
   const [info, setInfo] = useState<SchedulerInfo | null>(() => statusTracker.getSchedulerInfo());
   const [logs, setLogs] = useState<LogLine[]>(() => statusTracker.getRecentLogs(5));
+  const [baseImageStatus, setBaseImageStatus] = useState<string | null>(() => statusTracker.getBaseImageStatus());
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [, setTick] = useState(0);
 
@@ -193,6 +194,7 @@ export default function App({ statusTracker }: { statusTracker: StatusTracker })
       setAgents(newAgents);
       setInfo(statusTracker.getSchedulerInfo());
       setLogs(statusTracker.getRecentLogs(5));
+      setBaseImageStatus(statusTracker.getBaseImageStatus());
       
       // Adjust selection if agents list changed
       if (selectedIndex >= newAgents.length) {
@@ -215,7 +217,12 @@ export default function App({ statusTracker }: { statusTracker: StatusTracker })
   return (
     <Box flexDirection="column" paddingTop={1}>
       <Header info={info} agentCount={agents.length} agents={agents} />
-      <Box flexDirection="column" paddingTop={1} paddingBottom={1}>
+      {baseImageStatus ? (
+        <Box paddingTop={1}>
+          <Text color="yellow">Building base image: {baseImageStatus}</Text>
+        </Box>
+      ) : null}
+      <Box flexDirection="column" paddingTop={baseImageStatus ? 0 : 1} paddingBottom={1}>
         {agents.map((agent, index) => (
           <AgentRow key={agent.name} agent={agent} isSelected={index === selectedIndex} />
         ))}

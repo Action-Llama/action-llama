@@ -436,16 +436,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     baseImage = globalConfig.local?.image || AWS_CONSTANTS.DEFAULT_IMAGE;
     logger.info({ image: baseImage }, "Building base image (this may take a few minutes on first run)...");
 
-    // Show all active agents as "building" during the base image build.
-    // Progress updates are broadcast to all agents with a "Base image: " prefix
-    // so it's clear this is a single shared build, not per-agent.
-    for (const ac of activeAgentConfigs) {
-      statusTracker?.setAgentState(ac.name, "building");
-    }
     const setBaseImageProgress = (msg: string) => {
-      for (const ac of activeAgentConfigs) {
-        statusTracker?.setAgentStatusText(ac.name, `Base image: ${msg}`);
-      }
+      statusTracker?.setBaseImageStatus(msg);
     };
 
     if (runtimeType === "local") {
@@ -465,6 +457,9 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
         onProgress: setBaseImageProgress,
       });
     }
+
+    // Clear top-level base image status now that it's done
+    statusTracker?.setBaseImageStatus(null);
 
     // 3. Build per-agent images in parallel
     //    Every agent gets its own image with static files baked in (agent config,
