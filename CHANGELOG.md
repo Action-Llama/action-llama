@@ -1,5 +1,20 @@
 # @action-llama/action-llama
 
+## 0.7.1
+
+### Patch Changes
+
+- [`3866e9f`](https://github.com/Action-Llama/action-llama/commit/3866e9fddfc2504b2627caabf71e82b19a4cc0a4) Thanks [@asselstine](https://github.com/asselstine)! - Fixed Lambda agents starting repeatedly on failure. AWS Lambda's async invocation
+  auto-retries (default 2) caused duplicate container starts that the scheduler didn't
+  control. Now sets `MaximumRetryAttempts: 0` on each Lambda function. Also fixed stale
+  CloudWatch log replay by filtering `streamLogs` and `waitForExit` to only read logs
+  from the current invocation's launch time.
+
+- [`8490d91`](https://github.com/Action-Llama/action-llama/commit/8490d91076f77f3bd1246f1f508d312cd3c93268) Thanks [@asselstine](https://github.com/asselstine)! - Fixed Lambda container images timing out during init phase. The container entry
+  point now implements the Lambda Runtime API protocol via a dedicated handler
+  (`lambda-handler.ts`), keeping the init phase lightweight. The Lambda function's
+  ENTRYPOINT is overridden via `ImageConfig` so Docker/ECS containers are unaffected.
+
 ## 0.7.0
 
 ### Minor Changes
