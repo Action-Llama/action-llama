@@ -405,6 +405,8 @@ There are four IAM principals involved:
 
 This is the minimum policy for the IAM user or role running `al` commands. Replace `<REGION>`, `<ACCOUNT_ID>`, and `<REPO_NAME>` with your values.
 
+> **Note:** `al cloud setup` automatically grants the PassRole and Logs statements via the `ActionLlamaOperator` inline policy. You still need to attach the remaining statements (ECS, SecretsManager, ECR, CodeBuild, Lambda, S3, IAM) manually or via your own IaC.
+
 ```json
 {
   "Version": "2012-10-17",
@@ -634,6 +636,8 @@ aws logs create-log-group --log-group-name /ecs/action-llama --region us-east-1
 ```
 
 If you get `AccessDeniedException`, add the `logs:CreateLogGroup` action to your operator IAM policy (see the operator policy above).
+
+**"not authorized to perform: logs:FilterLogEvents"** — Your operator IAM user is missing CloudWatch Logs read permissions. Running `al cloud setup` grants these automatically (the `ActionLlamaOperator` inline policy). If you set up before this was added, re-run `al cloud setup` or manually add the Logs statement from the operator policy above.
 
 **Logs are delayed** — This is expected. CloudWatch Logs has a ~5-10 second ingestion delay. The TUI shows a warning when running in ECS mode.
 

@@ -261,20 +261,32 @@ async function setupEcsCloud(cloud: CloudConfig): Promise<boolean> {
   const prefix = await input({ message: "Secret prefix:", default: AWS_CONSTANTS.DEFAULT_SECRET_PREFIX });
   if (prefix !== AWS_CONSTANTS.DEFAULT_SECRET_PREFIX) cloud.awsSecretPrefix = prefix;
 
-  // Grant iam:PassRole on al-* roles to the calling IAM user so that
-  // al start / al run can assign roles to ECS tasks and Lambda functions.
-  // Also grant iam:PutUserPolicy so al doctor -c can update this policy later.
+  // Grant iam:PassRole, logs read, and iam:PutUserPolicy to the calling
+  // IAM user so that al start/run can assign roles, al logs can read
+  // CloudWatch, and al doctor -c can update this policy later.
   const callerArn = identity.Arn!;
   const userMatch = callerArn.match(/:user\/(.+)$/);
   if (userMatch) {
     const userName = userMatch[1];
-    const passRolePolicy = JSON.stringify({
+    const operatorPolicy = JSON.stringify({
       Version: "2012-10-17",
       Statement: [
         {
           Effect: "Allow",
           Action: "iam:PassRole",
           Resource: `arn:aws:iam::${accountId}:role/al-*`,
+        },
+        {
+          Effect: "Allow",
+          Action: [
+            "logs:CreateLogGroup",
+            "logs:GetLogEvents",
+            "logs:FilterLogEvents",
+          ],
+          Resource: [
+            `arn:aws:logs:${region}:${accountId}:log-group:${AWS_CONSTANTS.LOG_GROUP}*`,
+            `arn:aws:logs:${region}:${accountId}:log-group:${AWS_CONSTANTS.LAMBDA_LOG_GROUP}/al-*`,
+          ],
         },
         {
           Effect: "Allow",
@@ -286,21 +298,14 @@ async function setupEcsCloud(cloud: CloudConfig): Promise<boolean> {
     try {
       await iamClient.send(new PutUserPolicyCommand({
         UserName: userName,
-        PolicyName: "ActionLlamaPassRole",
-        PolicyDocument: passRolePolicy,
+        PolicyName: "ActionLlamaOperator",
+        PolicyDocument: operatorPolicy,
       }));
-      console.log(`  Granted iam:PassRole on al-* roles to user ${userName}`);
+      console.log(`  Granted iam:PassRole + logs read permissions to user ${userName}`);
     } catch (err: any) {
-      console.log(`\n  Warning: could not auto-grant iam:PassRole to user ${userName}: ${err.message}`);
-      console.log(`  You must manually attach this policy to user "${userName}" in the AWS Console:`);
-      console.log(JSON.stringify({
-        Version: "2012-10-17",
-        Statement: [{
-          Effect: "Allow",
-          Action: "iam:PassRole",
-          Resource: `arn:aws:iam::${accountId}:role/al-*`,
-        }],
-      }, null, 2));
+      console.log(`\n  Warning: could not auto-grant operator permissions to user ${userName}: ${err.message}`);
+      console.log(`  You must manually attach the ActionLlamaOperator policy to user "${userName}" in the AWS Console.`);
+      console.log(`  See docs/ecs.md "Operator IAM policy" for the full policy document.`);
     }
   }
 
