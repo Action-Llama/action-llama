@@ -1,5 +1,33 @@
 # @action-llama/action-llama
 
+## 0.6.10
+
+### Patch Changes
+
+- [`4092724`](https://github.com/Action-Llama/action-llama/commit/4092724cfec7e4dab1e77092fee01f1c84f9ee24) Thanks [@asselstine](https://github.com/asselstine)! - Show base image build progress as a single top-level TUI status line instead of
+  duplicating it under every agent. Previously, each agent row showed identical
+  "Base image: ..." status text during the shared base image build.
+
+- [`d6d1f0e`](https://github.com/Action-Llama/action-llama/commit/d6d1f0e457200c0736a24650a7ede09049f33617) Thanks [@asselstine](https://github.com/asselstine)! - Fixed `al logs -c` returning the oldest log entries instead of the newest.
+  CloudWatch's FilterLogEvents API returns events oldest-first, so `al logs -c`
+  was showing stale logs. Now uses GetLogEvents with `startFromHead: false` on
+  the most recent log streams for true tail behavior. Also fixed Lambda's
+  follow mode (`-f`) to track position with nextToken instead of re-fetching
+  the same events every poll cycle.
+
+- [`1e8000b`](https://github.com/Action-Llama/action-llama/commit/1e8000b6c39988b6a1584cc76fdeb9765e5ce40f) Thanks [@asselstine](https://github.com/asselstine)! - Fix Lambda agents re-running endlessly when there's no work to do. The `[SILENT]`
+  marker was missed due to a race between CloudWatch log polling and exit detection,
+  causing every run to be treated as "completed" (did work) instead of "silent" (no work).
+  Lambda's `waitForExit` now scans for `[SILENT]` in the same logs it reads for the
+  REPORT line, and returns exit code 42 which the container runner treats as silent.
+
+- [`87861ea`](https://github.com/Action-Llama/action-llama/commit/87861eacb626a734afdec7c539c53220acb272e8) Thanks [@asselstine](https://github.com/asselstine)! - Headless mode (`al start`) now shows why each agent is running. Log lines include
+  the trigger reason: `schedule`, `webhook`, `triggered by <agent>`, or `schedule (rerun N/M)`.
+
+- [`363fee9`](https://github.com/Action-Llama/action-llama/commit/363fee9c9517141a643120642703a412257a1524) Thanks [@asselstine](https://github.com/asselstine)! - Log base image build progress in headless mode. Previously there was no output
+  between "scheduler started" and the first agent build, which could be several
+  minutes of silence when the base image needed to be built or cached.
+
 ## 0.6.9
 
 ### Patch Changes
