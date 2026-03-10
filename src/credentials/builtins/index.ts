@@ -9,9 +9,12 @@ import mistralKey from "./mistral-key.js";
 import openrouterKey from "./openrouter-key.js";
 import customKey from "./custom-key.js";
 import sentryToken from "./sentry-token.js";
+import linearToken from "./linear-token.js";
+import linearOAuth from "./linear-oauth.js";
 import gitSsh from "./id-rsa.js";
 import githubWebhookSecret from "./github-webhook-secret.js";
 import sentryClientSecret from "./sentry-client-secret.js";
+import linearWebhookSecret from "./linear-webhook-secret.js";
 import netlifyToken from "./netlify-token.js";
 import xTwitterApi from "./x-twitter-api.js";
 import aws from "./aws.js";
@@ -28,9 +31,12 @@ export const builtinCredentials: Record<string, CredentialDefinition> = {
   "openrouter_key": openrouterKey,
   "custom_key": customKey,
   "sentry_token": sentryToken,
+  "linear_token": linearToken,
+  "linear_oauth": linearOAuth,
   "git_ssh": gitSsh,
   "github_webhook_secret": githubWebhookSecret,
   "sentry_client_secret": sentryClientSecret,
+  "linear_webhook_secret": linearWebhookSecret,
   "netlify_token": netlifyToken,
   "x_twitter_api": xTwitterApi,
   "aws": aws,

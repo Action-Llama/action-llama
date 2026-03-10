@@ -14,11 +14,15 @@ credential = "MyOrg"          # credential instance name (github_webhook_secret:
 [webhooks.my-sentry]
 type = "sentry"
 credential = "SentryProd"     # credential instance name (sentry_client_secret:SentryProd)
+
+[webhooks.my-linear]
+type = "linear"
+credential = "LinearMain"     # credential instance name (linear_webhook_secret:LinearMain)
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `type` | string | Yes | Provider type: `"github"` or `"sentry"` |
+| `type` | string | Yes | Provider type: `"github"`, `"sentry"`, or `"linear"` |
 | `credential` | string | No | Credential instance name for HMAC signature validation. Omit for unsigned webhooks. |
 
 ## Agent Webhook Triggers
@@ -90,6 +94,44 @@ Use the ngrok URL as your webhook payload URL in GitHub.
 3. It parses the event into a `WebhookContext` (source, event, action, repo, etc.)
 4. It matches the context against each agent's webhook triggers
 5. Matching agents are triggered with the webhook context injected into their prompt
+
+## Linear Webhooks
+
+### Filter Fields (all optional)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `organizations` | string[] | Only trigger for these Linear organizations |
+| `events` | string[] | Linear event types (issues, issue_comment, etc.) |
+| `actions` | string[] | Event actions (create, update, delete, etc.) |
+| `labels` | string[] | Only when issue has these labels |
+| `assignee` | string | Only when assigned to this user (email) |
+| `author` | string | Only for this author (email) |
+
+### Setup
+
+1. In Linear, go to **Settings > Workspace > Webhooks**
+2. Click **Create webhook**
+3. Set the URL to your Action Llama gateway (e.g. `https://your-server:8080/webhooks/linear`)
+4. Set the secret to match the `linear_webhook_secret` credential instance referenced by the webhook source in `config.toml`
+5. Select the resource types you want to receive (Issues, Comments, etc.)
+
+### Example Configuration
+
+```toml
+# In config.toml
+[webhooks.linear-main]
+type = "linear"
+credential = "main-workspace"
+
+# In agent-config.toml
+[[webhooks]]
+source = "linear-main"
+events = ["issues", "issue_comment"]
+actions = ["create", "update"]
+organizations = ["your-org-id"]
+labels = ["bug", "ready-for-dev"]
+```
 
 ## Hybrid Agents
 
