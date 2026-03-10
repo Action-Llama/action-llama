@@ -193,7 +193,7 @@ async function main() {
     const { instance } = parseCredentialRef(gitSshRef);
     const sshKey = readCredentialField("git_ssh", instance, "id_rsa");
     if (sshKey) {
-      const sshDir = "/home/node/.ssh";
+      const sshDir = resolve(process.env.HOME || "/tmp", ".ssh");
       mkdirSync(sshDir, { recursive: true, mode: 0o700 });
       const keyPath = `${sshDir}/id_rsa`;
       writeFileSync(keyPath, sshKey + "\n", { mode: 0o600 });
