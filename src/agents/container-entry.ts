@@ -81,9 +81,10 @@ function readCredentialFields(type: string, instance: string): Record<string, st
 }
 
 async function main() {
-  // Switch CWD to /workspace so child processes (git, bash, etc.) default to it.
-  // Node must resolve from /app (WORKDIR at build time), so we chdir after startup.
-  process.chdir("/workspace");
+  // Switch CWD to /tmp so child processes (git, bash, etc.) default to it.
+  // /tmp is the only writable directory across all platforms (local Docker,
+  // ECS Fargate, Cloud Run). Node starts in /app (WORKDIR at build time).
+  process.chdir("/tmp");
 
   const gatewayUrl = process.env.GATEWAY_URL;
   const shutdownSecret = process.env.SHUTDOWN_SECRET;
@@ -213,7 +214,7 @@ async function main() {
     }
   }
 
-  const cwd = "/workspace";
+  const cwd = "/tmp";
 
   const model = getModel(modelProvider as any, modelId as any);
 

@@ -103,6 +103,16 @@ export function buildCredentialContext(credentials: string[]): string {
   return lines.join("\n");
 }
 
+function buildEnvironmentContext(): string {
+  return [
+    "<environment>",
+    "**Filesystem:** The root filesystem is read-only. `/tmp` is the only writable directory.",
+    "Use `/tmp` for cloning repos, writing scratch files, and any other disk I/O.",
+    "Your working directory is `/tmp`.",
+    "</environment>",
+  ].join("\n");
+}
+
 function buildSkillsBlock(skills?: PromptSkills): string {
   if (!skills) return "";
   const blocks: string[] = [];
@@ -120,8 +130,9 @@ function buildSkillsBlock(skills?: PromptSkills): string {
 export function buildPromptSkeleton(agentConfig: AgentConfig, skills?: PromptSkills): string {
   const configBlock = buildConfigBlock(agentConfig);
   const credentialBlock = buildCredentialContext(agentConfig.credentials);
+  const environmentBlock = buildEnvironmentContext();
   const skillsBlock = buildSkillsBlock(skills);
-  return `<agent-config>\n${configBlock}\n</agent-config>\n\n${credentialBlock}${skillsBlock}`;
+  return `<agent-config>\n${configBlock}\n</agent-config>\n\n${credentialBlock}\n\n${environmentBlock}${skillsBlock}`;
 }
 
 /**

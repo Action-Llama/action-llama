@@ -46,7 +46,7 @@ gh label create "agent-completed" --repo <determined-repo> --color 1D76DB --desc
 
 1. **Claim the issue** — run `gh issue edit <number> --repo <determined-repo> --add-label in-progress` to mark it as claimed.
 
-2. **Clone and branch** — run `git clone git@github.com:<determined-repo>.git /workspace/repo && cd /workspace/repo && git checkout -b agent/<number>`.
+2. **Clone and branch** — run `git clone git@github.com:<determined-repo>.git /tmp/repo && cd /tmp/repo && git checkout -b agent/<number>`.
 
 3. **Understand the issue** — read the title, body, and comments. Note file paths, acceptance criteria, and linked issues.
 

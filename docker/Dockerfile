@@ -14,9 +14,6 @@ COPY package.json ./
 RUN --mount=type=cache,target=/root/.npm npm install --production
 COPY dist/ ./dist/
 
-# Create /workspace so container-entry can chdir into it regardless of runtime
-RUN mkdir -p /workspace && chown node:node /workspace
-
 # Use the built-in node user (uid 1000) instead of root
 USER node
 

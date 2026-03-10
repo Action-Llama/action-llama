@@ -11,7 +11,7 @@ When `al start` runs in Docker mode:
 3. Each agent run launches a fresh container with:
    - Read-only root filesystem
    - Credentials mounted read-only at `/credentials/`
-   - Writable tmpfs for `/workspace`, `/tmp`, and `/home/node`
+   - Writable tmpfs for `/tmp` and `/home/node`
    - All capabilities dropped, no-new-privileges
    - PID, memory, and CPU limits
    - Non-root user (uid 1000)
@@ -45,7 +45,7 @@ The container tries each strategy in order: volume mount, env vars, gateway. The
 
 ### Startup sequence
 
-1. **Set working directory** — `chdir("/workspace")`
+1. **Set working directory** — `chdir("/tmp")`
 2. **Start self-termination timer** — kills the process with exit code 124 if `TIMEOUT_SECONDS` is exceeded
 3. **Parse config** — reads `AGENT_CONFIG`, extracts `PLAYBOOK.md` content
 4. **Load credentials** — from volume, env vars, or gateway (see table above)
@@ -255,8 +255,7 @@ For Cloud Run configuration, see [Cloud Run docs](cloud-run.md). For ECS Fargate
 |------|------|----------|
 | `/app` | read-only | Action Llama application + node_modules |
 | `/credentials` | read-only | Mounted credential files (`/<type>/<instance>/<field>`) |
-| `/workspace` | read-write (tmpfs, 2GB) | Agent working directory — repos are cloned here |
-| `/tmp` | read-write (tmpfs, 512MB) | Temporary files |
+| `/tmp` | read-write (tmpfs, 2GB) | Agent working directory — repos cloned here, scratch files |
 | `/home/node` | read-write (tmpfs, 64MB) | User home — `.ssh/` for SSH keys |
 
 ## Troubleshooting
