@@ -437,30 +437,26 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     logger.info({ image: baseImage }, "Building base image (this may take a few minutes on first run)...");
 
     // Show all active agents as "building" during the base image build
-    const setBuildProgress = (message: string) => {
-      for (const ac of activeAgentConfigs) {
-        statusTracker?.setAgentStatusText(ac.name, message);
-      }
-    };
     for (const ac of activeAgentConfigs) {
       statusTracker?.setAgentState(ac.name, "building");
+      statusTracker?.setAgentStatusText(ac.name, "Waiting for base image");
     }
 
     if (runtimeType === "local") {
       // Local: only build if image doesn't exist yet
       const { imageExists } = await import("../docker/image.js");
       if (!imageExists(baseImage)) {
-        setBuildProgress("Building base image");
+        logger.info("Building base image");
         await runtime.buildImage({
           tag: baseImage, dockerfile: "docker/Dockerfile", contextDir: packageRoot,
-          onProgress: setBuildProgress,
+          onProgress: (msg) => logger.info({ image: baseImage }, `Base image: ${msg}`),
         });
       }
     } else {
       // Cloud: always build (Cloud Build handles caching)
       baseImage = await runtime.buildImage({
         tag: baseImage, dockerfile: "docker/Dockerfile", contextDir: packageRoot,
-        onProgress: setBuildProgress,
+        onProgress: (msg) => logger.info({ image: baseImage }, `Base image: ${msg}`),
       });
     }
 
