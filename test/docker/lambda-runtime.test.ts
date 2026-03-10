@@ -28,7 +28,8 @@ vi.mock("@aws-sdk/client-lambda", () => {
   const UpdateFunctionCodeCommand = vi.fn(function (this: any, input: any) { this._type = "UpdateFunctionCode"; this.input = input; });
   const UpdateFunctionConfigurationCommand = vi.fn(function (this: any, input: any) { this._type = "UpdateFunctionConfiguration"; this.input = input; });
   const InvokeCommand = vi.fn(function (this: any, input: any) { this._type = "Invoke"; this.input = input; });
-  return { LambdaClient, GetFunctionCommand, CreateFunctionCommand, UpdateFunctionCodeCommand, UpdateFunctionConfigurationCommand, InvokeCommand };
+  const PutFunctionEventInvokeConfigCommand = vi.fn(function (this: any, input: any) { this._type = "PutFunctionEventInvokeConfig"; this.input = input; });
+  return { LambdaClient, GetFunctionCommand, CreateFunctionCommand, UpdateFunctionCodeCommand, UpdateFunctionConfigurationCommand, InvokeCommand, PutFunctionEventInvokeConfigCommand };
 });
 
 vi.mock("@aws-sdk/client-secrets-manager", () => {
@@ -131,6 +132,9 @@ describe("LambdaRuntime", () => {
     // CreateFunction
     mockLambdaSend.mockResolvedValueOnce({});
 
+    // PutFunctionEventInvokeConfig
+    mockLambdaSend.mockResolvedValueOnce({});
+
     // GetFunction for waitForFunctionReady → active
     mockLambdaSend.mockResolvedValueOnce({
       Configuration: { State: "Active", LastUpdateStatus: "Successful" },
@@ -179,6 +183,9 @@ describe("LambdaRuntime", () => {
     // UpdateFunctionConfiguration
     mockLambdaSend.mockResolvedValueOnce({});
 
+    // PutFunctionEventInvokeConfig
+    mockLambdaSend.mockResolvedValueOnce({});
+
     // GetFunction for waitForFunctionReady after config update
     mockLambdaSend.mockResolvedValueOnce({
       Configuration: { State: "Active", LastUpdateStatus: "Successful" },
@@ -213,6 +220,8 @@ describe("LambdaRuntime", () => {
     mockLambdaSend.mockRejectedValueOnce({ name: "ResourceNotFoundException" });
     // CreateFunction
     mockLambdaSend.mockResolvedValueOnce({});
+    // PutFunctionEventInvokeConfig
+    mockLambdaSend.mockResolvedValueOnce({});
     // waitForFunctionReady
     mockLambdaSend.mockResolvedValueOnce({
       Configuration: { State: "Active", LastUpdateStatus: "Successful" },
@@ -240,6 +249,8 @@ describe("LambdaRuntime", () => {
     // GetFunction → not found
     mockLambdaSend.mockRejectedValueOnce({ name: "ResourceNotFoundException" });
     // CreateFunction
+    mockLambdaSend.mockResolvedValueOnce({});
+    // PutFunctionEventInvokeConfig
     mockLambdaSend.mockResolvedValueOnce({});
     // waitForFunctionReady
     mockLambdaSend.mockResolvedValueOnce({
@@ -270,7 +281,8 @@ describe("LambdaRuntime", () => {
     const creds = { strategy: "secrets-manager" as const, mounts: [] };
 
     mockLambdaSend.mockRejectedValueOnce({ name: "ResourceNotFoundException" });
-    mockLambdaSend.mockResolvedValueOnce({});
+    mockLambdaSend.mockResolvedValueOnce({}); // CreateFunction
+    mockLambdaSend.mockResolvedValueOnce({}); // PutFunctionEventInvokeConfig
     mockLambdaSend.mockResolvedValueOnce({
       Configuration: { State: "Active", LastUpdateStatus: "Successful" },
     });
@@ -344,7 +356,8 @@ describe("LambdaRuntime", () => {
 
     // Lambda API calls
     mockLambdaSend.mockRejectedValueOnce({ name: "ResourceNotFoundException" });
-    mockLambdaSend.mockResolvedValueOnce({});
+    mockLambdaSend.mockResolvedValueOnce({}); // CreateFunction
+    mockLambdaSend.mockResolvedValueOnce({}); // PutFunctionEventInvokeConfig
     mockLambdaSend.mockResolvedValueOnce({
       Configuration: { State: "Active", LastUpdateStatus: "Successful" },
     });

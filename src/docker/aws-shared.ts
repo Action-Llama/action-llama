@@ -474,8 +474,8 @@ export class AwsSharedUtils {
    * patterns (e.g. REPORT lines in waitForExit). Uses nextToken to paginate
    * through all matching events rather than capping at `limit` oldest entries.
    */
-  async filterLogEvents(logGroupName: string, logStreamPrefix: string, limit: number): Promise<string[]> {
-    const startTime = Date.now() - 24 * 3600_000; // last 24 hours
+  async filterLogEvents(logGroupName: string, logStreamPrefix: string, limit: number, startTime?: number): Promise<string[]> {
+    startTime ??= Date.now() - 24 * 3600_000; // default: last 24 hours
     const allEvents: string[] = [];
     let nextToken: string | undefined;
 
@@ -507,11 +507,13 @@ export class AwsSharedUtils {
     logGroupName: string,
     logStreamPrefix: string,
     nextToken?: string,
+    startTime?: number,
   ): Promise<{ events: string[]; nextToken?: string }> {
     const res = await this.logsClient.send(new FilterLogEventsCommand({
       logGroupName,
       ...(logStreamPrefix ? { logStreamNamePrefix: logStreamPrefix } : {}),
       ...(nextToken ? { nextToken } : {}),
+      ...(startTime && !nextToken ? { startTime } : {}),
     }));
 
     const events = (res.events ?? [])

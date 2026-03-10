@@ -13,6 +13,7 @@ import {
   UpdateFunctionCodeCommand,
   UpdateFunctionConfigurationCommand,
   InvokeCommand,
+  PutFunctionEventInvokeConfigCommand,
 } from "@aws-sdk/client-lambda";
 import type { ContainerRuntime, RuntimeLaunchOpts, RuntimeCredentials, BuildImageOpts, RunningAgent } from "./runtime.js";
 import { AwsSharedUtils } from "./aws-shared.js";
@@ -162,8 +163,18 @@ export class LambdaRuntime implements ContainerRuntime {
       }));
     }
 
+    // Disable automatic async invocation retries — the scheduler handles
+    // retry/rerun logic itself; Lambda's default 2 retries cause duplicate
+    // container starts on transient failures.
+    await this.lambdaClient.send(new PutFunctionEventInvokeConfigCommand({
+      FunctionName: functionName,
+      MaximumRetryAttempts: 0,
+    }));
+
     // Wait for function to be ready before invoking
     await this.waitForFunctionReady(functionName);
+
+    const launchTime = Date.now();
 
     // Invoke asynchronously
     const invokeRes = await this.lambdaClient.send(new InvokeCommand({
@@ -172,9 +183,9 @@ export class LambdaRuntime implements ContainerRuntime {
       Payload: Buffer.from(JSON.stringify({ source: "action-llama" })),
     }));
 
-    // Return a synthetic ID: functionName + timestamp for tracking
-    const requestId = invokeRes.$metadata.requestId || `${functionName}-${Date.now()}`;
-    return `lambda:${functionName}:${requestId}`;
+    // Return a synthetic ID: functionName + requestId + launchTime for tracking
+    const requestId = invokeRes.$metadata.requestId || `${functionName}-${launchTime}`;
+    return `lambda:${functionName}:${requestId}:${launchTime}`;
   }
 
   streamLogs(
@@ -184,6 +195,7 @@ export class LambdaRuntime implements ContainerRuntime {
   ): { stop: () => void } {
     let stopped = false;
     const functionName = this.parseFunctionName(containerId);
+    const launchTime = this.parseLaunchTime(containerId);
     const logGroupName = `${AWS_CONSTANTS.LAMBDA_LOG_GROUP}/${functionName}`;
 
     const poll = async () => {
@@ -194,7 +206,7 @@ export class LambdaRuntime implements ContainerRuntime {
 
       while (!stopped) {
         try {
-          const res = await this.shared.filterLogEventsRaw(logGroupName, "", nextToken);
+          const res = await this.shared.filterLogEventsRaw(logGroupName, "", nextToken, launchTime);
           for (const line of res.events) {
             onLine(line);
           }
@@ -217,16 +229,19 @@ export class LambdaRuntime implements ContainerRuntime {
 
   async waitForExit(containerId: string, timeoutSeconds: number): Promise<number> {
     const functionName = this.parseFunctionName(containerId);
+    const launchTime = this.parseLaunchTime(containerId);
     const logGroupName = `${AWS_CONSTANTS.LAMBDA_LOG_GROUP}/${functionName}`;
     const deadline = Date.now() + timeoutSeconds * 1000;
 
     // Poll CloudWatch Logs for the REPORT line indicating completion.
     // Also scan for [RERUN] to return exit code 42, since the async
     // streamLogs poller may not have delivered it before we return.
+    // Only look at logs since launch time to avoid matching stale REPORT
+    // lines from previous invocations.
     let sawRerun = false;
     while (Date.now() < deadline) {
       try {
-        const lines = await this.shared.filterLogEvents(logGroupName, "", 200);
+        const lines = await this.shared.filterLogEvents(logGroupName, "", 200, launchTime);
         for (const line of lines) {
           if (line.includes("[RERUN]")) {
             sawRerun = true;
@@ -271,9 +286,19 @@ export class LambdaRuntime implements ContainerRuntime {
   // --- Internal ---
 
   private parseFunctionName(containerId: string): string {
-    // containerId format: lambda:<functionName>:<requestId>
+    // containerId format: lambda:<functionName>:<requestId>:<launchTime>
     const parts = containerId.split(":");
     return parts.length >= 2 ? parts[1] : containerId;
+  }
+
+  private parseLaunchTime(containerId: string): number | undefined {
+    // containerId format: lambda:<functionName>:<requestId>:<launchTime>
+    const parts = containerId.split(":");
+    if (parts.length >= 4) {
+      const ts = parseInt(parts[3], 10);
+      return Number.isFinite(ts) ? ts : undefined;
+    }
+    return undefined;
   }
 
   private deriveLambdaRoleArn(agentName: string): string {
