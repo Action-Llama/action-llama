@@ -190,11 +190,16 @@ export class LambdaRuntime implements ContainerRuntime {
       // Wait a bit for logs to become available
       await sleep(5000);
 
+      let nextToken: string | undefined;
+
       while (!stopped) {
         try {
-          const lines = await this.shared.filterLogEvents(logGroupName, "", 100);
-          for (const line of lines) {
+          const res = await this.shared.filterLogEventsRaw(logGroupName, "", nextToken);
+          for (const line of res.events) {
             onLine(line);
+          }
+          if (res.nextToken) {
+            nextToken = res.nextToken;
           }
         } catch (err: any) {
           if (!stopped && onStderr && err.name !== "ResourceNotFoundException") {
@@ -255,7 +260,7 @@ export class LambdaRuntime implements ContainerRuntime {
   async fetchLogs(agentName: string, limit: number): Promise<string[]> {
     const functionName = AWS_CONSTANTS.lambdaFunction(agentName);
     const logGroupName = `${AWS_CONSTANTS.LAMBDA_LOG_GROUP}/${functionName}`;
-    return this.shared.filterLogEvents(logGroupName, "", limit);
+    return this.shared.tailLogEvents(logGroupName, "", limit);
   }
 
   getTaskUrl(containerId: string): string | null {

@@ -266,7 +266,7 @@ export class ECSFargateRuntime implements ContainerRuntime {
   }
 
   async fetchLogs(agentName: string, limit: number): Promise<string[]> {
-    return this.shared.filterLogEvents(
+    return this.shared.tailLogEvents(
       ECSFargateRuntime.LOG_GROUP,
       `${AWS_CONSTANTS.agentFamily(agentName)}/`,
       limit,

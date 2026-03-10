@@ -17,6 +17,7 @@ import {
   GetLogEventsCommand,
   FilterLogEventsCommand,
   CreateLogGroupCommand,
+  DescribeLogStreamsCommand,
 } from "@aws-sdk/client-cloudwatch-logs";
 import {
   CodeBuildClient,
@@ -467,16 +468,99 @@ export class AwsSharedUtils {
     };
   }
 
+  /**
+   * Scan log events in a time window using FilterLogEvents.
+   * Returns events in ascending order — suitable for scanning for specific
+   * patterns (e.g. REPORT lines in waitForExit). Uses nextToken to paginate
+   * through all matching events rather than capping at `limit` oldest entries.
+   */
   async filterLogEvents(logGroupName: string, logStreamPrefix: string, limit: number): Promise<string[]> {
+    const startTime = Date.now() - 24 * 3600_000; // last 24 hours
+    const allEvents: string[] = [];
+    let nextToken: string | undefined;
+
+    do {
+      const res = await this.logsClient.send(new FilterLogEventsCommand({
+        logGroupName,
+        ...(logStreamPrefix ? { logStreamNamePrefix: logStreamPrefix } : {}),
+        startTime,
+        ...(nextToken ? { nextToken } : {}),
+      }));
+
+      for (const e of res.events ?? []) {
+        const msg = e.message?.trimEnd();
+        if (msg) allEvents.push(msg);
+      }
+
+      nextToken = res.nextToken;
+    } while (nextToken);
+
+    return allEvents.slice(-limit);
+  }
+
+  /**
+   * Single-page FilterLogEvents call that returns the nextToken for streaming.
+   * Callers poll repeatedly with the returned nextToken to get new events
+   * (Option 2 / tail -f behavior).
+   */
+  async filterLogEventsRaw(
+    logGroupName: string,
+    logStreamPrefix: string,
+    nextToken?: string,
+  ): Promise<{ events: string[]; nextToken?: string }> {
     const res = await this.logsClient.send(new FilterLogEventsCommand({
       logGroupName,
       ...(logStreamPrefix ? { logStreamNamePrefix: logStreamPrefix } : {}),
-      limit,
+      ...(nextToken ? { nextToken } : {}),
     }));
 
-    return (res.events ?? [])
+    const events = (res.events ?? [])
       .map((e) => e.message?.trimEnd() ?? "")
       .filter(Boolean);
+
+    return { events, nextToken: res.nextToken };
+  }
+
+  /**
+   * Tail the most recent log events using GetLogEvents with startFromHead: false.
+   * Finds the latest log stream(s) and reads from the end — true tail behavior.
+   */
+  async tailLogEvents(logGroupName: string, logStreamPrefix: string, limit: number): Promise<string[]> {
+    // Find the most recent log streams
+    const streamsRes = await this.logsClient.send(new DescribeLogStreamsCommand({
+      logGroupName,
+      ...(logStreamPrefix ? { logStreamNamePrefix: logStreamPrefix } : {}),
+      orderBy: "LastEventTime",
+      descending: true,
+      limit: 5,
+    }));
+
+    const streams = streamsRes.logStreams ?? [];
+    if (streams.length === 0) return [];
+
+    // Read from the most recent stream first; if we don't get enough
+    // events, pull from older streams.
+    const allEvents: string[] = [];
+    for (const stream of streams) {
+      if (!stream.logStreamName || allEvents.length >= limit) break;
+
+      const remaining = limit - allEvents.length;
+      const res = await this.logsClient.send(new GetLogEventsCommand({
+        logGroupName,
+        logStreamName: stream.logStreamName,
+        startFromHead: false,
+        limit: remaining,
+      }));
+
+      const events = (res.events ?? [])
+        .map((e) => e.message?.trimEnd() ?? "")
+        .filter(Boolean);
+
+      // Prepend since we're reading newest streams first but want chronological order
+      allEvents.unshift(...events);
+    }
+
+    return allEvents.slice(-limit);
   }
 }
 
