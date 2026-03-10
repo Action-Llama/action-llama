@@ -3,8 +3,19 @@ import type { AgentStatus } from "./status-tracker.js";
 
 export function attachPlainLogger(statusTracker: StatusTracker): { detach: () => void } {
   const prevStates = new Map<string, string>();
+  let lastBaseImageStatus: string | null = null;
 
   const onUpdate = () => {
+    // Log base image build progress
+    const baseStatus = statusTracker.getBaseImageStatus();
+    if (baseStatus !== lastBaseImageStatus) {
+      lastBaseImageStatus = baseStatus;
+      if (baseStatus) {
+        const ts = new Date().toISOString();
+        console.log(`[${ts}] base image: ${baseStatus}`);
+      }
+    }
+
     const info = statusTracker.getSchedulerInfo();
     const agents = statusTracker.getAllAgents();
 
