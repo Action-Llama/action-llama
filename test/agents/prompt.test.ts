@@ -39,7 +39,7 @@ describe("buildCredentialContext", () => {
     const result = buildCredentialContext(["github_token:default"]);
     expect(result).toContain("Anti-exfiltration");
     expect(result).toContain("NEVER output credentials");
-    expect(result).toContain("/shutdown");
+    expect(result).toContain("al-shutdown");
   });
 });
 
@@ -151,29 +151,28 @@ describe("buildLockSkill", () => {
     expect(result).toContain("</skill-lock>");
   });
 
-  it("documents LOCK and UNLOCK operations", () => {
+  it("documents rlock and runlock commands", () => {
     const result = buildLockSkill();
-    expect(result).toContain("LOCK(resourceKey)");
-    expect(result).toContain("UNLOCK(resourceKey)");
+    expect(result).toContain("rlock");
+    expect(result).toContain("runlock");
   });
 
-  it("includes curl examples with gateway vars", () => {
+  it("includes command usage examples", () => {
     const result = buildLockSkill();
-    expect(result).toContain("$GATEWAY_URL/locks/acquire");
-    expect(result).toContain("$GATEWAY_URL/locks/release");
-    expect(result).toContain("$SHUTDOWN_SECRET");
+    expect(result).toContain('rlock "github issue acme/app#42"');
+    expect(result).toContain('runlock "github issue acme/app#42"');
   });
 
   it("documents conflict response", () => {
     const result = buildLockSkill();
-    expect(result).toContain("409");
+    expect(result).toContain("ok");
     expect(result).toContain("holder");
   });
 
-  it("documents HEARTBEAT operation", () => {
+  it("documents rlock-heartbeat command", () => {
     const result = buildLockSkill();
-    expect(result).toContain("HEARTBEAT(resourceKey)");
-    expect(result).toContain("$GATEWAY_URL/locks/heartbeat");
+    expect(result).toContain("rlock-heartbeat");
+    expect(result).toContain('rlock-heartbeat "github issue acme/app#42"');
   });
 
   it("documents one-lock-at-a-time constraint", () => {
@@ -186,7 +185,7 @@ describe("prompt skills integration", () => {
   it("includes lock skill in scheduled prompt when enabled", () => {
     const result = buildScheduledPrompt(agentConfig, { locking: true });
     expect(result).toContain("<skill-lock>");
-    expect(result).toContain("LOCK(resourceKey)");
+    expect(result).toContain("rlock");
   });
 
   it("does not include lock skill when not enabled", () => {

@@ -43,6 +43,7 @@ describe("start", () => {
       expect.any(Object),
       expect.any(StatusTracker),
       undefined,
+      undefined,
       undefined
     );
 

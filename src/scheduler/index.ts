@@ -207,7 +207,7 @@ async function runWithReruns(
   await drainWebhookQueue(agentConfig, ctx);
 }
 
-export async function startScheduler(projectPath: string, globalConfigOverride?: GlobalConfig, statusTracker?: StatusTracker, cloudMode?: boolean, webUI?: boolean) {
+export async function startScheduler(projectPath: string, globalConfigOverride?: GlobalConfig, statusTracker?: StatusTracker, cloudMode?: boolean, gatewayEnabled?: boolean, webUI?: boolean) {
   const mkLogger = statusTracker ? createFileOnlyLogger : createLogger;
   const logger = mkLogger(projectPath, "scheduler");
   logger.info("Starting scheduler...");
@@ -328,11 +328,15 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     statusTracker?.registerAgent(agentConfig.name, agentConfig.scale ?? 1);
   }
 
+  // Validate: webhooks require the gateway
+  if (anyWebhooks && !gatewayEnabled) {
+    logger.warn("Agents have webhook triggers but --gateway (-g) was not passed — webhooks will not be received. Use -g to enable.");
+  }
+
   // Start gateway early if needed (before Docker builds) so users can see build status
   let gateway: GatewayServer | undefined;
-  const shouldStartGateway = anyWebhooks || webUI || dockerEnabled;
-  
-  if (shouldStartGateway) {
+
+  if (gatewayEnabled) {
     const { startGateway } = await import("../gateway/index.js");
     const gatewayPort = globalConfig.gateway?.port || 8080;
     gateway = await startGateway({
@@ -552,11 +556,13 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   // Import necessary classes once if docker is enabled
   const ContainerAgentRunnerClass = dockerEnabled && runtime ? (await import("../agents/container-runner.js")).ContainerAgentRunner : null;
   const gatewayPort = globalConfig.gateway?.port || 8080;
-  const gatewayUrl = useCloudRuntime
-    ? (globalConfig.gateway?.url || "")
-    : `http://host.docker.internal:${gatewayPort}`;
+  const gatewayUrl = gatewayEnabled
+    ? (useCloudRuntime
+      ? (globalConfig.gateway?.url || "")
+      : `http://host.docker.internal:${gatewayPort}`)
+    : "";
 
-  if (useCloudRuntime && !globalConfig.gateway?.url) {
+  if (gatewayEnabled && useCloudRuntime && !globalConfig.gateway?.url) {
     logger.warn("Cloud mode is active but gateway.url is not set in config.toml — resource locking and shutdown will not work for cloud containers");
   }
 
@@ -613,8 +619,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   const skills: PromptSkills | undefined = dockerEnabled ? { locking: true } : undefined;
   const schedulerCtx: SchedulerContext = { runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, webhookQueue, shuttingDown: false, skills, useBakedImages: dockerEnabled };
 
-  // Set up webhook bindings
-  if (webhookRegistry) {
+  // Set up webhook bindings (only when gateway is enabled)
+  if (webhookRegistry && gatewayEnabled) {
     for (const agentConfig of activeAgentConfigs) {
       if (!agentConfig.webhooks?.length) continue;
 

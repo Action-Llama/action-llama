@@ -201,16 +201,12 @@ export class ContainerAgentRunner {
         cpus: this.globalConfig.local?.cpus,
       });
 
-      // Register container with gateway for shutdown, credential serving, locking, and log ingestion.
-      // Register whenever a gateway URL is configured (not just local Docker).
+      // Register container with gateway for shutdown, locking, and log ingestion.
       if (this.gatewayUrl) {
-        const bundle = credentials.strategy === "volume" ? credentials.bundle : undefined;
         this.registerContainer(shutdownSecret, {
           containerName,
           agentName: this.agentConfig.name,
           instanceId: this.instanceId,
-          credentials: bundle,
-          onLogLine: (line) => this.forwardLogLine(line),
         });
       }
 

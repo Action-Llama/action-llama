@@ -168,10 +168,16 @@ describe("scheduler webhook support", () => {
     expect(webhookRegistry!.getProvider("github")).toBeDefined();
   });
 
-  it("starts gateway for webhooks even without docker", async () => {
+  it("starts gateway for webhooks when gateway flag is enabled", async () => {
+    setupProjectWithWebhooks(tmpDir);
+    const { gateway } = await startScheduler(tmpDir, undefined, undefined, undefined, true);
+    expect(gateway).toBeDefined();
+  });
+
+  it("does not start gateway when gateway flag is not set", async () => {
     setupProjectWithWebhooks(tmpDir);
     const { gateway } = await startScheduler(tmpDir);
-    expect(gateway).toBeDefined();
+    expect(gateway).toBeUndefined();
   });
 
   it("creates cron job and webhook binding for hybrid agent", async () => {

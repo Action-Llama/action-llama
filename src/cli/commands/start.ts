@@ -5,7 +5,7 @@ import { startScheduler } from "../../scheduler/index.js";
 import { StatusTracker } from "../../tui/status-tracker.js";
 import { execute as runDoctor } from "./doctor.js";
 
-export async function execute(opts: { project: string; noDocker?: boolean; cloud?: boolean; headless?: boolean; webUi?: boolean }): Promise<void> {
+export async function execute(opts: { project: string; noDocker?: boolean; cloud?: boolean; headless?: boolean; gateway?: boolean; webUi?: boolean }): Promise<void> {
   const projectPath = resolve(opts.project);
 
   // Guard: refuse to run if the project path looks like an agent directory
@@ -14,6 +14,11 @@ export async function execute(opts: { project: string; noDocker?: boolean; cloud
       `"${projectPath}" looks like an agent directory, not a project directory. ` +
       `Run 'al start' from the project root (the parent directory).`
     );
+  }
+
+  // Validate: --web-ui requires --gateway
+  if (opts.webUi && !opts.gateway) {
+    throw new Error("--web-ui requires --gateway (-g). The web dashboard is served by the gateway.");
   }
 
   // Ensure all credentials are present before starting
@@ -69,7 +74,7 @@ export async function execute(opts: { project: string; noDocker?: boolean; cloud
   }
 
   const { cronJobs, runnerPools, gateway, webhookRegistry, webhookUrls } = await startScheduler(
-    projectPath, globalConfig, statusTracker, opts.cloud, opts.webUi
+    projectPath, globalConfig, statusTracker, opts.cloud, opts.gateway, opts.webUi
   );
 
   const gatewayPort = gateway ? (globalConfig.gateway?.port || 8080) : null;

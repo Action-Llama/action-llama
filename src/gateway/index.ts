@@ -2,8 +2,6 @@ import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import type { Server } from "http";
 import { registerShutdownRoute } from "./routes/shutdown.js";
-import { registerCredentialRoute } from "./routes/credentials.js";
-import { registerLogRoute } from "./routes/logs.js";
 import { registerLockRoutes } from "./routes/locks.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
 import { registerDashboardRoutes } from "./routes/dashboard.js";
@@ -47,8 +45,6 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
   // Container management routes
   const killFn = killContainer || (async () => {});
   registerShutdownRoute(app, containerRegistry, killFn, logger);
-  registerCredentialRoute(app, containerRegistry, logger);
-  registerLogRoute(app, containerRegistry, logger);
   registerLockRoutes(app, containerRegistry, lockStore, logger);
 
   // Webhook routes

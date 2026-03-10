@@ -17,7 +17,7 @@ function emitLog(level: string, msg: string, data?: Record<string, any>) {
   console.log(JSON.stringify({ _log: true, level, msg, ...data, ts: Date.now() }));
 }
 
-// Credential bundle loaded from either mounted volume or gateway HTTP endpoint
+// Credential bundle loaded from mounted volume or environment variables
 let credBundle: Record<string, Record<string, Record<string, string>>> = {};
 
 function hasLocalCredentials(): boolean {
@@ -62,15 +62,6 @@ function loadCredentialsFromEnv(): void {
   }
 }
 
-async function loadCredentialsFromGateway(gatewayUrl: string, secret: string): Promise<void> {
-  emitLog("info", "fetching credentials from gateway");
-  const res = await fetch(`${gatewayUrl}/credentials/${secret}`);
-  if (!res.ok) {
-    throw new Error(`failed to fetch credentials from gateway (status ${res.status})`);
-  }
-  credBundle = await res.json();
-}
-
 function readCredentialField(type: string, instance: string, field: string): string | undefined {
   return credBundle[type]?.[instance]?.[field];
 }
@@ -90,7 +81,46 @@ export async function runAgent(): Promise<number> {
   process.chdir("/tmp");
 
   const gatewayUrl = process.env.GATEWAY_URL;
-  const shutdownSecret = process.env.SHUTDOWN_SECRET;
+
+  // Write gateway helper scripts to /tmp/bin/ and prepend to PATH.
+  // When GATEWAY_URL is not set, these commands are no-ops (return success).
+  // This lets agents use clean commands like `rlock "resource"` instead of raw curl,
+  // and gracefully degrades when running without a gateway.
+  mkdirSync("/tmp/bin", { recursive: true });
+
+  const rlockScript = `#!/bin/sh
+if [ -z "$GATEWAY_URL" ]; then echo '{"ok":true}'; exit 0; fi
+curl -s -X POST "$GATEWAY_URL/locks/acquire" \\
+  -H 'Content-Type: application/json' \\
+  -d '{"secret":"'"$SHUTDOWN_SECRET"'","resourceKey":"'"$1"'"}'
+`;
+
+  const runlockScript = `#!/bin/sh
+if [ -z "$GATEWAY_URL" ]; then echo '{"ok":true}'; exit 0; fi
+curl -s -X POST "$GATEWAY_URL/locks/release" \\
+  -H 'Content-Type: application/json' \\
+  -d '{"secret":"'"$SHUTDOWN_SECRET"'","resourceKey":"'"$1"'"}'
+`;
+
+  const rlockHeartbeatScript = `#!/bin/sh
+if [ -z "$GATEWAY_URL" ]; then echo '{"ok":true}'; exit 0; fi
+curl -s -X POST "$GATEWAY_URL/locks/heartbeat" \\
+  -H 'Content-Type: application/json' \\
+  -d '{"secret":"'"$SHUTDOWN_SECRET"'","resourceKey":"'"$1"'"}'
+`;
+
+  const alShutdownScript = `#!/bin/sh
+if [ -z "$GATEWAY_URL" ]; then exit 0; fi
+curl -s -X POST "$GATEWAY_URL/shutdown" \\
+  -H 'Content-Type: application/json' \\
+  -d '{"secret":"'"$SHUTDOWN_SECRET"'","reason":"'"$\{1:-agent requested shutdown\}"'"}'
+`;
+
+  writeFileSync("/tmp/bin/rlock", rlockScript, { mode: 0o755 });
+  writeFileSync("/tmp/bin/runlock", runlockScript, { mode: 0o755 });
+  writeFileSync("/tmp/bin/rlock-heartbeat", rlockHeartbeatScript, { mode: 0o755 });
+  writeFileSync("/tmp/bin/al-shutdown", alShutdownScript, { mode: 0o755 });
+  process.env.PATH = `/tmp/bin:${process.env.PATH || ""}`;
 
   // Load agent config and PLAYBOOK.md from baked-in files or env vars.
   // Images built with extraFiles have static content at /app/static/.
@@ -131,20 +161,15 @@ export async function runAgent(): Promise<number> {
 
   emitLog("info", "container starting", { agentName: agentConfig.name, modelId, gatewayUrl });
 
-  // Load credentials from mounted volume, env vars (ECS secrets), or gateway.
-  // Env vars and volume mounts are preferred — when either is present, gateway
-  // fetch is explicitly skipped to avoid exposing a credential-fetch surface.
+  // Load credentials from mounted volume or env vars (ECS/Lambda/Cloud Run).
   if (hasLocalCredentials()) {
     loadCredentialsFromVolume();
     emitLog("info", "credentials loaded from volume");
   } else if (hasEnvCredentials()) {
     loadCredentialsFromEnv();
-    emitLog("info", "credentials loaded from env vars, gateway fetch disabled");
-  } else if (gatewayUrl && shutdownSecret) {
-    await loadCredentialsFromGateway(gatewayUrl, shutdownSecret);
-    emitLog("info", "credentials loaded from gateway");
+    emitLog("info", "credentials loaded from env vars");
   } else {
-    throw new Error("no credentials available — no volume mount, env vars, or gateway URL");
+    throw new Error("no credentials available — no volume mount or env vars found");
   }
 
   // Read provider API key from credentials (not needed for pi_auth)
