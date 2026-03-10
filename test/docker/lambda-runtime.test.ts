@@ -343,7 +343,7 @@ describe("LambdaRuntime", () => {
     );
   });
 
-  it("resolves secrets and passes as env vars during launch", async () => {
+  it("passes secrets in invoke payload, not env vars", async () => {
     const runtime = new LambdaRuntime(defaultConfig);
 
     // prepareCredentials returns mounts
@@ -378,9 +378,15 @@ describe("LambdaRuntime", () => {
       credentials: creds,
     });
 
-    // Verify the CreateFunction call includes the secret env var
-    const { CreateFunctionCommand } = await import("@aws-sdk/client-lambda");
+    // Secrets should NOT be in the function's env vars
+    const { CreateFunctionCommand, InvokeCommand } = await import("@aws-sdk/client-lambda");
     const envVars = vi.mocked(CreateFunctionCommand).mock.calls[0][0].Environment?.Variables;
-    expect(envVars).toHaveProperty("AL_SECRET_github_token__default__token", "ghp_fake123");
+    expect(envVars).not.toHaveProperty("AL_SECRET_github_token__default__token");
+
+    // Secrets should be in the invoke payload instead
+    const invokePayload = JSON.parse(
+      Buffer.from(vi.mocked(InvokeCommand).mock.calls[0][0].Payload as any).toString(),
+    );
+    expect(invokePayload.secrets).toHaveProperty("AL_SECRET_github_token__default__token", "ghp_fake123");
   });
 });

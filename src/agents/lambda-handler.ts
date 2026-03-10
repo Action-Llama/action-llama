@@ -40,6 +40,22 @@ async function main() {
     }
 
     try {
+      // Parse the invoke payload — secrets are passed here (not env vars)
+      // to stay under Lambda's 4 KB env-var limit and enforce least-privilege
+      // (the container never gets Secrets Manager access).
+      try {
+        const body = await nextRes.json() as Record<string, any>;
+        if (body?.secrets && typeof body.secrets === "object") {
+          for (const [key, value] of Object.entries(body.secrets)) {
+            if (typeof value === "string") {
+              process.env[key] = value;
+            }
+          }
+        }
+      } catch {
+        // Payload may be empty or malformed — continue without secrets
+      }
+
       const exitCode = await runAgent();
 
       await fetch(

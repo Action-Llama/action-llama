@@ -91,7 +91,11 @@ export class LambdaRuntime implements ContainerRuntime {
       AWS_CONSTANTS.LAMBDA_MAX_MEMORY,
     );
 
-    // Resolve secrets from Secrets Manager and pass as env vars
+    // Resolve secrets from Secrets Manager on the scheduler side and pass
+    // them in the invoke payload (256 KB limit) instead of env vars (4 KB
+    // limit).  The Lambda handler injects them as AL_SECRET_* env vars
+    // before calling runAgent(), so the container itself never needs
+    // Secrets Manager access — each agent can only see its own credentials.
     const credRefs = opts.credentials.strategy === "secrets-manager"
       ? opts.credentials.mounts.map((m) => {
           // Reconstruct credential ref from mount path
@@ -105,7 +109,6 @@ export class LambdaRuntime implements ContainerRuntime {
     const environment = {
       Variables: {
         ...opts.env,
-        ...secretEnv,
       },
     };
 
@@ -183,11 +186,16 @@ export class LambdaRuntime implements ContainerRuntime {
 
     const launchTime = Date.now();
 
-    // Invoke asynchronously
+    // Invoke asynchronously — pass resolved secrets in the payload so the
+    // container doesn't need Secrets Manager access (least-privilege).
+    const payload: Record<string, any> = { source: "action-llama" };
+    if (Object.keys(secretEnv).length > 0) {
+      payload.secrets = secretEnv;
+    }
     const invokeRes = await this.lambdaClient.send(new InvokeCommand({
       FunctionName: functionName,
       InvocationType: "Event",
-      Payload: Buffer.from(JSON.stringify({ source: "action-llama" })),
+      Payload: Buffer.from(JSON.stringify(payload)),
     }));
 
     // Return a synthetic ID: functionName + requestId + launchTime for tracking
