@@ -491,9 +491,12 @@ This is the minimum policy for the IAM user or role running `al` commands. Repla
       "Resource": "*"
     },
     {
-      "Sid": "ECRImageCheck",
+      "Sid": "ECR",
       "Effect": "Allow",
-      "Action": "ecr:BatchGetImage",
+      "Action": [
+        "ecr:BatchGetImage",
+        "ecr:SetRepositoryPolicy"
+      ],
       "Resource": "arn:aws:ecr:<REGION>:<ACCOUNT_ID>:repository/<REPO_NAME>"
     },
     {
