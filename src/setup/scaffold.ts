@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync, existsSync, symlinkSync } from "fs";
+import { mkdirSync, writeFileSync, existsSync, readFileSync, copyFileSync } from "fs";
 import { resolve } from "path";
 import { fileURLToPath } from "url";
 import { stringify as stringifyTOML } from "smol-toml";
@@ -74,17 +74,18 @@ export function scaffoldProject(
     scaffoldAgent(projectPath, agent);
   }
 
-  // Symlink project-level AGENTS.md and CLAUDE.md to the shipped copy in node_modules.
-  // Both point to the same file so that Claude Code and other LLM tools pick it up.
+  // Copy AGENTS.md (and CLAUDE.md alias) from the shipped package into the project.
+  // We copy instead of symlinking so the files work immediately after `git clone`
+  // without needing `npm install` first — important for agents that clone the repo.
   const packageAgentsMd = resolvePackageAgentsMd();
   for (const name of ["AGENTS.md", "CLAUDE.md"]) {
     const dest = resolve(projectPath, name);
     if (!existsSync(dest)) {
       try {
-        symlinkSync(packageAgentsMd, dest);
+        copyFileSync(packageAgentsMd, dest);
       } catch {
         // Fallback: if the package can't be resolved (e.g. running from source
-        // before npm install), skip the symlink — the user can create it later.
+        // before npm install), skip the copy — the user can create it later.
       }
     }
   }

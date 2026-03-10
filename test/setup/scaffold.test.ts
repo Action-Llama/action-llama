@@ -117,27 +117,27 @@ describe("scaffoldProject", () => {
     }
   });
 
-  it("creates project-level AGENTS.md as symlink", () => {
+  it("creates project-level AGENTS.md as a regular file", () => {
     tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
     const projDir = resolve(tmpDir, "my-project");
     scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
 
     const agentsMdPath = resolve(projDir, "AGENTS.md");
     expect(existsSync(agentsMdPath)).toBe(true);
-    expect(lstatSync(agentsMdPath).isSymbolicLink()).toBe(true);
+    expect(lstatSync(agentsMdPath).isFile()).toBe(true);
     const content = readFileSync(agentsMdPath, "utf-8");
     expect(content).toContain("Action Llama Project");
     expect(content).toContain("agent-config.toml");
   });
 
-  it("creates CLAUDE.md symlink pointing to same AGENTS.md", () => {
+  it("creates CLAUDE.md as a regular file with same content as AGENTS.md", () => {
     tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
     const projDir = resolve(tmpDir, "my-project");
     scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
 
     const claudeMdPath = resolve(projDir, "CLAUDE.md");
     expect(existsSync(claudeMdPath)).toBe(true);
-    expect(lstatSync(claudeMdPath).isSymbolicLink()).toBe(true);
+    expect(lstatSync(claudeMdPath).isFile()).toBe(true);
     const content = readFileSync(claudeMdPath, "utf-8");
     expect(content).toContain("Action Llama Project");
     expect(content).toContain("agent-config.toml");
