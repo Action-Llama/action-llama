@@ -81,6 +81,10 @@ function readCredentialFields(type: string, instance: string): Record<string, st
 }
 
 async function main() {
+  // Point HOME to /tmp so that tools writing to $HOME (e.g. git config --global)
+  // work on read-only filesystems like Lambda where /home/node is not writable.
+  process.env.HOME = "/tmp";
+
   // Switch CWD to /tmp so child processes (git, bash, etc.) default to it.
   // /tmp is the only writable directory across all platforms (local Docker,
   // ECS Fargate, Cloud Run). Node starts in /app (WORKDIR at build time).
