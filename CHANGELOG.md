@@ -1,5 +1,11 @@
 # @action-llama/action-llama
 
+## 0.8.1
+
+### Patch Changes
+
+- [`63e47f0`](https://github.com/Action-Llama/action-llama/commit/63e47f005706af2c9b15f74b62755d883567e2cf) Thanks [@asselstine](https://github.com/asselstine)! - Fixed `al logs -c` for ECS agents failing with "Cannot order by LastEventTime with a logStreamNamePrefix" by replacing the DescribeLogStreams-based tail with FilterLogEvents. Cloud logs now render through the same conversation/raw formatter as local logs, and Lambda platform lines (START, END, REPORT) are filtered out. Added `--instance` flag to `al logs` for agents with `scale > 1` — in follow mode, lists running instances and lets you pick one; in local mode, targets a specific instance's log file. Fixed local Docker `fetchLogs` to aggregate logs across all containers for the same agent.
+
 ## 0.8.0
 
 ### Minor Changes
