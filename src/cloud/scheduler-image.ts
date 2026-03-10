@@ -78,13 +78,13 @@ function generateDockerfile(): string {
     "RUN npm install --production",
     "COPY dist/ ./dist/",
     "",
-    "# Baked-in project files",
-    "COPY project/ ./project/",
+    "# Project files are baked in via extraFiles → static/project/",
+    "# (the build pipeline auto-injects COPY static/ /app/static/)",
     "",
     "EXPOSE 8080",
     "",
     'ENTRYPOINT ["node", "dist/cli/main.js", "start", \\',
-    '  "-p", "/app/project", "-c", "--headless", "--gateway"]',
+    '  "-p", "/app/static/project", "-c", "--headless", "--gateway"]',
     "",
   ].join("\n");
 }

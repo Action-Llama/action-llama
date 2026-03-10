@@ -1,7 +1,7 @@
 import { execFileSync, spawn } from "child_process";
 import { randomUUID } from "crypto";
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
-import { join, resolve, isAbsolute } from "path";
+import { join, resolve, isAbsolute, dirname } from "path";
 import { tmpdir } from "os";
 import { NETWORK_NAME } from "./network.js";
 import type { ContainerRuntime, RuntimeLaunchOpts, RuntimeCredentials, CredentialBundle, BuildImageOpts, RunningAgent } from "./runtime.js";
@@ -133,7 +133,9 @@ export class LocalDockerRuntime implements ContainerRuntime {
           const staticDir = join(buildCtx, "static");
           mkdirSync(staticDir, { recursive: true });
           for (const [filename, fileContent] of Object.entries(opts.extraFiles!)) {
-            writeFileSync(join(staticDir, filename), fileContent);
+            const filePath = join(staticDir, filename);
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, fileContent);
           }
         }
       }

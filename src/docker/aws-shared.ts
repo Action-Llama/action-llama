@@ -279,7 +279,10 @@ export class AwsSharedUtils {
       const staticDir = join(buildCtx, "static");
       mkdirSync(staticDir, { recursive: true });
       for (const [filename, content] of Object.entries(opts.extraFiles!)) {
-        writeFileSync(join(staticDir, filename), content);
+        const filePath = join(staticDir, filename);
+        const { dirname: dirnameFn } = await import("path");
+        mkdirSync(dirnameFn(filePath), { recursive: true });
+        writeFileSync(filePath, content);
       }
     }
 
