@@ -18,9 +18,11 @@ export function attachPlainLogger(statusTracker: StatusTracker): { detach: () =>
         case "building":
           log(ts, agent.name, "building" + (agent.statusText ? `: ${agent.statusText}` : ""));
           break;
-        case "running":
-          log(ts, agent.name, "running" + (agent.statusText ? `: ${agent.statusText}` : ""));
+        case "running": {
+          const reason = agent.runReason ? ` (${agent.runReason})` : "";
+          log(ts, agent.name, "running" + reason + (agent.statusText ? `: ${agent.statusText}` : ""));
           break;
+        }
         case "error":
           log(ts, agent.name, `error: ${agent.lastError ?? "unknown"}`);
           break;
@@ -93,7 +95,7 @@ export function attachPlainLogger(statusTracker: StatusTracker): { detach: () =>
 }
 
 function stateKey(agent: AgentStatus): string {
-  return `${agent.state}|${agent.statusText}|${agent.lastError}|${agent.lastRunAt?.getTime()}|${agent.lastRunDuration}`;
+  return `${agent.state}|${agent.statusText}|${agent.lastError}|${agent.lastRunAt?.getTime()}|${agent.lastRunDuration}|${agent.runReason}`;
 }
 
 function log(ts: string, agent: string, msg: string): void {

@@ -194,7 +194,7 @@ async function runWithReruns(
   while (result === "completed" && reruns < ctx.maxReruns) {
     reruns++;
     ctx.logger.info({ rerun: reruns, maxReruns: ctx.maxReruns }, `${agentConfig.name} did work, re-running immediately`);
-    ({ result, triggers } = await runner.run(makeScheduledPrompt(agentConfig, ctx), { type: 'schedule' }));
+    ({ result, triggers } = await runner.run(makeScheduledPrompt(agentConfig, ctx), { type: 'schedule', source: `rerun ${reruns}/${ctx.maxReruns}` }));
     if (triggers.length > 0) {
       dispatchTriggers(triggers, agentConfig.name, depth, ctx);
     }

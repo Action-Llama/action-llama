@@ -13,6 +13,7 @@ export interface AgentStatus {
   scale: number;        // total runner pool size
   runningCount: number; // how many runners are currently active
   taskUrl: string | null; // link to cloud task/execution (ECS or Cloud Run console)
+  runReason: string | null; // why the agent is running (e.g. "schedule", "webhook", "rerun 2/10")
 }
 
 export interface SchedulerInfo {
@@ -53,6 +54,7 @@ export class StatusTracker extends EventEmitter {
       scale,
       runningCount: 0,
       taskUrl: null,
+      runReason: null,
     });
     this.emit("update");
   }
@@ -69,7 +71,7 @@ export class StatusTracker extends EventEmitter {
   }
 
   /** Increment running count and set state to running */
-  startRun(name: string): void {
+  startRun(name: string, reason?: string): void {
     const agent = this.agents.get(name);
     if (!agent) return;
     agent.runningCount = Math.min(agent.runningCount + 1, agent.scale);
@@ -77,6 +79,7 @@ export class StatusTracker extends EventEmitter {
     agent.statusText = null;
     agent.lastError = null;
     agent.taskUrl = null;
+    agent.runReason = reason ?? null;
     this.emit("update");
   }
 
@@ -94,6 +97,7 @@ export class StatusTracker extends EventEmitter {
       agent.state = "error";
     } else if (agent.runningCount === 0) {
       agent.state = "idle";
+      agent.runReason = null;
     }
     // If still running instances, keep state as "running"
     this.emit("update");
@@ -127,6 +131,7 @@ export class StatusTracker extends EventEmitter {
     agent.lastRunAt = new Date();
     agent.lastRunDuration = durationMs;
     agent.statusText = null;
+    agent.runReason = null;
     if (error) {
       agent.lastError = error;
     }

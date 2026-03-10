@@ -142,8 +142,13 @@ export class ContainerAgentRunner {
     this._wasSilent = false;
     this._triggers = [];
     this._triggerAccum = null;
-    this.statusTracker?.startRun(this.agentConfig.name);
-    
+    const runReason = triggerInfo
+      ? (triggerInfo.source
+        ? (triggerInfo.type === 'agent' ? `triggered by ${triggerInfo.source}` : `${triggerInfo.type} (${triggerInfo.source})`)
+        : triggerInfo.type)
+      : undefined;
+    this.statusTracker?.startRun(this.agentConfig.name, runReason);
+
     if (triggerInfo) {
       const triggerDetails = triggerInfo.type === 'agent' && triggerInfo.source 
         ? `${triggerInfo.type} (${triggerInfo.source})` 
