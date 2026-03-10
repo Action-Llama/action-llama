@@ -5,14 +5,29 @@ import { logsDir } from "../../shared/paths.js";
 import { loadGlobalConfig, loadAgentConfig } from "../../shared/config.js";
 import { AWS_CONSTANTS } from "../../shared/aws-constants.js";
 
-const LEVEL_COLORS: Record<number, { label: string; color: string }> = {
-  10: { label: "TRACE", color: "\x1b[90m" },   // gray
-  20: { label: "DEBUG", color: "\x1b[36m" },   // cyan
-  30: { label: "INFO",  color: "\x1b[32m" },   // green
-  40: { label: "WARN",  color: "\x1b[33m" },   // yellow
-  50: { label: "ERROR", color: "\x1b[31m" },   // red
-};
+// ── ANSI helpers ──────────────────────────────────────────────────────────────
+
 const RESET = "\x1b[0m";
+const BOLD = "\x1b[1m";
+const DIM = "\x1b[2m";
+const RED = "\x1b[31m";
+const GREEN = "\x1b[32m";
+const YELLOW = "\x1b[33m";
+const BLUE = "\x1b[34m";
+const MAGENTA = "\x1b[35m";
+const CYAN = "\x1b[36m";
+const WHITE = "\x1b[37m";
+const GRAY = "\x1b[90m";
+
+// ── Raw format (--raw) ───────────────────────────────────────────────────────
+
+const LEVEL_COLORS: Record<number, { label: string; color: string }> = {
+  10: { label: "TRACE", color: GRAY },
+  20: { label: "DEBUG", color: CYAN },
+  30: { label: "INFO",  color: GREEN },
+  40: { label: "WARN",  color: YELLOW },
+  50: { label: "ERROR", color: RED },
+};
 
 interface LogEntry {
   level: number;
@@ -24,17 +39,143 @@ interface LogEntry {
   [key: string]: unknown;
 }
 
-function formatEntry(entry: LogEntry): string {
+type Formatter = (entry: LogEntry) => string | null;
+
+function formatRawEntry(entry: LogEntry): string {
   const date = new Date(entry.time);
   const time = date.toLocaleTimeString("en-US", { hour12: false });
   const levelInfo = LEVEL_COLORS[entry.level] || { label: `L${entry.level}`, color: "" };
 
-  // Collect extra fields (exclude standard pino fields)
   const { level, time: _t, msg, name: _n, pid: _p, hostname: _h, ...extra } = entry;
   const extraStr = Object.keys(extra).length > 0 ? ` ${JSON.stringify(extra)}` : "";
 
   return `${levelInfo.color}${time} ${levelInfo.label.padEnd(5)} ${msg}${extraStr}${RESET}`;
 }
+
+// ── Conversation format (default) ────────────────────────────────────────────
+
+// Messages we skip entirely in conversation mode
+const SKIP_MESSAGES = new Set([
+  "event",
+  "tool done",
+]);
+
+function formatTime(ts: number): string {
+  const d = new Date(ts);
+  return d.toLocaleTimeString("en-US", { hour12: false });
+}
+
+function formatConversationEntry(entry: LogEntry): string | null {
+  const time = `${DIM}${formatTime(entry.time)}${RESET}`;
+  const { msg } = entry;
+
+  // Skip debug-level noise (except tool errors which are level 50)
+  if (entry.level <= 20 && !SKIP_MESSAGES.has(msg)) {
+    // Show debug tool starts for non-bash tools
+    if (msg === "tool start") {
+      const tool = String(entry.tool || "unknown");
+      return `${time}  ${BLUE}▸ ${tool}${RESET}`;
+    }
+    // Skip all other debug entries
+    return null;
+  }
+
+  if (SKIP_MESSAGES.has(msg)) return null;
+
+  // ── Assistant text output ──
+  if (msg === "assistant") {
+    const text = String(entry.text || "");
+    if (!text) return null;
+    // Indent multi-line text under the timestamp
+    const lines = text.split("\n");
+    const first = `${time}  ${WHITE}${BOLD}${lines[0]}${RESET}`;
+    if (lines.length === 1) return first;
+    const rest = lines.slice(1).map((l) => `          ${WHITE}${l}${RESET}`).join("\n");
+    return `${first}\n${rest}`;
+  }
+
+  // ── Bash command ──
+  if (msg === "bash") {
+    const cmd = String(entry.cmd || "");
+    return `${time}  ${CYAN}$ ${cmd}${RESET}`;
+  }
+
+  // ── Tool start (non-bash, logged at info level in some paths) ──
+  if (msg === "tool start") {
+    const tool = String(entry.tool || "unknown");
+    return `${time}  ${BLUE}▸ ${tool}${RESET}`;
+  }
+
+  // ── Tool error ──
+  if (msg === "tool error") {
+    const tool = String(entry.tool || "unknown");
+    const cmd = entry.cmd ? `\n          ${DIM}$ ${String(entry.cmd)}${RESET}` : "";
+    const result = entry.result ? `\n          ${DIM}${String(entry.result).slice(0, 300)}${RESET}` : "";
+    return `${time}  ${RED}✗ ${tool} failed${RESET}${cmd}${result}`;
+  }
+
+  // ── Run lifecycle ──
+  if (msg.startsWith("Starting ")) {
+    const container = entry.container ? `${DIM} (${entry.container})${RESET}` : "";
+    return `${time}  ${MAGENTA}${BOLD}${msg}${RESET}${container}`;
+  }
+
+  if (msg === "run completed" || msg === "run completed, rerun requested") {
+    const suffix = msg.includes("rerun") ? ` ${YELLOW}(rerun requested)${RESET}` : "";
+    return `${time}  ${GREEN}${BOLD}Run completed${RESET}${suffix}`;
+  }
+
+  if (msg === "container launched") {
+    const container = entry.container ? ` ${DIM}${entry.container}${RESET}` : "";
+    return `${time}  ${DIM}Container launched${container}${RESET}`;
+  }
+
+  if (msg === "container finished" || msg === "container finished (rerun requested)") {
+    const elapsed = entry.elapsed ? ` ${DIM}(${entry.elapsed})${RESET}` : "";
+    return `${time}  ${DIM}Container finished${elapsed}${RESET}`;
+  }
+
+  // ── Container/session setup messages ──
+  if (msg === "container starting") {
+    const agentName = String(entry.agentName || "");
+    const modelId = entry.modelId ? ` ${DIM}model=${entry.modelId}${RESET}` : "";
+    return `${time}  ${MAGENTA}${BOLD}Container starting: ${agentName}${RESET}${modelId}`;
+  }
+
+  if (msg === "creating agent session" || msg === "session created, sending prompt") {
+    return `${time}  ${DIM}${msg}${RESET}`;
+  }
+
+  // ── Errors and warnings ──
+  if (entry.level >= 50) {
+    const errDetail = entry.err ? ` ${DIM}${JSON.stringify(entry.err).slice(0, 300)}${RESET}` : "";
+    return `${time}  ${RED}${BOLD}ERROR: ${msg}${RESET}${errDetail}`;
+  }
+
+  if (entry.level >= 40) {
+    return `${time}  ${YELLOW}WARN: ${msg}${RESET}`;
+  }
+
+  // ── Catch-all for other info messages ──
+  return `${time}  ${DIM}${msg}${RESET}`;
+}
+
+// ── Run header ───────────────────────────────────────────────────────────────
+
+function formatRunHeader(entry: LogEntry): string | null {
+  const { msg } = entry;
+  // Detect run start to print a separator header
+  if (msg.startsWith("Starting ") && (msg.includes(" run") || msg.includes(" container run"))) {
+    const agentName = entry.name || "agent";
+    const container = entry.container ? `  ${entry.container}` : "";
+    const label = ` ${agentName}${container} `;
+    const line = "─".repeat(Math.max(0, 60 - label.length));
+    return `\n${DIM}──${RESET}${MAGENTA}${BOLD}${label}${RESET}${DIM}${line}${RESET}`;
+  }
+  return null;
+}
+
+// ── Shared parsing & file helpers ─────────────────────────────────────────────
 
 function parseLine(line: string): LogEntry | null {
   if (!line.trim()) return null;
@@ -51,12 +192,10 @@ function findLogFile(dir: string, agent: string, date?: string): string | null {
     return existsSync(file) ? file : null;
   }
 
-  // Default to today
   const today = new Date().toISOString().slice(0, 10);
   const todayFile = resolve(dir, `${agent}-${today}.log`);
   if (existsSync(todayFile)) return todayFile;
 
-  // Find most recent log file for this agent
   if (!existsSync(dir)) return null;
   const files = readdirSync(dir)
     .filter((f) => f.startsWith(`${agent}-`) && f.endsWith(".log"))
@@ -66,7 +205,9 @@ function findLogFile(dir: string, agent: string, date?: string): string | null {
   return files.length > 0 ? resolve(dir, files[0]) : null;
 }
 
-async function readLastN(filePath: string, n: number): Promise<void> {
+// ── Reading & following ───────────────────────────────────────────────────────
+
+async function readLastN(filePath: string, n: number, fmt: Formatter): Promise<void> {
   const entries: string[] = [];
 
   const rl = createInterface({
@@ -77,8 +218,16 @@ async function readLastN(filePath: string, n: number): Promise<void> {
   for await (const line of rl) {
     const entry = parseLine(line);
     if (entry) {
-      entries.push(formatEntry(entry));
-      if (entries.length > n) entries.shift();
+      const header = fmt === formatConversationEntry ? formatRunHeader(entry) : null;
+      const formatted = fmt(entry);
+      if (header) {
+        entries.push(header);
+        if (entries.length > n) entries.shift();
+      }
+      if (formatted) {
+        entries.push(formatted);
+        if (entries.length > n) entries.shift();
+      }
     }
   }
 
@@ -87,7 +236,7 @@ async function readLastN(filePath: string, n: number): Promise<void> {
   }
 }
 
-async function readNewData(filePath: string, start: number): Promise<{ newPosition: number }> {
+async function readNewData(filePath: string, start: number, fmt: Formatter): Promise<{ newPosition: number }> {
   const currentSize = statSync(filePath).size;
   if (currentSize <= start) return { newPosition: start };
 
@@ -97,24 +246,26 @@ async function readNewData(filePath: string, start: number): Promise<{ newPositi
   for await (const line of rl) {
     const entry = parseLine(line);
     if (entry) {
-      console.log(formatEntry(entry));
+      if (fmt === formatConversationEntry) {
+        const header = formatRunHeader(entry);
+        if (header) console.log(header);
+      }
+      const formatted = fmt(entry);
+      if (formatted) console.log(formatted);
     }
   }
 
   return { newPosition: currentSize };
 }
 
-async function followFile(filePath: string, lastN: number): Promise<void> {
-  // Print last N entries first
-  await readLastN(filePath, lastN);
+async function followFile(filePath: string, lastN: number, fmt: Formatter): Promise<void> {
+  await readLastN(filePath, lastN, fmt);
 
-  // Start tailing from end of file
   let position = statSync(filePath).size;
 
-  // Poll for new data every 500ms (more reliable than fs.watch)
   const interval = setInterval(async () => {
     try {
-      const { newPosition } = await readNewData(filePath, position);
+      const { newPosition } = await readNewData(filePath, position, fmt);
       position = newPosition;
     } catch {
       // File may have been rotated or removed — ignore
@@ -129,11 +280,14 @@ async function followFile(filePath: string, lastN: number): Promise<void> {
   await new Promise(() => {});
 }
 
+// ── Main execute ──────────────────────────────────────────────────────────────
+
 export async function execute(
   agent: string,
-  opts: { project: string; lines: string; follow?: boolean; date?: string; cloud?: boolean }
+  opts: { project: string; lines: string; follow?: boolean; date?: string; raw?: boolean; cloud?: boolean }
 ): Promise<void> {
   const projectPath = resolve(opts.project);
+  const fmt: Formatter = opts.raw ? formatRawEntry : formatConversationEntry;
 
   if (opts.cloud) {
     const globalConfig = loadGlobalConfig(projectPath);
@@ -185,42 +339,36 @@ export async function execute(
     }
 
     if (opts.follow) {
-      // Find running agent container to follow
       console.log(`Looking for running ${agent} agent...`);
       const runningAgents = await runtime.listRunningAgents();
       const targetAgent = runningAgents.find(a => a.agentName === agent);
-      
+
       if (!targetAgent) {
         console.error(`No running agent found for "${agent}". Start the agent first to follow its logs.`);
         process.exit(1);
       }
 
       console.log(`Following logs for ${agent} (${targetAgent.taskId})...`);
-      
-      // Show last N entries first
+
       const recentLines = await runtime.fetchLogs(agent, limit);
       for (const line of recentLines) {
         console.log(line);
       }
 
-      // Start following new logs
       const { stop } = runtime.streamLogs(
         targetAgent.taskId,
         (line: string) => console.log(line),
         (stderr: string) => console.error(stderr)
       );
 
-      // Handle Ctrl+C to stop following
       process.on("SIGINT", () => {
         console.log("\nStopping log follow...");
         stop();
         process.exit(0);
       });
 
-      // Keep the process alive
       await new Promise(() => {});
     } else {
-      // Static log fetch (original behavior)
       console.log(`Fetching cloud logs for ${agent}...`);
       const lines = await runtime.fetchLogs(agent, limit);
 
@@ -247,8 +395,8 @@ export async function execute(
   }
 
   if (opts.follow) {
-    await followFile(logFile, n);
+    await followFile(logFile, n, fmt);
   } else {
-    await readLastN(logFile, n);
+    await readLastN(logFile, n, fmt);
   }
 }

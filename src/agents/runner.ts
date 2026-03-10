@@ -191,15 +191,24 @@ export class AgentRunner {
       // Track bash commands by toolCallId so we can correlate start→end
       const pendingCmds = new Map<string, string>();
       let outputText = "";
+      let currentTurnText = "";
       let unrecoverableErrors = 0;
       session.subscribe((event) => {
         if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
-          outputText += event.assistantMessageEvent.delta;
+          const delta = event.assistantMessageEvent.delta;
+          outputText += delta;
+          currentTurnText += delta;
           // Detect [STATUS: <text>] pattern
           const statusMatch = outputText.match(/\[STATUS:\s*([^\]]+)\]/);
           if (statusMatch) {
             this.statusTracker?.setAgentStatusText(this.agentConfig.name, statusMatch[1].trim());
           }
+        }
+        if (event.type === "message_end") {
+          if (currentTurnText.trim()) {
+            this.logger.info({ text: currentTurnText.trim() }, "assistant");
+          }
+          currentTurnText = "";
         }
         if (event.type === "tool_execution_start") {
           const cmd = String(event.args?.command || "");

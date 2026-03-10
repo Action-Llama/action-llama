@@ -70,6 +70,7 @@ program
   .option("-n, --lines <N>", "number of log entries to show", "50")
   .option("-f, --follow", "tail mode — watch for new log entries")
   .option("-d, --date <YYYY-MM-DD>", "specific date's log file")
+  .option("-r, --raw", "show raw JSON log entries instead of conversation view")
   .option("-c, --cloud", "view cloud logs")
   .action(async (agent: string, opts) => {
     const { execute } = await import("./commands/logs.js");

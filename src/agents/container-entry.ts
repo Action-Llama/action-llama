@@ -299,6 +299,7 @@ curl -s -X POST "$GATEWAY_URL/shutdown" \\
   // Mirror the host-mode AgentRunner's session event logging
   const pendingCmds = new Map<string, string>();
   let outputText = "";
+  let currentTurnText = "";
   let eventCount = 0;
   let unrecoverableErrors = 0;
   let abortedDueToErrors = false;
@@ -322,7 +323,15 @@ curl -s -X POST "$GATEWAY_URL/shutdown" \\
       emitLog("error", "session error", { error: String((event as any).error || (event as any).message || JSON.stringify(event)) });
     }
     if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
-      outputText += event.assistantMessageEvent.delta;
+      const delta = event.assistantMessageEvent.delta;
+      outputText += delta;
+      currentTurnText += delta;
+    }
+    if (event.type === "message_end") {
+      if (currentTurnText.trim()) {
+        emitLog("info", "assistant", { text: currentTurnText.trim() });
+      }
+      currentTurnText = "";
     }
     if (event.type === "tool_execution_start") {
       const cmd = String(event.args?.command || "");
