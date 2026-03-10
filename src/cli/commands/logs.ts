@@ -325,6 +325,34 @@ export async function execute(
 
     const limit = parseInt(opts.lines, 10) || 50;
 
+    // Special case: "scheduler" fetches scheduler service logs
+    if (agent === "scheduler") {
+      console.log("Fetching cloud scheduler logs...");
+      let lines: string[];
+      if (cloud.provider === "cloud-run") {
+        const { getCloudRunLogs } = await import("../../cloud/deploy-cloudrun.js");
+        lines = await getCloudRunLogs(cloud, limit);
+      } else {
+        const { getAppRunnerLogs } = await import("../../cloud/deploy-apprunner.js");
+        lines = await getAppRunnerLogs(cloud, limit);
+      }
+      if (lines.length === 0) {
+        console.log("No scheduler log events found.");
+      } else {
+        for (const line of lines) {
+          const entry = parseLine(line);
+          if (entry) {
+            const formatted = fmt(entry);
+            if (formatted) console.log(formatted);
+          } else {
+            // Raw line that didn't parse as JSON
+            console.log(line);
+          }
+        }
+      }
+      return;
+    }
+
     let runtime: import("../../docker/runtime.js").ContainerRuntime;
     if (cloud.provider === "cloud-run") {
       const { CloudRunJobRuntime } = await import("../../docker/cloud-run-runtime.js");

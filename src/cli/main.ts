@@ -143,6 +143,15 @@ cloudCmd
   });
 
 cloudCmd
+  .command("deploy")
+  .description("Build and deploy scheduler + agents to the cloud")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(async (opts) => {
+    const { execute } = await import("./commands/cloud-deploy.js");
+    await execute(opts);
+  });
+
+cloudCmd
   .command("teardown")
   .description("Delete per-agent IAM resources and remove [cloud] config")
   .option("-p, --project <dir>", "project directory", ".")

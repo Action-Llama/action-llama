@@ -37,6 +37,17 @@ vi.mock("@aws-sdk/client-iam", () => ({
   DeleteRoleCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "DeleteRole", input }); }),
 }));
 
+// Mock App Runner SDK (used by teardown for scheduler service)
+const mockAppRunnerSend = vi.fn();
+vi.mock("@aws-sdk/client-apprunner", () => ({
+  AppRunnerClient: vi.fn().mockImplementation(function () { this.send = mockAppRunnerSend; }),
+  ListServicesCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "ListServices", input }); }),
+  DescribeServiceCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "DescribeService", input }); }),
+  DeleteServiceCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "DeleteService", input }); }),
+  CreateServiceCommand: vi.fn(),
+  UpdateServiceCommand: vi.fn(),
+}));
+
 import { execute } from "../../../src/cli/commands/cloud-teardown.js";
 
 describe("cloud teardown", () => {
@@ -47,6 +58,8 @@ describe("cloud teardown", () => {
     tmpDir = mkdtempSync(join(tmpdir(), "al-cloud-teardown-"));
     mockStsSend.mockResolvedValue({});
     mockIamSend.mockResolvedValue({});
+    // App Runner ListServices returns empty (no scheduler deployed)
+    mockAppRunnerSend.mockResolvedValue({ ServiceSummaryList: [] });
   });
 
   afterEach(() => {

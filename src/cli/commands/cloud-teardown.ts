@@ -29,7 +29,7 @@ export async function execute(opts: { project: string }): Promise<void> {
   console.log(`\n=== Cloud Teardown (${cloud.provider}) ===\n`);
 
   const ok = await confirm({
-    message: "This will delete per-agent IAM resources and remove the [cloud] config. Continue?",
+    message: "This will delete the cloud scheduler, per-agent IAM resources, and remove the [cloud] config. Continue?",
     default: false,
   });
   if (!ok) {
@@ -60,7 +60,7 @@ export async function teardownCloud(projectPath: string, cloud: CloudConfig): Pr
 async function teardownGcp(projectPath: string, cloud: CloudConfig): Promise<void> {
   const { gcpProject } = cloud;
   if (!gcpProject) {
-    console.log("Incomplete GCP config (no project). Skipping IAM teardown.");
+    console.log("Incomplete GCP config (no project). Skipping teardown.");
     return;
   }
 
@@ -72,6 +72,12 @@ async function teardownGcp(projectPath: string, cloud: CloudConfig): Promise<voi
       `Original error: ${err.message}`
     );
   }
+
+  // Tear down scheduler Cloud Run service
+  console.log("Removing Cloud Run scheduler service...");
+  const { teardownCloudRunService } = await import("../../cloud/deploy-cloudrun.js");
+  await teardownCloudRunService(cloud);
+  console.log("");
 
   const agents = discoverAgents(projectPath);
   if (agents.length === 0) {
@@ -130,6 +136,12 @@ async function teardownAws(projectPath: string, cloud: CloudConfig): Promise<voi
     console.log("No agents found. Skipping IAM teardown.");
     return;
   }
+
+  // Tear down scheduler App Runner service
+  console.log("Removing App Runner scheduler service...");
+  const { teardownAppRunner } = await import("../../cloud/deploy-apprunner.js");
+  await teardownAppRunner(cloud);
+  console.log("");
 
   console.log(`Removing ECS task roles for ${agents.length} agent(s)...\n`);
 

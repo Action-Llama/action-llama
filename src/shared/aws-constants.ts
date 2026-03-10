@@ -93,4 +93,21 @@ export const AWS_CONSTANTS = {
 
   /** Per-agent Lambda execution role name */
   lambdaRoleName: (agentName: string) => `al-${agentName}-lambda-role`,
+  /** App Runner service name for the cloud scheduler */
+  SCHEDULER_SERVICE: "al-scheduler",
+
+  /** App Runner instance role name */
+  APPRUNNER_INSTANCE_ROLE: "al-apprunner-instance-role",
+
+  /** App Runner ECR access role name */
+  APPRUNNER_ACCESS_ROLE: "al-apprunner-access-role",
+
+  /** CloudWatch log group for App Runner */
+  APPRUNNER_LOG_GROUP: "/apprunner/al-scheduler",
+
+  /** Scheduler Docker image tag */
+  SCHEDULER_IMAGE: "al-scheduler:latest",
+
+  /** GCP Cloud Run service name for the cloud scheduler */
+  SCHEDULER_CLOUD_RUN_SERVICE: "al-scheduler",
 } satisfies Record<string, string | number | ((...args: any[]) => string)>;

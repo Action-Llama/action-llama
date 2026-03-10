@@ -8,7 +8,7 @@ import { agentDir } from "../shared/paths.js";
 import { AgentRunner, type RunOutcome } from "../agents/runner.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import {
-  buildScheduledPrompt, buildWebhookPrompt, buildTriggeredPrompt, buildPromptSkeleton,
+  buildScheduledPrompt, buildWebhookPrompt, buildTriggeredPrompt,
   buildScheduledSuffix, buildWebhookSuffix, buildTriggeredSuffix,
   type PromptSkills,
 } from "../agents/prompt.js";
@@ -19,6 +19,7 @@ import { LinearWebhookProvider } from "../webhooks/providers/linear.js";
 import type { GatewayServer } from "../gateway/index.js";
 import type { ContainerRuntime } from "../docker/runtime.js";
 import { AWS_CONSTANTS } from "../shared/aws-constants.js";
+import { buildAllImages } from "../cloud/image-builder.js";
 import type { WebhookContext, WebhookFilter, WebhookTrigger, GitHubWebhookFilter, SentryWebhookFilter, LinearWebhookFilter } from "../webhooks/types.js";
 import { WebhookEventQueue } from "./event-queue.js";
 import { RunnerPool, type PoolRunner } from "./runner-pool.js";
@@ -445,122 +446,22 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       ensureNetwork();
     }
 
-    // 2. Build base image via the runtime
-    const { resolve: resolvePath, dirname } = await import("path");
-    const { fileURLToPath } = await import("url");
-    const packageRoot = resolvePath(dirname(fileURLToPath(import.meta.url)), "..", "..");
-
-    baseImage = globalConfig.local?.image || AWS_CONSTANTS.DEFAULT_IMAGE;
-    logger.info({ image: baseImage }, "Building base image (this may take a few minutes on first run)...");
-
-    const setBaseImageProgress = (msg: string) => {
-      statusTracker?.setBaseImageStatus(msg);
-    };
-
-    if (runtimeType === "local") {
-      // Local: only build if image doesn't exist yet
-      const { imageExists } = await import("../docker/image.js");
-      if (!imageExists(baseImage)) {
-        setBaseImageProgress("Building");
-        await runtime.buildImage({
-          tag: baseImage, dockerfile: "docker/Dockerfile", contextDir: packageRoot,
-          onProgress: setBaseImageProgress,
-        });
-      }
-    } else {
-      // Cloud: always build (Cloud Build handles caching)
-      baseImage = await runtime.buildImage({
-        tag: baseImage, dockerfile: "docker/Dockerfile", contextDir: packageRoot,
-        onProgress: setBaseImageProgress,
-      });
-    }
-
-    // Clear top-level base image status now that it's done
-    statusTracker?.setBaseImageStatus(null);
-
-    // 3. Build per-agent images in parallel
-    //    Every agent gets its own image with static files baked in (agent config,
-    //    ACTIONS.md, prompt skeleton). This avoids passing large payloads as env
-    //    vars at runtime, which exceeds Lambda's 4KB env var limit.
-    const { existsSync, readFileSync: readFs } = await import("fs");
-
-    // Determine skills early so we can bake the prompt skeleton
+    // 2. Build base + per-agent images via shared image builder
     const buildSkills: PromptSkills | undefined = dockerEnabled ? { locking: true } : undefined;
 
-    await Promise.all(activeAgentConfigs.map(async (agentConfig) => {
-      statusTracker?.setAgentState(agentConfig.name, "building");
-      statusTracker?.setAgentStatusText(agentConfig.name, "Building agent image");
+    const buildResult = await buildAllImages({
+      projectPath,
+      globalConfig,
+      activeAgentConfigs,
+      runtime: runtime!,
+      runtimeType,
+      statusTracker,
+      logger,
+      skills: buildSkills,
+    });
 
-      const hasCustomDockerfile = existsSync(resolvePath(projectPath, agentConfig.name, "Dockerfile"));
-
-      // Read ACTIONS.md and build static files to bake into the image
-      const actionsPath = resolvePath(projectPath, agentConfig.name, "ACTIONS.md");
-      const actionsMd = existsSync(actionsPath) ? readFs(actionsPath, "utf-8") : "";
-      const timeout = String(agentConfig.timeout ?? globalConfig.local?.timeout ?? 900);
-
-      const extraFiles: Record<string, string> = {
-        "agent-config.json": JSON.stringify(agentConfig),
-        "ACTIONS.md": actionsMd,
-        "prompt-static.txt": buildPromptSkeleton(agentConfig, buildSkills),
-        "timeout": timeout,
-      };
-
-      const agentImageTag = AWS_CONSTANTS.agentImage(agentConfig.name);
-
-      let image: string;
-      if (hasCustomDockerfile) {
-        // Custom Dockerfile: use extraFiles to inject static content,
-        // and baseImage to rewrite FROM al-agent:latest → built base URI.
-        image = await runtime!.buildImage({
-          tag: agentImageTag,
-          dockerfile: resolvePath(projectPath, agentConfig.name, "Dockerfile"),
-          contextDir: packageRoot,
-          baseImage,
-          extraFiles,
-          onProgress: (msg) => statusTracker?.setAgentStatusText(agentConfig.name, msg),
-        });
-      } else {
-        // No custom Dockerfile: generate a minimal Dockerfile that layers
-        // static files on top of the already-built base image. This is a
-        // thin layer (just text files) — no apt-get, no npm install.
-        image = await runtime!.buildImage({
-          tag: agentImageTag,
-          dockerfile: "Dockerfile",  // not used when dockerfileContent is set
-          contextDir: packageRoot,
-          dockerfileContent: `FROM ${baseImage}\nCOPY static/ /app/static/\n`,
-          extraFiles,
-          onProgress: (msg) => statusTracker?.setAgentStatusText(agentConfig.name, msg),
-        });
-      }
-      agentImages[agentConfig.name] = image;
-      logger.info({ agent: agentConfig.name, image }, "Built agent image");
-    }));
-
-    // 4. Push images to remote registry in parallel (no-op for local, tags+pushes for cloud)
-    if (runtimeType !== "local") {
-      const imagesToPush = activeAgentConfigs.filter(ac => {
-        const currentImage = agentImages[ac.name] || baseImage;
-        return !currentImage.includes("/");
-      });
-
-      if (imagesToPush.length > 0) {
-        await Promise.all(imagesToPush.map(async (agentConfig, idx) => {
-          const currentImage = agentImages[agentConfig.name] || baseImage;
-          const progressIndicator = imagesToPush.length > 1 ? ` (${idx + 1}/${imagesToPush.length})` : "";
-          statusTracker?.setAgentStatusText(agentConfig.name, `Pushing image to registry${progressIndicator}`);
-          const remoteImage = await runtime!.pushImage(currentImage);
-          agentImages[agentConfig.name] = remoteImage;
-          logger.info({ agent: agentConfig.name, image: remoteImage, progress: `${idx + 1}/${imagesToPush.length}` }, "Pushed image to registry");
-        }));
-      }
-    }
-
-    // Reset all agents back to idle after builds complete
-    for (const ac of agentConfigs) {
-      statusTracker?.setAgentState(ac.name, "idle");
-    }
-
-    logger.info("Docker infrastructure ready");
+    baseImage = buildResult.baseImage;
+    Object.assign(agentImages, buildResult.agentImages);
   }
 
   // Create runner pools for each agent with configurable scale
@@ -570,13 +471,14 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   const ContainerAgentRunnerClass = dockerEnabled && runtime ? (await import("../agents/container-runner.js")).ContainerAgentRunner : null;
   const gatewayPort = globalConfig.gateway?.port || 8080;
   const gatewayUrl = gatewayEnabled
-    ? (useCloudRuntime
-      ? (globalConfig.gateway?.url || "")
-      : `http://host.docker.internal:${gatewayPort}`)
+    ? (process.env.GATEWAY_URL
+      || (useCloudRuntime
+        ? (globalConfig.gateway?.url || "")
+        : `http://host.docker.internal:${gatewayPort}`))
     : "";
 
-  if (gatewayEnabled && useCloudRuntime && !globalConfig.gateway?.url) {
-    logger.warn("Cloud mode is active but gateway.url is not set in config.toml — resource locking and shutdown will not work for cloud containers");
+  if (gatewayEnabled && useCloudRuntime && !gatewayUrl) {
+    logger.warn("Cloud mode is active but gateway URL is not set (via GATEWAY_URL env or gateway.url config) — resource locking and shutdown will not work for cloud containers");
   }
 
   // Gateway callbacks — no-ops if gateway isn't running (remote runtimes)

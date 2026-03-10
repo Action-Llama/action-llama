@@ -42,6 +42,12 @@ export interface CloudConfig {
   lambdaRoleArn?: string;            // Lambda execution role ARN (or derived per-agent)
   lambdaSubnets?: string[];          // VPC subnets for Lambda (optional)
   lambdaSecurityGroups?: string[];   // Security groups for Lambda (optional)
+  // Cloud scheduler (al cloud deploy)
+  schedulerCpu?: string;             // CPU for scheduler (e.g. "1024" for App Runner, "1" for Cloud Run)
+  schedulerMemory?: string;          // Memory (e.g. "2048" for App Runner, "2Gi" for Cloud Run)
+  // App Runner (AWS scheduler)
+  appRunnerInstanceRoleArn?: string;  // IAM role assumed by the App Runner instance
+  appRunnerAccessRoleArn?: string;    // IAM role for App Runner to pull ECR images
 }
 
 export interface GatewayConfig {
