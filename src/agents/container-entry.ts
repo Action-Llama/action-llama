@@ -174,16 +174,15 @@ async function main() {
   }
 
   // Configure git credential helper so HTTPS clones can use GITHUB_TOKEN
+  // Use GIT_CONFIG_COUNT env vars instead of `git config --global` to avoid
+  // writing to ~/.gitconfig, which may be read-only (e.g. Lambda containers).
   if (process.env.GITHUB_TOKEN) {
-    process.env.GIT_ASKPASS = "/bin/echo";
     process.env.GIT_TERMINAL_PROMPT = "0";
-    const { execSync } = await import("child_process");
-    try {
-      execSync('git config --global credential.helper "!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f"', { stdio: "ignore" });
-      emitLog("info", "git HTTPS credential helper configured");
-    } catch (err: any) {
-      emitLog("warn", "failed to configure git credential helper", { error: err.message });
-    }
+    const idx = parseInt(process.env.GIT_CONFIG_COUNT || "0", 10);
+    process.env.GIT_CONFIG_COUNT = String(idx + 1);
+    process.env[`GIT_CONFIG_KEY_${idx}`] = "credential.helper";
+    process.env[`GIT_CONFIG_VALUE_${idx}`] = `!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f`;
+    emitLog("info", "git HTTPS credential helper configured");
   }
 
   // Set up SSH key for git push/clone if git_ssh credential is available
