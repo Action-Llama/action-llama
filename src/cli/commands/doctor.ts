@@ -4,6 +4,7 @@ import { confirm } from "@inquirer/prompts";
 import { execFileSync } from "child_process";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 import { IAMClient, CreateRoleCommand, PutRolePolicyCommand, PutUserPolicyCommand, GetRoleCommand } from "@aws-sdk/client-iam";
+import { ECRClient, SetRepositoryPolicyCommand } from "@aws-sdk/client-ecr";
 import { discoverAgents, loadAgentConfig, loadGlobalConfig } from "../../shared/config.js";
 import type { CloudConfig } from "../../shared/config.js";
 import { resolveCredential } from "../../credentials/registry.js";
@@ -417,6 +418,9 @@ async function reconcileAws(projectPath: string, cloud: CloudConfig): Promise<vo
     }
   }
 
+  // Ensure ECR repository policy grants Lambda pull access
+  await ensureLambdaEcrPolicy(awsRegion, ecrRepository);
+
   console.log(`\nSetting up ECS task roles for ${agents.length} agent(s)...\n`);
 
   for (const name of agents) {
@@ -688,6 +692,35 @@ export async function validateEcsRoles(projectPath: string, cloud: CloudConfig):
     throw new Error(`${missing.length + hasIncorrectTrust.length} IAM task role(s) have issues that will prevent ECS tasks from starting. Fix the roles above before proceeding.`);
   } else {
     console.log(`All ${agents.length} IAM task role(s) exist and have correct trust policies.`);
+  }
+}
+
+async function ensureLambdaEcrPolicy(awsRegion: string, ecrRepoUri: string): Promise<void> {
+  const repoName = ecrRepoUri.split("/").pop();
+  if (!repoName) return;
+
+  const ecrClient = new ECRClient({ region: awsRegion });
+  const policy = JSON.stringify({
+    Version: "2012-10-17",
+    Statement: [{
+      Sid: "LambdaECRImageRetrievalPolicy",
+      Effect: "Allow",
+      Principal: { Service: "lambda.amazonaws.com" },
+      Action: [
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+      ],
+    }],
+  });
+
+  try {
+    await ecrClient.send(new SetRepositoryPolicyCommand({
+      repositoryName: repoName,
+      policyText: policy,
+    }));
+    console.log(`ECR repository policy: granted Lambda pull access`);
+  } catch (err: any) {
+    console.log(`Warning: could not set ECR repository policy for Lambda: ${err.message}`);
   }
 }
 

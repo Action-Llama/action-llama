@@ -12,6 +12,7 @@ import {
   ECRClient,
   DescribeRepositoriesCommand,
   CreateRepositoryCommand,
+  SetRepositoryPolicyCommand,
 } from "@aws-sdk/client-ecr";
 import {
   ECSClient,
@@ -187,6 +188,7 @@ async function setupEcsCloud(cloud: CloudConfig): Promise<boolean> {
   accountId = identity.Account!;
 
   cloud.ecrRepository = await pickOrCreateEcrRepo(ecrClient, region, accountId);
+  await ensureLambdaEcrPolicy(ecrClient, cloud.ecrRepository);
   cloud.ecsCluster = await pickOrCreateEcsCluster(ecsClient);
   cloud.executionRoleArn = await pickOrCreateEcsRole(
     iamClient,
@@ -343,6 +345,34 @@ async function pickOrCreateEcrRepo(ecrClient: ECRClient, region: string, account
     }
     console.log(`  Failed to create repository: ${err.message}`);
     return input({ message: "ECR repository URI:" });
+  }
+}
+
+async function ensureLambdaEcrPolicy(ecrClient: ECRClient, ecrRepoUri: string): Promise<void> {
+  const repoName = ecrRepoUri.split("/").pop();
+  if (!repoName) return;
+
+  const policy = JSON.stringify({
+    Version: "2012-10-17",
+    Statement: [{
+      Sid: "LambdaECRImageRetrievalPolicy",
+      Effect: "Allow",
+      Principal: { Service: "lambda.amazonaws.com" },
+      Action: [
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+      ],
+    }],
+  });
+
+  try {
+    await ecrClient.send(new SetRepositoryPolicyCommand({
+      repositoryName: repoName,
+      policyText: policy,
+    }));
+    console.log(`  ECR repository policy: granted Lambda pull access`);
+  } catch (err: any) {
+    console.log(`  Warning: could not set ECR repository policy for Lambda: ${err.message}`);
   }
 }
 
