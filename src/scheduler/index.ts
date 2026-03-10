@@ -473,11 +473,9 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     // Determine skills early so we can bake the prompt skeleton
     const buildSkills: PromptSkills | undefined = dockerEnabled ? { locking: true } : undefined;
 
-    await Promise.all(activeAgentConfigs.map(async (agentConfig, idx) => {
-      const progressIndicator = activeAgentConfigs.length > 1 ? ` (${idx + 1}/${activeAgentConfigs.length})` : "";
-
+    await Promise.all(activeAgentConfigs.map(async (agentConfig) => {
       statusTracker?.setAgentState(agentConfig.name, "building");
-      statusTracker?.setAgentStatusText(agentConfig.name, `Building agent image${progressIndicator}`);
+      statusTracker?.setAgentStatusText(agentConfig.name, "Building agent image");
 
       const hasCustomDockerfile = existsSync(resolvePath(projectPath, agentConfig.name, "Dockerfile"));
 
@@ -505,7 +503,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
           contextDir: packageRoot,
           baseImage,
           extraFiles,
-          onProgress: (msg) => statusTracker?.setAgentStatusText(agentConfig.name, `${msg}${progressIndicator}`),
+          onProgress: (msg) => statusTracker?.setAgentStatusText(agentConfig.name, msg),
         });
       } else {
         // No custom Dockerfile: generate a minimal Dockerfile that layers
@@ -517,11 +515,11 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
           contextDir: packageRoot,
           dockerfileContent: `FROM ${baseImage}\nCOPY static/ /app/static/\n`,
           extraFiles,
-          onProgress: (msg) => statusTracker?.setAgentStatusText(agentConfig.name, `${msg}${progressIndicator}`),
+          onProgress: (msg) => statusTracker?.setAgentStatusText(agentConfig.name, msg),
         });
       }
       agentImages[agentConfig.name] = image;
-      logger.info({ agent: agentConfig.name, image, progress: `${idx + 1}/${activeAgentConfigs.length}` }, "Built agent image");
+      logger.info({ agent: agentConfig.name, image }, "Built agent image");
     }));
 
     // 4. Push images to remote registry in parallel (no-op for local, tags+pushes for cloud)
