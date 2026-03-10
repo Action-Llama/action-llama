@@ -596,7 +596,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     }
 
     for (let i = 0; i < scale; i++) {
-      const instanceId = `${agentConfig.name}-${i + 1}`;
+      const instanceId = scale >= 2 ? `${agentConfig.name}(${i + 1})` : agentConfig.name;
       if (dockerEnabled && runtime && ContainerAgentRunnerClass) {
         const agentRuntime = agentRuntimeOverrides[agentConfig.name] || runtime;
         runners.push(new ContainerAgentRunnerClass(
