@@ -1,6 +1,6 @@
 {
   "name": "@action-llama/action-llama",
-  "version": "0.8.2",
+  "version": "0.9.0",
   "description": "Automated development agents triggered by cron or webhooks. BYOM — bring your own model.",
   "type": "module",
   "license": "MIT",
