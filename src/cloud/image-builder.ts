@@ -28,6 +28,8 @@ export interface ImageBuildOpts {
   statusTracker?: StatusTracker;
   logger: Logger;
   skills?: PromptSkills;
+  /** Optional progress callback for headless/CLI output (label, message) */
+  onProgress?: (label: string, message: string) => void;
 }
 
 export interface ImageBuildResult {
@@ -41,7 +43,7 @@ export interface ImageBuildResult {
  * Returns the resolved base image URI and a map of agent name → image URI.
  */
 export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildResult> {
-  const { projectPath, globalConfig, activeAgentConfigs, runtime, runtimeType, statusTracker, logger, skills } = opts;
+  const { projectPath, globalConfig, activeAgentConfigs, runtime, runtimeType, statusTracker, logger, skills, onProgress } = opts;
 
   // 1. Build base image
   let baseImage = globalConfig.local?.image || AWS_CONSTANTS.DEFAULT_IMAGE;
@@ -49,6 +51,7 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
 
   const setBaseImageProgress = (msg: string) => {
     statusTracker?.setBaseImageStatus(msg);
+    onProgress?.("base", msg);
   };
 
   if (runtimeType === "local") {
@@ -75,6 +78,7 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
   await Promise.all(activeAgentConfigs.map(async (agentConfig) => {
     statusTracker?.setAgentState(agentConfig.name, "building");
     statusTracker?.setAgentStatusText(agentConfig.name, "Building agent image");
+    onProgress?.(agentConfig.name, "Building agent image");
 
     const hasCustomDockerfile = existsSync(resolvePath(projectPath, agentConfig.name, "Dockerfile"));
 
@@ -99,7 +103,7 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
         contextDir: packageRoot,
         baseImage,
         extraFiles,
-        onProgress: (msg) => statusTracker?.setAgentStatusText(agentConfig.name, msg),
+        onProgress: (msg) => { statusTracker?.setAgentStatusText(agentConfig.name, msg); onProgress?.(agentConfig.name, msg); },
       });
     } else {
       image = await runtime.buildImage({
@@ -108,7 +112,7 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
         contextDir: packageRoot,
         dockerfileContent: `FROM ${baseImage}\nCOPY static/ /app/static/\n`,
         extraFiles,
-        onProgress: (msg) => statusTracker?.setAgentStatusText(agentConfig.name, msg),
+        onProgress: (msg) => { statusTracker?.setAgentStatusText(agentConfig.name, msg); onProgress?.(agentConfig.name, msg); },
       });
     }
     agentImages[agentConfig.name] = image;
@@ -127,6 +131,7 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
         const currentImage = agentImages[agentConfig.name] || baseImage;
         const progressIndicator = imagesToPush.length > 1 ? ` (${idx + 1}/${imagesToPush.length})` : "";
         statusTracker?.setAgentStatusText(agentConfig.name, `Pushing image to registry${progressIndicator}`);
+        onProgress?.(agentConfig.name, `Pushing image to registry${progressIndicator}`);
         const remoteImage = await runtime.pushImage(currentImage);
         agentImages[agentConfig.name] = remoteImage;
         logger.info({ agent: agentConfig.name, image: remoteImage, progress: `${idx + 1}/${imagesToPush.length}` }, "Pushed image to registry");

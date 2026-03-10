@@ -59,6 +59,7 @@ export async function execute(opts: { project: string }): Promise<void> {
 
   // 4. Build agent images
   console.log("Step 2: Building agent images...");
+  const lastProgress = new Map<string, string>();
   await buildAllImages({
     projectPath,
     globalConfig,
@@ -67,6 +68,13 @@ export async function execute(opts: { project: string }): Promise<void> {
     runtimeType: cloud.provider,
     logger,
     skills: { locking: true },
+    onProgress: (label, msg) => {
+      // Avoid repeating the same message for the same label
+      if (lastProgress.get(label) !== msg) {
+        lastProgress.set(label, msg);
+        console.log(`  [${label}] ${msg}`);
+      }
+    },
   });
   console.log("Agent images built and pushed.\n");
 
