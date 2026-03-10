@@ -37,7 +37,16 @@ export interface SentryWebhookFilter {
   resources?: string[];  // event_alert, metric_alert, issue, error, comment
 }
 
-export type WebhookFilter = GitHubWebhookFilter | SentryWebhookFilter;
+export interface LinearWebhookFilter {
+  organizations?: string[];
+  events?: string[];
+  actions?: string[];
+  labels?: string[];
+  assignee?: string;
+  author?: string;
+}
+
+export type WebhookFilter = GitHubWebhookFilter | SentryWebhookFilter | LinearWebhookFilter;
 
 // --- Webhook trigger (used in agent config) ---
 
@@ -47,6 +56,7 @@ export interface WebhookTrigger {
   actions?: string[];
   repos?: string[];
   orgs?: string[];
+  organizations?: string[];  // Linear organizations
   labels?: string[];
   assignee?: string;
   author?: string;

@@ -16,11 +16,14 @@ Credentials are stored in `~/.action-llama-credentials/<type>/<instance>/<field>
 | `openrouter_key` | `token` | OpenRouter API key | _(read by SDK)_ |
 | `custom_key` | `token` | Custom provider API key | _(read by SDK)_ |
 | `sentry_token` | `token` | Sentry auth token for error monitoring | `SENTRY_AUTH_TOKEN` env var |
+| `linear_token` | `token` | Linear personal API token for workspace access | `LINEAR_API_TOKEN` env var |
+| `linear_oauth` | `client_id`, `client_secret`, `access_token`, `refresh_token` | Linear OAuth2 credentials for workspace access | `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, `LINEAR_ACCESS_TOKEN`, `LINEAR_REFRESH_TOKEN` env vars |
 | `bugsnag_token` | `token` | Bugsnag auth token for error monitoring and release management | `BUGSNAG_AUTH_TOKEN` env var |
 | `netlify_token` | `token` | Netlify Personal Access Token for site management | `NETLIFY_AUTH_TOKEN` env var |
 | `git_ssh` | `id_rsa`, `username`, `email` | SSH private key + git author identity | SSH key mounted as file; `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL`/`GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` set from `username`/`email` |
 | `github_webhook_secret` | `secret` | Shared secret for GitHub webhook verification | _(used by gateway)_ |
 | `sentry_client_secret` | `secret` | Client secret for Sentry webhook verification | _(used by gateway)_ |
+| `linear_webhook_secret` | `secret` | Shared secret for Linear webhook verification | _(used by gateway)_ |
 | `x_twitter_api` | `api_key`, `api_secret`, `bearer_token`, `access_token`, `access_token_secret` | X (Twitter) API credentials for platform access | `X_API_KEY`, `X_API_SECRET`, `X_BEARER_TOKEN`, `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET` env vars |
 | `aws` | `access_key_id`, `secret_access_key`, `default_region` | AWS credentials for managing AWS resources | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION` env vars |
 

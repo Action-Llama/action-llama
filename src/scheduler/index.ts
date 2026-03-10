@@ -15,10 +15,11 @@ import {
 import { WebhookRegistry } from "../webhooks/registry.js";
 import { GitHubWebhookProvider } from "../webhooks/providers/github.js";
 import { SentryWebhookProvider } from "../webhooks/providers/sentry.js";
+import { LinearWebhookProvider } from "../webhooks/providers/linear.js";
 import type { GatewayServer } from "../gateway/index.js";
 import type { ContainerRuntime } from "../docker/runtime.js";
 import { AWS_CONSTANTS } from "../shared/aws-constants.js";
-import type { WebhookContext, WebhookFilter, WebhookTrigger, GitHubWebhookFilter, SentryWebhookFilter } from "../webhooks/types.js";
+import type { WebhookContext, WebhookFilter, WebhookTrigger, GitHubWebhookFilter, SentryWebhookFilter, LinearWebhookFilter } from "../webhooks/types.js";
 import { WebhookEventQueue } from "./event-queue.js";
 import { RunnerPool, type PoolRunner } from "./runner-pool.js";
 
@@ -26,6 +27,7 @@ import { RunnerPool, type PoolRunner } from "./runner-pool.js";
 const PROVIDER_TO_CREDENTIAL: Record<string, string> = {
   github: "github_webhook_secret",
   sentry: "sentry_client_secret",
+  linear: "linear_webhook_secret",
 };
 
 function resolveWebhookSource(
@@ -59,6 +61,16 @@ function buildFilterFromTrigger(trigger: WebhookTrigger, providerType: string): 
   if (providerType === "sentry") {
     const f: SentryWebhookFilter = {};
     if (trigger.resources) f.resources = trigger.resources;
+    return Object.keys(f).length > 0 ? f : undefined;
+  }
+  if (providerType === "linear") {
+    const f: LinearWebhookFilter = {};
+    if (trigger.events) f.events = trigger.events;
+    if (trigger.actions) f.actions = trigger.actions;
+    if (trigger.organizations) f.organizations = trigger.organizations;
+    if (trigger.labels) f.labels = trigger.labels;
+    if (trigger.assignee) f.assignee = trigger.assignee;
+    if (trigger.author) f.author = trigger.author;
     return Object.keys(f).length > 0 ? f : undefined;
   }
   return undefined;
@@ -293,6 +305,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     // Register providers
     webhookRegistry.registerProvider(new GitHubWebhookProvider());
     webhookRegistry.registerProvider(new SentryWebhookProvider());
+    webhookRegistry.registerProvider(new LinearWebhookProvider());
 
     // Load secrets for each provider type referenced by webhook sources
     const providerTypes = new Set(Object.values(webhookSources).map(s => s.type));
