@@ -113,7 +113,7 @@ Setup complete!
 
 Next steps:
   cd ${name}
-  npx al console # Start an interactive console to create agents
+  npx al chat    # Start an interactive chat to create agents
   npx al start # Start the gateway
 `);
 }

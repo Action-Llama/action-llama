@@ -202,12 +202,12 @@ al logs dev -c              # Cloud logs
 | `-d, --date <YYYY-MM-DD>` | View a specific date's log file |
 | `-c, --cloud` | View cloud logs (Cloud Logging / CloudWatch) |
 
-## `al console`
+## `al chat`
 
 Open an interactive Pi coding console with project context.
 
 ```bash
-al console -p .
+al chat -p .
 ```
 
 | Option | Description |

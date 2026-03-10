@@ -88,11 +88,11 @@ program
   });
 
 program
-  .command("console")
+  .command("chat")
   .description("Open an interactive Pi coding console with project context")
   .option("-p, --project <dir>", "project directory", ".")
   .action(async (opts) => {
-    const { execute } = await import("./commands/console.js");
+    const { execute } = await import("./commands/chat.js");
     await execute(opts);
   });
 

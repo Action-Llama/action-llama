@@ -45,10 +45,10 @@ This scaffolds the project and sets up your model credentials and defaults.
 ### 2. Create and manage agents
 
 ```bash
-npx al console
+npx al chat
 ```
 
-The console is a TUI powered by [Pi](https://github.com/badlogic/pi-mono) that helps you create and manage agents. If no agents exist yet, it will offer to create one for you.
+The chat console is a TUI powered by [Pi](https://github.com/badlogic/pi-mono) that helps you create and manage agents. If no agents exist yet, it will offer to create one for you.
 
 You can also create agents manually — see the [creating agents guide](docs/creating-agents.md).
 
@@ -101,7 +101,7 @@ If you installed globally (`npm install -g @action-llama/action-llama`), you can
 | Command | Description |
 |---------|-------------|
 | `al new <name>` | Interactive setup — creates project directory and credentials |
-| `al console` | Open an interactive Pi coding console with project context |
+| `al chat` | Open an interactive Pi coding console with project context |
 | `al doctor` | Check agents, credentials, webhooks, and config — prompt to fix |
 | `al cloud setup` | Interactive wizard for cloud provider setup |
 | `al cloud teardown` | Delete cloud IAM resources and remove cloud config |

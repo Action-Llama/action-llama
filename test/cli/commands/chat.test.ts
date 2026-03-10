@@ -49,9 +49,9 @@ vi.mock("../../../src/shared/credentials.js", () => ({
   resetDefaultBackend: () => {},
 }));
 
-import { execute } from "../../../src/cli/commands/console.js";
+import { execute } from "../../../src/cli/commands/chat.js";
 
-describe("console", () => {
+describe("chat", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     capturedOptions = undefined;
