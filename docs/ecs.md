@@ -56,6 +56,15 @@ Optional Lambda configuration (for agents that auto-route to Lambda):
 | `cloud.lambdaSubnets` | No | — | VPC subnet IDs for Lambda (only if Lambda needs VPC access) |
 | `cloud.lambdaSecurityGroups` | No | — | Security groups for Lambda (only with `lambdaSubnets`) |
 
+Optional cloud scheduler configuration (for `al cloud deploy`):
+
+| Key | Required | Default | Description |
+|-----|----------|---------|-------------|
+| `cloud.schedulerCpu` | No | `"256"` | App Runner instance CPU (valid: `256`, `512`, `1024`, `2048`, `4096`) |
+| `cloud.schedulerMemory` | No | `"512"` | App Runner instance memory in MB (valid depends on CPU — see [App Runner docs](https://docs.aws.amazon.com/apprunner/latest/dg/manage-configure.html)) |
+| `cloud.appRunnerInstanceRoleArn` | No | — | IAM role assumed by the scheduler container (needs ECS, Lambda, Secrets Manager, ECR, CodeBuild, S3, CloudWatch Logs permissions) |
+| `cloud.appRunnerAccessRoleArn` | Yes* | — | IAM role that allows App Runner to pull images from ECR (*required only when using `al cloud deploy`) |
+
 ## Quick Setup
 
 The fastest way to get started:
@@ -257,7 +266,7 @@ If your agents route to Lambda, add these permissions to your operator IAM polic
 }
 ```
 
-And extend the `PassRole` condition to include `lambda.amazonaws.com`:
+And extend the `PassRole` condition to include `lambda.amazonaws.com` and `apprunner.amazonaws.com`:
 
 ```json
 "Condition": {
@@ -265,7 +274,8 @@ And extend the `PassRole` condition to include `lambda.amazonaws.com`:
     "iam:PassedToService": [
       "ecs-tasks.amazonaws.com",
       "codebuild.amazonaws.com",
-      "lambda.amazonaws.com"
+      "lambda.amazonaws.com",
+      "apprunner.amazonaws.com"
     ]
   }
 }
@@ -394,12 +404,14 @@ Logs are streamed from CloudWatch Logs by polling. There is a ~5-10 second delay
 
 ## AWS permissions summary
 
-There are four IAM principals involved:
+There are six IAM principals involved:
 
 1. **Operator** — your machine or CI (runs `al` commands)
 2. **Execution role** — used by ECS itself to pull images, write logs, and inject secrets
 3. **Task role** — one per agent on ECS Fargate, used by the container to read its own secrets
 4. **Lambda execution role** — one per short-timeout agent, used by Lambda to read secrets and write logs
+5. **App Runner access role** — allows App Runner to pull scheduler images from ECR (only for `al cloud deploy`)
+6. **App Runner instance role** — assumed by the scheduler container, needs operator-level permissions (only for `al cloud deploy`)
 
 ### Operator IAM policy
 
@@ -439,7 +451,8 @@ This is the minimum policy for the IAM user or role running `al` commands. Repla
       ],
       "Resource": [
         "arn:aws:logs:<REGION>:<ACCOUNT_ID>:log-group:/ecs/action-llama*",
-        "arn:aws:logs:<REGION>:<ACCOUNT_ID>:log-group:/aws/lambda/al-*"
+        "arn:aws:logs:<REGION>:<ACCOUNT_ID>:log-group:/aws/lambda/al-*",
+        "arn:aws:logs:<REGION>:<ACCOUNT_ID>:log-group:/apprunner/al-scheduler*"
       ]
     },
     {
@@ -465,7 +478,8 @@ This is the minimum policy for the IAM user or role running `al` commands. Repla
           "iam:PassedToService": [
             "ecs-tasks.amazonaws.com",
             "codebuild.amazonaws.com",
-            "lambda.amazonaws.com"
+            "lambda.amazonaws.com",
+            "apprunner.amazonaws.com"
           ]
         }
       }
@@ -547,6 +561,18 @@ This is the minimum policy for the IAM user or role running `al` commands. Repla
         "s3:ListBucket"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "AppRunner",
+      "Effect": "Allow",
+      "Action": [
+        "apprunner:CreateService",
+        "apprunner:UpdateService",
+        "apprunner:DescribeService",
+        "apprunner:DeleteService",
+        "apprunner:ListServices"
+      ],
+      "Resource": "arn:aws:apprunner:<REGION>:<ACCOUNT_ID>:service/al-scheduler/*"
     }
   ]
 }
@@ -559,6 +585,8 @@ The `CodeBuild` and `S3BuildContext` statements are required for image builds vi
 The `SecretsManager` statement can be scoped to `arn:aws:secretsmanager:<REGION>:<ACCOUNT_ID>:secret:action-llama/*` if you use the default secret prefix.
 
 The `IAMAgentRoles` statement is scoped to `al-*` roles, so it cannot modify unrelated IAM resources.
+
+The `AppRunner` statement is only needed for `al cloud deploy` / `al cloud teardown`. You can omit it if you only run the scheduler locally.
 
 ### Execution role (ECS infrastructure)
 
@@ -580,7 +608,75 @@ Created automatically by `al doctor -c`. Each agent gets its own role scoped to 
 
 ## Deploying the scheduler
 
-The scheduler is a plain Node.js process — it doesn't need Docker locally. You can deploy it to any platform that runs Node.js (Railway, Fly, EC2, etc.). The scheduler orchestrates remote ECS tasks and reads credentials from Secrets Manager.
+### Using `al cloud deploy` (recommended)
+
+Deploy the scheduler as an AWS App Runner service:
+
+```bash
+al cloud deploy -p .
+```
+
+This builds a container image with the AL CLI and all project files baked in, pushes it to ECR, and creates an App Runner service. The scheduler runs in headless mode with the gateway enabled, providing a public HTTPS endpoint for webhooks.
+
+The deployed service URL is printed on completion. Use it to configure webhook endpoints in GitHub/Sentry/Linear:
+
+```
+https://<service-id>.<region>.awsapprunner.com/webhooks/github
+```
+
+#### App Runner IAM roles
+
+`al cloud deploy` requires two additional IAM roles:
+
+**1. Access role** — allows App Runner to pull images from ECR:
+
+```bash
+aws iam create-role \
+  --role-name al-apprunner-access-role \
+  --assume-role-policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Principal": { "Service": "build.apprunner.amazonaws.com" },
+      "Action": "sts:AssumeRole"
+    }]
+  }'
+
+aws iam attach-role-policy \
+  --role-name al-apprunner-access-role \
+  --policy-arn arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess
+```
+
+Set `cloud.appRunnerAccessRoleArn` to this role's ARN in `config.toml`.
+
+**2. Instance role** — the IAM role assumed by the scheduler container. It needs the same permissions as the operator (ECS, Lambda, Secrets Manager, ECR, CodeBuild, S3, CloudWatch Logs):
+
+```bash
+aws iam create-role \
+  --role-name al-apprunner-instance-role \
+  --assume-role-policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Principal": { "Service": "tasks.apprunner.amazonaws.com" },
+      "Action": "sts:AssumeRole"
+    }]
+  }'
+```
+
+Attach the same policy statements from the [operator IAM policy](#operator-iam-policy) to this role (ECS, Lambda, Secrets Manager, ECR, CodeBuild, S3, CloudWatch Logs, PassRole, IAM agent roles). Set `cloud.appRunnerInstanceRoleArn` to this role's ARN.
+
+#### Managing the cloud scheduler
+
+```bash
+al status -c          # Show scheduler service status + running agents
+al logs scheduler -c  # Tail scheduler logs from CloudWatch
+al cloud teardown     # Tear down scheduler + all cloud resources
+```
+
+### Manual deployment (alternative)
+
+You can also deploy the scheduler manually to any platform that runs Node.js (Railway, Fly, EC2, etc.):
 
 **Required environment variables:**
 
@@ -594,7 +690,7 @@ These provide the scheduler with the same permissions as running `al` locally. U
 **Start command:**
 
 ```
-al start -c
+al start -c --headless --gateway
 ```
 
 **What needs to be in the deploy:**
