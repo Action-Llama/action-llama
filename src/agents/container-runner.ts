@@ -233,7 +233,12 @@ export class ContainerAgentRunner {
       logStream.stop();
       logStream = undefined;
 
-      if (exitCode !== 0) {
+      if (exitCode === 42) {
+        // Exit code 42 = silent (no work done), used as out-of-band signal
+        // to avoid race conditions with log-based [SILENT] detection
+        this.logger.info({ exitCode, elapsed: `${elapsed}s` }, "container finished (silent)");
+        runResult = "silent";
+      } else if (exitCode !== 0) {
         this.logger.error({ exitCode, elapsed: `${elapsed}s` }, "container exited with error");
         runError = `Container exited with code ${exitCode}`;
         runResult = "error";
