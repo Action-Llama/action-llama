@@ -1,5 +1,68 @@
 # @action-llama/action-llama
 
+## 0.6.8
+
+### Patch Changes
+
+- [`b5429b9`](https://github.com/Action-Llama/action-llama/commit/b5429b9b9ce8a6ba14ceecc9ca2a30bb0ad2e850) Thanks [@asselstine](https://github.com/asselstine)! - Bake agent config, PLAYBOOK.md, and prompt skeleton into Docker images at build time instead of passing them as Lambda environment variables at runtime. This fixes AWS Lambda's 4KB environment variable size limit being exceeded when agents have large playbooks or configurations. The container entry point reads from baked-in files at `/app/static/` and falls back to environment variables for backwards compatibility with older images.
+
+- [`b7b8f7d`](https://github.com/Action-Llama/action-llama/commit/b7b8f7d588e64501e1fe68ecdb290afe47b7fc90) Thanks [@asselstine](https://github.com/asselstine)! - Standardized `/tmp` as the only writable directory across all platforms. Agents now
+  receive an `<environment>` block in their prompt documenting the read-only root
+  filesystem and `/tmp` as the working directory. The container entry point uses `/tmp`
+  instead of the previous `/workspace` directory, and the local Docker runtime mounts
+  a single 2GB tmpfs at `/tmp`. SSH keys are now written to `/tmp/.ssh` instead of
+  `$HOME/.ssh`, fixing a failure on Lambda where `/home/node` is read-only. This ensures
+  consistent behavior across local Docker, ECS Fargate, Lambda, and Cloud Run.
+
+- [`6dc20d9`](https://github.com/Action-Llama/action-llama/commit/6dc20d96e694b4e8bd1d9be901236b4933b7511e) Thanks [@asselstine](https://github.com/asselstine)! - Fixed base image build appearing three times in logs during cloud deploys. The build
+  was only running once but progress was broadcast to every agent, producing duplicate
+  log lines. Base image progress is now shown on all agents with a "Base image: " prefix
+  so it's clear it is a single shared build. Also fixed a race condition where parallel
+  per-agent image builds could corrupt each other by writing to a shared `static/`
+  directory — each build now uses an isolated temp directory.
+
+- [`c8dbb56`](https://github.com/Action-Llama/action-llama/commit/c8dbb56128fbfd12b426452bfeba3b2f05d894a9) Thanks [@asselstine](https://github.com/asselstine)! - Deny gateway credential fetch (403) for containers whose credentials were injected
+  via environment variables. Previously returned 404; now explicitly rejects the request
+  to reduce the credential-fetch surface for ECS/Lambda containers.
+
+- [`3a1c000`](https://github.com/Action-Llama/action-llama/commit/3a1c000da8cd2129216fc67e09b4b143bb744aac) Thanks [@asselstine](https://github.com/asselstine)! - Added `ecr:SetRepositoryPolicy` to the operator IAM policy in the ECS docs.
+  This permission is required by `al doctor -c` to grant Lambda image pull access
+  on the ECR repository.
+
+- [`fb0d249`](https://github.com/Action-Llama/action-llama/commit/fb0d24934abdacce80bc123b4832f5e36ef0d0f6) Thanks [@asselstine](https://github.com/asselstine)! - Fixed `al logs -c` failing for Lambda-backed agents with a validation error about empty `logStreamNamePrefix`. The empty string is now omitted from the CloudWatch API call.
+
+- [`e5664e2`](https://github.com/Action-Llama/action-llama/commit/e5664e2257baa622c283bd2d3488120788b760d1) Thanks [@asselstine](https://github.com/asselstine)! - Fixed Lambda memory limit error by lowering the default from 4096 MB to 512 MB
+  and clamping to Lambda's 3008 MB maximum. Previously, the uncapped 4096 MB default
+  caused `MemorySize value failed to satisfy constraint` errors on every Lambda invocation.
+
+- [`25de91c`](https://github.com/Action-Llama/action-llama/commit/25de91c6ce864ef9cb385d726c839549e9780390) Thanks [@asselstine](https://github.com/asselstine)! - Fixed container entry crashing on Lambda due to hardcoded `/home/node/.ssh` path
+  and read-only `~/.gitconfig`. The SSH directory now uses `$HOME` (falling back to
+  `/tmp`), and git credential helper uses `GIT_CONFIG_COUNT` env vars instead of
+  `git config --global`, avoiding filesystem writes in read-only containers.
+
+- [`449d052`](https://github.com/Action-Llama/action-llama/commit/449d052beacec25b85578c21c9ae72788f48eea2) Thanks [@asselstine](https://github.com/asselstine)! - `al cloud setup` now grants `iam:PassRole` on `al-*` roles and `iam:PutUserPolicy`
+  (self) to the calling IAM user during initial setup. `al doctor -c` also attempts
+  to update PassRole grants when roles change. Fixes "not authorized to perform
+  iam:PassRole" errors when launching Lambda agents.
+
+- [`7f8c521`](https://github.com/Action-Llama/action-llama/commit/7f8c521cbda340cc0852a0a0909dfff0b71627c3) Thanks [@asselstine](https://github.com/asselstine)! - Fixed Lambda failing to pull ECR images by setting an ECR repository policy
+  granting `lambda.amazonaws.com` pull access. Unlike ECS (which uses IAM role
+  permissions), Lambda requires an explicit resource policy on the ECR repository.
+  The policy is now applied during `al cloud init` and `al doctor -c`.
+
+- [`f08c1f9`](https://github.com/Action-Llama/action-llama/commit/f08c1f98e49cc0d74490394cd9f9562bd7a74539) Thanks [@asselstine](https://github.com/asselstine)! - Grant CloudWatch Logs read permissions to the operator IAM user during `al cloud setup`.
+  Previously, `al logs` would fail with an authorization error because the setup wizard
+  only granted `iam:PassRole`. The new `ActionLlamaOperator` inline policy includes
+  `logs:FilterLogEvents` and `logs:GetLogEvents` on both ECS and Lambda log groups.
+
+- [`a237139`](https://github.com/Action-Llama/action-llama/commit/a237139ecc703e12121a8d5870951c3fd5e8fe13) Thanks [@asselstine](https://github.com/asselstine)! - Fixed CodeBuild image cache hash instability caused by temp Dockerfile filenames
+  containing random UUIDs. The hash now uses a stable "Dockerfile" key instead of
+  the temp filename, so identical build contexts produce cache hits as expected.
+
+- [`cecb696`](https://github.com/Action-Llama/action-llama/commit/cecb696c751d10a2a3550ee647d8714d8ff466d2) Thanks [@asselstine](https://github.com/asselstine)! - Fix `al logs -c` returning empty results for Lambda-routed agents. The logs command
+  now uses the same runtime selection logic as the scheduler, routing to LambdaRuntime
+  (and its CloudWatch log group) for agents with timeout <= 900s.
+
 ## 0.6.7
 
 ### Patch Changes
