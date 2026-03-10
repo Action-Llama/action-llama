@@ -11,7 +11,7 @@ When `al start` runs in Docker mode:
 3. Each agent run launches a fresh container with:
    - Read-only root filesystem
    - Credentials mounted read-only at `/credentials/`
-   - Writable tmpfs for `/tmp` and `/home/node`
+   - Writable tmpfs at `/tmp` (2GB)
    - All capabilities dropped, no-new-privileges
    - PID, memory, and CPU limits
    - Non-root user (uid 1000)
@@ -255,8 +255,7 @@ For Cloud Run configuration, see [Cloud Run docs](cloud-run.md). For ECS Fargate
 |------|------|----------|
 | `/app` | read-only | Action Llama application + node_modules |
 | `/credentials` | read-only | Mounted credential files (`/<type>/<instance>/<field>`) |
-| `/tmp` | read-write (tmpfs, 2GB) | Agent working directory — repos cloned here, scratch files |
-| `/home/node` | read-write (tmpfs, 64MB) | User home — `.ssh/` for SSH keys |
+| `/tmp` | read-write (tmpfs, 2GB) | Agent working directory — repos, scratch files, SSH keys |
 
 ## Troubleshooting
 

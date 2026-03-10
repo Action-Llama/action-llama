@@ -176,7 +176,6 @@ export class LocalDockerRuntime implements ContainerRuntime {
       "--user", "1000:1000",
       "--read-only",
       "--tmpfs", "/tmp:rw,exec,nosuid,uid=1000,gid=1000,size=2g",
-      "--tmpfs", "/home/node:rw,nosuid,uid=1000,gid=1000,size=64m",
       "--cap-drop", "ALL",
       "--security-opt", "no-new-privileges:true",
       "--pids-limit", "256",
