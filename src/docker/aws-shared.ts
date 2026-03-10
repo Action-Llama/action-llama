@@ -532,7 +532,7 @@ export class AwsSharedUtils {
   async filterLogEvents(logGroupName: string, logStreamPrefix: string, limit: number): Promise<string[]> {
     const res = await this.logsClient.send(new FilterLogEventsCommand({
       logGroupName,
-      logStreamNamePrefix: logStreamPrefix,
+      ...(logStreamPrefix ? { logStreamNamePrefix: logStreamPrefix } : {}),
       limit,
     }));
 
