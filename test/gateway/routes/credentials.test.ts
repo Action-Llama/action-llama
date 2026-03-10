@@ -37,12 +37,12 @@ describe("GET /credentials/:secret", () => {
     expect(res.status).toBe(403);
   });
 
-  it("returns 404 when no credentials are registered", async () => {
+  it("returns 403 when credentials were injected via environment", async () => {
     const registry = new Map<string, ContainerRegistration>();
     registry.set("test-secret", { containerName: "al-dev-1234" });
 
     const app = createTestApp(registry);
     const res = await app.request("/credentials/test-secret");
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
   });
 });

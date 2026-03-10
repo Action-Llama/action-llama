@@ -128,13 +128,15 @@ async function main() {
 
   emitLog("info", "container starting", { agentName: agentConfig.name, modelId, gatewayUrl });
 
-  // Load credentials from mounted volume, env vars (ECS secrets), or gateway
+  // Load credentials from mounted volume, env vars (ECS secrets), or gateway.
+  // Env vars and volume mounts are preferred — when either is present, gateway
+  // fetch is explicitly skipped to avoid exposing a credential-fetch surface.
   if (hasLocalCredentials()) {
     loadCredentialsFromVolume();
     emitLog("info", "credentials loaded from volume");
   } else if (hasEnvCredentials()) {
     loadCredentialsFromEnv();
-    emitLog("info", "credentials loaded from env vars");
+    emitLog("info", "credentials loaded from env vars, gateway fetch disabled");
   } else if (gatewayUrl && shutdownSecret) {
     await loadCredentialsFromGateway(gatewayUrl, shutdownSecret);
     emitLog("info", "credentials loaded from gateway");

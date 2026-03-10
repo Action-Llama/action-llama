@@ -15,7 +15,7 @@ export function registerCredentialRoute(
     }
 
     if (!reg.credentials) {
-      return c.json({ error: "no credentials registered for this container" }, 404);
+      return c.json({ error: "credential fetch disabled — credentials were injected via environment" }, 403);
     }
 
     logger.debug({ container: reg.containerName }, "serving credentials");
