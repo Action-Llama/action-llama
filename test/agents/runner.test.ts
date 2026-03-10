@@ -155,7 +155,7 @@ describe("AgentRunner", () => {
     expect(runner.isRunning).toBe(false);
   });
 
-  it("detects SILENT output", async () => {
+  it("detects RERUN output", async () => {
     const logger = makeLogger();
     const infoSpy = vi.spyOn(logger, "info");
     const runner = new AgentRunner(makeAgentConfig(), logger, tmpDir);
@@ -163,12 +163,13 @@ describe("AgentRunner", () => {
     mockSubscribe.mockImplementation((callback: Function) => {
       callback({
         type: "message_update",
-        assistantMessageEvent: { type: "text_delta", delta: "[SILENT]" },
+        assistantMessageEvent: { type: "text_delta", delta: "[RERUN]" },
       });
     });
 
-    await runner.run("Test");
-    expect(infoSpy).toHaveBeenCalledWith("no work to do");
+    const outcome = await runner.run("Test");
+    expect(outcome.result).toBe("rerun");
+    expect(infoSpy).toHaveBeenCalledWith(expect.anything(), "run completed, rerun requested");
   });
 
   it("logs bash commands", async () => {

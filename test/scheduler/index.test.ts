@@ -40,7 +40,7 @@ vi.mock("croner", () => ({
 }));
 
 // Mock AgentRunner
-const mockRun = vi.fn().mockResolvedValue({ result: "silent", triggers: [] });
+const mockRun = vi.fn().mockResolvedValue({ result: "completed", triggers: [] });
 let mockIsRunning = false;
 vi.mock("../../src/agents/runner.js", () => ({
   AgentRunner: class {
@@ -156,26 +156,26 @@ describe("startScheduler", () => {
     // The key thing is startScheduler doesn't throw
   });
 
-  it("re-runs agent immediately when it did work", async () => {
-    // First call returns "completed", second returns "silent"
+  it("re-runs agent immediately when it requests rerun", async () => {
+    // First call returns "rerun", second returns "completed" (no more work)
     mockRun
+      .mockResolvedValueOnce({ result: "rerun", triggers: [] })
       .mockResolvedValueOnce({ result: "completed", triggers: [] })
-      .mockResolvedValueOnce({ result: "silent", triggers: [] })
-      .mockResolvedValue({ result: "silent", triggers: [] });
+      .mockResolvedValue({ result: "completed", triggers: [] });
     await startScheduler(tmpDir);
 
     // Wait for the initial rerun loop of the first agent to settle
     await new Promise((r) => setTimeout(r, 50));
 
     // dev agent: 1 initial + 1 rerun = 2 calls
-    // reviewer + devops: 1 each (silent, no rerun)
+    // reviewer + devops: 1 each (completed, no rerun)
     // Total: 4
     expect(mockRun).toHaveBeenCalledTimes(4);
   });
 
   it("stops re-running after max reruns", async () => {
-    // Always returns "completed" — should stop at maxReruns
-    mockRun.mockResolvedValue({ result: "completed", triggers: [] });
+    // Always returns "rerun" — should stop at maxReruns
+    mockRun.mockResolvedValue({ result: "rerun", triggers: [] });
 
     // Use a small maxReruns via global config
     writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({ maxReruns: 2 } as Record<string, unknown>));
@@ -205,7 +205,7 @@ describe("startScheduler", () => {
     // dev agent returns a trigger for reviewer
     mockRun
       .mockResolvedValueOnce({ result: "silent", triggers: [{ agent: "reviewer", context: "Please review PR #42" }] })
-      .mockResolvedValue({ result: "silent", triggers: [] });
+      .mockResolvedValue({ result: "completed", triggers: [] });
     await startScheduler(tmpDir);
 
     await new Promise((r) => setTimeout(r, 50));
@@ -222,7 +222,7 @@ describe("startScheduler", () => {
   it("skips self-triggers", async () => {
     mockRun
       .mockResolvedValueOnce({ result: "silent", triggers: [{ agent: "dev", context: "self" }] })
-      .mockResolvedValue({ result: "silent", triggers: [] });
+      .mockResolvedValue({ result: "completed", triggers: [] });
     await startScheduler(tmpDir);
 
     await new Promise((r) => setTimeout(r, 50));
@@ -245,7 +245,7 @@ describe("startScheduler", () => {
       // 4th call: triggered reviewer → tries to trigger devops (will be blocked by depth)
       if (callCount === 4) return Promise.resolve({ result: "silent", triggers: [{ agent: "devops", context: "chain2" }] });
       // All others: no triggers
-      return Promise.resolve({ result: "silent", triggers: [] });
+      return Promise.resolve({ result: "completed", triggers: [] });
     });
 
     writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({ maxTriggerDepth: 1 } as Record<string, unknown>));

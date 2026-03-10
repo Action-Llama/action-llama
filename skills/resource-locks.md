@@ -73,5 +73,5 @@ Use descriptive, unique keys that identify the exact resource:
    - If the lock fails, skip — another instance is handling it
    - Clone, branch, implement, push, open PR
    - UNLOCK("github issue acme/app#42")
-3. If no issues to work on, respond with [SILENT]
+3. If you completed work and there may be more issues, respond with [RERUN]
 ```

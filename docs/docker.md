@@ -112,7 +112,7 @@ Key log messages emitted during a run:
 
 | Signal | Description |
 |--------|-------------|
-| `[SILENT]` | The agent found no work to do. The scheduler logs "no work to do" and skips further output. Use this in your `PLAYBOOK.md` to tell the agent to respond with `[SILENT]` when idle |
+| `[RERUN]` | The agent did work and wants to be re-run immediately to drain remaining backlog. Without this signal, the scheduler treats the run as complete and waits for the next scheduled tick. |
 | `[STATUS: <text>]` | Status update shown in the TUI. Can appear anywhere in the agent's text output. Example: `[STATUS: reviewing PR #42]` |
 | `[TRIGGER: <agent>]...[/TRIGGER]` | Trigger another agent with context. See below |
 

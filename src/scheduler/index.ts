@@ -191,15 +191,15 @@ async function runWithReruns(
     dispatchTriggers(triggers, agentConfig.name, depth, ctx);
   }
   let reruns = 0;
-  while (result === "completed" && reruns < ctx.maxReruns) {
+  while (result === "rerun" && reruns < ctx.maxReruns) {
     reruns++;
-    ctx.logger.info({ rerun: reruns, maxReruns: ctx.maxReruns }, `${agentConfig.name} did work, re-running immediately`);
+    ctx.logger.info({ rerun: reruns, maxReruns: ctx.maxReruns }, `${agentConfig.name} requested rerun, re-running immediately`);
     ({ result, triggers } = await runner.run(makeScheduledPrompt(agentConfig, ctx), { type: 'schedule', source: `rerun ${reruns}/${ctx.maxReruns}` }));
     if (triggers.length > 0) {
       dispatchTriggers(triggers, agentConfig.name, depth, ctx);
     }
   }
-  if (result === "completed" && reruns >= ctx.maxReruns) {
+  if (result === "rerun" && reruns >= ctx.maxReruns) {
     ctx.logger.warn({ maxReruns: ctx.maxReruns }, `${agentConfig.name} hit max reruns limit`);
   }
 

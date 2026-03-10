@@ -221,22 +221,22 @@ export class LambdaRuntime implements ContainerRuntime {
     const deadline = Date.now() + timeoutSeconds * 1000;
 
     // Poll CloudWatch Logs for the REPORT line indicating completion.
-    // Also scan for [SILENT] to return exit code 42, since the async
+    // Also scan for [RERUN] to return exit code 42, since the async
     // streamLogs poller may not have delivered it before we return.
-    let sawSilent = false;
+    let sawRerun = false;
     while (Date.now() < deadline) {
       try {
         const lines = await this.shared.filterLogEvents(logGroupName, "", 200);
         for (const line of lines) {
-          if (line.includes("[SILENT]")) {
-            sawSilent = true;
+          if (line.includes("[RERUN]")) {
+            sawRerun = true;
           }
           if (line.includes("REPORT RequestId:")) {
             // Check for errors in the report
             if (line.includes("Error") || line.includes("Timeout")) {
               return 1;
             }
-            return sawSilent ? 42 : 0;
+            return sawRerun ? 42 : 0;
           }
         }
       } catch {

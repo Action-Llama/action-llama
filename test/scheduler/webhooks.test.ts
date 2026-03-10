@@ -47,7 +47,7 @@ vi.mock("croner", () => ({
 }));
 
 // Mock AgentRunner
-const mockRun = vi.fn().mockResolvedValue({ result: "silent", triggers: [] });
+const mockRun = vi.fn().mockResolvedValue({ result: "completed", triggers: [] });
 let mockIsRunning = false;
 vi.mock("../../src/agents/runner.js", () => ({
   AgentRunner: class {

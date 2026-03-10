@@ -104,6 +104,6 @@ Without this step, the new agent will fail to access its credentials at runtime.
 ## Tips
 
 - Agent name is derived from the directory name — no need to put it in the config
-- Use `[SILENT]` in your PLAYBOOK.md to tell the agent to respond with `[SILENT]` when there's nothing to do (saves on logging noise)
+- Use `[RERUN]` in your PLAYBOOK.md to tell the agent to respond with `[RERUN]` when it did work and there may be more in the backlog
 - Params in the config are injected into the agent prompt as an `<agent-config>` XML block
 - See [Examples](examples/dev-agent.md) for complete working agents

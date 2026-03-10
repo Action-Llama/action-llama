@@ -8,7 +8,7 @@ import type { RunResult, RunOutcome, TriggerRequest } from "./runner.js";
 
 export class ContainerAgentRunner {
   private _running = false;
-  private _wasSilent = false;
+  private _wantsRerun = false;
   private _triggers: TriggerRequest[] = [];
   private _triggerAccum: { agent: string; lines: string[] } | null = null;
   private runtime: ContainerRuntime;
@@ -100,10 +100,10 @@ export class ContainerAgentRunner {
       this.statusTracker?.setAgentStatusText(this.agentConfig.name, statusMatch[1].trim());
     }
 
-    if (line === "[SILENT]") {
-      this._wasSilent = true;
-      this.logger.info("no work to do");
-      this.statusTracker?.addLogLine(this.agentConfig.name, "no work to do");
+    if (line === "[RERUN]") {
+      this._wantsRerun = true;
+      this.logger.info("rerun requested");
+      this.statusTracker?.addLogLine(this.agentConfig.name, "rerun requested");
     }
 
     // Accumulate [TRIGGER: agent]...[/TRIGGER] blocks across lines
@@ -139,7 +139,7 @@ export class ContainerAgentRunner {
     }
 
     this._running = true;
-    this._wasSilent = false;
+    this._wantsRerun = false;
     this._triggers = [];
     this._triggerAccum = null;
     const runReason = triggerInfo
@@ -239,17 +239,17 @@ export class ContainerAgentRunner {
       logStream = undefined;
 
       if (exitCode === 42) {
-        // Exit code 42 = silent (no work done), used as out-of-band signal
-        // to avoid race conditions with log-based [SILENT] detection
-        this.logger.info({ exitCode, elapsed: `${elapsed}s` }, "container finished (silent)");
-        runResult = "silent";
+        // Exit code 42 = rerun requested, used as out-of-band signal
+        // to avoid race conditions with log-based [RERUN] detection
+        this.logger.info({ exitCode, elapsed: `${elapsed}s` }, "container finished (rerun requested)");
+        runResult = "rerun";
       } else if (exitCode !== 0) {
         this.logger.error({ exitCode, elapsed: `${elapsed}s` }, "container exited with error");
         runError = `Container exited with code ${exitCode}`;
         runResult = "error";
       } else {
         this.logger.info({ exitCode, elapsed: `${elapsed}s` }, "container finished");
-        runResult = this._wasSilent ? "silent" : "completed";
+        runResult = this._wantsRerun ? "rerun" : "completed";
       }
     } catch (err: any) {
       this.logger.error({ err }, `${this.agentConfig.name} container run failed`);

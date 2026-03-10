@@ -46,7 +46,7 @@ maxTriggerDepth = 3         # Max depth for agent-to-agent trigger chains (defau
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `maxReruns` | number | `10` | Maximum consecutive reruns when an agent completes productive work (non-`[SILENT]`) before stopping |
+| `maxReruns` | number | `10` | Maximum consecutive reruns when an agent requests a rerun via `[RERUN]` before stopping |
 | `maxTriggerDepth` | number | `3` | Maximum depth for agent-to-agent `[TRIGGER]` chains (A triggers B triggers C = depth 2) |
 
 ### `[model]` — Default LLM

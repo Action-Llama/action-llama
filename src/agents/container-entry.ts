@@ -380,9 +380,12 @@ async function main() {
 
   emitLog("info", "prompt returned", { eventCount, resultType: typeof result, resultKeys: result ? Object.keys(result) : [] });
 
-  if (outputText.includes("[SILENT]")) {
-    emitLog("info", "no work to do");
-    console.log("[SILENT]");
+  if (outputText.includes("[RERUN]")) {
+    emitLog("info", "run completed, rerun requested", { outputLength: outputText.length });
+    console.log(outputText.slice(0, 2000));
+    console.log("[RERUN]");
+    session.dispose();
+    process.exit(42);
   } else {
     emitLog("info", "run completed", { outputLength: outputText.length });
     console.log(outputText.slice(0, 2000));

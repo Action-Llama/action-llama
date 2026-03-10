@@ -32,7 +32,7 @@ function isUnrecoverableError(text: string): boolean {
 
 const UNRECOVERABLE_THRESHOLD = 3;
 
-export type RunResult = "completed" | "silent" | "error";
+export type RunResult = "completed" | "rerun" | "error";
 
 export interface TriggerRequest {
   agent: string;
@@ -276,10 +276,9 @@ export class AgentRunner {
 
       const triggers = extractTriggers(outputText);
       let result: RunResult;
-      if (outputText.includes("[SILENT]")) {
-        this.logger.info("no work to do");
-        this.statusTracker?.addLogLine(this.agentConfig.name, "no work to do");
-        result = "silent";
+      if (outputText.includes("[RERUN]")) {
+        this.logger.info({ outputLength: outputText.length }, "run completed, rerun requested");
+        result = "rerun";
       } else {
         this.logger.info({ outputLength: outputText.length }, "run completed");
         result = "completed";

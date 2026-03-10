@@ -10,7 +10,7 @@ You are triggered in exactly one of four ways. Check which context blocks are pr
 
 **How to detect:** No `<webhook-trigger>` or `<agent-trigger>` block. Your prompt says "You are running on a schedule."
 
-**What to do:** Check for new work proactively. Query APIs, list issues, scan for alerts — whatever your playbook defines. If there's nothing to do, respond with `[SILENT]`.
+**What to do:** Check for new work proactively. Query APIs, list issues, scan for alerts — whatever your playbook defines. If you completed work and there may be more, respond with `[RERUN]`.
 
 **Where to get context:**
 - `<agent-config>` — your custom params (repos, labels, org names, etc.)

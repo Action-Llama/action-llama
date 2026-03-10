@@ -9,7 +9,7 @@ Use those values for repos.
 
 ## Workflow
 
-1. **List open PRs** — run `gh pr list --repo <repo> --state open --json number,title,headRefName,headRefOid,statusCheckRollup` for each repo. If empty, respond `[SILENT]` and stop.
+1. **List open PRs** — run `gh pr list --repo <repo> --state open --json number,title,headRefName,headRefOid,statusCheckRollup` for each repo. If empty, stop.
 
 2. **Review each PR:**
 

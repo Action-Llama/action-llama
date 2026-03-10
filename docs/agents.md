@@ -70,7 +70,7 @@ Your configuration is in the `<agent-config>` block at the start of your prompt.
 
 ## Rules
 
-- If there is nothing to do, respond with `[SILENT]`
+- If you did work and there may be more, respond with `[RERUN]`
 - ...
 ```
 
@@ -96,7 +96,7 @@ Skills currently taught to agents:
 
 | Category | Skills | Description |
 |----------|--------|-------------|
-| **Signals** | `[SILENT]`, `[STATUS: ...]`, `[TRIGGER: ...]` | Text-based signals the agent emits in its output. See [Signals](#signals). |
+| **Signals** | `[RERUN]`, `[STATUS: ...]`, `[TRIGGER: ...]` | Text-based signals the agent emits in its output. See [Signals](#signals). |
 | **Locks** | `LOCK(...)`, `UNLOCK(...)`, `HEARTBEAT(...)` | Resource locking for parallel coordination. See [Resource locks](#resource-locks). |
 | **Credentials** | `GITHUB_TOKEN`, `gh`, `git`, etc. | Credential access and tool usage. See [Credentials](credentials.md). |
 
@@ -108,7 +108,7 @@ The agent can emit these signals in its text output:
 
 | Signal | Effect |
 |--------|--------|
-| `[SILENT]` | Tells the scheduler the agent found no work. Logged as "no work to do" and further output is skipped. |
+| `[RERUN]` | Tells the scheduler the agent did work and wants to be re-run immediately to drain remaining backlog. |
 | `[STATUS: <text>]` | Status update shown in the TUI (e.g. `[STATUS: reviewing PR #42]`). |
 | `[TRIGGER: <agent>]...[/TRIGGER]` | Triggers another agent with the enclosed context. The target receives a `<agent-trigger>` prompt with the source agent name and context. Self-triggers are skipped; chains are bounded by `maxTriggerDepth`. |
 
@@ -124,7 +124,7 @@ Each agent run is an isolated, short-lived container (or host process with `--no
    - **User prompt:** `<agent-config>` (params JSON) + `<credential-context>` (available env vars, tools, and security policy) + trigger context (schedule, webhook payload, or agent trigger)
 5. **Agent runs autonomously** — the LLM executes tools (bash, file I/O, API calls) until it finishes or hits an error. Rate-limited API calls are retried automatically (up to 5 attempts with exponential backoff).
 6. **Error detection** — the container watches for repeated auth/permission failures (e.g. "bad credentials", "permission denied"). After 3 such errors, it aborts early.
-7. **Signals are processed** — as the agent produces output, the scheduler scans for `[SILENT]`, `[STATUS]`, and `[TRIGGER]` signals.
+7. **Signals are processed** — as the agent produces output, the scheduler scans for `[RERUN]`, `[STATUS]`, and `[TRIGGER]` signals.
 8. **Container exits** — exit code 0 (success), 1 (error), or 124 (timeout). Any held locks are released automatically. The scheduler logs the result and the container is removed.
 
 ### Timeout
@@ -133,7 +133,7 @@ Each container has a self-termination timer controlled by `local.timeout` in `co
 
 ### Reruns
 
-When a scheduled agent completes productive work (i.e. it does not respond with `[SILENT]`), the scheduler immediately re-runs it. This continues until the agent reports `[SILENT]` (no more work), hits an error, or reaches the `maxReruns` limit (default: 10, configurable in `config.toml`). This lets an agent drain its work queue without waiting for the next cron tick.
+When a scheduled agent emits `[RERUN]`, the scheduler immediately re-runs it. This continues until the agent completes without `[RERUN]` (no more work), hits an error, or reaches the `maxReruns` limit (default: 10, configurable in `config.toml`). This lets an agent drain its work queue without waiting for the next cron tick.
 
 Webhook-triggered and agent-triggered runs do not re-run — they respond to a single event.
 
@@ -192,7 +192,7 @@ When a container exits — whether it finishes successfully, hits an error, or t
    - Clone the repo, create a branch, implement the fix
    - Open a PR and link it to the issue
    - UNLOCK("github issue owner/repo#123")
-3. If there are no issues to work on, respond with [SILENT]
+3. If you completed work and there may be more issues, respond with [RERUN]
 ```
 
 ### Resource key conventions

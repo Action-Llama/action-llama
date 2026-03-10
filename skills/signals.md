@@ -2,17 +2,19 @@
 
 Signals are text patterns you emit in your output. The scheduler scans your output for these patterns and acts on them. They are your only communication channel back to the scheduler.
 
-## `[SILENT]`
+## `[RERUN]`
 
-Tells the scheduler you found no work to do.
+Tells the scheduler you did work and there may be more to do — requests an immediate rerun.
 
 ```
-[SILENT]
+[RERUN]
 ```
 
-**When to use:** When you check for work (issues, PRs, alerts) and find nothing actionable. This is how the scheduler knows you're idle — it logs "no work to do" and skips further processing of your output.
+**When to use:** When you completed work (e.g. processed an issue, merged a PR) and there may be additional items in the backlog. The scheduler will immediately re-run you (up to `maxReruns` times) to drain remaining work.
 
-**Effect on reruns:** On scheduled runs, a `[SILENT]` response stops the rerun loop. Without it, the scheduler assumes you did productive work and immediately re-runs you (up to `maxReruns` times). Always emit `[SILENT]` when there's nothing to do.
+**When NOT to use:** If you found no work to do, or if you completed work but the backlog is empty. Simply end without emitting `[RERUN]` and the scheduler will wait for the next scheduled run.
+
+**Default behavior:** Without `[RERUN]`, the scheduler treats your run as complete and does not rerun. This is the safe default — errors, rate limits, and empty runs won't trigger unwanted reruns.
 
 ## `[STATUS: <text>]`
 
@@ -51,4 +53,4 @@ URL: https://github.com/acme/app/pull/42
 
 ## Multiple signals
 
-You can emit multiple signals in one run. For example, you might emit several `[STATUS]` updates as you work, then a `[TRIGGER]` at the end. `[SILENT]` should only appear alone — if you did work, don't emit `[SILENT]`.
+You can emit multiple signals in one run. For example, you might emit several `[STATUS]` updates as you work, then a `[TRIGGER]` at the end, and a `[RERUN]` if there's more work to do.

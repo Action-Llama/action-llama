@@ -94,9 +94,34 @@ JSON object with the source agent name and context. Only present when the agent 
 }
 ```
 
-### Triggering other agents
+## Signals
 
-An agent can trigger another agent by including a `[TRIGGER]` block in its output:
+Signals are text patterns you emit in your output. The scheduler scans for them — they are your only way to communicate back to the scheduler.
+
+### `[RERUN]`
+
+Request an immediate rerun to drain remaining backlog.
+
+```
+[RERUN]
+```
+
+Emit this when you completed work (processed an issue, merged a PR, etc.) and there may be more items to handle. The scheduler will re-run you immediately, up to `maxReruns` times (default: 10). Without `[RERUN]`, the scheduler treats the run as complete and waits for the next scheduled tick. This is the safe default — errors, rate limits, and empty runs won't cause unwanted reruns.
+
+### `[STATUS: <text>]`
+
+Send a live status update to the TUI and logs.
+
+```
+[STATUS: reviewing PR #42]
+[STATUS: deploying api-prod]
+```
+
+Emit at natural milestones so the operator can see what you're doing in real time.
+
+### `[TRIGGER: <agent>]...[/TRIGGER]`
+
+Trigger another agent with context you provide.
 
 ```
 [TRIGGER: reviewer]
@@ -109,6 +134,10 @@ The scheduler will run the target agent with the context injected as an `<agent-
 - An agent cannot trigger itself
 - If the target is busy or does not exist, the trigger is skipped
 - Trigger chains are limited by `maxTriggerDepth` in `config.toml` (default: 3)
+
+### Combining signals
+
+You can emit multiple signals in one run. For example, several `[STATUS]` updates as you work, a `[TRIGGER]` at the end, and `[RERUN]` if there's more work to do.
 
 ## Webhook Reference
 
@@ -311,9 +340,9 @@ gh label create "agent-completed" --repo <determined-repo> --color 1D76DB --desc
 
 ## Finding work
 
-**Webhook trigger:** When you receive a \`<webhook-trigger>\` block, extract the repository from the \`repo\` field and the issue details from the trigger context. Check the issue's labels and assignee against your \`triggerLabel\` and \`assignee\` params. If the issue matches (has your trigger label and is assigned to your assignee), proceed with implementation using the extracted repository. If it does not match, respond \`[SILENT]\` and stop.
+**Webhook trigger:** When you receive a \`<webhook-trigger>\` block, extract the repository from the \`repo\` field and the issue details from the trigger context. Check the issue's labels and assignee against your \`triggerLabel\` and \`assignee\` params. If the issue matches (has your trigger label and is assigned to your assignee), proceed with implementation using the extracted repository. If it does not match, stop.
 
-**Scheduled trigger:** If \`repos\` parameter exists in \`<agent-config>\`, run \`gh issue list --repo <repo> --label <triggerLabel> --assignee <assignee> --state open --json number,title,body,comments,labels --limit 1\` for each configured repo. If no work found in any repo, respond \`[SILENT]\` and stop.
+**Scheduled trigger:** If \`repos\` parameter exists in \`<agent-config>\`, run \`gh issue list --repo <repo> --label <triggerLabel> --assignee <assignee> --state open --json number,title,body,comments,labels --limit 1\` for each configured repo. If no work found in any repo, stop. If you completed work and there may be more issues to process, respond with \`[RERUN]\`.
 
 ## Workflow
 
@@ -397,7 +426,7 @@ Start all agents with `al start` (or `npx al start`). This starts the scheduler 
 
 ### Automatic re-runs
 
-When a scheduled agent completes productive work (i.e. it does not respond with `[SILENT]`), the scheduler immediately re-runs it. This continues until the agent reports `[SILENT]` (no more work), hits an error, or reaches the `maxReruns` limit. This way an agent drains its work queue without waiting for the next cron tick.
+When a scheduled agent emits `[RERUN]`, the scheduler immediately re-runs it. This continues until the agent completes without `[RERUN]` (no more work), hits an error, or reaches the `maxReruns` limit. This way an agent drains its work queue without waiting for the next cron tick.
 
 Set `maxReruns` in `config.toml` to control the limit (default: 10):
 
@@ -414,7 +443,7 @@ Agents have access to runtime skills — capabilities taught via a preamble befo
 
 - [Skills Overview](skills/README.md)
 - [Credentials](skills/credentials.md) — env vars, tools, and access patterns from mounted credentials
-- [Signals](skills/signals.md) — `[SILENT]`, `[STATUS]`, `[TRIGGER]` output signals
+- [Signals](skills/signals.md) — `[RERUN]`, `[STATUS]`, `[TRIGGER]` output signals
 - [Resource Locks](skills/resource-locks.md) — `LOCK`, `UNLOCK`, `HEARTBEAT` for parallel coordination
 - [Environment](skills/environment.md) — trigger types, context blocks, container filesystem
 
