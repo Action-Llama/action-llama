@@ -1,5 +1,12 @@
 # @action-llama/action-llama
 
+## 0.6.9
+
+### Patch Changes
+
+- [`b7671e1`](https://github.com/Action-Llama/action-llama/commit/b7671e13156214eaf003956afa8bcef88ee3fb31) Thanks [@asselstine](https://github.com/asselstine)! - Set `HOME=/tmp` in container entry so that child processes (like the agent harness)
+  that write to `$HOME` (e.g. `git config --global`) work on Lambda's read-only filesystem.
+
 ## 0.6.8
 
 ### Patch Changes
