@@ -155,21 +155,79 @@ describe("AgentRunner", () => {
     expect(runner.isRunning).toBe(false);
   });
 
-  it("detects RERUN output", async () => {
+  it("detects RERUN signal from command files", async () => {
     const logger = makeLogger();
     const infoSpy = vi.spyOn(logger, "info");
     const runner = new AgentRunner(makeAgentConfig(), logger, tmpDir);
     mockPrompt.mockResolvedValue(undefined);
+    
+    // Mock subscribe to simulate bash command execution (which would create signal files)
     mockSubscribe.mockImplementation((callback: Function) => {
+      // Simulate the bash tool calling al-rerun command
       callback({
-        type: "message_update",
-        assistantMessageEvent: { type: "text_delta", delta: "[RERUN]" },
+        type: "tool_execution_start",
+        toolName: "bash",
+        toolCallId: "call-1",
+        args: { command: "al-rerun" },
       });
+      callback({
+        type: "tool_execution_end",
+        toolName: "bash",
+        toolCallId: "call-1",
+        result: '{"ok":true}',
+        isError: false,
+      });
+      
+      // Manually create the signal file that the command would create
+      const runId = process.env.AL_RUN_ID;
+      if (runId) {
+        writeFileSync(`/tmp/al-signal-${runId}-rerun`, "");
+      }
     });
 
     const outcome = await runner.run("Test");
     expect(outcome.result).toBe("rerun");
     expect(infoSpy).toHaveBeenCalledWith(expect.anything(), "run completed, rerun requested");
+  });
+
+  it("detects trigger signals from command files", async () => {
+    const runner = new AgentRunner(makeAgentConfig(), makeLogger(), tmpDir);
+    mockPrompt.mockResolvedValue(undefined);
+    
+    // Mock subscribe to simulate bash command execution
+    mockSubscribe.mockImplementation((callback: Function) => {
+      // Simulate the bash tool calling al-trigger command
+      callback({
+        type: "tool_execution_start",
+        toolName: "bash",
+        toolCallId: "call-1",
+        args: { command: 'al-trigger reviewer "Please review PR #42"' },
+      });
+      callback({
+        type: "tool_execution_end",
+        toolName: "bash",
+        toolCallId: "call-1",
+        result: '{"ok":true}',
+        isError: false,
+      });
+      
+      // Manually create the signal file that the command would create
+      const runId = process.env.AL_RUN_ID;
+      if (runId) {
+        writeFileSync(`/tmp/al-signal-${runId}-trigger-123.json`, JSON.stringify({
+          agent: "reviewer",
+          context: "Please review PR #42"
+        }));
+      }
+    });
+
+    const outcome = await runner.run("Test");
+    expect(outcome.result).toBe("completed");
+    expect(outcome.triggers).toHaveLength(1);
+    expect(outcome.triggers[0]).toEqual({
+      agent: "reviewer",
+      context: "Please review PR #42"
+    });
   });
 
   it("logs bash commands", async () => {

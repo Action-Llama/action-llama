@@ -7,7 +7,7 @@ import {
   SettingsManager,
   createCodingTools,
 } from "@mariozechner/pi-coding-agent";
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, unlinkSync, readdirSync, writeFileSync, mkdirSync } from "fs";
 import { resolve } from "path";
 import type { AgentConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
@@ -44,15 +44,73 @@ export interface RunOutcome {
   triggers: TriggerRequest[];
 }
 
-const TRIGGER_PATTERN = /\[TRIGGER:\s*(\S+)\]([\s\S]*?)\[\/TRIGGER\]/g;
+import { readFileSync, existsSync, unlinkSync, readdirSync } from "fs";
 
-function extractTriggers(text: string): TriggerRequest[] {
+function readSignalFiles(runId: string): { rerun: boolean; triggers: TriggerRequest[] } {
+  let rerun = false;
   const triggers: TriggerRequest[] = [];
-  let match;
-  while ((match = TRIGGER_PATTERN.exec(text)) !== null) {
-    triggers.push({ agent: match[1], context: match[2].trim() });
+
+  try {
+    // Check for rerun signal
+    const rerunFile = `/tmp/al-signal-${runId}-rerun`;
+    if (existsSync(rerunFile)) {
+      rerun = true;
+      unlinkSync(rerunFile);
+    }
+
+    // Check for trigger signals
+    const triggerPattern = new RegExp(`^al-signal-${runId}-trigger-.*\\.json$`);
+    const files = readdirSync('/tmp').filter(f => triggerPattern.test(f));
+    for (const file of files) {
+      try {
+        const content = readFileSync(`/tmp/${file}`, 'utf-8');
+        const trigger = JSON.parse(content);
+        if (trigger.agent && trigger.context) {
+          triggers.push(trigger);
+        }
+        unlinkSync(`/tmp/${file}`);
+      } catch {
+        // Invalid signal file, ignore
+      }
+    }
+  } catch {
+    // Error reading signal files, continue with defaults
   }
-  return triggers;
+
+  return { rerun, triggers };
+}
+
+function createHostModeSignalCommands(runId: string, statusTracker?: StatusTracker, agentName?: string): void {
+  // Ensure /tmp/bin exists
+  mkdirSync("/tmp/bin", { recursive: true });
+
+  const alRerunScript = `#!/bin/sh
+# Host mode rerun signal
+touch "/tmp/al-signal-${runId}-rerun"
+echo '{"ok":true}'
+`;
+
+  const alStatusScript = `#!/bin/sh
+# Host mode status signal - for host mode, we just echo success since status is handled via text patterns
+if [ -z "$1" ]; then echo '{"ok":false,"error":"missing status text"}' >&2; exit 1; fi
+echo '{"ok":true}'
+`;
+
+  const alTriggerScript = `#!/bin/sh
+# Host mode trigger signal
+if [ -z "$1" ] || [ -z "$2" ]; then echo '{"ok":false,"error":"usage: al-trigger <agent> <context>"}' >&2; exit 1; fi
+echo '{"agent":"'"$1"'","context":"'"$2"'"}' > "/tmp/al-signal-${runId}-trigger-$(date +%s%N).json"
+echo '{"ok":true}'
+`;
+
+  writeFileSync("/tmp/bin/al-rerun", alRerunScript, { mode: 0o755 });
+  writeFileSync("/tmp/bin/al-status", alStatusScript, { mode: 0o755 });
+  writeFileSync("/tmp/bin/al-trigger", alTriggerScript, { mode: 0o755 });
+
+  // Ensure /tmp/bin is in PATH
+  if (!process.env.PATH?.includes("/tmp/bin")) {
+    process.env.PATH = `/tmp/bin:${process.env.PATH || ""}`;
+  }
 }
 
 export class AgentRunner {
@@ -80,6 +138,7 @@ export class AgentRunner {
     }
 
     this.running = true;
+    const runId = `${this.agentConfig.name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const runReason = triggerInfo
       ? (triggerInfo.source
         ? (triggerInfo.type === 'agent' ? `triggered by ${triggerInfo.source}` : `${triggerInfo.type} (${triggerInfo.source})`)
@@ -109,10 +168,18 @@ export class AgentRunner {
     for (const key of GIT_ENV_KEYS) {
       savedGitEnv[key] = process.env[key];
     }
+    let oldRunId: string | undefined;
 
     try {
       const cwd = agentDir(this.projectPath, this.agentConfig.name);
       const agentsFile = resolve(cwd, "ACTIONS.md");
+
+      // Set up environment variables for signal commands
+      oldRunId = process.env.AL_RUN_ID;
+      process.env.AL_RUN_ID = runId;
+
+      // Create host mode signal command stubs
+      createHostModeSignalCommands(runId, this.statusTracker, this.agentConfig.name);
 
       const { model } = this.agentConfig;
       const llmModel = getModel(
@@ -283,9 +350,10 @@ export class AgentRunner {
         }
       }
 
-      const triggers = extractTriggers(outputText);
+      // Read signals from command-created files
+      const { rerun, triggers } = readSignalFiles(runId);
       let result: RunResult;
-      if (outputText.includes("[RERUN]")) {
+      if (rerun) {
         this.logger.info({ outputLength: outputText.length }, "run completed, rerun requested");
         result = "rerun";
       } else {
@@ -308,6 +376,23 @@ export class AgentRunner {
         } else {
           process.env[key] = savedGitEnv[key];
         }
+      }
+
+      // Restore AL_RUN_ID
+      if (oldRunId === undefined) {
+        delete process.env.AL_RUN_ID;
+      } else {
+        process.env.AL_RUN_ID = oldRunId;
+      }
+
+      // Clean up any remaining signal files for this run
+      try {
+        const signalFiles = readdirSync('/tmp').filter(f => f.startsWith(`al-signal-${runId}-`));
+        for (const file of signalFiles) {
+          unlinkSync(`/tmp/${file}`);
+        }
+      } catch {
+        // Ignore cleanup errors
       }
 
       const elapsed = Date.now() - runStartTime;

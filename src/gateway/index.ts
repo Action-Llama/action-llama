@@ -5,6 +5,7 @@ import { registerShutdownRoute } from "./routes/shutdown.js";
 import { registerLockRoutes } from "./routes/locks.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
 import { registerDashboardRoutes } from "./routes/dashboard.js";
+import { registerSignalRoutes, type SignalContext } from "./routes/signals.js";
 import { LockStore } from "./lock-store.js";
 import type { ContainerRegistration } from "./types.js";
 import type { WebhookRegistry } from "../webhooks/registry.js";
@@ -23,6 +24,7 @@ export interface GatewayOptions {
   projectPath?: string;
   webUI?: boolean;
   lockTimeout?: number;
+  signalContext?: SignalContext;
 }
 
 export interface GatewayServer {
@@ -34,7 +36,7 @@ export interface GatewayServer {
 }
 
 export async function startGateway(opts: GatewayOptions): Promise<GatewayServer> {
-  const { port, logger, killContainer, webhookRegistry, webhookSecrets, statusTracker, projectPath, webUI, lockTimeout } = opts;
+  const { port, logger, killContainer, webhookRegistry, webhookSecrets, statusTracker, projectPath, webUI, lockTimeout, signalContext } = opts;
   const app = new Hono();
   const containerRegistry = new Map<string, ContainerRegistration>();
   const lockStore = new LockStore(lockTimeout);
@@ -46,6 +48,9 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
   const killFn = killContainer || (async () => {});
   registerShutdownRoute(app, containerRegistry, killFn, logger);
   registerLockRoutes(app, containerRegistry, lockStore, logger);
+
+  // Signal routes
+  registerSignalRoutes(app, containerRegistry, logger, statusTracker, signalContext);
 
   // Webhook routes
   if (webhookRegistry) {

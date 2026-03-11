@@ -116,10 +116,36 @@ curl -s -X POST "$GATEWAY_URL/shutdown" \\
   -d '{"secret":"'"$SHUTDOWN_SECRET"'","reason":"'"$\{1:-agent requested shutdown\}"'"}' || true
 `;
 
+  const alRerunScript = `#!/bin/sh
+if [ -z "$GATEWAY_URL" ]; then echo '{"ok":true}'; exit 0; fi
+curl -s -X POST "$GATEWAY_URL/signals/rerun" \\
+  -H 'Content-Type: application/json' \\
+  -d '{"secret":"'"$SHUTDOWN_SECRET"'"}'
+`;
+
+  const alStatusScript = `#!/bin/sh
+if [ -z "$GATEWAY_URL" ]; then echo '{"ok":true}'; exit 0; fi
+if [ -z "$1" ]; then echo '{"ok":false,"error":"missing status text"}' >&2; exit 1; fi
+curl -s -X POST "$GATEWAY_URL/signals/status" \\
+  -H 'Content-Type: application/json' \\
+  -d '{"secret":"'"$SHUTDOWN_SECRET"'","text":"'"$1"'"}'
+`;
+
+  const alTriggerScript = `#!/bin/sh
+if [ -z "$GATEWAY_URL" ]; then echo '{"ok":true}'; exit 0; fi
+if [ -z "$1" ] || [ -z "$2" ]; then echo '{"ok":false,"error":"usage: al-trigger <agent> <context>"}' >&2; exit 1; fi
+curl -s -X POST "$GATEWAY_URL/signals/trigger" \\
+  -H 'Content-Type: application/json' \\
+  -d '{"secret":"'"$SHUTDOWN_SECRET"'","targetAgent":"'"$1"'","context":"'"$2"'"}'
+`;
+
   writeFileSync("/tmp/bin/rlock", rlockScript, { mode: 0o755 });
   writeFileSync("/tmp/bin/runlock", runlockScript, { mode: 0o755 });
   writeFileSync("/tmp/bin/rlock-heartbeat", rlockHeartbeatScript, { mode: 0o755 });
   writeFileSync("/tmp/bin/al-shutdown", alShutdownScript, { mode: 0o755 });
+  writeFileSync("/tmp/bin/al-rerun", alRerunScript, { mode: 0o755 });
+  writeFileSync("/tmp/bin/al-status", alStatusScript, { mode: 0o755 });
+  writeFileSync("/tmp/bin/al-trigger", alTriggerScript, { mode: 0o755 });
   process.env.PATH = `/tmp/bin:${process.env.PATH || ""}`;
 
   // Load agent config and ACTIONS.md from baked-in files or env vars.

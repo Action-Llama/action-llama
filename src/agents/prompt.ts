@@ -6,6 +6,7 @@ import { parseCredentialRef } from "../shared/credentials.js";
 
 export interface PromptSkills {
   locking?: boolean;
+  signals?: boolean;
 }
 
 export function buildLockSkill(): string {
@@ -52,6 +53,47 @@ export function buildLockSkill(): string {
     '- Use descriptive keys: `"github issue acme/app#42"`, `"deploy api-prod"`',
     "- These commands are safe to use even without a gateway — they return success as a no-op",
     "</skill-lock>",
+  ];
+  return lines.join("\n");
+}
+
+export function buildSignalsSkill(): string {
+  const lines = [
+    "<skill-signals>",
+    "## Skill: Signals",
+    "",
+    "Use signals to communicate with the scheduler and trigger actions.",
+    "",
+    "### Commands",
+    "",
+    "**`al-rerun`** — Request an immediate rerun after completing work.",
+    "```",
+    "al-rerun",
+    "```",
+    "",
+    "**`al-status \"<text>\"`** — Update your status displayed in the TUI.",
+    "```",
+    'al-status "reviewing PR #42"',
+    'al-status "deploying api-prod"',
+    "```",
+    "",
+    "**`al-trigger <agent> \"<context>\"`** — Trigger another agent with context.",
+    "```",
+    'al-trigger reviewer "I just opened PR #42 on acme/app. Please review it."',
+    "```",
+    "",
+    "### Responses",
+    '- Success: `{"ok":true}`',
+    '- Error: `{"ok":false,"error":"<message>"}`',
+    "",
+    "### Guidelines",
+    "- Use `al-rerun` when you completed work and there may be more to do",
+    "- Use `al-status` at natural milestones to show progress",
+    "- Use `al-trigger` when your work creates something another agent should act on",
+    "- You cannot trigger yourself — self-triggers are ignored",
+    "- Commands gracefully degrade when `GATEWAY_URL` is not set (return success as no-op)",
+    "- Always provide meaningful context when triggering other agents",
+    "</skill-signals>",
   ];
   return lines.join("\n");
 }
@@ -111,6 +153,9 @@ function buildSkillsBlock(skills?: PromptSkills): string {
   const blocks: string[] = [];
   if (skills.locking) {
     blocks.push(buildLockSkill());
+  }
+  if (skills.signals) {
+    blocks.push(buildSignalsSkill());
   }
   return blocks.length > 0 ? "\n\n" + blocks.join("\n\n") : "";
 }

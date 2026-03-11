@@ -8,9 +8,6 @@ import type { RunResult, RunOutcome, TriggerRequest } from "./runner.js";
 
 export class ContainerAgentRunner {
   private _running = false;
-  private _wantsRerun = false;
-  private _triggers: TriggerRequest[] = [];
-  private _triggerAccum: { agent: string; lines: string[] } | null = null;
   private runtime: ContainerRuntime;
   private globalConfig: GlobalConfig;
   private agentConfig: AgentConfig;
@@ -94,32 +91,9 @@ export class ContainerAgentRunner {
       // Not JSON — treat as plain output
     }
 
-    // Detect [STATUS: <text>] in plain output
-    const statusMatch = line.match(/\[STATUS:\s*([^\]]+)\]/);
-    if (statusMatch) {
-      this.statusTracker?.setAgentStatusText(this.agentConfig.name, statusMatch[1].trim());
-    }
-
-    if (line === "[RERUN]") {
-      this._wantsRerun = true;
-      this.logger.info("rerun requested");
-      this.statusTracker?.addLogLine(this.agentConfig.name, "rerun requested");
-    }
-
-    // Accumulate [TRIGGER: agent]...[/TRIGGER] blocks across lines
-    const triggerOpen = line.match(/^\[TRIGGER:\s*(\S+)\]$/);
-    if (triggerOpen) {
-      this._triggerAccum = { agent: triggerOpen[1], lines: [] };
-      return;
-    }
-    if (this._triggerAccum) {
-      if (line === "[/TRIGGER]") {
-        this._triggers.push({ agent: this._triggerAccum.agent, context: this._triggerAccum.lines.join("\n").trim() });
-        this._triggerAccum = null;
-      } else {
-        this._triggerAccum.lines.push(line);
-      }
-    }
+    // Note: Signal detection removed - signals now handled via gateway commands
+    // Status updates are handled via al-status command calls to the gateway
+    // Rerun and trigger signals are handled via al-rerun and al-trigger commands
   }
 
   async run(prompt: string, triggerInfo?: { type: 'schedule' | 'webhook' | 'agent'; source?: string }): Promise<RunOutcome> {
@@ -139,9 +113,6 @@ export class ContainerAgentRunner {
     }
 
     this._running = true;
-    this._wantsRerun = false;
-    this._triggers = [];
-    this._triggerAccum = null;
     const runReason = triggerInfo
       ? (triggerInfo.source
         ? (triggerInfo.type === 'agent' ? `triggered by ${triggerInfo.source}` : `${triggerInfo.type} (${triggerInfo.source})`)
@@ -235,8 +206,7 @@ export class ContainerAgentRunner {
       logStream = undefined;
 
       if (exitCode === 42) {
-        // Exit code 42 = rerun requested, used as out-of-band signal
-        // to avoid race conditions with log-based [RERUN] detection
+        // Exit code 42 = rerun requested
         this.logger.info({ exitCode, elapsed: `${elapsed}s` }, "container finished (rerun requested)");
         runResult = "rerun";
       } else if (exitCode !== 0) {
@@ -245,7 +215,7 @@ export class ContainerAgentRunner {
         runResult = "error";
       } else {
         this.logger.info({ exitCode, elapsed: `${elapsed}s` }, "container finished");
-        runResult = this._wantsRerun ? "rerun" : "completed";
+        runResult = "completed";
       }
     } catch (err: any) {
       this.logger.error({ err }, `${this.agentConfig.name} container run failed`);
@@ -265,6 +235,6 @@ export class ContainerAgentRunner {
       this.statusTracker?.endRun(this.agentConfig.name, elapsed, runError);
       this._running = false;
     }
-    return { result: runResult, triggers: this._triggers };
+    return { result: runResult, triggers: [] };
   }
 }
