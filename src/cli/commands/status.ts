@@ -86,4 +86,24 @@ export async function execute(opts: { project: string; cloud?: boolean }): Promi
   }
 
   console.log(`Agents: ${agentNames.join(", ")}`);
+
+  // Fetch and display lock information (local mode only)
+  try {
+    const response = await fetch("http://localhost:3210/locks/status");
+    if (response.ok) {
+      const data = await response.json();
+      if (data.locks && data.locks.length > 0) {
+        console.log("");
+        console.log("Active locks:");
+        for (const lock of data.locks) {
+          const timeAgo = Math.floor((Date.now() - lock.heldSince) / 1000);
+          const timeStr = timeAgo < 60 ? `${timeAgo}s` : `${Math.floor(timeAgo / 60)}m${timeAgo % 60}s`;
+          console.log(`  ${lock.agentName}: ${lock.resourceKey} (held for ${timeStr})`);
+        }
+      }
+    }
+    // Silently ignore errors (gateway not running, etc.)
+  } catch {
+    // Gateway not available, skip lock display
+  }
 }
