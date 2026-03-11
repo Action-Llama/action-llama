@@ -1,5 +1,5 @@
 import type { AgentConfig, GlobalConfig } from "../shared/config.js";
-import { backendRequireCredentialRef } from "../shared/credentials.js";
+import { requireCredentialRef } from "../shared/credentials.js";
 
 /**
  * Validates that all agents have at least a schedule or webhooks configured (unless they are disabled with scale=0)
@@ -23,7 +23,7 @@ export async function validateCredentials(agentConfigs: AgentConfig[]): Promise<
   const allCredentials = new Set(activeAgentConfigs.flatMap((a) => a.credentials));
   
   for (const credRef of allCredentials) {
-    await backendRequireCredentialRef(credRef);
+    await requireCredentialRef(credRef);
   }
 }
 

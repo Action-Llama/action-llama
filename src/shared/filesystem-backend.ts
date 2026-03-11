@@ -15,6 +15,42 @@ export class FilesystemBackend implements CredentialBackend {
     this.baseDir = baseDir || CREDENTIALS_DIR;
   }
 
+  // Static sync methods for compatibility during migration
+  static readSync(type: string, instance: string, field: string, baseDir?: string): string | undefined {
+    const dir = baseDir || CREDENTIALS_DIR;
+    const filepath = resolve(dir, type, instance, field);
+    if (!existsSync(filepath)) return undefined;
+    return readFileSync(filepath, "utf-8").trim();
+  }
+
+  static writeSync(type: string, instance: string, field: string, value: string, baseDir?: string): void {
+    const dir = baseDir || CREDENTIALS_DIR;
+    const instDir = resolve(dir, type, instance);
+    mkdirSync(instDir, { recursive: true, mode: 0o700 });
+    writeFileSync(resolve(instDir, field), value + "\n", { mode: 0o600 });
+  }
+
+  static readAllSync(type: string, instance: string, baseDir?: string): Record<string, string> | undefined {
+    const dir = baseDir || CREDENTIALS_DIR;
+    const instDir = resolve(dir, type, instance);
+    if (!existsSync(instDir)) return undefined;
+
+    const result: Record<string, string> = {};
+    for (const file of readdirSync(instDir)) {
+      const filepath = resolve(instDir, file);
+      if (safeIsDir(filepath)) continue;
+      result[file] = readFileSync(filepath, "utf-8").trim();
+    }
+    return Object.keys(result).length > 0 ? result : undefined;
+  }
+
+  static existsSync(type: string, instance: string, baseDir?: string): boolean {
+    const dir = baseDir || CREDENTIALS_DIR;
+    const instDir = resolve(dir, type, instance);
+    if (!existsSync(instDir)) return false;
+    return readdirSync(instDir).length > 0;
+  }
+
   async read(type: string, instance: string, field: string): Promise<string | undefined> {
     const filepath = resolve(this.baseDir, type, instance, field);
     if (!existsSync(filepath)) return undefined;

@@ -1,4 +1,3 @@
-import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, statSync } from "fs";
 import { resolve } from "path";
 import { CREDENTIALS_DIR } from "./paths.js";
 import type { CredentialBackend } from "./credential-backend.js";
@@ -45,85 +44,62 @@ export function credentialDir(type: string, instance: string): string {
   return resolve(CREDENTIALS_DIR, type, instance);
 }
 
-// --- Synchronous filesystem functions (preserved for backward compatibility) ---
-// These operate directly on the local filesystem regardless of the default backend.
+// --- Unified async API (backend-aware) ---
+// These functions delegate to the default backend (local filesystem or remote).
 
 /**
- * Load a single field from a credential instance (sync, local filesystem).
+ * Load a single field from a credential instance.
  */
-export function loadCredentialField(type: string, instance: string, field: string): string | undefined {
-  const filepath = resolve(credentialDir(type, instance), field);
-  if (!existsSync(filepath)) return undefined;
-  return readFileSync(filepath, "utf-8").trim();
+export async function loadCredentialField(type: string, instance: string, field: string): Promise<string | undefined> {
+  return _defaultBackend.read(type, instance, field);
 }
 
 /**
- * Load all fields from a credential instance (sync, local filesystem).
+ * Load all fields from a credential instance.
  * Returns undefined if the instance directory does not exist.
  */
-export function loadCredentialFields(type: string, instance: string): Record<string, string> | undefined {
-  const dir = credentialDir(type, instance);
-  if (!existsSync(dir)) return undefined;
-
-  const result: Record<string, string> = {};
-  for (const file of readdirSync(dir)) {
-    const filepath = resolve(dir, file);
-    result[file] = readFileSync(filepath, "utf-8").trim();
-  }
-  return Object.keys(result).length > 0 ? result : undefined;
+export async function loadCredentialFields(type: string, instance: string): Promise<Record<string, string> | undefined> {
+  return _defaultBackend.readAll(type, instance);
 }
 
 /**
- * Write a single field to a credential instance (sync, local filesystem).
+ * Write a single field to a credential instance.
  */
-export function writeCredentialField(type: string, instance: string, field: string, value: string): void {
-  const dir = credentialDir(type, instance);
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  writeFileSync(resolve(dir, field), value + "\n", { mode: 0o600 });
+export async function writeCredentialField(type: string, instance: string, field: string, value: string): Promise<void> {
+  return _defaultBackend.write(type, instance, field, value);
 }
 
 /**
- * Write all fields to a credential instance (sync, local filesystem).
+ * Write all fields to a credential instance.
  */
-export function writeCredentialFields(type: string, instance: string, fields: Record<string, string>): void {
-  for (const [field, value] of Object.entries(fields)) {
-    writeCredentialField(type, instance, field, value);
-  }
+export async function writeCredentialFields(type: string, instance: string, fields: Record<string, string>): Promise<void> {
+  return _defaultBackend.writeAll(type, instance, fields);
 }
 
 /**
  * Check if a credential instance exists (has at least one field file).
  */
-export function credentialExists(type: string, instance: string): boolean {
-  const dir = credentialDir(type, instance);
-  if (!existsSync(dir)) return false;
-  return readdirSync(dir).length > 0;
+export async function credentialExists(type: string, instance: string): Promise<boolean> {
+  return _defaultBackend.exists(type, instance);
 }
 
 /**
  * List all instances of a credential type.
  * Returns an array of instance names (subdirectory names).
  */
-export function listCredentialInstances(type: string): string[] {
-  const dir = resolve(CREDENTIALS_DIR, type);
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir).filter((entry) => {
-    try {
-      return statSync(resolve(dir, entry)).isDirectory();
-    } catch {
-      return false;
-    }
-  });
+export async function listCredentialInstances(type: string): Promise<string[]> {
+  return _defaultBackend.listInstances(type);
 }
 
 /**
  * Require that a credential instance exists. Throws if missing.
  */
-export function requireCredentialRef(ref: string): void {
+export async function requireCredentialRef(ref: string): Promise<void> {
   const { type, instance } = parseCredentialRef(ref);
-  if (!credentialExists(type, instance)) {
+  const exists = await _defaultBackend.exists(type, instance);
+  if (!exists) {
     throw new Error(
-      `Credential "${ref}" not found at ${credentialDir(type, instance)}. Run 'al doctor' to configure it.`
+      `Credential "${ref}" not found. Run 'al doctor' to configure it.`
     );
   }
 }
@@ -152,47 +128,4 @@ export function unsanitizeEnvPart(encoded: string): string {
   });
 }
 
-// --- Async backend-aware functions ---
-// These delegate to the default backend (local filesystem or remote).
-// Use these in code paths that support --remote.
 
-/**
- * Load a credential field via the default backend (async).
- */
-export async function backendLoadField(type: string, instance: string, field: string): Promise<string | undefined> {
-  return _defaultBackend.read(type, instance, field);
-}
-
-/**
- * Load all fields for a credential instance via the default backend (async).
- */
-export async function backendLoadFields(type: string, instance: string): Promise<Record<string, string> | undefined> {
-  return _defaultBackend.readAll(type, instance);
-}
-
-/**
- * Check if a credential instance exists via the default backend (async).
- */
-export async function backendCredentialExists(type: string, instance: string): Promise<boolean> {
-  return _defaultBackend.exists(type, instance);
-}
-
-/**
- * List instances of a credential type via the default backend (async).
- */
-export async function backendListInstances(type: string): Promise<string[]> {
-  return _defaultBackend.listInstances(type);
-}
-
-/**
- * Require that a credential instance exists via the default backend (async).
- */
-export async function backendRequireCredentialRef(ref: string): Promise<void> {
-  const { type, instance } = parseCredentialRef(ref);
-  const exists = await _defaultBackend.exists(type, instance);
-  if (!exists) {
-    throw new Error(
-      `Credential "${ref}" not found. Run 'al doctor' to configure it.`
-    );
-  }
-}

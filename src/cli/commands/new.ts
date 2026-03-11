@@ -66,10 +66,10 @@ export async function execute(name: string): Promise<void> {
   const result = await promptCredential(credentialDef);
 
   if (result && Object.keys(result.values).length > 0) {
-    const existing = loadCredentialField(credentialType, "default", "token");
+    const existing = await loadCredentialField(credentialType, "default", "token");
     const newValue = result.values.token;
     if (newValue && newValue !== existing) {
-      writeCredentialFields(credentialType, "default", result.values);
+      await writeCredentialFields(credentialType, "default", result.values);
       console.log(`  Wrote ${CREDENTIALS_DIR}/${credentialType}/default/`);
     } else {
       console.log(`  ${provider === "anthropic" ? "Anthropic" : "OpenAI"} key unchanged`);

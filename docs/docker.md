@@ -1,10 +1,10 @@
-# Docker Mode
+# Container Isolation
 
-Docker mode runs each agent in an isolated container. It is enabled by default — disable it with `--no-docker` for development, or set `local.enabled = false` in `config.toml`.
+All agents run in isolated containers for security and consistency. Container isolation is always enabled.
 
 ## How it works
 
-When `al start` runs in Docker mode:
+When `al start` runs:
 
 1. The base image (`al-agent:latest`) is built from `docker/Dockerfile` on first run
 2. Per-agent images are built for any agent that has a custom `Dockerfile`
@@ -114,27 +114,37 @@ Key log messages emitted during a run:
 |--------|-------------|
 | `[RERUN]` | The agent did work and wants to be re-run immediately to drain remaining backlog. Without this signal, the scheduler treats the run as complete and waits for the next scheduled tick. |
 | `[STATUS: <text>]` | Status update shown in the TUI. Can appear anywhere in the agent's text output. Example: `[STATUS: reviewing PR #42]` |
-| `[TRIGGER: <agent>]...[/TRIGGER]` | Trigger another agent with context. See below |
+| `[RETURN]...[/RETURN]` | Return a value to the calling agent. Used when this agent was invoked via `al-call`. See below |
 
-**Agent triggers:**
+**Agent-to-agent calls:**
 
-An agent can trigger another agent by emitting a `[TRIGGER]` block in its output:
+Agents can call other agents and retrieve structured results using shell commands injected into the container:
 
+- **`al-call <agent>`** — Call another agent. Pass context via stdin, get back a JSON response with a `callId`.
+- **`al-check <callId>`** — Check the status of a call (never blocks). Returns `{"status":"pending|running|completed|error", ...}`.
+- **`al-wait <callId> [callId...] [--timeout N]`** — Wait for one or more calls to complete (polls every 5s, default timeout 900s).
+
+Example:
+```sh
+CALL_ID=$(echo "Review PR #42 on acme/app" | al-call reviewer | jq -r .callId)
+# ... do other work ...
+RESULT=$(al-wait "$CALL_ID" --timeout 600)
+echo "$RESULT" | jq ".\"$CALL_ID\".returnValue"
 ```
-[TRIGGER: reviewer]
-I just opened PR #42 on acme/app. Please review it.
-URL: https://github.com/acme/app/pull/42
-Branch: agent/42
-[/TRIGGER]
-```
 
-The scheduler detects this signal, looks up the target agent, and runs it with a `<agent-trigger>` block containing the source agent name and context. The target agent receives a prompt similar to a webhook trigger.
+The called agent receives an `<agent-call>` block with the caller name and context. To return a value, the called agent outputs a `[RETURN]...[/RETURN]` block:
+```
+[RETURN]
+PR looks good. Approved with minor suggestions.
+[/RETURN]
+```
 
 Rules:
-- An agent cannot trigger itself (self-triggers are skipped)
-- If the target agent is already running or doesn't exist, the trigger is skipped
-- Trigger chains are allowed (agent A triggers B, B triggers C) up to a configurable depth limit (`maxTriggerDepth` in `config.toml`, default: 3)
-- Triggered runs do not re-run — they respond to the single trigger event
+- An agent cannot call itself (self-calls are rejected)
+- If all runners for the target agent are busy, the call is queued (up to `workQueueSize` limit in global config, default: 100)
+- Call chains are allowed (agent A calls B, B calls C) up to a configurable depth limit (`maxCallDepth` in `config.toml`, default: 3)
+- Called runs do not re-run — they respond to the single call
+- These commands require the gateway; they return errors if `GATEWAY_URL` is not set
 
 Any stdout line that is not valid JSON with `_log: true` and does not match a special signal is treated as plain agent output (the LLM's final text response).
 
@@ -241,7 +251,6 @@ The key requirement is that `/app/dist/agents/container-entry.js` exists and can
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `local.enabled` | `true` | Enable Docker container isolation |
 | `local.image` | `"al-agent:latest"` | Base Docker image name |
 | `local.memory` | `"4g"` | Memory limit per container |
 | `local.cpus` | `2` | CPU limit per container |

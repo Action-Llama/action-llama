@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
-  buildScheduledPrompt, buildWebhookPrompt, buildManualPrompt, buildTriggeredPrompt,
-  buildCredentialContext, buildLockSkill, buildPromptSkeleton,
-  buildScheduledSuffix, buildManualSuffix, buildTriggeredSuffix, buildWebhookSuffix,
+  buildScheduledPrompt, buildWebhookPrompt, buildManualPrompt, buildCalledPrompt,
+  buildCredentialContext, buildLockSkill, buildCallSkill, buildPromptSkeleton,
+  buildScheduledSuffix, buildManualSuffix, buildCalledSuffix, buildWebhookSuffix,
 } from "../../src/agents/prompt.js";
 import type { AgentConfig } from "../../src/shared/config.js";
 import type { WebhookContext } from "../../src/webhooks/types.js";
@@ -130,17 +130,17 @@ describe("buildWebhookPrompt", () => {
   });
 });
 
-describe("buildTriggeredPrompt", () => {
-  it("includes agent-config, credential context, agent-trigger, and instruction", () => {
-    const result = buildTriggeredPrompt(agentConfig, "dev", "Please review PR #42");
+describe("buildCalledPrompt", () => {
+  it("includes agent-config, credential context, agent-call, and instruction", () => {
+    const result = buildCalledPrompt(agentConfig, "dev", "Please review PR #42");
     expect(result).toContain("<agent-config>");
     expect(result).toContain("</agent-config>");
     expect(result).toContain("<credential-context>");
-    expect(result).toContain("<agent-trigger>");
-    expect(result).toContain("</agent-trigger>");
-    expect(result).toContain('"source":"dev"');
+    expect(result).toContain("<agent-call>");
+    expect(result).toContain("</agent-call>");
+    expect(result).toContain('"caller":"dev"');
     expect(result).toContain("Please review PR #42");
-    expect(result).toContain('triggered by the "dev" agent');
+    expect(result).toContain('called by the "dev" agent');
   });
 });
 
@@ -181,6 +181,32 @@ describe("buildLockSkill", () => {
   });
 });
 
+describe("buildCallSkill", () => {
+  it("includes skill-call tags", () => {
+    const result = buildCallSkill();
+    expect(result).toContain("<skill-call>");
+    expect(result).toContain("</skill-call>");
+  });
+
+  it("documents al-call, al-check, and al-wait commands", () => {
+    const result = buildCallSkill();
+    expect(result).toContain("al-call");
+    expect(result).toContain("al-check");
+    expect(result).toContain("al-wait");
+  });
+
+  it("documents RETURN block", () => {
+    const result = buildCallSkill();
+    expect(result).toContain("[RETURN]");
+    expect(result).toContain("[/RETURN]");
+  });
+
+  it("documents non-blocking nature", () => {
+    const result = buildCallSkill();
+    expect(result).toContain("non-blocking");
+  });
+});
+
 describe("prompt skills integration", () => {
   it("includes lock skill in scheduled prompt when enabled", () => {
     const result = buildScheduledPrompt(agentConfig, { locking: true });
@@ -210,9 +236,20 @@ describe("prompt skills integration", () => {
     expect(result).toContain("<skill-lock>");
   });
 
-  it("includes lock skill in triggered prompt when enabled", () => {
-    const result = buildTriggeredPrompt(agentConfig, "dev", "context", { locking: true });
+  it("includes lock skill in called prompt when enabled", () => {
+    const result = buildCalledPrompt(agentConfig, "dev", "context", { locking: true });
     expect(result).toContain("<skill-lock>");
+  });
+
+  it("includes call skill in scheduled prompt when enabled", () => {
+    const result = buildScheduledPrompt(agentConfig, { calling: true });
+    expect(result).toContain("<skill-call>");
+    expect(result).toContain("al-call");
+  });
+
+  it("does not include call skill when not enabled", () => {
+    const result = buildScheduledPrompt(agentConfig);
+    expect(result).not.toContain("<skill-call>");
   });
 
   it("places lock skill between credentials and trigger instruction", () => {
@@ -264,10 +301,10 @@ describe("prompt suffix functions", () => {
     expect(buildManualSuffix()).toContain("triggered manually");
   });
 
-  it("buildTriggeredSuffix includes agent-trigger block", () => {
-    const result = buildTriggeredSuffix("dev", "Please review PR #42");
-    expect(result).toContain("<agent-trigger>");
-    expect(result).toContain('"source":"dev"');
+  it("buildCalledSuffix includes agent-call block", () => {
+    const result = buildCalledSuffix("dev", "Please review PR #42");
+    expect(result).toContain("<agent-call>");
+    expect(result).toContain('"caller":"dev"');
     expect(result).toContain("Please review PR #42");
   });
 

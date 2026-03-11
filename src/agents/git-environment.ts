@@ -1,4 +1,4 @@
-import { parseCredentialRef, backendLoadField } from "../shared/credentials.js";
+import { parseCredentialRef, loadCredentialField } from "../shared/credentials.js";
 import type { Logger } from "../shared/logger.js";
 
 const GIT_ENV_KEYS = [
@@ -35,13 +35,13 @@ export class GitEnvironment {
     if (gitSshRef) {
       const { instance } = parseCredentialRef(gitSshRef);
       try {
-        const gitName = await backendLoadField("git_ssh", instance, "username");
+        const gitName = await loadCredentialField("git_ssh", instance, "username");
         if (gitName) {
           process.env.GIT_AUTHOR_NAME = gitName;
           process.env.GIT_COMMITTER_NAME = gitName;
           this.logger.debug({ gitName }, "Set git author name from credential");
         }
-        const gitEmail = await backendLoadField("git_ssh", instance, "email");
+        const gitEmail = await loadCredentialField("git_ssh", instance, "email");
         if (gitEmail) {
           process.env.GIT_AUTHOR_EMAIL = gitEmail;
           process.env.GIT_COMMITTER_EMAIL = gitEmail;

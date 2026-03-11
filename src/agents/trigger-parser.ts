@@ -29,6 +29,20 @@ export function parseTriggers(text: string): TriggerRequest[] {
 }
 
 /**
+ * Extracts the last return value from agent output text
+ */
+const RETURN_PATTERN = /\[RETURN\]([\s\S]*?)\[\/RETURN\]/g;
+
+export function extractReturnValue(text: string): string | undefined {
+  let last: string | undefined;
+  let match;
+  while ((match = RETURN_PATTERN.exec(text)) !== null) {
+    last = match[1].trim();
+  }
+  return last;
+}
+
+/**
  * Check if the output contains a rerun request
  */
 export function hasRerunRequest(text: string): boolean {

@@ -11,7 +11,7 @@ import { readFileSync, existsSync } from "fs";
 import { resolve } from "path";
 import type { AgentConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
-import { backendLoadField } from "../shared/credentials.js";
+import { loadCredentialField } from "../shared/credentials.js";
 
 export type RunResult = "completed" | "rerun" | "error";
 
@@ -71,7 +71,7 @@ export class ExecutionEngine {
       // Try to load API key using provider-specific credential type
       const credentialType = `${model.provider}_key`;
       try {
-        const credential = await backendLoadField(credentialType, "default", "token");
+        const credential = await loadCredentialField(credentialType, "default", "token");
         if (credential) {
           authStorage.setRuntimeApiKey(model.provider, credential);
           this.logger.debug(`Loaded ${credentialType} credential for ${model.provider}`);

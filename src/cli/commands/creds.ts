@@ -82,7 +82,7 @@ export async function add(ref: string): Promise<void> {
     process.exit(1);
   }
 
-  if (credentialExists(type, instance)) {
+  if (await credentialExists(type, instance)) {
     console.log(`Credential "${ref}" already exists. Re-running setup to update it.\n`);
   }
 
@@ -92,14 +92,14 @@ export async function add(ref: string): Promise<void> {
     return;
   }
 
-  writeCredentialFields(type, instance, result.values);
+  await writeCredentialFields(type, instance, result.values);
   console.log(`\nCredential "${ref}" saved.`);
 }
 
 export async function rm(ref: string): Promise<void> {
   const { type, instance } = parseCredentialRef(ref);
 
-  if (!credentialExists(type, instance)) {
+  if (!(await credentialExists(type, instance))) {
     console.error(`Credential "${ref}" not found.`);
     process.exit(1);
   }

@@ -1,12 +1,12 @@
 import { Cron } from "croner";
 import type { Logger } from "../shared/logger.js";
 import type { GatewayServer } from "../gateway/index.js";
-import type { WebhookEventQueue } from "./event-queue.js";
+import type { WorkQueue } from "./event-queue.js";
 
 export class ShutdownHandler {
   private cronJobs: Cron[] = [];
   private gateway?: GatewayServer;
-  private webhookQueue?: WebhookEventQueue<any>;
+  private webhookQueue?: WorkQueue<any>;
   private logger: Logger;
   private registered = false;
 
@@ -17,7 +17,7 @@ export class ShutdownHandler {
   register(
     cronJobs: Cron[], 
     gateway?: GatewayServer, 
-    webhookQueue?: WebhookEventQueue<any>
+    webhookQueue?: WorkQueue<any>
   ): void {
     this.cronJobs = cronJobs;
     this.gateway = gateway;

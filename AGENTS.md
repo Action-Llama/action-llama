@@ -15,7 +15,7 @@ Each agent is a directory containing:
 1. Create a directory for your agent (e.g. `my-agent/`)
 2. Add `agent-config.toml` with credentials, model config, and a schedule or webhook trigger
 3. Add `ACTIONS.md` with the actions — step-by-step instructions the LLM follows each run
-4. If running in Docker mode and your agent needs tools beyond what the base image provides (git, curl, openssh-client, node), add a `Dockerfile` — see Docker Mode section below
+4. If your agent needs tools beyond what the base image provides (git, curl, openssh-client, node), add a `Dockerfile` — see Container Isolation section below
 5. Verify with `npx al status`
 6. Run with `npx al start`
 
@@ -119,25 +119,38 @@ Send a live status update to the TUI and logs.
 
 Emit at natural milestones so the operator can see what you're doing in real time.
 
-### `[TRIGGER: <agent>]...[/TRIGGER]`
+### `[RETURN]...[/RETURN]`
 
-Trigger another agent with context you provide.
+Return a value when you were called by another agent via `al-call`. The calling agent can retrieve this value using `al-check` or `al-wait`.
 
 ```
-[TRIGGER: reviewer]
-I just opened PR #42. Please review it.
-URL: https://github.com/acme/app/pull/42
-[/TRIGGER]
+[RETURN]
+PR looks good. Approved with minor suggestions on error handling.
+[/RETURN]
 ```
 
-The scheduler will run the target agent with the context injected as an `<agent-trigger>` block. Rules:
-- An agent cannot trigger itself
-- If the target is busy or does not exist, the trigger is skipped
-- Trigger chains are limited by `maxTriggerDepth` in `config.toml` (default: 3)
+### Agent-to-agent calls
+
+Call other agents and retrieve their results using shell commands (Docker mode only):
+
+- **`al-call <agent>`** — Call another agent. Pass context via stdin. Returns `{"ok":true,"callId":"..."}`.
+- **`al-check <callId>`** — Non-blocking status check. Returns `{"status":"pending|running|completed|error", ...}`.
+- **`al-wait <callId> [...] [--timeout N]`** — Wait for calls to complete (default timeout: 900s).
+
+```sh
+CALL_ID=$(echo "Review PR #42 on acme/app" | al-call reviewer | jq -r .callId)
+# ... continue working ...
+RESULT=$(al-wait "$CALL_ID")
+```
+
+Rules:
+- An agent cannot call itself
+- If the target is busy, the call is queued until a runner frees up
+- Call chains are limited by `maxCallDepth` in `config.toml` (default: 3)
 
 ### Combining signals
 
-You can emit multiple signals in one run. For example, several `[STATUS]` updates as you work, a `[TRIGGER]` at the end, and `[RERUN]` if there's more work to do.
+You can emit multiple signals in one run. For example, several `[STATUS]` updates as you work, `al-call` to delegate work, and `[RERUN]` if there's more work to do.
 
 ## Webhook Reference
 
@@ -309,7 +322,7 @@ Your configuration is in the \`<agent-config>\` block at the start of your promp
 Use those values for triggerLabel and assignee.
 
 \`GITHUB_TOKEN\` is already set in your environment. Use \`gh\` CLI and \`git\` directly.
-(Note: \`gh\` is not in the base Docker image — this agent needs a custom Dockerfile that installs it. See Docker Mode section.)
+(Note: \`gh\` is not in the base Docker image — this agent needs a custom Dockerfile that installs it. See Container Isolation section.)
 
 **You MUST complete ALL steps below.** Do not stop after reading the issue — you must implement, commit, push, and open a PR.
 
@@ -379,9 +392,9 @@ gh label create "agent-completed" --repo <determined-repo> --color 1D76DB --desc
 - If the issue is unclear, comment asking for clarification and stop
 ```
 
-## Docker Mode
+## Container Isolation
 
-Docker container isolation is enabled by default. Each agent run launches an isolated container with a read-only root filesystem, dropped capabilities, non-root user, and resource limits. Use `--no-docker` to disable it for development.
+All agents run in isolated containers with a read-only root filesystem, dropped capabilities, non-root user, and resource limits.
 
 ### Base image
 
@@ -414,7 +427,6 @@ Agent images are built automatically on startup. If no `Dockerfile` is present, 
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `local.enabled` | `true` | Enable Docker container isolation |
 | `local.image` | `"al-agent:latest"` | Base Docker image name |
 | `local.memory` | `"4g"` | Memory limit per container |
 | `local.cpus` | `2` | CPU limit per container |
@@ -432,7 +444,7 @@ Set `maxReruns` in `config.toml` to control the limit (default: 10):
 
 ```toml
 maxReruns = 5
-maxTriggerDepth = 3   # max depth for agent-to-agent trigger chains (default: 3)
+maxCallDepth = 3      # max depth for agent-to-agent call chains (default: 3)
 ```
 
 Webhook-triggered and agent-triggered runs do not re-run — they respond to a single event.

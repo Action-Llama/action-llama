@@ -11,10 +11,6 @@ export async function createRuntime(
   cloudMode: boolean,
   logger: Logger
 ): Promise<ContainerRuntime | undefined> {
-  if (!globalConfig.local?.enabled) {
-    return undefined;
-  }
-
   const useCloudRuntime = cloudMode && globalConfig.cloud;
   const runtimeType = useCloudRuntime ? globalConfig.cloud!.provider : "local";
 

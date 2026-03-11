@@ -137,14 +137,12 @@ Manually triggers a single agent run. The agent runs once and the process exits 
 ```bash
 al run dev -p .
 al run reviewer -p ./my-project
-al run dev --no-docker        # Skip Docker isolation
 al run dev -c                 # Run on cloud
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
-| `--no-docker` | Disable Docker container isolation |
 | `-c, --cloud` | Run on cloud infrastructure |
 
 ## `al start`
@@ -154,7 +152,6 @@ Starts the scheduler. Runs all agents on their configured schedules and listens 
 ```bash
 al start -p .
 al start -p ./my-project
-al start --no-docker          # Skip Docker isolation (dev only)
 al start -c                   # Run on cloud
 al start -w                   # Enable web dashboard
 ```
@@ -162,7 +159,6 @@ al start -w                   # Enable web dashboard
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
-| `--no-docker` | Disable Docker container isolation |
 | `-c, --cloud` | Run on cloud infrastructure |
 | `-w, --web-ui` | Enable web dashboard (see [Web Dashboard](web-dashboard.md)) |
 

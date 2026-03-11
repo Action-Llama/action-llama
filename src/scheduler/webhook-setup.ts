@@ -1,6 +1,6 @@
 import type { GlobalConfig, AgentConfig, WebhookSourceConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
-import { backendListInstances, backendLoadField } from "../shared/credentials.js";
+import { listCredentialInstances, loadCredentialField } from "../shared/credentials.js";
 import { WebhookRegistry } from "../webhooks/registry.js";
 import { GitHubWebhookProvider } from "../webhooks/providers/github.js";
 import { SentryWebhookProvider } from "../webhooks/providers/sentry.js";
@@ -90,10 +90,10 @@ export async function setupWebhookRegistry(
     const credType = PROVIDER_TO_CREDENTIAL[providerType];
     if (!credType) continue;
 
-    const instances = await backendListInstances(credType);
+    const instances = await listCredentialInstances(credType);
     const secrets: Record<string, string> = {};
     for (const inst of instances) {
-      const secret = await backendLoadField(credType, inst, "secret");
+      const secret = await loadCredentialField(credType, inst, "secret");
       if (secret) secrets[inst] = secret;
     }
     if (Object.keys(secrets).length > 0) {

@@ -4,6 +4,45 @@ import { join, resolve } from "path";
 import { tmpdir } from "os";
 import { stringify as stringifyTOML } from "smol-toml";
 
+// Mock child_process for Docker check
+vi.mock("child_process", () => ({
+  execFileSync: vi.fn((_cmd: string, _args: string[]) => ""),
+}));
+
+// Mock Docker/container related modules
+vi.mock("../../src/cloud/image-builder.js", () => ({
+  buildAllImages: vi.fn().mockResolvedValue({
+    baseImage: "test-base-image",
+    agentImages: {
+      webhook: "test-webhook-image",
+      hybrid: "test-hybrid-image"
+    }
+  })
+}));
+
+vi.mock("../../src/docker/local-runtime.js", () => ({
+  LocalDockerRuntime: class MockLocalDockerRuntime {
+    constructor() {
+      // Mock runtime methods if needed
+    }
+  }
+}));
+
+vi.mock("../../src/docker/network.js", () => ({
+  ensureNetwork: vi.fn()
+}));
+
+// Mock AgentRunner first
+const mockRun = vi.fn().mockResolvedValue({ result: "completed", triggers: [] });
+let mockIsRunning = false;
+
+vi.mock("../../src/agents/container-runner.js", () => ({
+  ContainerAgentRunner: class MockContainerAgentRunner {
+    run = mockRun;
+    get isRunning() { return mockIsRunning; }
+  }
+}));
+
 // Mock credentials
 vi.mock("../../src/shared/credentials.js", () => ({
   loadCredentialField: () => "fake-token",
@@ -46,9 +85,6 @@ vi.mock("croner", () => ({
   },
 }));
 
-// Mock AgentRunner
-const mockRun = vi.fn().mockResolvedValue({ result: "completed", triggers: [] });
-let mockIsRunning = false;
 vi.mock("../../src/agents/runner.js", () => ({
   AgentRunner: class {
     get isRunning() { return mockIsRunning; }
@@ -64,6 +100,8 @@ vi.mock("../../src/gateway/index.js", () => ({
     registerContainer: vi.fn(),
     unregisterContainer: vi.fn(),
     lockStore: { releaseAll: vi.fn(), dispose: vi.fn() },
+    callStore: { failAllByCaller: vi.fn(), dispose: vi.fn() },
+    setCallDispatcher: vi.fn(),
     close: mockGatewayClose,
   }),
 }));
