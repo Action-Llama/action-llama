@@ -1,5 +1,14 @@
 # @action-llama/action-llama
 
+## 0.9.1
+
+### Patch Changes
+
+- [`2468a0e`](https://github.com/Action-Llama/action-llama/commit/2468a0eaa0c0283c67ab98196d42959085bce0e6) Thanks [@asselstine](https://github.com/asselstine)! - Fix cloud deploy: create AWS service-linked roles for ECS and App Runner during
+  `al cloud setup`, include base agent Dockerfile in scheduler image so the
+  scheduler can verify image caches at runtime, and fix build context to use copies
+  instead of symlinks for cross-filesystem compatibility.
+
 ## 0.9.0
 
 ### Minor Changes
