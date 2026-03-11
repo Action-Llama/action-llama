@@ -43,34 +43,13 @@ export class TriggerDispatcher {
       }
       ctx.logger.info({ source: sourceAgent, target: agent, depth, running: pool.runningJobCount, scale: pool.size }, "agent trigger firing");
       const prompt = makeTriggeredPrompt(targetConfig, sourceAgent, context, ctx);
-      this.runTriggered(availableRunner, targetConfig, prompt, sourceAgent, depth + 1, ctx).catch((err) => {
+      this.runTriggered(availableRunner, targetConfig, prompt, sourceAgent, depth + 1, ctx, makeTriggeredPrompt).catch((err) => {
         ctx.logger.error({ err, target: agent }, "triggered run failed");
       });
     }
   }
 
   private async runTriggered(
-    runner: PoolRunner,
-    agentConfig: AgentConfig,
-    prompt: string,
-    sourceAgent: string,
-    depth: number,
-    ctx: SchedulerContext
-  ): Promise<void> {
-    const { result, triggers } = await runner.run(prompt, { type: 'agent', source: sourceAgent });
-    if (triggers.length > 0) {
-      // This creates a circular dependency, so we'll need to pass the dispatch function
-      // For now, we'll handle this in the main scheduler
-      ctx.logger.info({ agent: agentConfig.name, triggerCount: triggers.length }, "triggered run generated new triggers");
-    }
-    // No reruns for triggered runs — they respond to a specific event
-    if (result === "completed") {
-      ctx.logger.info(`${agentConfig.name} triggered run completed`);
-    }
-  }
-
-  // Helper method that can be called from scheduler to handle nested triggers
-  async runTriggeredWithDispatch(
     runner: PoolRunner,
     agentConfig: AgentConfig,
     prompt: string,
@@ -88,4 +67,6 @@ export class TriggerDispatcher {
       ctx.logger.info(`${agentConfig.name} triggered run completed`);
     }
   }
+
+
 }
