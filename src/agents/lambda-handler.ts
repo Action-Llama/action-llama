@@ -67,7 +67,7 @@ async function main() {
       );
 
       // Exit with the agent's exit code so Lambda's REPORT line reflects
-      // success/failure and the scheduler can detect [RERUN] (exit 42).
+      // success/failure and the scheduler can detect rerun (exit 42).
       process.exit(exitCode);
     } catch (err: any) {
       emitLog("error", "lambda handler error", { error: err.message, stack: err.stack?.split("\n").slice(0, 3).join("\n") });

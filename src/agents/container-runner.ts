@@ -8,9 +8,7 @@ import type { RunResult, RunOutcome } from "./runner.js";
 
 export class ContainerAgentRunner {
   private _running = false;
-  private _wantsRerun = false;
   private _returnValue: string | undefined = undefined;
-  private _returnAccum: string[] | null = null;
   private runtime: ContainerRuntime;
   private globalConfig: GlobalConfig;
   private agentConfig: AgentConfig;
@@ -101,30 +99,16 @@ export class ContainerAgentRunner {
       // Not JSON — treat as plain output
     }
 
-    // Detect [STATUS: <text>] in plain output
-    const statusMatch = line.match(/\[STATUS:\s*([^\]]+)\]/);
-    if (statusMatch) {
-      this.statusTracker?.setAgentStatusText(this.agentConfig.name, statusMatch[1].trim());
-    }
-
-    if (line === "[RERUN]") {
-      this._wantsRerun = true;
-      this.logger.info("rerun requested");
-      this.statusTracker?.addLogLine(this.agentConfig.name, "rerun requested");
-    }
-
-    // Accumulate [RETURN]...[/RETURN] blocks across lines
-    if (line === "[RETURN]") {
-      this._returnAccum = [];
-      return;
-    }
-    if (this._returnAccum !== null) {
-      if (line === "[/RETURN]") {
-        this._returnValue = this._returnAccum.join("\n").trim();
-        this._returnAccum = null;
-      } else {
-        this._returnAccum.push(line);
+    // Detect structured signal-result logs for return values
+    try {
+      const parsed = JSON.parse(line);
+      if (parsed._log && parsed.msg === "signal-result") {
+        if (parsed.type === "return" && parsed.value) {
+          this._returnValue = parsed.value;
+        }
       }
+    } catch {
+      // Not JSON — plain output, nothing to detect
     }
   }
 
@@ -145,9 +129,7 @@ export class ContainerAgentRunner {
     }
 
     this._running = true;
-    this._wantsRerun = false;
     this._returnValue = undefined;
-    this._returnAccum = null;
     const runReason = triggerInfo
       ? (triggerInfo.source
         ? (triggerInfo.type === 'agent' ? `triggered by ${triggerInfo.source}` : `${triggerInfo.type} (${triggerInfo.source})`)

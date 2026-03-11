@@ -46,7 +46,7 @@ workQueueSize = 100         # Max queued work items (webhooks + calls) per agent
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `maxReruns` | number | `10` | Maximum consecutive reruns when an agent requests a rerun via `[RERUN]` before stopping |
+| `maxReruns` | number | `10` | Maximum consecutive reruns when an agent requests a rerun via `al-rerun` before stopping |
 | `maxCallDepth` | number | `3` | Maximum depth for agent-to-agent call chains (A calls B calls C = depth 2) |
 | `workQueueSize` | number | `100` | Maximum queued work items (webhook events + agent calls) per agent when all runners are busy |
 

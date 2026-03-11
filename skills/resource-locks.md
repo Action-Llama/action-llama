@@ -68,5 +68,5 @@ Use descriptive, unique keys that identify the exact resource:
    - If ok is false, skip — another instance is handling it
    - Clone, branch, implement, push, open PR
    - runlock "github issue acme/app#42"
-3. If you completed work and there may be more issues, respond with [RERUN]
+3. If you completed work and there may be more issues, run `al-rerun`
 ```

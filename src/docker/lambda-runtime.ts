@@ -249,8 +249,9 @@ export class LambdaRuntime implements ContainerRuntime {
     const deadline = Date.now() + timeoutSeconds * 1000;
 
     // Poll CloudWatch Logs for the REPORT line indicating completion.
-    // Also scan for [RERUN] to return exit code 42, since the async
-    // streamLogs poller may not have delivered it before we return.
+    // Scan for structured signal-result logs emitted by container-entry
+    // to detect rerun requests, since the async streamLogs poller may
+    // not have delivered them before we return.
     // Only look at logs since launch time to avoid matching stale REPORT
     // lines from previous invocations.
     let sawRerun = false;
@@ -258,8 +259,14 @@ export class LambdaRuntime implements ContainerRuntime {
       try {
         const lines = await this.shared.filterLogEvents(logGroupName, "", 200, launchTime);
         for (const line of lines) {
-          if (line.includes("[RERUN]")) {
-            sawRerun = true;
+          // Detect structured signal-result log from container-entry
+          try {
+            const parsed = JSON.parse(line);
+            if (parsed._log && parsed.msg === "signal-result" && parsed.type === "rerun") {
+              sawRerun = true;
+            }
+          } catch {
+            // Not JSON — skip
           }
           if (line.includes("REPORT RequestId:")) {
             // Check for errors in the report

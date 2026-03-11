@@ -108,13 +108,16 @@ Key log messages emitted during a run:
 | `"no work to do"` | info | Agent found nothing to act on |
 | `"container timeout reached, self-terminating"` | error | Timeout exceeded |
 
-**Special plain-text signals:**
+**Signal commands:**
 
-| Signal | Description |
-|--------|-------------|
-| `[RERUN]` | The agent did work and wants to be re-run immediately to drain remaining backlog. Without this signal, the scheduler treats the run as complete and waits for the next scheduled tick. |
-| `[STATUS: <text>]` | Status update shown in the TUI. Can appear anywhere in the agent's text output. Example: `[STATUS: reviewing PR #42]` |
-| `[RETURN]...[/RETURN]` | Return a value to the calling agent. Used when this agent was invoked via `al-call`. See below |
+The container has signal commands installed at `/tmp/bin/` that write to `$AL_SIGNAL_DIR`:
+
+| Command | Description |
+|---------|-------------|
+| `al-rerun` | Request an immediate rerun to drain remaining backlog. Without this, the scheduler treats the run as complete and waits for the next scheduled tick. |
+| `al-status "<text>"` | Status update shown in the TUI. Example: `al-status "reviewing PR #42"` |
+| `al-return "<value>"` | Return a value to the calling agent. Used when this agent was invoked via `al-call`. |
+| `al-exit [code]` | Terminate with an exit code indicating an unrecoverable error. Defaults to 15. |
 
 **Agent-to-agent calls:**
 
@@ -132,11 +135,9 @@ RESULT=$(al-wait "$CALL_ID" --timeout 600)
 echo "$RESULT" | jq ".\"$CALL_ID\".returnValue"
 ```
 
-The called agent receives an `<agent-call>` block with the caller name and context. To return a value, the called agent outputs a `[RETURN]...[/RETURN]` block:
+The called agent receives an `<agent-call>` block with the caller name and context. To return a value, the called agent uses the `al-return` command:
 ```
-[RETURN]
-PR looks good. Approved with minor suggestions.
-[/RETURN]
+al-return "PR looks good. Approved with minor suggestions."
 ```
 
 Rules:
@@ -146,7 +147,7 @@ Rules:
 - Called runs do not re-run — they respond to the single call
 - These commands require the gateway; they return errors if `GATEWAY_URL` is not set
 
-Any stdout line that is not valid JSON with `_log: true` and does not match a special signal is treated as plain agent output (the LLM's final text response).
+Any stdout line that is not valid JSON with `_log: true` is treated as plain agent output (the LLM's final text response).
 
 ## Base image
 

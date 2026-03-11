@@ -1,11 +1,12 @@
 import type { Hono } from "hono";
-import type { ContainerRegistration, RerunRequest, StatusRequest, TriggerRequest } from "../types.js";
+import type { ContainerRegistration, RerunRequest, StatusRequest, TriggerRequest, ReturnRequest } from "../types.js";
 import type { Logger } from "../../shared/logger.js";
 import type { StatusTracker } from "../../tui/status-tracker.js";
 
 export interface SignalContext {
   schedulerRerun: (agentName: string) => void;
   schedulerTrigger: (targetAgent: string, sourceAgent: string, context: string) => void;
+  schedulerReturn?: (agentName: string, value: string) => void;
 }
 
 export function registerSignalRoutes(
@@ -97,11 +98,41 @@ export function registerSignalRoutes(
     }
 
     logger.info({ agent: reg.agentName, targetAgent }, "trigger signal received");
-    
+
     if (signalContext) {
       signalContext.schedulerTrigger(targetAgent, reg.agentName, context);
     }
-    
+
+    return c.json({ ok: true });
+  });
+
+  app.post("/signals/return", async (c) => {
+    let body: ReturnRequest;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "invalid JSON body" }, 400);
+    }
+
+    const { secret, value } = body;
+    if (!secret || typeof secret !== "string") {
+      return c.json({ error: "missing secret" }, 400);
+    }
+    if (value === undefined || value === null) {
+      return c.json({ error: "missing value" }, 400);
+    }
+
+    const reg = containerRegistry.get(secret);
+    if (!reg) {
+      return c.json({ error: "invalid secret" }, 403);
+    }
+
+    logger.debug({ agent: reg.agentName }, "return signal received");
+
+    if (signalContext?.schedulerReturn) {
+      signalContext.schedulerReturn(reg.agentName, String(value));
+    }
+
     return c.json({ ok: true });
   });
 }

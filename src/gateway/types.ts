@@ -19,3 +19,8 @@ export interface TriggerRequest {
   targetAgent: string;
   context: string;
 }
+
+export interface ReturnRequest {
+  secret: string;
+  value: string;
+}

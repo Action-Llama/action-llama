@@ -38,7 +38,7 @@ gh label create "agent-completed" --repo <determined-repo> --color 1D76DB --desc
 
 **Webhook trigger:** When you receive a `<webhook-trigger>` block, extract the repository from the `repo` field and the issue details from the trigger context. Check the issue's labels and assignee against your `triggerLabel` and `assignee` params. If the issue matches (has your trigger label and is assigned to your assignee), proceed with implementation using the extracted repository. If it does not match, stop.
 
-**Scheduled trigger:** If `repos` parameter exists in `<agent-config>`, run `gh issue list --repo <repo> --label <triggerLabel> --assignee <assignee> --state open --json number,title,body,comments,labels --limit 1` for each configured repo. If no work found in any repo, stop. If you completed work and there may be more issues to process, respond with `[RERUN]`.
+**Scheduled trigger:** If `repos` parameter exists in `<agent-config>`, run `gh issue list --repo <repo> --label <triggerLabel> --assignee <assignee> --state open --json number,title,body,comments,labels --limit 1` for each configured repo. If no work found in any repo, stop. If you completed work and there may be more issues to process, run `al-rerun`.
 
 ## Workflow
 

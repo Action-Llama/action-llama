@@ -11,7 +11,8 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { AgentConfig } from "../shared/config.js";
 import { parseCredentialRef, unsanitizeEnvPart } from "../shared/credentials.js";
-import { extractExitSignal, getExitCodeMessage } from "../shared/exit-codes.js";
+import { getExitCodeMessage } from "../shared/exit-codes.js";
+import { installSignalCommands, readSignals } from "./signals.js";
 
 // Structured log line — written to stdout, parsed by ContainerAgentRunner on the host
 function emitLog(level: string, msg: string, data?: Record<string, any>) {
@@ -171,6 +172,12 @@ echo "$RESULT}"
   writeFileSync("/tmp/bin/al-call", alCallScript, { mode: 0o755 });
   writeFileSync("/tmp/bin/al-check", alCheckScript, { mode: 0o755 });
   writeFileSync("/tmp/bin/al-wait", alWaitScript, { mode: 0o755 });
+
+  // Install signal commands (al-rerun, al-status, al-return, al-exit)
+  const signalDir = "/tmp/signals";
+  installSignalCommands("/tmp/bin", signalDir);
+  process.env.AL_SIGNAL_DIR = signalDir;
+
   process.env.PATH = `/tmp/bin:${process.env.PATH || ""}`;
 
   // Load agent config and ACTIONS.md from baked-in files or env vars.
@@ -468,24 +475,27 @@ echo "$RESULT}"
     return 1;
   }
 
-  const exitCode = extractExitSignal(outputText);
-  if (exitCode !== undefined) {
-    const reason = getExitCodeMessage(exitCode);
-    emitLog("error", "agent terminated with exit signal", { exitCode, reason });
-    console.log(outputText.slice(0, 2000));
-    console.log(`[EXIT: ${exitCode}] ${reason}`);
-    return exitCode;
+  // Read signal files written by al-rerun, al-status, al-return, al-exit
+  const signals = readSignals(signalDir);
+
+  if (signals.exitCode !== undefined) {
+    const reason = getExitCodeMessage(signals.exitCode);
+    emitLog("error", "agent terminated with exit signal", { exitCode: signals.exitCode, reason });
+    emitLog("info", "signal-result", { type: "exit", exitCode: signals.exitCode, reason });
+    return signals.exitCode;
   }
 
-  if (outputText.includes("[RERUN]")) {
+  if (signals.rerun) {
     emitLog("info", "run completed, rerun requested", { outputLength: outputText.length });
-    console.log(outputText.slice(0, 2000));
-    console.log("[RERUN]");
+    emitLog("info", "signal-result", { type: "rerun" });
     return 42;
   }
 
+  if (signals.returnValue !== undefined) {
+    emitLog("info", "signal-result", { type: "return", value: signals.returnValue.slice(0, 1000) });
+  }
+
   emitLog("info", "run completed", { outputLength: outputText.length });
-  console.log(outputText.slice(0, 2000));
   return 0;
 }
 

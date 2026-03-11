@@ -195,10 +195,9 @@ describe("buildCallSkill", () => {
     expect(result).toContain("al-wait");
   });
 
-  it("documents RETURN block", () => {
+  it("documents al-return command", () => {
     const result = buildCallSkill();
-    expect(result).toContain("[RETURN]");
-    expect(result).toContain("[/RETURN]");
+    expect(result).toContain("al-return");
   });
 
   it("documents non-blocking nature", () => {

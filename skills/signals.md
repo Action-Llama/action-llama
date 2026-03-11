@@ -1,6 +1,6 @@
 # Skill: Signals
 
-Use signals to communicate with the scheduler and trigger actions.
+Use signal commands to communicate with the scheduler and trigger actions. These commands write signal files to `$AL_SIGNAL_DIR` and optionally POST to the gateway for real-time TUI updates.
 
 ## Commands
 
@@ -30,41 +30,45 @@ al-status "waiting for CI checks"
 
 **Format:** Provide the status text as a quoted argument. Keep it short and descriptive.
 
-## `[RETURN]...[/RETURN]`
+## `al-return`
 
 Returns a value to the calling agent when you were invoked via `al-call`.
 
 ```
-[RETURN]
+al-return "PR looks good. Approved with minor suggestions."
+```
+
+For multiline results, pipe via stdin:
+
+```
+cat <<'EOF' | al-return
 PR looks good. Approved with minor suggestions:
 - Line 42: consider using a const instead of let
 - Line 89: missing error handling for the API call
-[/RETURN]
+EOF
 ```
 
-**When to use:** When you were called by another agent (you'll see an `<agent-call>` block in your prompt) and need to send back a result. Place your return value between the tags.
-
-**Format:** The opening `[RETURN]` and closing `[/RETURN]` must each be on their own line. Everything between them is returned verbatim to the caller.
+**When to use:** When you were called by another agent (you'll see an `<agent-call>` block in your prompt) and need to send back a result. Pass your return value as an argument or pipe it via stdin.
 
 **Rules:**
-- Only the last `[RETURN]...[/RETURN]` block in your output is used (if you emit multiple, earlier ones are overwritten)
-- If you were not called by another agent, `[RETURN]` blocks are ignored
+- If you call `al-return` multiple times, the last value wins
+- If you were not called by another agent, `al-return` is a no-op
 - Call chains are bounded by `maxCallDepth` (default: 3) to prevent infinite loops
 
-## `[EXIT]` and `[EXIT: <code>]`
+## `al-exit [code]`
 
 Terminates the agent with an optional exit code, indicating an unrecoverable error or intentional abort.
 
 ```
-[EXIT: 10] GitHub token is invalid or expired
-[EXIT: 11] Permission denied accessing repository
-[EXIT: 15] Unrecoverable error in build system
-[EXIT]
+al-exit 10    # GitHub token is invalid or expired
+al-exit 11    # Permission denied accessing repository
+al-exit 15    # Unrecoverable error in build system
+al-exit       # Defaults to 15 (unrecoverable error)
 ```
 
 **When to use:** When encountering errors that cannot be resolved by retrying — authentication failures, permission issues, invalid configuration, or when you need to abort due to user request or safety concerns.
 
-**Format:** Use `[EXIT]` for a generic unrecoverable error (exit code 15) or `[EXIT: <code>]` to specify a standard exit code.
+**Format:** Pass the exit code as an argument, or omit for code 15 (unrecoverable error).
 
 **Standard exit codes:**
 - `10` — Authentication/credentials failure
@@ -75,7 +79,7 @@ Terminates the agent with an optional exit code, indicating an unrecoverable err
 - `15` — Generic unrecoverable error (default)
 - `16` — User-requested abort
 
-**Behavior:** The agent terminates immediately with the specified exit code. The scheduler will not retry automatically. This replaces the fragile string-matching approach for detecting unrecoverable errors.
+**Behavior:** The agent terminates with the specified exit code. The scheduler will not retry automatically.
 
 **When NOT to use:** For transient errors (network timeouts, temporary rate limits) or normal completion. Use normal error handling or simply complete the run instead.
 
@@ -87,8 +91,8 @@ All signal commands return JSON responses:
 
 ## Multiple signals
 
-You can emit multiple signals in one run. For example, you might emit several `al-status` updates as you work, then a `[RETURN]` block with your result, and `al-rerun` if there's more work to do.
+You can use multiple signal commands in one run. For example, you might run several `al-status` updates as you work, then `al-return` with your result, and `al-rerun` if there's more work to do.
 
 ## Graceful degradation
 
-Commands gracefully degrade when `GATEWAY_URL` is not set (return success as no-op). This allows agents to work in both containerized and host environments.
+Commands gracefully degrade when `GATEWAY_URL` is not set — signal files are always written, but real-time TUI updates only work when a gateway is available. This allows agents to work in both containerized and host environments.

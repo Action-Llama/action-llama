@@ -38,27 +38,3 @@ export function getExitCodeMessage(code: number): string {
   }
 }
 
-/**
- * Extract exit signal from text output
- * @param text Agent output text
- * @returns Exit code if found, undefined otherwise
- */
-export function extractExitSignal(text: string): number | undefined {
-  // Create a fresh regex each time to avoid global state issues  
-  // This pattern allows for any characters after the colon to test malformed cases
-  const EXIT_PATTERN = /\[EXIT(?::\s*([^\]]*))?\]/;
-  const match = text.match(EXIT_PATTERN);
-  if (!match) {
-    return undefined;
-  }
-  
-  // If no code specified, use default
-  if (!match[1] || match[1].trim() === '') {
-    return ExitCode.UNRECOVERABLE_ERROR;
-  }
-  
-  // Try to parse the code
-  const code = parseInt(match[1].trim(), 10);
-  // Return the parsed code (could be NaN for invalid input like "abc")
-  return code;
-}

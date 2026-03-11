@@ -16,7 +16,7 @@ export class AgentStatusReporter {
   }
 
   /**
-   * Report status text for an agent (typically from [STATUS:...] patterns)
+   * Report status text for an agent (from al-status command signals)
    */
   reportStatus(agentName: string, text: string): void {
     if (!this.statusTracker) return;

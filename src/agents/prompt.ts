@@ -87,11 +87,13 @@ export function buildCallSkill(): string {
     "",
     "### Returning Values",
     "",
-    "When you are called by another agent, return your result in a `[RETURN]...[/RETURN]` block:",
+    "When you are called by another agent, return your result with the `al-return` command:",
     "```",
-    "[RETURN]",
-    "Your result text here",
-    "[/RETURN]",
+    'al-return "Your result text here"',
+    "```",
+    "For multiline results, pipe via stdin:",
+    "```",
+    'echo "Line 1\\nLine 2" | al-return',
     "```",
     "",
     "### Guidelines",
@@ -194,7 +196,7 @@ export function buildManualSuffix(): string {
 
 export function buildCalledSuffix(callerAgent: string, context: string): string {
   const callBlock = JSON.stringify({ caller: callerAgent, context });
-  return `<agent-call>\n${callBlock}\n</agent-call>\n\nYou were called by the "${callerAgent}" agent. Review the call context above, do the requested work, and output a [RETURN]...[/RETURN] block with your result.`;
+  return `<agent-call>\n${callBlock}\n</agent-call>\n\nYou were called by the "${callerAgent}" agent. Review the call context above, do the requested work, and use \`al-return\` to send back your result.`;
 }
 
 export function buildWebhookSuffix(context: WebhookContext): string {

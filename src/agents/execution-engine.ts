@@ -7,12 +7,14 @@ import {
   SettingsManager,
   createCodingTools,
 } from "@mariozechner/pi-coding-agent";
-import { readFileSync, existsSync } from "fs";
-import { resolve } from "path";
+import { readFileSync, existsSync, mkdtempSync, rmSync } from "fs";
+import { resolve, join } from "path";
+import { tmpdir } from "os";
 import type { AgentConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
 import { loadCredentialField } from "../shared/credentials.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
+import { installSignalCommands, readSignals } from "./signals.js";
 
 export type RunResult = "completed" | "rerun" | "error";
 
@@ -51,6 +53,15 @@ export class ExecutionEngine {
   }
 
   async execute(prompt: string, cwd: string): Promise<ExecutionResult> {
+    // Set up file-based signal IPC
+    const signalTmpDir = mkdtempSync(join(tmpdir(), "al-signals-"));
+    const signalDir = join(signalTmpDir, "signals");
+    const signalBinDir = join(signalTmpDir, "bin");
+    installSignalCommands(signalBinDir, signalDir);
+    const savedPath = process.env.PATH;
+    process.env.PATH = `${signalBinDir}:${process.env.PATH || ""}`;
+    process.env.AL_SIGNAL_DIR = signalDir;
+
     const agentsFile = resolve(cwd, "ACTIONS.md");
     const { model } = this.agentConfig;
 
@@ -121,11 +132,6 @@ export class ExecutionEngine {
         const delta = event.assistantMessageEvent.delta;
         outputText += delta;
         currentTurnText += delta;
-        // Detect [STATUS: <text>] pattern
-        const statusMatch = outputText.match(/\[STATUS:\s*([^\]]+)\]/);
-        if (statusMatch) {
-          this.statusTracker?.setAgentStatusText(this.agentConfig.name, statusMatch[1].trim());
-        }
       }
       if (event.type === "message_end") {
         if (currentTurnText.trim()) {
@@ -205,8 +211,20 @@ export class ExecutionEngine {
       }
     }
 
+    session.dispose();
+
+    // Read signal files
+    const signals = readSignals(signalDir);
+
+    // Clean up signal dir and restore PATH
+    if (savedPath !== undefined) {
+      process.env.PATH = savedPath;
+    }
+    delete process.env.AL_SIGNAL_DIR;
+    try { rmSync(signalTmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+
     let result: RunResult;
-    if (outputText.includes("[RERUN]")) {
+    if (signals.rerun) {
       this.logger.info({ outputLength: outputText.length }, "run completed, rerun requested");
       result = "rerun";
     } else {
@@ -214,7 +232,6 @@ export class ExecutionEngine {
       result = "completed";
     }
 
-    session.dispose();
     return { result, outputText, unrecoverableErrors };
   }
 }

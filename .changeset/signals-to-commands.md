@@ -2,4 +2,4 @@
 "@action-llama/action-llama": minor
 ---
 
-Changed signal system from text-pattern markers to explicit commands. Signals now use `al-rerun`, `al-status "<text>"`, and `al-trigger <agent> "<context>"` commands instead of `[RERUN]`, `[STATUS: text]`, and `[TRIGGER: agent]...[/TRIGGER]` patterns. This makes the signal system more robust and aligns with the existing resource locking command pattern. Closes #51.
+Migrated signal system from text-pattern markers to file-based shell commands. Agents now use `al-rerun`, `al-status "<text>"`, `al-return`, and `al-exit [code]` commands instead of `[RERUN]`, `[STATUS: text]`, `[RETURN]...[/RETURN]`, and `[EXIT: code]` text patterns. The old `[TRIGGER: agent]...[/TRIGGER]` pattern was already superseded by `al-call`. Commands write signal files to `$AL_SIGNAL_DIR` and optionally POST to the gateway for real-time TUI updates. This is more robust than text scanning and aligns with the existing command pattern used by `rlock`, `al-call`, and `al-shutdown`. Closes #51.

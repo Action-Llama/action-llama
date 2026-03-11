@@ -96,38 +96,54 @@ JSON object with the source agent name and context. Only present when the agent 
 
 ## Signals
 
-Signals are text patterns you emit in your output. The scheduler scans for them — they are your only way to communicate back to the scheduler.
+Signals are shell commands you run to communicate back to the scheduler. They write signal files to `$AL_SIGNAL_DIR` and optionally POST to the gateway for real-time TUI updates.
 
-### `[RERUN]`
+### `al-rerun`
 
 Request an immediate rerun to drain remaining backlog.
 
 ```
-[RERUN]
+al-rerun
 ```
 
-Emit this when you completed work (processed an issue, merged a PR, etc.) and there may be more items to handle. The scheduler will re-run you immediately, up to `maxReruns` times (default: 10). Without `[RERUN]`, the scheduler treats the run as complete and waits for the next scheduled tick. This is the safe default — errors, rate limits, and empty runs won't cause unwanted reruns.
+Run this when you completed work (processed an issue, merged a PR, etc.) and there may be more items to handle. The scheduler will re-run you immediately, up to `maxReruns` times (default: 10). Without `al-rerun`, the scheduler treats the run as complete and waits for the next scheduled tick. This is the safe default — errors, rate limits, and empty runs won't cause unwanted reruns.
 
-### `[STATUS: <text>]`
+### `al-status "<text>"`
 
 Send a live status update to the TUI and logs.
 
 ```
-[STATUS: reviewing PR #42]
-[STATUS: deploying api-prod]
+al-status "reviewing PR #42"
+al-status "deploying api-prod"
 ```
 
-Emit at natural milestones so the operator can see what you're doing in real time.
+Run at natural milestones so the operator can see what you're doing in real time.
 
-### `[RETURN]...[/RETURN]`
+### `al-return`
 
 Return a value when you were called by another agent via `al-call`. The calling agent can retrieve this value using `al-check` or `al-wait`.
 
 ```
-[RETURN]
-PR looks good. Approved with minor suggestions on error handling.
-[/RETURN]
+al-return "PR looks good. Approved with minor suggestions on error handling."
 ```
+
+For multiline results, pipe via stdin:
+
+```
+echo "Line 1\nLine 2" | al-return
+```
+
+### `al-exit [code]`
+
+Terminate the agent with an exit code, indicating an unrecoverable error.
+
+```
+al-exit 10    # Authentication failure
+al-exit 11    # Permission denied
+al-exit       # Defaults to 15 (unrecoverable error)
+```
+
+Standard exit codes: 10 (auth failure), 11 (permission denied), 12 (rate limited), 13 (config error), 14 (dependency error), 15 (unrecoverable), 16 (user abort).
 
 ### Agent-to-agent calls
 
@@ -150,7 +166,7 @@ Rules:
 
 ### Combining signals
 
-You can emit multiple signals in one run. For example, several `[STATUS]` updates as you work, `al-call` to delegate work, and `[RERUN]` if there's more work to do.
+You can use multiple signal commands in one run. For example, several `al-status` updates as you work, `al-call` to delegate work, and `al-rerun` if there's more work to do.
 
 ## Webhook Reference
 
@@ -355,7 +371,7 @@ gh label create "agent-completed" --repo <determined-repo> --color 1D76DB --desc
 
 **Webhook trigger:** When you receive a \`<webhook-trigger>\` block, extract the repository from the \`repo\` field and the issue details from the trigger context. Check the issue's labels and assignee against your \`triggerLabel\` and \`assignee\` params. If the issue matches (has your trigger label and is assigned to your assignee), proceed with implementation using the extracted repository. If it does not match, stop.
 
-**Scheduled trigger:** If \`repos\` parameter exists in \`<agent-config>\`, run \`gh issue list --repo <repo> --label <triggerLabel> --assignee <assignee> --state open --json number,title,body,comments,labels --limit 1\` for each configured repo. If no work found in any repo, stop. If you completed work and there may be more issues to process, respond with \`[RERUN]\`.
+**Scheduled trigger:** If \`repos\` parameter exists in \`<agent-config>\`, run \`gh issue list --repo <repo> --label <triggerLabel> --assignee <assignee> --state open --json number,title,body,comments,labels --limit 1\` for each configured repo. If no work found in any repo, stop. If you completed work and there may be more issues to process, run \`al-rerun\`.
 
 ## Workflow
 
@@ -438,7 +454,7 @@ Start all agents with `al start` (or `npx al start`). This starts the scheduler 
 
 ### Automatic re-runs
 
-When a scheduled agent emits `[RERUN]`, the scheduler immediately re-runs it. This continues until the agent completes without `[RERUN]` (no more work), hits an error, or reaches the `maxReruns` limit. This way an agent drains its work queue without waiting for the next cron tick.
+When a scheduled agent runs `al-rerun`, the scheduler immediately re-runs it. This continues until the agent completes without `al-rerun` (no more work), hits an error, or reaches the `maxReruns` limit. This way an agent drains its work queue without waiting for the next cron tick.
 
 Set `maxReruns` in `config.toml` to control the limit (default: 10):
 
@@ -455,7 +471,7 @@ Agents have access to runtime skills — capabilities taught via a preamble befo
 
 - [Skills Overview](skills/README.md)
 - [Credentials](skills/credentials.md) — env vars, tools, and access patterns from mounted credentials
-- [Signals](skills/signals.md) — `[RERUN]`, `[STATUS]`, `[RETURN]`, `[EXIT]` output signals, `al-call` for agent-to-agent calls
+- [Signals](skills/signals.md) — `al-rerun`, `al-status`, `al-return`, `al-exit` signal commands, `al-call` for agent-to-agent calls
 - [Resource Locks](skills/resource-locks.md) — `rlock`, `runlock`, `rlock-heartbeat` for parallel coordination
 - [Environment](skills/environment.md) — trigger types, context blocks, container filesystem
 

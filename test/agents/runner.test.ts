@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
 
@@ -155,18 +155,18 @@ describe("AgentRunner", () => {
     expect(runner.isRunning).toBe(false);
   });
 
-  it("detects RERUN signal in output text", async () => {
+  it("detects RERUN signal from signal file", async () => {
     const logger = makeLogger();
     const infoSpy = vi.spyOn(logger, "info");
     const runner = new AgentRunner(makeAgentConfig(), logger, tmpDir);
-    mockPrompt.mockResolvedValue(undefined);
 
-    mockSubscribe.mockImplementation((callback: Function) => {
-      callback({
-        type: "message_update",
-        assistantMessageEvent: { type: "text_delta", delta: "Done. [RERUN]" },
-      });
-      callback({ type: "message_end" });
+    mockSubscribe.mockImplementation(() => {});
+    // Simulate al-rerun by writing the signal file during prompt execution
+    mockPrompt.mockImplementation(async () => {
+      const signalDir = process.env.AL_SIGNAL_DIR;
+      if (signalDir) {
+        writeFileSync(join(signalDir, "rerun"), "");
+      }
     });
 
     const outcome = await runner.run("Test");
@@ -174,25 +174,13 @@ describe("AgentRunner", () => {
     expect(infoSpy).toHaveBeenCalledWith(expect.anything(), "run completed, rerun requested");
   });
 
-  it("detects trigger signals in output text", async () => {
+  it("returns empty triggers (triggers handled by al-call)", async () => {
     const runner = new AgentRunner(makeAgentConfig(), makeLogger(), tmpDir);
     mockPrompt.mockResolvedValue(undefined);
-
-    mockSubscribe.mockImplementation((callback: Function) => {
-      callback({
-        type: "message_update",
-        assistantMessageEvent: { type: "text_delta", delta: '[TRIGGER: reviewer]Please review PR #42[/TRIGGER]' },
-      });
-      callback({ type: "message_end" });
-    });
+    mockSubscribe.mockImplementation(() => {});
 
     const outcome = await runner.run("Test");
-    expect(outcome.result).toBe("completed");
-    expect(outcome.triggers).toHaveLength(1);
-    expect(outcome.triggers[0]).toEqual({
-      agent: "reviewer",
-      context: "Please review PR #42"
-    });
+    expect(outcome.triggers).toEqual([]);
   });
 
   it("logs bash commands", async () => {
@@ -421,16 +409,17 @@ describe("AgentRunner", () => {
     expect(mockPrompt).toHaveBeenCalled();
   });
 
-  it("detects EXIT signal with code and returns error", async () => {
+  it("detects EXIT signal from signal file with code", async () => {
     const logger = makeLogger();
     const errorSpy = vi.spyOn(logger, "error");
     const runner = new AgentRunner(makeAgentConfig(), logger, tmpDir);
-    mockPrompt.mockResolvedValue(undefined);
-    mockSubscribe.mockImplementation((callback: Function) => {
-      callback({
-        type: "message_update",
-        assistantMessageEvent: { type: "text_delta", delta: "[EXIT: 10] Authentication failed" },
-      });
+
+    mockSubscribe.mockImplementation(() => {});
+    mockPrompt.mockImplementation(async () => {
+      const signalDir = process.env.AL_SIGNAL_DIR;
+      if (signalDir) {
+        writeFileSync(join(signalDir, "exit"), "10");
+      }
     });
 
     const outcome = await runner.run("Test");
@@ -443,21 +432,22 @@ describe("AgentRunner", () => {
     );
   });
 
-  it("detects EXIT signal without code and uses default", async () => {
+  it("detects EXIT signal with default code 15", async () => {
     const logger = makeLogger();
     const errorSpy = vi.spyOn(logger, "error");
     const runner = new AgentRunner(makeAgentConfig(), logger, tmpDir);
-    mockPrompt.mockResolvedValue(undefined);
-    mockSubscribe.mockImplementation((callback: Function) => {
-      callback({
-        type: "message_update",
-        assistantMessageEvent: { type: "text_delta", delta: "[EXIT]" },
-      });
+
+    mockSubscribe.mockImplementation(() => {});
+    mockPrompt.mockImplementation(async () => {
+      const signalDir = process.env.AL_SIGNAL_DIR;
+      if (signalDir) {
+        writeFileSync(join(signalDir, "exit"), "15");
+      }
     });
 
     const outcome = await runner.run("Test");
     expect(outcome.result).toBe("error");
-    expect(outcome.exitCode).toBe(15); // UNRECOVERABLE_ERROR
+    expect(outcome.exitCode).toBe(15);
     expect(outcome.exitReason).toBe("Unrecoverable error");
     expect(errorSpy).toHaveBeenCalledWith(
       { exitCode: 15, reason: "Unrecoverable error" },
@@ -465,17 +455,12 @@ describe("AgentRunner", () => {
     );
   });
 
-  it("ignores invalid EXIT signals", async () => {
+  it("completes normally when no signal files written", async () => {
     const logger = makeLogger();
     const infoSpy = vi.spyOn(logger, "info");
     const runner = new AgentRunner(makeAgentConfig(), logger, tmpDir);
     mockPrompt.mockResolvedValue(undefined);
-    mockSubscribe.mockImplementation((callback: Function) => {
-      callback({
-        type: "message_update",
-        assistantMessageEvent: { type: "text_delta", delta: "Working on issue [EXIT should be ignored in this context]" },
-      });
-    });
+    mockSubscribe.mockImplementation(() => {});
 
     const outcome = await runner.run("Test");
     expect(outcome.result).toBe("completed");
@@ -488,12 +473,14 @@ describe("AgentRunner", () => {
     const logger = makeLogger();
     const errorSpy = vi.spyOn(logger, "error");
     const runner = new AgentRunner(makeAgentConfig(), logger, tmpDir);
-    mockPrompt.mockResolvedValue(undefined);
-    mockSubscribe.mockImplementation((callback: Function) => {
-      callback({
-        type: "message_update",
-        assistantMessageEvent: { type: "text_delta", delta: "[EXIT: 11] Permission denied\n[RERUN]" },
-      });
+
+    mockSubscribe.mockImplementation(() => {});
+    mockPrompt.mockImplementation(async () => {
+      const signalDir = process.env.AL_SIGNAL_DIR;
+      if (signalDir) {
+        writeFileSync(join(signalDir, "exit"), "11");
+        writeFileSync(join(signalDir, "rerun"), "");
+      }
     });
 
     const outcome = await runner.run("Test");
@@ -506,27 +493,30 @@ describe("AgentRunner", () => {
     );
   });
 
-  it("handles various exit code formats", async () => {
-    const testCases = [
-      { input: "[EXIT: 12]", expectedCode: 12 },
-      { input: "[EXIT:13]", expectedCode: 13 },
-      { input: "[EXIT: 14 ]", expectedCode: 14 },
-      { input: "[EXIT:  16  ]", expectedCode: 16 },
-    ];
+  it("reads return value from signal file", async () => {
+    const runner = new AgentRunner(makeAgentConfig(), makeLogger(), tmpDir);
 
-    for (const { input, expectedCode } of testCases) {
-      const runner = new AgentRunner(makeAgentConfig(), makeLogger(), tmpDir);
-      mockPrompt.mockResolvedValue(undefined);
-      mockSubscribe.mockImplementation((callback: Function) => {
-        callback({
-          type: "message_update",
-          assistantMessageEvent: { type: "text_delta", delta: input },
-        });
-      });
+    mockSubscribe.mockImplementation(() => {});
+    mockPrompt.mockImplementation(async () => {
+      const signalDir = process.env.AL_SIGNAL_DIR;
+      if (signalDir) {
+        writeFileSync(join(signalDir, "return"), "PR review result");
+      }
+    });
 
-      const outcome = await runner.run("Test");
-      expect(outcome.result).toBe("error");
-      expect(outcome.exitCode).toBe(expectedCode);
-    }
+    const outcome = await runner.run("Test");
+    expect(outcome.result).toBe("completed");
+    expect(outcome.returnValue).toBe("PR review result");
+  });
+
+  it("cleans up signal dir and restores PATH after run", async () => {
+    const runner = new AgentRunner(makeAgentConfig(), makeLogger(), tmpDir);
+    const originalPath = process.env.PATH;
+    mockPrompt.mockResolvedValue(undefined);
+    mockSubscribe.mockImplementation(() => {});
+
+    await runner.run("Test");
+    expect(process.env.AL_SIGNAL_DIR).toBeUndefined();
+    expect(process.env.PATH).toBe(originalPath);
   });
 });

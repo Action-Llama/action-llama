@@ -7,14 +7,16 @@ import {
   SettingsManager,
   createCodingTools,
 } from "@mariozechner/pi-coding-agent";
-import { readFileSync, existsSync } from "fs";
-import { resolve } from "path";
+import { readFileSync, existsSync, mkdtempSync, rmSync } from "fs";
+import { resolve, join } from "path";
+import { tmpdir } from "os";
 import type { AgentConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
 import { loadCredentialField, parseCredentialRef } from "../shared/credentials.js";
 import { agentDir } from "../shared/paths.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
-import { extractExitSignal, getExitCodeMessage } from "../shared/exit-codes.js";
+import { getExitCodeMessage } from "../shared/exit-codes.js";
+import { installSignalCommands, readSignals } from "./signals.js";
 
 const UNRECOVERABLE_PATTERNS = [
   "permission denied",
@@ -48,26 +50,6 @@ export interface RunOutcome {
   exitReason?: string;
 }
 
-const TRIGGER_PATTERN = /\[TRIGGER:\s*(\S+)\]([\s\S]*?)\[\/TRIGGER\]/g;
-const RETURN_PATTERN = /\[RETURN\]([\s\S]*?)\[\/RETURN\]/g;
-
-function extractTriggers(text: string): TriggerRequest[] {
-  const triggers: TriggerRequest[] = [];
-  let match;
-  while ((match = TRIGGER_PATTERN.exec(text)) !== null) {
-    triggers.push({ agent: match[1], context: match[2].trim() });
-  }
-  return triggers;
-}
-
-function extractReturnValue(text: string): string | undefined {
-  let last: string | undefined;
-  let match;
-  while ((match = RETURN_PATTERN.exec(text)) !== null) {
-    last = match[1].trim();
-  }
-  return last;
-}
 
 export class AgentRunner {
   private running = false;
@@ -132,6 +114,16 @@ export class AgentRunner {
     for (const key of GIT_ENV_KEYS) {
       savedGitEnv[key] = process.env[key];
     }
+
+    // Set up file-based signal IPC
+    const signalTmpDir = mkdtempSync(join(tmpdir(), "al-signals-"));
+    const signalDir = join(signalTmpDir, "signals");
+    const signalBinDir = join(signalTmpDir, "bin");
+    installSignalCommands(signalBinDir, signalDir);
+    const savedPath = process.env.PATH;
+    process.env.PATH = `${signalBinDir}:${process.env.PATH || ""}`;
+    process.env.AL_SIGNAL_DIR = signalDir;
+
     try {
       const cwd = agentDir(this.projectPath, this.agentConfig.name);
       const agentsFile = resolve(cwd, "ACTIONS.md");
@@ -220,11 +212,6 @@ export class AgentRunner {
           const delta = event.assistantMessageEvent.delta;
           outputText += delta;
           currentTurnText += delta;
-          // Detect [STATUS: <text>] pattern
-          const statusMatch = outputText.match(/\[STATUS:\s*([^\]]+)\]/);
-          if (statusMatch) {
-            this.statusTracker?.setAgentStatusText(this.agentConfig.name, statusMatch[1].trim());
-          }
         }
         if (event.type === "message_end") {
           if (currentTurnText.trim()) {
@@ -305,16 +292,18 @@ export class AgentRunner {
         }
       }
 
-      const triggers = extractTriggers(outputText);
-      const returnValue = extractReturnValue(outputText);
-      const exitCode = extractExitSignal(outputText);
+      session.dispose();
+
+      // Read signal files written by al-rerun, al-status, al-return, al-exit
+      const signals = readSignals(signalDir);
+
       let result: RunResult;
-      if (exitCode !== undefined) {
-        const reason = getExitCodeMessage(exitCode);
-        this.logger.error({ exitCode, reason }, "agent terminated with exit signal");
-        this.statusTracker?.setAgentError(this.agentConfig.name, `Exit ${exitCode}: ${reason}`);
+      if (signals.exitCode !== undefined) {
+        const reason = getExitCodeMessage(signals.exitCode);
+        this.logger.error({ exitCode: signals.exitCode, reason }, "agent terminated with exit signal");
+        this.statusTracker?.setAgentError(this.agentConfig.name, `Exit ${signals.exitCode}: ${reason}`);
         result = "error";
-      } else if (outputText.includes("[RERUN]")) {
+      } else if (signals.rerun) {
         this.logger.info({ outputLength: outputText.length }, "run completed, rerun requested");
         result = "rerun";
       } else {
@@ -322,14 +311,13 @@ export class AgentRunner {
         result = "completed";
       }
 
-      session.dispose();
-      return { 
-        result, 
-        triggers, 
-        returnValue,
-        ...(exitCode !== undefined && { 
-          exitCode, 
-          exitReason: getExitCodeMessage(exitCode) 
+      return {
+        result,
+        triggers: [],
+        returnValue: signals.returnValue,
+        ...(signals.exitCode !== undefined && {
+          exitCode: signals.exitCode,
+          exitReason: getExitCodeMessage(signals.exitCode)
         })
       };
     } catch (err: any) {
@@ -346,6 +334,13 @@ export class AgentRunner {
           process.env[key] = savedGitEnv[key];
         }
       }
+
+      // Restore PATH and clean up signal dir
+      if (savedPath !== undefined) {
+        process.env.PATH = savedPath;
+      }
+      delete process.env.AL_SIGNAL_DIR;
+      try { rmSync(signalTmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
 
       const elapsed = Date.now() - runStartTime;
       this.statusTracker?.endRun(this.agentConfig.name, elapsed, runError);
