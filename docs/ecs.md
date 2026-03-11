@@ -279,6 +279,7 @@ If your agents route to Lambda, add these permissions to your operator IAM polic
     "lambda:CreateFunction",
     "lambda:UpdateFunctionCode",
     "lambda:UpdateFunctionConfiguration",
+    "lambda:PutFunctionEventInvokeConfig",
     "lambda:InvokeFunction"
   ],
   "Resource": "arn:aws:iam::<ACCOUNT_ID>:function:al-*"
@@ -567,6 +568,7 @@ This is the minimum policy for the IAM user or role running `al` commands. Repla
         "lambda:CreateFunction",
         "lambda:UpdateFunctionCode",
         "lambda:UpdateFunctionConfiguration",
+        "lambda:PutFunctionEventInvokeConfig",
         "lambda:InvokeFunction"
       ],
       "Resource": "arn:aws:lambda:<REGION>:<ACCOUNT_ID>:function:al-*"

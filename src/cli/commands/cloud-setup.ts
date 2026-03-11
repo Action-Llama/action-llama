@@ -929,6 +929,7 @@ async function ensureAppRunnerInstanceRole(
               "lambda:CreateFunction",
               "lambda:UpdateFunctionCode",
               "lambda:UpdateFunctionConfiguration",
+              "lambda:PutFunctionEventInvokeConfig",
               "lambda:InvokeFunction",
             ],
             Resource: `arn:aws:lambda:${region}:${accountId}:function:al-*`,
