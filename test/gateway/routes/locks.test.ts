@@ -229,3 +229,48 @@ describe("GET /locks/list", () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe("GET /locks/status", () => {
+  let app: Hono, registry: Map<string, ContainerRegistration>, lockStore: LockStore;
+
+  beforeEach(() => {
+    ({ app, registry, lockStore } = setup());
+    register(registry, "secret-a", "agent-a");
+    register(registry, "secret-b", "dev-agent", "dev-agent-1");
+  });
+  afterEach(() => lockStore.dispose());
+
+  it("returns lock status without authentication", async () => {
+    await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#1" });
+    await acquire(app, { secret: "secret-b", resourceKey: "github pr acme/app#2" });
+    const res = await app.request("/locks/status");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.locks).toHaveLength(2);
+    
+    const lock1 = body.locks.find((l: any) => l.resourceKey === "github issue acme/app#1");
+    expect(lock1.agentName).toBe("agent");
+    expect(lock1.heldSince).toBeTypeOf("number");
+    
+    const lock2 = body.locks.find((l: any) => l.resourceKey === "github pr acme/app#2");
+    expect(lock2.agentName).toBe("dev-agent");
+    expect(lock2.heldSince).toBeTypeOf("number");
+  });
+
+  it("returns empty locks array when no locks exist", async () => {
+    const res = await app.request("/locks/status");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.locks).toEqual([]);
+  });
+
+  it("extracts agent name from holder correctly", async () => {
+    register(registry, "secret-c", "my-complex-agent", "my-complex-agent-123");
+    await acquire(app, { secret: "secret-c", resourceKey: "test resource" });
+    const res = await app.request("/locks/status");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.locks).toHaveLength(1);
+    expect(body.locks[0].agentName).toBe("my-complex-agent");
+  });
+});

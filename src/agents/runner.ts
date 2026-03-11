@@ -7,13 +7,14 @@ import {
   SettingsManager,
   createCodingTools,
 } from "@mariozechner/pi-coding-agent";
-import { readFileSync, existsSync, unlinkSync, readdirSync, writeFileSync, mkdirSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { resolve } from "path";
 import type { AgentConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
-import { loadCredentialField, parseCredentialRef, backendLoadField } from "../shared/credentials.js";
+import { loadCredentialField, parseCredentialRef } from "../shared/credentials.js";
 import { agentDir } from "../shared/paths.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
+import { extractExitSignal, getExitCodeMessage } from "../shared/exit-codes.js";
 
 const UNRECOVERABLE_PATTERNS = [
   "permission denied",
@@ -42,75 +43,30 @@ export interface TriggerRequest {
 export interface RunOutcome {
   result: RunResult;
   triggers: TriggerRequest[];
+  returnValue?: string;
+  exitCode?: number;
+  exitReason?: string;
 }
 
-import { readFileSync, existsSync, unlinkSync, readdirSync } from "fs";
+const TRIGGER_PATTERN = /\[TRIGGER:\s*(\S+)\]([\s\S]*?)\[\/TRIGGER\]/g;
+const RETURN_PATTERN = /\[RETURN\]([\s\S]*?)\[\/RETURN\]/g;
 
-function readSignalFiles(runId: string): { rerun: boolean; triggers: TriggerRequest[] } {
-  let rerun = false;
+function extractTriggers(text: string): TriggerRequest[] {
   const triggers: TriggerRequest[] = [];
-
-  try {
-    // Check for rerun signal
-    const rerunFile = `/tmp/al-signal-${runId}-rerun`;
-    if (existsSync(rerunFile)) {
-      rerun = true;
-      unlinkSync(rerunFile);
-    }
-
-    // Check for trigger signals
-    const triggerPattern = new RegExp(`^al-signal-${runId}-trigger-.*\\.json$`);
-    const files = readdirSync('/tmp').filter(f => triggerPattern.test(f));
-    for (const file of files) {
-      try {
-        const content = readFileSync(`/tmp/${file}`, 'utf-8');
-        const trigger = JSON.parse(content);
-        if (trigger.agent && trigger.context) {
-          triggers.push(trigger);
-        }
-        unlinkSync(`/tmp/${file}`);
-      } catch {
-        // Invalid signal file, ignore
-      }
-    }
-  } catch {
-    // Error reading signal files, continue with defaults
+  let match;
+  while ((match = TRIGGER_PATTERN.exec(text)) !== null) {
+    triggers.push({ agent: match[1], context: match[2].trim() });
   }
-
-  return { rerun, triggers };
+  return triggers;
 }
 
-function createHostModeSignalCommands(runId: string, statusTracker?: StatusTracker, agentName?: string): void {
-  // Ensure /tmp/bin exists
-  mkdirSync("/tmp/bin", { recursive: true });
-
-  const alRerunScript = `#!/bin/sh
-# Host mode rerun signal
-touch "/tmp/al-signal-${runId}-rerun"
-echo '{"ok":true}'
-`;
-
-  const alStatusScript = `#!/bin/sh
-# Host mode status signal - for host mode, we just echo success since status is handled via text patterns
-if [ -z "$1" ]; then echo '{"ok":false,"error":"missing status text"}' >&2; exit 1; fi
-echo '{"ok":true}'
-`;
-
-  const alTriggerScript = `#!/bin/sh
-# Host mode trigger signal
-if [ -z "$1" ] || [ -z "$2" ]; then echo '{"ok":false,"error":"usage: al-trigger <agent> <context>"}' >&2; exit 1; fi
-echo '{"agent":"'"$1"'","context":"'"$2"'"}' > "/tmp/al-signal-${runId}-trigger-$(date +%s%N).json"
-echo '{"ok":true}'
-`;
-
-  writeFileSync("/tmp/bin/al-rerun", alRerunScript, { mode: 0o755 });
-  writeFileSync("/tmp/bin/al-status", alStatusScript, { mode: 0o755 });
-  writeFileSync("/tmp/bin/al-trigger", alTriggerScript, { mode: 0o755 });
-
-  // Ensure /tmp/bin is in PATH
-  if (!process.env.PATH?.includes("/tmp/bin")) {
-    process.env.PATH = `/tmp/bin:${process.env.PATH || ""}`;
+function extractReturnValue(text: string): string | undefined {
+  let last: string | undefined;
+  let match;
+  while ((match = RETURN_PATTERN.exec(text)) !== null) {
+    last = match[1].trim();
   }
+  return last;
 }
 
 export class AgentRunner {
@@ -119,16 +75,25 @@ export class AgentRunner {
   private logger: Logger;
   private projectPath: string;
   private statusTracker?: StatusTracker;
+  public readonly instanceId: string;
+  private abortController: AbortController;
 
-  constructor(agentConfig: AgentConfig, logger: Logger, projectPath: string, statusTracker?: StatusTracker) {
+  constructor(agentConfig: AgentConfig, logger: Logger, projectPath: string, statusTracker?: StatusTracker, instanceId?: string) {
     this.agentConfig = agentConfig;
     this.logger = logger;
     this.projectPath = projectPath;
     this.statusTracker = statusTracker;
+    this.instanceId = instanceId || agentConfig.name;
+    this.abortController = new AbortController();
   }
 
   get isRunning(): boolean {
     return this.running;
+  }
+
+  abort(): void {
+    this.logger.info("Agent runner abort requested");
+    this.abortController.abort();
   }
 
   async run(prompt: string, triggerInfo?: { type: 'schedule' | 'webhook' | 'agent'; source?: string }): Promise<RunOutcome> {
@@ -138,7 +103,6 @@ export class AgentRunner {
     }
 
     this.running = true;
-    const runId = `${this.agentConfig.name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const runReason = triggerInfo
       ? (triggerInfo.source
         ? (triggerInfo.type === 'agent' ? `triggered by ${triggerInfo.source}` : `${triggerInfo.type} (${triggerInfo.source})`)
@@ -168,18 +132,9 @@ export class AgentRunner {
     for (const key of GIT_ENV_KEYS) {
       savedGitEnv[key] = process.env[key];
     }
-    let oldRunId: string | undefined;
-
     try {
       const cwd = agentDir(this.projectPath, this.agentConfig.name);
       const agentsFile = resolve(cwd, "ACTIONS.md");
-
-      // Set up environment variables for signal commands
-      oldRunId = process.env.AL_RUN_ID;
-      process.env.AL_RUN_ID = runId;
-
-      // Create host mode signal command stubs
-      createHostModeSignalCommands(runId, this.statusTracker, this.agentConfig.name);
 
       const { model } = this.agentConfig;
       const llmModel = getModel(
@@ -192,7 +147,7 @@ export class AgentRunner {
         // Try to load API key using provider-specific credential type
         const credentialType = `${model.provider}_key`;
         try {
-          const credential = await backendLoadField(credentialType, "default", "token");
+          const credential = await loadCredentialField(credentialType, "default", "token");
           if (credential) {
             authStorage.setRuntimeApiKey(model.provider, credential);
             this.logger.debug(`Loaded ${credentialType} credential for ${model.provider}`);
@@ -208,12 +163,12 @@ export class AgentRunner {
       const gitSshRef = this.agentConfig.credentials.find((ref) => parseCredentialRef(ref).type === "git_ssh");
       if (gitSshRef) {
         const { instance } = parseCredentialRef(gitSshRef);
-        const gitName = await backendLoadField("git_ssh", instance, "username");
+        const gitName = await loadCredentialField("git_ssh", instance, "username");
         if (gitName) {
           process.env.GIT_AUTHOR_NAME = gitName;
           process.env.GIT_COMMITTER_NAME = gitName;
         }
-        const gitEmail = await backendLoadField("git_ssh", instance, "email");
+        const gitEmail = await loadCredentialField("git_ssh", instance, "email");
         if (gitEmail) {
           process.env.GIT_AUTHOR_EMAIL = gitEmail;
           process.env.GIT_COMMITTER_EMAIL = gitEmail;
@@ -350,10 +305,16 @@ export class AgentRunner {
         }
       }
 
-      // Read signals from command-created files
-      const { rerun, triggers } = readSignalFiles(runId);
+      const triggers = extractTriggers(outputText);
+      const returnValue = extractReturnValue(outputText);
+      const exitCode = extractExitSignal(outputText);
       let result: RunResult;
-      if (rerun) {
+      if (exitCode !== undefined) {
+        const reason = getExitCodeMessage(exitCode);
+        this.logger.error({ exitCode, reason }, "agent terminated with exit signal");
+        this.statusTracker?.setAgentError(this.agentConfig.name, `Exit ${exitCode}: ${reason}`);
+        result = "error";
+      } else if (outputText.includes("[RERUN]")) {
         this.logger.info({ outputLength: outputText.length }, "run completed, rerun requested");
         result = "rerun";
       } else {
@@ -362,7 +323,15 @@ export class AgentRunner {
       }
 
       session.dispose();
-      return { result, triggers };
+      return { 
+        result, 
+        triggers, 
+        returnValue,
+        ...(exitCode !== undefined && { 
+          exitCode, 
+          exitReason: getExitCodeMessage(exitCode) 
+        })
+      };
     } catch (err: any) {
       this.logger.error({ err }, `${this.agentConfig.name} run failed`);
       runError = String(err?.message || err).slice(0, 200);
@@ -376,23 +345,6 @@ export class AgentRunner {
         } else {
           process.env[key] = savedGitEnv[key];
         }
-      }
-
-      // Restore AL_RUN_ID
-      if (oldRunId === undefined) {
-        delete process.env.AL_RUN_ID;
-      } else {
-        process.env.AL_RUN_ID = oldRunId;
-      }
-
-      // Clean up any remaining signal files for this run
-      try {
-        const signalFiles = readdirSync('/tmp').filter(f => f.startsWith(`al-signal-${runId}-`));
-        for (const file of signalFiles) {
-          unlinkSync(`/tmp/${file}`);
-        }
-      } catch {
-        // Ignore cleanup errors
       }
 
       const elapsed = Date.now() - runStartTime;

@@ -4,10 +4,13 @@ import type { Logger } from "../shared/logger.js";
 import type { ContainerRuntime, RuntimeCredentials } from "../docker/runtime.js";
 import type { ContainerRegistration } from "../gateway/types.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
-import type { RunResult, RunOutcome, TriggerRequest } from "./runner.js";
+import type { RunResult, RunOutcome } from "./runner.js";
 
 export class ContainerAgentRunner {
   private _running = false;
+  private _wantsRerun = false;
+  private _returnValue: string | undefined = undefined;
+  private _returnAccum: string[] | null = null;
   private runtime: ContainerRuntime;
   private globalConfig: GlobalConfig;
   private agentConfig: AgentConfig;
@@ -15,7 +18,7 @@ export class ContainerAgentRunner {
   private registerContainer: (secret: string, reg: ContainerRegistration) => void;
   private unregisterContainer: (secret: string) => void;
   private gatewayUrl: string;
-  private instanceId: string;
+  public readonly instanceId: string;
   private projectPath: string;
   private image: string;
   private statusTracker?: StatusTracker;
@@ -48,6 +51,13 @@ export class ContainerAgentRunner {
 
   get isRunning(): boolean {
     return this._running;
+  }
+
+  abort(): void {
+    this.logger.info("Container agent runner abort requested");
+    // For container runners, we'd need to kill the container
+    // This is a placeholder - a full implementation would need to track
+    // the running container and kill it
   }
 
   private forwardLogLine(line: string): void {
@@ -91,9 +101,31 @@ export class ContainerAgentRunner {
       // Not JSON — treat as plain output
     }
 
-    // Note: Signal detection removed - signals now handled via gateway commands
-    // Status updates are handled via al-status command calls to the gateway
-    // Rerun and trigger signals are handled via al-rerun and al-trigger commands
+    // Detect [STATUS: <text>] in plain output
+    const statusMatch = line.match(/\[STATUS:\s*([^\]]+)\]/);
+    if (statusMatch) {
+      this.statusTracker?.setAgentStatusText(this.agentConfig.name, statusMatch[1].trim());
+    }
+
+    if (line === "[RERUN]") {
+      this._wantsRerun = true;
+      this.logger.info("rerun requested");
+      this.statusTracker?.addLogLine(this.agentConfig.name, "rerun requested");
+    }
+
+    // Accumulate [RETURN]...[/RETURN] blocks across lines
+    if (line === "[RETURN]") {
+      this._returnAccum = [];
+      return;
+    }
+    if (this._returnAccum !== null) {
+      if (line === "[/RETURN]") {
+        this._returnValue = this._returnAccum.join("\n").trim();
+        this._returnAccum = null;
+      } else {
+        this._returnAccum.push(line);
+      }
+    }
   }
 
   async run(prompt: string, triggerInfo?: { type: 'schedule' | 'webhook' | 'agent'; source?: string }): Promise<RunOutcome> {
@@ -113,6 +145,9 @@ export class ContainerAgentRunner {
     }
 
     this._running = true;
+    this._wantsRerun = false;
+    this._returnValue = undefined;
+    this._returnAccum = null;
     const runReason = triggerInfo
       ? (triggerInfo.source
         ? (triggerInfo.type === 'agent' ? `triggered by ${triggerInfo.source}` : `${triggerInfo.type} (${triggerInfo.source})`)
@@ -235,6 +270,6 @@ export class ContainerAgentRunner {
       this.statusTracker?.endRun(this.agentConfig.name, elapsed, runError);
       this._running = false;
     }
-    return { result: runResult, triggers: [] };
+    return { result: runResult, triggers: [], returnValue: this._returnValue };
   }
 }

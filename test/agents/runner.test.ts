@@ -155,34 +155,18 @@ describe("AgentRunner", () => {
     expect(runner.isRunning).toBe(false);
   });
 
-  it("detects RERUN signal from command files", async () => {
+  it("detects RERUN signal in output text", async () => {
     const logger = makeLogger();
     const infoSpy = vi.spyOn(logger, "info");
     const runner = new AgentRunner(makeAgentConfig(), logger, tmpDir);
     mockPrompt.mockResolvedValue(undefined);
-    
-    // Mock subscribe to simulate bash command execution (which would create signal files)
+
     mockSubscribe.mockImplementation((callback: Function) => {
-      // Simulate the bash tool calling al-rerun command
       callback({
-        type: "tool_execution_start",
-        toolName: "bash",
-        toolCallId: "call-1",
-        args: { command: "al-rerun" },
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", delta: "Done. [RERUN]" },
       });
-      callback({
-        type: "tool_execution_end",
-        toolName: "bash",
-        toolCallId: "call-1",
-        result: '{"ok":true}',
-        isError: false,
-      });
-      
-      // Manually create the signal file that the command would create
-      const runId = process.env.AL_RUN_ID;
-      if (runId) {
-        writeFileSync(`/tmp/al-signal-${runId}-rerun`, "");
-      }
+      callback({ type: "message_end" });
     });
 
     const outcome = await runner.run("Test");
@@ -190,35 +174,16 @@ describe("AgentRunner", () => {
     expect(infoSpy).toHaveBeenCalledWith(expect.anything(), "run completed, rerun requested");
   });
 
-  it("detects trigger signals from command files", async () => {
+  it("detects trigger signals in output text", async () => {
     const runner = new AgentRunner(makeAgentConfig(), makeLogger(), tmpDir);
     mockPrompt.mockResolvedValue(undefined);
-    
-    // Mock subscribe to simulate bash command execution
+
     mockSubscribe.mockImplementation((callback: Function) => {
-      // Simulate the bash tool calling al-trigger command
       callback({
-        type: "tool_execution_start",
-        toolName: "bash",
-        toolCallId: "call-1",
-        args: { command: 'al-trigger reviewer "Please review PR #42"' },
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", delta: '[TRIGGER: reviewer]Please review PR #42[/TRIGGER]' },
       });
-      callback({
-        type: "tool_execution_end",
-        toolName: "bash",
-        toolCallId: "call-1",
-        result: '{"ok":true}',
-        isError: false,
-      });
-      
-      // Manually create the signal file that the command would create
-      const runId = process.env.AL_RUN_ID;
-      if (runId) {
-        writeFileSync(`/tmp/al-signal-${runId}-trigger-123.json`, JSON.stringify({
-          agent: "reviewer",
-          context: "Please review PR #42"
-        }));
-      }
+      callback({ type: "message_end" });
     });
 
     const outcome = await runner.run("Test");
@@ -454,5 +419,114 @@ describe("AgentRunner", () => {
     // Should successfully load groq_key credential and run without warnings
     expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining("Loaded groq_key credential for groq"));
     expect(mockPrompt).toHaveBeenCalled();
+  });
+
+  it("detects EXIT signal with code and returns error", async () => {
+    const logger = makeLogger();
+    const errorSpy = vi.spyOn(logger, "error");
+    const runner = new AgentRunner(makeAgentConfig(), logger, tmpDir);
+    mockPrompt.mockResolvedValue(undefined);
+    mockSubscribe.mockImplementation((callback: Function) => {
+      callback({
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", delta: "[EXIT: 10] Authentication failed" },
+      });
+    });
+
+    const outcome = await runner.run("Test");
+    expect(outcome.result).toBe("error");
+    expect(outcome.exitCode).toBe(10);
+    expect(outcome.exitReason).toBe("Authentication/credentials failure");
+    expect(errorSpy).toHaveBeenCalledWith(
+      { exitCode: 10, reason: "Authentication/credentials failure" },
+      "agent terminated with exit signal"
+    );
+  });
+
+  it("detects EXIT signal without code and uses default", async () => {
+    const logger = makeLogger();
+    const errorSpy = vi.spyOn(logger, "error");
+    const runner = new AgentRunner(makeAgentConfig(), logger, tmpDir);
+    mockPrompt.mockResolvedValue(undefined);
+    mockSubscribe.mockImplementation((callback: Function) => {
+      callback({
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", delta: "[EXIT]" },
+      });
+    });
+
+    const outcome = await runner.run("Test");
+    expect(outcome.result).toBe("error");
+    expect(outcome.exitCode).toBe(15); // UNRECOVERABLE_ERROR
+    expect(outcome.exitReason).toBe("Unrecoverable error");
+    expect(errorSpy).toHaveBeenCalledWith(
+      { exitCode: 15, reason: "Unrecoverable error" },
+      "agent terminated with exit signal"
+    );
+  });
+
+  it("ignores invalid EXIT signals", async () => {
+    const logger = makeLogger();
+    const infoSpy = vi.spyOn(logger, "info");
+    const runner = new AgentRunner(makeAgentConfig(), logger, tmpDir);
+    mockPrompt.mockResolvedValue(undefined);
+    mockSubscribe.mockImplementation((callback: Function) => {
+      callback({
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", delta: "Working on issue [EXIT should be ignored in this context]" },
+      });
+    });
+
+    const outcome = await runner.run("Test");
+    expect(outcome.result).toBe("completed");
+    expect(outcome.exitCode).toBeUndefined();
+    expect(outcome.exitReason).toBeUndefined();
+    expect(infoSpy).toHaveBeenCalledWith(expect.anything(), "run completed");
+  });
+
+  it("prioritizes EXIT over RERUN", async () => {
+    const logger = makeLogger();
+    const errorSpy = vi.spyOn(logger, "error");
+    const runner = new AgentRunner(makeAgentConfig(), logger, tmpDir);
+    mockPrompt.mockResolvedValue(undefined);
+    mockSubscribe.mockImplementation((callback: Function) => {
+      callback({
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", delta: "[EXIT: 11] Permission denied\n[RERUN]" },
+      });
+    });
+
+    const outcome = await runner.run("Test");
+    expect(outcome.result).toBe("error");
+    expect(outcome.exitCode).toBe(11);
+    expect(outcome.exitReason).toBe("Permission/access denied");
+    expect(errorSpy).toHaveBeenCalledWith(
+      { exitCode: 11, reason: "Permission/access denied" },
+      "agent terminated with exit signal"
+    );
+  });
+
+  it("handles various exit code formats", async () => {
+    const testCases = [
+      { input: "[EXIT: 12]", expectedCode: 12 },
+      { input: "[EXIT:13]", expectedCode: 13 },
+      { input: "[EXIT: 14 ]", expectedCode: 14 },
+      { input: "[EXIT:  16  ]", expectedCode: 16 },
+    ];
+
+    for (const { input, expectedCode } of testCases) {
+      const runner = new AgentRunner(makeAgentConfig(), makeLogger(), tmpDir);
+      mockPrompt.mockResolvedValue(undefined);
+      mockSubscribe.mockImplementation((callback: Function) => {
+        callback({
+          type: "message_update",
+          assistantMessageEvent: { type: "text_delta", delta: input },
+        });
+      });
+
+      const outcome = await runner.run("Test");
+      expect(outcome.result).toBe("error");
+      expect(outcome.exitCode).toBe(expectedCode);
+    }
   });
 });

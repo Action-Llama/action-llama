@@ -130,4 +130,17 @@ export function registerLockRoutes(
 
     return c.json(lockStore.list());
   });
+
+  app.get("/locks/status", (c) => {
+    const locks = lockStore.list().map((lock) => {
+      // Extract agent name from holder (typically "agentName-instanceNumber")
+      const agentName = lock.holder.split("-").slice(0, -1).join("-") || lock.holder;
+      return {
+        resourceKey: lock.resourceKey,
+        agentName,
+        heldSince: lock.heldSince,
+      };
+    });
+    return c.json({ locks });
+  });
 }

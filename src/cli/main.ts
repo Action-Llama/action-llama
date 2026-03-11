@@ -30,7 +30,6 @@ program
   .description("Manually run a single agent")
   .argument("<agent>", "agent name")
   .option("-p, --project <dir>", "project directory", ".")
-  .option("--no-docker", "disable Docker container isolation (run agents directly on host)")
   .option("-c, --cloud", "run on cloud infrastructure")
   .option("-H, --headless", "non-interactive mode (no credential prompts, for CI/deploy environments)")
   .action(async (agent: string, opts) => {
@@ -42,7 +41,6 @@ program
   .command("start")
   .description("Start cron scheduler")
   .option("-p, --project <dir>", "project directory", ".")
-  .option("--no-docker", "disable Docker container isolation (run agents directly on host)")
   .option("-c, --cloud", "run on cloud infrastructure")
   .option("-H, --headless", "non-interactive mode (no TUI, no credential prompts, for CI/deploy environments)")
   .option("-g, --gateway", "enable the HTTP gateway server (required for webhooks, locks, and web UI)")
@@ -85,6 +83,34 @@ program
   .option("-c, --cloud", "show cloud status")
   .action(async (opts) => {
     const { execute } = await import("./commands/status.js");
+    await execute(opts);
+  });
+
+program
+  .command("kill")
+  .description("Kill a running agent instance")
+  .argument("<instance-id>", "agent instance ID")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(async (instanceId: string, opts) => {
+    const { execute } = await import("./commands/kill.js");
+    await execute(instanceId, opts);
+  });
+
+program
+  .command("pause")
+  .description("Pause the scheduler")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(async (opts) => {
+    const { execute } = await import("./commands/pause.js");
+    await execute(opts);
+  });
+
+program
+  .command("resume")
+  .description("Resume the scheduler")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(async (opts) => {
+    const { execute } = await import("./commands/resume.js");
     await execute(opts);
   });
 
