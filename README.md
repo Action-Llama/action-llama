@@ -36,7 +36,7 @@ Built on [pi.dev](https://github.com/badlogic/pi-mono) as the agent harness.
 ### 1. Create a project
 
 ```bash
-npx @action-llama/action-llama@latest new my-project
+npx @action-llama/action-llama@next new my-project
 cd my-project
 ```
 
