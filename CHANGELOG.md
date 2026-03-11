@@ -1,5 +1,39 @@
 # @action-llama/action-llama
 
+## 0.10.0
+
+### Minor Changes
+
+- [`c10d85d`](https://github.com/Action-Llama/action-llama/commit/c10d85d6180a6076e1559bc31fb4da424dee81a5) Thanks [@asselstine](https://github.com/asselstine)! - Replace fire-and-forget `[TRIGGER]` mechanism with agent-to-agent calls that return values. Agents can now use `al-call`, `al-check`, and `al-wait` shell commands to invoke other agents, continue working, and retrieve structured results via `[RETURN]...[/RETURN]` blocks. Calls are queued in a unified per-agent work queue (shared with webhook events) when all runners are busy, with a configurable `workQueueSize` (default: 100). New config fields: `maxCallDepth` (replaces `maxTriggerDepth`, default: 3), `workQueueSize` (replaces `webhookQueueSize`, default: 100). Old field names still work as fallbacks.
+
+- [#59](https://github.com/Action-Llama/action-llama/pull/59) [`a69e985`](https://github.com/Action-Llama/action-llama/commit/a69e985188b36f3c0259b45103388d3c9a915788) Thanks [@asselstine](https://github.com/asselstine)! - Remove `--no-docker` option and enforce container isolation. Docker container isolation is now mandatory for all agent execution to strengthen the product's security model. The `--no-docker` flag and `local.enabled = false` configuration option have been removed. Closes [#53](https://github.com/Action-Llama/action-llama/issues/53).
+
+- [#56](https://github.com/Action-Llama/action-llama/pull/56) [`587ae39`](https://github.com/Action-Llama/action-llama/commit/587ae3971b319801e634641e45ef6d2ef3bacb84) Thanks [@asselstine](https://github.com/asselstine)! - Migrated signal system from text-pattern markers to file-based shell commands. Agents now use `al-rerun`, `al-status "<text>"`, `al-return`, and `al-exit [code]` commands instead of `[RERUN]`, `[STATUS: text]`, `[RETURN]...[/RETURN]`, and `[EXIT: code]` text patterns. The old `[TRIGGER: agent]...[/TRIGGER]` pattern was already superseded by `al-call`. Commands write signal files to `$AL_SIGNAL_DIR` and optionally POST to the gateway for real-time TUI updates. This is more robust than text scanning and aligns with the existing command pattern used by `rlock`, `al-call`, and `al-shutdown`. Closes [#51](https://github.com/Action-Llama/action-llama/issues/51).
+
+### Patch Changes
+
+- [#64](https://github.com/Action-Llama/action-llama/pull/64) [`00c6d40`](https://github.com/Action-Llama/action-llama/commit/00c6d402e16480b0ea38d0ac19df662d20e6b366) Thanks [@asselstine](https://github.com/asselstine)! - Added agent instance management and scheduler control commands. The new functionality includes:
+
+  - `al status` now shows running agent instances with unique IDs and scheduler pause state
+  - `al kill <instance-id>` allows killing a specific running agent instance
+  - `al pause` pauses the scheduler to prevent new runs from starting
+  - `al resume` resumes the scheduler after being paused
+
+  All management commands require the gateway to be running (start scheduler with `-g` flag). Instance IDs are generated with the format `{agentName}-{timestamp}-{randomHex}` and are displayed in the status output. Closes [#62](https://github.com/Action-Llama/action-llama/issues/62).
+
+- [`eaa50b7`](https://github.com/Action-Llama/action-llama/commit/eaa50b7f356f02906afd0384b113a00873ce5b6f) Thanks [@asselstine](https://github.com/asselstine)! - Fixed several inconsistencies introduced during recent refactorings:
+
+  - Wired control routes (`pause`, `resume`, `kill`) into the gateway so CLI commands work at runtime
+  - Removed stale `--no-docker` references from error messages (flag was removed in [#59](https://github.com/Action-Llama/action-llama/issues/59))
+  - Config now reads `maxCallDepth` and `workQueueSize` with fallback to deprecated field names
+  - Replaced `any` types with proper `StatusTracker` imports in status-reporter, execution-engine, and runtime-factory
+  - Removed dead `trigger-parser.ts` (duplicate of logic in runner.ts, never imported)
+  - Updated AGENTS.md skills reference to reflect current signal/command names
+
+- [#61](https://github.com/Action-Llama/action-llama/pull/61) [`2283d1f`](https://github.com/Action-Llama/action-llama/commit/2283d1f0bb8f18330a90734c43ac1bbe57a1bbb2) Thanks [@asselstine](https://github.com/asselstine)! - Added support for resource locks when running the scheduler and agent containers locally. The system now automatically creates a gateway proxy container that enables containers to communicate with the host's gateway service across all platforms (Linux, Mac, Windows). This fixes resource locking functionality for local Docker deployments. Closes [#57](https://github.com/Action-Llama/action-llama/issues/57).
+
+- [#65](https://github.com/Action-Llama/action-llama/pull/65) [`26a32d9`](https://github.com/Action-Llama/action-llama/commit/26a32d9191240baf84522aee5032ed52196a4cd4) Thanks [@asselstine](https://github.com/asselstine)! - Unified credential handling by migrating all code to use async backend-aware API, eliminating sync filesystem-specific functions. All credential operations (`loadCredentialField`, `writeCredentialField`, `credentialExists`, etc.) are now consistently async and work with both local filesystem and remote backends. This change improves consistency and reduces API surface area, preventing accidental divergence between sync and async credential handling patterns. Closes [#55](https://github.com/Action-Llama/action-llama/issues/55).
+
 ## 0.9.2
 
 ### Patch Changes
