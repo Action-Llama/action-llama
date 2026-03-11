@@ -10,6 +10,7 @@ import type { ContainerRegistration } from "./types.js";
 import type { WebhookRegistry } from "../webhooks/registry.js";
 import type { Logger } from "../shared/logger.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
+import type { ControlRoutesDeps } from "./routes/control.js";
 
 export type { ContainerRegistration } from "./types.js";
 
@@ -23,6 +24,7 @@ export interface GatewayOptions {
   projectPath?: string;
   webUI?: boolean;
   lockTimeout?: number;
+  controlDeps?: ControlRoutesDeps;
 }
 
 export interface GatewayServer {
@@ -55,6 +57,12 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
   // Dashboard routes
   if (webUI && statusTracker) {
     registerDashboardRoutes(app, statusTracker, projectPath);
+  }
+
+  // Control routes (for kill, pause, resume commands)
+  if (opts.controlDeps) {
+    const { registerControlRoutes } = await import("./routes/control.js");
+    registerControlRoutes(app, opts.controlDeps);
   }
 
   const server = serve({

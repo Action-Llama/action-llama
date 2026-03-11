@@ -1,4 +1,5 @@
 import { EventEmitter } from "events";
+import type { AgentInstance } from "../scheduler/types.js";
 
 export interface AgentStatus {
   name: string;
@@ -25,6 +26,7 @@ export interface SchedulerInfo {
   webhookUrls: string[];
   dashboardUrl?: string;
   startedAt: Date;
+  paused: boolean;
 }
 
 export interface LogLine {
@@ -39,6 +41,7 @@ export class StatusTracker extends EventEmitter {
   private recentLogs: LogLine[] = [];
   private maxLogs = 100;
   private _baseImageStatus: string | null = null;
+  private instances: Map<string, AgentInstance> = new Map();
 
   registerAgent(name: string, scale = 1): void {
     this.agents.set(name, {
@@ -206,5 +209,45 @@ export class StatusTracker extends EventEmitter {
 
   getRecentLogs(n = 10): LogLine[] {
     return this.recentLogs.slice(-n);
+  }
+
+  /**
+   * Register a running agent instance
+   */
+  registerInstance(instance: AgentInstance): void {
+    this.instances.set(instance.id, instance);
+    this.emit("update");
+  }
+
+  /**
+   * Unregister an agent instance
+   */
+  unregisterInstance(id: string): void {
+    this.instances.delete(id);
+    this.emit("update");
+  }
+
+  /**
+   * Get all running instances
+   */
+  getInstances(): AgentInstance[] {
+    return Array.from(this.instances.values());
+  }
+
+  /**
+   * Set scheduler paused state
+   */
+  setPaused(paused: boolean): void {
+    if (this.schedulerInfo) {
+      this.schedulerInfo.paused = paused;
+      this.emit("update");
+    }
+  }
+
+  /**
+   * Get scheduler paused state
+   */
+  isPaused(): boolean {
+    return this.schedulerInfo?.paused ?? false;
   }
 }

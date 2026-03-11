@@ -23,6 +23,7 @@ import { buildAllImages } from "../cloud/image-builder.js";
 import type { WebhookContext, WebhookFilter, WebhookTrigger, GitHubWebhookFilter, SentryWebhookFilter, LinearWebhookFilter } from "../webhooks/types.js";
 import { WebhookEventQueue } from "./event-queue.js";
 import { RunnerPool, type PoolRunner } from "./runner-pool.js";
+import type { AgentInstance } from "./types.js";
 
 // Provider type → credential type for loading secrets
 const PROVIDER_TO_CREDENTIAL: Record<string, string> = {
@@ -80,6 +81,12 @@ function buildFilterFromTrigger(trigger: WebhookTrigger, providerType: string): 
 const DEFAULT_MAX_RERUNS = 10;
 const DEFAULT_MAX_TRIGGER_DEPTH = 3;
 
+function generateInstanceId(agentName: string): string {
+  const timestamp = Date.now();
+  const randomHex = Math.random().toString(16).slice(2, 8);
+  return `${agentName}-${timestamp}-${randomHex}`;
+}
+
 interface SchedulerContext {
   runnerPools: Record<string, RunnerPool>;
   agentConfigs: AgentConfig[];
@@ -91,6 +98,9 @@ interface SchedulerContext {
   skills?: PromptSkills;
   /** When true, images have baked-in static files; only pass dynamic suffix as prompt. */
   useBakedImages: boolean;
+  paused: boolean;
+  runningInstances: Map<string, AgentInstance>;
+  statusTracker?: StatusTracker;
 }
 
 // Prompt helpers: when images have baked-in static files, only pass the dynamic suffix.
@@ -153,13 +163,37 @@ async function runTriggered(
   depth: number,
   ctx: SchedulerContext
 ): Promise<void> {
-  const { result, triggers } = await runner.run(prompt, { type: 'agent', source: sourceAgent });
-  if (triggers.length > 0) {
-    dispatchTriggers(triggers, agentConfig.name, depth, ctx);
-  }
-  // No reruns for triggered runs — they respond to a specific event
-  if (result === "completed") {
-    ctx.logger.info(`${agentConfig.name} triggered run completed`);
+  // Create and register instance
+  const instanceId = generateInstanceId(agentConfig.name);
+  const instance: AgentInstance = {
+    id: instanceId,
+    agentName: agentConfig.name,
+    status: 'running',
+    startedAt: new Date(),
+    trigger: `trigger:${sourceAgent}`,
+    runner
+  };
+  
+  ctx.runningInstances.set(instanceId, instance);
+  ctx.statusTracker?.registerInstance(instance);
+  
+  try {
+    const { result, triggers } = await runner.run(prompt, { type: 'agent', source: sourceAgent });
+    if (triggers.length > 0) {
+      dispatchTriggers(triggers, agentConfig.name, depth, ctx);
+    }
+    // No reruns for triggered runs — they respond to a specific event
+    if (result === "completed") {
+      ctx.logger.info(`${agentConfig.name} triggered run completed`);
+    }
+    instance.status = result === 'error' ? 'error' : 'completed';
+  } catch (err) {
+    instance.status = 'error';
+    throw err;
+  } finally {
+    // Unregister instance
+    ctx.runningInstances.delete(instanceId);
+    ctx.statusTracker?.unregisterInstance(instanceId);
   }
 }
 
@@ -199,25 +233,50 @@ async function runWithReruns(
   depth: number,
   ctx: SchedulerContext
 ): Promise<void> {
-  let { result, triggers } = await runner.run(makeScheduledPrompt(agentConfig, ctx), { type: 'schedule' });
-  if (triggers.length > 0) {
-    dispatchTriggers(triggers, agentConfig.name, depth, ctx);
-  }
-  let reruns = 0;
-  while (result === "rerun" && reruns < ctx.maxReruns) {
-    reruns++;
-    ctx.logger.info({ rerun: reruns, maxReruns: ctx.maxReruns }, `${agentConfig.name} requested rerun, re-running immediately`);
-    ({ result, triggers } = await runner.run(makeScheduledPrompt(agentConfig, ctx), { type: 'schedule', source: `rerun ${reruns}/${ctx.maxReruns}` }));
+  // Create and register instance
+  const instanceId = generateInstanceId(agentConfig.name);
+  const instance: AgentInstance = {
+    id: instanceId,
+    agentName: agentConfig.name,
+    status: 'running',
+    startedAt: new Date(),
+    trigger: 'schedule',
+    runner
+  };
+  
+  ctx.runningInstances.set(instanceId, instance);
+  ctx.statusTracker?.registerInstance(instance);
+  
+  try {
+    let { result, triggers } = await runner.run(makeScheduledPrompt(agentConfig, ctx), { type: 'schedule' });
     if (triggers.length > 0) {
       dispatchTriggers(triggers, agentConfig.name, depth, ctx);
     }
-  }
-  if (result === "rerun" && reruns >= ctx.maxReruns) {
-    ctx.logger.warn({ maxReruns: ctx.maxReruns }, `${agentConfig.name} hit max reruns limit`);
-  }
+    let reruns = 0;
+    while (result === "rerun" && reruns < ctx.maxReruns) {
+      reruns++;
+      ctx.logger.info({ rerun: reruns, maxReruns: ctx.maxReruns }, `${agentConfig.name} requested rerun, re-running immediately`);
+      ({ result, triggers } = await runner.run(makeScheduledPrompt(agentConfig, ctx), { type: 'schedule', source: `rerun ${reruns}/${ctx.maxReruns}` }));
+      if (triggers.length > 0) {
+        dispatchTriggers(triggers, agentConfig.name, depth, ctx);
+      }
+    }
+    if (result === "rerun" && reruns >= ctx.maxReruns) {
+      ctx.logger.warn({ maxReruns: ctx.maxReruns }, `${agentConfig.name} hit max reruns limit`);
+    }
 
-  // Drain any webhook events that arrived during the rerun cycle
-  await drainWebhookQueue(agentConfig, ctx);
+    // Drain any webhook events that arrived during the rerun cycle
+    await drainWebhookQueue(agentConfig, ctx);
+    
+    instance.status = result === 'error' ? 'error' : 'completed';
+  } catch (err) {
+    instance.status = 'error';
+    throw err;
+  } finally {
+    // Unregister instance
+    ctx.runningInstances.delete(instanceId);
+    ctx.statusTracker?.unregisterInstance(instanceId);
+  }
 }
 
 export async function startScheduler(projectPath: string, globalConfigOverride?: GlobalConfig, statusTracker?: StatusTracker, cloudMode?: boolean, gatewayEnabled?: boolean, webUI?: boolean) {
@@ -350,9 +409,13 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   // Start gateway early if needed (before Docker builds) so users can see build status
   let gateway: GatewayServer | undefined;
 
+  // Define control functions early for gateway
+  let gatewayControlDeps: any = {};
+  
   if (gatewayEnabled) {
     const { startGateway } = await import("../gateway/index.js");
     const gatewayPort = globalConfig.gateway?.port || 8080;
+    
     gateway = await startGateway({
       port: gatewayPort,
       logger: mkLogger(projectPath, "gateway"),
@@ -363,6 +426,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       projectPath,
       webUI,
       lockTimeout: globalConfig.gateway?.lockTimeout,
+      controlDeps: gatewayControlDeps, // will be populated later
     });
     logger.info({ port: gatewayPort }, "Gateway started early to show build progress");
   }
@@ -521,7 +585,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
           agentConfig,
           mkLogger(projectPath, instanceId),
           projectPath,
-          statusTracker
+          statusTracker,
+          instanceId
         ));
       }
     }
@@ -533,7 +598,58 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   const webhookQueueSize = globalConfig.webhookQueueSize ?? 20;
   const webhookQueue = new WebhookEventQueue<WebhookContext>(webhookQueueSize);
   const skills: PromptSkills | undefined = dockerEnabled ? { locking: true } : undefined;
-  const schedulerCtx: SchedulerContext = { runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, webhookQueue, shuttingDown: false, skills, useBakedImages: dockerEnabled };
+  const schedulerCtx: SchedulerContext = { 
+    runnerPools, 
+    agentConfigs, 
+    maxReruns, 
+    maxTriggerDepth, 
+    logger, 
+    webhookQueue, 
+    shuttingDown: false, 
+    skills, 
+    useBakedImages: dockerEnabled,
+    paused: false,
+    runningInstances: new Map(),
+    statusTracker
+  };
+
+  // Control functions for management
+  const killInstance = async (instanceId: string): Promise<boolean> => {
+    const instance = schedulerCtx.runningInstances.get(instanceId);
+    if (!instance) {
+      return false;
+    }
+    
+    if (instance.runner && typeof instance.runner.abort === 'function') {
+      instance.runner.abort();
+    }
+    
+    instance.status = 'killed';
+    logger.info({ instanceId, agent: instance.agentName }, "Instance killed");
+    return true;
+  };
+
+  const pauseScheduler = async (): Promise<void> => {
+    schedulerCtx.paused = true;
+    statusTracker?.setPaused(true);
+    logger.info("Scheduler paused");
+  };
+
+  const resumeScheduler = async (): Promise<void> => {
+    schedulerCtx.paused = false;
+    statusTracker?.setPaused(false);
+    logger.info("Scheduler resumed");
+  };
+
+  // Update gateway control dependencies
+  if (gatewayEnabled && gateway) {
+    Object.assign(gatewayControlDeps, {
+      statusTracker,
+      killInstance,
+      pauseScheduler,
+      resumeScheduler,
+    });
+  }
 
   // Set up webhook bindings (only when gateway is enabled)
   if (webhookRegistry && gatewayEnabled) {
@@ -552,6 +668,12 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
           type: providerType,
           filter,
           trigger: (context: WebhookContext) => {
+            // Skip if scheduler is paused
+            if (schedulerCtx.paused) {
+              logger.info({ agent: agentConfig.name, event: context.event }, "scheduler is paused, ignoring webhook event");
+              return;
+            }
+            
             // Skip if agent is disabled
             if (statusTracker && !statusTracker.isAgentEnabled(agentConfig.name)) {
               logger.info({ agent: agentConfig.name, event: context.event }, "agent is disabled, ignoring webhook event");
@@ -579,15 +701,36 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
               { agent: agentConfig.name, event: context.event, action: context.action, running: pool.runningJobCount, scale: pool.size },
               "webhook triggering agent"
             );
+            
+            // Create and register instance
+            const instanceId = generateInstanceId(agentConfig.name);
+            const instance: AgentInstance = {
+              id: instanceId,
+              agentName: agentConfig.name,
+              status: 'running',
+              startedAt: new Date(),
+              trigger: `webhook:${context.event}`,
+              runner: availableRunner
+            };
+            
+            schedulerCtx.runningInstances.set(instanceId, instance);
+            schedulerCtx.statusTracker?.registerInstance(instance);
+            
             const prompt = makeWebhookPrompt(agentConfig, context, schedulerCtx);
             availableRunner.run(prompt, { type: 'webhook', source: context.event }).then(({ triggers }) => {
               if (triggers.length > 0) {
                 dispatchTriggers(triggers, agentConfig.name, 0, schedulerCtx);
               }
-              // Drain any events that queued while this webhook run was executing
+              instance.status = 'completed';
+              // Drain any events that queued while this webhook run was executed
               return drainWebhookQueue(agentConfig, schedulerCtx);
             }).catch((err) => {
+              instance.status = 'error';
               logger.error({ err }, `${agentConfig.name} webhook run failed`);
+            }).finally(() => {
+              // Unregister instance
+              schedulerCtx.runningInstances.delete(instanceId);
+              schedulerCtx.statusTracker?.unregisterInstance(instanceId);
             });
           },
         });
@@ -604,6 +747,12 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     const pool = runnerPools[agentConfig.name];
 
     const job = new Cron(agentConfig.schedule, { timezone }, async () => {
+      // Skip if scheduler is paused
+      if (schedulerCtx.paused) {
+        logger.info({ agent: agentConfig.name }, "scheduler is paused, skipping scheduled run");
+        return;
+      }
+      
       // Skip if agent is disabled
       if (statusTracker && !statusTracker.isAgentEnabled(agentConfig.name)) {
         logger.info({ agent: agentConfig.name }, "agent is disabled, skipping scheduled run");
@@ -713,5 +862,17 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  return { cronJobs, runnerPools, gateway, webhookRegistry, webhookUrls, statusTracker };
+
+
+  return { 
+    cronJobs, 
+    runnerPools, 
+    gateway, 
+    webhookRegistry, 
+    webhookUrls, 
+    statusTracker,
+    killInstance,
+    pauseScheduler,
+    resumeScheduler
+  };
 }

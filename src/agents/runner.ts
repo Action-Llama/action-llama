@@ -61,16 +61,25 @@ export class AgentRunner {
   private logger: Logger;
   private projectPath: string;
   private statusTracker?: StatusTracker;
+  public readonly instanceId: string;
+  private abortController: AbortController;
 
-  constructor(agentConfig: AgentConfig, logger: Logger, projectPath: string, statusTracker?: StatusTracker) {
+  constructor(agentConfig: AgentConfig, logger: Logger, projectPath: string, statusTracker?: StatusTracker, instanceId?: string) {
     this.agentConfig = agentConfig;
     this.logger = logger;
     this.projectPath = projectPath;
     this.statusTracker = statusTracker;
+    this.instanceId = instanceId || agentConfig.name;
+    this.abortController = new AbortController();
   }
 
   get isRunning(): boolean {
     return this.running;
+  }
+
+  abort(): void {
+    this.logger.info("Agent runner abort requested");
+    this.abortController.abort();
   }
 
   async run(prompt: string, triggerInfo?: { type: 'schedule' | 'webhook' | 'agent'; source?: string }): Promise<RunOutcome> {
