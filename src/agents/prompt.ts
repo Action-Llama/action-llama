@@ -6,6 +6,7 @@ import { parseCredentialRef } from "../shared/credentials.js";
 
 export interface PromptSkills {
   locking?: boolean;
+  calling?: boolean;
 }
 
 export function buildLockSkill(): string {
@@ -52,6 +53,54 @@ export function buildLockSkill(): string {
     '- Use descriptive keys: `"github issue acme/app#42"`, `"deploy api-prod"`',
     "- These commands are safe to use even without a gateway — they return success as a no-op",
     "</skill-lock>",
+  ];
+  return lines.join("\n");
+}
+
+export function buildCallSkill(): string {
+  const lines = [
+    "<skill-call>",
+    "## Skill: Agent-to-Agent Calls",
+    "",
+    "Call other agents and retrieve their results. Calls are **non-blocking** — fire a call, continue working, then check or wait for results.",
+    "",
+    "### Commands",
+    "",
+    '**`al-call <agent>`** — Call another agent. Pass the context via stdin. Returns a call ID.',
+    "```",
+    'CALL_ID=$(echo "find competitors for Acme" | al-call researcher | jq -r .callId)',
+    "```",
+    "",
+    "**`al-check <callId>`** — Check the status of a call. Never blocks.",
+    "```",
+    'al-check "$CALL_ID"',
+    "```",
+    '- Running: `{"status":"running"}`',
+    '- Completed: `{"status":"completed","returnValue":"..."}`',
+    '- Error: `{"status":"error","errorMessage":"..."}`',
+    "",
+    "**`al-wait <callId> [callId...] [--timeout N]`** — Wait for one or more calls to complete. Default timeout: 900s.",
+    "```",
+    'RESULTS=$(al-wait "$CALL_ID1" "$CALL_ID2" --timeout 600)',
+    "```",
+    "Returns a JSON object keyed by call ID with each call's final status.",
+    "",
+    "### Returning Values",
+    "",
+    "When you are called by another agent, return your result in a `[RETURN]...[/RETURN]` block:",
+    "```",
+    "[RETURN]",
+    "Your result text here",
+    "[/RETURN]",
+    "```",
+    "",
+    "### Guidelines",
+    "- Calls are non-blocking — fire multiple calls then wait for all at once",
+    "- Use `al-wait` to wait for multiple calls efficiently",
+    "- Use `al-check` for polling when you want to do work between checks",
+    "- Called agents cannot call back to the calling agent (no cycles)",
+    "- There is a depth limit on nested calls to prevent infinite chains",
+    "</skill-call>",
   ];
   return lines.join("\n");
 }
@@ -112,6 +161,9 @@ function buildSkillsBlock(skills?: PromptSkills): string {
   if (skills.locking) {
     blocks.push(buildLockSkill());
   }
+  if (skills.calling) {
+    blocks.push(buildCallSkill());
+  }
   return blocks.length > 0 ? "\n\n" + blocks.join("\n\n") : "";
 }
 
@@ -140,9 +192,9 @@ export function buildManualSuffix(): string {
   return "You have been triggered manually. Check for new work and act on anything you find.";
 }
 
-export function buildTriggeredSuffix(sourceAgent: string, context: string): string {
-  const triggerBlock = JSON.stringify({ source: sourceAgent, context });
-  return `<agent-trigger>\n${triggerBlock}\n</agent-trigger>\n\nYou were triggered by the "${sourceAgent}" agent. Review the trigger context above and take appropriate action.`;
+export function buildCalledSuffix(callerAgent: string, context: string): string {
+  const callBlock = JSON.stringify({ caller: callerAgent, context });
+  return `<agent-call>\n${callBlock}\n</agent-call>\n\nYou were called by the "${callerAgent}" agent. Review the call context above, do the requested work, and output a [RETURN]...[/RETURN] block with your result.`;
 }
 
 export function buildWebhookSuffix(context: WebhookContext): string {
@@ -158,8 +210,8 @@ export function buildManualPrompt(agentConfig: AgentConfig, skills?: PromptSkill
   return `${buildPromptSkeleton(agentConfig, skills)}\n\n${buildManualSuffix()}`;
 }
 
-export function buildTriggeredPrompt(agentConfig: AgentConfig, sourceAgent: string, context: string, skills?: PromptSkills): string {
-  return `${buildPromptSkeleton(agentConfig, skills)}\n\n${buildTriggeredSuffix(sourceAgent, context)}`;
+export function buildCalledPrompt(agentConfig: AgentConfig, callerAgent: string, context: string, skills?: PromptSkills): string {
+  return `${buildPromptSkeleton(agentConfig, skills)}\n\n${buildCalledSuffix(callerAgent, context)}`;
 }
 
 export function buildWebhookPrompt(agentConfig: AgentConfig, context: WebhookContext, skills?: PromptSkills): string {

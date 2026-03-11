@@ -82,8 +82,8 @@ The `scale` field controls how many instances of an agent can run concurrently. 
 ### How it works
 
 1. **Scheduled runs**: If a cron trigger fires but all agent instances are busy, the scheduled run is skipped with a warning
-2. **Webhook events**: If a webhook arrives but all instances are busy, the event is queued (up to `webhookQueueSize` limit in global config)
-3. **Agent triggers**: If one agent tries to trigger another but the target has no available instances, the trigger is skipped with a warning
+2. **Webhook events**: If a webhook arrives but all instances are busy, the event is queued (up to `workQueueSize` limit in global config, default: 100)
+3. **Agent calls**: If one agent calls another but all target instances are busy, the call is queued in the same work queue and processed when a runner frees up
 
 ### Example use cases
 

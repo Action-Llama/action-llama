@@ -68,8 +68,12 @@ export interface GlobalConfig {
   gateway?: GatewayConfig;
   webhooks?: Record<string, WebhookSourceConfig>;
   maxReruns?: number;
+  maxCallDepth?: number;
+  /** @deprecated Use maxCallDepth instead */
   maxTriggerDepth?: number;
+  /** @deprecated Use workQueueSize instead */
   webhookQueueSize?: number;
+  workQueueSize?: number;
 }
 
 // --- Per-agent config (lives at <project>/<agent>/agent-config.toml) ---

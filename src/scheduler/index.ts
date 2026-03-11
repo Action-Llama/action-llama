@@ -5,11 +5,11 @@ import type { GlobalConfig, AgentConfig, WebhookSourceConfig } from "../shared/c
 import { requireCredentialRef, loadCredentialField, listCredentialInstances } from "../shared/credentials.js";
 import { createLogger, createFileOnlyLogger } from "../shared/logger.js";
 import { agentDir } from "../shared/paths.js";
-import { AgentRunner, type RunOutcome } from "../agents/runner.js";
+import { AgentRunner } from "../agents/runner.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import {
-  buildScheduledPrompt, buildWebhookPrompt, buildTriggeredPrompt,
-  buildScheduledSuffix, buildWebhookSuffix, buildTriggeredSuffix,
+  buildScheduledPrompt, buildWebhookPrompt, buildCalledPrompt,
+  buildScheduledSuffix, buildWebhookSuffix, buildCalledSuffix,
   type PromptSkills,
 } from "../agents/prompt.js";
 import { WebhookRegistry } from "../webhooks/registry.js";
@@ -21,9 +21,14 @@ import type { ContainerRuntime } from "../docker/runtime.js";
 import { AWS_CONSTANTS } from "../shared/aws-constants.js";
 import { buildAllImages } from "../cloud/image-builder.js";
 import type { WebhookContext, WebhookFilter, WebhookTrigger, GitHubWebhookFilter, SentryWebhookFilter, LinearWebhookFilter } from "../webhooks/types.js";
-import { WebhookEventQueue } from "./event-queue.js";
+import { WorkQueue } from "./event-queue.js";
 import { RunnerPool, type PoolRunner } from "./runner-pool.js";
 import type { AgentInstance } from "./types.js";
+
+/** A work item is either a webhook event or an agent call. */
+export type WorkItem =
+  | { type: "webhook"; webhookContext: WebhookContext }
+  | { type: "call"; callId: string; callerAgent: string; context: string };
 
 // Provider type → credential type for loading secrets
 const PROVIDER_TO_CREDENTIAL: Record<string, string> = {
@@ -79,7 +84,9 @@ function buildFilterFromTrigger(trigger: WebhookTrigger, providerType: string): 
 }
 
 const DEFAULT_MAX_RERUNS = 10;
-const DEFAULT_MAX_TRIGGER_DEPTH = 3;
+const DEFAULT_MAX_CALL_DEPTH = 3;
+
+import type { CallStore } from "../gateway/call-store.js";
 
 function generateInstanceId(agentName: string): string {
   const timestamp = Date.now();
@@ -91,9 +98,9 @@ interface SchedulerContext {
   runnerPools: Record<string, RunnerPool>;
   agentConfigs: AgentConfig[];
   maxReruns: number;
-  maxTriggerDepth: number;
+  maxCallDepth: number;
   logger: ReturnType<typeof createLogger>;
-  webhookQueue: WebhookEventQueue<WebhookContext>;
+  workQueue: WorkQueue<WorkItem>;
   shuttingDown: boolean;
   skills?: PromptSkills;
   /** When true, images have baked-in static files; only pass dynamic suffix as prompt. */
@@ -101,6 +108,7 @@ interface SchedulerContext {
   paused: boolean;
   runningInstances: Map<string, AgentInstance>;
   statusTracker?: StatusTracker;
+  callStore?: CallStore;
 }
 
 // Prompt helpers: when images have baked-in static files, only pass the dynamic suffix.
@@ -113,54 +121,66 @@ function makeWebhookPrompt(agentConfig: AgentConfig, context: WebhookContext, ct
   return ctx.useBakedImages ? buildWebhookSuffix(context) : buildWebhookPrompt(agentConfig, context, ctx.skills);
 }
 
-function makeTriggeredPrompt(agentConfig: AgentConfig, sourceAgent: string, context: string, ctx: SchedulerContext): string {
-  return ctx.useBakedImages ? buildTriggeredSuffix(sourceAgent, context) : buildTriggeredPrompt(agentConfig, sourceAgent, context, ctx.skills);
+function makeCalledPrompt(agentConfig: AgentConfig, callerAgent: string, context: string, ctx: SchedulerContext): string {
+  return ctx.useBakedImages ? buildCalledSuffix(callerAgent, context) : buildCalledPrompt(agentConfig, callerAgent, context, ctx.skills);
 }
 
-function dispatchTriggers(
-  triggers: Array<{ agent: string; context: string }>,
-  sourceAgent: string,
-  depth: number,
+import type { CallEntry } from "../gateway/call-store.js";
+
+function dispatchCall(
+  entry: CallEntry,
   ctx: SchedulerContext
-): void {
-  for (const { agent, context } of triggers) {
-    if (agent === sourceAgent) {
-      ctx.logger.warn({ source: sourceAgent }, "agent cannot trigger itself, skipping");
-      continue;
-    }
-    if (depth >= ctx.maxTriggerDepth) {
-      ctx.logger.warn({ source: sourceAgent, target: agent, depth, maxTriggerDepth: ctx.maxTriggerDepth }, "trigger depth limit reached, skipping");
-      continue;
-    }
-    const targetConfig = ctx.agentConfigs.find((a) => a.name === agent);
-    if (!targetConfig) {
-      ctx.logger.warn({ source: sourceAgent, target: agent }, "trigger target agent not found, skipping");
-      continue;
-    }
-    const pool = ctx.runnerPools[agent];
-    if (pool.size === 0) {
-      ctx.logger.info({ source: sourceAgent, target: agent }, "agent is disabled (scale=0), skipping trigger");
-      continue;
-    }
-    const availableRunner = pool.getAvailableRunner();
-    if (!availableRunner) {
-      ctx.logger.warn({ source: sourceAgent, target: agent, running: pool.runningJobCount, scale: pool.size }, "all agent runners busy, skipping trigger");
-      continue;
-    }
-    ctx.logger.info({ source: sourceAgent, target: agent, depth, running: pool.runningJobCount, scale: pool.size }, "agent trigger firing");
-    const prompt = makeTriggeredPrompt(targetConfig, sourceAgent, context, ctx);
-    runTriggered(availableRunner, targetConfig, prompt, sourceAgent, depth + 1, ctx).catch((err) => {
-      ctx.logger.error({ err, target: agent }, "triggered run failed");
-    });
+): { ok: boolean; reason?: string } {
+  const { callerAgent, targetAgent, callId } = entry;
+
+  if (targetAgent === callerAgent) {
+    return { ok: false, reason: "agent cannot call itself" };
   }
+
+  if (entry.depth >= ctx.maxCallDepth) {
+    return { ok: false, reason: `call depth limit reached (max ${ctx.maxCallDepth})` };
+  }
+
+  const targetConfig = ctx.agentConfigs.find((a) => a.name === targetAgent);
+  if (!targetConfig) {
+    return { ok: false, reason: `target agent "${targetAgent}" not found` };
+  }
+
+  const pool = ctx.runnerPools[targetAgent];
+  if (!pool || pool.size === 0) {
+    return { ok: false, reason: `agent "${targetAgent}" is disabled (scale=0)` };
+  }
+
+  const availableRunner = pool.getAvailableRunner();
+  if (!availableRunner) {
+    // Queue the call — it will be picked up when a runner frees up
+    const { dropped } = ctx.workQueue.enqueue(targetAgent, { type: "call", callId, callerAgent, context: entry.context });
+    if (dropped && dropped.context.type === "call" && ctx.callStore) {
+      ctx.callStore.fail(dropped.context.callId, "evicted from work queue");
+    }
+    ctx.logger.info({ caller: callerAgent, target: targetAgent, callId, queueSize: ctx.workQueue.size(targetAgent), running: pool.runningJobCount, scale: pool.size }, "all runners busy, call queued");
+    return { ok: true };
+  }
+
+  ctx.logger.info({ caller: callerAgent, target: targetAgent, callId, depth: entry.depth, running: pool.runningJobCount, scale: pool.size }, "agent call dispatching");
+
+  const callStore = ctx.callStore!;
+  callStore.setRunning(callId);
+
+  const prompt = makeCalledPrompt(targetConfig, callerAgent, entry.context, ctx);
+  runCalled(availableRunner, targetConfig, prompt, callId, ctx).catch((err) => {
+    ctx.logger.error({ err, target: targetAgent, callId }, "called run failed");
+    callStore.fail(callId, String(err?.message || err));
+  });
+
+  return { ok: true };
 }
 
-async function runTriggered(
+async function runCalled(
   runner: PoolRunner,
   agentConfig: AgentConfig,
   prompt: string,
-  sourceAgent: string,
-  depth: number,
+  callId: string,
   ctx: SchedulerContext
 ): Promise<void> {
   // Create and register instance
@@ -170,59 +190,77 @@ async function runTriggered(
     agentName: agentConfig.name,
     status: 'running',
     startedAt: new Date(),
-    trigger: `trigger:${sourceAgent}`,
+    trigger: `call:${callId}`,
     runner
   };
-  
+
   ctx.runningInstances.set(instanceId, instance);
   ctx.statusTracker?.registerInstance(instance);
-  
+
+  const callStore = ctx.callStore!;
   try {
-    const { result, triggers } = await runner.run(prompt, { type: 'agent', source: sourceAgent });
-    if (triggers.length > 0) {
-      dispatchTriggers(triggers, agentConfig.name, depth, ctx);
+    const { result, returnValue } = await runner.run(prompt, { type: 'agent', source: `call:${callId}` });
+    if (result === "error") {
+      callStore.fail(callId, "agent run failed");
+      instance.status = 'error';
+    } else {
+      callStore.complete(callId, returnValue);
+      instance.status = 'completed';
     }
-    // No reruns for triggered runs — they respond to a specific event
-    if (result === "completed") {
-      ctx.logger.info(`${agentConfig.name} triggered run completed`);
-    }
-    instance.status = result === 'error' ? 'error' : 'completed';
-  } catch (err) {
+    ctx.logger.info({ agent: agentConfig.name, callId, result, hasReturn: !!returnValue }, "called run completed");
+  } catch (err: any) {
+    callStore.fail(callId, String(err?.message || err));
     instance.status = 'error';
     throw err;
   } finally {
-    // Unregister instance
     ctx.runningInstances.delete(instanceId);
     ctx.statusTracker?.unregisterInstance(instanceId);
   }
+  // Runner is now free — drain any queued work for this agent
+  await drainWorkQueue(agentConfig, ctx);
 }
 
-async function drainWebhookQueue(
+async function drainWorkQueue(
   agentConfig: AgentConfig,
   ctx: SchedulerContext
 ): Promise<void> {
   const pool = ctx.runnerPools[agentConfig.name];
-  let event;
-  while (!ctx.shuttingDown && (event = ctx.webhookQueue.dequeue(agentConfig.name)) !== undefined) {
+  let item;
+  while (!ctx.shuttingDown && (item = ctx.workQueue.dequeue(agentConfig.name)) !== undefined) {
     const runner = pool.getAvailableRunner();
     if (!runner) {
-      // Put the event back in the queue if no runners are available
-      ctx.webhookQueue.enqueue(agentConfig.name, event.context, event.receivedAt);
+      // Put the item back in the queue if no runners are available
+      ctx.workQueue.enqueue(agentConfig.name, item.context, item.receivedAt);
       break;
     }
-    const ageMs = Date.now() - event.receivedAt.getTime();
-    ctx.logger.info(
-      { agent: agentConfig.name, event: event.context.event, ageMs, remaining: ctx.webhookQueue.size(agentConfig.name), running: pool.runningJobCount, scale: pool.size },
-      "processing queued webhook event"
-    );
-    try {
-      const prompt = makeWebhookPrompt(agentConfig, event.context, ctx);
-      const { triggers } = await runner.run(prompt, { type: 'webhook', source: event.context.event });
-      if (triggers.length > 0) {
-        dispatchTriggers(triggers, agentConfig.name, 0, ctx);
+    const ageMs = Date.now() - item.receivedAt.getTime();
+
+    if (item.context.type === "webhook") {
+      const webhookCtx = item.context.webhookContext;
+      ctx.logger.info(
+        { agent: agentConfig.name, event: webhookCtx.event, ageMs, remaining: ctx.workQueue.size(agentConfig.name), running: pool.runningJobCount, scale: pool.size },
+        "processing queued webhook event"
+      );
+      try {
+        const prompt = makeWebhookPrompt(agentConfig, webhookCtx, ctx);
+        await runner.run(prompt, { type: 'webhook', source: webhookCtx.event });
+      } catch (err) {
+        ctx.logger.error({ err, agent: agentConfig.name }, "queued webhook run failed");
       }
-    } catch (err) {
-      ctx.logger.error({ err, agent: agentConfig.name }, "queued webhook run failed");
+    } else if (item.context.type === "call") {
+      const { callId, callerAgent, context } = item.context;
+      ctx.logger.info(
+        { agent: agentConfig.name, callId, caller: callerAgent, ageMs, remaining: ctx.workQueue.size(agentConfig.name), running: pool.runningJobCount, scale: pool.size },
+        "processing queued call"
+      );
+      const callStore = ctx.callStore!;
+      callStore.setRunning(callId);
+      const prompt = makeCalledPrompt(agentConfig, callerAgent, context, ctx);
+      try {
+        await runCalled(runner, agentConfig, prompt, callId, ctx);
+      } catch (err) {
+        ctx.logger.error({ err, agent: agentConfig.name, callId }, "queued call run failed");
+      }
     }
   }
 }
@@ -230,7 +268,6 @@ async function drainWebhookQueue(
 async function runWithReruns(
   runner: PoolRunner,
   agentConfig: AgentConfig,
-  depth: number,
   ctx: SchedulerContext
 ): Promise<void> {
   // Create and register instance
@@ -243,37 +280,30 @@ async function runWithReruns(
     trigger: 'schedule',
     runner
   };
-  
+
   ctx.runningInstances.set(instanceId, instance);
   ctx.statusTracker?.registerInstance(instance);
-  
+
   try {
-    let { result, triggers } = await runner.run(makeScheduledPrompt(agentConfig, ctx), { type: 'schedule' });
-    if (triggers.length > 0) {
-      dispatchTriggers(triggers, agentConfig.name, depth, ctx);
-    }
+    let { result } = await runner.run(makeScheduledPrompt(agentConfig, ctx), { type: 'schedule' });
     let reruns = 0;
     while (result === "rerun" && reruns < ctx.maxReruns) {
       reruns++;
       ctx.logger.info({ rerun: reruns, maxReruns: ctx.maxReruns }, `${agentConfig.name} requested rerun, re-running immediately`);
-      ({ result, triggers } = await runner.run(makeScheduledPrompt(agentConfig, ctx), { type: 'schedule', source: `rerun ${reruns}/${ctx.maxReruns}` }));
-      if (triggers.length > 0) {
-        dispatchTriggers(triggers, agentConfig.name, depth, ctx);
-      }
+      ({ result } = await runner.run(makeScheduledPrompt(agentConfig, ctx), { type: 'schedule', source: `rerun ${reruns}/${ctx.maxReruns}` }));
     }
     if (result === "rerun" && reruns >= ctx.maxReruns) {
       ctx.logger.warn({ maxReruns: ctx.maxReruns }, `${agentConfig.name} hit max reruns limit`);
     }
 
-    // Drain any webhook events that arrived during the rerun cycle
-    await drainWebhookQueue(agentConfig, ctx);
-    
+    // Drain any work items that arrived during the rerun cycle
+    await drainWorkQueue(agentConfig, ctx);
+
     instance.status = result === 'error' ? 'error' : 'completed';
   } catch (err) {
     instance.status = 'error';
     throw err;
   } finally {
-    // Unregister instance
     ctx.runningInstances.delete(instanceId);
     ctx.statusTracker?.unregisterInstance(instanceId);
   }
@@ -326,7 +356,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   }
 
   const maxReruns = globalConfig.maxReruns ?? DEFAULT_MAX_RERUNS;
-  const maxTriggerDepth = globalConfig.maxTriggerDepth ?? DEFAULT_MAX_TRIGGER_DEPTH;
+  const maxCallDepth = globalConfig.maxCallDepth ?? globalConfig.maxTriggerDepth ?? DEFAULT_MAX_CALL_DEPTH;
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const dockerEnabled = globalConfig.local?.enabled === true;
   const anyWebhooks = activeAgentConfigs.some((a) => a.webhooks?.length);
@@ -519,7 +549,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     }
 
     // 2. Build base + per-agent images via shared image builder
-    const buildSkills: PromptSkills | undefined = dockerEnabled ? { locking: true } : undefined;
+    const buildSkills: PromptSkills | undefined = dockerEnabled ? { locking: true, calling: true } : undefined;
 
     const buildResult = await buildAllImages({
       projectPath,
@@ -602,22 +632,16 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     logger.info({ agent: agentConfig.name, scale }, "Created runner pool");
   }
 
-  const webhookQueueSize = globalConfig.webhookQueueSize ?? 20;
-  const webhookQueue = new WebhookEventQueue<WebhookContext>(webhookQueueSize);
-  const skills: PromptSkills | undefined = dockerEnabled ? { locking: true } : undefined;
-  const schedulerCtx: SchedulerContext = { 
-    runnerPools, 
-    agentConfigs, 
-    maxReruns, 
-    maxTriggerDepth, 
-    logger, 
-    webhookQueue, 
-    shuttingDown: false, 
-    skills, 
-    useBakedImages: dockerEnabled,
+  const workQueueSize = globalConfig.workQueueSize ?? globalConfig.webhookQueueSize ?? 100;
+  const workQueue = new WorkQueue<WorkItem>(workQueueSize);
+  const skills: PromptSkills | undefined = dockerEnabled ? { locking: true, calling: true } : undefined;
+  const schedulerCtx: SchedulerContext = {
+    runnerPools, agentConfigs, maxReruns, maxCallDepth, logger, workQueue,
+    shuttingDown: false, skills, useBakedImages: dockerEnabled,
     paused: false,
     runningInstances: new Map(),
-    statusTracker
+    statusTracker,
+    callStore: gateway?.callStore,
   };
 
   // Control functions for management
@@ -626,11 +650,11 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     if (!instance) {
       return false;
     }
-    
+
     if (instance.runner && typeof instance.runner.abort === 'function') {
       instance.runner.abort();
     }
-    
+
     instance.status = 'killed';
     logger.info({ instanceId, agent: instance.agentName }, "Instance killed");
     return true;
@@ -648,7 +672,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     logger.info("Scheduler resumed");
   };
 
-  // Update gateway control dependencies
+  // Update gateway control dependencies and wire call dispatcher
   if (gatewayEnabled && gateway) {
     Object.assign(gatewayControlDeps, {
       statusTracker,
@@ -656,6 +680,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       pauseScheduler,
       resumeScheduler,
     });
+    gateway.setCallDispatcher((entry) => dispatchCall(entry as CallEntry, schedulerCtx));
   }
 
   // Set up webhook bindings (only when gateway is enabled)
@@ -689,18 +714,23 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
             const availableRunner = pool.getAvailableRunner();
             if (!availableRunner) {
-              const { accepted, dropped } = webhookQueue.enqueue(agentConfig.name, context);
+              const workItem: WorkItem = { type: "webhook", webhookContext: context };
+              const { accepted, dropped } = workQueue.enqueue(agentConfig.name, workItem);
               if (accepted) {
                 logger.info(
-                  { agent: agentConfig.name, event: context.event, queueSize: webhookQueue.size(agentConfig.name), running: pool.runningJobCount, scale: pool.size },
+                  { agent: agentConfig.name, event: context.event, queueSize: workQueue.size(agentConfig.name), running: pool.runningJobCount, scale: pool.size },
                   "all agent runners busy, webhook event queued"
                 );
               }
               if (dropped) {
+                const droppedDesc = dropped.context.type === "webhook" ? dropped.context.webhookContext.event : `call:${dropped.context.callId}`;
                 logger.warn(
-                  { agent: agentConfig.name, droppedEvent: dropped.context.event },
-                  "webhook queue full, oldest event dropped"
+                  { agent: agentConfig.name, droppedItem: droppedDesc },
+                  "work queue full, oldest item dropped"
                 );
+                if (dropped.context.type === "call" && gateway?.callStore) {
+                  gateway.callStore.fail(dropped.context.callId, "evicted from work queue");
+                }
               }
               return;
             }
@@ -724,13 +754,10 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
             schedulerCtx.statusTracker?.registerInstance(instance);
             
             const prompt = makeWebhookPrompt(agentConfig, context, schedulerCtx);
-            availableRunner.run(prompt, { type: 'webhook', source: context.event }).then(({ triggers }) => {
-              if (triggers.length > 0) {
-                dispatchTriggers(triggers, agentConfig.name, 0, schedulerCtx);
-              }
+            availableRunner.run(prompt, { type: 'webhook', source: context.event }).then(() => {
               instance.status = 'completed';
-              // Drain any events that queued while this webhook run was executed
-              return drainWebhookQueue(agentConfig, schedulerCtx);
+              // Drain any work items that queued while this webhook run was executing
+              return drainWorkQueue(agentConfig, schedulerCtx);
             }).catch((err) => {
               instance.status = 'error';
               logger.error({ err }, `${agentConfig.name} webhook run failed`);
@@ -772,7 +799,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
         return;
       }
       logger.info({ agent: agentConfig.name, running: pool.runningJobCount, scale: pool.size }, "triggering scheduled run");
-      await runWithReruns(availableRunner, agentConfig, 0, schedulerCtx);
+      await runWithReruns(availableRunner, agentConfig, schedulerCtx);
     });
 
     cronJobs.push(job);
@@ -842,7 +869,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     const availableRunner = pool.getAvailableRunner();
     if (availableRunner) {
       logger.info(`Initial run for ${agentConfig.name}`);
-      runWithReruns(availableRunner, agentConfig, 0, schedulerCtx).catch((err) => {
+      runWithReruns(availableRunner, agentConfig, schedulerCtx).catch((err) => {
         logger.error({ err }, `Initial ${agentConfig.name} run failed`);
       });
     } else {
@@ -854,7 +881,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   const shutdown = async () => {
     logger.info("Shutting down scheduler...");
     schedulerCtx.shuttingDown = true;
-    webhookQueue.clearAll();
+    workQueue.clearAll();
     for (const job of cronJobs) {
       job.stop();
     }

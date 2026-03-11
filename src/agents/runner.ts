@@ -43,11 +43,13 @@ export interface TriggerRequest {
 export interface RunOutcome {
   result: RunResult;
   triggers: TriggerRequest[];
+  returnValue?: string;
   exitCode?: number;
   exitReason?: string;
 }
 
 const TRIGGER_PATTERN = /\[TRIGGER:\s*(\S+)\]([\s\S]*?)\[\/TRIGGER\]/g;
+const RETURN_PATTERN = /\[RETURN\]([\s\S]*?)\[\/RETURN\]/g;
 
 function extractTriggers(text: string): TriggerRequest[] {
   const triggers: TriggerRequest[] = [];
@@ -56,6 +58,15 @@ function extractTriggers(text: string): TriggerRequest[] {
     triggers.push({ agent: match[1], context: match[2].trim() });
   }
   return triggers;
+}
+
+function extractReturnValue(text: string): string | undefined {
+  let last: string | undefined;
+  let match;
+  while ((match = RETURN_PATTERN.exec(text)) !== null) {
+    last = match[1].trim();
+  }
+  return last;
 }
 
 export class AgentRunner {
@@ -296,8 +307,8 @@ export class AgentRunner {
       }
 
       const triggers = extractTriggers(outputText);
+      const returnValue = extractReturnValue(outputText);
       const exitCode = extractExitSignal(outputText);
-      
       let result: RunResult;
       if (exitCode !== undefined) {
         const reason = getExitCodeMessage(exitCode);
@@ -316,6 +327,7 @@ export class AgentRunner {
       return { 
         result, 
         triggers, 
+        returnValue,
         ...(exitCode !== undefined && { 
           exitCode, 
           exitReason: getExitCodeMessage(exitCode) 
