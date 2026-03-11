@@ -5,12 +5,11 @@
  * This handler replaces the default ENTRYPOINT on Lambda via ImageConfig,
  * keeping container-entry.ts as the direct entrypoint for Docker/ECS.
  *
- * During init (module load): only imports are executed — fast, well under
- * Lambda's 10-second init timeout.
- *
- * During invocation: runAgent() is called, which does all the real work
- * (loading config, credentials, running the LLM session).
+ * During init: initAgent() runs once (loads config, creates model/resourceLoader).
+ * During invocation: handleInvocation() runs per-request (credentials, session).
  */
+
+import { initAgent, handleInvocation } from "./container-entry.js";
 
 const RUNTIME_API = process.env.AWS_LAMBDA_RUNTIME_API;
 
@@ -23,8 +22,10 @@ async function main() {
     throw new Error("AWS_LAMBDA_RUNTIME_API not set — this file should only run on Lambda");
   }
 
-  // Lazy-import runAgent so module loading stays fast during init.
-  const { runAgent } = await import("./container-entry.js");
+  // Init phase — runs once during cold start. Hoists reusable work
+  // (PATH setup, signal dir, config parsing, model creation) out of
+  // the per-invocation hot path.
+  const init = await initAgent();
 
   // Lambda Runtime API loop. In practice, each agent invocation runs for
   // minutes, so this loop only executes once before the process exits.
@@ -56,7 +57,7 @@ async function main() {
         // Payload may be empty or malformed — continue without secrets
       }
 
-      const exitCode = await runAgent();
+      const exitCode = await handleInvocation(init);
 
       await fetch(
         `http://${RUNTIME_API}/2018-06-01/runtime/invocation/${requestId}/response`,

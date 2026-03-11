@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSync } from "fs";
+import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSync, rmSync } from "fs";
 import { resolve } from "path";
 import { getModel } from "@mariozechner/pi-ai";
 import {
@@ -12,7 +12,8 @@ import {
 import type { AgentConfig } from "../shared/config.js";
 import { parseCredentialRef, unsanitizeEnvPart } from "../shared/credentials.js";
 import { getExitCodeMessage } from "../shared/exit-codes.js";
-import { installSignalCommands, readSignals } from "./signals.js";
+import { ensureSignalDir, readSignals } from "./signals.js";
+import { builtinCredentials } from "../credentials/builtins/index.js";
 
 // Structured log line — written to stdout, parsed by ContainerAgentRunner on the host
 function emitLog(level: string, msg: string, data?: Record<string, any>) {
@@ -72,7 +73,26 @@ function readCredentialFields(type: string, instance: string): Record<string, st
   return credBundle[type]?.[instance] || {};
 }
 
-export async function runAgent(): Promise<number> {
+/**
+ * Components initialized once and reused across invocations (Lambda) or
+ * used for the single run (Docker/ECS).
+ */
+export interface AgentInit {
+  agentConfig: AgentConfig;
+  agentsMd: string;
+  timeoutSeconds: number;
+  model: ReturnType<typeof getModel>;
+  resourceLoader: InstanceType<typeof DefaultResourceLoader>;
+  settingsManager: ReturnType<typeof SettingsManager.inMemory>;
+  signalDir: string;
+}
+
+/**
+ * One-time initialization — called once during Lambda init (cold start) or
+ * at the start of a direct container run. Sets up PATH, signal dir, loads
+ * static config, creates reusable model/resourceLoader/settingsManager.
+ */
+export async function initAgent(): Promise<AgentInit> {
   // Point HOME to /tmp so that tools writing to $HOME (e.g. git config --global)
   // work on read-only filesystems like Lambda where /home/node is not writable.
   process.env.HOME = "/tmp";
@@ -82,103 +102,14 @@ export async function runAgent(): Promise<number> {
   // ECS Fargate, Cloud Run). Node starts in /app (WORKDIR at build time).
   process.chdir("/tmp");
 
-  const gatewayUrl = process.env.GATEWAY_URL;
+  // Set PATH to include baked scripts at /app/bin.
+  // Scripts are baked into the image by the Dockerfile — no need to write them.
+  process.env.PATH = `/app/bin:${process.env.PATH || ""}`;
 
-  // Write gateway helper scripts to /tmp/bin/ and prepend to PATH.
-  // When GATEWAY_URL is not set, these commands are no-ops (return success).
-  // This lets agents use clean commands like `rlock "resource"` instead of raw curl,
-  // and gracefully degrades when running without a gateway.
-  mkdirSync("/tmp/bin", { recursive: true });
-
-  const rlockScript = `#!/bin/sh
-if [ -z "$GATEWAY_URL" ]; then echo '{"ok":true}'; exit 0; fi
-curl -s -X POST "$GATEWAY_URL/locks/acquire" \\
-  -H 'Content-Type: application/json' \\
-  -d '{"secret":"'"$SHUTDOWN_SECRET"'","resourceKey":"'"$1"'"}'
-`;
-
-  const runlockScript = `#!/bin/sh
-if [ -z "$GATEWAY_URL" ]; then echo '{"ok":true}'; exit 0; fi
-curl -s -X POST "$GATEWAY_URL/locks/release" \\
-  -H 'Content-Type: application/json' \\
-  -d '{"secret":"'"$SHUTDOWN_SECRET"'","resourceKey":"'"$1"'"}' || echo '{"ok":true,"note":"gateway unreachable, lock will expire"}'
-`;
-
-  const rlockHeartbeatScript = `#!/bin/sh
-if [ -z "$GATEWAY_URL" ]; then echo '{"ok":true}'; exit 0; fi
-curl -s -X POST "$GATEWAY_URL/locks/heartbeat" \\
-  -H 'Content-Type: application/json' \\
-  -d '{"secret":"'"$SHUTDOWN_SECRET"'","resourceKey":"'"$1"'"}' || echo '{"ok":true,"note":"gateway unreachable"}'
-`;
-
-  const alShutdownScript = `#!/bin/sh
-if [ -z "$GATEWAY_URL" ]; then exit 0; fi
-curl -s -X POST "$GATEWAY_URL/shutdown" \\
-  -H 'Content-Type: application/json' \\
-  -d '{"secret":"'"$SHUTDOWN_SECRET"'","reason":"'"$\{1:-agent requested shutdown\}"'"}' || true
-`;
-
-  const alCallScript = `#!/bin/sh
-if [ -z "$GATEWAY_URL" ]; then echo '{"ok":false,"reason":"no gateway"}'; exit 1; fi
-if [ -z "$1" ]; then echo '{"ok":false,"reason":"usage: echo ctx | al-call <agent>"}'; exit 1; fi
-CONTEXT=$(cat)
-curl -s -X POST "$GATEWAY_URL/calls" \\
-  -H 'Content-Type: application/json' \\
-  -d "$(jq -n --arg s "$SHUTDOWN_SECRET" --arg t "$1" --arg c "$CONTEXT" \\
-    '{secret:$s,targetAgent:$t,context:$c}')"
-`;
-
-  const alCheckScript = `#!/bin/sh
-if [ -z "$GATEWAY_URL" ]; then echo '{"status":"error","errorMessage":"no gateway"}'; exit 1; fi
-if [ -z "$1" ]; then echo '{"status":"error","errorMessage":"usage: al-check <callId>"}'; exit 1; fi
-curl -s "$GATEWAY_URL/calls/$1?secret=$SHUTDOWN_SECRET"
-`;
-
-  const alWaitScript = `#!/bin/sh
-if [ -z "$GATEWAY_URL" ]; then echo '{"error":"no gateway"}'; exit 1; fi
-TIMEOUT=900
-IDS=""
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --timeout) TIMEOUT="$2"; shift 2;;
-    *) IDS="$IDS $1"; shift;;
-  esac
-done
-if [ -z "$IDS" ]; then echo '{"error":"usage: al-wait <callId> [callId...] [--timeout N]"}'; exit 1; fi
-ELAPSED=0
-while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
-  ALL_DONE=true
-  for id in $IDS; do
-    STATUS=$(curl -s "$GATEWAY_URL/calls/$id?secret=$SHUTDOWN_SECRET" | jq -r .status)
-    case "$STATUS" in running|pending) ALL_DONE=false;; esac
-  done
-  if $ALL_DONE; then break; fi
-  sleep 5; ELAPSED=$((ELAPSED + 5))
-done
-RESULT="{"
-FIRST=true
-for id in $IDS; do
-  $FIRST || RESULT="$RESULT,"
-  FIRST=false
-  RESULT="$RESULT\\"$id\\":$(curl -s "$GATEWAY_URL/calls/$id?secret=$SHUTDOWN_SECRET")"
-done
-echo "$RESULT}"
-`;
-
-  writeFileSync("/tmp/bin/rlock", rlockScript, { mode: 0o755 });
-  writeFileSync("/tmp/bin/runlock", runlockScript, { mode: 0o755 });
-  writeFileSync("/tmp/bin/rlock-heartbeat", rlockHeartbeatScript, { mode: 0o755 });
-  writeFileSync("/tmp/bin/al-shutdown", alShutdownScript, { mode: 0o755 });
-  writeFileSync("/tmp/bin/al-call", alCallScript, { mode: 0o755 });
-  writeFileSync("/tmp/bin/al-check", alCheckScript, { mode: 0o755 });
-  writeFileSync("/tmp/bin/al-wait", alWaitScript, { mode: 0o755 });
-
-  // Install signal commands (al-rerun, al-status, al-return, al-exit)
+  // Create the per-run signal directory (scripts reference $AL_SIGNAL_DIR)
   const signalDir = "/tmp/signals";
-  installSignalCommands("/tmp/bin", signalDir);
+  ensureSignalDir(signalDir);
   process.env.AL_SIGNAL_DIR = signalDir;
-
-  process.env.PATH = `/tmp/bin:${process.env.PATH || ""}`;
 
   // Load agent config and ACTIONS.md from baked-in files or env vars.
   // Images built with extraFiles have static content at /app/static/.
@@ -207,17 +138,50 @@ echo "$RESULT}"
     timeoutSeconds = parseInt(process.env.TIMEOUT_SECONDS || "3600", 10);
   }
 
+  const modelProvider = agentConfig.model.provider;
+  const modelId = agentConfig.model.model;
+  const model = getModel(modelProvider as any, modelId as any);
+
+  const agentsContent = agentsMd || `# ${agentConfig.name} Agent\n\nCustom agent.\n`;
+  const agentsFile = "/tmp/ACTIONS.md";
+
+  const resourceLoader = new DefaultResourceLoader({
+    noExtensions: true,
+    agentsFilesOverride: () => ({
+      agentsFiles: [
+        { path: agentsFile, content: agentsContent },
+      ],
+    }),
+  });
+  await resourceLoader.reload();
+
+  const settingsManager = SettingsManager.inMemory({
+    compaction: { enabled: true },
+    retry: { enabled: true, maxRetries: 2 },
+  });
+
+  return { agentConfig, agentsMd, timeoutSeconds, model, resourceLoader, settingsManager, signalDir };
+}
+
+/**
+ * Per-invocation handler. Loads credentials, creates a session, runs the
+ * prompt, reads signals, and returns an exit code.
+ */
+export async function handleInvocation(init: AgentInit): Promise<number> {
+  const { agentConfig, timeoutSeconds, model, resourceLoader, settingsManager, signalDir } = init;
+
+  const gatewayUrl = process.env.GATEWAY_URL;
+  const modelId = agentConfig.model.model;
+  const modelThinking = agentConfig.model.thinkingLevel;
+
+  emitLog("info", "container starting", { agentName: agentConfig.name, modelId, gatewayUrl });
+
   // Container-level timeout — self-terminates even if scheduler dies
   const timer = setTimeout(() => {
     emitLog("error", "container timeout reached, self-terminating", { timeoutSeconds });
     process.exit(124);
   }, timeoutSeconds * 1000);
   timer.unref();
-
-  const modelId = agentConfig.model.model;
-  const modelThinking = agentConfig.model.thinkingLevel;
-
-  emitLog("info", "container starting", { agentName: agentConfig.name, modelId, gatewayUrl });
 
   // Load credentials from mounted volume or env vars (ECS/Lambda/Cloud Run).
   if (hasLocalCredentials()) {
@@ -239,7 +203,6 @@ echo "$RESULT}"
   }
 
   // Generic credential → env var injection from credential definitions
-  const { builtinCredentials } = await import("../credentials/builtins/index.js");
   for (const credRef of agentConfig.credentials) {
     const { type, instance } = parseCredentialRef(credRef);
     const def = builtinCredentials[type];
@@ -299,32 +262,10 @@ echo "$RESULT}"
 
   const cwd = "/tmp";
 
-  const model = getModel(modelProvider as any, modelId as any);
-
   const authStorage = AuthStorage.create();
   if (providerApiKey) {
     authStorage.setRuntimeApiKey(modelProvider, providerApiKey);
   }
-
-  // ACTIONS.md content is passed via the serialized config from the host
-  const agentsContent = agentsMd || `# ${agentConfig.name} Agent\n\nCustom agent.\n`;
-
-  const agentsFile = "/tmp/ACTIONS.md";
-
-  const resourceLoader = new DefaultResourceLoader({
-    noExtensions: true,
-    agentsFilesOverride: () => ({
-      agentsFiles: [
-        { path: agentsFile, content: agentsContent },
-      ],
-    }),
-  });
-  await resourceLoader.reload();
-
-  const settingsManager = SettingsManager.inMemory({
-    compaction: { enabled: true },
-    retry: { enabled: true, maxRetries: 2 },
-  });
 
   emitLog("info", "creating agent session", { model: modelId, thinking: modelThinking });
 
@@ -430,6 +371,8 @@ echo "$RESULT}"
   });
 
   // Build full prompt: static skeleton (from image) + dynamic suffix (from env var)
+  const STATIC_DIR = "/app/static";
+  const hasBakedFiles = existsSync(`${STATIC_DIR}/agent-config.json`);
   let fullPrompt: string;
   const promptStaticPath = `${STATIC_DIR}/prompt-static.txt`;
   if (hasBakedFiles && existsSync(promptStaticPath)) {
@@ -496,7 +439,28 @@ echo "$RESULT}"
   }
 
   emitLog("info", "run completed", { outputLength: outputText.length });
+
+  // Clean up signal files between invocations (Lambda reuses /tmp)
+  try {
+    const signalFiles = ["rerun", "status", "return", "exit"];
+    for (const f of signalFiles) {
+      try { rmSync(`${signalDir}/${f}`); } catch { /* may not exist */ }
+    }
+  } catch { /* best-effort cleanup */ }
+
+  // Reset credential bundle for next invocation
+  credBundle = {};
+
   return 0;
+}
+
+/**
+ * Legacy single-function entrypoint. Calls initAgent() then handleInvocation().
+ * Kept for backward compatibility with non-Lambda container runs.
+ */
+export async function runAgent(): Promise<number> {
+  const init = await initAgent();
+  return handleInvocation(init);
 }
 
 // Auto-run when executed directly (not as a Lambda handler).

@@ -18,8 +18,20 @@ export interface AgentSignals {
 }
 
 /**
+ * Ensure the signal directory exists and clean any stale signal files.
+ * Scripts are baked into the image at /app/bin/ — this only creates the
+ * per-run signal directory.
+ */
+export function ensureSignalDir(signalDir: string): void {
+  mkdirSync(signalDir, { recursive: true });
+}
+
+/**
  * Install signal shell commands into a bin directory.
  * The bin dir should be prepended to PATH so agents can use these commands.
+ *
+ * In container mode, scripts are baked into the image at /app/bin/ and this
+ * function is not called. It remains for host-mode agent runners.
  */
 export function installSignalCommands(binDir: string, signalDir: string): void {
   mkdirSync(binDir, { recursive: true });

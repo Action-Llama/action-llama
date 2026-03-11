@@ -1,0 +1,8 @@
+#!/bin/sh
+touch "$AL_SIGNAL_DIR/rerun"
+if [ -n "$GATEWAY_URL" ] && [ -n "$SHUTDOWN_SECRET" ]; then
+  curl -s -X POST "$GATEWAY_URL/signals/rerun" \
+    -H 'Content-Type: application/json' \
+    -d '{"secret":"'"$SHUTDOWN_SECRET"'"}' > /dev/null 2>&1 || true
+fi
+echo '{"ok":true}'

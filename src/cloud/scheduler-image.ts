@@ -116,12 +116,18 @@ export async function buildSchedulerImage(opts: SchedulerImageOpts): Promise<str
     extraFiles[join("project", relPath)] = content;
   }
 
-  // Include the base agent Dockerfile so the scheduler can build agent images
-  // at runtime. The Dockerfile is placed at static/docker/Dockerfile and then
-  // copied to /app/docker/Dockerfile by the generated scheduler Dockerfile.
+  // Include the base agent Dockerfile and bin scripts so the scheduler can
+  // build agent images at runtime. These are placed at static/docker/ and then
+  // copied to /app/docker/ by the generated scheduler Dockerfile.
   const baseDockerfilePath = resolvePath(packageRoot, "docker", "Dockerfile");
   if (existsSync(baseDockerfilePath)) {
     extraFiles[join("docker", "Dockerfile")] = readFileSync(baseDockerfilePath, "utf-8");
+  }
+  const binDir = resolvePath(packageRoot, "docker", "bin");
+  if (existsSync(binDir)) {
+    for (const script of readdirSync(binDir)) {
+      extraFiles[join("docker", "bin", script)] = readFileSync(resolvePath(binDir, script), "utf-8");
+    }
   }
 
   // Write the Dockerfile to a temp file rather than using dockerfileContent,

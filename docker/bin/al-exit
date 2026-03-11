@@ -1,0 +1,4 @@
+#!/bin/sh
+CODE="${1:-15}"
+printf '%s' "$CODE" > "$AL_SIGNAL_DIR/exit"
+echo '{"ok":true}'

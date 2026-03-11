@@ -35,6 +35,8 @@ export class LambdaRuntime implements ContainerRuntime {
   private config: LambdaRuntimeConfig;
   private lambdaClient: LambdaClient;
   private shared: AwsSharedUtils;
+  /** Cache of function name → last deployed image URI, used to skip redundant updates. */
+  private imageCache = new Map<string, string>();
 
   constructor(config: LambdaRuntimeConfig) {
     this.config = config;
@@ -125,7 +127,14 @@ export class LambdaRuntime implements ContainerRuntime {
       if (err.name !== "ResourceNotFoundException") throw err;
     }
 
-    if (functionExists) {
+    // Skip update/config/wait calls when the image hasn't changed — eliminates
+    // 4-6 API calls + up to 60s of polling on repeated launches of the same agent.
+    const cachedImage = this.imageCache.get(functionName);
+    const imageUnchanged = functionExists && cachedImage === opts.image;
+
+    if (imageUnchanged) {
+      // Image matches — go straight to invoke
+    } else if (functionExists) {
       // Update code first, then configuration
       await this.lambdaClient.send(new UpdateFunctionCodeCommand({
         FunctionName: functionName,
@@ -150,6 +159,17 @@ export class LambdaRuntime implements ContainerRuntime {
           },
         } : {}),
       }));
+
+      // Disable automatic async invocation retries — the scheduler handles
+      // retry/rerun logic itself; Lambda's default 2 retries cause duplicate
+      // container starts on transient failures.
+      await this.lambdaClient.send(new PutFunctionEventInvokeConfigCommand({
+        FunctionName: functionName,
+        MaximumRetryAttempts: 0,
+      }));
+
+      // Wait for function to be ready before invoking
+      await this.waitForFunctionReady(functionName);
     } else {
       // Create new function — override ENTRYPOINT to use the Lambda Runtime
       // API handler instead of the default container-entry.js direct runner.
@@ -171,18 +191,19 @@ export class LambdaRuntime implements ContainerRuntime {
           },
         } : {}),
       }));
+
+      // Disable automatic async invocation retries
+      await this.lambdaClient.send(new PutFunctionEventInvokeConfigCommand({
+        FunctionName: functionName,
+        MaximumRetryAttempts: 0,
+      }));
+
+      // Wait for function to be ready before invoking
+      await this.waitForFunctionReady(functionName);
     }
 
-    // Disable automatic async invocation retries — the scheduler handles
-    // retry/rerun logic itself; Lambda's default 2 retries cause duplicate
-    // container starts on transient failures.
-    await this.lambdaClient.send(new PutFunctionEventInvokeConfigCommand({
-      FunctionName: functionName,
-      MaximumRetryAttempts: 0,
-    }));
-
-    // Wait for function to be ready before invoking
-    await this.waitForFunctionReady(functionName);
+    // Cache the image URI for subsequent launches
+    this.imageCache.set(functionName, opts.image);
 
     const launchTime = Date.now();
 

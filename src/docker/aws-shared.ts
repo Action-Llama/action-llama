@@ -123,23 +123,41 @@ export class AwsSharedUtils {
   async resolveSecretValues(credRefs: string[]): Promise<Record<string, string>> {
     const env: Record<string, string> = {};
 
-    for (const credRef of credRefs) {
-      const { type, instance } = parseCredentialRef(credRef);
-      const fields = await this.listSecretFields(type, instance);
+    // Phase 1: list all fields in parallel
+    const parsed = credRefs.map((ref) => parseCredentialRef(ref));
+    const fieldResults = await Promise.all(
+      parsed.map(({ type, instance }) => this.listSecretFields(type, instance)),
+    );
 
-      for (const field of fields) {
-        const secretName = this.awsSecretName(type, instance, field);
-        const envName = `AL_SECRET_${sanitizeEnvPart(type)}__${sanitizeEnvPart(instance)}__${sanitizeEnvPart(field)}`;
+    // Phase 2: fetch all secret values in parallel
+    const fetchOps: Array<{ envName: string; secretName: string }> = [];
+    for (let i = 0; i < parsed.length; i++) {
+      const { type, instance } = parsed[i];
+      for (const field of fieldResults[i]) {
+        fetchOps.push({
+          envName: `AL_SECRET_${sanitizeEnvPart(type)}__${sanitizeEnvPart(instance)}__${sanitizeEnvPart(field)}`,
+          secretName: this.awsSecretName(type, instance, field),
+        });
+      }
+    }
+
+    const values = await Promise.all(
+      fetchOps.map(async ({ secretName }) => {
         try {
           const res = await this.smClient.send(new GetSecretValueCommand({
             SecretId: secretName,
           }));
-          if (res.SecretString) {
-            env[envName] = res.SecretString;
-          }
+          return res.SecretString ?? null;
         } catch (err: any) {
           if (err.name !== "ResourceNotFoundException") throw err;
+          return null;
         }
+      }),
+    );
+
+    for (let i = 0; i < fetchOps.length; i++) {
+      if (values[i] !== null) {
+        env[fetchOps[i].envName] = values[i]!;
       }
     }
 
@@ -229,7 +247,7 @@ export class AwsSharedUtils {
     onProgress?.("Preparing build context");
 
     const { join, relative, isAbsolute } = await import("path");
-    const { readFileSync, writeFileSync, mkdirSync, copyFileSync, cpSync } = await import("fs");
+    const { readFileSync, writeFileSync, mkdirSync, copyFileSync, cpSync, existsSync } = await import("fs");
     const { randomUUID, createHash } = await import("crypto");
     const { tmpdir } = await import("os");
 
@@ -272,6 +290,11 @@ export class AwsSharedUtils {
     if (!opts.dockerfileContent) {
       copyFileSync(join(opts.contextDir, "package.json"), join(buildCtx, "package.json"));
       cpSync(join(opts.contextDir, "dist"), join(buildCtx, "dist"), { recursive: true });
+      // Copy baked shell scripts (docker/bin/) into the build context
+      const binSrc = join(opts.contextDir, "docker", "bin");
+      if (existsSync(binSrc)) {
+        cpSync(binSrc, join(buildCtx, "docker", "bin"), { recursive: true });
+      }
     }
 
     // Write extra files to static/ directory
@@ -310,6 +333,9 @@ export class AwsSharedUtils {
     if (!opts.dockerfileContent) {
       hashFile("package.json");
       hashDir("dist");
+      if (existsSync(join(buildCtx, "docker"))) {
+        hashDir("docker");
+      }
     }
     if (hasExtraFiles) {
       hashDir("static");
@@ -338,6 +364,9 @@ export class AwsSharedUtils {
     const tarEntries = ["Dockerfile"];
     if (!opts.dockerfileContent) {
       tarEntries.push("package.json", "dist");
+      if (existsSync(join(buildCtx, "docker"))) {
+        tarEntries.push("docker");
+      }
     }
     if (hasExtraFiles) {
       tarEntries.push("static");

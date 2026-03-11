@@ -1,0 +1,14 @@
+#!/bin/sh
+if [ $# -gt 0 ]; then
+  VALUE="$*"
+else
+  VALUE=$(cat)
+fi
+printf '%s' "$VALUE" > "$AL_SIGNAL_DIR/return"
+if [ -n "$GATEWAY_URL" ] && [ -n "$SHUTDOWN_SECRET" ]; then
+  PAYLOAD=$(printf '{"secret":"%s","value":%s}' "$SHUTDOWN_SECRET" "$(printf '%s' "$VALUE" | jq -Rs .)")
+  curl -s -X POST "$GATEWAY_URL/signals/return" \
+    -H 'Content-Type: application/json' \
+    -d "$PAYLOAD" > /dev/null 2>&1 || true
+fi
+echo '{"ok":true}'
