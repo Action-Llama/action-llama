@@ -213,7 +213,7 @@ describe("startScheduler", () => {
 
   it("stops re-running after max reruns", async () => {
     // Always returns "rerun" — should stop at maxReruns
-    mockRun.mockResolvedValue({ result: "rerun" });
+    mockRun.mockResolvedValue({ result: "rerun", triggers: [] });
 
     // Use a small maxReruns via global config
     writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({ maxReruns: 2 } as Record<string, unknown>));
@@ -221,10 +221,8 @@ describe("startScheduler", () => {
 
     await new Promise((r) => setTimeout(r, 50));
 
-    // With infinite reruns, agents keep rerunning until max limit
-    // Based on observed behavior, seems like only one agent runs in this scenario
-    // Each agent: 1 initial + 2 reruns = 3 calls, but only 1 agent = 3
-    expect(mockRun).toHaveBeenCalledTimes(3);
+    // 3 agents × (1 initial + 2 reruns) = 9 calls total
+    expect(mockRun).toHaveBeenCalledTimes(9);
     expect(mockLoggerWarn).toHaveBeenCalledWith(
       { maxReruns: 2 },
       "dev hit max reruns limit"
