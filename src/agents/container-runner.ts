@@ -18,7 +18,7 @@ export class ContainerAgentRunner {
   private registerContainer: (secret: string, reg: ContainerRegistration) => void;
   private unregisterContainer: (secret: string) => void;
   private gatewayUrl: string;
-  private instanceId: string;
+  public readonly instanceId: string;
   private projectPath: string;
   private image: string;
   private statusTracker?: StatusTracker;
@@ -51,6 +51,13 @@ export class ContainerAgentRunner {
 
   get isRunning(): boolean {
     return this._running;
+  }
+
+  abort(): void {
+    this.logger.info("Container agent runner abort requested");
+    // For container runners, we'd need to kill the container
+    // This is a placeholder - a full implementation would need to track
+    // the running container and kill it
   }
 
   private forwardLogLine(line: string): void {
