@@ -11,6 +11,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { AgentConfig } from "../shared/config.js";
 import { parseCredentialRef, unsanitizeEnvPart } from "../shared/credentials.js";
+import { extractExitSignal, getExitCodeMessage } from "../shared/exit-codes.js";
 
 // Structured log line — written to stdout, parsed by ContainerAgentRunner on the host
 function emitLog(level: string, msg: string, data?: Record<string, any>) {
@@ -465,6 +466,15 @@ echo "$RESULT}"
 
   if (abortedDueToErrors) {
     return 1;
+  }
+
+  const exitCode = extractExitSignal(outputText);
+  if (exitCode !== undefined) {
+    const reason = getExitCodeMessage(exitCode);
+    emitLog("error", "agent terminated with exit signal", { exitCode, reason });
+    console.log(outputText.slice(0, 2000));
+    console.log(`[EXIT: ${exitCode}] ${reason}`);
+    return exitCode;
   }
 
   if (outputText.includes("[RERUN]")) {

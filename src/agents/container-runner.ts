@@ -131,14 +131,14 @@ export class ContainerAgentRunner {
   async run(prompt: string, triggerInfo?: { type: 'schedule' | 'webhook' | 'agent'; source?: string }): Promise<RunOutcome> {
     if (this._running) {
       this.logger.warn(`${this.agentConfig.name} is already running, skipping`);
-      return { result: "error" };
+      return { result: "error", triggers: [] };
     }
 
     // Check if this agent already has a running container (e.g. orphan from a previous scheduler)
     try {
       if (await this.runtime.isAgentRunning(this.agentConfig.name)) {
         this.logger.warn(`${this.agentConfig.name} is already running in the runtime, skipping`);
-        return { result: "error" };
+        return { result: "error", triggers: [] };
       }
     } catch {
       // Best-effort check — proceed if it fails
@@ -271,6 +271,6 @@ export class ContainerAgentRunner {
       this.statusTracker?.endRun(this.agentConfig.name, elapsed, runError);
       this._running = false;
     }
-    return { result: runResult, returnValue: this._returnValue };
+    return { result: runResult, triggers: [], returnValue: this._returnValue };
   }
 }

@@ -14,6 +14,7 @@ import type { Logger } from "../shared/logger.js";
 import { loadCredentialField, parseCredentialRef } from "../shared/credentials.js";
 import { agentDir } from "../shared/paths.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
+import { extractExitSignal, getExitCodeMessage } from "../shared/exit-codes.js";
 
 const UNRECOVERABLE_PATTERNS = [
   "permission denied",
@@ -34,12 +35,30 @@ const UNRECOVERABLE_THRESHOLD = 3;
 
 export type RunResult = "completed" | "rerun" | "error";
 
-export interface RunOutcome {
-  result: RunResult;
-  returnValue?: string;
+export interface TriggerRequest {
+  agent: string;
+  context: string;
 }
 
+export interface RunOutcome {
+  result: RunResult;
+  triggers: TriggerRequest[];
+  returnValue?: string;
+  exitCode?: number;
+  exitReason?: string;
+}
+
+const TRIGGER_PATTERN = /\[TRIGGER:\s*(\S+)\]([\s\S]*?)\[\/TRIGGER\]/g;
 const RETURN_PATTERN = /\[RETURN\]([\s\S]*?)\[\/RETURN\]/g;
+
+function extractTriggers(text: string): TriggerRequest[] {
+  const triggers: TriggerRequest[] = [];
+  let match;
+  while ((match = TRIGGER_PATTERN.exec(text)) !== null) {
+    triggers.push({ agent: match[1], context: match[2].trim() });
+  }
+  return triggers;
+}
 
 function extractReturnValue(text: string): string | undefined {
   let last: string | undefined;
@@ -80,7 +99,7 @@ export class AgentRunner {
   async run(prompt: string, triggerInfo?: { type: 'schedule' | 'webhook' | 'agent'; source?: string }): Promise<RunOutcome> {
     if (this.running) {
       this.logger.warn(`${this.agentConfig.name} is already running, skipping`);
-      return { result: "error" };
+      return { result: "error", triggers: [] };
     }
 
     this.running = true;
@@ -287,9 +306,16 @@ export class AgentRunner {
         }
       }
 
+      const triggers = extractTriggers(outputText);
       const returnValue = extractReturnValue(outputText);
+      const exitCode = extractExitSignal(outputText);
       let result: RunResult;
-      if (outputText.includes("[RERUN]")) {
+      if (exitCode !== undefined) {
+        const reason = getExitCodeMessage(exitCode);
+        this.logger.error({ exitCode, reason }, "agent terminated with exit signal");
+        this.statusTracker?.setAgentError(this.agentConfig.name, `Exit ${exitCode}: ${reason}`);
+        result = "error";
+      } else if (outputText.includes("[RERUN]")) {
         this.logger.info({ outputLength: outputText.length }, "run completed, rerun requested");
         result = "rerun";
       } else {
@@ -298,11 +324,19 @@ export class AgentRunner {
       }
 
       session.dispose();
-      return { result, returnValue };
+      return { 
+        result, 
+        triggers, 
+        returnValue,
+        ...(exitCode !== undefined && { 
+          exitCode, 
+          exitReason: getExitCodeMessage(exitCode) 
+        })
+      };
     } catch (err: any) {
       this.logger.error({ err }, `${this.agentConfig.name} run failed`);
       runError = String(err?.message || err).slice(0, 200);
-      return { result: "error" };
+      return { result: "error", triggers: [] };
     } finally {
       // Restore the git env vars we may have overwritten so other
       // agents running in the same process get a clean slate.
