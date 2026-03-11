@@ -1,5 +1,21 @@
 # @action-llama/action-llama
 
+## 0.10.1
+
+### Patch Changes
+
+- [`002f069`](https://github.com/Action-Llama/action-llama/commit/002f069851557879b66aea037869856b700ebd25) Thanks [@asselstine](https://github.com/asselstine)! - Reduced Lambda cold start time through multiple optimizations: bake shell scripts
+  into the Docker image instead of writing them at container startup, switch to Alpine
+  base image (~100-150MB smaller), parallelize AWS Secrets Manager lookups, cache Lambda
+  function image URIs to skip redundant update/wait API calls on repeated launches, split
+  container entry into init/invocation phases so Lambda can reuse model and config across
+  warm starts, convert credential builtins to a static import, and add `--omit=optional`
+  to the container npm install.
+
+- [`94aed13`](https://github.com/Action-Llama/action-llama/commit/94aed13b2025713f15bc9495e18dc9f25f5018cb) Thanks [@asselstine](https://github.com/asselstine)! - Make the agent argument optional in `al logs`, defaulting to scheduler logs.
+  Running `al logs` or `al logs -c` without an agent name now shows scheduler logs
+  instead of erroring with "missing required argument".
+
 ## 0.10.0
 
 ### Minor Changes
