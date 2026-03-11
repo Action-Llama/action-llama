@@ -447,7 +447,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       ensureNetwork();
 
       // Start gateway proxy container if gateway is enabled
-      if (gatewayEnabled) {
+      if (gatewayEnabled && runtime.startGatewayProxy) {
         const gatewayPort = globalConfig.gateway?.port || 8080;
         logger.info({ port: gatewayPort }, "Starting gateway proxy container for local Docker runtime");
         await runtime.startGatewayProxy(gatewayPort);
@@ -714,8 +714,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       logger.info("Gateway server stopped");
     }
     // Stop gateway proxy if running local Docker
-    if (dockerEnabled && !useCloudRuntime && runtime && 'stopGatewayProxy' in runtime) {
-      await (runtime as any).stopGatewayProxy();
+    if (dockerEnabled && !useCloudRuntime && runtime && runtime.stopGatewayProxy) {
+      await runtime.stopGatewayProxy();
       logger.info("Gateway proxy container stopped");
     }
     logger.info("All cron jobs stopped");
