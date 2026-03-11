@@ -11,7 +11,7 @@ import { readFileSync, existsSync } from "fs";
 import { resolve } from "path";
 import type { AgentConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
-import { loadCredentialField, parseCredentialRef, backendLoadField } from "../shared/credentials.js";
+import { loadCredentialField, parseCredentialRef } from "../shared/credentials.js";
 import { agentDir } from "../shared/paths.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 
@@ -134,7 +134,7 @@ export class AgentRunner {
         // Try to load API key using provider-specific credential type
         const credentialType = `${model.provider}_key`;
         try {
-          const credential = await backendLoadField(credentialType, "default", "token");
+          const credential = await loadCredentialField(credentialType, "default", "token");
           if (credential) {
             authStorage.setRuntimeApiKey(model.provider, credential);
             this.logger.debug(`Loaded ${credentialType} credential for ${model.provider}`);
@@ -150,12 +150,12 @@ export class AgentRunner {
       const gitSshRef = this.agentConfig.credentials.find((ref) => parseCredentialRef(ref).type === "git_ssh");
       if (gitSshRef) {
         const { instance } = parseCredentialRef(gitSshRef);
-        const gitName = await backendLoadField("git_ssh", instance, "username");
+        const gitName = await loadCredentialField("git_ssh", instance, "username");
         if (gitName) {
           process.env.GIT_AUTHOR_NAME = gitName;
           process.env.GIT_COMMITTER_NAME = gitName;
         }
-        const gitEmail = await backendLoadField("git_ssh", instance, "email");
+        const gitEmail = await loadCredentialField("git_ssh", instance, "email");
         if (gitEmail) {
           process.env.GIT_AUTHOR_EMAIL = gitEmail;
           process.env.GIT_COMMITTER_EMAIL = gitEmail;

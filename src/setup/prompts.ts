@@ -9,9 +9,9 @@ import type { CredentialDefinition, CredentialPromptResult } from "../credential
 /**
  * Write credential values to disk using the directory-based layout.
  */
-function writeCredentialValues(def: CredentialDefinition, values: Record<string, string>, instance: string = "default"): void {
+async function writeCredentialValues(def: CredentialDefinition, values: Record<string, string>, instance: string = "default"): Promise<void> {
   if (Object.keys(values).length === 0) return; // e.g. pi_auth
-  writeCredentialFields(def.id, instance, values);
+  await writeCredentialFields(def.id, instance, values);
 }
 
 /**
@@ -24,7 +24,7 @@ async function promptAndStoreCredential(
 ): Promise<CredentialPromptResult | undefined> {
   const result = await promptCredential(def, instance);
   if (result && Object.keys(result.values).length > 0) {
-    writeCredentialValues(def, result.values, instance);
+    await writeCredentialValues(def, result.values, instance);
   }
   return result;
 }
@@ -152,7 +152,7 @@ export async function runSetup(): Promise<{
         message: `Enter ${provider} API key:`,
       });
       if (apiKey) {
-        writeCredentialFields(credentialType, "default", { token: apiKey });
+        await writeCredentialFields(credentialType, "default", { token: apiKey });
       }
     }
   }
