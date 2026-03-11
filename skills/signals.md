@@ -51,6 +51,34 @@ URL: https://github.com/acme/app/pull/42
 - Trigger chains are bounded by `maxTriggerDepth` (default: 3) to prevent infinite loops
 - The target agent receives your context in an `<agent-trigger>` block with your agent name as the `source`
 
+## `[EXIT]` and `[EXIT: <code>]`
+
+Terminates the agent with an optional exit code, indicating an unrecoverable error or intentional abort.
+
+```
+[EXIT: 10] GitHub token is invalid or expired
+[EXIT: 11] Permission denied accessing repository
+[EXIT: 15] Unrecoverable error in build system
+[EXIT]
+```
+
+**When to use:** When encountering errors that cannot be resolved by retrying — authentication failures, permission issues, invalid configuration, or when you need to abort due to user request or safety concerns.
+
+**Format:** Use `[EXIT]` for a generic unrecoverable error (exit code 15) or `[EXIT: <code>]` to specify a standard exit code.
+
+**Standard exit codes:**
+- `10` — Authentication/credentials failure
+- `11` — Permission/access denied
+- `12` — Rate limit exceeded
+- `13` — Configuration error
+- `14` — Missing dependency or service error
+- `15` — Generic unrecoverable error (default)
+- `16` — User-requested abort
+
+**Behavior:** The agent terminates immediately with the specified exit code. The scheduler will not retry automatically. This replaces the fragile string-matching approach for detecting unrecoverable errors.
+
+**When NOT to use:** For transient errors (network timeouts, temporary rate limits) or normal completion. Use normal error handling or simply complete the run instead.
+
 ## Multiple signals
 
 You can emit multiple signals in one run. For example, you might emit several `[STATUS]` updates as you work, then a `[TRIGGER]` at the end, and a `[RERUN]` if there's more work to do.

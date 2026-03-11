@@ -14,6 +14,7 @@ import type { Logger } from "../shared/logger.js";
 import { loadCredentialField, parseCredentialRef } from "../shared/credentials.js";
 import { agentDir } from "../shared/paths.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
+import { extractExitSignal, getExitCodeMessage } from "../shared/exit-codes.js";
 
 const UNRECOVERABLE_PATTERNS = [
   "permission denied",
@@ -42,6 +43,8 @@ export interface TriggerRequest {
 export interface RunOutcome {
   result: RunResult;
   triggers: TriggerRequest[];
+  exitCode?: number;
+  exitReason?: string;
 }
 
 const TRIGGER_PATTERN = /\[TRIGGER:\s*(\S+)\]([\s\S]*?)\[\/TRIGGER\]/g;
@@ -293,8 +296,15 @@ export class AgentRunner {
       }
 
       const triggers = extractTriggers(outputText);
+      const exitCode = extractExitSignal(outputText);
+      
       let result: RunResult;
-      if (outputText.includes("[RERUN]")) {
+      if (exitCode !== undefined) {
+        const reason = getExitCodeMessage(exitCode);
+        this.logger.error({ exitCode, reason }, "agent terminated with exit signal");
+        this.statusTracker?.setAgentError(this.agentConfig.name, `Exit ${exitCode}: ${reason}`);
+        result = "error";
+      } else if (outputText.includes("[RERUN]")) {
         this.logger.info({ outputLength: outputText.length }, "run completed, rerun requested");
         result = "rerun";
       } else {
@@ -303,7 +313,14 @@ export class AgentRunner {
       }
 
       session.dispose();
-      return { result, triggers };
+      return { 
+        result, 
+        triggers, 
+        ...(exitCode !== undefined && { 
+          exitCode, 
+          exitReason: getExitCodeMessage(exitCode) 
+        })
+      };
     } catch (err: any) {
       this.logger.error({ err }, `${this.agentConfig.name} run failed`);
       runError = String(err?.message || err).slice(0, 200);
