@@ -122,7 +122,7 @@ Configuration lives in two places:
 
 Credentials are stored outside the project in `~/.action-llama-credentials/` and referenced by name in agent configs. Run `al doctor` to configure them interactively.
 
-Agents run in isolated Docker containers by default. Use `--no-docker` to run directly on the host during development.
+Agents run in isolated Docker containers for security and consistency.
 
 See also the [credentials](docs/credentials.md), [webhooks](docs/webhooks.md), and [Docker](docs/docker.md) docs for details.
 

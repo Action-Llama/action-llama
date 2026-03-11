@@ -59,13 +59,13 @@ describe("run", () => {
     vi.clearAllMocks();
   });
 
-  it("runs a named agent in host mode", async () => {
+  it("runs a named agent in Docker mode", async () => {
     const dir = makeTmpProject({
       agents: [{ name: "dev", schedule: "*/5 * * * *" }],
     });
 
     const output = await captureLog(async () => {
-      await execute("dev", { project: dir, noDocker: true });
+      await execute("dev", { project: dir });
     });
 
     expect(mockRun).toHaveBeenCalledTimes(1);

@@ -9,7 +9,7 @@ import { AWS_CONSTANTS } from "../../shared/aws-constants.js";
 import { buildManualPrompt } from "../../agents/prompt.js";
 import { execute as runDoctor } from "./doctor.js";
 
-export async function execute(agent: string, opts: { project: string; noDocker?: boolean; cloud?: boolean; headless?: boolean }): Promise<void> {
+export async function execute(agent: string, opts: { project: string; cloud?: boolean; headless?: boolean }): Promise<void> {
   const projectPath = resolve(opts.project);
 
   // Guard: refuse to run if the project path looks like an agent directory
@@ -38,7 +38,7 @@ export async function execute(agent: string, opts: { project: string; noDocker?:
     await backendRequireCredentialRef(credRef);
   }
 
-  const dockerEnabled = !opts.noDocker && (globalConfig.local?.enabled ?? true);
+  const dockerEnabled = true;
   const cloudMode = opts.cloud === true;
 
   const logger = createLogger(projectPath, agent);
@@ -127,8 +127,8 @@ export async function execute(agent: string, opts: { project: string; noDocker?:
     // Docker mode: validate and run in container
     if (agentConfig.model.authType === "pi_auth") {
       throw new Error(
-        `Agent "${agent}" uses pi_auth which is not supported in Docker mode. ` +
-        `Either switch to api_key/oauth_token (run 'al doctor') or use --no-docker.`
+        `Agent "${agent}" uses pi_auth which is not supported in container mode. ` +
+        `Switch to api_key/oauth_token (run 'al doctor').`
       );
     }
 
@@ -137,8 +137,7 @@ export async function execute(agent: string, opts: { project: string; noDocker?:
       execFileSync("docker", ["info"], { stdio: "pipe", timeout: 10000 });
     } catch {
       throw new Error(
-        "Docker is not running. Start Docker Desktop (or the Docker daemon) and try again, " +
-        "or use --no-docker to run without container isolation."
+        "Docker is not running. Start Docker Desktop (or the Docker daemon) and try again."
       );
     }
 
@@ -168,13 +167,6 @@ export async function execute(agent: string, opts: { project: string; noDocker?:
 
     const prompt = buildManualPrompt(agentConfig);
     console.log(`Running agent "${agent}" in Docker...`);
-    await runner.run(prompt);
-  } else {
-    // Host mode
-    mkdirSync(agentDir(projectPath, agent), { recursive: true });
-    const runner = new AgentRunner(agentConfig, logger, projectPath);
-    const prompt = buildManualPrompt(agentConfig);
-    console.log(`Running agent "${agent}"...`);
     await runner.run(prompt);
   }
 

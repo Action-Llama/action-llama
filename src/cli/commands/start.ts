@@ -5,7 +5,7 @@ import { startScheduler } from "../../scheduler/index.js";
 import { StatusTracker } from "../../tui/status-tracker.js";
 import { execute as runDoctor } from "./doctor.js";
 
-export async function execute(opts: { project: string; noDocker?: boolean; cloud?: boolean; headless?: boolean; gateway?: boolean; webUi?: boolean }): Promise<void> {
+export async function execute(opts: { project: string; cloud?: boolean; headless?: boolean; gateway?: boolean; webUi?: boolean }): Promise<void> {
   const projectPath = resolve(opts.project);
 
   // Guard: refuse to run if the project path looks like an agent directory
@@ -26,12 +26,11 @@ export async function execute(opts: { project: string; noDocker?: boolean; cloud
 
   const globalConfig = loadGlobalConfig(projectPath);
 
-  // Docker is on by default; --no-docker disables it
-  if (opts.noDocker) {
-    if (!globalConfig.local) globalConfig.local = { enabled: false };
-    else globalConfig.local.enabled = false;
-  } else if (!globalConfig.local) {
+  // Docker is always enabled
+  if (!globalConfig.local) {
     globalConfig.local = { enabled: true };
+  } else {
+    globalConfig.local.enabled = true;
   }
 
   // Cloud mode: set up cloud backend

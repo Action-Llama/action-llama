@@ -1,10 +1,10 @@
-# Docker Mode
+# Container Isolation
 
-Docker mode runs each agent in an isolated container. It is enabled by default — disable it with `--no-docker` for development, or set `local.enabled = false` in `config.toml`.
+All agents run in isolated containers for security and consistency. Container isolation is always enabled.
 
 ## How it works
 
-When `al start` runs in Docker mode:
+When `al start` runs:
 
 1. The base image (`al-agent:latest`) is built from `docker/Dockerfile` on first run
 2. Per-agent images are built for any agent that has a custom `Dockerfile`
@@ -241,7 +241,6 @@ The key requirement is that `/app/dist/agents/container-entry.js` exists and can
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `local.enabled` | `true` | Enable Docker container isolation |
 | `local.image` | `"al-agent:latest"` | Base Docker image name |
 | `local.memory` | `"4g"` | Memory limit per container |
 | `local.cpus` | `2` | CPU limit per container |

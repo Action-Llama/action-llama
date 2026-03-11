@@ -8,7 +8,6 @@ Pass `-w` or `--web-ui` to `al start`:
 
 ```bash
 al start -w
-al start -w --no-docker
 al start -w -p ./my-project
 ```
 

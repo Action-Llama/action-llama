@@ -269,18 +269,16 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   const maxReruns = globalConfig.maxReruns ?? DEFAULT_MAX_RERUNS;
   const maxTriggerDepth = globalConfig.maxTriggerDepth ?? DEFAULT_MAX_TRIGGER_DEPTH;
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const dockerEnabled = globalConfig.local?.enabled === true;
+  const dockerEnabled = true;
   const anyWebhooks = activeAgentConfigs.some((a) => a.webhooks?.length);
 
   // Validate pi_auth is not used with Docker (containers can't access host auth storage)
-  if (dockerEnabled) {
-    for (const config of activeAgentConfigs) {
-      if (config.model.authType === "pi_auth") {
-        throw new Error(
-          `Agent "${config.name}" uses pi_auth which is not supported in Docker mode. ` +
-          `Either switch to api_key/oauth_token (run 'al doctor') or use --no-docker.`
-        );
-      }
+  for (const config of activeAgentConfigs) {
+    if (config.model.authType === "pi_auth") {
+      throw new Error(
+        `Agent "${config.name}" uses pi_auth which is not supported in container mode. ` +
+        `Switch to api_key/oauth_token (run 'al doctor').`
+      );
     }
   }
 
@@ -367,109 +365,106 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     logger.info({ port: gatewayPort }, "Gateway started early to show build progress");
   }
 
-  if (dockerEnabled) {
-    logger.info({ runtime: runtimeType }, "Docker mode enabled — initializing infrastructure");
+  logger.info({ runtime: runtimeType }, "Container mode enabled — initializing infrastructure");
 
-    // 1. Create the container runtime
-    if (useCloudRuntime && globalConfig.cloud!.provider === "cloud-run") {
-      const { CloudRunJobRuntime } = await import("../docker/cloud-run-runtime.js");
-      const { gcpProject, region, artifactRegistry, serviceAccount, secretPrefix } = globalConfig.cloud!;
-      if (!gcpProject || !region || !artifactRegistry || !serviceAccount) {
-        throw new Error(
-          "Cloud Run runtime requires cloud.gcpProject, cloud.region, " +
-          "cloud.artifactRegistry, and cloud.serviceAccount in config.toml"
-        );
-      }
-      runtime = new CloudRunJobRuntime({ gcpProject, region, artifactRegistry, serviceAccount, secretPrefix });
-      logger.info({ gcpProject, region }, "Using Cloud Run Jobs runtime");
-    } else if (useCloudRuntime && globalConfig.cloud!.provider === "ecs") {
-      const { ECSFargateRuntime } = await import("../docker/ecs-runtime.js");
-      const cc = globalConfig.cloud!;
-      if (!cc.awsRegion || !cc.ecsCluster || !cc.ecrRepository || !cc.executionRoleArn || !cc.taskRoleArn || !cc.subnets?.length) {
-        throw new Error(
-          "ECS runtime requires cloud.awsRegion, cloud.ecsCluster, cloud.ecrRepository, " +
-          "cloud.executionRoleArn, cloud.taskRoleArn, and cloud.subnets in config.toml"
-        );
-      }
-      runtime = new ECSFargateRuntime({
-        awsRegion: cc.awsRegion,
-        ecsCluster: cc.ecsCluster,
-        ecrRepository: cc.ecrRepository,
-        executionRoleArn: cc.executionRoleArn,
-        taskRoleArn: cc.taskRoleArn,
-        subnets: cc.subnets,
-        securityGroups: cc.securityGroups,
-        secretPrefix: cc.awsSecretPrefix,
-        buildBucket: cc.buildBucket,
-      });
-
-      // Create Lambda runtime for short-running agents (timeout <= 900s)
-      const { LambdaRuntime } = await import("../docker/lambda-runtime.js");
-      const lambdaRuntime = new LambdaRuntime({
-        awsRegion: cc.awsRegion,
-        ecrRepository: cc.ecrRepository,
-        secretPrefix: cc.awsSecretPrefix,
-        buildBucket: cc.buildBucket,
-        lambdaRoleArn: cc.lambdaRoleArn,
-        lambdaSubnets: cc.lambdaSubnets,
-        lambdaSecurityGroups: cc.lambdaSecurityGroups,
-      });
-
-      // Per-agent runtime selection: Lambda for short agents, ECS for long ones
-      agentRuntimeOverrides = {};
-      for (const ac of activeAgentConfigs) {
-        const effectiveTimeout = ac.timeout ?? globalConfig.local?.timeout ?? 900;
-        if (effectiveTimeout <= AWS_CONSTANTS.LAMBDA_MAX_TIMEOUT) {
-          agentRuntimeOverrides[ac.name] = lambdaRuntime;
-          logger.info({ agent: ac.name, timeout: effectiveTimeout }, "Routing to Lambda (timeout <= 900s)");
-        }
-      }
-
-      logger.info({ region: cc.awsRegion, cluster: cc.ecsCluster }, "Using ECS Fargate runtime");
-    } else {
-      // Local runtime needs Docker running
-      const { execFileSync } = await import("child_process");
-      try {
-        execFileSync("docker", ["info"], { stdio: "pipe", timeout: 10000 });
-      } catch {
-        throw new Error(
-          "Docker is not running. Start Docker Desktop (or the Docker daemon) and try again, " +
-          "or use --no-docker to run without container isolation."
-        );
-      }
-
-      const { LocalDockerRuntime } = await import("../docker/local-runtime.js");
-      runtime = new LocalDockerRuntime();
-
-      // Local-only: ensure Docker network
-      logger.info("Ensuring Docker network...");
-      const { ensureNetwork } = await import("../docker/network.js");
-      ensureNetwork();
+  // 1. Create the container runtime
+  if (useCloudRuntime && globalConfig.cloud!.provider === "cloud-run") {
+    const { CloudRunJobRuntime } = await import("../docker/cloud-run-runtime.js");
+    const { gcpProject, region, artifactRegistry, serviceAccount, secretPrefix } = globalConfig.cloud!;
+    if (!gcpProject || !region || !artifactRegistry || !serviceAccount) {
+      throw new Error(
+        "Cloud Run runtime requires cloud.gcpProject, cloud.region, " +
+        "cloud.artifactRegistry, and cloud.serviceAccount in config.toml"
+      );
     }
-
-    // 2. Build base + per-agent images via shared image builder
-    const buildSkills: PromptSkills | undefined = dockerEnabled ? { locking: true } : undefined;
-
-    const buildResult = await buildAllImages({
-      projectPath,
-      globalConfig,
-      activeAgentConfigs,
-      runtime: runtime!,
-      runtimeType,
-      statusTracker,
-      logger,
-      skills: buildSkills,
+    runtime = new CloudRunJobRuntime({ gcpProject, region, artifactRegistry, serviceAccount, secretPrefix });
+    logger.info({ gcpProject, region }, "Using Cloud Run Jobs runtime");
+  } else if (useCloudRuntime && globalConfig.cloud!.provider === "ecs") {
+    const { ECSFargateRuntime } = await import("../docker/ecs-runtime.js");
+    const cc = globalConfig.cloud!;
+    if (!cc.awsRegion || !cc.ecsCluster || !cc.ecrRepository || !cc.executionRoleArn || !cc.taskRoleArn || !cc.subnets?.length) {
+      throw new Error(
+        "ECS runtime requires cloud.awsRegion, cloud.ecsCluster, cloud.ecrRepository, " +
+        "cloud.executionRoleArn, cloud.taskRoleArn, and cloud.subnets in config.toml"
+      );
+    }
+    runtime = new ECSFargateRuntime({
+      awsRegion: cc.awsRegion,
+      ecsCluster: cc.ecsCluster,
+      ecrRepository: cc.ecrRepository,
+      executionRoleArn: cc.executionRoleArn,
+      taskRoleArn: cc.taskRoleArn,
+      subnets: cc.subnets,
+      securityGroups: cc.securityGroups,
+      secretPrefix: cc.awsSecretPrefix,
+      buildBucket: cc.buildBucket,
     });
 
-    baseImage = buildResult.baseImage;
-    Object.assign(agentImages, buildResult.agentImages);
+    // Create Lambda runtime for short-running agents (timeout <= 900s)
+    const { LambdaRuntime } = await import("../docker/lambda-runtime.js");
+    const lambdaRuntime = new LambdaRuntime({
+      awsRegion: cc.awsRegion,
+      ecrRepository: cc.ecrRepository,
+      secretPrefix: cc.awsSecretPrefix,
+      buildBucket: cc.buildBucket,
+      lambdaRoleArn: cc.lambdaRoleArn,
+      lambdaSubnets: cc.lambdaSubnets,
+      lambdaSecurityGroups: cc.lambdaSecurityGroups,
+    });
+
+    // Per-agent runtime selection: Lambda for short agents, ECS for long ones
+    agentRuntimeOverrides = {};
+    for (const ac of activeAgentConfigs) {
+      const effectiveTimeout = ac.timeout ?? globalConfig.local?.timeout ?? 900;
+      if (effectiveTimeout <= AWS_CONSTANTS.LAMBDA_MAX_TIMEOUT) {
+        agentRuntimeOverrides[ac.name] = lambdaRuntime;
+        logger.info({ agent: ac.name, timeout: effectiveTimeout }, "Routing to Lambda (timeout <= 900s)");
+      }
+    }
+
+    logger.info({ region: cc.awsRegion, cluster: cc.ecsCluster }, "Using ECS Fargate runtime");
+  } else {
+    // Local runtime needs Docker running
+    const { execFileSync } = await import("child_process");
+    try {
+      execFileSync("docker", ["info"], { stdio: "pipe", timeout: 10000 });
+    } catch {
+      throw new Error(
+        "Docker is not running. Start Docker Desktop (or the Docker daemon) and try again."
+      );
+    }
+
+    const { LocalDockerRuntime } = await import("../docker/local-runtime.js");
+    runtime = new LocalDockerRuntime();
+
+    // Local-only: ensure Docker network
+    logger.info("Ensuring Docker network...");
+    const { ensureNetwork } = await import("../docker/network.js");
+    ensureNetwork();
   }
+
+  // 2. Build base + per-agent images via shared image builder
+  const buildSkills: PromptSkills = { locking: true };
+
+  const buildResult = await buildAllImages({
+    projectPath,
+    globalConfig,
+    activeAgentConfigs,
+    runtime: runtime!,
+    runtimeType,
+    statusTracker,
+    logger,
+    skills: buildSkills,
+  });
+
+  baseImage = buildResult.baseImage;
+  Object.assign(agentImages, buildResult.agentImages);
 
   // Create runner pools for each agent with configurable scale
   const runnerPools: Record<string, RunnerPool> = {};
 
-  // Import necessary classes once if docker is enabled
-  const ContainerAgentRunnerClass = dockerEnabled && runtime ? (await import("../agents/container-runner.js")).ContainerAgentRunner : null;
+  // Import necessary classes for container runners
+  const ContainerAgentRunnerClass = runtime ? (await import("../agents/container-runner.js")).ContainerAgentRunner : null;
   const gatewayPort = globalConfig.gateway?.port || 8080;
   const gatewayUrl = gatewayEnabled
     ? (process.env.GATEWAY_URL
@@ -494,13 +489,11 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     const scale = agentConfig.scale ?? 1;
     const runners: PoolRunner[] = [];
 
-    if (!dockerEnabled && scale > 1) {
-      logger.warn({ agent: agentConfig.name, scale }, "scale > 1 has no effect without Docker — only one instance will run at a time");
-    }
+
 
     for (let i = 0; i < scale; i++) {
       const instanceId = scale >= 2 ? `${agentConfig.name}(${i + 1})` : agentConfig.name;
-      if (dockerEnabled && runtime && ContainerAgentRunnerClass) {
+      if (runtime && ContainerAgentRunnerClass) {
         const agentRuntime = agentRuntimeOverrides[agentConfig.name] || runtime;
         runners.push(new ContainerAgentRunnerClass(
           agentRuntime,
@@ -515,14 +508,6 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
           statusTracker,
           instanceId
         ));
-      } else {
-        mkdirSync(agentDir(projectPath, agentConfig.name), { recursive: true });
-        runners.push(new AgentRunner(
-          agentConfig,
-          mkLogger(projectPath, instanceId),
-          projectPath,
-          statusTracker
-        ));
       }
     }
 
@@ -532,8 +517,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   const webhookQueueSize = globalConfig.webhookQueueSize ?? 20;
   const webhookQueue = new WebhookEventQueue<WebhookContext>(webhookQueueSize);
-  const skills: PromptSkills | undefined = dockerEnabled ? { locking: true } : undefined;
-  const schedulerCtx: SchedulerContext = { runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, webhookQueue, shuttingDown: false, skills, useBakedImages: dockerEnabled };
+  const skills: PromptSkills = { locking: true };
+  const schedulerCtx: SchedulerContext = { runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, webhookQueue, shuttingDown: false, skills, useBakedImages: true };
 
   // Set up webhook bindings (only when gateway is enabled)
   if (webhookRegistry && gatewayEnabled) {
