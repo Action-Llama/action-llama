@@ -32,10 +32,14 @@ vi.mock("../../src/docker/network.js", () => ({
   ensureNetwork: vi.fn()
 }));
 
+// Mock AgentRunner first
+const mockRun = vi.fn().mockResolvedValue({ result: "completed", triggers: [] });
+let mockIsRunning = false;
+
 vi.mock("../../src/agents/container-runner.js", () => ({
   ContainerAgentRunner: class MockContainerAgentRunner {
-    run = vi.fn().mockResolvedValue({ result: "completed", triggers: [] });
-    isRunning = false;
+    run = mockRun;
+    get isRunning() { return mockIsRunning; }
   }
 }));
 
@@ -81,9 +85,6 @@ vi.mock("croner", () => ({
   },
 }));
 
-// Mock AgentRunner
-const mockRun = vi.fn().mockResolvedValue({ result: "completed", triggers: [] });
-let mockIsRunning = false;
 vi.mock("../../src/agents/runner.js", () => ({
   AgentRunner: class {
     get isRunning() { return mockIsRunning; }

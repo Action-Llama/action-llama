@@ -26,9 +26,12 @@ vi.mock("../../../src/docker/image.js", () => ({
   ensureAgentImage: vi.fn().mockReturnValue("test-agent-image")
 }));
 
+// Mock AgentRunner first
+const mockRun = vi.fn().mockResolvedValue({ result: "completed", triggers: [] });
+
 vi.mock("../../../src/agents/container-runner.js", () => ({
   ContainerAgentRunner: class MockContainerAgentRunner {
-    run = vi.fn().mockResolvedValue({ result: "completed", triggers: [] });
+    run = mockRun;
     isRunning = false;
   }
 }));
@@ -57,8 +60,6 @@ vi.mock("../../../src/shared/credentials.js", async () => {
   };
 });
 
-// Mock AgentRunner
-const mockRun = vi.fn().mockResolvedValue({ result: "completed", triggers: [] });
 vi.mock("../../../src/agents/runner.js", () => ({
   AgentRunner: class MockAgentRunner {
     run = mockRun;
