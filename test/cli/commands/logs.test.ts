@@ -408,7 +408,7 @@ describe("logs command", () => {
     expect(errorOutput).toContain("nonexistent");
   });
 
-  it("follows cloud logs when --follow is used", async () => {
+  it("follows cloud logs when --follow is used", { timeout: 15_000 }, async () => {
     const configContent = `
 [cloud]
 provider = "ecs"
@@ -425,20 +425,32 @@ subnets = ["subnet-123"]
     const origLog = console.log;
     console.log = (...args: any[]) => output.push(args.join(" "));
 
+    // execute() will hang on the infinite await in follow mode after
+    // fetchLogs + followLogs start. Race against a short timeout — we
+    // only need to verify the initial output message was printed.
+    const ac = new AbortController();
+    const timeout = new Promise<void>((resolve) => setTimeout(() => {
+      ac.abort();
+      resolve();
+    }, 3000));
+
     try {
-      await execute("dev", {
-        project: tmpDir,
-        lines: "10",
-        follow: true,
-        cloud: true
-      });
+      await Promise.race([
+        execute("dev", {
+          project: tmpDir,
+          lines: "10",
+          follow: true,
+          cloud: true
+        }),
+        timeout,
+      ]);
     } catch (e: any) {
-      // Expected - will fail when trying to contact AWS
+      // Expected - may fail when trying to contact AWS
     }
 
     console.log = origLog;
 
-    expect(output.some(line => line.includes("Looking for running dev agent"))).toBe(true);
+    expect(output.some(line => line.includes("Following logs for dev"))).toBe(true);
   });
 
   it("fetches static cloud logs when --follow is not used", { timeout: 15_000 }, async () => {

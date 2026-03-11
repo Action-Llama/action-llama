@@ -293,6 +293,42 @@ export class LambdaRuntime implements ContainerRuntime {
     return this.shared.tailLogEvents(logGroupName, "", limit);
   }
 
+  followLogs(
+    agentName: string,
+    onLine: (line: string) => void,
+    onStderr?: (text: string) => void
+  ): { stop: () => void } {
+    let stopped = false;
+    const functionName = AWS_CONSTANTS.lambdaFunction(agentName);
+    const logGroupName = `${AWS_CONSTANTS.LAMBDA_LOG_GROUP}/${functionName}`;
+    const startTime = Date.now() - 60_000; // start from 1 minute ago
+
+    const poll = async () => {
+      let nextToken: string | undefined;
+
+      while (!stopped) {
+        try {
+          const res = await this.shared.filterLogEventsRaw(logGroupName, "", nextToken, startTime);
+          for (const line of res.events) {
+            onLine(line);
+          }
+          if (res.nextToken) {
+            nextToken = res.nextToken;
+          }
+        } catch (err: any) {
+          if (!stopped && onStderr && err.name !== "ResourceNotFoundException") {
+            onStderr(`Lambda log polling error: ${err.message}`);
+          }
+        }
+        if (!stopped) await sleep(5000);
+      }
+    };
+
+    poll();
+
+    return { stop: () => { stopped = true; } };
+  }
+
   getTaskUrl(containerId: string): string | null {
     const functionName = this.parseFunctionName(containerId);
     return `https://${this.config.awsRegion}.console.aws.amazon.com/lambda/home?region=${this.config.awsRegion}#/functions/${functionName}`;

@@ -308,6 +308,15 @@ export class LocalDockerRuntime implements ContainerRuntime {
     }
   }
 
+  followLogs(
+    _agentName: string,
+    _onLine: (line: string) => void,
+    _onStderr?: (text: string) => void
+  ): { stop: () => void } {
+    // Local follow is handled by the file-based tail in logs.ts
+    return { stop: () => {} };
+  }
+
   getTaskUrl(): string | null {
     return null;
   }

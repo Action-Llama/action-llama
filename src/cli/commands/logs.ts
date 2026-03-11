@@ -405,48 +405,15 @@ export async function execute(
     };
 
     if (opts.follow) {
-      console.log(`Looking for running ${agent} agent...`);
-      const runningAgents = await runtime.listRunningAgents();
-      const matching = runningAgents.filter(a => a.agentName === agent);
-
-      if (matching.length === 0) {
-        console.error(`No running agent found for "${agent}". Start the agent first to follow its logs.`);
-        process.exit(1);
-      }
-
-      let targetAgent: typeof matching[0];
-
-      if (matching.length > 1 && instanceNum === undefined) {
-        // Multiple instances running — list them and ask user to pick
-        console.error(`Multiple running instances of "${agent}" found. Use --instance to select one:\n`);
-        for (let i = 0; i < matching.length; i++) {
-          const a = matching[i];
-          const started = a.startedAt ? ` (started ${a.startedAt.toISOString()})` : "";
-          console.error(`  ${i + 1}. ${a.taskId}${started}`);
-        }
-        console.error(`\nExample: al logs -cf --instance 1 ${agent}`);
-        process.exit(1);
-      }
-
-      if (instanceNum !== undefined) {
-        if (instanceNum < 1 || instanceNum > matching.length) {
-          console.error(`Instance ${instanceNum} out of range. ${matching.length} instance(s) running.`);
-          process.exit(1);
-        }
-        targetAgent = matching[instanceNum - 1];
-      } else {
-        targetAgent = matching[0];
-      }
-
-      console.log(`Following logs for ${agent} (${targetAgent.taskId})...`);
+      console.log(`Following logs for ${agent}...`);
 
       const recentLines = await runtime.fetchLogs(agent, limit);
       for (const line of recentLines) {
         formatCloudLine(line);
       }
 
-      const { stop } = runtime.streamLogs(
-        targetAgent.taskId,
+      const { stop } = runtime.followLogs(
+        agent,
         (line: string) => formatCloudLine(line),
         (stderr: string) => console.error(stderr)
       );

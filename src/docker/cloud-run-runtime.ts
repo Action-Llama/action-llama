@@ -309,6 +309,69 @@ export class CloudRunJobRuntime implements ContainerRuntime {
       .filter(Boolean);
   }
 
+  followLogs(
+    agentName: string,
+    onLine: (line: string) => void,
+    onStderr?: (text: string) => void
+  ): { stop: () => void } {
+    let stopped = false;
+    const jobName = AWS_CONSTANTS.agentFamily(agentName);
+    let lastTimestamp: string | undefined;
+
+    const poll = async () => {
+      while (!stopped) {
+        try {
+          const token = await this.getAccessToken();
+          let filter = `resource.type="cloud_run_job" AND labels."run.googleapis.com/job_name"="${jobName}"`;
+          if (lastTimestamp) {
+            filter += ` AND timestamp>"${lastTimestamp}"`;
+          } else {
+            // Start from 1 minute ago
+            filter += ` AND timestamp>="${new Date(Date.now() - 60_000).toISOString()}"`;
+          }
+
+          const res = await fetch("https://logging.googleapis.com/v2/entries:list", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              resourceNames: [`projects/${this.config.gcpProject}`],
+              filter,
+              orderBy: "timestamp asc",
+              pageSize: 100,
+            }),
+          });
+
+          if (!res.ok) {
+            const body = await res.text();
+            throw new Error(`Cloud Logging read failed: ${res.status} ${body}`);
+          }
+
+          const data = await res.json() as {
+            entries?: Array<{ timestamp?: string; textPayload?: string; jsonPayload?: unknown }>;
+          };
+
+          for (const entry of data.entries ?? []) {
+            if (entry.timestamp) lastTimestamp = entry.timestamp;
+            const line = entry.textPayload ?? (entry.jsonPayload ? JSON.stringify(entry.jsonPayload) : "");
+            if (line) onLine(line);
+          }
+        } catch (err: any) {
+          if (!stopped && onStderr) {
+            onStderr(`Log polling error: ${err.message}`);
+          }
+        }
+        if (!stopped) await sleep(5000);
+      }
+    };
+
+    poll();
+
+    return { stop: () => { stopped = true; } };
+  }
+
   getTaskUrl(executionName: string): string | null {
     // executionName format: projects/{project}/locations/{region}/jobs/{jobName}/executions/{executionId}
     const parts = executionName.split("/");

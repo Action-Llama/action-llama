@@ -115,6 +115,18 @@ export interface ContainerRuntime {
   /** Fetch recent log entries for an agent. */
   fetchLogs(agentName: string, limit: number): Promise<string[]>;
 
+  /**
+   * Follow logs for an agent by name, polling for new entries.
+   * Unlike streamLogs (which follows a specific running task), this polls the
+   * agent's log group directly — works even when no task is currently running.
+   * Returns a handle to stop polling.
+   */
+  followLogs(
+    agentName: string,
+    onLine: (line: string) => void,
+    onStderr?: (text: string) => void
+  ): { stop: () => void };
+
   /** Return a URL to the cloud console for this task/execution, or null for local runtimes. */
   getTaskUrl(containerName: string): string | null;
 }
