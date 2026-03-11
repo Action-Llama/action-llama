@@ -84,7 +84,7 @@ The ACTIONS.md is set as the LLM's system prompt. The scheduler then sends a use
    - *Scheduled run:* "You are running on a schedule. Check for new work and act on anything you find."
    - *Manual run:* "You have been triggered manually. Check for new work and act on anything you find."
    - *Webhook:* `<webhook-trigger>` block with the full event payload (source, event, action, repo, etc.)
-   - *Agent trigger:* `<agent-trigger>` block with the source agent name and context
+   - *Agent call:* `<agent-call>` block with the caller agent name and context
 
 Your ACTIONS.md should reference `<agent-config>` for parameter values and handle both scheduled and webhook triggers if the agent uses both.
 
@@ -96,7 +96,8 @@ Skills currently taught to agents:
 
 | Category | Skills | Description |
 |----------|--------|-------------|
-| **Signals** | `[RERUN]`, `[STATUS: ...]`, `[TRIGGER: ...]` | Text-based signals the agent emits in its output. See [Signals](#signals). |
+| **Signals** | `[RERUN]`, `[STATUS: ...]`, `[RETURN]...[/RETURN]` | Text-based signals the agent emits in its output. See [Signals](#signals). |
+| **Calls** | `al-call`, `al-check`, `al-wait` | Agent-to-agent calls with return values. See [Agent calls](#agent-calls). |
 | **Locks** | `LOCK(...)`, `UNLOCK(...)`, `HEARTBEAT(...)` | Resource locking for parallel coordination. See [Resource locks](#resource-locks). |
 | **Credentials** | `GITHUB_TOKEN`, `gh`, `git`, etc. | Credential access and tool usage. See [Credentials](credentials.md). |
 
@@ -110,21 +111,31 @@ The agent can emit these signals in its text output:
 |--------|--------|
 | `[RERUN]` | Tells the scheduler the agent did work and wants to be re-run immediately to drain remaining backlog. |
 | `[STATUS: <text>]` | Status update shown in the TUI (e.g. `[STATUS: reviewing PR #42]`). |
-| `[TRIGGER: <agent>]...[/TRIGGER]` | Triggers another agent with the enclosed context. The target receives a `<agent-trigger>` prompt with the source agent name and context. Self-triggers are skipped; chains are bounded by `maxTriggerDepth`. |
+| `[RETURN]...[/RETURN]` | Returns a value to the calling agent when invoked via `al-call`. |
+
+### Agent calls
+
+Agents running in Docker mode can call other agents and retrieve their results using shell commands:
+
+- **`al-call <agent>`** — Call another agent. Pass context via stdin. Returns `{"ok":true,"callId":"..."}`.
+- **`al-check <callId>`** — Non-blocking status check. Returns `{"status":"pending|running|completed|error", ...}`.
+- **`al-wait <callId> [...] [--timeout N]`** — Wait for calls to complete (default timeout: 900s).
+
+Calls are non-blocking: fire multiple calls, continue working, then collect results with `al-wait`. If the target agent's runners are all busy, the call is queued until one frees up. Self-calls are rejected; call depth is bounded by `maxCallDepth`.
 
 ## Runtime lifecycle
 
 Each agent run is an isolated, short-lived container (or host process with `--no-docker`). Here's what happens from trigger to exit:
 
-1. **Trigger fires** — a cron tick, webhook event, manual `al run`, or `[TRIGGER]` from another agent.
+1. **Trigger fires** — a cron tick, webhook event, manual `al run`, or `al-call` from another agent.
 2. **Container launches** — a fresh container starts with credentials and config passed via environment variables and volume mounts.
 3. **Credentials are loaded** — the entry point reads credential files from `/credentials/<type>/<instance>/<field>` (local Docker and Cloud Run) or from `AL_SECRET_*` environment variables (ECS). Key credentials are injected as env vars the LLM can use directly: `GITHUB_TOKEN`, `GH_TOKEN`, `SENTRY_AUTH_TOKEN`, `GIT_SSH_COMMAND`, git author identity, etc.
 4. **LLM session starts** — the model is initialized and receives two inputs:
    - **System prompt:** the contents of `ACTIONS.md`
-   - **User prompt:** `<agent-config>` (params JSON) + `<credential-context>` (available env vars, tools, and security policy) + trigger context (schedule, webhook payload, or agent trigger)
+   - **User prompt:** `<agent-config>` (params JSON) + `<credential-context>` (available env vars, tools, and security policy) + trigger context (schedule, webhook payload, or agent call)
 5. **Agent runs autonomously** — the LLM executes tools (bash, file I/O, API calls) until it finishes or hits an error. Rate-limited API calls are retried automatically (up to 5 attempts with exponential backoff).
 6. **Error detection** — the container watches for repeated auth/permission failures (e.g. "bad credentials", "permission denied"). After 3 such errors, it aborts early.
-7. **Signals are processed** — as the agent produces output, the scheduler scans for `[RERUN]`, `[STATUS]`, and `[TRIGGER]` signals.
+7. **Signals are processed** — as the agent produces output, the scheduler scans for `[RERUN]`, `[STATUS]`, and `[RETURN]` signals.
 8. **Container exits** — exit code 0 (success), 1 (error), or 124 (timeout). Any held locks are released automatically. The scheduler logs the result and the container is removed.
 
 ### Timeout
@@ -135,7 +146,7 @@ Each container has a self-termination timer controlled by `local.timeout` in `co
 
 When a scheduled agent emits `[RERUN]`, the scheduler immediately re-runs it. This continues until the agent completes without `[RERUN]` (no more work), hits an error, or reaches the `maxReruns` limit (default: 10, configurable in `config.toml`). This lets an agent drain its work queue without waiting for the next cron tick.
 
-Webhook-triggered and agent-triggered runs do not re-run — they respond to a single event.
+Webhook-triggered and agent-called runs do not re-run — they respond to a single event.
 
 See [Docker docs](docker.md) for the full container reference including the startup sequence, log protocol, filesystem layout, and exit codes.
 

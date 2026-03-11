@@ -37,7 +37,8 @@ credential = "MyOrg"              # credential instance for HMAC validation
 
 # Scheduler settings
 maxReruns = 10              # Max consecutive reruns for successful agent runs (default: 10)
-maxTriggerDepth = 3         # Max depth for agent-to-agent trigger chains (default: 3)
+maxCallDepth = 3            # Max depth for agent-to-agent call chains (default: 3)
+workQueueSize = 100         # Max queued work items (webhooks + calls) per agent (default: 100)
 ```
 
 ## Field Reference
@@ -47,7 +48,8 @@ maxTriggerDepth = 3         # Max depth for agent-to-agent trigger chains (defau
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `maxReruns` | number | `10` | Maximum consecutive reruns when an agent requests a rerun via `[RERUN]` before stopping |
-| `maxTriggerDepth` | number | `3` | Maximum depth for agent-to-agent `[TRIGGER]` chains (A triggers B triggers C = depth 2) |
+| `maxCallDepth` | number | `3` | Maximum depth for agent-to-agent call chains (A calls B calls C = depth 2) |
+| `workQueueSize` | number | `100` | Maximum queued work items (webhook events + agent calls) per agent when all runners are busy |
 
 ### `[model]` — Default LLM
 
@@ -221,5 +223,5 @@ taskRoleArn = "arn:aws:iam::123456789012:role/al-default-task-role"
 subnets = ["subnet-abc123"]
 
 maxReruns = 5
-maxTriggerDepth = 2
+maxCallDepth = 2
 ```

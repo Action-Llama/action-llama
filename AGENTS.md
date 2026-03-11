@@ -119,25 +119,38 @@ Send a live status update to the TUI and logs.
 
 Emit at natural milestones so the operator can see what you're doing in real time.
 
-### `[TRIGGER: <agent>]...[/TRIGGER]`
+### `[RETURN]...[/RETURN]`
 
-Trigger another agent with context you provide.
+Return a value when you were called by another agent via `al-call`. The calling agent can retrieve this value using `al-check` or `al-wait`.
 
 ```
-[TRIGGER: reviewer]
-I just opened PR #42. Please review it.
-URL: https://github.com/acme/app/pull/42
-[/TRIGGER]
+[RETURN]
+PR looks good. Approved with minor suggestions on error handling.
+[/RETURN]
 ```
 
-The scheduler will run the target agent with the context injected as an `<agent-trigger>` block. Rules:
-- An agent cannot trigger itself
-- If the target is busy or does not exist, the trigger is skipped
-- Trigger chains are limited by `maxTriggerDepth` in `config.toml` (default: 3)
+### Agent-to-agent calls
+
+Call other agents and retrieve their results using shell commands (Docker mode only):
+
+- **`al-call <agent>`** — Call another agent. Pass context via stdin. Returns `{"ok":true,"callId":"..."}`.
+- **`al-check <callId>`** — Non-blocking status check. Returns `{"status":"pending|running|completed|error", ...}`.
+- **`al-wait <callId> [...] [--timeout N]`** — Wait for calls to complete (default timeout: 900s).
+
+```sh
+CALL_ID=$(echo "Review PR #42 on acme/app" | al-call reviewer | jq -r .callId)
+# ... continue working ...
+RESULT=$(al-wait "$CALL_ID")
+```
+
+Rules:
+- An agent cannot call itself
+- If the target is busy, the call is queued until a runner frees up
+- Call chains are limited by `maxCallDepth` in `config.toml` (default: 3)
 
 ### Combining signals
 
-You can emit multiple signals in one run. For example, several `[STATUS]` updates as you work, a `[TRIGGER]` at the end, and `[RERUN]` if there's more work to do.
+You can emit multiple signals in one run. For example, several `[STATUS]` updates as you work, `al-call` to delegate work, and `[RERUN]` if there's more work to do.
 
 ## Webhook Reference
 
@@ -432,7 +445,7 @@ Set `maxReruns` in `config.toml` to control the limit (default: 10):
 
 ```toml
 maxReruns = 5
-maxTriggerDepth = 3   # max depth for agent-to-agent trigger chains (default: 3)
+maxCallDepth = 3      # max depth for agent-to-agent call chains (default: 3)
 ```
 
 Webhook-triggered and agent-triggered runs do not re-run — they respond to a single event.

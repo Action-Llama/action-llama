@@ -4,13 +4,13 @@ import type { Logger } from "../shared/logger.js";
 import type { ContainerRuntime, RuntimeCredentials } from "../docker/runtime.js";
 import type { ContainerRegistration } from "../gateway/types.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
-import type { RunResult, RunOutcome, TriggerRequest } from "./runner.js";
+import type { RunResult, RunOutcome } from "./runner.js";
 
 export class ContainerAgentRunner {
   private _running = false;
   private _wantsRerun = false;
-  private _triggers: TriggerRequest[] = [];
-  private _triggerAccum: { agent: string; lines: string[] } | null = null;
+  private _returnValue: string | undefined = undefined;
+  private _returnAccum: string[] | null = null;
   private runtime: ContainerRuntime;
   private globalConfig: GlobalConfig;
   private agentConfig: AgentConfig;
@@ -113,18 +113,17 @@ export class ContainerAgentRunner {
       this.statusTracker?.addLogLine(this.agentConfig.name, "rerun requested");
     }
 
-    // Accumulate [TRIGGER: agent]...[/TRIGGER] blocks across lines
-    const triggerOpen = line.match(/^\[TRIGGER:\s*(\S+)\]$/);
-    if (triggerOpen) {
-      this._triggerAccum = { agent: triggerOpen[1], lines: [] };
+    // Accumulate [RETURN]...[/RETURN] blocks across lines
+    if (line === "[RETURN]") {
+      this._returnAccum = [];
       return;
     }
-    if (this._triggerAccum) {
-      if (line === "[/TRIGGER]") {
-        this._triggers.push({ agent: this._triggerAccum.agent, context: this._triggerAccum.lines.join("\n").trim() });
-        this._triggerAccum = null;
+    if (this._returnAccum !== null) {
+      if (line === "[/RETURN]") {
+        this._returnValue = this._returnAccum.join("\n").trim();
+        this._returnAccum = null;
       } else {
-        this._triggerAccum.lines.push(line);
+        this._returnAccum.push(line);
       }
     }
   }
@@ -132,14 +131,14 @@ export class ContainerAgentRunner {
   async run(prompt: string, triggerInfo?: { type: 'schedule' | 'webhook' | 'agent'; source?: string }): Promise<RunOutcome> {
     if (this._running) {
       this.logger.warn(`${this.agentConfig.name} is already running, skipping`);
-      return { result: "error", triggers: [] };
+      return { result: "error" };
     }
 
     // Check if this agent already has a running container (e.g. orphan from a previous scheduler)
     try {
       if (await this.runtime.isAgentRunning(this.agentConfig.name)) {
         this.logger.warn(`${this.agentConfig.name} is already running in the runtime, skipping`);
-        return { result: "error", triggers: [] };
+        return { result: "error" };
       }
     } catch {
       // Best-effort check — proceed if it fails
@@ -147,8 +146,8 @@ export class ContainerAgentRunner {
 
     this._running = true;
     this._wantsRerun = false;
-    this._triggers = [];
-    this._triggerAccum = null;
+    this._returnValue = undefined;
+    this._returnAccum = null;
     const runReason = triggerInfo
       ? (triggerInfo.source
         ? (triggerInfo.type === 'agent' ? `triggered by ${triggerInfo.source}` : `${triggerInfo.type} (${triggerInfo.source})`)
@@ -272,6 +271,6 @@ export class ContainerAgentRunner {
       this.statusTracker?.endRun(this.agentConfig.name, elapsed, runError);
       this._running = false;
     }
-    return { result: runResult, triggers: this._triggers };
+    return { result: runResult, returnValue: this._returnValue };
   }
 }

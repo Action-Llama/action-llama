@@ -30,27 +30,27 @@ Sends a status update to the TUI and logs.
 
 **Format:** The text between `[STATUS:` and `]` is extracted verbatim. Keep it short and descriptive.
 
-## `[TRIGGER: <agent>]...[/TRIGGER]`
+## `[RETURN]...[/RETURN]`
 
-Triggers another agent with context you provide.
+Returns a value to the calling agent when you were invoked via `al-call`.
 
 ```
-[TRIGGER: reviewer]
-I just opened PR #42 on acme/app. Please review it.
-URL: https://github.com/acme/app/pull/42
-[/TRIGGER]
+[RETURN]
+PR looks good. Approved with minor suggestions:
+- Line 42: consider using a const instead of let
+- Line 89: missing error handling for the API call
+[/RETURN]
 ```
 
-**When to use:** When your work creates something another agent should act on — e.g. a dev agent opens a PR and wants a reviewer agent to review it.
+**When to use:** When you were called by another agent (you'll see an `<agent-call>` block in your prompt) and need to send back a result. Place your return value between the tags.
 
-**Format:** The opening tag must be on its own line: `[TRIGGER: <agent-name>]`. The closing tag must also be on its own line: `[/TRIGGER]`. Everything between them becomes the context passed to the target agent.
+**Format:** The opening `[RETURN]` and closing `[/RETURN]` must each be on their own line. Everything between them is returned verbatim to the caller.
 
 **Rules:**
-- You cannot trigger yourself — self-triggers are silently skipped
-- If the target agent doesn't exist or is busy, the trigger is skipped
-- Trigger chains are bounded by `maxTriggerDepth` (default: 3) to prevent infinite loops
-- The target agent receives your context in an `<agent-trigger>` block with your agent name as the `source`
+- Only the last `[RETURN]...[/RETURN]` block in your output is used (if you emit multiple, earlier ones are overwritten)
+- If you were not called by another agent, `[RETURN]` blocks are ignored
+- Call chains are bounded by `maxCallDepth` (default: 3) to prevent infinite loops
 
 ## Multiple signals
 
-You can emit multiple signals in one run. For example, you might emit several `[STATUS]` updates as you work, then a `[TRIGGER]` at the end, and a `[RERUN]` if there's more work to do.
+You can emit multiple signals in one run. For example, you might emit several `[STATUS]` updates as you work, then a `[RETURN]` block with your result, and a `[RERUN]` if there's more work to do.

@@ -34,25 +34,20 @@ const UNRECOVERABLE_THRESHOLD = 3;
 
 export type RunResult = "completed" | "rerun" | "error";
 
-export interface TriggerRequest {
-  agent: string;
-  context: string;
-}
-
 export interface RunOutcome {
   result: RunResult;
-  triggers: TriggerRequest[];
+  returnValue?: string;
 }
 
-const TRIGGER_PATTERN = /\[TRIGGER:\s*(\S+)\]([\s\S]*?)\[\/TRIGGER\]/g;
+const RETURN_PATTERN = /\[RETURN\]([\s\S]*?)\[\/RETURN\]/g;
 
-function extractTriggers(text: string): TriggerRequest[] {
-  const triggers: TriggerRequest[] = [];
+function extractReturnValue(text: string): string | undefined {
+  let last: string | undefined;
   let match;
-  while ((match = TRIGGER_PATTERN.exec(text)) !== null) {
-    triggers.push({ agent: match[1], context: match[2].trim() });
+  while ((match = RETURN_PATTERN.exec(text)) !== null) {
+    last = match[1].trim();
   }
-  return triggers;
+  return last;
 }
 
 export class AgentRunner {
@@ -85,7 +80,7 @@ export class AgentRunner {
   async run(prompt: string, triggerInfo?: { type: 'schedule' | 'webhook' | 'agent'; source?: string }): Promise<RunOutcome> {
     if (this.running) {
       this.logger.warn(`${this.agentConfig.name} is already running, skipping`);
-      return { result: "error", triggers: [] };
+      return { result: "error" };
     }
 
     this.running = true;
@@ -292,7 +287,7 @@ export class AgentRunner {
         }
       }
 
-      const triggers = extractTriggers(outputText);
+      const returnValue = extractReturnValue(outputText);
       let result: RunResult;
       if (outputText.includes("[RERUN]")) {
         this.logger.info({ outputLength: outputText.length }, "run completed, rerun requested");
@@ -303,11 +298,11 @@ export class AgentRunner {
       }
 
       session.dispose();
-      return { result, triggers };
+      return { result, returnValue };
     } catch (err: any) {
       this.logger.error({ err }, `${this.agentConfig.name} run failed`);
       runError = String(err?.message || err).slice(0, 200);
-      return { result: "error", triggers: [] };
+      return { result: "error" };
     } finally {
       // Restore the git env vars we may have overwritten so other
       // agents running in the same process get a clean slate.
