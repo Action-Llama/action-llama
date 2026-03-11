@@ -14,7 +14,6 @@ authType = "api_key"
 
 # Local Docker container settings
 [local]
-enabled = true              # Enable Docker isolation (default: true)
 image = "al-agent:latest"   # Base image name (default: "al-agent:latest")
 memory = "4g"               # Memory limit per container (default: "4g")
 cpus = 2                    # CPU limit per container (default: 2)
@@ -70,7 +69,6 @@ Controls local Docker container isolation. These settings also apply as resource
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `enabled` | boolean | `true` | Enable Docker container isolation. Set to `false` or use `--no-docker` to run agents directly on the host. |
 | `image` | string | `"al-agent:latest"` | Base Docker image name |
 | `memory` | string | `"4g"` | Memory limit per container (e.g. `"4g"`, `"8g"`, `"4096"` for ECS in MiB) |
 | `cpus` | number | `2` | CPU limit per container |
@@ -167,18 +165,6 @@ authType = "api_key"
 ```
 
 Everything else uses defaults: Docker enabled, 4GB memory, 2 CPUs, 15min timeout, gateway on port 8080.
-
-### OpenAI without Docker
-
-```toml
-[model]
-provider = "openai"
-model = "gpt-4o"
-authType = "api_key"
-
-[local]
-enabled = false
-```
 
 ### Cloud Run production
 

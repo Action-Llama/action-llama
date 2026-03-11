@@ -3,6 +3,39 @@ import { writeFileSync, mkdirSync } from "fs";
 import { resolve } from "path";
 import { makeTmpProject, captureLog } from "../../helpers.js";
 
+// Mock child_process for Docker check
+vi.mock("child_process", () => ({
+  execFileSync: vi.fn((_cmd: string, _args: string[]) => ""),
+}));
+
+// Mock Docker/container related modules
+vi.mock("../../../src/docker/local-runtime.js", () => ({
+  LocalDockerRuntime: class MockLocalDockerRuntime {
+    constructor() {
+      // Mock runtime methods if needed
+    }
+  }
+}));
+
+vi.mock("../../../src/docker/network.js", () => ({
+  ensureNetwork: vi.fn()
+}));
+
+vi.mock("../../../src/docker/image.js", () => ({
+  ensureImage: vi.fn(),
+  ensureAgentImage: vi.fn().mockReturnValue("test-agent-image")
+}));
+
+// Mock AgentRunner first
+const mockRun = vi.fn().mockResolvedValue({ result: "completed", triggers: [] });
+
+vi.mock("../../../src/agents/container-runner.js", () => ({
+  ContainerAgentRunner: class MockContainerAgentRunner {
+    run = mockRun;
+    isRunning = false;
+  }
+}));
+
 // Mock doctor to be a no-op
 vi.mock("../../../src/cli/commands/doctor.js", () => ({
   execute: vi.fn().mockResolvedValue(undefined),
@@ -27,8 +60,6 @@ vi.mock("../../../src/shared/credentials.js", async () => {
   };
 });
 
-// Mock AgentRunner
-const mockRun = vi.fn().mockResolvedValue(undefined);
 vi.mock("../../../src/agents/runner.js", () => ({
   AgentRunner: class MockAgentRunner {
     run = mockRun;
@@ -59,13 +90,13 @@ describe("run", () => {
     vi.clearAllMocks();
   });
 
-  it("runs a named agent in host mode", async () => {
+  it("runs a named agent in Docker mode", async () => {
     const dir = makeTmpProject({
       agents: [{ name: "dev", schedule: "*/5 * * * *" }],
     });
 
     const output = await captureLog(async () => {
-      await execute("dev", { project: dir, noDocker: true });
+      await execute("dev", { project: dir });
     });
 
     expect(mockRun).toHaveBeenCalledTimes(1);

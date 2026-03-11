@@ -125,7 +125,7 @@ Calls are non-blocking: fire multiple calls, continue working, then collect resu
 
 ## Runtime lifecycle
 
-Each agent run is an isolated, short-lived container (or host process with `--no-docker`). Here's what happens from trigger to exit:
+Each agent run is an isolated, short-lived container. Here's what happens from trigger to exit:
 
 1. **Trigger fires** — a cron tick, webhook event, manual `al run`, or `al-call` from another agent.
 2. **Container launches** — a fresh container starts with credentials and config passed via environment variables and volume mounts.
@@ -235,7 +235,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 USER node
 ```
 
-Agents without a Dockerfile use the base image directly. The Dockerfile is only relevant in Docker mode (enabled by default) — it has no effect with `--no-docker`.
+Agents without a Dockerfile use the base image directly.
 
 See [Docker docs](docker.md) for the full container reference including the base image contents, filesystem layout, and how to write standalone Dockerfiles.
 

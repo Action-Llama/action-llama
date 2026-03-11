@@ -30,7 +30,6 @@ program
   .description("Manually run a single agent")
   .argument("<agent>", "agent name")
   .option("-p, --project <dir>", "project directory", ".")
-  .option("--no-docker", "disable Docker container isolation (run agents directly on host)")
   .option("-c, --cloud", "run on cloud infrastructure")
   .option("-H, --headless", "non-interactive mode (no credential prompts, for CI/deploy environments)")
   .action(async (agent: string, opts) => {
@@ -42,7 +41,6 @@ program
   .command("start")
   .description("Start cron scheduler")
   .option("-p, --project <dir>", "project directory", ".")
-  .option("--no-docker", "disable Docker container isolation (run agents directly on host)")
   .option("-c, --cloud", "run on cloud infrastructure")
   .option("-H, --headless", "non-interactive mode (no TUI, no credential prompts, for CI/deploy environments)")
   .option("-g, --gateway", "enable the HTTP gateway server (required for webhooks, locks, and web UI)")
