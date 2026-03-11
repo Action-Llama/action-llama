@@ -3,6 +3,36 @@ import { writeFileSync, mkdirSync } from "fs";
 import { resolve } from "path";
 import { makeTmpProject, captureLog } from "../../helpers.js";
 
+// Mock child_process for Docker check
+vi.mock("child_process", () => ({
+  execFileSync: vi.fn((_cmd: string, _args: string[]) => ""),
+}));
+
+// Mock Docker/container related modules
+vi.mock("../../../src/docker/local-runtime.js", () => ({
+  LocalDockerRuntime: class MockLocalDockerRuntime {
+    constructor() {
+      // Mock runtime methods if needed
+    }
+  }
+}));
+
+vi.mock("../../../src/docker/network.js", () => ({
+  ensureNetwork: vi.fn()
+}));
+
+vi.mock("../../../src/docker/image.js", () => ({
+  ensureImage: vi.fn(),
+  ensureAgentImage: vi.fn().mockReturnValue("test-agent-image")
+}));
+
+vi.mock("../../../src/agents/container-runner.js", () => ({
+  ContainerAgentRunner: class MockContainerAgentRunner {
+    run = vi.fn().mockResolvedValue({ result: "completed", triggers: [] });
+    isRunning = false;
+  }
+}));
+
 // Mock doctor to be a no-op
 vi.mock("../../../src/cli/commands/doctor.js", () => ({
   execute: vi.fn().mockResolvedValue(undefined),
@@ -28,7 +58,7 @@ vi.mock("../../../src/shared/credentials.js", async () => {
 });
 
 // Mock AgentRunner
-const mockRun = vi.fn().mockResolvedValue(undefined);
+const mockRun = vi.fn().mockResolvedValue({ result: "completed", triggers: [] });
 vi.mock("../../../src/agents/runner.js", () => ({
   AgentRunner: class MockAgentRunner {
     run = mockRun;
