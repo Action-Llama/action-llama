@@ -12,3 +12,12 @@ export interface WebhookEvent {
   text: string;
   source: string;
 }
+
+export interface AgentInstance {
+  id: string;
+  agentName: string;
+  status: 'running' | 'completed' | 'error' | 'killed';
+  startedAt: Date;
+  trigger: string;
+  runner?: any; // Reference to the actual runner instance
+}

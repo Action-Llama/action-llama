@@ -59,6 +59,7 @@ export async function execute(opts: { project: string; noDocker?: boolean; cloud
     webhooksActive: false,
     webhookUrls: [],
     startedAt: new Date(),
+    paused: false,
   });
 
   let cleanup: () => void;
@@ -89,6 +90,7 @@ export async function execute(opts: { project: string; noDocker?: boolean; cloud
     webhookUrls: webhookUrls || [],
     dashboardUrl: (opts.webUi && gatewayPort) ? `http://localhost:${gatewayPort}/dashboard` : undefined,
     startedAt: new Date(),
+    paused: false,
   });
 
   // Coordinate SIGINT: cleanup, then exit
