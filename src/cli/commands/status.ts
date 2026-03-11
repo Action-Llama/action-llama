@@ -152,7 +152,7 @@ export async function execute(opts: { project: string; cloud?: boolean }): Promi
 
   // Fetch and display lock information (local mode only)
   try {
-    const response = await fetch("http://localhost:3210/locks/status");
+    const response = await fetch(`http://localhost:${gatewayPort}/locks/status`);
     if (response.ok) {
       const data = await response.json();
       if (data.locks && data.locks.length > 0) {

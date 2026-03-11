@@ -509,6 +509,13 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       logger.info("Ensuring Docker network...");
       const { ensureNetwork } = await import("../docker/network.js");
       ensureNetwork();
+
+      // Start gateway proxy container if gateway is enabled
+      if (gatewayEnabled && runtime.startGatewayProxy) {
+        const gatewayPort = globalConfig.gateway?.port || 8080;
+        logger.info({ port: gatewayPort }, "Starting gateway proxy container for local Docker runtime");
+        await runtime.startGatewayProxy(gatewayPort);
+      }
     }
 
     // 2. Build base + per-agent images via shared image builder
@@ -539,7 +546,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     ? (process.env.GATEWAY_URL
       || (useCloudRuntime
         ? (globalConfig.gateway?.url || "")
-        : `http://host.docker.internal:${gatewayPort}`))
+        : `http://gateway:${gatewayPort}`))
     : "";
 
   if (gatewayEnabled && useCloudRuntime && !gatewayUrl) {
@@ -854,6 +861,11 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     if (gateway) {
       await gateway.close();
       logger.info("Gateway server stopped");
+    }
+    // Stop gateway proxy if running local Docker
+    if (dockerEnabled && !useCloudRuntime && runtime && runtime.stopGatewayProxy) {
+      await runtime.stopGatewayProxy();
+      logger.info("Gateway proxy container stopped");
     }
     logger.info("All cron jobs stopped");
     process.exit(0);
