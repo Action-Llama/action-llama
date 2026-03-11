@@ -123,6 +123,20 @@ program
     await execute(opts);
   });
 
+program
+  .command("optimize")
+  .description("Optimize Lambda performance for faster start times")
+  .argument("[agent]", "agent name (omit to list all agents)")
+  .option("-p, --project <dir>", "project directory", ".")
+  .option("--prewarm", "pre-warm the Lambda function")
+  .option("--provisioned-concurrency <N>", "set provisioned concurrency (eliminates cold starts)", parseInt)
+  .option("--remove-provisioned", "remove provisioned concurrency")
+  .option("--status", "show optimization status")
+  .action(async (agent: string | undefined, opts) => {
+    const { optimizeCommand } = await import("./commands/optimize.js");
+    await optimizeCommand(agent, opts);
+  });
+
 // --- Credential management ---
 
 const credsCmd = program

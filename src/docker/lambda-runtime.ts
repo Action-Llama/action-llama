@@ -86,8 +86,12 @@ export class LambdaRuntime implements ContainerRuntime {
   async launch(opts: RuntimeLaunchOpts): Promise<string> {
     const functionName = AWS_CONSTANTS.lambdaFunction(opts.agentName);
     const timeout = parseInt(opts.env.TIMEOUT_SECONDS || "900", 10);
+    
+    // Use higher default memory for better cold start performance
+    // Lambda provisioned concurrency and execution duration benefit from more memory
+    const defaultMemory = "1024"; // Increased from 512MB to 1GB
     const memoryMb = Math.min(
-      parseInt(opts.memory || "512", 10),
+      parseInt(opts.memory || defaultMemory, 10),
       AWS_CONSTANTS.LAMBDA_MAX_MEMORY,
     );
 
@@ -214,26 +218,41 @@ export class LambdaRuntime implements ContainerRuntime {
     const logGroupName = `${AWS_CONSTANTS.LAMBDA_LOG_GROUP}/${functionName}`;
 
     const poll = async () => {
-      // Wait a bit for logs to become available
-      await sleep(5000);
+      // Reduce initial wait time from 5s to 1s for faster log availability
+      await sleep(1000);
 
       let nextToken: string | undefined;
+      let pollInterval = 1000; // Start with 1s polling
+      let consecutiveErrors = 0;
 
       while (!stopped) {
         try {
           const res = await this.shared.filterLogEventsRaw(logGroupName, "", nextToken, launchTime);
-          for (const line of res.events) {
-            onLine(line);
+          consecutiveErrors = 0; // Reset error count on success
+          
+          if (res.events.length > 0) {
+            for (const line of res.events) {
+              onLine(line);
+            }
+            // If we're receiving logs, poll more frequently
+            pollInterval = 1000;
+          } else {
+            // No new logs, gradually increase interval up to 3s to reduce API calls
+            pollInterval = Math.min(pollInterval * 1.2, 3000);
           }
+          
           if (res.nextToken) {
             nextToken = res.nextToken;
           }
         } catch (err: any) {
+          consecutiveErrors++;
           if (!stopped && onStderr && err.name !== "ResourceNotFoundException") {
             onStderr(`Lambda log polling error: ${err.message}`);
           }
+          // Back off more aggressively on errors
+          pollInterval = Math.min(2000 * consecutiveErrors, 10000);
         }
-        if (!stopped) await sleep(5000);
+        if (!stopped) await sleep(pollInterval);
       }
     };
 
@@ -254,9 +273,13 @@ export class LambdaRuntime implements ContainerRuntime {
     // Only look at logs since launch time to avoid matching stale REPORT
     // lines from previous invocations.
     let sawRerun = false;
+    let pollInterval = 2000; // Start with 2s polling instead of 10s
+    
     while (Date.now() < deadline) {
       try {
         const lines = await this.shared.filterLogEvents(logGroupName, "", 200, launchTime);
+        let foundNewLogs = false;
+        
         for (const line of lines) {
           if (line.includes("[RERUN]")) {
             sawRerun = true;
@@ -268,11 +291,21 @@ export class LambdaRuntime implements ContainerRuntime {
             }
             return sawRerun ? 42 : 0;
           }
+          foundNewLogs = true;
         }
+        
+        // Adaptive polling: if we're getting logs, poll more frequently
+        if (foundNewLogs) {
+          pollInterval = Math.max(pollInterval * 0.8, 1000); // Speed up to 1s minimum
+        } else {
+          pollInterval = Math.min(pollInterval * 1.3, 8000); // Slow down to 8s maximum
+        }
+        
       } catch {
         // Log group may not exist yet
+        pollInterval = Math.min(pollInterval * 1.5, 10000); // Back off on errors
       }
-      await sleep(10_000);
+      await sleep(pollInterval);
     }
 
     // Lambda will timeout on its own; we just report it
@@ -305,13 +338,26 @@ export class LambdaRuntime implements ContainerRuntime {
 
     const poll = async () => {
       let nextToken: string | undefined;
+      let pollInterval = 1000; // Start with 1s polling instead of 5s
+      let consecutiveEmptyPolls = 0;
 
       while (!stopped) {
         try {
           const res = await this.shared.filterLogEventsRaw(logGroupName, "", nextToken, startTime);
-          for (const line of res.events) {
-            onLine(line);
+          
+          if (res.events.length > 0) {
+            consecutiveEmptyPolls = 0;
+            for (const line of res.events) {
+              onLine(line);
+            }
+            // Keep polling frequently when receiving logs
+            pollInterval = 1000;
+          } else {
+            consecutiveEmptyPolls++;
+            // Gradually increase polling interval when no new logs
+            pollInterval = Math.min(1000 + (consecutiveEmptyPolls * 500), 4000);
           }
+          
           if (res.nextToken) {
             nextToken = res.nextToken;
           }
@@ -319,8 +365,10 @@ export class LambdaRuntime implements ContainerRuntime {
           if (!stopped && onStderr && err.name !== "ResourceNotFoundException") {
             onStderr(`Lambda log polling error: ${err.message}`);
           }
+          // Back off on errors
+          pollInterval = Math.min(pollInterval * 1.5, 8000);
         }
-        if (!stopped) await sleep(5000);
+        if (!stopped) await sleep(pollInterval);
       }
     };
 
@@ -361,7 +409,12 @@ export class LambdaRuntime implements ContainerRuntime {
   }
 
   private async waitForFunctionReady(functionName: string): Promise<void> {
-    for (let i = 0; i < 30; i++) {
+    // Use exponential backoff with shorter initial intervals for faster readiness detection
+    const maxWaitTime = 45_000; // Reduce from 60s to 45s
+    const startTime = Date.now();
+    let attempt = 0;
+    
+    while (Date.now() - startTime < maxWaitTime) {
       try {
         const res = await this.lambdaClient.send(new GetFunctionCommand({
           FunctionName: functionName,
@@ -381,9 +434,13 @@ export class LambdaRuntime implements ContainerRuntime {
           throw err;
         }
       }
-      await sleep(2000);
+      
+      // Exponential backoff: start with 200ms, max out at 3s
+      const backoffMs = Math.min(200 * Math.pow(1.5, attempt), 3000);
+      await sleep(backoffMs);
+      attempt++;
     }
-    throw new Error(`Lambda function ${functionName} did not become ready within 60s`);
+    throw new Error(`Lambda function ${functionName} did not become ready within 45s`);
   }
 }
 

@@ -12,6 +12,7 @@ import {
 import type { AgentConfig } from "../shared/config.js";
 import { parseCredentialRef, unsanitizeEnvPart } from "../shared/credentials.js";
 import { extractExitSignal, getExitCodeMessage } from "../shared/exit-codes.js";
+import { LambdaPerformanceMonitor } from "../docker/lambda-optimization.js";
 
 // Structured log line — written to stdout, parsed by ContainerAgentRunner on the host
 function emitLog(level: string, msg: string, data?: Record<string, any>) {
@@ -72,6 +73,8 @@ function readCredentialFields(type: string, instance: string): Record<string, st
 }
 
 export async function runAgent(): Promise<number> {
+  const startTime = Date.now();
+  
   // Point HOME to /tmp so that tools writing to $HOME (e.g. git config --global)
   // work on read-only filesystems like Lambda where /home/node is not writable.
   process.env.HOME = "/tmp";
@@ -209,19 +212,31 @@ echo "$RESULT}"
 
   const modelId = agentConfig.model.model;
   const modelThinking = agentConfig.model.thinkingLevel;
-
-  emitLog("info", "container starting", { agentName: agentConfig.name, modelId, gatewayUrl });
+  
+  const initTime = Date.now() - startTime;
+  emitLog("info", "container starting", { 
+    agentName: agentConfig.name, 
+    modelId, 
+    gatewayUrl,
+    initTimeMs: initTime
+  });
 
   // Load credentials from mounted volume or env vars (ECS/Lambda/Cloud Run).
+  const credentialsStartTime = Date.now();
   if (hasLocalCredentials()) {
     loadCredentialsFromVolume();
-    emitLog("info", "credentials loaded from volume");
+    emitLog("info", "credentials loaded from volume", { 
+      loadTimeMs: Date.now() - credentialsStartTime 
+    });
   } else if (hasEnvCredentials()) {
     loadCredentialsFromEnv();
-    emitLog("info", "credentials loaded from env vars");
+    emitLog("info", "credentials loaded from env vars", { 
+      loadTimeMs: Date.now() - credentialsStartTime 
+    });
   } else {
     throw new Error("no credentials available — no volume mount or env vars found");
   }
+  const credentialsEndTime = Date.now();
 
   // Read provider API key from credentials (not needed for pi_auth)
   const modelProvider = agentConfig.model.provider;
@@ -319,6 +334,7 @@ echo "$RESULT}"
     retry: { enabled: true, maxRetries: 2 },
   });
 
+  const sessionStartTime = Date.now();
   emitLog("info", "creating agent session", { model: modelId, thinking: modelThinking });
 
   const { session } = await createAgentSession({
@@ -332,7 +348,21 @@ echo "$RESULT}"
     settingsManager,
   });
 
-  emitLog("info", "session created, sending prompt");
+  const sessionCreationTime = Date.now() - sessionStartTime;
+  const totalStartupTime = Date.now() - startTime;
+  
+  // Log comprehensive performance metrics
+  LambdaPerformanceMonitor.logPerformanceMetrics({
+    initTimeMs: initTime,
+    credentialsTimeMs: credentialsEndTime - credentialsStartTime,
+    sessionCreationTimeMs: sessionCreationTime,
+    totalStartupTimeMs: totalStartupTime,
+  });
+  
+  emitLog("info", "session created, sending prompt", { 
+    sessionCreationTimeMs: sessionCreationTime,
+    totalStartupTimeMs: totalStartupTime
+  });
 
   const UNRECOVERABLE_PATTERNS = [
     "permission denied",

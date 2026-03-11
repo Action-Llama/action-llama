@@ -25,6 +25,7 @@ async function main() {
 
   // Lazy-import runAgent so module loading stays fast during init.
   const { runAgent } = await import("./container-entry.js");
+  const { LambdaPerformanceMonitor } = await import("../docker/lambda-optimization.js");
 
   // Lambda Runtime API loop. In practice, each agent invocation runs for
   // minutes, so this loop only executes once before the process exits.
@@ -43,8 +44,26 @@ async function main() {
       // Parse the invoke payload — secrets are passed here (not env vars)
       // to stay under Lambda's 4 KB env-var limit and enforce least-privilege
       // (the container never gets Secrets Manager access).
+      let isWarmup = false;
       try {
         const body = await nextRes.json() as Record<string, any>;
+        
+        // Check if this is a warmup invocation
+        if (body?.warmup === true || body?.source === "action-llama-warmup") {
+          isWarmup = true;
+          emitLog("info", "warmup invocation detected");
+          
+          // For warmup invocations, just return success without running the agent
+          await fetch(
+            `http://${RUNTIME_API}/2018-06-01/runtime/invocation/${requestId}/response`,
+            {
+              method: "POST",
+              body: JSON.stringify({ statusCode: 200, message: "warmup complete" }),
+            },
+          );
+          continue; // Get next invocation
+        }
+        
         if (body?.secrets && typeof body.secrets === "object") {
           for (const [key, value] of Object.entries(body.secrets)) {
             if (typeof value === "string") {
@@ -56,6 +75,9 @@ async function main() {
         // Payload may be empty or malformed — continue without secrets
       }
 
+      // Log cold/warm start detection
+      LambdaPerformanceMonitor.logColdStart(false);
+      
       const exitCode = await runAgent();
 
       await fetch(
