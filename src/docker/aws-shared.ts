@@ -256,7 +256,7 @@ export class AwsSharedUtils {
         );
       }
     }
-    if (hasExtraFiles) {
+    if (hasExtraFiles && !dockerfileContent.includes("COPY static/ /app/static/")) {
       // Insert COPY before USER directive so files are owned by root (readable by node)
       const copyLine = "COPY static/ /app/static/";
       const userIdx = dockerfileContent.indexOf("\nUSER ");

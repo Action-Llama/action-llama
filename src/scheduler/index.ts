@@ -400,6 +400,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
         subnets: cc.subnets,
         securityGroups: cc.securityGroups,
         secretPrefix: cc.awsSecretPrefix,
+        buildBucket: cc.buildBucket,
       });
 
       // Create Lambda runtime for short-running agents (timeout <= 900s)
