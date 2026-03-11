@@ -45,6 +45,12 @@ describe("status with locks", () => {
       ]
     };
 
+    // Mock the first call to /control/status (which fails/returns empty)
+    fetchSpy.mockResolvedValueOnce({
+      ok: false,
+    });
+
+    // Mock the second call to /locks/status  
     fetchSpy.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve(mockLocks),
@@ -55,7 +61,7 @@ describe("status with locks", () => {
     expect(output).toContain("dev-agent: github issue acme/app#42");
     expect(output).toContain("reviewer-agent: github pr acme/app#45");
     expect(output).toContain("held for");
-    expect(fetchSpy).toHaveBeenCalledWith("http://localhost:3210/locks/status");
+    expect(fetchSpy).toHaveBeenCalledWith("http://localhost:8080/locks/status");
   });
 
   it("handles empty locks gracefully", async () => {
