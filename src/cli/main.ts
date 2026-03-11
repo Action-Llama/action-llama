@@ -62,8 +62,8 @@ program
 
 program
   .command("logs")
-  .description("View agent log files")
-  .argument("<agent>", "agent name")
+  .description("View agent log files (defaults to scheduler logs)")
+  .argument("[agent]", "agent name (omit for scheduler logs)", "scheduler")
   .option("-p, --project <dir>", "project directory", ".")
   .option("-n, --lines <N>", "number of log entries to show", "50")
   .option("-f, --follow", "tail mode — watch for new log entries")
