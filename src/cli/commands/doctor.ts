@@ -108,7 +108,7 @@ export async function execute(opts: { project: string; cloud?: boolean; checkOnl
         const { type, instance } = parseCredentialRef(ref);
         const def = resolveCredential(type);
 
-        if (credentialExists(type, instance)) {
+        if (await credentialExists(type, instance)) {
           console.log(`  [ok] ${def.label} (${ref})`);
           okCount++;
         } else {
@@ -137,7 +137,7 @@ export async function execute(opts: { project: string; cloud?: boolean; checkOnl
       const { type, instance } = parseCredentialRef(ref);
       const def = resolveCredential(type);
 
-      if (credentialExists(type, instance)) {
+      if (await credentialExists(type, instance)) {
         console.log(`  [ok] ${def.label} (${ref})`);
         okCount++;
         continue;
@@ -145,7 +145,7 @@ export async function execute(opts: { project: string; cloud?: boolean; checkOnl
 
       const result = await promptCredential(def, instance);
       if (result && Object.keys(result.values).length > 0) {
-        writeCredentialFields(type, instance, result.values);
+        await writeCredentialFields(type, instance, result.values);
         promptedCount++;
       }
     }

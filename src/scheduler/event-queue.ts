@@ -20,23 +20,23 @@ export class EventQueue {
   }
 }
 
-// --- Bounded per-agent webhook event queue ---
+// --- Bounded per-agent work queue ---
 
-export interface QueuedWebhookEvent<T> {
+export interface QueuedWorkItem<T> {
   context: T;
   receivedAt: Date;
 }
 
 export interface EnqueueResult<T> {
   accepted: boolean;
-  dropped?: QueuedWebhookEvent<T>;
+  dropped?: QueuedWorkItem<T>;
 }
 
-export class WebhookEventQueue<T> {
-  private queues = new Map<string, QueuedWebhookEvent<T>[]>();
+export class WorkQueue<T> {
+  private queues = new Map<string, QueuedWorkItem<T>[]>();
   private maxSize: number;
 
-  constructor(maxSize = 20) {
+  constructor(maxSize = 100) {
     this.maxSize = maxSize;
   }
 
@@ -46,7 +46,7 @@ export class WebhookEventQueue<T> {
       queue = [];
       this.queues.set(agentName, queue);
     }
-    let dropped: QueuedWebhookEvent<T> | undefined;
+    let dropped: QueuedWorkItem<T> | undefined;
     if (queue.length >= this.maxSize) {
       dropped = queue.shift();
     }
@@ -54,7 +54,7 @@ export class WebhookEventQueue<T> {
     return { accepted: true, dropped };
   }
 
-  dequeue(agentName: string): QueuedWebhookEvent<T> | undefined {
+  dequeue(agentName: string): QueuedWorkItem<T> | undefined {
     const queue = this.queues.get(agentName);
     if (!queue || queue.length === 0) return undefined;
     return queue.shift();
@@ -72,3 +72,7 @@ export class WebhookEventQueue<T> {
     this.queues.clear();
   }
 }
+
+/** @deprecated Use WorkQueue instead */
+export const WebhookEventQueue = WorkQueue;
+export type QueuedWebhookEvent<T> = QueuedWorkItem<T>;

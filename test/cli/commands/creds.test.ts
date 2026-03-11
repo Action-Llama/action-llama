@@ -3,26 +3,21 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync
 import { join, resolve } from "path";
 import { tmpdir } from "os";
 
+// Set up global state for temp directory
+(globalThis as any).__AL_TEST_TMPDIR = "/tmp/al-test-fallback";
+
 // Mock CREDENTIALS_DIR to use a temp directory
-let tmpDir: string;
 vi.mock("../../../src/shared/paths.js", () => ({
   get CREDENTIALS_DIR() {
-    return tmpDir;
+    return (globalThis as any).__AL_TEST_TMPDIR;
   },
 }));
 
-// Mock the filesystem backend to avoid early initialization of CREDENTIALS_DIR
-vi.mock("../../../src/shared/filesystem-backend.js", () => ({
-  FilesystemBackend: class {
-    async read() { return undefined; }
-    async write() {}
-    async list() { return []; }
-    async exists() { return false; }
-    async readAll() { return undefined; }
-    async writeAll() {}
-    async listInstances() { return []; }
-  },
-}));
+let tmpDir: string;
+
+// Import the real FilesystemBackend to use in tests
+import { FilesystemBackend } from "../../../src/shared/filesystem-backend.js";
+import { setDefaultBackend } from "../../../src/shared/credentials.js";
 
 // Mock the credential registry
 vi.mock("../../../src/credentials/registry.js", () => ({
@@ -61,6 +56,8 @@ describe("creds ls", () => {
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "al-creds-"));
+    (globalThis as any).__AL_TEST_TMPDIR = tmpDir;
+    setDefaultBackend(new FilesystemBackend(tmpDir));
     consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
   });
 
@@ -135,6 +132,8 @@ describe("creds add", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     tmpDir = mkdtempSync(join(tmpdir(), "al-creds-"));
+    (globalThis as any).__AL_TEST_TMPDIR = tmpDir;
+    setDefaultBackend(new FilesystemBackend(tmpDir));
     consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
   });
 
@@ -216,6 +215,8 @@ describe("creds rm", () => {
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "al-creds-"));
+    (globalThis as any).__AL_TEST_TMPDIR = tmpDir;
+    setDefaultBackend(new FilesystemBackend(tmpDir));
     consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
   });
 

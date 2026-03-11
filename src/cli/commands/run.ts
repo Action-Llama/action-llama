@@ -1,7 +1,7 @@
 import { resolve } from "path";
 import { existsSync, mkdirSync } from "fs";
 import { loadGlobalConfig, loadAgentConfig, discoverAgents } from "../../shared/config.js";
-import { backendRequireCredentialRef } from "../../shared/credentials.js";
+import { requireCredentialRef } from "../../shared/credentials.js";
 import { createLogger } from "../../shared/logger.js";
 import { agentDir } from "../../shared/paths.js";
 import { AgentRunner } from "../../agents/runner.js";
@@ -35,7 +35,7 @@ export async function execute(agent: string, opts: { project: string; cloud?: bo
 
   // Validate credentials
   for (const credRef of agentConfig.credentials) {
-    await backendRequireCredentialRef(credRef);
+    await requireCredentialRef(credRef);
   }
 
   const dockerEnabled = true;

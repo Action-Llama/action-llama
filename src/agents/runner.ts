@@ -11,9 +11,10 @@ import { readFileSync, existsSync } from "fs";
 import { resolve } from "path";
 import type { AgentConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
-import { loadCredentialField, parseCredentialRef, backendLoadField } from "../shared/credentials.js";
+import { loadCredentialField, parseCredentialRef } from "../shared/credentials.js";
 import { agentDir } from "../shared/paths.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
+import { extractExitSignal, getExitCodeMessage } from "../shared/exit-codes.js";
 
 const UNRECOVERABLE_PATTERNS = [
   "permission denied",
@@ -42,9 +43,13 @@ export interface TriggerRequest {
 export interface RunOutcome {
   result: RunResult;
   triggers: TriggerRequest[];
+  returnValue?: string;
+  exitCode?: number;
+  exitReason?: string;
 }
 
 const TRIGGER_PATTERN = /\[TRIGGER:\s*(\S+)\]([\s\S]*?)\[\/TRIGGER\]/g;
+const RETURN_PATTERN = /\[RETURN\]([\s\S]*?)\[\/RETURN\]/g;
 
 function extractTriggers(text: string): TriggerRequest[] {
   const triggers: TriggerRequest[] = [];
@@ -55,22 +60,40 @@ function extractTriggers(text: string): TriggerRequest[] {
   return triggers;
 }
 
+function extractReturnValue(text: string): string | undefined {
+  let last: string | undefined;
+  let match;
+  while ((match = RETURN_PATTERN.exec(text)) !== null) {
+    last = match[1].trim();
+  }
+  return last;
+}
+
 export class AgentRunner {
   private running = false;
   private agentConfig: AgentConfig;
   private logger: Logger;
   private projectPath: string;
   private statusTracker?: StatusTracker;
+  public readonly instanceId: string;
+  private abortController: AbortController;
 
-  constructor(agentConfig: AgentConfig, logger: Logger, projectPath: string, statusTracker?: StatusTracker) {
+  constructor(agentConfig: AgentConfig, logger: Logger, projectPath: string, statusTracker?: StatusTracker, instanceId?: string) {
     this.agentConfig = agentConfig;
     this.logger = logger;
     this.projectPath = projectPath;
     this.statusTracker = statusTracker;
+    this.instanceId = instanceId || agentConfig.name;
+    this.abortController = new AbortController();
   }
 
   get isRunning(): boolean {
     return this.running;
+  }
+
+  abort(): void {
+    this.logger.info("Agent runner abort requested");
+    this.abortController.abort();
   }
 
   async run(prompt: string, triggerInfo?: { type: 'schedule' | 'webhook' | 'agent'; source?: string }): Promise<RunOutcome> {
@@ -125,7 +148,7 @@ export class AgentRunner {
         // Try to load API key using provider-specific credential type
         const credentialType = `${model.provider}_key`;
         try {
-          const credential = await backendLoadField(credentialType, "default", "token");
+          const credential = await loadCredentialField(credentialType, "default", "token");
           if (credential) {
             authStorage.setRuntimeApiKey(model.provider, credential);
             this.logger.debug(`Loaded ${credentialType} credential for ${model.provider}`);
@@ -141,12 +164,12 @@ export class AgentRunner {
       const gitSshRef = this.agentConfig.credentials.find((ref) => parseCredentialRef(ref).type === "git_ssh");
       if (gitSshRef) {
         const { instance } = parseCredentialRef(gitSshRef);
-        const gitName = await backendLoadField("git_ssh", instance, "username");
+        const gitName = await loadCredentialField("git_ssh", instance, "username");
         if (gitName) {
           process.env.GIT_AUTHOR_NAME = gitName;
           process.env.GIT_COMMITTER_NAME = gitName;
         }
-        const gitEmail = await backendLoadField("git_ssh", instance, "email");
+        const gitEmail = await loadCredentialField("git_ssh", instance, "email");
         if (gitEmail) {
           process.env.GIT_AUTHOR_EMAIL = gitEmail;
           process.env.GIT_COMMITTER_EMAIL = gitEmail;
@@ -284,8 +307,15 @@ export class AgentRunner {
       }
 
       const triggers = extractTriggers(outputText);
+      const returnValue = extractReturnValue(outputText);
+      const exitCode = extractExitSignal(outputText);
       let result: RunResult;
-      if (outputText.includes("[RERUN]")) {
+      if (exitCode !== undefined) {
+        const reason = getExitCodeMessage(exitCode);
+        this.logger.error({ exitCode, reason }, "agent terminated with exit signal");
+        this.statusTracker?.setAgentError(this.agentConfig.name, `Exit ${exitCode}: ${reason}`);
+        result = "error";
+      } else if (outputText.includes("[RERUN]")) {
         this.logger.info({ outputLength: outputText.length }, "run completed, rerun requested");
         result = "rerun";
       } else {
@@ -294,7 +324,15 @@ export class AgentRunner {
       }
 
       session.dispose();
-      return { result, triggers };
+      return { 
+        result, 
+        triggers, 
+        returnValue,
+        ...(exitCode !== undefined && { 
+          exitCode, 
+          exitReason: getExitCodeMessage(exitCode) 
+        })
+      };
     } catch (err: any) {
       this.logger.error({ err }, `${this.agentConfig.name} run failed`);
       runError = String(err?.message || err).slice(0, 200);

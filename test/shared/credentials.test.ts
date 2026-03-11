@@ -38,21 +38,21 @@ describe("credentials", () => {
   });
 
   describe("writeCredentialField + loadCredentialField roundtrip", () => {
-    it("writes and reads back a field", () => {
-      writeCredentialField(testType, testInstance, "token", "my-secret-value");
-      const loaded = loadCredentialField(testType, testInstance, "token");
+    it("writes and reads back a field", async () => {
+      await writeCredentialField(testType, testInstance, "token", "my-secret-value");
+      const loaded = await loadCredentialField(testType, testInstance, "token");
       expect(loaded).toBe("my-secret-value");
     });
   });
 
   describe("writeCredentialFields + loadCredentialFields", () => {
-    it("writes and reads back multiple fields", () => {
-      writeCredentialFields(testType, testInstance, {
+    it("writes and reads back multiple fields", async () => {
+      await writeCredentialFields(testType, testInstance, {
         id_rsa: "ssh-key-content",
         username: "Bot",
         email: "bot@example.com",
       });
-      const fields = loadCredentialFields(testType, testInstance);
+      const fields = await loadCredentialFields(testType, testInstance);
       expect(fields).toEqual({
         id_rsa: "ssh-key-content",
         username: "Bot",
@@ -62,25 +62,25 @@ describe("credentials", () => {
   });
 
   describe("credentialExists", () => {
-    it("returns false for non-existent credential", () => {
-      expect(credentialExists(testType, "nonexistent")).toBe(false);
+    it("returns false for non-existent credential", async () => {
+      expect(await credentialExists(testType, "nonexistent")).toBe(false);
     });
 
-    it("returns true after writing", () => {
-      writeCredentialField(testType, testInstance, "token", "value");
-      expect(credentialExists(testType, testInstance)).toBe(true);
+    it("returns true after writing", async () => {
+      await writeCredentialField(testType, testInstance, "token", "value");
+      expect(await credentialExists(testType, testInstance)).toBe(true);
     });
   });
 
   describe("requireCredentialRef", () => {
-    it("throws for missing credential", () => {
-      expect(() => requireCredentialRef("nonexistent_type:missing")).toThrow("not found");
+    it("throws for missing credential", async () => {
+      await expect(requireCredentialRef("nonexistent_type:missing")).rejects.toThrow("not found");
     });
   });
 
   describe("loadCredentialField", () => {
-    it("returns undefined when field does not exist", () => {
-      expect(loadCredentialField(testType, testInstance, "nonexistent")).toBeUndefined();
+    it("returns undefined when field does not exist", async () => {
+      expect(await loadCredentialField(testType, testInstance, "nonexistent")).toBeUndefined();
     });
   });
 });

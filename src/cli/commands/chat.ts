@@ -152,12 +152,12 @@ export async function execute(opts: { project: string }): Promise<void> {
   const authStorage = AuthStorage.create();
   if (modelConfig.authType !== "pi_auth") {
     if (modelConfig.provider === "anthropic") {
-      const credential = loadCredentialField("anthropic_key", "default", "token");
+      const credential = await loadCredentialField("anthropic_key", "default", "token");
       if (credential) {
         authStorage.setRuntimeApiKey("anthropic", credential);
       }
     } else if (modelConfig.provider === "openai") {
-      const credential = loadCredentialField("openai_key", "default", "token");
+      const credential = await loadCredentialField("openai_key", "default", "token");
       if (credential) {
         authStorage.setRuntimeApiKey("openai", credential);
       }

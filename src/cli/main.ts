@@ -87,6 +87,34 @@ program
   });
 
 program
+  .command("kill")
+  .description("Kill a running agent instance")
+  .argument("<instance-id>", "agent instance ID")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(async (instanceId: string, opts) => {
+    const { execute } = await import("./commands/kill.js");
+    await execute(instanceId, opts);
+  });
+
+program
+  .command("pause")
+  .description("Pause the scheduler")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(async (opts) => {
+    const { execute } = await import("./commands/pause.js");
+    await execute(opts);
+  });
+
+program
+  .command("resume")
+  .description("Resume the scheduler")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(async (opts) => {
+    const { execute } = await import("./commands/resume.js");
+    await execute(opts);
+  });
+
+program
   .command("chat")
   .description("Open an interactive Pi coding console with project context")
   .option("-p, --project <dir>", "project directory", ".")

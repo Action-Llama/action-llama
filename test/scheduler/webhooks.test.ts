@@ -47,7 +47,7 @@ vi.mock("croner", () => ({
 }));
 
 // Mock AgentRunner
-const mockRun = vi.fn().mockResolvedValue({ result: "completed", triggers: [] });
+const mockRun = vi.fn().mockResolvedValue({ result: "completed" });
 let mockIsRunning = false;
 vi.mock("../../src/agents/runner.js", () => ({
   AgentRunner: class {
@@ -64,6 +64,8 @@ vi.mock("../../src/gateway/index.js", () => ({
     registerContainer: vi.fn(),
     unregisterContainer: vi.fn(),
     lockStore: { releaseAll: vi.fn(), dispose: vi.fn() },
+    callStore: { failAllByCaller: vi.fn(), dispose: vi.fn() },
+    setCallDispatcher: vi.fn(),
     close: mockGatewayClose,
   }),
 }));

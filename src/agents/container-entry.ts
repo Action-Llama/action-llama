@@ -11,6 +11,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { AgentConfig } from "../shared/config.js";
 import { parseCredentialRef, unsanitizeEnvPart } from "../shared/credentials.js";
+import { extractExitSignal, getExitCodeMessage } from "../shared/exit-codes.js";
 
 // Structured log line — written to stdout, parsed by ContainerAgentRunner on the host
 function emitLog(level: string, msg: string, data?: Record<string, any>) {
@@ -116,10 +117,60 @@ curl -s -X POST "$GATEWAY_URL/shutdown" \\
   -d '{"secret":"'"$SHUTDOWN_SECRET"'","reason":"'"$\{1:-agent requested shutdown\}"'"}' || true
 `;
 
+  const alCallScript = `#!/bin/sh
+if [ -z "$GATEWAY_URL" ]; then echo '{"ok":false,"reason":"no gateway"}'; exit 1; fi
+if [ -z "$1" ]; then echo '{"ok":false,"reason":"usage: echo ctx | al-call <agent>"}'; exit 1; fi
+CONTEXT=$(cat)
+curl -s -X POST "$GATEWAY_URL/calls" \\
+  -H 'Content-Type: application/json' \\
+  -d "$(jq -n --arg s "$SHUTDOWN_SECRET" --arg t "$1" --arg c "$CONTEXT" \\
+    '{secret:$s,targetAgent:$t,context:$c}')"
+`;
+
+  const alCheckScript = `#!/bin/sh
+if [ -z "$GATEWAY_URL" ]; then echo '{"status":"error","errorMessage":"no gateway"}'; exit 1; fi
+if [ -z "$1" ]; then echo '{"status":"error","errorMessage":"usage: al-check <callId>"}'; exit 1; fi
+curl -s "$GATEWAY_URL/calls/$1?secret=$SHUTDOWN_SECRET"
+`;
+
+  const alWaitScript = `#!/bin/sh
+if [ -z "$GATEWAY_URL" ]; then echo '{"error":"no gateway"}'; exit 1; fi
+TIMEOUT=900
+IDS=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --timeout) TIMEOUT="$2"; shift 2;;
+    *) IDS="$IDS $1"; shift;;
+  esac
+done
+if [ -z "$IDS" ]; then echo '{"error":"usage: al-wait <callId> [callId...] [--timeout N]"}'; exit 1; fi
+ELAPSED=0
+while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+  ALL_DONE=true
+  for id in $IDS; do
+    STATUS=$(curl -s "$GATEWAY_URL/calls/$id?secret=$SHUTDOWN_SECRET" | jq -r .status)
+    case "$STATUS" in running|pending) ALL_DONE=false;; esac
+  done
+  if $ALL_DONE; then break; fi
+  sleep 5; ELAPSED=$((ELAPSED + 5))
+done
+RESULT="{"
+FIRST=true
+for id in $IDS; do
+  $FIRST || RESULT="$RESULT,"
+  FIRST=false
+  RESULT="$RESULT\\"$id\\":$(curl -s "$GATEWAY_URL/calls/$id?secret=$SHUTDOWN_SECRET")"
+done
+echo "$RESULT}"
+`;
+
   writeFileSync("/tmp/bin/rlock", rlockScript, { mode: 0o755 });
   writeFileSync("/tmp/bin/runlock", runlockScript, { mode: 0o755 });
   writeFileSync("/tmp/bin/rlock-heartbeat", rlockHeartbeatScript, { mode: 0o755 });
   writeFileSync("/tmp/bin/al-shutdown", alShutdownScript, { mode: 0o755 });
+  writeFileSync("/tmp/bin/al-call", alCallScript, { mode: 0o755 });
+  writeFileSync("/tmp/bin/al-check", alCheckScript, { mode: 0o755 });
+  writeFileSync("/tmp/bin/al-wait", alWaitScript, { mode: 0o755 });
   process.env.PATH = `/tmp/bin:${process.env.PATH || ""}`;
 
   // Load agent config and ACTIONS.md from baked-in files or env vars.
@@ -415,6 +466,15 @@ curl -s -X POST "$GATEWAY_URL/shutdown" \\
 
   if (abortedDueToErrors) {
     return 1;
+  }
+
+  const exitCode = extractExitSignal(outputText);
+  if (exitCode !== undefined) {
+    const reason = getExitCodeMessage(exitCode);
+    emitLog("error", "agent terminated with exit signal", { exitCode, reason });
+    console.log(outputText.slice(0, 2000));
+    console.log(`[EXIT: ${exitCode}] ${reason}`);
+    return exitCode;
   }
 
   if (outputText.includes("[RERUN]")) {
