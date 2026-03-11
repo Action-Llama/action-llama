@@ -229,7 +229,7 @@ export class AwsSharedUtils {
     onProgress?.("Preparing build context");
 
     const { join, relative, isAbsolute } = await import("path");
-    const { readFileSync, writeFileSync, mkdirSync, symlinkSync } = await import("fs");
+    const { readFileSync, writeFileSync, mkdirSync, copyFileSync, cpSync } = await import("fs");
     const { randomUUID, createHash } = await import("crypto");
     const { tmpdir } = await import("os");
 
@@ -268,10 +268,10 @@ export class AwsSharedUtils {
     }
     writeFileSync(join(buildCtx, "Dockerfile"), dockerfileContent);
 
-    // For full builds, symlink application files into the build context
+    // For full builds, copy application files into the build context
     if (!opts.dockerfileContent) {
-      symlinkSync(join(opts.contextDir, "package.json"), join(buildCtx, "package.json"));
-      symlinkSync(join(opts.contextDir, "dist"), join(buildCtx, "dist"));
+      copyFileSync(join(opts.contextDir, "package.json"), join(buildCtx, "package.json"));
+      cpSync(join(opts.contextDir, "dist"), join(buildCtx, "dist"), { recursive: true });
     }
 
     // Write extra files to static/ directory
@@ -347,7 +347,6 @@ export class AwsSharedUtils {
       execFileSync("tar", [
         "czf", tarPath,
         "-C", buildCtx,
-        "-h",  // follow symlinks
         ...tarEntries,
       ], {
         encoding: "utf-8",
@@ -378,10 +377,13 @@ export class AwsSharedUtils {
       "phases:",
       "  pre_build:",
       "    commands:",
-      "      - tar xzf *.tar.gz && rm -f *.tar.gz",
+      // CodeBuild auto-extracts tar.gz S3 sources, but extract manually if the
+      // archive is still present (e.g. when sourceType handling changes).
+      "      - if ls *.tar.gz 1>/dev/null 2>&1; then tar xzf *.tar.gz && rm -f *.tar.gz; fi",
       "      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY",
       "  build:",
       "    commands:",
+      "      - ls -la",
       "      - docker build -t $IMAGE_URI -f $DOCKERFILE .",
       "      - docker push $IMAGE_URI",
     ].join("\n");

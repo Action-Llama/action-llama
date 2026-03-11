@@ -7,6 +7,7 @@ Run agents as ECS Fargate tasks on AWS instead of local Docker containers. Agent
 - AWS account with ECS, ECR, Secrets Manager, and CloudWatch Logs access
 - AWS CLI configured (`aws configure`) or `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` env vars
 - Docker is **not** required — images are built remotely via AWS CodeBuild and pushed directly to ECR
+- The IAM user running `al cloud setup` needs `iam:CreateServiceLinkedRole` permission (or the service-linked roles for ECS and App Runner must already exist — see [Service-linked roles](#service-linked-roles))
 
 ## Configuration
 
@@ -64,6 +65,24 @@ Optional cloud scheduler configuration (for `al cloud deploy`):
 | `cloud.schedulerMemory` | No | `"512"` | App Runner instance memory in MB (valid depends on CPU — see [App Runner docs](https://docs.aws.amazon.com/apprunner/latest/dg/manage-configure.html)) |
 | `cloud.appRunnerInstanceRoleArn` | No | — | IAM role assumed by the scheduler container (needs ECS, Lambda, Secrets Manager, ECR, CodeBuild, S3, CloudWatch Logs permissions) |
 | `cloud.appRunnerAccessRoleArn` | Yes* | — | IAM role that allows App Runner to pull images from ECR (*required only when using `al cloud deploy`) |
+
+## Service-linked roles
+
+AWS requires service-linked roles for ECS and App Runner. These are account-level roles that AWS services use internally — they only need to be created once per AWS account.
+
+`al cloud setup` automatically creates both:
+
+- `AWSServiceRoleForECS` (for ECS Fargate task execution)
+- `AWSServiceRoleForAppRunner` (for App Runner service management)
+
+If your IAM user lacks `iam:CreateServiceLinkedRole` permission, create them manually:
+
+```bash
+aws iam create-service-linked-role --aws-service-name ecs.amazonaws.com
+aws iam create-service-linked-role --aws-service-name apprunner.amazonaws.com
+```
+
+These commands are safe to re-run — they return an error if the role already exists.
 
 ## Quick Setup
 
@@ -569,10 +588,24 @@ This is the minimum policy for the IAM user or role running `al` commands. Repla
         "apprunner:CreateService",
         "apprunner:UpdateService",
         "apprunner:DescribeService",
-        "apprunner:DeleteService",
-        "apprunner:ListServices"
+        "apprunner:DeleteService"
       ],
       "Resource": "arn:aws:apprunner:<REGION>:<ACCOUNT_ID>:service/al-scheduler/*"
+    },
+    {
+      "Sid": "AppRunnerList",
+      "Effect": "Allow",
+      "Action": "apprunner:ListServices",
+      "Resource": "*"
+    },
+    {
+      "Sid": "ServiceLinkedRoles",
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": [
+        "arn:aws:iam::<ACCOUNT_ID>:role/aws-service-role/ecs.amazonaws.com/*",
+        "arn:aws:iam::<ACCOUNT_ID>:role/aws-service-role/apprunner.amazonaws.com/*"
+      ]
     }
   ]
 }
@@ -706,7 +739,9 @@ The scheduler builds images via CodeBuild, launches containers on ECS Fargate, a
 
 **"No AWS credentials found"** — Set `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` env vars or run `aws configure`.
 
-**"Unable to assume the service linked role"** — ECS needs a service-linked role the first time it's used in an account. Run `aws iam create-service-linked-role --aws-service-name ecs.amazonaws.com`. This is a one-time setup; the command is safe to re-run (it'll error if the role already exists).
+**"Unable to assume the service linked role"** — ECS needs a service-linked role the first time it's used in an account. `al cloud setup` creates this automatically, but if you set up manually: `aws iam create-service-linked-role --aws-service-name ecs.amazonaws.com`.
+
+**"Couldn't create a service-linked role for App Runner"** — Same issue for App Runner. `al cloud setup` creates this automatically, but if you set up manually: `aws iam create-service-linked-role --aws-service-name apprunner.amazonaws.com`. If `al cloud setup` itself fails with this error, your IAM user needs `iam:CreateServiceLinkedRole` permission — see [Service-linked roles](#service-linked-roles).
 
 **"ECS was unable to assume the role 'arn:aws:iam::...:role/al-AGENT-task-role'"** — This is the most common issue with multiple agents. It means the IAM task role for your second (or subsequent) agent doesn't exist or has incorrect permissions. This typically happens because:
 

@@ -28,6 +28,7 @@ import {
   AttachRolePolicyCommand,
   PutRolePolicyCommand,
   PutUserPolicyCommand,
+  CreateServiceLinkedRoleCommand,
 } from "@aws-sdk/client-iam";
 import {
   EC2Client,
@@ -187,6 +188,9 @@ async function setupEcsCloud(cloud: CloudConfig): Promise<boolean> {
   const identity = await stsClient.send(new GetCallerIdentityCommand({}));
   accountId = identity.Account!;
 
+  // Ensure service-linked roles exist (one-time per AWS account)
+  await ensureServiceLinkedRoles(iamClient);
+
   cloud.ecrRepository = await pickOrCreateEcrRepo(ecrClient, region, accountId);
   await ensureLambdaEcrPolicy(ecrClient, cloud.ecrRepository);
   cloud.ecsCluster = await pickOrCreateEcsCluster(ecsClient);
@@ -252,6 +256,12 @@ async function setupEcsCloud(cloud: CloudConfig): Promise<boolean> {
   // Create CodeBuild service role for remote image builds
   await ensureCodeBuildRole(iamClient, accountId, region, cloud.ecrRepository!);
 
+  // Create App Runner roles for cloud deploy
+  cloud.appRunnerAccessRoleArn = await ensureAppRunnerAccessRole(iamClient);
+  cloud.appRunnerInstanceRoleArn = await ensureAppRunnerInstanceRole(
+    iamClient, accountId, region, cloud.ecrRepository!,
+  );
+
   const result = await pickVpcAndSubnets(ec2Client);
   cloud.subnets = result.subnets;
 
@@ -286,12 +296,36 @@ async function setupEcsCloud(cloud: CloudConfig): Promise<boolean> {
           Resource: [
             `arn:aws:logs:${region}:${accountId}:log-group:${AWS_CONSTANTS.LOG_GROUP}*`,
             `arn:aws:logs:${region}:${accountId}:log-group:${AWS_CONSTANTS.LAMBDA_LOG_GROUP}/al-*`,
+            `arn:aws:logs:${region}:${accountId}:log-group:${AWS_CONSTANTS.APPRUNNER_LOG_GROUP}*`,
           ],
+        },
+        {
+          Effect: "Allow",
+          Action: [
+            "apprunner:CreateService",
+            "apprunner:UpdateService",
+            "apprunner:DescribeService",
+            "apprunner:DeleteService",
+          ],
+          Resource: `arn:aws:apprunner:${region}:${accountId}:service/al-scheduler/*`,
+        },
+        {
+          Effect: "Allow",
+          Action: "apprunner:ListServices",
+          Resource: "*",
         },
         {
           Effect: "Allow",
           Action: "iam:PutUserPolicy",
           Resource: `arn:aws:iam::${accountId}:user/${userName}`,
+        },
+        {
+          Effect: "Allow",
+          Action: "iam:CreateServiceLinkedRole",
+          Resource: [
+            `arn:aws:iam::${accountId}:role/aws-service-role/ecs.amazonaws.com/*`,
+            `arn:aws:iam::${accountId}:role/aws-service-role/apprunner.amazonaws.com/*`,
+          ],
         },
       ],
     });
@@ -310,6 +344,31 @@ async function setupEcsCloud(cloud: CloudConfig): Promise<boolean> {
   }
 
   return true;
+}
+
+// --- Service-linked roles ---
+
+async function ensureServiceLinkedRoles(iamClient: IAMClient): Promise<void> {
+  const services = [
+    { name: "ECS", serviceName: "ecs.amazonaws.com" },
+    { name: "App Runner", serviceName: "apprunner.amazonaws.com" },
+  ];
+
+  for (const svc of services) {
+    try {
+      await iamClient.send(new CreateServiceLinkedRoleCommand({
+        AWSServiceName: svc.serviceName,
+      }));
+      console.log(`  Created service-linked role for ${svc.name}`);
+    } catch (err: any) {
+      if (err.name === "InvalidInputException" && err.message?.includes("already exists")) {
+        console.log(`  Service-linked role for ${svc.name} already exists`);
+      } else {
+        console.log(`  Warning: could not create service-linked role for ${svc.name}: ${err.message}`);
+        console.log(`  You may need to run: aws iam create-service-linked-role --aws-service-name ${svc.serviceName}`);
+      }
+    }
+  }
 }
 
 // --- Resource pickers ---
@@ -454,12 +513,19 @@ async function pickOrCreateEcsRole(iamClient: IAMClient, label: string, defaultN
     });
 
     if (ecsRoles.length > 0) {
+      // Sort so the expected default role appears first
+      const sorted = [...ecsRoles].sort((a, b) => {
+        const aMatch = a.RoleName === defaultName ? 0 : 1;
+        const bMatch = b.RoleName === defaultName ? 0 : 1;
+        return aMatch - bMatch || a.RoleName!.localeCompare(b.RoleName!);
+      });
+      const defaultArn = sorted.find((r) => r.RoleName === defaultName)?.Arn;
       const choices = [
-        ...ecsRoles.map((r) => ({ name: r.RoleName!, value: r.Arn! })),
+        ...sorted.map((r) => ({ name: r.RoleName!, value: r.Arn! })),
         { name: `Create new: ${defaultName}`, value: CREATE_NEW },
         { name: "Enter ARN manually", value: MANUAL_INPUT },
       ];
-      const choice = await select({ message: `${label}:`, choices });
+      const choice = await select({ message: `${label}:`, choices, default: defaultArn });
       if (choice === MANUAL_INPUT) return input({ message: `${label} ARN:` });
       if (choice !== CREATE_NEW) return choice;
     } else {
@@ -666,6 +732,248 @@ async function pickVpcAndSubnets(ec2Client: EC2Client): Promise<{ subnets: strin
 
   const raw = await input({ message: "Subnet IDs (comma-separated):" });
   return { subnets: raw.split(",").map(s => s.trim()).filter(Boolean), vpcId };
+}
+
+async function ensureAppRunnerAccessRole(iamClient: IAMClient): Promise<string> {
+  const roleName = AWS_CONSTANTS.APPRUNNER_ACCESS_ROLE;
+  console.log(`\nEnsuring App Runner access role (${roleName})...`);
+
+  const trustPolicy = JSON.stringify({
+    Version: "2012-10-17",
+    Statement: [{
+      Effect: "Allow",
+      Principal: { Service: "build.apprunner.amazonaws.com" },
+      Action: "sts:AssumeRole",
+    }],
+  });
+
+  try {
+    const data = await iamClient.send(new CreateRoleCommand({
+      RoleName: roleName,
+      AssumeRolePolicyDocument: trustPolicy,
+    }));
+    console.log(`  Created role: ${roleName}`);
+  } catch (err: any) {
+    if (err.name === "EntityAlreadyExistsException") {
+      console.log(`  Role already exists`);
+    } else {
+      console.log(`  Warning: could not create ${roleName}: ${err.message}`);
+      return input({ message: "App Runner access role ARN:" });
+    }
+  }
+
+  try {
+    await iamClient.send(new AttachRolePolicyCommand({
+      RoleName: roleName,
+      PolicyArn: "arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess",
+    }));
+    console.log(`  Attached AWSAppRunnerServicePolicyForECRAccess`);
+  } catch (err: any) {
+    console.log(`  Warning: could not attach ECR access policy: ${err.message}`);
+  }
+
+  const data = await iamClient.send(new GetRoleCommand({ RoleName: roleName }));
+  return data.Role!.Arn!;
+}
+
+async function ensureAppRunnerInstanceRole(
+  iamClient: IAMClient, accountId: string, region: string, ecrRepository: string,
+): Promise<string> {
+  const roleName = AWS_CONSTANTS.APPRUNNER_INSTANCE_ROLE;
+  console.log(`\nEnsuring App Runner instance role (${roleName})...`);
+
+  const trustPolicy = JSON.stringify({
+    Version: "2012-10-17",
+    Statement: [{
+      Effect: "Allow",
+      Principal: { Service: "tasks.apprunner.amazonaws.com" },
+      Action: "sts:AssumeRole",
+    }],
+  });
+
+  try {
+    await iamClient.send(new CreateRoleCommand({
+      RoleName: roleName,
+      AssumeRolePolicyDocument: trustPolicy,
+    }));
+    console.log(`  Created role: ${roleName}`);
+  } catch (err: any) {
+    if (err.name === "EntityAlreadyExistsException") {
+      console.log(`  Role already exists`);
+    } else {
+      console.log(`  Warning: could not create ${roleName}: ${err.message}`);
+      return input({ message: "App Runner instance role ARN:" });
+    }
+  }
+
+  // The instance role needs the same permissions as the operator:
+  // ECS, ECR, CodeBuild, S3, SecretsManager, CloudWatch Logs, IAM, Lambda, App Runner
+  const repoName = ecrRepository.split("/").pop()!;
+  const bucketName = AWS_CONSTANTS.buildBucket(accountId, region);
+
+  try {
+    await iamClient.send(new PutRolePolicyCommand({
+      RoleName: roleName,
+      PolicyName: "ActionLlamaScheduler",
+      PolicyDocument: JSON.stringify({
+        Version: "2012-10-17",
+        Statement: [
+          {
+            Sid: "Identity",
+            Effect: "Allow",
+            Action: "sts:GetCallerIdentity",
+            Resource: "*",
+          },
+          {
+            Sid: "ECS",
+            Effect: "Allow",
+            Action: [
+              "ecs:RegisterTaskDefinition",
+              "ecs:RunTask",
+              "ecs:DescribeTasks",
+              "ecs:ListTasks",
+              "ecs:StopTask",
+            ],
+            Resource: "*",
+          },
+          {
+            Sid: "Logs",
+            Effect: "Allow",
+            Action: [
+              "logs:CreateLogGroup",
+              "logs:CreateLogStream",
+              "logs:PutLogEvents",
+              "logs:GetLogEvents",
+              "logs:FilterLogEvents",
+            ],
+            Resource: [
+              `arn:aws:logs:${region}:${accountId}:log-group:/ecs/action-llama*`,
+              `arn:aws:logs:${region}:${accountId}:log-group:/aws/lambda/al-*`,
+              `arn:aws:logs:${region}:${accountId}:log-group:/apprunner/al-scheduler*`,
+            ],
+          },
+          {
+            Sid: "SecretsManager",
+            Effect: "Allow",
+            Action: [
+              "secretsmanager:ListSecrets",
+              "secretsmanager:CreateSecret",
+              "secretsmanager:PutSecretValue",
+              "secretsmanager:GetSecretValue",
+            ],
+            Resource: "*",
+          },
+          {
+            Sid: "PassRole",
+            Effect: "Allow",
+            Action: "iam:PassRole",
+            Resource: `arn:aws:iam::${accountId}:role/al-*`,
+            Condition: {
+              StringEquals: {
+                "iam:PassedToService": [
+                  "ecs-tasks.amazonaws.com",
+                  "codebuild.amazonaws.com",
+                  "lambda.amazonaws.com",
+                  "apprunner.amazonaws.com",
+                ],
+              },
+            },
+          },
+          {
+            Sid: "IAMAgentRoles",
+            Effect: "Allow",
+            Action: [
+              "iam:CreateRole",
+              "iam:GetRole",
+              "iam:GetRolePolicy",
+              "iam:PutRolePolicy",
+              "iam:DeleteRole",
+              "iam:DeleteRolePolicy",
+              "iam:AttachRolePolicy",
+            ],
+            Resource: `arn:aws:iam::${accountId}:role/al-*`,
+          },
+          {
+            Sid: "IAMListRoles",
+            Effect: "Allow",
+            Action: "iam:ListRoles",
+            Resource: "*",
+          },
+          {
+            Sid: "ECR",
+            Effect: "Allow",
+            Action: [
+              "ecr:BatchGetImage",
+              "ecr:GetDownloadUrlForLayer",
+              "ecr:BatchCheckLayerAvailability",
+              "ecr:GetAuthorizationToken",
+              "ecr:SetRepositoryPolicy",
+            ],
+            Resource: "*",
+          },
+          {
+            Sid: "CodeBuild",
+            Effect: "Allow",
+            Action: [
+              "codebuild:StartBuild",
+              "codebuild:BatchGetBuilds",
+              "codebuild:CreateProject",
+            ],
+            Resource: `arn:aws:codebuild:${region}:${accountId}:project/al-image-builder`,
+          },
+          {
+            Sid: "Lambda",
+            Effect: "Allow",
+            Action: [
+              "lambda:GetFunction",
+              "lambda:CreateFunction",
+              "lambda:UpdateFunctionCode",
+              "lambda:UpdateFunctionConfiguration",
+              "lambda:InvokeFunction",
+            ],
+            Resource: `arn:aws:lambda:${region}:${accountId}:function:al-*`,
+          },
+          {
+            Sid: "S3",
+            Effect: "Allow",
+            Action: [
+              "s3:CreateBucket",
+              "s3:PutObject",
+              "s3:GetObject",
+              "s3:ListBucket",
+            ],
+            Resource: [
+              `arn:aws:s3:::${bucketName}`,
+              `arn:aws:s3:::${bucketName}/*`,
+            ],
+          },
+          {
+            Sid: "AppRunner",
+            Effect: "Allow",
+            Action: [
+              "apprunner:CreateService",
+              "apprunner:UpdateService",
+              "apprunner:DescribeService",
+              "apprunner:DeleteService",
+            ],
+            Resource: `arn:aws:apprunner:${region}:${accountId}:service/al-scheduler/*`,
+          },
+          {
+            Sid: "AppRunnerList",
+            Effect: "Allow",
+            Action: "apprunner:ListServices",
+            Resource: "*",
+          },
+        ],
+      }),
+    }));
+    console.log(`  Attached ActionLlamaScheduler policy`);
+  } catch (err: any) {
+    console.log(`  Warning: could not attach policy to ${roleName}: ${err.message}`);
+  }
+
+  const data = await iamClient.send(new GetRoleCommand({ RoleName: roleName }));
+  return data.Role!.Arn!;
 }
 
 async function pickSecurityGroups(ec2Client: EC2Client, vpcId: string): Promise<string[]> {

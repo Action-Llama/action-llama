@@ -49,6 +49,7 @@ vi.mock("@aws-sdk/client-ecr", () => ({
   ECRClient: vi.fn().mockImplementation(function () { this.send = mockEcrSend; }),
   DescribeRepositoriesCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "DescribeRepositories", ...input }); }),
   CreateRepositoryCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "CreateRepository", ...input }); }),
+  SetRepositoryPolicyCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "SetRepositoryPolicy", ...input }); }),
 }));
 
 vi.mock("@aws-sdk/client-ecs", () => ({
@@ -65,6 +66,8 @@ vi.mock("@aws-sdk/client-iam", () => ({
   GetRoleCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "GetRole", ...input }); }),
   AttachRolePolicyCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "AttachRolePolicy", ...input }); }),
   PutRolePolicyCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "PutRolePolicy", ...input }); }),
+  PutUserPolicyCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "PutUserPolicy", ...input }); }),
+  CreateServiceLinkedRoleCommand: vi.fn().mockImplementation(function (input: any) { Object.assign(this, { _type: "CreateServiceLinkedRole", ...input }); }),
 }));
 
 vi.mock("@aws-sdk/client-ec2", () => ({
@@ -119,21 +122,23 @@ describe("cloud setup", () => {
     // Region input
     mockInput.mockResolvedValueOnce("us-east-1");
 
-    // ECR: list returns empty -> create succeeds
+    // ECR: list returns empty -> create succeeds -> set Lambda policy
     mockEcrSend
       .mockResolvedValueOnce({ repositories: [] })                    // DescribeRepositories
       .mockResolvedValueOnce({                                         // CreateRepository
         repository: { repositoryUri: "123456789012.dkr.ecr.us-east-1.amazonaws.com/al-images" },
-      });
+      })
+      .mockResolvedValueOnce({});                                      // SetRepositoryPolicy (Lambda access)
 
     // ECS: list returns empty -> create succeeds
     mockEcsSend
       .mockResolvedValueOnce({ clusterArns: [] })                     // ListClusters
       .mockResolvedValueOnce({});                                      // CreateCluster
 
-    // IAM: execution role - list returns empty -> create succeeds
-    // IAM: task role - list returns empty -> create succeeds
+    // IAM: service-linked roles, execution role, task role, CodeBuild role, App Runner roles
     mockIamSend
+      .mockResolvedValueOnce({})                                       // CreateServiceLinkedRole (ECS)
+      .mockResolvedValueOnce({})                                       // CreateServiceLinkedRole (App Runner)
       .mockResolvedValueOnce({ Roles: [] })                            // ListRoles (execution role)
       .mockResolvedValueOnce({                                         // CreateRole (execution role)
         Role: { Arn: "arn:aws:iam::123456789012:role/al-ecs-execution-role" },
@@ -143,7 +148,20 @@ describe("cloud setup", () => {
       .mockResolvedValueOnce({                                         // CreateRole (task role)
         Role: { Arn: "arn:aws:iam::123456789012:role/al-default-task-role" },
       })
-      .mockResolvedValueOnce({});                                      // PutRolePolicy (execution role)
+      .mockResolvedValueOnce({})                                       // PutRolePolicy (execution role inline)
+      .mockResolvedValueOnce({})                                       // CreateRole (CodeBuild)
+      .mockResolvedValueOnce({})                                       // PutRolePolicy (CodeBuild)
+      .mockResolvedValueOnce({})                                       // CreateRole (App Runner access)
+      .mockResolvedValueOnce({})                                       // AttachRolePolicy (App Runner access)
+      .mockResolvedValueOnce({                                         // GetRole (App Runner access)
+        Role: { Arn: "arn:aws:iam::123456789012:role/al-apprunner-access-role" },
+      })
+      .mockResolvedValueOnce({})                                       // CreateRole (App Runner instance)
+      .mockResolvedValueOnce({})                                       // PutRolePolicy (App Runner instance)
+      .mockResolvedValueOnce({                                         // GetRole (App Runner instance)
+        Role: { Arn: "arn:aws:iam::123456789012:role/al-apprunner-instance-role" },
+      })
+      .mockResolvedValueOnce({});                                      // PutUserPolicy (operator)
 
     // EC2: single VPC (auto-selected), subnets, security groups
     mockEc2Send
@@ -181,6 +199,8 @@ describe("cloud setup", () => {
     expect(config.cloud.ecrRepository).toBe("123456789012.dkr.ecr.us-east-1.amazonaws.com/al-images");
     expect(config.cloud.executionRoleArn).toBe("arn:aws:iam::123456789012:role/al-ecs-execution-role");
     expect(config.cloud.taskRoleArn).toBe("arn:aws:iam::123456789012:role/al-default-task-role");
+    expect(config.cloud.appRunnerAccessRoleArn).toBe("arn:aws:iam::123456789012:role/al-apprunner-access-role");
+    expect(config.cloud.appRunnerInstanceRoleArn).toBe("arn:aws:iam::123456789012:role/al-apprunner-instance-role");
     expect(config.cloud.subnets).toEqual(["subnet-abc"]);
   });
 
@@ -205,26 +225,38 @@ describe("cloud setup", () => {
     // Region input
     mockInput.mockResolvedValueOnce("us-east-1");
 
-    // ECR: list empty -> create
+    // ECR: list empty -> create -> set Lambda policy
     mockEcrSend
       .mockResolvedValueOnce({ repositories: [] })
       .mockResolvedValueOnce({
         repository: { repositoryUri: "123456789012.dkr.ecr.us-east-1.amazonaws.com/al-images" },
-      });
+      })
+      .mockResolvedValueOnce({});                                      // SetRepositoryPolicy
 
     // ECS: list empty -> create
     mockEcsSend
       .mockResolvedValueOnce({ clusterArns: [] })
       .mockResolvedValueOnce({});
 
-    // IAM: two roles, list empty -> create each
+    // IAM: SLRs, two ECS roles, CodeBuild role, two App Runner roles, operator policy
     mockIamSend
+      .mockResolvedValueOnce({})  // CreateServiceLinkedRole (ECS)
+      .mockResolvedValueOnce({})  // CreateServiceLinkedRole (App Runner)
       .mockResolvedValueOnce({ Roles: [] })
       .mockResolvedValueOnce({ Role: { Arn: "arn:aws:iam::123456789012:role/al-ecs-execution-role" } })
       .mockResolvedValueOnce({})  // AttachRolePolicy
       .mockResolvedValueOnce({ Roles: [] })
       .mockResolvedValueOnce({ Role: { Arn: "arn:aws:iam::123456789012:role/al-default-task-role" } })
-      .mockResolvedValueOnce({});  // PutRolePolicy
+      .mockResolvedValueOnce({})  // PutRolePolicy (execution)
+      .mockResolvedValueOnce({})  // CreateRole (CodeBuild)
+      .mockResolvedValueOnce({})  // PutRolePolicy (CodeBuild)
+      .mockResolvedValueOnce({})  // CreateRole (App Runner access)
+      .mockResolvedValueOnce({})  // AttachRolePolicy (App Runner access)
+      .mockResolvedValueOnce({ Role: { Arn: "arn:aws:iam::123456789012:role/al-apprunner-access-role" } })
+      .mockResolvedValueOnce({})  // CreateRole (App Runner instance)
+      .mockResolvedValueOnce({})  // PutRolePolicy (App Runner instance)
+      .mockResolvedValueOnce({ Role: { Arn: "arn:aws:iam::123456789012:role/al-apprunner-instance-role" } })
+      .mockResolvedValueOnce({});  // PutUserPolicy (operator)
 
     // EC2: single VPC, subnets, security groups
     mockEc2Send

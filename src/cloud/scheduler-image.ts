@@ -81,6 +81,10 @@ function generateDockerfile(): string {
     "# Project files are baked in via extraFiles → static/project/",
     "# (the build pipeline auto-injects COPY static/ /app/static/)",
     "",
+    "# Copy base agent Dockerfile to where image-builder expects it",
+    "# (packageRoot resolves to /app at runtime, so it looks for /app/docker/Dockerfile)",
+    "RUN cp -r /app/static/docker /app/docker",
+    "",
     "EXPOSE 8080",
     "",
     'ENTRYPOINT ["node", "dist/cli/main.js", "start", \\',
@@ -109,6 +113,14 @@ export async function buildSchedulerImage(opts: SchedulerImageOpts): Promise<str
   const extraFiles: Record<string, string> = {};
   for (const [relPath, content] of Object.entries(projectFiles)) {
     extraFiles[join("project", relPath)] = content;
+  }
+
+  // Include the base agent Dockerfile so the scheduler can build agent images
+  // at runtime. The Dockerfile is placed at static/docker/Dockerfile and then
+  // copied to /app/docker/Dockerfile by the generated scheduler Dockerfile.
+  const baseDockerfilePath = resolvePath(packageRoot, "docker", "Dockerfile");
+  if (existsSync(baseDockerfilePath)) {
+    extraFiles[join("docker", "Dockerfile")] = readFileSync(baseDockerfilePath, "utf-8");
   }
 
   // Write the Dockerfile to a temp file rather than using dockerfileContent,

@@ -118,9 +118,9 @@ export class ECSFargateRuntime implements ContainerRuntime {
     return this.shared.buildImageCodeBuild(opts, opts.onProgress);
   }
 
-  async pushImage(_localImage: string): Promise<string> {
+  async pushImage(image: string): Promise<string> {
     // CodeBuild handles build + push in one step; the image is already in ECR
-    return `${this.config.ecrRepository}:${_localImage.replace(":", "-")}`;
+    return image;
   }
 
   // --- Container lifecycle ---
