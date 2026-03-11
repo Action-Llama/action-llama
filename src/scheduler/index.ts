@@ -267,7 +267,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   }
 
   const maxReruns = globalConfig.maxReruns ?? DEFAULT_MAX_RERUNS;
-  const maxTriggerDepth = globalConfig.maxTriggerDepth ?? DEFAULT_MAX_TRIGGER_DEPTH;
+  const maxTriggerDepth = globalConfig.maxCallDepth ?? globalConfig.maxTriggerDepth ?? DEFAULT_MAX_TRIGGER_DEPTH;
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const dockerEnabled = true;
   const anyWebhooks = activeAgentConfigs.some((a) => a.webhooks?.length);
@@ -345,6 +345,11 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     logger.warn("Agents have webhook triggers but --gateway (-g) was not passed — webhooks will not be received. Use -g to enable.");
   }
 
+  // Declare runner pools and cron jobs early so control route closures can reference them.
+  // They are populated after image builds complete.
+  const runnerPools: Record<string, RunnerPool> = {};
+  let cronJobs: Cron[] = [];
+
   // Start gateway early if needed (before Docker builds) so users can see build status
   let gateway: GatewayServer | undefined;
 
@@ -361,6 +366,29 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       projectPath,
       webUI,
       lockTimeout: globalConfig.gateway?.lockTimeout,
+      controlDeps: {
+        statusTracker,
+        killInstance: async (instanceId: string) => {
+          for (const pool of Object.values(runnerPools)) {
+            if (pool.killInstance(instanceId)) return true;
+          }
+          return false;
+        },
+        pauseScheduler: async () => {
+          for (const job of cronJobs) {
+            job.pause();
+          }
+          statusTracker?.setPaused(true);
+          logger.info("Scheduler paused via control API");
+        },
+        resumeScheduler: async () => {
+          for (const job of cronJobs) {
+            job.resume();
+          }
+          statusTracker?.setPaused(false);
+          logger.info("Scheduler resumed via control API");
+        },
+      },
     });
     logger.info({ port: gatewayPort }, "Gateway started early to show build progress");
   }
@@ -460,9 +488,6 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   baseImage = buildResult.baseImage;
   Object.assign(agentImages, buildResult.agentImages);
 
-  // Create runner pools for each agent with configurable scale
-  const runnerPools: Record<string, RunnerPool> = {};
-
   // Import necessary classes for container runners
   const ContainerAgentRunnerClass = runtime ? (await import("../agents/container-runner.js")).ContainerAgentRunner : null;
   const gatewayPort = globalConfig.gateway?.port || 8080;
@@ -515,7 +540,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     logger.info({ agent: agentConfig.name, scale }, "Created runner pool");
   }
 
-  const webhookQueueSize = globalConfig.webhookQueueSize ?? 20;
+  const webhookQueueSize = globalConfig.workQueueSize ?? globalConfig.webhookQueueSize ?? 20;
   const webhookQueue = new WorkQueue<WebhookContext>(webhookQueueSize);
   const skills: PromptSkills = { locking: true };
   const schedulerCtx: SchedulerContext = { runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, webhookQueue, shuttingDown: false, skills, useBakedImages: true };
@@ -581,7 +606,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   }
 
   // Set up cron jobs (only for agents with a schedule)
-  const cronJobs: Cron[] = [];
+  cronJobs = [];
 
   for (const agentConfig of activeAgentConfigs) {
     if (!agentConfig.schedule) continue;

@@ -1,7 +1,9 @@
+import type { StatusTracker } from "../tui/status-tracker.js";
+
 export class AgentStatusReporter {
-  private statusTracker?: any; // StatusTracker type to avoid circular import
-  
-  constructor(statusTracker?: any) {
+  private statusTracker?: StatusTracker;
+
+  constructor(statusTracker?: StatusTracker) {
     this.statusTracker = statusTracker;
   }
 

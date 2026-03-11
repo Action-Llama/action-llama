@@ -455,7 +455,7 @@ Agents have access to runtime skills — capabilities taught via a preamble befo
 
 - [Skills Overview](skills/README.md)
 - [Credentials](skills/credentials.md) — env vars, tools, and access patterns from mounted credentials
-- [Signals](skills/signals.md) — `[RERUN]`, `[STATUS]`, `[TRIGGER]` output signals
+- [Signals](skills/signals.md) — `[RERUN]`, `[STATUS]`, `[RETURN]`, `[EXIT]` output signals, `al-call` for agent-to-agent calls
 - [Resource Locks](skills/resource-locks.md) — `rlock`, `runlock`, `rlock-heartbeat` for parallel coordination
 - [Environment](skills/environment.md) — trigger types, context blocks, container filesystem
 

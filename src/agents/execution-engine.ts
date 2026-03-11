@@ -12,6 +12,7 @@ import { resolve } from "path";
 import type { AgentConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
 import { loadCredentialField } from "../shared/credentials.js";
+import type { StatusTracker } from "../tui/status-tracker.js";
 
 export type RunResult = "completed" | "rerun" | "error";
 
@@ -41,9 +42,9 @@ const UNRECOVERABLE_THRESHOLD = 3;
 export class ExecutionEngine {
   private agentConfig: AgentConfig;
   private logger: Logger;
-  private statusTracker?: any; // StatusTracker
-  
-  constructor(agentConfig: AgentConfig, logger: Logger, statusTracker?: any) {
+  private statusTracker?: StatusTracker;
+
+  constructor(agentConfig: AgentConfig, logger: Logger, statusTracker?: StatusTracker) {
     this.agentConfig = agentConfig;
     this.logger = logger;
     this.statusTracker = statusTracker;

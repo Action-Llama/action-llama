@@ -62,7 +62,7 @@ export function validateDockerCompatibility(
     if (config.model.authType === "pi_auth") {
       throw new Error(
         `Agent "${config.name}" uses pi_auth which is not supported in Docker mode. ` +
-        `Either switch to api_key/oauth_token (run 'al doctor') or use --no-docker.`
+        `Switch to api_key/oauth_token (run 'al doctor').`
       );
     }
   }

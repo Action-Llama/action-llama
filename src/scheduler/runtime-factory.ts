@@ -5,6 +5,7 @@ import { AWS_CONSTANTS } from "../shared/aws-constants.js";
 import { buildAllImages } from "../cloud/image-builder.js";
 import { ensureNetwork } from "../docker/network.js";
 import type { Logger } from "../shared/logger.js";
+import type { StatusTracker } from "../tui/status-tracker.js";
 
 export async function createRuntime(
   globalConfig: GlobalConfig,
@@ -59,8 +60,7 @@ export async function createRuntime(
     execFileSync("docker", ["info"], { stdio: "pipe", timeout: 10000 });
   } catch {
     throw new Error(
-      "Docker is not running. Start Docker Desktop (or the Docker daemon) and try again, " +
-      "or use --no-docker to run without container isolation."
+      "Docker is not running. Start Docker Desktop (or the Docker daemon) and try again."
     );
   }
 
@@ -80,7 +80,7 @@ export async function buildAgentImages(
   globalConfig: GlobalConfig,
   activeAgentConfigs: AgentConfig[],
   cloudMode: boolean,
-  statusTracker?: any, // StatusTracker
+  statusTracker?: StatusTracker,
   logger?: Logger
 ): Promise<{baseImage: string, agentImages: Record<string, string>}> {
   const useCloudRuntime = cloudMode && globalConfig.cloud;
