@@ -1,34 +1,34 @@
 # Skill: Signals
 
-Signals are text patterns you emit in your output. The scheduler scans your output for these patterns and acts on them. They are your only communication channel back to the scheduler.
+Use signals to communicate with the scheduler and trigger actions.
 
-## `[RERUN]`
+## Commands
 
-Tells the scheduler you did work and there may be more to do — requests an immediate rerun.
+**`al-rerun`** — Request an immediate rerun after completing work.
 
 ```
-[RERUN]
+al-rerun
 ```
 
 **When to use:** When you completed work (e.g. processed an issue, merged a PR) and there may be additional items in the backlog. The scheduler will immediately re-run you (up to `maxReruns` times) to drain remaining work.
 
-**When NOT to use:** If you found no work to do, or if you completed work but the backlog is empty. Simply end without emitting `[RERUN]` and the scheduler will wait for the next scheduled run.
+**When NOT to use:** If you found no work to do, or if you completed work but the backlog is empty. Simply end without calling `al-rerun` and the scheduler will wait for the next scheduled run.
 
-**Default behavior:** Without `[RERUN]`, the scheduler treats your run as complete and does not rerun. This is the safe default — errors, rate limits, and empty runs won't trigger unwanted reruns.
+**Default behavior:** Without `al-rerun`, the scheduler treats your run as complete and does not rerun. This is the safe default — errors, rate limits, and empty runs won't trigger unwanted reruns.
 
-## `[STATUS: <text>]`
+## `al-status "<text>"`
 
-Sends a status update to the TUI and logs.
+Updates your status displayed in the TUI and logs.
 
 ```
-[STATUS: reviewing PR #42]
-[STATUS: deploying api-prod]
-[STATUS: waiting for CI checks]
+al-status "reviewing PR #42"
+al-status "deploying api-prod"
+al-status "waiting for CI checks"
 ```
 
 **When to use:** At natural milestones during your work — starting a new phase, switching tasks, or waiting on something. Helps the operator see what you're doing in real time.
 
-**Format:** The text between `[STATUS:` and `]` is extracted verbatim. Keep it short and descriptive.
+**Format:** Provide the status text as a quoted argument. Keep it short and descriptive.
 
 ## `[RETURN]...[/RETURN]`
 
@@ -79,6 +79,16 @@ Terminates the agent with an optional exit code, indicating an unrecoverable err
 
 **When NOT to use:** For transient errors (network timeouts, temporary rate limits) or normal completion. Use normal error handling or simply complete the run instead.
 
+## Responses
+
+All signal commands return JSON responses:
+- Success: `{"ok":true}`
+- Error: `{"ok":false,"error":"<message>"}`
+
 ## Multiple signals
 
-You can emit multiple signals in one run. For example, you might emit several `[STATUS]` updates as you work, then a `[RETURN]` block with your result, and a `[RERUN]` if there's more work to do.
+You can emit multiple signals in one run. For example, you might emit several `al-status` updates as you work, then a `[RETURN]` block with your result, and `al-rerun` if there's more work to do.
+
+## Graceful degradation
+
+Commands gracefully degrade when `GATEWAY_URL` is not set (return success as no-op). This allows agents to work in both containerized and host environments.

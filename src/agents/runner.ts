@@ -132,7 +132,6 @@ export class AgentRunner {
     for (const key of GIT_ENV_KEYS) {
       savedGitEnv[key] = process.env[key];
     }
-
     try {
       const cwd = agentDir(this.projectPath, this.agentConfig.name);
       const agentsFile = resolve(cwd, "ACTIONS.md");

@@ -241,8 +241,7 @@ export class ContainerAgentRunner {
       logStream = undefined;
 
       if (exitCode === 42) {
-        // Exit code 42 = rerun requested, used as out-of-band signal
-        // to avoid race conditions with log-based [RERUN] detection
+        // Exit code 42 = rerun requested
         this.logger.info({ exitCode, elapsed: `${elapsed}s` }, "container finished (rerun requested)");
         runResult = "rerun";
       } else if (exitCode !== 0) {
@@ -251,7 +250,7 @@ export class ContainerAgentRunner {
         runResult = "error";
       } else {
         this.logger.info({ exitCode, elapsed: `${elapsed}s` }, "container finished");
-        runResult = this._wantsRerun ? "rerun" : "completed";
+        runResult = "completed";
       }
     } catch (err: any) {
       this.logger.error({ err }, `${this.agentConfig.name} container run failed`);

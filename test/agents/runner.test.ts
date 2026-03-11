@@ -155,21 +155,44 @@ describe("AgentRunner", () => {
     expect(runner.isRunning).toBe(false);
   });
 
-  it("detects RERUN output", async () => {
+  it("detects RERUN signal in output text", async () => {
     const logger = makeLogger();
     const infoSpy = vi.spyOn(logger, "info");
     const runner = new AgentRunner(makeAgentConfig(), logger, tmpDir);
     mockPrompt.mockResolvedValue(undefined);
+
     mockSubscribe.mockImplementation((callback: Function) => {
       callback({
         type: "message_update",
-        assistantMessageEvent: { type: "text_delta", delta: "[RERUN]" },
+        assistantMessageEvent: { type: "text_delta", delta: "Done. [RERUN]" },
       });
+      callback({ type: "message_end" });
     });
 
     const outcome = await runner.run("Test");
     expect(outcome.result).toBe("rerun");
     expect(infoSpy).toHaveBeenCalledWith(expect.anything(), "run completed, rerun requested");
+  });
+
+  it("detects trigger signals in output text", async () => {
+    const runner = new AgentRunner(makeAgentConfig(), makeLogger(), tmpDir);
+    mockPrompt.mockResolvedValue(undefined);
+
+    mockSubscribe.mockImplementation((callback: Function) => {
+      callback({
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", delta: '[TRIGGER: reviewer]Please review PR #42[/TRIGGER]' },
+      });
+      callback({ type: "message_end" });
+    });
+
+    const outcome = await runner.run("Test");
+    expect(outcome.result).toBe("completed");
+    expect(outcome.triggers).toHaveLength(1);
+    expect(outcome.triggers[0]).toEqual({
+      agent: "reviewer",
+      context: "Please review PR #42"
+    });
   });
 
   it("logs bash commands", async () => {
