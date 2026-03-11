@@ -2,7 +2,7 @@ import { Cron } from "croner";
 import { mkdirSync } from "fs";
 import { loadGlobalConfig, loadAgentConfig, discoverAgents, validateAgentConfig } from "../shared/config.js";
 import type { GlobalConfig, AgentConfig, WebhookSourceConfig } from "../shared/config.js";
-import { requireCredentialRef, loadCredentialField, listCredentialInstances, backendRequireCredentialRef, backendLoadField, backendListInstances } from "../shared/credentials.js";
+import { requireCredentialRef, loadCredentialField, listCredentialInstances } from "../shared/credentials.js";
 import { createLogger, createFileOnlyLogger } from "../shared/logger.js";
 import { agentDir } from "../shared/paths.js";
 import { AgentRunner, type RunOutcome } from "../agents/runner.js";
@@ -245,7 +245,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   // Validate credentials exist for each active agent
   const allCredentials = new Set(activeAgentConfigs.flatMap((a) => a.credentials));
   for (const credRef of allCredentials) {
-    await backendRequireCredentialRef(credRef);
+    await requireCredentialRef(credRef);
   }
 
   // Validate ECS IAM roles exist if using cloud ECS mode
@@ -315,10 +315,10 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       const credType = PROVIDER_TO_CREDENTIAL[providerType];
       if (!credType) continue;
 
-      const instances = await backendListInstances(credType);
+      const instances = await listCredentialInstances(credType);
       const secrets: Record<string, string> = {};
       for (const inst of instances) {
-        const secret = await backendLoadField(credType, inst, "secret");
+        const secret = await loadCredentialField(credType, inst, "secret");
         if (secret) secrets[inst] = secret;
       }
       if (Object.keys(secrets).length > 0) {

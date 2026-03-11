@@ -5,8 +5,8 @@ import { loadCredentialFields } from "../shared/credentials.js";
 /**
  * Load existing credential values from disk.
  */
-function loadExistingValues(def: CredentialDefinition, instance: string): Record<string, string> | undefined {
-  return loadCredentialFields(def.id, instance);
+async function loadExistingValues(def: CredentialDefinition, instance: string): Promise<Record<string, string> | undefined> {
+  return await loadCredentialFields(def.id, instance);
 }
 
 /**
@@ -24,7 +24,7 @@ export async function promptCredential(
   def: CredentialDefinition,
   instance: string = "default"
 ): Promise<CredentialPromptResult | undefined> {
-  const existing = loadExistingValues(def, instance);
+  const existing = await loadExistingValues(def, instance);
 
   // Custom prompt handler — delegates entirely
   if (def.prompt) {
