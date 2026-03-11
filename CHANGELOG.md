@@ -1,5 +1,14 @@
 # @action-llama/action-llama
 
+## 0.9.2
+
+### Patch Changes
+
+- [`ed94aef`](https://github.com/Action-Llama/action-llama/commit/ed94aef70419d434b55c69e1ab78a5fb8260d2af) Thanks [@asselstine](https://github.com/asselstine)! - Fixed `al logs -f -c` for AWS Lambda and ECS. Follow mode previously required a
+  running task to be detected via `listRunningAgents`, which always returned empty
+  for Lambda and missed short-lived ECS tasks. Now polls CloudWatch directly by
+  agent name, so follow works regardless of whether a task is currently running.
+
 ## 0.9.1
 
 ### Patch Changes
