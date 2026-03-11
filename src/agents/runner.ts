@@ -1,58 +1,17 @@
-import { getModel } from "@mariozechner/pi-ai";
-import {
-  AuthStorage,
-  createAgentSession,
-  DefaultResourceLoader,
-  SessionManager,
-  SettingsManager,
-  createCodingTools,
-} from "@mariozechner/pi-coding-agent";
-import { readFileSync, existsSync } from "fs";
-import { resolve } from "path";
 import type { AgentConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
-import { loadCredentialField, parseCredentialRef, backendLoadField } from "../shared/credentials.js";
 import { agentDir } from "../shared/paths.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
+import { ExecutionEngine, type RunResult } from "./execution-engine.js";
+import { GitEnvironment } from "./git-environment.js";
+import { AgentStatusReporter } from "./status-reporter.js";
+import { parseTriggers, type TriggerRequest } from "./trigger-parser.js";
 
-const UNRECOVERABLE_PATTERNS = [
-  "permission denied",
-  "could not read from remote repository",
-  "resource not accessible by personal access token",
-  "bad credentials",
-  "authentication failed",
-  "the requested url returned error: 403",
-  "denied to ",
-];
-
-function isUnrecoverableError(text: string): boolean {
-  const lower = text.toLowerCase();
-  return UNRECOVERABLE_PATTERNS.some((p) => lower.includes(p));
-}
-
-const UNRECOVERABLE_THRESHOLD = 3;
-
-export type RunResult = "completed" | "rerun" | "error";
-
-export interface TriggerRequest {
-  agent: string;
-  context: string;
-}
+export type { RunResult, TriggerRequest };
 
 export interface RunOutcome {
   result: RunResult;
   triggers: TriggerRequest[];
-}
-
-const TRIGGER_PATTERN = /\[TRIGGER:\s*(\S+)\]([\s\S]*?)\[\/TRIGGER\]/g;
-
-function extractTriggers(text: string): TriggerRequest[] {
-  const triggers: TriggerRequest[] = [];
-  let match;
-  while ((match = TRIGGER_PATTERN.exec(text)) !== null) {
-    triggers.push({ agent: match[1], context: match[2].trim() });
-  }
-  return triggers;
 }
 
 export class AgentRunner {
@@ -60,13 +19,17 @@ export class AgentRunner {
   private agentConfig: AgentConfig;
   private logger: Logger;
   private projectPath: string;
-  private statusTracker?: StatusTracker;
+  private executionEngine: ExecutionEngine;
+  private gitEnvironment: GitEnvironment;
+  private statusReporter: AgentStatusReporter;
 
   constructor(agentConfig: AgentConfig, logger: Logger, projectPath: string, statusTracker?: StatusTracker) {
     this.agentConfig = agentConfig;
     this.logger = logger;
     this.projectPath = projectPath;
-    this.statusTracker = statusTracker;
+    this.executionEngine = new ExecutionEngine(agentConfig, logger, statusTracker);
+    this.gitEnvironment = new GitEnvironment(logger);
+    this.statusReporter = new AgentStatusReporter(statusTracker);
   }
 
   get isRunning(): boolean {
@@ -85,7 +48,7 @@ export class AgentRunner {
         ? (triggerInfo.type === 'agent' ? `triggered by ${triggerInfo.source}` : `${triggerInfo.type} (${triggerInfo.source})`)
         : triggerInfo.type)
       : undefined;
-    this.statusTracker?.startRun(this.agentConfig.name, runReason);
+    this.statusReporter.startRun(this.agentConfig.name, runReason);
 
     if (triggerInfo) {
       const triggerDetails = triggerInfo.type === 'agent' && triggerInfo.source 
@@ -98,220 +61,29 @@ export class AgentRunner {
     const runStartTime = Date.now();
     let runError: string | undefined;
 
-    // Declared outside try so the finally block can restore them.
-    const GIT_ENV_KEYS = [
-      "GIT_AUTHOR_NAME",
-      "GIT_COMMITTER_NAME",
-      "GIT_AUTHOR_EMAIL",
-      "GIT_COMMITTER_EMAIL",
-    ] as const;
-    const savedGitEnv: Record<string, string | undefined> = {};
-    for (const key of GIT_ENV_KEYS) {
-      savedGitEnv[key] = process.env[key];
-    }
+    // Setup git environment and save previous state
+    const savedGitEnv = await this.gitEnvironment.setup(this.agentConfig.credentials);
 
     try {
       const cwd = agentDir(this.projectPath, this.agentConfig.name);
-      const agentsFile = resolve(cwd, "ACTIONS.md");
-
-      const { model } = this.agentConfig;
-      const llmModel = getModel(
-        model.provider as any,
-        model.model as any
-      );
-
-      const authStorage = AuthStorage.create();
-      if (model.authType !== "pi_auth") {
-        // Try to load API key using provider-specific credential type
-        const credentialType = `${model.provider}_key`;
-        try {
-          const credential = await backendLoadField(credentialType, "default", "token");
-          if (credential) {
-            authStorage.setRuntimeApiKey(model.provider, credential);
-            this.logger.debug(`Loaded ${credentialType} credential for ${model.provider}`);
-          } else {
-            this.logger.warn(`${credentialType} credential not found — agent may fail to authenticate. Run 'al doctor' to configure it.`);
-          }
-        } catch (err) {
-          this.logger.warn(`Failed to load credential for provider ${model.provider}: ${credentialType} credential type may not be configured.`);
-        }
-      }
-
-      // Set git author identity from git_ssh credential (scoped to this run)
-      const gitSshRef = this.agentConfig.credentials.find((ref) => parseCredentialRef(ref).type === "git_ssh");
-      if (gitSshRef) {
-        const { instance } = parseCredentialRef(gitSshRef);
-        const gitName = await backendLoadField("git_ssh", instance, "username");
-        if (gitName) {
-          process.env.GIT_AUTHOR_NAME = gitName;
-          process.env.GIT_COMMITTER_NAME = gitName;
-        }
-        const gitEmail = await backendLoadField("git_ssh", instance, "email");
-        if (gitEmail) {
-          process.env.GIT_AUTHOR_EMAIL = gitEmail;
-          process.env.GIT_COMMITTER_EMAIL = gitEmail;
-        }
-      }
-
-      // ACTIONS.md must exist on disk (written during al new)
-      if (!existsSync(agentsFile)) {
-        throw new Error(
-          `ACTIONS.md not found at ${agentsFile}. Run 'al new' to create it.`
-        );
-      }
-      const agentsContent = readFileSync(agentsFile, "utf-8");
-
-      const resourceLoader = new DefaultResourceLoader({
-        noExtensions: true,
-        agentsFilesOverride: () => ({
-          agentsFiles: [
-            { path: agentsFile, content: agentsContent },
-          ],
-        }),
-      });
-      await resourceLoader.reload();
-
-      const settingsManager = SettingsManager.inMemory({
-        compaction: { enabled: true },
-        retry: { enabled: true, maxRetries: 2 },
-      });
-
-      const { session } = await createAgentSession({
-        cwd,
-        model: llmModel,
-        thinkingLevel: model.thinkingLevel,
-        authStorage,
-        resourceLoader,
-        tools: createCodingTools(cwd),
-        sessionManager: SessionManager.inMemory(),
-        settingsManager,
-      });
-
-      // Subscribe to events for logging
-      // Track bash commands by toolCallId so we can correlate start→end
-      const pendingCmds = new Map<string, string>();
-      let outputText = "";
-      let currentTurnText = "";
-      let unrecoverableErrors = 0;
-      session.subscribe((event) => {
-        if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
-          const delta = event.assistantMessageEvent.delta;
-          outputText += delta;
-          currentTurnText += delta;
-          // Detect [STATUS: <text>] pattern
-          const statusMatch = outputText.match(/\[STATUS:\s*([^\]]+)\]/);
-          if (statusMatch) {
-            this.statusTracker?.setAgentStatusText(this.agentConfig.name, statusMatch[1].trim());
-          }
-        }
-        if (event.type === "message_end") {
-          if (currentTurnText.trim()) {
-            this.logger.info({ text: currentTurnText.trim() }, "assistant");
-          }
-          currentTurnText = "";
-        }
-        if (event.type === "tool_execution_start") {
-          const cmd = String(event.args?.command || "");
-          if (event.toolName === "bash") {
-            pendingCmds.set(event.toolCallId, cmd);
-            this.logger.info({ cmd: cmd.slice(0, 200) }, "bash");
-          } else {
-            this.logger.debug({ tool: event.toolName }, "tool start");
-          }
-        }
-        if (event.type === "tool_execution_end") {
-          const resultStr = typeof event.result === "string"
-            ? event.result
-            : JSON.stringify(event.result);
-          const originCmd = pendingCmds.get(event.toolCallId);
-          pendingCmds.delete(event.toolCallId);
-
-          if (event.isError) {
-            this.logger.error(
-              { tool: event.toolName, result: resultStr.slice(0, 1000) },
-              "tool error"
-            );
-            // Extract a human-readable error message from the result
-            let errorMsg = resultStr;
-            try {
-              const parsed = JSON.parse(resultStr);
-              if (parsed?.content?.[0]?.text) {
-                errorMsg = parsed.content[0].text;
-              }
-            } catch { /* use raw string */ }
-            const cmdPrefix = originCmd ? `$ ${originCmd.slice(0, 80)} — ` : "";
-            const detail = `${cmdPrefix}${errorMsg.slice(0, 200)}`;
-            this.statusTracker?.setAgentError(this.agentConfig.name, detail);
-            this.statusTracker?.addLogLine(this.agentConfig.name, `ERROR: ${detail}`);
-            if (isUnrecoverableError(errorMsg)) {
-              unrecoverableErrors++;
-              if (unrecoverableErrors >= UNRECOVERABLE_THRESHOLD) {
-                this.logger.error("Aborting: repeated auth/permission failures — check credentials");
-                this.statusTracker?.addLogLine(this.agentConfig.name, "ABORT: repeated auth/permission failures — check credentials");
-                session.dispose();
-              }
-            }
-          } else {
-            this.logger.debug({ tool: event.toolName, resultLength: resultStr.length }, "tool done");
-          }
-        }
-      });
-
-      // Prompt is now built by the scheduler (includes <agent-config> and optional <webhook-trigger>)
-      // Retry on rate limit errors with exponential backoff
-      const MAX_PROMPT_RETRIES = 5;
-      const DEFAULT_BACKOFF_MS = 30_000;
-      const MAX_BACKOFF_MS = 300_000;
-
-      for (let attempt = 0; attempt <= MAX_PROMPT_RETRIES; attempt++) {
-        try {
-          await session.prompt(prompt);
-          break;
-        } catch (promptErr: any) {
-          const msg = String(promptErr?.message || promptErr || "");
-          const isRateLimit = msg.includes("rate_limit") || msg.includes("429") || msg.includes("529") || msg.includes("overloaded");
-          if (!isRateLimit || attempt === MAX_PROMPT_RETRIES) {
-            throw promptErr;
-          }
-          const delayMs = Math.min(DEFAULT_BACKOFF_MS * Math.pow(2, attempt), MAX_BACKOFF_MS);
-          this.logger.warn(
-            { attempt: attempt + 1, delayMs },
-            "rate limited, retrying prompt"
-          );
-          this.statusTracker?.addLogLine(this.agentConfig.name, `Rate limited, retrying in ${Math.round(delayMs / 1000)}s...`);
-          await new Promise((r) => setTimeout(r, delayMs));
-        }
-      }
-
-      const triggers = extractTriggers(outputText);
-      let result: RunResult;
-      if (outputText.includes("[RERUN]")) {
-        this.logger.info({ outputLength: outputText.length }, "run completed, rerun requested");
-        result = "rerun";
-      } else {
-        this.logger.info({ outputLength: outputText.length }, "run completed");
-        result = "completed";
-      }
-
-      session.dispose();
+      
+      // Execute the agent using the execution engine
+      const { result, outputText } = await this.executionEngine.execute(prompt, cwd);
+      
+      // Parse triggers from output
+      const triggers = parseTriggers(outputText);
+      
       return { result, triggers };
     } catch (err: any) {
       this.logger.error({ err }, `${this.agentConfig.name} run failed`);
       runError = String(err?.message || err).slice(0, 200);
       return { result: "error", triggers: [] };
     } finally {
-      // Restore the git env vars we may have overwritten so other
-      // agents running in the same process get a clean slate.
-      for (const key of GIT_ENV_KEYS) {
-        if (savedGitEnv[key] === undefined) {
-          delete process.env[key];
-        } else {
-          process.env[key] = savedGitEnv[key];
-        }
-      }
+      // Restore git environment
+      this.gitEnvironment.restore(savedGitEnv);
 
       const elapsed = Date.now() - runStartTime;
-      this.statusTracker?.endRun(this.agentConfig.name, elapsed, runError);
+      this.statusReporter.endRun(this.agentConfig.name, elapsed, runError);
       this.running = false;
     }
   }
