@@ -1,5 +1,25 @@
 # @action-llama/action-llama
 
+## 0.10.2
+
+### Patch Changes
+
+- [`49a680a`](https://github.com/Action-Llama/action-llama/commit/49a680afe54c74a354c52c854f5675a4eeb1f1af) Thanks [@asselstine](https://github.com/asselstine)! - Refactored codebase for improved maintainability and testability. Added typed error
+  classes (ConfigError, CredentialError, CloudProviderError, AgentError) with a unified
+  CLI error handler (withCommand). Extracted shared HMAC webhook validation, split
+  oversized modules (doctor.ts, cloud-setup.ts, scheduler/index.ts) into focused files,
+  and added test helper factories. Removed dead code from scheduler directory. No
+  user-facing behavior changes.
+
+- [`87514b7`](https://github.com/Action-Llama/action-llama/commit/87514b71e867a695c1f568ee23b2b5285d40b3f4) Thanks [@asselstine](https://github.com/asselstine)! - Harden gateway security: bind to localhost by default (cloud mode uses 0.0.0.0),
+  disable control routes/dashboard/lock-status endpoints in cloud mode since they
+  are local-only concerns, scope `/locks/list` to the requesting agent's own locks,
+  add 10 MB webhook body size limit, add per-IP rate limiting (120 req/min) on
+  webhook endpoints, validate agent names against `[a-z0-9-]` pattern, fix path
+  traversal in dashboard log access, replace `execSync` with `execFileSync` in
+  git helper to prevent shell injection, and warn when dashboard runs without
+  `AL_DASHBOARD_SECRET`.
+
 ## 0.10.1
 
 ### Patch Changes
