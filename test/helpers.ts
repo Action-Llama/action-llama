@@ -4,10 +4,7 @@ import { tmpdir } from "os";
 import { stringify as stringifyTOML } from "smol-toml";
 import type { GlobalConfig, AgentConfig } from "../src/shared/config.js";
 
-export interface TmpProjectOptions {
-  global?: Partial<GlobalConfig>;
-  agents?: Partial<AgentConfig>[];
-}
+// --- Factories ---
 
 const DEFAULT_MODEL = {
   provider: "anthropic",
@@ -16,39 +13,55 @@ const DEFAULT_MODEL = {
   authType: "api_key" as const,
 };
 
-const DEFAULT_GLOBAL: GlobalConfig = {};
+/** Build a model config with optional overrides. */
+export function makeModel(overrides?: Partial<typeof DEFAULT_MODEL>): typeof DEFAULT_MODEL {
+  return { ...DEFAULT_MODEL, ...overrides };
+}
+
+/** Build an AgentConfig with sensible defaults. Override any field. */
+export function makeAgentConfig(overrides?: Partial<AgentConfig>): AgentConfig {
+  return {
+    name: "test-agent",
+    credentials: ["github_token:default"],
+    model: makeModel(),
+    schedule: "*/5 * * * *",
+    params: {},
+    ...overrides,
+  };
+}
+
+/** Build a GlobalConfig with optional overrides. */
+export function makeGlobalConfig(overrides?: Partial<GlobalConfig>): GlobalConfig {
+  return { ...overrides };
+}
+
+// --- Temp project scaffolding ---
+
+export interface TmpProjectOptions {
+  global?: Partial<GlobalConfig>;
+  agents?: Partial<AgentConfig>[];
+}
 
 const DEFAULT_AGENTS: AgentConfig[] = [
-  {
+  makeAgentConfig({
     name: "dev",
-    credentials: ["github_token:default"],
-    model: DEFAULT_MODEL,
-    schedule: "*/5 * * * *",
     params: { repos: ["acme/app"], triggerLabel: "agent", assignee: "bot" },
-  },
-  {
+  }),
+  makeAgentConfig({
     name: "reviewer",
-    credentials: ["github_token:default"],
-    model: DEFAULT_MODEL,
-    schedule: "*/5 * * * *",
     params: { repos: ["acme/app"] },
-  },
-  {
+  }),
+  makeAgentConfig({
     name: "devops",
-    credentials: ["github_token:default"],
-    model: DEFAULT_MODEL,
     schedule: "*/15 * * * *",
     params: { repos: ["acme/app"] },
-  },
+  }),
 ];
 
 export function makeTmpProject(opts?: TmpProjectOptions): string {
   const dir = mkdtempSync(join(tmpdir(), "al-cmd-"));
 
-  const globalConfig: GlobalConfig = {
-    ...DEFAULT_GLOBAL,
-    ...opts?.global,
-  };
+  const globalConfig = makeGlobalConfig(opts?.global);
   if (Object.keys(globalConfig).length > 0) {
     writeFileSync(resolve(dir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
   }

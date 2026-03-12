@@ -1,12 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { validateAgentConfig } from "../../src/shared/config.js";
-import type { AgentConfig } from "../../src/shared/config.js";
+import { makeAgentConfig } from "../helpers.js";
 
-const baseConfig: AgentConfig = {
-  name: "test",
-  credentials: [],
-  model: { provider: "anthropic", model: "test", thinkingLevel: "off", authType: "api_key" },
-};
+const baseConfig = makeAgentConfig({ name: "test", credentials: [], schedule: undefined });
 
 describe("validateAgentConfig", () => {
   it("accepts agent with schedule only", () => {

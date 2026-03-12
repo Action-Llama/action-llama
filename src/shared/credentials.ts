@@ -2,6 +2,7 @@ import { resolve } from "path";
 import { CREDENTIALS_DIR } from "./paths.js";
 import type { CredentialBackend } from "./credential-backend.js";
 import { FilesystemBackend } from "./filesystem-backend.js";
+import { CredentialError } from "./errors.js";
 
 // Default backend instance (local filesystem)
 let _defaultBackend: CredentialBackend = new FilesystemBackend();
@@ -98,7 +99,7 @@ export async function requireCredentialRef(ref: string): Promise<void> {
   const { type, instance } = parseCredentialRef(ref);
   const exists = await _defaultBackend.exists(type, instance);
   if (!exists) {
-    throw new Error(
+    throw new CredentialError(
       `Credential "${ref}" not found. Run 'al doctor' to configure it.`
     );
   }

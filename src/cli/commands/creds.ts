@@ -78,8 +78,7 @@ export async function add(ref: string): Promise<void> {
     def = resolveCredential(type);
   } catch {
     const known = listBuiltinCredentialIds().join(", ");
-    console.error(`Unknown credential type "${type}". Known types:\n  ${known}`);
-    process.exit(1);
+    throw new Error(`Unknown credential type "${type}". Known types:\n  ${known}`);
   }
 
   if (await credentialExists(type, instance)) {
@@ -100,8 +99,7 @@ export async function rm(ref: string): Promise<void> {
   const { type, instance } = parseCredentialRef(ref);
 
   if (!(await credentialExists(type, instance))) {
-    console.error(`Credential "${ref}" not found.`);
-    process.exit(1);
+    throw new Error(`Credential "${ref}" not found.`);
   }
 
   const dir = credentialDir(type, instance);

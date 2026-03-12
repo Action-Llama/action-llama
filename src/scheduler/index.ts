@@ -1,81 +1,22 @@
 import { Cron } from "croner";
-import { mkdirSync } from "fs";
 import { loadGlobalConfig, loadAgentConfig, discoverAgents, validateAgentConfig } from "../shared/config.js";
-import type { GlobalConfig, AgentConfig, WebhookSourceConfig } from "../shared/config.js";
-import { requireCredentialRef, loadCredentialField, listCredentialInstances } from "../shared/credentials.js";
+import type { GlobalConfig, AgentConfig } from "../shared/config.js";
+import { requireCredentialRef } from "../shared/credentials.js";
 import { createLogger, createFileOnlyLogger } from "../shared/logger.js";
-import { agentDir } from "../shared/paths.js";
-import { AgentRunner, type RunOutcome } from "../agents/runner.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import {
   buildScheduledPrompt, buildWebhookPrompt, buildCalledPrompt,
   buildScheduledSuffix, buildWebhookSuffix, buildCalledSuffix,
   type PromptSkills,
 } from "../agents/prompt.js";
-import { WebhookRegistry } from "../webhooks/registry.js";
-import { GitHubWebhookProvider } from "../webhooks/providers/github.js";
-import { SentryWebhookProvider } from "../webhooks/providers/sentry.js";
-import { LinearWebhookProvider } from "../webhooks/providers/linear.js";
 import type { GatewayServer } from "../gateway/index.js";
-import type { ContainerRuntime } from "../docker/runtime.js";
 import { AWS_CONSTANTS } from "../shared/aws-constants.js";
-import { buildAllImages } from "../cloud/image-builder.js";
-import type { WebhookContext, WebhookFilter, WebhookTrigger, GitHubWebhookFilter, SentryWebhookFilter, LinearWebhookFilter } from "../webhooks/types.js";
+import { ConfigError, AgentError } from "../shared/errors.js";
+import type { WebhookContext } from "../webhooks/types.js";
 import { WorkQueue } from "./event-queue.js";
 import { RunnerPool, type PoolRunner } from "./runner-pool.js";
-
-// Provider type → credential type for loading secrets
-const PROVIDER_TO_CREDENTIAL: Record<string, string> = {
-  github: "github_webhook_secret",
-  sentry: "sentry_client_secret",
-  linear: "linear_webhook_secret",
-};
-
-function resolveWebhookSource(
-  sourceName: string,
-  agentName: string,
-  webhookSources: Record<string, WebhookSourceConfig>
-): WebhookSourceConfig {
-  const source = webhookSources[sourceName];
-  if (!source) {
-    const available = Object.keys(webhookSources).join(", ") || "(none)";
-    throw new Error(
-      `Agent "${agentName}" references webhook source "${sourceName}" ` +
-      `which is not defined in config.toml [webhooks]. Available: ${available}`
-    );
-  }
-  return source;
-}
-
-function buildFilterFromTrigger(trigger: WebhookTrigger, providerType: string): WebhookFilter | undefined {
-  if (providerType === "github") {
-    const f: GitHubWebhookFilter = {};
-    if (trigger.events) f.events = trigger.events;
-    if (trigger.actions) f.actions = trigger.actions;
-    if (trigger.repos) f.repos = trigger.repos;
-    if (trigger.labels) f.labels = trigger.labels;
-    if (trigger.assignee) f.assignee = trigger.assignee;
-    if (trigger.author) f.author = trigger.author;
-    if (trigger.branches) f.branches = trigger.branches;
-    return Object.keys(f).length > 0 ? f : undefined;
-  }
-  if (providerType === "sentry") {
-    const f: SentryWebhookFilter = {};
-    if (trigger.resources) f.resources = trigger.resources;
-    return Object.keys(f).length > 0 ? f : undefined;
-  }
-  if (providerType === "linear") {
-    const f: LinearWebhookFilter = {};
-    if (trigger.events) f.events = trigger.events;
-    if (trigger.actions) f.actions = trigger.actions;
-    if (trigger.organizations) f.organizations = trigger.organizations;
-    if (trigger.labels) f.labels = trigger.labels;
-    if (trigger.assignee) f.assignee = trigger.assignee;
-    if (trigger.author) f.author = trigger.author;
-    return Object.keys(f).length > 0 ? f : undefined;
-  }
-  return undefined;
-}
+import { createContainerRuntime, buildAgentImages } from "./runtime-factory.js";
+import { resolveWebhookSource, buildFilterFromTrigger, setupWebhookRegistry } from "./webhook-setup.js";
 
 const DEFAULT_MAX_RERUNS = 10;
 const DEFAULT_MAX_TRIGGER_DEPTH = 3;
@@ -230,7 +171,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   // Discover all agents in the project
   const agentNames = discoverAgents(projectPath);
   if (agentNames.length === 0) {
-    throw new Error("No agents found. Run 'al new' to create a project with agents.");
+    throw new ConfigError("No agents found. Run 'al new' to create a project with agents.");
   }
 
   const agentConfigs: AgentConfig[] = agentNames.map((name) => loadAgentConfig(projectPath, name));
@@ -275,7 +216,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   // Validate pi_auth is not used with Docker (containers can't access host auth storage)
   for (const config of activeAgentConfigs) {
     if (config.model.authType === "pi_auth") {
-      throw new Error(
+      throw new ConfigError(
         `Agent "${config.name}" uses pi_auth which is not supported in container mode. ` +
         `Switch to api_key/oauth_token (run 'al doctor').`
       );
@@ -295,45 +236,13 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   }
 
   // Set up webhook registry if any agents use webhooks
-  let webhookRegistry: WebhookRegistry | undefined;
-  let webhookSecrets: Record<string, Record<string, string>> = {};
+  const { registry: webhookRegistry, secrets: webhookSecrets } = anyWebhooks
+    ? await setupWebhookRegistry(globalConfig, logger)
+    : { registry: undefined, secrets: {} };
 
-  if (anyWebhooks) {
-    webhookRegistry = new WebhookRegistry(logger);
-
-    // Register providers
-    webhookRegistry.registerProvider(new GitHubWebhookProvider());
-    webhookRegistry.registerProvider(new SentryWebhookProvider());
-    webhookRegistry.registerProvider(new LinearWebhookProvider());
-
-    // Load secrets for each provider type referenced by webhook sources
-    const providerTypes = new Set(Object.values(webhookSources).map(s => s.type));
-
-    for (const providerType of providerTypes) {
-      const credType = PROVIDER_TO_CREDENTIAL[providerType];
-      if (!credType) continue;
-
-      const instances = await listCredentialInstances(credType);
-      const secrets: Record<string, string> = {};
-      for (const inst of instances) {
-        const secret = await loadCredentialField(credType, inst, "secret");
-        if (secret) secrets[inst] = secret;
-      }
-      if (Object.keys(secrets).length > 0) {
-        webhookSecrets[providerType] = secrets;
-        logger.info({ providerType, count: Object.keys(secrets).length }, "loaded webhook secrets");
-      }
-    }
-  }
-
-  let runtime: ContainerRuntime | undefined;
-  let agentRuntimeOverrides: Record<string, ContainerRuntime> = {};
   let baseImage = AWS_CONSTANTS.DEFAULT_IMAGE;
   const agentImages: Record<string, string> = {};
-
-  // Determine runtime type from cloud mode or local
   const useCloudRuntime = cloudMode && globalConfig.cloud;
-  const runtimeType = useCloudRuntime ? globalConfig.cloud!.provider : "local";
 
   // Register agents early so the TUI shows them during image builds
   for (const agentConfig of agentConfigs) {
@@ -396,103 +305,23 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     logger.info({ port: gatewayPort }, "Gateway started early to show build progress");
   }
 
-  logger.info({ runtime: runtimeType }, "Container mode enabled — initializing infrastructure");
-
   // 1. Create the container runtime
-  if (useCloudRuntime && globalConfig.cloud!.provider === "cloud-run") {
-    const { CloudRunJobRuntime } = await import("../docker/cloud-run-runtime.js");
-    const { gcpProject, region, artifactRegistry, serviceAccount, secretPrefix } = globalConfig.cloud!;
-    if (!gcpProject || !region || !artifactRegistry || !serviceAccount) {
-      throw new Error(
-        "Cloud Run runtime requires cloud.gcpProject, cloud.region, " +
-        "cloud.artifactRegistry, and cloud.serviceAccount in config.toml"
-      );
-    }
-    runtime = new CloudRunJobRuntime({ gcpProject, region, artifactRegistry, serviceAccount, secretPrefix });
-    logger.info({ gcpProject, region }, "Using Cloud Run Jobs runtime");
-  } else if (useCloudRuntime && globalConfig.cloud!.provider === "ecs") {
-    const { ECSFargateRuntime } = await import("../docker/ecs-runtime.js");
-    const cc = globalConfig.cloud!;
-    if (!cc.awsRegion || !cc.ecsCluster || !cc.ecrRepository || !cc.executionRoleArn || !cc.taskRoleArn || !cc.subnets?.length) {
-      throw new Error(
-        "ECS runtime requires cloud.awsRegion, cloud.ecsCluster, cloud.ecrRepository, " +
-        "cloud.executionRoleArn, cloud.taskRoleArn, and cloud.subnets in config.toml"
-      );
-    }
-    runtime = new ECSFargateRuntime({
-      awsRegion: cc.awsRegion,
-      ecsCluster: cc.ecsCluster,
-      ecrRepository: cc.ecrRepository,
-      executionRoleArn: cc.executionRoleArn,
-      taskRoleArn: cc.taskRoleArn,
-      subnets: cc.subnets,
-      securityGroups: cc.securityGroups,
-      secretPrefix: cc.awsSecretPrefix,
-      buildBucket: cc.buildBucket,
-    });
-
-    // Create Lambda runtime for short-running agents (timeout <= 900s)
-    const { LambdaRuntime } = await import("../docker/lambda-runtime.js");
-    const lambdaRuntime = new LambdaRuntime({
-      awsRegion: cc.awsRegion,
-      ecrRepository: cc.ecrRepository,
-      secretPrefix: cc.awsSecretPrefix,
-      buildBucket: cc.buildBucket,
-      lambdaRoleArn: cc.lambdaRoleArn,
-      lambdaSubnets: cc.lambdaSubnets,
-      lambdaSecurityGroups: cc.lambdaSecurityGroups,
-    });
-
-    // Per-agent runtime selection: Lambda for short agents, ECS for long ones
-    agentRuntimeOverrides = {};
-    for (const ac of activeAgentConfigs) {
-      const effectiveTimeout = ac.timeout ?? globalConfig.local?.timeout ?? 900;
-      if (effectiveTimeout <= AWS_CONSTANTS.LAMBDA_MAX_TIMEOUT) {
-        agentRuntimeOverrides[ac.name] = lambdaRuntime;
-        logger.info({ agent: ac.name, timeout: effectiveTimeout }, "Routing to Lambda (timeout <= 900s)");
-      }
-    }
-
-    logger.info({ region: cc.awsRegion, cluster: cc.ecsCluster }, "Using ECS Fargate runtime");
-  } else {
-    // Local runtime needs Docker running
-    const { execFileSync } = await import("child_process");
-    try {
-      execFileSync("docker", ["info"], { stdio: "pipe", timeout: 10000 });
-    } catch {
-      throw new Error(
-        "Docker is not running. Start Docker Desktop (or the Docker daemon) and try again."
-      );
-    }
-
-    const { LocalDockerRuntime } = await import("../docker/local-runtime.js");
-    runtime = new LocalDockerRuntime();
-
-    // Local-only: ensure Docker network
-    logger.info("Ensuring Docker network...");
-    const { ensureNetwork } = await import("../docker/network.js");
-    ensureNetwork();
-  }
+  const { runtime, agentRuntimeOverrides, runtimeType } = await createContainerRuntime(
+    globalConfig, activeAgentConfigs, cloudMode, logger,
+  );
+  logger.info({ runtime: runtimeType }, "Container mode enabled — initializing infrastructure");
 
   // 2. Build base + per-agent images via shared image builder
   const buildSkills: PromptSkills = { locking: true };
-
-  const buildResult = await buildAllImages({
-    projectPath,
-    globalConfig,
-    activeAgentConfigs,
-    runtime: runtime!,
-    runtimeType,
-    statusTracker,
-    logger,
-    skills: buildSkills,
+  const buildResult = await buildAgentImages({
+    projectPath, globalConfig, activeAgentConfigs,
+    runtime, runtimeType, statusTracker, logger, skills: buildSkills,
   });
-
   baseImage = buildResult.baseImage;
   Object.assign(agentImages, buildResult.agentImages);
 
   // Import necessary classes for container runners
-  const ContainerAgentRunnerClass = runtime ? (await import("../agents/container-runner.js")).ContainerAgentRunner : null;
+  const { ContainerAgentRunner: ContainerAgentRunnerClass } = await import("../agents/container-runner.js");
   const gatewayPort = globalConfig.gateway?.port || 8080;
   const gatewayUrl = gatewayEnabled
     ? (process.env.GATEWAY_URL
@@ -521,22 +350,20 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
     for (let i = 0; i < scale; i++) {
       const instanceId = scale >= 2 ? `${agentConfig.name}(${i + 1})` : agentConfig.name;
-      if (runtime && ContainerAgentRunnerClass) {
-        const agentRuntime = agentRuntimeOverrides[agentConfig.name] || runtime;
-        runners.push(new ContainerAgentRunnerClass(
-          agentRuntime,
-          globalConfig,
-          agentConfig,
-          mkLogger(projectPath, instanceId),
-          registerContainer,
-          unregisterContainer,
-          gatewayUrl,
-          projectPath,
-          agentImages[agentConfig.name] || baseImage,
-          statusTracker,
-          instanceId
-        ));
-      }
+      const agentRuntime = agentRuntimeOverrides[agentConfig.name] || runtime;
+      runners.push(new ContainerAgentRunnerClass(
+        agentRuntime,
+        globalConfig,
+        agentConfig,
+        mkLogger(projectPath, instanceId),
+        registerContainer,
+        unregisterContainer,
+        gatewayUrl,
+        projectPath,
+        agentImages[agentConfig.name] || baseImage,
+        statusTracker,
+        instanceId
+      ));
     }
 
     runnerPools[agentConfig.name] = new RunnerPool(runners);

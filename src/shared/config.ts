@@ -2,6 +2,7 @@ import { readFileSync, existsSync, readdirSync, statSync } from "fs";
 import { resolve } from "path";
 import { parse as parseTOML } from "smol-toml";
 import type { WebhookTrigger } from "../webhooks/types.js";
+import { ConfigError } from "./errors.js";
 
 // --- Global config (lives at <project>/config.toml) ---
 
@@ -105,7 +106,7 @@ export function loadAgentConfig(projectPath: string, agentName: string): AgentCo
   const tomlPath = resolve(agentDir, "agent-config.toml");
 
   if (!existsSync(tomlPath)) {
-    throw new Error(`Agent config not found at ${tomlPath}.`);
+    throw new ConfigError(`Agent config not found at ${tomlPath}.`);
   }
 
   const raw = readFileSync(tomlPath, "utf-8");
@@ -127,12 +128,12 @@ const AGENT_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/;
 
 export function validateAgentName(name: string): void {
   if (!name || name.length > 63) {
-    throw new Error(
+    throw new ConfigError(
       `Agent name "${name}" is invalid: must be 1-63 characters.`
     );
   }
   if (!AGENT_NAME_PATTERN.test(name)) {
-    throw new Error(
+    throw new ConfigError(
       `Agent name "${name}" is invalid: must contain only lowercase letters, numbers, and hyphens (cannot start or end with a hyphen).`
     );
   }
@@ -145,7 +146,7 @@ export function validateAgentConfig(config: AgentConfig): void {
   if (config.scale === 0) return;
 
   if (!config.schedule && (!config.webhooks || config.webhooks.length === 0)) {
-    throw new Error(
+    throw new ConfigError(
       `Agent "${config.name}" must have a schedule, webhooks, or both.`
     );
   }

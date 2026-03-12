@@ -1,12 +1,5 @@
-import { createHmac, timingSafeEqual } from "crypto";
 import type { WebhookProvider, WebhookContext, WebhookFilter, GitHubWebhookFilter } from "../types.js";
-
-const MAX_TEXT_LENGTH = 4000;
-
-function truncate(text: string | undefined | null, max = MAX_TEXT_LENGTH): string | undefined {
-  if (!text) return undefined;
-  return text.length > max ? text.slice(0, max) + "..." : text;
-}
+import { truncateEventText as truncate, validateHmacSignature } from "../validation.js";
 
 export class GitHubWebhookProvider implements WebhookProvider {
   source = "github";
@@ -16,21 +9,7 @@ export class GitHubWebhookProvider implements WebhookProvider {
     rawBody: string,
     secrets?: Record<string, string>
   ): string | null {
-    // If no secrets configured, skip validation (allow unsigned webhooks)
-    if (!secrets || Object.keys(secrets).length === 0) return "_unsigned";
-
-    const signature = headers["x-hub-signature-256"];
-    if (!signature) return null;
-
-    // Try each configured secret — different orgs/repos may use different secrets
-    for (const [instanceName, secret] of Object.entries(secrets)) {
-      const expected = "sha256=" + createHmac("sha256", secret).update(rawBody).digest("hex");
-      if (signature.length === expected.length && timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
-        return instanceName;
-      }
-    }
-
-    return null;
+    return validateHmacSignature(rawBody, headers["x-hub-signature-256"], secrets, "sha256=");
   }
 
   parseEvent(headers: Record<string, string | undefined>, body: any): WebhookContext | null {

@@ -53,27 +53,19 @@ vi.mock("../../src/shared/credentials.js", () => ({
 }));
 
 import { AgentRunner } from "../../src/agents/runner.js";
-import type { AgentConfig } from "../../src/shared/config.js";
 import pino from "pino";
+import { makeAgentConfig as makeAgentConfigBase } from "../helpers.js";
+import type { AgentConfig } from "../../src/shared/config.js";
 
-function makeAgentConfig(overrides?: Partial<AgentConfig>): AgentConfig {
-  return {
+function makeRunnerAgentConfig(overrides?: Partial<AgentConfig>): AgentConfig {
+  return makeAgentConfigBase({
     name: "dev",
-    credentials: ["github_token:default"],
-    model: {
-      provider: "anthropic",
-      model: "claude-sonnet-4-20250514",
-      thinkingLevel: "medium",
-      authType: "api_key",
-    },
-    schedule: "*/5 * * * *",
     params: { repos: ["acme/app"], triggerLabel: "agent", assignee: "bot" },
     ...overrides,
-  };
+  });
 }
 
 function makeLogger(): pino.Logger {
-  // Silent logger for tests
   return pino({ level: "silent" });
 }
 
@@ -95,12 +87,12 @@ describe("AgentRunner", () => {
   });
 
   it("creates runner and reports not running initially", () => {
-    const runner = new AgentRunner(makeAgentConfig(), makeLogger(), tmpDir);
+    const runner = new AgentRunner(makeRunnerAgentConfig(), makeLogger(), tmpDir);
     expect(runner.isRunning).toBe(false);
   });
 
   it("runs agent session and calls prompt", async () => {
-    const runner = new AgentRunner(makeAgentConfig(), makeLogger(), tmpDir);
+    const runner = new AgentRunner(makeRunnerAgentConfig(), makeLogger(), tmpDir);
     mockPrompt.mockResolvedValue(undefined);
 
     // Mock subscribe to simulate text output
@@ -121,7 +113,7 @@ describe("AgentRunner", () => {
   it("skips if already running", async () => {
     const logger = makeLogger();
     const warnSpy = vi.spyOn(logger, "warn");
-    const runner = new AgentRunner(makeAgentConfig(), logger, tmpDir);
+    const runner = new AgentRunner(makeRunnerAgentConfig(), logger, tmpDir);
 
     // Simulate a long-running prompt
     let resolvePrompt: () => void;
@@ -146,7 +138,7 @@ describe("AgentRunner", () => {
   it("handles errors gracefully", async () => {
     const logger = makeLogger();
     const errorSpy = vi.spyOn(logger, "error");
-    const runner = new AgentRunner(makeAgentConfig(), logger, tmpDir);
+    const runner = new AgentRunner(makeRunnerAgentConfig(), logger, tmpDir);
     mockSubscribe.mockImplementation(() => {});
     mockPrompt.mockRejectedValue(new Error("Session failed"));
 
@@ -158,7 +150,7 @@ describe("AgentRunner", () => {
   it("detects RERUN signal from signal file", async () => {
     const logger = makeLogger();
     const infoSpy = vi.spyOn(logger, "info");
-    const runner = new AgentRunner(makeAgentConfig(), logger, tmpDir);
+    const runner = new AgentRunner(makeRunnerAgentConfig(), logger, tmpDir);
 
     mockSubscribe.mockImplementation(() => {});
     // Simulate al-rerun by writing the signal file during prompt execution
@@ -175,7 +167,7 @@ describe("AgentRunner", () => {
   });
 
   it("returns empty triggers (triggers handled by al-call)", async () => {
-    const runner = new AgentRunner(makeAgentConfig(), makeLogger(), tmpDir);
+    const runner = new AgentRunner(makeRunnerAgentConfig(), makeLogger(), tmpDir);
     mockPrompt.mockResolvedValue(undefined);
     mockSubscribe.mockImplementation(() => {});
 
@@ -186,7 +178,7 @@ describe("AgentRunner", () => {
   it("logs bash commands", async () => {
     const logger = makeLogger();
     const infoSpy = vi.spyOn(logger, "info");
-    const runner = new AgentRunner(makeAgentConfig(), logger, tmpDir);
+    const runner = new AgentRunner(makeRunnerAgentConfig(), logger, tmpDir);
     mockPrompt.mockResolvedValue(undefined);
     mockSubscribe.mockImplementation((callback: Function) => {
       callback({
@@ -214,7 +206,7 @@ describe("AgentRunner", () => {
   it("truncates long bash commands", async () => {
     const logger = makeLogger();
     const infoSpy = vi.spyOn(logger, "info");
-    const runner = new AgentRunner(makeAgentConfig(), logger, tmpDir);
+    const runner = new AgentRunner(makeRunnerAgentConfig(), logger, tmpDir);
     mockPrompt.mockResolvedValue(undefined);
 
     const longCmd = "cat " + "x".repeat(500);
@@ -245,7 +237,7 @@ describe("AgentRunner", () => {
   it("logs tool errors", async () => {
     const logger = makeLogger();
     const errorSpy = vi.spyOn(logger, "error");
-    const runner = new AgentRunner(makeAgentConfig(), logger, tmpDir);
+    const runner = new AgentRunner(makeRunnerAgentConfig(), logger, tmpDir);
     mockPrompt.mockResolvedValue(undefined);
     mockSubscribe.mockImplementation((callback: Function) => {
       callback({
@@ -267,7 +259,7 @@ describe("AgentRunner", () => {
   it("logs non-bash tool events at debug level", async () => {
     const logger = makeLogger();
     const debugSpy = vi.spyOn(logger, "debug");
-    const runner = new AgentRunner(makeAgentConfig(), logger, tmpDir);
+    const runner = new AgentRunner(makeRunnerAgentConfig(), logger, tmpDir);
     mockPrompt.mockResolvedValue(undefined);
     mockSubscribe.mockImplementation((callback: Function) => {
       callback({
@@ -302,7 +294,7 @@ describe("AgentRunner", () => {
 
     const logger = makeLogger();
     const errorSpy = vi.spyOn(logger, "error");
-    const runner = new AgentRunner(makeAgentConfig(), logger, noMdDir);
+    const runner = new AgentRunner(makeRunnerAgentConfig(), logger, noMdDir);
     mockSubscribe.mockImplementation(() => {});
     mockPrompt.mockResolvedValue(undefined);
 
@@ -316,7 +308,7 @@ describe("AgentRunner", () => {
   });
 
   it("reads ACTIONS.md from disk", async () => {
-    const runner = new AgentRunner(makeAgentConfig(), makeLogger(), tmpDir);
+    const runner = new AgentRunner(makeRunnerAgentConfig(), makeLogger(), tmpDir);
     mockPrompt.mockResolvedValue(undefined);
     mockSubscribe.mockImplementation(() => {});
 
@@ -328,7 +320,7 @@ describe("AgentRunner", () => {
     // Overwrite with a custom ACTIONS.md
     writeFileSync(resolve(tmpDir, "dev", "ACTIONS.md"), "# Custom Agent\nDo custom things.");
 
-    const runner = new AgentRunner(makeAgentConfig(), makeLogger(), tmpDir);
+    const runner = new AgentRunner(makeRunnerAgentConfig(), makeLogger(), tmpDir);
     mockPrompt.mockResolvedValue(undefined);
     mockSubscribe.mockImplementation(() => {});
 
@@ -337,7 +329,7 @@ describe("AgentRunner", () => {
   });
 
   it("uses pi_auth when configured", async () => {
-    const agentConfig = makeAgentConfig({
+    const agentConfig = makeRunnerAgentConfig({
       model: {
         provider: "anthropic",
         model: "claude-sonnet-4-20250514",
@@ -354,7 +346,7 @@ describe("AgentRunner", () => {
   });
 
   it("works with openai provider and api_key auth", async () => {
-    const agentConfig = makeAgentConfig({
+    const agentConfig = makeRunnerAgentConfig({
       model: {
         provider: "openai",
         model: "gpt-4",
@@ -371,7 +363,7 @@ describe("AgentRunner", () => {
   });
 
   it("works with openai codex model", async () => {
-    const agentConfig = makeAgentConfig({
+    const agentConfig = makeRunnerAgentConfig({
       model: {
         provider: "openai",
         model: "gpt-4o",
@@ -391,7 +383,7 @@ describe("AgentRunner", () => {
     const logger = makeLogger();
     const debugSpy = vi.spyOn(logger, "debug");
     
-    const agentConfig = makeAgentConfig({
+    const agentConfig = makeRunnerAgentConfig({
       model: {
         provider: "groq",
         model: "llama-3.3-70b-versatile",
@@ -412,7 +404,7 @@ describe("AgentRunner", () => {
   it("detects EXIT signal from signal file with code", async () => {
     const logger = makeLogger();
     const errorSpy = vi.spyOn(logger, "error");
-    const runner = new AgentRunner(makeAgentConfig(), logger, tmpDir);
+    const runner = new AgentRunner(makeRunnerAgentConfig(), logger, tmpDir);
 
     mockSubscribe.mockImplementation(() => {});
     mockPrompt.mockImplementation(async () => {
@@ -435,7 +427,7 @@ describe("AgentRunner", () => {
   it("detects EXIT signal with default code 15", async () => {
     const logger = makeLogger();
     const errorSpy = vi.spyOn(logger, "error");
-    const runner = new AgentRunner(makeAgentConfig(), logger, tmpDir);
+    const runner = new AgentRunner(makeRunnerAgentConfig(), logger, tmpDir);
 
     mockSubscribe.mockImplementation(() => {});
     mockPrompt.mockImplementation(async () => {
@@ -458,7 +450,7 @@ describe("AgentRunner", () => {
   it("completes normally when no signal files written", async () => {
     const logger = makeLogger();
     const infoSpy = vi.spyOn(logger, "info");
-    const runner = new AgentRunner(makeAgentConfig(), logger, tmpDir);
+    const runner = new AgentRunner(makeRunnerAgentConfig(), logger, tmpDir);
     mockPrompt.mockResolvedValue(undefined);
     mockSubscribe.mockImplementation(() => {});
 
@@ -472,7 +464,7 @@ describe("AgentRunner", () => {
   it("prioritizes EXIT over RERUN", async () => {
     const logger = makeLogger();
     const errorSpy = vi.spyOn(logger, "error");
-    const runner = new AgentRunner(makeAgentConfig(), logger, tmpDir);
+    const runner = new AgentRunner(makeRunnerAgentConfig(), logger, tmpDir);
 
     mockSubscribe.mockImplementation(() => {});
     mockPrompt.mockImplementation(async () => {
@@ -494,7 +486,7 @@ describe("AgentRunner", () => {
   });
 
   it("reads return value from signal file", async () => {
-    const runner = new AgentRunner(makeAgentConfig(), makeLogger(), tmpDir);
+    const runner = new AgentRunner(makeRunnerAgentConfig(), makeLogger(), tmpDir);
 
     mockSubscribe.mockImplementation(() => {});
     mockPrompt.mockImplementation(async () => {
@@ -510,7 +502,7 @@ describe("AgentRunner", () => {
   });
 
   it("cleans up signal dir and restores PATH after run", async () => {
-    const runner = new AgentRunner(makeAgentConfig(), makeLogger(), tmpDir);
+    const runner = new AgentRunner(makeRunnerAgentConfig(), makeLogger(), tmpDir);
     const originalPath = process.env.PATH;
     mockPrompt.mockResolvedValue(undefined);
     mockSubscribe.mockImplementation(() => {});

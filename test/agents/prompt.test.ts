@@ -4,16 +4,13 @@ import {
   buildCredentialContext, buildLockSkill, buildCallSkill, buildPromptSkeleton,
   buildScheduledSuffix, buildManualSuffix, buildCalledSuffix, buildWebhookSuffix,
 } from "../../src/agents/prompt.js";
-import type { AgentConfig } from "../../src/shared/config.js";
 import type { WebhookContext } from "../../src/webhooks/types.js";
+import { makeAgentConfig } from "../helpers.js";
 
-const agentConfig: AgentConfig = {
+const agentConfig = makeAgentConfig({
   name: "dev",
-  credentials: ["github_token:default"],
-  model: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
-  schedule: "*/5 * * * *",
   params: { repos: ["acme/app"], triggerLabel: "agent", assignee: "bot" },
-};
+});
 
 describe("buildCredentialContext", () => {
   it("includes github token context when credential present", () => {

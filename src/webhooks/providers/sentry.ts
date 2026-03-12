@@ -1,12 +1,5 @@
-import { createHmac, timingSafeEqual } from "crypto";
 import type { WebhookProvider, WebhookContext, WebhookFilter, SentryWebhookFilter } from "../types.js";
-
-const MAX_TEXT_LENGTH = 4000;
-
-function truncate(text: string | undefined | null, max = MAX_TEXT_LENGTH): string | undefined {
-  if (!text) return undefined;
-  return text.length > max ? text.slice(0, max) + "..." : text;
-}
+import { truncateEventText as truncate, validateHmacSignature } from "../validation.js";
 
 export class SentryWebhookProvider implements WebhookProvider {
   source = "sentry";
@@ -16,20 +9,7 @@ export class SentryWebhookProvider implements WebhookProvider {
     rawBody: string,
     secrets?: Record<string, string>
   ): string | null {
-    // If no secrets configured, skip validation
-    if (!secrets || Object.keys(secrets).length === 0) return "_unsigned";
-
-    const signature = headers["sentry-hook-signature"];
-    if (!signature) return null;
-
-    for (const [instanceName, secret] of Object.entries(secrets)) {
-      const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
-      if (signature.length === expected.length && timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
-        return instanceName;
-      }
-    }
-
-    return null;
+    return validateHmacSignature(rawBody, headers["sentry-hook-signature"], secrets);
   }
 
   parseEvent(headers: Record<string, string | undefined>, body: any): WebhookContext | null {

@@ -14,6 +14,7 @@ import type { AgentConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
 import { loadCredentialField } from "../shared/credentials.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
+import { AgentError, isUnrecoverableError, UNRECOVERABLE_THRESHOLD } from "../shared/errors.js";
 import { installSignalCommands, readSignals } from "./signals.js";
 
 export type RunResult = "completed" | "rerun" | "error";
@@ -23,23 +24,6 @@ export interface ExecutionResult {
   outputText: string;
   unrecoverableErrors: number;
 }
-
-const UNRECOVERABLE_PATTERNS = [
-  "permission denied",
-  "could not read from remote repository",
-  "resource not accessible by personal access token",
-  "bad credentials",
-  "authentication failed",
-  "the requested url returned error: 403",
-  "denied to ",
-];
-
-function isUnrecoverableError(text: string): boolean {
-  const lower = text.toLowerCase();
-  return UNRECOVERABLE_PATTERNS.some((p) => lower.includes(p));
-}
-
-const UNRECOVERABLE_THRESHOLD = 3;
 
 export class ExecutionEngine {
   private agentConfig: AgentConfig;
@@ -67,7 +51,7 @@ export class ExecutionEngine {
 
     // ACTIONS.md must exist on disk (written during al new)
     if (!existsSync(agentsFile)) {
-      throw new Error(
+      throw new AgentError(
         `ACTIONS.md not found at ${agentsFile}. Run 'al new' to create it.`
       );
     }

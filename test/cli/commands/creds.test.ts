@@ -196,17 +196,7 @@ describe("creds add", () => {
   });
 
   it("exits with error for unknown credential type", async () => {
-    const mockExit = vi.spyOn(process, "exit").mockImplementation(() => { throw new Error("exit"); });
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    await expect(add("fake_cred")).rejects.toThrow("exit");
-
-    const output = errorSpy.mock.calls.map((c) => c[0]).join("\n");
-    expect(output).toContain('Unknown credential type "fake_cred"');
-    expect(output).toContain("github_token");
-
-    mockExit.mockRestore();
-    errorSpy.mockRestore();
+    await expect(add("fake_cred")).rejects.toThrow('Unknown credential type "fake_cred"');
   });
 });
 
@@ -261,15 +251,6 @@ describe("creds rm", () => {
   });
 
   it("exits with error when credential does not exist", async () => {
-    const mockExit = vi.spyOn(process, "exit").mockImplementation(() => { throw new Error("exit"); });
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    await expect(rm("github_token:nonexistent")).rejects.toThrow("exit");
-
-    const output = errorSpy.mock.calls.map((c) => c[0]).join("\n");
-    expect(output).toContain("not found");
-
-    mockExit.mockRestore();
-    errorSpy.mockRestore();
+    await expect(rm("github_token:nonexistent")).rejects.toThrow("not found");
   });
 });

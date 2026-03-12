@@ -5,26 +5,24 @@ export async function execute(opts: { project: string }): Promise<void> {
   const projectPath = resolve(opts.project);
   const globalConfig = loadGlobalConfig(projectPath);
   const gatewayPort = globalConfig.gateway?.port || 8080;
-  
+
+  let response: Response;
   try {
-    const response = await fetch(`http://localhost:${gatewayPort}/control/resume`, {
+    response = await fetch(`http://localhost:${gatewayPort}/control/resume`, {
       method: 'POST',
     });
-    
-    const data = await response.json();
-    
-    if (response.ok) {
-      console.log(`▶️  ${data.message}`);
-    } else {
-      console.error(`❌ Error: ${data.error}`);
-      process.exit(1);
-    }
   } catch (error) {
     if (error instanceof Error && error.message.includes('ECONNREFUSED')) {
-      console.error(`❌ Error: Gateway not running. Start the scheduler with --gateway (-g) flag.`);
-    } else {
-      console.error(`❌ Error: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error("Gateway not running. Start the scheduler with --gateway (-g) flag.");
     }
-    process.exit(1);
+    throw error;
+  }
+
+  const data = await response.json();
+
+  if (response.ok) {
+    console.log(`${data.message}`);
+  } else {
+    throw new Error(data.error);
   }
 }
