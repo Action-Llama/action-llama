@@ -210,13 +210,20 @@ describe("GET /locks/list", () => {
   });
   afterEach(() => lockStore.dispose());
 
-  it("returns all active locks", async () => {
+  it("returns only locks held by the requesting agent", async () => {
     await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#1" });
     await acquire(app, { secret: "secret-b", resourceKey: "github pr acme/app#2" });
-    const res = await app.request("/locks/list?secret=secret-a");
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body).toHaveLength(2);
+    const resA = await app.request("/locks/list?secret=secret-a");
+    expect(resA.status).toBe(200);
+    const bodyA = await resA.json();
+    expect(bodyA).toHaveLength(1);
+    expect(bodyA[0].resourceKey).toBe("github issue acme/app#1");
+
+    const resB = await app.request("/locks/list?secret=secret-b");
+    expect(resB.status).toBe(200);
+    const bodyB = await resB.json();
+    expect(bodyB).toHaveLength(1);
+    expect(bodyB[0].resourceKey).toBe("github pr acme/app#2");
   });
 
   it("returns 403 for invalid secret", async () => {

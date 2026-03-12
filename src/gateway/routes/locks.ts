@@ -7,7 +7,8 @@ export function registerLockRoutes(
   app: Hono,
   containerRegistry: Map<string, ContainerRegistration>,
   lockStore: LockStore,
-  logger: Logger
+  logger: Logger,
+  opts?: { skipStatusEndpoint?: boolean }
 ): void {
   app.post("/locks/acquire", async (c) => {
     let body: { secret?: string; resourceKey?: string; ttl?: number };
@@ -128,19 +129,24 @@ export function registerLockRoutes(
       return c.json({ error: "invalid secret" }, 403);
     }
 
-    return c.json(lockStore.list());
+    // Only return locks held by the requesting agent's instance
+    return c.json(lockStore.list(reg.instanceId));
   });
 
-  app.get("/locks/status", (c) => {
-    const locks = lockStore.list().map((lock) => {
-      // Extract agent name from holder (typically "agentName-instanceNumber")
-      const agentName = lock.holder.split("-").slice(0, -1).join("-") || lock.holder;
-      return {
-        resourceKey: lock.resourceKey,
-        agentName,
-        heldSince: lock.heldSince,
-      };
+  // /locks/status is local-only — not registered in cloud mode where the
+  // gateway is publicly reachable and this endpoint has no authentication.
+  if (!opts?.skipStatusEndpoint) {
+    app.get("/locks/status", (c) => {
+      const locks = lockStore.list().map((lock) => {
+        // Extract agent name from holder (typically "agentName-instanceNumber")
+        const agentName = lock.holder.split("-").slice(0, -1).join("-") || lock.holder;
+        return {
+          resourceKey: lock.resourceKey,
+          agentName,
+          heldSince: lock.heldSince,
+        };
+      });
+      return c.json({ locks });
     });
-    return c.json({ locks });
-  });
+  }
 }

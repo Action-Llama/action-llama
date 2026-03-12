@@ -2,6 +2,7 @@ import type { Hono } from "hono";
 import type { WebhookRegistry } from "../../webhooks/registry.js";
 import type { Logger } from "../../shared/logger.js";
 import type { StatusTracker } from "../../tui/status-tracker.js";
+import { rateLimiter } from "../rate-limiter.js";
 
 export function registerWebhookRoutes(
   app: Hono,
@@ -10,6 +11,9 @@ export function registerWebhookRoutes(
   logger: Logger,
   statusTracker?: StatusTracker
 ): void {
+  // Rate limit webhook endpoint: 120 requests per minute per IP
+  app.use("/webhooks/*", rateLimiter({ max: 120, windowMs: 60_000 }));
+
   app.post("/webhooks/:source", async (c) => {
     const source = c.req.param("source");
     logger.debug({ source }, "webhook request received");
@@ -21,6 +25,14 @@ export function registerWebhookRoutes(
       return c.json({ error: `unknown webhook source: ${source}` }, 404);
     }
 
+    // Reject oversized payloads (10 MB limit)
+    const MAX_BODY_SIZE = 10 * 1024 * 1024;
+    const contentLength = parseInt(c.req.header("content-length") || "0", 10);
+    if (contentLength > MAX_BODY_SIZE) {
+      logger.warn({ source, contentLength }, "webhook rejected: payload too large");
+      return c.json({ error: "payload too large" }, 413);
+    }
+
     let rawBody: string;
     try {
       rawBody = await c.req.text();
@@ -28,6 +40,11 @@ export function registerWebhookRoutes(
       logger.error({ err, source }, "webhook body read failed");
       statusTracker?.addLogLine("webhook", `Failed to read body from ${source}: ${err.message}`);
       return c.json({ error: "failed to read request body" }, 400);
+    }
+
+    if (rawBody.length > MAX_BODY_SIZE) {
+      logger.warn({ source, bodyLength: rawBody.length }, "webhook rejected: payload too large");
+      return c.json({ error: "payload too large" }, 413);
     }
 
     logger.debug({ source, bodyLength: rawBody.length }, "webhook body read ok");

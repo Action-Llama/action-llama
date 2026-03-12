@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("child_process", () => ({
-  execSync: vi.fn(() => "  output  "),
+  execFileSync: vi.fn(() => "  output  "),
 }));
 
 vi.mock("fs", async (importOriginal) => {
@@ -16,16 +16,17 @@ vi.mock("fs", async (importOriginal) => {
 });
 
 import { gitExec } from "../../src/shared/git.js";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 
 describe("gitExec", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("calls execSync and trims output", () => {
+  it("calls execFileSync with split args and trims output", () => {
     const result = gitExec("git status", "/tmp");
     expect(result).toBe("output");
-    expect(execSync).toHaveBeenCalledWith(
-      "git status",
+    expect(execFileSync).toHaveBeenCalledWith(
+      "git",
+      ["status"],
       expect.objectContaining({
         cwd: "/tmp",
         encoding: "utf-8",
@@ -36,15 +37,16 @@ describe("gitExec", () => {
 
   it("includes GIT_SSH_COMMAND when SSH key exists", () => {
     gitExec("git fetch", "/tmp");
-    const call = vi.mocked(execSync).mock.calls[0];
-    const env = (call[1] as any).env;
+    const call = vi.mocked(execFileSync).mock.calls[0];
+    const env = (call[2] as any).env;
     expect(env.GIT_SSH_COMMAND).toContain("id_rsa");
   });
 
   it("works without cwd", () => {
     gitExec("git version");
-    expect(execSync).toHaveBeenCalledWith(
-      "git version",
+    expect(execFileSync).toHaveBeenCalledWith(
+      "git",
+      ["version"],
       expect.objectContaining({ cwd: undefined })
     );
   });

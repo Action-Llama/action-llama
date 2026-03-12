@@ -19,6 +19,7 @@ export type { ContainerRegistration } from "./types.js";
 
 export interface GatewayOptions {
   port: number;
+  hostname?: string;
   logger: Logger;
   killContainer?: (name: string) => Promise<void>;
   webhookRegistry?: WebhookRegistry;
@@ -55,7 +56,10 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
   // Container management routes
   const killFn = killContainer || (async () => {});
   registerShutdownRoute(app, containerRegistry, killFn, logger);
-  registerLockRoutes(app, containerRegistry, lockStore, logger);
+  const isPublic = opts.hostname === "0.0.0.0";
+  registerLockRoutes(app, containerRegistry, lockStore, logger, {
+    skipStatusEndpoint: isPublic,
+  });
   registerCallRoutes(app, containerRegistry, callStore, () => callDispatcher, logger);
 
   // Signal routes
@@ -80,7 +84,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
   const server = serve({
     fetch: app.fetch,
     port,
-    hostname: "0.0.0.0",
+    hostname: opts.hostname || "127.0.0.1",
   }) as Server;
 
   await new Promise<void>((resolve) => {

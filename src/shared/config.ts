@@ -123,7 +123,24 @@ export function loadAgentConfig(projectPath: string, agentName: string): AgentCo
   return parsed;
 }
 
+const AGENT_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/;
+
+export function validateAgentName(name: string): void {
+  if (!name || name.length > 63) {
+    throw new Error(
+      `Agent name "${name}" is invalid: must be 1-63 characters.`
+    );
+  }
+  if (!AGENT_NAME_PATTERN.test(name)) {
+    throw new Error(
+      `Agent name "${name}" is invalid: must contain only lowercase letters, numbers, and hyphens (cannot start or end with a hyphen).`
+    );
+  }
+}
+
 export function validateAgentConfig(config: AgentConfig): void {
+  validateAgentName(config.name);
+
   // scale = 0 disables the agent — skip schedule/webhook requirement
   if (config.scale === 0) return;
 

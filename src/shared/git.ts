@@ -1,4 +1,4 @@
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { existsSync } from "fs";
 import { resolve } from "path";
 import { CREDENTIALS_DIR } from "./paths.js";
@@ -18,7 +18,8 @@ function gitSshEnv(): Record<string, string> {
 }
 
 export function gitExec(cmd: string, cwd?: string): string {
-  return execSync(cmd, {
+  const args = cmd.split(/\s+/);
+  return execFileSync(args[0], args.slice(1), {
     cwd,
     encoding: "utf-8",
     timeout: 120000,

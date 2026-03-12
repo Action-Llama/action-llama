@@ -358,15 +358,18 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     const gatewayPort = globalConfig.gateway?.port || 8080;
     gateway = await startGateway({
       port: gatewayPort,
+      hostname: cloudMode ? "0.0.0.0" : "127.0.0.1",
       logger: mkLogger(projectPath, "gateway"),
       killContainer: undefined, // Runtime not ready yet, will handle container ops later
       webhookRegistry,
       webhookSecrets,
       statusTracker,
       projectPath,
-      webUI,
+      webUI: cloudMode ? false : webUI,
       lockTimeout: globalConfig.gateway?.lockTimeout,
-      controlDeps: {
+      // Control routes, dashboard, and lock status are local-only.
+      // In cloud mode, use cloud-native tools (console, CLI) for these operations.
+      controlDeps: cloudMode ? undefined : {
         statusTracker,
         killInstance: async (instanceId: string) => {
           for (const pool of Object.values(runnerPools)) {

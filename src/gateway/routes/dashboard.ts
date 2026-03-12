@@ -11,7 +11,12 @@ function logsDir(projectPath: string): string {
   return resolve(projectPath, ".al", "logs");
 }
 
+const SAFE_AGENT_NAME = /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/;
+
 function findLogFiles(projectPath: string, agentName: string): string[] {
+  // Reject names that could cause path traversal
+  if (!SAFE_AGENT_NAME.test(agentName)) return [];
+
   const dir = logsDir(projectPath);
   try {
     return readdirSync(dir)
@@ -69,6 +74,11 @@ export function registerDashboardRoutes(
   if (dashboardSecret) {
     app.use("/dashboard/*", basicAuthMiddleware(dashboardSecret));
     app.use("/dashboard", basicAuthMiddleware(dashboardSecret));
+  } else {
+    console.warn(
+      "[security] Dashboard is running without authentication. " +
+      "Set AL_DASHBOARD_SECRET to require a password."
+    );
   }
 
   // Main dashboard page
