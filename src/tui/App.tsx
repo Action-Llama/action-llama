@@ -116,6 +116,13 @@ function AgentRow({ agent, isSelected }: { agent: AgentStatus; isSelected: boole
               : ""}
           </Text>
         </Box>
+        <Box width={25}>
+          <Text dimColor={!isSelected}>
+            {agent.lastRunUsage 
+              ? `${agent.lastRunUsage.totalTokens.toLocaleString()}tok $${agent.lastRunUsage.cost.toFixed(4)}` 
+              : ""}
+          </Text>
+        </Box>
         <Box>
           <Text dimColor={!isSelected}>
             {agent.nextRunAt ? `Next: ${formatTimeUntil(agent.nextRunAt)}` : ""}

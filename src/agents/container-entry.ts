@@ -16,6 +16,7 @@ import { ensureSignalDir, readSignals } from "./signals.js";
 import { builtinCredentials } from "../credentials/builtins/index.js";
 import { initTelemetry } from "../telemetry/index.js";
 import type { TelemetryConfig } from "../telemetry/types.js";
+import { sessionStatsToUsage } from "../shared/usage.js";
 
 // Structured log line — written to stdout, parsed by ContainerAgentRunner on the host
 function emitLog(level: string, msg: string, data?: Record<string, any>) {
@@ -437,6 +438,21 @@ export async function handleInvocation(init: AgentInit): Promise<number> {
   }
 
   emitLog("info", "prompt returned", { eventCount, resultType: typeof result, resultKeys: result ? Object.keys(result) : [] });
+
+  // Capture token usage before disposing the session
+  const sessionStats = session.getSessionStats();
+  const usage = sessionStatsToUsage(sessionStats);
+  
+  // Emit token usage structured log line for host-side parsing
+  emitLog("info", "token-usage", {
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    cacheReadTokens: usage.cacheReadTokens,
+    cacheWriteTokens: usage.cacheWriteTokens,
+    totalTokens: usage.totalTokens,
+    cost: usage.cost,
+    turnCount: usage.turnCount,
+  });
 
   session.dispose();
   clearTimeout(timer);

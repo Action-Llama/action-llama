@@ -7,10 +7,12 @@ import type { StatusTracker } from "../tui/status-tracker.js";
 import type { RunResult, RunOutcome } from "./runner.js";
 import { withSpan, getTelemetry } from "../telemetry/index.js";
 import { SpanKind } from "@opentelemetry/api";
+import type { TokenUsage } from "../shared/usage.js";
 
 export class ContainerAgentRunner {
   private _running = false;
   private _returnValue: string | undefined = undefined;
+  private _tokenUsage: TokenUsage | undefined = undefined;
   private _containerName: string | undefined = undefined;
   private runtime: ContainerRuntime;
   private globalConfig: GlobalConfig;
@@ -116,6 +118,18 @@ export class ContainerAgentRunner {
           this._returnValue = parsed.value;
         }
       }
+      // Detect token usage logs
+      if (parsed._log && parsed.msg === "token-usage") {
+        this._tokenUsage = {
+          inputTokens: parsed.inputTokens || 0,
+          outputTokens: parsed.outputTokens || 0,
+          cacheReadTokens: parsed.cacheReadTokens || 0,
+          cacheWriteTokens: parsed.cacheWriteTokens || 0,
+          totalTokens: parsed.totalTokens || 0,
+          cost: parsed.cost || 0,
+          turnCount: parsed.turnCount || 0,
+        };
+      }
     } catch {
       // Not JSON — plain output, nothing to detect
     }
@@ -163,6 +177,7 @@ export class ContainerAgentRunner {
 
   private async _runInternalContainer(prompt: string, triggerInfo?: { type: 'schedule' | 'webhook' | 'agent'; source?: string }, parentSpan?: any): Promise<RunOutcome> {
     this._returnValue = undefined;
+    this._tokenUsage = undefined;
     const runReason = triggerInfo
       ? (triggerInfo.source
         ? (triggerInfo.type === 'agent' ? `triggered by ${triggerInfo.source}` : `${triggerInfo.type} (${triggerInfo.source})`)
@@ -298,23 +313,37 @@ export class ContainerAgentRunner {
       }
       this._containerName = undefined;
       const elapsed = Date.now() - runStartTime;
-      this.statusTracker?.endRun(this.agentConfig.name, elapsed, runError);
+      this.statusTracker?.endRun(this.agentConfig.name, elapsed, runError, this._tokenUsage);
       this._running = false;
       
       // Add telemetry attributes for the execution result
       if (parentSpan) {
-        parentSpan.setAttributes({
+        const attrs: Record<string, any> = {
           "execution.result": runResult,
           "execution.elapsed_ms": elapsed,
           "execution.has_return_value": !!this._returnValue,
           "container.name": containerName || "",
-        });
+        };
+
+        // Add token usage OTel attributes if available
+        if (this._tokenUsage) {
+          const usage = this._tokenUsage as TokenUsage;
+          attrs["llm.token.input"] = usage.inputTokens;
+          attrs["llm.token.output"] = usage.outputTokens;
+          attrs["llm.token.cache_read"] = usage.cacheReadTokens;
+          attrs["llm.token.cache_write"] = usage.cacheWriteTokens;
+          attrs["llm.token.total"] = usage.totalTokens;
+          attrs["llm.cost.total"] = usage.cost;
+          attrs["llm.turns"] = usage.turnCount;
+        }
+
+        parentSpan.setAttributes(attrs);
 
         if (runResult === "error") {
           parentSpan.recordException(new Error(`Container execution failed: ${runError || "Unknown error"}`));
         }
       }
     }
-    return { result: runResult, triggers: [], returnValue: this._returnValue };
+    return { result: runResult, triggers: [], returnValue: this._returnValue, usage: this._tokenUsage };
   }
 }
