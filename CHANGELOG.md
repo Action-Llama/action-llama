@@ -1,5 +1,55 @@
 # @action-llama/action-llama
 
+## 0.11.0
+
+### Minor Changes
+
+- [`e94e1d4`](https://github.com/Action-Llama/action-llama/commit/e94e1d43e941399619b97089e691472706380f4d) Thanks [@asselstine](https://github.com/asselstine)! - Replaced `AL_DASHBOARD_SECRET` Basic Auth with a single API key for both CLI and browser access. The key is stored at `~/.action-llama/credentials/gateway_api_key/default/key` and generated automatically by `al doctor` or on first `al start`. Browser sessions use a login page that sets an HttpOnly cookie; CLI commands send a Bearer token. Added dashboard controls: per-agent Run and Enable/Disable buttons, scheduler Pause/Resume, and Logout. Added `al kill`, `al pause`, `al resume` to CLI docs. A deprecation warning is logged if `AL_DASHBOARD_SECRET` is still set.
+
+### Patch Changes
+
+- [`3982b79`](https://github.com/Action-Llama/action-llama/commit/3982b7947927cb5a837bb5d0bf35b40323372ae0) Thanks [@asselstine](https://github.com/asselstine)! - Added agent-scoped interactive mode to `al chat`. Running `al chat <agent>` loads the
+  agent's credentials as environment variables (GITHUB_TOKEN, GIT_SSH_COMMAND, etc.) and
+  opens an interactive session in the agent's directory. Use `-c` to load credentials from
+  the cloud secrets manager instead of the local filesystem. The agent's ACTIONS.md is
+  provided as reference context but is not auto-executed. A warning is shown if the gateway
+  is not reachable, since resource locks, agent calls, and signals require a running gateway.
+
+- [`686922e`](https://github.com/Action-Llama/action-llama/commit/686922ef1d15faec9a3b76d652a975182cc42280) Thanks [@asselstine](https://github.com/asselstine)! - Refactored cloud infrastructure behind a `CloudProvider` interface. AWS (ECS) and GCP (Cloud Run)
+  logic is now organized under `src/cloud/aws/` and `src/cloud/gcp/` respectively, with provider-specific
+  provisioning, teardown, IAM, and deploy modules. CLI commands are thin wrappers that delegate to the
+  provider. Added state file persistence for tracking provisioned resources. Split `CloudConfig` into a
+  discriminated union (`EcsCloudConfig | CloudRunCloudConfig`) with per-provider validation. Moved
+  credential directory to `~/.action-llama/credentials/`.
+
+- [`af51124`](https://github.com/Action-Llama/action-llama/commit/af51124339a724c80f5e56b6d2ac33d5ec3018c7) Thanks [@asselstine](https://github.com/asselstine)! - Added per-agent pause, resume, and kill commands. Use `al agent pause <name>` to stop
+  scheduling new runs for a specific agent, `al agent resume <name>` to re-enable it, and
+  `al agent kill <name>` to terminate all running instances of an agent. The gateway also
+  exposes these as `POST /control/agents/:name/pause`, `/resume`, and `/kill` endpoints.
+  `al status` now shows `(PAUSED)` next to disabled agents. The container runner's `abort()`
+  method now properly kills the running Docker container instead of being a no-op.
+
+- [#73](https://github.com/Action-Llama/action-llama/pull/73) [`0fec527`](https://github.com/Action-Llama/action-llama/commit/0fec527316cd470bdb20351af55bb6b95e482321) Thanks [@asselstine](https://github.com/asselstine)! - Optimized `al logs` command performance for faster log reading. Improved local log file reading with reverse-read algorithm that turns O(file) operations into O(N), direct filename computation to skip directory scans for common cases, and file watching instead of polling for follow mode. Enhanced dashboard log streaming with async file operations and fs.watch() instead of 500ms polling. Optimized CloudWatch log queries with time-bounded searches starting from narrow windows. These changes provide significant performance improvements, especially for large log files. Closes [#72](https://github.com/Action-Llama/action-llama/issues/72).
+
+- [`f701b75`](https://github.com/Action-Llama/action-llama/commit/f701b7503349311986778a5486aed498016bdffa) Thanks [@asselstine](https://github.com/asselstine)! - Added project-level Dockerfile for customizing the shared base image. `al new` now
+  scaffolds a `Dockerfile` at the project root that extends `al-agent:latest`. Users can
+  add system packages, environment variables, or CLI tools that all agents in the project
+  share. When the project Dockerfile has customizations beyond the bare `FROM`, the build
+  pipeline creates an intermediate `al-project-base:latest` image; when unmodified, the
+  extra build step is skipped entirely with zero overhead.
+
+- [`fc5ef7f`](https://github.com/Action-Llama/action-llama/commit/fc5ef7f598a92ac305547623a43fe8c154954282) Thanks [@asselstine](https://github.com/asselstine)! - Simplified CLI commands: renamed `al status` to `al stat`, merged per-agent
+  `al agent pause/resume/kill` into `al pause [name]`, `al resume [name]`, and
+  `al kill <target>` (tries agent name first, falls back to instance ID). The
+  `al agent` subcommand group has been removed.
+
+- [#71](https://github.com/Action-Llama/action-llama/pull/71) [`505f264`](https://github.com/Action-Llama/action-llama/commit/505f2646b117d1e964c446c87f1a5f51a0bcc456) Thanks [@asselstine](https://github.com/asselstine)! - Added OpenTelemetry integration with support for trace instrumentation and AWS X-Ray integration. Configure telemetry in `config.toml` with `[telemetry]` section to enable observability for scheduler operations, agent executions, webhook processing, and HTTP gateway requests. Supports local OpenTelemetry collectors and AWS X-Ray via ADOT sidecars on ECS deployments. Telemetry is disabled by default to avoid unexpected network traffic. Closes [#69](https://github.com/Action-Llama/action-llama/issues/69).
+
+- [`5eda7ba`](https://github.com/Action-Llama/action-llama/commit/5eda7bafd9628d948033039315ef637869011ae5) Thanks [@asselstine](https://github.com/asselstine)! - Optimize cloud deploy image builds with multiple caching strategies: CodeBuild local
+  Docker layer cache, stable cache tags with `--cache-from`, direct ECR image assembly
+  for thin agents (bypasses CodeBuild entirely), batched CodeBuild jobs for heavy agents,
+  and a multi-stage scheduler Dockerfile that caches npm install separately from code changes.
+
 ## 0.10.2
 
 ### Patch Changes
