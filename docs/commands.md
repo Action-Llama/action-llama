@@ -198,9 +198,48 @@ al logs dev -c              # Cloud logs
 | `-d, --date <YYYY-MM-DD>` | View a specific date's log file |
 | `-c, --cloud` | View cloud logs (Cloud Logging / CloudWatch) |
 
+## `al agent pause <name>`
+
+Pause a specific agent — its cron job stops firing and webhook events are ignored. In-flight runs continue until they finish. Requires the gateway.
+
+```bash
+al agent pause dev
+al agent pause reviewer -p ./my-project
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
+## `al agent resume <name>`
+
+Resume a paused agent. Its cron job resumes firing on its next scheduled time and webhooks are accepted again.
+
+```bash
+al agent resume dev
+al agent resume reviewer -p ./my-project
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
+## `al agent kill <name>`
+
+Kill all running instances of an agent. The agent's containers are terminated immediately. This does **not** pause the agent — if it has a schedule, a new run will start at the next cron tick. To fully stop an agent, pause it first, then kill.
+
+```bash
+al agent kill dev
+al agent kill reviewer -p ./my-project
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
 ## `al kill <instanceId>`
 
-Kill a running agent instance. Requires the gateway to be running (start with `--gateway` or `-g`).
+Kill a single running agent instance by ID. Requires the gateway to be running (start with `--gateway` or `-g`).
 
 ```bash
 al kill my-agent-abc123

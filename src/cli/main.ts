@@ -156,6 +156,42 @@ program
     await execute(opts);
   }));
 
+// --- Per-agent control ---
+
+const agentCmd = program
+  .command("agent")
+  .description("Per-agent control commands");
+
+agentCmd
+  .command("pause")
+  .description("Pause an agent (stop scheduling new runs, in-flight runs finish)")
+  .argument("<name>", "agent name")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(withCommand(async (name: string, opts) => {
+    const { execute } = await import("./commands/agent-pause.js");
+    await execute(name, opts);
+  }));
+
+agentCmd
+  .command("resume")
+  .description("Resume a paused agent")
+  .argument("<name>", "agent name")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(withCommand(async (name: string, opts) => {
+    const { execute } = await import("./commands/agent-resume.js");
+    await execute(name, opts);
+  }));
+
+agentCmd
+  .command("kill")
+  .description("Kill all running instances of an agent")
+  .argument("<name>", "agent name")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(withCommand(async (name: string, opts) => {
+    const { execute } = await import("./commands/agent-kill.js");
+    await execute(name, opts);
+  }));
+
 // --- Credential management ---
 
 const credsCmd = program

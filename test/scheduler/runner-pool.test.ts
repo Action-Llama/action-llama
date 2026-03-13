@@ -4,6 +4,7 @@ import { RunnerPool } from "../../src/scheduler/runner-pool.js";
 interface MockRunner {
   isRunning: boolean;
   run: Function;
+  abort?: Function;
 }
 
 describe("RunnerPool", () => {
@@ -121,6 +122,53 @@ describe("RunnerPool", () => {
       const runners = pool.allRunners;
       expect(runners).toEqual([runner1, runner2, runner3]);
       expect(runners).not.toBe(pool.allRunners); // should be a new array each time
+    });
+  });
+
+  describe("killAll", () => {
+    it("returns 0 for empty pool", () => {
+      pool = new RunnerPool([]);
+      expect(pool.killAll()).toBe(0);
+    });
+
+    it("calls abort on all running runners", () => {
+      runner1.isRunning = true;
+      runner1.abort = vi.fn();
+      runner2.isRunning = true;
+      runner2.abort = vi.fn();
+      runner3.isRunning = false;
+      runner3.abort = vi.fn();
+
+      pool = new RunnerPool([runner1, runner2, runner3]);
+      const killed = pool.killAll();
+
+      expect(killed).toBe(2);
+      expect(runner1.abort).toHaveBeenCalled();
+      expect(runner2.abort).toHaveBeenCalled();
+      expect(runner3.abort).not.toHaveBeenCalled();
+    });
+
+    it("skips runners without abort method", () => {
+      runner1.isRunning = true;
+      // runner1 has no abort
+      runner2.isRunning = true;
+      runner2.abort = vi.fn();
+
+      pool = new RunnerPool([runner1, runner2]);
+      const killed = pool.killAll();
+
+      expect(killed).toBe(1);
+      expect(runner2.abort).toHaveBeenCalled();
+    });
+
+    it("returns 0 when no runners are running", () => {
+      runner1.abort = vi.fn();
+      runner2.abort = vi.fn();
+      pool = new RunnerPool([runner1, runner2]);
+
+      expect(pool.killAll()).toBe(0);
+      expect(runner1.abort).not.toHaveBeenCalled();
+      expect(runner2.abort).not.toHaveBeenCalled();
     });
   });
 

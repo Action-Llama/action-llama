@@ -11,6 +11,7 @@ import { SpanKind } from "@opentelemetry/api";
 export class ContainerAgentRunner {
   private _running = false;
   private _returnValue: string | undefined = undefined;
+  private _containerName: string | undefined = undefined;
   private runtime: ContainerRuntime;
   private globalConfig: GlobalConfig;
   private agentConfig: AgentConfig;
@@ -53,11 +54,17 @@ export class ContainerAgentRunner {
     return this._running;
   }
 
+  get containerName(): string | undefined {
+    return this._containerName;
+  }
+
   abort(): void {
     this.logger.info("Container agent runner abort requested");
-    // For container runners, we'd need to kill the container
-    // This is a placeholder - a full implementation would need to track
-    // the running container and kill it
+    if (this._containerName) {
+      this.runtime.kill(this._containerName).catch((err) => {
+        this.logger.warn({ err }, "Failed to kill container during abort");
+      });
+    }
   }
 
   private forwardLogLine(line: string): void {
@@ -228,6 +235,7 @@ export class ContainerAgentRunner {
         cpus: this.globalConfig.local?.cpus,
         telemetry: this.globalConfig.telemetry,
       });
+      this._containerName = containerName;
 
       // Register container with gateway for shutdown, locking, and log ingestion.
       if (this.gatewayUrl) {
@@ -288,6 +296,7 @@ export class ContainerAgentRunner {
       if (containerName) {
         await this.runtime.remove(containerName);
       }
+      this._containerName = undefined;
       const elapsed = Date.now() - runStartTime;
       this.statusTracker?.endRun(this.agentConfig.name, elapsed, runError);
       this._running = false;

@@ -83,6 +83,7 @@ export async function execute(opts: { project: string; cloud?: boolean }): Promi
   // Try to get running instances from gateway if available
   let schedulerInfo = null;
   let instances: AgentInstance[] = [];
+  let agentStatuses: Array<{ name: string; enabled: boolean }> = [];
 
   try {
     const response = await gatewayFetch({ project: projectPath, path: "/control/status" });
@@ -90,6 +91,7 @@ export async function execute(opts: { project: string; cloud?: boolean }): Promi
       const data = await response.json();
       schedulerInfo = data.scheduler;
       instances = data.instances || [];
+      agentStatuses = data.agents || [];
     }
   } catch (error) {
     // Gateway not running or not accessible, continue with basic info
@@ -142,7 +144,9 @@ export async function execute(opts: { project: string; cloud?: boolean }): Promi
   // Show agent configuration
   for (const name of agentNames) {
     const agentConfig = loadAgentConfig(projectPath, name);
-    console.log(`${name}:`);
+    const agentStatus = agentStatuses.find(a => a.name === name);
+    const pausedSuffix = agentStatus && !agentStatus.enabled ? " (PAUSED)" : "";
+    console.log(`${name}:${pausedSuffix}`);
     console.log(`  Schedule: ${agentConfig.schedule || "(none)"}`);
     console.log("");
   }

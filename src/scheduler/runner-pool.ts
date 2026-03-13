@@ -99,12 +99,27 @@ export class RunnerPool {
   killInstance(id: string): boolean {
     const instance = this.instances.get(id);
     if (!instance) return false;
-    
+
     if (instance.runner && typeof instance.runner.abort === 'function') {
       instance.runner.abort();
     }
-    
+
     instance.status = 'killed';
     return true;
+  }
+
+  /**
+   * Kill all running instances in this pool.
+   * Returns the number of runners that were aborted.
+   */
+  killAll(): number {
+    let killed = 0;
+    for (const runner of this.runners) {
+      if (runner.isRunning && runner.abort) {
+        runner.abort();
+        killed++;
+      }
+    }
+    return killed;
   }
 }

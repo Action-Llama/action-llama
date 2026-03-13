@@ -4,6 +4,7 @@ import type { StatusTracker } from "../../tui/status-tracker.js";
 export interface ControlRoutesDeps {
   statusTracker?: StatusTracker;
   killInstance: (instanceId: string) => Promise<boolean>;
+  killAgent: (name: string) => Promise<{ killed: number } | null>;
   pauseScheduler: () => Promise<void>;
   resumeScheduler: () => Promise<void>;
   triggerAgent?: (name: string) => Promise<boolean>;
@@ -120,6 +121,59 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps) {
     }
   });
 
+  // POST /control/agents/:name/pause - Pause an agent (alias for disable)
+  app.post("/control/agents/:name/pause", async (c) => {
+    const name = c.req.param("name");
+    if (!deps.disableAgent) {
+      return c.json({ error: "Pause not available" }, 503);
+    }
+    try {
+      const success = await deps.disableAgent(name);
+      if (success) {
+        return c.json({ success: true, message: `Agent ${name} paused` });
+      } else {
+        return c.json({ error: `Agent ${name} not found` }, 404);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return c.json({ error: `Failed to pause agent: ${message}` }, 500);
+    }
+  });
+
+  // POST /control/agents/:name/resume - Resume an agent (alias for enable)
+  app.post("/control/agents/:name/resume", async (c) => {
+    const name = c.req.param("name");
+    if (!deps.enableAgent) {
+      return c.json({ error: "Resume not available" }, 503);
+    }
+    try {
+      const success = await deps.enableAgent(name);
+      if (success) {
+        return c.json({ success: true, message: `Agent ${name} resumed` });
+      } else {
+        return c.json({ error: `Agent ${name} not found` }, 404);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return c.json({ error: `Failed to resume agent: ${message}` }, 500);
+    }
+  });
+
+  // POST /control/agents/:name/kill - Kill all running instances of an agent
+  app.post("/control/agents/:name/kill", async (c) => {
+    const name = c.req.param("name");
+    try {
+      const result = await deps.killAgent(name);
+      if (result === null) {
+        return c.json({ error: `Agent ${name} not found` }, 404);
+      }
+      return c.json({ success: true, message: `Killed ${result.killed} instance(s) of ${name}`, killed: result.killed });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return c.json({ error: `Failed to kill agent: ${message}` }, 500);
+    }
+  });
+
   // GET /control/status - Get scheduler status
   app.get("/control/status", async (c) => {
     if (!statusTracker) {
@@ -128,10 +182,12 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps) {
     
     const schedulerInfo = statusTracker.getSchedulerInfo();
     const instances = statusTracker.getInstances();
-    
+    const agents = statusTracker.getAllAgents();
+
     return c.json({
       scheduler: schedulerInfo,
       instances,
+      agents,
       running: instances.length,
     });
   });

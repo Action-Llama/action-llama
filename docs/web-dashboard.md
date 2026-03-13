@@ -42,7 +42,7 @@ CLI commands (`al status`, `al pause`, `al resume`, `al kill`) automatically rea
 The following routes require authentication:
 
 - `/dashboard` and `/dashboard/*` — all dashboard pages and SSE streams
-- `/control/*` — scheduler control endpoints (pause, resume, kill, trigger, enable/disable)
+- `/control/*` — scheduler and agent control endpoints (pause, resume, kill, trigger, enable/disable)
 - `/locks/status` — active lock information
 
 Health checks (`/health`), webhook endpoints (`/webhooks/*`), and container management routes are **not** protected.
@@ -102,6 +102,9 @@ Dashboard actions (Run, Enable/Disable, Pause/Resume) call the control API endpo
 - `POST /control/trigger/<name>` — trigger an immediate agent run
 - `POST /control/agents/<name>/enable` — enable a disabled agent
 - `POST /control/agents/<name>/disable` — disable an agent (pauses its cron job)
+- `POST /control/agents/<name>/pause` — pause an agent (alias for disable)
+- `POST /control/agents/<name>/resume` — resume an agent (alias for enable)
+- `POST /control/agents/<name>/kill` — kill all running instances of an agent
 - `POST /control/pause` — pause the scheduler
 - `POST /control/resume` — resume the scheduler
 

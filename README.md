@@ -110,8 +110,11 @@ If you installed globally (`npm install -g @action-llama/action-llama`), you can
 | `al start` | Start the scheduler (cron + webhooks) |
 | `al status` | Show agent status |
 | `al logs <agent>` | View agent log files |
-| `al kill <instanceId>` | Kill a running agent instance |
-| `al pause` | Pause the scheduler (stop cron jobs) |
+| `al agent pause <name>` | Pause a specific agent (stop its cron/webhooks) |
+| `al agent resume <name>` | Resume a paused agent |
+| `al agent kill <name>` | Kill all running instances of an agent |
+| `al kill <instanceId>` | Kill a single running agent instance |
+| `al pause` | Pause the scheduler (stop all cron jobs) |
 | `al resume` | Resume a paused scheduler |
 
 Most commands accept `-p <dir>` to set the project directory and `-c` to target cloud infrastructure. See the [CLI command reference](docs/commands.md) for all options and flags.

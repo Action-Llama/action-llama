@@ -353,6 +353,13 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
           }
           return false;
         },
+        killAgent: async (name: string) => {
+          const pool = runnerPools[name];
+          if (!pool) return null;
+          const killed = pool.killAll();
+          logger.info({ agent: name, killed }, "kill all instances requested via control API");
+          return { killed };
+        },
         pauseScheduler: async () => {
           for (const job of cronJobs) {
             job.pause();
