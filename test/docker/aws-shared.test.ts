@@ -38,7 +38,8 @@ vi.mock("@aws-sdk/client-codebuild", () => {
   const StartBuildCommand = vi.fn(function (this: any, input: any) { this._type = "StartBuild"; this.input = input; });
   const BatchGetBuildsCommand = vi.fn(function (this: any, input: any) { this._type = "BatchGetBuilds"; this.input = input; });
   const CreateProjectCommand = vi.fn(function (this: any, input: any) { this._type = "CreateProject"; this.input = input; });
-  return { CodeBuildClient, StartBuildCommand, BatchGetBuildsCommand, CreateProjectCommand };
+  const UpdateProjectCommand = vi.fn(function (this: any, input: any) { this._type = "UpdateProject"; this.input = input; });
+  return { CodeBuildClient, StartBuildCommand, BatchGetBuildsCommand, CreateProjectCommand, UpdateProjectCommand };
 });
 
 vi.mock("@aws-sdk/client-s3", () => {
@@ -52,11 +53,23 @@ vi.mock("@aws-sdk/client-s3", () => {
 vi.mock("@aws-sdk/client-ecr", () => {
   const ECRClient = vi.fn(function (this: any) { this.send = mockEcrSend; });
   const BatchGetImageCommand = vi.fn(function (this: any, input: any) { this._type = "BatchGetImage"; this.input = input; });
-  return { ECRClient, BatchGetImageCommand };
+  const PutImageCommand = vi.fn(function (this: any, input: any) { this._type = "PutImage"; this.input = input; });
+  const GetDownloadUrlForLayerCommand = vi.fn(function (this: any, input: any) { this._type = "GetDownloadUrlForLayer"; this.input = input; });
+  const InitiateLayerUploadCommand = vi.fn(function (this: any, input: any) { this._type = "InitiateLayerUpload"; this.input = input; });
+  const UploadLayerPartCommand = vi.fn(function (this: any, input: any) { this._type = "UploadLayerPart"; this.input = input; });
+  const CompleteLayerUploadCommand = vi.fn(function (this: any, input: any) { this._type = "CompleteLayerUpload"; this.input = input; });
+  return { ECRClient, BatchGetImageCommand, PutImageCommand, GetDownloadUrlForLayerCommand, InitiateLayerUploadCommand, UploadLayerPartCommand, CompleteLayerUploadCommand };
 });
 
 vi.mock("child_process", () => ({
-  execFileSync: vi.fn((_cmd: string, _args: string[]) => ""),
+  execFileSync: vi.fn((cmd: string, args: string[]) => {
+    // For tar creation commands, write a dummy file so readFileSync succeeds
+    if (cmd === "tar" && (args[0] === "cf" || args[0] === "czf") && args[1]) {
+      const fs = require("fs");
+      fs.writeFileSync(args[1], Buffer.from("fake-tar-content"));
+    }
+    return "";
+  }),
 }));
 
 vi.mock("fs", async () => {
@@ -72,7 +85,7 @@ const defaultConfig = {
 
 describe("AwsSharedUtils", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   it("extracts account ID from ECR repository URI", () => {
@@ -232,6 +245,215 @@ describe("AwsSharedUtils", () => {
     const bucket = await utils.ensureBuildBucket();
     expect(bucket).toBe("al-builds-123456789012-us-east-1");
     expect(mockS3Send).toHaveBeenCalledTimes(2);
+  });
+
+  describe("ensureCodeBuildProject", () => {
+    it("includes LOCAL_DOCKER_LAYER_CACHE in new project", async () => {
+      const utils = new AwsSharedUtils(defaultConfig);
+
+      // BatchGetBuilds (probe)
+      mockCbSend.mockRejectedValueOnce(new Error("not found"));
+      // CreateProject succeeds
+      mockCbSend.mockResolvedValueOnce({});
+
+      await utils.ensureCodeBuildProject("al-image-builder", "test-bucket");
+
+      // Verify CreateProject was called with cache config
+      const createCall = mockCbSend.mock.calls.find(
+        (c: any[]) => c[0]._type === "CreateProject",
+      );
+      expect(createCall).toBeDefined();
+      expect(createCall![0].input.cache).toEqual({
+        type: "LOCAL",
+        modes: ["LOCAL_DOCKER_LAYER_CACHE"],
+      });
+    });
+
+    it("updates existing project with cache config via UpdateProject", async () => {
+      const utils = new AwsSharedUtils(defaultConfig);
+
+      // BatchGetBuilds (probe)
+      mockCbSend.mockRejectedValueOnce(new Error("not found"));
+      // CreateProject → already exists
+      mockCbSend.mockRejectedValueOnce({ name: "ResourceAlreadyExistsException" });
+      // UpdateProject succeeds
+      mockCbSend.mockResolvedValueOnce({});
+
+      await utils.ensureCodeBuildProject("al-image-builder", "test-bucket");
+
+      const updateCall = mockCbSend.mock.calls.find(
+        (c: any[]) => c[0]._type === "UpdateProject",
+      );
+      expect(updateCall).toBeDefined();
+      expect(updateCall![0].input.cache).toEqual({
+        type: "LOCAL",
+        modes: ["LOCAL_DOCKER_LAYER_CACHE"],
+      });
+    });
+  });
+
+  describe("assembleImageDirect", () => {
+    it("returns cached image when ECR tag exists", async () => {
+      const utils = new AwsSharedUtils(defaultConfig);
+
+      // ecrImageExists → true
+      mockEcrSend.mockResolvedValueOnce({ images: [{ imageId: { imageTag: "x" } }] });
+
+      const result = await utils.assembleImageDirect({
+        tag: "al-myagent:latest",
+        baseImage: "123456789012.dkr.ecr.us-east-1.amazonaws.com/al-images:base-abc123",
+        extraFiles: { "agent-config.json": '{"name":"myagent"}' },
+      });
+
+      expect(result).toContain("al-images:");
+      expect(result).toContain("al-myagent-latest-");
+      // Only one ECR call (the cache check)
+      expect(mockEcrSend).toHaveBeenCalledTimes(1);
+    });
+
+    it("assembles and pushes image on cache miss", async () => {
+      const utils = new AwsSharedUtils(defaultConfig);
+
+      // ecrImageExists → false (cache miss)
+      mockEcrSend.mockResolvedValueOnce({ images: [] });
+
+      // BatchGetImage → base image manifest
+      const baseManifest = {
+        schemaVersion: 2,
+        mediaType: "application/vnd.docker.distribution.manifest.v2+json",
+        config: {
+          mediaType: "application/vnd.docker.container.image.v1+json",
+          size: 100,
+          digest: "sha256:configdigest",
+        },
+        layers: [{
+          mediaType: "application/vnd.docker.image.rootfs.diff.tar.gzip",
+          size: 200,
+          digest: "sha256:layer1digest",
+        }],
+      };
+      mockEcrSend.mockResolvedValueOnce({
+        images: [{ imageManifest: JSON.stringify(baseManifest) }],
+      });
+
+      // GetDownloadUrlForLayer → config blob URL
+      mockEcrSend.mockResolvedValueOnce({
+        downloadUrl: "https://example.com/config-blob",
+      });
+
+      // Mock global fetch for config download
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn().mockResolvedValueOnce({
+        text: () => Promise.resolve(JSON.stringify({
+          architecture: "amd64",
+          os: "linux",
+          rootfs: { type: "layers", diff_ids: ["sha256:basediffid"] },
+          history: [],
+        })),
+      }) as any;
+
+      // InitiateLayerUpload (layer)
+      mockEcrSend.mockResolvedValueOnce({ uploadId: "upload-1" });
+      // UploadLayerPart (layer)
+      mockEcrSend.mockResolvedValueOnce({});
+      // CompleteLayerUpload (layer)
+      mockEcrSend.mockResolvedValueOnce({});
+      // InitiateLayerUpload (config)
+      mockEcrSend.mockResolvedValueOnce({ uploadId: "upload-2" });
+      // UploadLayerPart (config)
+      mockEcrSend.mockResolvedValueOnce({});
+      // CompleteLayerUpload (config)
+      mockEcrSend.mockResolvedValueOnce({});
+      // PutImage
+      mockEcrSend.mockResolvedValueOnce({});
+
+      try {
+        const result = await utils.assembleImageDirect({
+          tag: "al-myagent:latest",
+          baseImage: "123456789012.dkr.ecr.us-east-1.amazonaws.com/al-images:base-abc123",
+          extraFiles: { "agent-config.json": '{"name":"myagent"}' },
+        });
+
+        expect(result).toContain("al-images:al-myagent-latest-");
+
+        // Verify PutImage was called with extended manifest
+        const putCall = mockEcrSend.mock.calls.find(
+          (c: any[]) => c[0]._type === "PutImage",
+        );
+        expect(putCall).toBeDefined();
+        const pushedManifest = JSON.parse(putCall![0].input.imageManifest);
+        // Should have original layer + our new layer
+        expect(pushedManifest.layers).toHaveLength(2);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it("produces stable hash for same inputs", async () => {
+      const utils = new AwsSharedUtils(defaultConfig);
+
+      // Both calls hit cache
+      mockEcrSend.mockResolvedValue({ images: [{ imageId: { imageTag: "x" } }] });
+
+      const opts = {
+        tag: "al-myagent:latest",
+        baseImage: "123456789012.dkr.ecr.us-east-1.amazonaws.com/al-images:base-abc123",
+        extraFiles: { "config.json": '{"a":1}', "prompt.txt": "hello" },
+      };
+
+      const tag1 = await utils.assembleImageDirect(opts);
+      const tag2 = await utils.assembleImageDirect(opts);
+      expect(tag1).toBe(tag2);
+    });
+  });
+
+  describe("buildMultipleImagesCodeBuild", () => {
+    let contextDir: string;
+
+    beforeEach(async () => {
+      const { mkdtempSync, mkdirSync, writeFileSync: wfs } = await import("fs");
+      const { join } = await import("path");
+      const os = await import("os");
+      contextDir = mkdtempSync(join(os.tmpdir(), "al-multi-test-"));
+      wfs(join(contextDir, "Dockerfile"), "FROM al-agent:latest\nRUN echo hello\n");
+      wfs(join(contextDir, "package.json"), '{"name":"test"}');
+      mkdirSync(join(contextDir, "dist"));
+      wfs(join(contextDir, "dist", "index.js"), "console.log('hi')");
+    });
+
+    it("returns cached tags when all images exist in ECR", async () => {
+      const utils = new AwsSharedUtils(defaultConfig);
+
+      // All cache checks → hit
+      mockEcrSend.mockResolvedValue({ images: [{ imageId: { imageTag: "x" } }] });
+
+      const builds = [
+        { tag: "al-agent1:latest", dockerfile: "Dockerfile", contextDir, baseImage: "base:tag" },
+        { tag: "al-agent2:latest", dockerfile: "Dockerfile", contextDir, baseImage: "base:tag" },
+      ];
+
+      const results = await utils.buildMultipleImagesCodeBuild(builds);
+      expect(results).toHaveLength(2);
+      expect(results[0]).toContain("al-images:al-agent1-latest-");
+      expect(results[1]).toContain("al-images:al-agent2-latest-");
+      // No S3 or CodeBuild calls (all cached)
+      expect(mockS3Send).not.toHaveBeenCalled();
+    });
+
+    it("delegates to buildImageCodeBuild for single build", async () => {
+      const utils = new AwsSharedUtils(defaultConfig);
+
+      // Cache check → hit
+      mockEcrSend.mockResolvedValue({ images: [{ imageId: { imageTag: "x" } }] });
+
+      const builds = [
+        { tag: "al-agent1:latest", dockerfile: "Dockerfile", contextDir, baseImage: "base:tag" },
+      ];
+
+      const results = await utils.buildMultipleImagesCodeBuild(builds);
+      expect(results).toHaveLength(1);
+      expect(results[0]).toContain("al-images:al-agent1-latest-");
+    });
   });
 
   describe("buildImageCodeBuild cache hash stability", () => {

@@ -51,6 +51,17 @@ export interface BuildImageOpts {
   dockerfileContent?: string;
 }
 
+export interface AssembleImageOpts {
+  /** Tag for the assembled image */
+  tag: string;
+  /** Base image URI (must already exist in the registry) */
+  baseImage: string;
+  /** Files to add as a new layer at /app/static/ */
+  extraFiles: Record<string, string>;
+  /** Optional progress callback */
+  onProgress?: (message: string) => void;
+}
+
 export interface RunningAgent {
   agentName: string;
   taskId: string;
@@ -132,6 +143,19 @@ export interface ContainerRuntime {
 
   /** Return a URL to the cloud console for this task/execution, or null for local runtimes. */
   getTaskUrl(containerName: string): string | null;
+
+  /**
+   * Assemble a thin image directly via registry API (no CodeBuild).
+   * Adds an extra-files layer on top of an existing base image.
+   * Only supported by cloud runtimes with registry access (e.g. ECS/ECR).
+   */
+  assembleImageDirect?(opts: AssembleImageOpts): Promise<string>;
+
+  /**
+   * Build multiple images in a single cloud build job.
+   * Falls back to sequential buildImage() calls if not supported.
+   */
+  buildMultipleImages?(builds: BuildImageOpts[], onProgress?: (message: string) => void): Promise<string[]>;
 
   /** Start a gateway proxy container for local runtimes. No-op for cloud runtimes. */
   startGatewayProxy?(gatewayPort: number): Promise<void>;

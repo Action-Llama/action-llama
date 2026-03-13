@@ -6,7 +6,7 @@ import {
   StopTaskCommand,
   ListTasksCommand,
 } from "@aws-sdk/client-ecs";
-import type { ContainerRuntime, RuntimeLaunchOpts, RuntimeCredentials, SecretMount, BuildImageOpts, RunningAgent } from "./runtime.js";
+import type { ContainerRuntime, RuntimeLaunchOpts, RuntimeCredentials, SecretMount, BuildImageOpts, AssembleImageOpts, RunningAgent } from "./runtime.js";
 import { AwsSharedUtils } from "./aws-shared.js";
 import { AWS_CONSTANTS } from "../shared/aws-constants.js";
 import { sanitizeEnvPart } from "../shared/credentials.js";
@@ -122,6 +122,14 @@ export class ECSFargateRuntime implements ContainerRuntime {
   async pushImage(image: string): Promise<string> {
     // CodeBuild handles build + push in one step; the image is already in ECR
     return image;
+  }
+
+  async assembleImageDirect(opts: AssembleImageOpts): Promise<string> {
+    return this.shared.assembleImageDirect(opts);
+  }
+
+  async buildMultipleImages(builds: BuildImageOpts[], onProgress?: (message: string) => void): Promise<string[]> {
+    return this.shared.buildMultipleImagesCodeBuild(builds, onProgress);
   }
 
   // --- Container lifecycle ---

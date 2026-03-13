@@ -72,38 +72,44 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
 
   statusTracker?.setBaseImageStatus(null);
 
-  // 2. Build per-agent images in parallel
+  // 2. Build per-agent images — partition into thin (no Dockerfile) vs heavy
   const agentImages: Record<string, string> = {};
 
-  await Promise.all(activeAgentConfigs.map(async (agentConfig) => {
-    statusTracker?.setAgentState(agentConfig.name, "building");
-    statusTracker?.setAgentStatusText(agentConfig.name, "Building agent image");
-    onProgress?.(agentConfig.name, "Building agent image");
-
+  const agentMeta = activeAgentConfigs.map((agentConfig) => {
     const hasCustomDockerfile = existsSync(resolvePath(projectPath, agentConfig.name, "Dockerfile"));
-
     const actionsPath = resolvePath(projectPath, agentConfig.name, "ACTIONS.md");
     const actionsMd = existsSync(actionsPath) ? readFileSync(actionsPath, "utf-8") : "";
     const timeout = String(agentConfig.timeout ?? globalConfig.local?.timeout ?? 900);
-
     const extraFiles: Record<string, string> = {
       "agent-config.json": JSON.stringify(agentConfig),
       "ACTIONS.md": actionsMd,
       "prompt-static.txt": buildPromptSkeleton(agentConfig, skills),
       "timeout": timeout,
     };
+    return { agentConfig, hasCustomDockerfile, extraFiles };
+  });
 
+  const thinAgents = agentMeta.filter(a => !a.hasCustomDockerfile);
+  const heavyAgents = agentMeta.filter(a => a.hasCustomDockerfile);
+
+  for (const a of agentMeta) {
+    statusTracker?.setAgentState(a.agentConfig.name, "building");
+    statusTracker?.setAgentStatusText(a.agentConfig.name, "Building agent image");
+    onProgress?.(a.agentConfig.name, "Building agent image");
+  }
+
+  // Thin agents: use assembleImageDirect if available (bypasses CodeBuild)
+  const thinPromises = thinAgents.map(async ({ agentConfig, extraFiles }) => {
     const agentImageTag = AWS_CONSTANTS.agentImage(agentConfig.name);
+    const progressCb = (msg: string) => { statusTracker?.setAgentStatusText(agentConfig.name, msg); onProgress?.(agentConfig.name, msg); };
 
     let image: string;
-    if (hasCustomDockerfile) {
-      image = await runtime.buildImage({
+    if (runtime.assembleImageDirect && runtimeType !== "local") {
+      image = await runtime.assembleImageDirect({
         tag: agentImageTag,
-        dockerfile: resolvePath(projectPath, agentConfig.name, "Dockerfile"),
-        contextDir: packageRoot,
         baseImage,
         extraFiles,
-        onProgress: (msg) => { statusTracker?.setAgentStatusText(agentConfig.name, msg); onProgress?.(agentConfig.name, msg); },
+        onProgress: progressCb,
       });
     } else {
       image = await runtime.buildImage({
@@ -112,12 +118,58 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
         contextDir: packageRoot,
         dockerfileContent: `FROM ${baseImage}\nCOPY static/ /app/static/\n`,
         extraFiles,
-        onProgress: (msg) => { statusTracker?.setAgentStatusText(agentConfig.name, msg); onProgress?.(agentConfig.name, msg); },
+        onProgress: progressCb,
       });
     }
     agentImages[agentConfig.name] = image;
     logger.info({ agent: agentConfig.name, image }, "Built agent image");
-  }));
+  });
+
+  // Heavy agents: batch into one CodeBuild job if supported, else build individually
+  let heavyPromise: Promise<void>;
+  if (heavyAgents.length > 0 && runtime.buildMultipleImages && runtimeType !== "local") {
+    const heavyBuilds = heavyAgents.map(({ agentConfig, extraFiles }) => ({
+      tag: AWS_CONSTANTS.agentImage(agentConfig.name),
+      dockerfile: resolvePath(projectPath, agentConfig.name, "Dockerfile"),
+      contextDir: packageRoot,
+      baseImage,
+      extraFiles,
+      onProgress: (msg: string) => { statusTracker?.setAgentStatusText(agentConfig.name, msg); onProgress?.(agentConfig.name, msg); },
+    }));
+
+    heavyPromise = runtime.buildMultipleImages(
+      heavyBuilds,
+      (msg) => {
+        for (const a of heavyAgents) {
+          statusTracker?.setAgentStatusText(a.agentConfig.name, msg);
+          onProgress?.(a.agentConfig.name, msg);
+        }
+      },
+    ).then((images) => {
+      for (let i = 0; i < heavyAgents.length; i++) {
+        const name = heavyAgents[i].agentConfig.name;
+        agentImages[name] = images[i];
+        logger.info({ agent: name, image: images[i] }, "Built agent image");
+      }
+    });
+  } else {
+    heavyPromise = Promise.all(heavyAgents.map(async ({ agentConfig, extraFiles }) => {
+      const agentImageTag = AWS_CONSTANTS.agentImage(agentConfig.name);
+      const progressCb = (msg: string) => { statusTracker?.setAgentStatusText(agentConfig.name, msg); onProgress?.(agentConfig.name, msg); };
+      const image = await runtime.buildImage({
+        tag: agentImageTag,
+        dockerfile: resolvePath(projectPath, agentConfig.name, "Dockerfile"),
+        contextDir: packageRoot,
+        baseImage,
+        extraFiles,
+        onProgress: progressCb,
+      });
+      agentImages[agentConfig.name] = image;
+      logger.info({ agent: agentConfig.name, image }, "Built agent image");
+    })).then(() => {});
+  }
+
+  await Promise.all([...thinPromises, heavyPromise]);
 
   // 3. Push images to remote registry (no-op for local)
   if (runtimeType !== "local") {

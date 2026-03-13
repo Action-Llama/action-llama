@@ -23,6 +23,7 @@ import {
   StartBuildCommand,
   BatchGetBuildsCommand,
   CreateProjectCommand,
+  UpdateProjectCommand,
 } from "@aws-sdk/client-codebuild";
 import {
   S3Client,
@@ -33,10 +34,15 @@ import {
 import {
   ECRClient,
   BatchGetImageCommand,
+  PutImageCommand,
+  GetDownloadUrlForLayerCommand,
+  InitiateLayerUploadCommand,
+  UploadLayerPartCommand,
+  CompleteLayerUploadCommand,
 } from "@aws-sdk/client-ecr";
 import { parseCredentialRef, sanitizeEnvPart } from "../shared/credentials.js";
 import { AWS_CONSTANTS } from "../shared/aws-constants.js";
-import type { RuntimeCredentials, SecretMount, BuildImageOpts } from "./runtime.js";
+import type { RuntimeCredentials, SecretMount, BuildImageOpts, AssembleImageOpts } from "./runtime.js";
 
 export interface AwsSharedConfig {
   awsRegion: string;
@@ -214,6 +220,7 @@ export class AwsSharedUtils {
     } catch {}
 
     const serviceRole = `arn:aws:iam::${accountId}:role/${AWS_CONSTANTS.CODEBUILD_ROLE}`;
+    const cache = { type: "LOCAL" as const, modes: ["LOCAL_DOCKER_LAYER_CACHE" as const] };
 
     try {
       await this.cbClient.send(new CreateProjectCommand({
@@ -234,11 +241,21 @@ export class AwsSharedUtils {
             { name: "DOCKERFILE", value: "Dockerfile" },
           ],
         },
+        cache,
         serviceRole,
       }));
     } catch (err: any) {
       if (err.name !== "ResourceAlreadyExistsException") {
         throw err;
+      }
+      // Project exists — ensure cache config is applied
+      try {
+        await this.cbClient.send(new UpdateProjectCommand({
+          name: projectName,
+          cache,
+        }));
+      } catch {
+        // Best-effort — build still works without local cache
       }
     }
   }
@@ -401,6 +418,8 @@ export class AwsSharedUtils {
     await this.ensureCodeBuildProject(projectName, bucket);
     const registry = this.config.ecrRepository.split("/")[0];
 
+    const cacheTag = `${this.config.ecrRepository}:${nameTag}-cache`;
+
     const buildspec = [
       "version: 0.2",
       "phases:",
@@ -410,11 +429,14 @@ export class AwsSharedUtils {
       // archive is still present (e.g. when sourceType handling changes).
       "      - if ls *.tar.gz 1>/dev/null 2>&1; then tar xzf *.tar.gz && rm -f *.tar.gz; fi",
       "      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY",
+      "      - docker pull $CACHE_TAG || true",
       "  build:",
       "    commands:",
       "      - ls -la",
-      "      - docker build -t $IMAGE_URI -f $DOCKERFILE .",
+      "      - docker build --cache-from $CACHE_TAG -t $IMAGE_URI -f $DOCKERFILE .",
       "      - docker push $IMAGE_URI",
+      "      - docker tag $IMAGE_URI $CACHE_TAG",
+      "      - docker push $CACHE_TAG",
     ].join("\n");
 
     const buildRes = await this.cbClient.send(new StartBuildCommand({
@@ -426,6 +448,7 @@ export class AwsSharedUtils {
         { name: "IMAGE_URI", value: remoteTag },
         { name: "ECR_REGISTRY", value: registry },
         { name: "DOCKERFILE", value: "Dockerfile" },
+        { name: "CACHE_TAG", value: cacheTag },
       ],
     }));
 
@@ -465,6 +488,389 @@ export class AwsSharedUtils {
           throw new Error(`CodeBuild build failed (${build.buildStatus}). Logs: ${logs}`);
         }
         return remoteTag;
+      }
+    }
+  }
+
+  // --- Direct image assembly (bypass CodeBuild for thin agents) ---
+
+  async assembleImageDirect(opts: AssembleImageOpts): Promise<string> {
+    const { join, dirname: dirnameFn } = await import("path");
+    const { mkdirSync, writeFileSync, rmSync, readFileSync: readFileSyncBuf } = await import("fs");
+    const { execFileSync } = await import("child_process");
+    const { createHash, randomUUID } = await import("crypto");
+    const { gzipSync } = await import("zlib");
+    const { tmpdir } = await import("os");
+
+    // Compute content hash for cache check
+    const hash = createHash("sha256");
+    hash.update(opts.baseImage);
+    const sortedEntries = Object.entries(opts.extraFiles).sort(([a], [b]) => a.localeCompare(b));
+    for (const [name, content] of sortedEntries) {
+      hash.update(name);
+      hash.update(content);
+    }
+    const contentHash = hash.digest("hex").slice(0, 16);
+    const nameTag = opts.tag.replace(":", "-");
+    const hashTag = `${nameTag}-${contentHash}`;
+    const remoteTag = `${this.config.ecrRepository}:${hashTag}`;
+    const repoName = this.config.ecrRepository.split("/").pop()!;
+
+    opts.onProgress?.(`Checking cache (${hashTag})`);
+    const exists = await this.ecrImageExists(repoName, hashTag, opts.onProgress);
+    if (exists) {
+      opts.onProgress?.("Image unchanged — reusing cached build");
+      return remoteTag;
+    }
+
+    opts.onProgress?.("Assembling image directly (no CodeBuild)");
+
+    // Create temp dir with the layer structure: app/static/...
+    const tmpDir = join(tmpdir(), `al-assemble-${randomUUID().slice(0, 8)}`);
+    mkdirSync(join(tmpDir, "app", "static"), { recursive: true });
+
+    for (const [filename, content] of Object.entries(opts.extraFiles)) {
+      const filePath = join(tmpDir, "app", "static", filename);
+      mkdirSync(dirnameFn(filePath), { recursive: true });
+      writeFileSync(filePath, content);
+    }
+
+    // Create layer tar via system tar (consistent with buildImageCodeBuild)
+    const tarPath = join(tmpdir(), `al-layer-${randomUUID().slice(0, 8)}.tar`);
+    try {
+      execFileSync("tar", ["cf", tarPath, "-C", tmpDir, "app"], {
+        timeout: 30_000,
+        env: { ...process.env, COPYFILE_DISABLE: "1" },
+      });
+    } finally {
+      try { rmSync(tmpDir, { recursive: true }); } catch {}
+    }
+
+    const tarBuffer = readFileSyncBuf(tarPath);
+    try { rmSync(tarPath); } catch {}
+    const compressedLayer = gzipSync(tarBuffer);
+
+    const layerDigest = `sha256:${createHash("sha256").update(compressedLayer).digest("hex")}`;
+    const diffId = `sha256:${createHash("sha256").update(tarBuffer).digest("hex")}`;
+
+    // Get base image manifest
+    opts.onProgress?.("Fetching base image manifest");
+    const baseTag = opts.baseImage.includes(":")
+      ? opts.baseImage.split(":").pop()!
+      : opts.baseImage;
+
+    const baseRes = await this.ecrClient.send(new BatchGetImageCommand({
+      repositoryName: repoName,
+      imageIds: [{ imageTag: baseTag }],
+    }));
+
+    if (!baseRes.images?.length) throw new Error(`Base image ${baseTag} not found in ECR`);
+    const manifest = JSON.parse(baseRes.images[0].imageManifest!);
+
+    // Fetch config blob via pre-signed URL
+    opts.onProgress?.("Fetching base image config");
+    const configDigest = manifest.config.digest;
+    const configDownload = await this.ecrClient.send(new GetDownloadUrlForLayerCommand({
+      repositoryName: repoName,
+      layerDigest: configDigest,
+    }));
+    const configRes = await fetch(configDownload.downloadUrl!);
+    const configJson = JSON.parse(await configRes.text());
+
+    // Extend config with our layer
+    configJson.rootfs.diff_ids.push(diffId);
+    configJson.history = configJson.history || [];
+    configJson.history.push({
+      created: new Date().toISOString(),
+      created_by: "action-llama assembleImageDirect",
+    });
+
+    const newConfigBytes = Buffer.from(JSON.stringify(configJson));
+    const newConfigDigest = `sha256:${createHash("sha256").update(newConfigBytes).digest("hex")}`;
+
+    // Upload layer blob
+    opts.onProgress?.("Uploading layer");
+    await this.uploadBlob(repoName, layerDigest, compressedLayer);
+
+    // Upload new config blob
+    await this.uploadBlob(repoName, newConfigDigest, newConfigBytes);
+
+    // Build and push new manifest
+    const newManifest = {
+      schemaVersion: manifest.schemaVersion,
+      mediaType: manifest.mediaType,
+      config: {
+        mediaType: manifest.config.mediaType,
+        size: newConfigBytes.length,
+        digest: newConfigDigest,
+      },
+      layers: [
+        ...manifest.layers,
+        {
+          mediaType: "application/vnd.docker.image.rootfs.diff.tar.gzip",
+          size: compressedLayer.length,
+          digest: layerDigest,
+        },
+      ],
+    };
+
+    opts.onProgress?.("Pushing image manifest");
+    await this.ecrClient.send(new PutImageCommand({
+      repositoryName: repoName,
+      imageManifest: JSON.stringify(newManifest),
+      imageTag: hashTag,
+    }));
+
+    return remoteTag;
+  }
+
+  private async uploadBlob(repoName: string, digest: string, data: Buffer | Uint8Array): Promise<void> {
+    const initRes = await this.ecrClient.send(new InitiateLayerUploadCommand({
+      repositoryName: repoName,
+    }));
+
+    await this.ecrClient.send(new UploadLayerPartCommand({
+      repositoryName: repoName,
+      uploadId: initRes.uploadId!,
+      partFirstByte: 0,
+      partLastByte: data.length - 1,
+      layerPartBlob: new Uint8Array(data),
+    }));
+
+    await this.ecrClient.send(new CompleteLayerUploadCommand({
+      repositoryName: repoName,
+      uploadId: initRes.uploadId!,
+      layerDigests: [digest],
+    }));
+  }
+
+  // --- Batched CodeBuild (multiple images in one job) ---
+
+  async buildMultipleImagesCodeBuild(
+    builds: BuildImageOpts[],
+    onProgress?: (message: string) => void,
+  ): Promise<string[]> {
+    if (builds.length === 0) return [];
+    if (builds.length === 1) return [await this.buildImageCodeBuild(builds[0], onProgress)];
+
+    const { join, isAbsolute, dirname: dirnameFn } = await import("path");
+    const { readFileSync, writeFileSync, mkdirSync, copyFileSync, cpSync, existsSync, rmSync, readdirSync } = await import("fs");
+    const { createHash, randomUUID } = await import("crypto");
+    const { tmpdir } = await import("os");
+    const { execFileSync } = await import("child_process");
+
+    onProgress?.(`Preparing ${builds.length} build contexts`);
+
+    const combinedCtx = join(tmpdir(), `al-multi-ctx-${randomUUID().slice(0, 8)}`);
+    mkdirSync(combinedCtx, { recursive: true });
+
+    // Per-build info: compute hash, check cache, prepare context
+    const buildInfos: Array<{
+      idx: number;
+      remoteTag: string;
+      hashTag: string;
+      nameTag: string;
+      cached: boolean;
+      subdir: string;
+    }> = [];
+
+    for (let i = 0; i < builds.length; i++) {
+      const opts = builds[i];
+      const subdir = `build-${i}`;
+      const subPath = join(combinedCtx, subdir);
+      mkdirSync(subPath, { recursive: true });
+
+      const hasExtraFiles = opts.extraFiles && Object.keys(opts.extraFiles).length > 0;
+
+      // Prepare Dockerfile
+      let dockerfileContent: string;
+      if (opts.dockerfileContent) {
+        dockerfileContent = opts.dockerfileContent;
+      } else {
+        const resolvedDockerfile = isAbsolute(opts.dockerfile)
+          ? opts.dockerfile
+          : join(opts.contextDir, opts.dockerfile);
+        dockerfileContent = readFileSync(resolvedDockerfile, "utf-8");
+        if (opts.baseImage) {
+          dockerfileContent = dockerfileContent.replace(/^FROM\s+\S+/m, `FROM ${opts.baseImage}`);
+        }
+      }
+      if (hasExtraFiles && !dockerfileContent.includes("COPY static/ /app/static/")) {
+        const copyLine = "COPY static/ /app/static/";
+        const userIdx = dockerfileContent.indexOf("\nUSER ");
+        if (userIdx !== -1) {
+          dockerfileContent = dockerfileContent.slice(0, userIdx) + "\n" + copyLine + dockerfileContent.slice(userIdx);
+        } else {
+          dockerfileContent += "\n" + copyLine + "\n";
+        }
+      }
+      writeFileSync(join(subPath, "Dockerfile"), dockerfileContent);
+
+      if (!opts.dockerfileContent) {
+        copyFileSync(join(opts.contextDir, "package.json"), join(subPath, "package.json"));
+        cpSync(join(opts.contextDir, "dist"), join(subPath, "dist"), { recursive: true });
+        const binSrc = join(opts.contextDir, "docker", "bin");
+        if (existsSync(binSrc)) {
+          cpSync(binSrc, join(subPath, "docker", "bin"), { recursive: true });
+        }
+      }
+
+      if (hasExtraFiles) {
+        const staticDir = join(subPath, "static");
+        mkdirSync(staticDir, { recursive: true });
+        for (const [filename, content] of Object.entries(opts.extraFiles!)) {
+          const filePath = join(staticDir, filename);
+          mkdirSync(dirnameFn(filePath), { recursive: true });
+          writeFileSync(filePath, content);
+        }
+      }
+
+      // Compute content hash (same algorithm as buildImageCodeBuild)
+      const hash = createHash("sha256");
+      const hashFile = (p: string) => { hash.update(p); hash.update(readFileSync(join(subPath, p))); };
+      const hashDir = (dir: string) => {
+        const entries = readdirSync(join(subPath, dir), { withFileTypes: true })
+          .sort((a, b) => a.name.localeCompare(b.name));
+        for (const entry of entries) {
+          const p = join(dir, entry.name);
+          if (entry.isDirectory()) hashDir(p);
+          else hashFile(p);
+        }
+      };
+
+      hash.update("Dockerfile");
+      hash.update(readFileSync(join(subPath, "Dockerfile")));
+      if (!opts.dockerfileContent) {
+        hashFile("package.json");
+        hashDir("dist");
+        if (existsSync(join(subPath, "docker"))) hashDir("docker");
+      }
+      if (hasExtraFiles) hashDir("static");
+
+      const contentHash = hash.digest("hex").slice(0, 16);
+      const nameTag = opts.tag.replace(":", "-");
+      const hashTag = `${nameTag}-${contentHash}`;
+      const remoteTag = `${this.config.ecrRepository}:${hashTag}`;
+
+      buildInfos.push({ idx: i, remoteTag, hashTag, nameTag, cached: false, subdir });
+    }
+
+    // Check cache for all builds in parallel
+    const repoName = this.config.ecrRepository.split("/").pop()!;
+    const cacheResults = await Promise.all(
+      buildInfos.map(info => this.ecrImageExists(repoName, info.hashTag, onProgress)),
+    );
+    for (let i = 0; i < buildInfos.length; i++) {
+      buildInfos[i].cached = cacheResults[i];
+    }
+
+    const uncached = buildInfos.filter(b => !b.cached);
+    if (uncached.length === 0) {
+      onProgress?.("All images unchanged — reusing cached builds");
+      try { rmSync(combinedCtx, { recursive: true }); } catch {}
+      return buildInfos.map(b => b.remoteTag);
+    }
+
+    onProgress?.(`Cache: ${buildInfos.length - uncached.length} hit, ${uncached.length} miss — building`);
+
+    // Tar only uncached build subdirs
+    const tarEntries = uncached.map(b => b.subdir);
+    const tarPath = join(tmpdir(), `al-multi-${randomUUID().slice(0, 8)}.tar.gz`);
+
+    try {
+      execFileSync("tar", ["czf", tarPath, "-C", combinedCtx, ...tarEntries], {
+        timeout: 120_000,
+        env: { ...process.env, COPYFILE_DISABLE: "1" },
+      });
+    } finally {
+      try { rmSync(combinedCtx, { recursive: true }); } catch {}
+    }
+
+    onProgress?.("Uploading combined build context to S3");
+    const bucket = await this.ensureBuildBucket();
+    const s3Key = `${AWS_CONSTANTS.BUILD_S3_PREFIX}/multi-${Date.now()}.tar.gz`;
+    await this.s3Client.send(new PutObjectCommand({
+      Bucket: bucket,
+      Key: s3Key,
+      Body: createReadStream(tarPath),
+    }));
+    try { rmSync(tarPath); } catch {}
+
+    const projectName = AWS_CONSTANTS.CODEBUILD_PROJECT;
+    await this.ensureCodeBuildProject(projectName, bucket);
+    const registry = this.config.ecrRepository.split("/")[0];
+
+    // Generate multi-image buildspec
+    const buildCommands = uncached.flatMap((b) => {
+      const cacheTag = `${this.config.ecrRepository}:${b.nameTag}-cache`;
+      return [
+        `echo "Building ${b.subdir}: ${b.remoteTag}"`,
+        `docker pull ${cacheTag} || true`,
+        `docker build --cache-from ${cacheTag} -t ${b.remoteTag} -f ${b.subdir}/Dockerfile ${b.subdir}`,
+        `docker push ${b.remoteTag}`,
+        `docker tag ${b.remoteTag} ${cacheTag}`,
+        `docker push ${cacheTag}`,
+      ];
+    });
+
+    const buildspec = [
+      "version: 0.2",
+      "phases:",
+      "  pre_build:",
+      "    commands:",
+      "      - if ls *.tar.gz 1>/dev/null 2>&1; then tar xzf *.tar.gz && rm -f *.tar.gz; fi",
+      `      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin ${registry}`,
+      "  build:",
+      "    commands:",
+      ...buildCommands.map(cmd => `      - ${cmd}`),
+    ].join("\n");
+
+    const buildRes = await this.cbClient.send(new StartBuildCommand({
+      projectName,
+      sourceTypeOverride: "S3",
+      sourceLocationOverride: `${bucket}/${s3Key}`,
+      buildspecOverride: buildspec,
+      environmentVariablesOverride: [
+        { name: "ECR_REGISTRY", value: registry },
+      ],
+    }));
+
+    const buildId = buildRes.build?.id;
+    if (!buildId) throw new Error("CodeBuild did not return a build ID");
+
+    onProgress?.(`Queued — building ${uncached.length} images in CodeBuild`);
+
+    while (true) {
+      await sleep(10_000);
+
+      const status = await this.cbClient.send(new BatchGetBuildsCommand({ ids: [buildId] }));
+      const build = status.builds?.[0];
+      if (!build) throw new Error(`CodeBuild build ${buildId} not found`);
+
+      if (build.currentPhase) {
+        const phaseLabels: Record<string, string> = {
+          SUBMITTED: "Submitted",
+          QUEUED: "Queued",
+          PROVISIONING: "Provisioning build environment",
+          DOWNLOAD_SOURCE: "Downloading source",
+          INSTALL: "Installing dependencies",
+          PRE_BUILD: "Logging in to ECR",
+          BUILD: `Building ${uncached.length} images`,
+          POST_BUILD: "Finalizing",
+          UPLOAD_ARTIFACTS: "Uploading artifacts",
+          FINALIZING: "Finalizing",
+          COMPLETED: "Complete",
+        };
+        const label = phaseLabels[build.currentPhase] || build.currentPhase;
+        onProgress?.(label);
+      }
+
+      if (build.buildComplete) {
+        if (build.buildStatus !== "SUCCEEDED") {
+          const logs = build.logs?.deepLink || "";
+          throw new Error(`CodeBuild batch build failed (${build.buildStatus}). Logs: ${logs}`);
+        }
+        return buildInfos.map(b => b.remoteTag);
       }
     }
   }

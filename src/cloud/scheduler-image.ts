@@ -67,6 +67,14 @@ function collectProjectFiles(projectPath: string): Record<string, string> {
  */
 function generateDockerfile(): string {
   return [
+    "# Stage 1: install production dependencies (cached unless package.json changes)",
+    "FROM public.ecr.aws/docker/library/node:20-slim AS deps",
+    "",
+    "WORKDIR /app",
+    "COPY package.json ./",
+    "RUN npm install --production",
+    "",
+    "# Stage 2: final image with deps + application code",
     "FROM public.ecr.aws/docker/library/node:20-slim",
     "",
     "RUN apt-get update && apt-get install -y --no-install-recommends \\",
@@ -74,8 +82,8 @@ function generateDockerfile(): string {
     "    && rm -rf /var/lib/apt/lists/*",
     "",
     "WORKDIR /app",
+    "COPY --from=deps /app/node_modules ./node_modules",
     "COPY package.json ./",
-    "RUN npm install --production",
     "COPY dist/ ./dist/",
     "",
     "# Extra files (project config, agent dirs, base Dockerfile) are placed in",
