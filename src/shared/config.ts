@@ -62,12 +62,22 @@ export interface WebhookSourceConfig {
   credential?: string;    // credential instance name for HMAC validation (optional — omit for unsigned)
 }
 
+export interface TelemetryConfig {
+  enabled: boolean;
+  provider: "otel" | "xray" | "none";
+  endpoint?: string;
+  serviceName?: string;
+  headers?: Record<string, string>;
+  samplingRate?: number;
+}
+
 export interface GlobalConfig {
   model?: ModelConfig;
   local?: LocalConfig;
   cloud?: CloudConfig;
   gateway?: GatewayConfig;
   webhooks?: Record<string, WebhookSourceConfig>;
+  telemetry?: TelemetryConfig;
   maxReruns?: number;
   maxCallDepth?: number;
   /** @deprecated Use maxCallDepth instead */
@@ -94,11 +104,22 @@ export interface AgentConfig {
 
 export function loadGlobalConfig(projectPath: string): GlobalConfig {
   const configPath = resolve(projectPath, "config.toml");
-  if (!existsSync(configPath)) {
-    return {};
+  let config: GlobalConfig = {};
+  
+  if (existsSync(configPath)) {
+    const raw = readFileSync(configPath, "utf-8");
+    config = parseTOML(raw) as unknown as GlobalConfig;
   }
-  const raw = readFileSync(configPath, "utf-8");
-  return parseTOML(raw) as unknown as GlobalConfig;
+
+  // Set default telemetry config if not provided
+  if (!config.telemetry) {
+    config.telemetry = {
+      enabled: false,
+      provider: "none",
+    };
+  }
+
+  return config;
 }
 
 export function loadAgentConfig(projectPath: string, agentName: string): AgentConfig {

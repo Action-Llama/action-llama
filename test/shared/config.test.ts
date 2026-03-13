@@ -35,12 +35,22 @@ describe("loadGlobalConfig", () => {
   it("ignores config.json", () => {
     writeFileSync(resolve(tmpDir, "config.json"), JSON.stringify({ local: { enabled: true } }));
     const loaded = loadGlobalConfig(tmpDir);
-    expect(loaded).toEqual({});
+    expect(loaded).toEqual({
+      telemetry: {
+        enabled: false,
+        provider: "none",
+      },
+    });
   });
 
   it("returns empty config when no config file exists", () => {
     const loaded = loadGlobalConfig(tmpDir);
-    expect(loaded).toEqual({});
+    expect(loaded).toEqual({
+      telemetry: {
+        enabled: false,
+        provider: "none",
+      },
+    });
   });
 });
 

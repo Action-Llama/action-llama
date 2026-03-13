@@ -18,6 +18,8 @@ import type { StatusTracker } from "../tui/status-tracker.js";
 import { getExitCodeMessage } from "../shared/exit-codes.js";
 import { AgentError, isUnrecoverableError, UNRECOVERABLE_THRESHOLD } from "../shared/errors.js";
 import { installSignalCommands, readSignals } from "./signals.js";
+import { withSpan, getTelemetry } from "../telemetry/index.js";
+import { SpanKind } from "@opentelemetry/api";
 
 export type RunResult = "completed" | "rerun" | "error";
 
@@ -75,6 +77,28 @@ export class AgentRunner {
         : triggerInfo.type)
       : undefined;
     this.statusTracker?.startRun(this.agentConfig.name, runReason);
+
+    return await withSpan(
+      "agent.run",
+      async (span) => {
+        span.setAttributes({
+          "agent.name": this.agentConfig.name,
+          "agent.run_id": this.instanceId,
+          "agent.trigger_type": triggerInfo?.type || "manual",
+          "agent.trigger_source": triggerInfo?.source || "",
+          "agent.model_provider": this.agentConfig.model?.provider,
+          "agent.model_name": this.agentConfig.model?.model,
+          "execution.environment": "host",
+        });
+
+        return this._runInternal(prompt, triggerInfo, span);
+      },
+      {},
+      SpanKind.INTERNAL
+    );
+  }
+
+  private async _runInternal(prompt: string, triggerInfo?: { type: 'schedule' | 'webhook' | 'agent'; source?: string }, parentSpan?: any): Promise<RunOutcome> {
 
     if (triggerInfo) {
       const triggerDetails = triggerInfo.type === 'agent' && triggerInfo.source 
@@ -293,6 +317,21 @@ export class AgentRunner {
       } else {
         this.logger.info({ outputLength: outputText.length }, "run completed");
         result = "completed";
+      }
+
+      // Add telemetry attributes for the execution result
+      if (parentSpan) {
+        parentSpan.setAttributes({
+          "execution.result": result,
+          "execution.output_length": outputText.length,
+          "execution.exit_code": signals.exitCode,
+          "execution.has_return_value": !!signals.returnValue,
+          "execution.unrecoverable_errors": unrecoverableErrors,
+        });
+
+        if (result === "error") {
+          parentSpan.recordException(new Error(`Agent execution failed: ${runError || "Unknown error"}`));
+        }
       }
 
       return {
