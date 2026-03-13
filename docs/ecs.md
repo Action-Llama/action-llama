@@ -704,7 +704,7 @@ Attach the same policy statements from the [operator IAM policy](#operator-iam-p
 #### Managing the cloud scheduler
 
 ```bash
-al status -c          # Show scheduler service status + running agents
+al stat -c            # Show scheduler service status + running agents
 al logs scheduler -c  # Tail scheduler logs from CloudWatch
 al cloud teardown     # Tear down scheduler + all cloud resources
 ```

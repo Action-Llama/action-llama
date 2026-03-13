@@ -1,14 +1,17 @@
 import { resolve } from "path";
 import { gatewayFetch } from "../gateway-client.js";
 
-export async function execute(opts: { project: string }): Promise<void> {
+export async function execute(name: string | undefined, opts: { project: string }): Promise<void> {
   const projectPath = resolve(opts.project);
+  const path = name
+    ? `/control/agents/${encodeURIComponent(name)}/resume`
+    : "/control/resume";
 
   let response: Response;
   try {
     response = await gatewayFetch({
       project: projectPath,
-      path: "/control/resume",
+      path,
       method: "POST",
     });
   } catch (error) {

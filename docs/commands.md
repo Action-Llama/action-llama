@@ -162,13 +162,13 @@ al start -w                   # Enable web dashboard
 | `-c, --cloud` | Run on cloud infrastructure |
 | `-w, --web-ui` | Enable web dashboard (see [Web Dashboard](web-dashboard.md)) |
 
-## `al status`
+## `al stat`
 
 Shows status of all discovered agents in the project.
 
 ```bash
-al status -p .
-al status -c                  # Show cloud status
+al stat -p .
+al stat -c                    # Show cloud status
 ```
 
 Displays each agent's schedule, credentials, and webhook configuration.
@@ -198,78 +198,42 @@ al logs dev -c              # Cloud logs
 | `-d, --date <YYYY-MM-DD>` | View a specific date's log file |
 | `-c, --cloud` | View cloud logs (Cloud Logging / CloudWatch) |
 
-## `al agent pause <name>`
+## `al pause [name]`
 
-Pause a specific agent — its cron job stops firing and webhook events are ignored. In-flight runs continue until they finish. Requires the gateway.
+Pause the scheduler or a single agent. Without a name, pauses the entire scheduler — all cron jobs stop firing. With a name, pauses that agent — its cron job stops firing and webhook events are ignored. In-flight runs continue until they finish. Requires the gateway.
 
 ```bash
-al agent pause dev
-al agent pause reviewer -p ./my-project
+al pause                              # Pause the scheduler
+al pause dev                          # Pause a single agent
+al pause reviewer -p ./my-project
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
 
-## `al agent resume <name>`
+## `al resume [name]`
 
-Resume a paused agent. Its cron job resumes firing on its next scheduled time and webhooks are accepted again.
+Resume the scheduler or a single agent. Without a name, resumes the entire scheduler. With a name, resumes that agent — its cron job resumes firing and webhooks are accepted again.
 
 ```bash
-al agent resume dev
-al agent resume reviewer -p ./my-project
+al resume                             # Resume the scheduler
+al resume dev                         # Resume a single agent
+al resume reviewer -p ./my-project
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
 
-## `al agent kill <name>`
+## `al kill <target>`
 
-Kill all running instances of an agent. The agent's containers are terminated immediately. This does **not** pause the agent — if it has a schedule, a new run will start at the next cron tick. To fully stop an agent, pause it first, then kill.
-
-```bash
-al agent kill dev
-al agent kill reviewer -p ./my-project
-```
-
-| Option | Description |
-|--------|-------------|
-| `-p, --project <dir>` | Project directory (default: `.`) |
-
-## `al kill <instanceId>`
-
-Kill a single running agent instance by ID. Requires the gateway to be running (start with `--gateway` or `-g`).
+Kill an agent (all running instances) or a single instance by ID. Tries the target as an agent name first; if not found, falls back to instance ID. This does **not** pause the agent — if it has a schedule, a new run will start at the next cron tick. To fully stop an agent, pause it first, then kill.
 
 ```bash
-al kill my-agent-abc123
-al kill -p ./my-project my-agent-abc123
-```
-
-| Option | Description |
-|--------|-------------|
-| `-p, --project <dir>` | Project directory (default: `.`) |
-
-## `al pause`
-
-Pause the scheduler — all cron jobs stop firing. Running instances continue until they finish. Requires the gateway.
-
-```bash
-al pause
-al pause -p ./my-project
-```
-
-| Option | Description |
-|--------|-------------|
-| `-p, --project <dir>` | Project directory (default: `.`) |
-
-## `al resume`
-
-Resume a paused scheduler. Cron jobs resume firing on their next scheduled time.
-
-```bash
-al resume
-al resume -p ./my-project
+al kill dev                           # Kill all instances of an agent
+al kill my-agent-abc123               # Kill a single instance by ID
+al kill dev -p ./my-project
 ```
 
 | Option | Description |

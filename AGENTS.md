@@ -16,7 +16,7 @@ Each agent is a directory containing:
 2. Add `agent-config.toml` with credentials, model config, and a schedule or webhook trigger
 3. Add `ACTIONS.md` with the actions — step-by-step instructions the LLM follows each run
 4. If your agents need shared tools beyond the base image (git, curl, openssh-client, node), edit the project `Dockerfile` at the project root. For agent-specific tools, add a `Dockerfile` to that agent's directory — see Container Isolation section below
-5. Verify with `npx al status`
+5. Verify with `npx al stat`
 6. Run with `npx al start`
 
 ## Credential Reference

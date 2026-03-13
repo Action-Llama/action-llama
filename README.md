@@ -109,14 +109,11 @@ If you installed globally (`npm install -g @action-llama/action-llama`), you can
 | `al creds ls` | List stored credentials (names only, no secrets) |
 | `al run <agent>` | Manually run a single agent |
 | `al start` | Start the scheduler (cron + webhooks) |
-| `al status` | Show agent status |
+| `al stat` | Show agent status |
 | `al logs <agent>` | View agent log files |
-| `al agent pause <name>` | Pause a specific agent (stop its cron/webhooks) |
-| `al agent resume <name>` | Resume a paused agent |
-| `al agent kill <name>` | Kill all running instances of an agent |
-| `al kill <instanceId>` | Kill a single running agent instance |
-| `al pause` | Pause the scheduler (stop all cron jobs) |
-| `al resume` | Resume a paused scheduler |
+| `al pause [name]` | Pause the scheduler, or a single agent by name |
+| `al resume [name]` | Resume the scheduler, or a single agent by name |
+| `al kill <target>` | Kill an agent (all instances) or a single instance by ID |
 
 Most commands accept `-p <dir>` to set the project directory and `-c` to target cloud infrastructure. See the [CLI command reference](docs/commands.md) for all options and flags.
 

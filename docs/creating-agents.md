@@ -62,10 +62,10 @@ Your configuration is in the `<agent-config>` block at the start of your prompt.
 
 The ACTIONS.md is injected as the agent's system prompt at runtime. Write it as instructions to the LLM.
 
-### 4. Verify with `al status`
+### 4. Verify with `al stat`
 
 ```bash
-al status -p .
+al stat -p .
 ```
 
 This should show your agent with its schedule and credentials.

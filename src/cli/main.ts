@@ -110,7 +110,7 @@ program
   }));
 
 program
-  .command("status")
+  .command("stat")
   .description("Show agent status")
   .option("-p, --project <dir>", "project directory", ".")
   .option("-c, --cloud", "show cloud status")
@@ -121,30 +121,32 @@ program
 
 program
   .command("kill")
-  .description("Kill a running agent instance")
-  .argument("<instance-id>", "agent instance ID")
+  .description("Kill an agent (all instances) or a single instance by ID")
+  .argument("<target>", "agent name or instance ID")
   .option("-p, --project <dir>", "project directory", ".")
-  .action(withCommand(async (instanceId: string, opts) => {
+  .action(withCommand(async (target: string, opts) => {
     const { execute } = await import("./commands/kill.js");
-    await execute(instanceId, opts);
+    await execute(target, opts);
   }));
 
 program
   .command("pause")
-  .description("Pause the scheduler")
+  .description("Pause the scheduler, or a single agent by name")
+  .argument("[name]", "agent name (omit to pause the entire scheduler)")
   .option("-p, --project <dir>", "project directory", ".")
-  .action(withCommand(async (opts) => {
+  .action(withCommand(async (name: string | undefined, opts) => {
     const { execute } = await import("./commands/pause.js");
-    await execute(opts);
+    await execute(name, opts);
   }));
 
 program
   .command("resume")
-  .description("Resume the scheduler")
+  .description("Resume the scheduler, or a single agent by name")
+  .argument("[name]", "agent name (omit to resume the entire scheduler)")
   .option("-p, --project <dir>", "project directory", ".")
-  .action(withCommand(async (opts) => {
+  .action(withCommand(async (name: string | undefined, opts) => {
     const { execute } = await import("./commands/resume.js");
-    await execute(opts);
+    await execute(name, opts);
   }));
 
 program
@@ -156,42 +158,6 @@ program
   .action(withCommand(async (agent: string | undefined, opts) => {
     const { execute } = await import("./commands/chat.js");
     await execute({ ...opts, agent });
-  }));
-
-// --- Per-agent control ---
-
-const agentCmd = program
-  .command("agent")
-  .description("Per-agent control commands");
-
-agentCmd
-  .command("pause")
-  .description("Pause an agent (stop scheduling new runs, in-flight runs finish)")
-  .argument("<name>", "agent name")
-  .option("-p, --project <dir>", "project directory", ".")
-  .action(withCommand(async (name: string, opts) => {
-    const { execute } = await import("./commands/agent-pause.js");
-    await execute(name, opts);
-  }));
-
-agentCmd
-  .command("resume")
-  .description("Resume a paused agent")
-  .argument("<name>", "agent name")
-  .option("-p, --project <dir>", "project directory", ".")
-  .action(withCommand(async (name: string, opts) => {
-    const { execute } = await import("./commands/agent-resume.js");
-    await execute(name, opts);
-  }));
-
-agentCmd
-  .command("kill")
-  .description("Kill all running instances of an agent")
-  .argument("<name>", "agent name")
-  .option("-p, --project <dir>", "project directory", ".")
-  .action(withCommand(async (name: string, opts) => {
-    const { execute } = await import("./commands/agent-kill.js");
-    await execute(name, opts);
   }));
 
 // --- Credential management ---

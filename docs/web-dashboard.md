@@ -35,7 +35,7 @@ A **Logout** link is available in the dashboard header.
 
 ### CLI access
 
-CLI commands (`al status`, `al pause`, `al resume`, `al kill`) automatically read the API key from the credential store and send it as a `Bearer` token in the `Authorization` header.
+CLI commands (`al stat`, `al pause`, `al resume`, `al kill`) automatically read the API key from the credential store and send it as a `Bearer` token in the `Authorization` header.
 
 ### What's protected
 
