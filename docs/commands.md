@@ -18,7 +18,7 @@ After setup, create agents by following [Creating Agents](creating-agents.md).
 
 ## `al doctor`
 
-Checks all agent credentials and interactively prompts for any that are missing. Discovers agents in the project, collects their credential requirements (plus any webhook secret credentials), and ensures each one exists on disk.
+Checks all agent credentials and interactively prompts for any that are missing. Discovers agents in the project, collects their credential requirements (plus any webhook secret credentials), and ensures each one exists on disk. Also generates a gateway API key if one doesn't exist yet (used for dashboard and CLI authentication).
 
 ```bash
 al doctor -p .
@@ -197,6 +197,45 @@ al logs dev -c              # Cloud logs
 | `-f, --follow` | Tail mode — watch for new entries |
 | `-d, --date <YYYY-MM-DD>` | View a specific date's log file |
 | `-c, --cloud` | View cloud logs (Cloud Logging / CloudWatch) |
+
+## `al kill <instanceId>`
+
+Kill a running agent instance. Requires the gateway to be running (start with `--gateway` or `-g`).
+
+```bash
+al kill my-agent-abc123
+al kill -p ./my-project my-agent-abc123
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
+## `al pause`
+
+Pause the scheduler — all cron jobs stop firing. Running instances continue until they finish. Requires the gateway.
+
+```bash
+al pause
+al pause -p ./my-project
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
+## `al resume`
+
+Resume a paused scheduler. Cron jobs resume firing on their next scheduled time.
+
+```bash
+al resume
+al resume -p ./my-project
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
 
 ## `al chat`
 

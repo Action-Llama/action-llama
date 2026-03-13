@@ -1,15 +1,15 @@
-import { loadGlobalConfig } from "../../shared/config.js";
 import { resolve } from "path";
+import { gatewayFetch } from "../gateway-client.js";
 
 export async function execute(opts: { project: string }): Promise<void> {
   const projectPath = resolve(opts.project);
-  const globalConfig = loadGlobalConfig(projectPath);
-  const gatewayPort = globalConfig.gateway?.port || 8080;
 
   let response: Response;
   try {
-    response = await fetch(`http://localhost:${gatewayPort}/control/pause`, {
-      method: 'POST',
+    response = await gatewayFetch({
+      project: projectPath,
+      path: "/control/pause",
+      method: "POST",
     });
   } catch (error) {
     if (error instanceof Error && error.message.includes('ECONNREFUSED')) {

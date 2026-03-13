@@ -1,5 +1,6 @@
 import { resolve } from "path";
 import { discoverAgents, loadAgentConfig, loadGlobalConfig } from "../../shared/config.js";
+import { gatewayFetch } from "../gateway-client.js";
 import type { RunningAgent } from "../../docker/runtime.js";
 import type { AgentInstance } from "../../scheduler/types.js";
 
@@ -80,13 +81,11 @@ export async function execute(opts: { project: string; cloud?: boolean }): Promi
   console.log(`AL Status — ${projectPath}\n`);
 
   // Try to get running instances from gateway if available
-  const globalConfig = loadGlobalConfig(projectPath);
-  const gatewayPort = globalConfig.gateway?.port || 8080;
   let schedulerInfo = null;
   let instances: AgentInstance[] = [];
-  
+
   try {
-    const response = await fetch(`http://localhost:${gatewayPort}/control/status`);
+    const response = await gatewayFetch({ project: projectPath, path: "/control/status" });
     if (response.ok) {
       const data = await response.json();
       schedulerInfo = data.scheduler;
@@ -152,7 +151,7 @@ export async function execute(opts: { project: string; cloud?: boolean }): Promi
 
   // Fetch and display lock information (local mode only)
   try {
-    const response = await fetch(`http://localhost:${gatewayPort}/locks/status`);
+    const response = await gatewayFetch({ project: projectPath, path: "/locks/status" });
     if (response.ok) {
       const data = await response.json();
       if (data.locks && data.locks.length > 0) {

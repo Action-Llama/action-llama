@@ -19,6 +19,7 @@ import { createContainerRuntime, buildAgentImages } from "./runtime-factory.js";
 import { resolveWebhookSource, buildFilterFromTrigger, setupWebhookRegistry } from "./webhook-setup.js";
 import { initTelemetry, withSpan } from "../telemetry/index.js";
 import { SpanKind } from "@opentelemetry/api";
+import { ensureGatewayApiKey } from "../gateway/api-key.js";
 
 const DEFAULT_MAX_RERUNS = 10;
 const DEFAULT_MAX_TRIGGER_DEPTH = 3;
@@ -322,6 +323,12 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   let gateway: GatewayServer | undefined;
 
   if (gatewayEnabled) {
+    // Ensure gateway API key exists (fallback generation if doctor wasn't run)
+    const { key: gatewayApiKey, generated } = await ensureGatewayApiKey();
+    if (generated) {
+      logger.info("Generated gateway API key (run 'al doctor' to view it)");
+    }
+
     const { startGateway } = await import("../gateway/index.js");
     const gatewayPort = globalConfig.gateway?.port || 8080;
     gateway = await startGateway({
@@ -335,6 +342,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       projectPath,
       webUI: cloudMode ? false : webUI,
       lockTimeout: globalConfig.gateway?.lockTimeout,
+      apiKey: gatewayApiKey,
       // Control routes, dashboard, and lock status are local-only.
       // In cloud mode, use cloud-native tools (console, CLI) for these operations.
       controlDeps: cloudMode ? undefined : {
@@ -358,6 +366,33 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
           }
           statusTracker?.setPaused(false);
           logger.info("Scheduler resumed via control API");
+        },
+        triggerAgent: async (name: string) => {
+          const pool = runnerPools[name];
+          if (!pool) return false;
+          const runner = pool.getAvailableRunner();
+          if (!runner) return false;
+          const config = agentConfigs.find((a) => a.name === name);
+          if (!config) return false;
+          logger.info({ agent: name }, "manual trigger via control API");
+          runWithReruns(runner, config, 0, schedulerCtx).catch((err) => {
+            logger.error({ err, agent: name }, "manual trigger run failed");
+          });
+          return true;
+        },
+        enableAgent: async (name: string) => {
+          if (!statusTracker) return false;
+          const config = agentConfigs.find((a) => a.name === name);
+          if (!config) return false;
+          statusTracker.enableAgent(name);
+          return true;
+        },
+        disableAgent: async (name: string) => {
+          if (!statusTracker) return false;
+          const config = agentConfigs.find((a) => a.name === name);
+          if (!config) return false;
+          statusTracker.disableAgent(name);
+          return true;
         },
       },
     });

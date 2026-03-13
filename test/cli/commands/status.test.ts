@@ -61,11 +61,17 @@ describe("status with locks", () => {
     expect(output).toContain("dev-agent: github issue acme/app#42");
     expect(output).toContain("reviewer-agent: github pr acme/app#45");
     expect(output).toContain("held for");
-    expect(fetchSpy).toHaveBeenCalledWith("http://localhost:8080/locks/status");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://localhost:8080/locks/status",
+      expect.objectContaining({ method: "GET" }),
+    );
   });
 
   it("handles empty locks gracefully", async () => {
     tmpDir = makeTmpProject();
+    // First call: /control/status
+    fetchSpy.mockResolvedValueOnce({ ok: false });
+    // Second call: /locks/status
     fetchSpy.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({ locks: [] }),
@@ -78,7 +84,7 @@ describe("status with locks", () => {
 
   it("handles gateway not running gracefully", async () => {
     tmpDir = makeTmpProject();
-    fetchSpy.mockRejectedValueOnce(new Error("fetch failed"));
+    fetchSpy.mockRejectedValue(new Error("fetch failed"));
 
     const output = await captureLog(() => execute({ project: tmpDir }));
     expect(output).toContain("AL Status");
@@ -87,7 +93,7 @@ describe("status with locks", () => {
 
   it("handles gateway returning error status gracefully", async () => {
     tmpDir = makeTmpProject();
-    fetchSpy.mockResolvedValueOnce({ ok: false });
+    fetchSpy.mockResolvedValue({ ok: false });
 
     const output = await captureLog(() => execute({ project: tmpDir }));
     expect(output).toContain("AL Status");

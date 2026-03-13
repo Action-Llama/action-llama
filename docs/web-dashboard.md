@@ -21,15 +21,35 @@ The port is controlled by the `[gateway].port` setting in `config.toml` (default
 
 ## Authentication
 
-Set the `AL_DASHBOARD_SECRET` environment variable to enable HTTP basic auth on all dashboard routes:
+The dashboard is protected by a gateway API key. The same key is used for both browser sessions and CLI access.
 
-```bash
-AL_DASHBOARD_SECRET=my-secret al start -w
-```
+**Key location:** `~/.action-llama-credentials/gateway_api_key/default/key`
 
-When set, the browser will prompt for credentials. Use any username and the secret as the password. When not set, the dashboard is open (suitable for local development).
+The key is generated automatically by `al doctor` or on first `al start`. To view or regenerate it, run `al doctor`.
 
-Only the `/dashboard` routes are protected — health checks, webhook endpoints, and container management routes are unaffected.
+### Browser login
+
+Navigate to `http://localhost:8080/dashboard`. You'll be redirected to a login page where you paste your API key. On success, an `al_session` cookie is set (HttpOnly, SameSite=Strict) so all subsequent requests — including SSE streams — are authenticated automatically.
+
+A **Logout** link is available in the dashboard header.
+
+### CLI access
+
+CLI commands (`al status`, `al pause`, `al resume`, `al kill`) automatically read the API key from the credential store and send it as a `Bearer` token in the `Authorization` header.
+
+### What's protected
+
+The following routes require authentication:
+
+- `/dashboard` and `/dashboard/*` — all dashboard pages and SSE streams
+- `/control/*` — scheduler control endpoints (pause, resume, kill, trigger, enable/disable)
+- `/locks/status` — active lock information
+
+Health checks (`/health`), webhook endpoints (`/webhooks/*`), and container management routes are **not** protected.
+
+### Migrating from `AL_DASHBOARD_SECRET`
+
+The old `AL_DASHBOARD_SECRET` environment variable (HTTP Basic Auth) is no longer used. If it's still set, a deprecation warning is logged. Remove it from your environment and run `al doctor` to set up the new API key.
 
 ## Dashboard Pages
 
@@ -45,6 +65,12 @@ Displays a live overview of all agents:
 | Last Run | Timestamp of the most recent run |
 | Duration | How long the last run took |
 | Next Run | When the next scheduled run will happen |
+| Actions | **Run** (trigger an immediate run) and **Enable/Disable** (toggle the agent) |
+
+The header also includes:
+
+- **Pause/Resume** button — pauses or resumes the scheduler (all cron jobs)
+- **Logout** link — clears the session cookie and redirects to the login page
 
 Below the table, a **Recent Activity** section shows the last 20 log lines across all agents.
 
@@ -70,5 +96,15 @@ Live updates use **Server-Sent Events (SSE)** on two endpoints:
 
 - `GET /dashboard/api/status-stream` — pushes agent status and scheduler info whenever state changes
 - `GET /dashboard/api/logs/<agent>/stream` — streams log lines for a specific agent by tailing its log file (500ms poll interval)
+
+Dashboard actions (Run, Enable/Disable, Pause/Resume) call the control API endpoints:
+
+- `POST /control/trigger/<name>` — trigger an immediate agent run
+- `POST /control/agents/<name>/enable` — enable a disabled agent
+- `POST /control/agents/<name>/disable` — disable an agent (pauses its cron job)
+- `POST /control/pause` — pause the scheduler
+- `POST /control/resume` — resume the scheduler
+
+All control requests use `credentials: 'same-origin'` to carry the session cookie.
 
 No additional dependencies or frontend build steps are required. The dashboard is rendered as plain HTML with inline CSS and JavaScript.

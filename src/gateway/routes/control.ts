@@ -6,6 +6,9 @@ export interface ControlRoutesDeps {
   killInstance: (instanceId: string) => Promise<boolean>;
   pauseScheduler: () => Promise<void>;
   resumeScheduler: () => Promise<void>;
+  triggerAgent?: (name: string) => Promise<boolean>;
+  enableAgent?: (name: string) => Promise<boolean>;
+  disableAgent?: (name: string) => Promise<boolean>;
 }
 
 export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps) {
@@ -57,6 +60,63 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps) {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return c.json({ error: `Failed to resume scheduler: ${message}` }, 500);
+    }
+  });
+
+  // POST /control/trigger/:name - Trigger an agent run
+  app.post("/control/trigger/:name", async (c) => {
+    const name = c.req.param("name");
+    if (!deps.triggerAgent) {
+      return c.json({ error: "Trigger not available" }, 503);
+    }
+    try {
+      const success = await deps.triggerAgent(name);
+      if (success) {
+        return c.json({ success: true, message: `Agent ${name} triggered` });
+      } else {
+        return c.json({ error: `Agent ${name} not found or all runners busy` }, 404);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return c.json({ error: `Failed to trigger agent: ${message}` }, 500);
+    }
+  });
+
+  // POST /control/agents/:name/enable - Enable an agent
+  app.post("/control/agents/:name/enable", async (c) => {
+    const name = c.req.param("name");
+    if (!deps.enableAgent) {
+      return c.json({ error: "Enable not available" }, 503);
+    }
+    try {
+      const success = await deps.enableAgent(name);
+      if (success) {
+        return c.json({ success: true, message: `Agent ${name} enabled` });
+      } else {
+        return c.json({ error: `Agent ${name} not found` }, 404);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return c.json({ error: `Failed to enable agent: ${message}` }, 500);
+    }
+  });
+
+  // POST /control/agents/:name/disable - Disable an agent
+  app.post("/control/agents/:name/disable", async (c) => {
+    const name = c.req.param("name");
+    if (!deps.disableAgent) {
+      return c.json({ error: "Disable not available" }, 503);
+    }
+    try {
+      const success = await deps.disableAgent(name);
+      if (success) {
+        return c.json({ success: true, message: `Agent ${name} disabled` });
+      } else {
+        return c.json({ error: `Agent ${name} not found` }, 404);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return c.json({ error: `Failed to disable agent: ${message}` }, 500);
     }
   });
 

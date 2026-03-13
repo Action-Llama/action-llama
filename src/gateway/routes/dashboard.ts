@@ -1,11 +1,12 @@
-import type { Hono, Context, Next } from "hono";
+import type { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { renderDashboardPage } from "../views/dashboard-page.js";
 import { renderLogsPage } from "../views/logs-page.js";
+import { renderLoginPage } from "../views/login-page.js";
+import { safeCompare } from "../auth.js";
 import type { StatusTracker } from "../../tui/status-tracker.js";
 import { readFileSync, readdirSync, statSync } from "fs";
 import { resolve } from "path";
-import { timingSafeEqual } from "crypto";
 
 function logsDir(projectPath: string): string {
   return resolve(projectPath, ".al", "logs");
@@ -38,48 +39,55 @@ function readLastNLines(filePath: string, n: number): string[] {
   }
 }
 
-function safeCompare(a: string, b: string): boolean {
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  if (bufA.length !== bufB.length) return false;
-  return timingSafeEqual(bufA, bufB);
-}
-
-function basicAuthMiddleware(secret: string) {
-  return async (c: Context, next: Next) => {
-    const header = c.req.header("Authorization");
-    if (header && header.startsWith("Basic ")) {
-      const decoded = Buffer.from(header.slice(6), "base64").toString("utf-8");
-      const sep = decoded.indexOf(":");
-      if (sep !== -1) {
-        const password = decoded.slice(sep + 1);
-        if (safeCompare(password, secret)) {
-          await next();
-          return;
-        }
-      }
-    }
-    c.header("WWW-Authenticate", 'Basic realm="Action Llama Dashboard"');
-    return c.text("Unauthorized", 401);
-  };
-}
-
 export function registerDashboardRoutes(
   app: Hono,
   statusTracker: StatusTracker,
-  projectPath?: string
+  projectPath?: string,
+  apiKey?: string,
 ): void {
-  // Apply basic auth if AL_DASHBOARD_SECRET is set
-  const dashboardSecret = process.env.AL_DASHBOARD_SECRET;
-  if (dashboardSecret) {
-    app.use("/dashboard/*", basicAuthMiddleware(dashboardSecret));
-    app.use("/dashboard", basicAuthMiddleware(dashboardSecret));
-  } else {
+  // Deprecation warning for old env var
+  if (process.env.AL_DASHBOARD_SECRET) {
     console.warn(
-      "[security] Dashboard is running without authentication. " +
-      "Set AL_DASHBOARD_SECRET to require a password."
+      "[deprecated] AL_DASHBOARD_SECRET is no longer used. " +
+      "The dashboard now uses the gateway API key from ~/.action-llama-credentials/gateway_api_key/default/key. " +
+      "Run 'al doctor' to set it up."
     );
   }
+
+  // --- Unprotected routes: login / logout ---
+
+  app.get("/login", (c) => {
+    return c.html(renderLoginPage());
+  });
+
+  app.post("/login", async (c) => {
+    if (!apiKey) {
+      // No API key configured — skip auth
+      return c.redirect("/dashboard");
+    }
+    const body = await c.req.parseBody();
+    const key = typeof body["key"] === "string" ? body["key"] : "";
+    if (safeCompare(key, apiKey)) {
+      return c.html("", {
+        status: 302,
+        headers: {
+          Location: "/dashboard",
+          "Set-Cookie": `al_session=${apiKey}; HttpOnly; SameSite=Strict; Path=/`,
+        },
+      });
+    }
+    return c.html(renderLoginPage("Invalid API key"), 401);
+  });
+
+  app.post("/logout", (c) => {
+    return c.html("", {
+      status: 302,
+      headers: {
+        Location: "/login",
+        "Set-Cookie": "al_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0",
+      },
+    });
+  });
 
   // Main dashboard page
   app.get("/dashboard", (c) => {

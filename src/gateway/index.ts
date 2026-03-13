@@ -16,6 +16,7 @@ import type { StatusTracker } from "../tui/status-tracker.js";
 import type { ControlRoutesDeps } from "./routes/control.js";
 import { withSpan, getTelemetry } from "../telemetry/index.js";
 import { SpanKind } from "@opentelemetry/api";
+import { authMiddleware } from "./auth.js";
 
 export type { ContainerRegistration } from "./types.js";
 
@@ -32,6 +33,7 @@ export interface GatewayOptions {
   lockTimeout?: number;
   signalContext?: SignalContext;
   controlDeps?: ControlRoutesDeps;
+  apiKey?: string;
 }
 
 export interface GatewayServer {
@@ -87,6 +89,15 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
   // Container management routes
   const killFn = killContainer || (async () => {});
   registerShutdownRoute(app, containerRegistry, killFn, logger);
+  // Apply auth middleware to protected routes when an API key is configured
+  if (opts.apiKey) {
+    const auth = authMiddleware(opts.apiKey);
+    app.use("/control/*", auth);
+    app.use("/dashboard/*", auth);
+    app.use("/dashboard", auth);
+    app.use("/locks/status", auth);
+  }
+
   const isPublic = opts.hostname === "0.0.0.0";
   registerLockRoutes(app, containerRegistry, lockStore, logger, {
     skipStatusEndpoint: isPublic,
@@ -101,9 +112,9 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     registerWebhookRoutes(app, webhookRegistry, webhookSecrets || {}, logger, statusTracker);
   }
 
-  // Dashboard routes
+  // Dashboard routes (login/logout are unprotected; dashboard pages are behind authMiddleware above)
   if (webUI && statusTracker) {
-    registerDashboardRoutes(app, statusTracker, projectPath);
+    registerDashboardRoutes(app, statusTracker, projectPath, opts.apiKey);
   }
 
   // Control routes (for kill, pause, resume commands)

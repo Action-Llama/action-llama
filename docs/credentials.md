@@ -21,6 +21,7 @@ Credentials are stored in `~/.action-llama-credentials/<type>/<instance>/<field>
 | `bugsnag_token` | `token` | Bugsnag auth token for error monitoring and release management | `BUGSNAG_AUTH_TOKEN` env var |
 | `netlify_token` | `token` | Netlify Personal Access Token for site management | `NETLIFY_AUTH_TOKEN` env var |
 | `git_ssh` | `id_rsa`, `username`, `email` | SSH private key + git author identity | SSH key mounted as file; `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL`/`GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` set from `username`/`email` |
+| `gateway_api_key` | `key` | API key for dashboard and CLI access to the gateway | _(used by gateway + CLI)_ |
 | `github_webhook_secret` | `secret` | Shared secret for GitHub webhook verification | _(used by gateway)_ |
 | `sentry_client_secret` | `secret` | Client secret for Sentry webhook verification | _(used by gateway)_ |
 | `linear_webhook_secret` | `secret` | Shared secret for Linear webhook verification | _(used by gateway)_ |

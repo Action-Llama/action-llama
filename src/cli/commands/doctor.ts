@@ -7,6 +7,7 @@ import { parseCredentialRef, credentialExists, writeCredentialFields } from "../
 import { createLocalBackend, createBackendFromCloudConfig } from "../../shared/remote.js";
 import { ConfigError, CredentialError } from "../../shared/errors.js";
 import { reconcileCloudIam, validateEcsRoles, reconcileLambdaRoles } from "./cloud-iam.js";
+import { ensureGatewayApiKey } from "../../gateway/api-key.js";
 
 // Re-export for backward compatibility (used by cloud-setup.ts and scheduler/index.ts)
 export { reconcileCloudIam, validateEcsRoles, reconcileLambdaRoles } from "./cloud-iam.js";
@@ -61,6 +62,16 @@ export async function execute(opts: { project: string; cloud?: boolean; checkOnl
     await checkCredentials(credentialRefs, projectPath, opts.cloud);
   } else {
     await promptCredentials(credentialRefs);
+  }
+
+  // --- Gateway API key ---
+  console.log("\nGateway API key:");
+  const { key, generated } = await ensureGatewayApiKey();
+  if (generated) {
+    console.log(`  [new] Generated gateway API key: ${key}`);
+    console.log("  Save this key — you'll need it to log into the dashboard.");
+  } else {
+    console.log("  [ok] Gateway API key already configured.");
   }
 
   // --- Cloud mode: push creds + reconcile IAM (interactive only) ---
