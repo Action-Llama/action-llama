@@ -531,6 +531,11 @@ This is the minimum policy for the IAM user or role running `al` commands. Repla
       "Effect": "Allow",
       "Action": [
         "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:PutImage",
+        "ecr:InitiateLayerUpload",
+        "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload",
         "ecr:SetRepositoryPolicy"
       ],
       "Resource": "arn:aws:ecr:<REGION>:<ACCOUNT_ID>:repository/<REPO_NAME>"
