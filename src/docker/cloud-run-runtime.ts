@@ -1,7 +1,8 @@
 import { execFileSync } from "child_process";
 import type { ContainerRuntime, RuntimeLaunchOpts, RuntimeCredentials, SecretMount, BuildImageOpts, RunningAgent } from "./runtime.js";
 import { parseCredentialRef } from "../shared/credentials.js";
-import { AWS_CONSTANTS } from "../shared/aws-constants.js";
+import { CONSTANTS } from "../shared/constants.js";
+import { GCP_CONSTANTS } from "../cloud/gcp/constants.js";
 
 export interface CloudRunJobConfig {
   gcpProject: string;
@@ -40,13 +41,13 @@ export class CloudRunJobRuntime implements ContainerRuntime {
 
   constructor(config: CloudRunJobConfig) {
     this.config = config;
-    this.prefix = config.secretPrefix || AWS_CONSTANTS.DEFAULT_SECRET_PREFIX;
+    this.prefix = config.secretPrefix || CONSTANTS.DEFAULT_SECRET_PREFIX;
   }
 
   // --- Agent tracking ---
 
   async isAgentRunning(agentName: string): Promise<boolean> {
-    const jobName = AWS_CONSTANTS.agentFamily(agentName);
+    const jobName = CONSTANTS.agentFamily(agentName);
     const { gcpProject, region } = this.config;
     const fullName = `projects/${gcpProject}/locations/${region}/jobs/${jobName}`;
 
@@ -78,13 +79,13 @@ export class CloudRunJobRuntime implements ContainerRuntime {
     const jobsData = await jobsRes.json() as { jobs?: Array<{ name: string }> };
     const jobs = (jobsData.jobs ?? []).filter((j) => {
       const name = j.name.split("/").pop() ?? "";
-      return name.startsWith(AWS_CONSTANTS.CONTAINER_FILTER);
+      return name.startsWith(CONSTANTS.CONTAINER_FILTER);
     });
 
     const running: RunningAgent[] = [];
     for (const job of jobs) {
       const jobName = job.name.split("/").pop()!;
-      const agentName = AWS_CONSTANTS.agentNameFromFamily(jobName);
+      const agentName = CONSTANTS.agentNameFromFamily(jobName);
 
       const execRes = await this.gcpRequest("GET",
         `https://run.googleapis.com/v2/${job.name}/executions?pageSize=1`
@@ -178,7 +179,7 @@ export class CloudRunJobRuntime implements ContainerRuntime {
   // --- Container lifecycle ---
 
   async launch(opts: RuntimeLaunchOpts): Promise<string> {
-    const jobName = AWS_CONSTANTS.agentFamily(opts.agentName);
+    const jobName = CONSTANTS.agentFamily(opts.agentName);
 
     // Build the job spec with secret volume mounts
     const secretMounts = opts.credentials.strategy === "secrets-manager"
@@ -187,7 +188,7 @@ export class CloudRunJobRuntime implements ContainerRuntime {
 
     // Use per-agent SA if available (created by `al doctor -c`),
     // otherwise fall back to the shared SA from config
-    const perAgentSa = AWS_CONSTANTS.serviceAccountEmail(opts.agentName, this.config.gcpProject);
+    const perAgentSa = GCP_CONSTANTS.serviceAccountEmail(opts.agentName, this.config.gcpProject);
     const serviceAccount = opts.serviceAccount || perAgentSa;
 
     // Create or update the Cloud Run job
@@ -277,7 +278,7 @@ export class CloudRunJobRuntime implements ContainerRuntime {
   }
 
   async fetchLogs(agentName: string, limit: number): Promise<string[]> {
-    const jobName = AWS_CONSTANTS.agentFamily(agentName);
+    const jobName = CONSTANTS.agentFamily(agentName);
     const token = await this.getAccessToken();
 
     const res = await fetch("https://logging.googleapis.com/v2/entries:list", {
@@ -315,7 +316,7 @@ export class CloudRunJobRuntime implements ContainerRuntime {
     onStderr?: (text: string) => void
   ): { stop: () => void } {
     let stopped = false;
-    const jobName = AWS_CONSTANTS.agentFamily(agentName);
+    const jobName = CONSTANTS.agentFamily(agentName);
     let lastTimestamp: string | undefined;
 
     const poll = async () => {

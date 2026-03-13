@@ -1,11 +1,9 @@
 import { resolve } from "path";
-import { existsSync, mkdirSync } from "fs";
+import { existsSync } from "fs";
 import { loadGlobalConfig, loadAgentConfig, discoverAgents } from "../../shared/config.js";
 import { requireCredentialRef } from "../../shared/credentials.js";
 import { createLogger } from "../../shared/logger.js";
-import { agentDir } from "../../shared/paths.js";
-import { AgentRunner } from "../../agents/runner.js";
-import { AWS_CONSTANTS } from "../../shared/aws-constants.js";
+import { CONSTANTS } from "../../shared/constants.js";
 import { buildManualPrompt } from "../../agents/prompt.js";
 import { execute as runDoctor } from "./doctor.js";
 
@@ -38,74 +36,28 @@ export async function execute(agent: string, opts: { project: string; cloud?: bo
     await requireCredentialRef(credRef);
   }
 
-  const dockerEnabled = true;
   const cloudMode = opts.cloud === true;
-
   const logger = createLogger(projectPath, agent);
 
   if (cloudMode) {
-    // Cloud mode: use cloud runtime
+    // Cloud mode: use cloud runtime via provider
     const cloud = globalConfig.cloud;
     if (!cloud) {
       throw new Error("No [cloud] section found in config.toml. Run 'al cloud setup' first.");
     }
 
+    const { createCloudProvider } = await import("../../cloud/provider.js");
+    const provider = await createCloudProvider(cloud);
+
     const { setDefaultBackend } = await import("../../shared/credentials.js");
-    const { createBackendFromCloudConfig } = await import("../../shared/remote.js");
-    const backend = await createBackendFromCloudConfig(cloud);
+    const backend = await provider.createCredentialBackend();
     setDefaultBackend(backend);
 
-    let runtime;
-    if (cloud.provider === "cloud-run") {
-      const { CloudRunJobRuntime } = await import("../../docker/cloud-run-runtime.js");
-      const { gcpProject, region, artifactRegistry, serviceAccount, secretPrefix } = cloud;
-      if (!gcpProject || !region || !artifactRegistry || !serviceAccount) {
-        throw new Error(
-          "Cloud Run requires cloud.gcpProject, cloud.region, " +
-          "cloud.artifactRegistry, and cloud.serviceAccount in config.toml"
-        );
-      }
-      runtime = new CloudRunJobRuntime({ gcpProject, region, artifactRegistry, serviceAccount, secretPrefix });
-    } else {
-      // ECS provider: route to Lambda for short-timeout agents, ECS for long ones
-      const effectiveTimeout = agentConfig.timeout ?? globalConfig.local?.timeout ?? 900;
-
-      if (effectiveTimeout <= AWS_CONSTANTS.LAMBDA_MAX_TIMEOUT) {
-        const { LambdaRuntime } = await import("../../docker/lambda-runtime.js");
-        runtime = new LambdaRuntime({
-          awsRegion: cloud.awsRegion!,
-          ecrRepository: cloud.ecrRepository!,
-          secretPrefix: cloud.awsSecretPrefix,
-          buildBucket: cloud.buildBucket,
-          lambdaRoleArn: cloud.lambdaRoleArn,
-          lambdaSubnets: cloud.lambdaSubnets,
-          lambdaSecurityGroups: cloud.lambdaSecurityGroups,
-        });
-        console.log(`Agent "${agent}" has timeout ${effectiveTimeout}s — routing to Lambda`);
-      } else {
-        const { ECSFargateRuntime } = await import("../../docker/ecs-runtime.js");
-        if (!cloud.awsRegion || !cloud.ecsCluster || !cloud.ecrRepository || !cloud.executionRoleArn || !cloud.taskRoleArn || !cloud.subnets?.length) {
-          throw new Error(
-            "ECS requires cloud.awsRegion, cloud.ecsCluster, cloud.ecrRepository, " +
-            "cloud.executionRoleArn, cloud.taskRoleArn, and cloud.subnets in config.toml"
-          );
-        }
-        runtime = new ECSFargateRuntime({
-          awsRegion: cloud.awsRegion,
-          ecsCluster: cloud.ecsCluster,
-          ecrRepository: cloud.ecrRepository,
-          executionRoleArn: cloud.executionRoleArn,
-          taskRoleArn: cloud.taskRoleArn,
-          subnets: cloud.subnets,
-          securityGroups: cloud.securityGroups,
-          secretPrefix: cloud.awsSecretPrefix,
-        });
-      }
-    }
+    const runtime = provider.createAgentRuntime(agentConfig, globalConfig);
 
     const { ContainerAgentRunner } = await import("../../agents/container-runner.js");
 
-    const baseImage = globalConfig.local?.image || AWS_CONSTANTS.DEFAULT_IMAGE;
+    const baseImage = globalConfig.local?.image || CONSTANTS.DEFAULT_IMAGE;
     const image = await runtime.buildImage({ tag: baseImage, dockerfile: "docker/Dockerfile", contextDir: resolve(import.meta.dirname || ".", "../..") });
 
     const runner = new ContainerAgentRunner(
@@ -123,7 +75,7 @@ export async function execute(agent: string, opts: { project: string; cloud?: bo
     const prompt = buildManualPrompt(agentConfig);
     console.log(`Running agent "${agent}" in cloud (${cloud.provider})...`);
     await runner.run(prompt);
-  } else if (dockerEnabled) {
+  } else {
     // Docker mode: validate and run in container
     if (agentConfig.model.authType === "pi_auth") {
       throw new Error(
@@ -149,7 +101,7 @@ export async function execute(agent: string, opts: { project: string; cloud?: bo
     const runtime = new LocalDockerRuntime();
     ensureNetwork();
 
-    const baseImage = globalConfig.local?.image || AWS_CONSTANTS.DEFAULT_IMAGE;
+    const baseImage = globalConfig.local?.image || CONSTANTS.DEFAULT_IMAGE;
     ensureImage(baseImage);
     const effectiveBaseImage = ensureProjectBaseImage(projectPath, baseImage);
     const image = ensureAgentImage(agent, projectPath, effectiveBaseImage);

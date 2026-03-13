@@ -17,12 +17,12 @@ import {
   CloudWatchLogsClient,
   FilterLogEventsCommand,
 } from "@aws-sdk/client-cloudwatch-logs";
-import { AWS_CONSTANTS } from "../shared/aws-constants.js";
-import type { CloudConfig } from "../shared/config.js";
+import { AWS_CONSTANTS } from "./constants.js";
+import type { EcsCloudConfig } from "../../shared/config.js";
 
 export interface AppRunnerDeployOpts {
   imageUri: string;
-  cloudConfig: CloudConfig;
+  cloudConfig: EcsCloudConfig;
   port?: number;
   envVars?: Record<string, string>;
 }
@@ -138,7 +138,7 @@ export async function deployAppRunner(opts: AppRunnerDeployOpts): Promise<AppRun
 /**
  * Get the current status of the scheduler App Runner service.
  */
-export async function getAppRunnerStatus(cloudConfig: CloudConfig): Promise<AppRunnerServiceInfo | null> {
+export async function getAppRunnerStatus(cloudConfig: EcsCloudConfig): Promise<AppRunnerServiceInfo | null> {
   const client = new AppRunnerClient({ region: cloudConfig.awsRegion! });
   return findService(client, AWS_CONSTANTS.SCHEDULER_SERVICE);
 }
@@ -146,7 +146,7 @@ export async function getAppRunnerStatus(cloudConfig: CloudConfig): Promise<AppR
 /**
  * Fetch recent scheduler logs from CloudWatch.
  */
-export async function getAppRunnerLogs(cloudConfig: CloudConfig, limit: number): Promise<string[]> {
+export async function getAppRunnerLogs(cloudConfig: EcsCloudConfig, limit: number): Promise<string[]> {
   const logsClient = new CloudWatchLogsClient({ region: cloudConfig.awsRegion! });
   const logGroup = AWS_CONSTANTS.APPRUNNER_LOG_GROUP;
 
@@ -181,7 +181,7 @@ export async function getAppRunnerLogs(cloudConfig: CloudConfig, limit: number):
 /**
  * Delete the scheduler App Runner service.
  */
-export async function teardownAppRunner(cloudConfig: CloudConfig): Promise<void> {
+export async function teardownAppRunner(cloudConfig: EcsCloudConfig): Promise<void> {
   const client = new AppRunnerClient({ region: cloudConfig.awsRegion! });
   const existing = await findService(client, AWS_CONSTANTS.SCHEDULER_SERVICE);
 

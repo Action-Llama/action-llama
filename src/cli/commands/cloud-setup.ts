@@ -1,14 +1,12 @@
 import { resolve } from "path";
 import { existsSync, readFileSync, writeFileSync } from "fs";
-import { select, input, confirm } from "@inquirer/prompts";
+import { select, confirm } from "@inquirer/prompts";
 import { parse as parseTOML, stringify as stringifyTOML } from "smol-toml";
 import type { CloudConfig } from "../../shared/config.js";
 import { createLocalBackend, createBackendFromCloudConfig } from "../../shared/remote.js";
-import { reconcileCloudIam } from "./cloud-iam.js";
+import { createCloudProvider } from "../../cloud/provider.js";
+import { saveState, createState } from "../../cloud/state.js";
 import { teardownCloud } from "./cloud-teardown.js";
-import { setupEcsCloud } from "./cloud-setup-ecs.js";
-
-import { AWS_CONSTANTS } from "../../shared/aws-constants.js";
 
 export async function execute(opts: { project: string }): Promise<void> {
   const projectPath = resolve(opts.project);
@@ -41,7 +39,7 @@ export async function execute(opts: { project: string }): Promise<void> {
   }
 
   // 1. Select provider
-  const provider = await select({
+  const providerChoice = await select({
     message: "Cloud provider:",
     choices: [
       { name: "GCP Cloud Run Jobs", value: "cloud-run" as const },
@@ -49,26 +47,13 @@ export async function execute(opts: { project: string }): Promise<void> {
     ],
   });
 
-  // 2. Prompt for provider-specific fields
-  const cloud: CloudConfig = { provider };
+  // 2. Run provider-specific provisioning wizard
+  // Create a temporary provider with minimal config to access provision()
+  const stubConfig = { provider: providerChoice } as any;
+  const provider = await createCloudProvider(stubConfig);
+  const cloudConfig = await provider.provision();
 
-  if (provider === "cloud-run") {
-    cloud.gcpProject = await input({ message: "GCP project ID:" });
-    cloud.region = await input({ message: "Region:", default: "us-central1" });
-    cloud.artifactRegistry = await input({
-      message: "Artifact Registry repo:",
-      default: `${cloud.region}-docker.pkg.dev/${cloud.gcpProject}/${AWS_CONSTANTS.DEFAULT_ECR_REPO}`,
-    });
-    cloud.serviceAccount = await input({
-      message: "Service account email (for job creation):",
-      default: AWS_CONSTANTS.defaultGcpRunner(cloud.gcpProject!),
-    });
-    const prefix = await input({ message: "Secret prefix:", default: AWS_CONSTANTS.DEFAULT_SECRET_PREFIX });
-    if (prefix !== AWS_CONSTANTS.DEFAULT_SECRET_PREFIX) cloud.secretPrefix = prefix;
-  } else {
-    const ok = await setupEcsCloud(cloud);
-    if (!ok) return;
-  }
+  if (!cloudConfig) return; // provision returned early (e.g. no AWS creds)
 
   // 3. Write [cloud] to config.toml
   let rawConfig: Record<string, any> = {};
@@ -78,7 +63,7 @@ export async function execute(opts: { project: string }): Promise<void> {
 
   // Strip undefined values before writing
   const cloudToWrite: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(cloud)) {
+  for (const [k, v] of Object.entries(cloudConfig)) {
     if (v !== undefined) cloudToWrite[k] = v;
   }
   rawConfig.cloud = cloudToWrite;
@@ -86,11 +71,14 @@ export async function execute(opts: { project: string }): Promise<void> {
   writeFileSync(configPath, stringifyTOML(rawConfig));
   console.log(`\nWrote [cloud] config to ${configPath}`);
 
-  // 4. Push credentials
-  console.log(`\nPushing local credentials to ${provider}...`);
+  // 4. Save provisioning state
+  saveState(createState(projectPath, providerChoice, []));
+
+  // 5. Push credentials
+  console.log(`\nPushing local credentials to ${providerChoice}...`);
   try {
     const local = createLocalBackend();
-    const remote = await createBackendFromCloudConfig(cloud);
+    const remote = await createBackendFromCloudConfig(cloudConfig as unknown as CloudConfig);
     const localEntries = await local.list();
 
     if (localEntries.length === 0) {
@@ -106,9 +94,10 @@ export async function execute(opts: { project: string }): Promise<void> {
       }
       console.log(`Pushed ${pushed} credential field(s).`);
 
-      // 5. Provision IAM
+      // 6. Provision IAM
       console.log(`\nProvisioning per-agent IAM resources...`);
-      await reconcileCloudIam(projectPath, cloud);
+      const fullProvider = await createCloudProvider(cloudConfig as unknown as CloudConfig);
+      await fullProvider.reconcileAgents(projectPath);
     }
   } catch (err: any) {
     console.log(`\nCloud credential push/IAM failed: ${err.message}`);

@@ -101,7 +101,7 @@ export function registerDashboardRoutes(
   if (process.env.AL_DASHBOARD_SECRET) {
     console.warn(
       "[deprecated] AL_DASHBOARD_SECRET is no longer used. " +
-      "The dashboard now uses the gateway API key from ~/.action-llama-credentials/gateway_api_key/default/key. " +
+      "The dashboard now uses the gateway API key from ~/.action-llama/credentials/gateway_api_key/default/key. " +
       "Run 'al doctor' to set it up."
     );
   }

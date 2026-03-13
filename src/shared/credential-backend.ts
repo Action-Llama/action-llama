@@ -1,7 +1,7 @@
 /**
  * Abstract credential backend interface.
  * Implementations provide read/write/list/exists for credential storage.
- * The filesystem backend wraps the existing ~/.action-llama-credentials/ layout.
+ * The filesystem backend wraps the ~/.action-llama/credentials/ layout.
  * Remote backends (e.g. Google Secret Manager) implement the same interface.
  */
 export interface CredentialBackend {

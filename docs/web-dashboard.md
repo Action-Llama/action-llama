@@ -23,7 +23,7 @@ The port is controlled by the `[gateway].port` setting in `config.toml` (default
 
 The dashboard is protected by a gateway API key. The same key is used for both browser sessions and CLI access.
 
-**Key location:** `~/.action-llama-credentials/gateway_api_key/default/key`
+**Key location:** `~/.action-llama/credentials/gateway_api_key/default/key`
 
 The key is generated automatically by `al doctor` or on first `al start`. To view or regenerate it, run `al doctor`.
 

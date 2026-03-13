@@ -41,7 +41,8 @@ import {
   CompleteLayerUploadCommand,
 } from "@aws-sdk/client-ecr";
 import { parseCredentialRef, sanitizeEnvPart } from "../shared/credentials.js";
-import { AWS_CONSTANTS } from "../shared/aws-constants.js";
+import { CONSTANTS } from "../shared/constants.js";
+import { AWS_CONSTANTS } from "../cloud/aws/constants.js";
 import type { RuntimeCredentials, SecretMount, BuildImageOpts, AssembleImageOpts } from "./runtime.js";
 
 export interface AwsSharedConfig {
@@ -62,7 +63,7 @@ export class AwsSharedUtils {
 
   constructor(config: AwsSharedConfig) {
     this.config = config;
-    this.prefix = config.secretPrefix || AWS_CONSTANTS.DEFAULT_SECRET_PREFIX;
+    this.prefix = config.secretPrefix || CONSTANTS.DEFAULT_SECRET_PREFIX;
 
     const clientConfig = { region: config.awsRegion };
     this.smClient = new SecretsManagerClient(clientConfig);

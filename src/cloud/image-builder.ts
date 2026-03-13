@@ -10,7 +10,7 @@ import { resolve as resolvePath, dirname, join } from "path";
 import { fileURLToPath } from "url";
 import type { AgentConfig, GlobalConfig } from "../shared/config.js";
 import type { ContainerRuntime } from "../docker/runtime.js";
-import { AWS_CONSTANTS } from "../shared/aws-constants.js";
+import { CONSTANTS } from "../shared/constants.js";
 import { buildPromptSkeleton, type PromptSkills } from "../agents/prompt.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import type { Logger } from "../shared/logger.js";
@@ -63,7 +63,7 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
   const { projectPath, globalConfig, activeAgentConfigs, runtime, runtimeType, statusTracker, logger, skills, onProgress } = opts;
 
   // 1. Build base image
-  let baseImage = globalConfig.local?.image || AWS_CONSTANTS.DEFAULT_IMAGE;
+  let baseImage = globalConfig.local?.image || CONSTANTS.DEFAULT_IMAGE;
   logger.info({ image: baseImage }, "Building base image (this may take a few minutes on first run)...");
 
   const setBaseImageProgress = (msg: string) => {
@@ -94,7 +94,7 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
   const projectDockerfile = resolvePath(projectPath, "Dockerfile");
 
   if (isProjectDockerfileCustomized(projectPath)) {
-    const projectBaseTag = AWS_CONSTANTS.PROJECT_BASE_IMAGE;
+    const projectBaseTag = CONSTANTS.PROJECT_BASE_IMAGE;
     logger.info("Building project base image...");
     const setProjectBaseProgress = (msg: string) => {
       statusTracker?.setBaseImageStatus(msg);
@@ -153,7 +153,7 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
 
   // Thin agents: use assembleImageDirect if available (bypasses CodeBuild)
   const thinPromises = thinAgents.map(async ({ agentConfig, extraFiles }) => {
-    const agentImageTag = AWS_CONSTANTS.agentImage(agentConfig.name);
+    const agentImageTag = CONSTANTS.agentImage(agentConfig.name);
     const progressCb = (msg: string) => { statusTracker?.setAgentStatusText(agentConfig.name, msg); onProgress?.(agentConfig.name, msg); };
 
     let image: string;
@@ -182,7 +182,7 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
   let heavyPromise: Promise<void>;
   if (heavyAgents.length > 0 && runtime.buildMultipleImages && runtimeType !== "local") {
     const heavyBuilds = heavyAgents.map(({ agentConfig, extraFiles }) => ({
-      tag: AWS_CONSTANTS.agentImage(agentConfig.name),
+      tag: CONSTANTS.agentImage(agentConfig.name),
       dockerfile: resolvePath(projectPath, agentConfig.name, "Dockerfile"),
       contextDir: packageRoot,
       baseImage: effectiveBaseImage,
@@ -207,7 +207,7 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
     });
   } else {
     heavyPromise = Promise.all(heavyAgents.map(async ({ agentConfig, extraFiles }) => {
-      const agentImageTag = AWS_CONSTANTS.agentImage(agentConfig.name);
+      const agentImageTag = CONSTANTS.agentImage(agentConfig.name);
       const progressCb = (msg: string) => { statusTracker?.setAgentStatusText(agentConfig.name, msg); onProgress?.(agentConfig.name, msg); };
       const image = await runtime.buildImage({
         tag: agentImageTag,

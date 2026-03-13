@@ -33,6 +33,12 @@ vi.mock("../../../src/cli/commands/cloud-teardown.js", () => ({
   teardownCloud: (...args: any[]) => mockTeardownCloud(...args),
 }));
 
+// Mock cloud state to avoid filesystem writes
+vi.mock("../../../src/cloud/state.js", () => ({
+  saveState: vi.fn(),
+  createState: vi.fn().mockReturnValue({}),
+}));
+
 // Mock AWS SDK clients
 const mockStsSend = vi.fn();
 const mockEcrSend = vi.fn();

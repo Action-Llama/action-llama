@@ -15,41 +15,48 @@ export interface ModelConfig {
 
 export interface LocalConfig {
   enabled: boolean;        // Docker isolation (default true)
-  image?: string;          // Base Docker image (default: AWS_CONSTANTS.DEFAULT_IMAGE)
+  image?: string;          // Base Docker image (default: CONSTANTS.DEFAULT_IMAGE)
   memory?: string;         // e.g. "4g"
   cpus?: number;
   timeout?: number;        // Max container runtime in seconds
 }
 
-export interface CloudConfig {
-  provider: "cloud-run" | "ecs";
-  // Cloud Run (GCP)
-  gcpProject?: string;
-  region?: string;
-  artifactRegistry?: string;
-  serviceAccount?: string;
-  secretPrefix?: string;
-  // ECS Fargate (AWS)
-  awsRegion?: string;
-  ecsCluster?: string;
-  ecrRepository?: string;
-  executionRoleArn?: string;
-  taskRoleArn?: string;
-  subnets?: string[];
+export interface EcsCloudConfig {
+  provider: "ecs";
+  awsRegion: string;
+  ecsCluster: string;
+  ecrRepository: string;
+  executionRoleArn: string;
+  taskRoleArn: string;
+  subnets: string[];
   securityGroups?: string[];
   awsSecretPrefix?: string;
-  buildBucket?: string;             // S3 bucket for CodeBuild source (remote builds)
-  // Lambda (auto-routed for ECS agents with timeout <= 900)
-  lambdaRoleArn?: string;            // Lambda execution role ARN (or derived per-agent)
-  lambdaSubnets?: string[];          // VPC subnets for Lambda (optional)
-  lambdaSecurityGroups?: string[];   // Security groups for Lambda (optional)
+  buildBucket?: string;
+  // Lambda (auto-routed for agents with timeout <= 900)
+  lambdaRoleArn?: string;
+  lambdaSubnets?: string[];
+  lambdaSecurityGroups?: string[];
   // Cloud scheduler (al cloud deploy)
-  schedulerCpu?: string;             // CPU for scheduler (e.g. "1024" for App Runner, "1" for Cloud Run)
-  schedulerMemory?: string;          // Memory (e.g. "2048" for App Runner, "2Gi" for Cloud Run)
+  schedulerCpu?: string;
+  schedulerMemory?: string;
   // App Runner (AWS scheduler)
-  appRunnerInstanceRoleArn?: string;  // IAM role assumed by the App Runner instance
-  appRunnerAccessRoleArn?: string;    // IAM role for App Runner to pull ECR images
+  appRunnerInstanceRoleArn?: string;
+  appRunnerAccessRoleArn?: string;
 }
+
+export interface CloudRunCloudConfig {
+  provider: "cloud-run";
+  gcpProject: string;
+  region: string;
+  artifactRegistry: string;
+  serviceAccount: string;
+  secretPrefix?: string;
+  // Cloud scheduler (al cloud deploy)
+  schedulerCpu?: string;
+  schedulerMemory?: string;
+}
+
+export type CloudConfig = EcsCloudConfig | CloudRunCloudConfig;
 
 export interface GatewayConfig {
   port?: number;
@@ -119,7 +126,44 @@ export function loadGlobalConfig(projectPath: string): GlobalConfig {
     };
   }
 
+  // Validate cloud config if present
+  if (config.cloud) {
+    config.cloud = validateCloudConfig(config.cloud);
+  }
+
   return config;
+}
+
+function validateCloudConfig(raw: any): CloudConfig {
+  if (!raw.provider) {
+    throw new ConfigError("cloud.provider is required in config.toml");
+  }
+
+  if (raw.provider === "ecs") {
+    const required = ["awsRegion", "ecsCluster", "ecrRepository", "executionRoleArn", "taskRoleArn", "subnets"] as const;
+    const missing = required.filter((k) => !raw[k] || (Array.isArray(raw[k]) && raw[k].length === 0));
+    if (missing.length > 0) {
+      throw new ConfigError(
+        `ECS cloud config is missing required fields: ${missing.map((k) => `cloud.${k}`).join(", ")}. ` +
+        `Run 'al cloud setup' to configure.`
+      );
+    }
+    return raw as EcsCloudConfig;
+  }
+
+  if (raw.provider === "cloud-run") {
+    const required = ["gcpProject", "region", "artifactRegistry", "serviceAccount"] as const;
+    const missing = required.filter((k) => !raw[k]);
+    if (missing.length > 0) {
+      throw new ConfigError(
+        `Cloud Run config is missing required fields: ${missing.map((k) => `cloud.${k}`).join(", ")}. ` +
+        `Run 'al cloud setup' to configure.`
+      );
+    }
+    return raw as CloudRunCloudConfig;
+  }
+
+  throw new ConfigError(`Unknown cloud provider: "${raw.provider}". Supported: ecs, cloud-run`);
 }
 
 export function loadAgentConfig(projectPath: string, agentName: string): AgentConfig {

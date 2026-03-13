@@ -1,153 +1,34 @@
 /**
- * Cloud IAM reconciliation for doctor and cloud-setup commands.
+ * AWS IAM reconciliation for ECS cloud agents.
  *
- * Extracted from doctor.ts to keep the credential validation logic
- * separate from cloud infrastructure provisioning.
+ * Extracted from cli/commands/cloud-iam.ts into the cloud provider module.
+ * Handles per-agent IAM task roles, Lambda roles, and ECR policies.
  */
 
-import { execFileSync } from "child_process";
-import { confirm } from "@inquirer/prompts";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
-import { IAMClient, CreateRoleCommand, PutRolePolicyCommand, PutUserPolicyCommand, GetRoleCommand } from "@aws-sdk/client-iam";
+import {
+  IAMClient,
+  CreateRoleCommand,
+  PutRolePolicyCommand,
+  PutUserPolicyCommand,
+  GetRoleCommand,
+} from "@aws-sdk/client-iam";
 import { ECRClient, SetRepositoryPolicyCommand } from "@aws-sdk/client-ecr";
 import { discoverAgents, loadAgentConfig, loadGlobalConfig } from "../../shared/config.js";
-import type { CloudConfig } from "../../shared/config.js";
+import type { EcsCloudConfig } from "../../shared/config.js";
 import { parseCredentialRef } from "../../shared/credentials.js";
-import { AWS_CONSTANTS } from "../../shared/aws-constants.js";
+import { AWS_CONSTANTS } from "./constants.js";
+import { CONSTANTS } from "../../shared/constants.js";
 import { ConfigError, CloudProviderError } from "../../shared/errors.js";
 
-export async function reconcileCloudIam(projectPath: string, cloud: CloudConfig): Promise<void> {
-  if (cloud.provider === "cloud-run") {
-    await reconcileGcp(projectPath, cloud);
-  } else if (cloud.provider === "ecs") {
-    await reconcileAws(projectPath, cloud);
-  } else {
-    throw new CloudProviderError(`Unknown cloud provider: "${cloud.provider}"`);
-  }
-}
-
-async function reconcileGcp(projectPath: string, cloud: CloudConfig): Promise<void> {
-  const { gcpProject, secretPrefix: configPrefix } = cloud;
-  if (!gcpProject) {
-    throw new ConfigError("cloud.gcpProject is required in config.toml");
-  }
-
-  const secretPrefix = configPrefix || AWS_CONSTANTS.DEFAULT_SECRET_PREFIX;
-
-  // Verify gcloud is available and authenticated
-  try {
-    gcloud(["auth", "print-access-token"], gcpProject);
-  } catch (err: any) {
-    throw new CloudProviderError(
-      "gcloud CLI is not authenticated. Run 'gcloud auth login' first.\n" +
-      `Original error: ${err.message}`
-    );
-  }
-
-  const agents = discoverAgents(projectPath);
-  if (agents.length === 0) {
-    console.log("No agents found. Create agents first.");
-    return;
-  }
-
-  // Pre-flight: check if any secrets exist in GSM with this prefix
-  const preflight = listGsmSecretCount(gcpProject, secretPrefix);
-  if (preflight === 0) {
-    console.log(
-      `\nWarning: No secrets found in GSM with prefix "${secretPrefix}".\n` +
-      `IAM bindings are created against existing secrets, so you should push credentials first.\n`
-    );
-    const proceed = await confirm({
-      message: "Continue anyway? (Service accounts will be created but no secrets will be bound)",
-      default: false,
-    });
-    if (!proceed) {
-      console.log("Aborted. Push credentials first, then re-run.");
-      return;
-    }
-  }
-
-  console.log(`\nSetting up Cloud Run service accounts for ${agents.length} agent(s)...\n`);
-
-  for (const name of agents) {
-    const config = loadAgentConfig(projectPath, name);
-    const saName = AWS_CONSTANTS.serviceAccountName(name);
-    const saEmail = AWS_CONSTANTS.serviceAccountEmail(name, gcpProject);
-
-    console.log(`  Agent: ${name}`);
-    console.log(`    SA: ${saEmail}`);
-
-    // 1. Create service account (idempotent)
-    try {
-      gcloud([
-        "iam", "service-accounts", "create", saName,
-        "--display-name", `Action Llama agent: ${name}`,
-        "--project", gcpProject,
-      ], gcpProject);
-      console.log(`    Created service account`);
-    } catch (err: any) {
-      if (err.message?.includes("already exists")) {
-        console.log(`    Service account already exists`);
-      } else {
-        throw err;
-      }
-    }
-
-    // 2. Collect all secret names this agent needs
-    const credRefs = [...new Set(config.credentials)];
-    if (config.model.authType !== "pi_auth" && !credRefs.includes("anthropic_key:default")) {
-      credRefs.push("anthropic_key:default");
-    }
-
-    const secretNames: string[] = [];
-    for (const ref of credRefs) {
-      const { type, instance } = parseCredentialRef(ref);
-      const fields = listGsmFields(gcpProject, secretPrefix, type, instance);
-      for (const field of fields) {
-        secretNames.push(`${secretPrefix}--${type}--${instance}--${field}`);
-      }
-    }
-
-    // 3. Grant secretmanager.secretAccessor on each secret
-    let boundCount = 0;
-    for (const secretName of secretNames) {
-      try {
-        gcloud([
-          "secrets", "add-iam-policy-binding", secretName,
-          "--member", `serviceAccount:${saEmail}`,
-          "--role", "roles/secretmanager.secretAccessor",
-          "--project", gcpProject,
-        ], gcpProject);
-        boundCount++;
-      } catch (err: any) {
-        if (err.message?.includes("already exists") || err.message?.includes("already has")) {
-          boundCount++;
-        } else {
-          console.log(`    Warning: failed to bind ${secretName}: ${err.message}`);
-        }
-      }
-    }
-    console.log(`    Bound ${boundCount} secret(s)`);
-
-    // 4. Grant the SA permission to act as itself (for Cloud Run job execution)
-    try {
-      gcloud([
-        "iam", "service-accounts", "add-iam-policy-binding", saEmail,
-        "--member", `serviceAccount:${saEmail}`,
-        "--role", "roles/iam.serviceAccountUser",
-        "--project", gcpProject,
-      ], gcpProject);
-    } catch {
-      // May already be bound
-    }
-
-    console.log("");
-  }
-
-  console.log("Done. Each agent now has an isolated service account with access to only its declared secrets.");
-}
-
-async function reconcileAws(projectPath: string, cloud: CloudConfig): Promise<void> {
+/**
+ * Reconcile per-agent ECS task roles and Secrets Manager policies.
+ *
+ * Creates an IAM task role for each agent with a trust policy for
+ * ecs-tasks.amazonaws.com, then attaches an inline policy granting
+ * secretsmanager:GetSecretValue on each agent's declared credentials.
+ */
+export async function reconcileAwsAgents(projectPath: string, cloud: EcsCloudConfig): Promise<void> {
   const { awsRegion, ecrRepository, awsSecretPrefix } = cloud;
   if (!awsRegion) {
     throw new ConfigError("cloud.awsRegion is required in config.toml");
@@ -156,7 +37,7 @@ async function reconcileAws(projectPath: string, cloud: CloudConfig): Promise<vo
     throw new ConfigError("cloud.ecrRepository is required in config.toml");
   }
 
-  const secretPrefix = awsSecretPrefix || AWS_CONSTANTS.DEFAULT_SECRET_PREFIX;
+  const secretPrefix = awsSecretPrefix || CONSTANTS.DEFAULT_SECRET_PREFIX;
 
   // Extract account ID from ECR repo URI
   const accountMatch = ecrRepository.match(/^(\d+)\.dkr\.ecr\./);
@@ -373,61 +254,10 @@ export async function grantPassRole(
   }
 }
 
-function gcloud(args: string[], _project: string): string {
-  return execFileSync("gcloud", args, {
-    encoding: "utf-8",
-    timeout: 30_000,
-    stdio: ["pipe", "pipe", "pipe"],
-  }).trim();
-}
-
-function listGsmSecretCount(gcpProject: string, prefix: string): number {
-  try {
-    const output = gcloud([
-      "secrets", "list",
-      "--filter", `name:${prefix}--`,
-      "--format", "value(name)",
-      "--project", gcpProject,
-    ], gcpProject);
-    if (!output.trim()) return 0;
-    return output.trim().split("\n").length;
-  } catch {
-    return 0;
-  }
-}
-
-function listGsmFields(
-  gcpProject: string,
-  prefix: string,
-  type: string,
-  instance: string
-): string[] {
-  const filter = `name:${prefix}--${type}--${instance}--`;
-  try {
-    const output = gcloud([
-      "secrets", "list",
-      "--filter", filter,
-      "--format", "value(name)",
-      "--project", gcpProject,
-    ], gcpProject);
-
-    if (!output.trim()) return [];
-
-    const fields: string[] = [];
-    for (const line of output.split("\n")) {
-      const secretId = line.trim().split("/").pop()!;
-      const parts = secretId.split("--");
-      if (parts.length === 4 && parts[0] === prefix && parts[1] === type && parts[2] === instance) {
-        fields.push(parts[3]);
-      }
-    }
-    return fields;
-  } catch {
-    return [];
-  }
-}
-
-export async function validateEcsRoles(projectPath: string, cloud: CloudConfig): Promise<void> {
+/**
+ * Validate that per-agent ECS task roles exist and have correct trust policies.
+ */
+export async function validateEcsRoles(projectPath: string, cloud: EcsCloudConfig): Promise<void> {
   const { awsRegion } = cloud;
   if (!awsRegion) {
     throw new ConfigError("cloud.awsRegion is required for ECS validation");
@@ -507,7 +337,10 @@ export async function validateEcsRoles(projectPath: string, cloud: CloudConfig):
   }
 }
 
-async function ensureLambdaEcrPolicy(awsRegion: string, ecrRepoUri: string): Promise<void> {
+/**
+ * Ensure the ECR repository policy grants Lambda pull access.
+ */
+export async function ensureLambdaEcrPolicy(awsRegion: string, ecrRepoUri: string): Promise<void> {
   const repoName = ecrRepoUri.split("/").pop();
   if (!repoName) return;
 
@@ -536,11 +369,17 @@ async function ensureLambdaEcrPolicy(awsRegion: string, ecrRepoUri: string): Pro
   }
 }
 
-export async function reconcileLambdaRoles(projectPath: string, cloud: CloudConfig): Promise<void> {
+/**
+ * Reconcile per-agent Lambda execution roles for agents with short timeouts.
+ *
+ * Agents with timeout <= LAMBDA_MAX_TIMEOUT are automatically routed to Lambda.
+ * Each gets an IAM role with Secrets Manager, ECR, and CloudWatch Logs access.
+ */
+export async function reconcileLambdaRoles(projectPath: string, cloud: EcsCloudConfig): Promise<void> {
   const { awsRegion, ecrRepository, awsSecretPrefix } = cloud;
   if (!awsRegion || !ecrRepository) return;
 
-  const secretPrefix = awsSecretPrefix || AWS_CONSTANTS.DEFAULT_SECRET_PREFIX;
+  const secretPrefix = awsSecretPrefix || CONSTANTS.DEFAULT_SECRET_PREFIX;
   const accountMatch = ecrRepository.match(/^(\d+)\.dkr\.ecr\./);
   if (!accountMatch) return;
   const accountId = accountMatch[1];

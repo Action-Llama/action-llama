@@ -6,12 +6,12 @@
  */
 
 import { execFileSync } from "child_process";
-import { AWS_CONSTANTS } from "../shared/aws-constants.js";
-import type { CloudConfig } from "../shared/config.js";
+import { GCP_CONSTANTS } from "./constants.js";
+import type { CloudRunCloudConfig } from "../../shared/config.js";
 
 export interface CloudRunDeployOpts {
   imageUri: string;
-  cloudConfig: CloudConfig;
+  cloudConfig: CloudRunCloudConfig;
   port?: number;
   envVars?: Record<string, string>;
 }
@@ -34,7 +34,7 @@ export async function deployCloudRun(opts: CloudRunDeployOpts): Promise<CloudRun
     throw new Error("cloud.gcpProject and cloud.region are required for Cloud Run deployment.");
   }
 
-  const serviceName = AWS_CONSTANTS.SCHEDULER_CLOUD_RUN_SERVICE;
+  const serviceName = GCP_CONSTANTS.SCHEDULER_CLOUD_RUN_SERVICE;
   const cpu = cloudConfig.schedulerCpu || "1";
   const memory = cloudConfig.schedulerMemory || "512Mi";
 
@@ -81,18 +81,18 @@ export async function deployCloudRun(opts: CloudRunDeployOpts): Promise<CloudRun
     serviceName,
     serviceUrl: url,
     status: "RUNNING",
-    region: region!,
+    region,
   };
 }
 
 /**
  * Get the current status of the scheduler Cloud Run service.
  */
-export async function getCloudRunStatus(cloudConfig: CloudConfig): Promise<CloudRunServiceInfo | null> {
+export async function getCloudRunStatus(cloudConfig: CloudRunCloudConfig): Promise<CloudRunServiceInfo | null> {
   const { gcpProject, region } = cloudConfig;
   if (!gcpProject || !region) return null;
 
-  const serviceName = AWS_CONSTANTS.SCHEDULER_CLOUD_RUN_SERVICE;
+  const serviceName = GCP_CONSTANTS.SCHEDULER_CLOUD_RUN_SERVICE;
 
   try {
     const url = gcloud([
@@ -126,11 +126,11 @@ export async function getCloudRunStatus(cloudConfig: CloudConfig): Promise<Cloud
 /**
  * Fetch recent scheduler logs from Cloud Logging.
  */
-export async function getCloudRunLogs(cloudConfig: CloudConfig, limit: number): Promise<string[]> {
+export async function getCloudRunLogs(cloudConfig: CloudRunCloudConfig, limit: number): Promise<string[]> {
   const { gcpProject, region } = cloudConfig;
   if (!gcpProject || !region) return [];
 
-  const serviceName = AWS_CONSTANTS.SCHEDULER_CLOUD_RUN_SERVICE;
+  const serviceName = GCP_CONSTANTS.SCHEDULER_CLOUD_RUN_SERVICE;
 
   try {
     const output = gcloud([
@@ -151,14 +151,14 @@ export async function getCloudRunLogs(cloudConfig: CloudConfig, limit: number): 
 /**
  * Delete the scheduler Cloud Run service.
  */
-export async function teardownCloudRunService(cloudConfig: CloudConfig): Promise<void> {
+export async function teardownCloudRunService(cloudConfig: CloudRunCloudConfig): Promise<void> {
   const { gcpProject, region } = cloudConfig;
   if (!gcpProject || !region) {
     console.log("  Incomplete GCP config. Skipping Cloud Run service teardown.");
     return;
   }
 
-  const serviceName = AWS_CONSTANTS.SCHEDULER_CLOUD_RUN_SERVICE;
+  const serviceName = GCP_CONSTANTS.SCHEDULER_CLOUD_RUN_SERVICE;
 
   try {
     gcloud([

@@ -84,7 +84,7 @@ Use the ngrok URL as your webhook payload URL in GitHub.
 
 1. In Sentry, go to **Settings > Developer Settings > New Internal Integration**
 2. Set the webhook URL to your gateway (e.g. `https://your-server:8080/webhooks/sentry`)
-3. Copy the client secret to `~/.action-llama-credentials/sentry_client_secret/<instance>/secret`
+3. Copy the client secret to `~/.action-llama/credentials/sentry_client_secret/<instance>/secret`
 4. Select the resource types you want to receive
 
 ## How Webhooks Work at Runtime

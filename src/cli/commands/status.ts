@@ -14,43 +14,24 @@ export async function execute(opts: { project: string; cloud?: boolean }): Promi
       throw new Error("No [cloud] section found in config.toml. Run 'al cloud setup' first.");
     }
 
-    let agents: RunningAgent[];
+    const { createCloudProvider } = await import("../../cloud/provider.js");
+    const provider = await createCloudProvider(cloud);
 
     // Show scheduler service status
-    if (cloud.provider === "cloud-run") {
-      const { getCloudRunStatus } = await import("../../cloud/deploy-cloudrun.js");
-      const svc = await getCloudRunStatus(cloud);
-      if (svc) {
-        console.log("Scheduler (Cloud Run service):");
-        console.log(`  URL:    ${svc.serviceUrl}`);
-        console.log(`  Status: ${svc.status}`);
-      } else {
-        console.log("Scheduler: not deployed");
-      }
-      console.log("");
-
-      const { CloudRunJobRuntime } = await import("../../docker/cloud-run-runtime.js");
-      const runtime = new CloudRunJobRuntime(cloud as any);
-      console.log(`Cloud Run Jobs status (project: ${cloud.gcpProject}):\n`);
-      agents = await runtime.listRunningAgents();
+    const svc = await provider.getSchedulerStatus();
+    if (svc) {
+      console.log(`Scheduler (${cloud.provider}):`);
+      console.log(`  URL:    ${svc.serviceUrl}`);
+      console.log(`  Status: ${svc.status}`);
+      if (svc.createdAt) console.log(`  Created: ${svc.createdAt.toISOString()}`);
     } else {
-      const { getAppRunnerStatus } = await import("../../cloud/deploy-apprunner.js");
-      const svc = await getAppRunnerStatus(cloud);
-      if (svc) {
-        console.log("Scheduler (App Runner):");
-        console.log(`  URL:    ${svc.serviceUrl}`);
-        console.log(`  Status: ${svc.status}`);
-        if (svc.createdAt) console.log(`  Created: ${svc.createdAt.toISOString()}`);
-      } else {
-        console.log("Scheduler: not deployed");
-      }
-      console.log("");
-
-      const { ECSFargateRuntime } = await import("../../docker/ecs-runtime.js");
-      const runtime = new ECSFargateRuntime(cloud as any);
-      console.log(`ECS tasks status (cluster: ${cloud.ecsCluster}):\n`);
-      agents = await runtime.listRunningAgents();
+      console.log("Scheduler: not deployed");
     }
+    console.log("");
+
+    // List running agents
+    const runtime = provider.createRuntime();
+    const agents: RunningAgent[] = await runtime.listRunningAgents();
 
     if (agents.length === 0) {
       console.log("No running agents.");
@@ -125,9 +106,9 @@ export async function execute(opts: { project: string; cloud?: boolean }): Promi
     console.log("-".repeat(cols.agent + cols.instance + cols.status + cols.started + cols.trigger));
 
     for (const instance of instances) {
-      const instanceIdShort = instance.id.length > 20 ? 
+      const instanceIdShort = instance.id.length > 20 ?
         `...${instance.id.slice(-17)}` : instance.id;
-      
+
       console.log(
         instance.agentName.padEnd(cols.agent) +
         instanceIdShort.padEnd(cols.instance) +

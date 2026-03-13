@@ -62,7 +62,7 @@ Once your agents are ready, start the scheduler!
 npx al start
 ```
 
-If any credentials are missing, it will prompt you for them. Credentials are stored in `~/.action-llama-credentials/` (shared across projects, not committed to git). See [credentials docs](docs/credentials.md) for details.
+If any credentials are missing, it will prompt you for them. Credentials are stored in `~/.action-llama/credentials/` (shared across projects, not committed to git). See [credentials docs](docs/credentials.md) for details.
 
 If you want to set up credentials without starting the scheduler:
 
@@ -127,7 +127,7 @@ Configuration lives in two places:
 - [**`config.toml`**](docs/config-reference.md) (project root) — global settings: default model (`[model]`), local Docker options (`[local]`), cloud provider config (`[cloud]`), and scheduler options like `maxReruns`.
 - [**`agent-config.toml`**](docs/agent-config-reference.md) (per agent) — model, credentials, schedule, webhooks, and parameters. Each agent can use a different model or provider (e.g., Claude Opus for dev, GPT-4o for review, Gemini for devops).
 
-Credentials are stored outside the project in `~/.action-llama-credentials/` and referenced by name in agent configs. Run `al doctor` to configure them interactively.
+Credentials are stored outside the project in `~/.action-llama/credentials/` and referenced by name in agent configs. Run `al doctor` to configure them interactively.
 
 Agents run in isolated Docker containers for security and consistency.
 

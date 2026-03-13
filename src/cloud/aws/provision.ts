@@ -1,7 +1,7 @@
 /**
- * ECS-specific cloud setup logic.
+ * ECS-specific cloud provisioning logic.
  *
- * Extracted from cloud-setup.ts to keep the main orchestrator slim.
+ * Extracted from cli/commands/cloud-setup-ecs.ts into the cloud provider module.
  * Contains all AWS resource creation/discovery for ECS Fargate setup.
  */
 
@@ -41,13 +41,14 @@ import {
   CreateLogGroupCommand,
 } from "@aws-sdk/client-cloudwatch-logs";
 
-import type { CloudConfig } from "../../shared/config.js";
-import { AWS_CONSTANTS } from "../../shared/aws-constants.js";
+import type { EcsCloudConfig } from "../../shared/config.js";
+import { AWS_CONSTANTS } from "./constants.js";
+import { CONSTANTS } from "../../shared/constants.js";
 
 const CREATE_NEW = "__create_new__";
 const MANUAL_INPUT = "__manual_input__";
 
-export async function setupEcsCloud(cloud: CloudConfig): Promise<boolean> {
+export async function setupEcsCloud(cloud: EcsCloudConfig): Promise<boolean> {
   // Check for AWS credentials before asking any questions
   console.log("Checking for AWS credentials...");
   const probe = new STSClient({});
@@ -100,7 +101,7 @@ export async function setupEcsCloud(cloud: CloudConfig): Promise<boolean> {
 
   // Add Secrets Manager + CloudWatch Logs inline policy to execution role
   const executionRoleName = cloud.executionRoleArn!.split("/").pop()!;
-  const secretPrefix = AWS_CONSTANTS.DEFAULT_SECRET_PREFIX;
+  const secretPrefix = CONSTANTS.DEFAULT_SECRET_PREFIX;
   try {
     await iamClient.send(new PutRolePolicyCommand({
       RoleName: executionRoleName,
@@ -158,8 +159,8 @@ export async function setupEcsCloud(cloud: CloudConfig): Promise<boolean> {
   const sgs = await pickSecurityGroups(ec2Client, result.vpcId);
   if (sgs.length > 0) cloud.securityGroups = sgs;
 
-  const prefix = await input({ message: "Secret prefix:", default: AWS_CONSTANTS.DEFAULT_SECRET_PREFIX });
-  if (prefix !== AWS_CONSTANTS.DEFAULT_SECRET_PREFIX) cloud.awsSecretPrefix = prefix;
+  const prefix = await input({ message: "Secret prefix:", default: CONSTANTS.DEFAULT_SECRET_PREFIX });
+  if (prefix !== CONSTANTS.DEFAULT_SECRET_PREFIX) cloud.awsSecretPrefix = prefix;
 
   // Grant iam:PassRole, logs read, and iam:PutUserPolicy to the calling
   // IAM user so that al start/run can assign roles, al logs can read

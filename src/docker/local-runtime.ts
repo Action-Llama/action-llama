@@ -6,7 +6,7 @@ import { tmpdir } from "os";
 import { NETWORK_NAME } from "./network.js";
 import type { ContainerRuntime, RuntimeLaunchOpts, RuntimeCredentials, CredentialBundle, BuildImageOpts, RunningAgent } from "./runtime.js";
 import { parseCredentialRef, getDefaultBackend } from "../shared/credentials.js";
-import { AWS_CONSTANTS } from "../shared/aws-constants.js";
+import { CONSTANTS } from "../shared/constants.js";
 
 function docker(...args: string[]): string {
   return execFileSync("docker", args, {
@@ -29,7 +29,7 @@ export class LocalDockerRuntime implements ContainerRuntime {
 
   async listRunningAgents(): Promise<RunningAgent[]> {
     try {
-      const out = docker("ps", "--filter", `name=${AWS_CONSTANTS.CONTAINER_FILTER}`, "--format", "{{.Names}}\t{{.Status}}\t{{.CreatedAt}}");
+      const out = docker("ps", "--filter", `name=${CONSTANTS.CONTAINER_FILTER}`, "--format", "{{.Names}}\t{{.Status}}\t{{.CreatedAt}}");
       if (!out) return [];
       return out.split("\n").filter(Boolean).map((line) => {
         const [name, status, createdAt] = line.split("\t");
@@ -49,7 +49,7 @@ export class LocalDockerRuntime implements ContainerRuntime {
   }
 
   async prepareCredentials(credRefs: string[]): Promise<RuntimeCredentials> {
-    const stagingDir = mkdtempSync(join(tmpdir(), AWS_CONSTANTS.CREDS_TEMP_PREFIX));
+    const stagingDir = mkdtempSync(join(tmpdir(), CONSTANTS.CREDS_TEMP_PREFIX));
     const bundle: CredentialBundle = {};
     const backend = getDefaultBackend();
 
@@ -167,7 +167,7 @@ export class LocalDockerRuntime implements ContainerRuntime {
 
   async launch(opts: RuntimeLaunchOpts): Promise<string> {
     const runId = randomUUID().slice(0, 8);
-    const containerName = AWS_CONSTANTS.containerName(opts.agentName, runId);
+    const containerName = CONSTANTS.containerName(opts.agentName, runId);
     const memory = opts.memory || "4g";
     const cpus = opts.cpus || 2;
 

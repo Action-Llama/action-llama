@@ -14,7 +14,7 @@ import { resolve as resolvePath, dirname, join } from "path";
 import { fileURLToPath } from "url";
 import type { GlobalConfig } from "../shared/config.js";
 import type { ContainerRuntime } from "../docker/runtime.js";
-import { AWS_CONSTANTS } from "../shared/aws-constants.js";
+import { CONSTANTS } from "../shared/constants.js";
 import type { Logger } from "../shared/logger.js";
 
 const packageRoot = resolvePath(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -153,7 +153,7 @@ export async function buildSchedulerImage(opts: SchedulerImageOpts): Promise<str
   mkdirSync(dirname(tmpDockerfile), { recursive: true });
   writeFileSync(tmpDockerfile, dockerfileContent);
 
-  const tag = AWS_CONSTANTS.SCHEDULER_IMAGE;
+  const tag = CONSTANTS.SCHEDULER_IMAGE;
 
   const image = await runtime.buildImage({
     tag,

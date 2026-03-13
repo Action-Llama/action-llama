@@ -132,6 +132,6 @@ src/
 ## Key Conventions
 
 - Config format: TOML (`config.toml`, `agent-config.toml`)
-- Credentials: `~/.action-llama-credentials/<type>/<instance>/<field>`
+- Credentials: `~/.action-llama/credentials/<type>/<instance>/<field>`
 - Cloud is opt-in via `-c`/`--cloud` flag
 - Tests use vitest with `test/` mirroring `src/`

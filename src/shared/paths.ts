@@ -2,7 +2,9 @@ import { resolve } from "path";
 import { homedir } from "os";
 
 export const AL_HOME = resolve(homedir(), ".al");
-export const CREDENTIALS_DIR = resolve(homedir(), ".action-llama-credentials");
+export const AL_HOME_DIR = resolve(homedir(), ".action-llama");
+export const CREDENTIALS_DIR = resolve(AL_HOME_DIR, "credentials");
+export const STATE_DIR = resolve(AL_HOME_DIR, "state");
 
 export function projectDir(projectPath: string): string {
   return resolve(projectPath);

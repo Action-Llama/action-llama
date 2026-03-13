@@ -12,7 +12,7 @@ Creates:
 - `my-project/package.json` — with `@action-llama/action-llama` dependency
 - `my-project/.gitignore`
 - `my-project/.workspace/` — runtime state directory
-- Credential files in `~/.action-llama-credentials/`
+- Credential files in `~/.action-llama/credentials/`
 
 After setup, create agents by following [Creating Agents](creating-agents.md).
 

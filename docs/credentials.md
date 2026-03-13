@@ -1,6 +1,6 @@
 # Credentials
 
-Credentials are stored in `~/.action-llama-credentials/<type>/<instance>/<field>`. Each credential type is a directory containing one file per field. Reference them in `agent-config.toml` as `"type:instance"` (e.g. `"github_token:default"`).
+Credentials are stored in `~/.action-llama/credentials/<type>/<instance>/<field>`. Each credential type is a directory containing one file per field. Reference them in `agent-config.toml` as `"type:instance"` (e.g. `"github_token:default"`).
 
 ## Built-in Credentials
 
@@ -35,7 +35,7 @@ Credentials are stored in `~/.action-llama-credentials/<type>/<instance>/<field>
    credentials = ["github_token:default", "git_ssh:default"]
    ```
 
-2. **Storage**: Credential values live in `~/.action-llama-credentials/<type>/<instance>/<field>`. Each field is a plain text file.
+2. **Storage**: Credential values live in `~/.action-llama/credentials/<type>/<instance>/<field>`. Each field is a plain text file.
 
 3. **Injection**: When an agent runs, the credentials it requires are injected into the container.
 
@@ -46,17 +46,17 @@ Credentials are stored in `~/.action-llama-credentials/<type>/<instance>/<field>
 Each credential type supports named instances. For example, you could have webhook secrets for multiple GitHub orgs:
 
 ```
-~/.action-llama-credentials/github_webhook_secret/MyOrg/secret
-~/.action-llama-credentials/github_webhook_secret/OtherOrg/secret
+~/.action-llama/credentials/github_webhook_secret/MyOrg/secret
+~/.action-llama/credentials/github_webhook_secret/OtherOrg/secret
 ```
 
 Or multiple SSH keys:
 
 ```
-~/.action-llama-credentials/git_ssh/default/id_rsa
-~/.action-llama-credentials/git_ssh/default/username
-~/.action-llama-credentials/git_ssh/botty/id_rsa
-~/.action-llama-credentials/git_ssh/botty/username
+~/.action-llama/credentials/git_ssh/default/id_rsa
+~/.action-llama/credentials/git_ssh/default/username
+~/.action-llama/credentials/git_ssh/botty/id_rsa
+~/.action-llama/credentials/git_ssh/botty/username
 ```
 
 Reference them as `"git_ssh:default"` or `"git_ssh:botty"` in your agent config. If you omit the instance, it defaults to `"default"`.
@@ -107,23 +107,23 @@ The `al new` command prompts for the Anthropic credential during initial setup. 
 Write credential files directly:
 
 ```bash
-mkdir -p ~/.action-llama-credentials/github_token/default
-echo "ghp_your_token_here" > ~/.action-llama-credentials/github_token/default/token
+mkdir -p ~/.action-llama/credentials/github_token/default
+echo "ghp_your_token_here" > ~/.action-llama/credentials/github_token/default/token
 
-mkdir -p ~/.action-llama-credentials/anthropic_key/default
-echo "sk-ant-api-your_key_here" > ~/.action-llama-credentials/anthropic_key/default/token
+mkdir -p ~/.action-llama/credentials/anthropic_key/default
+echo "sk-ant-api-your_key_here" > ~/.action-llama/credentials/anthropic_key/default/token
 
-mkdir -p ~/.action-llama-credentials/openai_key/default
-echo "sk-your_openai_key_here" > ~/.action-llama-credentials/openai_key/default/token
+mkdir -p ~/.action-llama/credentials/openai_key/default
+echo "sk-your_openai_key_here" > ~/.action-llama/credentials/openai_key/default/token
 
-mkdir -p ~/.action-llama-credentials/groq_key/default
-echo "gsk_your_groq_key_here" > ~/.action-llama-credentials/groq_key/default/token
+mkdir -p ~/.action-llama/credentials/groq_key/default
+echo "gsk_your_groq_key_here" > ~/.action-llama/credentials/groq_key/default/token
 
-mkdir -p ~/.action-llama-credentials/bugsnag_token/default
-echo "your_bugsnag_token_here" > ~/.action-llama-credentials/bugsnag_token/default/token
+mkdir -p ~/.action-llama/credentials/bugsnag_token/default
+echo "your_bugsnag_token_here" > ~/.action-llama/credentials/bugsnag_token/default/token
 
-mkdir -p ~/.action-llama-credentials/netlify_token/default
-echo "your_netlify_token_here" > ~/.action-llama-credentials/netlify_token/default/token
+mkdir -p ~/.action-llama/credentials/netlify_token/default
+echo "your_netlify_token_here" > ~/.action-llama/credentials/netlify_token/default/token
 ```
 
 ### Anthropic Auth Methods
@@ -139,8 +139,8 @@ Three auth methods are supported:
 Webhook secrets use named credential instances. For example, to set up a GitHub webhook secret for your org:
 
 ```bash
-mkdir -p ~/.action-llama-credentials/github_webhook_secret/MyOrg
-echo "your-webhook-secret" > ~/.action-llama-credentials/github_webhook_secret/MyOrg/secret
+mkdir -p ~/.action-llama/credentials/github_webhook_secret/MyOrg
+echo "your-webhook-secret" > ~/.action-llama/credentials/github_webhook_secret/MyOrg/secret
 ```
 
 The gateway automatically loads secrets from all credential instances (e.g. `github_webhook_secret:MyOrg`, `sentry_client_secret:MyOrg`) and uses them to verify incoming webhook payloads. No global configuration is needed.

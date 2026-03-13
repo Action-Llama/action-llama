@@ -10,7 +10,7 @@ import {
   type PromptSkills,
 } from "../agents/prompt.js";
 import type { GatewayServer } from "../gateway/index.js";
-import { AWS_CONSTANTS } from "../shared/aws-constants.js";
+import { CONSTANTS } from "../shared/constants.js";
 import { ConfigError, AgentError } from "../shared/errors.js";
 import type { WebhookContext } from "../webhooks/types.js";
 import { WorkQueue } from "./event-queue.js";
@@ -249,17 +249,18 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     await requireCredentialRef(credRef);
   }
 
-  // Validate ECS IAM roles exist if using cloud ECS mode
-  if (cloudMode && globalConfig.cloud?.provider === "ecs") {
-    logger.info("Validating ECS IAM task roles...");
-    const { validateEcsRoles } = await import("../cli/commands/doctor.js");
+  // Validate IAM roles exist if using cloud mode
+  if (cloudMode && globalConfig.cloud) {
+    logger.info("Validating cloud IAM roles...");
+    const { createCloudProvider } = await import("../cloud/provider.js");
     try {
-      await validateEcsRoles(projectPath, globalConfig.cloud);
-      logger.info("All ECS IAM task roles validated successfully");
+      const provider = await createCloudProvider(globalConfig.cloud);
+      await provider.validateRoles(projectPath);
+      logger.info("All cloud IAM roles validated successfully");
     } catch (err: any) {
-      logger.error("ECS IAM role validation failed");
+      logger.error("Cloud IAM role validation failed");
       throw new Error(
-        `❌ ECS IAM role validation failed\n\n` +
+        `❌ Cloud IAM role validation failed\n\n` +
         `${err.message}\n\n` +
         `This validation prevents runtime failures when agents try to start.\n` +
         `Fix the IAM roles before starting the scheduler.`
@@ -300,7 +301,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     ? await setupWebhookRegistry(globalConfig, logger)
     : { registry: undefined, secrets: {} };
 
-  let baseImage = AWS_CONSTANTS.DEFAULT_IMAGE;
+  let baseImage = CONSTANTS.DEFAULT_IMAGE;
   const agentImages: Record<string, string> = {};
   const useCloudRuntime = cloudMode && globalConfig.cloud;
 

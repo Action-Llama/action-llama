@@ -48,7 +48,7 @@ export function renderLoginPage(error?: string): string {
       <input type="password" id="key" name="key" placeholder="Paste your gateway API key" autofocus required>
       <button type="submit">Log in</button>
     </form>
-    <div class="hint">Key is stored at ~/.action-llama-credentials/gateway_api_key/default/key</div>
+    <div class="hint">Key is stored at ~/.action-llama/credentials/gateway_api_key/default/key</div>
   </div>
 </body>
 </html>`;

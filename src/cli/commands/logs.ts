@@ -3,7 +3,6 @@ import { createReadStream, readdirSync, existsSync, statSync } from "fs";
 import { createInterface } from "readline";
 import { logsDir } from "../../shared/paths.js";
 import { loadGlobalConfig, loadAgentConfig } from "../../shared/config.js";
-import { AWS_CONSTANTS } from "../../shared/aws-constants.js";
 
 // ── ANSI helpers ──────────────────────────────────────────────────────────────
 
@@ -417,19 +416,14 @@ export async function execute(
       throw new Error("No [cloud] section found in config.toml. Run 'al cloud setup' first.");
     }
 
+    const { createCloudProvider } = await import("../../cloud/provider.js");
+    const provider = await createCloudProvider(cloud);
     const limit = parseInt(opts.lines, 10) || 50;
 
     // Special case: "scheduler" fetches scheduler service logs
     if (agent === "scheduler") {
       console.log("Fetching cloud scheduler logs...");
-      let lines: string[];
-      if (cloud.provider === "cloud-run") {
-        const { getCloudRunLogs } = await import("../../cloud/deploy-cloudrun.js");
-        lines = await getCloudRunLogs(cloud, limit);
-      } else {
-        const { getAppRunnerLogs } = await import("../../cloud/deploy-apprunner.js");
-        lines = await getAppRunnerLogs(cloud, limit);
-      }
+      const lines = await provider.getSchedulerLogs(limit);
       if (lines.length === 0) {
         console.log("No scheduler log events found.");
       } else {
@@ -439,7 +433,6 @@ export async function execute(
             const formatted = fmt(entry);
             if (formatted) console.log(formatted);
           } else {
-            // Raw line that didn't parse as JSON
             console.log(line);
           }
         }
@@ -447,45 +440,16 @@ export async function execute(
       return;
     }
 
-    let runtime: import("../../docker/runtime.js").ContainerRuntime;
-    if (cloud.provider === "cloud-run") {
-      const { CloudRunJobRuntime } = await import("../../docker/cloud-run-runtime.js");
-      runtime = new CloudRunJobRuntime(cloud as any);
-    } else {
-      // Route to Lambda runtime for short-timeout agents (same logic as scheduler)
-      let effectiveTimeout = globalConfig.local?.timeout ?? 900;
-      try {
-        const agentConfig = loadAgentConfig(projectPath, agent);
-        effectiveTimeout = agentConfig.timeout ?? effectiveTimeout;
-      } catch {
-        // Agent config not found — fall back to default timeout
-      }
-
-      if (effectiveTimeout <= AWS_CONSTANTS.LAMBDA_MAX_TIMEOUT) {
-        const { LambdaRuntime } = await import("../../docker/lambda-runtime.js");
-        runtime = new LambdaRuntime({
-          awsRegion: cloud.awsRegion!,
-          ecrRepository: cloud.ecrRepository!,
-          secretPrefix: cloud.awsSecretPrefix,
-          buildBucket: cloud.buildBucket,
-          lambdaRoleArn: cloud.lambdaRoleArn,
-          lambdaSubnets: cloud.lambdaSubnets,
-          lambdaSecurityGroups: cloud.lambdaSecurityGroups,
-        });
-      } else {
-        const { ECSFargateRuntime } = await import("../../docker/ecs-runtime.js");
-        runtime = new ECSFargateRuntime({
-          awsRegion: cloud.awsRegion!,
-          ecsCluster: cloud.ecsCluster!,
-          ecrRepository: cloud.ecrRepository!,
-          executionRoleArn: cloud.executionRoleArn!,
-          taskRoleArn: cloud.taskRoleArn!,
-          subnets: cloud.subnets!,
-          securityGroups: cloud.securityGroups,
-          secretPrefix: cloud.awsSecretPrefix,
-        });
-      }
+    // Create agent-specific runtime (handles Lambda routing for ECS)
+    let agentConfig;
+    try {
+      agentConfig = loadAgentConfig(projectPath, agent);
+    } catch {
+      // Agent config not found — use primary runtime
     }
+    const runtime = agentConfig
+      ? provider.createAgentRuntime(agentConfig, globalConfig)
+      : provider.createRuntime();
 
     const formatCloudLine = (line: string): void => {
       const entry = parseLine(line);

@@ -5,7 +5,7 @@ import type { CredentialBackend, CredentialEntry } from "./credential-backend.js
 
 /**
  * Filesystem credential backend.
- * Stores credentials at ~/.action-llama-credentials/<type>/<instance>/<field>.
+ * Stores credentials at ~/.action-llama/credentials/<type>/<instance>/<field>.
  * This is the default local-first backend.
  */
 export class FilesystemBackend implements CredentialBackend {

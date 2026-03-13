@@ -6,11 +6,8 @@ import { promptCredential } from "../../credentials/prompter.js";
 import { parseCredentialRef, credentialExists, writeCredentialFields } from "../../shared/credentials.js";
 import { createLocalBackend, createBackendFromCloudConfig } from "../../shared/remote.js";
 import { ConfigError, CredentialError } from "../../shared/errors.js";
-import { reconcileCloudIam, validateEcsRoles, reconcileLambdaRoles } from "./cloud-iam.js";
+import { createCloudProvider } from "../../cloud/provider.js";
 import { ensureGatewayApiKey } from "../../gateway/api-key.js";
-
-// Re-export for backward compatibility (used by cloud-setup.ts and scheduler/index.ts)
-export { reconcileCloudIam, validateEcsRoles, reconcileLambdaRoles } from "./cloud-iam.js";
 
 // Webhook secret credential types — these support multiple named instances
 const WEBHOOK_SECRET_TYPES: Record<string, string> = {
@@ -86,10 +83,12 @@ export async function execute(opts: { project: string; cloud?: boolean; checkOnl
       );
     }
 
+    const provider = await createCloudProvider(cloudConfig);
+
     // Push local creds to cloud
     console.log(`\nPushing credentials to cloud (${cloudConfig.provider})...`);
     const local = createLocalBackend();
-    const remote = await createBackendFromCloudConfig(cloudConfig);
+    const remote = await provider.createCredentialBackend();
     const localEntries = await local.list();
 
     if (localEntries.length === 0) {
@@ -106,19 +105,13 @@ export async function execute(opts: { project: string; cloud?: boolean; checkOnl
       console.log(`Pushed ${pushed} credential field(s) to ${cloudConfig.provider}.`);
     }
 
-    // Reconcile IAM
+    // Reconcile IAM (handles task roles, service accounts, Lambda roles)
     console.log(`\nReconciling cloud IAM...`);
-    await reconcileCloudIam(projectPath, cloudConfig);
+    await provider.reconcileAgents(projectPath);
 
-    // Validate IAM roles exist for ECS mode
-    if (cloudConfig.provider === "ecs") {
-      console.log(`\nValidating ECS IAM roles...`);
-      await validateEcsRoles(projectPath, cloudConfig);
-
-      // Create Lambda execution roles for short-timeout agents
-      console.log(`\nReconciling Lambda roles for short-timeout agents...`);
-      await reconcileLambdaRoles(projectPath, cloudConfig);
-    }
+    // Validate IAM roles
+    console.log(`\nValidating IAM roles...`);
+    await provider.validateRoles(projectPath);
   }
 }
 

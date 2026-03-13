@@ -21,7 +21,7 @@ Each agent is a directory containing:
 
 ## Credential Reference
 
-Credentials are managed by the user via `al doctor` or `al creds add` and stored in `~/.action-llama-credentials/<type>/<instance>/<field>`. Reference them in `credentials` arrays as `"type:instance"` (e.g. `"github_token:default"`). The `:default` instance suffix can be omitted.
+Credentials are managed by the user via `al doctor` or `al creds add` and stored in `~/.action-llama/credentials/<type>/<instance>/<field>`. Reference them in `credentials` arrays as `"type:instance"` (e.g. `"github_token:default"`). The `:default` instance suffix can be omitted.
 
 | Type | What it is | Fields | Runtime injection | What it enables |
 |------|-----------|--------|-------------------|----------------|

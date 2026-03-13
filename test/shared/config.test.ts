@@ -25,11 +25,19 @@ describe("loadGlobalConfig", () => {
   });
 
   it("loads valid config.toml with [cloud]", () => {
-    const config = { cloud: { provider: "cloud-run", gcpProject: "my-proj", region: "us-central1" } };
+    const config = { cloud: {
+      provider: "cloud-run",
+      gcpProject: "my-proj",
+      region: "us-central1",
+      artifactRegistry: "us-central1-docker.pkg.dev/my-proj/al-images",
+      serviceAccount: "al-runner@my-proj.iam.gserviceaccount.com",
+    } };
     writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(config as any));
     const loaded = loadGlobalConfig(tmpDir);
     expect(loaded.cloud?.provider).toBe("cloud-run");
-    expect(loaded.cloud?.gcpProject).toBe("my-proj");
+    if (loaded.cloud?.provider === "cloud-run") {
+      expect(loaded.cloud.gcpProject).toBe("my-proj");
+    }
   });
 
   it("ignores config.json", () => {

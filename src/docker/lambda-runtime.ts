@@ -17,7 +17,7 @@ import {
 } from "@aws-sdk/client-lambda";
 import type { ContainerRuntime, RuntimeLaunchOpts, RuntimeCredentials, BuildImageOpts, RunningAgent } from "./runtime.js";
 import { AwsSharedUtils } from "./aws-shared.js";
-import { AWS_CONSTANTS } from "../shared/aws-constants.js";
+import { AWS_CONSTANTS } from "../cloud/aws/constants.js";
 
 export interface LambdaRuntimeConfig {
   awsRegion: string;

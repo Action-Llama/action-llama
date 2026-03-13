@@ -6,7 +6,7 @@ import {
   ListSecretsCommand,
 } from "@aws-sdk/client-secrets-manager";
 import type { CredentialBackend, CredentialEntry } from "./credential-backend.js";
-import { AWS_CONSTANTS } from "./aws-constants.js";
+import { CONSTANTS } from "./constants.js";
 
 /**
  * AWS Secrets Manager credential backend.
@@ -21,7 +21,7 @@ export class AwsSecretsManagerBackend implements CredentialBackend {
   private client: SecretsManagerClient;
   private prefix: string;
 
-  constructor(awsRegion: string, secretPrefix = AWS_CONSTANTS.DEFAULT_SECRET_PREFIX) {
+  constructor(awsRegion: string, secretPrefix = CONSTANTS.DEFAULT_SECRET_PREFIX) {
     this.client = new SecretsManagerClient({ region: awsRegion });
     this.prefix = secretPrefix;
   }

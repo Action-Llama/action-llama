@@ -5,7 +5,7 @@ This guide walks you through creating an Action Llama agent from scratch.
 ## Prerequisites
 
 - An Action Llama project (created with `al new <name>`)
-- Credentials configured in `~/.action-llama-credentials/` (see [Credentials](credentials.md))
+- Credentials configured in `~/.action-llama/credentials/` (see [Credentials](credentials.md))
 
 ## Steps
 

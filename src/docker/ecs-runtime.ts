@@ -8,7 +8,8 @@ import {
 } from "@aws-sdk/client-ecs";
 import type { ContainerRuntime, RuntimeLaunchOpts, RuntimeCredentials, SecretMount, BuildImageOpts, AssembleImageOpts, RunningAgent } from "./runtime.js";
 import { AwsSharedUtils } from "./aws-shared.js";
-import { AWS_CONSTANTS } from "../shared/aws-constants.js";
+import { CONSTANTS } from "../shared/constants.js";
+import { AWS_CONSTANTS } from "../cloud/aws/constants.js";
 import { sanitizeEnvPart } from "../shared/credentials.js";
 import type { TelemetryConfig } from "../shared/config.js";
 
@@ -61,13 +62,13 @@ export class ECSFargateRuntime implements ContainerRuntime {
     });
   }
 
-  private static readonly STARTED_BY_PREFIX = AWS_CONSTANTS.STARTED_BY;
+  private static readonly STARTED_BY_PREFIX = CONSTANTS.STARTED_BY;
   static readonly LOG_GROUP = AWS_CONSTANTS.LOG_GROUP;
 
   // --- Agent tracking ---
 
   async isAgentRunning(agentName: string): Promise<boolean> {
-    const family = AWS_CONSTANTS.agentFamily(agentName);
+    const family = CONSTANTS.agentFamily(agentName);
     const res = await this.ecsClient.send(new ListTasksCommand({
       cluster: this.config.ecsCluster,
       family,
@@ -93,7 +94,7 @@ export class ECSFargateRuntime implements ContainerRuntime {
 
     return (desc.tasks ?? []).map((task) => {
       const family = task.taskDefinitionArn?.split("/").pop()?.split(":")[0] ?? "";
-      const agentName = AWS_CONSTANTS.agentNameFromFamily(family);
+      const agentName = CONSTANTS.agentNameFromFamily(family);
       return {
         agentName,
         taskId: task.taskArn?.split("/").pop() ?? task.taskArn ?? "unknown",
@@ -137,7 +138,7 @@ export class ECSFargateRuntime implements ContainerRuntime {
   async launch(opts: RuntimeLaunchOpts): Promise<string> {
     await this.shared.ensureLogGroup(ECSFargateRuntime.LOG_GROUP);
 
-    const family = AWS_CONSTANTS.agentFamily(opts.agentName);
+    const family = CONSTANTS.agentFamily(opts.agentName);
 
     const secretMounts = opts.credentials.strategy === "secrets-manager"
       ? opts.credentials.mounts
@@ -208,7 +209,7 @@ export class ECSFargateRuntime implements ContainerRuntime {
         cluster: this.config.ecsCluster,
         tasks: [taskArn],
       }));
-      const family = desc.tasks?.[0]?.taskDefinitionArn?.split("/").pop()?.split(":")[0] ?? AWS_CONSTANTS.agentFamily("agent");
+      const family = desc.tasks?.[0]?.taskDefinitionArn?.split("/").pop()?.split(":")[0] ?? CONSTANTS.agentFamily("agent");
       // awslogs stream format: <prefix>/<container-name>/<task-id>
       const logStream = `${family}/agent/${taskId}`;
 
@@ -278,7 +279,7 @@ export class ECSFargateRuntime implements ContainerRuntime {
   async fetchLogs(agentName: string, limit: number): Promise<string[]> {
     return this.shared.tailLogEvents(
       ECSFargateRuntime.LOG_GROUP,
-      `${AWS_CONSTANTS.agentFamily(agentName)}/`,
+      `${CONSTANTS.agentFamily(agentName)}/`,
       limit,
     );
   }
@@ -290,7 +291,7 @@ export class ECSFargateRuntime implements ContainerRuntime {
   ): { stop: () => void } {
     let stopped = false;
     const logGroup = ECSFargateRuntime.LOG_GROUP;
-    const streamPrefix = `${AWS_CONSTANTS.agentFamily(agentName)}/`;
+    const streamPrefix = `${CONSTANTS.agentFamily(agentName)}/`;
     const startTime = Date.now() - 60_000; // start from 1 minute ago
 
     const poll = async () => {
@@ -459,7 +460,7 @@ export class ECSFargateRuntime implements ContainerRuntime {
 
       // Extract agent name from task definition ARN for better error messages
       const family = taskDefinitionArn.split("/").pop()?.split(":")[0] ?? "";
-      const agentName = AWS_CONSTANTS.agentNameFromFamily(family);
+      const agentName = CONSTANTS.agentNameFromFamily(family);
 
       // Provide specific guidance for role assumption failures
       if (reason.includes("Unable to assume the role") ||

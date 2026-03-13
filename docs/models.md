@@ -184,7 +184,7 @@ If an agent defines its own `[model]` section, it fully overrides the project de
 
 ## Credential Setup
 
-Each provider requires a corresponding credential in `~/.action-llama-credentials/`. Run `al doctor` to configure them interactively.
+Each provider requires a corresponding credential in `~/.action-llama/credentials/`. Run `al doctor` to configure them interactively.
 
 The LLM credential does not need to be listed in your agent's `credentials` array — it is loaded automatically based on the `[model]` config. The `credentials` array is for runtime credentials the agent uses during execution (GitHub tokens, SSH keys, etc.).
 

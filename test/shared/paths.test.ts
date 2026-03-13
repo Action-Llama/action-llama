@@ -3,7 +3,9 @@ import { resolve } from "path";
 import { homedir } from "os";
 import {
   AL_HOME,
+  AL_HOME_DIR,
   CREDENTIALS_DIR,
+  STATE_DIR,
   projectDir,
   logsDir,
   eventsDir,
@@ -15,8 +17,16 @@ describe("paths", () => {
     expect(AL_HOME).toBe(resolve(homedir(), ".al"));
   });
 
-  it("CREDENTIALS_DIR is under homedir", () => {
-    expect(CREDENTIALS_DIR).toBe(resolve(homedir(), ".action-llama-credentials"));
+  it("AL_HOME_DIR is under homedir", () => {
+    expect(AL_HOME_DIR).toBe(resolve(homedir(), ".action-llama"));
+  });
+
+  it("CREDENTIALS_DIR is under AL_HOME_DIR", () => {
+    expect(CREDENTIALS_DIR).toBe(resolve(homedir(), ".action-llama", "credentials"));
+  });
+
+  it("STATE_DIR is under AL_HOME_DIR", () => {
+    expect(STATE_DIR).toBe(resolve(homedir(), ".action-llama", "state"));
   });
 
   it("projectDir resolves the path", () => {
