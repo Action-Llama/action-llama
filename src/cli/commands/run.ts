@@ -143,7 +143,7 @@ export async function execute(agent: string, opts: { project: string; cloud?: bo
 
     const { LocalDockerRuntime } = await import("../../docker/local-runtime.js");
     const { ensureNetwork } = await import("../../docker/network.js");
-    const { ensureImage, ensureAgentImage } = await import("../../docker/image.js");
+    const { ensureImage, ensureAgentImage, ensureProjectBaseImage } = await import("../../docker/image.js");
     const { ContainerAgentRunner } = await import("../../agents/container-runner.js");
 
     const runtime = new LocalDockerRuntime();
@@ -151,7 +151,8 @@ export async function execute(agent: string, opts: { project: string; cloud?: bo
 
     const baseImage = globalConfig.local?.image || AWS_CONSTANTS.DEFAULT_IMAGE;
     ensureImage(baseImage);
-    const image = ensureAgentImage(agent, projectPath, baseImage);
+    const effectiveBaseImage = ensureProjectBaseImage(projectPath, baseImage);
+    const image = ensureAgentImage(agent, projectPath, effectiveBaseImage);
 
     const runner = new ContainerAgentRunner(
       runtime,

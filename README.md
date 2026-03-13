@@ -75,6 +75,7 @@ npx al doctor
 ```
 my-project/
   package.json              # Includes @action-llama/action-llama as a dependency
+  Dockerfile                # Project base image — shared customizations for all agents
   AGENTS.md                 # Project overview, credential/webhook reference, example agent
   config.toml               # Global config: [local], [cloud], gateway, webhooks (no secrets)
   dev/                      # One directory per agent

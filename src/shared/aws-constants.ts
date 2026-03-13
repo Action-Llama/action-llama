@@ -67,6 +67,9 @@ export const AWS_CONSTANTS = {
   /** Default base Docker image */
   DEFAULT_IMAGE: "al-agent:latest",
 
+  /** Project-level base image (extends DEFAULT_IMAGE with user customizations) */
+  PROJECT_BASE_IMAGE: "al-project-base:latest",
+
   /** Agent-specific Docker image tag */
   agentImage: (agentName: string) => `al-${agentName}:latest`,
 

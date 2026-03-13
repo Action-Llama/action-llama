@@ -6,7 +6,7 @@
  */
 
 import { existsSync, readFileSync } from "fs";
-import { resolve as resolvePath, dirname } from "path";
+import { resolve as resolvePath, dirname, join } from "path";
 import { fileURLToPath } from "url";
 import type { AgentConfig, GlobalConfig } from "../shared/config.js";
 import type { ContainerRuntime } from "../docker/runtime.js";
@@ -35,6 +35,23 @@ export interface ImageBuildOpts {
 export interface ImageBuildResult {
   baseImage: string;
   agentImages: Record<string, string>;
+}
+
+/**
+ * Check whether the project Dockerfile has user customizations beyond a bare FROM.
+ */
+function isProjectDockerfileCustomized(projectPath: string): boolean {
+  const dockerfilePath = resolvePath(projectPath, "Dockerfile");
+  if (!existsSync(dockerfilePath)) return false;
+
+  const instructions = readFileSync(dockerfilePath, "utf-8")
+    .split("\n")
+    .map(l => l.trim())
+    .filter(l => l && !l.startsWith("#"));
+
+  // Unmodified = empty or a single FROM line
+  if (instructions.length <= 1) return false;
+  return true;
 }
 
 /**
@@ -72,6 +89,42 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
 
   statusTracker?.setBaseImageStatus(null);
 
+  // 1.5. Build project base image (if project has a customized Dockerfile)
+  let effectiveBaseImage = baseImage;
+  const projectDockerfile = resolvePath(projectPath, "Dockerfile");
+
+  if (isProjectDockerfileCustomized(projectPath)) {
+    const projectBaseTag = AWS_CONSTANTS.PROJECT_BASE_IMAGE;
+    logger.info("Building project base image...");
+    const setProjectBaseProgress = (msg: string) => {
+      statusTracker?.setBaseImageStatus(msg);
+      onProgress?.("project-base", msg);
+    };
+
+    if (runtimeType === "local") {
+      setProjectBaseProgress("Building project base image");
+      effectiveBaseImage = await runtime.buildImage({
+        tag: projectBaseTag,
+        dockerfile: projectDockerfile,
+        contextDir: packageRoot,
+        baseImage,
+        onProgress: setProjectBaseProgress,
+      });
+    } else {
+      setProjectBaseProgress("Building project base image");
+      effectiveBaseImage = await runtime.buildImage({
+        tag: projectBaseTag,
+        dockerfile: projectDockerfile,
+        contextDir: packageRoot,
+        baseImage,
+        onProgress: setProjectBaseProgress,
+      });
+    }
+
+    statusTracker?.setBaseImageStatus(null);
+    logger.info({ image: effectiveBaseImage }, "Project base image built");
+  }
+
   // 2. Build per-agent images — partition into thin (no Dockerfile) vs heavy
   const agentImages: Record<string, string> = {};
 
@@ -107,7 +160,7 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
     if (runtime.assembleImageDirect && runtimeType !== "local") {
       image = await runtime.assembleImageDirect({
         tag: agentImageTag,
-        baseImage,
+        baseImage: effectiveBaseImage,
         extraFiles,
         onProgress: progressCb,
       });
@@ -116,7 +169,7 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
         tag: agentImageTag,
         dockerfile: "Dockerfile",
         contextDir: packageRoot,
-        dockerfileContent: `FROM ${baseImage}\nCOPY static/ /app/static/\n`,
+        dockerfileContent: `FROM ${effectiveBaseImage}\nCOPY static/ /app/static/\n`,
         extraFiles,
         onProgress: progressCb,
       });
@@ -132,7 +185,7 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
       tag: AWS_CONSTANTS.agentImage(agentConfig.name),
       dockerfile: resolvePath(projectPath, agentConfig.name, "Dockerfile"),
       contextDir: packageRoot,
-      baseImage,
+      baseImage: effectiveBaseImage,
       extraFiles,
       onProgress: (msg: string) => { statusTracker?.setAgentStatusText(agentConfig.name, msg); onProgress?.(agentConfig.name, msg); },
     }));
@@ -160,7 +213,7 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
         tag: agentImageTag,
         dockerfile: resolvePath(projectPath, agentConfig.name, "Dockerfile"),
         contextDir: packageRoot,
-        baseImage,
+        baseImage: effectiveBaseImage,
         extraFiles,
         onProgress: progressCb,
       });
@@ -198,5 +251,5 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
 
   logger.info("Docker infrastructure ready");
 
-  return { baseImage, agentImages };
+  return { baseImage: effectiveBaseImage, agentImages };
 }

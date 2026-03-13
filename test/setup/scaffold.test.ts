@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync, readFileSync, lstatSync } from "fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync, lstatSync, writeFileSync, mkdirSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
 import { parse as parseTOML } from "smol-toml";
@@ -165,6 +165,30 @@ describe("scaffoldProject", () => {
     expect(existsSync(resolve(projDir, ".gitignore"))).toBe(true);
     const gitignore = readFileSync(resolve(projDir, ".gitignore"), "utf-8");
     expect(gitignore).toContain(".workspace/");
+  });
+
+  it("creates project Dockerfile at project root", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
+    const projDir = resolve(tmpDir, "my-project");
+    scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
+
+    const dockerfilePath = resolve(projDir, "Dockerfile");
+    expect(existsSync(dockerfilePath)).toBe(true);
+    const content = readFileSync(dockerfilePath, "utf-8");
+    expect(content).toContain("FROM al-agent:latest");
+    expect(content).toContain("Project base image");
+  });
+
+  it("does not overwrite existing project Dockerfile", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
+    const projDir = resolve(tmpDir, "my-project");
+    mkdirSync(projDir, { recursive: true });
+    writeFileSync(resolve(projDir, "Dockerfile"), "FROM custom:image\nRUN echo hi\n");
+
+    scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
+
+    const content = readFileSync(resolve(projDir, "Dockerfile"), "utf-8");
+    expect(content).toContain("FROM custom:image");
   });
 
 });

@@ -41,6 +41,12 @@ function collectProjectFiles(projectPath: string): Record<string, string> {
     files["config.toml"] = readFileSync(configPath, "utf-8");
   }
 
+  // Project Dockerfile (project base image)
+  const projectDockerfilePath = resolvePath(projectPath, "Dockerfile");
+  if (existsSync(projectDockerfilePath)) {
+    files["Dockerfile"] = readFileSync(projectDockerfilePath, "utf-8");
+  }
+
   // Walk agent directories
   for (const entry of readdirSync(projectPath)) {
     if (entry.startsWith(".") || entry === "node_modules") continue;

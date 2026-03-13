@@ -23,7 +23,8 @@ vi.mock("../../../src/docker/network.js", () => ({
 
 vi.mock("../../../src/docker/image.js", () => ({
   ensureImage: vi.fn(),
-  ensureAgentImage: vi.fn().mockReturnValue("test-agent-image")
+  ensureAgentImage: vi.fn().mockReturnValue("test-agent-image"),
+  ensureProjectBaseImage: vi.fn().mockImplementation((_projectPath: string, baseImage: string) => baseImage),
 }));
 
 // Mock AgentRunner first

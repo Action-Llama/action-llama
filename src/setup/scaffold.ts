@@ -113,6 +113,32 @@ export function scaffoldProject(
     // Fallback: skip if skills directory can't be read
   }
 
+  // Write project Dockerfile (base image for all agents)
+  const dockerfilePath = resolve(projectPath, "Dockerfile");
+  if (!existsSync(dockerfilePath)) {
+    writeFileSync(dockerfilePath, [
+      "# Project base image — shared by all agents in this project.",
+      "# This extends the Action Llama base image (al-agent:latest).",
+      "#",
+      "# SAFE TO CUSTOMIZE:",
+      "#   - Add system packages (RUN apk add ...)",
+      "#   - Set environment variables (ENV ...)",
+      "#   - Install language runtimes or CLI tools",
+      "#",
+      "# DO NOT MODIFY:",
+      "#   - The FROM line (it must reference al-agent:latest)",
+      "#   - Action Llama rewrites it at build time to the correct base image",
+      "#",
+      "# Examples:",
+      "#   RUN apk add --no-cache python3 py3-pip",
+      "#   RUN apk add --no-cache github-cli",
+      "#   ENV MY_VAR=value",
+      "",
+      "FROM al-agent:latest",
+      "",
+    ].join("\n"));
+  }
+
   // Create workspace directory
   mkdirSync(resolve(projectPath, ".workspace"), { recursive: true });
 

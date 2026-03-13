@@ -151,7 +151,7 @@ Any stdout line that is not valid JSON with `_log: true` is treated as plain age
 
 ## Base image
 
-The base image (`docker/Dockerfile`) includes the minimum needed for any agent:
+The base image (`al-agent:latest`) is built automatically from the Action Llama package and includes the minimum needed for any agent:
 
 | Package | Why |
 |---------|-----|
@@ -163,25 +163,72 @@ The base image (`docker/Dockerfile`) includes the minimum needed for any agent:
 
 The base image also copies the compiled Action Llama application (`dist/`) and installs its npm dependencies. The entry point is `node /app/dist/agents/container-entry.js`.
 
-## Custom agent images
+## Project base image
 
-Agents that need extra tools can add a `Dockerfile` to their directory. The simplest approach is to extend the base image:
+The project `Dockerfile` (at the project root) lets you customize the base image for **all** agents in the project. It is created by `al new` and checked into git:
 
 ```
 my-project/
+  Dockerfile              <-- project base image (shared by all agents)
+  config.toml
   dev/
     agent-config.toml
     ACTIONS.md
-    Dockerfile          <-- custom image for this agent
   reviewer/
     agent-config.toml
     ACTIONS.md
-                        <-- no Dockerfile, uses base image
+```
+
+By default, the project Dockerfile is a bare `FROM al-agent:latest` with no customizations. In this state, it is skipped entirely — agents build directly on `al-agent:latest` with no overhead.
+
+To customize, add `RUN`, `ENV`, or other instructions:
+
+```dockerfile
+FROM al-agent:latest
+
+# Install tools shared by all agents
+RUN apk add --no-cache python3 py3-pip github-cli
+
+# Set shared environment variables
+ENV MY_ORG=acme
+```
+
+When the project Dockerfile has customizations beyond the bare `FROM`, the build pipeline creates an intermediate image (`al-project-base:latest`) that all per-agent images layer on top of.
+
+### Image build order
+
+```
+al-agent:latest            ← Action Llama package (automatic)
+    │
+    ▼
+al-project-base:latest     ← project Dockerfile (if customized)
+    │
+    ▼
+al-<agent>:latest          ← per-agent Dockerfile (if present)
+```
+
+If the project Dockerfile is unmodified, the middle layer is skipped.
+
+## Custom agent images
+
+Agents that need extra tools **beyond** what the project base provides can add a `Dockerfile` to their own directory:
+
+```
+my-project/
+  Dockerfile              <-- project base (shared tools)
+  dev/
+    agent-config.toml
+    ACTIONS.md
+    Dockerfile            <-- custom image for this agent only
+  reviewer/
+    agent-config.toml
+    ACTIONS.md
+                          <-- no Dockerfile, uses project base
 ```
 
 ### Extending the base image
 
-Use `FROM al-agent:latest` and add what you need. Switch to `root` to install packages, then back to `node`:
+Use `FROM al-agent:latest` and add what you need. The build pipeline automatically rewrites the `FROM` line to point at the correct base (either `al-project-base:latest` or the cloud registry URI). Switch to `root` to install packages, then back to `node`:
 
 ```dockerfile
 FROM al-agent:latest
@@ -194,6 +241,8 @@ USER node
 ```
 
 This is a thin layer on top of the base — fast to build and shares most of the image.
+
+**Tip:** If multiple agents need the same tool, put it in the project `Dockerfile` instead of duplicating it across agent Dockerfiles.
 
 Common additions:
 
@@ -243,10 +292,10 @@ The key requirement is that `/app/dist/agents/container-entry.js` exists and can
 
 ### Build behavior
 
-- Agent images are named `al-<agent-name>:latest` (e.g. `al-dev:latest`)
-- They are rebuilt on every `al start` to pick up Dockerfile changes
-- The base image is only built if it doesn't exist yet
-- The build context is the Action Llama package root (not the project directory), so `COPY` paths reference the package's `dist/`, `package.json`, etc.
+- The base image (`al-agent:latest`) is only built if it doesn't exist yet
+- The project base image (`al-project-base:latest`) is rebuilt on every `al start` if the project Dockerfile has customizations
+- Agent images are named `al-<agent-name>:latest` (e.g. `al-dev:latest`) and are rebuilt on every `al start` to pick up Dockerfile changes
+- The build context is the Action Llama package root (not the project directory), so `COPY` paths in per-agent Dockerfiles reference the package's `dist/`, `package.json`, etc.
 
 ## Configuration
 
@@ -273,6 +322,8 @@ For Cloud Run configuration, see [Cloud Run docs](cloud-run.md). For ECS Fargate
 
 **Base image build fails** — Run `docker build -t al-agent:latest -f docker/Dockerfile .` from the Action Llama package directory to see the full build output.
 
-**Agent image build fails** — Check that your agent's `Dockerfile` starts with `FROM al-agent:latest` (the base must exist first) and that any `apt-get install` packages are spelled correctly.
+**Project base image build fails** — Check that the project `Dockerfile` starts with `FROM al-agent:latest` and that any `apk add` packages are spelled correctly. The base image uses Alpine Linux.
+
+**Agent image build fails** — Check that your agent's `Dockerfile` starts with `FROM al-agent:latest` (the build pipeline rewrites this to the correct base) and that any package install commands are correct.
 
 **Container exits immediately** — Check `al logs <agent>` for the error. Common causes: missing credentials, missing `ACTIONS.md`, invalid model config.

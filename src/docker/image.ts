@@ -1,5 +1,5 @@
 import { execFileSync } from "child_process";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -43,6 +43,37 @@ export function ensureImage(image: string = DEFAULT_IMAGE): void {
   if (!imageExists(image)) {
     buildImage(image);
   }
+}
+
+/**
+ * Build the project base image if the project has a customized Dockerfile.
+ *
+ * Returns the effective base image tag — either the project base image
+ * if customizations exist, or the original baseImage if not.
+ */
+export function ensureProjectBaseImage(projectPath: string, baseImage: string = DEFAULT_IMAGE): string {
+  const projectDockerfile = resolve(projectPath, "Dockerfile");
+  if (!existsSync(projectDockerfile)) return baseImage;
+
+  const instructions = readFileSync(projectDockerfile, "utf-8")
+    .split("\n")
+    .map(l => l.trim())
+    .filter(l => l && !l.startsWith("#"));
+
+  // Unmodified = empty or a single FROM line — skip the extra build
+  if (instructions.length <= 1) return baseImage;
+
+  const projectBaseImage = AWS_CONSTANTS.PROJECT_BASE_IMAGE;
+
+  // Always rebuild — the project Dockerfile may have changed
+  docker([
+    "build",
+    "-t", projectBaseImage,
+    "-f", projectDockerfile,
+    ".",
+  ], { cwd: PACKAGE_ROOT });
+
+  return projectBaseImage;
 }
 
 /**

@@ -8,14 +8,14 @@ Each agent is a directory containing:
 
 - `agent-config.toml` — credentials, model, schedule, webhooks, params
 - `ACTIONS.md` — the system prompt that defines what the agent does
-- `Dockerfile` (optional) — custom Docker image extending the base `al-agent:latest` (e.g. to install extra tools like `gh`)
+- `Dockerfile` (optional) — custom Docker image for this specific agent, extending the project base
 
 ## Creating an Agent
 
 1. Create a directory for your agent (e.g. `my-agent/`)
 2. Add `agent-config.toml` with credentials, model config, and a schedule or webhook trigger
 3. Add `ACTIONS.md` with the actions — step-by-step instructions the LLM follows each run
-4. If your agent needs tools beyond what the base image provides (git, curl, openssh-client, node), add a `Dockerfile` — see Container Isolation section below
+4. If your agents need shared tools beyond the base image (git, curl, openssh-client, node), edit the project `Dockerfile` at the project root. For agent-specific tools, add a `Dockerfile` to that agent's directory — see Container Isolation section below
 5. Verify with `npx al status`
 6. Run with `npx al start`
 
@@ -416,9 +416,20 @@ All agents run in isolated containers with a read-only root filesystem, dropped 
 
 The base image (`al-agent:latest`) is built automatically on first run. It includes Node.js, git, curl, openssh-client, and ca-certificates — the minimum needed for any agent.
 
+### Project base image
+
+The project `Dockerfile` at the project root customizes the base image for **all** agents. It is created by `al new` and checked into git. By default it is a bare `FROM al-agent:latest` (no customizations, skipped at build time). Add shared tools here:
+
+```dockerfile
+FROM al-agent:latest
+
+RUN apk add --no-cache python3 github-cli
+ENV MY_ORG=acme
+```
+
 ### Custom agent images
 
-If your agent needs extra tools (e.g. `gh` CLI, Python, `jq`), add a `Dockerfile` to the agent directory that extends the base image:
+If a specific agent needs extra tools beyond the project base, add a `Dockerfile` to that agent's directory:
 
 ```dockerfile
 FROM al-agent:latest
@@ -427,7 +438,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends gh && rm -rf /v
 USER node
 ```
 
-Agent images are built automatically on startup. If no `Dockerfile` is present, the agent uses the base image.
+The build pipeline automatically rewrites the `FROM` line to point at the project base image. Agent images are built automatically on startup. If no per-agent `Dockerfile` is present, the agent uses the project base (or `al-agent:latest` if the project Dockerfile is unmodified).
 
 ### Container filesystem
 

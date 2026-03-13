@@ -78,9 +78,18 @@ al start -p .
 
 Your agent will run on its configured schedule and/or respond to webhooks.
 
-### 6. (Optional) Add a custom Dockerfile
+### 6. (Optional) Customize the project Dockerfile
 
-If your agent needs tools beyond the base image (git, curl, openssh), add a `Dockerfile` to the agent directory:
+Every project has a `Dockerfile` at the root (created by `al new`) that defines the shared base image for all agents. If your agents need extra system packages, edit it:
+
+```dockerfile
+FROM al-agent:latest
+
+# Shared tools for all agents
+RUN apk add --no-cache github-cli python3
+```
+
+If only one specific agent needs extra tools, add a `Dockerfile` to that agent's directory instead:
 
 ```dockerfile
 FROM al-agent:latest
@@ -89,7 +98,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends gh && rm -rf /v
 USER node
 ```
 
-This is only used in Docker mode (`"docker": { "enabled": true }` in `config.json`). See [Docker docs](docker.md) for the full reference.
+See [Docker docs](docker.md) for the full reference.
 
 ### 7. (Cloud only) Re-run `al doctor -c`
 
