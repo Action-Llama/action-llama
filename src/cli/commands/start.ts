@@ -16,9 +16,9 @@ export async function execute(opts: { project: string; cloud?: boolean; headless
     );
   }
 
-  // Validate: --web-ui requires --gateway
+  // Auto-enable gateway when web UI is requested
   if (opts.webUi && !opts.gateway) {
-    throw new Error("--web-ui requires --gateway (-g). The web dashboard is served by the gateway.");
+    opts.gateway = true;
   }
 
   // Ensure all credentials are present before starting
