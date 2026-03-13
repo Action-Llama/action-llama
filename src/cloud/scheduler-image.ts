@@ -103,7 +103,7 @@ function generateDockerfile(): string {
     "EXPOSE 8080",
     "",
     'ENTRYPOINT ["node", "dist/cli/main.js", "start", \\',
-    '  "-p", "/app/static/project", "-c", "--headless", "--gateway"]',
+    '  "-p", "/app/static/project", "-c", "--headless", "--gateway", "-w"]',
     "",
   ].join("\n");
 }
