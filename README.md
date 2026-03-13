@@ -102,7 +102,7 @@ If you installed globally (`npm install -g @action-llama/action-llama`), you can
 | Command | Description |
 |---------|-------------|
 | `al new <name>` | Interactive setup — creates project directory and credentials |
-| `al chat` | Open an interactive Pi coding console with project context |
+| `al chat [agent]` | Interactive console — or agent-scoped session with credentials loaded |
 | `al doctor` | Check agents, credentials, webhooks, and config — prompt to fix |
 | `al cloud setup` | Interactive wizard for cloud provider setup |
 | `al cloud teardown` | Delete cloud IAM resources and remove cloud config |

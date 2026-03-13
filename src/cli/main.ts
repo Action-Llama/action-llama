@@ -149,11 +149,13 @@ program
 
 program
   .command("chat")
-  .description("Open an interactive Pi coding console with project context")
+  .description("Open an interactive console (optionally scoped to an agent's environment)")
+  .argument("[agent]", "agent name — loads its credentials and environment")
   .option("-p, --project <dir>", "project directory", ".")
-  .action(withCommand(async (opts) => {
+  .option("-c, --cloud", "load credentials from cloud secrets manager")
+  .action(withCommand(async (agent: string | undefined, opts) => {
     const { execute } = await import("./commands/chat.js");
-    await execute(opts);
+    await execute({ ...opts, agent });
   }));
 
 // --- Per-agent control ---

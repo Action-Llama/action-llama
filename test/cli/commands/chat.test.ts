@@ -29,7 +29,8 @@ vi.mock("@mariozechner/pi-ai", () => ({
 }));
 
 vi.mock("../../../src/shared/credentials.js", () => ({
-  loadCredentialField: vi.fn().mockReturnValue("sk-ant-api-test"),
+  loadCredentialField: vi.fn().mockResolvedValue("sk-ant-api-test"),
+  loadCredentialFields: vi.fn().mockResolvedValue({ token: "sk-ant-api-test" }),
   parseCredentialRef: (ref: string) => {
     const sep = ref.indexOf(":");
     if (sep === -1) return { type: ref, instance: "default" };
@@ -49,7 +50,14 @@ vi.mock("../../../src/shared/credentials.js", () => ({
   resetDefaultBackend: () => {},
 }));
 
+let capturedCwd: string | undefined;
+vi.mock("../../../src/cli/commands/chat.js", async (importOriginal) => {
+  const original = await importOriginal() as any;
+  return original;
+});
+
 import { execute } from "../../../src/cli/commands/chat.js";
+import { createAgentSession } from "@mariozechner/pi-coding-agent";
 
 describe("chat", () => {
   beforeEach(() => {
@@ -73,5 +81,37 @@ describe("chat", () => {
     expect(mockRun).toHaveBeenCalled();
     // Initial message should be short — template details are in system context, not the user prompt
     expect(capturedOptions.initialMessage).toContain("first agent");
+  });
+
+  it("launches agent-scoped session when agent name is provided", async () => {
+    const dir = makeTmpProject();
+    await execute({ project: dir, agent: "dev" });
+
+    expect(mockRun).toHaveBeenCalled();
+    expect(capturedOptions.initialMessage).toContain('"dev"');
+    // Should use agent dir as cwd
+    const call = (createAgentSession as any).mock.calls[0][0];
+    expect(call.cwd).toContain("dev");
+  });
+
+  it("throws when agent does not exist", async () => {
+    const dir = makeTmpProject();
+    await expect(execute({ project: dir, agent: "nonexistent" }))
+      .rejects.toThrow('Agent "nonexistent" not found');
+  });
+
+  it("warns when gateway is not reachable in agent mode", async () => {
+    const dir = makeTmpProject();
+    const logs: string[] = [];
+    const orig = console.log;
+    console.log = (...args: any[]) => logs.push(args.map(String).join(" "));
+    try {
+      await execute({ project: dir, agent: "dev" });
+    } finally {
+      console.log = orig;
+    }
+    const output = logs.join("\n");
+    expect(output).toContain("No gateway detected");
+    expect(output).toContain("al start -g");
   });
 });

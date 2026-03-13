@@ -278,12 +278,25 @@ al resume -p ./my-project
 
 ## `al chat`
 
-Open an interactive Pi coding console with project context.
+Open an interactive console. Without an agent name, opens the project-level console for creating and managing agents. With an agent name, opens an interactive session scoped to that agent's environment — credentials are loaded and injected as environment variables (e.g. `GITHUB_TOKEN`, `GIT_SSH_COMMAND`), and the working directory is set to the agent's directory.
 
 ```bash
-al chat -p .
+al chat                # project-level console
+al chat dev            # interactive session with dev agent's credentials
+al chat dev -c         # same, but credentials from cloud secrets manager
 ```
 
 | Option | Description |
 |--------|-------------|
+| `[agent]` | Agent name — loads its credentials and environment |
 | `-p, --project <dir>` | Project directory (default: `.`) |
+| `-c, --cloud` | Load credentials from cloud secrets manager |
+
+When running in agent mode, the command probes the gateway and warns if it is not reachable:
+
+```
+⚠ No gateway detected at http://localhost:8080. Resource locks, agent calls, and signals are unavailable.
+  Start the scheduler with `al start -g` to enable these features.
+```
+
+The agent's ACTIONS.md is loaded as reference context but is **not** auto-executed — you drive the session interactively.
