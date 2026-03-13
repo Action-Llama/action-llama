@@ -503,30 +503,51 @@ export class AwsSharedUtils {
 
   /**
    * Scan log events in a time window using FilterLogEvents.
-   * Returns events in ascending order — suitable for scanning for specific
-   * patterns (e.g. REPORT lines in waitForExit). Uses nextToken to paginate
-   * through all matching events rather than capping at `limit` oldest entries.
+   * Returns events in ascending order. Uses time-bounded queries and limits
+   * to improve performance by starting with a narrower time window.
    */
   async filterLogEvents(logGroupName: string, logStreamPrefix: string, limit: number, startTime?: number): Promise<string[]> {
-    startTime ??= Date.now() - 24 * 3600_000; // default: last 24 hours
+    // Start with a narrow time window (last 1 hour) for better performance
+    let queryStartTime = startTime ?? (Date.now() - 3600_000); // last 1 hour
+    const fallbackStartTime = startTime ?? (Date.now() - 24 * 3600_000); // last 24 hours
+    
     const allEvents: string[] = [];
     let nextToken: string | undefined;
+    const MAX_PAGES = 10;
+    let pageCount = 0;
 
-    do {
-      const res = await this.logsClient.send(new FilterLogEventsCommand({
-        logGroupName,
-        ...(logStreamPrefix ? { logStreamNamePrefix: logStreamPrefix } : {}),
-        startTime,
-        ...(nextToken ? { nextToken } : {}),
-      }));
+    // Try narrow window first, expand if needed
+    for (const currentStartTime of [queryStartTime, fallbackStartTime]) {
+      if (allEvents.length >= limit) break;
+      if (currentStartTime === fallbackStartTime && queryStartTime >= fallbackStartTime) break;
 
-      for (const e of res.events ?? []) {
-        const msg = e.message?.trimEnd();
-        if (msg) allEvents.push(msg);
-      }
+      nextToken = undefined;
+      pageCount = 0;
 
-      nextToken = res.nextToken;
-    } while (nextToken);
+      do {
+        const res: any = await this.logsClient.send(new FilterLogEventsCommand({
+          logGroupName,
+          ...(logStreamPrefix ? { logStreamNamePrefix: logStreamPrefix } : {}),
+          startTime: currentStartTime,
+          ...(nextToken ? { nextToken } : {}),
+        }));
+
+        for (const e of res.events ?? []) {
+          const msg = e.message?.trimEnd();
+          if (msg) {
+            allEvents.push(msg);
+            // Early exit if we have enough events
+            if (allEvents.length >= limit * 3) break;
+          }
+        }
+
+        nextToken = res.nextToken;
+        pageCount++;
+      } while (nextToken && pageCount < MAX_PAGES && allEvents.length < limit * 3);
+
+      // If we got enough results, no need to try the wider window
+      if (allEvents.length >= limit) break;
+    }
 
     return allEvents.slice(-limit);
   }

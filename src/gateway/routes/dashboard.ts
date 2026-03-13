@@ -29,11 +29,63 @@ function findLogFiles(projectPath: string, agentName: string): string[] {
   }
 }
 
-function readLastNLines(filePath: string, n: number): string[] {
+/**
+ * Efficiently read the last N lines from a file using reverse reading.
+ * This is async to avoid blocking the event loop.
+ */
+async function readLastNLines(filePath: string, n: number): Promise<string[]> {
   try {
-    const content = readFileSync(filePath, "utf-8");
-    const lines = content.split("\n").filter((l) => l.trim());
-    return lines.slice(-n);
+    const { promises: fs } = await import("fs");
+    const stat = await fs.stat(filePath);
+    const fileSize = stat.size;
+    
+    if (fileSize === 0) return [];
+    
+    const fd = await fs.open(filePath, 'r');
+    const lines: string[] = [];
+    let position = fileSize;
+    let buffer = Buffer.alloc(8192); // 8KB chunks
+    let remainder = '';
+    
+    try {
+      while (lines.length < n && position > 0) {
+        // Calculate how much to read (up to buffer size, but not before start of file)
+        const chunkSize = Math.min(buffer.length, position);
+        position -= chunkSize;
+        
+        // Read chunk from file
+        const { buffer: readBuffer } = await fd.read(buffer, 0, chunkSize, position);
+        const chunk = readBuffer.toString('utf-8', 0, chunkSize);
+        
+        // Combine with any remainder from previous iteration and split by newlines
+        const text = chunk + remainder;
+        const parts = text.split('\n');
+        
+        // The first part becomes the new remainder (since we're reading backwards)
+        remainder = parts[0];
+        
+        // Add lines in reverse order (excluding the first part which is incomplete)
+        for (let i = parts.length - 1; i >= 1; i--) {
+          const line = parts[i];
+          if (line.trim()) { // Skip empty lines
+            lines.unshift(line);
+            if (lines.length >= n) break;
+          }
+        }
+      }
+      
+      // Handle any remaining text if we've read the whole file
+      if (position === 0 && remainder.trim()) {
+        lines.unshift(remainder);
+        if (lines.length > n) {
+          lines.splice(0, lines.length - n);
+        }
+      }
+    } finally {
+      await fd.close();
+    }
+    
+    return lines.slice(-n); // Ensure we return exactly n lines (or fewer if file is smaller)
   } catch {
     return [];
   }
@@ -149,7 +201,7 @@ export function registerDashboardRoutes(
         const logFiles = findLogFiles(projectPath, agentName);
         if (logFiles.length > 0) {
           const lastFile = logFiles[logFiles.length - 1];
-          const lines = readLastNLines(lastFile, 100);
+          const lines = await readLastNLines(lastFile, 100);
           if (lines.length > 0) {
             stream.writeSSE({ data: JSON.stringify({ lines }) });
           }
@@ -159,6 +211,9 @@ export function registerDashboardRoutes(
       // Track file position for tailing
       let fileSize = 0;
       let currentFile = "";
+      let watcher: import("fs").FSWatcher | null = null;
+      let fallbackPoll: NodeJS.Timeout | null = null;
+
       if (projectPath) {
         const logFiles = findLogFiles(projectPath, agentName);
         if (logFiles.length > 0) {
@@ -171,8 +226,7 @@ export function registerDashboardRoutes(
         }
       }
 
-      // Poll for new file data
-      const filePoll = setInterval(() => {
+      const readNewData = async () => {
         if (!projectPath) return;
 
         // Check if a new log file appeared
@@ -181,25 +235,61 @@ export function registerDashboardRoutes(
 
         const latestFile = logFiles[logFiles.length - 1];
         if (latestFile !== currentFile) {
+          // Switch to new file and restart watching
+          if (watcher) {
+            watcher.close();
+            watcher = null;
+          }
           currentFile = latestFile;
           fileSize = 0;
+          
+          // Start watching the new file
+          try {
+            const { watch } = await import("fs");
+            watcher = watch(currentFile, { persistent: false }, () => readNewData());
+          } catch {
+            // fs.watch failed for new file, rely on fallback polling
+          }
         }
 
         try {
-          const stat = statSync(currentFile);
+          const { promises: fs } = await import("fs");
+          const stat = await fs.stat(currentFile);
           if (stat.size > fileSize) {
-            const fd = readFileSync(currentFile, "utf-8");
-            const newContent = fd.slice(fileSize);
-            fileSize = stat.size;
-            const newLines = newContent.split("\n").filter((l) => l.trim());
-            for (const line of newLines) {
-              stream.writeSSE({ data: JSON.stringify({ line }) });
+            const fd = await fs.open(currentFile, 'r');
+            try {
+              const buffer = Buffer.alloc(stat.size - fileSize);
+              await fd.read(buffer, 0, buffer.length, fileSize);
+              const newContent = buffer.toString('utf-8');
+              fileSize = stat.size;
+              const newLines = newContent.split("\n").filter((l) => l.trim());
+              for (const line of newLines) {
+                stream.writeSSE({ data: JSON.stringify({ line }) });
+              }
+            } finally {
+              await fd.close();
             }
           }
         } catch {
           // File read error, skip
         }
-      }, 500);
+      };
+
+      // Set up file watching with fallback polling
+      if (currentFile) {
+        try {
+          const { watch } = await import("fs");
+          watcher = watch(currentFile, { persistent: false }, () => readNewData());
+          // Still use a fallback poll but with longer interval since watch should catch most changes
+          fallbackPoll = setInterval(readNewData, 2000);
+        } catch {
+          // fs.watch not available, use polling only
+          fallbackPoll = setInterval(readNewData, 500);
+        }
+      } else {
+        // No current file, just poll for new files
+        fallbackPoll = setInterval(readNewData, 1000);
+      }
 
       // Also forward StatusTracker log lines for this agent
       const onUpdate = () => {
@@ -213,7 +303,8 @@ export function registerDashboardRoutes(
       }, 15000);
 
       stream.onAbort(() => {
-        clearInterval(filePoll);
+        if (watcher) watcher.close();
+        if (fallbackPoll) clearInterval(fallbackPoll);
         clearInterval(heartbeat);
       });
 

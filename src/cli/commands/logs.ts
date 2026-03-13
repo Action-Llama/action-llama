@@ -218,10 +218,17 @@ function findLogFile(dir: string, agent: string, date?: string): string | null {
     return existsSync(file) ? file : null;
   }
 
+  // Try today's file first (common case optimization)
   const today = new Date().toISOString().slice(0, 10);
   const todayFile = resolve(dir, `${agent}-${today}.log`);
   if (existsSync(todayFile)) return todayFile;
 
+  // Try yesterday's file (also common)
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const yesterdayFile = resolve(dir, `${agent}-${yesterday}.log`);
+  if (existsSync(yesterdayFile)) return yesterdayFile;
+
+  // Fallback to directory scan only if neither today nor yesterday exists
   if (!existsSync(dir)) return null;
   const files = readdirSync(dir)
     .filter((f) => f.startsWith(`${agent}-`) && f.endsWith(".log"))
@@ -233,15 +240,69 @@ function findLogFile(dir: string, agent: string, date?: string): string | null {
 
 // ── Reading & following ───────────────────────────────────────────────────────
 
+/**
+ * Efficiently read the last N lines from a file by reading backwards from the end.
+ * This avoids reading the entire file when we only need the last few lines.
+ */
+async function readLastNLines(filePath: string, n: number): Promise<string[]> {
+  const fs = await import("fs");
+  const stat = await fs.promises.stat(filePath);
+  const fileSize = stat.size;
+  
+  if (fileSize === 0) return [];
+  
+  const fd = await fs.promises.open(filePath, 'r');
+  const lines: string[] = [];
+  let position = fileSize;
+  let buffer = Buffer.alloc(8192); // 8KB chunks
+  let remainder = '';
+  
+  try {
+    while (lines.length < n && position > 0) {
+      // Calculate how much to read (up to buffer size, but not before start of file)
+      const chunkSize = Math.min(buffer.length, position);
+      position -= chunkSize;
+      
+      // Read chunk from file
+      const { buffer: readBuffer } = await fd.read(buffer, 0, chunkSize, position);
+      const chunk = readBuffer.toString('utf-8', 0, chunkSize);
+      
+      // Combine with any remainder from previous iteration and split by newlines
+      const text = chunk + remainder;
+      const parts = text.split('\n');
+      
+      // The first part becomes the new remainder (since we're reading backwards)
+      remainder = parts[0];
+      
+      // Add lines in reverse order (excluding the first part which is incomplete)
+      for (let i = parts.length - 1; i >= 1; i--) {
+        const line = parts[i];
+        if (line.trim()) { // Skip empty lines
+          lines.unshift(line);
+          if (lines.length >= n) break;
+        }
+      }
+    }
+    
+    // Handle any remaining text if we've read the whole file
+    if (position === 0 && remainder.trim()) {
+      lines.unshift(remainder);
+      if (lines.length > n) {
+        lines.splice(0, lines.length - n);
+      }
+    }
+  } finally {
+    await fd.close();
+  }
+  
+  return lines.slice(-n); // Ensure we return exactly n lines (or fewer if file is smaller)
+}
+
 async function readLastN(filePath: string, n: number, fmt: Formatter): Promise<void> {
+  const lines = await readLastNLines(filePath, n * 3); // Read more raw lines to account for filtering
   const entries: string[] = [];
 
-  const rl = createInterface({
-    input: createReadStream(filePath, { encoding: "utf-8" }),
-    crlfDelay: Infinity,
-  });
-
-  for await (const line of rl) {
+  for (const line of lines) {
     const entry = parseLine(line);
     if (entry) {
       const header = fmt === formatConversationEntry ? formatRunHeader(entry) : null;
@@ -289,17 +350,50 @@ async function followFile(filePath: string, lastN: number, fmt: Formatter): Prom
 
   let position = statSync(filePath).size;
 
-  const interval = setInterval(async () => {
+  // Use fs.watch instead of polling for better performance
+  let watcher: import("fs").FSWatcher | null = null;
+  let pollInterval: NodeJS.Timeout | null = null;
+
+  const cleanup = () => {
+    if (watcher) {
+      watcher.close();
+      watcher = null;
+    }
+    if (pollInterval) {
+      clearInterval(pollInterval);
+      pollInterval = null;
+    }
+  };
+
+  const readNewChanges = async () => {
     try {
       const { newPosition } = await readNewData(filePath, position, fmt);
       position = newPosition;
     } catch {
       // File may have been rotated or removed — ignore
     }
-  }, 500);
+  };
+
+  try {
+    // Try to use fs.watch() for efficient file monitoring
+    const fs = await import("fs");
+    watcher = fs.watch(filePath, { persistent: false }, async (eventType) => {
+      if (eventType === 'change') {
+        await readNewChanges();
+      }
+    });
+
+    // fs.watch can be unreliable on some systems, so add a fallback poll
+    // but with a longer interval since watch should catch most changes
+    pollInterval = setInterval(readNewChanges, 2000); // 2s instead of 500ms
+
+  } catch {
+    // fs.watch failed, fall back to polling only
+    pollInterval = setInterval(readNewChanges, 500);
+  }
 
   process.on("SIGINT", () => {
-    clearInterval(interval);
+    cleanup();
     process.exit(0);
   });
 
