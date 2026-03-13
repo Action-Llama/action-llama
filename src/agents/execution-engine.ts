@@ -16,6 +16,8 @@ import { loadCredentialField } from "../shared/credentials.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import { AgentError, isUnrecoverableError, UNRECOVERABLE_THRESHOLD } from "../shared/errors.js";
 import { installSignalCommands, readSignals } from "./signals.js";
+import type { TokenUsage } from "../shared/usage.js";
+import { sessionStatsToUsage } from "../shared/usage.js";
 
 export type RunResult = "completed" | "rerun" | "error";
 
@@ -23,6 +25,7 @@ export interface ExecutionResult {
   result: RunResult;
   outputText: string;
   unrecoverableErrors: number;
+  usage?: TokenUsage;  // NEW
 }
 
 export class ExecutionEngine {
@@ -195,6 +198,10 @@ export class ExecutionEngine {
       }
     }
 
+    // Capture token usage before disposing the session
+    const sessionStats = session.getSessionStats();
+    const usage = sessionStatsToUsage(sessionStats);
+
     session.dispose();
 
     // Read signal files
@@ -216,6 +223,6 @@ export class ExecutionEngine {
       result = "completed";
     }
 
-    return { result, outputText, unrecoverableErrors };
+    return { result, outputText, unrecoverableErrors, usage };
   }
 }

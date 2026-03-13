@@ -1,5 +1,7 @@
 import { EventEmitter } from "events";
 import type { AgentInstance } from "../scheduler/types.js";
+import type { TokenUsage } from "../shared/usage.js";
+import { addTokenUsage, zeroTokenUsage } from "../shared/usage.js";
 
 export interface AgentStatus {
   name: string;
@@ -15,6 +17,8 @@ export interface AgentStatus {
   runningCount: number; // how many runners are currently active
   taskUrl: string | null; // link to cloud task/execution (ECS or Cloud Run console)
   runReason: string | null; // why the agent is running (e.g. "schedule", "webhook", "rerun 2/10")
+  lastRunUsage: TokenUsage | null;
+  cumulativeUsage: TokenUsage | null;  // accumulated across all runs in this session
 }
 
 export interface SchedulerInfo {
@@ -58,6 +62,8 @@ export class StatusTracker extends EventEmitter {
       runningCount: 0,
       taskUrl: null,
       runReason: null,
+      lastRunUsage: null,
+      cumulativeUsage: null,
     });
     this.emit("update");
   }
@@ -87,7 +93,7 @@ export class StatusTracker extends EventEmitter {
   }
 
   /** Decrement running count and update state accordingly */
-  endRun(name: string, durationMs: number, error?: string): void {
+  endRun(name: string, durationMs: number, error?: string, usage?: TokenUsage): void {
     const agent = this.agents.get(name);
     if (!agent) return;
     agent.runningCount = Math.max(agent.runningCount - 1, 0);
@@ -95,6 +101,15 @@ export class StatusTracker extends EventEmitter {
     agent.lastRunDuration = durationMs;
     agent.statusText = null;
     agent.taskUrl = null;
+
+    // Update token usage
+    if (usage) {
+      agent.lastRunUsage = usage;
+      agent.cumulativeUsage = agent.cumulativeUsage
+        ? addTokenUsage(agent.cumulativeUsage, usage)
+        : usage;
+    }
+
     if (error) {
       agent.lastError = error;
       agent.state = "error";

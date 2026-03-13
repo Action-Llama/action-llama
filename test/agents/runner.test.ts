@@ -11,6 +11,7 @@ vi.mock("@mariozechner/pi-ai", () => ({
 const mockSubscribe = vi.fn();
 const mockPrompt = vi.fn();
 const mockDispose = vi.fn();
+const mockGetSessionStats = vi.fn();
 vi.mock("@mariozechner/pi-coding-agent", () => ({
   AuthStorage: { create: () => ({ setRuntimeApiKey: vi.fn() }) },
   createAgentSession: vi.fn(() =>
@@ -19,6 +20,7 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
         subscribe: mockSubscribe,
         prompt: mockPrompt,
         dispose: mockDispose,
+        getSessionStats: mockGetSessionStats,
       },
     })
   ),
@@ -80,6 +82,19 @@ describe("AgentRunner", () => {
     mkdirSync(resolve(tmpDir, ".al", "logs"), { recursive: true });
     // Write ACTIONS.md (required on disk now)
     writeFileSync(resolve(tmpDir, "dev", "ACTIONS.md"), "# Dev Agent\nDefault instructions.");
+    
+    // Configure session stats mock with realistic data
+    mockGetSessionStats.mockReturnValue({
+      usage: {
+        input: 100,
+        output: 200,
+        cacheRead: 50,
+        cacheWrite: 25,
+        totalTokens: 375,
+        cost: { input: 0.001, output: 0.002, cacheRead: 0.0005, cacheWrite: 0.00025, total: 0.00375 }
+      },
+      turnCount: 3
+    });
   });
 
   afterEach(() => {

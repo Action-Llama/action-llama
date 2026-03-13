@@ -20,6 +20,8 @@ import { AgentError, isUnrecoverableError, UNRECOVERABLE_THRESHOLD } from "../sh
 import { installSignalCommands, readSignals } from "./signals.js";
 import { withSpan, getTelemetry } from "../telemetry/index.js";
 import { SpanKind } from "@opentelemetry/api";
+import type { TokenUsage } from "../shared/usage.js";
+import { sessionStatsToUsage } from "../shared/usage.js";
 
 export type RunResult = "completed" | "rerun" | "error";
 
@@ -34,6 +36,7 @@ export interface RunOutcome {
   returnValue?: string;
   exitCode?: number;
   exitReason?: string;
+  usage?: TokenUsage;  // NEW
 }
 
 
@@ -110,6 +113,7 @@ export class AgentRunner {
     }
     const runStartTime = Date.now();
     let runError: string | undefined;
+    let usage: TokenUsage | undefined;
 
     // Declared outside try so the finally block can restore them.
     const GIT_ENV_KEYS = [
@@ -300,6 +304,10 @@ export class AgentRunner {
         }
       }
 
+      // Capture token usage before disposing the session
+      const sessionStats = session.getSessionStats();
+      usage = sessionStatsToUsage(sessionStats);
+      
       session.dispose();
 
       // Read signal files written by al-rerun, al-status, al-return, al-exit
@@ -327,6 +335,14 @@ export class AgentRunner {
           "execution.exit_code": signals.exitCode,
           "execution.has_return_value": !!signals.returnValue,
           "execution.unrecoverable_errors": unrecoverableErrors,
+          // OTel span attributes for token usage (following OpenTelemetry GenAI semantic conventions)
+          "llm.token.input": usage.inputTokens,
+          "llm.token.output": usage.outputTokens,
+          "llm.token.cache_read": usage.cacheReadTokens,
+          "llm.token.cache_write": usage.cacheWriteTokens,
+          "llm.token.total": usage.totalTokens,
+          "llm.cost.total": usage.cost,
+          "llm.turns": usage.turnCount,
         });
 
         if (result === "error") {
@@ -338,6 +354,7 @@ export class AgentRunner {
         result,
         triggers: [],
         returnValue: signals.returnValue,
+        usage,
         ...(signals.exitCode !== undefined && {
           exitCode: signals.exitCode,
           exitReason: getExitCodeMessage(signals.exitCode)
@@ -346,7 +363,7 @@ export class AgentRunner {
     } catch (err: any) {
       this.logger.error({ err }, `${this.agentConfig.name} run failed`);
       runError = String(err?.message || err).slice(0, 200);
-      return { result: "error", triggers: [] };
+      return { result: "error", triggers: [], usage: undefined };
     } finally {
       // Restore the git env vars we may have overwritten so other
       // agents running in the same process get a clean slate.
@@ -366,7 +383,7 @@ export class AgentRunner {
       try { rmSync(signalTmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
 
       const elapsed = Date.now() - runStartTime;
-      this.statusTracker?.endRun(this.agentConfig.name, elapsed, runError);
+      this.statusTracker?.endRun(this.agentConfig.name, elapsed, runError, usage);
       this.running = false;
     }
   }

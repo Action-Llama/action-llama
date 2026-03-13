@@ -40,7 +40,10 @@ export function attachPlainLogger(statusTracker: StatusTracker): { detach: () =>
         case "idle": {
           if (agent.lastRunAt) {
             const dur = agent.lastRunDuration != null ? ` (${(agent.lastRunDuration / 1000).toFixed(1)}s)` : "";
-            log(ts, agent.name, `completed${dur}`);
+            const usage = agent.lastRunUsage 
+              ? ` | ${agent.lastRunUsage.totalTokens} tokens ($${agent.lastRunUsage.cost.toFixed(4)})` 
+              : "";
+            log(ts, agent.name, `completed${dur}${usage}`);
           }
           if (agent.nextRunAt) {
             log(ts, agent.name, `next run: ${agent.nextRunAt.toISOString()}`);
@@ -106,7 +109,10 @@ export function attachPlainLogger(statusTracker: StatusTracker): { detach: () =>
 }
 
 function stateKey(agent: AgentStatus): string {
-  return `${agent.state}|${agent.statusText}|${agent.lastError}|${agent.lastRunAt?.getTime()}|${agent.lastRunDuration}|${agent.runReason}`;
+  const usageKey = agent.lastRunUsage 
+    ? `${agent.lastRunUsage.totalTokens}|${agent.lastRunUsage.cost}`
+    : "";
+  return `${agent.state}|${agent.statusText}|${agent.lastError}|${agent.lastRunAt?.getTime()}|${agent.lastRunDuration}|${agent.runReason}|${usageKey}`;
 }
 
 function log(ts: string, agent: string, msg: string): void {
