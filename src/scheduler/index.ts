@@ -17,6 +17,8 @@ import { WorkQueue } from "./event-queue.js";
 import { RunnerPool, type PoolRunner } from "./runner-pool.js";
 import { createContainerRuntime, buildAgentImages } from "./runtime-factory.js";
 import { resolveWebhookSource, buildFilterFromTrigger, setupWebhookRegistry } from "./webhook-setup.js";
+import { initTelemetry, withSpan } from "../telemetry/index.js";
+import { SpanKind } from "@opentelemetry/api";
 
 const DEFAULT_MAX_RERUNS = 10;
 const DEFAULT_MAX_TRIGGER_DEPTH = 3;
@@ -94,14 +96,36 @@ async function runTriggered(
   depth: number,
   ctx: SchedulerContext
 ): Promise<void> {
-  const { result, triggers } = await runner.run(prompt, { type: 'agent', source: sourceAgent });
-  if (triggers.length > 0) {
-    dispatchTriggers(triggers, agentConfig.name, depth, ctx);
-  }
-  // No reruns for triggered runs — they respond to a specific event
-  if (result === "completed") {
-    ctx.logger.info(`${agentConfig.name} triggered run completed`);
-  }
+  await withSpan(
+    "scheduler.run_triggered",
+    async (span) => {
+      span.setAttributes({
+        "agent.name": agentConfig.name,
+        "agent.trigger_type": "agent",
+        "agent.source_agent": sourceAgent,
+        "agent.model_provider": agentConfig.model?.provider,
+        "agent.model_name": agentConfig.model?.model,
+        "execution.depth": depth,
+      });
+
+      const { result, triggers } = await runner.run(prompt, { type: 'agent', source: sourceAgent });
+      if (triggers.length > 0) {
+        dispatchTriggers(triggers, agentConfig.name, depth, ctx);
+      }
+
+      span.setAttributes({
+        "execution.result": result,
+        "execution.triggers_fired": triggers.length,
+      });
+
+      // No reruns for triggered runs — they respond to a specific event
+      if (result === "completed") {
+        ctx.logger.info(`${agentConfig.name} triggered run completed`);
+      }
+    },
+    {},
+    SpanKind.INTERNAL
+  );
 }
 
 async function drainWebhookQueue(
@@ -140,25 +164,48 @@ async function runWithReruns(
   depth: number,
   ctx: SchedulerContext
 ): Promise<void> {
-  let { result, triggers } = await runner.run(makeScheduledPrompt(agentConfig, ctx), { type: 'schedule' });
-  if (triggers.length > 0) {
-    dispatchTriggers(triggers, agentConfig.name, depth, ctx);
-  }
-  let reruns = 0;
-  while (result === "rerun" && reruns < ctx.maxReruns) {
-    reruns++;
-    ctx.logger.info({ rerun: reruns, maxReruns: ctx.maxReruns }, `${agentConfig.name} requested rerun, re-running immediately`);
-    ({ result, triggers } = await runner.run(makeScheduledPrompt(agentConfig, ctx), { type: 'schedule', source: `rerun ${reruns}/${ctx.maxReruns}` }));
-    if (triggers.length > 0) {
-      dispatchTriggers(triggers, agentConfig.name, depth, ctx);
-    }
-  }
-  if (result === "rerun" && reruns >= ctx.maxReruns) {
-    ctx.logger.warn({ maxReruns: ctx.maxReruns }, `${agentConfig.name} hit max reruns limit`);
-  }
+  await withSpan(
+    "scheduler.run_with_reruns",
+    async (span) => {
+      span.setAttributes({
+        "agent.name": agentConfig.name,
+        "agent.trigger_type": "schedule",
+        "agent.model_provider": agentConfig.model?.provider,
+        "agent.model_name": agentConfig.model?.model,
+        "execution.max_reruns": ctx.maxReruns,
+      });
 
-  // Drain any webhook events that arrived during the rerun cycle
-  await drainWebhookQueue(agentConfig, ctx);
+      let { result, triggers } = await runner.run(makeScheduledPrompt(agentConfig, ctx), { type: 'schedule' });
+      if (triggers.length > 0) {
+        dispatchTriggers(triggers, agentConfig.name, depth, ctx);
+      }
+      let reruns = 0;
+      while (result === "rerun" && reruns < ctx.maxReruns) {
+        reruns++;
+        ctx.logger.info({ rerun: reruns, maxReruns: ctx.maxReruns }, `${agentConfig.name} requested rerun, re-running immediately`);
+        ({ result, triggers } = await runner.run(makeScheduledPrompt(agentConfig, ctx), { type: 'schedule', source: `rerun ${reruns}/${ctx.maxReruns}` }));
+        if (triggers.length > 0) {
+          dispatchTriggers(triggers, agentConfig.name, depth, ctx);
+        }
+      }
+      
+      span.setAttributes({
+        "execution.reruns": reruns,
+        "execution.result": result,
+        "execution.triggers_fired": triggers.length,
+      });
+
+      if (result === "rerun" && reruns >= ctx.maxReruns) {
+        ctx.logger.warn({ maxReruns: ctx.maxReruns }, `${agentConfig.name} hit max reruns limit`);
+        span.setAttribute("execution.max_reruns_reached", true);
+      }
+
+      // Drain any webhook events that arrived during the rerun cycle
+      await drainWebhookQueue(agentConfig, ctx);
+    },
+    {},
+    SpanKind.INTERNAL
+  );
 }
 
 export async function startScheduler(projectPath: string, globalConfigOverride?: GlobalConfig, statusTracker?: StatusTracker, cloudMode?: boolean, gatewayEnabled?: boolean, webUI?: boolean) {
@@ -167,6 +214,18 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   logger.info("Starting scheduler...");
 
   const globalConfig = globalConfigOverride || loadGlobalConfig(projectPath);
+
+  // Initialize telemetry if enabled
+  let telemetry: any;
+  if (globalConfig.telemetry?.enabled) {
+    try {
+      telemetry = initTelemetry(globalConfig.telemetry);
+      await telemetry.init();
+      logger.info("Telemetry initialized successfully");
+    } catch (error: any) {
+      logger.warn({ error: error.message }, "Failed to initialize telemetry");
+    }
+  }
 
   // Discover all agents in the project
   const agentNames = discoverAgents(projectPath);
@@ -420,13 +479,37 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
               "webhook triggering agent"
             );
             const prompt = makeWebhookPrompt(agentConfig, context, schedulerCtx);
-            availableRunner.run(prompt, { type: 'webhook', source: context.event }).then(({ triggers }) => {
-              if (triggers.length > 0) {
-                dispatchTriggers(triggers, agentConfig.name, 0, schedulerCtx);
-              }
-              // Drain any events that queued while this webhook run was executing
-              return drainWebhookQueue(agentConfig, schedulerCtx);
-            }).catch((err) => {
+            
+            withSpan(
+              "scheduler.webhook_trigger",
+              async (span) => {
+                span.setAttributes({
+                  "agent.name": agentConfig.name,
+                  "agent.trigger_type": "webhook",
+                  "webhook.event": context.event,
+                  "webhook.action": context.action || "",
+                  "webhook.source": trigger.source,
+                  "agent.model_provider": agentConfig.model?.provider,
+                  "agent.model_name": agentConfig.model?.model,
+                  "execution.pool_running": pool.runningJobCount,
+                  "execution.pool_scale": pool.size,
+                });
+
+                const { triggers } = await availableRunner.run(prompt, { type: 'webhook', source: context.event });
+                
+                span.setAttributes({
+                  "execution.triggers_fired": triggers.length,
+                });
+
+                if (triggers.length > 0) {
+                  dispatchTriggers(triggers, agentConfig.name, 0, schedulerCtx);
+                }
+                // Drain any events that queued while this webhook run was executing
+                await drainWebhookQueue(agentConfig, schedulerCtx);
+              },
+              {},
+              SpanKind.INTERNAL
+            ).catch((err) => {
               logger.error({ err }, `${agentConfig.name} webhook run failed`);
             });
           },
@@ -546,6 +629,17 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       await gateway.close();
       logger.info("Gateway server stopped");
     }
+    
+    // Shutdown telemetry
+    if (telemetry) {
+      try {
+        await telemetry.shutdown();
+        logger.info("Telemetry shutdown completed");
+      } catch (error: any) {
+        logger.warn({ error: error.message }, "Error during telemetry shutdown");
+      }
+    }
+    
     logger.info("All cron jobs stopped");
     process.exit(0);
   };

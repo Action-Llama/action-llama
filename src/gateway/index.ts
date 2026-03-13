@@ -14,6 +14,8 @@ import type { WebhookRegistry } from "../webhooks/registry.js";
 import type { Logger } from "../shared/logger.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import type { ControlRoutesDeps } from "./routes/control.js";
+import { withSpan, getTelemetry } from "../telemetry/index.js";
+import { SpanKind } from "@opentelemetry/api";
 
 export type { ContainerRegistration } from "./types.js";
 
@@ -49,6 +51,35 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
   const lockStore = new LockStore(lockTimeout);
   const callStore = new CallStore();
   let callDispatcher: CallDispatcher | undefined;
+
+  // Add telemetry middleware for HTTP requests
+  const telemetry = getTelemetry();
+  if (telemetry) {
+    app.use("*", async (c, next) => {
+      const spanName = `gateway.${c.req.method.toLowerCase()}_${c.req.path.replace(/\/+/g, "_").replace(/^_|_$/g, "") || "root"}`;
+      
+      await withSpan(
+        spanName,
+        async (span) => {
+          span.setAttributes({
+            "http.method": c.req.method,
+            "http.url": c.req.url,
+            "http.path": c.req.path,
+            "http.user_agent": c.req.header("user-agent") || "",
+            "gateway.component": "http_server",
+          });
+
+          await next();
+
+          span.setAttributes({
+            "http.status_code": c.res.status,
+          });
+        },
+        {},
+        SpanKind.SERVER
+      );
+    });
+  }
 
   // Health check
   app.get("/health", (c) => c.json({ status: "ok" }));

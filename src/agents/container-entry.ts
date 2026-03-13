@@ -14,6 +14,8 @@ import { parseCredentialRef, unsanitizeEnvPart } from "../shared/credentials.js"
 import { getExitCodeMessage } from "../shared/exit-codes.js";
 import { ensureSignalDir, readSignals } from "./signals.js";
 import { builtinCredentials } from "../credentials/builtins/index.js";
+import { initTelemetry } from "../telemetry/index.js";
+import type { TelemetryConfig } from "../telemetry/types.js";
 
 // Structured log line — written to stdout, parsed by ContainerAgentRunner on the host
 function emitLog(level: string, msg: string, data?: Record<string, any>) {
@@ -110,6 +112,31 @@ export async function initAgent(): Promise<AgentInit> {
   const signalDir = "/tmp/signals";
   ensureSignalDir(signalDir);
   process.env.AL_SIGNAL_DIR = signalDir;
+
+  // Initialize telemetry if trace context is available
+  if (process.env.OTEL_TRACE_PARENT || process.env.OTEL_EXPORTER_OTLP_ENDPOINT) {
+    try {
+      const telemetryConfig: TelemetryConfig = {
+        enabled: true,
+        provider: "otel",
+        serviceName: "action-llama-agent",
+        endpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
+        samplingRate: 1.0,
+      };
+      
+      const telemetry = initTelemetry(telemetryConfig);
+      await telemetry.init();
+      
+      // Set trace context if passed from parent
+      if (process.env.OTEL_TRACE_PARENT) {
+        telemetry.setTraceContext(process.env.OTEL_TRACE_PARENT);
+      }
+      
+      emitLog("info", "telemetry initialized in container");
+    } catch (error: any) {
+      emitLog("warn", "failed to initialize container telemetry", { error: error.message });
+    }
+  }
 
   // Load agent config and ACTIONS.md from baked-in files or env vars.
   // Images built with extraFiles have static content at /app/static/.

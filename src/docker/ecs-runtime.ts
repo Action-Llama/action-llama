@@ -10,6 +10,7 @@ import type { ContainerRuntime, RuntimeLaunchOpts, RuntimeCredentials, SecretMou
 import { AwsSharedUtils } from "./aws-shared.js";
 import { AWS_CONSTANTS } from "../shared/aws-constants.js";
 import { sanitizeEnvPart } from "../shared/credentials.js";
+import type { TelemetryConfig } from "../shared/config.js";
 
 export interface ECSFargateConfig {
   awsRegion: string;
@@ -145,6 +146,7 @@ export class ECSFargateRuntime implements ContainerRuntime {
       cpus: String((opts.cpus || 2) * 1024),
       taskRoleArn,
       streamPrefix: family,
+      telemetry: opts.telemetry,
     });
 
     try {
@@ -336,6 +338,7 @@ export class ECSFargateRuntime implements ContainerRuntime {
       cpus: string;
       taskRoleArn: string;
       streamPrefix: string;
+      telemetry?: TelemetryConfig;
     }
   ): Promise<string> {
     const environment = Object.entries(opts.env).map(([name, value]) => ({ name, value }));
@@ -349,6 +352,68 @@ export class ECSFargateRuntime implements ContainerRuntime {
       };
     });
 
+    // Build container definitions - start with the main agent container
+    const containerDefinitions: any[] = [{
+      name: "agent",
+      image: opts.image,
+      essential: true,
+      environment: [
+        ...environment,
+        // Add telemetry collector endpoint if telemetry is enabled
+        ...(opts.telemetry?.enabled ? [{
+          name: "OTEL_EXPORTER_OTLP_ENDPOINT",
+          value: "http://localhost:4317"
+        }] : [])
+      ],
+      secrets,
+      logConfiguration: {
+        logDriver: "awslogs",
+        options: {
+          "awslogs-group": ECSFargateRuntime.LOG_GROUP,
+          "awslogs-region": this.config.awsRegion,
+          "awslogs-stream-prefix": opts.streamPrefix,
+          "awslogs-create-group": "true",
+        },
+      },
+      user: "1000:1000",
+      linuxParameters: {
+        initProcessEnabled: true,
+      },
+      // Agent depends on telemetry collector if enabled
+      ...(opts.telemetry?.enabled ? {
+        dependsOn: [{
+          containerName: "adot-collector",
+          condition: "START"
+        }]
+      } : {})
+    }];
+
+    // Add ADOT collector sidecar if telemetry is enabled
+    if (opts.telemetry?.enabled && (opts.telemetry.provider === "otel" || opts.telemetry.provider === "xray")) {
+      containerDefinitions.push({
+        name: "adot-collector",
+        image: "public.ecr.aws/aws-observability/aws-otel-collector:latest",
+        essential: false, // Non-essential so agent failure doesn't kill sidecar
+        environment: [
+          { name: "AWS_REGION", value: this.config.awsRegion }
+        ],
+        command: ["--config=/etc/otelcol-contrib/otel-collector-config.yaml"],
+        logConfiguration: {
+          logDriver: "awslogs",
+          options: {
+            "awslogs-group": ECSFargateRuntime.LOG_GROUP,
+            "awslogs-region": this.config.awsRegion,
+            "awslogs-stream-prefix": `${opts.streamPrefix}-adot`,
+            "awslogs-create-group": "true",
+          },
+        },
+        portMappings: [
+          { containerPort: 4317, protocol: "tcp" }, // gRPC
+          { containerPort: 4318, protocol: "tcp" }  // HTTP
+        ]
+      });
+    }
+
     const res = await this.ecsClient.send(new RegisterTaskDefinitionCommand({
       family,
       networkMode: "awsvpc",
@@ -357,26 +422,7 @@ export class ECSFargateRuntime implements ContainerRuntime {
       memory: opts.memory,
       executionRoleArn: this.config.executionRoleArn,
       taskRoleArn: opts.taskRoleArn,
-      containerDefinitions: [{
-        name: "agent",
-        image: opts.image,
-        essential: true,
-        environment,
-        secrets,
-        logConfiguration: {
-          logDriver: "awslogs",
-          options: {
-            "awslogs-group": ECSFargateRuntime.LOG_GROUP,
-            "awslogs-region": this.config.awsRegion,
-            "awslogs-stream-prefix": opts.streamPrefix,
-            "awslogs-create-group": "true",
-          },
-        },
-        user: "1000:1000",
-        linuxParameters: {
-          initProcessEnabled: true,
-        },
-      }],
+      containerDefinitions,
     }));
 
     return res.taskDefinition!.taskDefinitionArn!;

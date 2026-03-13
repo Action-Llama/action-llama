@@ -5,6 +5,8 @@ import type { ContainerRuntime, RuntimeCredentials } from "../docker/runtime.js"
 import type { ContainerRegistration } from "../gateway/types.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import type { RunResult, RunOutcome } from "./runner.js";
+import { withSpan, getTelemetry } from "../telemetry/index.js";
+import { SpanKind } from "@opentelemetry/api";
 
 export class ContainerAgentRunner {
   private _running = false;
@@ -129,6 +131,30 @@ export class ContainerAgentRunner {
     }
 
     this._running = true;
+    
+    return await withSpan(
+      "container_agent.run",
+      async (span) => {
+        span.setAttributes({
+          "agent.name": this.agentConfig.name,
+          "agent.run_id": this.instanceId,
+          "agent.trigger_type": triggerInfo?.type || "manual",
+          "agent.trigger_source": triggerInfo?.source || "",
+          "agent.model_provider": this.agentConfig.model?.provider,
+          "agent.model_name": this.agentConfig.model?.model,
+          "execution.environment": "container",
+          "runtime.type": this.runtime.constructor.name,
+          "container.image": this.image,
+        });
+
+        return this._runInternalContainer(prompt, triggerInfo, span);
+      },
+      {},
+      SpanKind.INTERNAL
+    );
+  }
+
+  private async _runInternalContainer(prompt: string, triggerInfo?: { type: 'schedule' | 'webhook' | 'agent'; source?: string }, parentSpan?: any): Promise<RunOutcome> {
     this._returnValue = undefined;
     const runReason = triggerInfo
       ? (triggerInfo.source
@@ -180,6 +206,19 @@ export class ContainerAgentRunner {
         env.SHUTDOWN_SECRET = shutdownSecret;
       }
 
+      // Pass telemetry context to container
+      const telemetry = getTelemetry();
+      if (telemetry) {
+        const traceContext = telemetry.getActiveContext();
+        if (traceContext) {
+          env.OTEL_TRACE_PARENT = traceContext;
+        }
+        // Pass collector endpoint if configured
+        if (this.globalConfig.telemetry?.endpoint) {
+          env.OTEL_EXPORTER_OTLP_ENDPOINT = this.globalConfig.telemetry.endpoint;
+        }
+      }
+
       containerName = await this.runtime.launch({
         image: this.image,
         agentName: this.agentConfig.name,
@@ -187,6 +226,7 @@ export class ContainerAgentRunner {
         credentials,
         memory: this.globalConfig.local?.memory,
         cpus: this.globalConfig.local?.cpus,
+        telemetry: this.globalConfig.telemetry,
       });
 
       // Register container with gateway for shutdown, locking, and log ingestion.
@@ -251,6 +291,20 @@ export class ContainerAgentRunner {
       const elapsed = Date.now() - runStartTime;
       this.statusTracker?.endRun(this.agentConfig.name, elapsed, runError);
       this._running = false;
+      
+      // Add telemetry attributes for the execution result
+      if (parentSpan) {
+        parentSpan.setAttributes({
+          "execution.result": runResult,
+          "execution.elapsed_ms": elapsed,
+          "execution.has_return_value": !!this._returnValue,
+          "container.name": containerName || "",
+        });
+
+        if (runResult === "error") {
+          parentSpan.recordException(new Error(`Container execution failed: ${runError || "Unknown error"}`));
+        }
+      }
     }
     return { result: runResult, triggers: [], returnValue: this._returnValue };
   }

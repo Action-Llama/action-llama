@@ -1,0 +1,57 @@
+# AWS Distro for OpenTelemetry (ADOT) Collector Configuration
+# This configuration is used by the ADOT sidecar container in ECS deployments
+# to collect and export traces to AWS X-Ray
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Batch processor to reduce the number of requests
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+  
+  # Memory limiter to prevent excessive memory usage
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+  
+  # Resource processor to add additional attributes
+  resource:
+    attributes:
+      - key: service.namespace
+        value: action-llama
+        action: insert
+      - key: deployment.environment
+        value: ${AWS_REGION}
+        action: insert
+
+exporters:
+  # AWS X-Ray exporter for trace data
+  awsxray:
+    no_verify_ssl: false
+    local_mode: false
+    region: ${AWS_REGION}
+  
+  # Logging exporter for debugging
+  logging:
+    loglevel: info
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [awsxray, logging]
+  
+  extensions: []
+
+  telemetry:
+    logs:
+      level: info
