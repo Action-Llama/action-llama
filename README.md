@@ -8,7 +8,7 @@ Run agents like scripts: triggered by cron or webhooks.
 
 Dev Experience:
 
-1. Either a webhook or cron wakes up the agent
+1. The agent is triggered by a webhook, agent, or crom schedule.
 2. The agent runs according to the instructions in ACTIONS.md you define
 3. The agent shuts down
 
