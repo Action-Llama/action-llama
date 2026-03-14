@@ -69,10 +69,15 @@ If any credentials are missing, it will prompt you for them. Credentials are sto
 ```
 my-project/
   package.json              # Includes @action-llama/action-llama as a dependency
-  Dockerfile                # Project base image — shared customizations for all agents
-  AGENTS.md                 # Project overview, credential/webhook reference, example agent
+  Dockerfile                # Project base image. Generated. Shared customizations for all agents
+  AGENTS.md                 # Project overview, Generated. Credential/webhook reference, example agent
   config.toml               # Global config: [local], [cloud], gateway, webhooks (no secrets)
-  dev/                      # One directory per agent
+```
+
+Each agent subdirectory:
+
+```
+  dev/                      # Agent name
     agent-config.toml       # Agent config: credentials, model, schedule, webhooks, params
     ACTIONS.md             # Agent instructions (system prompt) — edit to customize behavior
     Dockerfile              # (optional) Custom Docker image for this agent
