@@ -52,7 +52,7 @@ The chat console helps you create and manage agents. If no agents exist yet, it 
 
 You can also create agents manually — see the [creating agents guide](docs/creating-agents.md).
 
-Or, if you're using your own coding agent just make sure it reads the AGENTS.md in your project root. It contains everything needed to create agents (including a complete example agent).
+Or, if you're using your own coding agent just make sure it reads the AGENTS.md in your project root.
 
 ### 3. Run
 
