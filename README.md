@@ -104,6 +104,8 @@ See the [cloud docs](docs/cloud.md) for setup, provider comparison, and links to
 
 If you installed globally (`npm install -g @action-llama/action-llama`), you can use `al` directly. Otherwise, prefix commands with `npx` (e.g., `npx al start`).
 
+Commands generally have two modes: local or cloud.
+
 | Command | Description |
 |---------|-------------|
 | `al new <name>` | Interactive setup — creates project directory and credentials |
