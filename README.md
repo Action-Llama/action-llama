@@ -64,12 +64,6 @@ npx al start
 
 If any credentials are missing, it will prompt you for them. Credentials are stored in `~/.action-llama/credentials/` (shared across projects, not committed to git). See [credentials docs](docs/credentials.md) for details.
 
-If you want to set up credentials without starting the scheduler:
-
-```bash
-npx al doctor
-```
-
 ### Project structure
 
 ```
@@ -86,7 +80,13 @@ my-project/
 
 ## Cloud
 
-For production, run agents on managed cloud infrastructure — automatic restarts, IAM-enforced secret isolation, no laptop required. Action Llama supports **GCP Cloud Run Jobs** and **AWS ECS Fargate**.
+For production, run agents on managed cloud infrastructure — automatic restarts, secret isolation, no laptop required.
+
+Action Llama supports:
+
+- **AWS**
+- **GCP**
+- more by request
 
 ```bash
 al cloud setup    # Interactive wizard: pick provider, configure, push creds, provision IAM
