@@ -48,7 +48,7 @@ This scaffolds the project and sets up your model credentials and defaults.
 npx al chat
 ```
 
-The chat console is a TUI powered by [Pi](https://github.com/badlogic/pi-mono) that helps you create and manage agents. If no agents exist yet, it will offer to create one for you.
+The chat console helps you create and manage agents. If no agents exist yet, it will offer to create one for you.
 
 You can also create agents manually — see the [creating agents guide](docs/creating-agents.md).
 
