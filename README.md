@@ -89,8 +89,8 @@ For production, run agents on managed cloud infrastructure — automatic restart
 
 Action Llama supports:
 
-- **AWS**
-- **GCP**
+- **Amazon Web Services**
+- **Google Cloud Platform**
 - more by request
 
 ```bash
@@ -98,7 +98,7 @@ al cloud setup    # Interactive wizard: pick provider, configure, push creds, pr
 al start -c      # Start on cloud
 ```
 
-See the [cloud docs](docs/cloud.md) for setup, provider comparison, and links to the [Cloud Run](docs/cloud-run.md) and [ECS](docs/ecs.md) guides.
+See the [cloud docs](docs/cloud.md) for setup, provider comparison, and links to the [GCP](docs/cloud-run.md) and [AWS](docs/ecs.md) guides.
 
 ## CLI commands
 
