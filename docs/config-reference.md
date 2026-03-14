@@ -76,7 +76,7 @@ Controls local Docker container isolation. These settings also apply as resource
 
 ### `[cloud]` — Cloud Provider
 
-Only needed when running agents on cloud infrastructure with `al start -c`. Configure using `al cloud setup` (interactive wizard) or manually.
+Only needed when running agents on cloud infrastructure with `al start -c`. Configure using `al setup cloud` (interactive wizard) or manually.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|

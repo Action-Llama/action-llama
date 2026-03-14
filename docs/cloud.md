@@ -7,7 +7,7 @@ Action Llama supports two cloud providers. Both use the same project structure a
 ## Quick start
 
 ```bash
-al cloud setup -p .   # Interactive wizard: pick provider, configure, push creds, provision IAM
+al setup cloud -p .   # Interactive wizard: pick provider, configure, push creds, provision IAM
 al start -c -p .     # Start on cloud
 ```
 

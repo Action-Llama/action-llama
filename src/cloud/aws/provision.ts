@@ -60,7 +60,7 @@ export async function setupEcsCloud(cloud: EcsCloudConfig): Promise<boolean> {
     console.log("  1. Install the AWS CLI:");
     console.log("     https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html\n");
     console.log("  2. Run: aws configure\n");
-    console.log("  3. Then re-run: al cloud setup\n");
+    console.log("  3. Then re-run: al setup cloud\n");
     console.log("  Alternatively, set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables.\n");
     return false;
   }

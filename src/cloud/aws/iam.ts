@@ -328,7 +328,7 @@ export async function validateEcsRoles(projectPath: string, cloud: EcsCloudConfi
     }, null, 2));
 
     console.log(`\nAlternatively, re-run the cloud setup to fix all issues:`);
-    console.log(`  al cloud setup`);
+    console.log(`  al setup cloud`);
 
     // Throw error to prevent proceeding with invalid configuration
     throw new CloudProviderError(`${missing.length + hasIncorrectTrust.length} IAM task role(s) have issues that will prevent ECS tasks from starting. Fix the roles above before proceeding.`);

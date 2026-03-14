@@ -145,7 +145,7 @@ function validateCloudConfig(raw: any): CloudConfig {
     if (missing.length > 0) {
       throw new ConfigError(
         `ECS cloud config is missing required fields: ${missing.map((k) => `cloud.${k}`).join(", ")}. ` +
-        `Run 'al cloud setup' to configure.`
+        `Run 'al setup cloud' to configure.`
       );
     }
     return raw as EcsCloudConfig;
@@ -157,7 +157,7 @@ function validateCloudConfig(raw: any): CloudConfig {
     if (missing.length > 0) {
       throw new ConfigError(
         `Cloud Run config is missing required fields: ${missing.map((k) => `cloud.${k}`).join(", ")}. ` +
-        `Run 'al cloud setup' to configure.`
+        `Run 'al setup cloud' to configure.`
       );
     }
     return raw as CloudRunCloudConfig;

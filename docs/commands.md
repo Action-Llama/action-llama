@@ -104,26 +104,26 @@ al creds rm github_webhook_secret:myapp
 
 Removes all field files for the credential instance. If the type directory becomes empty, it is also removed.
 
-## `al cloud setup`
+## `al setup cloud`
 
 Interactive wizard for configuring cloud infrastructure. Prompts for provider selection and provider-specific fields, writes `[cloud]` to config.toml, pushes credentials, and provisions IAM — all in one shot.
 
 If an existing `[cloud]` config is found, you'll be prompted to tear down the old infrastructure first.
 
 ```bash
-al cloud setup -p .
+al setup cloud -p .
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
 
-## `al cloud teardown`
+## `al teardown cloud`
 
 Deletes per-agent IAM resources (service accounts for Cloud Run, task roles for ECS) and removes the `[cloud]` section from config.toml.
 
 ```bash
-al cloud teardown -p .
+al teardown cloud -p .
 ```
 
 | Option | Description |

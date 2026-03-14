@@ -79,7 +79,7 @@ export async function execute(opts: { project: string; cloud?: boolean; checkOnl
     if (!cloudConfig) {
       throw new ConfigError(
         "No [cloud] section found in config.toml. " +
-        "Run 'al cloud setup' to configure a cloud provider first."
+        "Run 'al setup cloud' to configure a cloud provider first."
       );
     }
 
@@ -131,7 +131,7 @@ async function checkCredentials(
     if (!cloudConfig) {
       throw new ConfigError(
         "No [cloud] section found in config.toml. " +
-        "Run 'al cloud setup' to configure a cloud provider first."
+        "Run 'al setup cloud' to configure a cloud provider first."
       );
     }
 

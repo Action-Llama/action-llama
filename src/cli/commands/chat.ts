@@ -110,7 +110,7 @@ async function executeAgentChat(opts: ChatOpts & { agent: string }): Promise<voi
   if (cloudMode) {
     const cloud = globalConfig.cloud;
     if (!cloud) {
-      throw new Error("No [cloud] section found in config.toml. Run 'al cloud setup' first.");
+      throw new Error("No [cloud] section found in config.toml. Run 'al setup cloud' first.");
     }
     const { createBackendFromCloudConfig } = await import("../../shared/remote.js");
     const { setDefaultBackend } = await import("../../shared/credentials.js");

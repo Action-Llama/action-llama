@@ -45,7 +45,7 @@ Local Docker settings (`[local]`) control resource limits:
 The fastest way to get started:
 
 ```bash
-al cloud setup -p .
+al setup cloud -p .
 ```
 
 This interactive wizard prompts for all required fields, writes the `[cloud]` config, pushes credentials, and provisions IAM in one step.

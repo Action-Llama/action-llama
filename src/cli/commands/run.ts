@@ -43,7 +43,7 @@ export async function execute(agent: string, opts: { project: string; cloud?: bo
     // Cloud mode: use cloud runtime via provider
     const cloud = globalConfig.cloud;
     if (!cloud) {
-      throw new Error("No [cloud] section found in config.toml. Run 'al cloud setup' first.");
+      throw new Error("No [cloud] section found in config.toml. Run 'al setup cloud' first.");
     }
 
     const { createCloudProvider } = await import("../../cloud/provider.js");
