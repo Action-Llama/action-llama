@@ -1,5 +1,17 @@
 # @action-llama/action-llama
 
+## 0.11.1
+
+### Patch Changes
+
+- [#77](https://github.com/Action-Llama/action-llama/pull/77) [`7c53bd2`](https://github.com/Action-Llama/action-llama/commit/7c53bd2c450248969fbd362b7a8506a9cb0ee759) Thanks [@asselstine](https://github.com/asselstine)! - The `-w` flag now automatically enables the gateway, eliminating the need to specify both `-g` and `-w` flags. Users can now simply use `al start -w` to enable the web dashboard. Closes [#76](https://github.com/Action-Llama/action-llama/issues/76).
+
+- [#81](https://github.com/Action-Llama/action-llama/pull/81) [`ee6c600`](https://github.com/Action-Llama/action-llama/commit/ee6c60087c0d404eb2a6dbdea5c7af7b280779a9) Thanks [@asselstine](https://github.com/asselstine)! - Renamed CLI commands for better consistency. The cloud setup and teardown commands
+  have been restructured from `al cloud setup`/`al cloud teardown` to
+  `al setup cloud`/`al teardown cloud`. This change provides a more logical command
+  hierarchy and better aligns with potential future setup/teardown operations for
+  other infrastructure types. Closes [#80](https://github.com/Action-Llama/action-llama/issues/80).
+
 ## 0.11.0
 
 ### Minor Changes
