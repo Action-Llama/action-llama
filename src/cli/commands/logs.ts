@@ -413,7 +413,7 @@ export async function execute(
     const globalConfig = loadGlobalConfig(projectPath);
     const cloud = globalConfig.cloud;
     if (!cloud) {
-      throw new Error("No [cloud] section found in config.toml. Run 'al cloud setup' first.");
+      throw new Error("No [cloud] section found in config.toml. Run 'al setup cloud' first.");
     }
 
     const { createCloudProvider } = await import("../../cloud/provider.js");

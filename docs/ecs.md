@@ -7,7 +7,7 @@ Run agents as ECS Fargate tasks on AWS instead of local Docker containers. Agent
 - AWS account with ECS, ECR, Secrets Manager, and CloudWatch Logs access
 - AWS CLI configured (`aws configure`) or `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` env vars
 - Docker is **not** required — images are built remotely via AWS CodeBuild and pushed directly to ECR
-- The IAM user running `al cloud setup` needs `iam:CreateServiceLinkedRole` permission (or the service-linked roles for ECS and App Runner must already exist — see [Service-linked roles](#service-linked-roles))
+- The IAM user running `al setup cloud` needs `iam:CreateServiceLinkedRole` permission (or the service-linked roles for ECS and App Runner must already exist — see [Service-linked roles](#service-linked-roles))
 
 ## Configuration
 
@@ -70,7 +70,7 @@ Optional cloud scheduler configuration (for `al cloud deploy`):
 
 AWS requires service-linked roles for ECS and App Runner. These are account-level roles that AWS services use internally — they only need to be created once per AWS account.
 
-`al cloud setup` automatically creates both:
+`al setup cloud` automatically creates both:
 
 - `AWSServiceRoleForECS` (for ECS Fargate task execution)
 - `AWSServiceRoleForAppRunner` (for App Runner service management)
@@ -89,7 +89,7 @@ These commands are safe to re-run — they return an error if the role already e
 The fastest way to get started:
 
 ```bash
-al cloud setup -p .
+al setup cloud -p .
 ```
 
 This interactive wizard prompts for all required fields, writes the `[cloud]` config, pushes credentials, and provisions IAM in one step.
@@ -437,7 +437,7 @@ There are six IAM principals involved:
 
 This is the minimum policy for the IAM user or role running `al` commands. Replace `<REGION>`, `<ACCOUNT_ID>`, and `<REPO_NAME>` with your values.
 
-> **Note:** `al cloud setup` automatically grants the PassRole and Logs statements via the `ActionLlamaOperator` inline policy. You still need to attach the remaining statements (ECS, SecretsManager, ECR, CodeBuild, Lambda, S3, IAM) manually or via your own IaC.
+> **Note:** `al setup cloud` automatically grants the PassRole and Logs statements via the `ActionLlamaOperator` inline policy. You still need to attach the remaining statements (ECS, SecretsManager, ECR, CodeBuild, Lambda, S3, IAM) manually or via your own IaC.
 
 ```json
 {
@@ -613,7 +613,7 @@ This is the minimum policy for the IAM user or role running `al` commands. Repla
 }
 ```
 
-The `SetupWizardReadOnly` statement is only needed for `al cloud setup`. You can remove it after initial setup if you prefer a tighter policy.
+The `SetupWizardReadOnly` statement is only needed for `al setup cloud`. You can remove it after initial setup if you prefer a tighter policy.
 
 The `CodeBuild` and `S3BuildContext` statements are required for image builds via CodeBuild.
 
@@ -621,7 +621,7 @@ The `SecretsManager` statement can be scoped to `arn:aws:secretsmanager:<REGION>
 
 The `IAMAgentRoles` statement is scoped to `al-*` roles, so it cannot modify unrelated IAM resources.
 
-The `AppRunner` statement is only needed for `al cloud deploy` / `al cloud teardown`. You can omit it if you only run the scheduler locally.
+The `AppRunner` statement is only needed for `al cloud deploy` / `al teardown cloud`. You can omit it if you only run the scheduler locally.
 
 ### Execution role (ECS infrastructure)
 
@@ -706,7 +706,7 @@ Attach the same policy statements from the [operator IAM policy](#operator-iam-p
 ```bash
 al stat -c            # Show scheduler service status + running agents
 al logs scheduler -c  # Tail scheduler logs from CloudWatch
-al cloud teardown     # Tear down scheduler + all cloud resources
+al teardown cloud     # Tear down scheduler + all cloud resources
 ```
 
 ### Manual deployment (alternative)
@@ -741,13 +741,13 @@ The scheduler builds images via CodeBuild, launches containers on ECS Fargate, a
 
 **"No AWS credentials found"** — Set `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` env vars or run `aws configure`.
 
-**"Unable to assume the service linked role"** — ECS needs a service-linked role the first time it's used in an account. `al cloud setup` creates this automatically, but if you set up manually: `aws iam create-service-linked-role --aws-service-name ecs.amazonaws.com`.
+**"Unable to assume the service linked role"** — ECS needs a service-linked role the first time it's used in an account. `al setup cloud` creates this automatically, but if you set up manually: `aws iam create-service-linked-role --aws-service-name ecs.amazonaws.com`.
 
-**"Couldn't create a service-linked role for App Runner"** — Same issue for App Runner. `al cloud setup` creates this automatically, but if you set up manually: `aws iam create-service-linked-role --aws-service-name apprunner.amazonaws.com`. If `al cloud setup` itself fails with this error, your IAM user needs `iam:CreateServiceLinkedRole` permission — see [Service-linked roles](#service-linked-roles).
+**"Couldn't create a service-linked role for App Runner"** — Same issue for App Runner. `al setup cloud` creates this automatically, but if you set up manually: `aws iam create-service-linked-role --aws-service-name apprunner.amazonaws.com`. If `al setup cloud` itself fails with this error, your IAM user needs `iam:CreateServiceLinkedRole` permission — see [Service-linked roles](#service-linked-roles).
 
 **"ECS was unable to assume the role 'arn:aws:iam::...:role/al-AGENT-task-role'"** — This is the most common issue with multiple agents. It means the IAM task role for your second (or subsequent) agent doesn't exist or has incorrect permissions. This typically happens because:
 
-1. You ran `al cloud setup` with only one agent, then added more agents later
+1. You ran `al setup cloud` with only one agent, then added more agents later
 2. The per-agent role creation failed during setup
 3. The role exists but has an incorrect trust policy
 
@@ -762,7 +762,7 @@ The scheduler builds images via CodeBuild, launches containers on ECS Fargate, a
 
 **CodeBuild build fails** — Check the build logs linked in the error message. Common causes: the `al-codebuild-role` is missing or lacks ECR push permissions, or the S3 bucket doesn't exist. Verify the role exists and has the permissions listed in the "How CodeBuild works" section above.
 
-**"The specified log group does not exist"** — The CloudWatch log group `/ecs/action-llama` hasn't been created. The runtime creates it automatically on first launch, but the operator IAM user needs `logs:CreateLogGroup` permission. Either re-run `al cloud setup` (which creates it), or create it manually:
+**"The specified log group does not exist"** — The CloudWatch log group `/ecs/action-llama` hasn't been created. The runtime creates it automatically on first launch, but the operator IAM user needs `logs:CreateLogGroup` permission. Either re-run `al setup cloud` (which creates it), or create it manually:
 
 ```bash
 aws logs create-log-group --log-group-name /ecs/action-llama --region us-east-1
@@ -770,7 +770,7 @@ aws logs create-log-group --log-group-name /ecs/action-llama --region us-east-1
 
 If you get `AccessDeniedException`, add the `logs:CreateLogGroup` action to your operator IAM policy (see the operator policy above).
 
-**"not authorized to perform: logs:FilterLogEvents"** — Your operator IAM user is missing CloudWatch Logs read permissions. Running `al cloud setup` grants these automatically (the `ActionLlamaOperator` inline policy). If you set up before this was added, re-run `al cloud setup` or manually add the Logs statement from the operator policy above.
+**"not authorized to perform: logs:FilterLogEvents"** — Your operator IAM user is missing CloudWatch Logs read permissions. Running `al setup cloud` grants these automatically (the `ActionLlamaOperator` inline policy). If you set up before this was added, re-run `al setup cloud` or manually add the Logs statement from the operator policy above.
 
 **Logs are delayed** — This is expected. CloudWatch Logs has a ~5-10 second ingestion delay. The TUI shows a warning when running in ECS mode.
 

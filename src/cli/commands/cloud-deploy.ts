@@ -24,7 +24,7 @@ export async function execute(opts: { project: string }): Promise<void> {
   const cloud = globalConfig.cloud;
 
   if (!cloud) {
-    throw new Error("No [cloud] section found in config.toml. Run 'al cloud setup' first.");
+    throw new Error("No [cloud] section found in config.toml. Run 'al setup cloud' first.");
   }
 
   const provider = await createCloudProvider(cloud);

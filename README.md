@@ -94,7 +94,7 @@ Action Llama supports:
 - more by request
 
 ```bash
-al cloud setup    # Interactive wizard: pick provider, configure, push creds, provision IAM
+al setup cloud    # Interactive wizard: pick provider, configure, push creds, provision IAM
 al start -c      # Start on cloud
 ```
 
@@ -111,8 +111,8 @@ Commands generally have two modes: local or cloud.
 | `al new <name>` | Interactive setup — creates project directory and credentials |
 | `al chat [agent]` | Interactive console — or agent-scoped session with credentials loaded |
 | `al doctor` | Check agents, credentials, webhooks, and config — prompt to fix |
-| `al cloud setup` | Interactive wizard for cloud provider setup |
-| `al cloud teardown` | Delete cloud IAM resources and remove cloud config |
+| `al setup cloud` | Interactive wizard for cloud provider setup |
+| `al teardown cloud` | Delete cloud IAM resources and remove cloud config |
 | `al creds ls` | List stored credentials (names only, no secrets) |
 | `al run <agent>` | Manually run a single agent |
 | `al start` | Start the scheduler (cron + webhooks) |

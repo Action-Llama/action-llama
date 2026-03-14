@@ -190,14 +190,14 @@ credsCmd
     await rm(ref);
   }));
 
-// --- Cloud management ---
+// --- Setup management ---
 
-const cloudCmd = program
-  .command("cloud")
-  .description("Cloud infrastructure management");
-
-cloudCmd
+const setupCmd = program
   .command("setup")
+  .description("Setup infrastructure and configuration");
+
+setupCmd
+  .command("cloud")
   .description("Interactive wizard: pick provider, configure, push creds, provision IAM")
   .option("-p, --project <dir>", "project directory", ".")
   .action(withCommand(async (opts) => {
@@ -205,21 +205,33 @@ cloudCmd
     await execute(opts);
   }));
 
+// --- Teardown management ---
+
+const teardownCmd = program
+  .command("teardown")
+  .description("Teardown infrastructure and configuration");
+
+teardownCmd
+  .command("cloud")
+  .description("Delete per-agent IAM resources and remove [cloud] config")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(withCommand(async (opts) => {
+    const { execute } = await import("./commands/cloud-teardown.js");
+    await execute(opts);
+  }));
+
+// --- Cloud management ---
+
+const cloudCmd = program
+  .command("cloud")
+  .description("Cloud infrastructure management");
+
 cloudCmd
   .command("deploy")
   .description("Build and deploy scheduler + agents to the cloud")
   .option("-p, --project <dir>", "project directory", ".")
   .action(withCommand(async (opts) => {
     const { execute } = await import("./commands/cloud-deploy.js");
-    await execute(opts);
-  }));
-
-cloudCmd
-  .command("teardown")
-  .description("Delete per-agent IAM resources and remove [cloud] config")
-  .option("-p, --project <dir>", "project directory", ".")
-  .action(withCommand(async (opts) => {
-    const { execute } = await import("./commands/cloud-teardown.js");
     await execute(opts);
   }));
 
