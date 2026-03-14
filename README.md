@@ -115,7 +115,7 @@ Commands generally have two modes: local or cloud.
 | `al teardown cloud` | Delete cloud IAM resources and remove cloud config |
 | `al creds ls` | List stored credentials (names only, no secrets) |
 | `al run <agent>` | Manually run a single agent |
-| `al start` | Start the scheduler and gateway|
+| `al start` | Start the scheduler |
 | `al stat` | Show agent status |
 | `al logs <agent>` | View agent log files |
 | `al pause [name]` | Pause the scheduler, or a single agent by name |
