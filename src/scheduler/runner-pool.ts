@@ -34,6 +34,13 @@ export class RunnerPool {
   }
 
   /**
+   * Get all available runners at once for parallel processing
+   */
+  getAllAvailableRunners(): PoolRunner[] {
+    return this.runners.filter(r => !r.isRunning);
+  }
+
+  /**
    * Get the next runner using round-robin, regardless of availability
    * Used for scheduled runs where we want to distribute evenly
    */
