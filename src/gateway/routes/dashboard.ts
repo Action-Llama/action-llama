@@ -91,23 +91,12 @@ async function readLastNLines(filePath: string, n: number): Promise<string[]> {
   }
 }
 
-export function registerDashboardRoutes(
-  app: Hono,
-  statusTracker: StatusTracker,
-  projectPath?: string,
-  apiKey?: string,
-): void {
-  // Deprecation warning for old env var
-  if (process.env.AL_DASHBOARD_SECRET) {
-    console.warn(
-      "[deprecated] AL_DASHBOARD_SECRET is no longer used. " +
-      "The dashboard now uses the gateway API key from ~/.action-llama/credentials/gateway_api_key/default/key. " +
-      "Run 'al doctor' to set it up."
-    );
-  }
-
-  // --- Unprotected routes: login / logout ---
-
+/**
+ * Register login/logout routes. Call this whenever auth is active so
+ * the auth middleware's redirect to /login always has a target — even
+ * when the full dashboard (webUI) is disabled.
+ */
+export function registerLoginRoutes(app: Hono, apiKey?: string): void {
   app.get("/login", (c) => {
     return c.html(renderLoginPage());
   });
@@ -140,6 +129,22 @@ export function registerDashboardRoutes(
       },
     });
   });
+}
+
+export function registerDashboardRoutes(
+  app: Hono,
+  statusTracker: StatusTracker,
+  projectPath?: string,
+  apiKey?: string,
+): void {
+  // Deprecation warning for old env var
+  if (process.env.AL_DASHBOARD_SECRET) {
+    console.warn(
+      "[deprecated] AL_DASHBOARD_SECRET is no longer used. " +
+      "The dashboard now uses the gateway API key from ~/.action-llama/credentials/gateway_api_key/default/key. " +
+      "Run 'al doctor' to set it up."
+    );
+  }
 
   // Main dashboard page
   app.get("/dashboard", (c) => {

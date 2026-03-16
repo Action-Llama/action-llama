@@ -5,7 +5,7 @@ import { registerShutdownRoute } from "./routes/shutdown.js";
 import { registerLockRoutes } from "./routes/locks.js";
 import { registerCallRoutes, type CallDispatcher } from "./routes/calls.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
-import { registerDashboardRoutes } from "./routes/dashboard.js";
+import { registerDashboardRoutes, registerLoginRoutes } from "./routes/dashboard.js";
 import { registerSignalRoutes, type SignalContext } from "./routes/signals.js";
 import { LockStore } from "./lock-store.js";
 import { CallStore } from "./call-store.js";
@@ -107,6 +107,9 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     app.use("/dashboard/*", auth);
     app.use("/dashboard", auth);
     app.use("/locks/status", auth);
+
+    // Always register login/logout so the auth redirect has a target
+    registerLoginRoutes(app, opts.apiKey);
   }
 
   const isPublic = opts.hostname === "0.0.0.0";

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Hono } from "hono";
-import { registerDashboardRoutes } from "../../../src/gateway/routes/dashboard.js";
+import { registerDashboardRoutes, registerLoginRoutes } from "../../../src/gateway/routes/dashboard.js";
 import { authMiddleware } from "../../../src/gateway/auth.js";
 
 function mockStatusTracker() {
@@ -21,8 +21,21 @@ function createTestApp(apiKey?: string) {
     app.use("/dashboard/*", auth);
     app.use("/dashboard", auth);
     app.use("/locks/status", auth);
+    registerLoginRoutes(app, apiKey);
   }
   registerDashboardRoutes(app, mockStatusTracker(), undefined, apiKey);
+  return app;
+}
+
+/** Simulates gateway with apiKey but no webUI (no dashboard routes). */
+function createAuthOnlyApp(apiKey: string) {
+  const app = new Hono();
+  const auth = authMiddleware(apiKey);
+  app.use("/control/*", auth);
+  app.use("/dashboard/*", auth);
+  app.use("/dashboard", auth);
+  app.use("/locks/status", auth);
+  registerLoginRoutes(app, apiKey);
   return app;
 }
 
@@ -152,6 +165,28 @@ describe("dashboard auth", () => {
     expect(res.headers.get("Location")).toBe("/login");
     const cookie = res.headers.get("Set-Cookie") || "";
     expect(cookie).toContain("Max-Age=0");
+  });
+
+  it("login page is accessible when webUI is off but apiKey is set", async () => {
+    const app = createAuthOnlyApp("test-key");
+    const res = await app.request("/login");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Action Llama");
+  });
+
+  it("auth redirect to /login works when webUI is off", async () => {
+    const app = createAuthOnlyApp("test-key");
+    // Unauthenticated browser request to /dashboard should redirect to /login
+    const res = await app.request("/dashboard", {
+      headers: { Accept: "text/html" },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/login");
+
+    // Following the redirect should get the login page, not 404
+    const loginRes = await app.request("/login");
+    expect(loginRes.status).toBe(200);
   });
 
   it("logs deprecation warning when AL_DASHBOARD_SECRET is set", async () => {
