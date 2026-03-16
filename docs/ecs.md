@@ -499,18 +499,7 @@ This is the minimum policy for the IAM user or role running `al` commands. Repla
       "Action": "iam:PassRole",
       "Resource": [
         "arn:aws:iam::<ACCOUNT_ID>:role/al-*"
-      ],
-      "Condition": {
-        "StringEquals": {
-          "iam:PassedToService": [
-            "ecs-tasks.amazonaws.com",
-            "codebuild.amazonaws.com",
-            "lambda.amazonaws.com",
-            "tasks.apprunner.amazonaws.com",
-            "build.apprunner.amazonaws.com"
-          ]
-        }
-      }
+      ]
     },
     {
       "Sid": "IAMAgentRoles",
