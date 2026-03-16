@@ -4,7 +4,7 @@ This is an Action Llama project. It runs automated development agents triggered 
 
 ## Project Structure
 
-Each agent is a directory containing:
+Each agent is a directory under `agents/` containing:
 
 - `agent-config.toml` — credentials, model, schedule, webhooks, params
 - `ACTIONS.md` — the system prompt that defines what the agent does
@@ -12,7 +12,7 @@ Each agent is a directory containing:
 
 ## Creating an Agent
 
-1. Create a directory for your agent (e.g. `my-agent/`)
+1. Create a directory for your agent under `agents/` (e.g. `agents/my-agent/`)
 2. Add `agent-config.toml` with credentials, model config, and a schedule or webhook trigger
 3. Add `ACTIONS.md` with the actions — step-by-step instructions the LLM follows each run
 4. If your agents need shared tools beyond the base image (git, curl, openssh-client, node), edit the project `Dockerfile` at the project root. For agent-specific tools, add a `Dockerfile` to that agent's directory — see Container Isolation section below

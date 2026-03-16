@@ -19,5 +19,5 @@ export function eventsDir(projectPath: string): string {
 }
 
 export function agentDir(projectPath: string, agentType: string): string {
-  return resolve(projectPath, agentType);
+  return resolve(projectPath, "agents", agentType);
 }

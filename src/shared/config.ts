@@ -169,7 +169,7 @@ function validateCloudConfig(raw: any): CloudConfig {
 }
 
 export function loadAgentConfig(projectPath: string, agentName: string): AgentConfig {
-  const agentDir = resolve(projectPath, agentName);
+  const agentDir = resolve(projectPath, "agents", agentName);
   const tomlPath = resolve(agentDir, "agent-config.toml");
 
   if (!existsSync(tomlPath)) {
@@ -224,11 +224,14 @@ export function discoverAgents(projectPath: string): string[] {
   const agents: string[] = [];
 
   if (!existsSync(projectPath)) return agents;
+  
+  const agentsPath = resolve(projectPath, "agents");
+  if (!existsSync(agentsPath)) return agents;
 
-  for (const entry of readdirSync(projectPath)) {
+  for (const entry of readdirSync(agentsPath)) {
     if (excluded.has(entry)) continue;
     if (entry.startsWith(".")) continue;
-    const entryPath = resolve(projectPath, entry);
+    const entryPath = resolve(agentsPath, entry);
     if (!statSync(entryPath).isDirectory()) continue;
     if (existsSync(resolve(entryPath, "agent-config.toml"))) {
       agents.push(entry);

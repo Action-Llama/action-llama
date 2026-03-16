@@ -27,7 +27,7 @@ export interface ScaffoldAgent {
 }
 
 export function scaffoldAgent(projectPath: string, agent: ScaffoldAgent): void {
-  const agentPath = resolve(projectPath, agent.name);
+  const agentPath = resolve(projectPath, "agents", agent.name);
   mkdirSync(agentPath, { recursive: true });
 
   // Strip `name` before serializing — it's derived from the directory name
@@ -73,6 +73,8 @@ export function scaffoldProject(
       stringifyTOML(globalConfig as Record<string, unknown>) + "\n"
     );
   }
+
+  mkdirSync(resolve(projectPath, "agents"), { recursive: true });
 
   for (const agent of agents) {
     scaffoldAgent(projectPath, agent);

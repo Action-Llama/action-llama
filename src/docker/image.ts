@@ -84,7 +84,7 @@ export function ensureProjectBaseImage(projectPath: string, baseImage: string = 
  * Otherwise, return the base image name.
  */
 export function ensureAgentImage(agentName: string, projectPath: string, baseImage: string = DEFAULT_IMAGE): string {
-  const agentDockerfile = resolve(projectPath, agentName, "Dockerfile");
+  const agentDockerfile = resolve(projectPath, "agents", agentName, "Dockerfile");
   if (!existsSync(agentDockerfile)) {
     return baseImage;
   }

@@ -11,15 +11,15 @@ This guide walks you through creating an Action Llama agent from scratch.
 
 ### 1. Create the agent directory
 
-Inside your project directory, create a folder for your agent:
+Inside your project directory, create a folder for your agent under the `agents/` directory:
 
 ```bash
-mkdir my-agent
+mkdir -p agents/my-agent
 ```
 
 ### 2. Write `agent-config.toml`
 
-Create `my-agent/agent-config.toml`:
+Create `agents/my-agent/agent-config.toml`:
 
 ```toml
 credentials = ["github_token:default", "git_ssh:default"]
@@ -39,7 +39,7 @@ Supported providers: `anthropic`, `openai`, `groq`, `google`, `xai`, `mistral`, 
 
 ### 3. Write `ACTIONS.md`
 
-Create `my-agent/ACTIONS.md` — this is the system prompt that defines your agent's behavior:
+Create `agents/my-agent/ACTIONS.md` — this is the system prompt that defines your agent's behavior:
 
 ```markdown
 # My Agent
