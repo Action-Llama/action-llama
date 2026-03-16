@@ -6,7 +6,7 @@
  */
 
 import { execFileSync } from "child_process";
-import { createReadStream } from "fs";
+import { createReadStream, lstatSync } from "fs";
 import {
   SecretsManagerClient,
   ListSecretsCommand,
