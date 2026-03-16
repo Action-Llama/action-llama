@@ -110,13 +110,13 @@ program
   }));
 
 program
-  .command("stat")
+  .command("stat [agent]")
   .description("Show agent status")
   .option("-p, --project <dir>", "project directory", ".")
   .option("-c, --cloud", "show cloud status")
-  .action(withCommand(async (opts) => {
+  .action(withCommand(async (agent, opts) => {
     const { execute } = await import("./commands/status.js");
-    await execute(opts);
+    await execute({ ...opts, agent });
   }));
 
 program
