@@ -1,5 +1,50 @@
 # @action-llama/action-llama
 
+## 0.11.3
+
+### Patch Changes
+
+- [#97](https://github.com/Action-Llama/action-llama/pull/97) [`9e460c2`](https://github.com/Action-Llama/action-llama/commit/9e460c29e38d9bc51c3fcab08485d5cc4ae996db) Thanks [@asselstine](https://github.com/asselstine)! - Added `--expose` / `-e` flag to `al start` for VPS deployment. Binds the gateway to `0.0.0.0` (public) while keeping all local-mode features enabled (web UI, control routes, filesystem credentials, SQLite state). Closes [#91](https://github.com/Action-Llama/action-llama/issues/91).
+
+- [`c1e3b5d`](https://github.com/Action-Llama/action-llama/commit/c1e3b5dfcd1b62a2c798744d46d17c81b813bc42) Thanks [@asselstine](https://github.com/asselstine)! - Extracted core scheduling logic (executeRun, dispatchTriggers, drainQueues, runWithReruns)
+  from scheduler/index.ts into a new scheduler/execution.ts module. This separates pure
+  scheduling logic from startup orchestration, enabling focused unit tests without
+  infrastructure mocks.
+
+- [`a37e214`](https://github.com/Action-Llama/action-llama/commit/a37e2145ecdef3ee3dbd12fe89fdacf0d39b7899) Thanks [@asselstine](https://github.com/asselstine)! - Respect the --web-ui flag in cloud mode. Previously, cloud mode forced the web UI
+  off, causing a 404 on /dashboard after login. Also added a root URL redirect to
+  /dashboard when the web UI is enabled.
+
+- [`cb3bc6c`](https://github.com/Action-Llama/action-llama/commit/cb3bc6cd51ea25886586d7a3bcfe4a343257917e) Thanks [@asselstine](https://github.com/asselstine)! - Fixed `al logs -c -f <instance-id>` producing no output. Cloud log commands now
+  accept a task/instance ID (from `al stat -c`) in addition to agent names. When an
+  instance ID is passed, logs are filtered to that specific task's CloudWatch stream.
+  Added shared `resolveTarget()` so all commands that accept agent-or-instance resolve
+  consistently.
+
+- [#98](https://github.com/Action-Llama/action-llama/pull/98) [`36057de`](https://github.com/Action-Llama/action-llama/commit/36057de5f01abb5208733a2a4f29687ccd526a4e) Thanks [@asselstine](https://github.com/asselstine)! - Preserve webhook queues on SIGTERM and add `al stop` command. Previously, shutting down
+  the scheduler (SIGINT/SIGTERM) called `clearAll()` which deleted queued events from the
+  persistent StateStore, losing pending webhook events during rolling updates. Now the signal
+  handler only clears in-memory state, preserving persistent queues for the next instance.
+  The new `al stop` command intentionally clears both in-memory and persistent queues for a
+  clean shutdown. Closes [#95](https://github.com/Action-Llama/action-llama/issues/95).
+
+- [`5f9a15a`](https://github.com/Action-Llama/action-llama/commit/5f9a15aefaa90d5edad1f97ea447ff00d849cfec) Thanks [@asselstine](https://github.com/asselstine)! - Cleaned up scheduler plain-logger output: removed noisy agent-level events (assistant turns,
+  bash commands, tool errors) from stdout. Only core scheduling events (triggers, completions,
+  shutdowns, rate-limit retries) now appear. Agent details remain in file logs. When running
+  agents at scale > 1, instance-level start/completion lines are now shown (e.g. `reviewer(1) started`).
+
+- [`9a1ad6a`](https://github.com/Action-Llama/action-llama/commit/9a1ad6ac492672f8061b11b52656babd153d7bca) Thanks [@asselstine](https://github.com/asselstine)! - Unified scheduler webhook and agent-trigger queues into a single per-agent work queue.
+  This simplifies the drain logic (two separate drain functions replaced by one), removes
+  ~240 lines of code, and fixes a bug where webhook run completions did not drain queued
+  agent-trigger items. Also fixed a latent crash in the rerun loop when `triggers` was
+  undefined in the run outcome.
+
+- [`e374031`](https://github.com/Action-Llama/action-llama/commit/e374031de16f759c189011eefcf5e37745231496) Thanks [@asselstine](https://github.com/asselstine)! - `al doctor -c` now reconciles the App Runner instance role's inline policy to match the
+  current code. Previously, infrastructure-level IAM policies (like DynamoDB permissions on
+  `al-apprunner-instance-role`) could only be updated by re-running the full `al cloud init`
+  provisioning wizard. The scheduler policy document is now defined in a single shared
+  function to prevent drift between provisioning and reconciliation.
+
 ## 0.11.2
 
 ### Patch Changes
