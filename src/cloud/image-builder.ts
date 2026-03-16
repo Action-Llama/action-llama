@@ -80,12 +80,14 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
         tag: baseImage, dockerfile: "docker/Dockerfile", contextDir: packageRoot,
         onProgress: setBaseImageProgress,
         additionalTags: baseAliases,
+        useLockfileHash: true,
       });
     }
   } else {
     baseImage = await runtime.buildImage({
       tag: baseImage, dockerfile: "docker/Dockerfile", contextDir: packageRoot,
       onProgress: setBaseImageProgress,
+      useLockfileHash: true,
     });
   }
 
