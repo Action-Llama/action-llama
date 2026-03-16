@@ -197,7 +197,7 @@ export async function setupEcsCloud(cloud: EcsCloudConfig): Promise<boolean> {
           Resource: [
             `arn:aws:logs:${region}:${accountId}:log-group:${AWS_CONSTANTS.LOG_GROUP}*`,
             `arn:aws:logs:${region}:${accountId}:log-group:${AWS_CONSTANTS.LAMBDA_LOG_GROUP}/al-*`,
-            `arn:aws:logs:${region}:${accountId}:log-group:${AWS_CONSTANTS.APPRUNNER_LOG_GROUP}*`,
+            `arn:aws:logs:${region}:${accountId}:log-group:/aws/apprunner/${AWS_CONSTANTS.SCHEDULER_SERVICE}*`,
           ],
         },
         {

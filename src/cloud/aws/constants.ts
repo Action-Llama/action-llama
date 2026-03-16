@@ -62,9 +62,6 @@ export const AWS_CONSTANTS = {
   /** App Runner ECR access role name */
   APPRUNNER_ACCESS_ROLE: "al-apprunner-access-role",
 
-  /** CloudWatch log group for App Runner */
-  APPRUNNER_LOG_GROUP: "/apprunner/al-scheduler",
-
   /** DynamoDB table for scheduler state (locks, container registry, queues) */
   STATE_TABLE: "al-state",
 } satisfies Record<string, string | number | ((...args: any[]) => string)>;
