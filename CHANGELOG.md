@@ -1,5 +1,11 @@
 # @action-llama/action-llama
 
+## 0.11.4
+
+### Patch Changes
+
+- [`66f1603`](https://github.com/Action-Llama/action-llama/commit/66f1603d5101c8911de49966d4fe8accbe485b39) Thanks [@asselstine](https://github.com/asselstine)! - fixed docker static copy out
+
 ## 0.11.3
 
 ### Patch Changes
