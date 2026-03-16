@@ -49,6 +49,11 @@ export interface BuildImageOpts {
    * add static files on top of an existing base image.
    */
   dockerfileContent?: string;
+  /**
+   * Additional tags to apply after building (e.g. semver and latest aliases).
+   * The primary tag is `tag`; these are extra aliases pointing to the same image.
+   */
+  additionalTags?: string[];
 }
 
 export interface AssembleImageOpts {

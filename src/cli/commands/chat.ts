@@ -25,7 +25,7 @@ Built-in agent templates:
 
 ### Docker base image
 
-When Docker mode is enabled, agents run in an isolated container. The base image (\`al-agent:latest\`) includes ONLY these tools: **Node.js, git, curl, openssh-client, ca-certificates**. Nothing else — no \`gh\`, no \`python3\`, no \`jq\`, no language runtimes beyond Node.
+When Docker mode is enabled, agents run in an isolated container. The base image (\`al-agent\`) includes ONLY these tools: **Node.js, git, curl, openssh-client, ca-certificates**. Nothing else — no \`gh\`, no \`python3\`, no \`jq\`, no language runtimes beyond Node.
 
 ### When to create a custom Dockerfile
 
@@ -34,7 +34,7 @@ After writing the agent's ACTIONS.md, analyze it to determine what CLI tools, la
 Example — agent that needs \`gh\` CLI:
 
 \`\`\`dockerfile
-FROM al-agent:latest
+FROM al-agent
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends gh && rm -rf /var/lib/apt/lists/*
 USER node
@@ -43,7 +43,7 @@ USER node
 Example — agent that needs Python:
 
 \`\`\`dockerfile
-FROM al-agent:latest
+FROM al-agent
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip && rm -rf /var/lib/apt/lists/*
 USER node

@@ -175,7 +175,7 @@ describe("scaffoldProject", () => {
     const dockerfilePath = resolve(projDir, "Dockerfile");
     expect(existsSync(dockerfilePath)).toBe(true);
     const content = readFileSync(dockerfilePath, "utf-8");
-    expect(content).toContain("FROM al-agent:latest");
+    expect(content).toMatch(/FROM al-agent:\S+/);
     expect(content).toContain("Project base image");
   });
 

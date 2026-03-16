@@ -5,7 +5,7 @@ import { dirname } from "path";
 import { loadGlobalConfig, loadAgentConfig, discoverAgents } from "../../shared/config.js";
 import { requireCredentialRef } from "../../shared/credentials.js";
 import { createLogger } from "../../shared/logger.js";
-import { CONSTANTS } from "../../shared/constants.js";
+import { CONSTANTS, imageTags } from "../../shared/constants.js";
 import { buildManualPrompt } from "../../agents/prompt.js";
 import { execute as runDoctor } from "./doctor.js";
 
@@ -63,7 +63,8 @@ export async function execute(agent: string, opts: { project: string; cloud?: bo
     const { ContainerAgentRunner } = await import("../../agents/container-runner.js");
 
     const baseImage = globalConfig.local?.image || CONSTANTS.DEFAULT_IMAGE;
-    const image = await runtime.buildImage({ tag: baseImage, dockerfile: "docker/Dockerfile", contextDir: PACKAGE_ROOT });
+    const [, ...baseAliases] = imageTags("al-agent");
+    const image = await runtime.buildImage({ tag: baseImage, dockerfile: "docker/Dockerfile", contextDir: PACKAGE_ROOT, additionalTags: baseAliases });
 
     const runner = new ContainerAgentRunner(
       runtime,

@@ -6,7 +6,7 @@ import { tmpdir } from "os";
 import { NETWORK_NAME } from "./network.js";
 import type { ContainerRuntime, RuntimeLaunchOpts, RuntimeCredentials, CredentialBundle, BuildImageOpts, RunningAgent } from "./runtime.js";
 import { parseCredentialRef, getDefaultBackend } from "../shared/credentials.js";
-import { CONSTANTS } from "../shared/constants.js";
+import { CONSTANTS, VERSION, GIT_SHA } from "../shared/constants.js";
 
 function docker(...args: string[]): string {
   return execFileSync("docker", args, {
@@ -143,6 +143,8 @@ export class LocalDockerRuntime implements ContainerRuntime {
       execFileSync("docker", [
         "build",
         "-t", opts.tag,
+        "--build-arg", `GIT_SHA=${GIT_SHA}`,
+        "--build-arg", `VERSION=${VERSION}`,
         "-f", dockerfile,
         ".",
       ], {
@@ -155,6 +157,13 @@ export class LocalDockerRuntime implements ContainerRuntime {
     } finally {
       if (buildCtx) {
         try { rmSync(buildCtx, { recursive: true }); } catch {}
+      }
+    }
+
+    // Apply additional tags (e.g. semver and latest aliases)
+    if (opts.additionalTags) {
+      for (const alias of opts.additionalTags) {
+        docker("tag", opts.tag, alias);
       }
     }
 

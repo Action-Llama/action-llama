@@ -4,6 +4,7 @@ import { fileURLToPath } from "url";
 import { stringify as stringifyTOML } from "smol-toml";
 import type { GlobalConfig, AgentConfig } from "../shared/config.js";
 import { writeCredentialField, writeCredentialFields } from "../shared/credentials.js";
+import { CONSTANTS } from "../shared/constants.js";
 
 export { writeCredentialField, writeCredentialFields };
 
@@ -120,7 +121,7 @@ export function scaffoldProject(
   if (!existsSync(dockerfilePath)) {
     writeFileSync(dockerfilePath, [
       "# Project base image — shared by all agents in this project.",
-      "# This extends the Action Llama base image (al-agent:latest).",
+      "# This extends the Action Llama base image.",
       "#",
       "# SAFE TO CUSTOMIZE:",
       "#   - Add system packages (RUN apk add ...)",
@@ -128,15 +129,14 @@ export function scaffoldProject(
       "#   - Install language runtimes or CLI tools",
       "#",
       "# DO NOT MODIFY:",
-      "#   - The FROM line (it must reference al-agent:latest)",
-      "#   - Action Llama rewrites it at build time to the correct base image",
+      "#   - The FROM line — Action Llama rewrites it at build time to the correct base image",
       "#",
       "# Examples:",
       "#   RUN apk add --no-cache python3 py3-pip",
       "#   RUN apk add --no-cache github-cli",
       "#   ENV MY_VAR=value",
       "",
-      "FROM al-agent:latest",
+      `FROM ${CONSTANTS.DEFAULT_IMAGE}`,
       "",
     ].join("\n"));
   }

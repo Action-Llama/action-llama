@@ -10,7 +10,7 @@ import { resolve as resolvePath, dirname, join } from "path";
 import { fileURLToPath } from "url";
 import type { AgentConfig, GlobalConfig } from "../shared/config.js";
 import type { ContainerRuntime } from "../docker/runtime.js";
-import { CONSTANTS } from "../shared/constants.js";
+import { CONSTANTS, imageTags } from "../shared/constants.js";
 import { buildPromptSkeleton, type PromptSkills } from "../agents/prompt.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import type { Logger } from "../shared/logger.js";
@@ -75,9 +75,11 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
     const { imageExists } = await import("../docker/image.js");
     if (!imageExists(baseImage)) {
       setBaseImageProgress("Building");
+      const [, ...baseAliases] = imageTags("al-agent");
       await runtime.buildImage({
         tag: baseImage, dockerfile: "docker/Dockerfile", contextDir: packageRoot,
         onProgress: setBaseImageProgress,
+        additionalTags: baseAliases,
       });
     }
   } else {
@@ -102,6 +104,7 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
     };
 
     if (runtimeType === "local") {
+      const [, ...projAliases] = imageTags("al-project-base");
       setProjectBaseProgress("Building project base image");
       effectiveBaseImage = await runtime.buildImage({
         tag: projectBaseTag,
@@ -109,6 +112,7 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
         contextDir: packageRoot,
         baseImage,
         onProgress: setProjectBaseProgress,
+        additionalTags: projAliases,
       });
     } else {
       setProjectBaseProgress("Building project base image");
@@ -154,6 +158,7 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
   // Thin agents: use assembleImageDirect if available (bypasses CodeBuild)
   const thinPromises = thinAgents.map(async ({ agentConfig, extraFiles }) => {
     const agentImageTag = CONSTANTS.agentImage(agentConfig.name);
+    const [, ...agentAliases] = imageTags(`al-${agentConfig.name}`);
     const progressCb = (msg: string) => { statusTracker?.setAgentStatusText(agentConfig.name, msg); onProgress?.(agentConfig.name, msg); };
 
     let image: string;
@@ -172,6 +177,7 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
         dockerfileContent: `FROM ${effectiveBaseImage}\nCOPY static/ /app/static/\n`,
         extraFiles,
         onProgress: progressCb,
+        additionalTags: runtimeType === "local" ? agentAliases : undefined,
       });
     }
     agentImages[agentConfig.name] = image;
@@ -208,6 +214,7 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
   } else {
     heavyPromise = Promise.all(heavyAgents.map(async ({ agentConfig, extraFiles }) => {
       const agentImageTag = CONSTANTS.agentImage(agentConfig.name);
+      const [, ...heavyAliases] = imageTags(`al-${agentConfig.name}`);
       const progressCb = (msg: string) => { statusTracker?.setAgentStatusText(agentConfig.name, msg); onProgress?.(agentConfig.name, msg); };
       const image = await runtime.buildImage({
         tag: agentImageTag,
@@ -216,6 +223,7 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
         baseImage: effectiveBaseImage,
         extraFiles,
         onProgress: progressCb,
+        additionalTags: runtimeType === "local" ? heavyAliases : undefined,
       });
       agentImages[agentConfig.name] = image;
       logger.info({ agent: agentConfig.name, image }, "Built agent image");

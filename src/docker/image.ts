@@ -7,7 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PACKAGE_ROOT = resolve(__dirname, "..", "..");
 
-import { CONSTANTS } from "../shared/constants.js";
+import { CONSTANTS, imageTags, VERSION, GIT_SHA } from "../shared/constants.js";
 
 const DEFAULT_IMAGE = CONSTANTS.DEFAULT_IMAGE;
 
@@ -34,9 +34,20 @@ export function buildImage(image: string = DEFAULT_IMAGE): void {
   docker([
     "build",
     "-t", image,
+    "--build-arg", `GIT_SHA=${GIT_SHA}`,
+    "--build-arg", `VERSION=${VERSION}`,
     "-f", "docker/Dockerfile",
     ".",
   ]);
+
+  // Apply alias tags (semver + latest) so the same digest is reachable by all three
+  const name = image.split(":")[0];
+  const [primary, ...aliases] = imageTags(name);
+  if (image === primary) {
+    for (const alias of aliases) {
+      docker(["tag", image, alias]);
+    }
+  }
 }
 
 export function ensureImage(image: string = DEFAULT_IMAGE): void {
@@ -73,6 +84,12 @@ export function ensureProjectBaseImage(projectPath: string, baseImage: string = 
     ".",
   ], { cwd: PACKAGE_ROOT });
 
+  // Tag aliases
+  const [, ...aliases] = imageTags("al-project-base");
+  for (const alias of aliases) {
+    docker(["tag", projectBaseImage, alias]);
+  }
+
   return projectBaseImage;
 }
 
@@ -80,7 +97,7 @@ export function ensureProjectBaseImage(projectPath: string, baseImage: string = 
  * Resolve the Docker image for an agent.
  *
  * If the agent directory contains a Dockerfile, build an agent-specific image
- * that extends the base image (the agent Dockerfile should `FROM al-agent:latest`).
+ * that extends the base image (the FROM line is rewritten at build time).
  * Otherwise, return the base image name.
  */
 export function ensureAgentImage(agentName: string, projectPath: string, baseImage: string = DEFAULT_IMAGE): string {
@@ -99,6 +116,12 @@ export function ensureAgentImage(agentName: string, projectPath: string, baseIma
     "-f", agentDockerfile,
     ".",
   ], { cwd: PACKAGE_ROOT });
+
+  // Tag aliases
+  const [, ...aliases] = imageTags(`al-${agentName}`);
+  for (const alias of aliases) {
+    docker(["tag", agentImage, alias]);
+  }
 
   return agentImage;
 }
