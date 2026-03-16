@@ -71,7 +71,7 @@ export function makeTmpProject(opts?: TmpProjectOptions): string {
     : DEFAULT_AGENTS;
 
   for (const agent of agents) {
-    const agentPath = resolve(dir, agent.name!);
+    const agentPath = resolve(dir, "agents", agent.name!);
     mkdirSync(agentPath, { recursive: true });
     // Strip name before writing (matches scaffold behavior)
     const { name: _, ...configToWrite } = agent;

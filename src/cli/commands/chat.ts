@@ -198,7 +198,7 @@ async function executeAgentChat(opts: ChatOpts & { agent: string }): Promise<voi
   }
 
   // Load ACTIONS.md for context (but not as a prompt — user drives the session)
-  const actionsFile = resolve(projectPath, agentName, "ACTIONS.md");
+  const actionsFile = resolve(projectPath, "agents", agentName, "ACTIONS.md");
   const actionsContent = existsSync(actionsFile)
     ? readFileSync(actionsFile, "utf-8")
     : undefined;
@@ -256,7 +256,7 @@ async function executeAgentChat(opts: ChatOpts & { agent: string }): Promise<voi
   }
 
   const model = getModel(modelConfig.provider as any, modelConfig.model as any);
-  const contextFile = resolve(projectPath, agentName, "ACTIONS.md");
+  const contextFile = resolve(projectPath, "agents", agentName, "ACTIONS.md");
 
   const resourceLoader = new DefaultResourceLoader({
     noExtensions: true,
@@ -274,7 +274,7 @@ async function executeAgentChat(opts: ChatOpts & { agent: string }): Promise<voi
   });
 
   // Use the agent's directory as the working directory
-  const agentDir = resolve(projectPath, agentName);
+  const agentDir = resolve(projectPath, "agents", agentName);
 
   const { session } = await createAgentSession({
     cwd: agentDir,

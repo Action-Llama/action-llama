@@ -86,7 +86,7 @@ describe("scaffoldProject", () => {
     scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
 
     for (const name of ["dev", "reviewer", "devops"]) {
-      const agentConfigPath = resolve(projDir, name, "agent-config.toml");
+      const agentConfigPath = resolve(projDir, "agents", name, "agent-config.toml");
       expect(existsSync(agentConfigPath)).toBe(true);
       const config = parseTOML(readFileSync(agentConfigPath, "utf-8"));
       // name should NOT be in the serialized config (injected at load time)
@@ -100,7 +100,7 @@ describe("scaffoldProject", () => {
     scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
 
     for (const name of ["dev", "reviewer", "devops"]) {
-      const actionsPath = resolve(projDir, name, "ACTIONS.md");
+      const actionsPath = resolve(projDir, "agents", name, "ACTIONS.md");
       expect(existsSync(actionsPath)).toBe(true);
       const content = readFileSync(actionsPath, "utf-8");
       expect(content.length).toBeGreaterThan(0);
@@ -113,7 +113,7 @@ describe("scaffoldProject", () => {
     scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
 
     for (const agent of ["dev", "reviewer", "devops"]) {
-      expect(existsSync(resolve(projDir, agent))).toBe(true);
+      expect(existsSync(resolve(projDir, "agents", agent))).toBe(true);
     }
   });
 

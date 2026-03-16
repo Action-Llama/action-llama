@@ -78,10 +78,10 @@ describe("AgentRunner", () => {
     vi.clearAllMocks();
     tmpDir = mkdtempSync(join(tmpdir(), "al-runner-"));
     // Create needed directories
-    mkdirSync(resolve(tmpDir, "dev"), { recursive: true });
+    mkdirSync(resolve(tmpDir, "agents", "dev"), { recursive: true });
     mkdirSync(resolve(tmpDir, ".al", "logs"), { recursive: true });
     // Write ACTIONS.md (required on disk now)
-    writeFileSync(resolve(tmpDir, "dev", "ACTIONS.md"), "# Dev Agent\nDefault instructions.");
+    writeFileSync(resolve(tmpDir, "agents", "dev", "ACTIONS.md"), "# Dev Agent\nDefault instructions.");
     
     // Configure session stats mock with realistic data
     mockGetSessionStats.mockReturnValue({
@@ -303,7 +303,7 @@ describe("AgentRunner", () => {
   it("throws when ACTIONS.md is missing", async () => {
     // Create a separate agent dir without ACTIONS.md
     const noMdDir = mkdtempSync(join(tmpdir(), "al-runner-nomd-"));
-    mkdirSync(resolve(noMdDir, "dev"), { recursive: true });
+    mkdirSync(resolve(noMdDir, "agents", "dev"), { recursive: true });
     mkdirSync(resolve(noMdDir, ".al", "logs"), { recursive: true });
     // No ACTIONS.md written
 
@@ -333,7 +333,7 @@ describe("AgentRunner", () => {
 
   it("uses custom ACTIONS.md when present", async () => {
     // Overwrite with a custom ACTIONS.md
-    writeFileSync(resolve(tmpDir, "dev", "ACTIONS.md"), "# Custom Agent\nDo custom things.");
+    writeFileSync(resolve(tmpDir, "agents", "dev", "ACTIONS.md"), "# Custom Agent\nDo custom things.");
 
     const runner = new AgentRunner(makeRunnerAgentConfig(), makeLogger(), tmpDir);
     mockPrompt.mockResolvedValue(undefined);
