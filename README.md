@@ -26,6 +26,7 @@ Use cases:
 
 - A developer agent that watches for new Github issues and reacts (works great with OpenAI Codex for code generation)
 - A reviewer agent that watches for new Github Pull Requests and reviews them then merges if all ok
+- Deploy on a VPS (DigitalOcean, Vultr, Hetzner) for cost-effective remote hosting
 
 Have as many agents as you like. Customize the behaviour as you wish. The system is MIT licensed and fully extensible.
 

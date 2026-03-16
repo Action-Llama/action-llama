@@ -286,7 +286,7 @@ async function runWithReruns(
   );
 }
 
-export async function startScheduler(projectPath: string, globalConfigOverride?: GlobalConfig, statusTracker?: StatusTracker, cloudMode?: boolean, gatewayEnabled?: boolean, webUI?: boolean) {
+export async function startScheduler(projectPath: string, globalConfigOverride?: GlobalConfig, statusTracker?: StatusTracker, cloudMode?: boolean, gatewayEnabled?: boolean, webUI?: boolean, expose?: boolean) {
   const mkLogger = statusTracker ? createFileOnlyLogger : createLogger;
   const logger = mkLogger(projectPath, "scheduler");
   logger.info("Starting scheduler...");
@@ -433,7 +433,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     const gatewayPort = globalConfig.gateway?.port || 8080;
     gateway = await startGateway({
       port: gatewayPort,
-      hostname: cloudMode ? "0.0.0.0" : "127.0.0.1",
+      hostname: (cloudMode || expose) ? "0.0.0.0" : "127.0.0.1",
       logger: mkLogger(projectPath, "gateway"),
       killContainer: undefined, // Runtime not ready yet, will handle container ops later
       webhookRegistry,
