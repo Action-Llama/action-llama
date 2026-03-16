@@ -115,7 +115,7 @@ export class LocalDockerRuntime implements ContainerRuntime {
             content = content.replace(/^FROM\s+\S+/m, `FROM ${opts.baseImage}`);
           }
         }
-        if (hasExtraFiles) {
+        if (hasExtraFiles && !content.includes("COPY static/ /app/static/")) {
           const copyLine = "COPY static/ /app/static/";
           const userIdx = content.indexOf("\nUSER ");
           if (userIdx !== -1) {

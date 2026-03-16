@@ -174,7 +174,7 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
         tag: agentImageTag,
         dockerfile: "Dockerfile",
         contextDir: packageRoot,
-        dockerfileContent: `FROM ${effectiveBaseImage}\nCOPY static/ /app/static/\n`,
+        dockerfileContent: `FROM ${effectiveBaseImage}\n`,
         extraFiles,
         onProgress: progressCb,
         additionalTags: runtimeType === "local" ? agentAliases : undefined,
