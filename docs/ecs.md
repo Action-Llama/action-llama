@@ -479,7 +479,7 @@ This is the minimum policy for the IAM user or role running `al` commands. Repla
       "Resource": [
         "arn:aws:logs:<REGION>:<ACCOUNT_ID>:log-group:/ecs/action-llama*",
         "arn:aws:logs:<REGION>:<ACCOUNT_ID>:log-group:/aws/lambda/al-*",
-        "arn:aws:logs:<REGION>:<ACCOUNT_ID>:log-group:/apprunner/al-scheduler*"
+        "arn:aws:logs:<REGION>:<ACCOUNT_ID>:log-group:/aws/apprunner/al-scheduler*"
       ]
     },
     {

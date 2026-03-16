@@ -193,12 +193,60 @@ export class AwsCloudProvider implements CloudProvider {
     };
   }
 
+  private async resolveSchedulerLogGroup(): Promise<{ logGroup: string; shared: import("../../docker/aws-shared.js").AwsSharedUtils }> {
+    const { getSchedulerLogGroup } = await import("./deploy.js");
+    const logGroup = await getSchedulerLogGroup(this.config);
+    if (!logGroup) {
+      throw new Error("App Runner service not deployed. Run 'al deploy scheduler -c' first.");
+    }
+    const { AwsSharedUtils } = await import("../../docker/aws-shared.js");
+    const shared = new AwsSharedUtils({
+      awsRegion: this.config.awsRegion,
+      ecrRepository: this.config.ecrRepository,
+    });
+    return { logGroup, shared };
+  }
+
   /**
    * Fetch recent scheduler logs from CloudWatch.
    */
   async getSchedulerLogs(limit: number): Promise<string[]> {
-    const { getAppRunnerLogs } = await import("./deploy.js");
-    return getAppRunnerLogs(this.config, limit);
+    const { logGroup, shared } = await this.resolveSchedulerLogGroup();
+    return shared.tailLogEvents(logGroup, "", limit);
+  }
+
+  /**
+   * Follow scheduler logs, polling for new entries.
+   */
+  followSchedulerLogs(
+    onLine: (line: string) => void,
+    onStderr?: (text: string) => void,
+  ): { stop: () => void } {
+    let stopped = false;
+
+    const poll = async () => {
+      const { logGroup, shared } = await this.resolveSchedulerLogGroup();
+      let nextToken: string | undefined;
+      const startTime = Date.now() - 60_000;
+
+      while (!stopped) {
+        try {
+          const res = await shared.filterLogEventsRaw(logGroup, "", nextToken, startTime);
+          for (const line of res.events) {
+            onLine(line);
+          }
+          if (res.nextToken) nextToken = res.nextToken;
+        } catch (err: any) {
+          if (!stopped && onStderr && err.name !== "ResourceNotFoundException") {
+            onStderr(`Log polling error: ${err.message}`);
+          }
+        }
+        if (!stopped) await new Promise((r) => setTimeout(r, 5000));
+      }
+    };
+
+    poll();
+    return { stop: () => { stopped = true; } };
   }
 
   /**

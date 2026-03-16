@@ -67,6 +67,12 @@ export interface CloudProvider {
   /** Fetch recent scheduler logs. */
   getSchedulerLogs(limit: number): Promise<string[]>;
 
+  /** Follow scheduler logs, polling for new entries. */
+  followSchedulerLogs(
+    onLine: (line: string) => void,
+    onStderr?: (text: string) => void,
+  ): { stop: () => void };
+
   /** Tear down the scheduler service only. */
   teardownScheduler(): Promise<void>;
 }

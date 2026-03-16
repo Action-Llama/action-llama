@@ -13,10 +13,6 @@ import {
   DeleteServiceCommand,
   ListServicesCommand,
 } from "@aws-sdk/client-apprunner";
-import {
-  CloudWatchLogsClient,
-  FilterLogEventsCommand,
-} from "@aws-sdk/client-cloudwatch-logs";
 import { AWS_CONSTANTS } from "./constants.js";
 import type { EcsCloudConfig } from "../../shared/config.js";
 
@@ -144,48 +140,15 @@ export async function getAppRunnerStatus(cloudConfig: EcsCloudConfig): Promise<A
 }
 
 /**
- * Fetch recent scheduler logs from CloudWatch.
+ * Resolve the CloudWatch log group for the scheduler App Runner service.
+ * Returns null if the service is not deployed.
  */
-export async function getAppRunnerLogs(cloudConfig: EcsCloudConfig, limit: number): Promise<string[]> {
-  const logsClient = new CloudWatchLogsClient({ region: cloudConfig.awsRegion! });
-  
-  // First verify the App Runner service exists
+export async function getSchedulerLogGroup(cloudConfig: EcsCloudConfig): Promise<string | null> {
   const serviceInfo = await getAppRunnerStatus(cloudConfig);
-  if (!serviceInfo) {
-    throw new Error("App Runner service not deployed. Run 'al deploy scheduler -c' first.");
-  }
+  if (!serviceInfo) return null;
 
-  // Construct the log group directly from the service ARN — no DescribeLogGroups needed
   const serviceId = serviceInfo.serviceArn.split('/').pop();
-  const serviceName = AWS_CONSTANTS.SCHEDULER_SERVICE;
-  const logGroup = `/aws/apprunner/${serviceName}/${serviceId}/application`;
-
-  try {
-    const allEvents: string[] = [];
-    let nextToken: string | undefined;
-
-    do {
-      const res = await logsClient.send(new FilterLogEventsCommand({
-        logGroupName: logGroup,
-        startTime: Date.now() - 24 * 3600_000,
-        ...(nextToken ? { nextToken } : {}),
-      }));
-
-      for (const e of res.events ?? []) {
-        const msg = e.message?.trimEnd();
-        if (msg) allEvents.push(msg);
-      }
-
-      nextToken = res.nextToken;
-    } while (nextToken);
-
-    return allEvents.slice(-limit);
-  } catch (err: any) {
-    if (err.name === "ResourceNotFoundException") {
-      return [];
-    }
-    throw err;
-  }
+  return `/aws/apprunner/${AWS_CONSTANTS.SCHEDULER_SERVICE}/${serviceId}/application`;
 }
 
 /**

@@ -102,6 +102,31 @@ export class GcpCloudProvider implements CloudProvider {
     return getCloudRunLogs(this.config, limit);
   }
 
+  followSchedulerLogs(
+    onLine: (line: string) => void,
+    onStderr?: (text: string) => void,
+  ): { stop: () => void } {
+    let stopped = false;
+
+    const poll = async () => {
+      let lastTimestamp: string | undefined;
+      while (!stopped) {
+        try {
+          const { getCloudRunLogs } = await import("./deploy.js");
+          // Re-fetch recent logs — crude but functional until GCP gets proper tailing
+          const lines = await getCloudRunLogs(this.config, 50);
+          for (const line of lines) onLine(line);
+        } catch (err: any) {
+          if (!stopped && onStderr) onStderr(`Log polling error: ${err.message}`);
+        }
+        if (!stopped) await new Promise((r) => setTimeout(r, 5000));
+      }
+    };
+
+    poll();
+    return { stop: () => { stopped = true; } };
+  }
+
   async teardownScheduler(): Promise<void> {
     const { teardownCloudRunService } = await import("./deploy.js");
     await teardownCloudRunService(this.config);

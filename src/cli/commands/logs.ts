@@ -423,19 +423,40 @@ export async function execute(
 
     // Special case: "scheduler" fetches scheduler service logs
     if (agent === "scheduler") {
-      console.log("Fetching cloud scheduler logs...");
-      const lines = await provider.getSchedulerLogs(limit);
-      if (lines.length === 0) {
-        console.log("No scheduler log events found.");
+      const formatSchedulerLine = (line: string): void => {
+        const entry = parseLine(line);
+        if (entry) {
+          const formatted = fmt(entry);
+          if (formatted) console.log(formatted);
+        } else {
+          console.log(line);
+        }
+      };
+
+      if (opts.follow) {
+        console.log("Following scheduler logs...");
+        const recentLines = await provider.getSchedulerLogs(limit);
+        for (const line of recentLines) formatSchedulerLine(line);
+
+        const { stop } = provider.followSchedulerLogs(
+          (line) => formatSchedulerLine(line),
+          (stderr) => console.error(stderr),
+        );
+
+        process.on("SIGINT", () => {
+          console.log("\nStopping log follow...");
+          stop();
+          process.exit(0);
+        });
+
+        await new Promise(() => {});
       } else {
-        for (const line of lines) {
-          const entry = parseLine(line);
-          if (entry) {
-            const formatted = fmt(entry);
-            if (formatted) console.log(formatted);
-          } else {
-            console.log(line);
-          }
+        console.log("Fetching cloud scheduler logs...");
+        const lines = await provider.getSchedulerLogs(limit);
+        if (lines.length === 0) {
+          console.log("No scheduler log events found.");
+        } else {
+          for (const line of lines) formatSchedulerLine(line);
         }
       }
       return;
