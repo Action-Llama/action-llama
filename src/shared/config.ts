@@ -2,6 +2,7 @@ import { readFileSync, existsSync, readdirSync, statSync } from "fs";
 import { resolve } from "path";
 import { parse as parseTOML } from "smol-toml";
 import type { WebhookTrigger } from "../webhooks/types.js";
+import type { PreflightStep } from "../preflight/schema.js";
 import { ConfigError } from "./errors.js";
 
 // --- Global config (lives at <project>/config.toml) ---
@@ -102,6 +103,7 @@ export interface AgentConfig {
   model: ModelConfig;
   schedule?: string;
   webhooks?: WebhookTrigger[];
+  preflight?: PreflightStep[];
   params?: Record<string, unknown>;
   scale?: number; // Number of concurrent runs allowed (default: 1)
   timeout?: number; // Max runtime in seconds (falls back to global local.timeout, then 900)

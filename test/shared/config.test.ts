@@ -89,6 +89,71 @@ describe("loadAgentConfig", () => {
     expect(loaded.model.model).toBe("claude-sonnet-4-20250514");
   });
 
+  it("parses [[preflight]] array-of-tables with nested params", () => {
+    const agentDir = resolve(tmpDir, "with-preflight");
+    mkdirSync(agentDir, { recursive: true });
+    const toml = `
+credentials = ["github_token:default"]
+schedule = "0 * * * *"
+
+[model]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+thinkingLevel = "medium"
+authType = "api_key"
+
+[[preflight]]
+provider = "git-clone"
+required = true
+[preflight.params]
+repo = "acme/app"
+dest = "/tmp/repo"
+depth = 1
+
+[[preflight]]
+provider = "http"
+required = false
+[preflight.params]
+url = "https://api.test/flags"
+output = "/tmp/flags.json"
+headers = { Authorization = "Bearer \${TOKEN}" }
+
+[[preflight]]
+provider = "shell"
+[preflight.params]
+command = "echo hello"
+output = "/tmp/hello.txt"
+`;
+    writeFileSync(resolve(agentDir, "agent-config.toml"), toml);
+    const loaded = loadAgentConfig(tmpDir, "with-preflight");
+
+    expect(loaded.preflight).toHaveLength(3);
+    expect(loaded.preflight![0].provider).toBe("git-clone");
+    expect(loaded.preflight![0].required).toBe(true);
+    expect(loaded.preflight![0].params.repo).toBe("acme/app");
+    expect(loaded.preflight![0].params.depth).toBe(1);
+
+    expect(loaded.preflight![1].provider).toBe("http");
+    expect(loaded.preflight![1].required).toBe(false);
+    expect((loaded.preflight![1].params.headers as any).Authorization).toBe("Bearer ${TOKEN}");
+
+    expect(loaded.preflight![2].provider).toBe("shell");
+    expect(loaded.preflight![2].required).toBeUndefined(); // omitted → runner treats as true
+    expect(loaded.preflight![2].params.command).toBe("echo hello");
+  });
+
+  it("loads agent config without preflight", () => {
+    const agentDir = resolve(tmpDir, "no-preflight");
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML({
+      credentials: ["github_token:default"],
+      model: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
+      schedule: "*/5 * * * *",
+    } as Record<string, unknown>));
+    const loaded = loadAgentConfig(tmpDir, "no-preflight");
+    expect(loaded.preflight).toBeUndefined();
+  });
+
   it("throws when agent config is missing", () => {
     expect(() => loadAgentConfig(tmpDir, "nonexistent")).toThrow("Agent config not found");
   });

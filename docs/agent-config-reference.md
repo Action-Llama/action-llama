@@ -44,6 +44,30 @@ labels = ["agent"]                        # Only trigger on issues with these la
 source = "my-sentry"                      # Required: references [webhooks.my-sentry] in config.toml
 resources = ["error", "event_alert"]      # Sentry resource types (optional)
 
+# Optional: preflight steps — run before the LLM session starts
+# Each step runs a built-in provider to stage data the agent will reference
+[[preflight]]
+provider = "git-clone"                    # Clone a repo into the workspace
+required = true                           # If true (default), abort if this step fails
+[preflight.params]
+repo = "acme/app"                         # Short "owner/repo" or full URL
+dest = "/tmp/repo"
+depth = 1                                 # Optional: shallow clone
+
+[[preflight]]
+provider = "http"                         # Fetch a URL and write the response to a file
+required = false                          # Optional step — warn and continue on failure
+[preflight.params]
+url = "https://api.internal/v1/flags"
+output = "/tmp/context/flags.json"
+headers = { Authorization = "Bearer ${INTERNAL_TOKEN}" }
+
+[[preflight]]
+provider = "shell"                        # Run a shell command
+[preflight.params]
+command = "gh issue list --repo acme/app --label P1 --json number,title,body --limit 20"
+output = "/tmp/context/issues.json"       # Optional: capture stdout to file
+
 # Optional: custom parameters injected into the agent prompt
 [params]
 repos = ["acme/app", "acme/api"]
@@ -67,6 +91,7 @@ sentryProjects = ["web-app", "api"]
 | `model.thinkingLevel` | string | No | Thinking budget level: off, minimal, low, medium, high, xhigh. Only relevant for Claude Sonnet/Opus. Omit for other models. |
 | `model.authType` | string | Yes* | Auth method for the provider |
 | `webhooks` | array | No* | Array of webhook trigger objects |
+| `preflight` | array | No | Array of preflight steps that run before the LLM session. See [Preflight](#preflight). |
 | `params` | table | No | Custom key-value params for the agent prompt |
 
 *At least one of `schedule` or `webhooks` is required (unless `scale = 0`). *Required within `[model]` if the agent defines its own model block (otherwise inherits from project `config.toml`).
@@ -142,6 +167,106 @@ timeout = 3600      # 1 hour
 # Omit timeout — uses [local].timeout or defaults to 900s
 # (routes to Lambda on AWS since 900 <= 900)
 ```
+
+## Preflight
+
+Preflight steps run mechanical data-staging tasks after credentials are loaded but before the LLM session starts. They fetch data, clone repos, or run commands to prepare the workspace so the agent starts with everything it needs — instead of spending tokens fetching context at runtime.
+
+### How it works
+
+1. Steps run **sequentially** in the order they appear in `agent-config.toml`
+2. Steps run **inside the container** (or host process in `--no-docker` mode) after credential/env setup
+3. Providers write files to disk — your ACTIONS.md references the staged files
+4. Environment variable interpolation is supported: `${VAR_NAME}` in string params is resolved against `process.env` (which already has credentials injected)
+
+### Step fields
+
+Each `[[preflight]]` entry has these fields:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `provider` | string | Yes | Provider name: `shell`, `http`, or `git-clone` |
+| `required` | boolean | No | If `true` (default), the agent aborts on failure. If `false`, logs a warning and continues. |
+| `params` | table | Yes | Provider-specific parameters (see below) |
+
+### Built-in providers
+
+#### `shell`
+
+Runs a command via `/bin/sh`. Optionally captures stdout to a file.
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `command` | string | Yes | Shell command to execute |
+| `output` | string | No | File path to write stdout to. Parent directories are created automatically. |
+
+```toml
+[[preflight]]
+provider = "shell"
+[preflight.params]
+command = "gh issue list --repo acme/app --label P1 --json number,title,body --limit 20"
+output = "/tmp/context/issues.json"
+```
+
+#### `http`
+
+Fetches a URL and writes the response body to a file.
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `url` | string | Yes | URL to fetch |
+| `output` | string | Yes | File path to write the response body |
+| `method` | string | No | HTTP method (default: `GET`) |
+| `headers` | table | No | HTTP headers as key-value pairs |
+| `body` | string | No | Request body (for POST/PUT) |
+
+```toml
+[[preflight]]
+provider = "http"
+required = false
+[preflight.params]
+url = "https://api.internal/v1/feature-flags"
+output = "/tmp/context/flags.json"
+headers = { Authorization = "Bearer ${INTERNAL_TOKEN}" }
+```
+
+#### `git-clone`
+
+Clones a git repository. Short `"owner/repo"` names are expanded to `git@github.com:owner/repo.git`; full URLs are passed through. Git credentials (SSH key, HTTPS token) are already configured from the agent's credentials.
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `repo` | string | Yes | Repository: `"owner/repo"` or full URL |
+| `dest` | string | Yes | Local path to clone into |
+| `branch` | string | No | Branch to check out |
+| `depth` | number | No | Shallow clone depth (e.g., `1`) |
+
+```toml
+[[preflight]]
+provider = "git-clone"
+[preflight.params]
+repo = "acme/app"
+dest = "/tmp/repo"
+branch = "main"
+depth = 1
+```
+
+### Referencing staged files in ACTIONS.md
+
+Preflight writes files to disk — your ACTIONS.md tells the LLM what's there:
+
+```markdown
+## Context
+- The repo is cloned at `/tmp/repo`
+- Open P1 issues are at `/tmp/context/issues.json`
+- Feature flags (if available) are at `/tmp/context/flags.json`
+```
+
+### Notes
+
+- The `shell` provider is the escape hatch — anything a built-in provider doesn't cover can be expressed as a shell command
+- There is no per-step timeout — steps are bounded by the container-level timeout
+- Environment variables set inside `shell` child processes do not propagate back to the agent's `process.env`
 
 ## Webhook Trigger Fields
 
