@@ -42,6 +42,6 @@ describe("paths", () => {
   });
 
   it("agentDir appends agent type", () => {
-    expect(agentDir("/proj", "dev")).toBe(resolve("/proj", "dev"));
+    expect(agentDir("/proj", "dev")).toBe(resolve("/proj", "agents", "dev"));
   });
 });

@@ -114,7 +114,7 @@ function setupProject(tmpDir: string) {
   ];
 
   for (const agent of agents) {
-    const agentDir = resolve(tmpDir, agent.name);
+    const agentDir = resolve(tmpDir, "agents", agent.name);
     mkdirSync(agentDir, { recursive: true });
     // Strip name before writing (matches scaffold behavior — name is injected at load time)
     const { name: _, ...configToWrite } = agent;
@@ -262,7 +262,7 @@ describe("startScheduler", () => {
       ];
 
       for (const agent of agents) {
-        const agentDir = resolve(tmpDir, agent.name);
+        const agentDir = resolve(tmpDir, "agents", agent.name);
         mkdirSync(agentDir, { recursive: true });
         const { name: _, ...configToWrite } = agent;
         writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML(configToWrite as Record<string, unknown>));
@@ -322,7 +322,7 @@ describe("startScheduler", () => {
       ];
 
       for (const agent of agents) {
-        const agentDir = resolve(tmpDir, agent.name);
+        const agentDir = resolve(tmpDir, "agents", agent.name);
         mkdirSync(agentDir, { recursive: true });
         const { name: _, ...configToWrite } = agent;
         writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML(configToWrite as Record<string, unknown>));
@@ -355,7 +355,7 @@ describe("startScheduler", () => {
     it("allows scale = 0 agent without schedule or webhooks", async () => {
       // Overwrite disabled-agent config to have no schedule
       const model = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" };
-      const agentDir = resolve(tmpDir, "disabled-agent");
+      const agentDir = resolve(tmpDir, "agents", "disabled-agent");
       writeFileSync(
         resolve(agentDir, "agent-config.toml"),
         stringifyTOML({ credentials: ["github_token:default"], model, scale: 0 } as Record<string, unknown>)
@@ -380,7 +380,7 @@ describe("startScheduler", () => {
       ];
 
       for (const agent of agents) {
-        const agentDir = resolve(tmpDir, agent.name);
+        const agentDir = resolve(tmpDir, "agents", agent.name);
         mkdirSync(agentDir, { recursive: true });
         const { name: _, ...configToWrite } = agent;
         writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML(configToWrite as Record<string, unknown>));

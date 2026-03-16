@@ -74,7 +74,7 @@ describe("loadAgentConfig", () => {
   });
 
   it("loads agent-config.toml and injects name from directory", () => {
-    const agentDir = resolve(tmpDir, "dev");
+    const agentDir = resolve(tmpDir, "agents", "dev");
     mkdirSync(agentDir, { recursive: true });
     const agentOnDisk = {
       credentials: ["github_token:default"],
@@ -90,7 +90,7 @@ describe("loadAgentConfig", () => {
   });
 
   it("parses [[preflight]] array-of-tables with nested params", () => {
-    const agentDir = resolve(tmpDir, "with-preflight");
+    const agentDir = resolve(tmpDir, "agents", "with-preflight");
     mkdirSync(agentDir, { recursive: true });
     const toml = `
 credentials = ["github_token:default"]
@@ -143,7 +143,7 @@ output = "/tmp/hello.txt"
   });
 
   it("loads agent config without preflight", () => {
-    const agentDir = resolve(tmpDir, "no-preflight");
+    const agentDir = resolve(tmpDir, "agents", "no-preflight");
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML({
       credentials: ["github_token:default"],
@@ -164,7 +164,7 @@ output = "/tmp/hello.txt"
     writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({ model: globalModel } as Record<string, unknown>));
 
     // Write agent config without [model]
-    const agentDir = resolve(tmpDir, "dev");
+    const agentDir = resolve(tmpDir, "agents", "dev");
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML({
       credentials: ["github_token:default"],
@@ -182,7 +182,7 @@ output = "/tmp/hello.txt"
     } as Record<string, unknown>));
 
     // Write agent config with its own [model]
-    const agentDir = resolve(tmpDir, "dev");
+    const agentDir = resolve(tmpDir, "agents", "dev");
     mkdirSync(agentDir, { recursive: true });
     const agentModel = { provider: "openai", model: "gpt-4o", thinkingLevel: "off", authType: "api_key" };
     writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML({
@@ -210,7 +210,7 @@ describe("discoverAgents", () => {
 
   it("discovers agents with agent-config.toml", () => {
     for (const name of ["dev", "reviewer"]) {
-      const dir = resolve(tmpDir, name);
+      const dir = resolve(tmpDir, "agents", name);
       mkdirSync(dir, { recursive: true });
       writeFileSync(resolve(dir, "agent-config.toml"), "");
     }
@@ -220,7 +220,7 @@ describe("discoverAgents", () => {
 
   it("excludes dotfile and node_modules directories", () => {
     for (const name of [".al", ".workspace", "dev"]) {
-      const dir = resolve(tmpDir, name);
+      const dir = resolve(tmpDir, "agents", name);
       mkdirSync(dir, { recursive: true });
       writeFileSync(resolve(dir, "agent-config.toml"), "");
     }

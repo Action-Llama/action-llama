@@ -137,7 +137,7 @@ function setupProjectWithWebhooks(tmpDir: string) {
     model,
     webhooks: [{ source: "my-github", events: ["issues"], actions: ["labeled"], labels: ["agent"] }],
   };
-  const agentDir = resolve(tmpDir, "webhook-dev");
+  const agentDir = resolve(tmpDir, "agents", "webhook-dev");
   mkdirSync(agentDir, { recursive: true });
   writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML(webhookAgent as Record<string, unknown>));
   mkdirSync(resolve(tmpDir, ".al", "state", "webhook-dev"), { recursive: true });
@@ -153,7 +153,7 @@ function setupProjectWithHybrid(tmpDir: string) {
     schedule: "*/15 * * * *",
     webhooks: [{ source: "my-github", events: ["pull_request"], actions: ["opened"] }],
   };
-  const agentDir = resolve(tmpDir, "hybrid");
+  const agentDir = resolve(tmpDir, "agents", "hybrid");
   mkdirSync(agentDir, { recursive: true });
   writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML(hybridAgent as Record<string, unknown>));
   mkdirSync(resolve(tmpDir, ".al", "state", "hybrid"), { recursive: true });
@@ -167,7 +167,7 @@ function setupProjectWithNoTrigger(tmpDir: string) {
     credentials: ["github_token:default"],
     model,
   };
-  const agentDir = resolve(tmpDir, "bad-agent");
+  const agentDir = resolve(tmpDir, "agents", "bad-agent");
   mkdirSync(agentDir, { recursive: true });
   writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML(badAgent as Record<string, unknown>));
   mkdirSync(resolve(tmpDir, ".al", "state", "bad-agent"), { recursive: true });

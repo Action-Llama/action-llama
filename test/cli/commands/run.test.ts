@@ -133,7 +133,7 @@ describe("run", () => {
     });
 
     // Point at the agent subdir instead of the project root
-    await expect(execute("dev", { project: resolve(dir, "dev") })).rejects.toThrow(
+    await expect(execute("dev", { project: resolve(dir, "agents", "dev") })).rejects.toThrow(
       "looks like an agent directory"
     );
   });
