@@ -135,28 +135,55 @@ async function drainWebhookQueue(
   ctx: SchedulerContext
 ): Promise<void> {
   const pool = ctx.runnerPools[agentConfig.name];
-  let event;
-  while (!ctx.shuttingDown && (event = ctx.webhookQueue.dequeue(agentConfig.name)) !== undefined) {
-    const runner = pool.getAvailableRunner();
-    if (!runner) {
-      // Put the event back in the queue if no runners are available
-      ctx.webhookQueue.enqueue(agentConfig.name, event.context, event.receivedAt);
+  
+  while (!ctx.shuttingDown && ctx.webhookQueue.size(agentConfig.name) > 0) {
+    // Get all available runners at once
+    const availableRunners = pool.getAllAvailableRunners();
+    if (availableRunners.length === 0) {
+      // No runners available, stop draining
       break;
     }
-    const ageMs = Date.now() - event.receivedAt.getTime();
-    ctx.logger.info(
-      { agent: agentConfig.name, event: event.context.event, ageMs, remaining: ctx.webhookQueue.size(agentConfig.name), running: pool.runningJobCount, scale: pool.size },
-      "processing queued webhook event"
-    );
-    try {
-      const prompt = makeWebhookPrompt(agentConfig, event.context, ctx);
-      const { triggers } = await runner.run(prompt, { type: 'webhook', source: event.context.event });
-      if (triggers.length > 0) {
-        dispatchTriggers(triggers, agentConfig.name, 0, ctx);
-      }
-    } catch (err) {
-      ctx.logger.error({ err, agent: agentConfig.name }, "queued webhook run failed");
+    
+    // Dequeue events up to the number of available runners
+    const eventsToProcess: Array<{ event: any; runner: PoolRunner }> = [];
+    for (const runner of availableRunners) {
+      const event = ctx.webhookQueue.dequeue(agentConfig.name);
+      if (!event) break; // No more events in queue
+      eventsToProcess.push({ event, runner });
     }
+    
+    if (eventsToProcess.length === 0) break; // No events to process
+    
+    // Process all events in parallel
+    const promises = eventsToProcess.map(({ event, runner }) => {
+      const ageMs = Date.now() - event.receivedAt.getTime();
+      ctx.logger.info(
+        { 
+          agent: agentConfig.name, 
+          event: event.context.event, 
+          ageMs, 
+          remaining: ctx.webhookQueue.size(agentConfig.name), 
+          running: pool.runningJobCount + eventsToProcess.length, 
+          scale: pool.size 
+        },
+        "processing queued webhook event"
+      );
+      
+      return (async () => {
+        try {
+          const prompt = makeWebhookPrompt(agentConfig, event.context, ctx);
+          const { triggers } = await runner.run(prompt, { type: 'webhook', source: event.context.event });
+          if (triggers.length > 0) {
+            dispatchTriggers(triggers, agentConfig.name, 0, ctx);
+          }
+        } catch (err) {
+          ctx.logger.error({ err, agent: agentConfig.name }, "queued webhook run failed");
+        }
+      })();
+    });
+    
+    // Wait for all parallel runs to complete before checking for more events
+    await Promise.all(promises);
   }
 }
 
@@ -573,8 +600,13 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
                 if (triggers.length > 0) {
                   dispatchTriggers(triggers, agentConfig.name, 0, schedulerCtx);
                 }
-                // Drain any events that queued while this webhook run was executing
-                await drainWebhookQueue(agentConfig, schedulerCtx);
+                // If there are queued events and more runners available, start draining immediately
+                // without waiting for the first run to complete
+                if (webhookQueue.size(agentConfig.name) > 0) {
+                  drainWebhookQueue(agentConfig, schedulerCtx).catch((err) => {
+                    logger.error({ err }, `${agentConfig.name} parallel queue drain failed`);
+                  });
+                }
               },
               {},
               SpanKind.INTERNAL

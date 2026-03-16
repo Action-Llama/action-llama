@@ -69,6 +69,44 @@ describe("RunnerPool", () => {
     });
   });
 
+  describe("getAllAvailableRunners", () => {
+    beforeEach(() => {
+      pool = new RunnerPool([runner1, runner2, runner3]);
+    });
+
+    it("returns all runners when all are idle", () => {
+      const available = pool.getAllAvailableRunners();
+      expect(available).toHaveLength(3);
+      expect(available).toContain(runner1);
+      expect(available).toContain(runner2);
+      expect(available).toContain(runner3);
+    });
+
+    it("returns only available runners when some are busy", () => {
+      runner1.isRunning = true;
+      runner2.isRunning = true;
+
+      const available = pool.getAllAvailableRunners();
+      expect(available).toHaveLength(1);
+      expect(available).toContain(runner3);
+    });
+
+    it("returns empty array when all runners are busy", () => {
+      runner1.isRunning = true;
+      runner2.isRunning = true;
+      runner3.isRunning = true;
+
+      const available = pool.getAllAvailableRunners();
+      expect(available).toHaveLength(0);
+    });
+
+    it("returns empty array for empty pool", () => {
+      const emptyPool = new RunnerPool([]);
+      const available = emptyPool.getAllAvailableRunners();
+      expect(available).toHaveLength(0);
+    });
+  });
+
   describe("getNextRunner", () => {
     beforeEach(() => {
       pool = new RunnerPool([runner1, runner2, runner3]);
