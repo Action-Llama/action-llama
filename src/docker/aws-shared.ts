@@ -673,7 +673,7 @@ export class AwsSharedUtils {
     if (builds.length === 1) return [await this.buildImageCodeBuild(builds[0], onProgress)];
 
     const { join, isAbsolute, dirname: dirnameFn } = await import("path");
-    const { readFileSync, writeFileSync, mkdirSync, copyFileSync, cpSync, existsSync, rmSync, readdirSync } = await import("fs");
+    const { readFileSync, writeFileSync, mkdirSync, copyFileSync, cpSync, existsSync, rmSync, readdirSync, lstatSync } = await import("fs");
     const { createHash, randomUUID } = await import("crypto");
     const { tmpdir } = await import("os");
     const { execFileSync } = await import("child_process");
