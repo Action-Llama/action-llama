@@ -88,58 +88,63 @@ export class LocalDockerRuntime implements ContainerRuntime {
   async buildImage(opts: BuildImageOpts): Promise<string> {
     opts.onProgress?.("Building image locally");
 
-    const hasExtraFiles = opts.extraFiles && Object.keys(opts.extraFiles).length > 0;
+    // ── 1. Resolve Dockerfile content ──────────────────────────────
+    let content: string;
+    if (opts.dockerfileContent) {
+      content = opts.dockerfileContent;
+    } else {
+      const src = isAbsolute(opts.dockerfile)
+        ? opts.dockerfile
+        : resolve(opts.contextDir, opts.dockerfile);
+      content = readFileSync(src, "utf-8");
+    }
 
-    // Use an isolated temp directory when we need to write temp files
-    // so parallel builds don't race on shared files in contextDir.
-    const needsTempContext = !!opts.dockerfileContent || hasExtraFiles || !!opts.baseImage;
-    const buildCtx = needsTempContext
-      ? mkdtempSync(join(tmpdir(), "al-ctx-"))
-      : undefined;
+    if (opts.baseImage) {
+      content = content.replace(/^FROM\s+\S+/m, `FROM ${opts.baseImage}`);
+    }
+
+    // ── 2. Inject COPY static/ when extra files are provided ───────
+    const hasExtraFiles = opts.extraFiles && Object.keys(opts.extraFiles).length > 0;
+    if (hasExtraFiles && !content.includes("COPY static/ /app/static/")) {
+      const copyLine = "COPY static/ /app/static/";
+      const userIdx = content.indexOf("\nUSER ");
+      if (userIdx !== -1) {
+        content = content.slice(0, userIdx) + "\n" + copyLine + content.slice(userIdx);
+      } else {
+        content += "\n" + copyLine + "\n";
+      }
+    }
+
+    // ── 3. Prepare build context ───────────────────────────────────
+    // When the Dockerfile or context needs modification (generated content,
+    // FROM rewrite, or extra static files), build from an isolated temp dir.
+    // Otherwise build directly from contextDir.
+    const needsTempCtx = !!opts.dockerfileContent || hasExtraFiles || !!opts.baseImage;
+    const buildDir = needsTempCtx ? mkdtempSync(join(tmpdir(), "al-ctx-")) : undefined;
 
     try {
-      let dockerfile = opts.dockerfile;
-      let cwd = opts.contextDir;
+      let dockerfilePath: string;
+      let contextPath: string;
 
-      if (buildCtx) {
-        // Prepare Dockerfile content
-        let content: string;
-        if (opts.dockerfileContent) {
-          content = opts.dockerfileContent;
-        } else {
-          const resolvedDockerfile = isAbsolute(dockerfile)
-            ? dockerfile
-            : resolve(opts.contextDir, dockerfile);
-          content = readFileSync(resolvedDockerfile, "utf-8");
-          if (opts.baseImage) {
-            content = content.replace(/^FROM\s+\S+/m, `FROM ${opts.baseImage}`);
-          }
-        }
-        if (hasExtraFiles && !content.includes("COPY static/ /app/static/")) {
-          const copyLine = "COPY static/ /app/static/";
-          const userIdx = content.indexOf("\nUSER ");
-          if (userIdx !== -1) {
-            content = content.slice(0, userIdx) + "\n" + copyLine + content.slice(userIdx);
-          } else {
-            content += "\n" + copyLine + "\n";
-          }
-        }
-        const tempDockerfile = join(buildCtx, "Dockerfile");
-        writeFileSync(tempDockerfile, content);
-        dockerfile = tempDockerfile;
+      if (buildDir) {
+        writeFileSync(join(buildDir, "Dockerfile"), content);
+        dockerfilePath = join(buildDir, "Dockerfile");
+        contextPath = buildDir;
 
-        // Write extra files to static/ directory and use buildCtx as Docker
-        // build context so the COPY static/ directive can find the files.
         if (hasExtraFiles) {
-          const staticDir = join(buildCtx, "static");
+          const staticDir = join(buildDir, "static");
           mkdirSync(staticDir, { recursive: true });
           for (const [filename, fileContent] of Object.entries(opts.extraFiles!)) {
             const filePath = join(staticDir, filename);
             mkdirSync(dirname(filePath), { recursive: true });
             writeFileSync(filePath, fileContent);
           }
-          cwd = buildCtx;
         }
+      } else {
+        dockerfilePath = isAbsolute(opts.dockerfile)
+          ? opts.dockerfile
+          : resolve(opts.contextDir, opts.dockerfile);
+        contextPath = opts.contextDir;
       }
 
       execFileSync("docker", [
@@ -147,18 +152,17 @@ export class LocalDockerRuntime implements ContainerRuntime {
         "-t", opts.tag,
         "--build-arg", `GIT_SHA=${GIT_SHA}`,
         "--build-arg", `VERSION=${VERSION}`,
-        "-f", dockerfile,
-        ".",
+        "-f", dockerfilePath,
+        contextPath,
       ], {
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "inherit"],
         timeout: 300_000,
-        cwd,
         env: { ...process.env, DOCKER_BUILDKIT: "1" },
       });
     } finally {
-      if (buildCtx) {
-        try { rmSync(buildCtx, { recursive: true }); } catch {}
+      if (buildDir) {
+        try { rmSync(buildDir, { recursive: true }); } catch {}
       }
     }
 
