@@ -36,6 +36,10 @@ export class GcpCloudProvider implements CloudProvider {
     await reconcileGcpAgents(projectPath, this.config);
   }
 
+  async reconcileInfraPolicy(): Promise<void> {
+    // No-op for GCP — infrastructure policies are managed via gcloud IAM bindings.
+  }
+
   async validateRoles(_projectPath: string): Promise<void> {
     // No-op for GCP — no equivalent to ECS role validation.
     // GCP service accounts are validated implicitly at execution time.

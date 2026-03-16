@@ -105,8 +105,12 @@ export async function execute(opts: { project: string; cloud?: boolean; checkOnl
       console.log(`Pushed ${pushed} credential field(s) to ${cloudConfig.provider}.`);
     }
 
-    // Reconcile IAM (handles task roles, service accounts, Lambda roles)
-    console.log(`\nReconciling cloud IAM...`);
+    // Reconcile infrastructure-level IAM policies (App Runner instance role, etc.)
+    console.log(`\nReconciling infrastructure IAM policies...`);
+    await provider.reconcileInfraPolicy();
+
+    // Reconcile per-agent IAM (task roles, service accounts, Lambda roles)
+    console.log(`\nReconciling agent IAM...`);
     await provider.reconcileAgents(projectPath);
 
     // Validate IAM roles

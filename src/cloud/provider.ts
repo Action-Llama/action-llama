@@ -40,6 +40,9 @@ export interface CloudProvider {
   /** Reconcile per-agent IAM resources (roles, service accounts, secret bindings). */
   reconcileAgents(projectPath: string): Promise<void>;
 
+  /** Reconcile infrastructure-level IAM policies (e.g. App Runner instance role). */
+  reconcileInfraPolicy(): Promise<void>;
+
   /** Validate that IAM roles/service accounts exist and are correctly configured. */
   validateRoles(projectPath: string): Promise<void>;
 

@@ -60,6 +60,14 @@ export class AwsCloudProvider implements CloudProvider {
   }
 
   /**
+   * Reconcile infrastructure-level IAM policies (App Runner instance role).
+   */
+  async reconcileInfraPolicy(): Promise<void> {
+    const { reconcileAppRunnerInstancePolicy } = await import("./iam.js");
+    await reconcileAppRunnerInstancePolicy(this.config);
+  }
+
+  /**
    * Validate that per-agent IAM task roles exist and are correctly configured.
    */
   async validateRoles(projectPath: string): Promise<void> {

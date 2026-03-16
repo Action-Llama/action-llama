@@ -49,6 +49,7 @@ import {
 
 import type { EcsCloudConfig } from "../../shared/config.js";
 import { AWS_CONSTANTS } from "./constants.js";
+import { buildSchedulerPolicyDocument } from "./iam.js";
 import { CONSTANTS } from "../../shared/constants.js";
 
 const CREATE_NEW = "__create_new__";
@@ -706,32 +707,14 @@ async function ensureAppRunnerInstanceRole(
     }
   }
 
-  const repoName = ecrRepository.split("/").pop()!;
   const bucketName = AWS_CONSTANTS.buildBucket(accountId, region);
+  const policyDoc = buildSchedulerPolicyDocument(accountId, region, bucketName);
 
   try {
     await iamClient.send(new PutRolePolicyCommand({
       RoleName: roleName,
       PolicyName: "ActionLlamaScheduler",
-      PolicyDocument: JSON.stringify({
-        Version: "2012-10-17",
-        Statement: [
-          { Sid: "Identity", Effect: "Allow", Action: "sts:GetCallerIdentity", Resource: "*" },
-          { Sid: "ECS", Effect: "Allow", Action: ["ecs:RegisterTaskDefinition", "ecs:RunTask", "ecs:DescribeTasks", "ecs:ListTasks", "ecs:StopTask"], Resource: "*" },
-          { Sid: "Logs", Effect: "Allow", Action: ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents", "logs:GetLogEvents", "logs:FilterLogEvents"], Resource: [`arn:aws:logs:${region}:${accountId}:log-group:/ecs/action-llama*`, `arn:aws:logs:${region}:${accountId}:log-group:/aws/lambda/al-*`, `arn:aws:logs:${region}:${accountId}:log-group:/apprunner/al-scheduler*`] },
-          { Sid: "SecretsManager", Effect: "Allow", Action: ["secretsmanager:ListSecrets", "secretsmanager:CreateSecret", "secretsmanager:PutSecretValue", "secretsmanager:GetSecretValue"], Resource: "*" },
-          { Sid: "PassRole", Effect: "Allow", Action: "iam:PassRole", Resource: `arn:aws:iam::${accountId}:role/al-*`, Condition: { StringEquals: { "iam:PassedToService": ["ecs-tasks.amazonaws.com", "codebuild.amazonaws.com", "lambda.amazonaws.com", "tasks.apprunner.amazonaws.com", "build.apprunner.amazonaws.com"] } } },
-          { Sid: "IAMAgentRoles", Effect: "Allow", Action: ["iam:CreateRole", "iam:GetRole", "iam:GetRolePolicy", "iam:PutRolePolicy", "iam:DeleteRole", "iam:DeleteRolePolicy", "iam:AttachRolePolicy"], Resource: `arn:aws:iam::${accountId}:role/al-*` },
-          { Sid: "IAMListRoles", Effect: "Allow", Action: "iam:ListRoles", Resource: "*" },
-          { Sid: "ECR", Effect: "Allow", Action: ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability", "ecr:GetAuthorizationToken", "ecr:SetRepositoryPolicy", "ecr:PutImage", "ecr:InitiateLayerUpload", "ecr:UploadLayerPart", "ecr:CompleteLayerUpload"], Resource: "*" },
-          { Sid: "CodeBuild", Effect: "Allow", Action: ["codebuild:StartBuild", "codebuild:BatchGetBuilds", "codebuild:CreateProject", "codebuild:UpdateProject"], Resource: `arn:aws:codebuild:${region}:${accountId}:project/al-image-builder` },
-          { Sid: "Lambda", Effect: "Allow", Action: ["lambda:GetFunction", "lambda:CreateFunction", "lambda:UpdateFunctionCode", "lambda:UpdateFunctionConfiguration", "lambda:PutFunctionEventInvokeConfig", "lambda:InvokeFunction"], Resource: `arn:aws:lambda:${region}:${accountId}:function:al-*` },
-          { Sid: "S3", Effect: "Allow", Action: ["s3:CreateBucket", "s3:PutObject", "s3:GetObject", "s3:ListBucket"], Resource: [`arn:aws:s3:::${bucketName}`, `arn:aws:s3:::${bucketName}/*`] },
-          { Sid: "AppRunner", Effect: "Allow", Action: ["apprunner:CreateService", "apprunner:UpdateService", "apprunner:DescribeService", "apprunner:DeleteService"], Resource: `arn:aws:apprunner:${region}:${accountId}:service/al-scheduler/*` },
-          { Sid: "AppRunnerList", Effect: "Allow", Action: "apprunner:ListServices", Resource: "*" },
-          { Sid: "DynamoDB", Effect: "Allow", Action: ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem", "dynamodb:Query", "dynamodb:CreateTable", "dynamodb:DescribeTable", "dynamodb:UpdateTimeToLive"], Resource: `arn:aws:dynamodb:${region}:${accountId}:table/${AWS_CONSTANTS.STATE_TABLE}` },
-        ],
-      }),
+      PolicyDocument: JSON.stringify(policyDoc),
     }));
     console.log(`  Attached ActionLlamaScheduler policy`);
   } catch (err: any) {

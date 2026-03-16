@@ -338,6 +338,89 @@ export async function validateEcsRoles(projectPath: string, cloud: EcsCloudConfi
 }
 
 /**
+ * Build the ActionLlamaScheduler inline policy document for the App Runner instance role.
+ *
+ * Exported so both provision (initial create) and doctor (reconcile) use
+ * the same authoritative policy definition.
+ */
+export function buildSchedulerPolicyDocument(
+  accountId: string, region: string, bucketName: string,
+): Record<string, unknown> {
+  return {
+    Version: "2012-10-17",
+    Statement: [
+      { Sid: "Identity", Effect: "Allow", Action: "sts:GetCallerIdentity", Resource: "*" },
+      { Sid: "ECS", Effect: "Allow", Action: ["ecs:RegisterTaskDefinition", "ecs:RunTask", "ecs:DescribeTasks", "ecs:ListTasks", "ecs:StopTask"], Resource: "*" },
+      { Sid: "Logs", Effect: "Allow", Action: ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents", "logs:GetLogEvents", "logs:FilterLogEvents"], Resource: [`arn:aws:logs:${region}:${accountId}:log-group:/ecs/action-llama*`, `arn:aws:logs:${region}:${accountId}:log-group:/aws/lambda/al-*`, `arn:aws:logs:${region}:${accountId}:log-group:/apprunner/al-scheduler*`] },
+      { Sid: "SecretsManager", Effect: "Allow", Action: ["secretsmanager:ListSecrets", "secretsmanager:CreateSecret", "secretsmanager:PutSecretValue", "secretsmanager:GetSecretValue"], Resource: "*" },
+      { Sid: "PassRole", Effect: "Allow", Action: "iam:PassRole", Resource: `arn:aws:iam::${accountId}:role/al-*`, Condition: { StringEquals: { "iam:PassedToService": ["ecs-tasks.amazonaws.com", "codebuild.amazonaws.com", "lambda.amazonaws.com", "tasks.apprunner.amazonaws.com", "build.apprunner.amazonaws.com"] } } },
+      { Sid: "IAMAgentRoles", Effect: "Allow", Action: ["iam:CreateRole", "iam:GetRole", "iam:GetRolePolicy", "iam:PutRolePolicy", "iam:DeleteRole", "iam:DeleteRolePolicy", "iam:AttachRolePolicy"], Resource: `arn:aws:iam::${accountId}:role/al-*` },
+      { Sid: "IAMListRoles", Effect: "Allow", Action: "iam:ListRoles", Resource: "*" },
+      { Sid: "ECR", Effect: "Allow", Action: ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability", "ecr:GetAuthorizationToken", "ecr:SetRepositoryPolicy", "ecr:PutImage", "ecr:InitiateLayerUpload", "ecr:UploadLayerPart", "ecr:CompleteLayerUpload"], Resource: "*" },
+      { Sid: "CodeBuild", Effect: "Allow", Action: ["codebuild:StartBuild", "codebuild:BatchGetBuilds", "codebuild:CreateProject", "codebuild:UpdateProject"], Resource: `arn:aws:codebuild:${region}:${accountId}:project/al-image-builder` },
+      { Sid: "Lambda", Effect: "Allow", Action: ["lambda:GetFunction", "lambda:CreateFunction", "lambda:UpdateFunctionCode", "lambda:UpdateFunctionConfiguration", "lambda:PutFunctionEventInvokeConfig", "lambda:InvokeFunction"], Resource: `arn:aws:lambda:${region}:${accountId}:function:al-*` },
+      { Sid: "S3", Effect: "Allow", Action: ["s3:CreateBucket", "s3:PutObject", "s3:GetObject", "s3:ListBucket"], Resource: [`arn:aws:s3:::${bucketName}`, `arn:aws:s3:::${bucketName}/*`] },
+      { Sid: "AppRunner", Effect: "Allow", Action: ["apprunner:CreateService", "apprunner:UpdateService", "apprunner:DescribeService", "apprunner:DeleteService"], Resource: `arn:aws:apprunner:${region}:${accountId}:service/al-scheduler/*` },
+      { Sid: "AppRunnerList", Effect: "Allow", Action: "apprunner:ListServices", Resource: "*" },
+      { Sid: "DynamoDB", Effect: "Allow", Action: ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem", "dynamodb:Query", "dynamodb:CreateTable", "dynamodb:DescribeTable", "dynamodb:UpdateTimeToLive"], Resource: `arn:aws:dynamodb:${region}:${accountId}:table/${AWS_CONSTANTS.STATE_TABLE}` },
+    ],
+  };
+}
+
+/**
+ * Reconcile the App Runner instance role's inline policy to match the
+ * current code. Called by `al doctor -c` to fix stale policies without
+ * re-running the full provisioning wizard.
+ */
+export async function reconcileAppRunnerInstancePolicy(cloud: EcsCloudConfig): Promise<void> {
+  const { awsRegion, ecrRepository } = cloud;
+  if (!awsRegion || !ecrRepository) {
+    throw new ConfigError("cloud.awsRegion and cloud.ecrRepository are required in config.toml");
+  }
+
+  const accountMatch = ecrRepository.match(/^(\d+)\.dkr\.ecr\./);
+  if (!accountMatch) {
+    throw new ConfigError(
+      `Cannot extract AWS account ID from cloud.ecrRepository: "${ecrRepository}".`
+    );
+  }
+  const accountId = accountMatch[1];
+  const bucketName = cloud.buildBucket || AWS_CONSTANTS.buildBucket(accountId, awsRegion);
+  const roleName = AWS_CONSTANTS.APPRUNNER_INSTANCE_ROLE;
+
+  const iamClient = new IAMClient({ region: awsRegion });
+
+  // Verify the role exists before trying to update it
+  try {
+    await iamClient.send(new GetRoleCommand({ RoleName: roleName }));
+  } catch (err: any) {
+    if (err.name === "NoSuchEntityException") {
+      throw new CloudProviderError(
+        `App Runner instance role "${roleName}" does not exist.\n` +
+        `Run 'al cloud init' to provision infrastructure first.`
+      );
+    }
+    throw err;
+  }
+
+  const policyDoc = buildSchedulerPolicyDocument(accountId, awsRegion, bucketName);
+
+  try {
+    await iamClient.send(new PutRolePolicyCommand({
+      RoleName: roleName,
+      PolicyName: "ActionLlamaScheduler",
+      PolicyDocument: JSON.stringify(policyDoc),
+    }));
+    console.log(`  [updated] ${roleName}: ActionLlamaScheduler policy`);
+  } catch (err: any) {
+    throw new CloudProviderError(
+      `Failed to update policy on ${roleName}: ${err.message}\n` +
+      `Ensure your IAM identity has iam:PutRolePolicy permission on this role.`
+    );
+  }
+}
+
+/**
  * Ensure the ECR repository policy grants Lambda pull access.
  */
 export async function ensureLambdaEcrPolicy(awsRegion: string, ecrRepoUri: string): Promise<void> {
