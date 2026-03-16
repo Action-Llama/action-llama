@@ -513,5 +513,112 @@ describe("AwsSharedUtils", () => {
 
       expect(tag1).not.toBe(tag2);
     });
+
+    it("with useLockfileHash=true, changing dist/ does NOT change hash", async () => {
+      const utils = new AwsSharedUtils(defaultConfig);
+      const { writeFileSync: wfs, mkdirSync } = await import("fs");
+      const { join } = await import("path");
+
+      // Create package-lock.json
+      wfs(join(contextDir, "package-lock.json"), '{"name":"test","lockfileVersion":2}');
+      
+      mockEcrSend.mockResolvedValue({ images: [{ imageId: { imageTag: "x" } }] });
+
+      const opts = {
+        tag: "al-agent:latest",
+        dockerfile: "Dockerfile",
+        contextDir,
+        useLockfileHash: true,
+      };
+
+      const tag1 = await utils.buildImageCodeBuild(opts);
+
+      // Change dist/ content
+      wfs(join(contextDir, "dist", "index.js"), "console.log('changed dist content')");
+      mkdirSync(join(contextDir, "dist", "subdir"), { recursive: true });
+      wfs(join(contextDir, "dist", "subdir", "file.js"), "new file");
+
+      const tag2 = await utils.buildImageCodeBuild(opts);
+
+      expect(tag1).toBe(tag2); // Hash should be the same
+    });
+
+    it("with useLockfileHash=true, changing package-lock.json DOES change hash", async () => {
+      const utils = new AwsSharedUtils(defaultConfig);
+      const { writeFileSync: wfs } = await import("fs");
+      const { join } = await import("path");
+
+      // Create initial package-lock.json
+      wfs(join(contextDir, "package-lock.json"), '{"name":"test","lockfileVersion":2}');
+      
+      mockEcrSend.mockResolvedValue({ images: [{ imageId: { imageTag: "x" } }] });
+
+      const opts = {
+        tag: "al-agent:latest",
+        dockerfile: "Dockerfile",
+        contextDir,
+        useLockfileHash: true,
+      };
+
+      const tag1 = await utils.buildImageCodeBuild(opts);
+
+      // Change package-lock.json
+      wfs(join(contextDir, "package-lock.json"), '{"name":"test","lockfileVersion":2,"dependencies":{"new":"1.0.0"}}');
+
+      const tag2 = await utils.buildImageCodeBuild(opts);
+
+      expect(tag1).not.toBe(tag2); // Hash should be different
+    });
+
+    it("without useLockfileHash, .DS_Store/.map files don't affect hash", async () => {
+      const utils = new AwsSharedUtils(defaultConfig);
+      const { writeFileSync: wfs } = await import("fs");
+      const { join } = await import("path");
+
+      mockEcrSend.mockResolvedValue({ images: [{ imageId: { imageTag: "x" } }] });
+
+      const opts = {
+        tag: "al-agent:latest",
+        dockerfile: "Dockerfile",
+        contextDir,
+        // useLockfileHash: false (default)
+      };
+
+      const tag1 = await utils.buildImageCodeBuild(opts);
+
+      // Add .DS_Store and .map files
+      wfs(join(contextDir, "dist", ".DS_Store"), "mac metadata");
+      wfs(join(contextDir, "dist", "index.js.map"), '{"version":3,"sources":["index.ts"]}');
+      wfs(join(contextDir, "dist", "types.d.ts"), "export interface Test {}");
+      wfs(join(contextDir, "dist", "types.d.ts.map"), "sourcemap");
+
+      const tag2 = await utils.buildImageCodeBuild(opts);
+
+      expect(tag1).toBe(tag2); // Hash should be the same
+    });
+
+    it("without useLockfileHash, .js changes DO affect hash", async () => {
+      const utils = new AwsSharedUtils(defaultConfig);
+      const { writeFileSync: wfs } = await import("fs");
+      const { join } = await import("path");
+
+      mockEcrSend.mockResolvedValue({ images: [{ imageId: { imageTag: "x" } }] });
+
+      const opts = {
+        tag: "al-agent:latest",
+        dockerfile: "Dockerfile",
+        contextDir,
+        // useLockfileHash: false (default)
+      };
+
+      const tag1 = await utils.buildImageCodeBuild(opts);
+
+      // Change .js file
+      wfs(join(contextDir, "dist", "index.js"), "console.log('changed js content')");
+
+      const tag2 = await utils.buildImageCodeBuild(opts);
+
+      expect(tag1).not.toBe(tag2); // Hash should be different
+    });
   });
 });

@@ -45,6 +45,8 @@ import { CONSTANTS } from "../shared/constants.js";
 import { AWS_CONSTANTS } from "../cloud/aws/constants.js";
 import type { RuntimeCredentials, SecretMount, BuildImageOpts, AssembleImageOpts } from "./runtime.js";
 
+const HASH_EXCLUDED = [/\.DS_Store$/, /Thumbs\.db$/, /\.d\.ts$/, /\.d\.ts\.map$/, /\.js\.map$/, /\.tsbuildinfo$/];
+
 export interface AwsSharedConfig {
   awsRegion: string;
   ecrRepository: string;
@@ -265,7 +267,7 @@ export class AwsSharedUtils {
     onProgress?.("Preparing build context");
 
     const { join, relative, isAbsolute } = await import("path");
-    const { readFileSync, writeFileSync, mkdirSync, copyFileSync, cpSync, existsSync } = await import("fs");
+    const { readFileSync, writeFileSync, mkdirSync, copyFileSync, cpSync, existsSync, lstatSync } = await import("fs");
     const { randomUUID, createHash } = await import("crypto");
     const { tmpdir } = await import("os");
 
@@ -306,12 +308,17 @@ export class AwsSharedUtils {
 
     // For full builds, copy application files into the build context
     if (!opts.dockerfileContent) {
+      const cpFilter = (source: string) => {
+        try { if (lstatSync(source).isDirectory()) return true; } catch { return true; }
+        return !HASH_EXCLUDED.some(re => re.test(source));
+      };
+      
       copyFileSync(join(opts.contextDir, "package.json"), join(buildCtx, "package.json"));
-      cpSync(join(opts.contextDir, "dist"), join(buildCtx, "dist"), { recursive: true });
+      cpSync(join(opts.contextDir, "dist"), join(buildCtx, "dist"), { recursive: true, filter: cpFilter });
       // Copy baked shell scripts (docker/bin/) into the build context
       const binSrc = join(opts.contextDir, "docker", "bin");
       if (existsSync(binSrc)) {
-        cpSync(binSrc, join(buildCtx, "docker", "bin"), { recursive: true });
+        cpSync(binSrc, join(buildCtx, "docker", "bin"), { recursive: true, filter: cpFilter });
       }
     }
 
@@ -332,6 +339,7 @@ export class AwsSharedUtils {
     const hash = createHash("sha256");
 
     const hashFile = (p: string) => {
+      if (HASH_EXCLUDED.some(re => re.test(p))) return;
       hash.update(p);
       hash.update(readFileSyncBuf(join(buildCtx, p)));
     };
@@ -350,7 +358,16 @@ export class AwsSharedUtils {
     hash.update(readFileSyncBuf(join(buildCtx, "Dockerfile")));
     if (!opts.dockerfileContent) {
       hashFile("package.json");
-      hashDir("dist");
+      if (opts.useLockfileHash) {
+        // Stable proxy for dist/ — same package + deps = same compiled output
+        const lockfilePath = join(opts.contextDir, "package-lock.json");
+        if (existsSync(lockfilePath)) {
+          hash.update("package-lock.json");
+          hash.update(readFileSyncBuf(lockfilePath));
+        }
+      } else {
+        hashDir("dist");
+      }
       if (existsSync(join(buildCtx, "docker"))) {
         hashDir("docker");
       }
@@ -655,7 +672,7 @@ export class AwsSharedUtils {
     if (builds.length === 1) return [await this.buildImageCodeBuild(builds[0], onProgress)];
 
     const { join, isAbsolute, dirname: dirnameFn } = await import("path");
-    const { readFileSync, writeFileSync, mkdirSync, copyFileSync, cpSync, existsSync, rmSync, readdirSync } = await import("fs");
+    const { readFileSync, writeFileSync, mkdirSync, copyFileSync, cpSync, existsSync, rmSync, readdirSync, lstatSync } = await import("fs");
     const { createHash, randomUUID } = await import("crypto");
     const { tmpdir } = await import("os");
     const { execFileSync } = await import("child_process");
@@ -708,11 +725,16 @@ export class AwsSharedUtils {
       writeFileSync(join(subPath, "Dockerfile"), dockerfileContent);
 
       if (!opts.dockerfileContent) {
+        const cpFilter = (source: string) => {
+          try { if (lstatSync(source).isDirectory()) return true; } catch { return true; }
+          return !HASH_EXCLUDED.some(re => re.test(source));
+        };
+        
         copyFileSync(join(opts.contextDir, "package.json"), join(subPath, "package.json"));
-        cpSync(join(opts.contextDir, "dist"), join(subPath, "dist"), { recursive: true });
+        cpSync(join(opts.contextDir, "dist"), join(subPath, "dist"), { recursive: true, filter: cpFilter });
         const binSrc = join(opts.contextDir, "docker", "bin");
         if (existsSync(binSrc)) {
-          cpSync(binSrc, join(subPath, "docker", "bin"), { recursive: true });
+          cpSync(binSrc, join(subPath, "docker", "bin"), { recursive: true, filter: cpFilter });
         }
       }
 
@@ -728,7 +750,11 @@ export class AwsSharedUtils {
 
       // Compute content hash (same algorithm as buildImageCodeBuild)
       const hash = createHash("sha256");
-      const hashFile = (p: string) => { hash.update(p); hash.update(readFileSync(join(subPath, p))); };
+      const hashFile = (p: string) => {
+        if (HASH_EXCLUDED.some(re => re.test(p))) return;
+        hash.update(p);
+        hash.update(readFileSync(join(subPath, p)));
+      };
       const hashDir = (dir: string) => {
         const entries = readdirSync(join(subPath, dir), { withFileTypes: true })
           .sort((a, b) => a.name.localeCompare(b.name));
