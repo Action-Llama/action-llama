@@ -14,6 +14,7 @@ import { parseCredentialRef, unsanitizeEnvPart } from "../shared/credentials.js"
 import { getExitCodeMessage } from "../shared/exit-codes.js";
 import { ensureSignalDir, readSignals } from "./signals.js";
 import { builtinCredentials } from "../credentials/builtins/index.js";
+import { runPreflight } from "../preflight/runner.js";
 import { initTelemetry } from "../telemetry/index.js";
 import type { TelemetryConfig } from "../telemetry/types.js";
 import { sessionStatsToUsage } from "../shared/usage.js";
@@ -286,6 +287,15 @@ export async function handleInvocation(init: AgentInit): Promise<number> {
       process.env.GIT_AUTHOR_EMAIL = gitEmail;
       process.env.GIT_COMMITTER_EMAIL = gitEmail;
     }
+  }
+
+  // Run preflight steps (data staging before LLM session)
+  if (agentConfig.preflight && agentConfig.preflight.length > 0) {
+    const preflightCtx = {
+      env: { ...process.env } as Record<string, string>,
+      logger: emitLog,
+    };
+    await runPreflight(agentConfig.preflight, preflightCtx);
   }
 
   const cwd = "/tmp";

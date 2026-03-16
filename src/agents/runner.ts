@@ -18,6 +18,7 @@ import type { StatusTracker } from "../tui/status-tracker.js";
 import { getExitCodeMessage } from "../shared/exit-codes.js";
 import { AgentError, isUnrecoverableError, UNRECOVERABLE_THRESHOLD } from "../shared/errors.js";
 import { installSignalCommands, readSignals } from "./signals.js";
+import { runPreflight } from "../preflight/runner.js";
 import { withSpan, getTelemetry } from "../telemetry/index.js";
 import { SpanKind } from "@opentelemetry/api";
 import type { TokenUsage } from "../shared/usage.js";
@@ -177,6 +178,19 @@ export class AgentRunner {
           process.env.GIT_AUTHOR_EMAIL = gitEmail;
           process.env.GIT_COMMITTER_EMAIL = gitEmail;
         }
+      }
+
+      // Run preflight steps (data staging before LLM session)
+      if (this.agentConfig.preflight && this.agentConfig.preflight.length > 0) {
+        const preflightCtx = {
+          env: { ...process.env } as Record<string, string>,
+          logger: (level: string, msg: string, data?: Record<string, any>) => {
+            if (level === "error") this.logger.error(data ?? {}, msg);
+            else if (level === "warn") this.logger.warn(data ?? {}, msg);
+            else this.logger.info(data ?? {}, msg);
+          },
+        };
+        await runPreflight(this.agentConfig.preflight, preflightCtx);
       }
 
       // ACTIONS.md must exist on disk (written during al new)

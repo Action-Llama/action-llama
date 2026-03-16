@@ -62,7 +62,36 @@ Your configuration is in the `<agent-config>` block at the start of your prompt.
 
 The ACTIONS.md is injected as the agent's system prompt at runtime. Write it as instructions to the LLM.
 
-### 4. Verify with `al stat`
+### 4. (Optional) Add preflight steps
+
+If your agent needs external context (repo contents, API data, issue lists), add `[[preflight]]` steps to `agent-config.toml`. Preflight runs after credentials are loaded but before the LLM session starts, so the agent begins with everything it needs:
+
+```toml
+[[preflight]]
+provider = "git-clone"
+[preflight.params]
+repo = "your-org/your-repo"
+dest = "/tmp/repo"
+depth = 1
+
+[[preflight]]
+provider = "shell"
+[preflight.params]
+command = "gh issue list --repo your-org/your-repo --label bug --json number,title --limit 20"
+output = "/tmp/context/issues.json"
+```
+
+Then reference the staged files in your ACTIONS.md:
+
+```markdown
+## Context
+- The repo is cloned at `/tmp/repo`
+- Open bug issues are at `/tmp/context/issues.json`
+```
+
+See [Preflight](agent-config-reference.md#preflight) for the full reference.
+
+### 5. Verify with `al stat`
 
 ```bash
 al stat -p .
@@ -70,7 +99,7 @@ al stat -p .
 
 This should show your agent with its schedule and credentials.
 
-### 5. Run with `al start`
+### 6. Run with `al start`
 
 ```bash
 al start -p .
@@ -78,7 +107,7 @@ al start -p .
 
 Your agent will run on its configured schedule and/or respond to webhooks.
 
-### 6. (Optional) Customize the project Dockerfile
+### 7. (Optional) Customize the project Dockerfile
 
 Every project has a `Dockerfile` at the root (created by `al new`) that defines the shared base image for all agents. If your agents need extra system packages, edit it:
 
@@ -100,7 +129,7 @@ USER node
 
 See [Docker docs](docker.md) for the full reference.
 
-### 7. (Cloud only) Re-run `al doctor -c`
+### 8. (Cloud only) Re-run `al doctor -c`
 
 If you're running agents on cloud infrastructure, re-run `al doctor -c` after adding a new agent. This creates the per-agent IAM resources (service account for Cloud Run, task role for ECS) and grants the new agent access to its declared secrets.
 
