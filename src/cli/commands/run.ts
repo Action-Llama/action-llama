@@ -1,11 +1,16 @@
 import { resolve } from "path";
 import { existsSync } from "fs";
+import { fileURLToPath } from "url";
+import { dirname } from "path";
 import { loadGlobalConfig, loadAgentConfig, discoverAgents } from "../../shared/config.js";
 import { requireCredentialRef } from "../../shared/credentials.js";
 import { createLogger } from "../../shared/logger.js";
 import { CONSTANTS } from "../../shared/constants.js";
 import { buildManualPrompt } from "../../agents/prompt.js";
 import { execute as runDoctor } from "./doctor.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PACKAGE_ROOT = resolve(__dirname, "..", "..", "..");
 
 export async function execute(agent: string, opts: { project: string; cloud?: boolean; headless?: boolean }): Promise<void> {
   const projectPath = resolve(opts.project);
@@ -58,7 +63,7 @@ export async function execute(agent: string, opts: { project: string; cloud?: bo
     const { ContainerAgentRunner } = await import("../../agents/container-runner.js");
 
     const baseImage = globalConfig.local?.image || CONSTANTS.DEFAULT_IMAGE;
-    const image = await runtime.buildImage({ tag: baseImage, dockerfile: "docker/Dockerfile", contextDir: resolve(import.meta.dirname || ".", "../..") });
+    const image = await runtime.buildImage({ tag: baseImage, dockerfile: "docker/Dockerfile", contextDir: PACKAGE_ROOT });
 
     const runner = new ContainerAgentRunner(
       runtime,
