@@ -97,7 +97,7 @@ describe("WorkQueue", () => {
       list: vi.fn().mockResolvedValue([]),
       close: vi.fn().mockResolvedValue(undefined),
     };
-    const queue = new WebhookEventQueue<string>(100, mockStore as any);
+    const queue = new WorkQueue<string>(100, mockStore as any);
     queue.enqueue("agent-a", "a-event");
     queue.enqueue("agent-b", "b-event");
 

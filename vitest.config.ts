@@ -3,6 +3,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     globals: true,
+    exclude: ["**/node_modules/**", "**/.claude/worktrees/**"],
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],
