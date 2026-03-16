@@ -286,7 +286,7 @@ If your agents route to Lambda, add these permissions to your operator IAM polic
 }
 ```
 
-And extend the `PassRole` condition to include `lambda.amazonaws.com` and `apprunner.amazonaws.com`:
+And extend the `PassRole` condition to include `lambda.amazonaws.com` and the App Runner service principals:
 
 ```json
 "Condition": {
@@ -295,7 +295,8 @@ And extend the `PassRole` condition to include `lambda.amazonaws.com` and `appru
       "ecs-tasks.amazonaws.com",
       "codebuild.amazonaws.com",
       "lambda.amazonaws.com",
-      "apprunner.amazonaws.com"
+      "tasks.apprunner.amazonaws.com",
+      "build.apprunner.amazonaws.com"
     ]
   }
 }
@@ -505,7 +506,8 @@ This is the minimum policy for the IAM user or role running `al` commands. Repla
             "ecs-tasks.amazonaws.com",
             "codebuild.amazonaws.com",
             "lambda.amazonaws.com",
-            "apprunner.amazonaws.com"
+            "tasks.apprunner.amazonaws.com",
+            "build.apprunner.amazonaws.com"
           ]
         }
       }
