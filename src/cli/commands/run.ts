@@ -65,8 +65,8 @@ export async function execute(agent: string, opts: { project: string; cloud?: bo
       globalConfig,
       agentConfig,
       logger,
-      () => {},
-      () => {},
+      async () => {},
+      async () => {},
       "",
       projectPath,
       image,
@@ -111,8 +111,8 @@ export async function execute(agent: string, opts: { project: string; cloud?: bo
       globalConfig,
       agentConfig,
       logger,
-      () => {},          // no gateway to register with
-      () => {},          // no gateway to unregister from
+      async () => {},    // no gateway to register with
+      async () => {},    // no gateway to unregister from
       "",                // no gateway URL
       projectPath,
       image,

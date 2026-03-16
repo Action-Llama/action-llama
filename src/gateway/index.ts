@@ -9,7 +9,9 @@ import { registerDashboardRoutes } from "./routes/dashboard.js";
 import { registerSignalRoutes, type SignalContext } from "./routes/signals.js";
 import { LockStore } from "./lock-store.js";
 import { CallStore } from "./call-store.js";
+import { ContainerRegistry } from "./container-registry.js";
 import type { ContainerRegistration } from "./types.js";
+import type { StateStore } from "../shared/state-store.js";
 import type { WebhookRegistry } from "../webhooks/registry.js";
 import type { Logger } from "../shared/logger.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
@@ -34,12 +36,14 @@ export interface GatewayOptions {
   signalContext?: SignalContext;
   controlDeps?: ControlRoutesDeps;
   apiKey?: string;
+  stateStore?: StateStore;
 }
 
 export interface GatewayServer {
   server: Server;
-  registerContainer: (secret: string, reg: ContainerRegistration) => void;
-  unregisterContainer: (secret: string) => void;
+  containerRegistry: ContainerRegistry;
+  registerContainer: (secret: string, reg: ContainerRegistration) => Promise<void>;
+  unregisterContainer: (secret: string) => Promise<void>;
   lockStore: LockStore;
   callStore: CallStore;
   setCallDispatcher: (dispatcher: CallDispatcher) => void;
@@ -47,19 +51,26 @@ export interface GatewayServer {
 }
 
 export async function startGateway(opts: GatewayOptions): Promise<GatewayServer> {
-  const { port, logger, killContainer, webhookRegistry, webhookSecrets, statusTracker, projectPath, webUI, lockTimeout, signalContext } = opts;
+  const { port, logger, killContainer, webhookRegistry, webhookSecrets, statusTracker, projectPath, webUI, lockTimeout, signalContext, stateStore } = opts;
   const app = new Hono();
-  const containerRegistry = new Map<string, ContainerRegistration>();
-  const lockStore = new LockStore(lockTimeout);
-  const callStore = new CallStore();
+
+  // Create stores backed by the persistent StateStore (if provided).
+  const containerRegistry = new ContainerRegistry(stateStore);
+  const lockStore = new LockStore(lockTimeout, undefined, stateStore);
+  const callStore = new CallStore(undefined, stateStore);
   let callDispatcher: CallDispatcher | undefined;
+
+  // Hydrate in-memory caches from the persistent store.
+  await containerRegistry.init();
+  await lockStore.init();
+  await callStore.init();
 
   // Add telemetry middleware for HTTP requests
   const telemetry = getTelemetry();
   if (telemetry) {
     app.use("*", async (c, next) => {
       const spanName = `gateway.${c.req.method.toLowerCase()}_${c.req.path.replace(/\/+/g, "_").replace(/^_|_$/g, "") || "root"}`;
-      
+
       await withSpan(
         spanName,
         async (span) => {
@@ -135,11 +146,11 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
 
   logger.info({ port }, "Gateway server listening");
 
-  const registerContainer = (secret: string, reg: ContainerRegistration) => {
-    containerRegistry.set(secret, reg);
+  const registerContainer = async (secret: string, reg: ContainerRegistration) => {
+    await containerRegistry.register(secret, reg);
   };
 
-  const unregisterContainer = (secret: string) => {
+  const unregisterContainer = async (secret: string) => {
     const reg = containerRegistry.get(secret);
     if (reg) {
       const released = lockStore.releaseAll(reg.instanceId);
@@ -151,7 +162,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
         logger.info({ agent: reg.agentName, instance: reg.instanceId, failedCalls }, "failed pending calls on container cleanup");
       }
     }
-    containerRegistry.delete(secret);
+    await containerRegistry.unregister(secret);
   };
 
   const setCallDispatcher = (dispatcher: CallDispatcher) => {
@@ -165,5 +176,5 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
       server.close(() => resolve());
     });
 
-  return { server, registerContainer, unregisterContainer, lockStore, callStore, setCallDispatcher, close };
+  return { server, containerRegistry, registerContainer, unregisterContainer, lockStore, callStore, setCallDispatcher, close };
 }

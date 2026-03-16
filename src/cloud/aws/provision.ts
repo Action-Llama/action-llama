@@ -40,6 +40,12 @@ import {
   CloudWatchLogsClient,
   CreateLogGroupCommand,
 } from "@aws-sdk/client-cloudwatch-logs";
+import {
+  DynamoDBClient,
+  CreateTableCommand,
+  DescribeTableCommand,
+  UpdateTimeToLiveCommand,
+} from "@aws-sdk/client-dynamodb";
 
 import type { EcsCloudConfig } from "../../shared/config.js";
 import { AWS_CONSTANTS } from "./constants.js";
@@ -143,6 +149,9 @@ export async function setupEcsCloud(cloud: EcsCloudConfig): Promise<boolean> {
       console.log(`  Warning: could not create log group: ${err.message}`);
     }
   }
+
+  // Create DynamoDB state table for scheduler persistence
+  await ensureStateTable(region);
 
   // Create CodeBuild service role for remote image builds
   await ensureCodeBuildRole(iamClient, accountId, region, cloud.ecrRepository!);
@@ -720,6 +729,7 @@ async function ensureAppRunnerInstanceRole(
           { Sid: "S3", Effect: "Allow", Action: ["s3:CreateBucket", "s3:PutObject", "s3:GetObject", "s3:ListBucket"], Resource: [`arn:aws:s3:::${bucketName}`, `arn:aws:s3:::${bucketName}/*`] },
           { Sid: "AppRunner", Effect: "Allow", Action: ["apprunner:CreateService", "apprunner:UpdateService", "apprunner:DescribeService", "apprunner:DeleteService"], Resource: `arn:aws:apprunner:${region}:${accountId}:service/al-scheduler/*` },
           { Sid: "AppRunnerList", Effect: "Allow", Action: "apprunner:ListServices", Resource: "*" },
+          { Sid: "DynamoDB", Effect: "Allow", Action: ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem", "dynamodb:Query", "dynamodb:CreateTable", "dynamodb:DescribeTable", "dynamodb:UpdateTimeToLive"], Resource: `arn:aws:dynamodb:${region}:${accountId}:table/${AWS_CONSTANTS.STATE_TABLE}` },
         ],
       }),
     }));
@@ -730,6 +740,55 @@ async function ensureAppRunnerInstanceRole(
 
   const data = await iamClient.send(new GetRoleCommand({ RoleName: roleName }));
   return data.Role!.Arn!;
+}
+
+async function ensureStateTable(region: string): Promise<void> {
+  const tableName = AWS_CONSTANTS.STATE_TABLE;
+  console.log(`\nEnsuring DynamoDB state table (${tableName})...`);
+  const client = new DynamoDBClient({ region });
+
+  try {
+    await client.send(new DescribeTableCommand({ TableName: tableName }));
+    console.log(`  Table already exists`);
+    return;
+  } catch (err: any) {
+    if (err.name !== "ResourceNotFoundException") {
+      console.log(`  Warning: could not check state table: ${err.message}`);
+      return;
+    }
+  }
+
+  try {
+    await client.send(new CreateTableCommand({
+      TableName: tableName,
+      KeySchema: [
+        { AttributeName: "pk", KeyType: "HASH" },
+        { AttributeName: "sk", KeyType: "RANGE" },
+      ],
+      AttributeDefinitions: [
+        { AttributeName: "pk", AttributeType: "S" },
+        { AttributeName: "sk", AttributeType: "S" },
+      ],
+      BillingMode: "PAY_PER_REQUEST",
+    }));
+    console.log(`  Created table: ${tableName}`);
+
+    // Wait for ACTIVE status
+    for (let i = 0; i < 30; i++) {
+      const desc = await client.send(new DescribeTableCommand({ TableName: tableName }));
+      if (desc.Table?.TableStatus === "ACTIVE") break;
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+
+    // Enable TTL
+    await client.send(new UpdateTimeToLiveCommand({
+      TableName: tableName,
+      TimeToLiveSpecification: { Enabled: true, AttributeName: "expiresAt" },
+    }));
+    console.log(`  Enabled TTL on expiresAt`);
+  } catch (err: any) {
+    console.log(`  Warning: could not create state table: ${err.message}`);
+  }
 }
 
 async function pickSecurityGroups(ec2Client: EC2Client, vpcId: string): Promise<string[]> {

@@ -1,3 +1,5 @@
+import type { StateStore } from "../shared/state-store.js";
+
 export interface QueuedEvent {
   agentType: string;
   text: string;
@@ -32,12 +34,28 @@ export interface EnqueueResult<T> {
   dropped?: QueuedWorkItem<T>;
 }
 
+const NS = "queues";
+
 export class WorkQueue<T> {
   private queues = new Map<string, QueuedWorkItem<T>[]>();
   private maxSize: number;
+  private store?: StateStore;
 
-  constructor(maxSize = 100) {
+  constructor(maxSize = 100, store?: StateStore) {
     this.maxSize = maxSize;
+    this.store = store;
+  }
+
+  /** Hydrate in-memory state from the persistent store. */
+  async init(): Promise<void> {
+    if (!this.store) return;
+    const entries = await this.store.list<Array<{ context: T; receivedAt: string }>>(NS);
+    for (const { key, value } of entries) {
+      this.queues.set(
+        key,
+        value.map((item) => ({ context: item.context, receivedAt: new Date(item.receivedAt) }))
+      );
+    }
   }
 
   enqueue(agentName: string, context: T, receivedAt?: Date): EnqueueResult<T> {
@@ -51,13 +69,16 @@ export class WorkQueue<T> {
       dropped = queue.shift();
     }
     queue.push({ context, receivedAt: receivedAt || new Date() });
+    this.persist(agentName);
     return { accepted: true, dropped };
   }
 
   dequeue(agentName: string): QueuedWorkItem<T> | undefined {
     const queue = this.queues.get(agentName);
     if (!queue || queue.length === 0) return undefined;
-    return queue.shift();
+    const item = queue.shift();
+    this.persist(agentName);
+    return item;
   }
 
   size(agentName: string): number {
@@ -66,10 +87,21 @@ export class WorkQueue<T> {
 
   clear(agentName: string): void {
     this.queues.delete(agentName);
+    this.store?.delete(NS, agentName).catch(() => {});
   }
 
   clearAll(): void {
     this.queues.clear();
+    this.store?.deleteAll(NS).catch(() => {});
+  }
+
+  private persist(agentName: string): void {
+    const queue = this.queues.get(agentName);
+    if (!queue || queue.length === 0) {
+      this.store?.delete(NS, agentName).catch(() => {});
+    } else {
+      this.store?.set(NS, agentName, queue, { ttl: 86400 }).catch(() => {}); // 24h TTL
+    }
   }
 }
 

@@ -51,10 +51,10 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@aws-sdk/client-xray": "^3.1003.0",
     "@aws-sdk/client-apprunner": "^3.1006.0",
     "@aws-sdk/client-cloudwatch-logs": "^3.1003.0",
     "@aws-sdk/client-codebuild": "^3.1004.0",
+    "@aws-sdk/client-dynamodb": "^3.1009.0",
     "@aws-sdk/client-ec2": "^3.1003.0",
     "@aws-sdk/client-ecr": "^3.1003.0",
     "@aws-sdk/client-ecs": "^3.1003.0",
@@ -63,6 +63,8 @@
     "@aws-sdk/client-s3": "^3.1004.0",
     "@aws-sdk/client-secrets-manager": "^3.1003.0",
     "@aws-sdk/client-sts": "^3.1003.0",
+    "@aws-sdk/client-xray": "^3.1003.0",
+    "@aws-sdk/lib-dynamodb": "^3.1009.0",
     "@hono/node-server": "^1.19.11",
     "@inquirer/prompts": "^7",
     "@mariozechner/pi-ai": "^0.56.1",
@@ -74,6 +76,7 @@
     "@opentelemetry/instrumentation-http": "^0.54.0",
     "@opentelemetry/propagator-aws-xray": "^1.25.1",
     "@opentelemetry/sdk-node": "^0.55.0",
+    "better-sqlite3": "^12.8.0",
     "commander": "^14.0.3",
     "croner": "latest",
     "hono": "^4.12.5",
@@ -86,6 +89,7 @@
   "devDependencies": {
     "@changesets/changelog-github": "^0.6.0",
     "@changesets/cli": "^2.30.0",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/react": "^19.2.14",
     "@vitest/coverage-v8": "^4.0.18",
     "ink-testing-library": "^4.0.0",

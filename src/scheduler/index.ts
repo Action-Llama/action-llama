@@ -20,6 +20,7 @@ import { resolveWebhookSource, buildFilterFromTrigger, setupWebhookRegistry } fr
 import { initTelemetry, withSpan } from "../telemetry/index.js";
 import { SpanKind } from "@opentelemetry/api";
 import { ensureGatewayApiKey } from "../gateway/api-key.js";
+import type { StateStore } from "../shared/state-store.js";
 
 const DEFAULT_MAX_RERUNS = 10;
 const DEFAULT_MAX_TRIGGER_DEPTH = 3;
@@ -320,6 +321,28 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   const runnerPools: Record<string, RunnerPool> = {};
   let cronJobs: Cron[] = [];
 
+  // Create persistent state store (SQLite locally, DynamoDB in cloud).
+  let stateStore: StateStore | undefined;
+  if (gatewayEnabled) {
+    const { createStateStore } = await import("../shared/state-store.js");
+    const useCloudStore = cloudMode && globalConfig.cloud;
+    if (useCloudStore && globalConfig.cloud?.provider === "ecs") {
+      stateStore = await createStateStore({
+        type: "dynamodb",
+        region: globalConfig.cloud.awsRegion!,
+        tableName: "al-state",
+      });
+      logger.info("State store: DynamoDB (al-state)");
+    } else {
+      const { resolve: resolvePath } = await import("path");
+      stateStore = await createStateStore({
+        type: "sqlite",
+        path: resolvePath(projectPath, ".al", "state.db"),
+      });
+      logger.info("State store: SQLite (.al/state.db)");
+    }
+  }
+
   // Start gateway early if needed (before Docker builds) so users can see build status
   let gateway: GatewayServer | undefined;
 
@@ -344,6 +367,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       webUI: cloudMode ? false : webUI,
       lockTimeout: globalConfig.gateway?.lockTimeout,
       apiKey: gatewayApiKey,
+      stateStore,
       // Control routes, dashboard, and lock status are local-only.
       // In cloud mode, use cloud-native tools (console, CLI) for these operations.
       controlDeps: cloudMode ? undefined : {
@@ -436,13 +460,14 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     logger.warn("Cloud mode is active but gateway URL is not set (via GATEWAY_URL env or gateway.url config) — resource locking and shutdown will not work for cloud containers");
   }
 
-  // Gateway callbacks — no-ops if gateway isn't running (remote runtimes)
+  // Gateway callbacks — no-ops if gateway isn't running (remote runtimes).
+  // Both are async (ContainerRegistry persists to StateStore).
   const registerContainer = gateway
     ? gateway.registerContainer
-    : (_secret: string, _reg: any) => {};
+    : async (_secret: string, _reg: any) => {};
   const unregisterContainer = gateway
     ? gateway.unregisterContainer
-    : (_secret: string) => {};
+    : async (_secret: string) => {};
 
   for (const agentConfig of agentConfigs) {
     const scale = agentConfig.scale ?? 1;
@@ -473,7 +498,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   }
 
   const webhookQueueSize = globalConfig.workQueueSize ?? globalConfig.webhookQueueSize ?? 20;
-  const webhookQueue = new WorkQueue<WebhookContext>(webhookQueueSize);
+  const webhookQueue = new WorkQueue<WebhookContext>(webhookQueueSize, stateStore);
+  await webhookQueue.init();
   const skills: PromptSkills = { locking: true };
   const schedulerCtx: SchedulerContext = { runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, webhookQueue, shuttingDown: false, skills, useBakedImages: true };
 
@@ -672,7 +698,10 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       await gateway.close();
       logger.info("Gateway server stopped");
     }
-    
+    if (stateStore) {
+      await stateStore.close();
+    }
+
     // Shutdown telemetry
     if (telemetry) {
       try {

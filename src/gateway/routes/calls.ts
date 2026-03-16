@@ -1,5 +1,5 @@
 import type { Hono } from "hono";
-import type { ContainerRegistration } from "../types.js";
+import type { ContainerRegistry } from "../container-registry.js";
 import type { CallStore } from "../call-store.js";
 import type { Logger } from "../../shared/logger.js";
 
@@ -7,7 +7,7 @@ export type CallDispatcher = (entry: { callId: string; callerAgent: string; call
 
 export function registerCallRoutes(
   app: Hono,
-  containerRegistry: Map<string, ContainerRegistration>,
+  containerRegistry: ContainerRegistry,
   callStore: CallStore,
   getDispatcher: () => CallDispatcher | undefined,
   logger: Logger

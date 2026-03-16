@@ -1,12 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
 import { Hono } from "hono";
 import { registerShutdownRoute } from "../../../src/gateway/routes/shutdown.js";
-import type { ContainerRegistration } from "../../../src/gateway/types.js";
+import { ContainerRegistry } from "../../../src/gateway/container-registry.js";
 
 const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 
 function createTestApp(
-  registry: Map<string, ContainerRegistration>,
+  registry: ContainerRegistry,
   killFn: (name: string) => Promise<void>
 ): Hono {
   const app = new Hono();
@@ -17,8 +17,8 @@ function createTestApp(
 describe("POST /shutdown", () => {
   it("kills container and returns success for valid secret", async () => {
     const killFn = vi.fn().mockResolvedValue(undefined);
-    const registry = new Map<string, ContainerRegistration>();
-    registry.set("test-secret", { containerName: "al-dev-1234", agentName: "dev" });
+    const registry = new ContainerRegistry();
+    await registry.register("test-secret", { containerName: "al-dev-1234", agentName: "dev" });
 
     const app = createTestApp(registry, killFn);
     const res = await app.request("/shutdown", {
@@ -32,12 +32,12 @@ describe("POST /shutdown", () => {
     expect(body.container).toBe("al-dev-1234");
     expect(killFn).toHaveBeenCalledWith("al-dev-1234");
     // Secret should be removed from registry
-    expect(registry.has("test-secret")).toBe(false);
+    expect(registry.get("test-secret")).toBeUndefined();
   });
 
   it("returns 403 for invalid secret", async () => {
     const killFn = vi.fn();
-    const registry = new Map<string, ContainerRegistration>();
+    const registry = new ContainerRegistry();
 
     const app = createTestApp(registry, killFn);
     const res = await app.request("/shutdown", {
@@ -51,7 +51,7 @@ describe("POST /shutdown", () => {
 
   it("returns 400 for missing secret", async () => {
     const killFn = vi.fn();
-    const registry = new Map<string, ContainerRegistration>();
+    const registry = new ContainerRegistry();
 
     const app = createTestApp(registry, killFn);
     const res = await app.request("/shutdown", {

@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import type { StateStore } from "../shared/state-store.js";
 
 export type CallStatus = "pending" | "running" | "completed" | "error";
 
@@ -16,13 +17,26 @@ export interface CallEntry {
   depth: number;
 }
 
+const NS = "calls";
+
 export class CallStore {
   private calls = new Map<string, CallEntry>();
   private sweepTimer: ReturnType<typeof setInterval> | undefined;
+  private store?: StateStore;
 
-  constructor(sweepIntervalSeconds = 60) {
+  constructor(sweepIntervalSeconds = 60, store?: StateStore) {
+    this.store = store;
     this.sweepTimer = setInterval(() => this.sweep(), sweepIntervalSeconds * 1000);
     if (this.sweepTimer.unref) this.sweepTimer.unref();
+  }
+
+  /** Hydrate in-memory state from the persistent store. */
+  async init(): Promise<void> {
+    if (!this.store) return;
+    const entries = await this.store.list<CallEntry>(NS);
+    for (const { value } of entries) {
+      this.calls.set(value.callId, value);
+    }
   }
 
   create(opts: {
@@ -43,6 +57,7 @@ export class CallStore {
       depth: opts.depth,
     };
     this.calls.set(entry.callId, entry);
+    this.persist(entry);
     return entry;
   }
 
@@ -50,6 +65,7 @@ export class CallStore {
     const entry = this.calls.get(callId);
     if (!entry || entry.status !== "pending") return false;
     entry.status = "running";
+    this.persist(entry);
     return true;
   }
 
@@ -59,6 +75,7 @@ export class CallStore {
     entry.status = "completed";
     entry.returnValue = returnValue;
     entry.completedAt = Date.now();
+    this.persist(entry);
     return true;
   }
 
@@ -68,6 +85,7 @@ export class CallStore {
     entry.status = "error";
     entry.errorMessage = errorMessage;
     entry.completedAt = Date.now();
+    this.persist(entry);
     return true;
   }
 
@@ -93,6 +111,7 @@ export class CallStore {
         entry.status = "error";
         entry.errorMessage = "caller container exited";
         entry.completedAt = Date.now();
+        this.persist(entry);
         count++;
       }
     }
@@ -107,13 +126,21 @@ export class CallStore {
       if (entry.status === "completed" || entry.status === "error") {
         if (entry.completedAt && now - entry.completedAt > TERMINAL_TTL) {
           this.calls.delete(id);
+          this.store?.delete(NS, id).catch(() => {});
         }
       } else if (now - entry.createdAt > ACTIVE_TTL) {
         entry.status = "error";
         entry.errorMessage = "call timed out";
         entry.completedAt = now;
+        this.persist(entry);
       }
     }
+  }
+
+  private persist(entry: CallEntry): void {
+    // TTL: 2 hours for active, 10 minutes after completion
+    const ttlSec = entry.completedAt ? 600 : 7200;
+    this.store?.set(NS, entry.callId, entry, { ttl: ttlSec }).catch(() => {});
   }
 
   dispose(): void {

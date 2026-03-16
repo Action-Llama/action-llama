@@ -1,10 +1,10 @@
 import type { Hono } from "hono";
-import type { ContainerRegistration } from "../types.js";
+import type { ContainerRegistry } from "../container-registry.js";
 import type { Logger } from "../../shared/logger.js";
 
 export function registerShutdownRoute(
   app: Hono,
-  containerRegistry: Map<string, ContainerRegistration>,
+  containerRegistry: ContainerRegistry,
   killContainer: (name: string) => Promise<void>,
   logger: Logger
 ): void {
@@ -33,7 +33,7 @@ export function registerShutdownRoute(
 
     await killContainer(reg.containerName);
 
-    containerRegistry.delete(secret);
+    await containerRegistry.unregister(secret);
     return c.json({ killed: true, container: reg.containerName });
   });
 }

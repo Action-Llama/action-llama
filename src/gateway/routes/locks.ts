@@ -1,11 +1,11 @@
 import type { Hono } from "hono";
-import type { ContainerRegistration } from "../types.js";
+import type { ContainerRegistry } from "../container-registry.js";
 import type { LockStore } from "../lock-store.js";
 import type { Logger } from "../../shared/logger.js";
 
 export function registerLockRoutes(
   app: Hono,
-  containerRegistry: Map<string, ContainerRegistration>,
+  containerRegistry: ContainerRegistry,
   lockStore: LockStore,
   logger: Logger,
   opts?: { skipStatusEndpoint?: boolean }

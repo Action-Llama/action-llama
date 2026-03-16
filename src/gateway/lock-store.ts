@@ -1,3 +1,5 @@
+import type { StateStore } from "../shared/state-store.js";
+
 export interface LockEntry {
   resourceKey: string;
   holder: string;
@@ -23,16 +25,34 @@ export interface HeartbeatResult {
   expiresAt?: number;
 }
 
+const NS_LOCKS = "locks";
+const NS_HOLDERS = "lock-holders";
+
 export class LockStore {
   private locks = new Map<string, LockEntry>();
   private holderLocks = new Map<string, string>(); // holder -> resourceKey
   private sweepTimer: ReturnType<typeof setInterval> | undefined;
   private defaultTTL: number;
+  private store?: StateStore;
 
-  constructor(defaultTTLSeconds = 1800, sweepIntervalSeconds = 30) {
+  constructor(defaultTTLSeconds = 1800, sweepIntervalSeconds = 30, store?: StateStore) {
     this.defaultTTL = defaultTTLSeconds * 1000;
+    this.store = store;
     this.sweepTimer = setInterval(() => this.sweep(), sweepIntervalSeconds * 1000);
     if (this.sweepTimer.unref) this.sweepTimer.unref();
+  }
+
+  /** Hydrate in-memory state from the persistent store. */
+  async init(): Promise<void> {
+    if (!this.store) return;
+    const entries = await this.store.list<LockEntry>(NS_LOCKS);
+    const now = Date.now();
+    for (const { value } of entries) {
+      if (now < value.expiresAt) {
+        this.locks.set(value.resourceKey, value);
+        this.holderLocks.set(value.holder, value.resourceKey);
+      }
+    }
   }
 
   acquire(resourceKey: string, holder: string, ttlSeconds?: number): AcquireResult {
@@ -51,6 +71,7 @@ export class LockStore {
       // Expired — clean up
       this.locks.delete(existingHolderKey);
       this.holderLocks.delete(holder);
+      this.persistDelete(existingHolderKey, holder);
     }
 
     if (existing) {
@@ -58,6 +79,7 @@ export class LockStore {
         // Expired — evict
         this.holderLocks.delete(existing.holder);
         this.locks.delete(resourceKey);
+        this.persistDelete(resourceKey, existing.holder);
       } else if (existing.holder !== holder) {
         return { ok: false, holder: existing.holder, heldSince: existing.heldSince };
       }
@@ -66,13 +88,10 @@ export class LockStore {
 
     const now = Date.now();
     const ttl = ttlSeconds ? ttlSeconds * 1000 : this.defaultTTL;
-    this.locks.set(resourceKey, {
-      resourceKey,
-      holder,
-      heldSince: now,
-      expiresAt: now + ttl,
-    });
+    const entry: LockEntry = { resourceKey, holder, heldSince: now, expiresAt: now + ttl };
+    this.locks.set(resourceKey, entry);
     this.holderLocks.set(holder, resourceKey);
+    this.persistSet(entry);
     return { ok: true };
   }
 
@@ -82,6 +101,7 @@ export class LockStore {
     if (!existing || Date.now() >= existing.expiresAt) {
       this.locks.delete(resourceKey);
       if (this.holderLocks.get(holder) === resourceKey) this.holderLocks.delete(holder);
+      this.persistDelete(resourceKey, holder);
       return { ok: false, reason: "lock not found" };
     }
 
@@ -91,6 +111,7 @@ export class LockStore {
 
     this.locks.delete(resourceKey);
     this.holderLocks.delete(holder);
+    this.persistDelete(resourceKey, holder);
     return { ok: true };
   }
 
@@ -108,6 +129,7 @@ export class LockStore {
 
     const ttl = ttlSeconds ? ttlSeconds * 1000 : this.defaultTTL;
     existing.expiresAt = Date.now() + ttl;
+    this.persistSet(existing);
     return { ok: true, expiresAt: existing.expiresAt };
   }
 
@@ -116,6 +138,7 @@ export class LockStore {
     for (const [rk, entry] of this.locks) {
       if (entry.holder === holder) {
         this.locks.delete(rk);
+        this.persistDelete(rk, holder);
         count++;
       }
     }
@@ -140,8 +163,20 @@ export class LockStore {
       if (now >= entry.expiresAt) {
         this.holderLocks.delete(entry.holder);
         this.locks.delete(rk);
+        this.persistDelete(rk, entry.holder);
       }
     }
+  }
+
+  private persistSet(entry: LockEntry): void {
+    const ttlSec = Math.max(1, Math.ceil((entry.expiresAt - Date.now()) / 1000));
+    this.store?.set(NS_LOCKS, entry.resourceKey, entry, { ttl: ttlSec }).catch(() => {});
+    this.store?.set(NS_HOLDERS, entry.holder, entry.resourceKey, { ttl: ttlSec }).catch(() => {});
+  }
+
+  private persistDelete(resourceKey: string, holder: string): void {
+    this.store?.delete(NS_LOCKS, resourceKey).catch(() => {});
+    this.store?.delete(NS_HOLDERS, holder).catch(() => {});
   }
 
   dispose(): void {

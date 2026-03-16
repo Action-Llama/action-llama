@@ -4,7 +4,7 @@ Run agents as ECS Fargate tasks on AWS instead of local Docker containers. Agent
 
 ## Prerequisites
 
-- AWS account with ECS, ECR, Secrets Manager, and CloudWatch Logs access
+- AWS account with ECS, ECR, Secrets Manager, DynamoDB, and CloudWatch Logs access
 - AWS CLI configured (`aws configure`) or `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` env vars
 - Docker is **not** required — images are built remotely via AWS CodeBuild and pushed directly to ECR
 - The IAM user running `al setup cloud` needs `iam:CreateServiceLinkedRole` permission (or the service-linked roles for ECS and App Runner must already exist — see [Service-linked roles](#service-linked-roles))
@@ -401,6 +401,12 @@ Each role only has `secretsmanager:GetSecretValue` on its declared secrets. Even
 
 The per-agent role ARN is derived automatically from the ECR repository's account ID: `arn:aws:iam::{accountId}:role/al-{agentName}-task-role`.
 
+### State persistence
+
+The scheduler persists its runtime state (container registry, resource locks, work queues, inter-agent call state) to a DynamoDB table (`al-state`). This allows the scheduler to survive restarts (e.g., App Runner redeployments) without losing track of running containers. `al cloud setup` creates this table automatically with on-demand billing and native TTL.
+
+Locally, the same state is stored in a SQLite database at `.al/state.db` in your project directory.
+
 ### Gateway
 
 The gateway is **not required** for ECS mode. Containers get their credentials via native Secrets Manager injection (not the gateway's HTTP endpoint), and ECS handles task timeouts natively. The gateway still starts if you have webhooks configured, since webhooks are received by the scheduler process.
@@ -606,6 +612,20 @@ This is the minimum policy for the IAM user or role running `al` commands. Repla
       "Resource": "*"
     },
     {
+      "Sid": "DynamoDB",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:Query",
+        "dynamodb:CreateTable",
+        "dynamodb:DescribeTable",
+        "dynamodb:UpdateTimeToLive"
+      ],
+      "Resource": "arn:aws:dynamodb:<REGION>:<ACCOUNT_ID>:table/al-state"
+    },
+    {
       "Sid": "ServiceLinkedRoles",
       "Effect": "Allow",
       "Action": "iam:CreateServiceLinkedRole",
@@ -704,7 +724,7 @@ aws iam create-role \
   }'
 ```
 
-Attach the same policy statements from the [operator IAM policy](#operator-iam-policy) to this role (ECS, Lambda, Secrets Manager, ECR, CodeBuild, S3, CloudWatch Logs, PassRole, IAM agent roles). Set `cloud.appRunnerInstanceRoleArn` to this role's ARN.
+Attach the same policy statements from the [operator IAM policy](#operator-iam-policy) to this role (ECS, Lambda, Secrets Manager, ECR, CodeBuild, S3, DynamoDB, CloudWatch Logs, PassRole, IAM agent roles). Set `cloud.appRunnerInstanceRoleArn` to this role's ARN.
 
 #### Managing the cloud scheduler
 

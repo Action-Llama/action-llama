@@ -18,8 +18,8 @@ export class ContainerAgentRunner {
   private globalConfig: GlobalConfig;
   private agentConfig: AgentConfig;
   private logger: Logger;
-  private registerContainer: (secret: string, reg: ContainerRegistration) => void;
-  private unregisterContainer: (secret: string) => void;
+  private registerContainer: (secret: string, reg: ContainerRegistration) => Promise<void>;
+  private unregisterContainer: (secret: string) => Promise<void>;
   private gatewayUrl: string;
   public readonly instanceId: string;
   private projectPath: string;
@@ -31,8 +31,8 @@ export class ContainerAgentRunner {
     globalConfig: GlobalConfig,
     agentConfig: AgentConfig,
     logger: Logger,
-    registerContainer: (secret: string, reg: ContainerRegistration) => void,
-    unregisterContainer: (secret: string) => void,
+    registerContainer: (secret: string, reg: ContainerRegistration) => Promise<void>,
+    unregisterContainer: (secret: string) => Promise<void>,
     gatewayUrl: string,
     projectPath: string,
     image: string,
@@ -254,7 +254,7 @@ export class ContainerAgentRunner {
 
       // Register container with gateway for shutdown, locking, and log ingestion.
       if (this.gatewayUrl) {
-        this.registerContainer(shutdownSecret, {
+        await this.registerContainer(shutdownSecret, {
           containerName,
           agentName: this.agentConfig.name,
           instanceId: this.instanceId,
@@ -303,7 +303,7 @@ export class ContainerAgentRunner {
     } finally {
       if (logStream) logStream.stop();
       if (this.gatewayUrl) {
-        this.unregisterContainer(shutdownSecret);
+        await this.unregisterContainer(shutdownSecret);
       }
       if (credentials) {
         this.runtime.cleanupCredentials(credentials);

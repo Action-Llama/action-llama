@@ -1,5 +1,6 @@
 import type { Hono } from "hono";
-import type { ContainerRegistration, RerunRequest, StatusRequest, TriggerRequest, ReturnRequest } from "../types.js";
+import type { RerunRequest, StatusRequest, TriggerRequest, ReturnRequest } from "../types.js";
+import type { ContainerRegistry } from "../container-registry.js";
 import type { Logger } from "../../shared/logger.js";
 import type { StatusTracker } from "../../tui/status-tracker.js";
 
@@ -11,7 +12,7 @@ export interface SignalContext {
 
 export function registerSignalRoutes(
   app: Hono,
-  containerRegistry: Map<string, ContainerRegistration>,
+  containerRegistry: ContainerRegistry,
   logger: Logger,
   statusTracker?: StatusTracker,
   signalContext?: SignalContext
