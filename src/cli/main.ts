@@ -84,6 +84,15 @@ program
   }));
 
 program
+  .command("stop")
+  .description("Stop the scheduler and clear pending webhook queues")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(withCommand(async (opts) => {
+    const { execute } = await import("./commands/stop.js");
+    await execute(opts);
+  }));
+
+program
   .command("doctor")
   .description("Check agents, credentials, webhooks, and config — prompt to fix")
   .option("-p, --project <dir>", "project directory", ".")

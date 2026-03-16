@@ -120,4 +120,29 @@ describe("WebhookEventQueue", () => {
     expect(queue.size("agent-a")).toBe(0);
     expect(queue.size("agent-b")).toBe(0);
   });
+
+  it("clearInMemory clears in-memory state without touching the store", () => {
+    const mockStore = {
+      get: vi.fn(),
+      set: vi.fn().mockResolvedValue(undefined),
+      delete: vi.fn().mockResolvedValue(undefined),
+      deleteAll: vi.fn().mockResolvedValue(undefined),
+      list: vi.fn().mockResolvedValue([]),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const queue = new WebhookEventQueue<string>(100, mockStore as any);
+    queue.enqueue("agent-a", "a-event");
+    queue.enqueue("agent-b", "b-event");
+
+    // Reset mock counts after enqueue calls (which trigger persist -> set)
+    mockStore.delete.mockClear();
+    mockStore.deleteAll.mockClear();
+
+    queue.clearInMemory();
+
+    expect(queue.size("agent-a")).toBe(0);
+    expect(queue.size("agent-b")).toBe(0);
+    expect(mockStore.delete).not.toHaveBeenCalled();
+    expect(mockStore.deleteAll).not.toHaveBeenCalled();
+  });
 });

@@ -10,6 +10,7 @@ export interface ControlRoutesDeps {
   triggerAgent?: (name: string) => Promise<boolean>;
   enableAgent?: (name: string) => Promise<boolean>;
   disableAgent?: (name: string) => Promise<boolean>;
+  stopScheduler?: () => Promise<void>;
 }
 
 export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps) {
@@ -62,6 +63,16 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps) {
       const message = error instanceof Error ? error.message : String(error);
       return c.json({ error: `Failed to resume scheduler: ${message}` }, 500);
     }
+  });
+
+  // POST /control/stop - Stop the scheduler and clear queues
+  app.post("/control/stop", async (c) => {
+    if (!deps.stopScheduler) {
+      return c.json({ error: "Stop not available" }, 503);
+    }
+    // Respond before shutting down so the client gets a response
+    setTimeout(() => { deps.stopScheduler!().catch(() => {}); }, 100);
+    return c.json({ success: true, message: "Scheduler stopping" });
   });
 
   // POST /control/trigger/:name - Trigger an agent run

@@ -502,6 +502,19 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
           statusTracker.disableAgent(name);
           return true;
         },
+        stopScheduler: async () => {
+          logger.info("Stop requested via control API");
+          schedulerCtx.shuttingDown = true;
+          webhookQueue.clearAll();
+          agentTriggerQueue.clearInMemory();
+          for (const job of cronJobs) job.stop();
+          if (gateway) await gateway.close();
+          if (stateStore) await stateStore.close();
+          if (telemetry) {
+            try { await telemetry.shutdown(); } catch {}
+          }
+          process.exit(0);
+        },
       },
     });
     logger.info({ port: gatewayPort }, "Gateway started early to show build progress");
@@ -790,8 +803,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   const shutdown = async () => {
     logger.info("Shutting down scheduler...");
     schedulerCtx.shuttingDown = true;
-    webhookQueue.clearAll();
-    agentTriggerQueue.clearAll();
+    webhookQueue.clearInMemory();
+    agentTriggerQueue.clearInMemory();
     for (const job of cronJobs) {
       job.stop();
     }

@@ -143,6 +143,26 @@ describe("GET /control/status", () => {
   });
 });
 
+describe("POST /control/stop", () => {
+  it("returns 200 when stopScheduler is available", async () => {
+    const stopScheduler = vi.fn(async () => {});
+    const { app } = setup({ stopScheduler });
+    const res = await app.request("/control/stop", { method: "POST" });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.message).toContain("stopping");
+  });
+
+  it("returns 503 when stopScheduler is undefined", async () => {
+    const { app } = setup({ stopScheduler: undefined });
+    const res = await app.request("/control/stop", { method: "POST" });
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.error).toContain("Stop not available");
+  });
+});
+
 describe("POST /control/pause (scheduler)", () => {
   it("pauses the scheduler", async () => {
     const pauseScheduler = vi.fn(async () => {});
