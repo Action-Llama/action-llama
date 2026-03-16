@@ -25,6 +25,12 @@ import type { StateStore } from "../shared/state-store.js";
 const DEFAULT_MAX_RERUNS = 10;
 const DEFAULT_MAX_TRIGGER_DEPTH = 3;
 
+interface AgentTriggerContext {
+  sourceAgent: string;
+  context: string;
+  depth: number;
+}
+
 interface SchedulerContext {
   runnerPools: Record<string, RunnerPool>;
   agentConfigs: AgentConfig[];
@@ -32,6 +38,7 @@ interface SchedulerContext {
   maxTriggerDepth: number;
   logger: ReturnType<typeof createLogger>;
   webhookQueue: WorkQueue<WebhookContext>;
+  agentTriggerQueue: WorkQueue<AgentTriggerContext>;
   shuttingDown: boolean;
   skills?: PromptSkills;
   /** When true, images have baked-in static files; only pass dynamic suffix as prompt. */
@@ -79,7 +86,8 @@ function dispatchTriggers(
     }
     const availableRunner = pool.getAvailableRunner();
     if (!availableRunner) {
-      ctx.logger.warn({ source: sourceAgent, target: agent, running: pool.runningJobCount, scale: pool.size }, "all agent runners busy, skipping trigger");
+      ctx.agentTriggerQueue.enqueue(agent, { sourceAgent, context, depth });
+      ctx.logger.info({ source: sourceAgent, target: agent, running: pool.runningJobCount, scale: pool.size }, "all runners busy, agent trigger queued");
       continue;
     }
     ctx.logger.info({ source: sourceAgent, target: agent, depth, running: pool.runningJobCount, scale: pool.size }, "agent trigger firing");
@@ -124,6 +132,9 @@ async function runTriggered(
       if (result === "completed") {
         ctx.logger.info(`${agentConfig.name} triggered run completed`);
       }
+
+      // Drain any queued agent triggers that arrived while this runner was busy
+      await drainAgentTriggerQueue(ctx);
     },
     {},
     SpanKind.INTERNAL
@@ -187,6 +198,42 @@ async function drainWebhookQueue(
   }
 }
 
+async function drainAgentTriggerQueue(ctx: SchedulerContext): Promise<void> {
+  while (!ctx.shuttingDown) {
+    // Collect one batch: for each agent with queued triggers, pair triggers with available runners
+    const batch: Array<{ trigger: AgentTriggerContext; runner: PoolRunner; agentConfig: AgentConfig }> = [];
+
+    for (const agentConfig of ctx.agentConfigs) {
+      const pool = ctx.runnerPools[agentConfig.name];
+      if (!pool || ctx.agentTriggerQueue.size(agentConfig.name) === 0) continue;
+
+      const availableRunners = pool.getAllAvailableRunners();
+      for (const runner of availableRunners) {
+        const item = ctx.agentTriggerQueue.dequeue(agentConfig.name);
+        if (!item) break;
+        batch.push({ trigger: item.context, runner, agentConfig });
+      }
+    }
+
+    if (batch.length === 0) break;
+
+    await Promise.all(
+      batch
+        .filter(({ trigger }) => trigger.depth < ctx.maxTriggerDepth)
+        .map(({ trigger, runner, agentConfig }) => {
+          ctx.logger.info(
+            { source: trigger.sourceAgent, target: agentConfig.name, depth: trigger.depth },
+            "processing queued agent trigger"
+          );
+          const prompt = makeTriggeredPrompt(agentConfig, trigger.sourceAgent, trigger.context, ctx);
+          return runTriggered(runner, agentConfig, prompt, trigger.sourceAgent, trigger.depth, ctx).catch((err) => {
+            ctx.logger.error({ err, target: agentConfig.name }, "queued trigger run failed");
+          });
+        })
+    );
+  }
+}
+
 async function runWithReruns(
   runner: PoolRunner,
   agentConfig: AgentConfig,
@@ -231,6 +278,8 @@ async function runWithReruns(
 
       // Drain any webhook events that arrived during the rerun cycle
       await drainWebhookQueue(agentConfig, ctx);
+      // Drain any agent-to-agent triggers that arrived while this runner was busy
+      await drainAgentTriggerQueue(ctx);
     },
     {},
     SpanKind.INTERNAL
@@ -464,6 +513,24 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   );
   logger.info({ runtime: runtimeType }, "Container mode enabled — initializing infrastructure");
 
+  // Check for orphan containers from a previous scheduler run
+  try {
+    const orphans = await runtime.listRunningAgents();
+    if (orphans.length > 0) {
+      for (const orphan of orphans) {
+        logger.warn({ agent: orphan.agentName, task: orphan.taskId }, "found orphan container");
+      }
+      if (runtimeType === "local") {
+        for (const orphan of orphans) {
+          try { await runtime.kill(orphan.taskId); await runtime.remove(orphan.taskId); } catch {}
+        }
+        logger.info({ count: orphans.length }, "cleaned up local orphan containers");
+      }
+    }
+  } catch (err) {
+    logger.debug({ err }, "orphan detection skipped (runtime does not support listing)");
+  }
+
   // 2. Build base + per-agent images via shared image builder
   const buildSkills: PromptSkills = { locking: true };
   const buildResult = await buildAgentImages({
@@ -527,8 +594,9 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   const webhookQueueSize = globalConfig.workQueueSize ?? globalConfig.webhookQueueSize ?? 20;
   const webhookQueue = new WorkQueue<WebhookContext>(webhookQueueSize, stateStore);
   await webhookQueue.init();
+  const agentTriggerQueue = new WorkQueue<AgentTriggerContext>(webhookQueueSize);
   const skills: PromptSkills = { locking: true };
-  const schedulerCtx: SchedulerContext = { runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, webhookQueue, shuttingDown: false, skills, useBakedImages: true };
+  const schedulerCtx: SchedulerContext = { runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, webhookQueue, agentTriggerQueue, shuttingDown: false, skills, useBakedImages: true };
 
   // Set up webhook bindings (only when gateway is enabled)
   if (webhookRegistry && gatewayEnabled) {
@@ -723,6 +791,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     logger.info("Shutting down scheduler...");
     schedulerCtx.shuttingDown = true;
     webhookQueue.clearAll();
+    agentTriggerQueue.clearAll();
     for (const job of cronJobs) {
       job.stop();
     }

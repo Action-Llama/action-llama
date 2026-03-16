@@ -1,5 +1,3 @@
-import type { AgentInstance } from "./types.js";
-
 /**
  * RunnerPool manages multiple instances of the same agent for parallel execution.
  * It provides load balancing across available runners and handles queuing when all are busy.
@@ -7,7 +5,7 @@ import type { AgentInstance } from "./types.js";
 
 export interface PoolRunner {
   isRunning: boolean;
-  instanceId?: string;
+  instanceId: string;
   abort?(): void;
   run(prompt: string, triggerInfo?: { type: 'schedule' | 'webhook' | 'agent'; source?: string }): Promise<any>;
 }
@@ -15,7 +13,6 @@ export interface PoolRunner {
 export class RunnerPool {
   private runners: PoolRunner[] = [];
   private roundRobinIndex = 0;
-  private instances: Map<string, AgentInstance> = new Map();
 
   constructor(runners: PoolRunner[]) {
     this.runners = runners;
@@ -80,38 +77,12 @@ export class RunnerPool {
   }
 
   /**
-   * Register a running agent instance
-   */
-  registerInstance(instance: AgentInstance): void {
-    this.instances.set(instance.id, instance);
-  }
-
-  /**
-   * Unregister an agent instance
-   */
-  unregisterInstance(id: string): void {
-    this.instances.delete(id);
-  }
-
-  /**
-   * Get all running instances
-   */
-  getInstances(): AgentInstance[] {
-    return Array.from(this.instances.values());
-  }
-
-  /**
-   * Kill a specific instance by ID
+   * Kill a specific instance by its instanceId
    */
   killInstance(id: string): boolean {
-    const instance = this.instances.get(id);
-    if (!instance) return false;
-
-    if (instance.runner && typeof instance.runner.abort === 'function') {
-      instance.runner.abort();
-    }
-
-    instance.status = 'killed';
+    const runner = this.runners.find(r => r.instanceId === id && r.isRunning);
+    if (!runner) return false;
+    if (runner.abort) runner.abort();
     return true;
   }
 

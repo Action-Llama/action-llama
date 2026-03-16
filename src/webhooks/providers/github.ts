@@ -176,6 +176,9 @@ export class GitHubWebhookProvider implements WebhookProvider {
       return false;
     }
 
+    // Branch filter: reject events with a non-matching branch, but allow events
+    // without a branch (e.g., issues, comments) through. This is intentional —
+    // a user filtering branches: ["main"] still wants issue events.
     if (f.branches?.length && context.branch && !f.branches.includes(context.branch)) {
       return false;
     }

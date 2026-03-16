@@ -313,6 +313,13 @@ describe("GitHubWebhookProvider", () => {
       expect(provider.matchesFilter(prContext, { branches: ["develop"] })).toBe(false);
     });
 
+    it("allows events without a branch through the branches filter", () => {
+      // An issue event has no branch — it should pass even when branches filter is set.
+      // This is intentional: filtering branches: ["main"] should still allow issue events.
+      const issueContext = { ...baseContext, branch: undefined };
+      expect(provider.matchesFilter(issueContext, { branches: ["main"] })).toBe(true);
+    });
+
     it("matches with multiple filter criteria (AND logic)", () => {
       const filter: GitHubWebhookFilter = {
         events: ["issues"],

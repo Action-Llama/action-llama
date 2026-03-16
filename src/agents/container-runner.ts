@@ -141,16 +141,6 @@ export class ContainerAgentRunner {
       return { result: "error", triggers: [] };
     }
 
-    // Check if this agent already has a running container (e.g. orphan from a previous scheduler)
-    try {
-      if (await this.runtime.isAgentRunning(this.agentConfig.name)) {
-        this.logger.warn(`${this.agentConfig.name} is already running in the runtime, skipping`);
-        return { result: "error", triggers: [] };
-      }
-    } catch {
-      // Best-effort check — proceed if it fails
-    }
-
     this._running = true;
     
     return await withSpan(
