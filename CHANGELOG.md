@@ -1,5 +1,50 @@
 # @action-llama/action-llama
 
+## 0.11.2
+
+### Patch Changes
+
+- [`c4ac015`](https://github.com/Action-Llama/action-llama/commit/c4ac0150997f4718e9133cd322cb0103c948bf05) Thanks [@asselstine](https://github.com/asselstine)! - Updated ECS docs to use `al-*` wildcard for the ECR repository resource ARN in the
+  operator IAM policy, matching the convention used by `al cloud init`.
+
+- [#86](https://github.com/Action-Llama/action-llama/pull/86) [`149008e`](https://github.com/Action-Llama/action-llama/commit/149008e8a5d7bcb3585f6b30e72e3bd611d8311a) Thanks [@asselstine](https://github.com/asselstine)! - Fixed cloud scheduler logs command (`al logs -c`) not working due to incorrect App Runner log group naming convention. The function now dynamically discovers the correct CloudWatch log group pattern used by App Runner services and provides better error messaging when the service is not deployed or no logs are available yet.
+
+- [`30c4384`](https://github.com/Action-Llama/action-llama/commit/30c4384e16e283d1b5b8190063fe30c3a54645fb) Thanks [@asselstine](https://github.com/asselstine)! - Added missing ECR permissions to the operator IAM policy in ecs.md. The
+  `assembleImageDirect` path (used for thin agent images) requires
+  `GetDownloadUrlForLayer`, `PutImage`, `InitiateLayerUpload`,
+  `UploadLayerPart`, and `CompleteLayerUpload` on the deploy role.
+
+- [`29bd471`](https://github.com/Action-Llama/action-llama/commit/29bd4712bf61ba95881477c48132a689e3ce859d) Thanks [@asselstine](https://github.com/asselstine)! - Fixed /login returning 404 when the gateway has an API key configured but the web UI
+  is disabled. Login/logout routes are now registered whenever auth is active, not only
+  when the full dashboard is enabled.
+
+- [`3c97162`](https://github.com/Action-Llama/action-llama/commit/3c971623b9209c0ecd2d49e539caea3c95231d2e) Thanks [@asselstine](https://github.com/asselstine)! - Fixed critical scheduler scaling bugs where only one agent instance could run at a time
+  despite scale > 1. The `isAgentRunning` runtime check blocked concurrent instances by
+  finding the first instance's container and bailing; this check is removed from the hot
+  path and replaced with startup-time orphan detection. The `_running` flag is now set
+  synchronously to close a race window. Agent-to-agent triggers are now queued instead of
+  silently dropped when all runners are busy. The `killInstance` method on RunnerPool now
+  correctly finds runners by instanceId.
+
+- [`7c1fb06`](https://github.com/Action-Llama/action-llama/commit/7c1fb060410ed6486f5c905da70f86f56d00c806) Thanks [@asselstine](https://github.com/asselstine)! - Added persistent state store for scheduler runtime state (container registry, resource locks,
+  work queues, inter-agent calls). Uses SQLite locally and DynamoDB in cloud mode. This fixes
+  a bug where the cloud scheduler lost track of running containers after an App Runner restart,
+  causing "invalid secret" errors when agents tried to acquire resource locks. `al cloud setup`
+  now automatically provisions the DynamoDB table (`al-state`) and grants the required permissions.
+
+- [#94](https://github.com/Action-Llama/action-llama/pull/94) [`0696640`](https://github.com/Action-Llama/action-llama/commit/06966407db809c5df6f7a3e6f9f1e64f81f4db70) Thanks [@asselstine](https://github.com/asselstine)! - Added preflight steps system for declarative data staging before agent runs.
+  Define `[[preflight]]` steps in `agent-config.toml` to clone repos, fetch URLs,
+  or run shell commands — all inside the container after credentials load but
+  before the LLM session starts. Three built-in providers: `shell`, `http`, and
+  `git-clone`. Params support `${VAR}` env var interpolation. Steps marked
+  `required: false` log a warning and continue on failure. Closes [#85](https://github.com/Action-Llama/action-llama/issues/85).
+
+- [#92](https://github.com/Action-Llama/action-llama/pull/92) [`2efb712`](https://github.com/Action-Llama/action-llama/commit/2efb712b332968c1de1a5cc0ce37c59e235b7631) Thanks [@asselstine](https://github.com/asselstine)! - Unified `al stat` and `al stat -c` output to show the same structure: an agents
+  summary table with trigger types (cron, webhook, or manual) and instance counts,
+  plus a running instances table with per-instance trigger info. Added `al stat [agent]`
+  detail view showing full config (schedule, webhook sources/filters, scale, timeout)
+  and filtered instances. Closes [#83](https://github.com/Action-Llama/action-llama/issues/83).
+
 ## 0.11.1
 
 ### Patch Changes
