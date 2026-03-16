@@ -129,6 +129,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
   // Dashboard routes (login/logout are unprotected; dashboard pages are behind authMiddleware above)
   if (webUI && statusTracker) {
     registerDashboardRoutes(app, statusTracker, projectPath, opts.apiKey);
+    app.get("/", (c) => c.redirect("/dashboard"));
   }
 
   // Control routes (for kill, pause, resume commands)
