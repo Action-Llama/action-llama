@@ -67,6 +67,7 @@ export interface RunningAgent {
   taskId: string;
   status: string;
   startedAt?: Date;
+  trigger?: string;
 }
 
 export interface ContainerRuntime {

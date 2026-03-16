@@ -3,23 +3,79 @@ import { rmSync } from "fs";
 import { makeTmpProject, captureLog } from "../../helpers.js";
 import { execute } from "../../../src/cli/commands/status.js";
 
-describe("status", () => {
+describe("status summary", () => {
   let tmpDir: string;
   afterEach(() => rmSync(tmpDir, { recursive: true, force: true }));
 
-  it("shows status for all agents", async () => {
+  it("shows unified agents table with trigger types", async () => {
     tmpDir = makeTmpProject();
     const output = await captureLog(() => execute({ project: tmpDir }));
     expect(output).toContain("AL Status");
-    expect(output).toContain("dev:");
-    expect(output).toContain("reviewer:");
-    expect(output).toContain("devops:");
+    // Table headers
+    expect(output).toContain("AGENT");
+    expect(output).toContain("TRIGGER");
+    expect(output).toContain("STATUS");
+    expect(output).toContain("INSTANCES");
+    // Agents appear in the table
+    expect(output).toContain("dev");
+    expect(output).toContain("reviewer");
+    expect(output).toContain("devops");
+    // All default agents have schedules, so trigger column shows "cron"
+    expect(output).toContain("cron");
   });
 
-  it("shows schedule", async () => {
-    tmpDir = makeTmpProject();
+  it("shows (manual) for agents without schedule or webhooks", async () => {
+    tmpDir = makeTmpProject({
+      agents: [
+        { name: "manual-agent", schedule: undefined },
+      ],
+    });
     const output = await captureLog(() => execute({ project: tmpDir }));
-    expect(output).toContain("Schedule:");
+    expect(output).toContain("manual-agent");
+    expect(output).toContain("(manual)");
+  });
+
+  it("shows cron + webhook for agents with both triggers", async () => {
+    tmpDir = makeTmpProject({
+      agents: [
+        {
+          name: "multi-trigger",
+          schedule: "*/5 * * * *",
+          webhooks: [{ source: "github" }],
+        },
+      ],
+    });
+    const output = await captureLog(() => execute({ project: tmpDir }));
+    expect(output).toContain("cron + webhook");
+  });
+});
+
+describe("status per-agent detail", () => {
+  let tmpDir: string;
+  afterEach(() => rmSync(tmpDir, { recursive: true, force: true }));
+
+  it("shows agent config details", async () => {
+    tmpDir = makeTmpProject();
+    const output = await captureLog(() => execute({ project: tmpDir, agent: "devops" }));
+    expect(output).toContain("Agent: devops");
+    expect(output).toContain("Schedule: */15 * * * *");
+  });
+
+  it("shows webhook details for agent with webhooks", async () => {
+    tmpDir = makeTmpProject({
+      agents: [
+        {
+          name: "wh-agent",
+          webhooks: [
+            { source: "github", events: ["issues.opened", "pull_request"] },
+          ],
+        },
+      ],
+    });
+    const output = await captureLog(() => execute({ project: tmpDir, agent: "wh-agent" }));
+    expect(output).toContain("Agent: wh-agent");
+    expect(output).toContain("Webhooks:");
+    expect(output).toContain("github: issues.opened, pull_request");
   });
 });
 
@@ -50,7 +106,7 @@ describe("status with locks", () => {
       ok: false,
     });
 
-    // Mock the second call to /locks/status  
+    // Mock the second call to /locks/status
     fetchSpy.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve(mockLocks),
