@@ -1,5 +1,15 @@
 # @action-llama/action-llama
 
+## 0.11.5
+
+### Patch Changes
+
+- [`a74ceba`](https://github.com/Action-Llama/action-llama/commit/a74cebacee535db3189dfd1c0f540609bc9129ec) Thanks [@asselstine](https://github.com/asselstine)! - Docker images are now tagged with git SHA (primary), semver, and latest instead of
+  only `:latest`. The git SHA tag is immutable and used for builds and deployments,
+  making rollbacks deterministic and debugging easier. OCI labels
+  (`org.opencontainers.image.revision`, `org.opencontainers.image.version`) are baked
+  into the base image so `docker inspect` shows which commit built a running container.
+
 ## 0.11.4
 
 ### Patch Changes
