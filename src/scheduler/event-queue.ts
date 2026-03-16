@@ -95,6 +95,12 @@ export class WorkQueue<T> {
     this.store?.deleteAll(NS).catch(() => {});
   }
 
+  /** Clear in-memory queues only — persistent state survives for the next instance. */
+  clearInMemory(): void {
+    this.queues.clear();
+    // Does NOT touch this.store — persistent state survives for the next instance
+  }
+
   private persist(agentName: string): void {
     const queue = this.queues.get(agentName);
     if (!queue || queue.length === 0) {
