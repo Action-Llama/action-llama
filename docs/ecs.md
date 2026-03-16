@@ -361,7 +361,7 @@ aws iam put-role-policy \
           "ecr:GetDownloadUrlForLayer",
           "ecr:BatchGetImage"
         ],
-        "Resource": "arn:aws:ecr:<REGION>:<ACCOUNT_ID>:repository/<REPO_NAME>"
+        "Resource": "arn:aws:ecr:<REGION>:<ACCOUNT_ID>:repository/al-*"
       },
       {
         "Effect": "Allow",
