@@ -1,5 +1,14 @@
 # @action-llama/action-llama
 
+## 0.11.6
+
+### Patch Changes
+
+- [`b88d2aa`](https://github.com/Action-Llama/action-llama/commit/b88d2aa2c21a47d3f3f1d9de4d7bdc1315bb3d91) Thanks [@asselstine](https://github.com/asselstine)! - Fixed agent Docker builds failing with `COPY static/ /app/static/: not found` when agents
+  have no extra files. The COPY directive was hardcoded in the thin-agent Dockerfile template
+  regardless of whether a static/ directory existed, and was also duplicated when extra files
+  were present.
+
 ## 0.11.5
 
 ### Patch Changes
