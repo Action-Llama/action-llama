@@ -88,10 +88,6 @@ export class ContainerAgentRunner {
         } else {
           logFn(msg);
         }
-        // Forward info-level log events to status tracker
-        if (level !== "debug") {
-          this.statusTracker?.addLogLine(this.agentConfig.name, level === "error" ? `ERROR: ${msg}` : msg);
-        }
         // Surface tool errors to status tracker for TUI display
         if (level === "error" && msg === "tool error" && data.result) {
           let errorMsg = String(data.result);
@@ -180,8 +176,14 @@ export class ContainerAgentRunner {
         ? `${triggerInfo.type} (${triggerInfo.source})` 
         : triggerInfo.type;
       this.logger.info(`Starting ${this.agentConfig.name} container run (triggered by ${triggerDetails})`);
+      if (this.instanceId !== this.agentConfig.name) {
+        this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} started (${triggerDetails})`);
+      }
     } else {
       this.logger.info(`Starting ${this.agentConfig.name} container run`);
+      if (this.instanceId !== this.agentConfig.name) {
+        this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} started (manual)`);
+      }
     }
     const runStartTime = Date.now();
     let runError: string | undefined;
@@ -286,6 +288,9 @@ export class ContainerAgentRunner {
       } else {
         this.logger.info({ exitCode, elapsed: `${elapsed}s` }, "container finished");
         runResult = "completed";
+      }
+      if (this.instanceId !== this.agentConfig.name) {
+        this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} ${runResult} (${elapsed}s)`);
       }
     } catch (err: any) {
       this.logger.error({ err }, `${this.agentConfig.name} container run failed`);

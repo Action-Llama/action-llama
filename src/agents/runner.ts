@@ -109,8 +109,14 @@ export class AgentRunner {
         ? `${triggerInfo.type} (${triggerInfo.source})` 
         : triggerInfo.type;
       this.logger.info(`Starting ${this.agentConfig.name} run (triggered by ${triggerDetails})`);
+      if (this.instanceId !== this.agentConfig.name) {
+        this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} started (${triggerDetails})`);
+      }
     } else {
       this.logger.info(`Starting ${this.agentConfig.name} run`);
+      if (this.instanceId !== this.agentConfig.name) {
+        this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} started (manual)`);
+      }
     }
     const runStartTime = Date.now();
     let runError: string | undefined;
@@ -277,7 +283,6 @@ export class AgentRunner {
             const cmdPrefix = originCmd ? `$ ${originCmd.slice(0, 80)} — ` : "";
             const detail = `${cmdPrefix}${errorMsg.slice(0, 200)}`;
             this.statusTracker?.setAgentError(this.agentConfig.name, detail);
-            this.statusTracker?.addLogLine(this.agentConfig.name, `ERROR: ${detail}`);
             if (isUnrecoverableError(errorMsg)) {
               unrecoverableErrors++;
               if (unrecoverableErrors >= UNRECOVERABLE_THRESHOLD) {
@@ -339,6 +344,11 @@ export class AgentRunner {
       } else {
         this.logger.info({ outputLength: outputText.length }, "run completed");
         result = "completed";
+      }
+
+      if (this.instanceId !== this.agentConfig.name) {
+        const elapsed = ((Date.now() - runStartTime) / 1000).toFixed(1);
+        this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} ${result} (${elapsed}s)`);
       }
 
       // Add telemetry attributes for the execution result
