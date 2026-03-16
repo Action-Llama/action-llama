@@ -276,10 +276,13 @@ export class ECSFargateRuntime implements ContainerRuntime {
     // ECS cleans up stopped tasks automatically
   }
 
-  async fetchLogs(agentName: string, limit: number): Promise<string[]> {
+  async fetchLogs(agentName: string, limit: number, taskId?: string): Promise<string[]> {
+    const prefix = taskId
+      ? `${CONSTANTS.agentFamily(agentName)}/agent/${taskId}`
+      : `${CONSTANTS.agentFamily(agentName)}/`;
     return this.shared.tailLogEvents(
       ECSFargateRuntime.LOG_GROUP,
-      `${CONSTANTS.agentFamily(agentName)}/`,
+      prefix,
       limit,
     );
   }
@@ -287,11 +290,14 @@ export class ECSFargateRuntime implements ContainerRuntime {
   followLogs(
     agentName: string,
     onLine: (line: string) => void,
-    onStderr?: (text: string) => void
+    onStderr?: (text: string) => void,
+    taskId?: string,
   ): { stop: () => void } {
     let stopped = false;
     const logGroup = ECSFargateRuntime.LOG_GROUP;
-    const streamPrefix = `${CONSTANTS.agentFamily(agentName)}/`;
+    const streamPrefix = taskId
+      ? `${CONSTANTS.agentFamily(agentName)}/agent/${taskId}`
+      : `${CONSTANTS.agentFamily(agentName)}/`;
     const startTime = Date.now() - 60_000; // start from 1 minute ago
 
     const poll = async () => {

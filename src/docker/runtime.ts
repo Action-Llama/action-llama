@@ -127,8 +127,8 @@ export interface ContainerRuntime {
    */
   cleanupCredentials(creds: RuntimeCredentials): void;
 
-  /** Fetch recent log entries for an agent. */
-  fetchLogs(agentName: string, limit: number): Promise<string[]>;
+  /** Fetch recent log entries for an agent, optionally filtered to a specific task/instance. */
+  fetchLogs(agentName: string, limit: number, taskId?: string): Promise<string[]>;
 
   /**
    * Follow logs for an agent by name, polling for new entries.
@@ -139,7 +139,8 @@ export interface ContainerRuntime {
   followLogs(
     agentName: string,
     onLine: (line: string) => void,
-    onStderr?: (text: string) => void
+    onStderr?: (text: string) => void,
+    taskId?: string,
   ): { stop: () => void };
 
   /** Return a URL to the cloud console for this task/execution, or null for local runtimes. */
