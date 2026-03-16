@@ -1,5 +1,19 @@
 # @action-llama/action-llama
 
+## 0.11.7
+
+### Patch Changes
+
+- [`bb77b18`](https://github.com/Action-Llama/action-llama/commit/bb77b1899bbdd92fa14adcb51927e0f8b1a21ebd) Thanks [@asselstine](https://github.com/asselstine)! - Fixed local Docker builds failing with `COPY static/ /app/static/: not found` by passing
+  the build directory as an explicit absolute path to Docker instead of relying on `cwd` + `"."`.
+  Also restructured `buildImage()` into three linear phases (resolve content, inject COPY,
+  prepare context) to reduce nesting and branching.
+
+- [`9eb9982`](https://github.com/Action-Llama/action-llama/commit/9eb9982bae23bf0ef28ae20c6f9e75d0cfd1c983) Thanks [@asselstine](https://github.com/asselstine)! - Fixed agent Docker builds failing with `COPY static/ /app/static/: not found`. The static/
+  directory was written to a temp build context but Docker was invoked with the package root
+  as its build context, so it could never find the files. Now the temp directory is used as
+  Docker's build context when extra files are present.
+
 ## 0.11.6
 
 ### Patch Changes
