@@ -54,6 +54,8 @@ export interface BuildImageOpts {
    * The primary tag is `tag`; these are extra aliases pointing to the same image.
    */
   additionalTags?: string[];
+  /** When true, hash package-lock.json instead of traversing dist/ for cache key. */
+  useLockfileHash?: boolean;
 }
 
 export interface AssembleImageOpts {
