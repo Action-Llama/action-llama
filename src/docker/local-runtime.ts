@@ -128,7 +128,8 @@ export class LocalDockerRuntime implements ContainerRuntime {
         writeFileSync(tempDockerfile, content);
         dockerfile = tempDockerfile;
 
-        // Write extra files to static/ directory
+        // Write extra files to static/ directory and use buildCtx as Docker
+        // build context so the COPY static/ directive can find the files.
         if (hasExtraFiles) {
           const staticDir = join(buildCtx, "static");
           mkdirSync(staticDir, { recursive: true });
@@ -137,6 +138,7 @@ export class LocalDockerRuntime implements ContainerRuntime {
             mkdirSync(dirname(filePath), { recursive: true });
             writeFileSync(filePath, fileContent);
           }
+          cwd = buildCtx;
         }
       }
 
