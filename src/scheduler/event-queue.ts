@@ -1,29 +1,5 @@
 import type { StateStore } from "../shared/state-store.js";
 
-export interface QueuedEvent {
-  agentType: string;
-  text: string;
-  timestamp: string;
-}
-
-export type EventListener = (event: QueuedEvent) => void;
-
-export class EventQueue {
-  private listeners: EventListener[] = [];
-
-  onEvent(listener: EventListener): void {
-    this.listeners.push(listener);
-  }
-
-  push(event: QueuedEvent): void {
-    for (const listener of this.listeners) {
-      listener(event);
-    }
-  }
-}
-
-// --- Bounded per-agent work queue ---
-
 export interface QueuedWorkItem<T> {
   context: T;
   receivedAt: Date;
@@ -110,7 +86,3 @@ export class WorkQueue<T> {
     }
   }
 }
-
-/** @deprecated Use WorkQueue instead */
-export const WebhookEventQueue = WorkQueue;
-export type QueuedWebhookEvent<T> = QueuedWorkItem<T>;

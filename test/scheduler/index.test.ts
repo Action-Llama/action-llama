@@ -195,20 +195,17 @@ describe("startScheduler", () => {
   it("re-runs agent immediately when it requests rerun", async () => {
     // First call returns "rerun", second returns "completed" (no more work)
     mockRun
-      .mockResolvedValueOnce({ result: "rerun" })
-      .mockResolvedValueOnce({ result: "completed" })
-      .mockResolvedValueOnce({ result: "completed" })
-      .mockResolvedValue({ result: "completed" });
+      .mockResolvedValueOnce({ result: "rerun", triggers: [] })
+      .mockResolvedValueOnce({ result: "completed", triggers: [] })
+      .mockResolvedValueOnce({ result: "completed", triggers: [] })
+      .mockResolvedValue({ result: "completed", triggers: [] });
     await startScheduler(tmpDir);
 
-    // Wait longer for the initial rerun loop to settle completely
+    // Wait for the initial rerun loop to settle
     await new Promise((r) => setTimeout(r, 200));
 
-    // dev agent: 1 initial + 1 rerun = 2 calls
-    // reviewer: 1 call (completed, no rerun)
-    // Note: In the current implementation, it appears only 2 out of 3 agents run during initial startup with rerun scenarios
-    // Total: 3 (This matches the actual behavior where rerun logic works correctly)
-    expect(mockRun).toHaveBeenCalledTimes(3);
+    // dev: 1 initial + 1 rerun = 2, reviewer: 1, devops: 1 = 4 total
+    expect(mockRun).toHaveBeenCalledTimes(4);
   });
 
   it("stops re-running after max reruns", async () => {
