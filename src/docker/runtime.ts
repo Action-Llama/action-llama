@@ -72,6 +72,8 @@ export interface AssembleImageOpts {
 export interface RunningAgent {
   agentName: string;
   taskId: string;
+  /** Full runtime-specific identifier needed by kill() (e.g. ECS task ARN, Cloud Run execution path). */
+  runtimeId: string;
   status: string;
   startedAt?: Date;
   trigger?: string;

@@ -134,6 +134,7 @@ program
   .description("Kill an agent (all instances) or a single instance by ID")
   .argument("<target>", "agent name or instance ID")
   .option("-p, --project <dir>", "project directory", ".")
+  .option("-c, --cloud", "kill cloud instances")
   .action(withCommand(async (target: string, opts) => {
     const { execute } = await import("./commands/kill.js");
     await execute(target, opts);
@@ -144,6 +145,7 @@ program
   .description("Pause the scheduler, or a single agent by name")
   .argument("[name]", "agent name (omit to pause the entire scheduler)")
   .option("-p, --project <dir>", "project directory", ".")
+  .option("-c, --cloud", "pause cloud scheduler or agent")
   .action(withCommand(async (name: string | undefined, opts) => {
     const { execute } = await import("./commands/pause.js");
     await execute(name, opts);
@@ -154,6 +156,7 @@ program
   .description("Resume the scheduler, or a single agent by name")
   .argument("[name]", "agent name (omit to resume the entire scheduler)")
   .option("-p, --project <dir>", "project directory", ".")
+  .option("-c, --cloud", "resume cloud scheduler or agent")
   .action(withCommand(async (name: string | undefined, opts) => {
     const { execute } = await import("./commands/resume.js");
     await execute(name, opts);

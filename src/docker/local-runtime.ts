@@ -64,6 +64,7 @@ export class LocalDockerRuntime implements ContainerRuntime {
         return {
           agentName,
           taskId: name,
+          runtimeId: name,
           status: status ?? "unknown",
           startedAt: createdAt ? new Date(createdAt) : undefined,
         };

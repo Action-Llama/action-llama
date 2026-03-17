@@ -105,6 +105,7 @@ export class CloudRunJobRuntime implements ContainerRuntime {
         running.push({
           agentName,
           taskId: latest.name.split("/").pop() ?? "unknown",
+          runtimeId: latest.name,
           status: "RUNNING",
           startedAt: latest.createTime ? new Date(latest.createTime) : undefined,
         });

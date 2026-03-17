@@ -95,9 +95,11 @@ export class ECSFargateRuntime implements ContainerRuntime {
     return (desc.tasks ?? []).map((task) => {
       const family = task.taskDefinitionArn?.split("/").pop()?.split(":")[0] ?? "";
       const agentName = CONSTANTS.agentNameFromFamily(family);
+      const taskArn = task.taskArn ?? "unknown";
       return {
         agentName,
-        taskId: task.taskArn?.split("/").pop() ?? task.taskArn ?? "unknown",
+        taskId: taskArn.split("/").pop() ?? taskArn,
+        runtimeId: taskArn,
         status: task.lastStatus ?? "UNKNOWN",
         startedAt: task.startedAt,
       };
