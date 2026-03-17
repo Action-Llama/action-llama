@@ -151,6 +151,7 @@ export function scaffoldProject(
       "node_modules/",
       ".workspace/",
       ".al/",
+      ".env.toml",
       "*.log",
       ".DS_Store",
       "",

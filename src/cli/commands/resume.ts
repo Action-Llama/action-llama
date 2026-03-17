@@ -3,26 +3,25 @@ import { gatewayFetch } from "../gateway-client.js";
 import { loadGlobalConfig } from "../../shared/config.js";
 import { cloudGatewayFetch } from "../cloud-gateway-client.js";
 
-export async function execute(name: string | undefined, opts: { project: string; cloud?: boolean }): Promise<void> {
+export async function execute(name: string | undefined, opts: { project: string; env?: string }): Promise<void> {
   const projectPath = resolve(opts.project);
   const path = name
     ? `/control/agents/${encodeURIComponent(name)}/resume`
     : "/control/resume";
 
-  if (opts.cloud) {
-    await executeCloud(path, projectPath);
+  const globalConfig = loadGlobalConfig(projectPath, opts.env);
+  const cloudMode = !!globalConfig.cloud;
+
+  if (cloudMode) {
+    await executeCloud(path, globalConfig);
     return;
   }
 
   await executeLocal(path, projectPath);
 }
 
-async function executeCloud(path: string, projectPath: string): Promise<void> {
-  const globalConfig = loadGlobalConfig(projectPath);
-  const cloud = globalConfig.cloud;
-  if (!cloud) {
-    throw new Error("No [cloud] section found in config.toml. Run 'al setup cloud' first.");
-  }
+async function executeCloud(path: string, globalConfig: { cloud?: any }): Promise<void> {
+  const cloud = globalConfig.cloud!;
 
   const { createCloudProvider } = await import("../../cloud/provider.js");
   const provider = await createCloudProvider(cloud);
@@ -32,7 +31,7 @@ async function executeCloud(path: string, projectPath: string): Promise<void> {
   }
 
   const { ok, data } = await cloudGatewayFetch(status.serviceUrl, {
-    project: projectPath,
+    project: "",
     path,
     method: "POST",
   });

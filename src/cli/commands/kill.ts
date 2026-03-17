@@ -3,23 +3,21 @@ import { gatewayFetch } from "../gateway-client.js";
 import { loadGlobalConfig } from "../../shared/config.js";
 import type { RunningAgent } from "../../docker/runtime.js";
 
-export async function execute(target: string, opts: { project: string; cloud?: boolean }): Promise<void> {
+export async function execute(target: string, opts: { project: string; env?: string }): Promise<void> {
   const projectPath = resolve(opts.project);
+  const globalConfig = loadGlobalConfig(projectPath, opts.env);
+  const cloudMode = !!globalConfig.cloud;
 
-  if (opts.cloud) {
-    await executeCloud(target, projectPath);
+  if (cloudMode) {
+    await executeCloud(target, globalConfig);
     return;
   }
 
   await executeLocal(target, projectPath);
 }
 
-async function executeCloud(target: string, projectPath: string): Promise<void> {
-  const globalConfig = loadGlobalConfig(projectPath);
-  const cloud = globalConfig.cloud;
-  if (!cloud) {
-    throw new Error("No [cloud] section found in config.toml. Run 'al setup cloud' first.");
-  }
+async function executeCloud(target: string, globalConfig: { cloud?: any }): Promise<void> {
+  const cloud = globalConfig.cloud!;
 
   const { createCloudProvider } = await import("../../cloud/provider.js");
   const provider = await createCloudProvider(cloud);

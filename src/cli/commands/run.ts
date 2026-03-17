@@ -12,7 +12,7 @@ import { execute as runDoctor } from "./doctor.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(__dirname, "..", "..", "..");
 
-export async function execute(agent: string, opts: { project: string; cloud?: boolean; headless?: boolean }): Promise<void> {
+export async function execute(agent: string, opts: { project: string; env?: string; headless?: boolean }): Promise<void> {
   const projectPath = resolve(opts.project);
 
   // Guard: refuse to run if the project path looks like an agent directory
@@ -31,9 +31,9 @@ export async function execute(agent: string, opts: { project: string; cloud?: bo
   }
 
   // Ensure credentials are present
-  await runDoctor({ project: opts.project, cloud: opts.cloud, checkOnly: opts.headless });
+  await runDoctor({ project: opts.project, env: opts.env, checkOnly: opts.headless });
 
-  const globalConfig = loadGlobalConfig(projectPath);
+  const globalConfig = loadGlobalConfig(projectPath, opts.env);
   const agentConfig = loadAgentConfig(projectPath, agent);
 
   // Validate credentials
@@ -41,15 +41,12 @@ export async function execute(agent: string, opts: { project: string; cloud?: bo
     await requireCredentialRef(credRef);
   }
 
-  const cloudMode = opts.cloud === true;
+  const cloudMode = !!globalConfig.cloud;
   const logger = createLogger(projectPath, agent);
 
   if (cloudMode) {
     // Cloud mode: use cloud runtime via provider
-    const cloud = globalConfig.cloud;
-    if (!cloud) {
-      throw new Error("No [cloud] section found in config.toml. Run 'al setup cloud' first.");
-    }
+    const cloud = globalConfig.cloud!;
 
     const { createCloudProvider } = await import("../../cloud/provider.js");
     const provider = await createCloudProvider(cloud);

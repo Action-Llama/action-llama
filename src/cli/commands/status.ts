@@ -117,15 +117,13 @@ function printLocalInstances(instances: AgentInstance[]): void {
   }
 }
 
-export async function execute(opts: { project: string; cloud?: boolean; agent?: string }): Promise<void> {
+export async function execute(opts: { project: string; env?: string; agent?: string }): Promise<void> {
   const projectPath = resolve(opts.project);
+  const globalConfig = loadGlobalConfig(projectPath, opts.env);
+  const cloudMode = !!globalConfig.cloud;
 
-  if (opts.cloud) {
-    const globalConfig = loadGlobalConfig(projectPath);
-    const cloud = globalConfig.cloud;
-    if (!cloud) {
-      throw new Error("No [cloud] section found in config.toml. Run 'al setup cloud' first.");
-    }
+  if (cloudMode) {
+    const cloud = globalConfig.cloud!;
 
     const { createCloudProvider } = await import("../../cloud/provider.js");
     const provider = await createCloudProvider(cloud);

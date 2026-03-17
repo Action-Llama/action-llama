@@ -4,6 +4,12 @@ import { parse as parseTOML } from "smol-toml";
 import type { WebhookTrigger } from "../webhooks/types.js";
 import type { PreflightStep } from "../preflight/schema.js";
 import { ConfigError } from "./errors.js";
+import {
+  resolveEnvironmentName,
+  loadEnvToml,
+  loadEnvironmentConfig,
+  deepMerge,
+} from "./environment.js";
 
 // --- Global config (lives at <project>/config.toml) ---
 
@@ -111,13 +117,54 @@ export interface AgentConfig {
 
 // --- Loaders ---
 
-export function loadGlobalConfig(projectPath: string): GlobalConfig {
+/**
+ * Load the raw project config.toml without environment merging.
+ * Used internally and by tests that need the raw project config.
+ */
+export function loadProjectConfig(projectPath: string): GlobalConfig {
   const configPath = resolve(projectPath, "config.toml");
   let config: GlobalConfig = {};
-  
+
   if (existsSync(configPath)) {
     const raw = readFileSync(configPath, "utf-8");
     config = parseTOML(raw) as unknown as GlobalConfig;
+  }
+
+  return config;
+}
+
+/**
+ * Load the merged global config: config.toml → .env.toml → environment file.
+ *
+ * @param projectPath - path to the project directory
+ * @param envName - explicit environment name (from --env flag); takes precedence over .env.toml and AL_ENV
+ */
+export function loadGlobalConfig(projectPath: string, envName?: string): GlobalConfig {
+  let config = loadProjectConfig(projectPath);
+
+  // Emit deprecation warning if [cloud] is in config.toml
+  if (config.cloud) {
+    console.error(
+      "[DEPRECATED] [cloud] section found in config.toml. " +
+      "Move cloud infrastructure config to an environment file. " +
+      "Run 'al env init <name>' to create one."
+    );
+  }
+
+  // Layer 2: .env.toml overrides
+  const envToml = loadEnvToml(projectPath);
+  if (envToml) {
+    const { environment: _, ...overrides } = envToml;
+    if (Object.keys(overrides).length > 0) {
+      config = deepMerge(config, overrides);
+    }
+  }
+
+  // Layer 3: environment file
+  const resolvedEnv = resolveEnvironmentName(envName, projectPath);
+  if (resolvedEnv) {
+    const envConfig = loadEnvironmentConfig(resolvedEnv);
+    config = deepMerge(config, envConfig);
   }
 
   // Set default telemetry config if not provided
@@ -128,7 +175,7 @@ export function loadGlobalConfig(projectPath: string): GlobalConfig {
     };
   }
 
-  // Validate cloud config if present
+  // Validate cloud config if present (from any layer)
   if (config.cloud) {
     config.cloud = validateCloudConfig(config.cloud);
   }
@@ -136,9 +183,9 @@ export function loadGlobalConfig(projectPath: string): GlobalConfig {
   return config;
 }
 
-function validateCloudConfig(raw: any): CloudConfig {
+export function validateCloudConfig(raw: any): CloudConfig {
   if (!raw.provider) {
-    throw new ConfigError("cloud.provider is required in config.toml");
+    throw new ConfigError("cloud.provider is required");
   }
 
   if (raw.provider === "ecs") {
@@ -147,7 +194,7 @@ function validateCloudConfig(raw: any): CloudConfig {
     if (missing.length > 0) {
       throw new ConfigError(
         `ECS cloud config is missing required fields: ${missing.map((k) => `cloud.${k}`).join(", ")}. ` +
-        `Run 'al setup cloud' to configure.`
+        `Run 'al env init <name>' to configure.`
       );
     }
     return raw as EcsCloudConfig;
@@ -159,7 +206,7 @@ function validateCloudConfig(raw: any): CloudConfig {
     if (missing.length > 0) {
       throw new ConfigError(
         `Cloud Run config is missing required fields: ${missing.map((k) => `cloud.${k}`).join(", ")}. ` +
-        `Run 'al setup cloud' to configure.`
+        `Run 'al env init <name>' to configure.`
       );
     }
     return raw as CloudRunCloudConfig;
@@ -204,6 +251,11 @@ export function validateAgentName(name: string): void {
       `Agent name "${name}" is invalid: must contain only lowercase letters, numbers, and hyphens (cannot start or end with a hyphen).`
     );
   }
+  if (name === "default") {
+    throw new ConfigError(
+      `Agent name "default" is reserved. Choose a different name.`
+    );
+  }
 }
 
 export function validateAgentConfig(config: AgentConfig): void {
@@ -224,7 +276,7 @@ export function discoverAgents(projectPath: string): string[] {
   const agents: string[] = [];
 
   if (!existsSync(projectPath)) return agents;
-  
+
   const agentsPath = resolve(projectPath, "agents");
   if (!existsSync(agentsPath)) return agents;
 

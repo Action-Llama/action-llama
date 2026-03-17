@@ -18,13 +18,13 @@ import { buildSchedulerImage } from "../../cloud/scheduler-image.js";
 import { createLogger } from "../../shared/logger.js";
 import { createCloudProvider } from "../../cloud/provider.js";
 
-export async function execute(opts: { project: string }): Promise<void> {
+export async function execute(opts: { project: string; env?: string }): Promise<void> {
   const projectPath = resolve(opts.project);
-  const globalConfig = loadGlobalConfig(projectPath);
+  const globalConfig = loadGlobalConfig(projectPath, opts.env);
   const cloud = globalConfig.cloud;
 
   if (!cloud) {
-    throw new Error("No [cloud] section found in config.toml. Run 'al setup cloud' first.");
+    throw new Error("No cloud config found. Set up an environment with 'al env init <name>' or add [cloud] to config.toml.");
   }
 
   const provider = await createCloudProvider(cloud);
@@ -34,7 +34,7 @@ export async function execute(opts: { project: string }): Promise<void> {
 
   // 1. Run doctor -c to push credentials and reconcile IAM
   console.log("Step 1: Validating credentials and IAM...");
-  await runDoctor({ project: opts.project, cloud: true, checkOnly: true });
+  await runDoctor({ project: opts.project, env: opts.env, checkOnly: true });
   console.log("");
 
   // 2. Set up cloud credential backend

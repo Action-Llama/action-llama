@@ -17,7 +17,7 @@ vi.mock("../../../src/cli/cloud-gateway-client.js", () => ({
 
 const { execute } = await import("../../../src/cli/commands/pause.js");
 
-describe("pause --cloud", () => {
+describe("pause --env (cloud)", () => {
   let tmpDir: string;
 
   afterEach(() => {
@@ -54,7 +54,7 @@ describe("pause --cloud", () => {
     });
 
     const output = await captureLog(() =>
-      execute(undefined, { project: tmpDir, cloud: true })
+      execute(undefined, { project: tmpDir })
     );
 
     expect(mockCloudGatewayFetch).toHaveBeenCalledWith(
@@ -77,7 +77,7 @@ describe("pause --cloud", () => {
     });
 
     const output = await captureLog(() =>
-      execute("dev", { project: tmpDir, cloud: true })
+      execute("dev", { project: tmpDir })
     );
 
     expect(mockCloudGatewayFetch).toHaveBeenCalledWith(
@@ -92,16 +92,17 @@ describe("pause --cloud", () => {
     mockGetSchedulerStatus.mockResolvedValueOnce(null);
 
     await expect(
-      execute(undefined, { project: tmpDir, cloud: true })
+      execute(undefined, { project: tmpDir })
     ).rejects.toThrow("Cloud scheduler is not deployed.");
   });
 
-  it("throws when no [cloud] config", async () => {
+  it("falls through to local mode when no cloud config", async () => {
     tmpDir = makeTmpProject();
 
+    // Without cloud config, it tries local gateway which fails (no gateway running)
     await expect(
-      execute(undefined, { project: tmpDir, cloud: true })
-    ).rejects.toThrow("No [cloud] section found in config.toml");
+      execute(undefined, { project: tmpDir })
+    ).rejects.toThrow();
   });
 
   it("throws on gateway error response", async () => {
@@ -117,7 +118,7 @@ describe("pause --cloud", () => {
     });
 
     await expect(
-      execute("nonexistent", { project: tmpDir, cloud: true })
+      execute("nonexistent", { project: tmpDir })
     ).rejects.toThrow("Agent not found");
   });
 });

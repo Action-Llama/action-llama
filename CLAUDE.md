@@ -118,7 +118,7 @@ Updated code.
 
 ```
 src/
-  cli/              # Command definitions
+  cli/              # Command definitions (--env flag, env subcommand)
   setup/            # Project scaffolding
   scheduler/        # Scheduler: agent discovery, cron + webhooks
   agents/           # Agent runners (host + Docker), prompt builder
@@ -126,12 +126,25 @@ src/
   docker/           # Container lifecycle, image + network
   webhooks/         # Webhook registry, provider interface
   tui/              # Ink-based terminal UI
-  shared/           # Config, credentials, logger, paths, git helpers
+  shared/           # Config, credentials, environment, logger, paths, git helpers
 ```
+
+## Configuration
+
+Config uses a three-layer merge system for portable projects:
+
+1. **`config.toml`** (committed) — portable project settings: `[model]`, `[local]`, `[gateway]`, `[webhooks]`, `[telemetry]`
+2. **`.env.toml`** (gitignored) — per-project environment binding + config overrides. Has an `environment` field to select a named environment
+3. **`~/.action-llama/environments/<name>.toml`** (machine-level) — cloud infrastructure config (`[cloud]`, `gateway.url`, `telemetry.endpoint`)
+
+Merge order: `config.toml` -> `.env.toml` -> environment file (later values win, deep merge).
+
+Cloud mode is auto-detected from the merged config (presence of `[cloud]` section). The `-E`/`--env <name>` flag or `AL_ENV` env var selects an environment explicitly.
 
 ## Key Conventions
 
-- Config format: TOML (`config.toml`, `agent-config.toml`)
-- Credentials: `~/.action-llama/credentials/<type>/<instance>/<field>`
-- Cloud is opt-in via `-c`/`--cloud` flag
+- Config format: TOML (`config.toml`, `agent-config.toml`, `.env.toml`, environment files)
+- Credentials: `~/.action-llama/credentials/<type>/<instance>/<field>` — instance is agent name (agent-specific) or `"default"` (shared)
+- Cloud is opt-in via `--env <name>` flag or `.env.toml` environment binding
+- `"default"` is a reserved name — cannot be used as an agent name
 - Tests use vitest with `test/` mirroring `src/`

@@ -5,6 +5,7 @@ export const AL_HOME = resolve(homedir(), ".al");
 export const AL_HOME_DIR = resolve(homedir(), ".action-llama");
 export const CREDENTIALS_DIR = resolve(AL_HOME_DIR, "credentials");
 export const STATE_DIR = resolve(AL_HOME_DIR, "state");
+export const ENVIRONMENTS_DIR = resolve(AL_HOME_DIR, "environments");
 
 export function projectDir(projectPath: string): string {
   return resolve(projectPath);

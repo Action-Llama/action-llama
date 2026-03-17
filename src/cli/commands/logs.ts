@@ -404,18 +404,16 @@ async function followFile(filePath: string, lastN: number, fmt: Formatter): Prom
 
 export async function execute(
   agent: string,
-  opts: { project: string; lines: string; follow?: boolean; date?: string; raw?: boolean; cloud?: boolean; instance?: string }
+  opts: { project: string; lines: string; follow?: boolean; date?: string; raw?: boolean; env?: string; instance?: string }
 ): Promise<void> {
   const projectPath = resolve(opts.project);
   const fmt: Formatter = opts.raw ? formatRawEntry : formatConversationEntry;
   const instanceNum = opts.instance ? parseInt(opts.instance, 10) : undefined;
+  const globalConfig = loadGlobalConfig(projectPath, opts.env);
+  const cloudMode = !!globalConfig.cloud;
 
-  if (opts.cloud) {
-    const globalConfig = loadGlobalConfig(projectPath);
-    const cloud = globalConfig.cloud;
-    if (!cloud) {
-      throw new Error("No [cloud] section found in config.toml. Run 'al setup cloud' first.");
-    }
+  if (cloudMode) {
+    const cloud = globalConfig.cloud!;
 
     const { createCloudProvider } = await import("../../cloud/provider.js");
     const provider = await createCloudProvider(cloud);

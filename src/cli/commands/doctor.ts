@@ -16,7 +16,7 @@ const WEBHOOK_SECRET_TYPES: Record<string, string> = {
   sentry: "sentry_client_secret",
 };
 
-export async function execute(opts: { project: string; cloud?: boolean; checkOnly?: boolean }): Promise<void> {
+export async function execute(opts: { project: string; env?: string; checkOnly?: boolean }): Promise<void> {
   const projectPath = resolve(opts.project);
 
   // Guard: refuse to run if the project path looks like an agent directory
@@ -35,7 +35,7 @@ export async function execute(opts: { project: string; cloud?: boolean; checkOnl
 
   // Collect all credential refs from agents (including webhook secrets)
   const credentialRefs = new Set<string>();
-  const globalConfig = loadGlobalConfig(projectPath);
+  const globalConfig = loadGlobalConfig(projectPath, opts.env);
   const webhookSources = globalConfig.webhooks ?? {};
 
   for (const name of agents) {
@@ -71,10 +71,12 @@ export async function execute(opts: { project: string; cloud?: boolean; checkOnl
     );
   }
 
+  const cloudMode = !!globalConfig.cloud;
+
   if (credentialRefs.size === 0) {
     console.log("No credentials required by any agent.");
   } else if (opts.checkOnly) {
-    await checkCredentials(credentialRefs, projectPath, opts.cloud);
+    await checkCredentials(credentialRefs, globalConfig, cloudMode);
   } else {
     await promptCredentials(credentialRefs);
   }
@@ -93,15 +95,8 @@ export async function execute(opts: { project: string; cloud?: boolean; checkOnl
 
   // --- Cloud mode: push creds + reconcile IAM (interactive only) ---
 
-  if (opts.cloud && !opts.checkOnly) {
-    const cloudConfig = globalConfig.cloud;
-
-    if (!cloudConfig) {
-      throw new ConfigError(
-        "No [cloud] section found in config.toml. " +
-        "Run 'al setup cloud' to configure a cloud provider first."
-      );
-    }
+  if (cloudMode && !opts.checkOnly) {
+    const cloudConfig = globalConfig.cloud!;
 
     const provider = await createCloudProvider(cloudConfig);
 
@@ -143,21 +138,14 @@ export async function execute(opts: { project: string; cloud?: boolean; checkOnl
 
 async function checkCredentials(
   credentialRefs: Set<string>,
-  projectPath: string,
-  cloud?: boolean,
+  globalConfig: { cloud?: any },
+  cloudMode: boolean,
 ): Promise<void> {
   let okCount = 0;
   const missing: string[] = [];
 
-  if (cloud) {
-    const globalConfig = loadGlobalConfig(projectPath);
-    const cloudConfig = globalConfig.cloud;
-    if (!cloudConfig) {
-      throw new ConfigError(
-        "No [cloud] section found in config.toml. " +
-        "Run 'al setup cloud' to configure a cloud provider first."
-      );
-    }
+  if (cloudMode) {
+    const cloudConfig = globalConfig.cloud!;
 
     const remote = await createBackendFromCloudConfig(cloudConfig);
     console.log(`Checking ${credentialRefs.size} credential(s) in ${cloudConfig.provider}...`);
@@ -178,7 +166,7 @@ async function checkCredentials(
     if (missing.length > 0) {
       throw new CredentialError(
         `${missing.length} credential(s) missing from ${cloudConfig.provider}: ${missing.join(", ")}.\n` +
-        `Push them with 'al doctor -c' first.`
+        `Push them with 'al doctor --env <name>' first.`
       );
     }
 

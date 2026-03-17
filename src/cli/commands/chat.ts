@@ -76,7 +76,7 @@ const NO_AGENTS_INITIAL_MESSAGE = `Help me create my first agent.`;
 export interface ChatOpts {
   project: string;
   agent?: string;
-  cloud?: boolean;
+  env?: string;
 }
 
 export async function execute(opts: ChatOpts): Promise<void> {
@@ -94,7 +94,8 @@ export async function execute(opts: ChatOpts): Promise<void> {
 async function executeAgentChat(opts: ChatOpts & { agent: string }): Promise<void> {
   const projectPath = resolve(opts.project);
   const agentName = opts.agent;
-  const cloudMode = opts.cloud === true;
+  const globalConfig = loadGlobalConfig(projectPath, opts.env);
+  const cloudMode = !!globalConfig.cloud;
 
   // Validate agent exists
   const agentNames = discoverAgents(projectPath);
@@ -103,18 +104,13 @@ async function executeAgentChat(opts: ChatOpts & { agent: string }): Promise<voi
     throw new Error(`Agent "${agentName}" not found. ${available}`);
   }
 
-  const globalConfig = loadGlobalConfig(projectPath);
   const agentConfig = loadAgentConfig(projectPath, agentName);
 
-  // Switch to cloud credential backend if -c
+  // Switch to cloud credential backend if environment has cloud config
   if (cloudMode) {
-    const cloud = globalConfig.cloud;
-    if (!cloud) {
-      throw new Error("No [cloud] section found in config.toml. Run 'al setup cloud' first.");
-    }
     const { createBackendFromCloudConfig } = await import("../../shared/remote.js");
     const { setDefaultBackend } = await import("../../shared/credentials.js");
-    const backend = await createBackendFromCloudConfig(cloud);
+    const backend = await createBackendFromCloudConfig(globalConfig.cloud!);
     setDefaultBackend(backend);
   }
 
@@ -189,7 +185,7 @@ async function executeAgentChat(opts: ChatOpts & { agent: string }): Promise<voi
   if (gatewayUrl) {
     const reachable = await probeGateway(gatewayUrl);
     if (!reachable) {
-      const startCmd = cloudMode ? "al start -c" : "al start";
+      const startCmd = cloudMode ? "al start --env <name>" : "al start";
       console.log(
         `\u26a0 No gateway detected at ${gatewayUrl}. Resource locks, agent calls, and signals are unavailable.\n` +
         `  Start the scheduler with \`${startCmd}\` to enable these features.\n`

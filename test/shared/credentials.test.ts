@@ -10,12 +10,17 @@ import {
   credentialExists,
   parseCredentialRef,
   requireCredentialRef,
+  resolveAgentCredentials,
+  suppressLegacyWarning,
 } from "../../src/shared/credentials.js";
 import { CREDENTIALS_DIR } from "../../src/shared/paths.js";
 
 describe("credentials", () => {
   const testType = `test_cred_${Date.now()}`;
   const testInstance = "test";
+
+  // Suppress legacy deprecation warnings in tests
+  suppressLegacyWarning(true);
 
   afterEach(() => {
     try {
@@ -24,16 +29,29 @@ describe("credentials", () => {
   });
 
   describe("parseCredentialRef", () => {
-    it("parses type:instance", () => {
-      expect(parseCredentialRef("github_token:default")).toEqual({ type: "github_token", instance: "default" });
+    it("parses simple type ref", () => {
+      const result = parseCredentialRef("github_token");
+      expect(result.type).toBe("github_token");
+      expect(result.instance).toBe("default");
+      expect(result.agentRef).toBeUndefined();
     });
 
-    it("defaults instance to 'default' when no colon", () => {
-      expect(parseCredentialRef("github_token")).toEqual({ type: "github_token", instance: "default" });
+    it("parses cross-agent reference with slash", () => {
+      const result = parseCredentialRef("other-agent/github_token");
+      expect(result.type).toBe("github_token");
+      expect(result.agentRef).toBe("other-agent");
     });
 
-    it("handles named instances", () => {
-      expect(parseCredentialRef("git_ssh:botty")).toEqual({ type: "git_ssh", instance: "botty" });
+    it("parses legacy colon syntax (backwards compatible)", () => {
+      const result = parseCredentialRef("github_token:default");
+      expect(result.type).toBe("github_token");
+      expect(result.instance).toBe("default");
+    });
+
+    it("parses legacy named instance (backwards compatible)", () => {
+      const result = parseCredentialRef("git_ssh:botty");
+      expect(result.type).toBe("git_ssh");
+      expect(result.instance).toBe("botty");
     });
   });
 
@@ -81,6 +99,45 @@ describe("credentials", () => {
   describe("loadCredentialField", () => {
     it("returns undefined when field does not exist", async () => {
       expect(await loadCredentialField(testType, testInstance, "nonexistent")).toBeUndefined();
+    });
+  });
+
+  describe("resolveAgentCredentials", () => {
+    const resolveType = `resolve_cred_${Date.now()}`;
+
+    afterEach(() => {
+      try {
+        rmSync(resolve(CREDENTIALS_DIR, resolveType), { recursive: true, force: true });
+      } catch {}
+    });
+
+    it("falls back to default when no agent-specific credential", async () => {
+      await writeCredentialField(resolveType, "default", "token", "shared-value");
+
+      const resolved = await resolveAgentCredentials("my-agent", [resolveType]);
+      expect(resolved).toEqual([{ type: resolveType, instance: "default" }]);
+    });
+
+    it("uses agent-specific credential when it exists", async () => {
+      await writeCredentialField(resolveType, "default", "token", "shared-value");
+      await writeCredentialField(resolveType, "my-agent", "token", "agent-value");
+
+      const resolved = await resolveAgentCredentials("my-agent", [resolveType]);
+      expect(resolved).toEqual([{ type: resolveType, instance: "my-agent" }]);
+    });
+
+    it("resolves cross-agent references", async () => {
+      await writeCredentialField(resolveType, "other-agent", "token", "other-value");
+
+      const resolved = await resolveAgentCredentials("my-agent", [`other-agent/${resolveType}`]);
+      expect(resolved).toEqual([{ type: resolveType, instance: "other-agent" }]);
+    });
+
+    it("cross-agent ref falls back to default when agent-specific not found", async () => {
+      await writeCredentialField(resolveType, "default", "token", "shared-value");
+
+      const resolved = await resolveAgentCredentials("my-agent", [`nonexistent-agent/${resolveType}`]);
+      expect(resolved).toEqual([{ type: resolveType, instance: "default" }]);
     });
   });
 });

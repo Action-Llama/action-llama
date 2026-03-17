@@ -21,7 +21,28 @@ Each agent is a directory under `agents/` containing:
 
 ## Credential Reference
 
-Credentials are managed by the user via `al doctor` or `al creds add` and stored in `~/.action-llama/credentials/<type>/<instance>/<field>`. Reference them in `credentials` arrays as `"type:instance"` (e.g. `"github_token:default"`). The `:default` instance suffix can be omitted.
+Credentials are managed by the user via `al doctor` or `al creds add` and stored in `~/.action-llama/credentials/<type>/<instance>/<field>`.
+
+### Agent-scoped credentials
+
+Each agent declares the credential **types** it needs. At runtime, credentials resolve with agent-specific → default fallback:
+
+1. `<type>/<agent-name>/` — agent-specific credential (if it exists)
+2. `<type>/default/` — shared default credential
+
+Reference credentials in agent config as simple type names:
+
+```toml
+credentials = ["github_token", "git_ssh"]
+```
+
+For cross-agent references (use another agent's credential), prefix with the agent name:
+
+```toml
+credentials = ["github_token", "deploy-bot/git_ssh"]
+```
+
+> **Note:** The legacy `"type:instance"` syntax (e.g. `"github_token:default"`) still works but is deprecated. Use simple type names instead.
 
 | Type | What it is | Fields | Runtime injection | What it enables |
 |------|-----------|--------|-------------------|----------------|
@@ -247,7 +268,7 @@ The config file uses TOML syntax. The agent name is derived from the directory n
 ### Minimal example (webhook-driven)
 
 ```toml
-credentials = ["github_token:default", "git_ssh:default"]
+credentials = ["github_token", "git_ssh"]
 
 [[webhooks]]
 source = "my-github"
@@ -265,7 +286,7 @@ The `[model]` section is **optional** — agents inherit the default model from 
 ### Full example (webhooks + params + model override + optional schedule)
 
 ```toml
-credentials = ["github_token:default", "git_ssh:default", "sentry_token:default"]
+credentials = ["github_token", "git_ssh", "sentry_token"]
 # schedule = "*/5 * * * *"  # Optional: for scheduled polling in addition to webhooks
 
 # Optional: override the project default model for this agent
@@ -297,7 +318,7 @@ sentryProjects = ["web-app", "api"]
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `credentials` | string[] | Yes | Credential refs as `"type:instance"` (see Credential Reference above) |
+| `credentials` | string[] | Yes | Credential type names (see Credential Reference above). Cross-agent: `"agent/type"` |
 | `scale` | number | No | Number of concurrent runners (default: 1). Set to `0` to disable the agent |
 | `schedule` | string | No* | Cron expression (e.g. "*/5 * * * *") |
 | `model` | table | No | LLM model config — omit to inherit from project `config.toml` |
@@ -452,12 +473,39 @@ The build pipeline automatically rewrites the `FROM` line to point at the projec
 
 ### Docker config options
 
+These go in `config.toml` under `[local]`:
+
 | Key | Default | Description |
 |-----|---------|-------------|
 | `local.image` | `"al-agent:latest"` | Base Docker image name |
 | `local.memory` | `"4g"` | Memory limit per container |
 | `local.cpus` | `2` | CPU limit per container |
 | `local.timeout` | `3600` | Max container runtime in seconds |
+
+## Environments (Portable Projects)
+
+Projects are portable — cloud infrastructure details live outside the project directory:
+
+- **`config.toml`** (committed) — portable project settings (`[local]`, `[model]`, `[gateway]`, `[webhooks]`)
+- **`.env.toml`** (gitignored) — binds the project to an environment, can override any config value
+- **`~/.action-llama/environments/<name>.toml`** — shared cloud infrastructure config (`[cloud]`, etc.)
+
+Config merges in order: `config.toml` → `.env.toml` → environment file (later wins, deep merge).
+
+Cloud mode is auto-detected from the merged config (presence of `[cloud]` section). Use `--env <name>` or set `AL_ENV` to select an environment:
+
+```bash
+al start --env prod-aws      # explicit
+AL_ENV=prod-aws al start     # via env var
+```
+
+Or set it in `.env.toml`:
+
+```toml
+environment = "prod-aws"
+```
+
+Manage environments with `al env init <name>`, `al env list`, `al env show <name>`.
 
 ## Running Agents
 

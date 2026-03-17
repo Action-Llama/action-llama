@@ -40,6 +40,13 @@ vi.mock("../../src/shared/credentials.js", () => ({
     if (sep === -1) return { type: ref, instance: "default" };
     return { type: ref.slice(0, sep).trim(), instance: ref.slice(sep + 1).trim() };
   },
+  resolveAgentCredentials: (_agentName: string, refs: string[]) => {
+    return Promise.resolve(refs.map((ref: string) => {
+      const sep = ref.indexOf(":");
+      if (sep === -1) return { type: ref, instance: "default" };
+      return { type: ref.slice(0, sep).trim(), instance: ref.slice(sep + 1).trim() };
+    }));
+  },
   requireCredentialRef: () => {},
   writeCredentialField: () => {},
   writeCredentialFields: () => {},

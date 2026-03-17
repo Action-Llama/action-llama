@@ -12,7 +12,7 @@ import { resolve, join } from "path";
 import { tmpdir } from "os";
 import type { AgentConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
-import { loadCredentialField, parseCredentialRef } from "../shared/credentials.js";
+import { loadCredentialField, parseCredentialRef, resolveAgentCredentials } from "../shared/credentials.js";
 import { agentDir } from "../shared/paths.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import { getExitCodeMessage } from "../shared/exit-codes.js";
@@ -171,15 +171,16 @@ export class AgentRunner {
       }
 
       // Set git author identity from git_ssh credential (scoped to this run)
-      const gitSshRef = this.agentConfig.credentials.find((ref) => parseCredentialRef(ref).type === "git_ssh");
-      if (gitSshRef) {
-        const { instance } = parseCredentialRef(gitSshRef);
-        const gitName = await loadCredentialField("git_ssh", instance, "username");
+      // Resolve credentials using agent-specific → default fallback
+      const resolvedCreds = await resolveAgentCredentials(this.agentConfig.name, this.agentConfig.credentials);
+      const gitSshCred = resolvedCreds.find((c) => c.type === "git_ssh");
+      if (gitSshCred) {
+        const gitName = await loadCredentialField("git_ssh", gitSshCred.instance, "username");
         if (gitName) {
           process.env.GIT_AUTHOR_NAME = gitName;
           process.env.GIT_COMMITTER_NAME = gitName;
         }
-        const gitEmail = await loadCredentialField("git_ssh", instance, "email");
+        const gitEmail = await loadCredentialField("git_ssh", gitSshCred.instance, "email");
         if (gitEmail) {
           process.env.GIT_AUTHOR_EMAIL = gitEmail;
           process.env.GIT_COMMITTER_EMAIL = gitEmail;

@@ -5,7 +5,7 @@ import { startScheduler } from "../../scheduler/index.js";
 import { StatusTracker } from "../../tui/status-tracker.js";
 import { execute as runDoctor } from "./doctor.js";
 
-export async function execute(opts: { project: string; cloud?: boolean; headless?: boolean; webUi?: boolean; expose?: boolean }): Promise<void> {
+export async function execute(opts: { project: string; env?: string; headless?: boolean; webUi?: boolean; expose?: boolean }): Promise<void> {
   const projectPath = resolve(opts.project);
 
   // Guard: refuse to run if the project path looks like an agent directory
@@ -17,9 +17,10 @@ export async function execute(opts: { project: string; cloud?: boolean; headless
   }
 
   // Ensure all credentials are present before starting
-  await runDoctor({ project: opts.project, cloud: opts.cloud, checkOnly: opts.headless });
+  await runDoctor({ project: opts.project, env: opts.env, checkOnly: opts.headless });
 
-  const globalConfig = loadGlobalConfig(projectPath);
+  const globalConfig = loadGlobalConfig(projectPath, opts.env);
+  const cloudMode = !!globalConfig.cloud;
 
   // Docker is always enabled
   if (!globalConfig.local) {
@@ -29,13 +30,10 @@ export async function execute(opts: { project: string; cloud?: boolean; headless
   }
 
   // Cloud mode: set up cloud backend
-  if (opts.cloud) {
-    if (!globalConfig.cloud) {
-      throw new Error("No [cloud] section found in config.toml. Run 'al setup cloud' first.");
-    }
+  if (cloudMode) {
     const { setDefaultBackend } = await import("../../shared/credentials.js");
     const { createBackendFromCloudConfig } = await import("../../shared/remote.js");
-    const backend = await createBackendFromCloudConfig(globalConfig.cloud);
+    const backend = await createBackendFromCloudConfig(globalConfig.cloud!);
     setDefaultBackend(backend);
   }
 
@@ -47,7 +45,7 @@ export async function execute(opts: { project: string; cloud?: boolean; headless
   // Render TUI early so build progress is visible
   statusTracker.setSchedulerInfo({
     mode,
-    runtime: dockerEnabled ? (opts.cloud ? globalConfig.cloud?.provider : "local") : undefined,
+    runtime: dockerEnabled ? (cloudMode ? globalConfig.cloud?.provider : "local") : undefined,
     gatewayPort: null,
     cronJobCount: 0,
     webhooksActive: false,
@@ -69,7 +67,7 @@ export async function execute(opts: { project: string; cloud?: boolean; headless
   }
 
   const { cronJobs, runnerPools, gateway, webhookRegistry, webhookUrls } = await startScheduler(
-    projectPath, globalConfig, statusTracker, opts.cloud, opts.webUi, opts.expose
+    projectPath, globalConfig, statusTracker, cloudMode, opts.webUi, opts.expose
   );
 
   const gatewayPort = globalConfig.gateway?.port || 8080;
@@ -77,7 +75,7 @@ export async function execute(opts: { project: string; cloud?: boolean; headless
   // Update scheduler info now that startup is complete
   statusTracker.setSchedulerInfo({
     mode,
-    runtime: dockerEnabled ? (opts.cloud ? globalConfig.cloud?.provider : "local") : undefined,
+    runtime: dockerEnabled ? (cloudMode ? globalConfig.cloud?.provider : "local") : undefined,
     gatewayPort,
     cronJobCount: cronJobs.length,
     webhooksActive: !!webhookRegistry,

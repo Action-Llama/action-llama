@@ -16,7 +16,7 @@ vi.mock("../../../src/cloud/provider.js", () => ({
 
 const { execute } = await import("../../../src/cli/commands/kill.js");
 
-describe("kill --cloud", () => {
+describe("kill --env (cloud)", () => {
   let tmpDir: string;
 
   afterEach(() => {
@@ -59,7 +59,7 @@ describe("kill --cloud", () => {
     ]);
 
     const output = await captureLog(() =>
-      execute("dev", { project: tmpDir, cloud: true })
+      execute("dev", { project: tmpDir })
     );
 
     expect(mockKill).toHaveBeenCalledTimes(2);
@@ -81,7 +81,7 @@ describe("kill --cloud", () => {
     ]);
 
     const output = await captureLog(() =>
-      execute("8acdf32fa2c2405488c63bc55880192e", { project: tmpDir, cloud: true })
+      execute("8acdf32fa2c2405488c63bc55880192e", { project: tmpDir })
     );
 
     expect(mockKill).toHaveBeenCalledTimes(1);
@@ -95,17 +95,18 @@ describe("kill --cloud", () => {
     mockListRunningAgents.mockResolvedValueOnce([]);
 
     await expect(
-      execute("nonexistent", { project: tmpDir, cloud: true })
+      execute("nonexistent", { project: tmpDir })
     ).rejects.toThrow('No running cloud instances found matching "nonexistent".');
 
     expect(mockKill).not.toHaveBeenCalled();
   });
 
-  it("throws when no [cloud] config", async () => {
+  it("falls through to local mode when no cloud config", async () => {
     tmpDir = makeTmpProject();
 
+    // Without cloud config, it tries local gateway which fails (no gateway running)
     await expect(
-      execute("dev", { project: tmpDir, cloud: true })
-    ).rejects.toThrow("No [cloud] section found in config.toml");
+      execute("dev", { project: tmpDir })
+    ).rejects.toThrow();
   });
 });

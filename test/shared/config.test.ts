@@ -3,8 +3,9 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "fs";
 import { resolve, join } from "path";
 import { tmpdir } from "os";
 import { stringify as stringifyTOML } from "smol-toml";
-import { loadGlobalConfig, loadAgentConfig, discoverAgents } from "../../src/shared/config.js";
+import { loadGlobalConfig, loadProjectConfig, loadAgentConfig, discoverAgents, validateAgentName } from "../../src/shared/config.js";
 import type { GlobalConfig } from "../../src/shared/config.js";
+import { ENVIRONMENTS_DIR } from "../../src/shared/paths.js";
 
 describe("loadGlobalConfig", () => {
   let tmpDir: string;
@@ -194,6 +195,97 @@ output = "/tmp/hello.txt"
     const loaded = loadAgentConfig(tmpDir, "dev");
     expect(loaded.model.provider).toBe("openai");
     expect(loaded.model.model).toBe("gpt-4o");
+  });
+});
+
+describe("loadGlobalConfig three-layer merge", () => {
+  let tmpDir: string;
+  const testEnvName = `test-merge-${Date.now()}`;
+  const testEnvPath = resolve(ENVIRONMENTS_DIR, `${testEnvName}.toml`);
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    try { rmSync(testEnvPath); } catch {}
+  });
+
+  it("merges .env.toml overrides into config.toml", () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      gateway: { port: 8080 },
+    }));
+    writeFileSync(resolve(tmpDir, ".env.toml"), stringifyTOML({
+      gateway: { port: 9090 },
+    }));
+
+    const loaded = loadGlobalConfig(tmpDir);
+    expect(loaded.gateway?.port).toBe(9090);
+  });
+
+  it("merges environment config over project config", () => {
+    mkdirSync(ENVIRONMENTS_DIR, { recursive: true });
+    writeFileSync(testEnvPath, stringifyTOML({
+      gateway: { url: "https://cloud.example.com" },
+    }));
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      gateway: { port: 8080 },
+    }));
+
+    const loaded = loadGlobalConfig(tmpDir, testEnvName);
+    expect(loaded.gateway?.port).toBe(8080);
+    expect(loaded.gateway?.url).toBe("https://cloud.example.com");
+  });
+
+  it("environment overrides .env.toml overrides config.toml", () => {
+    mkdirSync(ENVIRONMENTS_DIR, { recursive: true });
+    writeFileSync(testEnvPath, stringifyTOML({
+      gateway: { port: 7070 },
+    }));
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      gateway: { port: 8080 },
+    }));
+    writeFileSync(resolve(tmpDir, ".env.toml"), stringifyTOML({
+      gateway: { port: 9090 },
+    }));
+
+    const loaded = loadGlobalConfig(tmpDir, testEnvName);
+    // env file (7070) wins over .env.toml (9090) which won over config.toml (8080)
+    expect(loaded.gateway?.port).toBe(7070);
+  });
+
+  it("loadProjectConfig does not include environment layers", () => {
+    mkdirSync(ENVIRONMENTS_DIR, { recursive: true });
+    writeFileSync(testEnvPath, stringifyTOML({
+      gateway: { url: "https://cloud.example.com" },
+    }));
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      gateway: { port: 8080 },
+    }));
+    writeFileSync(resolve(tmpDir, ".env.toml"), `environment = "${testEnvName}"\n`);
+
+    const raw = loadProjectConfig(tmpDir);
+    expect(raw.gateway?.port).toBe(8080);
+    expect(raw.gateway?.url).toBeUndefined();
+  });
+});
+
+describe("validateAgentName", () => {
+  it("rejects 'default' as agent name", () => {
+    expect(() => validateAgentName("default")).toThrow('reserved');
+  });
+
+  it("accepts valid agent names", () => {
+    expect(() => validateAgentName("dev")).not.toThrow();
+    expect(() => validateAgentName("my-agent")).not.toThrow();
+    expect(() => validateAgentName("a")).not.toThrow();
+  });
+
+  it("rejects invalid agent names", () => {
+    expect(() => validateAgentName("")).toThrow();
+    expect(() => validateAgentName("Invalid")).toThrow();
+    expect(() => validateAgentName("-bad")).toThrow();
   });
 });
 
