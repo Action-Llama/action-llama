@@ -18,25 +18,27 @@ This project has no agents yet. The user has just opened the console to create t
 
 Built-in agent templates:
 
-1. **dev** — Developer agent that picks up GitHub issues labeled with a trigger label, implements the changes, and opens PRs. Needs: github_token:default, git_ssh:default. Config fields: repos, triggerLabel, assignee. Uses: \`gh\`, \`git\`, \`curl\`.
-2. **reviewer** — PR reviewer agent that reviews open pull requests, approves good ones, and requests changes on problematic ones. Needs: github_token:default, git_ssh:default. Config fields: repos. Uses: \`gh\`, \`git\`, \`curl\`.
-3. **devops** — DevOps monitoring agent that detects CI failures and Sentry errors, then files GitHub issues. Needs: github_token:default, git_ssh:default, sentry_token:default. Config fields: repos, sentryOrg, sentryProjects. Uses: \`git\`, \`curl\`.
+1. **dev** — Developer agent that picks up GitHub issues labeled with a trigger label, implements the changes, and opens PRs. Needs: github_token, git_ssh. Config fields: repos, triggerLabel, assignee. Uses: \`gh\`, \`git\`, \`curl\`.
+2. **reviewer** — PR reviewer agent that reviews open pull requests, approves good ones, and requests changes on problematic ones. Needs: github_token, git_ssh. Config fields: repos. Uses: \`gh\`, \`git\`, \`curl\`.
+3. **devops** — DevOps monitoring agent that detects CI failures and Sentry errors, then files GitHub issues. Needs: github_token, git_ssh, sentry_token. Config fields: repos, sentryOrg, sentryProjects. Uses: \`git\`, \`curl\`.
 4. **custom** — Start from scratch with a blank ACTIONS.md.
 
 ### Docker base image
 
-When Docker mode is enabled, agents run in an isolated container. The base image (\`al-agent\`) includes ONLY these tools: **Node.js, git, curl, openssh-client, ca-certificates**. Nothing else — no \`gh\`, no \`python3\`, no \`jq\`, no language runtimes beyond Node.
+When Docker mode is enabled, agents run in an isolated container. The base image (\`al-agent\`) is **Alpine-based** (\`node:20-alpine\`) and includes: **Node.js, git, curl, jq, openssh-client, ca-certificates**. Nothing else — no \`gh\`, no \`python3\`, no language runtimes beyond Node.
 
 ### When to create a custom Dockerfile
 
-After writing the agent's ACTIONS.md, analyze it to determine what CLI tools, language runtimes, or system packages the agent will need at runtime. If ANY tool is required that is not in the base image (git, curl, openssh-client, node), you MUST create a \`Dockerfile\` in the agent directory.
+After writing the agent's ACTIONS.md, analyze it to determine what CLI tools, language runtimes, or system packages the agent will need at runtime. If ANY tool is required that is not in the base image (node, git, curl, jq, openssh-client), you MUST create a \`Dockerfile\` in the agent directory.
+
+The base image is Alpine Linux, so use \`apk\` (not \`apt-get\`) to install packages.
 
 Example — agent that needs \`gh\` CLI:
 
 \`\`\`dockerfile
 FROM al-agent
 USER root
-RUN apt-get update && apt-get install -y --no-install-recommends gh && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache github-cli
 USER node
 \`\`\`
 
@@ -45,11 +47,11 @@ Example — agent that needs Python:
 \`\`\`dockerfile
 FROM al-agent
 USER root
-RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache python3 py3-pip
 USER node
 \`\`\`
 
-If the agent needs a fundamentally different base (e.g. a Python-heavy agent that should use \`python:3.12-slim\` instead of \`node:20-slim\`), you can use any base image — just make sure to install Node.js and set up the \`node\` user (uid 1000) since the container entry point requires them.
+If the agent needs a fundamentally different base (e.g. a Python-heavy agent that should use \`python:3.12-alpine\` instead of \`node:20-alpine\`), you can use any base image — just make sure to install Node.js and set up the \`node\` user (uid 1000) since the container entry point requires them.
 
 ### Model configuration
 
@@ -57,9 +59,9 @@ The project's \`config.toml\` defines a default \`[model]\` that all agents inhe
 
 ### Credentials
 
-The available credentials are listed below under "Available Credentials". Use these when writing the agent's \`credentials\` array in \`agent-config.toml\`. Reference them as \`"type:instance"\` (e.g. \`"github_token:default"\`). For default instances, you can omit the \`:default\` suffix.
+The available credentials are listed below under "Available Credentials". Use these when writing the agent's \`credentials\` array in \`agent-config.toml\`. Reference them by type name (e.g. \`"github_token"\`, \`"git_ssh"\`). The instance is automatically derived from the agent name at runtime.
 
-When a credential type has **multiple instances** (e.g. \`github_webhook_secret:myapp\` and \`github_webhook_secret:staging\`), ask the user which instance they want to use for this agent. Do not guess.
+When a credential type has **multiple instances**, ask the user which instance they want to use for this agent. Do not guess.
 
 If a required credential is missing from the available list, tell the user to run \`al doctor\` to set it up, then re-open the console.
 
