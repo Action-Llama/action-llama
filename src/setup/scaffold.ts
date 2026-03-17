@@ -1,5 +1,5 @@
-import { mkdirSync, writeFileSync, existsSync, readFileSync, copyFileSync, readdirSync } from "fs";
-import { resolve } from "path";
+import { mkdirSync, writeFileSync, existsSync, copyFileSync, symlinkSync, lstatSync, realpathSync } from "fs";
+import { resolve, relative } from "path";
 import { fileURLToPath } from "url";
 import { stringify as stringifyTOML } from "smol-toml";
 import type { GlobalConfig, AgentConfig } from "../shared/config.js";
@@ -18,8 +18,13 @@ function resolvePackageRoot(): string {
   return resolve(thisFile, "..", "..", "..");
 }
 
-function resolvePackageAgentsMd(): string {
-  return resolve(resolvePackageRoot(), "AGENTS.md");
+function resolveAgentReferenceMd(): string {
+  return resolve(resolvePackageRoot(), "docs", "agent-reference", "AGENTS.md");
+}
+
+/** Check if a path exists as a symlink (even dangling). Returns false if nothing exists. */
+function lstatSafe(path: string): boolean {
+  try { return lstatSync(path).isSymbolicLink(); } catch { return false; }
 }
 
 export interface ScaffoldAgent {
@@ -81,39 +86,30 @@ export function scaffoldProject(
     scaffoldAgent(projectPath, agent);
   }
 
-  // Copy AGENTS.md (and CLAUDE.md alias) from the shipped package into the project.
-  // We copy instead of symlinking so the files work immediately after `git clone`
-  // without needing `npm install` first — important for agents that clone the repo.
-  const packageAgentsMd = resolvePackageAgentsMd();
+  // Symlink AGENTS.md and CLAUDE.md to the package's docs/agent-reference/AGENTS.md.
+  // Uses a relative symlink so it works if the project moves.
+  // Falls back to a regular copy if symlinks fail (e.g. Windows without Developer Mode)
+  // or if the target doesn't exist (e.g. running from source before npm install).
+  const agentRefMd = resolveAgentReferenceMd();
+  const agentRefExists = existsSync(agentRefMd);
   for (const name of ["AGENTS.md", "CLAUDE.md"]) {
     const dest = resolve(projectPath, name);
-    if (!existsSync(dest)) {
-      try {
-        copyFileSync(packageAgentsMd, dest);
-      } catch {
-        // Fallback: if the package can't be resolved (e.g. running from source
-        // before npm install), skip the copy — the user can create it later.
-      }
-    }
-  }
-
-  // Copy skills/ directory from the shipped package so AGENTS.md links resolve
-  // without needing node_modules.
-  const packageSkillsDir = resolve(resolvePackageRoot(), "skills");
-  try {
-    const skillFiles = readdirSync(packageSkillsDir).filter((f) => f.endsWith(".md"));
-    if (skillFiles.length > 0) {
-      const destSkillsDir = resolve(projectPath, "skills");
-      mkdirSync(destSkillsDir, { recursive: true });
-      for (const file of skillFiles) {
-        const dest = resolve(destSkillsDir, file);
-        if (!existsSync(dest)) {
-          copyFileSync(resolve(packageSkillsDir, file), dest);
+    if (!existsSync(dest) && !lstatSafe(dest)) {
+      if (agentRefExists) {
+        try {
+          const relTarget = relative(realpathSync(projectPath), agentRefMd);
+          symlinkSync(relTarget, dest);
+          continue;
+        } catch {
+          // Fall through to copy
         }
       }
+      try {
+        copyFileSync(agentRefMd, dest);
+      } catch {
+        // Skip if package can't be resolved
+      }
     }
-  } catch {
-    // Fallback: skip if skills directory can't be read
   }
 
   // Write project Dockerfile (base image for all agents)

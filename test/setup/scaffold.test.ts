@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync, readFileSync, lstatSync, writeFileSync, mkdirSync } from "fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync, lstatSync, readlinkSync, writeFileSync, mkdirSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
 import { parse as parseTOML } from "smol-toml";
@@ -117,43 +117,40 @@ describe("scaffoldProject", () => {
     }
   });
 
-  it("creates project-level AGENTS.md as a regular file", () => {
+  it("creates AGENTS.md as a symlink to docs/agent-reference/AGENTS.md", () => {
     tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
     const projDir = resolve(tmpDir, "my-project");
     scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
 
     const agentsMdPath = resolve(projDir, "AGENTS.md");
     expect(existsSync(agentsMdPath)).toBe(true);
-    expect(lstatSync(agentsMdPath).isFile()).toBe(true);
+    expect(lstatSync(agentsMdPath).isSymbolicLink()).toBe(true);
+    const target = readlinkSync(agentsMdPath);
+    expect(target).toContain("docs/agent-reference/AGENTS.md");
     const content = readFileSync(agentsMdPath, "utf-8");
     expect(content).toContain("Action Llama Project");
-    expect(content).toContain("agent-config.toml");
   });
 
-  it("creates CLAUDE.md as a regular file with same content as AGENTS.md", () => {
+  it("creates CLAUDE.md as a symlink to docs/agent-reference/AGENTS.md", () => {
     tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
     const projDir = resolve(tmpDir, "my-project");
     scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
 
     const claudeMdPath = resolve(projDir, "CLAUDE.md");
     expect(existsSync(claudeMdPath)).toBe(true);
-    expect(lstatSync(claudeMdPath).isFile()).toBe(true);
+    expect(lstatSync(claudeMdPath).isSymbolicLink()).toBe(true);
+    const target = readlinkSync(claudeMdPath);
+    expect(target).toContain("docs/agent-reference/AGENTS.md");
     const content = readFileSync(claudeMdPath, "utf-8");
     expect(content).toContain("Action Llama Project");
-    expect(content).toContain("agent-config.toml");
   });
 
-  it("copies skills/ directory with markdown files", () => {
+  it("does not create skills/ directory in project", () => {
     tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
     const projDir = resolve(tmpDir, "my-project");
     scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
 
-    const skillsDir = resolve(projDir, "skills");
-    expect(existsSync(skillsDir)).toBe(true);
-    expect(existsSync(resolve(skillsDir, "README.md"))).toBe(true);
-    expect(existsSync(resolve(skillsDir, "resource-locks.md"))).toBe(true);
-    const content = readFileSync(resolve(skillsDir, "resource-locks.md"), "utf-8");
-    expect(content).toContain("rlock");
+    expect(existsSync(resolve(projDir, "skills"))).toBe(false);
   });
 
   it("creates .env.toml with projectName when projectName is provided", () => {

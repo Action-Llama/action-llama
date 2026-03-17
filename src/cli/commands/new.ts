@@ -97,7 +97,7 @@ export async function execute(name: string): Promise<void> {
   scaffoldProject(projectPath, globalConfig, [], name);
 
   console.log(`  Wrote ${projectPath}/package.json`);
-  console.log(`  Wrote ${projectPath}/AGENTS.md`);
+  console.log(`  Linked ${projectPath}/AGENTS.md`);
   console.log(`  Created state directories`);
 
   console.log("\n--- Installing dependencies ---\n");
