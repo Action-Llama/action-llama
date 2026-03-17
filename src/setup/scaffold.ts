@@ -144,6 +144,12 @@ export function scaffoldProject(
   // Create workspace directory
   mkdirSync(resolve(projectPath, ".workspace"), { recursive: true });
 
+  // Create .env.toml with projectName
+  const envTomlPath = resolve(projectPath, ".env.toml");
+  if (!existsSync(envTomlPath) && projectName) {
+    writeFileSync(envTomlPath, `projectName = "${projectName}"\n`);
+  }
+
   // Create .gitignore
   const gitignorePath = resolve(projectPath, ".gitignore");
   if (!existsSync(gitignorePath)) {

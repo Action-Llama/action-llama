@@ -68,6 +68,12 @@ describe("loadEnvToml", () => {
     expect(result?.environment).toBe("prod-aws");
   });
 
+  it("loads .env.toml with projectName field", () => {
+    writeFileSync(resolve(tmpDir, ".env.toml"), 'projectName = "my-project"\n');
+    const result = loadEnvToml(tmpDir);
+    expect(result?.projectName).toBe("my-project");
+  });
+
   it("loads .env.toml with config overrides", () => {
     const content = `
 environment = "staging"

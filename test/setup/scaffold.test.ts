@@ -156,6 +156,27 @@ describe("scaffoldProject", () => {
     expect(content).toContain("rlock");
   });
 
+  it("creates .env.toml with projectName when projectName is provided", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
+    const projDir = resolve(tmpDir, "my-project");
+    scaffoldProject(projDir, makeGlobalConfig(), makeAgents(), "my-project");
+
+    const envTomlPath = resolve(projDir, ".env.toml");
+    expect(existsSync(envTomlPath)).toBe(true);
+    const content = readFileSync(envTomlPath, "utf-8");
+    const parsed = parseTOML(content);
+    expect(parsed.projectName).toBe("my-project");
+  });
+
+  it("does not create .env.toml when projectName is not provided", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
+    const projDir = resolve(tmpDir, "my-project");
+    scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
+
+    const envTomlPath = resolve(projDir, ".env.toml");
+    expect(existsSync(envTomlPath)).toBe(false);
+  });
+
   it("creates .workspace directory and .gitignore", () => {
     tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
     const projDir = resolve(tmpDir, "my-project");

@@ -55,7 +55,7 @@ function Header({ info, agentCount, agents }: { info: SchedulerInfo | null; agen
   return (
     <Box flexDirection="column">
       <Text bold>
-        Action Llama ({modeLabel}) — {agentCount} agent{agentCount !== 1 ? "s" : ""} 
+        Action Llama{info.projectName ? ` — ${info.projectName}` : ""} ({modeLabel}) — {agentCount} agent{agentCount !== 1 ? "s" : ""}
         ({enabledCount} enabled{disabledCount > 0 ? `, ${disabledCount} disabled` : ""}), {info.cronJobCount} cron job{info.cronJobCount !== 1 ? "s" : ""}
       </Text>
       <Text dimColor>
