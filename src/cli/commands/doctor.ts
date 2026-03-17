@@ -61,14 +61,16 @@ export async function execute(opts: { project: string; cloud?: boolean; checkOnl
     await promptCredentials(credentialRefs);
   }
 
-  // --- Gateway API key ---
-  console.log("\nGateway API key:");
-  const { key, generated } = await ensureGatewayApiKey();
-  if (generated) {
-    console.log(`  [new] Generated gateway API key: ${key}`);
-    console.log("  Save this key — you'll need it to log into the dashboard.");
-  } else {
-    console.log("  [ok] Gateway API key already configured.");
+  // --- Gateway API key (interactive only — CI doesn't need one) ---
+  if (!opts.checkOnly) {
+    console.log("\nGateway API key:");
+    const { key, generated } = await ensureGatewayApiKey();
+    if (generated) {
+      console.log(`  [new] Generated gateway API key: ${key}`);
+      console.log("  Save this key — you'll need it to log into the dashboard.");
+    } else {
+      console.log("  [ok] Gateway API key already configured.");
+    }
   }
 
   // --- Cloud mode: push creds + reconcile IAM (interactive only) ---
