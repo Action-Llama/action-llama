@@ -1,13 +1,16 @@
-import { readFileSync } from "fs";
+import { readFileSync, unlinkSync } from "fs";
 import {
   listEnvironments,
   loadEnvironmentConfig,
   writeEnvironmentConfig,
   environmentExists,
   environmentPath,
+  loadEnvToml,
+  writeEnvToml,
   type EnvironmentConfig,
 } from "../../shared/environment.js";
 import { ConfigError } from "../../shared/errors.js";
+import { VPS_CONSTANTS } from "../../cloud/vps/constants.js";
 
 const VALID_TYPES = ["server"] as const;
 type EnvType = typeof VALID_TYPES[number];
@@ -78,4 +81,86 @@ export async function show(name: string): Promise<void> {
   console.log(`File: ${filePath}\n`);
   const content = readFileSync(filePath, "utf-8");
   console.log(content);
+}
+
+export async function set(name: string | undefined, opts: { project: string }): Promise<void> {
+  if (name) {
+    if (!environmentExists(name)) {
+      console.warn(`Warning: environment "${name}" does not exist yet. You can create it with 'al env init ${name}'.`);
+    }
+    writeEnvToml(opts.project, { environment: name });
+    console.log(`Project bound to environment "${name}".`);
+  } else {
+    writeEnvToml(opts.project, { environment: undefined });
+    console.log("Environment binding cleared. Commands will use the local scheduler.");
+  }
+}
+
+export async function prov(name: string): Promise<void> {
+  // If env already exists with a real host, skip
+  if (environmentExists(name)) {
+    const existing = loadEnvironmentConfig(name);
+    if (existing.server?.host && existing.server.host !== "REPLACE_ME") {
+      console.log(`Environment "${name}" already has a server at ${existing.server.host}. Skipping provisioning.`);
+      return;
+    }
+  }
+
+  const { setupVpsCloud } = await import("../../cloud/vps/provision.js");
+  const result = await setupVpsCloud();
+  if (!result) return;
+
+  const host = result.host as string;
+  const config: EnvironmentConfig = {
+    server: {
+      host,
+      user: (result.sshUser as string) ?? VPS_CONSTANTS.DEFAULT_SSH_USER,
+      port: (result.sshPort as number) ?? VPS_CONSTANTS.DEFAULT_SSH_PORT,
+      basePath: "/opt/action-llama",
+      provider: (result.provider as string) ?? "vps",
+      vultrInstanceId: result.vultrInstanceId as string | undefined,
+      vultrRegion: result.vultrRegion as string | undefined,
+    },
+    gateway: { url: `http://${host}:${VPS_CONSTANTS.DEFAULT_GATEWAY_PORT}` },
+  };
+
+  writeEnvironmentConfig(name, config);
+  console.log(`Environment "${name}" created at ${environmentPath(name)}`);
+}
+
+export async function deprov(name: string, opts: { project: string }): Promise<void> {
+  if (!environmentExists(name)) {
+    throw new ConfigError(
+      `Environment "${name}" not found. Run 'al env list' to see available environments.`
+    );
+  }
+
+  const config = loadEnvironmentConfig(name);
+  if (!config.server) {
+    throw new ConfigError(`Environment "${name}" has no [server] config — nothing to deprovision.`);
+  }
+
+  const { teardownVps } = await import("../../cloud/vps/teardown.js");
+  const vpsConfig = {
+    provider: "vps" as const,
+    host: config.server.host,
+    sshUser: config.server.user,
+    sshPort: config.server.port,
+    sshKeyPath: config.server.keyPath,
+    vultrInstanceId: config.server.vultrInstanceId,
+    vultrRegion: config.server.vultrRegion,
+  };
+
+  await teardownVps(opts.project, vpsConfig);
+
+  // Delete environment file
+  unlinkSync(environmentPath(name));
+  console.log(`Environment "${name}" deleted.`);
+
+  // Clear .env.toml binding if it points to this env
+  const envToml = loadEnvToml(opts.project);
+  if (envToml?.environment === name) {
+    writeEnvToml(opts.project, { environment: undefined });
+    console.log(`Cleared environment binding in .env.toml.`);
+  }
 }

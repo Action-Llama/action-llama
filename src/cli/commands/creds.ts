@@ -1,5 +1,6 @@
 import { readdirSync, statSync, rmSync } from "fs";
 import { resolve } from "path";
+import { search, confirm } from "@inquirer/prompts";
 import { CREDENTIALS_DIR } from "../../shared/paths.js";
 import { resolveCredential, getBuiltinCredential, listBuiltinCredentialIds } from "../../credentials/registry.js";
 import { promptCredential } from "../../credentials/prompter.js";
@@ -117,4 +118,41 @@ export async function rm(ref: string): Promise<void> {
   }
 
   console.log(`Credential "${ref}" removed.`);
+}
+
+export async function types(): Promise<void> {
+  const ids = listBuiltinCredentialIds();
+  const choices = ids.map((id) => {
+    const def = getBuiltinCredential(id)!;
+    return {
+      name: `${def.label} — ${def.description}`,
+      value: id,
+    };
+  });
+
+  const selected = await search({
+    message: "Search credential types:",
+    source: (input) => {
+      if (!input) return choices;
+      const lower = input.toLowerCase();
+      return choices.filter((c) => c.name.toLowerCase().includes(lower));
+    },
+  });
+
+  const def = getBuiltinCredential(selected)!;
+  console.log(`\n  ${def.label} (${def.id})`);
+  console.log(`  ${def.description}`);
+  if (def.helpUrl) console.log(`  Help: ${def.helpUrl}`);
+  console.log(`  Fields: ${def.fields.map((f) => f.name).join(", ")}`);
+  if (def.envVars) {
+    const vars = Object.entries(def.envVars).map(([field, env]) => `${field} → ${env}`).join(", ");
+    console.log(`  Env vars: ${vars}`);
+  }
+  if (def.agentContext) console.log(`  Agent context: ${def.agentContext}`);
+  console.log();
+
+  const shouldAdd = await confirm({ message: "Add this credential now?", default: false });
+  if (shouldAdd) {
+    await add(selected);
+  }
 }

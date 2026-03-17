@@ -62,6 +62,17 @@ async function setupExistingServer(): Promise<Record<string, unknown> | null> {
   }
   console.log(`Docker ${dockerResult.stdout} found.`);
 
+  // Offer to configure firewall on existing server
+  const setupFirewall = await confirm({
+    message: "Configure ufw firewall (allow SSH + gateway only)?",
+    default: true,
+  });
+  if (setupFirewall) {
+    console.log("Configuring firewall...");
+    await sshExec(sshConfig, `ufw allow 22/tcp && ufw allow ${VPS_CONSTANTS.DEFAULT_GATEWAY_PORT}/tcp && ufw --force enable`);
+    console.log("Firewall enabled (SSH + gateway only).");
+  }
+
   const config: Record<string, unknown> = {
     provider: "vps",
     host,
@@ -230,6 +241,11 @@ async function provisionVultr(): Promise<Record<string, unknown> | null> {
     console.error("\nVPS is active but SSH connection failed. Check firewall rules.");
     return null;
   }
+
+  // Configure firewall
+  console.log("Configuring firewall...");
+  await sshExec(sshConfig, `ufw allow 22/tcp && ufw allow ${VPS_CONSTANTS.DEFAULT_GATEWAY_PORT}/tcp && ufw --force enable`);
+  console.log("Firewall enabled (SSH + gateway only).");
 
   const shouldContinue = await confirm({
     message: `VPS ready at ${sshConfig.host}. Continue with setup?`,

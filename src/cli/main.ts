@@ -71,7 +71,7 @@ program
 
 program
   .command("start")
-  .description("Start cron scheduler")
+  .description("Start the scheduler")
   .option("-p, --project <dir>", "project directory", ".")
   .option("-E, --env <name>", "use named deployment environment")
   .option("-H, --headless", "non-interactive mode (no TUI, no credential prompts, for CI/deploy environments)")
@@ -85,7 +85,7 @@ program
 
 program
   .command("stop")
-  .description("Stop the scheduler and clear pending webhook queues")
+  .description("Stop the scheduler and clear pending agent queues")
   .option("-p, --project <dir>", "project directory", ".")
   .action(withCommand(async (opts) => {
     const { execute } = await import("./commands/stop.js");
@@ -120,7 +120,7 @@ program
 
 program
   .command("stat [agent]")
-  .description("Show agent status")
+  .description("Show status of scheduler or agent")
   .option("-p, --project <dir>", "project directory", ".")
   .option("-E, --env <name>", "use named environment")
   .action(withCommand(async (agent, opts) => {
@@ -217,6 +217,35 @@ envCmd
     await show(name);
   }));
 
+envCmd
+  .command("set")
+  .description("Bind this project to a named environment (omit name to unset)")
+  .argument("[name]", "environment name (omit to clear binding and use local)")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(withCommand(async (name: string | undefined, opts: { project: string }) => {
+    const { set } = await import("./commands/env.js");
+    await set(name, opts);
+  }));
+
+envCmd
+  .command("prov")
+  .description("Provision a new VPS and save as an environment")
+  .argument("<name>", "environment name")
+  .action(withCommand(async (name: string) => {
+    const { prov } = await import("./commands/env.js");
+    await prov(name);
+  }));
+
+envCmd
+  .command("deprov")
+  .description("Tear down a provisioned environment and delete its config")
+  .argument("<name>", "environment name")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(withCommand(async (name: string, opts: { project: string }) => {
+    const { deprov } = await import("./commands/env.js");
+    await deprov(name, opts);
+  }));
+
 // --- Credential management ---
 
 const credsCmd = program
@@ -247,11 +276,38 @@ credsCmd
     await rm(ref);
   }));
 
-// --- Setup management ---
+credsCmd
+  .command("types")
+  .description("Browse available credential types")
+  .action(withCommand(async () => {
+    const { types } = await import("./commands/creds.js");
+    await types();
+  }));
 
-const setupCmd = program
-  .command("setup")
-  .description("Setup infrastructure and configuration");
+// --- Agent management ---
+
+const agentCmd = program
+  .command("agent")
+  .description("Agent management");
+
+agentCmd
+  .command("new")
+  .description("Create a new agent from a template")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(withCommand(async (opts) => {
+    const { newAgent } = await import("./commands/agent.js");
+    await newAgent(opts);
+  }));
+
+agentCmd
+  .command("config")
+  .description("Interactively configure an agent")
+  .argument("<name>", "agent name")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(withCommand(async (name: string, opts) => {
+    const { configAgent } = await import("./commands/agent.js");
+    await configAgent(name, opts);
+  }));
 
 program.parseAsync().catch((err) => {
   // Fallback for errors that escape command handlers (e.g. Commander parse errors)
