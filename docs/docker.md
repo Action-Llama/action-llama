@@ -234,9 +234,7 @@ Use `FROM al-agent:latest` and add what you need. The build pipeline automatical
 FROM al-agent:latest
 
 USER root
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gh \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache github-cli
 USER node
 ```
 
@@ -248,17 +246,13 @@ Common additions:
 
 ```dockerfile
 # GitHub CLI (for gh issue list, gh pr create, etc.)
-RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends gh \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache github-cli
 
 # Python (for agents that run Python scripts)
-RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache python3 py3-pip
 
-# jq (for JSON processing in bash)
-RUN apt-get update && apt-get install -y --no-install-recommends jq && rm -rf /var/lib/apt/lists/*
+# jq (for JSON processing in bash) — already in the base image
+# RUN apk add --no-cache jq
 ```
 
 ### Writing a standalone Dockerfile

@@ -18,7 +18,7 @@ The directory name becomes the agent name. No registration is needed — the sch
 Declares what the agent needs to run: which credentials to mount, which model to use, when to trigger, and any custom parameters.
 
 ```toml
-credentials = ["github_token:default", "git_ssh:default"]
+credentials = ["github_token", "git_ssh"]
 schedule = "*/5 * * * *"
 
 [model]
@@ -230,9 +230,7 @@ The base Docker image includes Node.js, git, curl, and openssh. If your agent ne
 ```dockerfile
 FROM al-agent:latest
 USER root
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gh jq python3 \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache github-cli jq python3
 USER node
 ```
 

@@ -1,4 +1,4 @@
-credentials = ["github_token:default", "git_ssh:default", "sentry_token:default"]
+credentials = ["github_token", "git_ssh", "sentry_token"]
 schedule = "*/15 * * * *"
 
 [model]

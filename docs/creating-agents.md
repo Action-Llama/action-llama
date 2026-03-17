@@ -22,7 +22,7 @@ mkdir -p agents/my-agent
 Create `agents/my-agent/agent-config.toml`:
 
 ```toml
-credentials = ["github_token:default", "git_ssh:default"]
+credentials = ["github_token", "git_ssh"]
 schedule = "*/5 * * * *"
 
 [params]
@@ -123,7 +123,7 @@ If only one specific agent needs extra tools, add a `Dockerfile` to that agent's
 ```dockerfile
 FROM al-agent:latest
 USER root
-RUN apt-get update && apt-get install -y --no-install-recommends gh && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache github-cli
 USER node
 ```
 

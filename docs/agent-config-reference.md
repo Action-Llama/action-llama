@@ -5,9 +5,9 @@ Each agent has an `agent-config.toml` file in its directory. The agent name is d
 ## Full Annotated Example
 
 ```toml
-# Required: credential IDs the agent needs at runtime
-# These must exist in ~/.action-llama/credentials/<type>/<instance>/
-credentials = ["github_token:default", "git_ssh:default", "sentry_token:default"]
+# Required: credential types the agent needs at runtime
+# Instance is resolved automatically: agents/<name>/ first, then default/
+credentials = ["github_token", "git_ssh", "sentry_token"]
 
 # Optional: cron schedule (standard cron syntax)
 # Agent must have at least one of: schedule, webhooks
