@@ -39,6 +39,16 @@ describe("env set", () => {
     expect(result?.projectName).toBe("my-project");
   });
 
+  it("clears environment binding when called without a name", async () => {
+    writeFileSync(resolve(tmpDir, ".env.toml"), 'environment = "prod"\nprojectName = "my-app"\n');
+
+    await set(undefined, { project: tmpDir });
+
+    const result = loadEnvToml(tmpDir);
+    expect(result?.environment).toBeUndefined();
+    expect(result?.projectName).toBe("my-app");
+  });
+
   it("warns when environment does not exist", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 

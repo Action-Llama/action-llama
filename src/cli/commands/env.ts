@@ -83,13 +83,17 @@ export async function show(name: string): Promise<void> {
   console.log(content);
 }
 
-export async function set(name: string, opts: { project: string }): Promise<void> {
-  if (!environmentExists(name)) {
-    console.warn(`Warning: environment "${name}" does not exist yet. You can create it with 'al env init ${name}'.`);
+export async function set(name: string | undefined, opts: { project: string }): Promise<void> {
+  if (name) {
+    if (!environmentExists(name)) {
+      console.warn(`Warning: environment "${name}" does not exist yet. You can create it with 'al env init ${name}'.`);
+    }
+    writeEnvToml(opts.project, { environment: name });
+    console.log(`Project bound to environment "${name}".`);
+  } else {
+    writeEnvToml(opts.project, { environment: undefined });
+    console.log("Environment binding cleared. Commands will use the local scheduler.");
   }
-
-  writeEnvToml(opts.project, { environment: name });
-  console.log(`Project bound to environment "${name}".`);
 }
 
 export async function prov(name: string): Promise<void> {

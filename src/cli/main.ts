@@ -219,10 +219,10 @@ envCmd
 
 envCmd
   .command("set")
-  .description("Bind this project to a named environment")
-  .argument("<name>", "environment name")
+  .description("Bind this project to a named environment (omit name to unset)")
+  .argument("[name]", "environment name (omit to clear binding and use local)")
   .option("-p, --project <dir>", "project directory", ".")
-  .action(withCommand(async (name: string, opts: { project: string }) => {
+  .action(withCommand(async (name: string | undefined, opts: { project: string }) => {
     const { set } = await import("./commands/env.js");
     await set(name, opts);
   }));
