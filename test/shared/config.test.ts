@@ -25,7 +25,7 @@ describe("loadGlobalConfig", () => {
     expect(loaded.local?.enabled).toBe(false);
   });
 
-  it("loads valid config.toml with [cloud]", () => {
+  it("throws when [cloud] is in config.toml", () => {
     const config = { cloud: {
       provider: "cloud-run",
       gcpProject: "my-proj",
@@ -34,11 +34,7 @@ describe("loadGlobalConfig", () => {
       serviceAccount: "al-runner@my-proj.iam.gserviceaccount.com",
     } };
     writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(config as any));
-    const loaded = loadGlobalConfig(tmpDir);
-    expect(loaded.cloud?.provider).toBe("cloud-run");
-    if (loaded.cloud?.provider === "cloud-run") {
-      expect(loaded.cloud.gcpProject).toBe("my-proj");
-    }
+    expect(() => loadGlobalConfig(tmpDir)).toThrow("[cloud] section found in config.toml");
   });
 
   it("ignores config.json", () => {

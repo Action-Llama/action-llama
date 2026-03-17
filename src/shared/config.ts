@@ -142,12 +142,12 @@ export function loadProjectConfig(projectPath: string): GlobalConfig {
 export function loadGlobalConfig(projectPath: string, envName?: string): GlobalConfig {
   let config = loadProjectConfig(projectPath);
 
-  // Emit deprecation warning if [cloud] is in config.toml
+  // [cloud] in config.toml is no longer supported — must be in an environment file
   if (config.cloud) {
-    console.error(
-      "[DEPRECATED] [cloud] section found in config.toml. " +
-      "Move cloud infrastructure config to an environment file. " +
-      "Run 'al env init <name>' to create one."
+    throw new ConfigError(
+      "[cloud] section found in config.toml. " +
+      "Cloud infrastructure config must be in an environment file. " +
+      "Move it to ~/.action-llama/environments/<name>.toml and run 'al env init <name>' to create one."
     );
   }
 
