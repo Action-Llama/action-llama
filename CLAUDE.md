@@ -17,7 +17,7 @@ npm run test:watch     # watch mode (unit tests only)
 npm run test:coverage  # V8 coverage
 ```
 
-Tests live in `test/` mirroring `src/`. Integration tests are in `test/integration/` and require Docker. Run unit tests to verify code changes. Run the full suite (`npm test`) before committing.
+Tests live in `test/` mirroring `src/`. Integration tests are in `test/integration/` and require Docker. When asked to run tests, run `npm test` (the full suite) unless explicitly told to run only unit tests. Use `npm run test:unit` only when iterating during development.
 
 ## Commits & Changesets
 
