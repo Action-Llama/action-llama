@@ -183,9 +183,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       lockTimeout: globalConfig.gateway?.lockTimeout,
       apiKey: gatewayApiKey,
       stateStore,
-      // Control routes, dashboard, and lock status are local-only.
-      // In cloud mode, use cloud-native tools (console, CLI) for these operations.
-      controlDeps: cloudMode ? undefined : {
+      controlDeps: {
         statusTracker,
         killInstance: async (instanceId: string) => {
           for (const pool of Object.values(runnerPools)) {
