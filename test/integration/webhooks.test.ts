@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, beforeAll } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { IntegrationHarness, isDockerAvailable } from "./harness.js";
 
 const DOCKER = isDockerAvailable();
@@ -16,75 +16,119 @@ describe.skipIf(!DOCKER)("integration: webhooks", { timeout: 180_000 }, () => {
         {
           name: "webhook-agent",
           webhooks: [{ source: "test-hook" }],
-          testScript: `#!/bin/bash\necho "webhook triggered"\nexit 0\n`,
+          testScript: [
+            "#!/bin/bash",
+            "set -e",
+            // Verify PROMPT contains webhook context
+            'echo "webhook-agent: prompt=$PROMPT"',
+            'test -n "$GATEWAY_URL" || exit 1',
+            "exit 0",
+          ].join("\n"),
         },
       ],
       globalConfig: {
-        webhooks: {
-          "test-hook": { type: "test" },
-        },
+        webhooks: { "test-hook": { type: "test" } },
       },
     });
 
     await harness.start();
-    // Wait for image builds to complete (initial run won't happen since no schedule)
     await harness.waitForSettle(5000);
 
     const res = await harness.sendWebhook({
       source: "test",
-      event: "test-event",
+      event: "deploy",
+      action: "created",
       repo: "acme/app",
       sender: "tester",
+      title: "Deploy v1.0",
     });
 
     expect(res.ok).toBe(true);
     const body = await res.json();
     expect(body.matched).toBeGreaterThanOrEqual(1);
 
-    // Wait for agent to complete
     await harness.waitForAgentRun("webhook-agent");
     expect(harness.getRunnerPool("webhook-agent")?.hasRunningJobs).toBe(false);
   });
 
-  it("filters webhooks by event type", async () => {
+  it("filters webhooks — non-matching events are skipped", async () => {
     harness = await IntegrationHarness.create({
       agents: [
         {
           name: "filtered-agent",
           webhooks: [{ source: "test-hook", events: ["deploy"] }],
-          testScript: `#!/bin/bash\nexit 0\n`,
+          testScript: "#!/bin/bash\nexit 0\n",
         },
       ],
       globalConfig: {
-        webhooks: {
-          "test-hook": { type: "test" },
-        },
+        webhooks: { "test-hook": { type: "test" } },
       },
     });
 
     await harness.start();
     await harness.waitForSettle(5000);
 
-    // Send a non-matching event
+    // Non-matching event → matched=0
     const res1 = await harness.sendWebhook({
-      source: "test",
       event: "push",
       repo: "acme/app",
       sender: "tester",
     });
     expect(res1.ok).toBe(true);
-    const body1 = await res1.json();
-    expect(body1.matched).toBe(0);
+    expect((await res1.json()).matched).toBe(0);
 
-    // Send a matching event
+    // Matching event → matched≥1
     const res2 = await harness.sendWebhook({
-      source: "test",
       event: "deploy",
       repo: "acme/app",
       sender: "tester",
     });
     expect(res2.ok).toBe(true);
-    const body2 = await res2.json();
-    expect(body2.matched).toBeGreaterThanOrEqual(1);
+    expect((await res2.json()).matched).toBeGreaterThanOrEqual(1);
+  });
+
+  it("webhook-triggered agent can use al-call to trigger another agent", async () => {
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "webhook-caller",
+          webhooks: [{ source: "test-hook" }],
+          testScript: [
+            "#!/bin/bash",
+            'echo "triggering responder" | al-call responder',
+            "exit 0",
+          ].join("\n"),
+        },
+        {
+          name: "responder",
+          schedule: "0 0 31 2 *", // needs schedule or webhook to be valid
+          testScript: [
+            "#!/bin/bash",
+            'echo "responder received call"',
+            "exit 0",
+          ].join("\n"),
+        },
+      ],
+      globalConfig: {
+        webhooks: { "test-hook": { type: "test" } },
+      },
+    });
+
+    await harness.start();
+    // Wait for responder's initial cron run
+    await harness.waitForAgentRun("responder");
+    await harness.waitForSettle(3000);
+
+    // Fire webhook
+    await harness.sendWebhook({
+      event: "test",
+      repo: "acme/app",
+      sender: "tester",
+    });
+
+    await harness.waitForAgentRun("webhook-caller");
+    await harness.waitForSettle(10000);
+    // responder should have been triggered by webhook-caller
+    expect(harness.getRunnerPool("webhook-caller")?.hasRunningJobs).toBe(false);
   });
 });

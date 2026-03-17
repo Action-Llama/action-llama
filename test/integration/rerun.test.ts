@@ -11,58 +11,53 @@ describe.skipIf(!DOCKER)("integration: rerun", { timeout: 180_000 }, () => {
   });
 
   it("exit 42 triggers rerun, then completes on second run", async () => {
-    // Script exits 42 on first run (creating a marker file), then 0 on subsequent runs
     harness = await IntegrationHarness.create({
       agents: [
         {
-          name: "rerun-agent",
+          name: "rerun-once",
           schedule: "0 0 31 2 *",
-          testScript: `#!/bin/bash
-MARKER="/tmp/rerun-agent-ran"
-if [ ! -f "$MARKER" ]; then
-  touch "$MARKER"
-  echo "requesting rerun"
-  exit 42
-fi
-echo "second run"
-exit 0
-`,
+          testScript: [
+            "#!/bin/bash",
+            'MARKER="/tmp/rerun-once-ran"',
+            'if [ ! -f "$MARKER" ]; then',
+            '  touch "$MARKER"',
+            '  echo "first run — requesting rerun"',
+            "  exit 42",
+            "fi",
+            'echo "second run — done"',
+            "exit 0",
+          ].join("\n"),
+          config: { timeout: 60 },
         },
       ],
-      globalConfig: {
-        maxReruns: 3,
-      },
+      globalConfig: { maxReruns: 5 },
     });
 
     await harness.start();
-    // The initial run will exit 42, then the scheduler re-runs and exits 0
-    // Wait long enough for both runs
-    await harness.waitForAgentRun("rerun-agent");
-    // Give time for the rerun to complete
-    await harness.waitForSettle(5000);
-    await harness.waitForAgentRun("rerun-agent");
-    expect(harness.getRunnerPool("rerun-agent")?.hasRunningJobs).toBe(false);
+    // First run exits 42, scheduler re-runs, second run exits 0
+    await harness.waitForAgentRun("rerun-once");
+    await harness.waitForSettle(10000);
+    await harness.waitForAgentRun("rerun-once");
+    expect(harness.getRunnerPool("rerun-once")?.hasRunningJobs).toBe(false);
   });
 
-  it("max reruns is enforced", async () => {
+  it("max reruns cap stops infinite rerun loops", async () => {
     harness = await IntegrationHarness.create({
       agents: [
         {
           name: "infinite-rerun",
           schedule: "0 0 31 2 *",
-          testScript: `#!/bin/bash\necho "rerun forever"\nexit 42\n`,
+          testScript: "#!/bin/bash\necho 'rerun again'\nexit 42\n",
+          config: { timeout: 30 },
         },
       ],
-      globalConfig: {
-        maxReruns: 2,
-      },
+      globalConfig: { maxReruns: 2 },
     });
 
     await harness.start();
-    // Wait for all reruns to exhaust
+    // 1 initial + 2 reruns = 3 total runs, then scheduler stops
     await harness.waitForAgentRun("infinite-rerun");
-    await harness.waitForSettle(10000);
-    await harness.waitForAgentRun("infinite-rerun");
+    await harness.waitForSettle(20000);
     expect(harness.getRunnerPool("infinite-rerun")?.hasRunningJobs).toBe(false);
   });
 });
