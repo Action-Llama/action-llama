@@ -36,6 +36,18 @@ repos = ["acme/app"]
 events = ["issues"]
 actions = ["labeled"]
 labels = ["agent"]
+
+# Filter by organization
+[[webhooks]]
+source = "my-github"
+orgs = ["acme", "example-org"]
+events = ["issues"]
+
+# Or using the singular form
+[[webhooks]]
+source = "my-github"
+org = "acme"
+events = ["pull_request"]
 ```
 
 Each `[[webhooks]]` entry is a trigger. The `source` field (referencing a name from `config.toml`) is required. All filter fields (`repos`, `events`, `actions`, `labels`, etc.) are optional — omit all of them to trigger on everything from that source.
@@ -49,6 +61,8 @@ An agent must have at least one of `schedule` or `webhooks` (or both).
 | Field | Type | Description |
 |-------|------|-------------|
 | `repos` | string[] | Only trigger for these repos |
+| `orgs` | string[] | Only trigger for these organizations |
+| `org` | string | Only trigger for this organization (singular form) |
 | `events` | string[] | GitHub event types (issues, pull_request, push, etc.) |
 | `actions` | string[] | Event actions (opened, labeled, closed, etc.) |
 | `labels` | string[] | Only when issue/PR has these labels |

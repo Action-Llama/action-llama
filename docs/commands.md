@@ -20,6 +20,13 @@ After setup, create agents by following [Creating Agents](creating-agents.md).
 
 Checks all agent credentials and interactively prompts for any that are missing. Discovers agents in the project, collects their credential requirements (plus any webhook secret credentials), and ensures each one exists on disk. Also generates a gateway API key if one doesn't exist yet (used for dashboard and CLI authentication).
 
+Additionally validates webhook trigger field configurations to catch common errors like:
+- Using `repository` instead of `repos`
+- Misspelled field names
+- Invalid field types
+
+This helps catch configuration mistakes early and ensures webhook triggers are properly configured.
+
 ```bash
 al doctor -p .
 al doctor -p ./my-project
@@ -210,11 +217,13 @@ Pause the scheduler or a single agent. Without a name, pauses the entire schedul
 al pause                              # Pause the scheduler
 al pause dev                          # Pause a single agent
 al pause reviewer -p ./my-project
+al pause dev -c                       # Pause via cloud gateway
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
+| `-c, --cloud` | Forward pause request to the cloud-deployed scheduler's gateway |
 
 ## `al resume [name]`
 
@@ -224,11 +233,13 @@ Resume the scheduler or a single agent. Without a name, resumes the entire sched
 al resume                             # Resume the scheduler
 al resume dev                         # Resume a single agent
 al resume reviewer -p ./my-project
+al resume dev -c                      # Resume via cloud gateway
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
+| `-c, --cloud` | Forward resume request to the cloud-deployed scheduler's gateway |
 
 ## `al kill <target>`
 
@@ -238,11 +249,13 @@ Kill an agent (all running instances) or a single instance by ID. Tries the targ
 al kill dev                           # Kill all instances of an agent
 al kill my-agent-abc123               # Kill a single instance by ID
 al kill dev -p ./my-project
+al kill dev -c                        # Kill cloud tasks directly
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
+| `-c, --cloud` | Kill cloud tasks directly via ECS StopTask / Cloud Run cancel APIs |
 
 ## `al chat`
 
