@@ -15,6 +15,31 @@ function docker(...args: string[]): string {
   }).trim();
 }
 
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g;
+
+/**
+ * Parse a line of Docker BuildKit stderr output.
+ * Returns a human-readable string for meaningful lines, or undefined to skip noise
+ * (blank lines, transfer progress, BuildKit metadata).
+ */
+export function parseBuildKitLine(raw: string): string | undefined {
+  const line = raw.replace(ANSI_RE, "").trim();
+  if (!line) return undefined;
+
+  const stepMatch = line.match(/^#\d+\s+\[(\d+\/\d+)]\s+(.+)/);
+  if (stepMatch) return `Step ${stepMatch[1]}: ${stepMatch[2]}`;
+
+  const errMatch = line.match(/^#\d+\s+ERROR\s+(.+)/);
+  if (errMatch) return `Error: ${errMatch[1]}`;
+
+  // Skip BuildKit progress/metadata noise (e.g. "#5 DONE 0.3s", "#5 sha256:abc 2MB/5MB")
+  if (/^#\d+\s/.test(line)) return undefined;
+
+  // Forward everything else (compiler errors, missing module traces, etc.)
+  return line;
+}
+
 export class LocalDockerRuntime implements ContainerRuntime {
   readonly needsGateway = true;
 
@@ -147,18 +172,52 @@ export class LocalDockerRuntime implements ContainerRuntime {
         contextPath = opts.contextDir;
       }
 
-      execFileSync("docker", [
-        "build",
-        "-t", opts.tag,
-        "--build-arg", `GIT_SHA=${GIT_SHA}`,
-        "--build-arg", `VERSION=${VERSION}`,
-        "-f", dockerfilePath,
-        contextPath,
-      ], {
-        encoding: "utf-8",
-        stdio: ["pipe", "pipe", "inherit"],
-        timeout: 300_000,
-        env: { ...process.env, DOCKER_BUILDKIT: "1" },
+      await new Promise<void>((resolve, reject) => {
+        const proc = spawn("docker", [
+          "build",
+          "-t", opts.tag,
+          "--build-arg", `GIT_SHA=${GIT_SHA}`,
+          "--build-arg", `VERSION=${VERSION}`,
+          "-f", dockerfilePath,
+          contextPath,
+        ], {
+          stdio: ["pipe", "pipe", "pipe"],
+          env: { ...process.env, DOCKER_BUILDKIT: "1" },
+        });
+
+        let stderr = "";
+        let stderrBuf = "";
+
+        proc.stderr.on("data", (chunk: Buffer) => {
+          const text = chunk.toString();
+          stderr += text;
+          stderrBuf += text;
+          const lines = stderrBuf.split("\n");
+          stderrBuf = lines.pop() || "";
+          for (const line of lines) {
+            const msg = parseBuildKitLine(line);
+            if (msg !== undefined) opts.onProgress?.(msg);
+          }
+        });
+
+        const timer = setTimeout(() => {
+          proc.kill();
+          reject(new Error("Docker build timed out after 300s"));
+        }, 300_000);
+
+        proc.on("close", (code) => {
+          clearTimeout(timer);
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`Docker build failed (exit ${code}):\n${stderr}`));
+          }
+        });
+
+        proc.on("error", (err) => {
+          clearTimeout(timer);
+          reject(err);
+        });
       });
     } finally {
       if (buildDir) {
