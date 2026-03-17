@@ -8,6 +8,7 @@ import { createLocalBackend, createBackendFromCloudConfig } from "../../shared/r
 import { ConfigError, CredentialError } from "../../shared/errors.js";
 import { createCloudProvider } from "../../cloud/provider.js";
 import { ensureGatewayApiKey } from "../../gateway/api-key.js";
+import { resolveWebhookSource, validateTriggerFields } from "../../scheduler/webhook-setup.js";
 
 // Webhook secret credential types — these support multiple named instances
 const WEBHOOK_SECRET_TYPES: Record<string, string> = {
@@ -51,6 +52,23 @@ export async function execute(opts: { project: string; cloud?: boolean; checkOnl
         credentialRefs.add(`${credType}:${sourceConfig.credential}`);
       }
     }
+  }
+
+  // Validate webhook trigger fields
+  const triggerErrors: string[] = [];
+  for (const name of agents) {
+    const config = loadAgentConfig(projectPath, name);
+    for (const trigger of config.webhooks || []) {
+      const sourceConfig = webhookSources[trigger.source];
+      if (!sourceConfig) continue; // resolveWebhookSource already handles this
+      triggerErrors.push(...validateTriggerFields(trigger, sourceConfig.type, name));
+    }
+  }
+  if (triggerErrors.length > 0) {
+    throw new ConfigError(
+      "Invalid webhook trigger configuration:\n" +
+      triggerErrors.map(e => `  - ${e}`).join("\n")
+    );
   }
 
   if (credentialRefs.size === 0) {

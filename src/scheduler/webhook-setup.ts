@@ -43,6 +43,8 @@ export function buildFilterFromTrigger(trigger: WebhookTrigger, providerType: st
     if (trigger.events) f.events = trigger.events;
     if (trigger.actions) f.actions = trigger.actions;
     if (trigger.repos) f.repos = trigger.repos;
+    if (trigger.org) f.orgs = [trigger.org, ...(trigger.orgs ?? [])];
+    else if (trigger.orgs) f.orgs = trigger.orgs;
     if (trigger.labels) f.labels = trigger.labels;
     if (trigger.assignee) f.assignee = trigger.assignee;
     if (trigger.author) f.author = trigger.author;
@@ -65,6 +67,52 @@ export function buildFilterFromTrigger(trigger: WebhookTrigger, providerType: st
     return Object.keys(f).length > 0 ? f : undefined;
   }
   return undefined;
+}
+
+// Valid trigger fields per provider type (filter fields + source)
+const VALID_TRIGGER_FIELDS: Record<string, Set<string>> = {
+  github: new Set(["source", "events", "actions", "repos", "orgs", "org", "labels", "assignee", "author", "branches"]),
+  sentry: new Set(["source", "resources"]),
+  linear: new Set(["source", "events", "actions", "organizations", "labels", "assignee", "author"]),
+};
+
+// Suggest similar valid fields for common typos
+const FIELD_SUGGESTIONS: Record<string, string> = {
+  repository: "repos",
+  repo: "repos",
+  event: "events",
+  action: "actions",
+  label: "labels",
+  branch: "branches",
+  organization: "organizations",
+};
+
+export function validateTriggerFields(
+  trigger: WebhookTrigger,
+  providerType: string,
+  agentName: string,
+): string[] {
+  const validFields = VALID_TRIGGER_FIELDS[providerType];
+  if (!validFields) {
+    // Unknown provider — flag everything except "source"
+    return Object.keys(trigger)
+      .filter(k => k !== "source")
+      .map(k => `Agent "${agentName}" webhook trigger: unrecognized field "${k}" for unknown provider type "${providerType}".`);
+  }
+
+  const errors: string[] = [];
+  for (const key of Object.keys(trigger)) {
+    if (!validFields.has(key)) {
+      const suggestion = FIELD_SUGGESTIONS[key];
+      const didYouMean = suggestion && validFields.has(suggestion)
+        ? ` Did you mean "${suggestion}"?`
+        : "";
+      errors.push(
+        `Agent "${agentName}" webhook trigger: unrecognized field "${key}" for ${providerType} provider.${didYouMean}`
+      );
+    }
+  }
+  return errors;
 }
 
 export interface WebhookSetupResult {

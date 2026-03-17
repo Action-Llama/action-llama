@@ -59,6 +59,13 @@ vi.mock("../../../src/shared/remote.js", () => ({
   createBackendFromCloudConfig: vi.fn().mockResolvedValue({}),
 }));
 
+const mockValidateTriggerFields = vi.fn();
+const mockResolveWebhookSource = vi.fn();
+vi.mock("../../../src/scheduler/webhook-setup.js", () => ({
+  validateTriggerFields: (...args: any[]) => mockValidateTriggerFields(...args),
+  resolveWebhookSource: (...args: any[]) => mockResolveWebhookSource(...args),
+}));
+
 import { execute } from "../../../src/cli/commands/doctor.js";
 
 describe("doctor", () => {
@@ -68,6 +75,7 @@ describe("doctor", () => {
     mockCredentialExists.mockReturnValue(false);
     mockListCredentialInstances.mockReturnValue([]);
     mockConfirm.mockResolvedValue(false);
+    mockValidateTriggerFields.mockReturnValue([]);
   });
 
   it("prints message when no agents found", async () => {
@@ -279,5 +287,46 @@ describe("doctor", () => {
 
     await captureLog(() => execute({ project: "." }));
     expect(mockWriteCredentialFields).not.toHaveBeenCalled();
+  });
+
+  it("throws ConfigError on unrecognized webhook trigger field", async () => {
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadGlobalConfig.mockReturnValue({
+      webhooks: { "my-github": { type: "github", credential: "MyOrg" } },
+    });
+    mockLoadAgentConfig.mockReturnValue({
+      name: "dev",
+      credentials: [],
+      webhooks: [{ source: "my-github", repository: "foo" }],
+    });
+    mockValidateTriggerFields.mockReturnValue([
+      'Agent "dev" webhook trigger: unrecognized field "repository" for github provider. Did you mean "repos"?',
+    ]);
+
+    await expect(
+      captureLog(() => execute({ project: "." }))
+    ).rejects.toThrow("Invalid webhook trigger configuration");
+  });
+
+  it("passes with valid webhook trigger fields", async () => {
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadGlobalConfig.mockReturnValue({
+      webhooks: { "my-github": { type: "github", credential: "MyOrg" } },
+    });
+    mockLoadAgentConfig.mockReturnValue({
+      name: "dev",
+      credentials: ["github_token:default"],
+      webhooks: [{ source: "my-github", events: ["issues"], org: "acme" }],
+    });
+    mockResolveCredential.mockReturnValue({
+      id: "github_token",
+      label: "GitHub Token",
+      fields: [{ name: "token" }],
+    });
+    mockCredentialExists.mockReturnValue(true);
+    mockValidateTriggerFields.mockReturnValue([]);
+
+    const output = await captureLog(() => execute({ project: "." }));
+    expect(output).toContain("[ok] GitHub Token");
   });
 });

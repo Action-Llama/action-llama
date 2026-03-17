@@ -355,5 +355,15 @@ describe("GitHubWebhookProvider", () => {
       const noActionCtx = { ...baseContext, action: undefined };
       expect(provider.matchesFilter(noActionCtx, { actions: ["opened"] })).toBe(false);
     });
+
+    it("matches with singular org field", () => {
+      expect(provider.matchesFilter(baseContext, { org: "acme" })).toBe(true);
+      expect(provider.matchesFilter(baseContext, { org: "other" })).toBe(false);
+    });
+
+    it("matches with both org and orgs", () => {
+      expect(provider.matchesFilter(baseContext, { org: "other", orgs: ["acme"] })).toBe(true);
+      expect(provider.matchesFilter(baseContext, { org: "nope", orgs: ["also-nope"] })).toBe(false);
+    });
   });
 });
