@@ -12,7 +12,9 @@ import { WebhookRegistry } from "../webhooks/registry.js";
 import { GitHubWebhookProvider } from "../webhooks/providers/github.js";
 import { SentryWebhookProvider } from "../webhooks/providers/sentry.js";
 import { LinearWebhookProvider } from "../webhooks/providers/linear.js";
+import { TestWebhookProvider } from "../webhooks/providers/test.js";
 import type { WebhookFilter, WebhookTrigger, GitHubWebhookFilter, SentryWebhookFilter, LinearWebhookFilter } from "../webhooks/types.js";
+import type { TestWebhookFilter } from "../webhooks/providers/test.js";
 
 // Provider type → credential type for loading secrets
 export const PROVIDER_TO_CREDENTIAL: Record<string, string> = {
@@ -66,6 +68,13 @@ export function buildFilterFromTrigger(trigger: WebhookTrigger, providerType: st
     if (trigger.author) f.author = trigger.author;
     return Object.keys(f).length > 0 ? f : undefined;
   }
+  if (providerType === "test") {
+    const f: TestWebhookFilter = {};
+    if (trigger.events) f.events = trigger.events;
+    if (trigger.actions) f.actions = trigger.actions;
+    if (trigger.repos) f.repos = trigger.repos;
+    return Object.keys(f).length > 0 ? f : undefined;
+  }
   return undefined;
 }
 
@@ -74,6 +83,7 @@ const VALID_TRIGGER_FIELDS: Record<string, Set<string>> = {
   github: new Set(["source", "events", "actions", "repos", "orgs", "org", "labels", "assignee", "author", "branches"]),
   sentry: new Set(["source", "resources"]),
   linear: new Set(["source", "events", "actions", "organizations", "labels", "assignee", "author"]),
+  test: new Set(["source", "events", "actions", "repos"]),
 };
 
 // Suggest similar valid fields for common typos
@@ -135,6 +145,7 @@ export async function setupWebhookRegistry(
   registry.registerProvider(new GitHubWebhookProvider());
   registry.registerProvider(new SentryWebhookProvider());
   registry.registerProvider(new LinearWebhookProvider());
+  registry.registerProvider(new TestWebhookProvider());
 
   // Load secrets for each provider type referenced by webhook sources
   const secrets: Record<string, Record<string, string>> = {};
