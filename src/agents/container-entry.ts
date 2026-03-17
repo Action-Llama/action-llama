@@ -1,5 +1,6 @@
 import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSync, rmSync } from "fs";
 import { resolve } from "path";
+import { spawnSync } from "child_process";
 import { getModel } from "@mariozechner/pi-ai";
 import {
   AuthStorage,
@@ -296,6 +297,20 @@ export async function handleInvocation(init: AgentInit): Promise<number> {
       logger: emitLog,
     };
     await runPreflight(agentConfig.preflight, preflightCtx);
+  }
+
+  // Script mode: if a test script is baked in, run it instead of the LLM.
+  // All env setup (PATH, credentials, signal dir, git config) is already done.
+  const testScriptPath = "/app/static/test-script.sh";
+  if (existsSync(testScriptPath)) {
+    emitLog("info", "script mode: running test-script.sh instead of LLM");
+    const result = spawnSync("sh", [testScriptPath], {
+      stdio: "inherit",
+      env: process.env,
+      cwd: "/tmp",
+    });
+    clearTimeout(timer);
+    return result.status ?? 1;
   }
 
   const cwd = "/tmp";
