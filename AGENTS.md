@@ -544,4 +544,4 @@ Full documentation is available on GitHub:
 - [Webhooks](https://github.com/Action-Llama/action-llama/blob/main/docs/webhooks.md)
 - [Docker](https://github.com/Action-Llama/action-llama/blob/main/docs/docker.md) — custom Dockerfiles, standalone images, troubleshooting
 - [CLI Commands](https://github.com/Action-Llama/action-llama/blob/main/docs/commands.md)
-- [Example Agents](https://github.com/Action-Llama/action-llama/blob/main/docs/examples/dev-agent.md) — dev, reviewer, devops
+- [Example Agents](https://github.com/Action-Llama/action-llama/blob/main/docs/examples/index.md) — dev, reviewer, devops

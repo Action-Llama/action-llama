@@ -144,4 +144,4 @@ Without this step, the new agent will fail to access its credentials at runtime.
 - Agent name is derived from the directory name — no need to put it in the config
 - Use `al-rerun` in your ACTIONS.md to tell the agent to run `al-rerun` when it did work and there may be more in the backlog
 - Params in the config are injected into the agent prompt as an `<agent-config>` XML block
-- See [Examples](examples/dev-agent.md) for complete working agents
+- See [Examples](examples/index.md) for complete working agents

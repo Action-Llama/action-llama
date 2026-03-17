@@ -155,9 +155,7 @@ See also the [credentials](docs/credentials.md), [webhooks](docs/webhooks.md), a
 | [VPS Deployment](docs/vps-deployment.md) | Running agents on any VPS via SSH + Docker |
 | [Cloud Run](docs/cloud-run.md) | Running agents on GCP Cloud Run Jobs |
 | [ECS Fargate](docs/ecs.md) | Running agents on AWS ECS Fargate |
-| [Example: Dev Agent](docs/examples/dev-agent.md) | Developer agent that implements GitHub issues |
-| [Example: Reviewer Agent](docs/examples/reviewer-agent.md) | PR review agent |
-| [Example: DevOps Agent](docs/examples/devops-agent.md) | CI/CD and Sentry monitoring agent |
+| [Example Agents](docs/examples/index.md) | Dev, reviewer, and devops agent templates |
 
 ## Developing
 

@@ -244,9 +244,9 @@ See [Docker docs](docker.md) for the full container reference including the base
 
 | Agent | Description |
 |-------|-------------|
-| [Dev Agent](examples/dev-agent.md) | Picks up GitHub issues and implements changes |
-| [Reviewer Agent](examples/reviewer-agent.md) | Reviews and merges open pull requests |
-| [DevOps Agent](examples/devops-agent.md) | Monitors CI failures and Sentry errors, files issues |
+| [Dev Agent](examples/dev/) | Picks up GitHub issues and implements changes |
+| [Reviewer Agent](examples/reviewer/) | Reviews and merges open pull requests |
+| [DevOps Agent](examples/devops/) | Monitors CI failures and Sentry errors, files issues |
 
 ## See also
 
