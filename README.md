@@ -204,12 +204,14 @@ src/
 ### Tests
 
 ```bash
-npm test              # run all tests
-npm run test:watch    # watch mode
+npm run test:unit     # unit tests only (fast, run during development)
+npm test              # all tests including integration (run before committing)
+npm run test:integration  # integration tests only (Docker-based, slow)
+npm run test:watch    # watch mode (unit tests only)
 npm run test:coverage # V8 coverage report
 ```
 
-Tests live in `test/` mirroring `src/`. Coverage excludes entry points (`cli/main.ts`), interactive prompts (`setup/prompts.ts`), and type-only files.
+Tests live in `test/` mirroring `src/`. Integration tests are in `test/integration/` and require Docker. Coverage excludes entry points (`cli/main.ts`), interactive prompts (`setup/prompts.ts`), and type-only files.
 
 ### Publishing
 

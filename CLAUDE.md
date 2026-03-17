@@ -10,12 +10,14 @@ Package: `@action-llama/action-llama`, CLI binary: `al`.
 
 ```bash
 npm run build          # TypeScript build
-npm test               # vitest (all tests)
-npm run test:watch     # watch mode
+npm run test:unit      # unit tests only (fast, run during development)
+npm test               # all tests including integration (run before committing)
+npm run test:integration  # integration tests only (Docker-based, slow)
+npm run test:watch     # watch mode (unit tests only)
 npm run test:coverage  # V8 coverage
 ```
 
-Tests live in `test/` mirroring `src/`. Run the full suite before committing.
+Tests live in `test/` mirroring `src/`. Integration tests are in `test/integration/` and require Docker. Run unit tests to verify code changes. Run the full suite (`npm test`) before committing.
 
 ## Commits & Changesets
 
