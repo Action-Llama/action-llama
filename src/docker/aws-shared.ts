@@ -267,7 +267,7 @@ export class AwsSharedUtils {
     onProgress?.("Preparing build context");
 
     const { join, relative, isAbsolute } = await import("path");
-    const { readFileSync, writeFileSync, mkdirSync, copyFileSync, cpSync, existsSync } = await import("fs");
+    const { readFileSync, writeFileSync, mkdirSync, copyFileSync, cpSync, existsSync, lstatSync } = await import("fs");
     const { randomUUID, createHash } = await import("crypto");
     const { tmpdir } = await import("os");
 
@@ -308,12 +308,10 @@ export class AwsSharedUtils {
 
     // For full builds, copy application files into the build context
     if (!opts.dockerfileContent) {
-      const { lstatSync } = await import("fs");
       const cpFilter = (source: string) => {
         try { if (lstatSync(source).isDirectory()) return true; } catch { return true; }
         return !HASH_EXCLUDED.some(re => re.test(source));
       };
-
       copyFileSync(join(opts.contextDir, "package.json"), join(buildCtx, "package.json"));
       cpSync(join(opts.contextDir, "dist"), join(buildCtx, "dist"), { recursive: true, filter: cpFilter });
       // Copy baked shell scripts (docker/bin/) into the build context
@@ -730,7 +728,6 @@ export class AwsSharedUtils {
           try { if (lstatSync(source).isDirectory()) return true; } catch { return true; }
           return !HASH_EXCLUDED.some(re => re.test(source));
         };
-
         copyFileSync(join(opts.contextDir, "package.json"), join(subPath, "package.json"));
         cpSync(join(opts.contextDir, "dist"), join(subPath, "dist"), { recursive: true, filter: cpFilter });
         const binSrc = join(opts.contextDir, "docker", "bin");
@@ -753,8 +750,8 @@ export class AwsSharedUtils {
       const hash = createHash("sha256");
       const hashFile = (p: string) => {
         if (HASH_EXCLUDED.some(re => re.test(p))) return;
-        hash.update(p); 
-        hash.update(readFileSync(join(subPath, p))); 
+        hash.update(p);
+        hash.update(readFileSync(join(subPath, p)));
       };
       const hashDir = (dir: string) => {
         const entries = readdirSync(join(subPath, dir), { withFileTypes: true })
