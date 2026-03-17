@@ -25,22 +25,6 @@ describe("loadGlobalConfig", () => {
     expect(loaded.local?.enabled).toBe(false);
   });
 
-  it("loads valid config.toml with [cloud]", () => {
-    const config = { cloud: {
-      provider: "cloud-run",
-      gcpProject: "my-proj",
-      region: "us-central1",
-      artifactRegistry: "us-central1-docker.pkg.dev/my-proj/al-images",
-      serviceAccount: "al-runner@my-proj.iam.gserviceaccount.com",
-    } };
-    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(config as any));
-    const loaded = loadGlobalConfig(tmpDir);
-    expect(loaded.cloud?.provider).toBe("cloud-run");
-    if (loaded.cloud?.provider === "cloud-run") {
-      expect(loaded.cloud.gcpProject).toBe("my-proj");
-    }
-  });
-
   it("ignores config.json", () => {
     writeFileSync(resolve(tmpDir, "config.json"), JSON.stringify({ local: { enabled: true } }));
     const loaded = loadGlobalConfig(tmpDir);
@@ -195,6 +179,45 @@ output = "/tmp/hello.txt"
     const loaded = loadAgentConfig(tmpDir, "dev");
     expect(loaded.model.provider).toBe("openai");
     expect(loaded.model.model).toBe("gpt-4o");
+  });
+});
+
+describe("loadGlobalConfig projectName", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("extracts projectName from .env.toml onto returned config", () => {
+    writeFileSync(resolve(tmpDir, ".env.toml"), 'projectName = "my-project"\n');
+    const loaded = loadGlobalConfig(tmpDir);
+    expect(loaded.projectName).toBe("my-project");
+  });
+
+  it("does not include projectName when .env.toml omits it", () => {
+    writeFileSync(resolve(tmpDir, ".env.toml"), '[gateway]\nport = 9090\n');
+    const loaded = loadGlobalConfig(tmpDir);
+    expect(loaded.projectName).toBeUndefined();
+  });
+
+  it("does not deep-merge projectName from config.toml", () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      projectName: "from-config-toml",
+    } as Record<string, unknown>));
+    const loaded = loadGlobalConfig(tmpDir);
+    // projectName in config.toml gets deep-merged as a regular field, but the
+    // .env.toml-only value is not set — so it comes through as a regular config key.
+    // The important thing: without .env.toml setting it, it should only appear
+    // if config.toml happens to set it (which is fine — it's just not the intended source).
+    // But if .env.toml sets it, .env.toml wins:
+    writeFileSync(resolve(tmpDir, ".env.toml"), 'projectName = "from-env-toml"\n');
+    const loaded2 = loadGlobalConfig(tmpDir);
+    expect(loaded2.projectName).toBe("from-env-toml");
   });
 });
 

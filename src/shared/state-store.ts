@@ -8,8 +8,7 @@
  *   - Call entries (inter-agent communication)
  *   - Work queues (buffered webhook/call events)
  *
- * Local mode uses SQLite (zero-config file in project dir).
- * Cloud mode uses DynamoDB (serverless, auto-provisioned by `al cloud setup`).
+ * Uses SQLite (zero-config file in project dir).
  */
 
 export interface StateStore {
@@ -40,28 +39,15 @@ export interface SqliteStoreOpts {
   path: string;
 }
 
-export interface DynamoStoreOpts {
-  type: "dynamodb";
-  region: string;
-  tableName: string;
-}
-
-export type StateStoreOpts = SqliteStoreOpts | DynamoStoreOpts;
+export type StateStoreOpts = SqliteStoreOpts;
 
 /**
  * Create a StateStore from configuration.
  *
- * Uses dynamic imports so native modules (better-sqlite3) and AWS SDK
+ * Uses dynamic imports so native modules (better-sqlite3)
  * are only loaded when actually needed.
  */
 export async function createStateStore(opts: StateStoreOpts): Promise<StateStore> {
-  if (opts.type === "sqlite") {
-    const { SqliteStateStore } = await import("./state-store-sqlite.js");
-    return new SqliteStateStore(opts.path);
-  }
-  if (opts.type === "dynamodb") {
-    const { DynamoStateStore } = await import("./state-store-dynamo.js");
-    return DynamoStateStore.create(opts.region, opts.tableName);
-  }
-  throw new Error(`Unknown state store type: ${(opts as any).type}`);
+  const { SqliteStateStore } = await import("./state-store-sqlite.js");
+  return new SqliteStateStore(opts.path);
 }

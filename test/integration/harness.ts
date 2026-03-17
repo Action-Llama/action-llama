@@ -138,13 +138,14 @@ export class IntegrationHarness {
       // Write ACTIONS.md
       writeFileSync(resolve(agentPath, "ACTIONS.md"), `# ${agent.name}\nTest agent.\n`);
 
-      // Write test-script.sh
+      // Write test-script.sh — container-entry.js detects this file at
+      // /app/static/test-script.sh and runs it instead of the LLM agent.
       writeFileSync(resolve(agentPath, "test-script.sh"), agent.testScript);
 
-      // Write Dockerfile that uses the test script as entrypoint
-      // Use sh (not bash) — base image is Alpine which has ash, not bash
-      const dockerfile = agent.dockerfile || `FROM al-agent:latest\nENTRYPOINT ["sh", "/app/static/test-script.sh"]\n`;
-      writeFileSync(resolve(agentPath, "Dockerfile"), dockerfile);
+      // Only write a custom Dockerfile if the test explicitly provides one
+      if (agent.dockerfile) {
+        writeFileSync(resolve(agentPath, "Dockerfile"), agent.dockerfile);
+      }
     }
 
     const harness = new IntegrationHarness(projectPath, gatewayPort, credentialDir, apiKey);

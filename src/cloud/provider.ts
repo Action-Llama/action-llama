@@ -1,7 +1,7 @@
 /**
  * CloudProvider interface — abstracts per-provider cloud operations.
  *
- * Each cloud provider (AWS ECS, GCP Cloud Run) implements this interface,
+ * Each cloud provider implements this interface,
  * allowing CLI commands and the scheduler to be provider-agnostic.
  */
 
@@ -13,7 +13,6 @@ export interface ProvisionedResource {
   type: string;
   id: string;
   region?: string;
-  arn?: string;
 }
 
 export interface SchedulerServiceInfo {
@@ -29,7 +28,7 @@ export interface RuntimeResult {
 }
 
 export interface CloudProvider {
-  readonly providerName: "ecs" | "cloud-run" | "vps";
+  readonly providerName: "vps";
 
   /** Interactive provisioning wizard. Returns config fields to write to config.toml, or null if aborted. */
   provision(): Promise<Record<string, unknown> | null>;
@@ -37,19 +36,19 @@ export interface CloudProvider {
   /** Tear down all provisioned cloud resources for this project. */
   teardown(projectPath: string): Promise<void>;
 
-  /** Reconcile per-agent IAM resources (roles, service accounts, secret bindings). */
+  /** Reconcile per-agent resources. */
   reconcileAgents(projectPath: string): Promise<void>;
 
-  /** Reconcile infrastructure-level IAM policies (e.g. App Runner instance role). */
+  /** Reconcile infrastructure-level policies. */
   reconcileInfraPolicy(): Promise<void>;
 
-  /** Validate that IAM roles/service accounts exist and are correctly configured. */
+  /** Validate that roles/accounts exist and are correctly configured. */
   validateRoles(projectPath: string): Promise<void>;
 
   /** Create the primary container runtime for this provider. */
   createRuntime(): ContainerRuntime;
 
-  /** Create a runtime for a specific agent. Handles Lambda routing for ECS short-timeout agents. */
+  /** Create a runtime for a specific agent. */
   createAgentRuntime(agentConfig: AgentConfig, globalConfig: GlobalConfig): ContainerRuntime;
 
   /** Create primary runtime + per-agent overrides for the scheduler. */
@@ -83,16 +82,6 @@ export interface CloudProvider {
 export async function createCloudProvider(
   cloudConfig: import("../shared/config.js").CloudConfig,
 ): Promise<CloudProvider> {
-  if (cloudConfig.provider === "ecs") {
-    const { AwsCloudProvider } = await import("./aws/provider.js");
-    return new AwsCloudProvider(cloudConfig);
-  }
-
-  if (cloudConfig.provider === "cloud-run") {
-    const { GcpCloudProvider } = await import("./gcp/provider.js");
-    return new GcpCloudProvider(cloudConfig);
-  }
-
   if (cloudConfig.provider === "vps") {
     const { VpsCloudProvider } = await import("./vps/provider.js");
     return new VpsCloudProvider(cloudConfig);

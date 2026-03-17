@@ -1,50 +1,9 @@
 import { resolve } from "path";
 import { gatewayFetch } from "../gateway-client.js";
-import { loadGlobalConfig } from "../../shared/config.js";
-import type { RunningAgent } from "../../docker/runtime.js";
 
 export async function execute(target: string, opts: { project: string; env?: string }): Promise<void> {
   const projectPath = resolve(opts.project);
-  const globalConfig = loadGlobalConfig(projectPath, opts.env);
-  const cloudMode = !!globalConfig.cloud;
 
-  if (cloudMode) {
-    await executeCloud(target, globalConfig);
-    return;
-  }
-
-  await executeLocal(target, projectPath);
-}
-
-async function executeCloud(target: string, globalConfig: { cloud?: any }): Promise<void> {
-  const cloud = globalConfig.cloud!;
-
-  const { createCloudProvider } = await import("../../cloud/provider.js");
-  const provider = await createCloudProvider(cloud);
-  const runtime = provider.createRuntime();
-  const running: RunningAgent[] = await runtime.listRunningAgents();
-
-  // Match by agent name (kill all instances) or by taskId (kill specific instance)
-  const byName = running.filter((a) => a.agentName === target);
-  const byTaskId = running.filter((a) => a.taskId === target);
-
-  const matches = byName.length > 0 ? byName : byTaskId;
-
-  if (matches.length === 0) {
-    throw new Error(`No running cloud instances found matching "${target}".`);
-  }
-
-  for (const match of matches) {
-    await runtime.kill(match.runtimeId);
-  }
-
-  const label = byName.length > 0
-    ? `Killed ${matches.length} instance(s) of agent "${target}".`
-    : `Killed instance ${target}.`;
-  console.log(label);
-}
-
-async function executeLocal(target: string, projectPath: string): Promise<void> {
   const fetchOpts = {
     project: projectPath,
     method: "POST",

@@ -10,7 +10,7 @@ vi.mock("child_process", () => ({
 }));
 
 // Mock Docker/container related modules
-vi.mock("../../src/cloud/image-builder.js", () => ({
+vi.mock("../../src/scheduler/image-builder.js", () => ({
   buildAllImages: vi.fn().mockResolvedValue({
     baseImage: "test-base-image",
     agentImages: {

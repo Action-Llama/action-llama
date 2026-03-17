@@ -62,7 +62,7 @@ program
   .description("Manually run a single agent")
   .argument("<agent>", "agent name")
   .option("-p, --project <dir>", "project directory", ".")
-  .option("-E, --env <name>", "use named environment for cloud infrastructure")
+  .option("-E, --env <name>", "use named deployment environment")
   .option("-H, --headless", "non-interactive mode (no credential prompts, for CI/deploy environments)")
   .action(withCommand(async (agent: string, opts) => {
     const { execute } = await import("./commands/run.js");
@@ -73,7 +73,7 @@ program
   .command("start")
   .description("Start cron scheduler")
   .option("-p, --project <dir>", "project directory", ".")
-  .option("-E, --env <name>", "use named environment for cloud infrastructure")
+  .option("-E, --env <name>", "use named deployment environment")
   .option("-H, --headless", "non-interactive mode (no TUI, no credential prompts, for CI/deploy environments)")
   .option("-w, --web-ui", "enable web dashboard at http://localhost:<port>/dashboard")
   .option("-e, --expose", "bind gateway to 0.0.0.0 (public) while keeping local mode features")
@@ -96,7 +96,7 @@ program
   .command("doctor")
   .description("Check agents, credentials, webhooks, and config — prompt to fix")
   .option("-p, --project <dir>", "project directory", ".")
-  .option("-E, --env <name>", "use named environment; push credentials to cloud and reconcile IAM")
+  .option("-E, --env <name>", "use named environment; validate configuration")
   .action(withCommand(async (opts) => {
     const { execute } = await import("./commands/doctor.js");
     await execute(opts);
@@ -111,7 +111,7 @@ program
   .option("-f, --follow", "tail mode — watch for new log entries")
   .option("-d, --date <YYYY-MM-DD>", "specific date's log file")
   .option("-r, --raw", "show raw JSON log entries instead of conversation view")
-  .option("-E, --env <name>", "use named environment to view cloud logs")
+  .option("-E, --env <name>", "use named environment")
   .option("-i, --instance <N>", "instance number (for agents with scale > 1)")
   .action(withCommand(async (agent: string, opts) => {
     const { execute } = await import("./commands/logs.js");
@@ -122,7 +122,7 @@ program
   .command("stat [agent]")
   .description("Show agent status")
   .option("-p, --project <dir>", "project directory", ".")
-  .option("-E, --env <name>", "use named environment to show cloud status")
+  .option("-E, --env <name>", "use named environment")
   .action(withCommand(async (agent, opts) => {
     const { execute } = await import("./commands/status.js");
     await execute({ ...opts, agent });
@@ -133,7 +133,7 @@ program
   .description("Kill an agent (all instances) or a single instance by ID")
   .argument("<target>", "agent name or instance ID")
   .option("-p, --project <dir>", "project directory", ".")
-  .option("-E, --env <name>", "use named environment to kill cloud instances")
+  .option("-E, --env <name>", "use named environment")
   .action(withCommand(async (target: string, opts) => {
     const { execute } = await import("./commands/kill.js");
     await execute(target, opts);
@@ -144,7 +144,7 @@ program
   .description("Pause the scheduler, or a single agent by name")
   .argument("[name]", "agent name (omit to pause the entire scheduler)")
   .option("-p, --project <dir>", "project directory", ".")
-  .option("-E, --env <name>", "use named environment to pause cloud scheduler or agent")
+  .option("-E, --env <name>", "use named environment")
   .action(withCommand(async (name: string | undefined, opts) => {
     const { execute } = await import("./commands/pause.js");
     await execute(name, opts);
@@ -155,7 +155,7 @@ program
   .description("Resume the scheduler, or a single agent by name")
   .argument("[name]", "agent name (omit to resume the entire scheduler)")
   .option("-p, --project <dir>", "project directory", ".")
-  .option("-E, --env <name>", "use named environment to resume cloud scheduler or agent")
+  .option("-E, --env <name>", "use named environment")
   .action(withCommand(async (name: string | undefined, opts) => {
     const { execute } = await import("./commands/resume.js");
     await execute(name, opts);
@@ -166,25 +166,38 @@ program
   .description("Open an interactive console (optionally scoped to an agent's environment)")
   .argument("[agent]", "agent name — loads its credentials and environment")
   .option("-p, --project <dir>", "project directory", ".")
-  .option("-E, --env <name>", "use named environment to load credentials from cloud secrets manager")
+  .option("-E, --env <name>", "use named environment to load credentials")
   .action(withCommand(async (agent: string | undefined, opts) => {
     const { execute } = await import("./commands/chat.js");
     await execute({ ...opts, agent });
+  }));
+
+program
+  .command("push")
+  .description("Deploy project to a self-hosted server via SSH")
+  .option("-p, --project <dir>", "project directory", ".")
+  .option("-E, --env <name>", "use named environment with [server] config")
+  .option("--dry-run", "show what would be synced without making changes")
+  .option("--no-creds", "skip credential sync")
+  .action(withCommand(async (opts) => {
+    const { execute } = await import("./commands/push.js");
+    await execute(opts);
   }));
 
 // --- Environment management ---
 
 const envCmd = program
   .command("env")
-  .description("Manage cloud environments");
+  .description("Manage deployment environments");
 
 envCmd
   .command("init")
   .description("Create a new environment configuration file")
-  .argument("<name>", "environment name (e.g. prod-aws, staging-gcp)")
-  .action(withCommand(async (name: string) => {
+  .argument("<name>", "environment name (e.g. prod, staging)")
+  .requiredOption("-t, --type <type>", "environment type: server")
+  .action(withCommand(async (name: string, opts: { type: string }) => {
     const { init } = await import("./commands/env.js");
-    await init(name);
+    await init(name, opts.type);
   }));
 
 envCmd
@@ -239,46 +252,6 @@ credsCmd
 const setupCmd = program
   .command("setup")
   .description("Setup infrastructure and configuration");
-
-setupCmd
-  .command("cloud")
-  .description("Interactive wizard: pick provider, configure, push creds, provision IAM")
-  .option("-p, --project <dir>", "project directory", ".")
-  .action(withCommand(async (opts) => {
-    const { execute } = await import("./commands/cloud-setup.js");
-    await execute(opts);
-  }));
-
-// --- Teardown management ---
-
-const teardownCmd = program
-  .command("teardown")
-  .description("Teardown infrastructure and configuration");
-
-teardownCmd
-  .command("cloud")
-  .description("Delete per-agent IAM resources and remove [cloud] config")
-  .option("-p, --project <dir>", "project directory", ".")
-  .action(withCommand(async (opts) => {
-    const { execute } = await import("./commands/cloud-teardown.js");
-    await execute(opts);
-  }));
-
-// --- Cloud management ---
-
-const cloudCmd = program
-  .command("cloud")
-  .description("Cloud infrastructure management");
-
-cloudCmd
-  .command("deploy")
-  .description("Build and deploy scheduler + agents to the cloud")
-  .option("-p, --project <dir>", "project directory", ".")
-  .option("-E, --env <name>", "use named environment")
-  .action(withCommand(async (opts) => {
-    const { execute } = await import("./commands/cloud-deploy.js");
-    await execute(opts);
-  }));
 
 program.parseAsync().catch((err) => {
   // Fallback for errors that escape command handlers (e.g. Commander parse errors)

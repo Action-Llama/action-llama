@@ -2,8 +2,6 @@ import { resolve } from "path";
 import { createReadStream, readdirSync, existsSync, statSync } from "fs";
 import { createInterface } from "readline";
 import { logsDir } from "../../shared/paths.js";
-import { loadGlobalConfig, loadAgentConfig } from "../../shared/config.js";
-import { resolveTarget } from "../resolve-target.js";
 
 // ── ANSI helpers ──────────────────────────────────────────────────────────────
 
@@ -409,141 +407,95 @@ export async function execute(
   const projectPath = resolve(opts.project);
   const fmt: Formatter = opts.raw ? formatRawEntry : formatConversationEntry;
   const instanceNum = opts.instance ? parseInt(opts.instance, 10) : undefined;
-  const globalConfig = loadGlobalConfig(projectPath, opts.env);
-  const cloudMode = !!globalConfig.cloud;
 
-  if (cloudMode) {
-    const cloud = globalConfig.cloud!;
+  const n = parseInt(opts.lines, 10);
 
-    const { createCloudProvider } = await import("../../cloud/provider.js");
-    const provider = await createCloudProvider(cloud);
-    const limit = parseInt(opts.lines, 10) || 50;
+  // Build API path
+  let apiPath: string;
+  if (agent === "scheduler") {
+    apiPath = "/api/logs/scheduler";
+  } else if (instanceNum !== undefined) {
+    apiPath = `/api/logs/agents/${encodeURIComponent(agent)}/${instanceNum}`;
+  } else {
+    apiPath = `/api/logs/agents/${encodeURIComponent(agent)}`;
+  }
 
-    // Special case: "scheduler" fetches scheduler service logs
-    if (agent === "scheduler") {
-      const formatSchedulerLine = (line: string): void => {
-        const entry = parseLine(line);
-        if (entry) {
-          const formatted = fmt(entry);
-          if (formatted) console.log(formatted);
-        } else {
-          console.log(line);
+  try {
+    const { gatewayFetch } = await import("../gateway-client.js");
+
+    const formatAndPrintEntries = (entries: LogEntry[]) => {
+      for (const entry of entries) {
+        if (fmt === formatConversationEntry) {
+          const header = formatRunHeader(entry);
+          if (header) console.log(header);
         }
-      };
-
-      if (opts.follow) {
-        console.log("Following scheduler logs...");
-        const recentLines = await provider.getSchedulerLogs(limit);
-        for (const line of recentLines) formatSchedulerLine(line);
-
-        const { stop } = provider.followSchedulerLogs(
-          (line) => formatSchedulerLine(line),
-          (stderr) => console.error(stderr),
-        );
-
-        process.on("SIGINT", () => {
-          console.log("\nStopping log follow...");
-          stop();
-          process.exit(0);
-        });
-
-        await new Promise(() => {});
-      } else {
-        console.log("Fetching cloud scheduler logs...");
-        const lines = await provider.getSchedulerLogs(limit);
-        if (lines.length === 0) {
-          console.log("No scheduler log events found.");
-        } else {
-          for (const line of lines) formatSchedulerLine(line);
-        }
+        const formatted = fmt(entry);
+        if (formatted) console.log(formatted);
       }
-      return;
-    }
-
-    const { agent: resolvedAgent, taskId } = await resolveTarget(agent, projectPath, provider);
-
-    let agentConfig;
-    try {
-      agentConfig = loadAgentConfig(projectPath, resolvedAgent);
-    } catch {
-      // No local config — use primary runtime
-    }
-
-    const runtime = agentConfig
-      ? provider.createAgentRuntime(agentConfig, globalConfig)
-      : provider.createRuntime();
-
-    const formatCloudLine = (line: string): void => {
-      const entry = parseLine(line);
-      if (!entry) return;
-      if (fmt === formatConversationEntry) {
-        const header = formatRunHeader(entry);
-        if (header) console.log(header);
-      }
-      const formatted = fmt(entry);
-      if (formatted) console.log(formatted);
     };
 
     if (opts.follow) {
-      console.log(`Following logs for ${resolvedAgent}${taskId ? ` (${taskId.slice(0, 8)})` : ""}...`);
+      // Initial fetch
+      const params = new URLSearchParams({ lines: String(n) });
+      const res = await gatewayFetch({ project: opts.project, path: `${apiPath}?${params}` });
+      if (!res.ok) throw new Error(`Gateway returned ${res.status}`);
+      const data = await res.json() as { entries: LogEntry[]; cursor: string | null; hasMore: boolean };
+      formatAndPrintEntries(data.entries);
+      let cursor = data.cursor;
 
-      const recentLines = await runtime.fetchLogs(resolvedAgent, limit, taskId);
-      for (const line of recentLines) {
-        formatCloudLine(line);
-      }
+      // Poll with cursor
+      const poll = async () => {
+        const p = new URLSearchParams();
+        if (cursor) p.set("cursor", cursor);
+        try {
+          const r = await gatewayFetch({ project: opts.project, path: `${apiPath}?${p}` });
+          if (r.ok) {
+            const d = await r.json() as { entries: LogEntry[]; cursor: string | null; hasMore: boolean };
+            formatAndPrintEntries(d.entries);
+            if (d.cursor) cursor = d.cursor;
+          }
+        } catch {
+          // Connection lost — silently retry next interval
+        }
+      };
 
-      const { stop } = runtime.followLogs(
-        resolvedAgent,
-        (line: string) => formatCloudLine(line),
-        (stderr: string) => console.error(stderr),
-        taskId,
-      );
-
+      const interval = setInterval(poll, 1000);
       process.on("SIGINT", () => {
-        console.log("\nStopping log follow...");
-        stop();
+        clearInterval(interval);
         process.exit(0);
       });
-
       await new Promise(() => {});
     } else {
-      console.log(`Fetching cloud logs for ${resolvedAgent}${taskId ? ` (${taskId.slice(0, 8)})` : ""}...`);
-      const lines = await runtime.fetchLogs(resolvedAgent, limit, taskId);
-
-      if (lines.length === 0) {
-        console.log("No log events found.");
+      const params = new URLSearchParams({ lines: String(n) });
+      const res = await gatewayFetch({ project: opts.project, path: `${apiPath}?${params}` });
+      if (!res.ok) throw new Error(`Gateway returned ${res.status}`);
+      const data = await res.json() as { entries: LogEntry[]; cursor: string | null; hasMore: boolean };
+      if (data.entries.length === 0) {
+        console.log(`No log entries found for "${agent}".`);
       } else {
-        for (const line of lines) {
-          formatCloudLine(line);
-        }
+        formatAndPrintEntries(data.entries);
       }
     }
-    return;
-  }
+  } catch {
+    // Gateway not running — fall back to direct file reading
+    const dir = logsDir(projectPath);
+    const logName = instanceNum !== undefined ? `${agent}-${instanceNum}` : agent;
+    const logFile = findLogFile(dir, logName, opts.date);
 
-  // ── Local mode ──
-
-  const dir = logsDir(projectPath);
-  const n = parseInt(opts.lines, 10);
-
-  // With --instance, look for the specific instance log file (e.g. dev-2-YYYY-MM-DD.log)
-  // Without --instance, look for the agent name directly then fall back to instance files
-  const logName = instanceNum !== undefined ? `${agent}-${instanceNum}` : agent;
-  const logFile = findLogFile(dir, logName, opts.date);
-
-  if (!logFile) {
-    const dateStr = opts.date || "today";
-    if (instanceNum !== undefined) {
-      console.error(`No log file found for agent "${agent}" instance ${instanceNum} (${dateStr}) in ${dir}`);
-    } else {
-      console.error(`No log file found for agent "${agent}" (${dateStr}) in ${dir}`);
+    if (!logFile) {
+      const dateStr = opts.date || "today";
+      if (instanceNum !== undefined) {
+        console.error(`No log file found for agent "${agent}" instance ${instanceNum} (${dateStr}) in ${dir}`);
+      } else {
+        console.error(`No log file found for agent "${agent}" (${dateStr}) in ${dir}`);
+      }
+      process.exit(1);
     }
-    process.exit(1);
-  }
 
-  if (opts.follow) {
-    await followFile(logFile, n, fmt);
-  } else {
-    await readLastN(logFile, n, fmt);
+    if (opts.follow) {
+      await followFile(logFile, n, fmt);
+    } else {
+      await readLastN(logFile, n, fmt);
+    }
   }
 }

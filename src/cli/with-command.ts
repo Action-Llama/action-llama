@@ -1,4 +1,4 @@
-import { ConfigError, CredentialError, CloudProviderError, AgentError } from "../shared/errors.js";
+import { ConfigError, CredentialError, AgentError } from "../shared/errors.js";
 
 /**
  * Wraps a CLI command handler with consistent error handling.
@@ -20,8 +20,6 @@ export function withCommand<T extends (...args: any[]) => Promise<void>>(fn: T):
         console.error(`Credential error: ${err.message}`);
       } else if (err instanceof ConfigError) {
         console.error(`Configuration error: ${err.message}`);
-      } else if (err instanceof CloudProviderError) {
-        console.error(`Cloud error: ${err.message}`);
       } else if (err instanceof AgentError) {
         console.error(`Agent error: ${err.message}`);
       } else {

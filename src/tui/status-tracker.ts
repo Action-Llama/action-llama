@@ -23,7 +23,8 @@ export interface AgentStatus {
 
 export interface SchedulerInfo {
   mode: "docker" | "host";
-  runtime?: "local" | "cloud-run" | "ecs" | "vps";  // only meaningful when mode === "docker"
+  runtime?: "local" | "vps";  // only meaningful when mode === "docker"
+  projectName?: string;
   gatewayPort: number | null;
   cronJobCount: number;
   webhooksActive: boolean;

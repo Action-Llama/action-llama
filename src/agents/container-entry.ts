@@ -1,5 +1,6 @@
 import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSync, rmSync } from "fs";
 import { resolve } from "path";
+import { spawnSync } from "child_process";
 import { getModel } from "@mariozechner/pi-ai";
 import {
   AuthStorage,
@@ -298,6 +299,20 @@ export async function handleInvocation(init: AgentInit): Promise<number> {
     await runPreflight(agentConfig.preflight, preflightCtx);
   }
 
+  // Script mode: if a test script is baked in, run it instead of the LLM.
+  // All env setup (PATH, credentials, signal dir, git config) is already done.
+  const testScriptPath = "/app/static/test-script.sh";
+  if (existsSync(testScriptPath)) {
+    emitLog("info", "script mode: running test-script.sh instead of LLM");
+    const result = spawnSync("sh", [testScriptPath], {
+      stdio: "inherit",
+      env: process.env,
+      cwd: "/tmp",
+    });
+    clearTimeout(timer);
+    return result.status ?? 1;
+  }
+
   const cwd = "/tmp";
 
   const authStorage = AuthStorage.create();
@@ -516,14 +531,10 @@ export async function runAgent(): Promise<number> {
   return handleInvocation(init);
 }
 
-// Auto-run when executed directly (not as a Lambda handler).
-// On Lambda, AWS_LAMBDA_RUNTIME_API is set and lambda-handler.ts drives execution.
-if (!process.env.AWS_LAMBDA_RUNTIME_API) {
-  runAgent().then(
-    (code) => process.exit(code),
-    (err) => {
-      emitLog("error", "container entry error", { error: err.message, stack: err.stack?.split("\n").slice(0, 5).join("\n") });
-      process.exit(1);
-    },
-  );
-}
+runAgent().then(
+  (code) => process.exit(code),
+  (err) => {
+    emitLog("error", "container entry error", { error: err.message, stack: err.stack?.split("\n").slice(0, 5).join("\n") });
+    process.exit(1);
+  },
+);

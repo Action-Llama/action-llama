@@ -1,9 +1,5 @@
 /**
  * Provider-agnostic constants shared across local and cloud runtimes.
- *
- * Provider-specific constants live in:
- *   - src/cloud/aws/constants.ts (AWS_CONSTANTS)
- *   - src/cloud/gcp/constants.ts (GCP_CONSTANTS)
  */
 
 import { execFileSync } from "child_process";

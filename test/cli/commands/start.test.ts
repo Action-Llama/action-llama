@@ -42,7 +42,6 @@ describe("start", () => {
       expect.stringContaining("test"),
       expect.any(Object),
       expect.any(StatusTracker),
-      false,  // cloudMode = !!globalConfig.cloud = false
       undefined,
       undefined
     );

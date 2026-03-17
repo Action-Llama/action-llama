@@ -13,5 +13,23 @@ export default defineConfig({
         "src/scheduler/types.ts", // pure type definitions
       ],
     },
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "unit",
+          exclude: ["**/node_modules/**", "**/.claude/worktrees/**", "test/integration/**"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "integration",
+          include: ["test/integration/**/*.test.ts"],
+          pool: "forks",
+          testTimeout: 1_800_000,
+        },
+      },
+    ],
   },
 });

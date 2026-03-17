@@ -54,11 +54,6 @@ vi.mock("@inquirer/prompts", () => ({
   confirm: (...args: any[]) => mockConfirm(...args),
 }));
 
-vi.mock("../../../src/shared/remote.js", () => ({
-  createLocalBackend: vi.fn().mockReturnValue({ list: vi.fn().mockResolvedValue([]) }),
-  createBackendFromCloudConfig: vi.fn().mockResolvedValue({}),
-}));
-
 const mockValidateTriggerFields = vi.fn();
 const mockResolveWebhookSource = vi.fn();
 vi.mock("../../../src/scheduler/webhook-setup.js", () => ({
@@ -230,47 +225,6 @@ describe("doctor", () => {
 
     const output = await captureLog(() => execute({ project: ".", checkOnly: true }));
     expect(output).toContain("[ok] GitHub Token");
-    expect(mockPromptCredential).not.toHaveBeenCalled();
-  });
-
-  it("headless cloud mode checks cloud backend and throws on missing", async () => {
-    const mockExists = vi.fn().mockResolvedValue(false);
-    const { createBackendFromCloudConfig } = await import("../../../src/shared/remote.js");
-    (createBackendFromCloudConfig as any).mockResolvedValue({ exists: mockExists });
-
-    mockDiscoverAgents.mockReturnValue(["dev"]);
-    mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["github_token:default"] });
-    mockLoadGlobalConfig.mockReturnValue({ cloud: { provider: "ecs", awsRegion: "us-east-1" } });
-    mockResolveCredential.mockReturnValue({
-      id: "github_token",
-      label: "GitHub Token",
-      fields: [{ name: "token" }],
-    });
-
-    await expect(
-      captureLog(() => execute({ project: ".", cloud: true, checkOnly: true }))
-    ).rejects.toThrow("missing from ecs");
-    expect(mockPromptCredential).not.toHaveBeenCalled();
-    expect(mockExists).toHaveBeenCalledWith("github_token", "default");
-  });
-
-  it("headless cloud mode succeeds when cloud creds exist", async () => {
-    const mockExists = vi.fn().mockResolvedValue(true);
-    const { createBackendFromCloudConfig } = await import("../../../src/shared/remote.js");
-    (createBackendFromCloudConfig as any).mockResolvedValue({ exists: mockExists });
-
-    mockDiscoverAgents.mockReturnValue(["dev"]);
-    mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["github_token:default"] });
-    mockLoadGlobalConfig.mockReturnValue({ cloud: { provider: "ecs", awsRegion: "us-east-1" } });
-    mockResolveCredential.mockReturnValue({
-      id: "github_token",
-      label: "GitHub Token",
-      fields: [{ name: "token" }],
-    });
-
-    const output = await captureLog(() => execute({ project: ".", cloud: true, checkOnly: true }));
-    expect(output).toContain("[ok] GitHub Token");
-    expect(output).toContain("verified in ecs");
     expect(mockPromptCredential).not.toHaveBeenCalled();
   });
 
