@@ -225,9 +225,12 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   );
   logger.info({ runtime: "local" }, "Container mode enabled — initializing infrastructure");
 
-  // Check for orphan containers from a previous scheduler run
+  // Check for orphan containers from a previous scheduler run.
+  // Only clean up containers belonging to agents in this project to avoid
+  // killing containers from other schedulers running in parallel (e.g. tests).
   try {
-    const orphans = await runtime.listRunningAgents();
+    const ownAgentNames = new Set(activeAgentConfigs.map((a) => a.name));
+    const orphans = (await runtime.listRunningAgents()).filter((o) => ownAgentNames.has(o.agentName));
     if (orphans.length > 0) {
       for (const orphan of orphans) {
         logger.warn({ agent: orphan.agentName, task: orphan.taskId }, "found orphan container");
