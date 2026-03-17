@@ -27,8 +27,11 @@ async function main() {
   // the per-invocation hot path.
   const init = await initAgent();
 
-  // Lambda Runtime API loop. In practice, each agent invocation runs for
-  // minutes, so this loop only executes once before the process exits.
+  // Lambda Runtime API loop. After each invocation completes and the
+  // response is posted, the loop blocks on /next and Lambda freezes the
+  // execution environment until the next invoke (or the function times out).
+  // The scheduler detects results via CloudWatch log parsing (signal-result
+  // for reruns, REPORT line for errors), not the process exit code.
   while (true) {
     // Block until Lambda delivers the next invocation
     const nextRes = await fetch(
@@ -67,9 +70,9 @@ async function main() {
         },
       );
 
-      // Exit with the agent's exit code so Lambda's REPORT line reflects
-      // success/failure and the scheduler can detect rerun (exit 42).
-      process.exit(exitCode);
+      // Don't call process.exit() — let the loop continue so Lambda can
+      // freeze the environment cleanly. Exiting here would race with
+      // Lambda's internal response processing and cause Runtime.ExitError.
     } catch (err: any) {
       emitLog("error", "lambda handler error", { error: err.message, stack: err.stack?.split("\n").slice(0, 3).join("\n") });
 
@@ -89,7 +92,8 @@ async function main() {
         // Best-effort error reporting
       }
 
-      process.exit(1);
+      // Don't exit — loop back so Lambda can freeze the environment.
+      // The error was already reported via the /error endpoint.
     }
   }
 }
