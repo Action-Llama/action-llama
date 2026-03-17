@@ -39,10 +39,10 @@ function formatTime(date: Date): string {
 function Header({ info, agentCount, agents }: { info: SchedulerInfo | null; agentCount: number; agents: AgentStatus[] }) {
   if (!info) return null;
   const modeLabel = info.mode === "host" ? "Host mode" : "Docker mode";
-  
+
   const enabledCount = agents.filter(a => a.enabled).length;
   const disabledCount = agentCount - enabledCount;
-  
+
   return (
     <Box flexDirection="column">
       <Text bold>
@@ -61,6 +61,50 @@ function Header({ info, agentCount, agents }: { info: SchedulerInfo | null; agen
         <Text dimColor>Dashboard: {info.dashboardUrl}</Text>
       ) : null}
       <Text dimColor>{"─".repeat(50)}</Text>
+    </Box>
+  );
+}
+
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+function InitializingView({ info, agents, baseImageStatus, tick }: { info: SchedulerInfo | null; agents: AgentStatus[]; baseImageStatus: string | null; tick: number }) {
+  const spinnerFrame = SPINNER_FRAMES[tick % SPINNER_FRAMES.length];
+
+  return (
+    <Box flexDirection="column" paddingTop={1}>
+      <Text bold>
+        Action Llama{info?.projectName ? ` — ${info.projectName}` : ""} — Initializing
+      </Text>
+      <Text dimColor>{"─".repeat(50)}</Text>
+      <Box flexDirection="column" paddingTop={1} paddingBottom={1}>
+        {baseImageStatus ? (
+          <Box>
+            <Text color="yellow">{spinnerFrame} Base image: {baseImageStatus}</Text>
+          </Box>
+        ) : null}
+        {agents.map((agent) => {
+          const isBuilding = agent.state === "building";
+          const isDone = !isBuilding && !baseImageStatus;
+          const icon = isDone ? "✓" : isBuilding ? spinnerFrame : "○";
+          const color = isDone ? "green" : isBuilding ? "yellow" : "white";
+          const detail = agent.statusText || (isBuilding ? "Waiting to build" : isDone ? "Ready" : "Waiting");
+          return (
+            <Box key={agent.name} flexDirection="column">
+              <Box>
+                <Box width={4}>
+                  <Text color={color}>{icon} </Text>
+                </Box>
+                <Box width={14}>
+                  <Text bold>{agent.name}</Text>
+                </Box>
+                <Text color={color} dimColor={!isBuilding && !isDone}>{detail}</Text>
+              </Box>
+            </Box>
+          );
+        })}
+      </Box>
+      <Text dimColor>{"─".repeat(50)}</Text>
+      <Text dimColor>Building Docker images... Ctrl+C to cancel</Text>
     </Box>
   );
 }
@@ -163,7 +207,7 @@ export default function App({ statusTracker }: { statusTracker: StatusTracker })
   const [logs, setLogs] = useState<LogLine[]>(() => statusTracker.getRecentLogs(5));
   const [baseImageStatus, setBaseImageStatus] = useState<string | null>(() => statusTracker.getBaseImageStatus());
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [, setTick] = useState(0);
+  const [tick, setTick] = useState(0);
 
   useInput((input, key) => {
     if (key.upArrow) {
@@ -200,24 +244,24 @@ export default function App({ statusTracker }: { statusTracker: StatusTracker })
     statusTracker.on("update", update);
     update(); // initial render
 
-    // 1-second timer for relative time updates
-    const timer = setInterval(() => setTick((t) => t + 1), 1000);
+    // Tick faster during init (for spinner), slower when running
+    const interval = info?.initializing ? 100 : 1000;
+    const timer = setInterval(() => setTick((t) => t + 1), interval);
 
     return () => {
       statusTracker.off("update", update);
       clearInterval(timer);
     };
-  }, [statusTracker, selectedIndex]);
+  }, [statusTracker, selectedIndex, info?.initializing]);
+
+  if (info?.initializing) {
+    return <InitializingView info={info} agents={agents} baseImageStatus={baseImageStatus} tick={tick} />;
+  }
 
   return (
     <Box flexDirection="column" paddingTop={1}>
       <Header info={info} agentCount={agents.length} agents={agents} />
-      {baseImageStatus ? (
-        <Box paddingTop={1}>
-          <Text color="yellow">Building base image: {baseImageStatus}</Text>
-        </Box>
-      ) : null}
-      <Box flexDirection="column" paddingTop={baseImageStatus ? 0 : 1} paddingBottom={1}>
+      <Box flexDirection="column" paddingTop={1} paddingBottom={1}>
         {agents.map((agent, index) => (
           <AgentRow key={agent.name} agent={agent} isSelected={index === selectedIndex} />
         ))}

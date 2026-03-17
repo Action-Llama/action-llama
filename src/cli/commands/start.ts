@@ -41,6 +41,7 @@ export async function execute(opts: { project: string; env?: string; headless?: 
     webhookUrls: [],
     startedAt: new Date(),
     paused: false,
+    initializing: true,
   });
 
   let cleanup: () => void;
@@ -73,6 +74,7 @@ export async function execute(opts: { project: string; env?: string; headless?: 
     dashboardUrl: (opts.webUi && gatewayPort) ? `http://localhost:${gatewayPort}/dashboard` : undefined,
     startedAt: new Date(),
     paused: false,
+    initializing: false,
   });
 
   // Coordinate SIGINT: cleanup, then exit

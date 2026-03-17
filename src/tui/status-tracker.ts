@@ -32,6 +32,7 @@ export interface SchedulerInfo {
   dashboardUrl?: string;
   startedAt: Date;
   paused: boolean;
+  initializing?: boolean;
 }
 
 export interface LogLine {
