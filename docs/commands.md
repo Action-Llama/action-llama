@@ -20,10 +20,25 @@ After setup, create agents by following [Creating Agents](creating-agents.md).
 
 Checks all agent credentials and interactively prompts for any that are missing. Discovers agents in the project, collects their credential requirements (plus any webhook secret credentials), and ensures each one exists on disk. Also generates a gateway API key if one doesn't exist yet (used for dashboard and CLI authentication).
 
+Additionally validates webhook trigger fields in agent configurations to catch common configuration errors early, such as:
+- Using `repository` instead of `repos`
+- Misspelled field names (e.g., `event` instead of `events`)  
+- Provider-specific invalid fields (e.g., using GitHub fields with Sentry webhooks)
+
+When validation errors are found, `al doctor` will display helpful suggestions and exit with an error.
+
 ```bash
 al doctor -p .
 al doctor -p ./my-project
 al doctor -c               # Also push creds to cloud + reconcile IAM
+```
+
+When webhook trigger validation errors are found, you'll see helpful error messages:
+
+```
+Invalid webhook trigger configuration:
+  - Agent "dev" webhook trigger: unrecognized field "repository" for github provider. Did you mean "repos"?
+  - Agent "notifier" webhook trigger: unrecognized field "event" for github provider. Did you mean "events"?
 ```
 
 | Option | Description |
