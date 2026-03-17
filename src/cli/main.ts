@@ -172,6 +172,18 @@ program
     await execute({ ...opts, agent });
   }));
 
+program
+  .command("push")
+  .description("Deploy project to a self-hosted server via SSH")
+  .option("-p, --project <dir>", "project directory", ".")
+  .option("-E, --env <name>", "use named environment with [server] config")
+  .option("--dry-run", "show what would be synced without making changes")
+  .option("--no-creds", "skip credential sync")
+  .action(withCommand(async (opts) => {
+    const { execute } = await import("./commands/push.js");
+    await execute(opts);
+  }));
+
 // --- Environment management ---
 
 const envCmd = program
@@ -182,9 +194,10 @@ envCmd
   .command("init")
   .description("Create a new environment configuration file")
   .argument("<name>", "environment name (e.g. prod-aws, staging-gcp)")
-  .action(withCommand(async (name: string) => {
+  .requiredOption("-t, --type <type>", "environment type: server, ecs, or cloud-run")
+  .action(withCommand(async (name: string, opts: { type: string }) => {
     const { init } = await import("./commands/env.js");
-    await init(name);
+    await init(name, opts.type);
   }));
 
 envCmd

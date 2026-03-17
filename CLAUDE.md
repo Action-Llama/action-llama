@@ -124,6 +124,7 @@ src/
   agents/           # Agent runners (host + Docker), prompt builder
   gateway/          # HTTP server: router, health, shutdown, webhook routes
   docker/           # Container lifecycle, image + network
+  remote/           # SSH push deploy: ssh/rsync helpers, bootstrap, push orchestration
   webhooks/         # Webhook registry, provider interface
   tui/              # Ink-based terminal UI
   shared/           # Config, credentials, environment, logger, paths, git helpers
@@ -135,16 +136,20 @@ Config uses a three-layer merge system for portable projects:
 
 1. **`config.toml`** (committed) — portable project settings: `[model]`, `[local]`, `[gateway]`, `[webhooks]`, `[telemetry]`
 2. **`.env.toml`** (gitignored) — per-project environment binding + config overrides. Has an `environment` field to select a named environment
-3. **`~/.action-llama/environments/<name>.toml`** (machine-level) — cloud infrastructure config (`[cloud]`, `gateway.url`, `telemetry.endpoint`)
+3. **`~/.action-llama/environments/<name>.toml`** (machine-level) — infrastructure config: `[cloud]` (ECS/Cloud Run) or `[server]` (SSH push deploy), plus `gateway.url`, `telemetry.endpoint`
 
 Merge order: `config.toml` -> `.env.toml` -> environment file (later values win, deep merge).
 
-Cloud mode is auto-detected from the merged config (presence of `[cloud]` section). The `-E`/`--env <name>` flag or `AL_ENV` env var selects an environment explicitly.
+`[cloud]` and `[server]` must be in an environment file (Layer 3) — placing `[cloud]` in `config.toml` is an error. `[cloud]` and `[server]` are mutually exclusive within an environment.
+
+Cloud mode is auto-detected from the merged config (presence of `[cloud]` section). Server mode uses `al push` with `[server]`. The `-E`/`--env <name>` flag or `AL_ENV` env var selects an environment explicitly.
+
+Environment types (for `al env init <name> --type <type>`): `server`, `ecs`, `cloud-run`.
 
 ## Key Conventions
 
 - Config format: TOML (`config.toml`, `agent-config.toml`, `.env.toml`, environment files)
 - Credentials: `~/.action-llama/credentials/<type>/<instance>/<field>` — instance is agent name (agent-specific) or `"default"` (shared)
-- Cloud is opt-in via `--env <name>` flag or `.env.toml` environment binding
+- Cloud is opt-in via `--env <name>` flag or `.env.toml` environment binding; server deploy via `al push --env <name>`
 - `"default"` is a reserved name — cannot be used as an agent name
 - Tests use vitest with `test/` mirroring `src/`

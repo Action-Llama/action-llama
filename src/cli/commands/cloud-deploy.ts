@@ -24,7 +24,7 @@ export async function execute(opts: { project: string; env?: string }): Promise<
   const cloud = globalConfig.cloud;
 
   if (!cloud) {
-    throw new Error("No cloud config found. Set up an environment with 'al env init <name>' or add [cloud] to config.toml.");
+    throw new Error("No cloud config found. Set up an environment with 'al env init <name> --type ecs' (or --type cloud-run).");
   }
 
   const provider = await createCloudProvider(cloud);

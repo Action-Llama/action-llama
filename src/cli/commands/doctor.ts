@@ -9,12 +9,7 @@ import { ConfigError, CredentialError } from "../../shared/errors.js";
 import { createCloudProvider } from "../../cloud/provider.js";
 import { ensureGatewayApiKey } from "../../gateway/api-key.js";
 import { resolveWebhookSource, validateTriggerFields } from "../../scheduler/webhook-setup.js";
-
-// Webhook secret credential types — these support multiple named instances
-const WEBHOOK_SECRET_TYPES: Record<string, string> = {
-  github: "github_webhook_secret",
-  sentry: "sentry_client_secret",
-};
+import { collectCredentialRefs } from "../../shared/credential-refs.js";
 
 export async function execute(opts: { project: string; env?: string; checkOnly?: boolean }): Promise<void> {
   const projectPath = resolve(opts.project);
@@ -34,25 +29,9 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
   }
 
   // Collect all credential refs from agents (including webhook secrets)
-  const credentialRefs = new Set<string>();
   const globalConfig = loadGlobalConfig(projectPath, opts.env);
   const webhookSources = globalConfig.webhooks ?? {};
-
-  for (const name of agents) {
-    const config = loadAgentConfig(projectPath, name);
-    for (const ref of config.credentials) {
-      credentialRefs.add(ref);
-    }
-    // Derive webhook secret credential refs from global webhook sources
-    for (const trigger of config.webhooks || []) {
-      const sourceConfig = webhookSources[trigger.source];
-      if (!sourceConfig) continue;
-      const credType = WEBHOOK_SECRET_TYPES[sourceConfig.type];
-      if (credType && sourceConfig.credential) {
-        credentialRefs.add(`${credType}:${sourceConfig.credential}`);
-      }
-    }
-  }
+  const credentialRefs = collectCredentialRefs(projectPath, globalConfig);
 
   // Validate webhook trigger fields
   const triggerErrors: string[] = [];

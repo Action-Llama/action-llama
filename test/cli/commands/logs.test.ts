@@ -409,7 +409,7 @@ describe("logs command", () => {
   });
 
   it("follows cloud logs when --follow is used", { timeout: 15_000 }, async () => {
-    const configContent = `
+    const envTomlContent = `
 [cloud]
 provider = "ecs"
 awsRegion = "us-east-1"
@@ -419,7 +419,7 @@ executionRoleArn = "arn:aws:iam::123456789:role/test-exec"
 taskRoleArn = "arn:aws:iam::123456789:role/test-task"
 subnets = ["subnet-123"]
 `;
-    writeFileSync(resolve(tmpDir, "config.toml"), configContent);
+    writeFileSync(resolve(tmpDir, ".env.toml"), envTomlContent);
 
     const output: string[] = [];
     const origLog = console.log;
@@ -454,7 +454,7 @@ subnets = ["subnet-123"]
   });
 
   it("fetches static cloud logs when --follow is not used", { timeout: 15_000 }, async () => {
-    const configContent = `
+    const envTomlContent = `
 [cloud]
 provider = "ecs"
 awsRegion = "us-east-1"
@@ -464,7 +464,7 @@ executionRoleArn = "arn:aws:iam::123456789:role/test-exec"
 taskRoleArn = "arn:aws:iam::123456789:role/test-task"
 subnets = ["subnet-123"]
 `;
-    writeFileSync(resolve(tmpDir, "config.toml"), configContent);
+    writeFileSync(resolve(tmpDir, ".env.toml"), envTomlContent);
 
     const output: string[] = [];
     const origLog = console.log;
