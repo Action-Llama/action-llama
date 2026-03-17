@@ -37,7 +37,8 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && chmod +x dist/cli/main.js && npm run build:assets",
+    "build": "tsc -p tsconfig.build.json && chmod +x dist/cli/main.js && npm run build:info && npm run build:assets",
+    "build:info": "printf '{\"gitSha\":\"%s\"}' \"$(git rev-parse --short=8 HEAD 2>/dev/null || echo dev)\" > dist/build-info.json",
     "build:assets": "echo 'No assets to copy'",
     "clean": "rm -rf dist",
     "prebuild": "npm run clean",

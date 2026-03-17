@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=public.ecr.aws/docker/dockerfile:1
 FROM public.ecr.aws/docker/library/node:20-alpine
 
 ARG GIT_SHA=unknown
