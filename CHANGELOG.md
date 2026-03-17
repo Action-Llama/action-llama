@@ -1,5 +1,43 @@
 # @action-llama/action-llama
 
+## 0.11.9
+
+### Patch Changes
+
+- [`71bbcf5`](https://github.com/Action-Llama/action-llama/commit/71bbcf51a250d8cf5d2c095128fbede9d5c0b718) Thanks [@asselstine](https://github.com/asselstine)! - Bake git SHA into `dist/build-info.json` at build time so Docker image tags are
+  consistent across npm installs. Previously, `GIT_SHA` was computed at runtime via
+  `git rev-parse`, which returned the user's project SHA instead of the package's,
+  busting the local Docker image cache on every commit. Also switched the Dockerfile
+  syntax directive from Docker Hub to the ECR mirror to avoid rate-limit failures
+  in CodeBuild.
+
+## 0.11.8
+
+### Patch Changes
+
+- [`4a4f21b`](https://github.com/Action-Llama/action-llama/commit/4a4f21bd40cb34cd7e2011d91d738436eca0a773) Thanks [@asselstine](https://github.com/asselstine)! - Fixed missing `lstatSync` import in aws-shared.ts that caused a build failure.
+
+- [`9dcda35`](https://github.com/Action-Llama/action-llama/commit/9dcda357b304fbe8b88bdd8f93838ac518c0c4c9) Thanks [@asselstine](https://github.com/asselstine)! - Fix Docker build output leaking into TUI during `al start`. Switched
+  `buildImage()` from synchronous `execFileSync` with inherited stderr to async
+  `spawn` with all stdio piped. BuildKit output is now parsed and forwarded
+  through `onProgress` instead of printing directly to the terminal, so the
+  Ink-based TUI can render cleanly during builds. Also piped stderr in the
+  `image.ts` helper used by `al run`.
+
+## 0.11.7
+
+### Patch Changes
+
+- [`bb77b18`](https://github.com/Action-Llama/action-llama/commit/bb77b1899bbdd92fa14adcb51927e0f8b1a21ebd) Thanks [@asselstine](https://github.com/asselstine)! - Fixed local Docker builds failing with `COPY static/ /app/static/: not found` by passing
+  the build directory as an explicit absolute path to Docker instead of relying on `cwd` + `"."`.
+  Also restructured `buildImage()` into three linear phases (resolve content, inject COPY,
+  prepare context) to reduce nesting and branching.
+
+- [`9eb9982`](https://github.com/Action-Llama/action-llama/commit/9eb9982bae23bf0ef28ae20c6f9e75d0cfd1c983) Thanks [@asselstine](https://github.com/asselstine)! - Fixed agent Docker builds failing with `COPY static/ /app/static/: not found`. The static/
+  directory was written to a temp build context but Docker was invoked with the package root
+  as its build context, so it could never find the files. Now the temp directory is used as
+  Docker's build context when extra files are present.
+
 ## 0.11.6
 
 ### Patch Changes

@@ -15,6 +15,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const VERSION: string = JSON.parse(readFileSync(resolve(__dirname, "../../package.json"), "utf-8")).version;
 
 function getGitSha(): string {
+  // Prefer baked build info (present in npm package installs)
+  try {
+    const buildInfoPath = resolve(__dirname, "..", "build-info.json");
+    const { gitSha } = JSON.parse(readFileSync(buildInfoPath, "utf-8"));
+    if (gitSha) return gitSha;
+  } catch {}
+
+  // Fall back to git rev-parse for development from source
   try {
     return execFileSync("git", ["rev-parse", "--short=8", "HEAD"], {
       encoding: "utf-8",

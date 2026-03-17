@@ -6,7 +6,7 @@
  */
 
 import { execFileSync } from "child_process";
-import { createReadStream } from "fs";
+import { createReadStream, lstatSync } from "fs";
 import {
   SecretsManagerClient,
   ListSecretsCommand,
@@ -312,7 +312,6 @@ export class AwsSharedUtils {
         try { if (lstatSync(source).isDirectory()) return true; } catch { return true; }
         return !HASH_EXCLUDED.some(re => re.test(source));
       };
-      
       copyFileSync(join(opts.contextDir, "package.json"), join(buildCtx, "package.json"));
       cpSync(join(opts.contextDir, "dist"), join(buildCtx, "dist"), { recursive: true, filter: cpFilter });
       // Copy baked shell scripts (docker/bin/) into the build context
@@ -729,7 +728,6 @@ export class AwsSharedUtils {
           try { if (lstatSync(source).isDirectory()) return true; } catch { return true; }
           return !HASH_EXCLUDED.some(re => re.test(source));
         };
-        
         copyFileSync(join(opts.contextDir, "package.json"), join(subPath, "package.json"));
         cpSync(join(opts.contextDir, "dist"), join(subPath, "dist"), { recursive: true, filter: cpFilter });
         const binSrc = join(opts.contextDir, "docker", "bin");

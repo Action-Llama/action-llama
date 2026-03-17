@@ -14,7 +14,7 @@ const DEFAULT_IMAGE = CONSTANTS.DEFAULT_IMAGE;
 function docker(args: string[], opts?: { quiet?: boolean; cwd?: string }): string {
   return execFileSync("docker", args, {
     encoding: "utf-8",
-    stdio: opts?.quiet ? ["pipe", "pipe", "pipe"] : ["pipe", "pipe", "inherit"],
+    stdio: ["pipe", "pipe", "pipe"],
     timeout: 300000, // 5 min for builds
     cwd: opts?.cwd || PACKAGE_ROOT,
     env: { ...process.env, DOCKER_BUILDKIT: "1" },
