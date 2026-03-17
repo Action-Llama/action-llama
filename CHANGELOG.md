@@ -1,5 +1,25 @@
 # @action-llama/action-llama
 
+## 0.11.11
+
+### Patch Changes
+
+- [`bfe56d7`](https://github.com/Action-Llama/action-llama/commit/bfe56d7e9a7d57b513c1694d1e63aa2ec68e06e9) Thanks [@asselstine](https://github.com/asselstine)! - Added `--cloud` (`-c`) flag to `al kill`, `al pause`, and `al resume` commands.
+  `kill -c` stops running cloud tasks directly via ECS/Cloud Run APIs.
+  `pause -c` and `resume -c` forward to the cloud-deployed scheduler's gateway.
+  Also added `runtimeId` field to `RunningAgent` to store full cloud identifiers
+  needed for kill operations (ECS task ARN, Cloud Run execution path).
+
+- [`653cd03`](https://github.com/Action-Llama/action-llama/commit/653cd034213e95cbb022a9387c47fa7840f94b18) Thanks [@asselstine](https://github.com/asselstine)! - Fixed GitHub webhook `orgs` filter being silently ignored. The `buildFilterFromTrigger` function
+  now correctly passes `orgs` through to the filter. Also added `org` as a convenience shorthand
+  for `orgs` (e.g., `org = "acme"` instead of `orgs = ["acme"]`), and `al doctor` now validates
+  webhook trigger fields and rejects unrecognized keys with helpful suggestions.
+
+- [`9919997`](https://github.com/Action-Llama/action-llama/commit/9919997ea39fb452673abe4673789dc90422bc32) Thanks [@asselstine](https://github.com/asselstine)! - Fixed Lambda agents failing with `Runtime.ExitError` by removing `process.exit()` calls
+  from the Lambda handler. The handler was exiting before Lambda finished processing the
+  invocation response, causing a race condition. The Runtime API loop now continues naturally,
+  allowing Lambda to freeze the environment between invocations.
+
 ## 0.11.10
 
 ### Patch Changes
