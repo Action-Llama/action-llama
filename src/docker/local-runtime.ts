@@ -1,6 +1,6 @@
 import { execFileSync, spawn } from "child_process";
 import { randomUUID } from "crypto";
-import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync } from "fs";
 import { join, resolve, isAbsolute, dirname } from "path";
 import { tmpdir } from "os";
 import { NETWORK_NAME } from "./network.js";
@@ -76,6 +76,10 @@ export class LocalDockerRuntime implements ContainerRuntime {
 
   async prepareCredentials(credRefs: string[]): Promise<RuntimeCredentials> {
     const stagingDir = mkdtempSync(join(tmpdir(), CONSTANTS.CREDS_TEMP_PREFIX));
+    // Make staging dir readable by the container user (runs as UID 1000).
+    // On Linux, bind-mount permissions are enforced strictly — the host UID
+    // creating these files may differ from the container UID.
+    chmodSync(stagingDir, 0o755);
     const bundle: CredentialBundle = {};
     const backend = getDefaultBackend();
 
@@ -86,13 +90,13 @@ export class LocalDockerRuntime implements ContainerRuntime {
       if (!fields) continue;
 
       const dstDir = join(stagingDir, type, instance);
-      mkdirSync(dstDir, { recursive: true });
+      mkdirSync(dstDir, { recursive: true, mode: 0o755 });
       if (!bundle[type]) bundle[type] = {};
       bundle[type][instance] = {};
 
       for (const [field, value] of Object.entries(fields)) {
         try {
-          writeFileSync(join(dstDir, field), value + "\n", { mode: 0o600 });
+          writeFileSync(join(dstDir, field), value + "\n", { mode: 0o644 });
           bundle[type][instance][field] = value;
         } catch {
           // Skip unwritable fields

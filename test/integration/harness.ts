@@ -126,7 +126,7 @@ export class IntegrationHarness {
         name: agent.name,
         schedule: agent.schedule,
         webhooks: agent.webhooks,
-        credentials: ["anthropic_key:default"],
+        credentials: ["anthropic_key"],
         ...agent.config,
       });
       const { name: _, ...configToWrite } = agentConfig;
@@ -169,8 +169,6 @@ export class IntegrationHarness {
       this.projectPath,
       loadedConfig,
       undefined, // no status tracker
-      false,     // not cloud mode
-      true,      // gateway enabled
       false,     // no web UI
       false,     // no expose
     );
@@ -215,8 +213,11 @@ export class IntegrationHarness {
     const pool = this._scheduler?.runnerPools[agentName];
     if (!pool) throw new Error(`Agent "${agentName}" not found in runner pools`);
 
-    // First wait for it to start running
-    while (!pool.hasRunningJobs && Date.now() - start < timeoutMs) {
+    // Wait for the agent to start running, but only up to 15s.
+    // If it doesn't start within that window, it likely already completed
+    // its run before we began polling (e.g. fast container exit in CI).
+    const startWaitLimit = Math.min(15_000, timeoutMs);
+    while (!pool.hasRunningJobs && Date.now() - start < startWaitLimit) {
       await new Promise((r) => setTimeout(r, 200));
     }
 
@@ -263,6 +264,13 @@ export class IntegrationHarness {
    */
   async shutdown(): Promise<void> {
     if (this._scheduler) {
+      // Kill any running containers so they don't become orphans
+      for (const pool of Object.values(this._scheduler.runnerPools)) {
+        pool.killAll();
+      }
+      // Brief pause to let container kills propagate
+      await new Promise((r) => setTimeout(r, 500));
+
       // Stop cron jobs
       for (const job of this._scheduler.cronJobs) {
         job.stop();

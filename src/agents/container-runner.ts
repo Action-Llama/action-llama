@@ -200,8 +200,9 @@ export class ContainerAgentRunner {
       // Resolve credential refs — always include anthropic_key for non-pi_auth
       const credRefs = [...new Set(this.agentConfig.credentials)];
       if (this.agentConfig.model.authType !== "pi_auth") {
-        if (!credRefs.includes("anthropic_key:default")) {
-          credRefs.push("anthropic_key:default");
+        const hasAnthropicKey = credRefs.some((r) => r === "anthropic_key" || r.startsWith("anthropic_key:"));
+        if (!hasAnthropicKey) {
+          credRefs.push("anthropic_key");
         }
       }
 
