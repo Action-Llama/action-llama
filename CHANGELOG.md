@@ -1,5 +1,16 @@
 # @action-llama/action-llama
 
+## 0.11.9
+
+### Patch Changes
+
+- [`71bbcf5`](https://github.com/Action-Llama/action-llama/commit/71bbcf51a250d8cf5d2c095128fbede9d5c0b718) Thanks [@asselstine](https://github.com/asselstine)! - Bake git SHA into `dist/build-info.json` at build time so Docker image tags are
+  consistent across npm installs. Previously, `GIT_SHA` was computed at runtime via
+  `git rev-parse`, which returned the user's project SHA instead of the package's,
+  busting the local Docker image cache on every commit. Also switched the Dockerfile
+  syntax directive from Docker Hub to the ECR mirror to avoid rate-limit failures
+  in CodeBuild.
+
 ## 0.11.8
 
 ### Patch Changes
