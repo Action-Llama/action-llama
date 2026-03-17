@@ -17,8 +17,8 @@ import sentryClientSecret from "./sentry-client-secret.js";
 import linearWebhookSecret from "./linear-webhook-secret.js";
 import netlifyToken from "./netlify-token.js";
 import xTwitterApi from "./x-twitter-api.js";
-import aws from "./aws.js";
 import bugsnagToken from "./bugsnag-token.js";
+import vultrApiKey from "./vultr-api-key.js";
 
 export const builtinCredentials: Record<string, CredentialDefinition> = {
   "github_token": githubToken,
@@ -39,6 +39,6 @@ export const builtinCredentials: Record<string, CredentialDefinition> = {
   "linear_webhook_secret": linearWebhookSecret,
   "netlify_token": netlifyToken,
   "x_twitter_api": xTwitterApi,
-  "aws": aws,
   "bugsnag_token": bugsnagToken,
+  "vultr_api_key": vultrApiKey,
 };

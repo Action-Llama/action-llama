@@ -28,6 +28,20 @@ export interface LocalConfig {
   timeout?: number;        // Max container runtime in seconds
 }
 
+export interface VpsCloudConfig {
+  provider: "vps";
+  host: string;
+  sshUser?: string;         // default: "root"
+  sshPort?: number;         // default: 22
+  sshKeyPath?: string;      // default: ~/.ssh/id_rsa
+  // Vultr-specific (present only if AL provisioned the instance)
+  vultrInstanceId?: string;
+  vultrRegion?: string;
+}
+
+export type CloudConfig = VpsCloudConfig;
+
+
 export interface GatewayConfig {
   port?: number;
   lockTimeout?: number;
@@ -138,6 +152,27 @@ export function loadGlobalConfig(projectPath: string, envName?: string): GlobalC
 
   return config;
 }
+
+export function validateCloudConfig(raw: any): CloudConfig {
+  if (!raw.provider) {
+    throw new ConfigError("cloud.provider is required");
+  }
+
+  if (raw.provider === "vps") {
+    const required = ["host"] as const;
+    const missing = required.filter((k) => !raw[k]);
+    if (missing.length > 0) {
+      throw new ConfigError(
+        `VPS cloud config is missing required fields: ${missing.map((k) => `cloud.${k}`).join(", ")}. ` +
+        `Run 'al setup cloud' to configure.`
+      );
+    }
+    return raw as VpsCloudConfig;
+  }
+
+  throw new ConfigError(`Unknown cloud provider: "${raw.provider}". Supported: vps`);
+}
+
 
 export function loadAgentConfig(projectPath: string, agentName: string): AgentConfig {
   const agentDir = resolve(projectPath, "agents", agentName);

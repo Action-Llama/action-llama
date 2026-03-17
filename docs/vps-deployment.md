@@ -1,8 +1,92 @@
 # VPS Deployment
 
-Deploy Action Llama on any VPS (DigitalOcean, Vultr, Hetzner, etc.) for cost-effective remote hosting. This approach uses local-mode features (Docker, filesystem credentials, SQLite) with public gateway access.
+Deploy Action Llama on any VPS (DigitalOcean, Vultr, Hetzner, etc.) for cost-effective remote hosting.
 
-## Quick Start
+There are two approaches:
+
+1. **VPS cloud provider** (`provider: "vps"`) — manage the VPS from your local machine via SSH. Images are built on the VPS, credentials pushed over SSH, scheduler deployed as a Docker container. Set up with `al setup cloud`.
+2. **Manual deployment** — install Action Llama directly on the VPS and run `al start` with the `--expose` flag. Simpler, but requires SSH'ing into the server to manage.
+
+## Approach 1: VPS Cloud Provider (Recommended)
+
+The VPS cloud provider lets you manage your VPS deployment from your local machine, just like AWS or GCP.
+
+### Quick Start
+
+```bash
+# From your local machine:
+al setup cloud -p .         # Select "VPS (Vultr, etc.)" → connect or provision
+al doctor -c -p .           # Push credentials to VPS via SSH
+al cloud deploy -p .        # Deploy scheduler to VPS
+```
+
+### Setup Options
+
+The `al setup cloud` wizard offers two paths:
+
+#### Connect to an existing server
+
+Works with any VPS provider (DigitalOcean, Hetzner, Linode, etc.) or any server you can SSH into:
+
+1. Enter the server IP, SSH user, port, and key path
+2. Action Llama validates SSH connectivity and checks Docker is installed
+3. Configuration is written to your environment file
+
+Requirements:
+- SSH access to the server
+- Docker installed on the server (`curl -fsSL https://get.docker.com | sh`)
+
+#### Provision a new Vultr VPS
+
+Automated provisioning with Vultr as the first supported backend:
+
+1. Configure `vultr_api_key` credential first: `al creds add vultr_api_key`
+2. Run `al setup cloud` and select "Provision a new Vultr VPS"
+3. Pick region, plan (minimum 2 vCPU / 2GB RAM), and SSH key
+4. Instance is created with cloud-init that installs Docker automatically
+5. Action Llama waits for the instance to become ready
+
+### How It Works
+
+| Operation | Implementation |
+|-----------|---------------|
+| Image builds | `tar -c . \| ssh docker build -t <tag> -` (built on VPS, no registry) |
+| Credential storage | Filesystem on VPS (`~/.action-llama/credentials/`) via SSH |
+| Credential push | `al doctor -c` copies credentials over SSH |
+| Scheduler deploy | `docker run -d --restart unless-stopped` on VPS |
+| IAM reconciliation | No-op (SSH access = full access) |
+| Log streaming | Real-time via SSH (`docker logs -f`) |
+
+### Configuration
+
+In your environment file (`~/.action-llama/environments/<name>.toml`):
+
+```toml
+[cloud]
+provider = "vps"
+host = "5.6.7.8"
+sshUser = "root"          # default: "root"
+sshPort = 22              # default: 22
+sshKeyPath = "~/.ssh/id_rsa"  # default: "~/.ssh/id_rsa"
+
+# Set automatically if provisioned via Vultr:
+# vultrInstanceId = "abc123"
+# vultrRegion = "ewr"
+```
+
+### Teardown
+
+```bash
+al teardown cloud -p .
+```
+
+This stops all Action Llama containers and cleans up remote credentials. If the instance was provisioned via Vultr, you'll be offered the option to delete it.
+
+## Approach 2: Manual Deployment
+
+Install Action Llama directly on your VPS and run it there. Simpler but requires managing the server directly.
+
+### Quick Start
 
 On your VPS:
 
@@ -18,10 +102,10 @@ cd my-project
 al doctor
 
 # Start with public gateway binding
-al start -g -w --expose --headless
+al start -w --expose --headless
 ```
 
-## Key Features
+### Key Features
 
 The `--expose` flag enables VPS deployment by:
 
@@ -62,7 +146,7 @@ sudo systemctl start caddy
 
 ## Process Management with systemd
 
-Create `/etc/systemd/system/action-llama.service`:
+For the manual deployment approach, create `/etc/systemd/system/action-llama.service`:
 
 ```ini
 [Unit]
@@ -74,7 +158,7 @@ Type=simple
 User=action-llama
 WorkingDirectory=/home/action-llama/my-project
 Environment=NODE_ENV=production
-ExecStart=/usr/local/bin/al start -g -w --expose --headless
+ExecStart=/usr/local/bin/al start -w --expose --headless
 Restart=always
 RestartSec=10
 
@@ -94,7 +178,7 @@ sudo systemctl start action-llama
 For simpler setups, use `nohup`:
 
 ```bash
-nohup al start -g -w --expose --headless > action-llama.log 2>&1 &
+nohup al start -w --expose --headless > action-llama.log 2>&1 &
 ```
 
 ## Firewall Configuration
@@ -121,17 +205,22 @@ sudo ufw enable
 - **Gateway API key** — Action Llama generates an API key for dashboard access (run `al doctor` to view it)
 - **Credentials isolation** — Each agent runs in a Docker container with only its required credentials
 - **User separation** — Run Action Llama as a non-root user
+- **SSH key security** — The VPS cloud provider uses your SSH key for all operations. Protect it with a passphrase and restrict access.
 
 ## Monitoring
 
 Check service status:
 
 ```bash
-# systemd
+# systemd (manual deployment)
 sudo systemctl status action-llama
+
+# Cloud provider deployment
+al stat -c
 
 # Logs
 al logs scheduler
+al logs dev -c              # Cloud provider: view agent logs via SSH
 journalctl -u action-llama -f
 ```
 
@@ -151,7 +240,7 @@ Compare to managed cloud solutions that may cost $50+ per month for similar agen
 ### Gateway not accessible externally
 
 - Check firewall settings
-- Verify `--expose` flag is used
+- Verify `--expose` flag is used (manual deployment)
 
 ### Docker issues
 
@@ -161,6 +250,16 @@ sudo systemctl status docker
 
 # Test Docker access
 docker ps
+```
+
+### SSH connection issues (cloud provider)
+
+```bash
+# Test SSH manually
+ssh -o ConnectTimeout=10 root@your-vps-ip echo ok
+
+# Check SSH key permissions
+chmod 600 ~/.ssh/id_rsa
 ```
 
 ### Webhook delivery failures

@@ -126,6 +126,7 @@ src/
   agents/           # Agent runners (host + Docker), prompt builder
   gateway/          # HTTP server: router, health, shutdown, webhook routes
   docker/           # Container lifecycle, image + network
+  cloud/            # Cloud providers (vps/) — provisioning, teardown
   remote/           # SSH push deploy: ssh/rsync helpers, bootstrap, push orchestration
   webhooks/         # Webhook registry, provider interface
   tui/              # Ink-based terminal UI

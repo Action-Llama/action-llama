@@ -531,14 +531,10 @@ export async function runAgent(): Promise<number> {
   return handleInvocation(init);
 }
 
-// Auto-run when executed directly (not as a Lambda handler).
-// On Lambda, AWS_LAMBDA_RUNTIME_API is set and lambda-handler.ts drives execution.
-if (!process.env.AWS_LAMBDA_RUNTIME_API) {
-  runAgent().then(
-    (code) => process.exit(code),
-    (err) => {
-      emitLog("error", "container entry error", { error: err.message, stack: err.stack?.split("\n").slice(0, 5).join("\n") });
-      process.exit(1);
-    },
-  );
-}
+runAgent().then(
+  (code) => process.exit(code),
+  (err) => {
+    emitLog("error", "container entry error", { error: err.message, stack: err.stack?.split("\n").slice(0, 5).join("\n") });
+    process.exit(1);
+  },
+);
