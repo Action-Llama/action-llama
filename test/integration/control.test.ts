@@ -16,7 +16,7 @@ describe.skipIf(!DOCKER)("integration: control API", { timeout: 180_000 }, () =>
         {
           name: "ctrl-agent",
           schedule: "0 0 31 2 *",
-          testScript: "#!/bin/bash\necho 'running'\nexit 0\n",
+          testScript: "#!/bin/sh\necho 'running'\nexit 0\n",
         },
       ],
     });
@@ -43,7 +43,7 @@ describe.skipIf(!DOCKER)("integration: control API", { timeout: 180_000 }, () =>
         {
           name: "manual-agent",
           schedule: "0 0 31 2 *",
-          testScript: "#!/bin/bash\necho 'manually triggered'\nexit 0\n",
+          testScript: "#!/bin/sh\necho 'manually triggered'\nexit 0\n",
         },
       ],
     });
@@ -66,7 +66,7 @@ describe.skipIf(!DOCKER)("integration: control API", { timeout: 180_000 }, () =>
           name: "kill-agent",
           schedule: "0 0 31 2 *",
           testScript: [
-            "#!/bin/bash",
+            "#!/bin/sh",
             // Long-running agent to give us time to kill it
             "sleep 300",
             "exit 0",
@@ -94,7 +94,7 @@ describe.skipIf(!DOCKER)("integration: control API", { timeout: 180_000 }, () =>
         {
           name: "existing-agent",
           schedule: "0 0 31 2 *",
-          testScript: "#!/bin/bash\nexit 0\n",
+          testScript: "#!/bin/sh\nexit 0\n",
         },
       ],
     });

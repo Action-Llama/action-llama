@@ -17,7 +17,7 @@ describe.skipIf(!DOCKER)("integration: resource locking", { timeout: 180_000 }, 
           name: "lock-agent",
           schedule: "0 0 31 2 *",
           testScript: [
-            "#!/bin/bash",
+            "#!/bin/sh",
             "set -e",
             // Acquire lock
             'ACQUIRE=$(rlock "my-resource")',
@@ -59,7 +59,7 @@ describe.skipIf(!DOCKER)("integration: resource locking", { timeout: 180_000 }, 
           name: "lock-holder",
           schedule: "0 0 31 2 *",
           testScript: [
-            "#!/bin/bash",
+            "#!/bin/sh",
             // Acquire and hold lock for a few seconds
             'rlock "contested-resource"',
             "sleep 5",
@@ -71,7 +71,7 @@ describe.skipIf(!DOCKER)("integration: resource locking", { timeout: 180_000 }, 
           name: "lock-waiter",
           schedule: "0 0 31 2 *",
           testScript: [
-            "#!/bin/bash",
+            "#!/bin/sh",
             // Wait a moment for holder to grab lock first
             "sleep 2",
             // Try to acquire — may get conflict, that's OK
@@ -99,7 +99,7 @@ describe.skipIf(!DOCKER)("integration: resource locking", { timeout: 180_000 }, 
           name: "leaky-locker",
           schedule: "0 0 31 2 *",
           testScript: [
-            "#!/bin/bash",
+            "#!/bin/sh",
             // Acquire lock but exit without releasing — container cleanup should release it
             'rlock "leaked-resource"',
             'echo "exiting without releasing lock"',
@@ -114,7 +114,9 @@ describe.skipIf(!DOCKER)("integration: resource locking", { timeout: 180_000 }, 
     await harness.waitForSettle(2000);
 
     // Check lock status — should be empty since container cleanup releases locks
-    const lockRes = await fetch(`http://127.0.0.1:${harness.gatewayPort}/locks/status`);
+    const lockRes = await fetch(`http://127.0.0.1:${harness.gatewayPort}/locks/status`, {
+      headers: { "Authorization": `Bearer ${harness.apiKey}` },
+    });
     expect(lockRes.ok).toBe(true);
     const lockBody = await lockRes.json();
     expect(lockBody.locks).toHaveLength(0);

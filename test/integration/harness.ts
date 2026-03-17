@@ -62,13 +62,13 @@ export class IntegrationHarness {
   readonly credentialDir: string;
 
   private _scheduler: Awaited<ReturnType<typeof import("../../src/scheduler/index.js").startScheduler>> | null = null;
-  private _apiKey: string;
+  readonly apiKey: string;
 
   private constructor(projectPath: string, gatewayPort: number, credentialDir: string, apiKey: string) {
     this.projectPath = projectPath;
     this.gatewayPort = gatewayPort;
     this.credentialDir = credentialDir;
-    this._apiKey = apiKey;
+    this.apiKey = apiKey;
   }
 
   static async create(opts: HarnessOptions): Promise<IntegrationHarness> {
@@ -142,7 +142,8 @@ export class IntegrationHarness {
       writeFileSync(resolve(agentPath, "test-script.sh"), agent.testScript);
 
       // Write Dockerfile that uses the test script as entrypoint
-      const dockerfile = agent.dockerfile || `FROM al-agent:latest\nENTRYPOINT ["bash", "/app/static/test-script.sh"]\n`;
+      // Use sh (not bash) — base image is Alpine which has ash, not bash
+      const dockerfile = agent.dockerfile || `FROM al-agent:latest\nENTRYPOINT ["sh", "/app/static/test-script.sh"]\n`;
       writeFileSync(resolve(agentPath, "Dockerfile"), dockerfile);
     }
 
@@ -192,7 +193,7 @@ export class IntegrationHarness {
   async controlAPI(method: string, path: string, body?: any): Promise<Response> {
     const url = `http://127.0.0.1:${this.gatewayPort}/control${path}`;
     const headers: Record<string, string> = {
-      "Authorization": `Bearer ${this._apiKey}`,
+      "Authorization": `Bearer ${this.apiKey}`,
     };
     if (body) {
       headers["Content-Type"] = "application/json";

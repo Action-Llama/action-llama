@@ -17,7 +17,7 @@ describe.skipIf(!DOCKER)("integration: rerun", { timeout: 180_000 }, () => {
           name: "rerun-once",
           schedule: "0 0 31 2 *",
           testScript: [
-            "#!/bin/bash",
+            "#!/bin/sh",
             'MARKER="/tmp/rerun-once-ran"',
             'if [ ! -f "$MARKER" ]; then',
             '  touch "$MARKER"',
@@ -47,7 +47,7 @@ describe.skipIf(!DOCKER)("integration: rerun", { timeout: 180_000 }, () => {
         {
           name: "infinite-rerun",
           schedule: "0 0 31 2 *",
-          testScript: "#!/bin/bash\necho 'rerun again'\nexit 42\n",
+          testScript: "#!/bin/sh\necho 'rerun again'\nexit 42\n",
           config: { timeout: 30 },
         },
       ],

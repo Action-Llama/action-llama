@@ -16,7 +16,7 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
         {
           name: "exit-zero",
           schedule: "0 0 31 2 *",
-          testScript: "#!/bin/bash\necho 'success'\nexit 0\n",
+          testScript: "#!/bin/sh\necho 'success'\nexit 0\n",
         },
       ],
     });
@@ -32,7 +32,7 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
         {
           name: "exit-error",
           schedule: "0 0 31 2 *",
-          testScript: "#!/bin/bash\necho 'failure'\nexit 1\n",
+          testScript: "#!/bin/sh\necho 'failure'\nexit 1\n",
         },
       ],
     });
@@ -49,7 +49,7 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
           name: "rerun-agent",
           schedule: "0 0 31 2 *",
           testScript: [
-            "#!/bin/bash",
+            "#!/bin/sh",
             'MARKER="/tmp/rerun-agent-ran"',
             'if [ ! -f "$MARKER" ]; then',
             '  touch "$MARKER"',
@@ -78,7 +78,7 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
         {
           name: "forever-rerun",
           schedule: "0 0 31 2 *",
-          testScript: "#!/bin/bash\necho 'rerun forever'\nexit 42\n",
+          testScript: "#!/bin/sh\necho 'rerun forever'\nexit 42\n",
           config: { timeout: 30 },
         },
       ],
@@ -99,7 +99,7 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
           name: "return-agent",
           schedule: "0 0 31 2 *",
           testScript: [
-            "#!/bin/bash",
+            "#!/bin/sh",
             "export AL_SIGNAL_DIR=/tmp/signals",
             "mkdir -p $AL_SIGNAL_DIR",
             // al-return writes signal file AND posts to gateway
@@ -124,7 +124,7 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
           name: "status-agent",
           schedule: "0 0 31 2 *",
           testScript: [
-            "#!/bin/bash",
+            "#!/bin/sh",
             "export AL_SIGNAL_DIR=/tmp/signals",
             "mkdir -p $AL_SIGNAL_DIR",
             // al-status posts to GATEWAY_URL/signals/status
@@ -149,7 +149,7 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
           name: "al-rerun-agent",
           schedule: "0 0 31 2 *",
           testScript: [
-            "#!/bin/bash",
+            "#!/bin/sh",
             "export AL_SIGNAL_DIR=/tmp/signals",
             "mkdir -p $AL_SIGNAL_DIR",
             'MARKER="/tmp/al-rerun-agent-ran"',
@@ -181,7 +181,7 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
           name: "structured-log-agent",
           schedule: "0 0 31 2 *",
           testScript: [
-            "#!/bin/bash",
+            "#!/bin/sh",
             // Emit various structured log lines the host parses
             'echo \'{"_log":true,"level":"info","msg":"custom info message","key":"value"}\'',
             'echo \'{"_log":true,"level":"warn","msg":"custom warning"}\'',

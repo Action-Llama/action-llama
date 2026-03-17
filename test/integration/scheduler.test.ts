@@ -17,7 +17,7 @@ describe.skipIf(!DOCKER)("integration: scheduler", { timeout: 180_000 }, () => {
           name: "cron-agent",
           schedule: "0 0 31 2 *", // never fires via cron — only initial run
           testScript: [
-            "#!/bin/bash",
+            "#!/bin/sh",
             "set -e",
             // Verify env vars are set
             'test -n "$PROMPT" || { echo "PROMPT not set"; exit 1; }',
@@ -52,12 +52,12 @@ describe.skipIf(!DOCKER)("integration: scheduler", { timeout: 180_000 }, () => {
         {
           name: "agent-a",
           schedule: "0 0 31 2 *",
-          testScript: "#!/bin/bash\necho 'agent-a ran'\nexit 0\n",
+          testScript: "#!/bin/sh\necho 'agent-a ran'\nexit 0\n",
         },
         {
           name: "agent-b",
           schedule: "0 0 31 2 *",
-          testScript: "#!/bin/bash\necho 'agent-b ran'\nexit 0\n",
+          testScript: "#!/bin/sh\necho 'agent-b ran'\nexit 0\n",
         },
       ],
     });

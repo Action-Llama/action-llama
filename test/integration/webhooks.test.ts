@@ -17,7 +17,7 @@ describe.skipIf(!DOCKER)("integration: webhooks", { timeout: 180_000 }, () => {
           name: "webhook-agent",
           webhooks: [{ source: "test-hook" }],
           testScript: [
-            "#!/bin/bash",
+            "#!/bin/sh",
             "set -e",
             // Verify PROMPT contains webhook context
             'echo "webhook-agent: prompt=$PROMPT"',
@@ -57,7 +57,7 @@ describe.skipIf(!DOCKER)("integration: webhooks", { timeout: 180_000 }, () => {
         {
           name: "filtered-agent",
           webhooks: [{ source: "test-hook", events: ["deploy"] }],
-          testScript: "#!/bin/bash\nexit 0\n",
+          testScript: "#!/bin/sh\nexit 0\n",
         },
       ],
       globalConfig: {
@@ -94,7 +94,7 @@ describe.skipIf(!DOCKER)("integration: webhooks", { timeout: 180_000 }, () => {
           name: "webhook-caller",
           webhooks: [{ source: "test-hook" }],
           testScript: [
-            "#!/bin/bash",
+            "#!/bin/sh",
             'echo "triggering responder" | al-call responder',
             "exit 0",
           ].join("\n"),
@@ -103,7 +103,7 @@ describe.skipIf(!DOCKER)("integration: webhooks", { timeout: 180_000 }, () => {
           name: "responder",
           schedule: "0 0 31 2 *", // needs schedule or webhook to be valid
           testScript: [
-            "#!/bin/bash",
+            "#!/bin/sh",
             'echo "responder received call"',
             "exit 0",
           ].join("\n"),

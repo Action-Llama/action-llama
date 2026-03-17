@@ -17,7 +17,7 @@ describe.skipIf(!DOCKER)("integration: agent-to-agent triggers", { timeout: 180_
           name: "caller",
           schedule: "0 0 31 2 *",
           testScript: [
-            "#!/bin/bash",
+            "#!/bin/sh",
             'echo "review PR #42" | al-call callee',
             "exit 0",
           ].join("\n"),
@@ -26,7 +26,7 @@ describe.skipIf(!DOCKER)("integration: agent-to-agent triggers", { timeout: 180_
           name: "callee",
           schedule: "0 0 31 2 *",
           testScript: [
-            "#!/bin/bash",
+            "#!/bin/sh",
             'echo "callee received trigger"',
             "exit 0",
           ].join("\n"),
@@ -50,7 +50,7 @@ describe.skipIf(!DOCKER)("integration: agent-to-agent triggers", { timeout: 180_
           name: "check-caller",
           schedule: "0 0 31 2 *",
           testScript: [
-            "#!/bin/bash",
+            "#!/bin/sh",
             "set -e",
             // Call the worker agent
             'RESULT=$(echo "do work" | al-call check-worker)',
@@ -69,7 +69,7 @@ describe.skipIf(!DOCKER)("integration: agent-to-agent triggers", { timeout: 180_
           name: "check-worker",
           schedule: "0 0 31 2 *",
           testScript: [
-            "#!/bin/bash",
+            "#!/bin/sh",
             'echo "worker doing work"',
             "exit 0",
           ].join("\n"),
@@ -91,7 +91,7 @@ describe.skipIf(!DOCKER)("integration: agent-to-agent triggers", { timeout: 180_
           name: "wait-caller",
           schedule: "0 0 31 2 *",
           testScript: [
-            "#!/bin/bash",
+            "#!/bin/sh",
             "set -e",
             // Call worker
             'RESULT=$(echo "compute something" | al-call wait-worker)',
@@ -107,7 +107,7 @@ describe.skipIf(!DOCKER)("integration: agent-to-agent triggers", { timeout: 180_
           name: "wait-worker",
           schedule: "0 0 31 2 *",
           testScript: [
-            "#!/bin/bash",
+            "#!/bin/sh",
             "sleep 2",
             'echo "worker done"',
             "exit 0",
@@ -130,7 +130,7 @@ describe.skipIf(!DOCKER)("integration: agent-to-agent triggers", { timeout: 180_
           name: "self-caller",
           schedule: "0 0 31 2 *",
           testScript: [
-            "#!/bin/bash",
+            "#!/bin/sh",
             // Try to call self — should succeed at HTTP level but scheduler skips it
             'echo "self-trigger attempt" | al-call self-caller || true',
             "exit 0",
