@@ -50,7 +50,7 @@ describe("resume --cloud", () => {
     });
     mockCloudGatewayFetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ message: "Scheduler resumed." }),
+      data: { message: "Scheduler resumed." },
     });
 
     const output = await captureLog(() =>
@@ -73,7 +73,7 @@ describe("resume --cloud", () => {
     });
     mockCloudGatewayFetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ message: "Agent dev resumed." }),
+      data: { message: "Agent dev resumed." },
     });
 
     const output = await captureLog(() =>
@@ -113,7 +113,7 @@ describe("resume --cloud", () => {
     });
     mockCloudGatewayFetch.mockResolvedValueOnce({
       ok: false,
-      json: async () => ({ error: "Agent not found" }),
+      data: { error: "Agent not found" },
     });
 
     await expect(

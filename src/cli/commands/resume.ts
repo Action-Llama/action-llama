@@ -31,17 +31,16 @@ async function executeCloud(path: string, projectPath: string): Promise<void> {
     throw new Error("Cloud scheduler is not deployed. Run 'al cloud deploy' first.");
   }
 
-  const response = await cloudGatewayFetch(status.serviceUrl, {
+  const { ok, data } = await cloudGatewayFetch(status.serviceUrl, {
     project: projectPath,
     path,
     method: "POST",
   });
 
-  const data = await response.json();
-  if (response.ok) {
+  if (ok) {
     console.log(`${data.message}`);
   } else {
-    throw new Error(data.error);
+    throw new Error(data.error as string);
   }
 }
 
