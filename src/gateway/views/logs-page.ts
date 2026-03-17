@@ -143,24 +143,28 @@ export function renderLogsPage(agentName: string): string {
       }
     });
 
-    // Log stream
-    const logEs = new EventSource("/dashboard/api/logs/" + encodeURIComponent(agentName) + "/stream");
-    logEs.onmessage = function(e) {
-      const data = JSON.parse(e.data);
-      if (Array.isArray(data.lines)) {
-        for (const line of data.lines) appendLine(line);
-      } else if (data.line) {
-        appendLine(data.line);
+    // Log polling via cursor-based API
+    let logCursor = null;
+    let pollTimer = null;
+    async function fetchLogs(initial) {
+      try {
+        const params = new URLSearchParams();
+        if (initial) params.set("lines", "100");
+        if (logCursor) params.set("cursor", logCursor);
+        const res = await fetch("/api/logs/agents/" + encodeURIComponent(agentName) + "?" + params, { credentials: "same-origin" });
+        if (!res.ok) throw new Error(res.status);
+        const data = await res.json();
+        for (const entry of data.entries) appendLine(JSON.stringify(entry));
+        if (data.cursor) logCursor = data.cursor;
+        connStatus.textContent = "connected";
+        connStatus.className = "connection-status connected";
+      } catch {
+        connStatus.textContent = "disconnected";
+        connStatus.className = "connection-status disconnected";
       }
-    };
-    logEs.onopen = function() {
-      connStatus.textContent = "connected";
-      connStatus.className = "connection-status connected";
-    };
-    logEs.onerror = function() {
-      connStatus.textContent = "disconnected";
-      connStatus.className = "connection-status disconnected";
-    };
+    }
+    fetchLogs(true);
+    pollTimer = setInterval(function() { fetchLogs(false); }, 1500);
 
     // Status stream for agent state
     const statusEs = new EventSource("/dashboard/api/status-stream");

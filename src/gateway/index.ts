@@ -107,6 +107,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     app.use("/dashboard/*", auth);
     app.use("/dashboard", auth);
     app.use("/locks/status", auth);
+    app.use("/api/logs/*", auth);
 
     // Always register login/logout so the auth redirect has a target
     registerLoginRoutes(app, opts.apiKey);
@@ -130,6 +131,12 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
   if (webUI && statusTracker) {
     registerDashboardRoutes(app, statusTracker, projectPath, opts.apiKey);
     app.get("/", (c) => c.redirect("/dashboard"));
+  }
+
+  // Log API routes — available regardless of webUI flag (CLI needs them)
+  if (projectPath) {
+    const { registerLogRoutes } = await import("./routes/logs.js");
+    registerLogRoutes(app, projectPath);
   }
 
   // Control routes (for kill, pause, resume commands)

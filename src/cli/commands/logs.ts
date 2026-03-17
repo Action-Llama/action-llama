@@ -523,27 +523,94 @@ export async function execute(
 
   // ── Local mode ──
 
-  const dir = logsDir(projectPath);
   const n = parseInt(opts.lines, 10);
 
-  // With --instance, look for the specific instance log file (e.g. dev-2-YYYY-MM-DD.log)
-  // Without --instance, look for the agent name directly then fall back to instance files
-  const logName = instanceNum !== undefined ? `${agent}-${instanceNum}` : agent;
-  const logFile = findLogFile(dir, logName, opts.date);
-
-  if (!logFile) {
-    const dateStr = opts.date || "today";
-    if (instanceNum !== undefined) {
-      console.error(`No log file found for agent "${agent}" instance ${instanceNum} (${dateStr}) in ${dir}`);
-    } else {
-      console.error(`No log file found for agent "${agent}" (${dateStr}) in ${dir}`);
-    }
-    process.exit(1);
+  // Build API path
+  let apiPath: string;
+  if (agent === "scheduler") {
+    apiPath = "/api/logs/scheduler";
+  } else if (instanceNum !== undefined) {
+    apiPath = `/api/logs/agents/${encodeURIComponent(agent)}/${instanceNum}`;
+  } else {
+    apiPath = `/api/logs/agents/${encodeURIComponent(agent)}`;
   }
 
-  if (opts.follow) {
-    await followFile(logFile, n, fmt);
-  } else {
-    await readLastN(logFile, n, fmt);
+  try {
+    const { gatewayFetch } = await import("../gateway-client.js");
+
+    const formatAndPrintEntries = (entries: LogEntry[]) => {
+      for (const entry of entries) {
+        if (fmt === formatConversationEntry) {
+          const header = formatRunHeader(entry);
+          if (header) console.log(header);
+        }
+        const formatted = fmt(entry);
+        if (formatted) console.log(formatted);
+      }
+    };
+
+    if (opts.follow) {
+      // Initial fetch
+      const params = new URLSearchParams({ lines: String(n) });
+      const res = await gatewayFetch({ project: opts.project, path: `${apiPath}?${params}` });
+      if (!res.ok) throw new Error(`Gateway returned ${res.status}`);
+      const data = await res.json() as { entries: LogEntry[]; cursor: string | null; hasMore: boolean };
+      formatAndPrintEntries(data.entries);
+      let cursor = data.cursor;
+
+      // Poll with cursor
+      const poll = async () => {
+        const p = new URLSearchParams();
+        if (cursor) p.set("cursor", cursor);
+        try {
+          const r = await gatewayFetch({ project: opts.project, path: `${apiPath}?${p}` });
+          if (r.ok) {
+            const d = await r.json() as { entries: LogEntry[]; cursor: string | null; hasMore: boolean };
+            formatAndPrintEntries(d.entries);
+            if (d.cursor) cursor = d.cursor;
+          }
+        } catch {
+          // Connection lost — silently retry next interval
+        }
+      };
+
+      const interval = setInterval(poll, 1000);
+      process.on("SIGINT", () => {
+        clearInterval(interval);
+        process.exit(0);
+      });
+      await new Promise(() => {});
+    } else {
+      const params = new URLSearchParams({ lines: String(n) });
+      const res = await gatewayFetch({ project: opts.project, path: `${apiPath}?${params}` });
+      if (!res.ok) throw new Error(`Gateway returned ${res.status}`);
+      const data = await res.json() as { entries: LogEntry[]; cursor: string | null; hasMore: boolean };
+      if (data.entries.length === 0) {
+        console.log(`No log entries found for "${agent}".`);
+      } else {
+        formatAndPrintEntries(data.entries);
+      }
+    }
+  } catch {
+    // Gateway not running — fall back to direct file reading
+    const dir = logsDir(projectPath);
+    const logName = instanceNum !== undefined ? `${agent}-${instanceNum}` : agent;
+    const logFile = findLogFile(dir, logName, opts.date);
+
+    if (!logFile) {
+      const dateStr = opts.date || "today";
+      if (instanceNum !== undefined) {
+        console.error(`No log file found for agent "${agent}" instance ${instanceNum} (${dateStr}) in ${dir}`);
+      } else {
+        console.error(`No log file found for agent "${agent}" (${dateStr}) in ${dir}`);
+      }
+      process.exit(1);
+    }
+
+    if (opts.follow) {
+      await followFile(logFile, n, fmt);
+    } else {
+      await readLastN(logFile, n, fmt);
+    }
   }
 }
