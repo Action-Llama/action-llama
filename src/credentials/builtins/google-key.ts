@@ -1,5 +1,5 @@
 import type { CredentialDefinition } from "../schema.js";
-import { input, confirm } from "@inquirer/prompts";
+import { password, confirm } from "@inquirer/prompts";
 import { CREDENTIALS_DIR } from "../../shared/paths.js";
 
 const googleKey: CredentialDefinition = {
@@ -22,8 +22,9 @@ const googleKey: CredentialDefinition = {
       }
     }
 
-    const token = (await input({
+    const token = (await password({
       message: "Google AI Studio API key:",
+      mask: "*",
       validate: (v) => {
         v = v.trim();
         if (v.length === 0) return "API key is required";

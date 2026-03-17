@@ -1,5 +1,5 @@
 import type { CredentialDefinition, CredentialPromptResult } from "../schema.js";
-import { input, select, checkbox, confirm } from "@inquirer/prompts";
+import { password, select, checkbox, confirm } from "@inquirer/prompts";
 import { validateSentryToken, validateSentryProjects } from "../../setup/validators.js";
 import { CREDENTIALS_DIR } from "../../shared/paths.js";
 
@@ -35,8 +35,9 @@ const sentryToken: CredentialDefinition = {
       });
       if (!useSentry) return undefined;
 
-      token = (await input({
+      token = (await password({
         message: "Sentry auth token:",
+        mask: "*",
         validate: (v) => (v.trim().length > 0 ? true : "Token is required"),
       })).trim();
     }

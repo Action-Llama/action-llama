@@ -1,5 +1,5 @@
 import type { CredentialDefinition, CredentialPromptResult } from "../schema.js";
-import { input, confirm, select } from "@inquirer/prompts";
+import { input, password, confirm, select } from "@inquirer/prompts";
 import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
 import { CREDENTIALS_DIR } from "../../shared/paths.js";
@@ -84,8 +84,9 @@ const gitSsh: CredentialDefinition = {
 
         keyContent = readFileSync(resolvedPath, "utf-8");
       } else {
-        keyContent = await input({
+        keyContent = await password({
           message: "Paste your SSH private key (entire content, then press Enter):",
+          mask: "*",
           validate: (v) => {
             const trimmed = v.trim();
             if (!trimmed) return "Key is required";

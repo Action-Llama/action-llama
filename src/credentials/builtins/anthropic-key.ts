@@ -1,5 +1,5 @@
 import type { CredentialDefinition, CredentialPromptResult } from "../schema.js";
-import { input, select, confirm } from "@inquirer/prompts";
+import { password, select, confirm } from "@inquirer/prompts";
 import { validateAnthropicApiKey, validateOAuthTokenFormat } from "../../setup/validators.js";
 import { CREDENTIALS_DIR } from "../../shared/paths.js";
 
@@ -53,8 +53,9 @@ const anthropicKey: CredentialDefinition = {
     }
 
     if (authMethod === "api_key") {
-      const token = (await input({
+      const token = (await password({
         message: "Anthropic API key:",
+        mask: "*",
         validate: (v) => (v.trim().length > 0 ? true : "Key is required"),
       })).trim();
       console.log("Validating API key...");
@@ -64,8 +65,9 @@ const anthropicKey: CredentialDefinition = {
     }
 
     // oauth_token
-    const token = (await input({
+    const token = (await password({
       message: "Anthropic OAuth token (from `claude setup-token`):",
+      mask: "*",
       validate: (v) => (v.trim().length > 0 ? true : "Token is required"),
     })).trim();
     validateOAuthTokenFormat(token);

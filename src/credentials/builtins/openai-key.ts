@@ -1,5 +1,5 @@
 import type { CredentialDefinition } from "../schema.js";
-import { input, confirm } from "@inquirer/prompts";
+import { password, confirm } from "@inquirer/prompts";
 import { CREDENTIALS_DIR } from "../../shared/paths.js";
 
 const openaiKey: CredentialDefinition = {
@@ -23,8 +23,9 @@ const openaiKey: CredentialDefinition = {
       }
     }
 
-    const token = (await input({
+    const token = (await password({
       message: "OpenAI API key:",
+      mask: "*",
       validate: (v) => {
         v = v.trim();
         if (v.length === 0) return "API key is required";
