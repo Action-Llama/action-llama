@@ -1,5 +1,18 @@
 # @action-llama/action-llama
 
+## 0.11.8
+
+### Patch Changes
+
+- [`4a4f21b`](https://github.com/Action-Llama/action-llama/commit/4a4f21bd40cb34cd7e2011d91d738436eca0a773) Thanks [@asselstine](https://github.com/asselstine)! - Fixed missing `lstatSync` import in aws-shared.ts that caused a build failure.
+
+- [`9dcda35`](https://github.com/Action-Llama/action-llama/commit/9dcda357b304fbe8b88bdd8f93838ac518c0c4c9) Thanks [@asselstine](https://github.com/asselstine)! - Fix Docker build output leaking into TUI during `al start`. Switched
+  `buildImage()` from synchronous `execFileSync` with inherited stderr to async
+  `spawn` with all stdio piped. BuildKit output is now parsed and forwarded
+  through `onProgress` instead of printing directly to the terminal, so the
+  Ink-based TUI can render cleanly during builds. Also piped stderr in the
+  `image.ts` helper used by `al run`.
+
 ## 0.11.7
 
 ### Patch Changes
