@@ -32,7 +32,7 @@ export interface SchedulerImageOpts {
  *
  * Returns a Record of relative path (inside /app/project/) → file contents.
  */
-function collectProjectFiles(projectPath: string): Record<string, string> {
+export function collectProjectFiles(projectPath: string): Record<string, string> {
   const files: Record<string, string> = {};
 
   // config.toml
@@ -47,21 +47,24 @@ function collectProjectFiles(projectPath: string): Record<string, string> {
     files["Dockerfile"] = readFileSync(projectDockerfilePath, "utf-8");
   }
 
-  // Walk agent directories
-  for (const entry of readdirSync(projectPath)) {
-    if (entry.startsWith(".") || entry === "node_modules") continue;
-    const entryPath = resolvePath(projectPath, entry);
-    if (!statSync(entryPath).isDirectory()) continue;
+  // Walk agent directories inside agents/ (matches discoverAgents() layout)
+  const agentsDir = resolvePath(projectPath, "agents");
+  if (existsSync(agentsDir)) {
+    for (const entry of readdirSync(agentsDir)) {
+      if (entry.startsWith(".") || entry === "node_modules") continue;
+      const entryPath = resolvePath(agentsDir, entry);
+      if (!statSync(entryPath).isDirectory()) continue;
 
-    // Only include directories that have agent-config.toml
-    const agentConfigPath = resolvePath(entryPath, "agent-config.toml");
-    if (!existsSync(agentConfigPath)) continue;
+      // Only include directories that have agent-config.toml
+      const agentConfigPath = resolvePath(entryPath, "agent-config.toml");
+      if (!existsSync(agentConfigPath)) continue;
 
-    // Collect all files in the agent directory (non-recursive for now)
-    for (const file of readdirSync(entryPath)) {
-      const filePath = resolvePath(entryPath, file);
-      if (!statSync(filePath).isFile()) continue;
-      files[join(entry, file)] = readFileSync(filePath, "utf-8");
+      // Collect all files in the agent directory (non-recursive for now)
+      for (const file of readdirSync(entryPath)) {
+        const filePath = resolvePath(entryPath, file);
+        if (!statSync(filePath).isFile()) continue;
+        files[join("agents", entry, file)] = readFileSync(filePath, "utf-8");
+      }
     }
   }
 
