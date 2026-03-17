@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   ConfigError,
   CredentialError,
-  CloudProviderError,
   AgentError,
   UNRECOVERABLE_PATTERNS,
   isUnrecoverableError,
@@ -23,13 +22,6 @@ describe("custom error classes", () => {
     expect(err).toBeInstanceOf(Error);
     expect(err.name).toBe("CredentialError");
     expect(err.message).toBe("missing key");
-  });
-
-  it("CloudProviderError has correct name and message", () => {
-    const err = new CloudProviderError("aws failed");
-    expect(err).toBeInstanceOf(Error);
-    expect(err.name).toBe("CloudProviderError");
-    expect(err.message).toBe("aws failed");
   });
 
   it("AgentError has correct name and message", () => {

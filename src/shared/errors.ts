@@ -21,14 +21,6 @@ export class CredentialError extends Error {
   }
 }
 
-export class CloudProviderError extends Error {
-  override name = "CloudProviderError";
-
-  constructor(message: string, options?: { cause?: unknown }) {
-    super(message, options);
-  }
-}
-
 export class AgentError extends Error {
   override name = "AgentError";
 

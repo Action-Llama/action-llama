@@ -20,7 +20,6 @@ export async function execute(opts: { project: string; env?: string; headless?: 
   await runDoctor({ project: opts.project, env: opts.env, checkOnly: opts.headless });
 
   const globalConfig = loadGlobalConfig(projectPath, opts.env);
-  const cloudMode = !!globalConfig.cloud;
 
   // Docker is always enabled
   if (!globalConfig.local) {
@@ -29,23 +28,12 @@ export async function execute(opts: { project: string; env?: string; headless?: 
     globalConfig.local.enabled = true;
   }
 
-  // Cloud mode: set up cloud backend
-  if (cloudMode) {
-    const { setDefaultBackend } = await import("../../shared/credentials.js");
-    const { createBackendFromCloudConfig } = await import("../../shared/remote.js");
-    const backend = await createBackendFromCloudConfig(globalConfig.cloud!);
-    setDefaultBackend(backend);
-  }
-
-  const dockerEnabled = globalConfig.local?.enabled === true;
-  const mode = dockerEnabled ? "docker" : "host";
-
   const statusTracker = new StatusTracker();
 
   // Render TUI early so build progress is visible
   statusTracker.setSchedulerInfo({
-    mode,
-    runtime: dockerEnabled ? (cloudMode ? globalConfig.cloud?.provider : "local") : undefined,
+    mode: "docker",
+    runtime: "local",
     projectName: globalConfig.projectName,
     gatewayPort: null,
     cronJobCount: 0,
@@ -68,15 +56,15 @@ export async function execute(opts: { project: string; env?: string; headless?: 
   }
 
   const { cronJobs, runnerPools, gateway, webhookRegistry, webhookUrls } = await startScheduler(
-    projectPath, globalConfig, statusTracker, cloudMode, opts.webUi, opts.expose
+    projectPath, globalConfig, statusTracker, opts.webUi, opts.expose
   );
 
   const gatewayPort = globalConfig.gateway?.port || 8080;
 
   // Update scheduler info now that startup is complete
   statusTracker.setSchedulerInfo({
-    mode,
-    runtime: dockerEnabled ? (cloudMode ? globalConfig.cloud?.provider : "local") : undefined,
+    mode: "docker",
+    runtime: "local",
     projectName: globalConfig.projectName,
     gatewayPort,
     cronJobCount: cronJobs.length,

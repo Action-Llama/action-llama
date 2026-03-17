@@ -29,11 +29,6 @@ export class TelemetryManager {
           this.provider = new OTelProvider(this.config);
           break;
         }
-        case "xray": {
-          const { XRayProvider } = await import("./providers/xray.js");
-          this.provider = new XRayProvider(this.config);
-          break;
-        }
         default:
           console.warn(`Unknown telemetry provider: ${this.config.provider}`);
           return;

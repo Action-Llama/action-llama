@@ -41,90 +41,53 @@ export async function execute(agent: string, opts: { project: string; env?: stri
     await requireCredentialRef(credRef);
   }
 
-  const cloudMode = !!globalConfig.cloud;
   const logger = createLogger(projectPath, agent);
 
-  if (cloudMode) {
-    // Cloud mode: use cloud runtime via provider
-    const cloud = globalConfig.cloud!;
-
-    const { createCloudProvider } = await import("../../cloud/provider.js");
-    const provider = await createCloudProvider(cloud);
-
-    const { setDefaultBackend } = await import("../../shared/credentials.js");
-    const backend = await provider.createCredentialBackend();
-    setDefaultBackend(backend);
-
-    const runtime = provider.createAgentRuntime(agentConfig, globalConfig);
-
-    const { ContainerAgentRunner } = await import("../../agents/container-runner.js");
-
-    const baseImage = globalConfig.local?.image || CONSTANTS.DEFAULT_IMAGE;
-    const [, ...baseAliases] = imageTags("al-agent");
-    const image = await runtime.buildImage({ tag: baseImage, dockerfile: "docker/Dockerfile", contextDir: PACKAGE_ROOT, additionalTags: baseAliases });
-
-    const runner = new ContainerAgentRunner(
-      runtime,
-      globalConfig,
-      agentConfig,
-      logger,
-      async () => {},
-      async () => {},
-      "",
-      projectPath,
-      image,
+  // Docker mode: validate and run in container
+  if (agentConfig.model.authType === "pi_auth") {
+    throw new Error(
+      `Agent "${agent}" uses pi_auth which is not supported in container mode. ` +
+      `Switch to api_key/oauth_token (run 'al doctor').`
     );
-
-    const prompt = buildManualPrompt(agentConfig);
-    console.log(`Running agent "${agent}" in cloud (${cloud.provider})...`);
-    await runner.run(prompt);
-  } else {
-    // Docker mode: validate and run in container
-    if (agentConfig.model.authType === "pi_auth") {
-      throw new Error(
-        `Agent "${agent}" uses pi_auth which is not supported in container mode. ` +
-        `Switch to api_key/oauth_token (run 'al doctor').`
-      );
-    }
-
-    const { execFileSync } = await import("child_process");
-    try {
-      execFileSync("docker", ["info"], { stdio: "pipe", timeout: 10000 });
-    } catch {
-      throw new Error(
-        "Docker is not running. Start Docker Desktop (or the Docker daemon) and try again."
-      );
-    }
-
-    const { LocalDockerRuntime } = await import("../../docker/local-runtime.js");
-    const { ensureNetwork } = await import("../../docker/network.js");
-    const { ensureImage, ensureAgentImage, ensureProjectBaseImage } = await import("../../docker/image.js");
-    const { ContainerAgentRunner } = await import("../../agents/container-runner.js");
-
-    const runtime = new LocalDockerRuntime();
-    ensureNetwork();
-
-    const baseImage = globalConfig.local?.image || CONSTANTS.DEFAULT_IMAGE;
-    ensureImage(baseImage);
-    const effectiveBaseImage = ensureProjectBaseImage(projectPath, baseImage);
-    const image = ensureAgentImage(agent, projectPath, effectiveBaseImage);
-
-    const runner = new ContainerAgentRunner(
-      runtime,
-      globalConfig,
-      agentConfig,
-      logger,
-      async () => {},    // no gateway to register with
-      async () => {},    // no gateway to unregister from
-      "",                // no gateway URL
-      projectPath,
-      image,
-    );
-
-    const prompt = buildManualPrompt(agentConfig);
-    console.log(`Running agent "${agent}" in Docker...`);
-    await runner.run(prompt);
   }
+
+  const { execFileSync } = await import("child_process");
+  try {
+    execFileSync("docker", ["info"], { stdio: "pipe", timeout: 10000 });
+  } catch {
+    throw new Error(
+      "Docker is not running. Start Docker Desktop (or the Docker daemon) and try again."
+    );
+  }
+
+  const { LocalDockerRuntime } = await import("../../docker/local-runtime.js");
+  const { ensureNetwork } = await import("../../docker/network.js");
+  const { ensureImage, ensureAgentImage, ensureProjectBaseImage } = await import("../../docker/image.js");
+  const { ContainerAgentRunner } = await import("../../agents/container-runner.js");
+
+  const runtime = new LocalDockerRuntime();
+  ensureNetwork();
+
+  const baseImage = globalConfig.local?.image || CONSTANTS.DEFAULT_IMAGE;
+  ensureImage(baseImage);
+  const effectiveBaseImage = ensureProjectBaseImage(projectPath, baseImage);
+  const image = ensureAgentImage(agent, projectPath, effectiveBaseImage);
+
+  const runner = new ContainerAgentRunner(
+    runtime,
+    globalConfig,
+    agentConfig,
+    logger,
+    async () => {},    // no gateway to register with
+    async () => {},    // no gateway to unregister from
+    "",                // no gateway URL
+    projectPath,
+    image,
+  );
+
+  const prompt = buildManualPrompt(agentConfig);
+  console.log(`Running agent "${agent}" in Docker...`);
+  await runner.run(prompt);
 
   console.log(`Agent "${agent}" run completed.`);
 }

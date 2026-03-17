@@ -25,18 +25,6 @@ describe("loadGlobalConfig", () => {
     expect(loaded.local?.enabled).toBe(false);
   });
 
-  it("throws when [cloud] is in config.toml", () => {
-    const config = { cloud: {
-      provider: "cloud-run",
-      gcpProject: "my-proj",
-      region: "us-central1",
-      artifactRegistry: "us-central1-docker.pkg.dev/my-proj/al-images",
-      serviceAccount: "al-runner@my-proj.iam.gserviceaccount.com",
-    } };
-    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(config as any));
-    expect(() => loadGlobalConfig(tmpDir)).toThrow("[cloud] section found in config.toml");
-  });
-
   it("ignores config.json", () => {
     writeFileSync(resolve(tmpDir, "config.json"), JSON.stringify({ local: { enabled: true } }));
     const loaded = loadGlobalConfig(tmpDir);

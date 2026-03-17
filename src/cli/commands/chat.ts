@@ -95,7 +95,6 @@ async function executeAgentChat(opts: ChatOpts & { agent: string }): Promise<voi
   const projectPath = resolve(opts.project);
   const agentName = opts.agent;
   const globalConfig = loadGlobalConfig(projectPath, opts.env);
-  const cloudMode = !!globalConfig.cloud;
 
   // Validate agent exists
   const agentNames = discoverAgents(projectPath);
@@ -105,14 +104,6 @@ async function executeAgentChat(opts: ChatOpts & { agent: string }): Promise<voi
   }
 
   const agentConfig = loadAgentConfig(projectPath, agentName);
-
-  // Switch to cloud credential backend if environment has cloud config
-  if (cloudMode) {
-    const { createBackendFromCloudConfig } = await import("../../shared/remote.js");
-    const { setDefaultBackend } = await import("../../shared/credentials.js");
-    const backend = await createBackendFromCloudConfig(globalConfig.cloud!);
-    setDefaultBackend(backend);
-  }
 
   // Load and inject credentials as env vars (mirrors container-entry.ts)
   const injectedEnvVars: string[] = [];
@@ -179,16 +170,13 @@ async function executeAgentChat(opts: ChatOpts & { agent: string }): Promise<voi
   }
 
   // Probe gateway and warn if not reachable
-  const gatewayUrl = cloudMode
-    ? globalConfig.gateway?.url
-    : `http://localhost:${globalConfig.gateway?.port || 8080}`;
-  if (gatewayUrl) {
+  const gatewayUrl = `http://localhost:${globalConfig.gateway?.port || 8080}`;
+  {
     const reachable = await probeGateway(gatewayUrl);
     if (!reachable) {
-      const startCmd = cloudMode ? "al start --env <name>" : "al start";
       console.log(
         `\u26a0 No gateway detected at ${gatewayUrl}. Resource locks, agent calls, and signals are unavailable.\n` +
-        `  Start the scheduler with \`${startCmd}\` to enable these features.\n`
+        `  Start the scheduler with \`al start\` to enable these features.\n`
       );
     }
   }
@@ -283,8 +271,7 @@ async function executeAgentChat(opts: ChatOpts & { agent: string }): Promise<voi
     settingsManager,
   });
 
-  const modeLabel = cloudMode ? " (cloud credentials)" : "";
-  const initialMessage = `Interactive session for agent "${agentName}"${modeLabel}. What would you like to do?`;
+  const initialMessage = `Interactive session for agent "${agentName}". What would you like to do?`;
 
   const mode = new InteractiveMode(session, { initialMessage });
 

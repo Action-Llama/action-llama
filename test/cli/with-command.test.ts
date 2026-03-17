@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { withCommand } from "../../src/cli/with-command.js";
-import { ConfigError, CredentialError, CloudProviderError, AgentError } from "../../src/shared/errors.js";
+import { ConfigError, CredentialError, AgentError } from "../../src/shared/errors.js";
 
 describe("withCommand", () => {
   let errorSpy: ReturnType<typeof vi.spyOn>;
@@ -48,14 +48,6 @@ describe("withCommand", () => {
     });
     await expect(wrapped()).rejects.toThrow("process.exit");
     expect(errorSpy).toHaveBeenCalledWith("Credential error: no key");
-  });
-
-  it("prints CloudProviderError with prefix", async () => {
-    const wrapped = withCommand(async () => {
-      throw new CloudProviderError("aws down");
-    });
-    await expect(wrapped()).rejects.toThrow("process.exit");
-    expect(errorSpy).toHaveBeenCalledWith("Cloud error: aws down");
   });
 
   it("prints AgentError with prefix", async () => {

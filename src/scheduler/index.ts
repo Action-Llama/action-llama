@@ -19,13 +19,13 @@ import type { StateStore } from "../shared/state-store.js";
 import {
   DEFAULT_MAX_RERUNS, DEFAULT_MAX_TRIGGER_DEPTH,
   executeRun, drainQueues, runWithReruns,
-  makeWebhookPrompt,
+  makeWebhookPrompt, makeTriggeredPrompt,
   type WorkItem, type SchedulerContext,
 } from "./execution.js";
 
 export type { SchedulerContext, WorkItem } from "./execution.js";
 
-export async function startScheduler(projectPath: string, globalConfigOverride?: GlobalConfig, statusTracker?: StatusTracker, cloudMode?: boolean, webUI?: boolean, expose?: boolean) {
+export async function startScheduler(projectPath: string, globalConfigOverride?: GlobalConfig, statusTracker?: StatusTracker, webUI?: boolean, expose?: boolean) {
   const mkLogger = statusTracker ? createFileOnlyLogger : createLogger;
   const logger = mkLogger(projectPath, "scheduler");
   logger.info("Starting scheduler...");
@@ -65,25 +65,6 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     await requireCredentialRef(credRef);
   }
 
-  // Validate IAM roles exist if using cloud mode
-  if (cloudMode && globalConfig.cloud) {
-    logger.info("Validating cloud IAM roles...");
-    const { createCloudProvider } = await import("../cloud/provider.js");
-    try {
-      const provider = await createCloudProvider(globalConfig.cloud);
-      await provider.validateRoles(projectPath);
-      logger.info("All cloud IAM roles validated successfully");
-    } catch (err: any) {
-      logger.error("Cloud IAM role validation failed");
-      throw new Error(
-        `❌ Cloud IAM role validation failed\n\n` +
-        `${err.message}\n\n` +
-        `This validation prevents runtime failures when agents try to start.\n` +
-        `Fix the IAM roles before starting the scheduler.`
-      );
-    }
-  }
-
   const maxReruns = globalConfig.maxReruns ?? DEFAULT_MAX_RERUNS;
   const maxTriggerDepth = globalConfig.maxCallDepth ?? globalConfig.maxTriggerDepth ?? DEFAULT_MAX_TRIGGER_DEPTH;
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -119,7 +100,6 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   let baseImage = CONSTANTS.DEFAULT_IMAGE;
   const agentImages: Record<string, string> = {};
-  const useCloudRuntime = cloudMode && globalConfig.cloud;
 
   // Register agents early so the TUI shows them during image builds
   for (const agentConfig of agentConfigs) {
@@ -131,26 +111,16 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   const runnerPools: Record<string, RunnerPool> = {};
   let cronJobs: Cron[] = [];
 
-  // Create persistent state store (SQLite locally, DynamoDB in cloud).
+  // Create persistent state store (SQLite)
   let stateStore: StateStore | undefined;
   {
     const { createStateStore } = await import("../shared/state-store.js");
-    const useCloudStore = cloudMode && globalConfig.cloud;
-    if (useCloudStore && globalConfig.cloud?.provider === "ecs") {
-      stateStore = await createStateStore({
-        type: "dynamodb",
-        region: globalConfig.cloud.awsRegion!,
-        tableName: "al-state",
-      });
-      logger.info("State store: DynamoDB (al-state)");
-    } else {
-      const { resolve: resolvePath } = await import("path");
-      stateStore = await createStateStore({
-        type: "sqlite",
-        path: resolvePath(projectPath, ".al", "state.db"),
-      });
-      logger.info("State store: SQLite (.al/state.db)");
-    }
+    const { resolve: resolvePath } = await import("path");
+    stateStore = await createStateStore({
+      type: "sqlite",
+      path: resolvePath(projectPath, ".al", "state.db"),
+    });
+    logger.info("State store: SQLite (.al/state.db)");
   }
 
   // Start gateway early (before Docker builds) so users can see build status
@@ -166,7 +136,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   const gatewayPort = globalConfig.gateway?.port || 8080;
   gateway = await startGateway({
     port: gatewayPort,
-    hostname: (cloudMode || expose) ? "0.0.0.0" : "127.0.0.1",
+    hostname: expose ? "0.0.0.0" : "127.0.0.1",
     logger: mkLogger(projectPath, "gateway"),
     killContainer: undefined, // Runtime not ready yet, will handle container ops later
     webhookRegistry,
@@ -250,10 +220,10 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   logger.info({ port: gatewayPort }, "Gateway started early to show build progress");
 
   // 1. Create the container runtime
-  const { runtime, agentRuntimeOverrides, runtimeType } = await createContainerRuntime(
-    globalConfig, activeAgentConfigs, cloudMode, logger,
+  const { runtime, agentRuntimeOverrides } = await createContainerRuntime(
+    globalConfig, activeAgentConfigs, logger,
   );
-  logger.info({ runtime: runtimeType }, "Container mode enabled — initializing infrastructure");
+  logger.info({ runtime: "local" }, "Container mode enabled — initializing infrastructure");
 
   // Check for orphan containers from a previous scheduler run
   try {
@@ -262,12 +232,10 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       for (const orphan of orphans) {
         logger.warn({ agent: orphan.agentName, task: orphan.taskId }, "found orphan container");
       }
-      if (runtimeType === "local") {
-        for (const orphan of orphans) {
-          try { await runtime.kill(orphan.taskId); await runtime.remove(orphan.taskId); } catch {}
-        }
-        logger.info({ count: orphans.length }, "cleaned up local orphan containers");
+      for (const orphan of orphans) {
+        try { await runtime.kill(orphan.taskId); await runtime.remove(orphan.taskId); } catch {}
       }
+      logger.info({ count: orphans.length }, "cleaned up local orphan containers");
     }
   } catch (err) {
     logger.debug({ err }, "orphan detection skipped (runtime does not support listing)");
@@ -277,24 +245,16 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   const buildSkills: PromptSkills = { locking: true };
   const buildResult = await buildAgentImages({
     projectPath, globalConfig, activeAgentConfigs,
-    runtime, runtimeType, statusTracker, logger, skills: buildSkills,
+    runtime, statusTracker, logger, skills: buildSkills,
   });
   baseImage = buildResult.baseImage;
   Object.assign(agentImages, buildResult.agentImages);
 
   // Import necessary classes for container runners
   const { ContainerAgentRunner: ContainerAgentRunnerClass } = await import("../agents/container-runner.js");
-  const gatewayUrl = process.env.GATEWAY_URL
-    || (useCloudRuntime
-      ? (globalConfig.gateway?.url || "")
-      : `http://host.docker.internal:${gatewayPort}`);
+  const gatewayUrl = process.env.GATEWAY_URL || `http://host.docker.internal:${gatewayPort}`;
 
-  if (useCloudRuntime && !gatewayUrl) {
-    logger.warn("Cloud mode is active but gateway URL is not set (via GATEWAY_URL env or gateway.url config) — resource locking and shutdown will not work for cloud containers");
-  }
-
-  // Gateway callbacks — no-ops if gateway isn't running (remote runtimes).
-  // Both are async (ContainerRegistry persists to StateStore).
+  // Gateway callbacks — async (ContainerRegistry persists to StateStore).
   const registerContainer = gateway
     ? gateway.registerContainer
     : async (_secret: string, _reg: any) => {};
@@ -335,6 +295,44 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   await workQueue.init();
   const skills: PromptSkills = { locking: true };
   const schedulerCtx: SchedulerContext = { runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, workQueue, shuttingDown: false, skills, useBakedImages: true };
+
+  // Wire up the call dispatcher so al-call works from inside containers
+  if (gateway) {
+    gateway.setCallDispatcher((entry) => {
+      if (entry.callerAgent === entry.targetAgent) {
+        return { ok: false, reason: "agent cannot call itself" };
+      }
+      if (entry.depth >= maxTriggerDepth) {
+        return { ok: false, reason: "trigger depth limit reached" };
+      }
+      const targetConfig = agentConfigs.find((a) => a.name === entry.targetAgent);
+      if (!targetConfig) {
+        return { ok: false, reason: `target agent "${entry.targetAgent}" not found` };
+      }
+      const pool = runnerPools[entry.targetAgent];
+      if (!pool || pool.size === 0) {
+        return { ok: false, reason: `target agent "${entry.targetAgent}" is disabled` };
+      }
+
+      const runner = pool.getAvailableRunner();
+      if (runner) {
+        logger.info({ caller: entry.callerAgent, target: entry.targetAgent, depth: entry.depth }, "dispatching call");
+        const prompt = makeTriggeredPrompt(targetConfig, entry.callerAgent, entry.context, schedulerCtx);
+        executeRun(runner, prompt, { type: 'agent', source: entry.callerAgent }, entry.targetAgent, entry.depth + 1, schedulerCtx)
+          .then(() => drainQueues(schedulerCtx))
+          .catch((err) => logger.error({ err, target: entry.targetAgent }, "called agent run failed"));
+      } else {
+        schedulerCtx.workQueue.enqueue(entry.targetAgent, {
+          type: 'agent-trigger',
+          sourceAgent: entry.callerAgent,
+          context: entry.context,
+          depth: entry.depth,
+        });
+        logger.info({ caller: entry.callerAgent, target: entry.targetAgent }, "all runners busy, call queued");
+      }
+      return { ok: true };
+    });
+  }
 
   // Set up webhook bindings (only when gateway is enabled)
   if (webhookRegistry) {
@@ -498,7 +496,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
         logger.warn({ error: error.message }, "Error during telemetry shutdown");
       }
     }
-    
+
     logger.info("All cron jobs stopped");
     process.exit(0);
   };

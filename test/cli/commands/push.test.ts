@@ -68,24 +68,12 @@ describe("push command", () => {
   });
 
   it("throws when environment has no [server] section", async () => {
-    mockResolveEnvironmentName.mockReturnValue("my-cloud");
-    mockLoadEnvironmentConfig.mockReturnValue({ cloud: { provider: "ecs" } });
+    mockResolveEnvironmentName.mockReturnValue("my-env");
+    mockLoadEnvironmentConfig.mockReturnValue({ gateway: { port: 8080 } });
 
     await expect(
-      captureLog(() => execute({ project: ".", env: "my-cloud" }))
+      captureLog(() => execute({ project: ".", env: "my-env" }))
     ).rejects.toThrow("no [server] section");
-  });
-
-  it("throws when environment has both [server] and [cloud]", async () => {
-    mockResolveEnvironmentName.mockReturnValue("mixed");
-    mockLoadEnvironmentConfig.mockReturnValue({
-      server: { host: "h" },
-      cloud: { provider: "ecs" },
-    });
-
-    await expect(
-      captureLog(() => execute({ project: ".", env: "mixed" }))
-    ).rejects.toThrow("mutually exclusive");
   });
 
   it("throws when no agents found", async () => {

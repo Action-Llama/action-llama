@@ -9,7 +9,7 @@ import {
 } from "../../shared/environment.js";
 import { ConfigError } from "../../shared/errors.js";
 
-const VALID_TYPES = ["server", "ecs", "cloud-run"] as const;
+const VALID_TYPES = ["server"] as const;
 type EnvType = typeof VALID_TYPES[number];
 
 function buildSkeleton(type: EnvType): EnvironmentConfig {
@@ -22,28 +22,6 @@ function buildSkeleton(type: EnvType): EnvironmentConfig {
           port: 22,
           basePath: "/opt/action-llama",
         },
-      };
-    case "ecs":
-      return {
-        cloud: {
-          provider: "ecs",
-          awsRegion: "us-east-1",
-          ecsCluster: "action-llama",
-          ecrRepository: "REPLACE_ME",
-          executionRoleArn: "REPLACE_ME",
-          taskRoleArn: "REPLACE_ME",
-          subnets: ["REPLACE_ME"],
-        } as any,
-      };
-    case "cloud-run":
-      return {
-        cloud: {
-          provider: "cloud-run",
-          gcpProject: "REPLACE_ME",
-          region: "us-central1",
-          artifactRegistry: "REPLACE_ME",
-          serviceAccount: "REPLACE_ME",
-        } as any,
       };
   }
 }
@@ -80,7 +58,7 @@ export async function list(): Promise<void> {
   for (const name of envs) {
     try {
       const config = loadEnvironmentConfig(name);
-      const envType = config.server ? "server" : config.cloud?.provider || "local";
+      const envType = config.server ? "server" : "unknown";
       console.log(`  ${name} (${envType})`);
     } catch {
       console.log(`  ${name} (invalid config)`);

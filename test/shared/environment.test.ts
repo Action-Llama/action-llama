@@ -103,20 +103,15 @@ describe("loadEnvironmentConfig", () => {
   it("loads environment config file", () => {
     mkdirSync(ENVIRONMENTS_DIR, { recursive: true });
     const config = {
-      cloud: {
-        provider: "ecs",
-        awsRegion: "us-east-1",
-        ecsCluster: "test",
-        ecrRepository: "test-repo",
-        executionRoleArn: "arn:test",
-        taskRoleArn: "arn:test",
-        subnets: ["subnet-1"],
+      server: {
+        host: "deploy.example.com",
+        user: "deployer",
       },
     };
     writeFileSync(testEnvPath, stringifyTOML(config as Record<string, unknown>));
 
     const loaded = loadEnvironmentConfig(testEnvName);
-    expect(loaded.cloud?.provider).toBe("ecs");
+    expect(loaded.server?.host).toBe("deploy.example.com");
   });
 });
 
@@ -187,12 +182,12 @@ describe("writeEnvironmentConfig / environmentExists", () => {
     expect(environmentExists(testEnvName)).toBe(false);
 
     writeEnvironmentConfig(testEnvName, {
-      cloud: { provider: "cloud-run", gcpProject: "test", region: "us-central1", artifactRegistry: "test", serviceAccount: "test" } as any,
+      server: { host: "deploy.example.com", user: "deployer" },
     });
 
     expect(environmentExists(testEnvName)).toBe(true);
 
     const loaded = loadEnvironmentConfig(testEnvName);
-    expect(loaded.cloud?.provider).toBe("cloud-run");
+    expect(loaded.server?.host).toBe("deploy.example.com");
   });
 });

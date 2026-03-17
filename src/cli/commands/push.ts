@@ -24,13 +24,7 @@ export async function execute(opts: { project: string; env?: string; dryRun?: bo
   if (!envConfig.server) {
     throw new ConfigError(
       `Environment "${envName}" has no [server] section. ` +
-      `al push requires a server environment. Use 'al cloud deploy' for cloud environments.`
-    );
-  }
-  if (envConfig.cloud) {
-    throw new ConfigError(
-      `Environment "${envName}" has both [server] and [cloud] sections. ` +
-      `These are mutually exclusive — use either al push (server) or al cloud deploy (cloud).`
+      `al push requires a server environment.`
     );
   }
 

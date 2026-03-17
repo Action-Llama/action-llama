@@ -2,8 +2,6 @@ import { resolve } from "path";
 import { createReadStream, readdirSync, existsSync, statSync } from "fs";
 import { createInterface } from "readline";
 import { logsDir } from "../../shared/paths.js";
-import { loadGlobalConfig, loadAgentConfig } from "../../shared/config.js";
-import { resolveTarget } from "../resolve-target.js";
 
 // ── ANSI helpers ──────────────────────────────────────────────────────────────
 
@@ -409,119 +407,6 @@ export async function execute(
   const projectPath = resolve(opts.project);
   const fmt: Formatter = opts.raw ? formatRawEntry : formatConversationEntry;
   const instanceNum = opts.instance ? parseInt(opts.instance, 10) : undefined;
-  const globalConfig = loadGlobalConfig(projectPath, opts.env);
-  const cloudMode = !!globalConfig.cloud;
-
-  if (cloudMode) {
-    const cloud = globalConfig.cloud!;
-
-    const { createCloudProvider } = await import("../../cloud/provider.js");
-    const provider = await createCloudProvider(cloud);
-    const limit = parseInt(opts.lines, 10) || 50;
-
-    // Special case: "scheduler" fetches scheduler service logs
-    if (agent === "scheduler") {
-      const formatSchedulerLine = (line: string): void => {
-        const entry = parseLine(line);
-        if (entry) {
-          const formatted = fmt(entry);
-          if (formatted) console.log(formatted);
-        } else {
-          console.log(line);
-        }
-      };
-
-      if (opts.follow) {
-        console.log("Following scheduler logs...");
-        const recentLines = await provider.getSchedulerLogs(limit);
-        for (const line of recentLines) formatSchedulerLine(line);
-
-        const { stop } = provider.followSchedulerLogs(
-          (line) => formatSchedulerLine(line),
-          (stderr) => console.error(stderr),
-        );
-
-        process.on("SIGINT", () => {
-          console.log("\nStopping log follow...");
-          stop();
-          process.exit(0);
-        });
-
-        await new Promise(() => {});
-      } else {
-        console.log("Fetching cloud scheduler logs...");
-        const lines = await provider.getSchedulerLogs(limit);
-        if (lines.length === 0) {
-          console.log("No scheduler log events found.");
-        } else {
-          for (const line of lines) formatSchedulerLine(line);
-        }
-      }
-      return;
-    }
-
-    const { agent: resolvedAgent, taskId } = await resolveTarget(agent, projectPath, provider);
-
-    let agentConfig;
-    try {
-      agentConfig = loadAgentConfig(projectPath, resolvedAgent);
-    } catch {
-      // No local config — use primary runtime
-    }
-
-    const runtime = agentConfig
-      ? provider.createAgentRuntime(agentConfig, globalConfig)
-      : provider.createRuntime();
-
-    const formatCloudLine = (line: string): void => {
-      const entry = parseLine(line);
-      if (!entry) return;
-      if (fmt === formatConversationEntry) {
-        const header = formatRunHeader(entry);
-        if (header) console.log(header);
-      }
-      const formatted = fmt(entry);
-      if (formatted) console.log(formatted);
-    };
-
-    if (opts.follow) {
-      console.log(`Following logs for ${resolvedAgent}${taskId ? ` (${taskId.slice(0, 8)})` : ""}...`);
-
-      const recentLines = await runtime.fetchLogs(resolvedAgent, limit, taskId);
-      for (const line of recentLines) {
-        formatCloudLine(line);
-      }
-
-      const { stop } = runtime.followLogs(
-        resolvedAgent,
-        (line: string) => formatCloudLine(line),
-        (stderr: string) => console.error(stderr),
-        taskId,
-      );
-
-      process.on("SIGINT", () => {
-        console.log("\nStopping log follow...");
-        stop();
-        process.exit(0);
-      });
-
-      await new Promise(() => {});
-    } else {
-      console.log(`Fetching cloud logs for ${resolvedAgent}${taskId ? ` (${taskId.slice(0, 8)})` : ""}...`);
-      const lines = await runtime.fetchLogs(resolvedAgent, limit, taskId);
-
-      if (lines.length === 0) {
-        console.log("No log events found.");
-      } else {
-        for (const line of lines) {
-          formatCloudLine(line);
-        }
-      }
-    }
-    return;
-  }
-
-  // ── Local mode ──
 
   const n = parseInt(opts.lines, 10);
 

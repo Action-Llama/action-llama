@@ -13,17 +13,9 @@ export interface RuntimeLaunchOpts {
 
 /** Opaque credential payload — each runtime produces and consumes its own variant. */
 export type RuntimeCredentials =
-  | { strategy: "volume"; stagingDir: string; bundle: CredentialBundle }
-  | { strategy: "secrets-manager"; mounts: SecretMount[] };
+  | { strategy: "volume"; stagingDir: string; bundle: CredentialBundle };
 
 export type CredentialBundle = Record<string, Record<string, Record<string, string>>>;
-
-export interface SecretMount {
-  /** Cloud-native secret identifier (e.g. GSM secret name, AWS ARN) */
-  secretId: string;
-  /** Path inside the container where the secret value will be mounted */
-  mountPath: string;
-}
 
 export interface BuildImageOpts {
   /** Tag for the built image */
@@ -34,7 +26,7 @@ export interface BuildImageOpts {
   contextDir: string;
   /** Optional callback for progress updates during the build */
   onProgress?: (message: string) => void;
-  /** Remote URI of the base image — used to rewrite FROM in cloud builds */
+  /** Base image to use for FROM rewriting */
   baseImage?: string;
   /**
    * Extra files to bake into the image at /app/static/.
@@ -58,21 +50,10 @@ export interface BuildImageOpts {
   useLockfileHash?: boolean;
 }
 
-export interface AssembleImageOpts {
-  /** Tag for the assembled image */
-  tag: string;
-  /** Base image URI (must already exist in the registry) */
-  baseImage: string;
-  /** Files to add as a new layer at /app/static/ */
-  extraFiles: Record<string, string>;
-  /** Optional progress callback */
-  onProgress?: (message: string) => void;
-}
-
 export interface RunningAgent {
   agentName: string;
   taskId: string;
-  /** Full runtime-specific identifier needed by kill() (e.g. ECS task ARN, Cloud Run execution path). */
+  /** Full runtime-specific identifier needed by kill(). */
   runtimeId: string;
   status: string;
   startedAt?: Date;
@@ -110,29 +91,25 @@ export interface ContainerRuntime {
 
   /**
    * Resolve credential refs into runtime-native credential specs.
-   * For local docker: stages files to a temp dir, returns volume mount path.
-   * For cloud runtimes: maps refs to cloud secret manager names.
+   * Stages files to a temp dir, returns volume mount path.
    */
   prepareCredentials(credRefs: string[]): Promise<RuntimeCredentials>;
 
   /**
-   * Build a Docker image.
-   * For local docker: runs `docker build` locally.
-   * For cloud runtimes: uses cloud build (e.g. Cloud Build).
-   * Returns the image tag/URI.
+   * Build a Docker image locally.
+   * Returns the image tag.
    */
   buildImage(opts: BuildImageOpts): Promise<string>;
 
   /**
-   * Push a local Docker image to the runtime's registry.
-   * Returns the remote image URI. For local docker, returns the input unchanged.
+   * Push a local Docker image to a registry.
+   * Returns the remote image URI (or the input unchanged for local).
    */
   pushImage(localImage: string): Promise<string>;
 
   /**
    * Clean up credentials prepared by prepareCredentials().
-   * For local docker: removes the staging directory.
-   * For cloud runtimes: no-op.
+   * Removes the staging directory.
    */
   cleanupCredentials(creds: RuntimeCredentials): void;
 
@@ -152,25 +129,12 @@ export interface ContainerRuntime {
     taskId?: string,
   ): { stop: () => void };
 
-  /** Return a URL to the cloud console for this task/execution, or null for local runtimes. */
+  /** Return a URL for this task/execution, or null. */
   getTaskUrl(containerName: string): string | null;
 
-  /**
-   * Assemble a thin image directly via registry API (no CodeBuild).
-   * Adds an extra-files layer on top of an existing base image.
-   * Only supported by cloud runtimes with registry access (e.g. ECS/ECR).
-   */
-  assembleImageDirect?(opts: AssembleImageOpts): Promise<string>;
-
-  /**
-   * Build multiple images in a single cloud build job.
-   * Falls back to sequential buildImage() calls if not supported.
-   */
-  buildMultipleImages?(builds: BuildImageOpts[], onProgress?: (message: string) => void): Promise<string[]>;
-
-  /** Start a gateway proxy container for local runtimes. No-op for cloud runtimes. */
+  /** Start a gateway proxy container for local runtimes. */
   startGatewayProxy?(gatewayPort: number): Promise<void>;
 
-  /** Stop the gateway proxy container for local runtimes. No-op for cloud runtimes. */
+  /** Stop the gateway proxy container for local runtimes. */
   stopGatewayProxy?(): Promise<void>;
 }

@@ -1,7 +1,6 @@
 import { resolve } from "path";
 import { discoverAgents, loadAgentConfig, loadGlobalConfig } from "../../shared/config.js";
 import { gatewayFetch } from "../gateway-client.js";
-import type { RunningAgent } from "../../docker/runtime.js";
 import type { AgentInstance } from "../../scheduler/types.js";
 import type { AgentConfig } from "../../shared/config.js";
 
@@ -59,35 +58,6 @@ function printAgentConfig(config: AgentConfig): void {
   if (config.timeout) console.log(`  Timeout: ${config.timeout}s`);
 }
 
-/** Print cloud running instances table. */
-function printCloudInstances(instances: RunningAgent[]): void {
-  if (instances.length === 0) {
-    console.log("No running instances.");
-    return;
-  }
-
-  console.log("Running Instances:");
-  const cols = { agent: 16, task: 40, status: 14, trigger: 20, started: 24 };
-  console.log(
-    "AGENT".padEnd(cols.agent) +
-    "TASK".padEnd(cols.task) +
-    "STATUS".padEnd(cols.status) +
-    "TRIGGER".padEnd(cols.trigger) +
-    "STARTED AT"
-  );
-  console.log("-".repeat(cols.agent + cols.task + cols.status + cols.trigger + cols.started));
-
-  for (const a of instances) {
-    console.log(
-      a.agentName.padEnd(cols.agent) +
-      a.taskId.padEnd(cols.task) +
-      a.status.padEnd(cols.status) +
-      (a.trigger || "-").padEnd(cols.trigger) +
-      (a.startedAt ? a.startedAt.toISOString().slice(0, 19).replace('T', ' ') : "-")
-    );
-  }
-}
-
 /** Print local running instances table. */
 function printLocalInstances(instances: AgentInstance[]): void {
   if (instances.length === 0) return;
@@ -119,69 +89,6 @@ function printLocalInstances(instances: AgentInstance[]): void {
 
 export async function execute(opts: { project: string; env?: string; agent?: string }): Promise<void> {
   const projectPath = resolve(opts.project);
-  const globalConfig = loadGlobalConfig(projectPath, opts.env);
-  const cloudMode = !!globalConfig.cloud;
-
-  if (cloudMode) {
-    const cloud = globalConfig.cloud!;
-
-    const { createCloudProvider } = await import("../../cloud/provider.js");
-    const provider = await createCloudProvider(cloud);
-    const runtime = provider.createRuntime();
-    const running: RunningAgent[] = await runtime.listRunningAgents();
-
-    // --- Per-agent detail view ---
-    if (opts.agent) {
-      const config = loadAgentConfig(projectPath, opts.agent);
-      const agentInstances = running.filter(a => a.agentName === opts.agent);
-
-      console.log(`Agent: ${opts.agent}\n`);
-      printAgentConfig(config);
-      console.log("");
-      printCloudInstances(agentInstances);
-      return;
-    }
-
-    // --- Summary view ---
-    console.log(`AL Status — ${projectPath}\n`);
-
-    const svc = await provider.getSchedulerStatus();
-    if (svc) {
-      console.log(`Scheduler (${cloud.provider}):`);
-      console.log(`  Status: ${svc.status}`);
-      console.log(`  URL:    ${svc.serviceUrl}`);
-      if (svc.createdAt) console.log(`  Created: ${svc.createdAt.toISOString()}`);
-      if (svc.updatedAt) console.log(`  Updated: ${svc.updatedAt.toISOString()}`);
-    } else {
-      console.log("Scheduler: not deployed");
-    }
-    console.log("");
-
-    const agentNames = discoverAgents(projectPath);
-    const instanceCounts = new Map<string, number>();
-    for (const a of running) {
-      instanceCounts.set(a.agentName, (instanceCounts.get(a.agentName) || 0) + 1);
-    }
-
-    console.log("Agents:");
-    const agentRows = agentNames.map(name => {
-      const config = loadAgentConfig(projectPath, name);
-      const count = instanceCounts.get(name) || 0;
-      return {
-        config,
-        status: count > 0 ? "Running" : "Idle",
-        instanceCount: count,
-        paused: false,
-      };
-    });
-    printAgentsTable(agentRows);
-    console.log("");
-
-    printCloudInstances(running);
-    return;
-  }
-
-  // --- Local mode ---
 
   let schedulerInfo = null;
   let instances: AgentInstance[] = [];
@@ -261,7 +168,7 @@ export async function execute(opts: { project: string; env?: string; agent?: str
     console.log("No running instances.\n");
   }
 
-  // Fetch and display lock information (local mode only)
+  // Fetch and display lock information
   try {
     const response = await gatewayFetch({ project: projectPath, path: "/locks/status" });
     if (response.ok) {

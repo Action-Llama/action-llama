@@ -28,43 +28,6 @@ export interface LocalConfig {
   timeout?: number;        // Max container runtime in seconds
 }
 
-export interface EcsCloudConfig {
-  provider: "ecs";
-  awsRegion: string;
-  ecsCluster: string;
-  ecrRepository: string;
-  executionRoleArn: string;
-  taskRoleArn: string;
-  subnets: string[];
-  securityGroups?: string[];
-  awsSecretPrefix?: string;
-  buildBucket?: string;
-  // Lambda (auto-routed for agents with timeout <= 900)
-  lambdaRoleArn?: string;
-  lambdaSubnets?: string[];
-  lambdaSecurityGroups?: string[];
-  // Cloud scheduler (al cloud deploy)
-  schedulerCpu?: string;
-  schedulerMemory?: string;
-  // App Runner (AWS scheduler)
-  appRunnerInstanceRoleArn?: string;
-  appRunnerAccessRoleArn?: string;
-}
-
-export interface CloudRunCloudConfig {
-  provider: "cloud-run";
-  gcpProject: string;
-  region: string;
-  artifactRegistry: string;
-  serviceAccount: string;
-  secretPrefix?: string;
-  // Cloud scheduler (al cloud deploy)
-  schedulerCpu?: string;
-  schedulerMemory?: string;
-}
-
-export type CloudConfig = EcsCloudConfig | CloudRunCloudConfig;
-
 export interface GatewayConfig {
   port?: number;
   lockTimeout?: number;
@@ -78,7 +41,7 @@ export interface WebhookSourceConfig {
 
 export interface TelemetryConfig {
   enabled: boolean;
-  provider: "otel" | "xray" | "none";
+  provider: "otel" | "none";
   endpoint?: string;
   serviceName?: string;
   headers?: Record<string, string>;
@@ -88,7 +51,6 @@ export interface TelemetryConfig {
 export interface GlobalConfig {
   model?: ModelConfig;
   local?: LocalConfig;
-  cloud?: CloudConfig;
   gateway?: GatewayConfig;
   webhooks?: Record<string, WebhookSourceConfig>;
   telemetry?: TelemetryConfig;
@@ -143,15 +105,6 @@ export function loadProjectConfig(projectPath: string): GlobalConfig {
 export function loadGlobalConfig(projectPath: string, envName?: string): GlobalConfig {
   let config = loadProjectConfig(projectPath);
 
-  // [cloud] in config.toml is no longer supported — must be in an environment file
-  if (config.cloud) {
-    throw new ConfigError(
-      "[cloud] section found in config.toml. " +
-      "Cloud infrastructure config must be in an environment file. " +
-      "Move it to ~/.action-llama/environments/<name>.toml and run 'al env init <name>' to create one."
-    );
-  }
-
   // Layer 2: .env.toml overrides
   const envToml = loadEnvToml(projectPath);
   let projectName: string | undefined;
@@ -178,49 +131,12 @@ export function loadGlobalConfig(projectPath: string, envName?: string): GlobalC
     };
   }
 
-  // Validate cloud config if present (from any layer)
-  if (config.cloud) {
-    config.cloud = validateCloudConfig(config.cloud);
-  }
-
   // projectName is .env.toml-only — not deep-merged from config.toml or environment files
   if (projectName) {
     config.projectName = projectName;
   }
 
   return config;
-}
-
-export function validateCloudConfig(raw: any): CloudConfig {
-  if (!raw.provider) {
-    throw new ConfigError("cloud.provider is required");
-  }
-
-  if (raw.provider === "ecs") {
-    const required = ["awsRegion", "ecsCluster", "ecrRepository", "executionRoleArn", "taskRoleArn", "subnets"] as const;
-    const missing = required.filter((k) => !raw[k] || (Array.isArray(raw[k]) && raw[k].length === 0));
-    if (missing.length > 0) {
-      throw new ConfigError(
-        `ECS cloud config is missing required fields: ${missing.map((k) => `cloud.${k}`).join(", ")}. ` +
-        `Run 'al env init <name>' to configure.`
-      );
-    }
-    return raw as EcsCloudConfig;
-  }
-
-  if (raw.provider === "cloud-run") {
-    const required = ["gcpProject", "region", "artifactRegistry", "serviceAccount"] as const;
-    const missing = required.filter((k) => !raw[k]);
-    if (missing.length > 0) {
-      throw new ConfigError(
-        `Cloud Run config is missing required fields: ${missing.map((k) => `cloud.${k}`).join(", ")}. ` +
-        `Run 'al env init <name>' to configure.`
-      );
-    }
-    return raw as CloudRunCloudConfig;
-  }
-
-  throw new ConfigError(`Unknown cloud provider: "${raw.provider}". Supported: ecs, cloud-run`);
 }
 
 export function loadAgentConfig(projectPath: string, agentName: string): AgentConfig {

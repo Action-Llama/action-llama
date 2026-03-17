@@ -38,16 +38,7 @@ function formatTime(date: Date): string {
 
 function Header({ info, agentCount, agents }: { info: SchedulerInfo | null; agentCount: number; agents: AgentStatus[] }) {
   if (!info) return null;
-  const isCloud = info.mode === "docker" && info.runtime && info.runtime !== "local";
-  const runtimeLabels: Record<string, string> = {
-    "cloud-run": "Cloud Run mode",
-    "ecs": "ECS Fargate mode",
-  };
-  const modeLabel = info.mode === "host"
-    ? "Host mode"
-    : isCloud
-      ? runtimeLabels[info.runtime!] || "Cloud mode"
-      : "Docker mode";
+  const modeLabel = info.mode === "host" ? "Host mode" : "Docker mode";
   
   const enabledCount = agents.filter(a => a.enabled).length;
   const disabledCount = agentCount - enabledCount;
@@ -68,9 +59,6 @@ function Header({ info, agentCount, agents }: { info: SchedulerInfo | null; agen
       ))}
       {info.dashboardUrl ? (
         <Text dimColor>Dashboard: {info.dashboardUrl}</Text>
-      ) : null}
-      {isCloud ? (
-        <Text color="yellow">Logs may be delayed ~10s (Cloud Logging ingestion)</Text>
       ) : null}
       <Text dimColor>{"─".repeat(50)}</Text>
     </Box>
