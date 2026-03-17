@@ -92,6 +92,7 @@ export interface GlobalConfig {
   gateway?: GatewayConfig;
   webhooks?: Record<string, WebhookSourceConfig>;
   telemetry?: TelemetryConfig;
+  projectName?: string;
   maxReruns?: number;
   maxCallDepth?: number;
   /** @deprecated Use maxCallDepth instead */
@@ -153,8 +154,10 @@ export function loadGlobalConfig(projectPath: string, envName?: string): GlobalC
 
   // Layer 2: .env.toml overrides
   const envToml = loadEnvToml(projectPath);
+  let projectName: string | undefined;
   if (envToml) {
-    const { environment: _, ...overrides } = envToml;
+    const { environment: _, projectName: pn, ...overrides } = envToml;
+    projectName = typeof pn === "string" ? pn : undefined;
     if (Object.keys(overrides).length > 0) {
       config = deepMerge(config, overrides);
     }
@@ -178,6 +181,11 @@ export function loadGlobalConfig(projectPath: string, envName?: string): GlobalC
   // Validate cloud config if present (from any layer)
   if (config.cloud) {
     config.cloud = validateCloudConfig(config.cloud);
+  }
+
+  // projectName is .env.toml-only — not deep-merged from config.toml or environment files
+  if (projectName) {
+    config.projectName = projectName;
   }
 
   return config;

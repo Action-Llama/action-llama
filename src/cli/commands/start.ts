@@ -46,6 +46,7 @@ export async function execute(opts: { project: string; env?: string; headless?: 
   statusTracker.setSchedulerInfo({
     mode,
     runtime: dockerEnabled ? (cloudMode ? globalConfig.cloud?.provider : "local") : undefined,
+    projectName: globalConfig.projectName,
     gatewayPort: null,
     cronJobCount: 0,
     webhooksActive: false,
@@ -76,6 +77,7 @@ export async function execute(opts: { project: string; env?: string; headless?: 
   statusTracker.setSchedulerInfo({
     mode,
     runtime: dockerEnabled ? (cloudMode ? globalConfig.cloud?.provider : "local") : undefined,
+    projectName: globalConfig.projectName,
     gatewayPort,
     cronJobCount: cronJobs.length,
     webhooksActive: !!webhookRegistry,

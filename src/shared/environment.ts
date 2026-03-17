@@ -13,6 +13,7 @@ export interface EnvironmentConfig {
 
 export interface EnvToml {
   environment?: string;
+  projectName?: string;
   [key: string]: unknown;
 }
 

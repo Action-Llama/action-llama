@@ -18,6 +18,7 @@ export function attachPlainLogger(statusTracker: StatusTracker): { detach: () =>
 
     const info = statusTracker.getSchedulerInfo();
     const agents = statusTracker.getAllAgents();
+    const pn = info?.projectName;
 
     for (const agent of agents) {
       const key = stateKey(agent);
@@ -27,26 +28,26 @@ export function attachPlainLogger(statusTracker: StatusTracker): { detach: () =>
       const ts = new Date().toISOString();
       switch (agent.state) {
         case "building":
-          log(ts, agent.name, "building" + (agent.statusText ? `: ${agent.statusText}` : ""));
+          log(ts, agent.name, "building" + (agent.statusText ? `: ${agent.statusText}` : ""), pn);
           break;
         case "running": {
           const reason = agent.runReason ? ` (${agent.runReason})` : "";
-          log(ts, agent.name, "running" + reason + (agent.statusText ? `: ${agent.statusText}` : ""));
+          log(ts, agent.name, "running" + reason + (agent.statusText ? `: ${agent.statusText}` : ""), pn);
           break;
         }
         case "error":
-          log(ts, agent.name, `error: ${agent.lastError ?? "unknown"}`);
+          log(ts, agent.name, `error: ${agent.lastError ?? "unknown"}`, pn);
           break;
         case "idle": {
           if (agent.lastRunAt) {
             const dur = agent.lastRunDuration != null ? ` (${(agent.lastRunDuration / 1000).toFixed(1)}s)` : "";
-            const usage = agent.lastRunUsage 
-              ? ` | ${agent.lastRunUsage.totalTokens} tokens ($${agent.lastRunUsage.cost.toFixed(4)})` 
+            const usage = agent.lastRunUsage
+              ? ` | ${agent.lastRunUsage.totalTokens} tokens ($${agent.lastRunUsage.cost.toFixed(4)})`
               : "";
-            log(ts, agent.name, `completed${dur}${usage}`);
+            log(ts, agent.name, `completed${dur}${usage}`, pn);
           }
           if (agent.nextRunAt) {
-            log(ts, agent.name, `next run: ${agent.nextRunAt.toISOString()}`);
+            log(ts, agent.name, `next run: ${agent.nextRunAt.toISOString()}`, pn);
           }
           break;
         }
@@ -60,7 +61,7 @@ export function attachPlainLogger(statusTracker: StatusTracker): { detach: () =>
       const lineKey = `${line.timestamp.getTime()}:${line.agent}:${line.message}`;
       if (lastLogKey !== lineKey) {
         lastLogKey = lineKey;
-        log(line.timestamp.toISOString(), line.agent, line.message);
+        log(line.timestamp.toISOString(), line.agent, line.message, pn);
       }
     }
   };
@@ -115,6 +116,7 @@ function stateKey(agent: AgentStatus): string {
   return `${agent.state}|${agent.statusText}|${agent.lastError}|${agent.lastRunAt?.getTime()}|${agent.lastRunDuration}|${agent.runReason}|${usageKey}`;
 }
 
-function log(ts: string, agent: string, msg: string): void {
-  console.log(`[${ts}] ${agent}: ${msg}`);
+function log(ts: string, agent: string, msg: string, projectName?: string): void {
+  const prefix = projectName ? `[${ts}] [${projectName}] ` : `[${ts}] `;
+  console.log(`${prefix}${agent}: ${msg}`);
 }
