@@ -1,5 +1,18 @@
 # @action-llama/action-llama
 
+## 0.11.10
+
+### Patch Changes
+
+- [`2a0f2c9`](https://github.com/Action-Llama/action-llama/commit/2a0f2c96443abc1bab2776898217a2d06e258650) Thanks [@asselstine](https://github.com/asselstine)! - Remove `# syntax=public.ecr.aws/docker/dockerfile:1` directive from Dockerfile.
+  The ECR public mirror doesn't carry the BuildKit frontend image, causing CodeBuild
+  Docker builds to fail. BuildKit is already the default builder, so the directive
+  is unnecessary.
+
+- [`1688bef`](https://github.com/Action-Llama/action-llama/commit/1688bef79d67ea4e09892a481d4530a55b28dd9d) Thanks [@asselstine](https://github.com/asselstine)! - Stop logging the gateway API key during `al cloud deploy`. The doctor
+  check-only mode (used by cloud deploy in CI) now skips the gateway API
+  key section entirely instead of generating and printing the key to stdout.
+
 ## 0.11.9
 
 ### Patch Changes
