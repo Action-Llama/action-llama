@@ -210,11 +210,18 @@ Pause the scheduler or a single agent. Without a name, pauses the entire schedul
 al pause                              # Pause the scheduler
 al pause dev                          # Pause a single agent
 al pause reviewer -p ./my-project
+al pause -c                           # Pause cloud scheduler
+al pause dev -c                       # Pause cloud agent
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
+| `-c, --cloud` | Pause cloud scheduler or agent via cloud gateway |
+
+### `al pause -c`
+
+In cloud mode, `al pause` forwards requests to the cloud-deployed scheduler's gateway to pause operations in the cloud environment. Requires the cloud scheduler to be deployed via `al start -c` or similar cloud deployment.
 
 ## `al resume [name]`
 
@@ -224,11 +231,18 @@ Resume the scheduler or a single agent. Without a name, resumes the entire sched
 al resume                             # Resume the scheduler
 al resume dev                         # Resume a single agent
 al resume reviewer -p ./my-project
+al resume -c                          # Resume cloud scheduler
+al resume dev -c                      # Resume cloud agent
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
+| `-c, --cloud` | Resume cloud scheduler or agent via cloud gateway |
+
+### `al resume -c`
+
+In cloud mode, `al resume` forwards requests to the cloud-deployed scheduler's gateway to resume operations in the cloud environment. Requires the cloud scheduler to be deployed via `al start -c` or similar cloud deployment.
 
 ## `al kill <target>`
 
@@ -238,11 +252,18 @@ Kill an agent (all running instances) or a single instance by ID. Tries the targ
 al kill dev                           # Kill all instances of an agent
 al kill my-agent-abc123               # Kill a single instance by ID
 al kill dev -p ./my-project
+al kill dev -c                        # Kill cloud instances of an agent
+al kill abc123 -c                     # Kill specific cloud instance by task ID
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
+| `-c, --cloud` | Kill cloud tasks directly via ECS StopTask / Cloud Run cancel APIs |
+
+### `al kill -c`
+
+In cloud mode, `al kill` stops running cloud tasks directly using the cloud provider's APIs (ECS StopTask for AWS, Cloud Run cancel for GCP). This bypasses the gateway and terminates tasks immediately. Requires a `[cloud]` configuration in config.toml but does not require the cloud scheduler to be running.
 
 ## `al chat`
 
