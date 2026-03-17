@@ -54,7 +54,7 @@ async function executeLocal(path: string, projectPath: string): Promise<void> {
     });
   } catch (error) {
     if (error instanceof Error && error.message.includes('ECONNREFUSED')) {
-      throw new Error("Gateway not running. Start the scheduler with --gateway (-g) flag.");
+      throw new Error("Scheduler not running. Start it with 'al start'.");
     }
     throw error;
   }

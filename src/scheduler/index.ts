@@ -25,7 +25,7 @@ import {
 
 export type { SchedulerContext, WorkItem } from "./execution.js";
 
-export async function startScheduler(projectPath: string, globalConfigOverride?: GlobalConfig, statusTracker?: StatusTracker, cloudMode?: boolean, gatewayEnabled?: boolean, webUI?: boolean, expose?: boolean) {
+export async function startScheduler(projectPath: string, globalConfigOverride?: GlobalConfig, statusTracker?: StatusTracker, cloudMode?: boolean, webUI?: boolean, expose?: boolean) {
   const mkLogger = statusTracker ? createFileOnlyLogger : createLogger;
   const logger = mkLogger(projectPath, "scheduler");
   logger.info("Starting scheduler...");
@@ -126,11 +126,6 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     statusTracker?.registerAgent(agentConfig.name, agentConfig.scale ?? 1);
   }
 
-  // Validate: webhooks require the gateway
-  if (anyWebhooks && !gatewayEnabled) {
-    logger.warn("Agents have webhook triggers but --gateway (-g) was not passed — webhooks will not be received. Use -g to enable.");
-  }
-
   // Declare runner pools and cron jobs early so control route closures can reference them.
   // They are populated after image builds complete.
   const runnerPools: Record<string, RunnerPool> = {};
@@ -138,7 +133,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // Create persistent state store (SQLite locally, DynamoDB in cloud).
   let stateStore: StateStore | undefined;
-  if (gatewayEnabled) {
+  {
     const { createStateStore } = await import("../shared/state-store.js");
     const useCloudStore = cloudMode && globalConfig.cloud;
     if (useCloudStore && globalConfig.cloud?.provider === "ecs") {
@@ -158,103 +153,101 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     }
   }
 
-  // Start gateway early if needed (before Docker builds) so users can see build status
+  // Start gateway early (before Docker builds) so users can see build status
   let gateway: GatewayServer | undefined;
 
-  if (gatewayEnabled) {
-    // Ensure gateway API key exists (fallback generation if doctor wasn't run)
-    const { key: gatewayApiKey, generated } = await ensureGatewayApiKey();
-    if (generated) {
-      logger.info("Generated gateway API key (run 'al doctor' to view it)");
-    }
-
-    const { startGateway } = await import("../gateway/index.js");
-    const gatewayPort = globalConfig.gateway?.port || 8080;
-    gateway = await startGateway({
-      port: gatewayPort,
-      hostname: (cloudMode || expose) ? "0.0.0.0" : "127.0.0.1",
-      logger: mkLogger(projectPath, "gateway"),
-      killContainer: undefined, // Runtime not ready yet, will handle container ops later
-      webhookRegistry,
-      webhookSecrets,
-      statusTracker,
-      projectPath,
-      webUI,
-      lockTimeout: globalConfig.gateway?.lockTimeout,
-      apiKey: gatewayApiKey,
-      stateStore,
-      controlDeps: {
-        statusTracker,
-        killInstance: async (instanceId: string) => {
-          for (const pool of Object.values(runnerPools)) {
-            if (pool.killInstance(instanceId)) return true;
-          }
-          return false;
-        },
-        killAgent: async (name: string) => {
-          const pool = runnerPools[name];
-          if (!pool) return null;
-          const killed = pool.killAll();
-          logger.info({ agent: name, killed }, "kill all instances requested via control API");
-          return { killed };
-        },
-        pauseScheduler: async () => {
-          for (const job of cronJobs) {
-            job.pause();
-          }
-          statusTracker?.setPaused(true);
-          logger.info("Scheduler paused via control API");
-        },
-        resumeScheduler: async () => {
-          for (const job of cronJobs) {
-            job.resume();
-          }
-          statusTracker?.setPaused(false);
-          logger.info("Scheduler resumed via control API");
-        },
-        triggerAgent: async (name: string) => {
-          const pool = runnerPools[name];
-          if (!pool) return false;
-          const runner = pool.getAvailableRunner();
-          if (!runner) return false;
-          const config = agentConfigs.find((a) => a.name === name);
-          if (!config) return false;
-          logger.info({ agent: name }, "manual trigger via control API");
-          runWithReruns(runner, config, 0, schedulerCtx).catch((err) => {
-            logger.error({ err, agent: name }, "manual trigger run failed");
-          });
-          return true;
-        },
-        enableAgent: async (name: string) => {
-          if (!statusTracker) return false;
-          const config = agentConfigs.find((a) => a.name === name);
-          if (!config) return false;
-          statusTracker.enableAgent(name);
-          return true;
-        },
-        disableAgent: async (name: string) => {
-          if (!statusTracker) return false;
-          const config = agentConfigs.find((a) => a.name === name);
-          if (!config) return false;
-          statusTracker.disableAgent(name);
-          return true;
-        },
-        stopScheduler: async () => {
-          logger.info("Stop requested via control API");
-          schedulerCtx.shuttingDown = true;
-          schedulerCtx.workQueue.clearAll();
-          for (const job of cronJobs) job.stop();
-          if (gateway) await gateway.close();
-          if (stateStore) await stateStore.close();
-          if (telemetry) {
-            try { await telemetry.shutdown(); } catch {}
-          }
-          process.exit(0);
-        },
-      },
-    });
-    logger.info({ port: gatewayPort }, "Gateway started early to show build progress");
+  // Ensure gateway API key exists (fallback generation if doctor wasn't run)
+  const { key: gatewayApiKey, generated } = await ensureGatewayApiKey();
+  if (generated) {
+    logger.info("Generated gateway API key (run 'al doctor' to view it)");
   }
+
+  const { startGateway } = await import("../gateway/index.js");
+  const gatewayPort = globalConfig.gateway?.port || 8080;
+  gateway = await startGateway({
+    port: gatewayPort,
+    hostname: (cloudMode || expose) ? "0.0.0.0" : "127.0.0.1",
+    logger: mkLogger(projectPath, "gateway"),
+    killContainer: undefined, // Runtime not ready yet, will handle container ops later
+    webhookRegistry,
+    webhookSecrets,
+    statusTracker,
+    projectPath,
+    webUI,
+    lockTimeout: globalConfig.gateway?.lockTimeout,
+    apiKey: gatewayApiKey,
+    stateStore,
+    controlDeps: {
+      statusTracker,
+      killInstance: async (instanceId: string) => {
+        for (const pool of Object.values(runnerPools)) {
+          if (pool.killInstance(instanceId)) return true;
+        }
+        return false;
+      },
+      killAgent: async (name: string) => {
+        const pool = runnerPools[name];
+        if (!pool) return null;
+        const killed = pool.killAll();
+        logger.info({ agent: name, killed }, "kill all instances requested via control API");
+        return { killed };
+      },
+      pauseScheduler: async () => {
+        for (const job of cronJobs) {
+          job.pause();
+        }
+        statusTracker?.setPaused(true);
+        logger.info("Scheduler paused via control API");
+      },
+      resumeScheduler: async () => {
+        for (const job of cronJobs) {
+          job.resume();
+        }
+        statusTracker?.setPaused(false);
+        logger.info("Scheduler resumed via control API");
+      },
+      triggerAgent: async (name: string) => {
+        const pool = runnerPools[name];
+        if (!pool) return false;
+        const runner = pool.getAvailableRunner();
+        if (!runner) return false;
+        const config = agentConfigs.find((a) => a.name === name);
+        if (!config) return false;
+        logger.info({ agent: name }, "manual trigger via control API");
+        runWithReruns(runner, config, 0, schedulerCtx).catch((err) => {
+          logger.error({ err, agent: name }, "manual trigger run failed");
+        });
+        return true;
+      },
+      enableAgent: async (name: string) => {
+        if (!statusTracker) return false;
+        const config = agentConfigs.find((a) => a.name === name);
+        if (!config) return false;
+        statusTracker.enableAgent(name);
+        return true;
+      },
+      disableAgent: async (name: string) => {
+        if (!statusTracker) return false;
+        const config = agentConfigs.find((a) => a.name === name);
+        if (!config) return false;
+        statusTracker.disableAgent(name);
+        return true;
+      },
+      stopScheduler: async () => {
+        logger.info("Stop requested via control API");
+        schedulerCtx.shuttingDown = true;
+        schedulerCtx.workQueue.clearAll();
+        for (const job of cronJobs) job.stop();
+        if (gateway) await gateway.close();
+        if (stateStore) await stateStore.close();
+        if (telemetry) {
+          try { await telemetry.shutdown(); } catch {}
+        }
+        process.exit(0);
+      },
+    },
+  });
+  logger.info({ port: gatewayPort }, "Gateway started early to show build progress");
 
   // 1. Create the container runtime
   const { runtime, agentRuntimeOverrides, runtimeType } = await createContainerRuntime(
@@ -291,15 +284,12 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // Import necessary classes for container runners
   const { ContainerAgentRunner: ContainerAgentRunnerClass } = await import("../agents/container-runner.js");
-  const gatewayPort = globalConfig.gateway?.port || 8080;
-  const gatewayUrl = gatewayEnabled
-    ? (process.env.GATEWAY_URL
-      || (useCloudRuntime
-        ? (globalConfig.gateway?.url || "")
-        : `http://host.docker.internal:${gatewayPort}`))
-    : "";
+  const gatewayUrl = process.env.GATEWAY_URL
+    || (useCloudRuntime
+      ? (globalConfig.gateway?.url || "")
+      : `http://host.docker.internal:${gatewayPort}`);
 
-  if (gatewayEnabled && useCloudRuntime && !gatewayUrl) {
+  if (useCloudRuntime && !gatewayUrl) {
     logger.warn("Cloud mode is active but gateway URL is not set (via GATEWAY_URL env or gateway.url config) — resource locking and shutdown will not work for cloud containers");
   }
 
@@ -347,7 +337,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   const schedulerCtx: SchedulerContext = { runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, workQueue, shuttingDown: false, skills, useBakedImages: true };
 
   // Set up webhook bindings (only when gateway is enabled)
-  if (webhookRegistry && gatewayEnabled) {
+  if (webhookRegistry) {
     for (const agentConfig of activeAgentConfigs) {
       if (!agentConfig.webhooks?.length) continue;
 

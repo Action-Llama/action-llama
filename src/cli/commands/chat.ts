@@ -189,7 +189,7 @@ async function executeAgentChat(opts: ChatOpts & { agent: string }): Promise<voi
   if (gatewayUrl) {
     const reachable = await probeGateway(gatewayUrl);
     if (!reachable) {
-      const startCmd = cloudMode ? "al start -c -g" : "al start -g";
+      const startCmd = cloudMode ? "al start -c" : "al start";
       console.log(
         `\u26a0 No gateway detected at ${gatewayUrl}. Resource locks, agent calls, and signals are unavailable.\n` +
         `  Start the scheduler with \`${startCmd}\` to enable these features.\n`

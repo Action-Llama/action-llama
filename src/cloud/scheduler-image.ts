@@ -6,7 +6,7 @@
  * - Project config.toml
  * - All agent directories (agent-config.toml, ACTIONS.md, prompt files, Dockerfiles)
  *
- * Entrypoint: `node dist/cli/main.js start -p /app/project -c --headless --gateway`
+ * Entrypoint: `node dist/cli/main.js start -p /app/project -c --headless`
  */
 
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from "fs";
@@ -106,7 +106,7 @@ function generateDockerfile(): string {
     "EXPOSE 8080",
     "",
     'ENTRYPOINT ["node", "dist/cli/main.js", "start", \\',
-    '  "-p", "/app/static/project", "-c", "--headless", "--gateway", "-w"]',
+    '  "-p", "/app/static/project", "-c", "--headless", "-w"]',
     "",
   ].join("\n");
 }

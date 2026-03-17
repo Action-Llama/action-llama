@@ -112,6 +112,6 @@ describe("chat", () => {
     }
     const output = logs.join("\n");
     expect(output).toContain("No gateway detected");
-    expect(output).toContain("al start -g");
+    expect(output).toContain("al start");
   });
 });

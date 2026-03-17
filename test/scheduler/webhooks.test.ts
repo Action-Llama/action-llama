@@ -92,6 +92,22 @@ vi.mock("../../src/agents/runner.js", () => ({
   },
 }));
 
+// Mock gateway API key
+vi.mock("../../src/gateway/api-key.js", () => ({
+  ensureGatewayApiKey: vi.fn().mockResolvedValue({ key: "test-api-key", generated: false }),
+}));
+
+// Mock state store
+vi.mock("../../src/shared/state-store.js", () => ({
+  createStateStore: vi.fn().mockResolvedValue({
+    get: vi.fn(),
+    set: vi.fn(),
+    delete: vi.fn(),
+    list: vi.fn().mockResolvedValue([]),
+    close: vi.fn().mockResolvedValue(undefined),
+  }),
+}));
+
 // Mock gateway
 const mockGatewayClose = vi.fn().mockResolvedValue(undefined);
 vi.mock("../../src/gateway/index.js", () => ({
@@ -206,16 +222,10 @@ describe("scheduler webhook support", () => {
     expect(webhookRegistry!.getProvider("github")).toBeDefined();
   });
 
-  it("starts gateway for webhooks when gateway flag is enabled", async () => {
-    setupProjectWithWebhooks(tmpDir);
-    const { gateway } = await startScheduler(tmpDir, undefined, undefined, undefined, true);
-    expect(gateway).toBeDefined();
-  });
-
-  it("does not start gateway when gateway flag is not set", async () => {
+  it("always starts gateway", async () => {
     setupProjectWithWebhooks(tmpDir);
     const { gateway } = await startScheduler(tmpDir);
-    expect(gateway).toBeUndefined();
+    expect(gateway).toBeDefined();
   });
 
   it("creates cron job and webhook binding for hybrid agent", async () => {

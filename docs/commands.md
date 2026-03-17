@@ -161,7 +161,7 @@ al start -p .
 al start -p ./my-project
 al start -c                   # Run on cloud
 al start -w                   # Enable web dashboard
-al start -e -g                # VPS deployment: expose gateway publicly
+al start -e                   # VPS deployment: expose gateway publicly
 ```
 
 | Option | Description |
@@ -170,7 +170,6 @@ al start -e -g                # VPS deployment: expose gateway publicly
 | `-c, --cloud` | Run on cloud infrastructure |
 | `-w, --web-ui` | Enable web dashboard (see [Web Dashboard](web-dashboard.md)) |
 | `-e, --expose` | Bind gateway to `0.0.0.0` (public) while keeping local-mode features |
-| `-g, --gateway` | Enable HTTP gateway server (required for webhooks and `--expose`) |
 | `-H, --headless` | Non-interactive mode (no TUI, no credential prompts) |
 
 ## `al stat`

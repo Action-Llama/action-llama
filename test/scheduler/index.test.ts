@@ -85,6 +85,35 @@ vi.mock("croner", () => ({
   },
 }));
 
+// Mock gateway
+vi.mock("../../src/gateway/index.js", () => ({
+  startGateway: vi.fn().mockResolvedValue({
+    server: {},
+    registerContainer: vi.fn(),
+    unregisterContainer: vi.fn(),
+    lockStore: { releaseAll: vi.fn(), dispose: vi.fn() },
+    callStore: { failAllByCaller: vi.fn(), dispose: vi.fn() },
+    setCallDispatcher: vi.fn(),
+    close: vi.fn().mockResolvedValue(undefined),
+  }),
+}));
+
+// Mock gateway API key
+vi.mock("../../src/gateway/api-key.js", () => ({
+  ensureGatewayApiKey: vi.fn().mockResolvedValue({ key: "test-api-key", generated: false }),
+}));
+
+// Mock state store
+vi.mock("../../src/shared/state-store.js", () => ({
+  createStateStore: vi.fn().mockResolvedValue({
+    get: vi.fn(),
+    set: vi.fn(),
+    delete: vi.fn(),
+    list: vi.fn().mockResolvedValue([]),
+    close: vi.fn().mockResolvedValue(undefined),
+  }),
+}));
+
 // Mock logger
 const mockLoggerInfo = vi.fn();
 const mockLoggerWarn = vi.fn();

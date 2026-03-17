@@ -152,7 +152,6 @@ Compare to managed cloud solutions that may cost $50+ per month for similar agen
 
 - Check firewall settings
 - Verify `--expose` flag is used
-- Ensure `-g` (gateway) flag is enabled
 
 ### Docker issues
 

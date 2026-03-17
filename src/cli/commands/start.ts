@@ -5,7 +5,7 @@ import { startScheduler } from "../../scheduler/index.js";
 import { StatusTracker } from "../../tui/status-tracker.js";
 import { execute as runDoctor } from "./doctor.js";
 
-export async function execute(opts: { project: string; cloud?: boolean; headless?: boolean; gateway?: boolean; webUi?: boolean; expose?: boolean }): Promise<void> {
+export async function execute(opts: { project: string; cloud?: boolean; headless?: boolean; webUi?: boolean; expose?: boolean }): Promise<void> {
   const projectPath = resolve(opts.project);
 
   // Guard: refuse to run if the project path looks like an agent directory
@@ -14,16 +14,6 @@ export async function execute(opts: { project: string; cloud?: boolean; headless
       `"${projectPath}" looks like an agent directory, not a project directory. ` +
       `Run 'al start' from the project root (the parent directory).`
     );
-  }
-
-  // Auto-enable gateway when web UI is requested
-  if (opts.webUi && !opts.gateway) {
-    opts.gateway = true;
-  }
-
-  // Warn if --expose is used without a gateway API key configured
-  if (opts.expose && !opts.gateway) {
-    console.warn("Warning: --expose flag used but gateway is not enabled. Use -g/--gateway to enable the gateway server for external access.");
   }
 
   // Ensure all credentials are present before starting
@@ -79,10 +69,10 @@ export async function execute(opts: { project: string; cloud?: boolean; headless
   }
 
   const { cronJobs, runnerPools, gateway, webhookRegistry, webhookUrls } = await startScheduler(
-    projectPath, globalConfig, statusTracker, opts.cloud, opts.gateway, opts.webUi, opts.expose
+    projectPath, globalConfig, statusTracker, opts.cloud, opts.webUi, opts.expose
   );
 
-  const gatewayPort = gateway ? (globalConfig.gateway?.port || 8080) : null;
+  const gatewayPort = globalConfig.gateway?.port || 8080;
 
   // Update scheduler info now that startup is complete
   statusTracker.setSchedulerInfo({

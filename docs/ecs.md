@@ -741,7 +741,7 @@ These provide the scheduler with the same permissions as running `al` locally. U
 **Start command:**
 
 ```
-al start -c --headless --gateway
+al start -c --headless
 ```
 
 **What needs to be in the deploy:**
