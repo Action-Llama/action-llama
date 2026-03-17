@@ -27,6 +27,7 @@ Credentials are stored in `~/.action-llama/credentials/<type>/<instance>/<field>
 | `linear_webhook_secret` | `secret` | Shared secret for Linear webhook verification | _(used by gateway)_ |
 | `x_twitter_api` | `api_key`, `api_secret`, `bearer_token`, `access_token`, `access_token_secret` | X (Twitter) API credentials for platform access | `X_API_KEY`, `X_API_SECRET`, `X_BEARER_TOKEN`, `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET` env vars |
 | `aws` | `access_key_id`, `secret_access_key`, `default_region` | AWS credentials for managing AWS resources | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION` env vars |
+| `vultr_api_key` | `api_key` | Vultr API key for VPS provisioning (not needed at agent runtime) | `VULTR_API_KEY` env var |
 
 ## How Credentials Work
 
@@ -158,3 +159,9 @@ Secret naming: `{prefix}--{type}--{instance}--{field}` (dashes, since GSM disall
 Secret naming: `{prefix}/{type}/{instance}/{field}` (slashes).
 
 Requires `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` env vars or a configured AWS CLI (`aws configure`).
+
+### VPS Filesystem (SSH)
+
+Secret naming: `~/.action-llama/credentials/{type}/{instance}/{field}` on the remote server (same layout as local).
+
+Credentials are transferred via SSH. No external secrets manager needed — same trust model as SSH access.

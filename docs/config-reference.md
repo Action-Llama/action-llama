@@ -21,7 +21,7 @@ timeout = 900               # Default max container runtime in seconds (default:
 
 # Cloud provider config (optional — only needed for `al start -c`)
 [cloud]
-provider = "cloud-run"      # "cloud-run" or "ecs"
+provider = "cloud-run"      # "cloud-run", "ecs", or "vps"
 # ... provider-specific fields (see below)
 
 # Gateway HTTP server settings
@@ -80,7 +80,7 @@ Only needed when running agents on cloud infrastructure with `al start -c`. Conf
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `provider` | string | Yes | `"cloud-run"` (GCP) or `"ecs"` (AWS) |
+| `provider` | string | Yes | `"cloud-run"` (GCP), `"ecs"` (AWS), or `"vps"` (SSH + Docker) |
 
 #### Cloud Run fields (`provider = "cloud-run"`)
 
@@ -112,6 +112,19 @@ See [Cloud Run docs](cloud-run.md) for full setup.
 | `lambdaSecurityGroups` | string[] | No | — | Security group IDs for Lambda functions (only needed with `lambdaSubnets`) |
 
 See [ECS docs](ecs.md) for full setup.
+
+#### VPS fields (`provider = "vps"`)
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `host` | string | Yes | — | Server IP address or hostname |
+| `sshUser` | string | No | `"root"` | SSH username |
+| `sshPort` | number | No | `22` | SSH port |
+| `sshKeyPath` | string | No | `"~/.ssh/id_rsa"` | Path to SSH private key |
+| `vultrInstanceId` | string | No | — | Vultr instance ID (set automatically if provisioned via `al setup cloud`) |
+| `vultrRegion` | string | No | — | Vultr region (set automatically if provisioned via `al setup cloud`) |
+
+See [VPS docs](vps-deployment.md) for full setup.
 
 ### `[gateway]` — HTTP Server
 
@@ -210,4 +223,19 @@ subnets = ["subnet-abc123"]
 
 maxReruns = 5
 maxCallDepth = 2
+```
+
+### VPS production
+
+```toml
+[model]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+thinkingLevel = "medium"
+authType = "api_key"
+
+[cloud]
+provider = "vps"
+host = "5.6.7.8"
+sshUser = "root"
 ```

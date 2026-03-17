@@ -11,7 +11,7 @@ import type { ProvisionedResource } from "./provider.js";
 
 export interface ProvisionedState {
   projectPath: string;
-  provider: "ecs" | "cloud-run";
+  provider: "ecs" | "cloud-run" | "vps";
   createdAt: string;
   updatedAt: string;
   resources: ProvisionedResource[];
@@ -51,7 +51,7 @@ export function deleteState(projectPath: string): void {
 
 export function createState(
   projectPath: string,
-  provider: "ecs" | "cloud-run",
+  provider: "ecs" | "cloud-run" | "vps",
   resources: ProvisionedResource[],
 ): ProvisionedState {
   const now = new Date().toISOString();

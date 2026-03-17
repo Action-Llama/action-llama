@@ -62,7 +62,11 @@ For each agent, it:
 
 Requires AWS CLI with IAM admin permissions. See [ECS docs](ecs.md) for full setup.
 
-**Re-run after adding agents:** Whenever you add a new agent to your project, re-run `al doctor -c` to create IAM resources for the new agent. Without this, the new agent won't have access to its credentials at runtime.
+**VPS** (`cloud.provider = "vps"`):
+
+Pushes all local credentials to the VPS filesystem over SSH. No IAM roles — SSH access implies full access. See [VPS docs](vps-deployment.md) for full setup.
+
+**Re-run after adding agents:** Whenever you add a new agent to your project, re-run `al doctor -c` to create IAM resources for the new agent (Cloud Run/ECS) or push credentials (VPS). Without this, the new agent won't have access to its credentials at runtime.
 
 ## `al creds ls`
 
@@ -127,7 +131,7 @@ al setup cloud -p .
 
 ## `al teardown cloud`
 
-Deletes per-agent IAM resources (service accounts for Cloud Run, task roles for ECS) and removes the `[cloud]` section from config.toml.
+Deletes per-agent IAM resources (service accounts for Cloud Run, task roles for ECS), stops containers and cleans up credentials (VPS), and removes the `[cloud]` section from config.toml.
 
 ```bash
 al teardown cloud -p .

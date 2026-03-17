@@ -29,7 +29,7 @@ export interface RuntimeResult {
 }
 
 export interface CloudProvider {
-  readonly providerName: "ecs" | "cloud-run";
+  readonly providerName: "ecs" | "cloud-run" | "vps";
 
   /** Interactive provisioning wizard. Returns config fields to write to config.toml, or null if aborted. */
   provision(): Promise<Record<string, unknown> | null>;
@@ -91,6 +91,11 @@ export async function createCloudProvider(
   if (cloudConfig.provider === "cloud-run") {
     const { GcpCloudProvider } = await import("./gcp/provider.js");
     return new GcpCloudProvider(cloudConfig);
+  }
+
+  if (cloudConfig.provider === "vps") {
+    const { VpsCloudProvider } = await import("./vps/provider.js");
+    return new VpsCloudProvider(cloudConfig);
   }
 
   throw new Error(`Unknown cloud provider: "${(cloudConfig as any).provider}"`);

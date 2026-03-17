@@ -63,7 +63,18 @@ export interface CloudRunCloudConfig {
   schedulerMemory?: string;
 }
 
-export type CloudConfig = EcsCloudConfig | CloudRunCloudConfig;
+export interface VpsCloudConfig {
+  provider: "vps";
+  host: string;
+  sshUser?: string;         // default: "root"
+  sshPort?: number;         // default: 22
+  sshKeyPath?: string;      // default: ~/.ssh/id_rsa
+  // Vultr-specific (present only if AL provisioned the instance)
+  vultrInstanceId?: string;
+  vultrRegion?: string;
+}
+
+export type CloudConfig = EcsCloudConfig | CloudRunCloudConfig | VpsCloudConfig;
 
 export interface GatewayConfig {
   port?: number;
@@ -212,7 +223,19 @@ export function validateCloudConfig(raw: any): CloudConfig {
     return raw as CloudRunCloudConfig;
   }
 
-  throw new ConfigError(`Unknown cloud provider: "${raw.provider}". Supported: ecs, cloud-run`);
+  if (raw.provider === "vps") {
+    const required = ["host"] as const;
+    const missing = required.filter((k) => !raw[k]);
+    if (missing.length > 0) {
+      throw new ConfigError(
+        `VPS cloud config is missing required fields: ${missing.map((k) => `cloud.${k}`).join(", ")}. ` +
+        `Run 'al setup cloud' to configure.`
+      );
+    }
+    return raw as VpsCloudConfig;
+  }
+
+  throw new ConfigError(`Unknown cloud provider: "${raw.provider}". Supported: ecs, cloud-run, vps`);
 }
 
 export function loadAgentConfig(projectPath: string, agentName: string): AgentConfig {

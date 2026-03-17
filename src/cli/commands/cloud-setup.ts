@@ -44,6 +44,7 @@ export async function execute(opts: { project: string }): Promise<void> {
     choices: [
       { name: "GCP Cloud Run Jobs", value: "cloud-run" as const },
       { name: "AWS ECS Fargate", value: "ecs" as const },
+      { name: "VPS (Vultr, etc.)", value: "vps" as const },
     ],
   });
 

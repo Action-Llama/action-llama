@@ -123,7 +123,8 @@ src/
   scheduler/        # Scheduler: agent discovery, cron + webhooks
   agents/           # Agent runners (host + Docker), prompt builder
   gateway/          # HTTP server: router, health, shutdown, webhook routes
-  docker/           # Container lifecycle, image + network
+  docker/           # Container lifecycle, image + network, runtimes (local, SSH, cloud)
+  cloud/            # Cloud providers (aws/, gcp/, vps/) — provisioning, teardown, IAM
   webhooks/         # Webhook registry, provider interface
   tui/              # Ink-based terminal UI
   shared/           # Config, credentials, environment, logger, paths, git helpers

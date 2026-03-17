@@ -2,7 +2,7 @@
 
 Running `al start` on your laptop works for development, but for production you want agents running 24/7 on managed infrastructure — no laptop required, automatic restarts, and IAM-enforced secret isolation so a compromised agent can only access its own credentials.
 
-Action Llama supports two cloud providers. Both use the same project structure and agent configs — the only difference is the `[cloud]` section in `config.toml`.
+Action Llama supports three cloud providers. All use the same project structure and agent configs — the only difference is the `[cloud]` section in `config.toml`.
 
 ## Quick start
 
@@ -59,16 +59,39 @@ If you add a new agent later, re-run `al doctor -c` to create its task role and 
 
 See [ECS docs](ecs.md) for prerequisites, full setup walkthrough, and troubleshooting.
 
+### VPS (SSH + Docker)
+
+Agents run on any VPS or server you can SSH into. Images are built directly on the server via `tar | ssh docker build` — no container registry needed. Credentials are stored on the VPS filesystem over SSH.
+
+```toml
+[cloud]
+provider = "vps"
+host = "your-vps-ip"
+```
+
+```bash
+al doctor -c    # Push creds to VPS via SSH
+al start -c     # Start on VPS
+```
+
+Setup supports two paths:
+- **Connect to an existing server** — any provider, any server with Docker installed
+- **Provision a new Vultr VPS** — automated instance creation with cloud-init Docker install
+
+See [VPS docs](vps-deployment.md) for full setup.
+
 ## Provider comparison
 
-| | GCP Cloud Run | AWS ECS (Fargate + Lambda) |
-|---|---|---|
-| Image builds | Cloud Build (no local Docker) | CodeBuild (no local Docker) |
-| Credential store | Google Secret Manager | AWS Secrets Manager |
-| Credential delivery | File mount (native) | Env var injection |
-| Secret isolation | Per-agent service accounts | Per-agent IAM task/Lambda roles |
-| Setup command | `al doctor -c` | `al doctor -c` |
-| Log latency | ~5-15s (Cloud Logging) | ~5-10s (CloudWatch) |
-| Cold start | ~10-30s | ~1-2s (Lambda, timeout<=900s) / ~30-60s (Fargate) |
+| | GCP Cloud Run | AWS ECS (Fargate + Lambda) | VPS (SSH + Docker) |
+|---|---|---|---|
+| Image builds | Cloud Build (no local Docker) | CodeBuild (no local Docker) | `tar \| ssh docker build` (on VPS) |
+| Credential store | Google Secret Manager | AWS Secrets Manager | Filesystem on VPS (over SSH) |
+| Credential delivery | File mount (native) | Env var injection | Volume mount |
+| Secret isolation | Per-agent service accounts | Per-agent IAM task/Lambda roles | SSH access = full access |
+| Setup command | `al doctor -c` | `al doctor -c` | `al doctor -c` |
+| Log latency | ~5-15s (Cloud Logging) | ~5-10s (CloudWatch) | Real-time (SSH) |
+| Cold start | ~10-30s | ~1-2s (Lambda, timeout<=900s) / ~30-60s (Fargate) | ~1-2s |
+| Cost | Pay-per-run | Pay-per-run | Fixed monthly ($5-24/mo) |
+| IAM reconciliation | Per-agent service accounts | Per-agent IAM roles | No-op |
 
 On AWS, agents with `timeout <= 900` automatically route to Lambda for faster cold starts. Agents with longer timeouts use ECS Fargate. See [ECS docs](ecs.md#per-agent-timeout-and-lambda-routing) for details.

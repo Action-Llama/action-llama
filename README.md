@@ -90,16 +90,16 @@ For production, run agents on managed cloud infrastructure — automatic restart
 
 Action Llama supports:
 
-- **Amazon Web Services**
-- **Google Cloud Platform**
-- more by request
+- **VPS** (Vultr, DigitalOcean, Hetzner, etc.) — SSH + Docker, no registry needed
+- **Amazon Web Services** — ECS Fargate + Lambda
+- **Google Cloud Platform** — Cloud Run Jobs
 
 ```bash
 al setup cloud    # Interactive wizard: pick provider, configure, push creds, provision IAM
 al start -c      # Start on cloud
 ```
 
-See the [cloud docs](docs/cloud.md) for setup, provider comparison, and links to the [GCP](docs/cloud-run.md) and [AWS](docs/ecs.md) guides.
+See the [cloud docs](docs/cloud.md) for setup, provider comparison, and links to the [VPS](docs/vps-deployment.md), [GCP](docs/cloud-run.md), and [AWS](docs/ecs.md) guides.
 
 ## CLI commands
 
@@ -152,6 +152,7 @@ See also the [credentials](docs/credentials.md), [webhooks](docs/webhooks.md), a
 | [Webhooks](docs/webhooks.md) | Webhook setup, filter fields, Sentry integration |
 | [Docker](docs/docker.md) | Container isolation, custom Dockerfiles, filesystem layout |
 | [Cloud](docs/cloud.md) | Cloud overview, provider comparison, quick start |
+| [VPS Deployment](docs/vps-deployment.md) | Running agents on any VPS via SSH + Docker |
 | [Cloud Run](docs/cloud-run.md) | Running agents on GCP Cloud Run Jobs |
 | [ECS Fargate](docs/ecs.md) | Running agents on AWS ECS Fargate |
 | [Example: Dev Agent](docs/examples/dev-agent.md) | Developer agent that implements GitHub issues |
