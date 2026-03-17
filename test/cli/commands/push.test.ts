@@ -1,0 +1,146 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { captureLog } from "../../helpers.js";
+
+// --- Mocks ---
+
+const mockDiscoverAgents = vi.fn();
+const mockLoadGlobalConfig = vi.fn();
+vi.mock("../../../src/shared/config.js", () => ({
+  discoverAgents: (...args: any[]) => mockDiscoverAgents(...args),
+  loadAgentConfig: vi.fn().mockReturnValue({ name: "dev", credentials: [] }),
+  loadGlobalConfig: (...args: any[]) => mockLoadGlobalConfig(...args),
+}));
+
+const mockResolveEnvironmentName = vi.fn();
+const mockLoadEnvironmentConfig = vi.fn();
+vi.mock("../../../src/shared/environment.js", () => ({
+  resolveEnvironmentName: (...args: any[]) => mockResolveEnvironmentName(...args),
+  loadEnvironmentConfig: (...args: any[]) => mockLoadEnvironmentConfig(...args),
+}));
+
+vi.mock("../../../src/shared/server.js", () => ({
+  validateServerConfig: (raw: any) => raw,
+}));
+
+const mockCollectCredentialRefs = vi.fn();
+vi.mock("../../../src/shared/credential-refs.js", () => ({
+  collectCredentialRefs: (...args: any[]) => mockCollectCredentialRefs(...args),
+}));
+
+const mockCredentialExists = vi.fn();
+vi.mock("../../../src/shared/credentials.js", () => ({
+  parseCredentialRef: (ref: string) => {
+    const sep = ref.indexOf(":");
+    if (sep === -1) return { type: ref, instance: "default" };
+    return { type: ref.slice(0, sep).trim(), instance: ref.slice(sep + 1).trim() };
+  },
+  credentialExists: (...args: any[]) => mockCredentialExists(...args),
+}));
+
+const mockResolveCredential = vi.fn();
+vi.mock("../../../src/credentials/registry.js", () => ({
+  resolveCredential: (...args: any[]) => mockResolveCredential(...args),
+}));
+
+const mockPushToServer = vi.fn();
+vi.mock("../../../src/remote/push.js", () => ({
+  pushToServer: (...args: any[]) => mockPushToServer(...args),
+}));
+
+import { execute } from "../../../src/cli/commands/push.js";
+
+describe("push command", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadGlobalConfig.mockReturnValue({});
+    mockCollectCredentialRefs.mockReturnValue(new Set());
+    mockCredentialExists.mockResolvedValue(true);
+    mockPushToServer.mockResolvedValue(undefined);
+  });
+
+  it("throws when no environment is specified", async () => {
+    mockResolveEnvironmentName.mockReturnValue(undefined);
+
+    await expect(
+      captureLog(() => execute({ project: "." }))
+    ).rejects.toThrow("No environment specified");
+  });
+
+  it("throws when environment has no [server] section", async () => {
+    mockResolveEnvironmentName.mockReturnValue("my-cloud");
+    mockLoadEnvironmentConfig.mockReturnValue({ cloud: { provider: "ecs" } });
+
+    await expect(
+      captureLog(() => execute({ project: ".", env: "my-cloud" }))
+    ).rejects.toThrow("no [server] section");
+  });
+
+  it("throws when environment has both [server] and [cloud]", async () => {
+    mockResolveEnvironmentName.mockReturnValue("mixed");
+    mockLoadEnvironmentConfig.mockReturnValue({
+      server: { host: "h" },
+      cloud: { provider: "ecs" },
+    });
+
+    await expect(
+      captureLog(() => execute({ project: ".", env: "mixed" }))
+    ).rejects.toThrow("mutually exclusive");
+  });
+
+  it("throws when no agents found", async () => {
+    mockResolveEnvironmentName.mockReturnValue("srv");
+    mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
+    mockDiscoverAgents.mockReturnValue([]);
+
+    await expect(
+      captureLog(() => execute({ project: ".", env: "srv" }))
+    ).rejects.toThrow("No agents found");
+  });
+
+  it("throws when credentials are missing locally", async () => {
+    mockResolveEnvironmentName.mockReturnValue("srv");
+    mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
+    mockCollectCredentialRefs.mockReturnValue(new Set(["github_token"]));
+    mockCredentialExists.mockResolvedValue(false);
+    mockResolveCredential.mockReturnValue({ label: "GitHub Token" });
+
+    await expect(
+      captureLog(() => execute({ project: ".", env: "srv" }))
+    ).rejects.toThrow("credential(s) missing locally");
+  });
+
+  it("delegates to pushToServer on valid config", async () => {
+    mockResolveEnvironmentName.mockReturnValue("srv");
+    mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
+
+    await captureLog(() => execute({ project: ".", env: "srv" }));
+
+    expect(mockPushToServer).toHaveBeenCalledOnce();
+    expect(mockPushToServer.mock.calls[0][0]).toMatchObject({
+      serverConfig: { host: "h" },
+      envName: "srv",
+    });
+  });
+
+  it("skips credential check with --no-creds", async () => {
+    mockResolveEnvironmentName.mockReturnValue("srv");
+    mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
+    mockCollectCredentialRefs.mockReturnValue(new Set(["github_token"]));
+    mockCredentialExists.mockResolvedValue(false);
+
+    await captureLog(() => execute({ project: ".", env: "srv", noCreds: true }));
+
+    expect(mockPushToServer).toHaveBeenCalledOnce();
+    expect(mockCredentialExists).not.toHaveBeenCalled();
+  });
+
+  it("passes dry-run option through", async () => {
+    mockResolveEnvironmentName.mockReturnValue("srv");
+    mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
+
+    await captureLog(() => execute({ project: ".", env: "srv", dryRun: true }));
+
+    expect(mockPushToServer.mock.calls[0][0].dryRun).toBe(true);
+  });
+});

@@ -11,7 +11,16 @@ export function ensureNetwork(): void {
   try {
     docker("network", "inspect", NETWORK_NAME);
   } catch {
-    docker("network", "create", NETWORK_NAME);
+    try {
+      docker("network", "create", NETWORK_NAME);
+    } catch (err: any) {
+      // Another process may have created the network between inspect and create
+      const msg = err?.stderr?.toString?.() ?? err?.message ?? "";
+      if (msg.includes("already exists")) {
+        return;
+      }
+      throw err;
+    }
   }
 }
 

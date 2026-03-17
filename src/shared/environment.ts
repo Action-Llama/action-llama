@@ -4,9 +4,11 @@ import { parse as parseTOML, stringify as stringifyTOML } from "smol-toml";
 import { ENVIRONMENTS_DIR } from "./paths.js";
 import { ConfigError } from "./errors.js";
 import type { CloudConfig } from "./config.js";
+import type { ServerConfig } from "./server.js";
 
 export interface EnvironmentConfig {
   cloud?: CloudConfig;
+  server?: ServerConfig;
   gateway?: { url?: string; port?: number; lockTimeout?: number };
   telemetry?: { enabled?: boolean; provider?: string; endpoint?: string; serviceName?: string; headers?: Record<string, string>; samplingRate?: number };
 }
@@ -40,7 +42,16 @@ export function loadEnvironmentConfig(name: string): EnvironmentConfig {
     );
   }
   const raw = readFileSync(envPath, "utf-8");
-  return parseTOML(raw) as unknown as EnvironmentConfig;
+  const config = parseTOML(raw) as unknown as EnvironmentConfig;
+
+  if (config.cloud && config.server) {
+    throw new ConfigError(
+      `Environment "${name}" has both [cloud] and [server] sections. ` +
+      `These are mutually exclusive — use one or the other.`
+    );
+  }
+
+  return config;
 }
 
 /**

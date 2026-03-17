@@ -62,8 +62,20 @@ export function makeTmpProject(opts?: TmpProjectOptions): string {
   const dir = mkdtempSync(join(tmpdir(), "al-cmd-"));
 
   const globalConfig = makeGlobalConfig(opts?.global);
-  if (Object.keys(globalConfig).length > 0) {
-    writeFileSync(resolve(dir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
+
+  // [cloud] and [server] belong in environment files, not config.toml.
+  // For test convenience, write them to .env.toml (Layer 2 overrides) which
+  // bypasses the config.toml restriction while achieving the same merged result.
+  const { cloud, server, ...projectConfig } = globalConfig as Record<string, unknown>;
+  if (Object.keys(projectConfig).length > 0) {
+    writeFileSync(resolve(dir, "config.toml"), stringifyTOML(projectConfig));
+  }
+
+  const envOverrides: Record<string, unknown> = {};
+  if (cloud) envOverrides.cloud = cloud;
+  if (server) envOverrides.server = server;
+  if (Object.keys(envOverrides).length > 0) {
+    writeFileSync(resolve(dir, ".env.toml"), stringifyTOML(envOverrides));
   }
 
   const agents = opts?.agents
