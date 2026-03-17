@@ -49,12 +49,40 @@ An agent must have at least one of `schedule` or `webhooks` (or both).
 | Field | Type | Description |
 |-------|------|-------------|
 | `repos` | string[] | Only trigger for these repos |
+| `orgs` | string[] | Only trigger for these GitHub organizations |
+| `org` | string | Only trigger for this GitHub organization (convenience shorthand for `orgs`) |
 | `events` | string[] | GitHub event types (issues, pull_request, push, etc.) |
 | `actions` | string[] | Event actions (opened, labeled, closed, etc.) |
 | `labels` | string[] | Only when issue/PR has these labels |
 | `assignee` | string | Only when assigned to this user |
 | `author` | string | Only for this author |
 | `branches` | string[] | Only for these branches |
+
+### Example Configuration
+
+Filter by organization(s):
+
+```toml
+# Multiple organizations using orgs
+[[webhooks]]
+source = "my-github"
+orgs = ["acme", "example-org"]
+events = ["issues"]
+
+# Single organization using org (convenience shorthand)
+[[webhooks]]
+source = "my-github"
+org = "acme"
+events = ["pull_request"]
+
+# Combine with other filters
+[[webhooks]]
+source = "my-github"
+org = "acme"
+repos = ["acme/frontend", "acme/api"]
+events = ["issues", "pull_request"]
+actions = ["opened", "labeled"]
+```
 
 ### Setup
 
