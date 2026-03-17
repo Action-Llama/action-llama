@@ -13,7 +13,7 @@ export { writeCredentialField, writeCredentialFields };
  * This module lives at src/setup/scaffold.ts (or dist/setup/scaffold.js),
  * so the package root is two directories up.
  */
-function resolvePackageRoot(): string {
+export function resolvePackageRoot(): string {
   const thisFile = fileURLToPath(import.meta.url);
   return resolve(thisFile, "..", "..", "..");
 }

@@ -247,6 +247,39 @@ credsCmd
     await rm(ref);
   }));
 
+credsCmd
+  .command("types")
+  .description("Browse available credential types")
+  .action(withCommand(async () => {
+    const { types } = await import("./commands/creds.js");
+    await types();
+  }));
+
+// --- Agent management ---
+
+const agentCmd = program
+  .command("agent")
+  .description("Agent management");
+
+agentCmd
+  .command("new")
+  .description("Create a new agent from a template")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(withCommand(async (opts) => {
+    const { newAgent } = await import("./commands/agent.js");
+    await newAgent(opts);
+  }));
+
+agentCmd
+  .command("config")
+  .description("Interactively configure an agent")
+  .argument("<name>", "agent name")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(withCommand(async (name: string, opts) => {
+    const { configAgent } = await import("./commands/agent.js");
+    await configAgent(name, opts);
+  }));
+
 // --- Setup management ---
 
 const setupCmd = program

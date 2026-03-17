@@ -32,15 +32,23 @@ vi.mock("../../../src/credentials/registry.js", () => ({
     return defs[id];
   },
   getBuiltinCredential: (id: string) => {
-    const labels: Record<string, any> = {
-      github_token: { label: "GitHub Token" },
-      anthropic_key: { label: "Anthropic API Key" },
-      github_webhook_secret: { label: "GitHub Webhook Secret" },
-      git_ssh: { label: "Git SSH Key" },
+    const defs: Record<string, any> = {
+      github_token: { id: "github_token", label: "GitHub Token", description: "PAT for repo access", fields: [{ name: "token", label: "Token", description: "PAT", secret: true }] },
+      anthropic_key: { id: "anthropic_key", label: "Anthropic API Key", description: "API key for Anthropic", fields: [{ name: "token", label: "API Key", description: "Key", secret: true }] },
+      github_webhook_secret: { id: "github_webhook_secret", label: "GitHub Webhook Secret", description: "HMAC secret", fields: [{ name: "secret", label: "Secret", description: "HMAC", secret: true }] },
+      git_ssh: { id: "git_ssh", label: "Git SSH Key", description: "SSH key for git", fields: [{ name: "id_rsa", label: "Private Key", description: "SSH key", secret: true }] },
     };
-    return labels[id];
+    return defs[id];
   },
   listBuiltinCredentialIds: () => ["github_token", "anthropic_key", "github_webhook_secret", "git_ssh"],
+}));
+
+// Mock inquirer prompts (needed by types())
+const mockSearch = vi.fn();
+const mockConfirm = vi.fn();
+vi.mock("@inquirer/prompts", () => ({
+  search: (...args: any[]) => mockSearch(...args),
+  confirm: (...args: any[]) => mockConfirm(...args),
 }));
 
 // Mock the prompter
@@ -49,7 +57,7 @@ vi.mock("../../../src/credentials/prompter.js", () => ({
   promptCredential: (...args: any[]) => mockPromptCredential(...args),
 }));
 
-import { list, add, rm } from "../../../src/cli/commands/creds.js";
+import { list, add, rm, types } from "../../../src/cli/commands/creds.js";
 
 describe("creds ls", () => {
   let consoleSpy: ReturnType<typeof vi.spyOn>;
@@ -252,5 +260,48 @@ describe("creds rm", () => {
 
   it("exits with error when credential does not exist", async () => {
     await expect(rm("github_token:nonexistent")).rejects.toThrow("not found");
+  });
+});
+
+describe("creds types", () => {
+  let consoleSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    consoleSpy.mockRestore();
+  });
+
+  it("shows credential details after search selection", async () => {
+    mockSearch.mockResolvedValueOnce("github_token");
+    mockConfirm.mockResolvedValueOnce(false);
+
+    await types();
+
+    const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("GitHub Token");
+    expect(output).toContain("github_token");
+    expect(output).toContain("Fields: token");
+  });
+
+  it("calls add when user confirms", async () => {
+    mockSearch.mockResolvedValueOnce("anthropic_key");
+    mockConfirm.mockResolvedValueOnce(true);
+    mockPromptCredential.mockResolvedValueOnce({ values: { token: "sk-test" } });
+
+    tmpDir = mkdtempSync(join(tmpdir(), "al-creds-types-"));
+    (globalThis as any).__AL_TEST_TMPDIR = tmpDir;
+    setDefaultBackend(new FilesystemBackend(tmpDir));
+
+    await types();
+
+    expect(mockPromptCredential).toHaveBeenCalledOnce();
+    const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("saved");
+
+    rmSync(tmpDir, { recursive: true, force: true });
   });
 });
