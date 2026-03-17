@@ -17,6 +17,9 @@ export const VPS_CONSTANTS = {
   MIN_VCPUS: 2,
   MIN_RAM_MB: 2048,
 
+  /** Default gateway port */
+  DEFAULT_GATEWAY_PORT: 3000,
+
   /** Scheduler container name on VPS */
   SCHEDULER_CONTAINER: "al-scheduler",
 

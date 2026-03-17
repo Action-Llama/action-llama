@@ -10,6 +10,7 @@ import {
   listEnvironments,
   environmentExists,
   writeEnvironmentConfig,
+  writeEnvToml,
   environmentPath,
   deepMerge,
 } from "../../src/shared/environment.js";
@@ -189,5 +190,46 @@ describe("writeEnvironmentConfig / environmentExists", () => {
 
     const loaded = loadEnvironmentConfig(testEnvName);
     expect(loaded.server?.host).toBe("deploy.example.com");
+  });
+});
+
+describe("writeEnvToml", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("creates .env.toml when it does not exist", () => {
+    writeEnvToml(tmpDir, { environment: "prod" });
+    const result = loadEnvToml(tmpDir);
+    expect(result?.environment).toBe("prod");
+  });
+
+  it("preserves existing fields when updating", () => {
+    writeFileSync(resolve(tmpDir, ".env.toml"), 'projectName = "my-app"\n');
+    writeEnvToml(tmpDir, { environment: "staging" });
+    const result = loadEnvToml(tmpDir);
+    expect(result?.environment).toBe("staging");
+    expect(result?.projectName).toBe("my-app");
+  });
+
+  it("deletes keys when value is undefined", () => {
+    writeFileSync(resolve(tmpDir, ".env.toml"), 'environment = "prod"\nprojectName = "my-app"\n');
+    writeEnvToml(tmpDir, { environment: undefined });
+    const result = loadEnvToml(tmpDir);
+    expect(result?.environment).toBeUndefined();
+    expect(result?.projectName).toBe("my-app");
+  });
+
+  it("overwrites existing values", () => {
+    writeFileSync(resolve(tmpDir, ".env.toml"), 'environment = "old"\n');
+    writeEnvToml(tmpDir, { environment: "new" });
+    const result = loadEnvToml(tmpDir);
+    expect(result?.environment).toBe("new");
   });
 });

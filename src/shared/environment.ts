@@ -18,6 +18,26 @@ export interface EnvToml {
 }
 
 /**
+ * Write or update .env.toml in the project directory.
+ * Merges updates into the existing file; deletes keys where value is undefined.
+ */
+export function writeEnvToml(projectPath: string, updates: Partial<EnvToml>): void {
+  const envPath = resolve(projectPath, ".env.toml");
+  let existing: Record<string, unknown> = {};
+  if (existsSync(envPath)) {
+    existing = parseTOML(readFileSync(envPath, "utf-8")) as Record<string, unknown>;
+  }
+  for (const [key, value] of Object.entries(updates)) {
+    if (value === undefined) {
+      delete existing[key];
+    } else {
+      existing[key] = value;
+    }
+  }
+  writeFileSync(envPath, stringifyTOML(existing) + "\n");
+}
+
+/**
  * Load .env.toml from the project directory.
  * Returns undefined if the file does not exist.
  */

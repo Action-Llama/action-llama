@@ -7,6 +7,9 @@ export interface ServerConfig {
   keyPath?: string;      // default: ssh-agent
   basePath?: string;     // default: "/opt/action-llama"
   gatewayPort?: number;  // default: 3000
+  provider?: string;        // "vultr" when AL-provisioned
+  vultrInstanceId?: string;
+  vultrRegion?: string;
 }
 
 export function validateServerConfig(raw: unknown): ServerConfig {
