@@ -1,39 +1,67 @@
 import { resolve, join } from "path";
-import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSync, rmSync } from "fs";
+import { readFileSync, existsSync, mkdirSync, writeFileSync, rmSync } from "fs";
 import { tmpdir, homedir } from "os";
+import { fileURLToPath } from "url";
 import { loadCredentialField, loadCredentialFields, parseCredentialRef } from "../../shared/credentials.js";
 import { discoverAgents, loadAgentConfig, loadGlobalConfig } from "../../shared/config.js";
-import { CREDENTIALS_DIR } from "../../shared/paths.js";
 import { builtinCredentials } from "../../credentials/builtins/index.js";
+
+function resolvePackageRoot(): string {
+  const thisFile = fileURLToPath(import.meta.url);
+  return resolve(thisFile, "..", "..", "..", "..");
+}
+
+function loadExampleTemplate(agentType: string): { actions: string; config: string } | undefined {
+  const dir = resolve(resolvePackageRoot(), "docs", "examples", agentType);
+  const actionsPath = resolve(dir, "ACTIONS.md");
+  const configPath = resolve(dir, "agent-config.toml");
+  if (!existsSync(actionsPath) || !existsSync(configPath)) return undefined;
+  return {
+    actions: readFileSync(actionsPath, "utf-8"),
+    config: readFileSync(configPath, "utf-8"),
+  };
+}
 
 const AL_KEYBINDINGS = {
   newLine: ["shift+enter", "alt+enter"],
   followUp: [],
 };
 
-const NO_AGENTS_CONTEXT = `
+function buildNoAgentsContext(): string {
+  const templates = ["dev", "reviewer", "devops"];
+  const templateSections: string[] = [];
+
+  for (const name of templates) {
+    const tpl = loadExampleTemplate(name);
+    if (!tpl) continue;
+    templateSections.push(
+      `### Template: ${name}\n\n` +
+      `#### agent-config.toml\n\n\`\`\`toml\n${tpl.config.trim()}\n\`\`\`\n\n` +
+      `#### ACTIONS.md\n\n\`\`\`markdown\n${tpl.actions.trim()}\n\`\`\``
+    );
+  }
+
+  return `
 ## Console Mode — No Agents Yet
 
 This project has no agents yet. The user has just opened the console to create their first agent.
 
-Built-in agent templates:
+### Available templates
 
-1. **dev** — Developer agent that picks up GitHub issues labeled with a trigger label, implements the changes, and opens PRs. Needs: github_token, git_ssh. Config fields: repos, triggerLabel, assignee. Uses: \`gh\`, \`git\`, \`curl\`.
-2. **reviewer** — PR reviewer agent that reviews open pull requests, approves good ones, and requests changes on problematic ones. Needs: github_token, git_ssh. Config fields: repos. Uses: \`gh\`, \`git\`, \`curl\`.
-3. **devops** — DevOps monitoring agent that detects CI failures and Sentry errors, then files GitHub issues. Needs: github_token, git_ssh, sentry_token. Config fields: repos, sentryOrg, sentryProjects. Uses: \`git\`, \`curl\`.
-4. **custom** — Start from scratch with a blank ACTIONS.md.
+1. **dev** — Picks up GitHub issues labeled with a trigger label, implements the changes, and opens PRs
+2. **reviewer** — Reviews open pull requests, approves good ones, and requests changes on problematic ones
+3. **devops** — Monitors CI/CD failures and Sentry errors, then files deduplicated GitHub issues
+4. **custom** — Start from scratch with a blank ACTIONS.md
 
-### Docker base image
+### Creating an agent
 
-When Docker mode is enabled, agents run in an isolated container. The base image (\`al-agent\`) is **Alpine-based** (\`node:20-alpine\`) and includes: **Node.js, git, curl, jq, openssh-client, ca-certificates**. Nothing else — no \`gh\`, no \`python3\`, no language runtimes beyond Node.
+When the user picks a template:
 
-### When to create a custom Dockerfile
-
-After writing the agent's ACTIONS.md, analyze it to determine what CLI tools, language runtimes, or system packages the agent will need at runtime. If ANY tool is required that is not in the base image (node, git, curl, jq, openssh-client), you MUST create a \`Dockerfile\` in the agent directory.
-
-The base image is Alpine Linux, so use \`apk\` (not \`apt-get\`) to install packages.
-
-Example — agent that needs \`gh\` CLI:
+1. **Ask what they need** — which template, which repos, any customization
+2. **Create the agent directory** (\`agents/<name>/\`)
+3. **Copy ACTIONS.md verbatim** from the template below — do NOT abbreviate, simplify, or rewrite the actions. Write the ACTIONS.md file exactly as shown in the template.
+4. **Write agent-config.toml** using the template as a starting point. Customize \`[params]\` based on the user's answers (repos, triggerLabel, assignee, etc.). Do NOT include a \`[model]\` section unless the user specifically asks for a different model — agents inherit the project default from \`config.toml\`.
+5. **Create a Dockerfile if needed** — analyze the ACTIONS.md to determine what CLI tools the agent needs. The base image (\`al-agent\`) is Alpine-based (\`node:20-alpine\`) and includes: Node.js, git, curl, jq, openssh-client, ca-certificates. If the agent needs anything else (e.g. \`gh\` CLI), create a Dockerfile:
 
 \`\`\`dockerfile
 FROM al-agent
@@ -42,36 +70,15 @@ RUN apk add --no-cache github-cli
 USER node
 \`\`\`
 
-Example — agent that needs Python:
+6. **Tell the user to run \`al doctor\`** to set up any missing credentials. Do NOT check for credentials yourself or run any shell commands to verify them.
 
-\`\`\`dockerfile
-FROM al-agent
-USER root
-RUN apk add --no-cache python3 py3-pip
-USER node
-\`\`\`
+### Credentials in agent-config.toml
 
-If the agent needs a fundamentally different base (e.g. a Python-heavy agent that should use \`python:3.12-alpine\` instead of \`node:20-alpine\`), you can use any base image — just make sure to install Node.js and set up the \`node\` user (uid 1000) since the container entry point requires them.
+Reference credentials by type name (e.g. \`"github_token"\`, \`"git_ssh"\`). The instance is resolved automatically at runtime. Do not worry about whether credentials exist yet — \`al doctor\` handles that.
 
-### Model configuration
-
-The project's \`config.toml\` defines a default \`[model]\` that all agents inherit. Do NOT add a \`[model]\` section to an agent's \`agent-config.toml\` unless the user specifically wants that agent to use a different model or thinking level than the project default. Omitting \`[model]\` from the agent config is correct — it will inherit from the project.
-
-### Credentials
-
-The available credentials are listed below under "Available Credentials". Use these when writing the agent's \`credentials\` array in \`agent-config.toml\`. Reference them by type name (e.g. \`"github_token"\`, \`"git_ssh"\`). The instance is automatically derived from the agent name at runtime.
-
-When a credential type has **multiple instances**, ask the user which instance they want to use for this agent. Do not guess.
-
-If a required credential is missing from the available list, tell the user to run \`al doctor\` to set it up, then re-open the console.
-
-When the user asks to create an agent:
-- Ask which template they want and walk them through configuring it
-- Check the available credentials and use what's there; ask the user to choose when there are multiple instances of a credential type
-- Create the agent directory with \`agent-config.toml\`, \`ACTIONS.md\`, and a \`Dockerfile\` if the actions require tools not in the base image
-- Do NOT include \`[model]\` in agent-config.toml unless the user asks for a different model than the project default
-- **IMPORTANT:** Agent actions must be detailed and prescriptive with step-by-step commands. Copy the example agent from the "Example Agent" section above and customize it — do NOT write simplified or abbreviated instructions.
+${templateSections.join("\n\n")}
 `;
+}
 
 const NO_AGENTS_INITIAL_MESSAGE = `Help me create my first agent.`;
 
@@ -372,17 +379,9 @@ async function executeProjectChat(opts: ChatOpts): Promise<void> {
   // Load AGENTS.md context, appending agent summaries or no-agents guidance
   let fullContext = agentsContent || "";
   if (agents.length === 0) {
-    fullContext += NO_AGENTS_CONTEXT;
+    fullContext += buildNoAgentsContext();
   } else if (agentSummaries.length > 0) {
     fullContext += `\n\n## Current Agents\n\n${agentSummaries.join("\n")}`;
-  }
-
-  // Append available credentials
-  const credInventory = collectCredentialInventory();
-  if (credInventory) {
-    fullContext += `\n\n## Available Credentials\n\nThese credentials are configured locally (from \`al creds ls\`):\n\n${credInventory}\n`;
-  } else {
-    fullContext += `\n\n## Available Credentials\n\nNo credentials configured yet. The user should run \`al doctor\` to set them up.\n`;
   }
 
   const resourceLoader = new DefaultResourceLoader({
@@ -481,48 +480,3 @@ function readKeybindings(): Record<string, string | string[]> {
   }
 }
 
-/**
- * Collect a credential inventory: type -> instance[] -> field[]
- * Returns a formatted string like `al creds ls` output, or empty string if none.
- */
-function collectCredentialInventory(): string {
-  let types: string[];
-  try {
-    types = readdirSync(CREDENTIALS_DIR).filter((e) => {
-      try { return statSync(resolve(CREDENTIALS_DIR, e)).isDirectory(); } catch { return false; }
-    }).sort();
-  } catch {
-    return "";
-  }
-
-  const lines: string[] = [];
-  for (const type of types) {
-    const typeDir = resolve(CREDENTIALS_DIR, type);
-    let instances: string[];
-    try {
-      instances = readdirSync(typeDir).filter((e) => {
-        try { return statSync(resolve(typeDir, e)).isDirectory(); } catch { return false; }
-      }).sort();
-    } catch {
-      continue;
-    }
-
-    for (const instance of instances) {
-      const instanceDir = resolve(typeDir, instance);
-      let fields: string[];
-      try {
-        fields = readdirSync(instanceDir).filter((e) => {
-          try { return statSync(resolve(instanceDir, e)).isFile(); } catch { return false; }
-        }).sort();
-      } catch {
-        fields = [];
-      }
-      if (fields.length === 0) continue;
-
-      const ref = instance === "default" ? type : `${type}:${instance}`;
-      lines.push(`  ${ref}  (${fields.join(", ")})`);
-    }
-  }
-
-  return lines.join("\n");
-}
