@@ -1,88 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { writeFileSync, mkdirSync } from "fs";
 import { resolve } from "path";
 import { makeTmpProject, captureLog } from "../../helpers.js";
 
-// Mock child_process for Docker check
-vi.mock("child_process", () => ({
-  execFileSync: vi.fn((_cmd: string, _args: string[]) => ""),
+// Mock gateway-client
+const mockGatewayFetch = vi.fn();
+vi.mock("../../../src/cli/gateway-client.js", () => ({
+  gatewayFetch: (...args: any[]) => mockGatewayFetch(...args),
 }));
 
-// Mock Docker/container related modules
-vi.mock("../../../src/docker/local-runtime.js", () => ({
-  LocalDockerRuntime: class MockLocalDockerRuntime {
-    constructor() {
-      // Mock runtime methods if needed
-    }
-  }
-}));
-
-vi.mock("../../../src/docker/network.js", () => ({
-  ensureNetwork: vi.fn()
-}));
-
-vi.mock("../../../src/docker/image.js", () => ({
-  ensureImage: vi.fn(),
-  ensureAgentImage: vi.fn().mockReturnValue("test-agent-image"),
-  ensureProjectBaseImage: vi.fn().mockImplementation((_projectPath: string, baseImage: string) => baseImage),
-}));
-
-// Mock AgentRunner first
-const mockRun = vi.fn().mockResolvedValue({ result: "completed", triggers: [] });
-
-vi.mock("../../../src/agents/container-runner.js", () => ({
-  ContainerAgentRunner: class MockContainerAgentRunner {
-    run = mockRun;
-    isRunning = false;
-  }
-}));
-
-// Mock doctor to be a no-op
-vi.mock("../../../src/cli/commands/doctor.js", () => ({
-  execute: vi.fn().mockResolvedValue(undefined),
-}));
-
-// Mock credentials to always pass
+// Mock credentials (needed by gateway-client's transitive imports)
 vi.mock("../../../src/shared/credentials.js", async () => {
   const actual = await vi.importActual("../../../src/shared/credentials.js") as any;
   return {
     ...actual,
-    requireCredentialRef: vi.fn(),
-    loadCredentialField: vi.fn().mockReturnValue("mock-value"),
+    loadCredentialField: vi.fn().mockReturnValue("mock-key"),
     parseCredentialRef: actual.parseCredentialRef,
-    backendLoadField: vi.fn().mockResolvedValue("mock-value"),
-    backendLoadFields: vi.fn().mockResolvedValue({}),
-    backendCredentialExists: vi.fn().mockResolvedValue(true),
-    backendListInstances: vi.fn().mockResolvedValue([]),
-    backendRequireCredentialRef: vi.fn().mockResolvedValue(undefined),
-    getDefaultBackend: vi.fn(),
-    setDefaultBackend: vi.fn(),
-    resetDefaultBackend: vi.fn(),
   };
 });
-
-vi.mock("../../../src/agents/runner.js", () => ({
-  AgentRunner: class MockAgentRunner {
-    run = mockRun;
-    isRunning = false;
-  },
-}));
-
-// Mock logger
-vi.mock("../../../src/shared/logger.js", () => ({
-  createLogger: vi.fn().mockReturnValue({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-  createFileOnlyLogger: vi.fn().mockReturnValue({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
 
 import { execute } from "../../../src/cli/commands/run.js";
 
@@ -91,19 +25,71 @@ describe("run", () => {
     vi.clearAllMocks();
   });
 
-  it("runs a named agent in Docker mode", async () => {
+  it("triggers an agent run via the gateway", async () => {
     const dir = makeTmpProject({
       agents: [{ name: "dev", schedule: "*/5 * * * *" }],
+    });
+
+    mockGatewayFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, message: "Agent dev triggered" }),
     });
 
     const output = await captureLog(async () => {
       await execute("dev", { project: dir });
     });
 
-    expect(mockRun).toHaveBeenCalledTimes(1);
-    expect(mockRun).toHaveBeenCalledWith(expect.stringContaining("triggered manually"));
-    expect(output).toContain('Running agent "dev"');
-    expect(output).toContain("run completed");
+    expect(mockGatewayFetch).toHaveBeenCalledWith({
+      project: resolve(dir),
+      path: "/control/trigger/dev",
+      method: "POST",
+      env: undefined,
+    });
+    expect(output).toContain("Agent dev triggered");
+  });
+
+  it("passes env option to gateway fetch", async () => {
+    const dir = makeTmpProject({
+      agents: [{ name: "dev", schedule: "*/5 * * * *" }],
+    });
+
+    mockGatewayFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, message: "Agent dev triggered" }),
+    });
+
+    await execute("dev", { project: dir, env: "staging" });
+
+    expect(mockGatewayFetch).toHaveBeenCalledWith(
+      expect.objectContaining({ env: "staging" }),
+    );
+  });
+
+  it("throws when scheduler is not running", async () => {
+    const dir = makeTmpProject({
+      agents: [{ name: "dev", schedule: "*/5 * * * *" }],
+    });
+
+    mockGatewayFetch.mockRejectedValue(new Error("fetch failed: ECONNREFUSED"));
+
+    await expect(execute("dev", { project: dir })).rejects.toThrow(
+      "Scheduler not running. Start it with 'al start'."
+    );
+  });
+
+  it("throws when gateway returns an error", async () => {
+    const dir = makeTmpProject({
+      agents: [{ name: "dev", schedule: "*/5 * * * *" }],
+    });
+
+    mockGatewayFetch.mockResolvedValue({
+      ok: false,
+      json: async () => ({ error: "Agent dev not found or all runners busy" }),
+    });
+
+    await expect(execute("dev", { project: dir })).rejects.toThrow(
+      "Agent dev not found or all runners busy"
+    );
   });
 
   it("throws if agent does not exist", async () => {
