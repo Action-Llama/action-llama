@@ -4,6 +4,8 @@ import { sshExec } from "./ssh.js";
 export interface BootstrapResult {
   /** Absolute path to the `node` binary on the remote server. */
   nodePath: string;
+  nodeVersion: string;
+  dockerVersion: string;
 }
 
 /**
@@ -22,15 +24,10 @@ export async function bootstrapServer(ssh: SshOptions): Promise<BootstrapResult>
 
   const errors: string[] = [];
 
-  if (nodeResult.status === "fulfilled") {
-    console.log(`  Node.js ${nodeResult.value.version}`);
-  } else {
+  if (nodeResult.status !== "fulfilled") {
     errors.push(nodeResult.reason?.message ?? "Node.js check failed");
   }
-
-  if (dockerResult.status === "fulfilled") {
-    console.log(`  Docker ${dockerResult.value}`);
-  } else {
+  if (dockerResult.status !== "fulfilled") {
     errors.push(dockerResult.reason?.message ?? "Docker check failed");
   }
 
@@ -42,7 +39,9 @@ export async function bootstrapServer(ssh: SshOptions): Promise<BootstrapResult>
   }
 
   return {
-    nodePath: nodeResult.status === "fulfilled" ? nodeResult.value.path : "",
+    nodePath: (nodeResult as PromiseFulfilledResult<{ version: string; path: string }>).value.path,
+    nodeVersion: (nodeResult as PromiseFulfilledResult<{ version: string; path: string }>).value.version,
+    dockerVersion: (dockerResult as PromiseFulfilledResult<string>).value,
   };
 }
 

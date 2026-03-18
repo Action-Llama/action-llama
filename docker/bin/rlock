@@ -1,5 +1,6 @@
 #!/bin/sh
 if [ -z "$GATEWAY_URL" ]; then echo '{"ok":true}'; exit 0; fi
-curl -s -X POST "$GATEWAY_URL/locks/acquire" \
+curl -s --connect-timeout 5 --max-time 10 -X POST "$GATEWAY_URL/locks/acquire" \
   -H 'Content-Type: application/json' \
-  -d '{"secret":"'"$SHUTDOWN_SECRET"'","resourceKey":"'"$1"'"}'
+  -d '{"secret":"'"$SHUTDOWN_SECRET"'","resourceKey":"'"$1"'"}' \
+  || echo '{"ok":false,"reason":"gateway unreachable"}'

@@ -19,6 +19,11 @@ vi.mock("../../src/remote/bootstrap.js", () => ({
   bootstrapServer: (...args: any[]) => mockBootstrapServer(...args),
 }));
 
+// Mock nginx config generator (dynamically imported by setupNginx)
+vi.mock("../../src/cloud/vps/nginx.js", () => ({
+  generateNginxConfig: () => "server { listen 443; }",
+}));
+
 // Mock fs for computePkgHash / unlinkSync
 const mockReadFileSync = vi.fn();
 const mockUnlinkSync = vi.fn();
@@ -41,7 +46,7 @@ describe("buildSystemdUnit", () => {
     expect(unit).toContain("[Install]");
     expect(unit).toContain("Description=Action Llama scheduler (my-project)");
     expect(unit).toContain("WorkingDirectory=/opt/action-llama/project");
-    expect(unit).toContain("node_modules/.bin/al start --headless -w\n");
+    expect(unit).toContain("node_modules/.bin/al start --headless -w -e\n");
     expect(unit).toContain("Requires=docker.service");
   });
 
@@ -52,29 +57,29 @@ describe("buildSystemdUnit", () => {
 
   it("uses project-local al binary and adds node to PATH", () => {
     const unit = buildSystemdUnit("proj", "/opt/al", {
-      nodePath: "/usr/local/bin/node",
+      nodePath: "/usr/local/bin/node", nodeVersion: "v22.22.1", dockerVersion: "29.3.0",
     });
-    expect(unit).toContain("ExecStart=/opt/al/project/node_modules/.bin/al start --headless -w\n");
+    expect(unit).toContain("ExecStart=/opt/al/project/node_modules/.bin/al start --headless -w -e\n");
     expect(unit).toContain("Environment=PATH=/usr/local/bin:");
   });
 
   it("includes nvm node dir in PATH", () => {
     const unit = buildSystemdUnit("proj", "/opt/al", {
-      nodePath: "/home/user/.nvm/versions/node/v22/bin/node",
+      nodePath: "/home/user/.nvm/versions/node/v22/bin/node", nodeVersion: "v22.22.1", dockerVersion: "29.3.0",
     });
-    expect(unit).toContain("ExecStart=/opt/al/project/node_modules/.bin/al start --headless -w\n");
+    expect(unit).toContain("ExecStart=/opt/al/project/node_modules/.bin/al start --headless -w -e\n");
     expect(unit).toContain("/home/user/.nvm/versions/node/v22/bin");
   });
 
   it("uses project-local al path even without binPaths", () => {
     const unit = buildSystemdUnit("proj", "/opt/al");
-    expect(unit).toContain("ExecStart=/opt/al/project/node_modules/.bin/al start --headless -w\n");
+    expect(unit).toContain("ExecStart=/opt/al/project/node_modules/.bin/al start --headless -w -e\n");
     expect(unit).not.toContain("Environment=PATH=");
   });
 
   it("includes --port flag when gatewayPort is provided", () => {
     const unit = buildSystemdUnit("proj", "/opt/al", undefined, 3000);
-    expect(unit).toContain("node_modules/.bin/al start --headless -w --port 3000");
+    expect(unit).toContain("node_modules/.bin/al start --headless -w -e --port 3000");
   });
 
   it("omits --port flag when gatewayPort is not provided", () => {
@@ -133,7 +138,7 @@ describe("pushToServer", () => {
     mockSshOptionsFromConfig.mockReturnValue({ ...sshOpts });
     mockSshExec.mockResolvedValue("");
     mockRsyncTo.mockResolvedValue(undefined);
-    mockBootstrapServer.mockResolvedValue({ nodePath: "/usr/local/bin/node" });
+    mockBootstrapServer.mockResolvedValue({ nodePath: "/usr/local/bin/node", nodeVersion: "v22.22.1", dockerVersion: "29.3.0" });
     mockUnlinkSync.mockReturnValue(undefined);
     // Mock sshSpawn to return a fake journal-tailing process
     mockSshSpawn.mockReturnValue({
@@ -345,6 +350,36 @@ describe("pushToServer", () => {
     );
     expect(envBatch).toBeDefined();
     expect(envBatch).toContain("&&");
+  });
+
+  it("heredoc delimiters appear on their own line", async () => {
+    mockSshExec.mockResolvedValue("ok");
+
+    const origLog = console.log;
+    console.log = () => {};
+    try {
+      await pushToServer({
+        projectPath: "/tmp/project",
+        serverConfig: { host: "h", cloudflareHostname: "test.example.com" },
+        globalConfig: {},
+        envName: "my-server",
+      });
+    } finally {
+      console.log = origLog;
+    }
+
+    const sshCommands = mockSshExec.mock.calls.map((c: any[]) => c[1]);
+    // Every heredoc delimiter (ENVEOF, UNITEOF, NGINXEOF) must be on its own
+    // line — if " && " follows on the same line, the shell won't recognise
+    // it as the end-of-heredoc marker and the command leaks into the file.
+    for (const cmd of sshCommands) {
+      for (const delim of ["ENVEOF", "UNITEOF", "NGINXEOF"]) {
+        for (const line of cmd.split("\n")) {
+          if (line === delim) continue; // correct: delimiter alone
+          expect(line).not.toMatch(new RegExp(`^${delim}\\s*&&`));
+        }
+      }
+    }
   });
 
   it("cleans up ControlMaster socket in finally block", async () => {

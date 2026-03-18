@@ -45,7 +45,7 @@ export async function execute(opts: {
 
   // Run doctor in checkOnly mode to validate full config before pushing
   const { execute: doctorExecute } = await import("./doctor.js");
-  await doctorExecute({ project: projectPath, env: envName, checkOnly: true });
+  await doctorExecute({ project: projectPath, env: envName, checkOnly: true, silent: true });
 
   // Determine what to sync
   const syncCreds = opts.credsOnly || opts.all || (!opts.filesOnly);

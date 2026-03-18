@@ -18,6 +18,7 @@ rlock "github issue acme/app#42"
 - Acquired: `{"ok":true}`
 - Conflict: `{"ok":false,"holder":"<other-agent>","heldSince":...}` — another instance has it. Skip this resource.
 - Already holding another lock: `{"ok":false,"reason":"already holding lock on ..."}` — release your current lock first.
+- Gateway unreachable: `{"ok":false,"reason":"gateway unreachable"}` — the lock service is down. **Do not proceed** — skip the resource.
 
 ### `runlock <resourceKey>`
 
@@ -54,10 +55,10 @@ Use descriptive, unique keys that identify the exact resource:
 - **One lock at a time.** You can hold at most one lock. `runlock` before acquiring a different resource.
 - **Always `rlock` before starting work** on a shared resource (issues, PRs, deployments).
 - **Always `runlock` when done.** Locks are auto-released when your container exits, but explicit unlock is cleaner.
-- **If `rlock` returns `{"ok":false,...}`, skip that resource.** Do not wait or retry — move on to the next item.
+- **If `rlock` returns `{"ok":false,...}` for ANY reason, skip that resource.** Do not wait, retry, or proceed without the lock — move on to the next item.
 - **Use `rlock-heartbeat` during long operations** to keep the lock alive. Each heartbeat resets the TTL.
 - **Locks expire after 30 minutes** by default (configurable via `gateway.lockTimeout` in `config.toml`). If you don't heartbeat and the lock expires, another instance can claim it.
-- These commands are safe to use even without a gateway — they return `{"ok":true}` as a no-op.
+- When `GATEWAY_URL` is not set (single-instance mode), lock commands return `{"ok":true}` as a no-op. When `GATEWAY_URL` is set but the gateway is unreachable, `rlock` returns `{"ok":false,"reason":"gateway unreachable"}` — you must not proceed.
 
 ## Example workflow
 

@@ -40,6 +40,8 @@ export function buildLockSkill(): string {
     "  → Another instance is already working on this. Skip it and move on.",
     '- Already holding another lock: `{"ok":false,"reason":"already holding lock on ..."}`',
     "  → Release your current lock first.",
+    '- Gateway unreachable: `{"ok":false,"reason":"gateway unreachable"}`',
+    "  → The lock service is down. **Do not proceed** — skip the resource.",
     '- Released: `{"ok":true}`',
     '- Heartbeat: `{"ok":true,"expiresAt":...}`',
     "",
@@ -47,11 +49,10 @@ export function buildLockSkill(): string {
     "- You can hold **one lock at a time**. `runlock` before acquiring a different resource.",
     "- Always `rlock` before starting work on a shared resource (issues, PRs, deployments)",
     "- Always `runlock` when done",
-    '- If `rlock` returns `{"ok":false,...}`, skip that resource — do not wait or retry',
+    '- If `rlock` returns `{"ok":false,...}` for ANY reason, skip that resource — do not wait, retry, or proceed without the lock',
     "- Use `rlock-heartbeat` during long operations to keep the lock alive",
     "- Locks expire automatically after 30 minutes if not refreshed",
     '- Use descriptive keys: `"github issue acme/app#42"`, `"deploy api-prod"`',
-    "- These commands are safe to use even without a gateway — they return success as a no-op",
     "</skill-lock>",
   ];
   return lines.join("\n");

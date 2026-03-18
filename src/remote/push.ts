@@ -66,7 +66,7 @@ Requires=docker.service
 [Service]
 Type=simple
 WorkingDirectory=${basePath}/project
-ExecStart=${alExec} start --headless -w${gatewayPort ? ` --port ${gatewayPort}` : ""}
+ExecStart=${alExec} start --headless -w -e${gatewayPort ? ` --port ${gatewayPort}` : ""}
 Restart=on-failure
 RestartSec=5
 Environment=NODE_ENV=production${pathEnv}
@@ -119,12 +119,14 @@ async function pushToServerInner(ssh: SshOptions, opts: InnerOpts): Promise<void
     basePath, gatewayPort, projectName } = opts;
 
   // Step 1: Bootstrap server
-  console.log("\n=== Checking server prerequisites ===\n");
+  console.log("\nChecking server...");
   let binPaths: BootstrapResult | undefined;
   if (dryRun) {
-    console.log("(dry-run) Would check server prerequisites");
+    console.log("  (dry-run) Skipped.");
   } else {
     binPaths = await bootstrapServer(ssh);
+    console.log(`  Node.js ${binPaths.nodeVersion}`);
+    console.log(`  Docker ${binPaths.dockerVersion}`);
   }
 
   // Step 2: Ensure remote directories exist
@@ -132,72 +134,56 @@ async function pushToServerInner(ssh: SshOptions, opts: InnerOpts): Promise<void
     await sshExec(ssh, `mkdir -p ${basePath}/project ${basePath}/credentials`);
   }
 
-  const rsyncFlags = dryRun ? ["--dry-run", "-v"] : [];
+  // Phase A: Rsync files and credentials in parallel
+  const syncItems: string[] = [];
+  if (!noFiles) syncItems.push("files");
+  if (!noCreds) syncItems.push("credentials");
 
-  // Phase A: Rsync project files and credentials in parallel
-  const phaseA: Promise<void>[] = [];
-
-  if (!noFiles) {
-    console.log("\n=== Syncing project files ===\n");
-    const excludes = [
-      "node_modules",
-      ".al",
-      ".git",
-      ".env.toml",
-    ];
-    phaseA.push(
-      rsyncTo(ssh, projectPath, `${basePath}/project`, excludes, rsyncFlags)
-        .then(() => { console.log(dryRun ? "(dry-run) Would sync project files" : "Project files synced."); }),
-    );
+  if (syncItems.length > 0) {
+    console.log(`\nSyncing ${syncItems.join(" and ")}...`);
+    const rsyncFlags = dryRun ? ["--dry-run", "-v"] : [];
+    const phaseA: Promise<void>[] = [];
+    if (!noFiles) {
+      const excludes = ["node_modules", ".al", ".git", ".env.toml"];
+      phaseA.push(rsyncTo(ssh, projectPath, `${basePath}/project`, excludes, rsyncFlags));
+    }
+    if (!noCreds) {
+      phaseA.push(rsyncTo(ssh, CREDENTIALS_DIR, `${basePath}/credentials`, undefined, rsyncFlags));
+    }
+    await Promise.all(phaseA);
+    console.log(dryRun ? "  (dry-run) No changes made." : "  Done.");
   }
-
-  if (!noCreds) {
-    console.log("\n=== Syncing credentials ===\n");
-    phaseA.push(
-      rsyncTo(ssh, CREDENTIALS_DIR, `${basePath}/credentials`, undefined, rsyncFlags)
-        .then(() => { console.log(dryRun ? "(dry-run) Would sync credentials" : "Credentials synced."); }),
-    );
-  }
-
-  await Promise.all(phaseA);
 
   if (dryRun) {
-    console.log("\n=== Dry run complete ===\n");
-    console.log("No changes were made to the server.");
+    console.log("\nDry run complete — no changes were made.");
     return;
   }
 
-  // Phase B: Parallel setup — npm install (if needed), nginx, env.toml, systemd
-  const phaseB: Promise<void>[] = [];
+  // Phase B: Configure server (parallel, results collected for deterministic output)
+  console.log("\nConfiguring server...");
+  const phaseB: Promise<string>[] = [];
 
-  // npm install (conditional on package hash)
   if (!noFiles) {
     phaseB.push(conditionalNpmInstall(ssh, projectPath, basePath, forceInstall));
   }
-
-  // nginx setup (batched into one SSH call)
   if (!noCreds && serverConfig.cloudflareHostname) {
     phaseB.push(setupNginx(ssh, basePath, serverConfig.cloudflareHostname, gatewayPort));
   }
-
-  // .env.toml + credentials symlink (batched into one SSH call)
   phaseB.push(writeEnvAndSymlink(ssh, basePath, gatewayPort, globalConfig));
-
-  // systemd unit install (batched into one SSH call)
   const unitContent = buildSystemdUnit(projectName, basePath, binPaths, gatewayPort);
   phaseB.push(installSystemdUnit(ssh, unitContent));
 
-  await Promise.all(phaseB);
+  const results = await Promise.all(phaseB);
+  for (const msg of results) {
+    console.log(`  ${msg}`);
+  }
 
-  // Phase C: Restart + health check (sequential)
-  console.log("\n=== Restarting service ===\n");
+  // Phase C: Restart + health check
+  console.log("\nRestarting service...");
   await sshExec(ssh, "sudo systemctl restart action-llama");
-  console.log("Service restarted.");
 
-  console.log("\n=== Health check ===\n");
   await healthCheck(ssh, gatewayPort);
 
-  // Print status
   console.log(`\nDeployed to ${serverConfig.host}:`);
   console.log(`  Gateway: http://${serverConfig.host}:${gatewayPort}`);
   console.log(`  Project: ${basePath}/project`);
@@ -207,27 +193,30 @@ async function pushToServerInner(ssh: SshOptions, opts: InnerOpts): Promise<void
 
 async function conditionalNpmInstall(
   ssh: SshOptions, projectPath: string, basePath: string, forceInstall?: boolean,
-): Promise<void> {
+): Promise<string> {
   const localHash = computePkgHash(projectPath);
 
   if (!forceInstall) {
     const remoteHash = (await sshExec(ssh, `cat ${basePath}/.pkg-hash 2>/dev/null || true`)).trim();
     if (remoteHash === localHash) {
-      console.log("\n=== Dependencies unchanged, skipping npm install ===\n");
-      return;
+      return "Dependencies unchanged, skipped npm install.";
     }
   }
 
-  console.log("\n=== Installing dependencies ===\n");
   await sshExec(ssh, `cd ${basePath}/project && npm install`);
+  // When pushing the source package itself (not a consumer project), npm install
+  // won't create a bin symlink for the package's own "bin" entry. Ensure it exists.
+  await sshExec(ssh, [
+    `cd ${basePath}/project`,
+    `test -x node_modules/.bin/al || (mkdir -p node_modules/.bin && ln -sf ../../dist/cli/main.js node_modules/.bin/al)`,
+  ].join(" && "));
   await sshExec(ssh, `cat > ${basePath}/.pkg-hash << 'HASHEOF'\n${localHash}\nHASHEOF`);
-  console.log("Dependencies installed.");
+  return "Dependencies installed.";
 }
 
 async function setupNginx(
   ssh: SshOptions, basePath: string, cfHost: string, gatewayPort: number,
-): Promise<void> {
-  console.log("\n=== Configuring nginx ===\n");
+): Promise<string> {
   const certSrc = `${basePath}/credentials/cloudflare_origin_cert/${cfHost}/certificate`;
   const keySrc = `${basePath}/credentials/cloudflare_origin_cert/${cfHost}/private_key`;
 
@@ -235,23 +224,25 @@ async function setupNginx(
   const nginxConf = generateNginxConfig(cfHost, gatewayPort);
   const nginxEscaped = nginxConf.replace(/'/g, "'\\''");
 
-  // Batch all nginx setup into one SSH call
+  // Heredoc delimiter must be on its own line — place post-heredoc commands on
+  // the opening line so the closing NGINXEOF isn't polluted by " && next_cmd".
+  const postNginxCmds = [
+    `sudo ln -sfn ${VPS_CONSTANTS.NGINX_SITE_CONFIG} /etc/nginx/sites-enabled/action-llama`,
+    "sudo rm -f /etc/nginx/sites-enabled/default",
+    "sudo nginx -t && sudo systemctl reload nginx",
+  ].join(" && ");
   await sshExec(ssh, [
     `sudo mkdir -p ${VPS_CONSTANTS.NGINX_CERT_DIR}`,
     `sudo cp ${certSrc} ${VPS_CONSTANTS.NGINX_CERT_PATH}`,
     `sudo cp ${keySrc} ${VPS_CONSTANTS.NGINX_KEY_PATH}`,
-    `sudo tee ${VPS_CONSTANTS.NGINX_SITE_CONFIG} > /dev/null << 'NGINXEOF'\n${nginxEscaped}\nNGINXEOF`,
-    `sudo ln -sfn ${VPS_CONSTANTS.NGINX_SITE_CONFIG} /etc/nginx/sites-enabled/action-llama`,
-    "sudo rm -f /etc/nginx/sites-enabled/default",
-    "sudo nginx -t && sudo systemctl reload nginx",
+    `sudo tee ${VPS_CONSTANTS.NGINX_SITE_CONFIG} > /dev/null << 'NGINXEOF' && ${postNginxCmds}\n${nginxEscaped}\nNGINXEOF`,
   ].join(" && "));
-  console.log(`  nginx: ${cfHost} :443 → 127.0.0.1:${gatewayPort}`);
+  return `nginx: ${cfHost} :443 → 127.0.0.1:${gatewayPort}`;
 }
 
 async function writeEnvAndSymlink(
   ssh: SshOptions, basePath: string, gatewayPort: number, globalConfig: GlobalConfig,
-): Promise<void> {
-  console.log("\n=== Writing server .env.toml ===\n");
+): Promise<string> {
   const remoteEnv: Record<string, unknown> = {
     gateway: { ...globalConfig.gateway, port: gatewayPort },
   };
@@ -261,25 +252,25 @@ async function writeEnvAndSymlink(
   const envToml = stringifyTOML(remoteEnv);
   const escaped = envToml.replace(/'/g, "'\\''");
 
-  // Batch .env.toml write + credentials symlink into one SSH call
-  await sshExec(ssh, [
-    `cat > ${basePath}/project/.env.toml << 'ENVEOF'\n${escaped}\nENVEOF`,
-    `mkdir -p ~/.action-llama && ln -sfn ${basePath}/credentials ~/.action-llama/credentials`,
-  ].join(" && "));
-  console.log("Server .env.toml written.");
+  // Heredoc delimiter must be on its own line — place subsequent commands on the
+  // opening line so the closing ENVEOF isn't polluted by " && next_cmd".
+  const symlinkCmd = `mkdir -p ~/.action-llama && ln -sfn ${basePath}/credentials ~/.action-llama/credentials`;
+  await sshExec(ssh,
+    `cat > ${basePath}/project/.env.toml << 'ENVEOF' && ${symlinkCmd}\n${escaped}\nENVEOF`,
+  );
+  return ".env.toml written.";
 }
 
-async function installSystemdUnit(ssh: SshOptions, unitContent: string): Promise<void> {
-  console.log("\n=== Setting up systemd service ===\n");
+async function installSystemdUnit(ssh: SshOptions, unitContent: string): Promise<string> {
   const unitEscaped = unitContent.replace(/'/g, "'\\''");
 
-  // Batch tee + daemon-reload + enable into one SSH call
-  await sshExec(ssh, [
-    `sudo tee /etc/systemd/system/action-llama.service > /dev/null << 'UNITEOF'\n${unitEscaped}\nUNITEOF`,
-    "sudo systemctl daemon-reload",
-    "sudo systemctl enable action-llama",
-  ].join(" && "));
-  console.log("Systemd service installed.");
+  // Heredoc delimiter must be on its own line — place post-heredoc commands on
+  // the opening line so the closing UNITEOF isn't polluted by " && next_cmd".
+  const postUnitCmds = "sudo systemctl daemon-reload && sudo systemctl enable action-llama";
+  await sshExec(ssh,
+    `sudo tee /etc/systemd/system/action-llama.service > /dev/null << 'UNITEOF' && ${postUnitCmds}\n${unitEscaped}\nUNITEOF`,
+  );
+  return "Systemd service installed.";
 }
 
 /** Ramp-up intervals: faster initial polling, then backs off. */
@@ -288,7 +279,7 @@ const HEALTH_CHECK_INTERVALS_MS = [1000, 1000, 2000, 3000, 3000];
 async function healthCheck(ssh: SshOptions, port: number): Promise<void> {
   const TIMEOUT_MS = 180_000; // 3 minutes — first push builds Docker images
 
-  console.log("  Waiting for service to start...\n");
+  console.log("  Waiting for health check...");
 
   // Tail journal for live build/startup progress so the user sees what's happening
   const journal = sshSpawn(ssh, "journalctl -u action-llama -f --since 'now' -o cat 2>/dev/null");
@@ -307,13 +298,11 @@ async function healthCheck(ssh: SshOptions, port: number): Promise<void> {
 
   try {
     while (Date.now() - startTime < TIMEOUT_MS) {
-      // Try health endpoint
       try {
         await sshExec(ssh, `curl -sf http://localhost:${port}/health`);
-        console.log("\n  Health check passed.");
+        console.log("  Health check passed.");
         return;
       } catch {
-        // Check if service has crashed/stopped — fail fast instead of waiting
         const active = await sshExecSafe(ssh, "systemctl is-active action-llama");
         if (active === "failed" || active === "inactive") {
           serviceFailed = true;
@@ -331,20 +320,18 @@ async function healthCheck(ssh: SshOptions, port: number): Promise<void> {
 
   // Failure diagnostics
   if (serviceFailed) {
-    console.log("\n  Service failed to start.\n");
+    console.log("\n  Service failed to start.");
   } else {
-    console.log(`\nHealth check did not pass within ${Math.round(TIMEOUT_MS / 1000)}s.\n`);
+    console.log(`\n  Health check timed out after ${Math.round(TIMEOUT_MS / 1000)}s.`);
   }
 
-  console.log("=== Service status ===\n");
+  console.log("\n  Service status:");
   const statusOutput = await sshExecSafe(ssh, "systemctl status action-llama --no-pager -l 2>&1; true");
   console.log(statusOutput || "  (no output)");
 
-  console.log("\n=== Recent logs ===\n");
+  console.log("\n  Recent logs:");
   const logsOutput = await sshExecSafe(ssh, "journalctl -u action-llama --no-pager -n 40 2>&1; true");
-  console.log(logsOutput || "  (no log output — service may have failed to start)");
-
-  console.log("");
+  console.log(logsOutput || "  (no log output)");
 }
 
 /**
