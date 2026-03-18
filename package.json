@@ -31,7 +31,7 @@
   "files": [
     "dist",
     "docker",
-    "docs",
+    "agent-docs",
     "README.md",
     "LICENSE"
   ],

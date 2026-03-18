@@ -1,3 +1,8 @@
+---
+title: "Docker"
+description: "Container isolation, custom images, and the Docker runtime"
+---
+
 # Container Isolation
 
 All agents run in isolated containers for security and consistency. Container isolation is always enabled.
@@ -300,7 +305,7 @@ The key requirement is that `/app/dist/agents/container-entry.js` exists and can
 | `local.cpus` | `2` | CPU limit per container |
 | `local.timeout` | `3600` | Max container runtime in seconds |
 
-For Cloud Run configuration, see [Cloud Run docs](cloud-run.md). For ECS Fargate configuration, see [ECS docs](ecs.md).
+For Cloud Run configuration, see [Cloud Run docs](/cloud-run). For ECS Fargate configuration, see [ECS docs](/ecs).
 
 ## Container filesystem layout
 

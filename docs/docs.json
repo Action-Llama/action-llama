@@ -1,0 +1,41 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Action Llama",
+  "colors": {
+    "primary": "#6D28D9",
+    "light": "#A78BFA",
+    "dark": "#4C1D95"
+  },
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "groups": [
+        {
+          "group": "Getting Started",
+          "pages": ["index", "creating-agents", "agents"]
+        },
+        {
+          "group": "Configuration",
+          "pages": ["config-reference", "agent-config-reference", "credentials", "models"]
+        },
+        {
+          "group": "CLI",
+          "pages": ["commands"]
+        },
+        {
+          "group": "Features",
+          "pages": ["webhooks", "docker", "web-dashboard"]
+        },
+        {
+          "group": "Deployment",
+          "pages": ["cloud", "vps-deployment", "cloud-run", "ecs"]
+        },
+        {
+          "group": "Examples",
+          "pages": ["examples/index", "examples/dev/README", "examples/reviewer/README", "examples/planner/README"]
+        }
+      ]
+    }
+  ]
+}

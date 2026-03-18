@@ -1,0 +1,61 @@
+---
+title: "Action Llama"
+description: "Run agents like scripts — triggered by cron or webhooks"
+---
+
+# Action Llama
+
+Run agents like scripts: triggered by cron or webhooks.
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/creating-agents">
+    Create your first agent in minutes
+  </Card>
+  <Card title="CLI Reference" icon="terminal" href="/commands">
+    All available CLI commands
+  </Card>
+  <Card title="Configuration" icon="gear" href="/config-reference">
+    Project and agent configuration
+  </Card>
+  <Card title="Examples" icon="book" href="/examples/index">
+    Ready-to-use agent configurations
+  </Card>
+</CardGroup>
+
+## How it works
+
+1. An agent is triggered by a webhook, cron schedule, or another agent
+2. The agent runs according to the instructions you define in `ACTIONS.md`
+3. The agent shuts down
+
+## Key features
+
+- **Contained runs** — each agent run is isolated in a Docker container with only the credentials it needs
+- **Git-native** — define agents in a git repo, add custom ones, and share them
+- **BYOM** — bring your own model (Anthropic, OpenAI, Groq, Google Gemini, xAI, Mistral, OpenRouter, or any custom provider)
+- **Deploy anywhere** — run locally, on a VPS, or in the cloud (AWS ECS, Google Cloud Run)
+
+## Get started
+
+### 1. Create a project
+
+```bash
+npx @action-llama/action-llama@next new my-project
+cd my-project
+```
+
+### 2. Create and manage agents
+
+```bash
+npx al chat
+```
+
+The chat console helps you create and manage agents. You can also create agents manually — see the [creating agents guide](/creating-agents).
+
+### 3. Run
+
+```bash
+npx al start
+```
+
+If any credentials are missing, it will prompt you for them. Credentials are stored in `~/.action-llama/credentials/` — see [credentials](/credentials) for details.
