@@ -72,7 +72,7 @@ export async function pushToServer(opts: PushOptions): Promise<void> {
   if (dryRun) {
     console.log("(dry-run) Would check server prerequisites");
   } else {
-    binPaths = await bootstrapServer(ssh);
+    binPaths = await bootstrapServer(ssh, gatewayPort);
   }
 
   // Step 2: Ensure remote directories exist

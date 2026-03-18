@@ -105,7 +105,7 @@ describe("pushToServer", () => {
       console.log = origLog;
     }
 
-    expect(mockBootstrapServer).toHaveBeenCalledWith(sshOpts);
+    expect(mockBootstrapServer).toHaveBeenCalledWith(sshOpts, 3000);
     expect(mockRsyncTo).toHaveBeenCalledTimes(2); // project + credentials
     expect(mockSshExec).toHaveBeenCalled();
     // Verify npm install runs on the remote after syncing project files

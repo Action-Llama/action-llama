@@ -7,14 +7,14 @@ export interface BootstrapResult {
 }
 
 /**
- * Check server prerequisites (Node >= 20, Docker).
+ * Check server prerequisites (Node >= 20, Docker, firewall).
  * Throws if a hard requirement is not met.
  * Returns resolved binary paths for use in the systemd unit.
  *
  * Note: al itself is not checked here — it is installed as a project
  * dependency via `npm install` during the push.
  */
-export async function bootstrapServer(ssh: SshOptions): Promise<BootstrapResult> {
+export async function bootstrapServer(ssh: SshOptions, gatewayPort: number): Promise<BootstrapResult> {
   const [nodeResult, dockerResult] = await Promise.allSettled([
     checkNode(ssh),
     checkDocker(ssh),
@@ -40,6 +40,9 @@ export async function bootstrapServer(ssh: SshOptions): Promise<BootstrapResult>
       errors.map(e => `  - ${e}`).join("\n")
     );
   }
+
+  // Ensure firewall allows the gateway port (non-fatal — not all servers use ufw)
+  await ensureFirewallPort(ssh, gatewayPort);
 
   return {
     nodePath: nodeResult.status === "fulfilled" ? nodeResult.value.path : "",
@@ -70,6 +73,28 @@ async function checkDocker(ssh: SshOptions): Promise<string> {
     throw new Error(
       "Docker is not running on the server. Install and start Docker before running al push."
     );
+  }
+}
+
+/**
+ * If ufw is active, ensure the gateway port is allowed.
+ * Silently skips if ufw is not installed or not active.
+ */
+async function ensureFirewallPort(ssh: SshOptions, port: number): Promise<void> {
+  try {
+    const status = (await sshExec(ssh, "sudo ufw status")).trim();
+    if (!status.startsWith("Status: active")) return;
+
+    // Check if the port is already allowed
+    if (status.includes(`${port}/tcp`) || status.includes(`${port} `)) {
+      console.log(`  Firewall: port ${port}/tcp already allowed`);
+      return;
+    }
+
+    await sshExec(ssh, `sudo ufw allow ${port}/tcp`);
+    console.log(`  Firewall: opened port ${port}/tcp`);
+  } catch {
+    // ufw not installed or not available — nothing to do
   }
 }
 
