@@ -88,6 +88,7 @@ program
   .command("stop")
   .description("Stop the scheduler and clear pending agent queues")
   .option("-p, --project <dir>", "project directory", ".")
+  .option("-E, --env <name>", "environment name")
   .action(withCommand(async (opts) => {
     const { execute } = await import("./commands/stop.js");
     await execute(opts);

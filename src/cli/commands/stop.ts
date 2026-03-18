@@ -1,7 +1,7 @@
 import { resolve } from "path";
 import { gatewayFetch } from "../gateway-client.js";
 
-export async function execute(opts: { project: string }): Promise<void> {
+export async function execute(opts: { project: string; env?: string }): Promise<void> {
   const projectPath = resolve(opts.project);
 
   let response: Response;
@@ -10,6 +10,7 @@ export async function execute(opts: { project: string }): Promise<void> {
       project: projectPath,
       path: "/control/stop",
       method: "POST",
+      env: opts.env,
     });
   } catch (error) {
     if (error instanceof Error && error.message.includes('ECONNREFUSED')) {
