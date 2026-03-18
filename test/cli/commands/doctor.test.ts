@@ -299,4 +299,68 @@ describe("doctor", () => {
     const output = await captureLog(() => execute({ project: "." }));
     expect(output).toContain("[ok] GitHub Token");
   });
+
+  describe("project-wide scale validation", () => {
+    it("validates agent scale does not exceed project scale", async () => {
+      mockDiscoverAgents.mockReturnValue(["dev"]);
+      mockLoadGlobalConfig.mockReturnValue({ scale: 3 });
+      mockLoadAgentConfig.mockReturnValue({
+        name: "dev",
+        credentials: [],
+        scale: 5,
+      });
+
+      await expect(
+        execute({ project: "." })
+      ).rejects.toThrow('Agent "dev" scale (5) exceeds project scale limit (3)');
+    });
+
+    it("allows agent scale equal to project scale", async () => {
+      mockDiscoverAgents.mockReturnValue(["dev"]);
+      mockLoadGlobalConfig.mockReturnValue({ scale: 3 });
+      mockLoadAgentConfig.mockReturnValue({
+        name: "dev",
+        credentials: [],
+        scale: 3,
+      });
+      mockCredentialExists.mockReturnValue(true);
+
+      // Should not throw
+      await execute({ project: "." });
+    });
+
+    it("allows multiple agents within project scale", async () => {
+      mockDiscoverAgents.mockReturnValue(["dev", "reviewer"]);
+      mockLoadGlobalConfig.mockReturnValue({ scale: 4 });
+      mockLoadAgentConfig
+        .mockReturnValueOnce({
+          name: "dev",
+          credentials: [],
+          scale: 2,
+        })
+        .mockReturnValueOnce({
+          name: "reviewer", 
+          credentials: [],
+          scale: 1,
+        });
+      mockCredentialExists.mockReturnValue(true);
+
+      // Should not throw (2 + 1 <= 4)
+      await execute({ project: "." });
+    });
+
+    it("handles missing project scale", async () => {
+      mockDiscoverAgents.mockReturnValue(["dev"]);
+      mockLoadGlobalConfig.mockReturnValue({}); // No scale limit
+      mockLoadAgentConfig.mockReturnValue({
+        name: "dev",
+        credentials: [],
+        scale: 10, // Would exceed if limit existed
+      });
+      mockCredentialExists.mockReturnValue(true);
+
+      // Should not throw when no project scale is set
+      await execute({ project: "." });
+    });
+  });
 });
