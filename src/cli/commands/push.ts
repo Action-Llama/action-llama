@@ -57,7 +57,6 @@ export async function execute(opts: {
     projectPath,
     serverConfig,
     globalConfig,
-    envName,
     dryRun: opts.dryRun,
     noCreds: !syncCreds,
     noFiles: !syncFiles,

@@ -104,7 +104,6 @@ describe("push command", () => {
     expect(mockPushToServer).toHaveBeenCalledOnce();
     expect(mockPushToServer.mock.calls[0][0]).toMatchObject({
       serverConfig: { host: "h" },
-      envName: "srv",
     });
   });
 

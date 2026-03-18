@@ -15,7 +15,6 @@ export interface PushOptions {
   projectPath: string;
   serverConfig: ServerConfig;
   globalConfig: GlobalConfig;
-  envName: string;
   dryRun?: boolean;
   noCreds?: boolean;
   noFiles?: boolean;
@@ -61,7 +60,7 @@ WantedBy=multi-user.target
  * Push project files and credentials to a server, set up systemd, and verify.
  */
 export async function pushToServer(opts: PushOptions): Promise<void> {
-  const { projectPath, serverConfig, globalConfig, envName, dryRun, noCreds, noFiles } = opts;
+  const { projectPath, serverConfig, globalConfig, dryRun, noCreds, noFiles } = opts;
   const ssh = sshOptionsFromConfig(serverConfig);
   const basePath = serverConfig.basePath ?? "/opt/action-llama";
   const gatewayPort = VPS_CONSTANTS.DEFAULT_GATEWAY_PORT;
@@ -113,10 +112,16 @@ export async function pushToServer(opts: PushOptions): Promise<void> {
   // Step 5: Write .env.toml on the server
   if (!dryRun) {
     console.log("\n=== Writing server .env.toml ===\n");
-    const envToml = stringifyTOML({
-      environment: envName,
-      gateway: { port: gatewayPort },
-    } as Record<string, unknown>);
+    // Build a self-contained .env.toml — no environment reference needed on the
+    // remote since the server is effectively running locally.  Inline gateway and
+    // telemetry config so the scheduler has everything it needs.
+    const remoteEnv: Record<string, unknown> = {
+      gateway: { ...globalConfig.gateway, port: gatewayPort },
+    };
+    if (globalConfig.telemetry) {
+      remoteEnv.telemetry = globalConfig.telemetry;
+    }
+    const envToml = stringifyTOML(remoteEnv);
     // Escape for shell
     const escaped = envToml.replace(/'/g, "'\\''");
     await sshExec(ssh, `cat > ${basePath}/project/.env.toml << 'ENVEOF'\n${escaped}\nENVEOF`);
