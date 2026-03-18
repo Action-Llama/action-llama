@@ -21,7 +21,7 @@ The VPS cloud provider lets you manage your VPS deployment from your local machi
 ```bash
 # From your local machine:
 al setup cloud -p .         # Select "VPS (Vultr, etc.)" → connect or provision
-al doctor -c -p .           # Push credentials to VPS via SSH
+al doctor -p .              # Ensure credentials are configured locally
 al cloud deploy -p .        # Deploy scheduler to VPS
 ```
 
@@ -67,7 +67,7 @@ Automated provisioning with Hetzner Cloud:
 |-----------|---------------|
 | Image builds | `tar -c . \| ssh docker build -t <tag> -` (built on VPS, no registry) |
 | Credential storage | Filesystem on VPS (`~/.action-llama/credentials/`) via SSH |
-| Credential push | `al doctor -c` copies credentials over SSH |
+| Credential push | Credentials copied over SSH during deployment |
 | Scheduler deploy | `docker run -d --restart unless-stopped` on VPS |
 | IAM reconciliation | No-op (SSH access = full access) |
 | Log streaming | Real-time via SSH (`docker logs -f`) |

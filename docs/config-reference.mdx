@@ -77,46 +77,17 @@ Controls local Docker container isolation. These settings also apply as resource
 | `image` | string | `"al-agent:latest"` | Base Docker image name |
 | `memory` | string | `"4g"` | Memory limit per container (e.g. `"4g"`, `"8g"`, `"4096"` for ECS in MiB) |
 | `cpus` | number | `2` | CPU limit per container |
-| `timeout` | number | `900` | Default max container runtime in seconds. Individual agents can override this with `timeout` in their `agent-config.toml`. On AWS ECS, agents with effective timeout ≤ 900s automatically route to Lambda for faster cold starts. See [agent timeout docs](/agent-config-reference#timeout). |
+| `timeout` | number | `900` | Default max container runtime in seconds. Individual agents can override this with `timeout` in their `agent-config.toml`. See [agent timeout docs](/agent-config-reference#timeout). |
 
 ### `[cloud]` — Cloud Provider
 
-Only needed when running agents on cloud infrastructure with `al start -c`. Configure using `al setup cloud` (interactive wizard) or manually.
+Only needed when running agents on VPS infrastructure. Configure manually or use deployment tools.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `provider` | string | Yes | `"cloud-run"` (GCP), `"ecs"` (AWS), or `"vps"` (SSH + Docker) |
+| `provider` | string | Yes | `"vps"` (SSH + Docker) |
 
-#### Cloud Run fields (`provider = "cloud-run"`)
 
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `gcpProject` | string | Yes | — | GCP project ID |
-| `region` | string | Yes | — | Cloud Run region (e.g. `"us-central1"`) |
-| `artifactRegistry` | string | Yes | — | Full Artifact Registry repo path (e.g. `"us-central1-docker.pkg.dev/my-project/al-images"`) |
-| `serviceAccount` | string | No | — | Runtime service account for job creation. Per-agent SAs are used for execution. |
-| `secretPrefix` | string | No | `"action-llama"` | Google Secret Manager name prefix |
-
-See [Cloud Run docs](/cloud-run) for full setup.
-
-#### ECS Fargate fields (`provider = "ecs"`)
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `awsRegion` | string | Yes | — | AWS region (e.g. `"us-east-1"`) |
-| `ecsCluster` | string | Yes | — | ECS cluster name or ARN |
-| `ecrRepository` | string | Yes | — | Full ECR repository URI (e.g. `"123456789012.dkr.ecr.us-east-1.amazonaws.com/al-images"`) |
-| `executionRoleArn` | string | Yes | — | IAM role ARN for task execution (ECR pull + CloudWatch Logs) |
-| `taskRoleArn` | string | Yes | — | Default IAM task role ARN (Secrets Manager access) |
-| `subnets` | string[] | Yes | — | VPC subnet IDs for Fargate tasks |
-| `securityGroups` | string[] | No | — | Security group IDs for Fargate tasks |
-| `awsSecretPrefix` | string | No | `"action-llama"` | AWS Secrets Manager name prefix |
-| `buildBucket` | string | No | auto-created | S3 bucket for CodeBuild source uploads |
-| `lambdaRoleArn` | string | No | auto-derived | Lambda execution role ARN. If omitted, per-agent roles (`al-{agentName}-lambda-role`) are derived automatically. |
-| `lambdaSubnets` | string[] | No | — | VPC subnet IDs for Lambda functions (only needed if Lambda must access VPC resources) |
-| `lambdaSecurityGroups` | string[] | No | — | Security group IDs for Lambda functions (only needed with `lambdaSubnets`) |
-
-See [ECS docs](/ecs) for full setup.
 
 #### VPS fields (`provider = "vps"`)
 
@@ -126,8 +97,8 @@ See [ECS docs](/ecs) for full setup.
 | `sshUser` | string | No | `"root"` | SSH username |
 | `sshPort` | number | No | `22` | SSH port |
 | `sshKeyPath` | string | No | `"~/.ssh/id_rsa"` | Path to SSH private key |
-| `vultrInstanceId` | string | No | — | Vultr instance ID (set automatically if provisioned via `al setup cloud`) |
-| `vultrRegion` | string | No | — | Vultr region (set automatically if provisioned via `al setup cloud`) |
+| `vultrInstanceId` | string | No | — | Vultr instance ID (set automatically if provisioned) |
+| `vultrRegion` | string | No | — | Vultr region (set automatically if provisioned) |
 
 See [VPS docs](/vps-deployment) for full setup.
 

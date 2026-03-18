@@ -35,43 +35,13 @@ This helps catch configuration mistakes early and ensures webhook triggers are p
 ```bash
 al doctor -p .
 al doctor -p ./my-project
-al doctor -c               # Also push creds to cloud + reconcile IAM
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
-| `-c, --cloud` | Push credentials to cloud and create per-agent IAM resources |
 
-### `al doctor -c`
 
-In cloud mode, `al doctor` additionally:
-1. Pushes all local credentials to the cloud secret manager configured in `[cloud]`
-2. Creates per-agent IAM resources (service accounts for Cloud Run, task roles for ECS)
-3. Grants each agent access to only its declared secrets
-
-**Cloud Run** (`cloud.provider = "cloud-run"`):
-
-For each agent, it:
-1. Creates `al-{agentName}@{gcpProject}.iam.gserviceaccount.com`
-2. Grants `secretmanager.secretAccessor` on that agent's declared credentials
-3. Grants `iam.serviceAccountUser` for Cloud Run execution
-
-Requires `gcloud` CLI with project admin permissions. See [Cloud Run docs](/cloud-run) for full setup.
-
-**ECS Fargate** (`cloud.provider = "ecs"`):
-
-For each agent, it:
-1. Creates IAM role `al-{agentName}-task-role`
-2. Attaches an inline policy granting `secretsmanager:GetSecretValue` on that agent's declared credentials
-
-Requires AWS CLI with IAM admin permissions. See [ECS docs](/ecs) for full setup.
-
-**VPS** (`cloud.provider = "vps"`):
-
-Pushes all local credentials to the VPS filesystem over SSH. No IAM roles — SSH access implies full access. See [VPS docs](/vps-deployment) for full setup.
-
-**Re-run after adding agents:** Whenever you add a new agent to your project, re-run `al doctor -c` to create IAM resources for the new agent (Cloud Run/ECS) or push credentials (VPS). Without this, the new agent won't have access to its credentials at runtime.
 
 ## `al creds ls`
 
@@ -120,31 +90,9 @@ al creds rm github_webhook_secret:myapp
 
 Removes all field files for the credential instance. If the type directory becomes empty, it is also removed.
 
-## `al setup cloud`
 
-Interactive wizard for configuring cloud infrastructure. Prompts for provider selection and provider-specific fields, writes `[cloud]` to config.toml, pushes credentials, and provisions IAM — all in one shot.
 
-If an existing `[cloud]` config is found, you'll be prompted to tear down the old infrastructure first.
 
-```bash
-al setup cloud -p .
-```
-
-| Option | Description |
-|--------|-------------|
-| `-p, --project <dir>` | Project directory (default: `.`) |
-
-## `al teardown cloud`
-
-Deletes per-agent IAM resources (service accounts for Cloud Run, task roles for ECS), stops containers and cleans up credentials (VPS), and removes the `[cloud]` section from config.toml.
-
-```bash
-al teardown cloud -p .
-```
-
-| Option | Description |
-|--------|-------------|
-| `-p, --project <dir>` | Project directory (default: `.`) |
 
 ## `al run <agent>`
 
@@ -168,7 +116,6 @@ Starts the scheduler. Runs all agents on their configured schedules and listens 
 ```bash
 al start -p .
 al start -p ./my-project
-al start -c                   # Run on cloud
 al start -w                   # Enable web dashboard
 al start -e                   # VPS deployment: expose gateway publicly
 ```
@@ -176,7 +123,6 @@ al start -e                   # VPS deployment: expose gateway publicly
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
-| `-c, --cloud` | Run on cloud infrastructure |
 | `-w, --web-ui` | Enable web dashboard (see [Web Dashboard](/web-dashboard)) |
 | `-e, --expose` | Bind gateway to `0.0.0.0` (public) while keeping local-mode features |
 | `-H, --headless` | Non-interactive mode (no TUI, no credential prompts) |
