@@ -72,7 +72,7 @@ export async function pushToServer(opts: PushOptions): Promise<void> {
   if (dryRun) {
     console.log("(dry-run) Would check server prerequisites");
   } else {
-    binPaths = await bootstrapServer(ssh, gatewayPort);
+    binPaths = await bootstrapServer(ssh);
   }
 
   // Step 2: Ensure remote directories exist
@@ -109,7 +109,28 @@ export async function pushToServer(opts: PushOptions): Promise<void> {
     console.log(dryRun ? "(dry-run) Would sync credentials" : "Credentials synced.");
   }
 
-  // Step 5: Write .env.toml on the server
+  // Step 5: Configure nginx TLS reverse proxy (certs from provisioning)
+  if (!dryRun && !noCreds && serverConfig.cloudflareHostname) {
+    console.log("\n=== Configuring nginx ===\n");
+    const cfHost = serverConfig.cloudflareHostname;
+    const certSrc = `${basePath}/credentials/cloudflare_origin_cert/${cfHost}/certificate`;
+    const keySrc = `${basePath}/credentials/cloudflare_origin_cert/${cfHost}/private_key`;
+
+    await sshExec(ssh, `sudo mkdir -p ${VPS_CONSTANTS.NGINX_CERT_DIR}`);
+    await sshExec(ssh, `sudo cp ${certSrc} ${VPS_CONSTANTS.NGINX_CERT_PATH}`);
+    await sshExec(ssh, `sudo cp ${keySrc} ${VPS_CONSTANTS.NGINX_KEY_PATH}`);
+
+    const { generateNginxConfig } = await import("../cloud/vps/nginx.js");
+    const nginxConf = generateNginxConfig(cfHost, gatewayPort);
+    const nginxEscaped = nginxConf.replace(/'/g, "'\\''");
+    await sshExec(ssh, `sudo tee ${VPS_CONSTANTS.NGINX_SITE_CONFIG} > /dev/null << 'NGINXEOF'\n${nginxEscaped}\nNGINXEOF`);
+    await sshExec(ssh, `sudo ln -sfn ${VPS_CONSTANTS.NGINX_SITE_CONFIG} /etc/nginx/sites-enabled/action-llama`);
+    await sshExec(ssh, "sudo rm -f /etc/nginx/sites-enabled/default");
+    await sshExec(ssh, "sudo nginx -t && sudo systemctl reload nginx");
+    console.log(`  nginx: ${cfHost} :443 → 127.0.0.1:${gatewayPort}`);
+  }
+
+  // Step 6: Write .env.toml on the server
   if (!dryRun) {
     console.log("\n=== Writing server .env.toml ===\n");
     // Build a self-contained .env.toml — no environment reference needed on the

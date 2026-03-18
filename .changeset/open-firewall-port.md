@@ -2,7 +2,7 @@
 "@action-llama/action-llama": patch
 ---
 
-`al push` now sets up nginx as a TLS reverse proxy in front of the gateway during
-server bootstrap. The gateway binds to localhost only — nginx handles external
-traffic on port 443 with a self-signed certificate (for Cloudflare Full mode) and
-forwards to the gateway. ufw is configured to allow HTTP/HTTPS if active.
+`al push` now configures nginx as a TLS reverse proxy using the Cloudflare Origin CA
+certificate created during provisioning. The gateway binds to localhost only — nginx
+terminates TLS on port 443 and forwards to the gateway. Removed `--expose` from the
+systemd unit since the gateway should not be directly reachable from the internet.

@@ -7,14 +7,14 @@ export interface BootstrapResult {
 }
 
 /**
- * Check server prerequisites (Node >= 20, Docker, nginx).
+ * Check server prerequisites (Node >= 20, Docker).
  * Throws if a hard requirement is not met.
  * Returns resolved binary paths for use in the systemd unit.
  *
  * Note: al itself is not checked here — it is installed as a project
  * dependency via `npm install` during the push.
  */
-export async function bootstrapServer(ssh: SshOptions, gatewayPort: number): Promise<BootstrapResult> {
+export async function bootstrapServer(ssh: SshOptions): Promise<BootstrapResult> {
   const [nodeResult, dockerResult] = await Promise.allSettled([
     checkNode(ssh),
     checkDocker(ssh),
@@ -40,9 +40,6 @@ export async function bootstrapServer(ssh: SshOptions, gatewayPort: number): Pro
       errors.map(e => `  - ${e}`).join("\n")
     );
   }
-
-  // Set up nginx as a reverse proxy to the gateway
-  await ensureNginx(ssh, gatewayPort);
 
   return {
     nodePath: nodeResult.status === "fulfilled" ? nodeResult.value.path : "",
@@ -73,71 +70,5 @@ async function checkDocker(ssh: SshOptions): Promise<string> {
     throw new Error(
       "Docker is not running on the server. Install and start Docker before running al push."
     );
-  }
-}
-
-/**
- * Ensure nginx is installed and configured as a reverse proxy to the gateway.
- * Installs nginx if missing, writes an action-llama site config, and reloads.
- */
-async function ensureNginx(ssh: SshOptions, gatewayPort: number): Promise<void> {
-  // Check if nginx is installed
-  try {
-    await sshExec(ssh, "which nginx");
-    console.log("  nginx installed");
-  } catch {
-    console.log("  Installing nginx...");
-    await sshExec(ssh, "sudo apt-get update -qq && sudo apt-get install -y -qq nginx");
-    console.log("  nginx installed");
-  }
-
-  // Ensure a self-signed TLS cert exists (Cloudflare "Full" mode accepts self-signed)
-  const certDir = "/etc/nginx/ssl";
-  const certPath = `${certDir}/action-llama.crt`;
-  const keyPath = `${certDir}/action-llama.key`;
-  try {
-    await sshExec(ssh, `test -f ${certPath} && test -f ${keyPath}`);
-  } catch {
-    console.log("  Generating self-signed TLS certificate...");
-    await sshExec(ssh, `sudo mkdir -p ${certDir}`);
-    await sshExec(ssh, `sudo openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout ${keyPath} -out ${certPath} -subj "/CN=action-llama"`);
-  }
-
-  const nginxConf = `server {
-    listen 443 ssl;
-    listen [::]:443 ssl;
-
-    ssl_certificate ${certPath};
-    ssl_certificate_key ${keyPath};
-
-    location / {
-        proxy_pass http://127.0.0.1:${gatewayPort};
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-`;
-
-  const escaped = nginxConf.replace(/'/g, "'\\''");
-  await sshExec(ssh, `sudo tee /etc/nginx/sites-available/action-llama > /dev/null << 'NGINXEOF'\n${escaped}\nNGINXEOF`);
-  await sshExec(ssh, "sudo ln -sfn /etc/nginx/sites-available/action-llama /etc/nginx/sites-enabled/action-llama");
-  await sshExec(ssh, "sudo rm -f /etc/nginx/sites-enabled/default");
-  await sshExec(ssh, "sudo nginx -t && sudo systemctl reload nginx");
-  console.log(`  nginx configured → 127.0.0.1:${gatewayPort}`);
-
-  // Ensure ufw allows HTTP/HTTPS for nginx (if ufw is active)
-  try {
-    const status = (await sshExec(ssh, "sudo ufw status")).trim();
-    if (status.startsWith("Status: active")) {
-      await sshExec(ssh, "sudo ufw allow 'Nginx Full'");
-      console.log("  Firewall: HTTP/HTTPS allowed");
-    }
-  } catch {
-    // ufw not installed — nothing to do
   }
 }
