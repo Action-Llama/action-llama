@@ -180,8 +180,11 @@ export async function prov(name: string | undefined): Promise<void> {
         provider: (partial.provider as string) ?? "vps",
         vultrInstanceId: partial.vultrInstanceId as string | undefined,
         vultrRegion: partial.vultrRegion as string | undefined,
+        cloudflareZoneId: partial.cloudflareZoneId as string | undefined,
+        cloudflareDnsRecordId: partial.cloudflareDnsRecordId as string | undefined,
+        cloudflareHostname: partial.cloudflareHostname as string | undefined,
       },
-      gateway: { url: host !== "PENDING" ? `http://${host}:${VPS_CONSTANTS.DEFAULT_GATEWAY_PORT}` : undefined },
+      gateway: { url: host !== "PENDING" ? (partial.gatewayUrl as string ?? `http://${host}:${VPS_CONSTANTS.DEFAULT_GATEWAY_PORT}`) : undefined },
     };
     writeEnvironmentConfig(name!, config);
   };
@@ -191,6 +194,7 @@ export async function prov(name: string | undefined): Promise<void> {
 
   // Final write with the confirmed host
   const host = result.host as string;
+  const gatewayUrl = (result.gatewayUrl as string) ?? `http://${host}:${VPS_CONSTANTS.DEFAULT_GATEWAY_PORT}`;
   const config: EnvironmentConfig = {
     server: {
       host,
@@ -200,8 +204,11 @@ export async function prov(name: string | undefined): Promise<void> {
       provider: (result.provider as string) ?? "vps",
       vultrInstanceId: result.vultrInstanceId as string | undefined,
       vultrRegion: result.vultrRegion as string | undefined,
+      cloudflareZoneId: result.cloudflareZoneId as string | undefined,
+      cloudflareDnsRecordId: result.cloudflareDnsRecordId as string | undefined,
+      cloudflareHostname: result.cloudflareHostname as string | undefined,
     },
-    gateway: { url: `http://${host}:${VPS_CONSTANTS.DEFAULT_GATEWAY_PORT}` },
+    gateway: { url: gatewayUrl },
   };
 
   writeEnvironmentConfig(name, config);
@@ -229,6 +236,9 @@ export async function deprov(name: string, opts: { project: string }): Promise<v
     sshKeyPath: config.server.keyPath,
     vultrInstanceId: config.server.vultrInstanceId,
     vultrRegion: config.server.vultrRegion,
+    cloudflareZoneId: config.server.cloudflareZoneId,
+    cloudflareDnsRecordId: config.server.cloudflareDnsRecordId,
+    cloudflareHostname: config.server.cloudflareHostname,
   };
 
   await teardownVps(opts.project, vpsConfig);

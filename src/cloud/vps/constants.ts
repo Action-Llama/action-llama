@@ -44,4 +44,10 @@ systemctl start docker
 # Signal that cloud-init is done
 touch /var/lib/cloud/instance/boot-finished-docker
 `,
+
+  /** nginx / Cloudflare Origin CA paths */
+  NGINX_CERT_DIR: "/etc/ssl/cloudflare",
+  NGINX_CERT_PATH: "/etc/ssl/cloudflare/origin.pem",
+  NGINX_KEY_PATH: "/etc/ssl/cloudflare/origin-key.pem",
+  NGINX_SITE_CONFIG: "/etc/nginx/sites-available/action-llama",
 } as const;

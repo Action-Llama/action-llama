@@ -20,6 +20,7 @@ import xTwitterApi from "./x-twitter-api.js";
 import bugsnagToken from "./bugsnag-token.js";
 import vultrApiKey from "./vultr-api-key.js";
 import vpsSsh from "./vps-ssh.js";
+import cloudflareApiToken from "./cloudflare-api-token.js";
 
 export const builtinCredentials: Record<string, CredentialDefinition> = {
   "github_token": githubToken,
@@ -43,4 +44,5 @@ export const builtinCredentials: Record<string, CredentialDefinition> = {
   "bugsnag_token": bugsnagToken,
   "vultr_api_key": vultrApiKey,
   "vps_ssh": vpsSsh,
+  "cloudflare_api_token": cloudflareApiToken,
 };

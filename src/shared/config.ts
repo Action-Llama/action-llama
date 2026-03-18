@@ -37,6 +37,10 @@ export interface VpsCloudConfig {
   // Vultr-specific (present only if AL provisioned the instance)
   vultrInstanceId?: string;
   vultrRegion?: string;
+  // Cloudflare-specific (present only if HTTPS was configured)
+  cloudflareZoneId?: string;
+  cloudflareDnsRecordId?: string;
+  cloudflareHostname?: string;
 }
 
 export type CloudConfig = VpsCloudConfig;

@@ -327,6 +327,9 @@ describe("VPS provisioning", () => {
       // Mode: vultr
       mockSelect.mockResolvedValueOnce("vultr");
 
+      // Decline Cloudflare HTTPS
+      mockConfirm.mockResolvedValueOnce(false);
+
       setupCatalogMocks();
       setupFirewallMocks(true);
       setupInstanceMocks();
@@ -350,6 +353,7 @@ describe("VPS provisioning", () => {
         host: "1.2.3.4",
         vultrInstanceId: "inst-123",
         vultrRegion: "atl",
+        gatewayUrl: "http://1.2.3.4:3000",
       });
 
       expect(mockCreateInstance).toHaveBeenCalledWith("fake-vultr-key", expect.objectContaining({
@@ -362,6 +366,7 @@ describe("VPS provisioning", () => {
 
     it("prompts for API key when not found in credentials", async () => {
       mockSelect.mockResolvedValueOnce("vultr");
+      mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
       mockBackendRead.mockResolvedValue(null); // No API key stored
 
       // Password prompt for API key
@@ -392,6 +397,7 @@ describe("VPS provisioning", () => {
 
     it("creates new firewall group when none exists", async () => {
       mockSelect.mockResolvedValueOnce("vultr");
+      mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
 
       setupCatalogMocks();
       setupFirewallMocks(false); // No existing firewall group
@@ -414,6 +420,7 @@ describe("VPS provisioning", () => {
 
     it("prompts for OS when plan has < 1024MB RAM", async () => {
       mockSelect.mockResolvedValueOnce("vultr");
+      mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
 
       // Use a plan with 512MB RAM
       const smallPlans = [
@@ -451,6 +458,7 @@ describe("VPS provisioning", () => {
 
     it("creates new SSH key via promptCredential when user selects __new__", async () => {
       mockSelect.mockResolvedValueOnce("vultr");
+      mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
 
       setupCatalogMocks();
       setupFirewallMocks(true);
@@ -494,6 +502,7 @@ describe("VPS provisioning", () => {
 
     it("uses existing AL vps_ssh credential and uploads to Vultr", async () => {
       mockSelect.mockResolvedValueOnce("vultr");
+      mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
 
       setupCatalogMocks();
       setupFirewallMocks(true);
@@ -531,6 +540,7 @@ describe("VPS provisioning", () => {
 
     it("reuses Vultr key when AL credential public key already exists on Vultr", async () => {
       mockSelect.mockResolvedValueOnce("vultr");
+      mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
 
       const pubKey = "ssh-ed25519 CCCC...";
       const vultrKeys = [
@@ -572,6 +582,7 @@ describe("VPS provisioning", () => {
 
     it("calls onInstanceCreated callback with partial config", async () => {
       mockSelect.mockResolvedValueOnce("vultr");
+      mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
 
       setupCatalogMocks();
       setupFirewallMocks(true);
@@ -598,6 +609,7 @@ describe("VPS provisioning", () => {
 
     it("returns null when user declines final confirmation", async () => {
       mockSelect.mockResolvedValueOnce("vultr");
+      mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
 
       setupCatalogMocks();
       setupFirewallMocks(true);
@@ -621,6 +633,7 @@ describe("VPS provisioning", () => {
       vi.useFakeTimers();
 
       mockSelect.mockResolvedValueOnce("vultr");
+      mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
 
       setupCatalogMocks();
       setupFirewallMocks(true);
@@ -653,6 +666,7 @@ describe("VPS provisioning", () => {
 
     it("stays on SSH key step when promptCredential returns undefined (user cancels)", async () => {
       mockSelect.mockResolvedValueOnce("vultr");
+      mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
 
       setupCatalogMocks();
       setupFirewallMocks(true);
@@ -682,6 +696,7 @@ describe("VPS provisioning", () => {
 
     it("filters regions by plan availability", async () => {
       mockSelect.mockResolvedValueOnce("vultr");
+      mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
 
       // Plan only available in "atl"
       const restrictedPlans = [

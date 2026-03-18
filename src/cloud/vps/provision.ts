@@ -49,6 +49,13 @@ async function searchWithEsc<T>(opts: {
   }
 }
 
+export interface CloudflareConfig {
+  apiToken: string;
+  zoneId: string;
+  zoneName: string;
+  hostname: string;
+}
+
 export type OnInstanceCreated = (partial: Record<string, unknown>) => void;
 
 export async function setupVpsCloud(onInstanceCreated?: OnInstanceCreated): Promise<Record<string, unknown> | null> {
@@ -63,7 +70,86 @@ export async function setupVpsCloud(onInstanceCreated?: OnInstanceCreated): Prom
   if (mode === "existing") {
     return setupExistingServer();
   }
-  return provisionVultr(onInstanceCreated);
+
+  // Offer Cloudflare HTTPS before Vultr provisioning
+  const cfConfig = await promptCloudflareHttps();
+
+  return provisionVultr(onInstanceCreated, cfConfig);
+}
+
+/**
+ * Prompt for optional Cloudflare HTTPS setup.
+ * Returns null if declined or validation fails.
+ */
+async function promptCloudflareHttps(): Promise<CloudflareConfig | null> {
+  const useHttps = await confirm({
+    message: "Expose gateway via Cloudflare HTTPS?",
+    default: true,
+  });
+  if (!useHttps) return null;
+
+  const backend = new FilesystemBackend();
+  let apiToken = await backend.read("cloudflare_api_token", "default", "api_token");
+  if (!apiToken) {
+    console.log("Cloudflare API token not found.");
+    const entered = await password({
+      message: "Enter your Cloudflare API token (from https://dash.cloudflare.com/profile/api-tokens):",
+      mask: "*",
+      validate: (v: string) => v.trim() ? true : "API token is required",
+    });
+    apiToken = entered.trim();
+
+    // Verify token before saving
+    const { verifyToken } = await import("./cloudflare-api.js");
+    try {
+      const active = await verifyToken(apiToken);
+      if (!active) {
+        console.error("Cloudflare API token is not active.");
+        return null;
+      }
+    } catch (err: any) {
+      console.error(`Cloudflare API token verification failed: ${err.message}`);
+      return null;
+    }
+
+    await writeCredentialField("cloudflare_api_token", "default", "api_token", apiToken);
+    console.log("Cloudflare API token saved.");
+  }
+
+  const { listZones } = await import("./cloudflare-api.js");
+
+  // Collect zone name
+  const zoneName = await input({
+    message: "Cloudflare zone (domain, e.g. example.com):",
+    validate: (v: string) => v.trim() ? true : "Zone name is required",
+  });
+
+  // Validate zone
+  let zoneId: string;
+  try {
+    const zones = await listZones(apiToken, zoneName.trim());
+    if (zones.length === 0) {
+      console.error(`No Cloudflare zone found for "${zoneName}". Check your domain and API token permissions.`);
+      return null;
+    }
+    zoneId = zones[0].id;
+    console.log(`Zone "${zoneName}" found (${zoneId}).`);
+  } catch (err: any) {
+    console.error(`Failed to list Cloudflare zones: ${err.message}`);
+    return null;
+  }
+
+  // Collect hostname
+  const hostname = await input({
+    message: `Hostname (e.g. agents.${zoneName.trim()}):`,
+    validate: (v: string) => {
+      if (!v.trim()) return "Hostname is required";
+      if (!v.trim().endsWith(zoneName.trim())) return `Hostname must be under ${zoneName.trim()}`;
+      return true;
+    },
+  });
+
+  return { apiToken, zoneId, zoneName: zoneName.trim(), hostname: hostname.trim() };
 }
 
 async function setupExistingServer(): Promise<Record<string, unknown> | null> {
@@ -123,7 +209,7 @@ async function setupExistingServer(): Promise<Record<string, unknown> | null> {
   return config;
 }
 
-async function provisionVultr(onInstanceCreated?: OnInstanceCreated): Promise<Record<string, unknown> | null> {
+async function provisionVultr(onInstanceCreated?: OnInstanceCreated, cfConfig?: CloudflareConfig | null): Promise<Record<string, unknown> | null> {
   // 1. Read Vultr API key — prompt inline if missing
   const backend = new FilesystemBackend();
   let apiKeyValue = await backend.read("vultr_api_key", "default", "api_key");
@@ -318,12 +404,25 @@ async function provisionVultr(onInstanceCreated?: OnInstanceCreated): Promise<Re
     const group = await createFirewallGroup(apiKeyValue, AL_FW_DESCRIPTION);
     firewallGroupId = group.id;
 
-    // Allow SSH (22) and gateway port inbound from anywhere, IPv4 + IPv6
+    // Allow SSH + web ports inbound from anywhere, IPv4 + IPv6
+    // HTTPS path: 22, 80, 443 (no direct gateway access)
+    // Non-HTTPS path: 22, 3000
+    const webPorts = cfConfig
+      ? [
+          { port: "80", notes: "HTTP redirect" },
+          { port: "443", notes: "HTTPS" },
+        ]
+      : [
+          { port: String(VPS_CONSTANTS.DEFAULT_GATEWAY_PORT), notes: "Gateway" },
+        ];
+
     const rules = [
       { ip_type: "v4" as const, protocol: "tcp" as const, subnet: "0.0.0.0", subnet_size: 0, port: "22", notes: "SSH" },
-      { ip_type: "v4" as const, protocol: "tcp" as const, subnet: "0.0.0.0", subnet_size: 0, port: String(VPS_CONSTANTS.DEFAULT_GATEWAY_PORT), notes: "Gateway" },
       { ip_type: "v6" as const, protocol: "tcp" as const, subnet: "::", subnet_size: 0, port: "22", notes: "SSH IPv6" },
-      { ip_type: "v6" as const, protocol: "tcp" as const, subnet: "::", subnet_size: 0, port: String(VPS_CONSTANTS.DEFAULT_GATEWAY_PORT), notes: "Gateway IPv6" },
+      ...webPorts.flatMap((wp) => [
+        { ip_type: "v4" as const, protocol: "tcp" as const, subnet: "0.0.0.0", subnet_size: 0, port: wp.port, notes: wp.notes },
+        { ip_type: "v6" as const, protocol: "tcp" as const, subnet: "::", subnet_size: 0, port: wp.port, notes: `${wp.notes} IPv6` },
+      ]),
     ];
     await Promise.all(rules.map((r) => createFirewallRule(apiKeyValue, firewallGroupId!, r)));
   }
@@ -421,7 +520,95 @@ async function provisionVultr(onInstanceCreated?: OnInstanceCreated): Promise<Re
     host: sshConfig.host,
     vultrInstanceId: instance.id,
     vultrRegion: regionChoice,
+    gatewayUrl: `http://${sshConfig.host}:${VPS_CONSTANTS.DEFAULT_GATEWAY_PORT}`,
   };
   if (sshKeyPath !== VPS_CONSTANTS.DEFAULT_SSH_KEY_PATH) result.sshKeyPath = sshKeyPath;
+
+  // Post-VPS Cloudflare HTTPS setup
+  if (cfConfig) {
+    try {
+      result.cloudflareHostname = cfConfig.hostname;
+      result.cloudflareZoneId = cfConfig.zoneId;
+
+      const {
+        upsertDnsRecord,
+        createOriginCertificate,
+        setSslMode,
+      } = await import("./cloudflare-api.js");
+      const { installNginx, configureNginx } = await import("./nginx.js");
+
+      // 1. DNS record
+      console.log(`\nCreating DNS record: ${cfConfig.hostname} → ${sshConfig.host}...`);
+      try {
+        const dnsRecord = await upsertDnsRecord(cfConfig.apiToken, cfConfig.zoneId, cfConfig.hostname, sshConfig.host, true);
+        result.cloudflareDnsRecordId = dnsRecord.id;
+        console.log(`DNS record created (${dnsRecord.id}).`);
+      } catch (err: any) {
+        console.error(`Warning: DNS record creation failed: ${err.message}`);
+        console.error(`Falling back to http://${sshConfig.host}:${VPS_CONSTANTS.DEFAULT_GATEWAY_PORT}`);
+        return result;
+      }
+
+      // 2. Origin CA certificate
+      console.log("Generating Cloudflare Origin CA certificate...");
+      let cert: string, key: string;
+      try {
+        const originCert = await createOriginCertificate(cfConfig.apiToken, [cfConfig.hostname], 5475);
+        cert = originCert.certificate;
+        key = originCert.private_key;
+        console.log("Origin CA certificate generated.");
+      } catch (err: any) {
+        console.error(`Warning: Origin CA certificate creation failed: ${err.message}`);
+        console.error("You can generate one manually at https://dash.cloudflare.com → SSL/TLS → Origin Server.");
+        return result;
+      }
+
+      // 3. Install nginx
+      console.log("Installing nginx...");
+      try {
+        await installNginx(sshConfig);
+        console.log("nginx installed.");
+      } catch (err: any) {
+        console.error(`Warning: nginx installation failed: ${err.message}`);
+        console.error(`SSH into the server and install manually: ssh ${sshConfig.user}@${sshConfig.host}`);
+        return result;
+      }
+
+      // 4. Configure nginx with cert
+      console.log("Configuring nginx TLS reverse proxy...");
+      try {
+        await configureNginx(sshConfig, cfConfig.hostname, cert, key, VPS_CONSTANTS.DEFAULT_GATEWAY_PORT);
+        console.log("nginx configured.");
+      } catch (err: any) {
+        console.error(`Warning: nginx configuration failed: ${err.message}`);
+        console.error(`SSH into the server to configure manually: ssh ${sshConfig.user}@${sshConfig.host}`);
+        return result;
+      }
+
+      // 5. Set SSL mode to strict
+      console.log("Setting Cloudflare SSL mode to strict...");
+      try {
+        await setSslMode(cfConfig.apiToken, cfConfig.zoneId, "strict");
+        console.log("SSL mode set to strict.");
+      } catch (err: any) {
+        console.error(`Warning: Failed to set SSL mode: ${err.message}`);
+        console.error("Set SSL/TLS mode to 'Full (strict)' manually in the Cloudflare dashboard.");
+      }
+
+      // 6. Verify nginx is proxying correctly
+      const healthCheck = await sshExec(sshConfig, "curl -sf http://localhost/health", 10_000);
+      if (healthCheck.exitCode === 0) {
+        console.log("nginx reverse proxy verified.");
+      } else {
+        console.log("Note: nginx health check returned non-zero (gateway may not be running yet).");
+      }
+
+      result.gatewayUrl = `https://${cfConfig.hostname}`;
+    } catch (err: any) {
+      console.error(`Cloudflare HTTPS setup encountered an error: ${err.message}`);
+      console.error(`VPS is still available at ${sshConfig.host}. HTTPS can be configured manually.`);
+    }
+  }
+
   return result;
 }

@@ -10,6 +10,9 @@ export interface ServerConfig {
   provider?: string;        // "vultr" when AL-provisioned
   vultrInstanceId?: string;
   vultrRegion?: string;
+  cloudflareZoneId?: string;
+  cloudflareDnsRecordId?: string;
+  cloudflareHostname?: string;
 }
 
 export function validateServerConfig(raw: unknown): ServerConfig {

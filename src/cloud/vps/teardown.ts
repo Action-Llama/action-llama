@@ -20,6 +20,7 @@ function sshConfigFromCloud(config: VpsCloudConfig): SshConfig {
 
 export async function teardownVps(_projectPath: string, config: VpsCloudConfig): Promise<void> {
   const sshConfig = sshConfigFromCloud(config);
+  const backend = new FilesystemBackend();
 
   // 1. Stop and remove all action-llama containers
   try {
@@ -48,7 +49,24 @@ export async function teardownVps(_projectPath: string, config: VpsCloudConfig):
     // Best effort — server may be unreachable
   }
 
-  // 3. If this is a Vultr-provisioned instance, offer to delete it
+  // 3. Clean up Cloudflare DNS record
+  if (config.cloudflareZoneId && config.cloudflareDnsRecordId) {
+    try {
+      const cfToken = await backend.read("cloudflare_api_token", "default", "api_token");
+      if (cfToken) {
+        const { deleteDnsRecord } = await import("./cloudflare-api.js");
+        await deleteDnsRecord(cfToken, config.cloudflareZoneId, config.cloudflareDnsRecordId);
+        console.log(`Cloudflare DNS record deleted${config.cloudflareHostname ? ` (${config.cloudflareHostname})` : ""}.`);
+      } else {
+        console.log("Cloudflare API token not found — delete the DNS record manually in the Cloudflare dashboard.");
+      }
+    } catch (err: any) {
+      console.log(`Cloudflare DNS cleanup failed: ${err.message}`);
+      console.log("Delete the DNS record manually in the Cloudflare dashboard.");
+    }
+  }
+
+  // 4. If this is a Vultr-provisioned instance, offer to delete it
   if (config.vultrInstanceId) {
     const deleteVps = await confirm({
       message: `Delete Vultr instance ${config.vultrInstanceId} (${config.host})?`,
@@ -56,7 +74,6 @@ export async function teardownVps(_projectPath: string, config: VpsCloudConfig):
     });
 
     if (deleteVps) {
-      const backend = new FilesystemBackend();
       const apiKey = await backend.read("vultr_api_key", "default", "api_key");
       if (!apiKey) {
         console.log("Vultr API key not found — delete the instance manually at https://my.vultr.com");
