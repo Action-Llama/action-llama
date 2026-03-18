@@ -89,7 +89,7 @@ sentryProjects = ["web-app", "api"]
 | `credentials` | string[] | Yes | Credential refs: `"type"` for default instance, `"type:instance"` for named instance |
 | `schedule` | string | No* | Cron expression for polling |
 | `scale` | number | No | Number of concurrent runs allowed (default: 1). Set to `0` to disable the agent. Use lock skills in your actions to coordinate instances. See [Resource Locks](/agents#resource-locks). |
-| `timeout` | number | No | Max runtime in seconds. Falls back to `[local].timeout` in project config, then `900`. On AWS ECS, agents with timeout <= 900 auto-route to Lambda for faster startup. See [Timeout](#timeout). |
+| `timeout` | number | No | Max runtime in seconds. Falls back to `[local].timeout` in project config, then `900`. On AWS ECS, agents with timeout ≤ 900 auto-route to Lambda for faster startup. See [Timeout](#timeout). |
 | `model` | table | No | LLM model configuration (falls back to `[model]` in project `config.toml`) |
 | `model.provider` | string | Yes* | LLM provider ("anthropic", "openai", "groq", "google", "xai", "mistral", "openrouter", or "custom") |
 | `model.model` | string | Yes* | Model ID |
@@ -144,7 +144,7 @@ When using `cloud.provider = "ecs"`, agents are automatically routed to the most
 
 | Effective timeout | Runtime | Cold start | Cost |
 |---|---|---|---|
-| **<= 900s** (15 min) | **AWS Lambda** | ~1-2s | Lower (pay per 100ms) |
+| **≤ 900s** (15 min) | **AWS Lambda** | ~1-2s | Lower (pay per 100ms) |
 | **> 900s** | **ECS Fargate** | ~30-60s | Higher (pay per second, 1-min minimum) |
 
 This routing is automatic — you don't need to configure anything beyond setting the timeout. Both runtimes use the same ECR images (built via CodeBuild) and the same Secrets Manager credentials.
@@ -155,7 +155,7 @@ This routing is automatic — you don't need to configure anything beyond settin
 
 ### Lambda IAM roles
 
-When `al doctor -c` runs, it automatically creates Lambda execution roles (`al-{agentName}-lambda-role`) for agents whose effective timeout is <= 900s. These roles include permissions for Secrets Manager access, CloudWatch Logs, and ECR image pull. You can override the role with `cloud.lambdaRoleArn` in `config.toml`.
+When `al doctor -c` runs, it automatically creates Lambda execution roles (`al-{agentName}-lambda-role`) for agents whose effective timeout is ≤ 900s. These roles include permissions for Secrets Manager access, CloudWatch Logs, and ECR image pull. You can override the role with `cloud.lambdaRoleArn` in `config.toml`.
 
 ### Examples
 
