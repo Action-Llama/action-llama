@@ -1,5 +1,152 @@
 # @action-llama/action-llama
 
+## 0.12.0
+
+### Minor Changes
+
+- [`bddd62d`](https://github.com/Action-Llama/action-llama/commit/bddd62d1d6260833153cbf4b67bb046cf0239d25) Thanks [@asselstine](https://github.com/asselstine)! - Removed AWS and GCP cloud system in favour of simpler VPS
+
+- [`2cc4267`](https://github.com/Action-Llama/action-llama/commit/2cc42671c14405cb98045cc59ed99fa9b7ffe56a) Thanks [@asselstine](https://github.com/asselstine)! - Portable projects: three-layer config separation and agent-scoped credentials.
+
+  **Config changes:**
+
+  - Project config (`config.toml`) is now portable — cloud infrastructure details belong in environment files
+  - Added `.env.toml` (gitignored) for per-project environment binding and config overrides
+  - Added `~/.action-llama/environments/<name>.toml` for shared cloud infrastructure config
+  - Config merge order: `config.toml` -> `.env.toml` -> environment file (later wins, deep merge)
+  - `[cloud]` in `config.toml` emits a deprecation warning; move to an environment file
+
+  **CLI changes:**
+
+  - Replaced `-c`/`--cloud` flag with `-E`/`--env <name>` on all commands (start, run, doctor, stat, logs, kill, pause, resume, chat, cloud deploy)
+  - Added `al env init <name>`, `al env list`, `al env show <name>` commands
+  - Environment can also be set via `AL_ENV` env var or `.env.toml`'s `environment` field
+  - Cloud mode is now auto-detected from the merged config (presence of `[cloud]` section)
+
+  **Credential changes:**
+
+  - Agent credentials now resolve with agent-specific -> default fallback (`type/<agent-name>/` then `type/default/`)
+  - Cross-agent credential references: `credentials = ["other-agent/github_token"]`
+  - Legacy `type:instance` syntax still works with a deprecation warning
+  - `"default"` is now a reserved name and cannot be used as an agent name
+
+  **Scaffolding:**
+
+  - `al new` now adds `.env.toml` to `.gitignore`
+
+- [#113](https://github.com/Action-Llama/action-llama/pull/113) [`04123f6`](https://github.com/Action-Llama/action-llama/commit/04123f65f68990d7d3fa54eab543a72f1ca2b28d) Thanks [@asselstine](https://github.com/asselstine)! - Added `al push` command for deploying to self-hosted servers via SSH. Configure a
+  `[server]` section in an environment file with host, user, port, keyPath, and basePath,
+  then run `al push --env <name>` to sync project files and credentials, install a systemd
+  service running `al start --headless --expose`, and verify deployment with a health check.
+  Supports `--dry-run` to preview changes and `--no-creds` to skip credential sync.
+
+  Also changed `al env init` to require a `--type` flag (`server`, `ecs`, or `cloud-run`)
+  instead of defaulting to ECS. Removed support for `[cloud]` in `config.toml` — cloud
+  config must now be in an environment file.
+
+### Patch Changes
+
+- [`5254284`](https://github.com/Action-Llama/action-llama/commit/525428474d285993977523ecf44ae53015a9d898) Thanks [@asselstine](https://github.com/asselstine)! - The HTTP gateway now starts automatically with `al start` — the `--gateway` (`-g`) flag has been removed. This means `al pause`, `al resume`, `al kill`, and `al stop` work out of the box without needing to remember the flag. The `--expose` flag still controls whether the gateway binds to `0.0.0.0` (public) or `127.0.0.1` (local only, the default).
+
+- [#118](https://github.com/Action-Llama/action-llama/pull/118) [`a280e15`](https://github.com/Action-Llama/action-llama/commit/a280e15e61a623cbe5833968ab02ac850910b8d5) Thanks [@asselstine](https://github.com/asselstine)! - Added `al creds types` to browse and search available credential types interactively,
+  `al agent new` to create agents from built-in templates (dev, reviewer, devops) or a
+  blank custom scaffold, and `al agent config <name>` to interactively edit an agent's
+  credentials, model, schedule, webhooks, and params via a menu loop.
+
+- [`570cf0c`](https://github.com/Action-Llama/action-llama/commit/570cf0ce4a9d170aaa695730bb509356ba839ca5) Thanks [@asselstine](https://github.com/asselstine)! - Added a dedicated "Initializing" TUI phase during Docker image builds. Instead of
+  showing the full running view while images are still building, `al start` now displays
+  a focused build progress screen with per-agent spinners and build step details, then
+  transitions to the normal running TUI once all images are ready.
+
+- [#118](https://github.com/Action-Llama/action-llama/pull/118) [`a280e15`](https://github.com/Action-Llama/action-llama/commit/a280e15e61a623cbe5833968ab02ac850910b8d5) Thanks [@asselstine](https://github.com/asselstine)! - Added `al env set`, `al env prov`, and `al env deprov` commands for binding projects to environments, provisioning VPS servers, and tearing them down. Provisioned servers now get a ufw firewall configured (SSH + gateway only). Removed the unused `al setup` command and dead `cloud-setup.ts` code.
+
+- [`4ffacb1`](https://github.com/Action-Llama/action-llama/commit/4ffacb13c488b21e7e2ac970d0e3d7d896a09abb) Thanks [@asselstine](https://github.com/asselstine)! - Added optional Cloudflare HTTPS support to `al env prov`. When provisioning a new Vultr VPS,
+  you can now opt in to Cloudflare HTTPS: the wizard collects your Cloudflare API token and
+  hostname, then after the VPS is up it creates a proxied DNS record, generates an Origin CA
+  certificate, installs nginx as a TLS-terminating reverse proxy, and sets the gateway URL to
+  `https://<hostname>`. Deprovisioning with `al env deprov` automatically cleans up the DNS record.
+  The existing plain HTTP flow is unchanged when you decline HTTPS.
+
+- [`194171d`](https://github.com/Action-Llama/action-llama/commit/194171d658db97c126105dd8c9cb3213c1174437) Thanks [@asselstine](https://github.com/asselstine)! - Fixed container agents failing to read ACTIONS.md via the read tool. The container
+  working directory was `/tmp` (an empty tmpfs mount), so file reads resolved there
+  instead of `/app/static` where agent files are baked into the image. Changed cwd
+  to `/app/static` and updated the prompt to instruct the LLM to write to `/tmp`.
+
+- [`fd5fe2b`](https://github.com/Action-Llama/action-llama/commit/fd5fe2b49f28d67e723de04c233038fcb6180880) Thanks [@asselstine](https://github.com/asselstine)! - `al env prov` now checks for an existing Origin CA certificate before generating a new one. If a certificate already exists, it prompts whether to regenerate (default: No) instead of generating unconditionally and then asking whether to overwrite.
+
+- [`0065a18`](https://github.com/Action-Llama/action-llama/commit/0065a18321a2e9c86775d2efe4f067c2760884f8) Thanks [@asselstine](https://github.com/asselstine)! - Removed hardcoded `--cpus 2` default from Docker container launch, fixing failures on
+  single-CPU VPS instances. CPU limit is now only passed when explicitly set via `[local].cpus`
+  in config. Also removed redundant `size=2g` tmpfs cap since `--memory` already bounds
+  container memory usage.
+
+- [`77e175f`](https://github.com/Action-Llama/action-llama/commit/77e175f3741964815f27fab20cfe6c05d83c2a5f) Thanks [@asselstine](https://github.com/asselstine)! - Added hot reload for `al start`. The scheduler now watches the `agents/` directory
+  for changes and automatically reloads agent configs, rebuilds images, and updates
+  cron/webhook schedules without restarting. Running containers finish with their old
+  image; new runs use the updated image. Adding or removing agent directories is also
+  detected automatically.
+
+- [#111](https://github.com/Action-Llama/action-llama/pull/111) [`1f2130a`](https://github.com/Action-Llama/action-llama/commit/1f2130ad7e1d1fadc2de4a67c94746f151f15423) Thanks [@asselstine](https://github.com/asselstine)! - Added full integration test system with Docker and shell script agents. Test agents use
+  bash scripts instead of LLMs inside real Docker containers, exercising the complete stack
+  (image builds, gateway, webhooks, cron, control API, reruns, signals) at zero LLM cost.
+
+  Production changes: fixed agent path bug in image builder (was missing `agents/` prefix),
+  added `test-script.sh` baking into agent images when present, and added a `TestWebhookProvider`
+  that skips HMAC validation for test webhooks.
+
+- [#116](https://github.com/Action-Llama/action-llama/pull/116) [`b8a792c`](https://github.com/Action-Llama/action-llama/commit/b8a792ccf20e0a36bd63272feae977ad3d035a1e) Thanks [@asselstine](https://github.com/asselstine)! - Added optional `projectName` field to `.env.toml` for human-readable project identification.
+  When set, the project name appears in the TUI header and in headless log output, making it
+  easier to identify which project is running. `al new` now scaffolds `.env.toml` with
+  `projectName` pre-populated from the project name.
+
+- [`e77d3f9`](https://github.com/Action-Llama/action-llama/commit/e77d3f9f79d422c883e484a98557caf024faff32) Thanks [@asselstine](https://github.com/asselstine)! - Fixed outdated Dockerfile examples in `al chat` context and AGENTS.md that used
+  `apt-get` (Debian) instead of `apk` (Alpine), matching the actual `node:20-alpine`
+  base image. Also updated credential reference examples to use the current simple
+  syntax (`"github_token"`) instead of the deprecated `"type:instance"` format, and
+  corrected the base image tool list to include `jq`.
+
+- [`80b195f`](https://github.com/Action-Llama/action-llama/commit/80b195f603366088dbf6b6c9b7bfab4be5432356) Thanks [@asselstine](https://github.com/asselstine)! - Removed `server.gatewayPort` config option. The remote gateway port is now
+  always 3000 (`DEFAULT_GATEWAY_PORT`), matching what UFW, nginx, and Vultr
+  firewall rules already assumed. Also removed the unused `AL_GATEWAY_PORT`
+  environment variable from the systemd unit.
+
+- [`db77a1c`](https://github.com/Action-Llama/action-llama/commit/db77a1c06978912b2eeb5050c1b55f24e45d32de) Thanks [@asselstine](https://github.com/asselstine)! - Fixed credential prompts exposing sensitive values in plain text. All custom credential
+  prompt flows (API keys, tokens, SSH private keys) now use masked password input instead
+  of plain text input, matching the behavior of the generic credential prompter.
+
+- [#113](https://github.com/Action-Llama/action-llama/pull/113) [`04123f6`](https://github.com/Action-Llama/action-llama/commit/04123f65f68990d7d3fa54eab543a72f1ca2b28d) Thanks [@asselstine](https://github.com/asselstine)! - Separated unit and integration test suites using vitest projects. `npm run test:unit` runs
+  only fast unit tests, `npm run test:integration` runs Docker-based integration tests with
+  process isolation and 180s timeout, and `npm test` runs both. Watch mode is scoped to unit tests.
+
+- [`7fd175b`](https://github.com/Action-Llama/action-llama/commit/7fd175bb1a6c593656869a65ce18938d0b45979f) Thanks [@asselstine](https://github.com/asselstine)! - Fixed VPS SSH key credential not being persisted during Vultr provisioning, and
+  SSH polling using the wrong key path. When creating or selecting a vps_ssh
+  credential, the keypair is now saved to the credential store and `sshKeyPath` is
+  stored in the environment config so that SSH connections use the correct key.
+
+  VPS cloud-init now installs Node.js 22.x LTS in addition to Docker, so
+  `al push` no longer fails with "Node.js not found" on freshly provisioned
+  servers. Running `al env prov` on an existing environment now verifies SSH,
+  Node.js, and Docker readiness (installing Node.js automatically if missing)
+  instead of silently skipping.
+
+- [`3cb2364`](https://github.com/Action-Llama/action-llama/commit/3cb2364a4484f8d75421353445eafac68743d7d3) Thanks [@asselstine](https://github.com/asselstine)! - Increased integration test timeout from 3 minutes to 30 minutes to prevent
+  timeouts in slower CI environments like GitHub Actions.
+
+- [`132dc10`](https://github.com/Action-Llama/action-llama/commit/132dc101315cada0e7cbb909a13bbf25c0ae8ec4) Thanks [@asselstine](https://github.com/asselstine)! - `al push` now supports `--creds-only`, `--files-only`, and `--all` flags for selective syncing, and delegates config validation to `al doctor --check-only` instead of performing its own credential check. Bootstrap runs Node/Docker/al readiness checks in parallel and returns resolved binary paths (`BootstrapResult`); the generated systemd unit uses absolute paths for `al` and `node` with a proper `PATH` env var and `-w` flag. `al agent config` webhook setup now offers a credential picker (pick existing or add new) instead of raw text input. `al doctor` validates that webhook sources referenced by agents exist in config.toml, and health-check failures now display service status and recent logs for debugging.
+
+- [`098fb0d`](https://github.com/Action-Llama/action-llama/commit/098fb0d7d05268f577d888dc8b8e587d04677dcc) Thanks [@asselstine](https://github.com/asselstine)! - Improved `al push` health check to handle slow first-time deployments. The health
+  check now streams live journal output so you can see Docker image build progress,
+  waits up to 3 minutes (was 12 seconds), and detects service crashes to fail fast
+  instead of waiting for the full timeout.
+
+- [`8dd81b0`](https://github.com/Action-Llama/action-llama/commit/8dd81b0a3b342fc56839bbf5b1e0e533970fdb37) Thanks [@asselstine](https://github.com/asselstine)! - Added `al env check <name>` to verify environment health (SSH, Node.js, Docker, Vultr firewall, Cloudflare DNS, nginx, SSL mode, gateway). Reports pass/fail for each check and suggests `al env prov <name>` to fix issues. Re-running `al env prov` on an existing environment now uses the same verification logic with auto-fix.
+
+- [#117](https://github.com/Action-Llama/action-llama/pull/117) [`2b65a3d`](https://github.com/Action-Llama/action-llama/commit/2b65a3d3f1a26391f9f335e37208477160e37325) Thanks [@asselstine](https://github.com/asselstine)! - Added VPS cloud provider (`provider: "vps"`) for deploying agents to any server via SSH + Docker.
+  Supports connecting to existing servers or provisioning new Vultr VPS instances. Images are built
+  directly on the VPS via `tar | ssh docker build` — no container registry needed. Credentials are
+  stored on the VPS filesystem over SSH.
+
+- [#115](https://github.com/Action-Llama/action-llama/pull/115) [`7dfd50a`](https://github.com/Action-Llama/action-llama/commit/7dfd50aec35d9b7540141581683e70b0fe273be5) Thanks [@asselstine](https://github.com/asselstine)! - Added a gateway log API (`/api/logs/scheduler`, `/api/logs/agents/:name`, `/api/logs/agents/:name/:instanceId`) with cursor-based pagination, time range filtering, and multi-instance aggregation. The CLI now fetches logs from the gateway API in local mode (falling back to direct file reading when the gateway isn't running), and the web UI uses cursor polling instead of SSE.
+
 ## 0.11.11
 
 ### Patch Changes
