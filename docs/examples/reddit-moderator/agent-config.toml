@@ -1,0 +1,30 @@
+# Reddit Moderator Agent Configuration
+
+credentials = ["reddit_oauth"]
+
+# Check every 15 minutes for new posts/comments to moderate
+schedule = "*/15 * * * *"
+
+[model]
+provider = "anthropic"
+model = "claude-3-5-sonnet-20241022"
+
+[params]
+# The subreddit to moderate (without r/ prefix)
+subreddit = "test"
+
+# Moderation rules - remove comments that contain these patterns
+moderation_rules = [
+  "spam",
+  "harassment", 
+  "hate speech",
+  "personal attacks",
+]
+
+# How far back to check for comments (in hours)
+max_comment_age_hours = 24
+
+# Optional: scheduled posting
+# posting_enabled = false
+# posting_schedule = "daily"
+# posting_time = "09:00"
