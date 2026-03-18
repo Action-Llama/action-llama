@@ -8,7 +8,7 @@ import { AbortPromptError } from "@inquirer/core";
 import { readFileSync } from "fs";
 import { resolve } from "path";
 import { VPS_CONSTANTS } from "./constants.js";
-import { testConnection, sshExec, type SshConfig } from "./ssh.js";
+import { testConnection, sshExec, clearKnownHost, type SshConfig } from "./ssh.js";
 import type { VpsCloudConfig } from "../../shared/config.js";
 import { FilesystemBackend } from "../../shared/filesystem-backend.js";
 import { writeCredentialField, writeCredentialFields, credentialDir } from "../../shared/credentials.js";
@@ -483,6 +483,7 @@ async function provisionVultr(onInstanceCreated?: OnInstanceCreated, cfConfig?: 
         partialResult.host = current.main_ip;
         if (onInstanceCreated) onInstanceCreated(partialResult);
         console.log(`Instance active at ${current.main_ip}. Waiting for SSH...`);
+        clearKnownHost(current.main_ip);
       }
 
       // Wait for SSH
@@ -496,6 +497,8 @@ async function provisionVultr(onInstanceCreated?: OnInstanceCreated, cfConfig?: 
           break;
         }
         console.log("Waiting for cloud-init to complete (Node.js + Docker)...");
+      } else {
+        process.stdout.write(".");
       }
     } else {
       process.stdout.write(".");
@@ -935,6 +938,9 @@ async function provisionHetzner(onInstanceCreated?: OnInstanceCreated, cfConfig?
         partialResult.host = current.public_net.ipv4.ip;
         if (onInstanceCreated) onInstanceCreated(partialResult);
         console.log(`Server running at ${current.public_net.ipv4.ip}. Waiting for SSH...`);
+        // Remove stale known_hosts entry — Hetzner recycles IPs, and
+        // StrictHostKeyChecking=accept-new rejects changed host keys.
+        clearKnownHost(current.public_net.ipv4.ip);
       }
 
       // Wait for SSH
@@ -948,6 +954,8 @@ async function provisionHetzner(onInstanceCreated?: OnInstanceCreated, cfConfig?
           break;
         }
         console.log("Waiting for cloud-init to complete (Node.js + Docker)...");
+      } else {
+        process.stdout.write(".");
       }
     } else {
       process.stdout.write(".");

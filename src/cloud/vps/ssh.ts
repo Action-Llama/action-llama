@@ -3,7 +3,7 @@
  * Wraps ssh/scp commands with consistent options.
  */
 
-import { execFile, spawn, type ChildProcess } from "child_process";
+import { execFile, execFileSync, spawn, type ChildProcess } from "child_process";
 import { homedir } from "os";
 
 export interface SshConfig {
@@ -124,6 +124,20 @@ export function scpBuffer(config: SshConfig, data: Buffer | string, remotePath: 
     proc.on("error", reject);
     proc.stdin.end(data);
   });
+}
+
+/**
+ * Remove any existing known_hosts entry for a host.
+ * Essential when provisioning new servers that may reuse IPs from previous instances.
+ * SSH's StrictHostKeyChecking=accept-new rejects changed host keys, so stale
+ * entries cause silent connection failures.
+ */
+export function clearKnownHost(host: string): void {
+  try {
+    execFileSync("ssh-keygen", ["-R", host], { stdio: "ignore" });
+  } catch {
+    /* no entry to remove — fine */
+  }
 }
 
 /**

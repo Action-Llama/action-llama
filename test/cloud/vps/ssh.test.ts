@@ -2,17 +2,18 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { EventEmitter } from "events";
 
 // Mock child_process
-const { mockExecFile, mockSpawn } = vi.hoisted(() => ({
+const { mockExecFile, mockExecFileSync, mockSpawn } = vi.hoisted(() => ({
   mockExecFile: vi.fn(),
+  mockExecFileSync: vi.fn(),
   mockSpawn: vi.fn(),
 }));
 
 vi.mock("child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("child_process")>();
-  return { ...actual, execFile: mockExecFile, spawn: mockSpawn };
+  return { ...actual, execFile: mockExecFile, execFileSync: mockExecFileSync, spawn: mockSpawn };
 });
 
-const { sshExec, sshSpawn, scpBuffer, testConnection } = await import("../../../src/cloud/vps/ssh.js");
+const { sshExec, sshSpawn, scpBuffer, testConnection, clearKnownHost } = await import("../../../src/cloud/vps/ssh.js");
 type SshConfig = import("../../../src/cloud/vps/ssh.js").SshConfig;
 
 const testConfig: SshConfig = {
@@ -25,6 +26,7 @@ const testConfig: SshConfig = {
 describe("ssh helpers", () => {
   beforeEach(() => {
     mockExecFile.mockReset();
+    mockExecFileSync.mockReset();
     mockSpawn.mockReset();
   });
 
@@ -104,6 +106,24 @@ describe("ssh helpers", () => {
       fakeProc.emit("close", 1);
 
       await expect(promise).rejects.toThrow("scpBuffer failed");
+    });
+  });
+
+  describe("clearKnownHost", () => {
+    it("calls ssh-keygen -R with the host", () => {
+      clearKnownHost("1.2.3.4");
+      expect(mockExecFileSync).toHaveBeenCalledWith(
+        "ssh-keygen",
+        ["-R", "1.2.3.4"],
+        { stdio: "ignore" },
+      );
+    });
+
+    it("does not throw when ssh-keygen fails", () => {
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("No such entry");
+      });
+      expect(() => clearKnownHost("1.2.3.4")).not.toThrow();
     });
   });
 
