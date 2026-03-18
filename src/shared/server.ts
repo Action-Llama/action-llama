@@ -6,7 +6,6 @@ export interface ServerConfig {
   port?: number;         // default: 22
   keyPath?: string;      // default: ssh-agent
   basePath?: string;     // default: "/opt/action-llama"
-  gatewayPort?: number;  // default: 3000
   provider?: string;        // "vultr" when AL-provisioned
   vultrInstanceId?: string;
   vultrRegion?: string;
@@ -44,12 +43,6 @@ export function validateServerConfig(raw: unknown): ServerConfig {
 
   if (config.keyPath !== undefined && typeof config.keyPath !== "string") {
     throw new ConfigError("server.keyPath must be a string");
-  }
-
-  if (config.gatewayPort !== undefined) {
-    if (typeof config.gatewayPort !== "number" || !Number.isInteger(config.gatewayPort) || config.gatewayPort < 1 || config.gatewayPort > 65535) {
-      throw new ConfigError("server.gatewayPort must be an integer between 1 and 65535");
-    }
   }
 
   return config as unknown as ServerConfig;

@@ -20,25 +20,23 @@ import { buildSystemdUnit, pushToServer } from "../../src/remote/push.js";
 
 describe("buildSystemdUnit", () => {
   it("generates a valid systemd unit", () => {
-    const unit = buildSystemdUnit("my-project", "/opt/action-llama", 3000);
+    const unit = buildSystemdUnit("my-project", "/opt/action-llama");
     expect(unit).toContain("[Unit]");
     expect(unit).toContain("[Service]");
     expect(unit).toContain("[Install]");
     expect(unit).toContain("Description=Action Llama scheduler (my-project)");
     expect(unit).toContain("WorkingDirectory=/opt/action-llama/project");
     expect(unit).toContain("al start --headless --expose -w");
-    expect(unit).toContain("AL_GATEWAY_PORT=3000");
     expect(unit).toContain("Requires=docker.service");
   });
 
-  it("uses custom basePath and port", () => {
-    const unit = buildSystemdUnit("proj", "/srv/al", 8080);
+  it("uses custom basePath", () => {
+    const unit = buildSystemdUnit("proj", "/srv/al");
     expect(unit).toContain("WorkingDirectory=/srv/al/project");
-    expect(unit).toContain("AL_GATEWAY_PORT=8080");
   });
 
   it("uses absolute al path and adds PATH when binPaths provided", () => {
-    const unit = buildSystemdUnit("proj", "/opt/al", 3000, {
+    const unit = buildSystemdUnit("proj", "/opt/al", {
       alPath: "/usr/local/bin/al",
       nodePath: "/usr/local/bin/node",
     });
@@ -47,7 +45,7 @@ describe("buildSystemdUnit", () => {
   });
 
   it("includes both node and al dirs in PATH when they differ", () => {
-    const unit = buildSystemdUnit("proj", "/opt/al", 3000, {
+    const unit = buildSystemdUnit("proj", "/opt/al", {
       alPath: "/usr/local/bin/al",
       nodePath: "/home/user/.nvm/versions/node/v22/bin/node",
     });
@@ -57,7 +55,7 @@ describe("buildSystemdUnit", () => {
   });
 
   it("falls back to bare al when no binPaths", () => {
-    const unit = buildSystemdUnit("proj", "/opt/al", 3000);
+    const unit = buildSystemdUnit("proj", "/opt/al");
     expect(unit).toContain("ExecStart=al start --headless --expose -w");
     expect(unit).not.toContain("Environment=PATH=");
   });
@@ -146,7 +144,7 @@ describe("pushToServer", () => {
     expect(mockRsyncTo).toHaveBeenCalledTimes(1);
   });
 
-  it("uses custom gatewayPort from serverConfig", async () => {
+  it("always uses default gateway port 3000", async () => {
     mockSshExec.mockResolvedValue("ok");
 
     const origLog = console.log;
@@ -154,7 +152,7 @@ describe("pushToServer", () => {
     try {
       await pushToServer({
         projectPath: "/tmp/project",
-        serverConfig: { host: "h", gatewayPort: 9090 },
+        serverConfig: { host: "h" },
         globalConfig: {},
         envName: "my-server",
       });
@@ -162,8 +160,8 @@ describe("pushToServer", () => {
       console.log = origLog;
     }
 
-    // Check that the systemd unit and health check use port 9090
+    // Check that the systemd unit and health check use port 3000
     const sshCalls = mockSshExec.mock.calls.map((c: any[]) => c[1]);
-    expect(sshCalls.some((cmd: string) => cmd.includes("9090"))).toBe(true);
+    expect(sshCalls.some((cmd: string) => cmd.includes("3000"))).toBe(true);
   });
 });

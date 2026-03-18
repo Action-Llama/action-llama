@@ -107,7 +107,7 @@ async function checkVultrFirewall(
   const hasHttps = !!server.cloudflareHostname;
   const requiredPorts = hasHttps
     ? ["22", "80", "443"]
-    : ["22", String(server.gatewayPort ?? VPS_CONSTANTS.DEFAULT_GATEWAY_PORT)];
+    : ["22", String(VPS_CONSTANTS.DEFAULT_GATEWAY_PORT)];
 
   // Check which ports have IPv4 TCP rules
   const coveredPorts = new Set(
@@ -211,7 +211,7 @@ async function checkSslMode(
 
 async function checkGateway(ssh: SshConfig, server: ServerConfig): Promise<CheckResult> {
   const { sshExec } = await import("./ssh.js");
-  const port = server.gatewayPort ?? VPS_CONSTANTS.DEFAULT_GATEWAY_PORT;
+  const port = VPS_CONSTANTS.DEFAULT_GATEWAY_PORT;
   const result = await sshExec(ssh, `curl -sf http://localhost:${port}/health`, 10_000);
   if (result.exitCode === 0) {
     return { name: "Gateway", status: "pass", detail: "healthy", fixable: false };

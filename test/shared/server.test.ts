@@ -14,14 +14,12 @@ describe("validateServerConfig", () => {
       port: 2222,
       keyPath: "/home/me/.ssh/id_ed25519",
       basePath: "/srv/action-llama",
-      gatewayPort: 8080,
     });
     expect(config.host).toBe("my-server.example.com");
     expect(config.user).toBe("deploy");
     expect(config.port).toBe(2222);
     expect(config.keyPath).toBe("/home/me/.ssh/id_ed25519");
     expect(config.basePath).toBe("/srv/action-llama");
-    expect(config.gatewayPort).toBe(8080);
   });
 
   it("throws on null input", () => {
@@ -54,7 +52,8 @@ describe("validateServerConfig", () => {
     expect(() => validateServerConfig({ host: "h", keyPath: true })).toThrow("server.keyPath must be a string");
   });
 
-  it("throws on invalid gatewayPort", () => {
-    expect(() => validateServerConfig({ host: "h", gatewayPort: -1 })).toThrow("server.gatewayPort");
+  it("ignores unknown fields", () => {
+    const config = validateServerConfig({ host: "h", gatewayPort: 9090 });
+    expect(config.host).toBe("h");
   });
 });

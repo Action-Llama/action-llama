@@ -3,6 +3,7 @@ import { stringify as stringifyTOML } from "smol-toml";
 import type { ServerConfig } from "../shared/server.js";
 import type { GlobalConfig } from "../shared/config.js";
 import { CREDENTIALS_DIR } from "../shared/paths.js";
+import { VPS_CONSTANTS } from "../cloud/vps/constants.js";
 import { sshOptionsFromConfig, sshExec, rsyncTo, buildSshArgs, type SshOptions } from "./ssh.js";
 import { execFile as execFileCb } from "child_process";
 import { promisify } from "util";
@@ -26,7 +27,6 @@ export interface PushOptions {
 export function buildSystemdUnit(
   projectName: string,
   basePath: string,
-  gatewayPort: number,
   binPaths?: BootstrapResult,
 ): string {
   const alExec = binPaths?.alPath ?? "al";
@@ -49,8 +49,7 @@ WorkingDirectory=${basePath}/project
 ExecStart=${alExec} start --headless --expose -w
 Restart=on-failure
 RestartSec=5
-Environment=NODE_ENV=production
-Environment=AL_GATEWAY_PORT=${gatewayPort}${pathEnv}
+Environment=NODE_ENV=production${pathEnv}
 
 [Install]
 WantedBy=multi-user.target
@@ -64,7 +63,7 @@ export async function pushToServer(opts: PushOptions): Promise<void> {
   const { projectPath, serverConfig, globalConfig, envName, dryRun, noCreds, noFiles } = opts;
   const ssh = sshOptionsFromConfig(serverConfig);
   const basePath = serverConfig.basePath ?? "/opt/action-llama";
-  const gatewayPort = serverConfig.gatewayPort ?? globalConfig.gateway?.port ?? 3000;
+  const gatewayPort = VPS_CONSTANTS.DEFAULT_GATEWAY_PORT;
   const projectName = basename(resolve(projectPath));
 
   // Step 1: Bootstrap server
@@ -127,7 +126,7 @@ export async function pushToServer(opts: PushOptions): Promise<void> {
 
   // Step 6: Install systemd unit
   console.log("\n=== Setting up systemd service ===\n");
-  const unitContent = buildSystemdUnit(projectName, basePath, gatewayPort, binPaths);
+  const unitContent = buildSystemdUnit(projectName, basePath, binPaths);
   const unitEscaped = unitContent.replace(/'/g, "'\\''");
   await sshExec(ssh, `sudo tee /etc/systemd/system/action-llama.service > /dev/null << 'UNITEOF'\n${unitEscaped}\nUNITEOF`);
   await sshExec(ssh, "sudo systemctl daemon-reload");
