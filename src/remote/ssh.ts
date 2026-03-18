@@ -1,4 +1,4 @@
-import { execFile as execFileCb } from "child_process";
+import { execFile as execFileCb, spawn } from "child_process";
 import { promisify } from "util";
 import type { ServerConfig } from "../shared/server.js";
 
@@ -84,4 +84,14 @@ export async function rsyncTo(
   args.push(src, `${opts.user}@${opts.host}:${remotePath}`);
 
   await execFile("rsync", args, { maxBuffer: 10 * 1024 * 1024 });
+}
+
+/**
+ * Spawn an SSH command as a long-running child process (for streaming output).
+ * Returns the ChildProcess — caller is responsible for killing it.
+ */
+export function sshSpawn(opts: SshOptions, command: string) {
+  const args = buildSshArgs(opts);
+  args.push(command);
+  return spawn("ssh", args, { stdio: ["ignore", "pipe", "pipe"] });
 }

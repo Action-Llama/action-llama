@@ -2,12 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock SSH module
 const mockSshExec = vi.fn();
+const mockSshSpawn = vi.fn();
 const mockRsyncTo = vi.fn();
 const mockSshOptionsFromConfig = vi.fn();
 vi.mock("../../src/remote/ssh.js", () => ({
   sshExec: (...args: any[]) => mockSshExec(...args),
+  sshSpawn: (...args: any[]) => mockSshSpawn(...args),
   rsyncTo: (...args: any[]) => mockRsyncTo(...args),
   sshOptionsFromConfig: (...args: any[]) => mockSshOptionsFromConfig(...args),
+  buildSshArgs: () => ["-o", "StrictHostKeyChecking=accept-new", "-o", "BatchMode=yes", "-p", "22", "root@h"],
 }));
 
 // Mock bootstrap
@@ -72,6 +75,11 @@ describe("pushToServer", () => {
     mockSshExec.mockResolvedValue("");
     mockRsyncTo.mockResolvedValue(undefined);
     mockBootstrapServer.mockResolvedValue({ alPath: "/usr/local/bin/al", nodePath: "/usr/local/bin/node" });
+    // Mock sshSpawn to return a fake journal-tailing process
+    mockSshSpawn.mockReturnValue({
+      stdout: { on: vi.fn() },
+      kill: vi.fn(),
+    });
   });
 
   it("runs full push flow", async () => {
