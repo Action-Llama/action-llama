@@ -696,7 +696,14 @@ async function provisionHetzner(onInstanceCreated?: OnInstanceCreated, cfConfig?
   while (step < 4) {
     if (step === 0) {
       // Pick server type first (searchable)
-      const typeChoices = serverTypes
+      // Filter out globally deprecated types (unavailable_after in the past)
+      const now = new Date();
+      const activeTypes = serverTypes.filter((st) => {
+        if (!st.deprecation) return true;
+        return new Date(st.deprecation.unavailable_after) > now;
+      });
+
+      const typeChoices = activeTypes
         .sort((a, b) => {
           // Sort by monthly price (parse from string)
           const priceA = parseFloat(a.prices[0]?.price_monthly.gross || "0");
@@ -704,7 +711,7 @@ async function provisionHetzner(onInstanceCreated?: OnInstanceCreated, cfConfig?
           return priceA - priceB;
         })
         .map((st) => {
-          const price = st.prices[0]?.price_monthly.gross || "0";
+          const price = parseFloat(st.prices[0]?.price_monthly.gross || "0").toFixed(2);
           return {
             name: `${st.name} — ${st.cores} vCPU / ${st.memory}GB RAM / ${st.disk}GB SSD — €${price}/mo`,
             value: st.name,
@@ -718,10 +725,15 @@ async function provisionHetzner(onInstanceCreated?: OnInstanceCreated, cfConfig?
     } else if (step === 1) {
       // Pick location (filtered to where the selected server type is available)
       const selectedType = serverTypes.find((st) => st.name === serverTypeChoice)!;
-      // Derive availability from the prices array — if a server type has pricing
-      // for a location, it's available there. The prices[].location field is a
-      // location name (e.g. "fsn1"), not a numeric ID.
-      const availableLocationNames = new Set(selectedType.prices.map((p) => p.location));
+      // Use the locations array from the server type — each entry includes
+      // per-location deprecation info. Only show locations that are not deprecated
+      // (or whose unavailable_after is still in the future).
+      const now = new Date();
+      const availableLocationNames = new Set(
+        selectedType.locations
+          .filter((loc) => !loc.deprecation || new Date(loc.deprecation.unavailable_after) > now)
+          .map((loc) => loc.name),
+      );
 
       const locationChoices = locations
         .filter((loc) => availableLocationNames.has(loc.name))
@@ -886,7 +898,7 @@ async function provisionHetzner(onInstanceCreated?: OnInstanceCreated, cfConfig?
     image: imageChoice,
     ssh_keys: [sshKeyId],
     user_data: VPS_CONSTANTS.CLOUD_INIT_SCRIPT,
-    firewalls: firewallId ? [firewallId] : undefined,
+    firewalls: firewallId ? [{ firewall: firewallId }] : undefined,
     labels: { "managed-by": "action-llama" },
   });
   console.log(`Server ${server.id} created.`);

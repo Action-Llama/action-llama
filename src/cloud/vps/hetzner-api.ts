@@ -16,6 +16,11 @@ export interface HetznerLocation {
   network_zone: string;
 }
 
+export interface HetznerDeprecation {
+  announced: string;
+  unavailable_after: string;
+}
+
 export interface HetznerServerType {
   id: number;
   name: string;
@@ -24,6 +29,7 @@ export interface HetznerServerType {
   memory: number; // GB
   disk: number; // GB
   architecture: string;
+  deprecation: HetznerDeprecation | null;
   prices: Array<{
     location: string;
     price_hourly: {
@@ -35,7 +41,12 @@ export interface HetznerServerType {
       gross: string;
     };
   }>;
-  supported_images: number[];
+  /** Available locations with per-location deprecation status. */
+  locations: Array<{
+    id: number;
+    name: string;
+    deprecation: HetznerDeprecation | null;
+  }>;
 }
 
 export interface HetznerImage {
@@ -144,26 +155,43 @@ async function hetznerFetch(
   return res.json();
 }
 
+/**
+ * Paginate a Hetzner list endpoint, collecting all pages.
+ * `key` is the response field holding the array (e.g. "server_types").
+ */
+async function hetznerListAll<T>(apiKey: string, path: string, key: string): Promise<T[]> {
+  const results: T[] = [];
+  let page = 1;
+  const sep = path.includes("?") ? "&" : "?";
+
+  while (true) {
+    const data = await hetznerFetch(apiKey, `${path}${sep}page=${page}&per_page=50`);
+    const items: T[] = data[key] ?? [];
+    results.push(...items);
+
+    const lastPage = data.meta?.pagination?.last_page ?? page;
+    if (page >= lastPage) break;
+    page++;
+  }
+
+  return results;
+}
+
 export async function listLocations(apiKey: string): Promise<HetznerLocation[]> {
-  const data = await hetznerFetch(apiKey, "/locations");
-  return data.locations;
+  return hetznerListAll(apiKey, "/locations", "locations");
 }
 
 export async function listServerTypes(apiKey: string): Promise<HetznerServerType[]> {
-  const data = await hetznerFetch(apiKey, "/server_types");
-  // Hetzner API includes supported locations per server type
-  return data.server_types;
+  return hetznerListAll(apiKey, "/server_types", "server_types");
 }
 
 export async function listImages(apiKey: string): Promise<HetznerImage[]> {
   // Filter to only OS images (not snapshots/backups)
-  const data = await hetznerFetch(apiKey, "/images?type=system");
-  return data.images;
+  return hetznerListAll(apiKey, "/images?type=system", "images");
 }
 
 export async function listSshKeys(apiKey: string): Promise<HetznerSshKey[]> {
-  const data = await hetznerFetch(apiKey, "/ssh_keys");
-  return data.ssh_keys;
+  return hetznerListAll(apiKey, "/ssh_keys", "ssh_keys");
 }
 
 export async function createSshKey(apiKey: string, name: string, publicKey: string): Promise<HetznerSshKey> {
@@ -183,7 +211,7 @@ export async function createServer(
     image: string | number;
     ssh_keys: number[];
     user_data?: string; // cloud-init script (not base64 for Hetzner)
-    firewalls?: number[];
+    firewalls?: Array<{ firewall: number }>;
     labels?: Record<string, string>;
   },
 ): Promise<HetznerServer> {
@@ -206,8 +234,7 @@ export async function deleteServer(apiKey: string, serverId: number): Promise<vo
 // --- Firewalls ---
 
 export async function listFirewalls(apiKey: string): Promise<HetznerFirewall[]> {
-  const data = await hetznerFetch(apiKey, "/firewalls");
-  return data.firewalls;
+  return hetznerListAll(apiKey, "/firewalls", "firewalls");
 }
 
 export async function createFirewall(

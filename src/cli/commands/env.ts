@@ -11,6 +11,7 @@ import {
   type EnvironmentConfig,
 } from "../../shared/environment.js";
 import { ConfigError } from "../../shared/errors.js";
+import { validateServerConfig } from "../../shared/server.js";
 import { VPS_CONSTANTS } from "../../cloud/vps/constants.js";
 import type { ServerConfig } from "../../shared/server.js";
 import type { CheckResult } from "../../cloud/vps/verify.js";
@@ -261,4 +262,48 @@ export async function deprov(name: string, opts: { project: string }): Promise<v
     writeEnvToml(opts.project, { environment: undefined });
     console.log(`Cleared environment binding in .env.toml.`);
   }
+}
+
+export async function logs(
+  name: string,
+  opts: { lines?: string; follow?: boolean },
+): Promise<void> {
+  if (!environmentExists(name)) {
+    throw new ConfigError(
+      `Environment "${name}" not found. Run 'al env list' to see available environments.`
+    );
+  }
+
+  const config = loadEnvironmentConfig(name);
+  if (!config.server) {
+    throw new ConfigError(`Environment "${name}" has no [server] config.`);
+  }
+
+  const serverConfig = validateServerConfig(config.server);
+  const { sshSpawn, sshOptionsFromConfig } = await import("../../remote/ssh.js");
+  const sshOpts = sshOptionsFromConfig(serverConfig);
+
+  const journalArgs = ["journalctl", "--no-pager"];
+
+  if (opts.follow) {
+    journalArgs.push("-f");
+    if (opts.lines) {
+      journalArgs.push("-n", opts.lines);
+    }
+  } else {
+    journalArgs.push("-n", opts.lines ?? "50");
+  }
+
+  const child = sshSpawn(sshOpts, journalArgs.join(" "));
+
+  child.stdout!.pipe(process.stdout);
+  child.stderr!.pipe(process.stderr);
+
+  await new Promise<void>((resolve, reject) => {
+    child.on("close", (code) => {
+      if (code === 0 || code === null) resolve();
+      else reject(new Error(`journalctl exited with code ${code}`));
+    });
+    child.on("error", reject);
+  });
 }

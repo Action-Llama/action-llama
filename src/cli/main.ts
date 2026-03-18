@@ -260,6 +260,17 @@ envCmd
     await deprov(name, opts);
   }));
 
+envCmd
+  .command("logs")
+  .description("View server system logs for an environment")
+  .argument("<name>", "environment name")
+  .option("-n, --lines <N>", "number of recent log lines to show", "50")
+  .option("-f, --follow", "follow log output in real-time")
+  .action(withCommand(async (name: string, opts: { lines: string; follow?: boolean }) => {
+    const { logs } = await import("./commands/env.js");
+    await logs(name, opts);
+  }));
+
 // --- Credential management ---
 
 const credsCmd = program
