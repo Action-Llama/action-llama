@@ -91,9 +91,24 @@ async function ensureNginx(ssh: SshOptions, gatewayPort: number): Promise<void> 
     console.log("  nginx installed");
   }
 
+  // Ensure a self-signed TLS cert exists (Cloudflare "Full" mode accepts self-signed)
+  const certDir = "/etc/nginx/ssl";
+  const certPath = `${certDir}/action-llama.crt`;
+  const keyPath = `${certDir}/action-llama.key`;
+  try {
+    await sshExec(ssh, `test -f ${certPath} && test -f ${keyPath}`);
+  } catch {
+    console.log("  Generating self-signed TLS certificate...");
+    await sshExec(ssh, `sudo mkdir -p ${certDir}`);
+    await sshExec(ssh, `sudo openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout ${keyPath} -out ${certPath} -subj "/CN=action-llama"`);
+  }
+
   const nginxConf = `server {
-    listen 80;
-    listen [::]:80;
+    listen 443 ssl;
+    listen [::]:443 ssl;
+
+    ssl_certificate ${certPath};
+    ssl_certificate_key ${keyPath};
 
     location / {
         proxy_pass http://127.0.0.1:${gatewayPort};
