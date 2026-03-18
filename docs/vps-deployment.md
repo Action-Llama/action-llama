@@ -38,13 +38,23 @@ Requirements:
 
 #### Provision a new Vultr VPS
 
-Automated provisioning with Vultr as the first supported backend:
+Automated provisioning with Vultr as a supported backend:
 
 1. Configure `vultr_api_key` credential first: `al creds add vultr_api_key`
 2. Run `al setup cloud` and select "Provision a new Vultr VPS"
 3. Pick region, plan (minimum 2 vCPU / 2GB RAM), and SSH key
 4. Instance is created with cloud-init that installs Docker automatically
 5. Action Llama waits for the instance to become ready
+
+#### Provision a new Hetzner VPS
+
+Automated provisioning with Hetzner Cloud:
+
+1. Configure `hetzner_api_key` credential first: `al creds add hetzner_api_key`
+2. Run `al setup cloud` and select "Provision a new Hetzner VPS"
+3. Pick server type, location, OS image, and SSH key
+4. Server is created with cloud-init that installs Docker automatically
+5. Action Llama waits for the server to become ready
 
 ### How It Works
 
