@@ -6,3 +6,4 @@ dist/
 .claude
 coverage
 .history
+.mintlify/

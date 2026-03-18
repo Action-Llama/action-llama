@@ -1,1 +1,1 @@
-docs/agent-reference/AGENTS.md
+agent-docs/AGENTS.md

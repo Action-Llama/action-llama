@@ -1,3 +1,8 @@
+---
+title: "Models"
+description: "Supported LLM providers, model IDs, and configuration"
+---
+
 # Models
 
 Action Llama supports 8 LLM providers. Each agent can use a different provider and model — configure a project-wide default in `config.toml` under `[model]`, and override per agent in `agent-config.toml`.
@@ -188,4 +193,4 @@ Each provider requires a corresponding credential in `~/.action-llama/credential
 
 The LLM credential does not need to be listed in your agent's `credentials` array — it is loaded automatically based on the `[model]` config. The `credentials` array is for runtime credentials the agent uses during execution (GitHub tokens, SSH keys, etc.).
 
-See [Credentials](credentials.md) for the full credential reference.
+See [Credentials](/credentials) for the full credential reference.

@@ -1,3 +1,8 @@
+---
+title: "Planner Agent"
+description: "Agent that triages GitHub issues and writes implementation plans"
+---
+
 # Planner Agent
 
 A triage agent that reads new GitHub issues, assesses whether they have enough detail, asks clarifying questions, and writes detailed implementation plans for the dev agent to follow.
@@ -13,7 +18,7 @@ A triage agent that reads new GitHub issues, assesses whether they have enough d
 
 ## Trigger modes
 
-**Webhook (recommended):** Fires when an issue is labeled with `plan` (configurable via `triggerLabel`) or when a new comment is added to a labeled issue. Requires a GitHub webhook configured in `config.toml` — see [Webhooks docs](../../docs/webhooks.md).
+**Webhook (recommended):** Fires when an issue is labeled with `plan` (configurable via `triggerLabel`) or when a new comment is added to a labeled issue. Requires a GitHub webhook configured in `config.toml` — see [Webhooks docs](/webhooks).
 
 **Scheduled:** Runs on a cron schedule (default: hourly). Searches for open issues matching the configured `org`, `author`, and `triggerLabel`.
 

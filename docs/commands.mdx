@@ -1,3 +1,8 @@
+---
+title: "CLI Commands"
+description: "Complete reference for all Action Llama CLI commands"
+---
+
 # CLI Commands
 
 ## `al new <name>`
@@ -14,7 +19,7 @@ Creates:
 - `my-project/.workspace/` — runtime state directory
 - Credential files in `~/.action-llama/credentials/`
 
-After setup, create agents by following [Creating Agents](creating-agents.md).
+After setup, create agents by following [Creating Agents](/creating-agents).
 
 ## `al doctor`
 
@@ -52,7 +57,7 @@ For each agent, it:
 2. Grants `secretmanager.secretAccessor` on that agent's declared credentials
 3. Grants `iam.serviceAccountUser` for Cloud Run execution
 
-Requires `gcloud` CLI with project admin permissions. See [Cloud Run docs](cloud-run.md) for full setup.
+Requires `gcloud` CLI with project admin permissions. See [Cloud Run docs](/cloud-run) for full setup.
 
 **ECS Fargate** (`cloud.provider = "ecs"`):
 
@@ -60,11 +65,11 @@ For each agent, it:
 1. Creates IAM role `al-{agentName}-task-role`
 2. Attaches an inline policy granting `secretsmanager:GetSecretValue` on that agent's declared credentials
 
-Requires AWS CLI with IAM admin permissions. See [ECS docs](ecs.md) for full setup.
+Requires AWS CLI with IAM admin permissions. See [ECS docs](/ecs) for full setup.
 
 **VPS** (`cloud.provider = "vps"`):
 
-Pushes all local credentials to the VPS filesystem over SSH. No IAM roles — SSH access implies full access. See [VPS docs](vps-deployment.md) for full setup.
+Pushes all local credentials to the VPS filesystem over SSH. No IAM roles — SSH access implies full access. See [VPS docs](/vps-deployment) for full setup.
 
 **Re-run after adding agents:** Whenever you add a new agent to your project, re-run `al doctor -c` to create IAM resources for the new agent (Cloud Run/ECS) or push credentials (VPS). Without this, the new agent won't have access to its credentials at runtime.
 
@@ -172,7 +177,7 @@ al start -e                   # VPS deployment: expose gateway publicly
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
 | `-c, --cloud` | Run on cloud infrastructure |
-| `-w, --web-ui` | Enable web dashboard (see [Web Dashboard](web-dashboard.md)) |
+| `-w, --web-ui` | Enable web dashboard (see [Web Dashboard](/web-dashboard)) |
 | `-e, --expose` | Bind gateway to `0.0.0.0` (public) while keeping local-mode features |
 | `-H, --headless` | Non-interactive mode (no TUI, no credential prompts) |
 

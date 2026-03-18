@@ -1,3 +1,8 @@
+---
+title: "Creating Agents"
+description: "Step-by-step guide to creating an Action Llama agent"
+---
+
 # Creating Agents
 
 This guide walks you through creating an Action Llama agent from scratch.
@@ -5,7 +10,7 @@ This guide walks you through creating an Action Llama agent from scratch.
 ## Prerequisites
 
 - An Action Llama project (created with `al new <name>`)
-- Credentials configured in `~/.action-llama/credentials/` (see [Credentials](credentials.md))
+- Credentials configured in `~/.action-llama/credentials/` (see [Credentials](/credentials))
 
 ## Steps
 
@@ -35,7 +40,7 @@ thinkingLevel = "medium"
 authType = "api_key"
 ```
 
-Supported providers: `anthropic`, `openai`, `groq`, `google`, `xai`, `mistral`, `openrouter`, `custom`. See [agent-config.toml Reference](agent-config-reference.md) for all available fields and provider examples.
+Supported providers: `anthropic`, `openai`, `groq`, `google`, `xai`, `mistral`, `openrouter`, `custom`. See [agent-config.toml Reference](/agent-config-reference) for all available fields and provider examples.
 
 ### 3. Write `ACTIONS.md`
 
@@ -89,7 +94,7 @@ Then reference the staged files in your ACTIONS.md:
 - Open bug issues are at `/tmp/context/issues.json`
 ```
 
-See [Preflight](agent-config-reference.md#preflight) for the full reference.
+See [Preflight](/agent-config-reference#preflight) for the full reference.
 
 ### 5. Verify with `al stat`
 
@@ -127,7 +132,7 @@ RUN apk add --no-cache github-cli
 USER node
 ```
 
-See [Docker docs](docker.md) for the full reference.
+See [Docker docs](/docker) for the full reference.
 
 ### 8. (Cloud only) Re-run `al doctor -c`
 
@@ -144,4 +149,4 @@ Without this step, the new agent will fail to access its credentials at runtime.
 - Agent name is derived from the directory name — no need to put it in the config
 - Use `al-rerun` in your ACTIONS.md to tell the agent to run `al-rerun` when it did work and there may be more in the backlog
 - Params in the config are injected into the agent prompt as an `<agent-config>` XML block
-- See [Examples](examples/index.md) for complete working agents
+- See [Examples](/examples/index) for complete working agents

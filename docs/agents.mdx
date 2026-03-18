@@ -1,3 +1,8 @@
+---
+title: "Agents"
+description: "Agent structure, configuration, lifecycle, and container isolation"
+---
+
 # Agents
 
 An agent is a directory inside your project that contains instructions and configuration for an autonomous LLM session. Each run is self-contained: the agent wakes up (on a schedule or webhook), executes its task, and shuts down.
@@ -40,12 +45,12 @@ triggerLabel = "agent"
 
 Key points:
 
-- **`credentials`** — list of credential refs (`"type:instance"`) the agent needs at runtime. These are mounted into the container and injected as environment variables. See [Credentials](credentials.md).
+- **`credentials`** — list of credential refs (`"type:instance"`) the agent needs at runtime. These are mounted into the container and injected as environment variables. See [Credentials](/credentials).
 - **`schedule`** and/or **`webhooks`** — at least one trigger is required. Agents can have both.
-- **`[model]`** — optional. If omitted, the agent inherits the default model from the project's `config.toml`. See [Models](models.md).
+- **`[model]`** — optional. If omitted, the agent inherits the default model from the project's `config.toml`. See [Models](/models).
 - **`[params]`** — optional key-value pairs injected into the agent's prompt as an `<agent-config>` JSON block. Use these for repo names, label names, org identifiers, or anything else your ACTIONS.md references.
 
-See [agent-config.toml Reference](agent-config-reference.md) for the full field reference.
+See [agent-config.toml Reference](/agent-config-reference) for the full field reference.
 
 ## `ACTIONS.md`
 
@@ -99,7 +104,7 @@ Skills currently taught to agents:
 | **Signals** | `al-rerun`, `al-status`, `al-return`, `al-exit` | Shell commands for signaling the scheduler. See [Signals](#signals). |
 | **Calls** | `al-call`, `al-check`, `al-wait` | Agent-to-agent calls with return values. See [Agent calls](#agent-calls). |
 | **Locks** | `LOCK(...)`, `UNLOCK(...)`, `HEARTBEAT(...)` | Resource locking for parallel coordination. See [Resource locks](#resource-locks). |
-| **Credentials** | `GITHUB_TOKEN`, `gh`, `git`, etc. | Credential access and tool usage. See [Credentials](credentials.md). |
+| **Credentials** | `GITHUB_TOKEN`, `gh`, `git`, etc. | Credential access and tool usage. See [Credentials](/credentials). |
 
 Agent authors write the shorthand naturally (e.g. `LOCK("github issue acme/app#42")`). The agent learns what it means from the preamble — no need to document curl commands or API endpoints in your actions.
 
@@ -149,7 +154,7 @@ When a scheduled agent runs `al-rerun`, the scheduler immediately re-runs it. Th
 
 Webhook-triggered and agent-called runs do not re-run — they respond to a single event.
 
-See [Docker docs](docker.md) for the full container reference including the startup sequence, log protocol, filesystem layout, and exit codes.
+See [Docker docs](/docker) for the full container reference including the startup sequence, log protocol, filesystem layout, and exit codes.
 
 ## Resource locks
 
@@ -236,7 +241,7 @@ USER node
 
 Agents without a Dockerfile use the base image directly.
 
-See [Docker docs](docker.md) for the full container reference including the base image contents, filesystem layout, and how to write standalone Dockerfiles.
+See [Docker docs](/docker) for the full container reference including the base image contents, filesystem layout, and how to write standalone Dockerfiles.
 
 ## Examples
 
@@ -248,9 +253,9 @@ See [Docker docs](docker.md) for the full container reference including the base
 
 ## See also
 
-- [Creating Agents](creating-agents.md) — step-by-step setup guide
-- [agent-config.toml Reference](agent-config-reference.md) — all config fields
-- [Models](models.md) — supported LLM providers and model IDs
-- [Credentials](credentials.md) — credential types and storage
-- [Webhooks](webhooks.md) — webhook setup and filter fields
-- [Docker](docker.md) — container isolation and custom images
+- [Creating Agents](/creating-agents) — step-by-step setup guide
+- [agent-config.toml Reference](/agent-config-reference) — all config fields
+- [Models](/models) — supported LLM providers and model IDs
+- [Credentials](/credentials) — credential types and storage
+- [Webhooks](/webhooks) — webhook setup and filter fields
+- [Docker](/docker) — container isolation and custom images

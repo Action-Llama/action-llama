@@ -1,3 +1,8 @@
+---
+title: "agent-config.toml Reference"
+description: "Complete reference for agent configuration fields"
+---
+
 # agent-config.toml Reference
 
 Each agent has an `agent-config.toml` file in its directory. The agent name is derived from the directory name and should not be included in the config.
@@ -83,7 +88,7 @@ sentryProjects = ["web-app", "api"]
 |-------|------|----------|-------------|
 | `credentials` | string[] | Yes | Credential refs: `"type"` for default instance, `"type:instance"` for named instance |
 | `schedule` | string | No* | Cron expression for polling |
-| `scale` | number | No | Number of concurrent runs allowed (default: 1). Set to `0` to disable the agent. Use lock skills in your actions to coordinate instances. See [Resource Locks](agents.md#resource-locks). |
+| `scale` | number | No | Number of concurrent runs allowed (default: 1). Set to `0` to disable the agent. Use lock skills in your actions to coordinate instances. See [Resource Locks](/agents#resource-locks). |
 | `timeout` | number | No | Max runtime in seconds. Falls back to `[local].timeout` in project config, then `900`. On AWS ECS, agents with timeout <= 900 auto-route to Lambda for faster startup. See [Timeout](#timeout). |
 | `model` | table | No | LLM model configuration (falls back to `[model]` in project `config.toml`) |
 | `model.provider` | string | Yes* | LLM provider ("anthropic", "openai", "groq", "google", "xai", "mistral", "openrouter", or "custom") |
@@ -300,14 +305,14 @@ All filter fields below are optional. Omit all of them to trigger on everything 
 
 The `[model]` section is optional — agents inherit the default model from the project's `config.toml`. Only add `[model]` to an agent config if you want to override the default for that specific agent.
 
-See [Models](models.md) for all supported providers, model IDs, auth types, thinking levels, and credential setup.
+See [Models](/models) for all supported providers, model IDs, auth types, thinking levels, and credential setup.
 
 ## Cloud Runtimes
 
 ### Cloud Run (GCP)
 
-When using Cloud Run mode (`cloud.provider = "cloud-run"` in `config.toml`), each agent automatically gets a per-agent service account (`al-{agentName}@{gcpProject}.iam.gserviceaccount.com`) that only has access to the credentials listed in that agent's `credentials` array. Run `al doctor -c` to create the service accounts and IAM bindings. See [Cloud Run docs](cloud-run.md) for details.
+When using Cloud Run mode (`cloud.provider = "cloud-run"` in `config.toml`), each agent automatically gets a per-agent service account (`al-{agentName}@{gcpProject}.iam.gserviceaccount.com`) that only has access to the credentials listed in that agent's `credentials` array. Run `al doctor -c` to create the service accounts and IAM bindings. See [Cloud Run docs](/cloud-run) for details.
 
 ### ECS Fargate (AWS)
 
-When using ECS mode (`cloud.provider = "ecs"` in `config.toml`), each agent automatically uses a per-agent IAM task role (`al-{agentName}-task-role`) that only has access to the credentials listed in that agent's `credentials` array. The task role ARN is derived from the ECR repository's account ID. See [ECS docs](ecs.md) for setup instructions including how to create the per-agent task roles.
+When using ECS mode (`cloud.provider = "ecs"` in `config.toml`), each agent automatically uses a per-agent IAM task role (`al-{agentName}-task-role`) that only has access to the credentials listed in that agent's `credentials` array. The task role ARN is derived from the ECR repository's account ID. See [ECS docs](/ecs) for setup instructions including how to create the per-agent task roles.

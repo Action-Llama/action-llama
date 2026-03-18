@@ -19,7 +19,7 @@ export function resolvePackageRoot(): string {
 }
 
 function resolveAgentReferenceMd(): string {
-  return resolve(resolvePackageRoot(), "docs", "agent-reference", "AGENTS.md");
+  return resolve(resolvePackageRoot(), "agent-docs", "AGENTS.md");
 }
 
 /** Check if a path exists as a symlink (even dangling). Returns false if nothing exists. */
@@ -86,7 +86,7 @@ export function scaffoldProject(
     scaffoldAgent(projectPath, agent);
   }
 
-  // Symlink AGENTS.md and CLAUDE.md to the package's docs/agent-reference/AGENTS.md.
+  // Symlink AGENTS.md and CLAUDE.md to the package's agent-docs/AGENTS.md.
   // Uses a relative symlink so it works if the project moves.
   // Falls back to a regular copy if symlinks fail (e.g. Windows without Developer Mode)
   // or if the target doesn't exist (e.g. running from source before npm install).

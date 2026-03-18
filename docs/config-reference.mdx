@@ -1,3 +1,8 @@
+---
+title: "config.toml Reference"
+description: "Project-level configuration reference"
+---
+
 # config.toml Reference
 
 The project-level `config.toml` lives at the root of your Action Llama project. All sections and fields are optional — sensible defaults are used for anything you omit. If the file doesn't exist at all, an empty config is assumed.
@@ -61,7 +66,7 @@ Default model configuration inherited by all agents that don't define their own 
 | `authType` | string | Yes | Auth method: `"api_key"`, `"oauth_token"`, or `"pi_auth"` |
 | `thinkingLevel` | string | No | Thinking budget: `"off"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, `"xhigh"`. Only applies to Anthropic models with reasoning support. Ignored for other providers. |
 
-See [Models](models.md) for all supported providers, model IDs, auth types, and thinking levels.
+See [Models](/models) for all supported providers, model IDs, auth types, and thinking levels.
 
 ### `[local]` — Docker Container Settings
 
@@ -72,7 +77,7 @@ Controls local Docker container isolation. These settings also apply as resource
 | `image` | string | `"al-agent:latest"` | Base Docker image name |
 | `memory` | string | `"4g"` | Memory limit per container (e.g. `"4g"`, `"8g"`, `"4096"` for ECS in MiB) |
 | `cpus` | number | `2` | CPU limit per container |
-| `timeout` | number | `900` | Default max container runtime in seconds. Individual agents can override this with `timeout` in their `agent-config.toml`. On AWS ECS, agents with effective timeout <= 900s automatically route to Lambda for faster cold starts. See [agent timeout docs](agent-config-reference.md#timeout). |
+| `timeout` | number | `900` | Default max container runtime in seconds. Individual agents can override this with `timeout` in their `agent-config.toml`. On AWS ECS, agents with effective timeout <= 900s automatically route to Lambda for faster cold starts. See [agent timeout docs](/agent-config-reference#timeout). |
 
 ### `[cloud]` — Cloud Provider
 
@@ -92,7 +97,7 @@ Only needed when running agents on cloud infrastructure with `al start -c`. Conf
 | `serviceAccount` | string | No | — | Runtime service account for job creation. Per-agent SAs are used for execution. |
 | `secretPrefix` | string | No | `"action-llama"` | Google Secret Manager name prefix |
 
-See [Cloud Run docs](cloud-run.md) for full setup.
+See [Cloud Run docs](/cloud-run) for full setup.
 
 #### ECS Fargate fields (`provider = "ecs"`)
 
@@ -111,7 +116,7 @@ See [Cloud Run docs](cloud-run.md) for full setup.
 | `lambdaSubnets` | string[] | No | — | VPC subnet IDs for Lambda functions (only needed if Lambda must access VPC resources) |
 | `lambdaSecurityGroups` | string[] | No | — | Security group IDs for Lambda functions (only needed with `lambdaSubnets`) |
 
-See [ECS docs](ecs.md) for full setup.
+See [ECS docs](/ecs) for full setup.
 
 #### VPS fields (`provider = "vps"`)
 
@@ -124,7 +129,7 @@ See [ECS docs](ecs.md) for full setup.
 | `vultrInstanceId` | string | No | — | Vultr instance ID (set automatically if provisioned via `al setup cloud`) |
 | `vultrRegion` | string | No | — | Vultr region (set automatically if provisioned via `al setup cloud`) |
 
-See [VPS docs](vps-deployment.md) for full setup.
+See [VPS docs](/vps-deployment) for full setup.
 
 ### `[gateway]` — HTTP Server
 
