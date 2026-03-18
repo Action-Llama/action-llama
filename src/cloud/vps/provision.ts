@@ -553,25 +553,29 @@ async function provisionVultr(onInstanceCreated?: OnInstanceCreated, cfConfig?: 
       }
 
       // 2. Origin CA certificate
-      console.log("Generating Cloudflare Origin CA certificate...");
       let cert: string, key: string;
       try {
-        const originCert = await createOriginCertificate(cfConfig.apiToken, [cfConfig.hostname], 5475);
-        cert = originCert.certificate;
-        key = originCert.private_key;
-        console.log("Origin CA certificate generated.");
-
-        // Persist cert + key locally so they survive VPS rebuilds
         const existingCert = await backend.read("cloudflare_origin_cert", cfConfig.hostname, "certificate");
-        const saveCert = existingCert
-          ? await confirm({ message: "Overwrite existing Origin CA certificate?", default: false })
+        const existingKey = await backend.read("cloudflare_origin_cert", cfConfig.hostname, "private_key");
+        const shouldGenerate = existingCert && existingKey
+          ? await confirm({ message: "Origin CA certificate already exists. Regenerate?", default: false })
           : true;
-        if (saveCert) {
+
+        if (shouldGenerate) {
+          console.log("Generating Cloudflare Origin CA certificate...");
+          const originCert = await createOriginCertificate(cfConfig.apiToken, [cfConfig.hostname], 5475);
+          cert = originCert.certificate;
+          key = originCert.private_key;
+          console.log("Origin CA certificate generated.");
           await writeCredentialFields("cloudflare_origin_cert", cfConfig.hostname, {
             certificate: cert,
             private_key: key,
           });
           console.log(`Origin CA cert saved to credentials (cloudflare_origin_cert/${cfConfig.hostname}).`);
+        } else {
+          cert = existingCert!;
+          key = existingKey!;
+          console.log("Using existing Origin CA certificate.");
         }
       } catch (err: any) {
         console.error(`Warning: Origin CA certificate creation failed: ${err.message}`);
