@@ -142,7 +142,8 @@ async function promptCloudflareHttps(): Promise<CloudflareConfig | null> {
 
   // Collect subdomain
   const subdomain = await input({
-    message: `Subdomain for ${zoneName} (e.g. agents):`,
+    message: `Subdomain for ${zoneName}:`,
+    default: "agents",
     validate: (v: string) => {
       if (!v.trim()) return "Subdomain is required";
       if (v.trim().includes(" ")) return "Subdomain must not contain spaces";
