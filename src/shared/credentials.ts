@@ -32,91 +32,33 @@ export function resetDefaultBackend(): void {
  * Parse a credential reference into its parts.
  *
  * Supported formats:
- * - "github_token"                → type="github_token", instance=undefined (needs agent context)
- * - "other-agent/github_token"    → type="github_token", agentRef="other-agent"
- *
- * Legacy format (deprecated):
- * - "github_token:default"        → type="github_token", instance="default" (with warning)
- * - "github_token:custom"         → type="github_token", instance=undefined (ignored, with warning)
+ * - "github_token"          → type="github_token", instance="default"
+ * - "git_ssh:botty"         → type="git_ssh", instance="botty"
  */
-export function parseCredentialRef(ref: string): { type: string; instance: string; agentRef?: string } {
-  // Cross-agent reference: "other-agent/type"
-  const slashIdx = ref.indexOf("/");
-  if (slashIdx !== -1) {
-    const agentRef = ref.slice(0, slashIdx).trim();
-    const type = ref.slice(slashIdx + 1).trim();
-    return { type, instance: "default", agentRef };
-  }
-
-  // Legacy colon syntax: "type:instance"
+export function parseCredentialRef(ref: string): { type: string; instance: string } {
   const colonIdx = ref.indexOf(":");
   if (colonIdx !== -1) {
     const type = ref.slice(0, colonIdx).trim();
     const instance = ref.slice(colonIdx + 1).trim();
-    // Emit deprecation warning for legacy syntax
-    if (!_suppressLegacyWarning) {
-      console.error(
-        `[DEPRECATED] Credential reference "${ref}" uses legacy "type:instance" syntax. ` +
-        `Use just "${type}" instead. Instance is now derived from agent name.`
-      );
-    }
-    // In legacy mode, keep the instance as-is for backwards compatibility
     return { type, instance };
   }
 
-  // Simple type reference: "github_token"
   return { type: ref.trim(), instance: "default" };
-}
-
-// Allow suppressing legacy warnings in tests
-let _suppressLegacyWarning = false;
-export function suppressLegacyWarning(suppress: boolean): void {
-  _suppressLegacyWarning = suppress;
 }
 
 /**
  * Resolve credentials for an agent.
  *
- * For each credential ref, resolves instance using the agent-specific → default fallback:
- * 1. Check `type/<agentName>/` → agent-specific
- * 2. Fall back to `type/default/` → shared
+ * Each ref is parsed deterministically:
+ * - "github_token"    → { type: "github_token", instance: "default" }
+ * - "git_ssh:botty"   → { type: "git_ssh", instance: "botty" }
  *
- * Cross-agent refs "other-agent/type" check:
- * 1. `type/<other-agent>/` → that agent's specific credential
- * 2. Fall back to `type/default/` → shared
- *
- * Returns an array of { type, instance } pairs with resolved instances.
+ * No filesystem probing — the instance comes from the ref string.
  */
-export async function resolveAgentCredentials(
-  agentName: string,
+export function resolveAgentCredentials(
   credentialRefs: string[],
-): Promise<Array<{ type: string; instance: string }>> {
-  const resolved: Array<{ type: string; instance: string }> = [];
-
-  for (const ref of credentialRefs) {
-    const parsed = parseCredentialRef(ref);
-
-    if (parsed.agentRef) {
-      // Cross-agent reference: check other-agent first, then default
-      if (await _defaultBackend.exists(parsed.type, parsed.agentRef)) {
-        resolved.push({ type: parsed.type, instance: parsed.agentRef });
-      } else {
-        resolved.push({ type: parsed.type, instance: "default" });
-      }
-    } else if (parsed.instance !== "default") {
-      // Legacy explicit instance — use as-is
-      resolved.push({ type: parsed.type, instance: parsed.instance });
-    } else {
-      // Standard: check agent-specific first, then default
-      if (await _defaultBackend.exists(parsed.type, agentName)) {
-        resolved.push({ type: parsed.type, instance: agentName });
-      } else {
-        resolved.push({ type: parsed.type, instance: "default" });
-      }
-    }
-  }
-
-  return resolved;
+): Array<{ type: string; instance: string }> {
+  return credentialRefs.map((ref) => parseCredentialRef(ref));
 }
 
 /**

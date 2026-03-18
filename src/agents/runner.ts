@@ -176,8 +176,7 @@ export class AgentRunner {
       }
 
       // Set git author identity from git_ssh credential (scoped to this run)
-      // Resolve credentials using agent-specific → default fallback
-      const resolvedCreds = await resolveAgentCredentials(this.agentConfig.name, this.agentConfig.credentials);
+      const resolvedCreds = resolveAgentCredentials(this.agentConfig.credentials);
       const gitSshCred = resolvedCreds.find((c) => c.type === "git_ssh");
       if (gitSshCred) {
         const gitName = await loadCredentialField("git_ssh", gitSshCred.instance, "username");

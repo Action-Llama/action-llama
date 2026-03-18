@@ -11,16 +11,12 @@ import {
   parseCredentialRef,
   requireCredentialRef,
   resolveAgentCredentials,
-  suppressLegacyWarning,
 } from "../../src/shared/credentials.js";
 import { CREDENTIALS_DIR } from "../../src/shared/paths.js";
 
 describe("credentials", () => {
   const testType = `test_cred_${Date.now()}`;
   const testInstance = "test";
-
-  // Suppress legacy deprecation warnings in tests
-  suppressLegacyWarning(true);
 
   afterEach(() => {
     try {
@@ -33,23 +29,22 @@ describe("credentials", () => {
       const result = parseCredentialRef("github_token");
       expect(result.type).toBe("github_token");
       expect(result.instance).toBe("default");
-      expect(result.agentRef).toBeUndefined();
     });
 
-    it("parses cross-agent reference with slash", () => {
-      const result = parseCredentialRef("other-agent/github_token");
-      expect(result.type).toBe("github_token");
-      expect(result.agentRef).toBe("other-agent");
-    });
-
-    it("parses legacy colon syntax (backwards compatible)", () => {
+    it("parses colon syntax with default instance", () => {
       const result = parseCredentialRef("github_token:default");
       expect(result.type).toBe("github_token");
       expect(result.instance).toBe("default");
     });
 
-    it("parses legacy named instance (backwards compatible)", () => {
+    it("parses colon syntax with named instance", () => {
       const result = parseCredentialRef("git_ssh:botty");
+      expect(result.type).toBe("git_ssh");
+      expect(result.instance).toBe("botty");
+    });
+
+    it("trims whitespace", () => {
+      const result = parseCredentialRef("  git_ssh : botty  ");
       expect(result.type).toBe("git_ssh");
       expect(result.instance).toBe("botty");
     });
@@ -103,41 +98,23 @@ describe("credentials", () => {
   });
 
   describe("resolveAgentCredentials", () => {
-    const resolveType = `resolve_cred_${Date.now()}`;
-
-    afterEach(() => {
-      try {
-        rmSync(resolve(CREDENTIALS_DIR, resolveType), { recursive: true, force: true });
-      } catch {}
+    it("resolves simple type to default instance", () => {
+      const resolved = resolveAgentCredentials(["github_token"]);
+      expect(resolved).toEqual([{ type: "github_token", instance: "default" }]);
     });
 
-    it("falls back to default when no agent-specific credential", async () => {
-      await writeCredentialField(resolveType, "default", "token", "shared-value");
-
-      const resolved = await resolveAgentCredentials("my-agent", [resolveType]);
-      expect(resolved).toEqual([{ type: resolveType, instance: "default" }]);
+    it("resolves colon syntax to named instance", () => {
+      const resolved = resolveAgentCredentials(["git_ssh:botty"]);
+      expect(resolved).toEqual([{ type: "git_ssh", instance: "botty" }]);
     });
 
-    it("uses agent-specific credential when it exists", async () => {
-      await writeCredentialField(resolveType, "default", "token", "shared-value");
-      await writeCredentialField(resolveType, "my-agent", "token", "agent-value");
-
-      const resolved = await resolveAgentCredentials("my-agent", [resolveType]);
-      expect(resolved).toEqual([{ type: resolveType, instance: "my-agent" }]);
-    });
-
-    it("resolves cross-agent references", async () => {
-      await writeCredentialField(resolveType, "other-agent", "token", "other-value");
-
-      const resolved = await resolveAgentCredentials("my-agent", [`other-agent/${resolveType}`]);
-      expect(resolved).toEqual([{ type: resolveType, instance: "other-agent" }]);
-    });
-
-    it("cross-agent ref falls back to default when agent-specific not found", async () => {
-      await writeCredentialField(resolveType, "default", "token", "shared-value");
-
-      const resolved = await resolveAgentCredentials("my-agent", [`nonexistent-agent/${resolveType}`]);
-      expect(resolved).toEqual([{ type: resolveType, instance: "default" }]);
+    it("resolves multiple refs", () => {
+      const resolved = resolveAgentCredentials(["github_token", "git_ssh:botty", "sentry_token"]);
+      expect(resolved).toEqual([
+        { type: "github_token", instance: "default" },
+        { type: "git_ssh", instance: "botty" },
+        { type: "sentry_token", instance: "default" },
+      ]);
     });
   });
 });

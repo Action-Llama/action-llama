@@ -1,6 +1,6 @@
 # Credentials
 
-Credentials are stored in `~/.action-llama/credentials/<type>/<instance>/<field>`. Each credential type is a directory containing one file per field. Reference them in `agent-config.toml` by type name (e.g. `"github_token"`). The instance is resolved automatically: agent-specific (`<agentName>`) first, then `default` as fallback.
+Credentials are stored in `~/.action-llama/credentials/<type>/<instance>/<field>`. Each credential type is a directory containing one file per field. Reference them in `agent-config.toml` by type name (e.g. `"github_token"`) for the `default` instance, or use `"type:instance"` for a named instance (e.g. `"git_ssh:botty"`).
 
 ## Built-in Credentials
 
@@ -60,7 +60,7 @@ Or multiple SSH keys:
 ~/.action-llama/credentials/git_ssh/botty/username
 ```
 
-By default, just reference `"git_ssh"` — the instance is resolved automatically (agent-specific first, then `default`). To explicitly reference another agent's credential, use the cross-agent syntax: `"botty/git_ssh"`.
+By default, just reference `"git_ssh"` — this resolves to the `default` instance. To use a named instance, use colon syntax: `"git_ssh:botty"`.
 
 ## Managing Credentials
 

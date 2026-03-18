@@ -23,26 +23,19 @@ Each agent is a directory under `agents/` containing:
 
 Credentials are managed by the user via `al doctor` or `al creds add` and stored in `~/.action-llama/credentials/<type>/<instance>/<field>`.
 
-### Agent-scoped credentials
+### Credential references
 
-Each agent declares the credential **types** it needs. At runtime, credentials resolve with agent-specific → default fallback:
+Each agent declares the credentials it needs. References resolve deterministically from the ref string — no filesystem probing.
 
-1. `<type>/<agent-name>/` — agent-specific credential (if it exists)
-2. `<type>/default/` — shared default credential
+- `"github_token"` → `github_token/default/` (default instance)
+- `"git_ssh:botty"` → `git_ssh/botty/` (named instance)
 
-Reference credentials in agent config as simple type names:
-
-```toml
-credentials = ["github_token", "git_ssh"]
-```
-
-For cross-agent references (use another agent's credential), prefix with the agent name:
+Reference credentials in agent config:
 
 ```toml
-credentials = ["github_token", "deploy-bot/git_ssh"]
+credentials = ["github_token", "git_ssh"]           # both use "default" instance
+credentials = ["github_token", "git_ssh:botty"]     # git_ssh uses "botty" instance
 ```
-
-> **Note:** The legacy `"type:instance"` syntax (e.g. `"github_token:default"`) still works but is deprecated. Use simple type names instead.
 
 | Type | What it is | Fields | Runtime injection | What it enables |
 |------|-----------|--------|-------------------|----------------|
@@ -318,7 +311,7 @@ sentryProjects = ["web-app", "api"]
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `credentials` | string[] | Yes | Credential type names (see Credential Reference above). Cross-agent: `"agent/type"` |
+| `credentials` | string[] | Yes | Credential refs: `"type"` for default instance, `"type:instance"` for named instance |
 | `scale` | number | No | Number of concurrent runners (default: 1). Set to `0` to disable the agent |
 | `schedule` | string | No* | Cron expression (e.g. "*/5 * * * *") |
 | `model` | table | No | LLM model config — omit to inherit from project `config.toml` |

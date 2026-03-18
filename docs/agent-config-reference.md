@@ -6,7 +6,7 @@ Each agent has an `agent-config.toml` file in its directory. The agent name is d
 
 ```toml
 # Required: credential types the agent needs at runtime
-# Instance is resolved automatically: agents/<name>/ first, then default/
+# Use "type" for default instance, "type:instance" for named instance
 credentials = ["github_token", "git_ssh", "sentry_token"]
 
 # Optional: cron schedule (standard cron syntax)
@@ -81,7 +81,7 @@ sentryProjects = ["web-app", "api"]
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `credentials` | string[] | Yes | Credential refs as `"type:instance"` needed at runtime |
+| `credentials` | string[] | Yes | Credential refs: `"type"` for default instance, `"type:instance"` for named instance |
 | `schedule` | string | No* | Cron expression for polling |
 | `scale` | number | No | Number of concurrent runs allowed (default: 1). Set to `0` to disable the agent. Use lock skills in your actions to coordinate instances. See [Resource Locks](agents.md#resource-locks). |
 | `timeout` | number | No | Max runtime in seconds. Falls back to `[local].timeout` in project config, then `900`. On AWS ECS, agents with timeout <= 900 auto-route to Lambda for faster startup. See [Timeout](#timeout). |
