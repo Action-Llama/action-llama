@@ -28,14 +28,21 @@ export function renderLogsPage(agentName: string): string {
   .controls button.active { background: #3b82f6; border-color: #3b82f6; }
   .controls .status { font-size: 0.8rem; color: #64748b; }
   .log-container { flex: 1; background: #1e293b; border-radius: 8px; padding: 12px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.75rem; line-height: 1.5; overflow-y: auto; min-height: 0; -webkit-overflow-scrolling: touch; }
-  .log-line { white-space: pre-wrap; word-break: break-all; }
+  .log-line { white-space: pre-wrap; word-break: break-all; padding: 1px 0; }
   .log-time { color: #64748b; }
-  .log-level { font-weight: 600; }
-  .log-level-trace { color: #64748b; }
-  .log-level-debug { color: #94a3b8; }
-  .log-level-info { color: #22c55e; }
-  .log-level-warn { color: #eab308; }
-  .log-level-error { color: #ef4444; }
+  .log-msg { color: #cbd5e1; }
+  .log-assistant { color: #f8fafc; font-weight: 500; }
+  .log-assistant-cont { color: #f8fafc; padding-left: 7.5em; display: block; }
+  .log-bash { color: #22d3ee; }
+  .log-tool { color: #60a5fa; }
+  .log-tool-error { color: #ef4444; }
+  .log-lifecycle { color: #c084fc; font-weight: 600; }
+  .log-completed { color: #22c55e; font-weight: 600; }
+  .log-dim { color: #64748b; }
+  .log-warn { color: #eab308; }
+  .log-error { color: #ef4444; font-weight: 600; }
+  .log-detail { color: #64748b; padding-left: 7.5em; display: block; font-size: 0.9em; }
+  .run-header { border-top: 1px solid #334155; margin-top: 8px; padding-top: 6px; color: #c084fc; font-weight: 600; }
   .empty { color: #475569; font-style: italic; }
   .connection-status { font-size: 0.75rem; padding: 2px 8px; border-radius: 3px; }
   .connection-status.connected { color: #22c55e; }
@@ -102,29 +109,118 @@ export function renderLogsPage(agentName: string): string {
       lineCountEl.textContent = "0 lines";
     }
 
-    const levelNames = { 10: "TRACE", 20: "DEBUG", 30: "INFO", 40: "WARN", 50: "ERROR", 60: "FATAL" };
-    const levelClasses = { 10: "trace", 20: "debug", 30: "info", 40: "warn", 50: "error", 60: "error" };
+    const SKIP_MSGS = new Set(["event", "tool done"]);
 
-    function formatLogEntry(entry) {
-      let time, level, msg;
-      try {
-        const parsed = JSON.parse(entry);
-        time = parsed.time ? new Date(parsed.time).toLocaleTimeString() : "";
-        const lvl = parsed.level || 30;
-        level = levelNames[lvl] || "INFO";
-        const cls = levelClasses[lvl] || "info";
-        msg = parsed.msg || entry;
-        return '<span class="log-time">' + esc(time) + '</span> <span class="log-level log-level-' + cls + '">' + level.padEnd(5) + '</span> ' + esc(msg);
-      } catch {
-        return esc(entry);
-      }
+    function fmtTime(ts) {
+      return new Date(ts).toLocaleTimeString("en-US", { hour12: false });
     }
 
-    function appendLine(entry) {
+    function formatEntry(p) {
+      var time = '<span class="log-time">' + esc(fmtTime(p.time)) + '</span>  ';
+      var msg = p.msg || "";
+      var lvl = p.level || 30;
+
+      // Skip noise
+      if (SKIP_MSGS.has(msg)) return null;
+      if (lvl <= 20 && msg !== "tool start") return null;
+
+      // Assistant text
+      if (msg === "assistant") {
+        var text = p.text || "";
+        if (!text) return null;
+        var lines = text.split("\\n");
+        var out = time + '<span class="log-assistant">' + esc(lines[0]) + '</span>';
+        for (var i = 1; i < lines.length; i++) {
+          out += '<span class="log-assistant-cont">' + esc(lines[i]) + '</span>';
+        }
+        return out;
+      }
+
+      // Bash command
+      if (msg === "bash") {
+        return time + '<span class="log-bash">$ ' + esc(p.cmd || "") + '</span>';
+      }
+
+      // Tool start
+      if (msg === "tool start") {
+        return time + '<span class="log-tool">\\u25b8 ' + esc(p.tool || "unknown") + '</span>';
+      }
+
+      // Tool error
+      if (msg === "tool error") {
+        var out = time + '<span class="log-tool-error">\\u2717 ' + esc(p.tool || "unknown") + ' failed</span>';
+        if (p.cmd) out += '<span class="log-detail">$ ' + esc(String(p.cmd)) + '</span>';
+        if (p.result) out += '<span class="log-detail">' + esc(String(p.result).slice(0, 300)) + '</span>';
+        return out;
+      }
+
+      // Run start
+      if (msg.startsWith && msg.startsWith("Starting ")) {
+        var ctr = p.container ? ' <span class="log-dim">(' + esc(p.container) + ')</span>' : "";
+        return time + '<span class="log-lifecycle">' + esc(msg) + '</span>' + ctr;
+      }
+
+      // Run completed
+      if (msg === "run completed" || msg === "run completed, rerun requested") {
+        var suffix = msg.includes("rerun") ? ' <span class="log-warn">(rerun requested)</span>' : "";
+        return time + '<span class="log-completed">Run completed</span>' + suffix;
+      }
+
+      // Container lifecycle
+      if (msg === "container launched") {
+        var ctr = p.container ? ' ' + esc(p.container) : "";
+        return time + '<span class="log-dim">Container launched' + ctr + '</span>';
+      }
+      if (msg === "container finished" || msg === "container finished (rerun requested)") {
+        var el = p.elapsed ? ' (' + esc(p.elapsed) + ')' : "";
+        return time + '<span class="log-dim">Container finished' + el + '</span>';
+      }
+      if (msg === "container starting") {
+        var model = p.modelId ? ' <span class="log-dim">model=' + esc(p.modelId) + '</span>' : "";
+        return time + '<span class="log-lifecycle">Container starting: ' + esc(p.agentName || "") + '</span>' + model;
+      }
+      if (msg === "creating agent session" || msg === "session created, sending prompt") {
+        return time + '<span class="log-dim">' + esc(msg) + '</span>';
+      }
+
+      // Errors
+      if (lvl >= 50) {
+        var detail = p.err ? '<span class="log-detail">' + esc(JSON.stringify(p.err).slice(0, 300)) + '</span>' : "";
+        return time + '<span class="log-error">ERROR: ' + esc(msg) + '</span>' + detail;
+      }
+
+      // Warnings
+      if (lvl >= 40) {
+        return time + '<span class="log-warn">WARN: ' + esc(msg) + '</span>';
+      }
+
+      // Catch-all
+      return time + '<span class="log-dim">' + esc(msg) + '</span>';
+    }
+
+    function maybeRunHeader(p) {
+      var msg = p.msg || "";
+      if (msg.startsWith && msg.startsWith("Starting ") && (msg.includes(" run") || msg.includes(" container run"))) {
+        var name = p.name || "agent";
+        var ctr = p.container ? "  " + p.container : "";
+        return '<div class="log-line run-header">\\u2500\\u2500 ' + esc(name + ctr) + ' ' + "\\u2500".repeat(50) + '</div>';
+      }
+      return null;
+    }
+
+    function appendEntry(p) {
       if (emptyMsg && emptyMsg.parentNode) emptyMsg.remove();
-      const div = document.createElement("div");
+      var header = maybeRunHeader(p);
+      if (header) {
+        var hdiv = document.createElement("div");
+        hdiv.innerHTML = header;
+        container.appendChild(hdiv.firstChild);
+      }
+      var html = formatEntry(p);
+      if (!html) return;
+      var div = document.createElement("div");
       div.className = "log-line";
-      div.innerHTML = formatLogEntry(entry);
+      div.innerHTML = html;
       container.appendChild(div);
       lineCount++;
       lineCountEl.textContent = lineCount + " line" + (lineCount !== 1 ? "s" : "");
@@ -154,7 +250,7 @@ export function renderLogsPage(agentName: string): string {
         const res = await fetch("/api/logs/agents/" + encodeURIComponent(agentName) + "?" + params, { credentials: "same-origin" });
         if (!res.ok) throw new Error(res.status);
         const data = await res.json();
-        for (const entry of data.entries) appendLine(JSON.stringify(entry));
+        for (const entry of data.entries) appendEntry(entry);
         if (data.cursor) logCursor = data.cursor;
         connStatus.textContent = "connected";
         connStatus.className = "connection-status connected";
