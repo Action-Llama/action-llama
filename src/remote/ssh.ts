@@ -9,6 +9,7 @@ export interface SshOptions {
   user: string;
   port: number;
   keyPath?: string;
+  controlPath?: string;
 }
 
 export function sshOptionsFromConfig(config: ServerConfig): SshOptions {
@@ -29,6 +30,13 @@ export function buildSshArgs(opts: SshOptions): string[] {
     "-o", "BatchMode=yes",
     "-p", String(opts.port),
   ];
+  if (opts.controlPath) {
+    args.push(
+      "-o", "ControlMaster=auto",
+      "-o", `ControlPath=${opts.controlPath}`,
+      "-o", "ControlPersist=30",
+    );
+  }
   if (opts.keyPath) {
     args.push("-i", opts.keyPath);
   }
@@ -62,6 +70,11 @@ export async function rsyncTo(
     "-o", "StrictHostKeyChecking=accept-new",
     "-o", "BatchMode=yes",
     "-p", String(opts.port),
+    ...(opts.controlPath ? [
+      "-o", "ControlMaster=auto",
+      "-o", `ControlPath=${opts.controlPath}`,
+      "-o", "ControlPersist=30",
+    ] : []),
     ...(opts.keyPath ? ["-i", opts.keyPath] : []),
   ].join(" ");
 

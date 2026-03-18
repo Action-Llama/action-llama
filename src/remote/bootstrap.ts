@@ -48,12 +48,12 @@ export async function bootstrapServer(ssh: SshOptions): Promise<BootstrapResult>
 
 async function checkNode(ssh: SshOptions): Promise<{ version: string; path: string }> {
   try {
-    const nodeVersion = (await sshExec(ssh, "node --version")).trim();
+    const output = (await sshExec(ssh, "node --version && which node")).trim();
+    const [nodeVersion, nodePath] = output.split("\n").map(s => s.trim());
     const major = parseInt(nodeVersion.replace(/^v/, ""), 10);
     if (major < 20) {
       throw new Error(`Node.js >= 20 required, found ${nodeVersion}`);
     }
-    const nodePath = (await sshExec(ssh, "which node")).trim();
     return { version: nodeVersion, path: nodePath };
   } catch (err: any) {
     if (err.message?.includes("required")) throw err;

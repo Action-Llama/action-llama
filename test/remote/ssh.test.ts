@@ -51,6 +51,19 @@ describe("buildSshArgs", () => {
     expect(args).toContain("2222");
     expect(args[args.length - 1]).toBe("deploy@example.com");
   });
+
+  it("includes ControlMaster options when controlPath is set", () => {
+    const args = buildSshArgs({ host: "example.com", user: "root", port: 22, controlPath: "/tmp/al-ssh-abc-123" });
+    expect(args).toContain("ControlMaster=auto");
+    expect(args).toContain("ControlPath=/tmp/al-ssh-abc-123");
+    expect(args).toContain("ControlPersist=30");
+    expect(args[args.length - 1]).toBe("root@example.com");
+  });
+
+  it("omits ControlMaster options when controlPath is not set", () => {
+    const args = buildSshArgs({ host: "example.com", user: "root", port: 22 });
+    expect(args.join(" ")).not.toContain("ControlMaster");
+  });
 });
 
 describe("sshExec", () => {
@@ -122,6 +135,28 @@ describe("rsyncTo", () => {
     expect(rsyncArgs[rsyncArgs.length - 1]).toBe("u@h:/remote/path");
     // localPath should end with /
     expect(rsyncArgs[rsyncArgs.length - 2]).toBe("/local/path/");
+  });
+
+  it("includes ControlMaster in rsync ssh command when controlPath is set", async () => {
+    mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: any) => {
+      if (typeof _opts === "function") {
+        _opts(null, { stdout: "", stderr: "" });
+      } else {
+        cb(null, { stdout: "", stderr: "" });
+      }
+    });
+
+    await rsyncTo(
+      { host: "h", user: "u", port: 22, controlPath: "/tmp/al-ssh-abc-123" },
+      "/local/path",
+      "/remote/path",
+    );
+
+    const rsyncArgs: string[] = mockExecFile.mock.calls[0][1];
+    const sshFlag = rsyncArgs[rsyncArgs.indexOf("-e") + 1];
+    expect(sshFlag).toContain("ControlMaster=auto");
+    expect(sshFlag).toContain("ControlPath=/tmp/al-ssh-abc-123");
+    expect(sshFlag).toContain("ControlPersist=30");
   });
 
   it("passes extra flags like --dry-run", async () => {

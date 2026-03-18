@@ -13,6 +13,7 @@ export async function execute(opts: {
   credsOnly?: boolean;
   filesOnly?: boolean;
   all?: boolean;
+  forceInstall?: boolean;
 }): Promise<void> {
   const projectPath = resolve(opts.project);
 
@@ -60,5 +61,6 @@ export async function execute(opts: {
     dryRun: opts.dryRun,
     noCreds: !syncCreds,
     noFiles: !syncFiles,
+    forceInstall: opts.forceInstall,
   });
 }

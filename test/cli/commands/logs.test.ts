@@ -3,6 +3,11 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
 
+// Force file-reading fallback by making gatewayFetch reject
+vi.mock("../../../src/cli/gateway-client.js", () => ({
+  gatewayFetch: () => Promise.reject(new Error("no gateway")),
+}));
+
 import { execute } from "../../../src/cli/commands/logs.js";
 
 function makePinoLine(overrides: Record<string, unknown> = {}): string {
