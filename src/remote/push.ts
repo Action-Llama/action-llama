@@ -167,8 +167,11 @@ async function pushToServerInner(ssh: SshOptions, opts: InnerOpts): Promise<void
     return;
   }
 
-  // Phase B: Parallel setup — npm install (if needed), nginx, env.toml, systemd
+  // Phase B: Parallel setup — npm install (if needed), nginx, env.toml, systemd, SSH hardening
   const phaseB: Promise<void>[] = [];
+
+  // SSH hardening (idempotent — safe to run on every push)
+  phaseB.push(hardenSsh(ssh));
 
   // npm install (conditional on package hash)
   if (!noFiles) {
@@ -203,6 +206,24 @@ async function pushToServerInner(ssh: SshOptions, opts: InnerOpts): Promise<void
   console.log(`  Project: ${basePath}/project`);
   console.log(`  Service: systemctl status action-llama`);
   console.log(`  Logs:    journalctl -u action-llama -f`);
+}
+
+/**
+ * Harden SSH on the remote server. Idempotent — safe to run on every push.
+ * Disables password authentication, restricts root login to key-only,
+ * and installs fail2ban for brute-force protection.
+ */
+async function hardenSsh(ssh: SshOptions): Promise<void> {
+  console.log("\n=== Hardening SSH ===\n");
+  await sshExec(ssh, [
+    // Disable password auth and restrict root to key-only
+    "sed -i 's/^#\\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config",
+    "sed -i 's/^#\\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config",
+    "systemctl restart sshd",
+    // Install fail2ban if not already present
+    "dpkg -s fail2ban >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq fail2ban && systemctl enable fail2ban && systemctl start fail2ban)",
+  ].join(" && "));
+  console.log("SSH hardened (password auth disabled, fail2ban active).");
 }
 
 async function conditionalNpmInstall(
