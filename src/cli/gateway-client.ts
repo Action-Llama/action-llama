@@ -7,16 +7,19 @@ export interface GatewayFetchOpts {
   path: string;
   method?: string;
   body?: unknown;
+  env?: string;
 }
 
 /**
- * Make an authenticated request to the local gateway.
- * Reads the port from config.toml and the API key from the credential store.
+ * Make an authenticated request to the gateway.
+ * Uses gateway.url from the resolved config when available (e.g. remote environments),
+ * falling back to http://localhost:<port>.
  */
 export async function gatewayFetch(opts: GatewayFetchOpts): Promise<Response> {
   const projectPath = resolve(opts.project);
-  const globalConfig = loadGlobalConfig(projectPath);
+  const globalConfig = loadGlobalConfig(projectPath, opts.env);
   const gatewayPort = globalConfig.gateway?.port || 8080;
+  const baseUrl = globalConfig.gateway?.url || `http://localhost:${gatewayPort}`;
 
   const headers: Record<string, string> = {};
 
@@ -35,5 +38,5 @@ export async function gatewayFetch(opts: GatewayFetchOpts): Promise<Response> {
     init.body = JSON.stringify(opts.body);
   }
 
-  return fetch(`http://localhost:${gatewayPort}${opts.path}`, init);
+  return fetch(`${baseUrl}${opts.path}`, init);
 }

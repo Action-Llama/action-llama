@@ -179,7 +179,7 @@ async function executeAgentChat(opts: ChatOpts & { agent: string }): Promise<voi
   }
 
   // Probe gateway and warn if not reachable
-  const gatewayUrl = `http://localhost:${globalConfig.gateway?.port || 8080}`;
+  const gatewayUrl = globalConfig.gateway?.url || `http://localhost:${globalConfig.gateway?.port || 8080}`;
   {
     const reachable = await probeGateway(gatewayUrl);
     if (!reachable) {

@@ -7,6 +7,7 @@ export async function execute(target: string, opts: { project: string; env?: str
   const fetchOpts = {
     project: projectPath,
     method: "POST",
+    env: opts.env,
   };
 
   let response: Response;

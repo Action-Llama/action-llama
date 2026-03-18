@@ -13,6 +13,7 @@ export async function execute(name: string | undefined, opts: { project: string;
       project: projectPath,
       path,
       method: "POST",
+      env: opts.env,
     });
   } catch (error) {
     if (error instanceof Error && error.message.includes('ECONNREFUSED')) {

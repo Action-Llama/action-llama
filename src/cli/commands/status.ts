@@ -95,7 +95,7 @@ export async function execute(opts: { project: string; env?: string; agent?: str
   let agentStatuses: Array<{ name: string; enabled: boolean }> = [];
 
   try {
-    const response = await gatewayFetch({ project: projectPath, path: "/control/status" });
+    const response = await gatewayFetch({ project: projectPath, path: "/control/status", env: opts.env });
     if (response.ok) {
       const data = await response.json();
       schedulerInfo = data.scheduler;
@@ -170,7 +170,7 @@ export async function execute(opts: { project: string; env?: string; agent?: str
 
   // Fetch and display lock information
   try {
-    const response = await gatewayFetch({ project: projectPath, path: "/locks/status" });
+    const response = await gatewayFetch({ project: projectPath, path: "/locks/status", env: opts.env });
     if (response.ok) {
       const data = await response.json();
       if (data.locks && data.locks.length > 0) {

@@ -437,7 +437,7 @@ export async function execute(
     if (opts.follow) {
       // Initial fetch
       const params = new URLSearchParams({ lines: String(n) });
-      const res = await gatewayFetch({ project: opts.project, path: `${apiPath}?${params}` });
+      const res = await gatewayFetch({ project: opts.project, path: `${apiPath}?${params}`, env: opts.env });
       if (!res.ok) throw new Error(`Gateway returned ${res.status}`);
       const data = await res.json() as { entries: LogEntry[]; cursor: string | null; hasMore: boolean };
       formatAndPrintEntries(data.entries);
@@ -448,7 +448,7 @@ export async function execute(
         const p = new URLSearchParams();
         if (cursor) p.set("cursor", cursor);
         try {
-          const r = await gatewayFetch({ project: opts.project, path: `${apiPath}?${p}` });
+          const r = await gatewayFetch({ project: opts.project, path: `${apiPath}?${p}`, env: opts.env });
           if (r.ok) {
             const d = await r.json() as { entries: LogEntry[]; cursor: string | null; hasMore: boolean };
             formatAndPrintEntries(d.entries);
@@ -467,7 +467,7 @@ export async function execute(
       await new Promise(() => {});
     } else {
       const params = new URLSearchParams({ lines: String(n) });
-      const res = await gatewayFetch({ project: opts.project, path: `${apiPath}?${params}` });
+      const res = await gatewayFetch({ project: opts.project, path: `${apiPath}?${params}`, env: opts.env });
       if (!res.ok) throw new Error(`Gateway returned ${res.status}`);
       const data = await res.json() as { entries: LogEntry[]; cursor: string | null; hasMore: boolean };
       if (data.entries.length === 0) {
