@@ -1,5 +1,85 @@
 # @action-llama/action-llama
 
+## 0.13.0
+
+### Minor Changes
+
+- [`afdc34e`](https://github.com/Action-Llama/action-llama/commit/afdc34edb718c6f31f9de8916be18016cee8e635) Thanks [@asselstine](https://github.com/asselstine)! - **Breaking:** Credential references now resolve deterministically from the ref string instead of probing the filesystem. `credentials = ["github_token"]` always resolves to `github_token/default/` — it no longer checks for an agent-specific `github_token/<agentName>/` directory. Use explicit colon syntax for named instances: `"git_ssh:botty"`. The cross-agent slash syntax (`"other-agent/github_token"`) has been removed.
+
+### Patch Changes
+
+- [`a14bc61`](https://github.com/Action-Llama/action-llama/commit/a14bc610d69475cfda61f6d35fc643de5aa323f6) Thanks [@asselstine](https://github.com/asselstine)! - Cleaned up `al start` output: credential checks are now silent on startup unless
+  something is missing, and the TUI header shows a visible "Scheduler paused"
+  indicator when the scheduler is paused.
+
+- [`324985c`](https://github.com/Action-Llama/action-llama/commit/324985cfcc1088e887abe5b31b8e388d21b06a65) Thanks [@asselstine](https://github.com/asselstine)! - Fixed `al env deprov` not destroying Hetzner servers. The `ServerConfig` type was
+  missing `hetznerServerId` and `hetznerLocation` fields, so they were silently
+  dropped when loading the environment config and never passed to the teardown function.
+
+- [`33bd851`](https://github.com/Action-Llama/action-llama/commit/33bd85122f27d7ded0c68e75e32d2ef37d7a69f7) Thanks [@asselstine](https://github.com/asselstine)! - Fixed Hetzner provisioning always showing "This server type is not available in
+  any location." The code checked a non-existent `available_locations` field on
+  the API response. Location availability is now derived from the `prices` array,
+  which lists per-location pricing for every location where the server type can
+  be provisioned.
+
+- [`db62de6`](https://github.com/Action-Llama/action-llama/commit/db62de6ab918be23025f7b914e0c03048e91bbe7) Thanks [@asselstine](https://github.com/asselstine)! - Always register the `/locks/status` gateway endpoint, even when the gateway
+  is publicly exposed. The endpoint is already protected by API key auth, so the
+  old `isPublic` guard was unnecessarily hiding it from remote `al stat` calls.
+  Also improved `al stat` to report connection/auth errors when targeting a remote
+  environment instead of silently falling back to local-only info.
+
+- [`409b321`](https://github.com/Action-Llama/action-llama/commit/409b321c735db766a673d1d2dc063568654139cd) Thanks [@asselstine](https://github.com/asselstine)! - Fixed misleading "webhook triggered agent" log when the agent is disabled. Previously,
+  the log was emitted even when the trigger callback silently skipped execution due to the
+  agent being disabled, making it appear the agent ran when it didn't. The registry now
+  checks the trigger return value and logs "webhook matched but agent skipped" instead.
+
+- [`16724cb`](https://github.com/Action-Llama/action-llama/commit/16724cb7db49e87a14dfafb0ab56ad8e02dac664) Thanks [@asselstine](https://github.com/asselstine)! - Added `al env logs <name>` command to view server system logs via SSH, with `-n` for
+  recent line count and `-f` to follow in real-time.
+
+  Fixed Hetzner VPS provisioning: corrected the `firewalls` request body format to match
+  the API spec (`[{"firewall": id}]`), switched location availability checks from the
+  `prices` array to the `locations` array with per-location deprecation filtering, added
+  pagination to all Hetzner list endpoints, filtered out deprecated server types, and
+  fixed price display formatting.
+
+- [#122](https://github.com/Action-Llama/action-llama/pull/122) [`4c19414`](https://github.com/Action-Llama/action-llama/commit/4c19414c8f48f19cd0b0a72e64a8df3acbe9d607) Thanks [@asselstine](https://github.com/asselstine)! - Added warning when log endpoints are exposed without authentication. The gateway now
+  logs a warning if log routes are registered without an API key configured, helping
+  operators identify potential security risks. Closes [#121](https://github.com/Action-Llama/action-llama/issues/121).
+
+- [`e0bada8`](https://github.com/Action-Llama/action-llama/commit/e0bada82ac92b7e5fb2ecdb3a9dda02b6c5f3c6d) Thanks [@asselstine](https://github.com/asselstine)! - `al start -E <name>` now starts the remote systemd service via SSH when the environment
+  has a `[server]` section, instead of always starting a local scheduler. Checks if the
+  service is already running, and polls the health endpoint for up to 30s after starting.
+
+- [`c09e627`](https://github.com/Action-Llama/action-llama/commit/c09e62727694f3b87c1bff7424d91c6aa376cf02) Thanks [@asselstine](https://github.com/asselstine)! - `al run <agent>` now triggers runs through the gateway instead of building and
+  running Docker containers directly. The scheduler must be running (`al start`)
+  for `al run` to work. This makes `al run` consistent with other CLI commands
+  and ensures runs go through the same execution path as cron/webhook triggers.
+
+- [`e9a34d0`](https://github.com/Action-Llama/action-llama/commit/e9a34d0c937970c99d626112a2ce84852fcff89c) Thanks [@asselstine](https://github.com/asselstine)! - Speed up `al push` by multiplexing SSH connections (ControlMaster), parallelizing rsync and
+  setup operations, batching small SSH commands, and skipping `npm install` when dependencies
+  haven't changed. Adds `--force-install` flag to bypass the dependency cache. Repeat pushes
+  with no dependency changes should complete significantly faster.
+
+- [`be02741`](https://github.com/Action-Llama/action-llama/commit/be027417031b619bfc0907c412d5c7ca2e4d2740) Thanks [@asselstine](https://github.com/asselstine)! - Added `-E`/`--env` flag to `al stop` so it can target a remote scheduler.
+  Previously `al stop` always hit the local gateway.
+
+- [`c9a4120`](https://github.com/Action-Llama/action-llama/commit/c9a41207cc92483ac5fedb873bf1f6f20d013783) Thanks [@asselstine](https://github.com/asselstine)! - Consolidated per-instance log files into a single file per agent. All instances now
+  write to one shared log file (e.g. `dev-2024-03-18.log`) with an `instance` field
+  to distinguish entries, instead of separate files per instance. Instance IDs are now
+  per-run random identifiers (e.g. `dev-a1b2c3d4`) instead of static scale indices
+  (`dev(1)`), making it easy to trace individual runs. The `al logs --instance` flag
+  accepts the run suffix or full instance ID. Also starts and stops the Docker gateway
+  proxy container as part of the scheduler lifecycle.
+
+- [`b153779`](https://github.com/Action-Llama/action-llama/commit/b153779368c7379de5fb955a3940f7632942438f) Thanks [@asselstine](https://github.com/asselstine)! - Fixed gateway proxy container name collision when multiple scheduler instances run
+  concurrently. The proxy container name now includes the gateway port
+  (`al-gateway-proxy-<port>`) instead of using a static name, preventing Docker
+  name conflicts in parallel test runs and multi-instance scenarios.
+
+- [`6646167`](https://github.com/Action-Llama/action-llama/commit/66461679636a3f37ce197548f0813f87462a4046) Thanks [@asselstine](https://github.com/asselstine)! - Updated example agent docs: replaced specific org/user/credential references with
+  generic placeholders, rewrote READMEs to match current behavior, added planner agent
+  example, and removed deleted devops agent from the index.
+
 ## 0.12.2
 
 ### Patch Changes
