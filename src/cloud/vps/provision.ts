@@ -718,10 +718,13 @@ async function provisionHetzner(onInstanceCreated?: OnInstanceCreated, cfConfig?
     } else if (step === 1) {
       // Pick location (filtered to where the selected server type is available)
       const selectedType = serverTypes.find((st) => st.name === serverTypeChoice)!;
-      const availableLocationIds = new Set(selectedType.available_locations || []);
-      
+      // Derive availability from the prices array — if a server type has pricing
+      // for a location, it's available there. The prices[].location field is a
+      // location name (e.g. "fsn1"), not a numeric ID.
+      const availableLocationNames = new Set(selectedType.prices.map((p) => p.location));
+
       const locationChoices = locations
-        .filter((loc) => availableLocationIds.has(loc.id))
+        .filter((loc) => availableLocationNames.has(loc.name))
         .sort((a, b) => a.city.localeCompare(b.city))
         .map((loc) => ({
           name: `${loc.city}, ${loc.country} (${loc.name})`,

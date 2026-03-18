@@ -36,7 +36,6 @@ export interface HetznerServerType {
     };
   }>;
   supported_images: number[];
-  available_locations?: number[];
 }
 
 export interface HetznerImage {
