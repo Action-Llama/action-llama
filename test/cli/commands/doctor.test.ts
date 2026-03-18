@@ -63,12 +63,49 @@ vi.mock("../../../src/scheduler/webhook-setup.js", () => ({
   resolveWebhookSource: (...args: any[]) => mockResolveWebhookSource(...args),
 }));
 
+const mockCollectCredentialRefs = vi.fn();
+vi.mock("../../../src/shared/credential-refs.js", () => ({
+  collectCredentialRefs: (...args: any[]) => mockCollectCredentialRefs(...args),
+}));
+
+const mockEnsureGatewayApiKey = vi.fn();
+vi.mock("../../../src/gateway/api-key.js", () => ({
+  ensureGatewayApiKey: (...args: any[]) => mockEnsureGatewayApiKey(...args),
+}));
+
 import { execute } from "../../../src/cli/commands/doctor.js";
 
 describe("doctor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockLoadGlobalConfig.mockReturnValue({});
+    
+    // Smart mock for collectCredentialRefs - returns credentials based on agent configs
+    mockCollectCredentialRefs.mockImplementation((projectPath: string, globalConfig: any) => {
+      const credentials = new Set<string>();
+      // Mock the logic that collectCredentialRefs would normally do
+      const agents = mockDiscoverAgents();
+      if (Array.isArray(agents)) {
+        agents.forEach((agentName: string) => {
+          const config = mockLoadAgentConfig();
+          if (config && config.credentials) {
+            config.credentials.forEach((ref: string) => credentials.add(ref));
+          }
+          // Add webhook credentials if configured
+          if (config && config.webhooks && globalConfig.webhooks) {
+            config.webhooks.forEach((trigger: any) => {
+              const sourceConfig = globalConfig.webhooks[trigger.source];
+              if (sourceConfig && sourceConfig.type === "github" && sourceConfig.credential) {
+                credentials.add(`github_webhook_secret:${sourceConfig.credential}`);
+              }
+            });
+          }
+        });
+      }
+      return credentials;
+    });
+    
+    mockEnsureGatewayApiKey.mockResolvedValue({ key: "test-key", generated: false });
     mockCredentialExists.mockReturnValue(false);
     mockListCredentialInstances.mockReturnValue([]);
     mockConfirm.mockResolvedValue(false);
