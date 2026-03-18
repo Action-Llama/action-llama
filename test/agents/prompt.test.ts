@@ -288,6 +288,20 @@ describe("buildPromptSkeleton", () => {
   });
 });
 
+describe("environment context", () => {
+  it("sets working directory to /app/static for agent file access", () => {
+    const result = buildScheduledPrompt(agentConfig);
+    expect(result).toContain("/app/static");
+    expect(result).toContain("ACTIONS.md");
+  });
+
+  it("instructs writes to /tmp", () => {
+    const result = buildScheduledPrompt(agentConfig);
+    expect(result).toContain("write operations");
+    expect(result).toContain("/tmp");
+  });
+});
+
 describe("prompt suffix functions", () => {
   it("buildScheduledSuffix returns schedule text", () => {
     expect(buildScheduledSuffix()).toContain("running on a schedule");

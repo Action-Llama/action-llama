@@ -152,7 +152,8 @@ function buildEnvironmentContext(): string {
     "<environment>",
     "**Filesystem:** The root filesystem is read-only. `/tmp` is the only writable directory.",
     "Use `/tmp` for cloning repos, writing scratch files, and any other disk I/O.",
-    "Your working directory is `/tmp`.",
+    "Your working directory is `/app/static` which contains your agent files (ACTIONS.md, agent-config.json).",
+    "All write operations (git clone, file creation, etc.) must target `/tmp`.",
     "</environment>",
   ].join("\n");
 }

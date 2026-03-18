@@ -313,7 +313,7 @@ export async function handleInvocation(init: AgentInit): Promise<number> {
     return result.status ?? 1;
   }
 
-  const cwd = "/tmp";
+  const cwd = "/app/static";
 
   const authStorage = AuthStorage.create();
   if (providerApiKey) {
