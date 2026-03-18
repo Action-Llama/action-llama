@@ -29,7 +29,7 @@ describe("buildSystemdUnit", () => {
     expect(unit).toContain("[Install]");
     expect(unit).toContain("Description=Action Llama scheduler (my-project)");
     expect(unit).toContain("WorkingDirectory=/opt/action-llama/project");
-    expect(unit).toContain("node_modules/.bin/al start --headless --expose -w");
+    expect(unit).toContain("node_modules/.bin/al start --headless --expose -w\n");
     expect(unit).toContain("Requires=docker.service");
   });
 
@@ -42,7 +42,7 @@ describe("buildSystemdUnit", () => {
     const unit = buildSystemdUnit("proj", "/opt/al", {
       nodePath: "/usr/local/bin/node",
     });
-    expect(unit).toContain("ExecStart=/opt/al/project/node_modules/.bin/al start --headless --expose -w");
+    expect(unit).toContain("ExecStart=/opt/al/project/node_modules/.bin/al start --headless --expose -w\n");
     expect(unit).toContain("Environment=PATH=/usr/local/bin:");
   });
 
@@ -50,14 +50,24 @@ describe("buildSystemdUnit", () => {
     const unit = buildSystemdUnit("proj", "/opt/al", {
       nodePath: "/home/user/.nvm/versions/node/v22/bin/node",
     });
-    expect(unit).toContain("ExecStart=/opt/al/project/node_modules/.bin/al start --headless --expose -w");
+    expect(unit).toContain("ExecStart=/opt/al/project/node_modules/.bin/al start --headless --expose -w\n");
     expect(unit).toContain("/home/user/.nvm/versions/node/v22/bin");
   });
 
   it("uses project-local al path even without binPaths", () => {
     const unit = buildSystemdUnit("proj", "/opt/al");
-    expect(unit).toContain("ExecStart=/opt/al/project/node_modules/.bin/al start --headless --expose -w");
+    expect(unit).toContain("ExecStart=/opt/al/project/node_modules/.bin/al start --headless --expose -w\n");
     expect(unit).not.toContain("Environment=PATH=");
+  });
+
+  it("includes --port flag when gatewayPort is provided", () => {
+    const unit = buildSystemdUnit("proj", "/opt/al", undefined, 3000);
+    expect(unit).toContain("node_modules/.bin/al start --headless --expose -w --port 3000");
+  });
+
+  it("omits --port flag when gatewayPort is not provided", () => {
+    const unit = buildSystemdUnit("proj", "/opt/al");
+    expect(unit).not.toContain("--port");
   });
 });
 
