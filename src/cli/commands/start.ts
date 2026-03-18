@@ -31,8 +31,8 @@ export async function execute(opts: { project: string; env?: string; headless?: 
     }
   }
 
-  // Ensure all credentials are present before starting
-  await runDoctor({ project: opts.project, env: opts.env, checkOnly: opts.headless });
+  // Ensure all credentials are present before starting (silent unless something is missing)
+  await runDoctor({ project: opts.project, env: opts.env, checkOnly: opts.headless, silent: true });
 
   const globalConfig = loadGlobalConfig(projectPath, opts.env);
 
