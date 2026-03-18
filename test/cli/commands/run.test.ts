@@ -4,9 +4,13 @@ import { makeTmpProject, captureLog } from "../../helpers.js";
 
 // Mock gateway-client
 const mockGatewayFetch = vi.fn();
-vi.mock("../../../src/cli/gateway-client.js", () => ({
-  gatewayFetch: (...args: any[]) => mockGatewayFetch(...args),
-}));
+vi.mock("../../../src/cli/gateway-client.js", async () => {
+  const actual = await vi.importActual("../../../src/cli/gateway-client.js") as any;
+  return {
+    gatewayFetch: (...args: any[]) => mockGatewayFetch(...args),
+    gatewayJson: actual.gatewayJson,
+  };
+});
 
 // Mock credentials (needed by gateway-client's transitive imports)
 vi.mock("../../../src/shared/credentials.js", async () => {
@@ -32,7 +36,7 @@ describe("run", () => {
 
     mockGatewayFetch.mockResolvedValue({
       ok: true,
-      json: async () => ({ success: true, message: "Agent dev triggered" }),
+      text: async () => JSON.stringify({ success: true, message: "Agent dev triggered" }),
     });
 
     const output = await captureLog(async () => {
@@ -55,7 +59,7 @@ describe("run", () => {
 
     mockGatewayFetch.mockResolvedValue({
       ok: true,
-      json: async () => ({ success: true, message: "Agent dev triggered" }),
+      text: async () => JSON.stringify({ success: true, message: "Agent dev triggered" }),
     });
 
     await execute("dev", { project: dir, env: "staging" });
@@ -84,7 +88,7 @@ describe("run", () => {
 
     mockGatewayFetch.mockResolvedValue({
       ok: false,
-      json: async () => ({ error: "Agent dev not found or all runners busy" }),
+      text: async () => JSON.stringify({ error: "Agent dev not found or all runners busy" }),
     });
 
     await expect(execute("dev", { project: dir })).rejects.toThrow(

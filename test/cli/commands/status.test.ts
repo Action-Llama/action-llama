@@ -109,7 +109,7 @@ describe("status with locks", () => {
     // Mock the second call to /locks/status
     fetchSpy.mockResolvedValueOnce({
       ok: true,
-      json: () => Promise.resolve(mockLocks),
+      text: () => Promise.resolve(JSON.stringify(mockLocks)),
     });
 
     const output = await captureLog(() => execute({ project: tmpDir }));
@@ -130,7 +130,7 @@ describe("status with locks", () => {
     // Second call: /locks/status
     fetchSpy.mockResolvedValueOnce({
       ok: true,
-      json: () => Promise.resolve({ locks: [] }),
+      text: () => Promise.resolve(JSON.stringify({ locks: [] })),
     });
 
     const output = await captureLog(() => execute({ project: tmpDir }));
