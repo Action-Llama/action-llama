@@ -299,4 +299,75 @@ describe("doctor", () => {
     const output = await captureLog(() => execute({ project: "." }));
     expect(output).toContain("[ok] GitHub Token");
   });
+
+  it("validates agent scale does not exceed project scale", async () => {
+    mockDiscoverAgents.mockReturnValue(["agent1", "agent2"]);
+    mockLoadGlobalConfig.mockReturnValue({ scale: 3 });
+    mockLoadAgentConfig.mockReturnValueOnce({ 
+      name: "agent1", 
+      scale: 2, 
+      credentials: [],
+      model: { provider: "anthropic", model: "claude-3-5-sonnet-20241022", authType: "api_key" }
+    });
+    mockLoadAgentConfig.mockReturnValueOnce({
+      name: "agent2", 
+      scale: 5, 
+      credentials: [],
+      model: { provider: "anthropic", model: "claude-3-5-sonnet-20241022", authType: "api_key" }
+    });
+    mockCollectCredentialRefs.mockReturnValue(new Set());
+
+    await expect(execute({ project: "." })).rejects.toThrow("Agent scale violations:");
+  });
+
+  it("allows agent scale equal to project scale", async () => {
+    mockDiscoverAgents.mockReturnValue(["agent1"]);
+    mockLoadGlobalConfig.mockReturnValue({ scale: 3 });
+    mockLoadAgentConfig.mockReturnValue({
+      name: "agent1", 
+      scale: 3, 
+      credentials: [],
+      model: { provider: "anthropic", model: "claude-3-5-sonnet-20241022", authType: "api_key" }
+    });
+    mockCollectCredentialRefs.mockReturnValue(new Set());
+    mockEnsureGatewayApiKey.mockResolvedValue({ key: "test-key", generated: false });
+
+    await expect(execute({ project: "." })).resolves.not.toThrow();
+  });
+
+  it("allows multiple agents within project scale", async () => {
+    mockDiscoverAgents.mockReturnValue(["agent1", "agent2"]);
+    mockLoadGlobalConfig.mockReturnValue({ scale: 5 });
+    mockLoadAgentConfig.mockReturnValueOnce({
+      name: "agent1", 
+      scale: 2, 
+      credentials: [],
+      model: { provider: "anthropic", model: "claude-3-5-sonnet-20241022", authType: "api_key" }
+    });
+    mockLoadAgentConfig.mockReturnValueOnce({
+      name: "agent2", 
+      scale: 3, 
+      credentials: [],
+      model: { provider: "anthropic", model: "claude-3-5-sonnet-20241022", authType: "api_key" }
+    });
+    mockCollectCredentialRefs.mockReturnValue(new Set());
+    mockEnsureGatewayApiKey.mockResolvedValue({ key: "test-key", generated: false });
+
+    await expect(execute({ project: "." })).resolves.not.toThrow();
+  });
+
+  it("handles missing project scale", async () => {
+    mockDiscoverAgents.mockReturnValue(["agent1"]);
+    mockLoadGlobalConfig.mockReturnValue({}); // No scale defined
+    mockLoadAgentConfig.mockReturnValue({
+      name: "agent1", 
+      scale: 10, 
+      credentials: [],
+      model: { provider: "anthropic", model: "claude-3-5-sonnet-20241022", authType: "api_key" }
+    });
+    mockCollectCredentialRefs.mockReturnValue(new Set());
+    mockEnsureGatewayApiKey.mockResolvedValue({ key: "test-key", generated: false });
+
+    await expect(execute({ project: "." })).resolves.not.toThrow();
+  });
 });

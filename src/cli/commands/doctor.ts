@@ -45,6 +45,27 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
     }
   }
 
+  // Validate agent scale does not exceed project scale
+  const projectScale = globalConfig.scale;
+  if (projectScale !== undefined) {
+    const scaleErrors: string[] = [];
+    for (const name of agents) {
+      const config = loadAgentConfig(projectPath, name);
+      const agentScale = config.scale ?? 1;
+      if (agentScale > projectScale) {
+        scaleErrors.push(
+          `Agent "${name}" scale (${agentScale}) exceeds project scale (${projectScale})`
+        );
+      }
+    }
+    if (scaleErrors.length > 0) {
+      throw new ConfigError(
+        "Agent scale violations:\n" +
+        scaleErrors.map(e => `  - ${e}`).join("\n")
+      );
+    }
+  }
+
   // Validate webhook sources exist and trigger fields are correct
   const configErrors: string[] = [];
   for (const name of agents) {

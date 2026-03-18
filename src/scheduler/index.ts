@@ -272,6 +272,38 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     ? gateway.unregisterContainer
     : async (_secret: string) => {};
 
+  // Enforce project-wide scale limit
+  const projectScale = globalConfig.scale;
+  if (projectScale !== undefined) {
+    let totalScale = 0;
+    const adjustedConfigs: AgentConfig[] = [];
+    
+    for (const agentConfig of agentConfigs) {
+      const originalScale = agentConfig.scale ?? 1;
+      const availableScale = projectScale - totalScale;
+      const adjustedScale = Math.max(1, Math.min(originalScale, availableScale));
+      
+      if (adjustedScale < originalScale) {
+        logger.warn({ 
+          agent: agentConfig.name, 
+          requestedScale: originalScale, 
+          adjustedScale, 
+          projectScale 
+        }, "agent scale reduced to fit within project scale limit");
+      }
+      
+      totalScale += adjustedScale;
+      adjustedConfigs.push({ ...agentConfig, scale: adjustedScale });
+      
+      if (totalScale >= projectScale) {
+        break;
+      }
+    }
+    
+    // Use adjusted configs for the rest of the scheduler
+    agentConfigs.splice(0, agentConfigs.length, ...adjustedConfigs);
+  }
+
   for (const agentConfig of agentConfigs) {
     const scale = agentConfig.scale ?? 1;
     const runners: PoolRunner[] = [];

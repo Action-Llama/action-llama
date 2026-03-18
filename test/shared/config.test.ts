@@ -45,6 +45,20 @@ describe("loadGlobalConfig", () => {
       },
     });
   });
+
+  it("project scale configuration", () => {
+    // Test loading config with scale set
+    const config = { scale: 3 };
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(config));
+    const loaded = loadGlobalConfig(tmpDir);
+    expect(loaded.scale).toBe(3);
+    
+    // Test default behavior when scale is not set
+    const emptyConfig = {};
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(emptyConfig));
+    const loadedEmpty = loadGlobalConfig(tmpDir);
+    expect(loadedEmpty.scale).toBeUndefined();
+  });
 });
 
 describe("loadAgentConfig", () => {

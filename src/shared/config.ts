@@ -83,6 +83,7 @@ export interface GlobalConfig {
   /** @deprecated Use workQueueSize instead */
   webhookQueueSize?: number;
   workQueueSize?: number;
+  scale?: number; // Max simultaneous agent runs project-wide
 }
 
 // --- Per-agent config (lives at <project>/<agent>/agent-config.toml) ---
