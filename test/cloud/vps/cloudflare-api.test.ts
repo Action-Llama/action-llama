@@ -1,8 +1,31 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { mkdtempSync, readFileSync, rmSync } from "fs";
 
 // Mock global fetch
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
+
+// Mock child_process
+vi.mock("child_process", () => ({
+  execFileSync: vi.fn(() => {
+    // Mock successful openssl execution - it doesn't need to return anything
+  }),
+}));
+
+// Mock fs functions
+vi.mock("fs", () => ({
+  mkdtempSync: vi.fn(() => "/tmp/mock-csr-dir"),
+  readFileSync: vi.fn((path: string) => {
+    if (path.endsWith("key.pem")) {
+      return "-----BEGIN PRIVATE KEY-----\nMOCK_PRIVATE_KEY\n-----END PRIVATE KEY-----";
+    }
+    if (path.endsWith("csr.pem")) {
+      return "-----BEGIN CERTIFICATE REQUEST-----\nMOCK_CSR\n-----END CERTIFICATE REQUEST-----";
+    }
+    return "";
+  }),
+  rmSync: vi.fn(),
+}));
 
 import {
   verifyToken,
