@@ -137,6 +137,11 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
   if (projectPath) {
     const { registerLogRoutes } = await import("./routes/logs.js");
     registerLogRoutes(app, projectPath);
+    
+    // Warn if log endpoints are exposed without authentication
+    if (!opts.apiKey) {
+      logger.warn("Log endpoints are exposed without authentication. Consider setting up a gateway API key for security.");
+    }
   }
 
   // Control routes (for kill, pause, resume commands)
