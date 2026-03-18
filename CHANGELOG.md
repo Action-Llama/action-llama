@@ -1,5 +1,33 @@
 # @action-llama/action-llama
 
+## 0.12.2
+
+### Patch Changes
+
+- [#120](https://github.com/Action-Llama/action-llama/pull/120) [`955f12e`](https://github.com/Action-Llama/action-llama/commit/955f12e5bcbff764a0a97610cc1a14556b423a38) Thanks [@asselstine](https://github.com/asselstine)! - Added support for Hetzner VPS provisioning alongside existing Vultr support.
+  Users can now provision Hetzner Cloud servers via `al setup cloud` with the
+  same Cloudflare HTTPS integration. Requires a `hetzner_api_key` credential.
+  Closes [#119](https://github.com/Action-Llama/action-llama/issues/119).
+
+- [`df60864`](https://github.com/Action-Llama/action-llama/commit/df60864fc11d1ae594ce50e6b15a59aa6901a13c) Thanks [@asselstine](https://github.com/asselstine)! - Fixed `-E`/`--env` flag being ignored by `al logs`, `al stat`, `al pause`, `al resume`,
+  `al kill`, and `al chat` when connecting to the gateway. These commands always connected to
+  `http://localhost:<port>` instead of using the `gateway.url` from the selected environment,
+  so remote environments showed stale local data instead of live remote logs/status.
+
+- [`d41e73d`](https://github.com/Action-Llama/action-llama/commit/d41e73d031e2a5b008a8563a3b56d60ce17ba888) Thanks [@asselstine](https://github.com/asselstine)! - Fixed container gateway URL fallback to use the nginx proxy (`http://gateway:8080`) on the
+  Docker network instead of `host.docker.internal`, which doesn't resolve on Linux. This broke
+  `rlock`, `runlock`, and other gateway-dependent commands inside containers on VPS deployments.
+
+- [`31da42f`](https://github.com/Action-Llama/action-llama/commit/31da42fdca6cfaa336ecb7e2f085b80d9a8147ca) Thanks [@asselstine](https://github.com/asselstine)! - Fixed `al push` crash-looping on the remote server due to a missing environment file.
+  The remote `.env.toml` no longer references a named environment; instead it inlines
+  gateway and telemetry config directly, so the server runs self-contained without
+  needing `~/.action-llama/environments/` on the remote.
+
+- [`3a1ad19`](https://github.com/Action-Llama/action-llama/commit/3a1ad19763312d7ce277aef791552030e0588e3a) Thanks [@asselstine](https://github.com/asselstine)! - `al push` now configures nginx as a TLS reverse proxy using the Cloudflare Origin CA
+  certificate created during provisioning. The gateway binds to localhost only — nginx
+  terminates TLS on port 443 and forwards to the gateway. Removed `--expose` from the
+  systemd unit since the gateway should not be directly reachable from the internet.
+
 ## 0.12.1
 
 ### Patch Changes
