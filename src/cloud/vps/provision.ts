@@ -11,7 +11,7 @@ import { VPS_CONSTANTS } from "./constants.js";
 import { testConnection, sshExec, type SshConfig } from "./ssh.js";
 import type { VpsCloudConfig } from "../../shared/config.js";
 import { FilesystemBackend } from "../../shared/filesystem-backend.js";
-import { writeCredentialField, writeCredentialFields } from "../../shared/credentials.js";
+import { writeCredentialField, writeCredentialFields, credentialDir } from "../../shared/credentials.js";
 
 /**
  * Run a search prompt with Esc-to-back support.
@@ -172,6 +172,7 @@ async function provisionVultr(onInstanceCreated?: OnInstanceCreated): Promise<Re
   let regionChoice = "";
   let osChoice: number = VPS_CONSTANTS.PREFERRED_OS_ID;
   let sshKeyId = "";
+  let sshKeyPath: string = VPS_CONSTANTS.DEFAULT_SSH_KEY_PATH;
 
   while (step < 4) {
     if (step === 0) {
@@ -260,6 +261,8 @@ async function provisionVultr(onInstanceCreated?: OnInstanceCreated): Promise<Re
       const result = await searchWithEsc({ message: "SSH key:", choices: keyChoices });
       if (result === null) { step--; continue; }
 
+      const vpsSshKeyPath = resolve(credentialDir("vps_ssh", "default"), "private_key");
+
       if (result === "__new__") {
         // Run the vps_ssh credential prompt
         const def = resolveCredential("vps_ssh");
@@ -269,12 +272,14 @@ async function provisionVultr(onInstanceCreated?: OnInstanceCreated): Promise<Re
         }
         // Persist the credential before uploading to Vultr
         await writeCredentialFields("vps_ssh", "default", promptResult.values);
+        sshKeyPath = vpsSshKeyPath;
         const pubKey = promptResult.values.public_key;
         // Upload to Vultr
         const uploaded = await createSshKey(apiKeyValue, "action-llama", pubKey);
         sshKeyId = uploaded.id;
         console.log("SSH key uploaded to Vultr.");
       } else if (result === "__al_credential__") {
+        sshKeyPath = vpsSshKeyPath;
         // Upload the existing vps_ssh public key to Vultr if not already there
         const pubKey = vpsSshFields!.public_key;
         const alreadyOnVultr = existingKeys.find((k) => k.ssh_key.trim() === pubKey.trim());
@@ -353,7 +358,7 @@ async function provisionVultr(onInstanceCreated?: OnInstanceCreated): Promise<Re
     host: "",
     user: VPS_CONSTANTS.DEFAULT_SSH_USER,
     port: VPS_CONSTANTS.DEFAULT_SSH_PORT,
-    keyPath: VPS_CONSTANTS.DEFAULT_SSH_KEY_PATH,
+    keyPath: sshKeyPath,
   };
 
   const startTime = Date.now();
@@ -375,13 +380,14 @@ async function provisionVultr(onInstanceCreated?: OnInstanceCreated): Promise<Re
       // Wait for SSH
       const sshReady = await testConnection(sshConfig);
       if (sshReady) {
-        // Check if cloud-init + Docker are done
+        // Check if cloud-init has finished installing Node.js + Docker
+        const nodeCheck = await sshExec(sshConfig, "node --version");
         const dockerCheck = await sshExec(sshConfig, "docker info --format '{{.ServerVersion}}'");
-        if (dockerCheck.exitCode === 0) {
-          console.log(`Docker ${dockerCheck.stdout} ready on VPS.`);
+        if (nodeCheck.exitCode === 0 && dockerCheck.exitCode === 0) {
+          console.log(`Node.js ${nodeCheck.stdout.trim()}, Docker ${dockerCheck.stdout.trim()} ready on VPS.`);
           break;
         }
-        console.log("Waiting for Docker installation to complete...");
+        console.log("Waiting for cloud-init to complete (Node.js + Docker)...");
       }
     } else {
       process.stdout.write(".");
@@ -410,10 +416,12 @@ async function provisionVultr(onInstanceCreated?: OnInstanceCreated): Promise<Re
   });
   if (!shouldContinue) return null;
 
-  return {
+  const result: Record<string, unknown> = {
     provider: "vps",
     host: sshConfig.host,
     vultrInstanceId: instance.id,
     vultrRegion: regionChoice,
   };
+  if (sshKeyPath !== VPS_CONSTANTS.DEFAULT_SSH_KEY_PATH) result.sshKeyPath = sshKeyPath;
+  return result;
 }

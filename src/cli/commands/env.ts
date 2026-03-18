@@ -12,6 +12,7 @@ import {
 } from "../../shared/environment.js";
 import { ConfigError } from "../../shared/errors.js";
 import { VPS_CONSTANTS } from "../../cloud/vps/constants.js";
+import type { ServerConfig } from "../../shared/server.js";
 
 const VALID_TYPES = ["server"] as const;
 type EnvType = typeof VALID_TYPES[number];
@@ -97,6 +98,54 @@ export async function set(name: string | undefined, opts: { project: string }): 
   }
 }
 
+async function verifyServerReady(server: ServerConfig): Promise<void> {
+  const { testConnection, sshExec } = await import("../../cloud/vps/ssh.js");
+  const sshConfig = {
+    host: server.host,
+    user: server.user ?? VPS_CONSTANTS.DEFAULT_SSH_USER,
+    port: server.port ?? VPS_CONSTANTS.DEFAULT_SSH_PORT,
+    keyPath: server.keyPath ?? VPS_CONSTANTS.DEFAULT_SSH_KEY_PATH,
+  };
+
+  console.log("\nChecking SSH...");
+  const connected = await testConnection(sshConfig);
+  if (!connected) {
+    console.error("SSH connection failed. Check host, credentials, and firewall rules.");
+    return;
+  }
+  console.log("  SSH OK");
+
+  console.log("Checking Node.js...");
+  const nodeResult = await sshExec(sshConfig, "node --version");
+  if (nodeResult.exitCode === 0) {
+    console.log(`  Node.js ${nodeResult.stdout.trim()}`);
+  } else {
+    console.error("  Node.js not found. Installing Node.js 22.x...");
+    const installResult = await sshExec(
+      sshConfig,
+      "curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs",
+      120_000,
+    );
+    if (installResult.exitCode === 0) {
+      const ver = await sshExec(sshConfig, "node --version");
+      console.log(`  Node.js ${ver.stdout.trim()} installed.`);
+    } else {
+      console.error("  Failed to install Node.js. Install Node.js >= 20 manually.");
+    }
+  }
+
+  console.log("Checking Docker...");
+  const dockerResult = await sshExec(sshConfig, "docker info --format '{{.ServerVersion}}'");
+  if (dockerResult.exitCode === 0) {
+    console.log(`  Docker ${dockerResult.stdout.trim()}`);
+  } else {
+    console.error("  Docker not found. Install Docker before running al push.");
+    console.error(`  ssh ${sshConfig.user}@${sshConfig.host} 'curl -fsSL https://get.docker.com | sh'`);
+  }
+
+  console.log("\nServer readiness check complete.");
+}
+
 export async function prov(name: string | undefined): Promise<void> {
   // Prompt for name if not provided
   if (!name) {
@@ -107,11 +156,12 @@ export async function prov(name: string | undefined): Promise<void> {
     name = name.trim();
   }
 
-  // If env already exists with a real host, skip
+  // If env already exists with a real host, verify readiness instead of re-provisioning
   if (environmentExists(name)) {
     const existing = loadEnvironmentConfig(name);
     if (existing.server?.host && existing.server.host !== "REPLACE_ME") {
-      console.log(`Environment "${name}" already has a server at ${existing.server.host}. Skipping provisioning.`);
+      console.log(`Environment "${name}" already has a server at ${existing.server.host}. Checking readiness...`);
+      await verifyServerReady(existing.server);
       return;
     }
   }

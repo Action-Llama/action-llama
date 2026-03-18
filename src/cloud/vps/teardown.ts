@@ -22,24 +22,30 @@ export async function teardownVps(_projectPath: string, config: VpsCloudConfig):
   const sshConfig = sshConfigFromCloud(config);
 
   // 1. Stop and remove all action-llama containers
-  console.log("Stopping all Action Llama containers on VPS...");
   try {
-    await sshExec(
-      sshConfig,
-      "docker ps -aq --filter 'name=al-' | xargs -r docker rm -f",
-      30_000,
-    );
-    console.log("Containers removed.");
+    const listResult = await sshExec(sshConfig, "docker ps -aq --filter 'name=al-'", 15_000);
+    if (listResult.exitCode === 0 && listResult.stdout.trim()) {
+      console.log("Stopping Action Llama containers on VPS...");
+      await sshExec(
+        sshConfig,
+        "docker ps -aq --filter 'name=al-' | xargs -r docker rm -f",
+        30_000,
+      );
+      console.log("Containers removed.");
+    }
   } catch (err: any) {
     console.log(`Container cleanup failed (server may be unreachable): ${err.message}`);
   }
 
   // 2. Clean up remote credentials
   try {
-    await sshExec(sshConfig, `rm -rf ${VPS_CONSTANTS.REMOTE_CREDENTIALS_DIR}`);
-    console.log("Remote credentials cleaned up.");
+    const checkResult = await sshExec(sshConfig, `test -d ${VPS_CONSTANTS.REMOTE_CREDENTIALS_DIR} && echo exists`);
+    if (checkResult.stdout.includes("exists")) {
+      await sshExec(sshConfig, `rm -rf ${VPS_CONSTANTS.REMOTE_CREDENTIALS_DIR}`);
+      console.log("Remote credentials cleaned up.");
+    }
   } catch {
-    // Best effort
+    // Best effort — server may be unreachable
   }
 
   // 3. If this is a Vultr-provisioned instance, offer to delete it

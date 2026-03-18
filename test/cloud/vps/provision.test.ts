@@ -60,6 +60,7 @@ vi.mock("../../../src/shared/credentials.js", () => ({
   writeCredentialFields: (...args: any[]) => mockWriteCredentialFields(...args),
   loadCredentialFields: (...args: any[]) => mockLoadCredentialFields(...args),
   credentialExists: (...args: any[]) => mockCredentialExists(...args),
+  credentialDir: (type: string, instance: string) => `/mock-creds/${type}/${instance}`,
 }));
 
 // Mock credentials prompter
@@ -185,8 +186,9 @@ function setupInstanceMocks() {
 }
 
 /**
- * Set up SSH/Docker check mocks.
+ * Set up SSH/Docker/Node check mocks.
  * testConnection calls `sshExec(config, "echo ok")` — stdout must include "ok".
+ * Node check calls `sshExec(config, "node --version")` — stdout is version string.
  * Docker check calls `sshExec(config, "docker info ...")` — stdout is version string.
  * The last arg to execFile is the SSH command.
  */
@@ -195,6 +197,8 @@ function setupSshMocks() {
     const command = args[args.length - 1];
     if (command.includes("echo ok")) {
       cb(null, "ok\n", "");
+    } else if (command.includes("node --version")) {
+      cb(null, "v22.14.0\n", "");
     } else {
       cb(null, "24.0.7\n", "");
     }
@@ -484,6 +488,8 @@ describe("VPS provisioning", () => {
       expect(mockCreateInstance).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
         sshkey_id: ["uploaded-key-1"],
       }));
+      // sshKeyPath stored in returned config
+      expect(result).toHaveProperty("sshKeyPath", "/mock-creds/vps_ssh/default/private_key");
     });
 
     it("uses existing AL vps_ssh credential and uploads to Vultr", async () => {
@@ -519,6 +525,8 @@ describe("VPS provisioning", () => {
       expect(mockCreateInstance).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
         sshkey_id: ["uploaded-key-2"],
       }));
+      // sshKeyPath stored in returned config
+      expect(result).toHaveProperty("sshKeyPath", "/mock-creds/vps_ssh/default/private_key");
     });
 
     it("reuses Vultr key when AL credential public key already exists on Vultr", async () => {
@@ -558,6 +566,8 @@ describe("VPS provisioning", () => {
       expect(mockCreateInstance).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
         sshkey_id: ["existing-vultr-key"],
       }));
+      // sshKeyPath stored in returned config
+      expect(result).toHaveProperty("sshKeyPath", "/mock-creds/vps_ssh/default/private_key");
     });
 
     it("calls onInstanceCreated callback with partial config", async () => {

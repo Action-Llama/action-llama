@@ -26,9 +26,13 @@ export const VPS_CONSTANTS = {
   /** Credentials directory on VPS */
   REMOTE_CREDENTIALS_DIR: "~/.action-llama/credentials",
 
-  /** Cloud-init script to install Docker on a fresh Ubuntu VPS */
+  /** Cloud-init script to install Docker + Node.js on a fresh Ubuntu VPS */
   CLOUD_INIT_SCRIPT: `#!/bin/bash
 set -euo pipefail
+
+# Install Node.js 22.x LTS via NodeSource
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+apt-get install -y nodejs
 
 # Install Docker via official script
 curl -fsSL https://get.docker.com | sh
