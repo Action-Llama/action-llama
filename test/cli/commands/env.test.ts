@@ -6,6 +6,7 @@ import {
   writeEnvToml,
   loadEnvToml,
   writeEnvironmentConfig,
+  loadEnvironmentConfig,
   environmentExists,
   environmentPath,
 } from "../../../src/shared/environment.js";
@@ -31,6 +32,12 @@ vi.mock("../../../src/cloud/vps/ssh.js", () => ({
 const mockTeardownVps = vi.fn().mockResolvedValue(undefined);
 vi.mock("../../../src/cloud/vps/teardown.js", () => ({
   teardownVps: (...args: any[]) => mockTeardownVps(...args),
+}));
+
+// Mock VPS provisioning
+const mockSetupVpsCloud = vi.fn();
+vi.mock("../../../src/cloud/vps/provision.js", () => ({
+  setupVpsCloud: (...args: any[]) => mockSetupVpsCloud(...args),
 }));
 
 // Mock FilesystemBackend for credential-dependent checks
@@ -157,6 +164,107 @@ describe("env prov", () => {
     logSpy.mockRestore();
     mockTestConnection.mockReset();
     mockSshExec.mockReset();
+  });
+});
+
+describe("env prov persists provider fields", () => {
+  const testEnvName = `test-prov-fields-${Date.now()}`;
+
+  afterEach(() => {
+    try { rmSync(environmentPath(testEnvName)); } catch {}
+    mockSetupVpsCloud.mockReset();
+  });
+
+  it("persists hetznerServerId via onInstanceCreated callback (interrupted provisioning)", async () => {
+    // Simulate setupVpsCloud calling onInstanceCreated then returning null (interrupted)
+    mockSetupVpsCloud.mockImplementation(async (onInstanceCreated: Function) => {
+      onInstanceCreated({
+        provider: "vps",
+        host: "PENDING",
+        hetznerServerId: 99887766,
+        hetznerLocation: "fsn1",
+      });
+      return null; // simulate Ctrl+C / failure before completion
+    });
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await prov(testEnvName);
+    logSpy.mockRestore();
+
+    // The environment file must contain the server ID so deprov can clean up
+    const saved = loadEnvironmentConfig(testEnvName);
+    expect(saved.server?.hetznerServerId).toBe(99887766);
+    expect(saved.server?.hetznerLocation).toBe("fsn1");
+  });
+
+  it("persists hetznerServerId in final write after successful provisioning", async () => {
+    mockSetupVpsCloud.mockImplementation(async (onInstanceCreated: Function) => {
+      onInstanceCreated({
+        provider: "vps",
+        host: "PENDING",
+        hetznerServerId: 11223344,
+        hetznerLocation: "nbg1",
+      });
+      return {
+        provider: "vps",
+        host: "5.6.7.8",
+        hetznerServerId: 11223344,
+        hetznerLocation: "nbg1",
+      };
+    });
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await prov(testEnvName);
+    logSpy.mockRestore();
+
+    const saved = loadEnvironmentConfig(testEnvName);
+    expect(saved.server?.hetznerServerId).toBe(11223344);
+    expect(saved.server?.hetznerLocation).toBe("nbg1");
+    expect(saved.server?.host).toBe("5.6.7.8");
+  });
+
+  it("persists vultrInstanceId via onInstanceCreated callback (interrupted provisioning)", async () => {
+    mockSetupVpsCloud.mockImplementation(async (onInstanceCreated: Function) => {
+      onInstanceCreated({
+        provider: "vps",
+        host: "PENDING",
+        vultrInstanceId: "vultr-abc-123",
+        vultrRegion: "ewr",
+      });
+      return null;
+    });
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await prov(testEnvName);
+    logSpy.mockRestore();
+
+    const saved = loadEnvironmentConfig(testEnvName);
+    expect(saved.server?.vultrInstanceId).toBe("vultr-abc-123");
+    expect(saved.server?.vultrRegion).toBe("ewr");
+  });
+
+  it("persists Cloudflare fields via onInstanceCreated callback", async () => {
+    mockSetupVpsCloud.mockImplementation(async (onInstanceCreated: Function) => {
+      onInstanceCreated({
+        provider: "vps",
+        host: "PENDING",
+        hetznerServerId: 55667788,
+        cloudflareZoneId: "zone-abc",
+        cloudflareDnsRecordId: "rec-xyz",
+        cloudflareHostname: "agents.example.com",
+      });
+      return null;
+    });
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await prov(testEnvName);
+    logSpy.mockRestore();
+
+    const saved = loadEnvironmentConfig(testEnvName);
+    expect(saved.server?.hetznerServerId).toBe(55667788);
+    expect(saved.server?.cloudflareZoneId).toBe("zone-abc");
+    expect(saved.server?.cloudflareDnsRecordId).toBe("rec-xyz");
+    expect(saved.server?.cloudflareHostname).toBe("agents.example.com");
   });
 });
 
