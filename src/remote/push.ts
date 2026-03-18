@@ -93,6 +93,13 @@ export async function pushToServer(opts: PushOptions): Promise<void> {
     ];
     await rsyncTo(ssh, projectPath, `${basePath}/project`, excludes, rsyncFlags);
     console.log(dryRun ? "(dry-run) Would sync project files" : "Project files synced.");
+
+    // Install project dependencies on the remote
+    if (!dryRun) {
+      console.log("\n=== Installing dependencies ===\n");
+      await sshExec(ssh, `cd ${basePath}/project && npm install`);
+      console.log("Dependencies installed.");
+    }
   }
 
   // Step 4: Sync credentials

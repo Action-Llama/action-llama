@@ -101,6 +101,9 @@ describe("pushToServer", () => {
     expect(mockBootstrapServer).toHaveBeenCalledWith(sshOpts);
     expect(mockRsyncTo).toHaveBeenCalledTimes(2); // project + credentials
     expect(mockSshExec).toHaveBeenCalled();
+    // Verify npm install runs on the remote after syncing project files
+    const sshCommands = mockSshExec.mock.calls.map((c: any[]) => c[1]);
+    expect(sshCommands.some((cmd: string) => cmd.includes("npm install"))).toBe(true);
     expect(logs.some((l) => l.includes("Deployed to h"))).toBe(true);
   });
 
