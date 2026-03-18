@@ -4,7 +4,7 @@ import type { ServerConfig } from "../shared/server.js";
 import type { GlobalConfig } from "../shared/config.js";
 import { CREDENTIALS_DIR } from "../shared/paths.js";
 import { VPS_CONSTANTS } from "../cloud/vps/constants.js";
-import { sshOptionsFromConfig, sshExec, rsyncTo, buildSshArgs, type SshOptions } from "./ssh.js";
+import { sshOptionsFromConfig, sshExec, sshSpawn, rsyncTo, buildSshArgs, type SshOptions } from "./ssh.js";
 import { execFile as execFileCb } from "child_process";
 import { promisify } from "util";
 
@@ -151,22 +151,53 @@ export async function pushToServer(opts: PushOptions): Promise<void> {
 }
 
 async function healthCheck(ssh: SshOptions, port: number): Promise<void> {
-  const maxAttempts = 6;
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      await sshExec(ssh, `curl -sf http://localhost:${port}/health`);
-      console.log("Health check passed.");
-      return;
-    } catch {
-      if (i < maxAttempts - 1) {
-        console.log(`  Waiting for service to start... (${i + 1}/${maxAttempts})`);
-        await new Promise((r) => setTimeout(r, 2000));
+  const TIMEOUT_MS = 180_000; // 3 minutes — first push builds Docker images
+  const POLL_MS = 3_000;
+
+  console.log("  Waiting for service to start...\n");
+
+  // Tail journal for live build/startup progress so the user sees what's happening
+  const journal = sshSpawn(ssh, "journalctl -u action-llama -f --since 'now' -o cat 2>/dev/null");
+  journal.stdout?.on("data", (chunk: Buffer) => {
+    for (const line of chunk.toString().split("\n")) {
+      const trimmed = line.trimEnd();
+      if (trimmed) {
+        console.log(`  ${trimmed}`);
       }
     }
+  });
+
+  const startTime = Date.now();
+  let serviceFailed = false;
+
+  try {
+    while (Date.now() - startTime < TIMEOUT_MS) {
+      // Try health endpoint
+      try {
+        await sshExec(ssh, `curl -sf http://localhost:${port}/health`);
+        console.log("\n  Health check passed.");
+        return;
+      } catch {
+        // Check if service has crashed/stopped — fail fast instead of waiting
+        const active = await sshExecSafe(ssh, "systemctl is-active action-llama");
+        if (active === "failed" || active === "inactive") {
+          serviceFailed = true;
+          break;
+        }
+      }
+
+      await new Promise((r) => setTimeout(r, POLL_MS));
+    }
+  } finally {
+    journal.kill();
   }
 
-  // Health check failed — fetch diagnostics from the server
-  console.log("Health check did not pass within 12s.\n");
+  // Failure diagnostics
+  if (serviceFailed) {
+    console.log("\n  Service failed to start.\n");
+  } else {
+    console.log(`\nHealth check did not pass within ${Math.round(TIMEOUT_MS / 1000)}s.\n`);
+  }
 
   console.log("=== Service status ===\n");
   const statusOutput = await sshExecSafe(ssh, "systemctl status action-llama --no-pager -l 2>&1; true");
