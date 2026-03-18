@@ -74,9 +74,10 @@ al doctor -c    # Push creds to VPS via SSH
 al start -c     # Start on VPS
 ```
 
-Setup supports two paths:
+Setup supports three paths:
 - **Connect to an existing server** — any provider, any server with Docker installed
 - **Provision a new Vultr VPS** — automated instance creation with cloud-init Docker install
+- **Provision a new Hetzner VPS** — automated server creation with cloud-init Docker install
 
 See [VPS docs](vps-deployment.md) for full setup.
 

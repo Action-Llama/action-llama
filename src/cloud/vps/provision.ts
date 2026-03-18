@@ -64,6 +64,7 @@ export async function setupVpsCloud(onInstanceCreated?: OnInstanceCreated): Prom
     choices: [
       { name: "Connect to an existing server (any provider)", value: "existing" as const },
       { name: "Provision a new Vultr VPS", value: "vultr" as const },
+      { name: "Provision a new Hetzner VPS", value: "hetzner" as const },
     ],
   });
 
@@ -71,10 +72,14 @@ export async function setupVpsCloud(onInstanceCreated?: OnInstanceCreated): Prom
     return setupExistingServer();
   }
 
-  // Offer Cloudflare HTTPS before Vultr provisioning
+  // Offer Cloudflare HTTPS before VPS provisioning
   const cfConfig = await promptCloudflareHttps();
 
-  return provisionVultr(onInstanceCreated, cfConfig);
+  if (mode === "vultr") {
+    return provisionVultr(onInstanceCreated, cfConfig);
+  }
+
+  return provisionHetzner(onInstanceCreated, cfConfig);
 }
 
 /**
@@ -529,6 +534,443 @@ async function provisionVultr(onInstanceCreated?: OnInstanceCreated, cfConfig?: 
   if (sshKeyPath !== VPS_CONSTANTS.DEFAULT_SSH_KEY_PATH) result.sshKeyPath = sshKeyPath;
 
   // Post-VPS Cloudflare HTTPS setup
+  if (cfConfig) {
+    try {
+      result.cloudflareHostname = cfConfig.hostname;
+      result.cloudflareZoneId = cfConfig.zoneId;
+
+      const {
+        upsertDnsRecord,
+        createOriginCertificate,
+        setSslMode,
+      } = await import("./cloudflare-api.js");
+      const { installNginx, configureNginx } = await import("./nginx.js");
+
+      // 1. DNS record
+      console.log(`\nCreating DNS record: ${cfConfig.hostname} → ${sshConfig.host}...`);
+      try {
+        const dnsRecord = await upsertDnsRecord(cfConfig.apiToken, cfConfig.zoneId, cfConfig.hostname, sshConfig.host, true);
+        result.cloudflareDnsRecordId = dnsRecord.id;
+        console.log(`DNS record created (${dnsRecord.id}).`);
+      } catch (err: any) {
+        console.error(`Warning: DNS record creation failed: ${err.message}`);
+        console.error(`Falling back to http://${sshConfig.host}:${VPS_CONSTANTS.DEFAULT_GATEWAY_PORT}`);
+        return result;
+      }
+
+      // 2. Origin CA certificate
+      let cert: string, key: string;
+      try {
+        const existingCert = await backend.read("cloudflare_origin_cert", cfConfig.hostname, "certificate");
+        const existingKey = await backend.read("cloudflare_origin_cert", cfConfig.hostname, "private_key");
+        const shouldGenerate = existingCert && existingKey
+          ? await confirm({ message: "Origin CA certificate already exists. Regenerate?", default: false })
+          : true;
+
+        if (shouldGenerate) {
+          console.log("Generating Cloudflare Origin CA certificate...");
+          const originCert = await createOriginCertificate(cfConfig.apiToken, [cfConfig.hostname], 5475);
+          cert = originCert.certificate;
+          key = originCert.private_key;
+          console.log("Origin CA certificate generated.");
+          await writeCredentialFields("cloudflare_origin_cert", cfConfig.hostname, {
+            certificate: cert,
+            private_key: key,
+          });
+          console.log(`Origin CA cert saved to credentials (cloudflare_origin_cert/${cfConfig.hostname}).`);
+        } else {
+          cert = existingCert!;
+          key = existingKey!;
+          console.log("Using existing Origin CA certificate.");
+        }
+      } catch (err: any) {
+        console.error(`Warning: Origin CA certificate creation failed: ${err.message}`);
+        console.error("You can generate one manually at https://dash.cloudflare.com → SSL/TLS → Origin Server.");
+        return result;
+      }
+
+      // 3. Install nginx
+      console.log("Installing nginx...");
+      try {
+        await installNginx(sshConfig);
+        console.log("nginx installed.");
+      } catch (err: any) {
+        console.error(`Warning: nginx installation failed: ${err.message}`);
+        console.error(`SSH into the server and install manually: ssh ${sshConfig.user}@${sshConfig.host}`);
+        return result;
+      }
+
+      // 4. Configure nginx with cert
+      console.log("Configuring nginx TLS reverse proxy...");
+      try {
+        await configureNginx(sshConfig, cfConfig.hostname, cert, key, VPS_CONSTANTS.DEFAULT_GATEWAY_PORT);
+        console.log("nginx configured.");
+      } catch (err: any) {
+        console.error(`Warning: nginx configuration failed: ${err.message}`);
+        console.error(`SSH into the server to configure manually: ssh ${sshConfig.user}@${sshConfig.host}`);
+        return result;
+      }
+
+      // 5. Set SSL mode to strict
+      console.log("Setting Cloudflare SSL mode to strict...");
+      try {
+        await setSslMode(cfConfig.apiToken, cfConfig.zoneId, "strict");
+        console.log("SSL mode set to strict.");
+      } catch (err: any) {
+        console.error(`Warning: Failed to set SSL mode: ${err.message}`);
+        console.error("Set SSL/TLS mode to 'Full (strict)' manually in the Cloudflare dashboard.");
+      }
+
+      // 6. Verify nginx is proxying correctly
+      const healthCheck = await sshExec(sshConfig, "curl -sf http://localhost/health", 10_000);
+      if (healthCheck.exitCode === 0) {
+        console.log("nginx reverse proxy verified.");
+      } else {
+        console.log("Note: nginx health check returned non-zero (gateway may not be running yet).");
+      }
+
+      result.gatewayUrl = `https://${cfConfig.hostname}`;
+    } catch (err: any) {
+      console.error(`Cloudflare HTTPS setup encountered an error: ${err.message}`);
+      console.error(`VPS is still available at ${sshConfig.host}. HTTPS can be configured manually.`);
+    }
+  }
+
+  return result;
+}
+
+async function provisionHetzner(onInstanceCreated?: OnInstanceCreated, cfConfig?: CloudflareConfig | null): Promise<Record<string, unknown> | null> {
+  // 1. Read Hetzner API key — prompt inline if missing
+  const backend = new FilesystemBackend();
+  let apiKeyValue = await backend.read("hetzner_api_key", "default", "api_key");
+  if (!apiKeyValue) {
+    console.log("Hetzner API key not found.");
+    const enteredKey = await password({
+      message: "Enter your Hetzner API key (from https://console.hetzner.cloud → Security → API tokens):",
+      mask: "*",
+      validate: (v: string) => v.trim() ? true : "API key is required",
+    });
+    apiKeyValue = enteredKey.trim();
+    await writeCredentialField("hetzner_api_key", "default", "api_key", apiKeyValue);
+    console.log("Hetzner API key saved.");
+  }
+
+  const {
+    listLocations,
+    listServerTypes,
+    listImages,
+    listSshKeys,
+    createSshKey,
+    createServer,
+    getServer,
+    listFirewalls,
+    createFirewall,
+    applyFirewallToServer,
+  } = await import("./hetzner-api.js");
+
+  // Fetch server types + locations + OS images + SSH keys in parallel
+  console.log("\nFetching Hetzner catalog...");
+  const [serverTypes, locations, allImages, existingKeys] = await Promise.all([
+    listServerTypes(apiKeyValue),
+    listLocations(apiKeyValue),
+    listImages(apiKeyValue),
+    listSshKeys(apiKeyValue),
+  ]);
+
+  // Filter to x86 Linux images
+  const linuxImages = allImages.filter((img) => 
+    img.architecture === "x86" && 
+    !img.deprecated &&
+    (img.os_flavor === "ubuntu" || img.os_flavor === "debian" || img.os_flavor === "fedora" || img.os_flavor === "centos" || img.os_flavor === "rocky" || img.os_flavor === "alma")
+  );
+
+  // Step-based wizard: Esc goes back to the previous step
+  // Steps: 0=Server Type, 1=Location, 2=OS, 3=SSH key
+  let step = 0;
+  let serverTypeChoice = "";
+  let locationChoice = "";
+  let imageChoice = "";
+  let sshKeyId = 0;
+  let sshKeyPath: string = VPS_CONSTANTS.DEFAULT_SSH_KEY_PATH;
+
+  while (step < 4) {
+    if (step === 0) {
+      // Pick server type first (searchable)
+      const typeChoices = serverTypes
+        .sort((a, b) => {
+          // Sort by monthly price (parse from string)
+          const priceA = parseFloat(a.prices[0]?.price_monthly.gross || "0");
+          const priceB = parseFloat(b.prices[0]?.price_monthly.gross || "0");
+          return priceA - priceB;
+        })
+        .map((st) => {
+          const price = st.prices[0]?.price_monthly.gross || "0";
+          return {
+            name: `${st.name} — ${st.cores} vCPU / ${st.memory}GB RAM / ${st.disk}GB SSD — €${price}/mo`,
+            value: st.name,
+          };
+        });
+
+      const result = await searchWithEsc({ message: "Server Type:", choices: typeChoices });
+      if (result === null) return null; // Esc at first step → abort
+      serverTypeChoice = result;
+      step++;
+    } else if (step === 1) {
+      // Pick location (filtered to where the selected server type is available)
+      const selectedType = serverTypes.find((st) => st.name === serverTypeChoice)!;
+      const availableLocationIds = new Set(selectedType.available_locations || []);
+      
+      const locationChoices = locations
+        .filter((loc) => availableLocationIds.has(loc.id))
+        .sort((a, b) => a.city.localeCompare(b.city))
+        .map((loc) => ({
+          name: `${loc.city}, ${loc.country} (${loc.name})`,
+          value: loc.name,
+        }));
+
+      if (locationChoices.length === 0) {
+        console.error("This server type is not available in any location.");
+        step--;
+        continue;
+      }
+
+      const result = await searchWithEsc({ message: "Location:", choices: locationChoices });
+      if (result === null) { step--; continue; }
+      locationChoice = result;
+      step++;
+    } else if (step === 2) {
+      // Pick OS image
+      const imageChoices = linuxImages
+        .sort((a, b) => {
+          // Prefer Ubuntu, then Debian, then alphabetical
+          const rank = (img: typeof a) => {
+            if (img.os_flavor === "ubuntu") return 0;
+            if (img.os_flavor === "debian") return 1;
+            return 2;
+          };
+          return rank(a) - rank(b) || a.description.localeCompare(b.description);
+        })
+        .map((img) => ({
+          name: img.description,
+          value: img.name,
+        }));
+
+      // Auto-select Ubuntu 22.04 if available
+      const ubuntu2204 = linuxImages.find((img) => img.name === "ubuntu-22.04");
+      if (ubuntu2204) {
+        imageChoice = ubuntu2204.name;
+        console.log(`OS: ${ubuntu2204.description} (auto-selected)`);
+      } else {
+        const result = await searchWithEsc({ message: "OS image:", choices: imageChoices });
+        if (result === null) { step--; continue; }
+        imageChoice = result;
+      }
+      step++;
+    } else if (step === 3) {
+      // SSH key — use vps_ssh credential, Hetzner keys, or create new
+      const { loadCredentialFields, credentialExists: credExists } = await import("../../shared/credentials.js");
+      const { promptCredential } = await import("../../credentials/prompter.js");
+      const { resolveCredential } = await import("../../credentials/registry.js");
+
+      // Check for existing vps_ssh credential
+      const hasVpsSsh = await credExists("vps_ssh", "default");
+      const vpsSshFields = hasVpsSsh ? await loadCredentialFields("vps_ssh", "default") : undefined;
+
+      // Build choices
+      const keyChoices: Array<{ name: string; value: string }> = [];
+
+      if (vpsSshFields?.public_key) {
+        const preview = vpsSshFields.public_key.slice(0, 40) + "...";
+        keyChoices.push({ name: `Action Llama VPS key (${preview})`, value: "__al_credential__" });
+      }
+
+      for (const k of existingKeys) {
+        keyChoices.push({
+          name: `Hetzner: ${k.name} (${k.public_key.slice(0, 30)}...)`,
+          value: String(k.id),
+        });
+      }
+
+      keyChoices.push({ name: "Set up a new VPS SSH key", value: "__new__" });
+
+      const result = await searchWithEsc({ message: "SSH key:", choices: keyChoices });
+      if (result === null) { step--; continue; }
+
+      const vpsSshKeyPath = resolve(credentialDir("vps_ssh", "default"), "private_key");
+
+      if (result === "__new__") {
+        // Run the vps_ssh credential prompt
+        const def = resolveCredential("vps_ssh");
+        const promptResult = await promptCredential(def, "default");
+        if (!promptResult) {
+          continue; // User cancelled — stay on this step
+        }
+        // Persist the credential before uploading to Hetzner
+        await writeCredentialFields("vps_ssh", "default", promptResult.values);
+        sshKeyPath = vpsSshKeyPath;
+        const pubKey = promptResult.values.public_key;
+        // Upload to Hetzner
+        const uploaded = await createSshKey(apiKeyValue, "action-llama", pubKey);
+        sshKeyId = uploaded.id;
+        console.log("SSH key uploaded to Hetzner.");
+      } else if (result === "__al_credential__") {
+        sshKeyPath = vpsSshKeyPath;
+        // Upload the existing vps_ssh public key to Hetzner if not already there
+        const pubKey = vpsSshFields!.public_key;
+        const alreadyOnHetzner = existingKeys.find((k) => k.public_key.trim() === pubKey.trim());
+        if (alreadyOnHetzner) {
+          sshKeyId = alreadyOnHetzner.id;
+        } else {
+          const uploaded = await createSshKey(apiKeyValue, "action-llama", pubKey);
+          sshKeyId = uploaded.id;
+          console.log("VPS SSH key uploaded to Hetzner.");
+        }
+      } else {
+        sshKeyId = parseInt(result);
+      }
+      step++;
+    }
+  }
+
+  // Set up Hetzner firewall (allow SSH + gateway inbound)
+  const AL_FW_NAME = "action-llama";
+  let firewallId: number | undefined;
+
+  console.log("\nConfiguring Hetzner firewall...");
+  const existingFirewalls = await listFirewalls(apiKeyValue);
+  const existingFw = existingFirewalls.find((fw) => fw.name === AL_FW_NAME);
+
+  if (existingFw) {
+    firewallId = existingFw.id;
+  } else {
+    // Create firewall with SSH + web ports
+    const webPorts = cfConfig
+      ? [
+          { port: "80", description: "HTTP redirect" },
+          { port: "443", description: "HTTPS" },
+        ]
+      : [
+          { port: String(VPS_CONSTANTS.DEFAULT_GATEWAY_PORT), description: "Gateway" },
+        ];
+
+    const rules = [
+      {
+        direction: "in" as const,
+        protocol: "tcp" as const,
+        source_ips: ["0.0.0.0/0", "::/0"],
+        port: "22",
+        description: "SSH",
+      },
+      ...webPorts.map((wp) => ({
+        direction: "in" as const,
+        protocol: "tcp" as const,
+        source_ips: ["0.0.0.0/0", "::/0"],
+        port: wp.port,
+        description: wp.description,
+      })),
+    ];
+    const firewall = await createFirewall(apiKeyValue, AL_FW_NAME, rules);
+    firewallId = firewall.id;
+    console.log("Hetzner firewall created.");
+  }
+
+  // Create server
+  console.log("Provisioning Hetzner server...");
+  const server = await createServer(apiKeyValue, {
+    name: "action-llama",
+    server_type: serverTypeChoice,
+    location: locationChoice,
+    image: imageChoice,
+    ssh_keys: [sshKeyId],
+    user_data: VPS_CONSTANTS.CLOUD_INIT_SCRIPT,
+    firewalls: firewallId ? [firewallId] : undefined,
+    labels: { "managed-by": "action-llama" },
+  });
+  console.log(`Server ${server.id} created.`);
+
+  // Persist immediately so the instance can be deprovisioned even if we're interrupted
+  const partialResult: Record<string, unknown> = {
+    provider: "vps",
+    host: "PENDING",
+    hetznerServerId: server.id,
+    hetznerLocation: locationChoice,
+  };
+  if (onInstanceCreated) onInstanceCreated(partialResult);
+
+  // Poll until active + SSH available + Docker installed
+  console.log("Waiting for server to become active...");
+  const sshConfig: SshConfig = {
+    host: "",
+    user: VPS_CONSTANTS.DEFAULT_SSH_USER,
+    port: VPS_CONSTANTS.DEFAULT_SSH_PORT,
+    keyPath: sshKeyPath,
+  };
+
+  const startTime = Date.now();
+  const maxWaitMs = 10 * 60 * 1000; // 10 minutes
+
+  while (Date.now() - startTime < maxWaitMs) {
+    const current = await getServer(apiKeyValue, server.id);
+
+    if (current.status === "running" && current.public_net.ipv4.ip) {
+      sshConfig.host = current.public_net.ipv4.ip;
+
+      // Update persisted config with real IP as soon as we know it
+      if (partialResult.host === "PENDING") {
+        partialResult.host = current.public_net.ipv4.ip;
+        if (onInstanceCreated) onInstanceCreated(partialResult);
+        console.log(`Server running at ${current.public_net.ipv4.ip}. Waiting for SSH...`);
+      }
+
+      // Wait for SSH
+      const sshReady = await testConnection(sshConfig);
+      if (sshReady) {
+        // Check if cloud-init has finished installing Node.js + Docker
+        const nodeCheck = await sshExec(sshConfig, "node --version");
+        const dockerCheck = await sshExec(sshConfig, "docker info --format '{{.ServerVersion}}'");
+        if (nodeCheck.exitCode === 0 && dockerCheck.exitCode === 0) {
+          console.log(`Node.js ${nodeCheck.stdout.trim()}, Docker ${dockerCheck.stdout.trim()} ready on VPS.`);
+          break;
+        }
+        console.log("Waiting for cloud-init to complete (Node.js + Docker)...");
+      }
+    } else {
+      process.stdout.write(".");
+    }
+
+    await new Promise((r) => setTimeout(r, 10_000));
+  }
+
+  if (!sshConfig.host || sshConfig.host === "0.0.0.0") {
+    console.error("\nTimed out waiting for VPS to become ready.");
+    console.error(`Server ${server.id} was created. Use 'al env deprov' to clean up.`);
+    return null;
+  }
+
+  // Final SSH check
+  const ok = await testConnection(sshConfig);
+  if (!ok) {
+    console.error("\nVPS is active but SSH connection failed.");
+    console.error(`Server ${server.id} at ${sshConfig.host} was created. Use 'al env deprov' to clean up.`);
+    return null;
+  }
+
+  const shouldContinue = await confirm({
+    message: `VPS ready at ${sshConfig.host}. Continue with setup?`,
+    default: true,
+  });
+  if (!shouldContinue) return null;
+
+  const result: Record<string, unknown> = {
+    provider: "vps",
+    host: sshConfig.host,
+    hetznerServerId: server.id,
+    hetznerLocation: locationChoice,
+    gatewayUrl: `http://${sshConfig.host}:${VPS_CONSTANTS.DEFAULT_GATEWAY_PORT}`,
+  };
+  if (sshKeyPath !== VPS_CONSTANTS.DEFAULT_SSH_KEY_PATH) result.sshKeyPath = sshKeyPath;
+
+  // Post-VPS Cloudflare HTTPS setup (same as Vultr)
   if (cfConfig) {
     try {
       result.cloudflareHostname = cfConfig.hostname;

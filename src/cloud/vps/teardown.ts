@@ -65,7 +65,7 @@ export async function teardownVps(_projectPath: string, config: VpsCloudConfig):
     }
   }
 
-  // 4. If this is a Vultr-provisioned instance, delete it
+  // 4. If this is a provisioned instance, delete it
   if (config.vultrInstanceId) {
     const apiKey = await backend.read("vultr_api_key", "default", "api_key");
     if (!apiKey) {
@@ -76,5 +76,15 @@ export async function teardownVps(_projectPath: string, config: VpsCloudConfig):
     const { deleteInstance } = await import("./vultr-api.js");
     await deleteInstance(apiKey, config.vultrInstanceId);
     console.log("Vultr instance deleted.");
+  } else if (config.hetznerServerId) {
+    const apiKey = await backend.read("hetzner_api_key", "default", "api_key");
+    if (!apiKey) {
+      console.log("Hetzner API key not found — delete the server manually at https://console.hetzner.cloud");
+      return;
+    }
+
+    const { deleteServer } = await import("./hetzner-api.js");
+    await deleteServer(apiKey, config.hetznerServerId);
+    console.log("Hetzner server deleted.");
   }
 }
