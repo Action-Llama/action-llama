@@ -1,0 +1,149 @@
+---
+title: "Reddit Moderator Agent"  
+description: "Agent that moderates Reddit posts and comments, removes violations, and posts content"
+---
+
+# Reddit Moderator Agent
+
+A moderator agent that helps manage a Reddit community by monitoring posts, removing inappropriate comments, and posting scheduled content.
+
+## Features
+
+- **Comment Moderation**: Automatically removes comments that violate configured rules
+- **Content Posting**: Posts scheduled content to your subreddit  
+- **Scheduled Polling**: Runs every 15 minutes to check for new activity
+- **Rate Limit Aware**: Respects Reddit's 60 requests/minute limit
+- **State Tracking**: Avoids re-processing old content
+
+## Setup
+
+### 1. Create a Reddit Script App
+
+1. Go to [Reddit App Preferences](https://www.reddit.com/prefs/apps)
+2. Click "Create App" or "Create Another App"
+3. Choose "script" as the app type
+4. Fill in:
+   - **Name**: Your bot name (e.g., "MySubredditModBot")
+   - **Description**: Brief description of your bot's purpose
+   - **About URL**: Optional link to documentation
+   - **Redirect URI**: Use `http://localhost:8080` (required but not used)
+5. Note the **client ID** (under the app name) and **secret**
+
+### 2. Configure the Agent
+
+1. Copy `agent-config.toml` and `ACTIONS.md` into `agents/reddit-moderator/` in your project
+2. Edit `agent-config.toml`:
+   - Set `subreddit` to the subreddit you want to moderate (without r/ prefix)
+   - Configure `moderation_rules` with patterns to detect and remove
+   - Adjust `schedule` if you want different polling frequency
+3. Add Reddit OAuth credentials: `al creds add reddit_oauth`
+4. Run `al doctor` to verify setup
+
+### 3. Reddit Account Setup
+
+**Important**: Use a dedicated bot account, not your personal Reddit account.
+
+1. Create a new Reddit account for your bot
+2. Subscribe the bot account to your target subreddit
+3. Grant the bot account moderator permissions in your subreddit
+4. Use the bot account credentials in the `reddit_oauth` credential
+
+## Configuration
+
+Edit the `[params]` section in `agent-config.toml`:
+
+```toml
+[params]
+# Required
+subreddit = "yoursubreddit"           # Subreddit to moderate
+
+# Moderation rules
+moderation_rules = [
+  "spam", 
+  "harassment",
+  "personal attacks",
+  "inappropriate content",
+]
+max_comment_age_hours = 24            # How far back to check
+
+# Optional: automated posting  
+posting_enabled = true
+posting_schedule = "daily"            # daily, weekly, or custom
+posting_time = "09:00"               # UTC time
+```
+
+## Permissions Required
+
+Your Reddit bot account needs:
+
+- **Posts & Comments**: Read access to view posts and comments
+- **Modmail**: Access to manage moderation actions  
+- **Edit**: Ability to edit/remove content
+- **Moderation Log**: View and manage moderation actions
+
+Grant these by making your bot account a moderator with appropriate permissions.
+
+## Rate Limits & Best Practices
+
+- Reddit allows 60 requests per minute for OAuth apps
+- The agent implements exponential backoff for rate limit handling
+- Consider running less frequently (every 30+ minutes) for high-traffic subreddits
+- Always test with a private test subreddit first
+
+## Customization
+
+### Custom Moderation Rules
+
+Modify the `moderation_rules` array to match your community standards:
+
+```toml
+moderation_rules = [
+  "buy now",           # Commercial spam
+  "click here",        # Link spam  
+  "stupid|idiot",      # Personal attacks
+  "(?i)hate\\s+speech", # Case-insensitive hate speech
+]
+```
+
+The agent checks comment text against these patterns and removes matching comments.
+
+### Scheduled Content
+
+Enable automated posting by adding to `[params]`:
+
+```toml
+posting_enabled = true
+posting_schedule = "weekly"  
+posting_day = "monday"
+posting_time = "10:00"
+post_template = "Weekly Discussion Thread"
+```
+
+### Custom Actions
+
+Extend the `ACTIONS.md` file to add custom behavior:
+- Welcome new subscribers
+- Pin important posts
+- Generate community reports
+- Cross-post to related subreddits
+
+## Troubleshooting
+
+**"Invalid credentials" errors:**
+- Verify your Reddit app is type "script" 
+- Double-check client ID and secret
+- Ensure bot account password is correct
+
+**"Insufficient permissions" errors:**  
+- Make sure bot account has moderator privileges
+- Check that required permissions are granted
+
+**Rate limit issues:**
+- Reduce polling frequency in schedule
+- Implement longer delays between API calls
+- Consider processing fewer posts per run
+
+**No comments found:**
+- Verify subreddit name (no r/ prefix)
+- Check that subreddit has recent activity
+- Ensure bot account can access the subreddit

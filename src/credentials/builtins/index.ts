@@ -22,6 +22,7 @@ import vultrApiKey from "./vultr-api-key.js";
 import hetznerApiKey from "./hetzner-api-key.js";
 import vpsSsh from "./vps-ssh.js";
 import cloudflareApiToken from "./cloudflare-api-token.js";
+import redditOAuth from "./reddit-oauth.js";
 
 export const builtinCredentials: Record<string, CredentialDefinition> = {
   "github_token": githubToken,
@@ -47,4 +48,5 @@ export const builtinCredentials: Record<string, CredentialDefinition> = {
   "hetzner_api_key": hetznerApiKey,
   "vps_ssh": vpsSsh,
   "cloudflare_api_token": cloudflareApiToken,
+  "reddit_oauth": redditOAuth,
 };
