@@ -1,5 +1,59 @@
 # @action-llama/action-llama
 
+## 0.13.1
+
+### Patch Changes
+
+- [`9b9ebea`](https://github.com/Action-Llama/action-llama/commit/9b9ebea69fceab430b6876bd41d4efda9e33fe9c) Thanks [@asselstine](https://github.com/asselstine)! - Fixed Mintlify docs build by updating `docs.json` navigation to the current object-based schema and escaping bare `<=` operators in MDX files that were being parsed as JSX tags.
+
+- [`99e04f0`](https://github.com/Action-Llama/action-llama/commit/99e04f08635c5b61d3e413a41373d961e2b99403) Thanks [@asselstine](https://github.com/asselstine)! - Fixed resource locks failing silently on VPS deployments. The gateway bound to
+  127.0.0.1 which was unreachable from Docker containers via the bridge network;
+  the systemd unit now passes `--expose` so the gateway binds to 0.0.0.0. The
+  `rlock` script also lacked an error fallback (unlike `runlock`/`rlock-heartbeat`),
+  so agents received empty output on failure and proceeded without acquiring a lock.
+  `rlock` now returns `{"ok":false,"reason":"gateway unreachable"}` when the gateway
+  is down, and all lock scripts include curl timeouts to fail fast.
+
+- [`c7ec254`](https://github.com/Action-Llama/action-llama/commit/c7ec2546765146fd892e7ac96bed05199a509e9b) Thanks [@asselstine](https://github.com/asselstine)! - CLI commands now show a clear error when the gateway returns non-JSON responses
+  (e.g. HTML from a reverse proxy or misconfigured gateway URL) instead of crashing
+  with "Unexpected token '<'". Affects `al kill`, `al pause`, `al resume`, `al stop`,
+  `al run`, and `al stat`.
+
+- [`5a9b634`](https://github.com/Action-Llama/action-llama/commit/5a9b6349d26be94e8be7c79cd49236d4fea8a245) Thanks [@asselstine](https://github.com/asselstine)! - Harden SSH on provisioned VPS servers to block brute-force attacks. New servers
+  get hardened at boot via cloud-init; existing servers are hardened on the next
+  `al push`. Disables password authentication, restricts root login to key-only,
+  and installs fail2ban.
+
+- [`3e9300f`](https://github.com/Action-Llama/action-llama/commit/3e9300f4e2c03e0361cfc3b2dc94c32751edd926) Thanks [@asselstine](https://github.com/asselstine)! - Set up Mintlify docs site. Added `docs/docs.json` config and `docs/index.mdx` landing page,
+  renamed all doc files from `.md` to `.mdx` with frontmatter and updated internal links.
+  Moved agent reference docs (`AGENTS.md` + skills) to `agent-docs/` so they ship in the npm
+  package and can be symlinked into user projects directly.
+
+- [`b4a6c7b`](https://github.com/Action-Llama/action-llama/commit/b4a6c7b8f1cf58d60447ab85182e84e43b644147) Thanks [@asselstine](https://github.com/asselstine)! - Fixed Hetzner server ID not being saved to the environment file during provisioning.
+  When provisioning was interrupted (Ctrl+C), `al env deprov` could not delete the
+  Hetzner server because `hetznerServerId` and `hetznerLocation` were missing from the
+  persisted config. Both fields are now written in the early `onInstanceCreated` callback
+  and the final write, matching the existing Vultr behavior.
+
+- [#134](https://github.com/Action-Llama/action-llama/pull/134) [`e8e9792`](https://github.com/Action-Llama/action-llama/commit/e8e9792e419e9ee1fdbea570e7b88ab4c9dc4b90) Thanks [@asselstine](https://github.com/asselstine)! - Added project-wide scale configuration to limit the maximum number of simultaneous agent runs across all agents. Set `scale = <number>` in config.toml to prevent server overload. The scheduler enforces this limit by reducing individual agent scales if needed, and `al doctor` validates that agent scales don't exceed the project limit. Closes [#133](https://github.com/Action-Llama/action-llama/issues/133).
+
+- [`1dbff23`](https://github.com/Action-Llama/action-llama/commit/1dbff23b9765f9734d611e5acaf05be68f4c4952) Thanks [@asselstine](https://github.com/asselstine)! - Added rich exit codes to all gateway-calling shell commands (`rlock`, `runlock`,
+  `rlock-heartbeat`, `al-call`, `al-check`, `al-wait`, `al-status`). Previously
+  most commands exited 0 regardless of HTTP status, causing agents to misinterpret
+  failures as successes — notably, multiple agents could acquire the same resource
+  lock because `rlock` always exited 0.
+
+  Exit codes now map HTTP statuses to distinct values: 0=success, 1=conflict,
+  2=not found, 3=auth error, 4=bad request, 5=unavailable, 6=unreachable,
+  7=unexpected, 8=timeout (al-wait only). These don't overlap with agent exit
+  codes (10–16) or POSIX signals (128+).
+
+- [`72aaf0e`](https://github.com/Action-Llama/action-llama/commit/72aaf0e628fd2a8d71695899bdb12e20d1043230) Thanks [@asselstine](https://github.com/asselstine)! - Fixed VPS provisioning getting stuck at "Waiting for SSH..." when Hetzner or Vultr
+  recycles an IP address from a previously deprovisioned server. The stale host key in
+  `~/.ssh/known_hosts` caused silent SSH connection failures. Now clears the old
+  known_hosts entry before the first SSH attempt. Also added progress dots during SSH
+  retry phase so the CLI no longer appears frozen.
+
 ## 0.13.0
 
 ### Minor Changes
