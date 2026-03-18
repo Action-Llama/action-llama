@@ -1,5 +1,28 @@
 # @action-llama/action-llama
 
+## 0.12.1
+
+### Patch Changes
+
+- [`c59262b`](https://github.com/Action-Llama/action-llama/commit/c59262b3be8d1c82c1df0b54cc700da32f16aea4) Thanks [@asselstine](https://github.com/asselstine)! - Default the Cloudflare subdomain prompt to "agents" during `al env prov`, so users
+  can accept the common choice by pressing Enter.
+
+- [`c944691`](https://github.com/Action-Llama/action-llama/commit/c9446910fd06c82b7672d7af0986c5b2cceac863) Thanks [@asselstine](https://github.com/asselstine)! - Fix remote deploy starting gateway on port 8080 instead of 3000. `al push` now passes
+  `--port 3000` explicitly in the systemd unit's ExecStart command, and `al start` accepts
+  a new `--port` flag to override the gateway port from the command line.
+
+- [`e0d6a53`](https://github.com/Action-Llama/action-llama/commit/e0d6a539efd12d7718d2a26416ab67c48e73a0c9) Thanks [@asselstine](https://github.com/asselstine)! - `al push` now runs `npm install` on the remote server after syncing project files,
+  ensuring dependencies (including `al` itself) stay up to date with each deploy.
+  The `al` CLI is no longer installed globally on the server — it is resolved from
+  the project's `node_modules/.bin/al` instead.
+
+- [`4b0e4b3`](https://github.com/Action-Llama/action-llama/commit/4b0e4b336475c564b27ce355c4b77aa11d53f553) Thanks [@asselstine](https://github.com/asselstine)! - `al env deprov` no longer prompts for confirmation before deleting a Vultr instance.
+  Since the environment is being deleted anyway, the extra prompt was unnecessary friction.
+
+- [`54d8668`](https://github.com/Action-Llama/action-llama/commit/54d8668a3f62a3b6a8b9e0da08ca92426f713b07) Thanks [@asselstine](https://github.com/asselstine)! - Redesigned the web dashboard log viewer to match the CLI's conversation format.
+  Logs now show assistant text, bash commands, tool invocations, and run lifecycle
+  events with rich formatting and color instead of flat `TIME LEVEL msg` lines.
+
 ## 0.12.0
 
 ### Minor Changes
