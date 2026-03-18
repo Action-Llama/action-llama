@@ -49,6 +49,9 @@ function Header({ info, agentCount, agents }: { info: SchedulerInfo | null; agen
         Action Llama{info.projectName ? ` — ${info.projectName}` : ""} ({modeLabel}) — {agentCount} agent{agentCount !== 1 ? "s" : ""}
         ({enabledCount} enabled{disabledCount > 0 ? `, ${disabledCount} disabled` : ""}), {info.cronJobCount} cron job{info.cronJobCount !== 1 ? "s" : ""}
       </Text>
+      {info.paused ? (
+        <Text bold color="yellow">▐▐ Scheduler paused</Text>
+      ) : null}
       <Text dimColor>
         {info.gatewayPort ? `Gateway: :${info.gatewayPort}` : ""}
         {info.gatewayPort && info.webhooksActive ? " | " : ""}

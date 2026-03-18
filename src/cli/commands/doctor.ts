@@ -9,7 +9,7 @@ import { ensureGatewayApiKey } from "../../gateway/api-key.js";
 import { resolveWebhookSource, validateTriggerFields } from "../../scheduler/webhook-setup.js";
 import { collectCredentialRefs } from "../../shared/credential-refs.js";
 
-export async function execute(opts: { project: string; env?: string; checkOnly?: boolean }): Promise<void> {
+export async function execute(opts: { project: string; env?: string; checkOnly?: boolean; silent?: boolean }): Promise<void> {
   const projectPath = resolve(opts.project);
 
   // Guard: refuse to run if the project path looks like an agent directory
@@ -71,21 +71,21 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
   }
 
   if (credentialRefs.size === 0) {
-    console.log("No credentials required by any agent.");
+    if (!opts.silent) console.log("No credentials required by any agent.");
   } else if (opts.checkOnly) {
-    await checkCredentials(credentialRefs);
+    await checkCredentials(credentialRefs, opts.silent);
   } else {
-    await promptCredentials(credentialRefs);
+    await promptCredentials(credentialRefs, opts.silent);
   }
 
   // --- Gateway API key (interactive only — CI doesn't need one) ---
   if (!opts.checkOnly) {
-    console.log("\nGateway API key:");
     const { key, generated } = await ensureGatewayApiKey();
     if (generated) {
-      console.log(`  [new] Generated gateway API key: ${key}`);
-      console.log("  Save this key — you'll need it to log into the dashboard.");
-    } else {
+      console.log(`\nGateway API key: ${key}`);
+      console.log("Save this key — you'll need it to log into the dashboard.");
+    } else if (!opts.silent) {
+      console.log("\nGateway API key:");
       console.log("  [ok] Gateway API key already configured.");
     }
   }
@@ -93,18 +93,18 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
 
 // --- Credential check (headless / non-interactive) ---
 
-async function checkCredentials(credentialRefs: Set<string>): Promise<void> {
+async function checkCredentials(credentialRefs: Set<string>, silent?: boolean): Promise<void> {
   let okCount = 0;
   const missing: string[] = [];
 
-  console.log(`Checking ${credentialRefs.size} credential(s)...`);
+  if (!silent) console.log(`Checking ${credentialRefs.size} credential(s)...`);
 
   for (const ref of credentialRefs) {
     const { type, instance } = parseCredentialRef(ref);
     const def = resolveCredential(type);
 
     if (await credentialExists(type, instance)) {
-      console.log(`  [ok] ${def.label} (${ref})`);
+      if (!silent) console.log(`  [ok] ${def.label} (${ref})`);
       okCount++;
     } else {
       console.log(`  [MISSING] ${def.label} (${ref})`);
@@ -119,13 +119,27 @@ async function checkCredentials(credentialRefs: Set<string>): Promise<void> {
     );
   }
 
-  console.log(`${okCount} credential(s) verified.`);
+  if (!silent) console.log(`${okCount} credential(s) verified.`);
 }
 
 // --- Interactive credential prompting ---
 
-async function promptCredentials(credentialRefs: Set<string>): Promise<void> {
-  console.log(`\nChecking ${credentialRefs.size} credential(s)...\n`);
+async function promptCredentials(credentialRefs: Set<string>, silent?: boolean): Promise<void> {
+  // In silent mode, check if all credentials exist first — skip output entirely if so
+  if (silent) {
+    const missing: string[] = [];
+    for (const ref of credentialRefs) {
+      const { type, instance } = parseCredentialRef(ref);
+      if (!(await credentialExists(type, instance))) {
+        missing.push(ref);
+      }
+    }
+    if (missing.length === 0) return;
+    // Fall through to interactive prompting for missing credentials
+    console.log(`\n${missing.length} credential(s) need to be configured:\n`);
+  } else {
+    console.log(`\nChecking ${credentialRefs.size} credential(s)...\n`);
+  }
 
   let okCount = 0;
   let promptedCount = 0;
@@ -135,7 +149,7 @@ async function promptCredentials(credentialRefs: Set<string>): Promise<void> {
     const def = resolveCredential(type);
 
     if (await credentialExists(type, instance)) {
-      console.log(`  [ok] ${def.label} (${ref})`);
+      if (!silent) console.log(`  [ok] ${def.label} (${ref})`);
       okCount++;
       continue;
     }
@@ -147,5 +161,7 @@ async function promptCredentials(credentialRefs: Set<string>): Promise<void> {
     }
   }
 
-  console.log(`\nDone. ${okCount} already present, ${promptedCount} configured.`);
+  if (!silent) {
+    console.log(`\nDone. ${okCount} already present, ${promptedCount} configured.`);
+  }
 }
