@@ -6,9 +6,11 @@ export interface ServerConfig {
   port?: number;         // default: 22
   keyPath?: string;      // default: ssh-agent
   basePath?: string;     // default: "/opt/action-llama"
-  provider?: string;        // "vultr" when AL-provisioned
+  provider?: string;        // "vultr" or "hetzner" when AL-provisioned
   vultrInstanceId?: string;
   vultrRegion?: string;
+  hetznerServerId?: number;
+  hetznerLocation?: string;
   cloudflareZoneId?: string;
   cloudflareDnsRecordId?: string;
   cloudflareHostname?: string;
