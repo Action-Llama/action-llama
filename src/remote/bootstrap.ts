@@ -7,7 +7,7 @@ export interface BootstrapResult {
 }
 
 /**
- * Check server prerequisites (Node >= 20, Docker, firewall).
+ * Check server prerequisites (Node >= 20, Docker, nginx).
  * Throws if a hard requirement is not met.
  * Returns resolved binary paths for use in the systemd unit.
  *
@@ -41,8 +41,8 @@ export async function bootstrapServer(ssh: SshOptions, gatewayPort: number): Pro
     );
   }
 
-  // Ensure firewall allows the gateway port (non-fatal — not all servers use ufw)
-  await ensureFirewallPort(ssh, gatewayPort);
+  // Set up nginx as a reverse proxy to the gateway
+  await ensureNginx(ssh, gatewayPort);
 
   return {
     nodePath: nodeResult.status === "fulfilled" ? nodeResult.value.path : "",
@@ -77,24 +77,52 @@ async function checkDocker(ssh: SshOptions): Promise<string> {
 }
 
 /**
- * If ufw is active, ensure the gateway port is allowed.
- * Silently skips if ufw is not installed or not active.
+ * Ensure nginx is installed and configured as a reverse proxy to the gateway.
+ * Installs nginx if missing, writes an action-llama site config, and reloads.
  */
-async function ensureFirewallPort(ssh: SshOptions, port: number): Promise<void> {
+async function ensureNginx(ssh: SshOptions, gatewayPort: number): Promise<void> {
+  // Check if nginx is installed
+  try {
+    await sshExec(ssh, "which nginx");
+    console.log("  nginx installed");
+  } catch {
+    console.log("  Installing nginx...");
+    await sshExec(ssh, "sudo apt-get update -qq && sudo apt-get install -y -qq nginx");
+    console.log("  nginx installed");
+  }
+
+  const nginxConf = `server {
+    listen 80;
+    listen [::]:80;
+
+    location / {
+        proxy_pass http://127.0.0.1:${gatewayPort};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+`;
+
+  const escaped = nginxConf.replace(/'/g, "'\\''");
+  await sshExec(ssh, `sudo tee /etc/nginx/sites-available/action-llama > /dev/null << 'NGINXEOF'\n${escaped}\nNGINXEOF`);
+  await sshExec(ssh, "sudo ln -sfn /etc/nginx/sites-available/action-llama /etc/nginx/sites-enabled/action-llama");
+  await sshExec(ssh, "sudo rm -f /etc/nginx/sites-enabled/default");
+  await sshExec(ssh, "sudo nginx -t && sudo systemctl reload nginx");
+  console.log(`  nginx configured → 127.0.0.1:${gatewayPort}`);
+
+  // Ensure ufw allows HTTP/HTTPS for nginx (if ufw is active)
   try {
     const status = (await sshExec(ssh, "sudo ufw status")).trim();
-    if (!status.startsWith("Status: active")) return;
-
-    // Check if the port is already allowed
-    if (status.includes(`${port}/tcp`) || status.includes(`${port} `)) {
-      console.log(`  Firewall: port ${port}/tcp already allowed`);
-      return;
+    if (status.startsWith("Status: active")) {
+      await sshExec(ssh, "sudo ufw allow 'Nginx Full'");
+      console.log("  Firewall: HTTP/HTTPS allowed");
     }
-
-    await sshExec(ssh, `sudo ufw allow ${port}/tcp`);
-    console.log(`  Firewall: opened port ${port}/tcp`);
   } catch {
-    // ufw not installed or not available — nothing to do
+    // ufw not installed — nothing to do
   }
 }
-

@@ -46,7 +46,7 @@ Requires=docker.service
 [Service]
 Type=simple
 WorkingDirectory=${basePath}/project
-ExecStart=${alExec} start --headless --expose -w${gatewayPort ? ` --port ${gatewayPort}` : ""}
+ExecStart=${alExec} start --headless -w${gatewayPort ? ` --port ${gatewayPort}` : ""}
 Restart=on-failure
 RestartSec=5
 Environment=NODE_ENV=production${pathEnv}
