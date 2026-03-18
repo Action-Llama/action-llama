@@ -11,6 +11,7 @@ interface LogEntry {
   level: number;
   time: number;
   msg: string;
+  instance?: string;
   [key: string]: unknown;
 }
 
@@ -56,32 +57,6 @@ function findLatestLogFile(projectPath: string, prefix: string): string | null {
   return files.length > 0 ? files[files.length - 1] : null;
 }
 
-/** Find all instance file prefixes for an agent (e.g. "dev", "dev-2", "dev-3"). */
-function findAgentPrefixes(projectPath: string, agentName: string): string[] {
-  const dir = logsDir(projectPath);
-  const prefixes = new Set<string>();
-  try {
-    for (const f of readdirSync(dir)) {
-      if (!f.endsWith(".log")) continue;
-      // Match "agentName-YYYY-MM-DD.log" or "agentName-N-YYYY-MM-DD.log"
-      if (f.startsWith(`${agentName}-`)) {
-        // Extract prefix: everything before the date part
-        const match = f.match(/^(.+)-\d{4}-\d{2}-\d{2}\.log$/);
-        if (match) {
-          const prefix = match[1];
-          // Only include if it's the agent itself or an instance (agent-N)
-          if (prefix === agentName || /^.+-\d+$/.test(prefix)) {
-            prefixes.add(prefix);
-          }
-        }
-      }
-    }
-  } catch {
-    // dir doesn't exist
-  }
-  return [...prefixes].sort();
-}
-
 function dateFromLogFile(filePath: string): string | null {
   const match = filePath.match(/(\d{4}-\d{2}-\d{2})\.log$/);
   return match ? match[1] : null;
@@ -112,6 +87,7 @@ async function readEntriesForward(
   limit: number,
   afterTime?: number,
   beforeTime?: number,
+  instanceFilter?: string,
 ): Promise<{ entries: LogEntry[]; newOffset: number }> {
   try {
     const stat = await fs.stat(filePath);
@@ -131,6 +107,7 @@ async function readEntriesForward(
         if (!entry) continue;
         if (afterTime && entry.time <= afterTime) continue;
         if (beforeTime && entry.time >= beforeTime) continue;
+        if (instanceFilter && entry.instance !== instanceFilter) continue;
         entries.push(entry);
       }
 
@@ -149,6 +126,7 @@ async function readLastEntries(
   limit: number,
   afterTime?: number,
   beforeTime?: number,
+  instanceFilter?: string,
 ): Promise<{ entries: LogEntry[]; byteOffset: number }> {
   try {
     const stat = await fs.stat(filePath);
@@ -182,6 +160,7 @@ async function readLastEntries(
           if (!entry) continue;
           if (afterTime && entry.time <= afterTime) continue;
           if (beforeTime && entry.time >= beforeTime) continue;
+          if (instanceFilter && entry.instance !== instanceFilter) continue;
           entries.unshift(entry);
           if (entries.length > limit) entries.shift();
         }
@@ -190,7 +169,8 @@ async function readLastEntries(
       if (position === 0 && remainder.trim()) {
         const entry = parseLine(remainder);
         if (entry) {
-          const inRange = (!afterTime || entry.time > afterTime) && (!beforeTime || entry.time < beforeTime);
+          const inRange = (!afterTime || entry.time > afterTime) && (!beforeTime || entry.time < beforeTime)
+            && (!instanceFilter || entry.instance === instanceFilter);
           if (inRange) {
             entries.unshift(entry);
             if (entries.length > limit) entries.shift();
@@ -205,14 +185,6 @@ async function readLastEntries(
   } catch {
     return { entries: [], byteOffset: 0 };
   }
-}
-
-/** Merge multiple sorted entry arrays by time, keeping the last `limit` entries. */
-function mergeEntries(arrays: LogEntry[][], limit: number): LogEntry[] {
-  const merged: LogEntry[] = [];
-  for (const arr of arrays) merged.push(...arr);
-  merged.sort((a, b) => a.time - b.time);
-  return merged.slice(-limit);
 }
 
 // ── Route handlers ────────────────────────────────────────────────────────────
@@ -258,86 +230,32 @@ export function registerLogRoutes(app: Hono, projectPath: string): void {
     return c.json({ entries, cursor: resCursor, hasMore: false });
   });
 
-  // ── Agent logs (aggregate) ──────────────────────────────────────────────
+  // ── Agent logs (all instances in one file) ─────────────────────────────
   app.get("/api/logs/agents/:name", async (c) => {
     const name = c.req.param("name");
     if (!SAFE_AGENT_NAME.test(name)) return c.json({ error: "Invalid agent name" }, 400);
 
     const { lines, cursor, after, before } = parseQueryParams(c.req.query());
-    const prefixes = findAgentPrefixes(projectPath, name);
 
-    // If no instance files, try the agent name directly
-    if (prefixes.length === 0) {
-      const file = findLatestLogFile(projectPath, name);
-      if (!file) return c.json({ entries: [], cursor: null, hasMore: false });
+    const file = findLatestLogFile(projectPath, name);
+    if (!file) return c.json({ entries: [], cursor: null, hasMore: false });
 
-      if (cursor) {
-        const parsed = decodeCursor(cursor);
-        if (!parsed) return c.json({ error: "Invalid cursor" }, 400);
-        const currentDate = dateFromLogFile(file);
-        const offset = currentDate !== parsed.date ? 0 : parsed.offsets[0] || 0;
-        const { entries, newOffset } = await readEntriesForward(file, offset, lines, after, before);
-        const newCursor = encodeCursor(currentDate || parsed.date, [newOffset]);
-        return c.json({ entries, cursor: newCursor, hasMore: entries.length >= lines });
-      }
-
-      const { entries, byteOffset } = await readLastEntries(file, lines, after, before);
-      const date = dateFromLogFile(file) || "";
-      return c.json({ entries, cursor: encodeCursor(date, [byteOffset]), hasMore: false });
-    }
-
-    // Multiple instance files — aggregate
     if (cursor) {
       const parsed = decodeCursor(cursor);
       if (!parsed) return c.json({ error: "Invalid cursor" }, 400);
-
-      const allEntries: LogEntry[][] = [];
-      const newOffsets: number[] = [];
-
-      for (let i = 0; i < prefixes.length; i++) {
-        const file = findLatestLogFile(projectPath, prefixes[i]);
-        if (!file) {
-          newOffsets.push(0);
-          allEntries.push([]);
-          continue;
-        }
-        const currentDate = dateFromLogFile(file);
-        const offset = currentDate !== parsed.date ? 0 : (parsed.offsets[i] || 0);
-        const { entries, newOffset } = await readEntriesForward(file, offset, lines, after, before);
-        allEntries.push(entries);
-        newOffsets.push(newOffset);
-      }
-
-      const merged = mergeEntries(allEntries, lines);
-      const latestFile = findLatestLogFile(projectPath, prefixes[0]);
-      const date = (latestFile ? dateFromLogFile(latestFile) : null) || parsed.date;
-      return c.json({ entries: merged, cursor: encodeCursor(date, newOffsets), hasMore: merged.length >= lines });
+      const currentDate = dateFromLogFile(file);
+      const offset = currentDate !== parsed.date ? 0 : parsed.offsets[0] || 0;
+      const { entries, newOffset } = await readEntriesForward(file, offset, lines, after, before);
+      const newCursor = encodeCursor(currentDate || parsed.date, [newOffset]);
+      return c.json({ entries, cursor: newCursor, hasMore: entries.length >= lines });
     }
 
-    // Initial fetch — read last N from each, merge
-    const allEntries: LogEntry[][] = [];
-    const offsets: number[] = [];
-    let latestDate = "";
-
-    for (const prefix of prefixes) {
-      const file = findLatestLogFile(projectPath, prefix);
-      if (!file) {
-        offsets.push(0);
-        allEntries.push([]);
-        continue;
-      }
-      const date = dateFromLogFile(file) || "";
-      if (date > latestDate) latestDate = date;
-      const { entries, byteOffset } = await readLastEntries(file, lines, after, before);
-      allEntries.push(entries);
-      offsets.push(byteOffset);
-    }
-
-    const merged = mergeEntries(allEntries, lines);
-    return c.json({ entries: merged, cursor: encodeCursor(latestDate, offsets), hasMore: false });
+    const { entries, byteOffset } = await readLastEntries(file, lines, after, before);
+    const date = dateFromLogFile(file) || "";
+    return c.json({ entries, cursor: encodeCursor(date, [byteOffset]), hasMore: false });
   });
 
-  // ── Specific instance logs ──────────────────────────────────────────────
+  // ── Specific instance logs (filter by instance field) ─────────────────
   app.get("/api/logs/agents/:name/:instanceId", async (c) => {
     const name = c.req.param("name");
     const instanceId = c.req.param("instanceId");
@@ -347,26 +265,22 @@ export function registerLogRoutes(app: Hono, projectPath: string): void {
     if (!/^\d+$/.test(instanceId)) return c.json({ error: "Invalid instance ID" }, 400);
 
     const { lines, cursor, after, before } = parseQueryParams(c.req.query());
-    const prefix = `${name}-${instanceId}`;
+    const instanceFilter = `${name}(${instanceId})`;
+
+    const file = findLatestLogFile(projectPath, name);
+    if (!file) return c.json({ entries: [], cursor: null, hasMore: false });
 
     if (cursor) {
       const parsed = decodeCursor(cursor);
       if (!parsed) return c.json({ error: "Invalid cursor" }, 400);
-
-      const file = findLatestLogFile(projectPath, prefix);
-      if (!file) return c.json({ entries: [], cursor: null, hasMore: false });
-
       const currentDate = dateFromLogFile(file);
       const offset = currentDate !== parsed.date ? 0 : parsed.offsets[0] || 0;
-      const { entries, newOffset } = await readEntriesForward(file, offset, lines, after, before);
+      const { entries, newOffset } = await readEntriesForward(file, offset, lines, after, before, instanceFilter);
       const newCursor = encodeCursor(currentDate || parsed.date, [newOffset]);
       return c.json({ entries, cursor: newCursor, hasMore: entries.length >= lines });
     }
 
-    const file = findLatestLogFile(projectPath, prefix);
-    if (!file) return c.json({ entries: [], cursor: null, hasMore: false });
-
-    const { entries, byteOffset } = await readLastEntries(file, lines, after, before);
+    const { entries, byteOffset } = await readLastEntries(file, lines, after, before, instanceFilter);
     const date = dateFromLogFile(file) || "";
     return c.json({ entries, cursor: encodeCursor(date, [byteOffset]), hasMore: false });
   });

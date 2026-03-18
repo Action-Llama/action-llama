@@ -139,39 +139,35 @@ describe("log API routes", () => {
       expect(data.entries[0].msg).toBe("agent-msg-2");
     });
 
-    it("merges entries from multiple instance files", async () => {
-      // Instance 1 logs
-      const inst1 = [
-        pinoLine(30, 1710700001000, "inst1-a"),
-        pinoLine(30, 1710700003000, "inst1-b"),
-        pinoLine(30, 1710700005000, "inst1-c"),
+    it("returns interleaved entries from multiple instances in one file", async () => {
+      // All instances write to the same file, tagged with an `instance` field
+      const lines = [
+        pinoLine(30, 1710700001000, "inst1-a", { instance: "dev(1)" }),
+        pinoLine(30, 1710700002000, "inst2-a", { instance: "dev(2)" }),
+        pinoLine(30, 1710700003000, "inst1-b", { instance: "dev(1)" }),
+        pinoLine(30, 1710700004000, "inst2-b", { instance: "dev(2)" }),
+        pinoLine(30, 1710700005000, "inst1-c", { instance: "dev(1)" }),
+        pinoLine(30, 1710700006000, "inst2-c", { instance: "dev(2)" }),
       ];
-      writeFileSync(join(logsPath, "dev-2024-03-18.log"), inst1.join("\n") + "\n");
-
-      // Instance 2 logs
-      const inst2 = [
-        pinoLine(30, 1710700002000, "inst2-a"),
-        pinoLine(30, 1710700004000, "inst2-b"),
-        pinoLine(30, 1710700006000, "inst2-c"),
-      ];
-      writeFileSync(join(logsPath, "dev-2-2024-03-18.log"), inst2.join("\n") + "\n");
+      writeFileSync(join(logsPath, "dev-2024-03-18.log"), lines.join("\n") + "\n");
 
       const app = createTestApp(tmpDir);
       const res = await app.request("/api/logs/agents/dev?lines=6");
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.entries).toHaveLength(6);
-      // Should be merged by time
+      // All entries returned in file order (already sorted by time)
       expect(data.entries.map((e: any) => e.msg)).toEqual([
         "inst1-a", "inst2-a", "inst1-b", "inst2-b", "inst1-c", "inst2-c",
       ]);
     });
 
-    it("supports cursor pagination for aggregate", async () => {
-      const inst1 = [pinoLine(30, 1710700001000, "inst1-a")];
-      const inst2 = [pinoLine(30, 1710700002000, "inst2-a")];
-      writeFileSync(join(logsPath, "dev-2024-03-18.log"), inst1.join("\n") + "\n");
-      writeFileSync(join(logsPath, "dev-2-2024-03-18.log"), inst2.join("\n") + "\n");
+    it("supports cursor pagination", async () => {
+      const lines = [
+        pinoLine(30, 1710700001000, "inst1-a", { instance: "dev(1)" }),
+        pinoLine(30, 1710700002000, "inst2-a", { instance: "dev(2)" }),
+      ];
+      writeFileSync(join(logsPath, "dev-2024-03-18.log"), lines.join("\n") + "\n");
 
       const app = createTestApp(tmpDir);
       const res1 = await app.request("/api/logs/agents/dev?lines=10");
@@ -179,10 +175,10 @@ describe("log API routes", () => {
       expect(data1.entries).toHaveLength(2);
       const cursor = data1.cursor;
 
-      // Append new data to instance 2
+      // Append new data
       writeFileSync(
-        join(logsPath, "dev-2-2024-03-18.log"),
-        inst2.join("\n") + "\n" + pinoLine(30, 1710700010000, "inst2-new") + "\n",
+        join(logsPath, "dev-2024-03-18.log"),
+        lines.join("\n") + "\n" + pinoLine(30, 1710700010000, "inst2-new", { instance: "dev(2)" }) + "\n",
       );
 
       const res2 = await app.request(`/api/logs/agents/dev?cursor=${encodeURIComponent(cursor)}`);
@@ -195,12 +191,14 @@ describe("log API routes", () => {
   // ── Instance logs ───────────────────────────────────────────────────────
 
   describe("GET /api/logs/agents/:name/:instanceId", () => {
-    it("returns entries for specific instance", async () => {
+    it("returns entries for specific instance filtered by instance field", async () => {
       const lines = [
-        pinoLine(30, 1710700001000, "inst2-msg-1"),
-        pinoLine(30, 1710700002000, "inst2-msg-2"),
+        pinoLine(30, 1710700001000, "inst1-msg", { instance: "dev(1)" }),
+        pinoLine(30, 1710700002000, "inst2-msg-1", { instance: "dev(2)" }),
+        pinoLine(30, 1710700003000, "inst1-msg-2", { instance: "dev(1)" }),
+        pinoLine(30, 1710700004000, "inst2-msg-2", { instance: "dev(2)" }),
       ];
-      writeFileSync(join(logsPath, "dev-2-2024-03-18.log"), lines.join("\n") + "\n");
+      writeFileSync(join(logsPath, "dev-2024-03-18.log"), lines.join("\n") + "\n");
 
       const app = createTestApp(tmpDir);
       const res = await app.request("/api/logs/agents/dev/2");
@@ -208,11 +206,25 @@ describe("log API routes", () => {
       const data = await res.json();
       expect(data.entries).toHaveLength(2);
       expect(data.entries[0].msg).toBe("inst2-msg-1");
+      expect(data.entries[1].msg).toBe("inst2-msg-2");
     });
 
-    it("returns empty entries for missing instance", async () => {
+    it("returns empty entries when instance has no log entries", async () => {
+      const lines = [
+        pinoLine(30, 1710700001000, "inst1-only", { instance: "dev(1)" }),
+      ];
+      writeFileSync(join(logsPath, "dev-2024-03-18.log"), lines.join("\n") + "\n");
+
       const app = createTestApp(tmpDir);
       const res = await app.request("/api/logs/agents/dev/99");
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.entries).toEqual([]);
+    });
+
+    it("returns empty entries for missing agent log file", async () => {
+      const app = createTestApp(tmpDir);
+      const res = await app.request("/api/logs/agents/dev/1");
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.entries).toEqual([]);
@@ -224,6 +236,35 @@ describe("log API routes", () => {
       expect(res.status).toBe(400);
       const data = await res.json();
       expect(data.error).toBe("Invalid instance ID");
+    });
+
+    it("supports cursor pagination with instance filtering", async () => {
+      const lines = [
+        pinoLine(30, 1710700001000, "inst1-a", { instance: "dev(1)" }),
+        pinoLine(30, 1710700002000, "inst2-a", { instance: "dev(2)" }),
+      ];
+      writeFileSync(join(logsPath, "dev-2024-03-18.log"), lines.join("\n") + "\n");
+
+      const app = createTestApp(tmpDir);
+      const res1 = await app.request("/api/logs/agents/dev/2?lines=10");
+      const data1 = await res1.json();
+      expect(data1.entries).toHaveLength(1);
+      expect(data1.entries[0].msg).toBe("inst2-a");
+      const cursor = data1.cursor;
+
+      // Append entries for both instances
+      writeFileSync(
+        join(logsPath, "dev-2024-03-18.log"),
+        lines.join("\n") + "\n"
+          + pinoLine(30, 1710700010000, "inst1-new", { instance: "dev(1)" }) + "\n"
+          + pinoLine(30, 1710700011000, "inst2-new", { instance: "dev(2)" }) + "\n",
+      );
+
+      // Only the instance 2 entry should be returned
+      const res2 = await app.request(`/api/logs/agents/dev/2?cursor=${encodeURIComponent(cursor)}`);
+      const data2 = await res2.json();
+      expect(data2.entries).toHaveLength(1);
+      expect(data2.entries[0].msg).toBe("inst2-new");
     });
   });
 

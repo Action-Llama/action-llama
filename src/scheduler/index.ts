@@ -225,6 +225,13 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   );
   logger.info({ runtime: "local" }, "Container mode enabled — initializing infrastructure");
 
+  // Start gateway proxy container so containers can reach the host gateway
+  // via http://gateway:8080 on the Docker network.
+  if (runtime.startGatewayProxy) {
+    logger.info({ port: gatewayPort }, "Starting gateway proxy container");
+    await runtime.startGatewayProxy(gatewayPort);
+  }
+
   // Check for orphan containers from a previous scheduler run.
   // Only clean up containers belonging to agents in this project to avoid
   // killing containers from other schedulers running in parallel (e.g. tests).
@@ -269,16 +276,19 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     const scale = agentConfig.scale ?? 1;
     const runners: PoolRunner[] = [];
 
-
+    // Single log file per agent — instances share the file and are distinguished
+    // by the `instance` field in each log entry.
+    const agentLogger = mkLogger(projectPath, agentConfig.name);
 
     for (let i = 0; i < scale; i++) {
       const instanceId = scale >= 2 ? `${agentConfig.name}(${i + 1})` : agentConfig.name;
+      const instanceLogger = scale >= 2 ? agentLogger.child({ instance: instanceId }) : agentLogger;
       const agentRuntime = agentRuntimeOverrides[agentConfig.name] || runtime;
       runners.push(new ContainerAgentRunnerClass(
         agentRuntime,
         globalConfig,
         agentConfig,
-        mkLogger(projectPath, instanceId),
+        instanceLogger,
         registerContainer,
         unregisterContainer,
         gatewayUrl,
@@ -496,11 +506,13 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     baseImage,
     createRunner: (agentConfig: AgentConfig, image: string, instanceId: string) => {
       const agentRuntime = agentRuntimeOverrides[agentConfig.name] || runtime;
+      const baseLogger = mkLogger(projectPath, agentConfig.name);
+      const runnerLogger = instanceId !== agentConfig.name ? baseLogger.child({ instance: instanceId }) : baseLogger;
       return new ContainerAgentRunnerClass(
         agentRuntime,
         globalConfig,
         agentConfig,
-        mkLogger(projectPath, instanceId),
+        runnerLogger,
         registerContainer,
         unregisterContainer,
         gatewayUrl,
@@ -525,6 +537,11 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     if (gateway) {
       await gateway.close();
       logger.info("Gateway server stopped");
+    }
+    // Stop gateway proxy container
+    if (runtime?.stopGatewayProxy) {
+      await runtime.stopGatewayProxy();
+      logger.info("Gateway proxy container stopped");
     }
     if (stateStore) {
       await stateStore.close();

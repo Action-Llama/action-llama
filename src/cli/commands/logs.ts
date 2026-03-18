@@ -32,6 +32,7 @@ interface LogEntry {
   time: number;
   msg: string;
   name?: string;
+  instance?: string;
   pid?: number;
   hostname?: string;
   [key: string]: unknown;
@@ -44,10 +45,11 @@ function formatRawEntry(entry: LogEntry): string {
   const time = date.toLocaleTimeString("en-US", { hour12: false });
   const levelInfo = LEVEL_COLORS[entry.level] || { label: `L${entry.level}`, color: "" };
 
-  const { level, time: _t, msg, name: _n, pid: _p, hostname: _h, ...extra } = entry;
+  const { level, time: _t, msg, name: _n, instance: _i, pid: _p, hostname: _h, ...extra } = entry;
+  const instanceTag = entry.instance ? `${MAGENTA}[${entry.instance}]${RESET} ` : "";
   const extraStr = Object.keys(extra).length > 0 ? ` ${JSON.stringify(extra)}` : "";
 
-  return `${levelInfo.color}${time} ${levelInfo.label.padEnd(5)} ${msg}${extraStr}${RESET}`;
+  return `${levelInfo.color}${time} ${levelInfo.label.padEnd(5)}${RESET} ${instanceTag}${levelInfo.color}${msg}${extraStr}${RESET}`;
 }
 
 // ── Conversation format (default) ────────────────────────────────────────────
@@ -65,6 +67,7 @@ function formatTime(ts: number): string {
 
 function formatConversationEntry(entry: LogEntry): string | null {
   const time = `${DIM}${formatTime(entry.time)}${RESET}`;
+  const instanceTag = entry.instance ? `${MAGENTA}[${entry.instance}]${RESET} ` : "";
   const { msg } = entry;
 
   // Skip debug-level noise (except tool errors which are level 50)
@@ -86,7 +89,7 @@ function formatConversationEntry(entry: LogEntry): string | null {
     if (!text) return null;
     // Indent multi-line text under the timestamp
     const lines = text.split("\n");
-    const first = `${time}  ${WHITE}${BOLD}${lines[0]}${RESET}`;
+    const first = `${time}  ${instanceTag}${WHITE}${BOLD}${lines[0]}${RESET}`;
     if (lines.length === 1) return first;
     const rest = lines.slice(1).map((l) => `          ${WHITE}${l}${RESET}`).join("\n");
     return `${first}\n${rest}`;
@@ -95,7 +98,7 @@ function formatConversationEntry(entry: LogEntry): string | null {
   // ── Bash command ──
   if (msg === "bash") {
     const cmd = String(entry.cmd || "");
-    return `${time}  ${CYAN}$ ${cmd}${RESET}`;
+    return `${time}  ${instanceTag}${CYAN}$ ${cmd}${RESET}`;
   }
 
   // ── Tool start (non-bash, logged at info level in some paths) ──
@@ -109,13 +112,13 @@ function formatConversationEntry(entry: LogEntry): string | null {
     const tool = String(entry.tool || "unknown");
     const cmd = entry.cmd ? `\n          ${DIM}$ ${String(entry.cmd)}${RESET}` : "";
     const result = entry.result ? `\n          ${DIM}${String(entry.result).slice(0, 300)}${RESET}` : "";
-    return `${time}  ${RED}✗ ${tool} failed${RESET}${cmd}${result}`;
+    return `${time}  ${instanceTag}${RED}✗ ${tool} failed${RESET}${cmd}${result}`;
   }
 
   // ── Run lifecycle ──
   if (msg.startsWith("Starting ")) {
     const container = entry.container ? `${DIM} (${entry.container})${RESET}` : "";
-    return `${time}  ${MAGENTA}${BOLD}${msg}${RESET}${container}`;
+    return `${time}  ${instanceTag}${MAGENTA}${BOLD}${msg}${RESET}${container}`;
   }
 
   if (msg === "run completed" || msg === "run completed, rerun requested") {
@@ -165,8 +168,9 @@ function formatRunHeader(entry: LogEntry): string | null {
   // Detect run start to print a separator header
   if (msg.startsWith("Starting ") && (msg.includes(" run") || msg.includes(" container run"))) {
     const agentName = entry.name || "agent";
+    const instance = entry.instance ? `  ${entry.instance}` : "";
     const container = entry.container ? `  ${entry.container}` : "";
-    const label = ` ${agentName}${container} `;
+    const label = ` ${agentName}${instance}${container} `;
     const line = "─".repeat(Math.max(0, 60 - label.length));
     return `\n${DIM}──${RESET}${MAGENTA}${BOLD}${label}${RESET}${DIM}${line}${RESET}`;
   }
@@ -479,23 +483,24 @@ export async function execute(
   } catch {
     // Gateway not running — fall back to direct file reading
     const dir = logsDir(projectPath);
-    const logName = instanceNum !== undefined ? `${agent}-${instanceNum}` : agent;
-    const logFile = findLogFile(dir, logName, opts.date);
+    const logFile = findLogFile(dir, agent, opts.date);
 
     if (!logFile) {
       const dateStr = opts.date || "today";
-      if (instanceNum !== undefined) {
-        console.error(`No log file found for agent "${agent}" instance ${instanceNum} (${dateStr}) in ${dir}`);
-      } else {
-        console.error(`No log file found for agent "${agent}" (${dateStr}) in ${dir}`);
-      }
+      console.error(`No log file found for agent "${agent}" (${dateStr}) in ${dir}`);
       process.exit(1);
     }
 
+    // When --instance is specified, wrap the formatter to skip non-matching entries
+    const instanceFilter = instanceNum !== undefined ? `${agent}(${instanceNum})` : undefined;
+    const filteredFmt: Formatter = instanceFilter
+      ? (entry) => entry.instance === instanceFilter ? fmt(entry) : null
+      : fmt;
+
     if (opts.follow) {
-      await followFile(logFile, n, fmt);
+      await followFile(logFile, n, filteredFmt);
     } else {
-      await readLastN(logFile, n, fmt);
+      await readLastN(logFile, n, filteredFmt);
     }
   }
 }

@@ -118,12 +118,16 @@ vi.mock("../../src/shared/state-store.js", () => ({
 const mockLoggerInfo = vi.fn();
 const mockLoggerWarn = vi.fn();
 const mockLoggerError = vi.fn();
-const mockLogger = () => ({
-  info: mockLoggerInfo,
-  warn: mockLoggerWarn,
-  error: mockLoggerError,
-  debug: vi.fn(),
-});
+const mockLogger = (): Record<string, any> => {
+  const logger: Record<string, any> = {
+    info: mockLoggerInfo,
+    warn: mockLoggerWarn,
+    error: mockLoggerError,
+    debug: vi.fn(),
+    child: () => mockLogger(),
+  };
+  return logger;
+};
 vi.mock("../../src/shared/logger.js", () => ({
   createLogger: () => mockLogger(),
   createFileOnlyLogger: () => mockLogger(),

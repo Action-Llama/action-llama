@@ -404,14 +404,15 @@ export class LocalDockerRuntime implements ContainerRuntime {
 
   async startGatewayProxy(gatewayPort: number): Promise<void> {
     const proxyName = "al-gateway-proxy";
-    
+
     // Check if proxy is already running
     try {
-      docker("ps", "--filter", `name=${proxyName}`, "--format", "{{.Names}}");
-      // If we get here, the container is already running
-      return;
+      const running = docker("ps", "--filter", `name=${proxyName}`, "--format", "{{.Names}}");
+      if (running.includes(proxyName)) {
+        return;
+      }
     } catch {
-      // Container is not running, we need to start it
+      // docker ps failed, proceed to start the proxy
     }
 
     // Remove any existing proxy container
