@@ -27,6 +27,12 @@ export class WebhookRegistry {
     return this.providers.get(source);
   }
 
+  removeBindingsForAgent(agentName: string): number {
+    const before = this.bindings.length;
+    this.bindings = this.bindings.filter(b => b.agentName !== agentName);
+    return before - this.bindings.length;
+  }
+
   dispatch(
     source: string,
     headers: Record<string, string | undefined>,

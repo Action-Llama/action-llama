@@ -56,6 +56,14 @@ export class ContainerAgentRunner {
     return this._running;
   }
 
+  setImage(image: string): void {
+    this.image = image;
+  }
+
+  setAgentConfig(config: AgentConfig): void {
+    this.agentConfig = config;
+  }
+
   get containerName(): string | undefined {
     return this._containerName;
   }

@@ -112,50 +112,26 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
   // 2. Build per-agent images
   const agentImages: Record<string, string> = {};
 
-  const agentMeta = activeAgentConfigs.map((agentConfig) => {
-    const agentPath = resolvePath(projectPath, "agents", agentConfig.name);
-    const hasCustomDockerfile = existsSync(resolvePath(agentPath, "Dockerfile"));
-    const actionsPath = resolvePath(agentPath, "ACTIONS.md");
-    const actionsMd = existsSync(actionsPath) ? readFileSync(actionsPath, "utf-8") : "";
-    const timeout = String(agentConfig.timeout ?? globalConfig.local?.timeout ?? 900);
-    const extraFiles: Record<string, string> = {
-      "agent-config.json": JSON.stringify(agentConfig),
-      "ACTIONS.md": actionsMd,
-      "prompt-static.txt": buildPromptSkeleton(agentConfig, skills),
-      "timeout": timeout,
-    };
-    const testScriptPath = resolvePath(agentPath, "test-script.sh");
-    if (existsSync(testScriptPath)) {
-      extraFiles["test-script.sh"] = readFileSync(testScriptPath, "utf-8");
-    }
-    return { agentConfig, hasCustomDockerfile, extraFiles };
-  });
-
-  for (const a of agentMeta) {
-    statusTracker?.setAgentState(a.agentConfig.name, "building");
-    statusTracker?.setAgentStatusText(a.agentConfig.name, "Building agent image");
-    onProgress?.(a.agentConfig.name, "Building agent image");
+  for (const agentConfig of activeAgentConfigs) {
+    statusTracker?.setAgentState(agentConfig.name, "building");
+    statusTracker?.setAgentStatusText(agentConfig.name, "Building agent image");
+    onProgress?.(agentConfig.name, "Building agent image");
   }
 
-  const buildPromises = agentMeta.map(async ({ agentConfig, hasCustomDockerfile, extraFiles }) => {
-    const agentImageTag = CONSTANTS.agentImage(agentConfig.name);
-    const [, ...agentAliases] = imageTags(`al-${agentConfig.name}`);
+  const buildPromises = activeAgentConfigs.map(async (agentConfig) => {
     const progressCb = (msg: string) => { statusTracker?.setAgentStatusText(agentConfig.name, msg); onProgress?.(agentConfig.name, msg); };
-
-    const image = await runtime.buildImage({
-      tag: agentImageTag,
-      dockerfile: hasCustomDockerfile
-        ? resolvePath(projectPath, "agents", agentConfig.name, "Dockerfile")
-        : "Dockerfile",
-      contextDir: packageRoot,
-      dockerfileContent: hasCustomDockerfile ? undefined : `FROM ${effectiveBaseImage}\n`,
-      baseImage: hasCustomDockerfile ? effectiveBaseImage : undefined,
-      extraFiles,
+    const image = await buildSingleAgentImage({
+      agentConfig,
+      projectPath,
+      globalConfig,
+      runtime,
+      baseImage: effectiveBaseImage,
+      statusTracker,
+      logger,
+      skills,
       onProgress: progressCb,
-      additionalTags: agentAliases,
     });
     agentImages[agentConfig.name] = image;
-    logger.info({ agent: agentConfig.name, image }, "Built agent image");
   });
 
   await Promise.all(buildPromises);
@@ -168,4 +144,60 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
   logger.info("Docker infrastructure ready");
 
   return { baseImage: effectiveBaseImage, agentImages };
+}
+
+export interface SingleAgentBuildOpts {
+  agentConfig: AgentConfig;
+  projectPath: string;
+  globalConfig: GlobalConfig;
+  runtime: ContainerRuntime;
+  baseImage: string;
+  statusTracker?: StatusTracker;
+  logger: Logger;
+  skills?: PromptSkills;
+  onProgress?: (msg: string) => void;
+}
+
+/**
+ * Build a single agent's Docker image.
+ * Returns the image tag.
+ */
+export async function buildSingleAgentImage(opts: SingleAgentBuildOpts): Promise<string> {
+  const { agentConfig, projectPath, globalConfig, runtime, baseImage, skills, onProgress, logger } = opts;
+
+  const agentPath = resolvePath(projectPath, "agents", agentConfig.name);
+  const hasCustomDockerfile = existsSync(resolvePath(agentPath, "Dockerfile"));
+  const actionsPath = resolvePath(agentPath, "ACTIONS.md");
+  const actionsMd = existsSync(actionsPath) ? readFileSync(actionsPath, "utf-8") : "";
+  const timeout = String(agentConfig.timeout ?? globalConfig.local?.timeout ?? 900);
+  const extraFiles: Record<string, string> = {
+    "agent-config.json": JSON.stringify(agentConfig),
+    "ACTIONS.md": actionsMd,
+    "prompt-static.txt": buildPromptSkeleton(agentConfig, skills),
+    "timeout": timeout,
+  };
+  const testScriptPath = resolvePath(agentPath, "test-script.sh");
+  if (existsSync(testScriptPath)) {
+    extraFiles["test-script.sh"] = readFileSync(testScriptPath, "utf-8");
+  }
+
+  const agentImageTag = CONSTANTS.agentImage(agentConfig.name);
+  const [, ...agentAliases] = imageTags(`al-${agentConfig.name}`);
+  const progressCb = onProgress ?? (() => {});
+
+  const image = await runtime.buildImage({
+    tag: agentImageTag,
+    dockerfile: hasCustomDockerfile
+      ? resolvePath(projectPath, "agents", agentConfig.name, "Dockerfile")
+      : "Dockerfile",
+    contextDir: packageRoot,
+    dockerfileContent: hasCustomDockerfile ? undefined : `FROM ${baseImage}\n`,
+    baseImage: hasCustomDockerfile ? baseImage : undefined,
+    extraFiles,
+    onProgress: progressCb,
+    additionalTags: agentAliases,
+  });
+
+  logger.info({ agent: agentConfig.name, image }, "Built agent image");
+  return image;
 }

@@ -77,6 +77,31 @@ export class RunnerPool {
   }
 
   /**
+   * Add a runner to the pool
+   */
+  addRunner(runner: PoolRunner): void {
+    this.runners.push(runner);
+  }
+
+  /**
+   * Shrink pool to target size by removing idle runners.
+   * Returns the number of runners removed.
+   */
+  shrinkTo(targetSize: number): number {
+    let removed = 0;
+    while (this.runners.length > targetSize) {
+      let idleIdx = -1;
+      for (let i = this.runners.length - 1; i >= 0; i--) {
+        if (!this.runners[i].isRunning) { idleIdx = i; break; }
+      }
+      if (idleIdx === -1) break;
+      this.runners.splice(idleIdx, 1);
+      removed++;
+    }
+    return removed;
+  }
+
+  /**
    * Kill a specific instance by its instanceId
    */
   killInstance(id: string): boolean {

@@ -70,6 +70,11 @@ export class StatusTracker extends EventEmitter {
     this.emit("update");
   }
 
+  unregisterAgent(name: string): void {
+    this.agents.delete(name);
+    this.emit("update");
+  }
+
   setAgentState(name: string, state: "idle" | "running" | "building" | "error"): void {
     const agent = this.agents.get(name);
     if (!agent) return;

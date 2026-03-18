@@ -474,9 +474,48 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     }
   }
 
+  // Start hot-reload watcher on agents/ directory
+  const { watchAgents } = await import("./watcher.js");
+  const watcherHandle = watchAgents({
+    projectPath,
+    globalConfig,
+    runtime,
+    agentRuntimeOverrides,
+    runnerPools,
+    agentConfigs,
+    agentImages,
+    cronJobs,
+    schedulerCtx,
+    webhookRegistry,
+    webhookSources,
+    statusTracker,
+    logger,
+    skills,
+    timezone,
+    baseImage,
+    createRunner: (agentConfig: AgentConfig, image: string, instanceId: string) => {
+      const agentRuntime = agentRuntimeOverrides[agentConfig.name] || runtime;
+      return new ContainerAgentRunnerClass(
+        agentRuntime,
+        globalConfig,
+        agentConfig,
+        mkLogger(projectPath, instanceId),
+        registerContainer,
+        unregisterContainer,
+        gatewayUrl,
+        projectPath,
+        image,
+        statusTracker,
+        instanceId,
+      );
+    },
+  });
+  logger.info("Watching agents/ for changes (hot reload enabled)");
+
   // Graceful shutdown
   const shutdown = async () => {
     logger.info("Shutting down scheduler...");
+    watcherHandle.stop();
     schedulerCtx.shuttingDown = true;
     schedulerCtx.workQueue.clearAll();
     for (const job of cronJobs) {
