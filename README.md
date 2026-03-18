@@ -86,34 +86,23 @@ Each agent subdirectory:
 
 ## Cloud
 
-For production, run agents on managed cloud infrastructure — automatic restarts, secret isolation, no laptop required.
+For production, deploy agents to a VPS for cost-effective remote hosting.
 
 Action Llama supports:
 
 - **VPS** (Vultr, DigitalOcean, Hetzner, etc.) — SSH + Docker, no registry needed
-- **Amazon Web Services** — ECS Fargate + Lambda
-- **Google Cloud Platform** — Cloud Run Jobs
 
-```bash
-al setup cloud    # Interactive wizard: pick provider, configure, push creds, provision IAM
-al start -c      # Start on cloud
-```
-
-See the [cloud docs](docs/cloud.md) for setup, provider comparison, and links to the [VPS](docs/vps-deployment.md), [GCP](docs/cloud-run.md), and [AWS](docs/ecs.md) guides.
+See the [VPS deployment docs](docs/vps-deployment.md) for setup details.
 
 ## CLI commands
 
 If you installed globally (`npm install -g @action-llama/action-llama`), you can use `al` directly. Otherwise, prefix commands with `npx` (e.g., `npx al start`).
-
-Commands generally have two modes: local or cloud.
 
 | Command | Description |
 |---------|-------------|
 | `al new <name>` | Interactive setup — creates project directory and credentials |
 | `al chat [agent]` | Interactive console — or agent-scoped session with credentials loaded |
 | `al doctor` | Check agents, credentials, webhooks, and config — prompt to fix |
-| `al setup cloud` | Interactive wizard for cloud provider setup |
-| `al teardown cloud` | Delete cloud IAM resources and remove cloud config |
 | `al creds ls` | List stored credentials (names only, no secrets) |
 | `al run <agent>` | Manually run a single agent |
 | `al start` | Start the scheduler |
@@ -123,7 +112,7 @@ Commands generally have two modes: local or cloud.
 | `al resume [name]` | Resume the scheduler, or a single agent by name |
 | `al kill <target>` | Kill an agent (all instances) or a single instance by ID |
 
-Most commands accept `-p <dir>` to set the project directory and `-c` to target cloud infrastructure. See the [CLI command reference](docs/commands.md) for all options and flags.
+Most commands accept `-p <dir>` to set the project directory. See the [CLI command reference](docs/commands.md) for all options and flags.
 
 ## Configuration
 
@@ -151,10 +140,8 @@ See also the [credentials](docs/credentials.md), [webhooks](docs/webhooks.md), a
 | [Credentials](docs/credentials.md) | Credential types, storage layout, named instances |
 | [Webhooks](docs/webhooks.md) | Webhook setup, filter fields, Sentry integration |
 | [Docker](docs/docker.md) | Container isolation, custom Dockerfiles, filesystem layout |
-| [Cloud](docs/cloud.md) | Cloud overview, provider comparison, quick start |
+| [Cloud](docs/cloud.md) | Cloud overview, VPS deployment guide |
 | [VPS Deployment](docs/vps-deployment.md) | Running agents on any VPS via SSH + Docker |
-| [Cloud Run](docs/cloud-run.md) | Running agents on GCP Cloud Run Jobs |
-| [ECS Fargate](docs/ecs.md) | Running agents on AWS ECS Fargate |
 | [Example Agents](docs/examples/index.md) | Dev, reviewer, and devops agent templates |
 
 ## Developing
