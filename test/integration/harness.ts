@@ -49,11 +49,22 @@ export function isDockerAvailable(): boolean {
 }
 
 /**
- * Get a random available port.
+ * Get an available port by letting the OS assign one.
  */
-function getRandomPort(): number {
-  // Use a port in the dynamic range
-  return 30000 + Math.floor(Math.random() * 20000);
+async function getAvailablePort(): Promise<number> {
+  const { createServer } = await import("net");
+  
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.unref();
+    server.on('error', reject);
+    server.listen(0, () => {
+      const port = (server.address() as any)?.port;
+      server.close(() => {
+        resolve(port);
+      });
+    });
+  });
 }
 
 export class IntegrationHarness {
@@ -74,7 +85,7 @@ export class IntegrationHarness {
   static async create(opts: HarnessOptions): Promise<IntegrationHarness> {
     const projectPath = mkdtempSync(join(tmpdir(), "al-integration-"));
     const credentialDir = mkdtempSync(join(tmpdir(), "al-creds-"));
-    const gatewayPort = getRandomPort();
+    const gatewayPort = await getAvailablePort();
     const apiKey = "test-api-key-" + Math.random().toString(36).slice(2);
 
     // Set up credential stubs
