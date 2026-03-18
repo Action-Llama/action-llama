@@ -53,6 +53,12 @@ events = ["issues"]
 source = "my-github"
 org = "acme"
 events = ["pull_request"]
+
+# Filter workflow runs by conclusion (only failed workflows)
+[[webhooks]]
+source = "my-github"
+events = ["workflow_run"]
+conclusions = ["failure"]
 ```
 
 Each `[[webhooks]]` entry is a trigger. The `source` field (referencing a name from `config.toml`) is required. All filter fields (`repos`, `events`, `actions`, `labels`, etc.) are optional — omit all of them to trigger on everything from that source.
@@ -74,6 +80,7 @@ An agent must have at least one of `schedule` or `webhooks` (or both).
 | `assignee` | string | Only when assigned to this user |
 | `author` | string | Only for this author |
 | `branches` | string[] | Only for these branches |
+| `conclusions` | string[] | Only for workflow_run events with these conclusions (success, failure, cancelled, skipped, timed_out, action_required) |
 
 ### Setup
 

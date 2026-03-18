@@ -188,6 +188,70 @@ describe("GitHubWebhookProvider", () => {
       expect(ctx!.branch).toBe("main");
     });
 
+    it("extracts conclusion from workflow_run event", () => {
+      const ctx = provider.parseEvent(
+        { "x-github-event": "workflow_run" },
+        {
+          action: "completed",
+          repository: { full_name: "acme/app" },
+          sender: { login: "user1" },
+          workflow_run: {
+            name: "CI",
+            html_url: "https://github.com/acme/app/actions/runs/123",
+            head_branch: "main",
+            actor: { login: "actor1" },
+            conclusion: "failure",
+          },
+        }
+      );
+      expect(ctx!.event).toBe("workflow_run");
+      expect(ctx!.conclusion).toBe("failure");
+    });
+
+    it("extracts pull request number from workflow_run event when triggered by PR", () => {
+      const ctx = provider.parseEvent(
+        { "x-github-event": "workflow_run" },
+        {
+          action: "completed",
+          repository: { full_name: "acme/app" },
+          sender: { login: "user1" },
+          workflow_run: {
+            name: "CI",
+            html_url: "https://github.com/acme/app/actions/runs/123",
+            head_branch: "feature-branch",
+            actor: { login: "actor1" },
+            conclusion: "success",
+            pull_requests: [{ number: 42 }],
+          },
+        }
+      );
+      expect(ctx!.event).toBe("workflow_run");
+      expect(ctx!.number).toBe(42);
+      expect(ctx!.conclusion).toBe("success");
+    });
+
+    it("does not extract pull request number when workflow not triggered by PR", () => {
+      const ctx = provider.parseEvent(
+        { "x-github-event": "workflow_run" },
+        {
+          action: "completed",
+          repository: { full_name: "acme/app" },
+          sender: { login: "user1" },
+          workflow_run: {
+            name: "CI",
+            html_url: "https://github.com/acme/app/actions/runs/123",
+            head_branch: "main",
+            actor: { login: "actor1" },
+            conclusion: "success",
+            pull_requests: [],
+          },
+        }
+      );
+      expect(ctx!.event).toBe("workflow_run");
+      expect(ctx!.number).toBeUndefined();
+      expect(ctx!.conclusion).toBe("success");
+    });
+
     it("parses pull_request_review event", () => {
       const ctx = provider.parseEvent(
         { "x-github-event": "pull_request_review" },
@@ -364,6 +428,55 @@ describe("GitHubWebhookProvider", () => {
     it("matches with both org and orgs", () => {
       expect(provider.matchesFilter(baseContext, { org: "other", orgs: ["acme"] })).toBe(true);
       expect(provider.matchesFilter(baseContext, { org: "nope", orgs: ["also-nope"] })).toBe(false);
+    });
+
+    it("matches on conclusion for workflow_run events", () => {
+      const workflowContext = {
+        ...baseContext,
+        event: "workflow_run",
+        action: "completed",
+        conclusion: "failure",
+      };
+      
+      expect(provider.matchesFilter(workflowContext, { conclusions: ["failure"] })).toBe(true);
+      expect(provider.matchesFilter(workflowContext, { conclusions: ["success"] })).toBe(false);
+      expect(provider.matchesFilter(workflowContext, { conclusions: ["failure", "cancelled"] })).toBe(true);
+    });
+
+    it("ignores conclusion filter for events without conclusion", () => {
+      // Issue events don't have conclusions, so the filter should be ignored
+      expect(provider.matchesFilter(baseContext, { conclusions: ["failure"] })).toBe(true);
+    });
+
+    it("allows events without conclusion through conclusion filter", () => {
+      const noConclusion = { ...baseContext, conclusion: undefined };
+      expect(provider.matchesFilter(noConclusion, { conclusions: ["success"] })).toBe(true);
+    });
+
+    it("filters workflow runs by conclusion correctly", () => {
+      const successWorkflow = {
+        ...baseContext,
+        event: "workflow_run",
+        action: "completed",
+        conclusion: "success",
+      };
+      
+      const failedWorkflow = {
+        ...baseContext,
+        event: "workflow_run", 
+        action: "completed",
+        conclusion: "failure",
+      };
+
+      // Filter for failures only
+      const failureFilter: GitHubWebhookFilter = { conclusions: ["failure"] };
+      expect(provider.matchesFilter(successWorkflow, failureFilter)).toBe(false);
+      expect(provider.matchesFilter(failedWorkflow, failureFilter)).toBe(true);
+
+      // Filter for success only  
+      const successFilter: GitHubWebhookFilter = { conclusions: ["success"] };
+      expect(provider.matchesFilter(successWorkflow, successFilter)).toBe(true);
+      expect(provider.matchesFilter(failedWorkflow, successFilter)).toBe(false);
     });
   });
 });
