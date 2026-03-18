@@ -517,6 +517,28 @@ maxCallDepth = 3      # max depth for agent-to-agent call chains (default: 3)
 
 Webhook-triggered and agent-triggered runs do not re-run — they respond to a single event.
 
+## Shell Command Exit Codes
+
+All gateway-calling shell commands (`rlock`, `runlock`, `rlock-heartbeat`, `al-call`, `al-check`, `al-wait`) share a common exit code scheme. **Always check exit codes** — do not assume success.
+
+| Exit | Meaning | HTTP | When |
+|------|---------|------|------|
+| 0 | Success | 200 | Operation completed |
+| 1 | Conflict | 409 | Resource held by another, dispatch rejected |
+| 2 | Not found | 404 | Resource or call doesn't exist |
+| 3 | Auth error | 403 | Invalid or expired secret |
+| 4 | Bad request | 400 | Missing arguments, usage error |
+| 5 | Unavailable | 503 | Service not ready, no gateway configured |
+| 6 | Unreachable | — | Gateway connection failed |
+| 7 | Unexpected | other | Unknown HTTP status |
+| 8 | Timeout | — | `al-wait` only: polling deadline exceeded |
+
+These codes (0–8) don't overlap with agent exit codes (10–16 in `al-exit`) or POSIX signal codes (128+).
+
+**Lock commands** (`rlock`, `runlock`, `rlock-heartbeat`) exit 0 with `{"ok":true}` when `GATEWAY_URL` is unset (graceful degradation for local/non-containerized runs).
+
+**Call commands** (`al-call`, `al-check`, `al-wait`) exit 5 when `GATEWAY_URL` is unset — they require a gateway.
+
 ## Skills Reference
 
 Agents have access to runtime skills — capabilities taught via a preamble before the actions run. Each skill is documented for LLM consumption:
@@ -525,6 +547,7 @@ Agents have access to runtime skills — capabilities taught via a preamble befo
 - [Credentials](skills/credentials.md) — env vars, tools, and access patterns from mounted credentials
 - [Signals](skills/signals.md) — `al-rerun`, `al-status`, `al-return`, `al-exit` signal commands, `al-call` for agent-to-agent calls
 - [Resource Locks](skills/resource-locks.md) — `rlock`, `runlock`, `rlock-heartbeat` for parallel coordination
+- [Calls](skills/calls.md) — `al-call`, `al-check`, `al-wait` for agent-to-agent calls
 - [Environment](skills/environment.md) — trigger types, context blocks, container filesystem
 
 ## Further Documentation

@@ -18,7 +18,7 @@ al-rerun
 
 ## `al-status "<text>"`
 
-Updates your status displayed in the TUI and logs.
+Updates your status displayed in the TUI and logs. Exits 4 if no text argument is provided.
 
 ```
 al-status "reviewing PR #42"

@@ -1,6 +1,12 @@
 #!/bin/sh
+# rlock — acquire an exclusive resource lock
+# Exit codes: 0=acquired, 1=conflict, 3=auth, 4=bad request, 6=unreachable
+. "$(dirname "$0")/_http-exit"
 if [ -z "$GATEWAY_URL" ]; then echo '{"ok":true}'; exit 0; fi
-curl -s --connect-timeout 5 --max-time 10 -X POST "$GATEWAY_URL/locks/acquire" \
+if [ -z "$1" ]; then echo '{"ok":false,"error":"usage: rlock <resourceKey>"}'; exit 4; fi
+_raw=$(curl -s --connect-timeout 5 --max-time 10 -w '\n%{http_code}' -X POST "$GATEWAY_URL/locks/acquire" \
   -H 'Content-Type: application/json' \
-  -d '{"secret":"'"$SHUTDOWN_SECRET"'","resourceKey":"'"$1"'"}' \
-  || echo '{"ok":false,"reason":"gateway unreachable"}'
+  -d '{"secret":"'"$SHUTDOWN_SECRET"'","resourceKey":"'"$1"'"}')
+AL_HTTP_CODE=$(printf '%s' "$_raw" | tail -n1)
+printf '%s' "$_raw" | sed '$d'
+http_exit "$AL_HTTP_CODE"
