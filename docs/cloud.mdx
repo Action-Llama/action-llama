@@ -96,7 +96,7 @@ See [VPS docs](/vps-deployment) for full setup.
 | Secret isolation | Per-agent service accounts | Per-agent IAM task/Lambda roles | SSH access = full access |
 | Setup command | `al doctor -c` | `al doctor -c` | `al doctor -c` |
 | Log latency | ~5-15s (Cloud Logging) | ~5-10s (CloudWatch) | Real-time (SSH) |
-| Cold start | ~10-30s | ~1-2s (Lambda, timeout<=900s) / ~30-60s (Fargate) | ~1-2s |
+| Cold start | ~10-30s | ~1-2s (Lambda, timeout ≤ 900s) / ~30-60s (Fargate) | ~1-2s |
 | Cost | Pay-per-run | Pay-per-run | Fixed monthly ($5-24/mo) |
 | IAM reconciliation | Per-agent service accounts | Per-agent IAM roles | No-op |
 
