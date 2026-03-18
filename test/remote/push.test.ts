@@ -29,7 +29,7 @@ describe("buildSystemdUnit", () => {
     expect(unit).toContain("[Install]");
     expect(unit).toContain("Description=Action Llama scheduler (my-project)");
     expect(unit).toContain("WorkingDirectory=/opt/action-llama/project");
-    expect(unit).toContain("al start --headless --expose -w");
+    expect(unit).toContain("al start --headless --expose -w\n");
     expect(unit).toContain("Requires=docker.service");
   });
 
@@ -43,7 +43,7 @@ describe("buildSystemdUnit", () => {
       alPath: "/usr/local/bin/al",
       nodePath: "/usr/local/bin/node",
     });
-    expect(unit).toContain("ExecStart=/usr/local/bin/al start --headless --expose -w");
+    expect(unit).toContain("ExecStart=/usr/local/bin/al start --headless --expose -w\n");
     expect(unit).toContain("Environment=PATH=/usr/local/bin:");
   });
 
@@ -52,15 +52,25 @@ describe("buildSystemdUnit", () => {
       alPath: "/usr/local/bin/al",
       nodePath: "/home/user/.nvm/versions/node/v22/bin/node",
     });
-    expect(unit).toContain("ExecStart=/usr/local/bin/al start --headless --expose -w");
+    expect(unit).toContain("ExecStart=/usr/local/bin/al start --headless --expose -w\n");
     expect(unit).toContain("/home/user/.nvm/versions/node/v22/bin");
     expect(unit).toContain("/usr/local/bin");
   });
 
   it("falls back to bare al when no binPaths", () => {
     const unit = buildSystemdUnit("proj", "/opt/al");
-    expect(unit).toContain("ExecStart=al start --headless --expose -w");
+    expect(unit).toContain("ExecStart=al start --headless --expose -w\n");
     expect(unit).not.toContain("Environment=PATH=");
+  });
+
+  it("includes --port flag when gatewayPort is provided", () => {
+    const unit = buildSystemdUnit("proj", "/opt/al", undefined, 3000);
+    expect(unit).toContain("ExecStart=al start --headless --expose -w --port 3000");
+  });
+
+  it("omits --port flag when gatewayPort is not provided", () => {
+    const unit = buildSystemdUnit("proj", "/opt/al");
+    expect(unit).not.toContain("--port");
   });
 });
 

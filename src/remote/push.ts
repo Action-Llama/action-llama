@@ -28,6 +28,7 @@ export function buildSystemdUnit(
   projectName: string,
   basePath: string,
   binPaths?: BootstrapResult,
+  gatewayPort?: number,
 ): string {
   const alExec = binPaths?.alPath ?? "al";
   // Collect unique directories containing node and al so systemd can find them
@@ -46,7 +47,7 @@ Requires=docker.service
 [Service]
 Type=simple
 WorkingDirectory=${basePath}/project
-ExecStart=${alExec} start --headless --expose -w
+ExecStart=${alExec} start --headless --expose -w${gatewayPort ? ` --port ${gatewayPort}` : ""}
 Restart=on-failure
 RestartSec=5
 Environment=NODE_ENV=production${pathEnv}
@@ -126,7 +127,7 @@ export async function pushToServer(opts: PushOptions): Promise<void> {
 
   // Step 6: Install systemd unit
   console.log("\n=== Setting up systemd service ===\n");
-  const unitContent = buildSystemdUnit(projectName, basePath, binPaths);
+  const unitContent = buildSystemdUnit(projectName, basePath, binPaths, gatewayPort);
   const unitEscaped = unitContent.replace(/'/g, "'\\''");
   await sshExec(ssh, `sudo tee /etc/systemd/system/action-llama.service > /dev/null << 'UNITEOF'\n${unitEscaped}\nUNITEOF`);
   await sshExec(ssh, "sudo systemctl daemon-reload");

@@ -77,6 +77,7 @@ program
   .option("-H, --headless", "non-interactive mode (no TUI, no credential prompts, for CI/deploy environments)")
   .option("-w, --web-ui", "enable web dashboard at http://localhost:<port>/dashboard")
   .option("-e, --expose", "bind gateway to 0.0.0.0 (public) while keeping local mode features")
+  .option("--port <number>", "override gateway port", parseInt)
   .action(withCommand(async (opts) => {
     initializeTelemetryForProject(opts.project);
     const { execute } = await import("./commands/start.js");
