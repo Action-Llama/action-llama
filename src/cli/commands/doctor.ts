@@ -1,6 +1,6 @@
 import { resolve } from "path";
 import { existsSync } from "fs";
-import { discoverAgents, loadAgentConfig, loadGlobalConfig } from "../../shared/config.js";
+import { discoverAgents, loadAgentConfig, loadGlobalConfig, validateAgentConfig } from "../../shared/config.js";
 import { resolveCredential } from "../../credentials/registry.js";
 import { promptCredential } from "../../credentials/prompter.js";
 import { parseCredentialRef, credentialExists, writeCredentialFields } from "../../shared/credentials.js";
@@ -31,20 +31,42 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
   const webhookSources = globalConfig.webhooks ?? {};
   const credentialRefs = collectCredentialRefs(projectPath, globalConfig);
 
-  // Validate webhook trigger fields
-  const triggerErrors: string[] = [];
+  // Validate each agent's config (schedule/webhooks required, name rules)
+  for (const name of agents) {
+    const config = loadAgentConfig(projectPath, name);
+    validateAgentConfig(config);
+
+    // Validate pi_auth is not used (incompatible with container mode)
+    if (config.model?.authType === "pi_auth") {
+      throw new ConfigError(
+        `Agent "${name}" uses pi_auth which is not supported in container mode. ` +
+        `Switch to api_key/oauth_token (run 'al doctor').`
+      );
+    }
+  }
+
+  // Validate webhook sources exist and trigger fields are correct
+  const configErrors: string[] = [];
   for (const name of agents) {
     const config = loadAgentConfig(projectPath, name);
     for (const trigger of config.webhooks || []) {
+      // Validate the source exists in [webhooks]
       const sourceConfig = webhookSources[trigger.source];
-      if (!sourceConfig) continue; // resolveWebhookSource already handles this
-      triggerErrors.push(...validateTriggerFields(trigger, sourceConfig.type, name));
+      if (!sourceConfig) {
+        const available = Object.keys(webhookSources).join(", ") || "(none)";
+        configErrors.push(
+          `Agent "${name}" references webhook source "${trigger.source}" ` +
+          `which is not defined in config.toml [webhooks]. Available: ${available}`
+        );
+        continue;
+      }
+      configErrors.push(...validateTriggerFields(trigger, sourceConfig.type, name));
     }
   }
-  if (triggerErrors.length > 0) {
+  if (configErrors.length > 0) {
     throw new ConfigError(
-      "Invalid webhook trigger configuration:\n" +
-      triggerErrors.map(e => `  - ${e}`).join("\n")
+      "Invalid webhook configuration:\n" +
+      configErrors.map(e => `  - ${e}`).join("\n")
     );
   }
 

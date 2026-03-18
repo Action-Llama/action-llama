@@ -179,6 +179,9 @@ program
   .option("-E, --env <name>", "use named environment with [server] config")
   .option("--dry-run", "show what would be synced without making changes")
   .option("--no-creds", "skip credential sync")
+  .option("--creds-only", "sync only credentials (skip project files)")
+  .option("--files-only", "sync only project files (skip credentials)")
+  .option("-a, --all", "sync project files, credentials, and restart service")
   .action(withCommand(async (opts) => {
     const { execute } = await import("./commands/push.js");
     await execute(opts);

@@ -35,20 +35,30 @@ vi.mock("../../../src/cli/commands/doctor.js", () => ({
 }));
 
 // Mock credential registry
+const credDefs: Record<string, any> = {
+  github_token: { id: "github_token", label: "GitHub Token", description: "PAT", fields: [{ name: "token", label: "Token", description: "PAT", secret: true }] },
+  anthropic_key: { id: "anthropic_key", label: "Anthropic Key", description: "API key", fields: [{ name: "token", label: "Key", description: "Key", secret: true }] },
+  git_ssh: { id: "git_ssh", label: "Git SSH", description: "SSH key", fields: [{ name: "id_rsa", label: "Key", description: "Key", secret: true }] },
+  github_webhook_secret: { id: "github_webhook_secret", label: "GitHub Webhook Secret", description: "HMAC secret", fields: [{ name: "secret", label: "Webhook Secret", secret: true }] },
+};
 vi.mock("../../../src/credentials/registry.js", () => ({
   listBuiltinCredentialIds: () => ["github_token", "anthropic_key", "git_ssh"],
-  getBuiltinCredential: (id: string) => {
-    const defs: Record<string, any> = {
-      github_token: { id: "github_token", label: "GitHub Token", description: "PAT", fields: [{ name: "token", label: "Token", description: "PAT", secret: true }] },
-      anthropic_key: { id: "anthropic_key", label: "Anthropic Key", description: "API key", fields: [{ name: "token", label: "Key", description: "Key", secret: true }] },
-      git_ssh: { id: "git_ssh", label: "Git SSH", description: "SSH key", fields: [{ name: "id_rsa", label: "Key", description: "Key", secret: true }] },
-    };
-    return defs[id];
-  },
+  getBuiltinCredential: (id: string) => credDefs[id],
   resolveCredential: (id: string) => {
-    if (id === "github_token" || id === "anthropic_key" || id === "git_ssh") return {};
+    if (credDefs[id]) return credDefs[id];
     throw new Error(`Unknown credential "${id}".`);
   },
+}));
+
+// Mock credentials module (for listCredentialInstances, writeCredentialFields)
+vi.mock("../../../src/shared/credentials.js", () => ({
+  listCredentialInstances: vi.fn().mockResolvedValue([]),
+  writeCredentialFields: vi.fn().mockResolvedValue(undefined),
+}));
+
+// Mock credential prompter
+vi.mock("../../../src/credentials/prompter.js", () => ({
+  promptCredential: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { newAgent, configAgent } from "../../../src/cli/commands/agent.js";
@@ -281,12 +291,12 @@ describe("agent config", () => {
     mockSelect
       .mockResolvedValueOnce("webhooks")    // menu: webhooks
       .mockResolvedValueOnce("github")      // provider type for new source
+      .mockResolvedValueOnce("__skip__")    // skip webhook secret (accept unsigned)
       .mockResolvedValueOnce("back")        // webhooks: back (after source created)
       .mockResolvedValueOnce("done");       // menu: done
     mockConfirm.mockResolvedValueOnce(true);  // accept to add source
     mockInput
-      .mockResolvedValueOnce("my-github")   // source name
-      .mockResolvedValueOnce("");           // credential (skip)
+      .mockResolvedValueOnce("my-github");  // source name
 
     await configAgent("wh-setup", { project: tmpDir });
 

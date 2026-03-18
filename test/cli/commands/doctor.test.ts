@@ -6,10 +6,12 @@ import { captureLog } from "../../helpers.js";
 const mockDiscoverAgents = vi.fn();
 const mockLoadAgentConfig = vi.fn();
 const mockLoadGlobalConfig = vi.fn();
+const mockValidateAgentConfig = vi.fn();
 vi.mock("../../../src/shared/config.js", () => ({
   discoverAgents: (...args: any[]) => mockDiscoverAgents(...args),
   loadAgentConfig: (...args: any[]) => mockLoadAgentConfig(...args),
   loadGlobalConfig: (...args: any[]) => mockLoadGlobalConfig(...args),
+  validateAgentConfig: (...args: any[]) => mockValidateAgentConfig(...args),
 }));
 
 const mockResolveCredential = vi.fn();
@@ -243,6 +245,20 @@ describe("doctor", () => {
     expect(mockWriteCredentialFields).not.toHaveBeenCalled();
   });
 
+  it("throws ConfigError when agent references undefined webhook source", async () => {
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadGlobalConfig.mockReturnValue({ webhooks: {} });
+    mockLoadAgentConfig.mockReturnValue({
+      name: "dev",
+      credentials: [],
+      webhooks: [{ source: "my-github", events: ["issues"] }],
+    });
+
+    await expect(
+      captureLog(() => execute({ project: "." }))
+    ).rejects.toThrow('references webhook source "my-github"');
+  });
+
   it("throws ConfigError on unrecognized webhook trigger field", async () => {
     mockDiscoverAgents.mockReturnValue(["dev"]);
     mockLoadGlobalConfig.mockReturnValue({
@@ -259,7 +275,7 @@ describe("doctor", () => {
 
     await expect(
       captureLog(() => execute({ project: "." }))
-    ).rejects.toThrow("Invalid webhook trigger configuration");
+    ).rejects.toThrow("Invalid webhook configuration");
   });
 
   it("passes with valid webhook trigger fields", async () => {

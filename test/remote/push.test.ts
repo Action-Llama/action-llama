@@ -26,7 +26,7 @@ describe("buildSystemdUnit", () => {
     expect(unit).toContain("[Install]");
     expect(unit).toContain("Description=Action Llama scheduler (my-project)");
     expect(unit).toContain("WorkingDirectory=/opt/action-llama/project");
-    expect(unit).toContain("al start --headless --expose");
+    expect(unit).toContain("al start --headless --expose -w");
     expect(unit).toContain("AL_GATEWAY_PORT=3000");
     expect(unit).toContain("Requires=docker.service");
   });
@@ -35,6 +35,31 @@ describe("buildSystemdUnit", () => {
     const unit = buildSystemdUnit("proj", "/srv/al", 8080);
     expect(unit).toContain("WorkingDirectory=/srv/al/project");
     expect(unit).toContain("AL_GATEWAY_PORT=8080");
+  });
+
+  it("uses absolute al path and adds PATH when binPaths provided", () => {
+    const unit = buildSystemdUnit("proj", "/opt/al", 3000, {
+      alPath: "/usr/local/bin/al",
+      nodePath: "/usr/local/bin/node",
+    });
+    expect(unit).toContain("ExecStart=/usr/local/bin/al start --headless --expose -w");
+    expect(unit).toContain("Environment=PATH=/usr/local/bin:");
+  });
+
+  it("includes both node and al dirs in PATH when they differ", () => {
+    const unit = buildSystemdUnit("proj", "/opt/al", 3000, {
+      alPath: "/usr/local/bin/al",
+      nodePath: "/home/user/.nvm/versions/node/v22/bin/node",
+    });
+    expect(unit).toContain("ExecStart=/usr/local/bin/al start --headless --expose -w");
+    expect(unit).toContain("/home/user/.nvm/versions/node/v22/bin");
+    expect(unit).toContain("/usr/local/bin");
+  });
+
+  it("falls back to bare al when no binPaths", () => {
+    const unit = buildSystemdUnit("proj", "/opt/al", 3000);
+    expect(unit).toContain("ExecStart=al start --headless --expose -w");
+    expect(unit).not.toContain("Environment=PATH=");
   });
 });
 
@@ -46,7 +71,7 @@ describe("pushToServer", () => {
     mockSshOptionsFromConfig.mockReturnValue(sshOpts);
     mockSshExec.mockResolvedValue("");
     mockRsyncTo.mockResolvedValue(undefined);
-    mockBootstrapServer.mockResolvedValue(undefined);
+    mockBootstrapServer.mockResolvedValue({ alPath: "/usr/local/bin/al", nodePath: "/usr/local/bin/node" });
   });
 
   it("runs full push flow", async () => {
@@ -119,7 +144,6 @@ describe("pushToServer", () => {
 
     // Only 1 rsync call (project), not 2 (project + creds)
     expect(mockRsyncTo).toHaveBeenCalledTimes(1);
-    expect(logs.some((l) => l.includes("Skipping credentials"))).toBe(true);
   });
 
   it("uses custom gatewayPort from serverConfig", async () => {

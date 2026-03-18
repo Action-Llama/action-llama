@@ -22,24 +22,10 @@ vi.mock("../../../src/shared/server.js", () => ({
   validateServerConfig: (raw: any) => raw,
 }));
 
-const mockCollectCredentialRefs = vi.fn();
-vi.mock("../../../src/shared/credential-refs.js", () => ({
-  collectCredentialRefs: (...args: any[]) => mockCollectCredentialRefs(...args),
-}));
-
-const mockCredentialExists = vi.fn();
-vi.mock("../../../src/shared/credentials.js", () => ({
-  parseCredentialRef: (ref: string) => {
-    const sep = ref.indexOf(":");
-    if (sep === -1) return { type: ref, instance: "default" };
-    return { type: ref.slice(0, sep).trim(), instance: ref.slice(sep + 1).trim() };
-  },
-  credentialExists: (...args: any[]) => mockCredentialExists(...args),
-}));
-
-const mockResolveCredential = vi.fn();
-vi.mock("../../../src/credentials/registry.js", () => ({
-  resolveCredential: (...args: any[]) => mockResolveCredential(...args),
+// Mock doctor — push now delegates full config validation to doctor
+const mockDoctorExecute = vi.fn();
+vi.mock("../../../src/cli/commands/doctor.js", () => ({
+  execute: (...args: any[]) => mockDoctorExecute(...args),
 }));
 
 const mockPushToServer = vi.fn();
@@ -54,8 +40,7 @@ describe("push command", () => {
     vi.clearAllMocks();
     mockDiscoverAgents.mockReturnValue(["dev"]);
     mockLoadGlobalConfig.mockReturnValue({});
-    mockCollectCredentialRefs.mockReturnValue(new Set());
-    mockCredentialExists.mockResolvedValue(true);
+    mockDoctorExecute.mockResolvedValue(undefined);
     mockPushToServer.mockResolvedValue(undefined);
   });
 
@@ -86,16 +71,28 @@ describe("push command", () => {
     ).rejects.toThrow("No agents found");
   });
 
-  it("throws when credentials are missing locally", async () => {
+  it("runs doctor checkOnly before pushing", async () => {
     mockResolveEnvironmentName.mockReturnValue("srv");
     mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
-    mockCollectCredentialRefs.mockReturnValue(new Set(["github_token"]));
-    mockCredentialExists.mockResolvedValue(false);
-    mockResolveCredential.mockReturnValue({ label: "GitHub Token" });
+
+    await captureLog(() => execute({ project: ".", env: "srv" }));
+
+    expect(mockDoctorExecute).toHaveBeenCalledOnce();
+    expect(mockDoctorExecute.mock.calls[0][0]).toMatchObject({
+      env: "srv",
+      checkOnly: true,
+    });
+  });
+
+  it("throws when doctor fails (e.g. missing credentials)", async () => {
+    mockResolveEnvironmentName.mockReturnValue("srv");
+    mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
+    mockDoctorExecute.mockRejectedValue(new Error("1 credential(s) missing: github_token"));
 
     await expect(
       captureLog(() => execute({ project: ".", env: "srv" }))
-    ).rejects.toThrow("credential(s) missing locally");
+    ).rejects.toThrow("credential(s) missing");
+    expect(mockPushToServer).not.toHaveBeenCalled();
   });
 
   it("delegates to pushToServer on valid config", async () => {
@@ -111,18 +108,6 @@ describe("push command", () => {
     });
   });
 
-  it("skips credential check with --no-creds", async () => {
-    mockResolveEnvironmentName.mockReturnValue("srv");
-    mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
-    mockCollectCredentialRefs.mockReturnValue(new Set(["github_token"]));
-    mockCredentialExists.mockResolvedValue(false);
-
-    await captureLog(() => execute({ project: ".", env: "srv", noCreds: true }));
-
-    expect(mockPushToServer).toHaveBeenCalledOnce();
-    expect(mockCredentialExists).not.toHaveBeenCalled();
-  });
-
   it("passes dry-run option through", async () => {
     mockResolveEnvironmentName.mockReturnValue("srv");
     mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
@@ -130,5 +115,35 @@ describe("push command", () => {
     await captureLog(() => execute({ project: ".", env: "srv", dryRun: true }));
 
     expect(mockPushToServer.mock.calls[0][0].dryRun).toBe(true);
+  });
+
+  it("passes noCreds when --creds-only is false and --files-only is true", async () => {
+    mockResolveEnvironmentName.mockReturnValue("srv");
+    mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
+
+    await captureLog(() => execute({ project: ".", env: "srv", filesOnly: true }));
+
+    expect(mockPushToServer.mock.calls[0][0].noCreds).toBe(true);
+    expect(mockPushToServer.mock.calls[0][0].noFiles).toBe(false);
+  });
+
+  it("passes noFiles when --creds-only is true", async () => {
+    mockResolveEnvironmentName.mockReturnValue("srv");
+    mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
+
+    await captureLog(() => execute({ project: ".", env: "srv", credsOnly: true }));
+
+    expect(mockPushToServer.mock.calls[0][0].noFiles).toBe(true);
+    expect(mockPushToServer.mock.calls[0][0].noCreds).toBe(false);
+  });
+
+  it("syncs everything with --all flag", async () => {
+    mockResolveEnvironmentName.mockReturnValue("srv");
+    mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
+
+    await captureLog(() => execute({ project: ".", env: "srv", all: true }));
+
+    expect(mockPushToServer.mock.calls[0][0].noCreds).toBe(false);
+    expect(mockPushToServer.mock.calls[0][0].noFiles).toBe(false);
   });
 });

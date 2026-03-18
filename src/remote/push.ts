@@ -1,10 +1,14 @@
-import { resolve, basename } from "path";
+import { resolve, basename, dirname } from "path";
 import { stringify as stringifyTOML } from "smol-toml";
 import type { ServerConfig } from "../shared/server.js";
 import type { GlobalConfig } from "../shared/config.js";
 import { CREDENTIALS_DIR } from "../shared/paths.js";
-import { sshOptionsFromConfig, sshExec, rsyncTo, type SshOptions } from "./ssh.js";
-import { bootstrapServer } from "./bootstrap.js";
+import { sshOptionsFromConfig, sshExec, rsyncTo, buildSshArgs, type SshOptions } from "./ssh.js";
+import { execFile as execFileCb } from "child_process";
+import { promisify } from "util";
+
+const execFile = promisify(execFileCb);
+import { bootstrapServer, type BootstrapResult } from "./bootstrap.js";
 
 export interface PushOptions {
   projectPath: string;
@@ -13,12 +17,27 @@ export interface PushOptions {
   envName: string;
   dryRun?: boolean;
   noCreds?: boolean;
+  noFiles?: boolean;
 }
 
 /**
  * Build a systemd unit file for the al scheduler.
  */
-export function buildSystemdUnit(projectName: string, basePath: string, gatewayPort: number): string {
+export function buildSystemdUnit(
+  projectName: string,
+  basePath: string,
+  gatewayPort: number,
+  binPaths?: BootstrapResult,
+): string {
+  const alExec = binPaths?.alPath ?? "al";
+  // Collect unique directories containing node and al so systemd can find them
+  const extraDirs = new Set<string>();
+  if (binPaths?.nodePath) extraDirs.add(dirname(binPaths.nodePath));
+  if (binPaths?.alPath) extraDirs.add(dirname(binPaths.alPath));
+  const pathEnv = extraDirs.size > 0
+    ? `\nEnvironment=PATH=${[...extraDirs].join(":")}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`
+    : "";
+
   return `[Unit]
 Description=Action Llama scheduler (${projectName})
 After=network.target docker.service
@@ -27,11 +46,11 @@ Requires=docker.service
 [Service]
 Type=simple
 WorkingDirectory=${basePath}/project
-ExecStart=/usr/bin/env al start --headless --expose
+ExecStart=${alExec} start --headless --expose -w
 Restart=on-failure
 RestartSec=5
 Environment=NODE_ENV=production
-Environment=AL_GATEWAY_PORT=${gatewayPort}
+Environment=AL_GATEWAY_PORT=${gatewayPort}${pathEnv}
 
 [Install]
 WantedBy=multi-user.target
@@ -42,7 +61,7 @@ WantedBy=multi-user.target
  * Push project files and credentials to a server, set up systemd, and verify.
  */
 export async function pushToServer(opts: PushOptions): Promise<void> {
-  const { projectPath, serverConfig, globalConfig, envName, dryRun, noCreds } = opts;
+  const { projectPath, serverConfig, globalConfig, envName, dryRun, noCreds, noFiles } = opts;
   const ssh = sshOptionsFromConfig(serverConfig);
   const basePath = serverConfig.basePath ?? "/opt/action-llama";
   const gatewayPort = serverConfig.gatewayPort ?? globalConfig.gateway?.port ?? 3000;
@@ -50,37 +69,38 @@ export async function pushToServer(opts: PushOptions): Promise<void> {
 
   // Step 1: Bootstrap server
   console.log("\n=== Checking server prerequisites ===\n");
+  let binPaths: BootstrapResult | undefined;
   if (dryRun) {
     console.log("(dry-run) Would check server prerequisites");
   } else {
-    await bootstrapServer(ssh);
+    binPaths = await bootstrapServer(ssh);
   }
 
   // Step 2: Ensure remote directories exist
-  console.log("\n=== Syncing project files ===\n");
   if (!dryRun) {
     await sshExec(ssh, `mkdir -p ${basePath}/project ${basePath}/credentials`);
   }
 
-  // Step 3: Rsync project files
-  const excludes = [
-    "node_modules",
-    ".al",
-    ".git",
-    ".env.toml",
-  ];
   const rsyncFlags = dryRun ? ["--dry-run", "-v"] : [];
 
-  await rsyncTo(ssh, projectPath, `${basePath}/project`, excludes, rsyncFlags);
-  console.log(dryRun ? "(dry-run) Would sync project files" : "Project files synced.");
+  // Step 3: Rsync project files
+  if (!noFiles) {
+    console.log("\n=== Syncing project files ===\n");
+    const excludes = [
+      "node_modules",
+      ".al",
+      ".git",
+      ".env.toml",
+    ];
+    await rsyncTo(ssh, projectPath, `${basePath}/project`, excludes, rsyncFlags);
+    console.log(dryRun ? "(dry-run) Would sync project files" : "Project files synced.");
+  }
 
   // Step 4: Sync credentials
   if (!noCreds) {
     console.log("\n=== Syncing credentials ===\n");
     await rsyncTo(ssh, CREDENTIALS_DIR, `${basePath}/credentials`, undefined, rsyncFlags);
     console.log(dryRun ? "(dry-run) Would sync credentials" : "Credentials synced.");
-  } else {
-    console.log("\n=== Skipping credentials (--no-creds) ===\n");
   }
 
   // Step 5: Write .env.toml on the server
@@ -107,7 +127,7 @@ export async function pushToServer(opts: PushOptions): Promise<void> {
 
   // Step 6: Install systemd unit
   console.log("\n=== Setting up systemd service ===\n");
-  const unitContent = buildSystemdUnit(projectName, basePath, gatewayPort);
+  const unitContent = buildSystemdUnit(projectName, basePath, gatewayPort, binPaths);
   const unitEscaped = unitContent.replace(/'/g, "'\\''");
   await sshExec(ssh, `sudo tee /etc/systemd/system/action-llama.service > /dev/null << 'UNITEOF'\n${unitEscaped}\nUNITEOF`);
   await sshExec(ssh, "sudo systemctl daemon-reload");
@@ -132,11 +152,10 @@ export async function pushToServer(opts: PushOptions): Promise<void> {
 }
 
 async function healthCheck(ssh: SshOptions, port: number): Promise<void> {
-  // Give the service a moment to start
   const maxAttempts = 6;
   for (let i = 0; i < maxAttempts; i++) {
     try {
-      const resp = await sshExec(ssh, `curl -sf http://localhost:${port}/health`);
+      await sshExec(ssh, `curl -sf http://localhost:${port}/health`);
       console.log("Health check passed.");
       return;
     } catch {
@@ -146,5 +165,34 @@ async function healthCheck(ssh: SshOptions, port: number): Promise<void> {
       }
     }
   }
-  console.log("Warning: health check did not pass within 12s. Check 'journalctl -u action-llama' on the server.");
+
+  // Health check failed — fetch diagnostics from the server
+  console.log("Health check did not pass within 12s.\n");
+
+  console.log("=== Service status ===\n");
+  const statusOutput = await sshExecSafe(ssh, "systemctl status action-llama --no-pager -l 2>&1; true");
+  console.log(statusOutput || "  (no output)");
+
+  console.log("\n=== Recent logs ===\n");
+  const logsOutput = await sshExecSafe(ssh, "journalctl -u action-llama --no-pager -n 40 2>&1; true");
+  console.log(logsOutput || "  (no log output — service may have failed to start)");
+
+  console.log("");
+}
+
+/**
+ * Run a command via SSH, returning whatever output is available even if the
+ * command exits non-zero. Returns trimmed stdout+stderr combined, or the
+ * error message if the SSH connection itself fails.
+ */
+async function sshExecSafe(opts: SshOptions, command: string): Promise<string> {
+  const args = [...buildSshArgs(opts), command];
+  try {
+    const { stdout } = await execFile("ssh", args, { maxBuffer: 10 * 1024 * 1024 });
+    return stdout.trim();
+  } catch (err: any) {
+    // execFile error objects include stdout/stderr even on non-zero exit
+    const output = [err.stdout, err.stderr].filter(Boolean).join("\n").trim();
+    return output || err.message || "(unknown error)";
+  }
 }

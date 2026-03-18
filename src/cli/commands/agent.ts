@@ -12,7 +12,10 @@ import type { AgentConfig, ModelConfig } from "../../shared/config.js";
 import type { WebhookTrigger } from "../../webhooks/types.js";
 import { scaffoldAgent } from "../../setup/scaffold.js";
 import { resolvePackageRoot } from "../../setup/scaffold.js";
-import { listBuiltinCredentialIds, getBuiltinCredential } from "../../credentials/registry.js";
+import { listBuiltinCredentialIds, getBuiltinCredential, resolveCredential } from "../../credentials/registry.js";
+import { listCredentialInstances, writeCredentialFields } from "../../shared/credentials.js";
+import { promptCredential } from "../../credentials/prompter.js";
+import { WEBHOOK_SECRET_TYPES } from "../../shared/credential-refs.js";
 
 const EXAMPLE_TYPES = ["dev", "reviewer", "devops"] as const;
 
@@ -277,13 +280,16 @@ async function addWebhookSource(projectPath: string): Promise<Record<string, { t
     choices: WEBHOOK_PROVIDER_TYPES.map((t) => ({ name: t, value: t })),
   });
 
-  const credential = await input({
-    message: "Credential instance for HMAC validation (empty to skip):",
-    default: "",
-  });
+  // Prompt for webhook secret credential (for HMAC signature validation)
+  const credType = WEBHOOK_SECRET_TYPES[providerType];
+  let credentialInstance: string | undefined;
+
+  if (credType) {
+    credentialInstance = await pickOrAddCredentialInstance(credType);
+  }
 
   const sourceConfig: { type: string; credential?: string } = { type: providerType };
-  if (credential.trim()) sourceConfig.credential = credential.trim();
+  if (credentialInstance) sourceConfig.credential = credentialInstance;
 
   // Merge into config.toml
   const webhooks = (existing.webhooks ?? {}) as Record<string, unknown>;
@@ -293,6 +299,50 @@ async function addWebhookSource(projectPath: string): Promise<Record<string, { t
   console.log(`Added webhook source "${sourceName}" (${providerType}) to config.toml.`);
 
   return { ...webhooks, [sourceName]: sourceConfig } as Record<string, { type: string; credential?: string }>;
+}
+
+/**
+ * Let the user pick an existing credential instance or add a new one.
+ * Returns the instance name, or undefined to skip.
+ */
+async function pickOrAddCredentialInstance(credType: string): Promise<string | undefined> {
+  const def = resolveCredential(credType);
+  const instances = await listCredentialInstances(credType);
+
+  type Choice = { name: string; value: string };
+  const choices: Choice[] = [];
+
+  for (const inst of instances) {
+    const label = inst === "default" ? `${def.label} (default)` : `${def.label} (${inst})`;
+    choices.push({ name: label, value: inst });
+  }
+
+  choices.push({ name: "+ Add new webhook secret", value: "__add__" });
+  choices.push({ name: "Skip — accept unsigned webhooks", value: "__skip__" });
+
+  const choice = await select({
+    message: `${def.label} for signature verification:`,
+    choices,
+  });
+
+  if (choice === "__skip__") return undefined;
+
+  if (choice === "__add__") {
+    const instance = await input({
+      message: "Instance name (e.g. default, prod, staging):",
+      default: instances.length === 0 ? "default" : "",
+      validate: (v) => v.trim() ? true : "Instance name is required",
+    });
+
+    const result = await promptCredential(def, instance.trim());
+    if (result && Object.keys(result.values).length > 0) {
+      await writeCredentialFields(credType, instance.trim(), result.values);
+      console.log(`Credential "${credType}:${instance.trim()}" saved.`);
+    }
+    return instance.trim();
+  }
+
+  return choice;
 }
 
 async function editWebhooks(config: AgentConfig, projectPath: string): Promise<void> {

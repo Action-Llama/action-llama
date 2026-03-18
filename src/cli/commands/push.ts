@@ -2,13 +2,18 @@ import { resolve } from "path";
 import { loadGlobalConfig, discoverAgents } from "../../shared/config.js";
 import { resolveEnvironmentName, loadEnvironmentConfig } from "../../shared/environment.js";
 import { validateServerConfig } from "../../shared/server.js";
-import { collectCredentialRefs } from "../../shared/credential-refs.js";
-import { credentialExists, parseCredentialRef } from "../../shared/credentials.js";
-import { resolveCredential } from "../../credentials/registry.js";
-import { ConfigError, CredentialError } from "../../shared/errors.js";
+import { ConfigError } from "../../shared/errors.js";
 import { pushToServer } from "../../remote/push.js";
 
-export async function execute(opts: { project: string; env?: string; dryRun?: boolean; noCreds?: boolean }): Promise<void> {
+export async function execute(opts: {
+  project: string;
+  env?: string;
+  dryRun?: boolean;
+  noCreds?: boolean;
+  credsOnly?: boolean;
+  filesOnly?: boolean;
+  all?: boolean;
+}): Promise<void> {
   const projectPath = resolve(opts.project);
 
   // Resolve environment
@@ -37,25 +42,13 @@ export async function execute(opts: { project: string; env?: string; dryRun?: bo
     throw new ConfigError("No agents found. Create agents first, then re-run al push.");
   }
 
-  // Check that local credentials exist before pushing
-  if (!opts.noCreds) {
-    const credentialRefs = collectCredentialRefs(projectPath, globalConfig);
-    const missing: string[] = [];
-    for (const ref of credentialRefs) {
-      const { type, instance } = parseCredentialRef(ref);
-      if (!(await credentialExists(type, instance))) {
-        const def = resolveCredential(type);
-        missing.push(`${def.label} (${ref})`);
-      }
-    }
-    if (missing.length > 0) {
-      throw new CredentialError(
-        `${missing.length} credential(s) missing locally:\n` +
-        missing.map((m) => `  - ${m}`).join("\n") + "\n" +
-        "Run 'al doctor' to configure them before pushing."
-      );
-    }
-  }
+  // Run doctor in checkOnly mode to validate full config before pushing
+  const { execute: doctorExecute } = await import("./doctor.js");
+  await doctorExecute({ project: projectPath, env: envName, checkOnly: true });
+
+  // Determine what to sync
+  const syncCreds = opts.credsOnly || opts.all || (!opts.filesOnly);
+  const syncFiles = opts.filesOnly || opts.all || (!opts.credsOnly);
 
   console.log(`\n=== Push to ${serverConfig.host} (env: ${envName}) ===`);
   console.log(`Agents: ${agents.join(", ")}`);
@@ -66,6 +59,7 @@ export async function execute(opts: { project: string; env?: string; dryRun?: bo
     globalConfig,
     envName,
     dryRun: opts.dryRun,
-    noCreds: opts.noCreds,
+    noCreds: !syncCreds,
+    noFiles: !syncFiles,
   });
 }
