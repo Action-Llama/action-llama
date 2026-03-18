@@ -1,6 +1,6 @@
 import { resolve } from "path";
 import { discoverAgents, loadAgentConfig, loadGlobalConfig } from "../../shared/config.js";
-import { gatewayFetch } from "../gateway-client.js";
+import { gatewayFetch, gatewayJson } from "../gateway-client.js";
 import { resolveEnvironmentName } from "../../shared/environment.js";
 import type { AgentInstance } from "../../scheduler/types.js";
 import type { AgentConfig } from "../../shared/config.js";
@@ -101,7 +101,7 @@ export async function execute(opts: { project: string; env?: string; agent?: str
   try {
     const response = await gatewayFetch({ project: projectPath, path: "/control/status", env: envName || undefined });
     if (response.ok) {
-      const data = await response.json();
+      const data = await gatewayJson(response);
       schedulerInfo = data.scheduler;
       instances = data.instances || [];
       agentStatuses = data.agents || [];
@@ -188,7 +188,7 @@ export async function execute(opts: { project: string; env?: string; agent?: str
   try {
     const response = await gatewayFetch({ project: projectPath, path: "/locks/status", env: envName || undefined });
     if (response.ok) {
-      const data = await response.json();
+      const data = await gatewayJson(response);
       if (data.locks && data.locks.length > 0) {
         console.log("Active locks:");
         for (const lock of data.locks) {

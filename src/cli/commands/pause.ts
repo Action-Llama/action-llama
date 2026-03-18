@@ -1,5 +1,5 @@
 import { resolve } from "path";
-import { gatewayFetch } from "../gateway-client.js";
+import { gatewayFetch, gatewayJson } from "../gateway-client.js";
 
 export async function execute(name: string | undefined, opts: { project: string; env?: string }): Promise<void> {
   const projectPath = resolve(opts.project);
@@ -22,7 +22,7 @@ export async function execute(name: string | undefined, opts: { project: string;
     throw error;
   }
 
-  const data = await response.json();
+  const data = await gatewayJson(response);
 
   if (response.ok) {
     console.log(`${data.message}`);

@@ -40,3 +40,24 @@ export async function gatewayFetch(opts: GatewayFetchOpts): Promise<Response> {
 
   return fetch(`${baseUrl}${opts.path}`, init);
 }
+
+/**
+ * Parse JSON from a gateway response, throwing a clear error if the
+ * response body is not valid JSON (e.g. HTML from a reverse proxy or
+ * cloud load balancer).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function gatewayJson<T = any>(response: Response): Promise<T> {
+  const text = await response.text();
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    // Trim the body preview to something readable
+    const preview = text.length > 120 ? text.slice(0, 120) + "…" : text;
+    throw new Error(
+      `Gateway returned non-JSON response (HTTP ${response.status}). ` +
+      `This usually means the gateway URL is wrong or a proxy is intercepting the request.\n` +
+      `Response body: ${preview}`
+    );
+  }
+}

@@ -1,7 +1,7 @@
 import { resolve } from "path";
 import { existsSync } from "fs";
 import { discoverAgents } from "../../shared/config.js";
-import { gatewayFetch } from "../gateway-client.js";
+import { gatewayFetch, gatewayJson } from "../gateway-client.js";
 
 export async function execute(agent: string, opts: { project: string; env?: string; headless?: boolean }): Promise<void> {
   const projectPath = resolve(opts.project);
@@ -36,7 +36,7 @@ export async function execute(agent: string, opts: { project: string; env?: stri
     throw error;
   }
 
-  const data = await response.json();
+  const data = await gatewayJson(response);
 
   if (response.ok) {
     console.log(data.message);

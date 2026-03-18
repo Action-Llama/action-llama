@@ -41,6 +41,15 @@ curl -fsSL https://get.docker.com | sh
 systemctl enable docker
 systemctl start docker
 
+# Harden SSH: disable password auth, install fail2ban
+sed -i 's/^#\\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+sed -i 's/^#\\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+systemctl restart sshd
+
+apt-get install -y fail2ban
+systemctl enable fail2ban
+systemctl start fail2ban
+
 # Signal that cloud-init is done
 touch /var/lib/cloud/instance/boot-finished-docker
 `,
