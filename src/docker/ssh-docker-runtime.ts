@@ -233,20 +233,22 @@ export class SshDockerRuntime implements ContainerRuntime {
     const runId = randomUUID().slice(0, 8);
     const containerName = CONSTANTS.containerName(opts.agentName, runId);
     const memory = opts.memory || "4g";
-    const cpus = opts.cpus || 2;
 
     const args = [
       "run", "-d",
       "--name", containerName,
       "--user", "1000:1000",
       "--read-only",
-      "--tmpfs", "/tmp:rw,exec,nosuid,uid=1000,gid=1000,size=2g",
+      "--tmpfs", "/tmp:rw,exec,nosuid,uid=1000,gid=1000",
       "--cap-drop", "ALL",
       "--security-opt", "no-new-privileges:true",
       "--pids-limit", "256",
       "--memory", memory,
-      "--cpus", String(cpus),
     ];
+
+    if (opts.cpus) {
+      args.push("--cpus", String(opts.cpus));
+    }
 
     if (opts.credentials.strategy === "volume") {
       args.push("-v", `${opts.credentials.stagingDir}:/credentials:ro`);
