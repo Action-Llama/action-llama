@@ -8,6 +8,7 @@ import {
   createCodingTools,
 } from "@mariozechner/pi-coding-agent";
 import { readFileSync, existsSync, mkdtempSync, rmSync } from "fs";
+import { randomBytes } from "crypto";
 import { resolve, join } from "path";
 import { tmpdir } from "os";
 import type { AgentConfig } from "../shared/config.js";
@@ -44,18 +45,20 @@ export interface RunOutcome {
 export class AgentRunner {
   private running = false;
   private agentConfig: AgentConfig;
+  private baseLogger: Logger;
   private logger: Logger;
   private projectPath: string;
   private statusTracker?: StatusTracker;
-  public readonly instanceId: string;
+  public instanceId: string;
   private abortController: AbortController;
 
-  constructor(agentConfig: AgentConfig, logger: Logger, projectPath: string, statusTracker?: StatusTracker, instanceId?: string) {
+  constructor(agentConfig: AgentConfig, logger: Logger, projectPath: string, statusTracker?: StatusTracker) {
     this.agentConfig = agentConfig;
+    this.baseLogger = logger;
     this.logger = logger;
     this.projectPath = projectPath;
     this.statusTracker = statusTracker;
-    this.instanceId = instanceId || agentConfig.name;
+    this.instanceId = agentConfig.name;
     this.abortController = new AbortController();
   }
 
@@ -75,6 +78,12 @@ export class AgentRunner {
     }
 
     this.running = true;
+
+    // Generate a unique instance ID for this run
+    const runId = randomBytes(4).toString("hex");
+    this.instanceId = `${this.agentConfig.name}-${runId}`;
+    this.logger = this.baseLogger.child({ instance: this.instanceId });
+
     const runReason = triggerInfo
       ? (triggerInfo.source
         ? (triggerInfo.type === 'agent' ? `triggered by ${triggerInfo.source}` : `${triggerInfo.type} (${triggerInfo.source})`)
@@ -109,14 +118,10 @@ export class AgentRunner {
         ? `${triggerInfo.type} (${triggerInfo.source})` 
         : triggerInfo.type;
       this.logger.info(`Starting ${this.agentConfig.name} run (triggered by ${triggerDetails})`);
-      if (this.instanceId !== this.agentConfig.name) {
-        this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} started (${triggerDetails})`);
-      }
+      this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} started (${triggerDetails})`);
     } else {
       this.logger.info(`Starting ${this.agentConfig.name} run`);
-      if (this.instanceId !== this.agentConfig.name) {
-        this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} started (manual)`);
-      }
+      this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} started (manual)`);
     }
     const runStartTime = Date.now();
     let runError: string | undefined;
@@ -347,10 +352,8 @@ export class AgentRunner {
         result = "completed";
       }
 
-      if (this.instanceId !== this.agentConfig.name) {
-        const elapsed = ((Date.now() - runStartTime) / 1000).toFixed(1);
-        this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} ${result} (${elapsed}s)`);
-      }
+      const elapsed = ((Date.now() - runStartTime) / 1000).toFixed(1);
+      this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} ${elapsed}s`);
 
       // Add telemetry attributes for the execution result
       if (parentSpan) {

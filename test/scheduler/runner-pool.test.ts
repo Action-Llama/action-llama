@@ -15,9 +15,9 @@ describe("RunnerPool", () => {
   let runner3: MockRunner;
 
   beforeEach(() => {
-    runner1 = { isRunning: false, instanceId: "agent(1)", run: vi.fn() };
-    runner2 = { isRunning: false, instanceId: "agent(2)", run: vi.fn() };
-    runner3 = { isRunning: false, instanceId: "agent(3)", run: vi.fn() };
+    runner1 = { isRunning: false, instanceId: "agent-aabbcc01", run: vi.fn() };
+    runner2 = { isRunning: false, instanceId: "agent-aabbcc02", run: vi.fn() };
+    runner3 = { isRunning: false, instanceId: "agent-aabbcc03", run: vi.fn() };
   });
 
   describe("constructor", () => {
@@ -217,7 +217,7 @@ describe("RunnerPool", () => {
       runner2.abort = vi.fn();
       pool = new RunnerPool([runner1, runner2, runner3]);
 
-      expect(pool.killInstance("agent(2)")).toBe(true);
+      expect(pool.killInstance("agent-aabbcc02")).toBe(true);
       expect(runner2.abort).toHaveBeenCalled();
     });
 
@@ -230,7 +230,7 @@ describe("RunnerPool", () => {
       runner1.abort = vi.fn();
       pool = new RunnerPool([runner1]);
 
-      expect(pool.killInstance("agent(1)")).toBe(false);
+      expect(pool.killInstance("agent-aabbcc01")).toBe(false);
       expect(runner1.abort).not.toHaveBeenCalled();
     });
 
@@ -239,7 +239,7 @@ describe("RunnerPool", () => {
       // no abort method
       pool = new RunnerPool([runner1]);
 
-      expect(pool.killInstance("agent(1)")).toBe(true);
+      expect(pool.killInstance("agent-aabbcc01")).toBe(true);
     });
   });
 

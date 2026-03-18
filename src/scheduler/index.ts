@@ -277,25 +277,22 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     const runners: PoolRunner[] = [];
 
     // Single log file per agent — instances share the file and are distinguished
-    // by the `instance` field in each log entry.
+    // by the `instance` field in each log entry (generated per-run by the runner).
     const agentLogger = mkLogger(projectPath, agentConfig.name);
 
     for (let i = 0; i < scale; i++) {
-      const instanceId = scale >= 2 ? `${agentConfig.name}(${i + 1})` : agentConfig.name;
-      const instanceLogger = scale >= 2 ? agentLogger.child({ instance: instanceId }) : agentLogger;
       const agentRuntime = agentRuntimeOverrides[agentConfig.name] || runtime;
       runners.push(new ContainerAgentRunnerClass(
         agentRuntime,
         globalConfig,
         agentConfig,
-        instanceLogger,
+        agentLogger,
         registerContainer,
         unregisterContainer,
         gatewayUrl,
         projectPath,
         agentImages[agentConfig.name] || baseImage,
         statusTracker,
-        instanceId
       ));
     }
 
@@ -504,22 +501,19 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     skills,
     timezone,
     baseImage,
-    createRunner: (agentConfig: AgentConfig, image: string, instanceId: string) => {
+    createRunner: (agentConfig: AgentConfig, image: string) => {
       const agentRuntime = agentRuntimeOverrides[agentConfig.name] || runtime;
-      const baseLogger = mkLogger(projectPath, agentConfig.name);
-      const runnerLogger = instanceId !== agentConfig.name ? baseLogger.child({ instance: instanceId }) : baseLogger;
       return new ContainerAgentRunnerClass(
         agentRuntime,
         globalConfig,
         agentConfig,
-        runnerLogger,
+        mkLogger(projectPath, agentConfig.name),
         registerContainer,
         unregisterContainer,
         gatewayUrl,
         projectPath,
         image,
         statusTracker,
-        instanceId,
       );
     },
   });

@@ -142,12 +142,12 @@ describe("log API routes", () => {
     it("returns interleaved entries from multiple instances in one file", async () => {
       // All instances write to the same file, tagged with an `instance` field
       const lines = [
-        pinoLine(30, 1710700001000, "inst1-a", { instance: "dev(1)" }),
-        pinoLine(30, 1710700002000, "inst2-a", { instance: "dev(2)" }),
-        pinoLine(30, 1710700003000, "inst1-b", { instance: "dev(1)" }),
-        pinoLine(30, 1710700004000, "inst2-b", { instance: "dev(2)" }),
-        pinoLine(30, 1710700005000, "inst1-c", { instance: "dev(1)" }),
-        pinoLine(30, 1710700006000, "inst2-c", { instance: "dev(2)" }),
+        pinoLine(30, 1710700001000, "inst1-a", { instance: "dev-aa11bb22" }),
+        pinoLine(30, 1710700002000, "inst2-a", { instance: "dev-cc33dd44" }),
+        pinoLine(30, 1710700003000, "inst1-b", { instance: "dev-aa11bb22" }),
+        pinoLine(30, 1710700004000, "inst2-b", { instance: "dev-cc33dd44" }),
+        pinoLine(30, 1710700005000, "inst1-c", { instance: "dev-aa11bb22" }),
+        pinoLine(30, 1710700006000, "inst2-c", { instance: "dev-cc33dd44" }),
       ];
       writeFileSync(join(logsPath, "dev-2024-03-18.log"), lines.join("\n") + "\n");
 
@@ -164,8 +164,8 @@ describe("log API routes", () => {
 
     it("supports cursor pagination", async () => {
       const lines = [
-        pinoLine(30, 1710700001000, "inst1-a", { instance: "dev(1)" }),
-        pinoLine(30, 1710700002000, "inst2-a", { instance: "dev(2)" }),
+        pinoLine(30, 1710700001000, "inst1-a", { instance: "dev-aa11bb22" }),
+        pinoLine(30, 1710700002000, "inst2-a", { instance: "dev-cc33dd44" }),
       ];
       writeFileSync(join(logsPath, "dev-2024-03-18.log"), lines.join("\n") + "\n");
 
@@ -178,7 +178,7 @@ describe("log API routes", () => {
       // Append new data
       writeFileSync(
         join(logsPath, "dev-2024-03-18.log"),
-        lines.join("\n") + "\n" + pinoLine(30, 1710700010000, "inst2-new", { instance: "dev(2)" }) + "\n",
+        lines.join("\n") + "\n" + pinoLine(30, 1710700010000, "inst2-new", { instance: "dev-cc33dd44" }) + "\n",
       );
 
       const res2 = await app.request(`/api/logs/agents/dev?cursor=${encodeURIComponent(cursor)}`);
@@ -193,15 +193,15 @@ describe("log API routes", () => {
   describe("GET /api/logs/agents/:name/:instanceId", () => {
     it("returns entries for specific instance filtered by instance field", async () => {
       const lines = [
-        pinoLine(30, 1710700001000, "inst1-msg", { instance: "dev(1)" }),
-        pinoLine(30, 1710700002000, "inst2-msg-1", { instance: "dev(2)" }),
-        pinoLine(30, 1710700003000, "inst1-msg-2", { instance: "dev(1)" }),
-        pinoLine(30, 1710700004000, "inst2-msg-2", { instance: "dev(2)" }),
+        pinoLine(30, 1710700001000, "inst1-msg", { instance: "dev-aa11bb22" }),
+        pinoLine(30, 1710700002000, "inst2-msg-1", { instance: "dev-cc33dd44" }),
+        pinoLine(30, 1710700003000, "inst1-msg-2", { instance: "dev-aa11bb22" }),
+        pinoLine(30, 1710700004000, "inst2-msg-2", { instance: "dev-cc33dd44" }),
       ];
       writeFileSync(join(logsPath, "dev-2024-03-18.log"), lines.join("\n") + "\n");
 
       const app = createTestApp(tmpDir);
-      const res = await app.request("/api/logs/agents/dev/2");
+      const res = await app.request("/api/logs/agents/dev/cc33dd44");
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.entries).toHaveLength(2);
@@ -211,12 +211,12 @@ describe("log API routes", () => {
 
     it("returns empty entries when instance has no log entries", async () => {
       const lines = [
-        pinoLine(30, 1710700001000, "inst1-only", { instance: "dev(1)" }),
+        pinoLine(30, 1710700001000, "inst1-only", { instance: "dev-aa11bb22" }),
       ];
       writeFileSync(join(logsPath, "dev-2024-03-18.log"), lines.join("\n") + "\n");
 
       const app = createTestApp(tmpDir);
-      const res = await app.request("/api/logs/agents/dev/99");
+      const res = await app.request("/api/logs/agents/dev/00000099");
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.entries).toEqual([]);
@@ -224,15 +224,15 @@ describe("log API routes", () => {
 
     it("returns empty entries for missing agent log file", async () => {
       const app = createTestApp(tmpDir);
-      const res = await app.request("/api/logs/agents/dev/1");
+      const res = await app.request("/api/logs/agents/dev/aa11bb22");
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.entries).toEqual([]);
     });
 
-    it("returns 400 for non-numeric instance ID", async () => {
+    it("returns 400 for invalid instance ID characters", async () => {
       const app = createTestApp(tmpDir);
-      const res = await app.request("/api/logs/agents/dev/abc");
+      const res = await app.request("/api/logs/agents/dev/AB-CD!");
       expect(res.status).toBe(400);
       const data = await res.json();
       expect(data.error).toBe("Invalid instance ID");
@@ -240,13 +240,13 @@ describe("log API routes", () => {
 
     it("supports cursor pagination with instance filtering", async () => {
       const lines = [
-        pinoLine(30, 1710700001000, "inst1-a", { instance: "dev(1)" }),
-        pinoLine(30, 1710700002000, "inst2-a", { instance: "dev(2)" }),
+        pinoLine(30, 1710700001000, "inst1-a", { instance: "dev-aa11bb22" }),
+        pinoLine(30, 1710700002000, "inst2-a", { instance: "dev-cc33dd44" }),
       ];
       writeFileSync(join(logsPath, "dev-2024-03-18.log"), lines.join("\n") + "\n");
 
       const app = createTestApp(tmpDir);
-      const res1 = await app.request("/api/logs/agents/dev/2?lines=10");
+      const res1 = await app.request("/api/logs/agents/dev/cc33dd44?lines=10");
       const data1 = await res1.json();
       expect(data1.entries).toHaveLength(1);
       expect(data1.entries[0].msg).toBe("inst2-a");
@@ -256,12 +256,12 @@ describe("log API routes", () => {
       writeFileSync(
         join(logsPath, "dev-2024-03-18.log"),
         lines.join("\n") + "\n"
-          + pinoLine(30, 1710700010000, "inst1-new", { instance: "dev(1)" }) + "\n"
-          + pinoLine(30, 1710700011000, "inst2-new", { instance: "dev(2)" }) + "\n",
+          + pinoLine(30, 1710700010000, "inst1-new", { instance: "dev-aa11bb22" }) + "\n"
+          + pinoLine(30, 1710700011000, "inst2-new", { instance: "dev-cc33dd44" }) + "\n",
       );
 
-      // Only the instance 2 entry should be returned
-      const res2 = await app.request(`/api/logs/agents/dev/2?cursor=${encodeURIComponent(cursor)}`);
+      // Only the matching instance entry should be returned
+      const res2 = await app.request(`/api/logs/agents/dev/cc33dd44?cursor=${encodeURIComponent(cursor)}`);
       const data2 = await res2.json();
       expect(data2.entries).toHaveLength(1);
       expect(data2.entries[0].msg).toBe("inst2-new");

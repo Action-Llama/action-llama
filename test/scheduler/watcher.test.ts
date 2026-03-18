@@ -120,7 +120,7 @@ function makeContext(overrides: Partial<HotReloadContext> = {}): HotReloadContex
     skills: { locking: true },
     timezone: "UTC",
     baseImage: "al-agent:latest",
-    createRunner: vi.fn((_config, _image, instanceId) => makeMockRunner(instanceId)),
+    createRunner: vi.fn((_config, _image) => makeMockRunner(_config.name)),
     ...overrides,
   };
 }
@@ -262,7 +262,7 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     const handle = watchAgents(ctx);
     await handle._handleAgentChange("agent-b");
 
-    expect(ctx.createRunner).toHaveBeenCalledWith(newConfig, "agent-b:v1", "agent-b");
+    expect(ctx.createRunner).toHaveBeenCalledWith(newConfig, "agent-b:v1");
     expect(ctx.runnerPools["agent-b"]).toBeInstanceOf(RunnerPool);
     expect(ctx.agentConfigs).toContain(newConfig);
     expect(ctx.statusTracker!.registerAgent).toHaveBeenCalledWith("agent-b", 1);
@@ -338,9 +338,9 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
   });
 
   it("handles scale change: removes idle runners when scale decreases", async () => {
-    const runner1 = makeMockRunner("agent-a(1)");
-    const runner2 = makeMockRunner("agent-a(2)");
-    const runner3 = makeMockRunner("agent-a(3)");
+    const runner1 = makeMockRunner("agent-a-00000001");
+    const runner2 = makeMockRunner("agent-a-00000002");
+    const runner3 = makeMockRunner("agent-a-00000003");
     const pool = new RunnerPool([runner1, runner2, runner3]);
     const ctx = makeContext({
       agentConfigs: [makeAgentConfig("agent-a", { scale: 3 })],

@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID, randomBytes } from "crypto";
 import type { GlobalConfig, AgentConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
 import type { ContainerRuntime, RuntimeCredentials } from "../docker/runtime.js";
@@ -17,11 +17,12 @@ export class ContainerAgentRunner {
   private runtime: ContainerRuntime;
   private globalConfig: GlobalConfig;
   private agentConfig: AgentConfig;
+  private baseLogger: Logger;
   private logger: Logger;
   private registerContainer: (secret: string, reg: ContainerRegistration) => Promise<void>;
   private unregisterContainer: (secret: string) => Promise<void>;
   private gatewayUrl: string;
-  public readonly instanceId: string;
+  public instanceId: string;
   private projectPath: string;
   private image: string;
   private statusTracker?: StatusTracker;
@@ -37,16 +38,16 @@ export class ContainerAgentRunner {
     projectPath: string,
     image: string,
     statusTracker?: StatusTracker,
-    instanceId?: string
   ) {
     this.runtime = runtime;
     this.globalConfig = globalConfig;
     this.agentConfig = agentConfig;
+    this.baseLogger = logger;
     this.logger = logger;
     this.registerContainer = registerContainer;
     this.unregisterContainer = unregisterContainer;
     this.gatewayUrl = gatewayUrl;
-    this.instanceId = instanceId || agentConfig.name;
+    this.instanceId = agentConfig.name;
     this.projectPath = projectPath;
     this.image = image;
     this.statusTracker = statusTracker;
@@ -146,7 +147,12 @@ export class ContainerAgentRunner {
     }
 
     this._running = true;
-    
+
+    // Generate a unique instance ID for this run
+    const runId = randomBytes(4).toString("hex");
+    this.instanceId = `${this.agentConfig.name}-${runId}`;
+    this.logger = this.baseLogger.child({ instance: this.instanceId });
+
     return await withSpan(
       "container_agent.run",
       async (span) => {
@@ -184,14 +190,10 @@ export class ContainerAgentRunner {
         ? `${triggerInfo.type} (${triggerInfo.source})` 
         : triggerInfo.type;
       this.logger.info(`Starting ${this.agentConfig.name} container run (triggered by ${triggerDetails})`);
-      if (this.instanceId !== this.agentConfig.name) {
-        this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} started (${triggerDetails})`);
-      }
+      this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} started (${triggerDetails})`);
     } else {
       this.logger.info(`Starting ${this.agentConfig.name} container run`);
-      if (this.instanceId !== this.agentConfig.name) {
-        this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} started (manual)`);
-      }
+      this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} started (manual)`);
     }
     const runStartTime = Date.now();
     let runError: string | undefined;
@@ -298,9 +300,7 @@ export class ContainerAgentRunner {
         this.logger.info({ exitCode, elapsed: `${elapsed}s` }, "container finished");
         runResult = "completed";
       }
-      if (this.instanceId !== this.agentConfig.name) {
-        this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} ${runResult} (${elapsed}s)`);
-      }
+      this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} ${runResult} (${elapsed}s)`);
     } catch (err: any) {
       this.logger.error({ err }, `${this.agentConfig.name} container run failed`);
       runError = String(err?.message || err).slice(0, 200);

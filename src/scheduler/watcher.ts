@@ -45,7 +45,7 @@ export interface HotReloadContext {
   skills?: PromptSkills;
   timezone: string;
   baseImage: string;
-  createRunner: (agentConfig: AgentConfig, image: string, instanceId: string) => PoolRunner;
+  createRunner: (agentConfig: AgentConfig, image: string) => PoolRunner;
 }
 
 /**
@@ -180,8 +180,7 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
     // Create runners
     const runners: PoolRunner[] = [];
     for (let i = 0; i < scale; i++) {
-      const instanceId = scale >= 2 ? `${agentName}(${i + 1})` : agentName;
-      runners.push(ctx.createRunner(agentConfig, image, instanceId));
+      runners.push(ctx.createRunner(agentConfig, image));
     }
     const pool = new RunnerPool(runners);
     ctx.runnerPools[agentName] = pool;
@@ -311,8 +310,7 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
       // Handle scale changes
       if (newScale > oldScale) {
         for (let i = oldScale; i < newScale; i++) {
-          const instanceId = newScale >= 2 ? `${agentName}(${i + 1})` : agentName;
-          pool.addRunner(ctx.createRunner(newConfig, image, instanceId));
+          pool.addRunner(ctx.createRunner(newConfig, image));
         }
         ctx.statusTracker?.registerAgent(agentName, newScale);
       } else if (newScale < oldScale) {

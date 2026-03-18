@@ -410,7 +410,10 @@ export async function execute(
 ): Promise<void> {
   const projectPath = resolve(opts.project);
   const fmt: Formatter = opts.raw ? formatRawEntry : formatConversationEntry;
-  const instanceNum = opts.instance ? parseInt(opts.instance, 10) : undefined;
+  // --instance accepts a full instance ID (e.g. "dev-a1b2c3d4") or just the suffix ("a1b2c3d4")
+  const instanceSuffix = opts.instance
+    ? (opts.instance.startsWith(`${agent}-`) ? opts.instance.slice(agent.length + 1) : opts.instance)
+    : undefined;
 
   const n = parseInt(opts.lines, 10);
 
@@ -418,8 +421,8 @@ export async function execute(
   let apiPath: string;
   if (agent === "scheduler") {
     apiPath = "/api/logs/scheduler";
-  } else if (instanceNum !== undefined) {
-    apiPath = `/api/logs/agents/${encodeURIComponent(agent)}/${instanceNum}`;
+  } else if (instanceSuffix !== undefined) {
+    apiPath = `/api/logs/agents/${encodeURIComponent(agent)}/${instanceSuffix}`;
   } else {
     apiPath = `/api/logs/agents/${encodeURIComponent(agent)}`;
   }
@@ -492,7 +495,7 @@ export async function execute(
     }
 
     // When --instance is specified, wrap the formatter to skip non-matching entries
-    const instanceFilter = instanceNum !== undefined ? `${agent}(${instanceNum})` : undefined;
+    const instanceFilter = instanceSuffix !== undefined ? `${agent}-${instanceSuffix}` : undefined;
     const filteredFmt: Formatter = instanceFilter
       ? (entry) => entry.instance === instanceFilter ? fmt(entry) : null
       : fmt;

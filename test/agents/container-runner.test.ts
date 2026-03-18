@@ -25,12 +25,14 @@ function createMockRuntime(overrides: Partial<ContainerRuntime> = {}): Container
   } as ContainerRuntime;
 }
 
-const mockLogger = {
+const makeMockLogger = (): any => ({
   info: vi.fn(),
   warn: vi.fn(),
   error: vi.fn(),
   debug: vi.fn(),
-} as any;
+  child: () => makeMockLogger(),
+});
+const mockLogger = makeMockLogger();
 
 const globalConfig: GlobalConfig = {};
 const agentConfig: AgentConfig = {
@@ -48,7 +50,7 @@ describe("ContainerAgentRunner", () => {
     runtime = createMockRuntime();
   });
 
-  function createRunner(opts?: { runtime?: ContainerRuntime; instanceId?: string }) {
+  function createRunner(opts?: { runtime?: ContainerRuntime }) {
     return new ContainerAgentRunner(
       opts?.runtime ?? runtime,
       globalConfig,
@@ -59,8 +61,6 @@ describe("ContainerAgentRunner", () => {
       "",      // gatewayUrl
       "/tmp",  // projectPath
       "test-image:latest",
-      undefined, // statusTracker
-      opts?.instanceId,
     );
   }
 

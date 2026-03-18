@@ -261,11 +261,11 @@ export function registerLogRoutes(app: Hono, projectPath: string): void {
     const instanceId = c.req.param("instanceId");
     if (!SAFE_AGENT_NAME.test(name)) return c.json({ error: "Invalid agent name" }, 400);
 
-    // instanceId should be a number
-    if (!/^\d+$/.test(instanceId)) return c.json({ error: "Invalid instance ID" }, 400);
+    // instanceId should be a lowercase alphanumeric run suffix (e.g. "a1b2c3d4")
+    if (!/^[a-z0-9]+$/.test(instanceId)) return c.json({ error: "Invalid instance ID" }, 400);
 
     const { lines, cursor, after, before } = parseQueryParams(c.req.query());
-    const instanceFilter = `${name}(${instanceId})`;
+    const instanceFilter = `${name}-${instanceId}`;
 
     const file = findLatestLogFile(projectPath, name);
     if (!file) return c.json({ entries: [], cursor: null, hasMore: false });
