@@ -312,6 +312,42 @@ describe("validateAgentName", () => {
   });
 });
 
+describe("project scale configuration", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("loads config with scale set", () => {
+    const config = { scale: 4 };
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(config));
+    const loaded = loadGlobalConfig(tmpDir);
+    expect(loaded.scale).toBe(4);
+  });
+
+  it("handles default behavior when scale is not set", () => {
+    const config = { gateway: { port: 8080 } };
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(config));
+    const loaded = loadGlobalConfig(tmpDir);
+    expect(loaded.scale).toBeUndefined();
+  });
+
+  it("preserves scale value through config merge layers", () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({ scale: 4 }));
+    writeFileSync(resolve(tmpDir, ".env.toml"), stringifyTOML({
+      gateway: { port: 9090 },
+    }));
+    const loaded = loadGlobalConfig(tmpDir);
+    expect(loaded.scale).toBe(4);
+    expect(loaded.gateway?.port).toBe(9090);
+  });
+});
+
 describe("discoverAgents", () => {
   let tmpDir: string;
 
