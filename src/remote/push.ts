@@ -1,4 +1,6 @@
 import { resolve, basename, dirname } from "path";
+import { createHash } from "crypto";
+import { readFileSync, unlinkSync } from "fs";
 import { stringify as stringifyTOML } from "smol-toml";
 import type { ServerConfig } from "../shared/server.js";
 import type { GlobalConfig } from "../shared/config.js";
@@ -18,6 +20,24 @@ export interface PushOptions {
   dryRun?: boolean;
   noCreds?: boolean;
   noFiles?: boolean;
+  forceInstall?: boolean;
+}
+
+/**
+ * Compute a SHA-256 hash of package.json + package-lock.json contents.
+ * Used to skip `npm install` when dependencies haven't changed.
+ */
+export function computePkgHash(projectPath: string): string {
+  const hash = createHash("sha256");
+  for (const file of ["package.json", "package-lock.json"]) {
+    try {
+      hash.update(readFileSync(resolve(projectPath, file)));
+    } catch {
+      // File missing — hash will differ from remote, triggering install
+      hash.update(`missing:${file}`);
+    }
+  }
+  return hash.digest("hex");
 }
 
 /**
@@ -60,11 +80,43 @@ WantedBy=multi-user.target
  * Push project files and credentials to a server, set up systemd, and verify.
  */
 export async function pushToServer(opts: PushOptions): Promise<void> {
-  const { projectPath, serverConfig, globalConfig, dryRun, noCreds, noFiles } = opts;
+  const { projectPath, serverConfig, globalConfig, dryRun, noCreds, noFiles, forceInstall } = opts;
   const ssh = sshOptionsFromConfig(serverConfig);
   const basePath = serverConfig.basePath ?? "/opt/action-llama";
   const gatewayPort = VPS_CONSTANTS.DEFAULT_GATEWAY_PORT;
   const projectName = basename(resolve(projectPath));
+
+  // Set up SSH ControlMaster for connection multiplexing
+  const hostHash = createHash("sha256").update(ssh.host).digest("hex").slice(0, 8);
+  const controlPath = `/tmp/al-ssh-${hostHash}-${process.pid}`;
+  ssh.controlPath = controlPath;
+
+  try {
+    await pushToServerInner(ssh, {
+      projectPath, serverConfig, globalConfig, dryRun, noCreds, noFiles, forceInstall,
+      basePath, gatewayPort, projectName,
+    });
+  } finally {
+    try { unlinkSync(controlPath); } catch {}
+  }
+}
+
+interface InnerOpts {
+  projectPath: string;
+  serverConfig: ServerConfig;
+  globalConfig: GlobalConfig;
+  dryRun?: boolean;
+  noCreds?: boolean;
+  noFiles?: boolean;
+  forceInstall?: boolean;
+  basePath: string;
+  gatewayPort: number;
+  projectName: string;
+}
+
+async function pushToServerInner(ssh: SshOptions, opts: InnerOpts): Promise<void> {
+  const { projectPath, serverConfig, globalConfig, dryRun, noCreds, noFiles, forceInstall,
+    basePath, gatewayPort, projectName } = opts;
 
   // Step 1: Bootstrap server
   console.log("\n=== Checking server prerequisites ===\n");
@@ -82,7 +134,9 @@ export async function pushToServer(opts: PushOptions): Promise<void> {
 
   const rsyncFlags = dryRun ? ["--dry-run", "-v"] : [];
 
-  // Step 3: Rsync project files
+  // Phase A: Rsync project files and credentials in parallel
+  const phaseA: Promise<void>[] = [];
+
   if (!noFiles) {
     console.log("\n=== Syncing project files ===\n");
     const excludes = [
@@ -91,66 +145,21 @@ export async function pushToServer(opts: PushOptions): Promise<void> {
       ".git",
       ".env.toml",
     ];
-    await rsyncTo(ssh, projectPath, `${basePath}/project`, excludes, rsyncFlags);
-    console.log(dryRun ? "(dry-run) Would sync project files" : "Project files synced.");
-
-    // Install project dependencies on the remote
-    if (!dryRun) {
-      console.log("\n=== Installing dependencies ===\n");
-      await sshExec(ssh, `cd ${basePath}/project && npm install`);
-      console.log("Dependencies installed.");
-    }
+    phaseA.push(
+      rsyncTo(ssh, projectPath, `${basePath}/project`, excludes, rsyncFlags)
+        .then(() => { console.log(dryRun ? "(dry-run) Would sync project files" : "Project files synced."); }),
+    );
   }
 
-  // Step 4: Sync credentials
   if (!noCreds) {
     console.log("\n=== Syncing credentials ===\n");
-    await rsyncTo(ssh, CREDENTIALS_DIR, `${basePath}/credentials`, undefined, rsyncFlags);
-    console.log(dryRun ? "(dry-run) Would sync credentials" : "Credentials synced.");
+    phaseA.push(
+      rsyncTo(ssh, CREDENTIALS_DIR, `${basePath}/credentials`, undefined, rsyncFlags)
+        .then(() => { console.log(dryRun ? "(dry-run) Would sync credentials" : "Credentials synced."); }),
+    );
   }
 
-  // Step 5: Configure nginx TLS reverse proxy (certs from provisioning)
-  if (!dryRun && !noCreds && serverConfig.cloudflareHostname) {
-    console.log("\n=== Configuring nginx ===\n");
-    const cfHost = serverConfig.cloudflareHostname;
-    const certSrc = `${basePath}/credentials/cloudflare_origin_cert/${cfHost}/certificate`;
-    const keySrc = `${basePath}/credentials/cloudflare_origin_cert/${cfHost}/private_key`;
-
-    await sshExec(ssh, `sudo mkdir -p ${VPS_CONSTANTS.NGINX_CERT_DIR}`);
-    await sshExec(ssh, `sudo cp ${certSrc} ${VPS_CONSTANTS.NGINX_CERT_PATH}`);
-    await sshExec(ssh, `sudo cp ${keySrc} ${VPS_CONSTANTS.NGINX_KEY_PATH}`);
-
-    const { generateNginxConfig } = await import("../cloud/vps/nginx.js");
-    const nginxConf = generateNginxConfig(cfHost, gatewayPort);
-    const nginxEscaped = nginxConf.replace(/'/g, "'\\''");
-    await sshExec(ssh, `sudo tee ${VPS_CONSTANTS.NGINX_SITE_CONFIG} > /dev/null << 'NGINXEOF'\n${nginxEscaped}\nNGINXEOF`);
-    await sshExec(ssh, `sudo ln -sfn ${VPS_CONSTANTS.NGINX_SITE_CONFIG} /etc/nginx/sites-enabled/action-llama`);
-    await sshExec(ssh, "sudo rm -f /etc/nginx/sites-enabled/default");
-    await sshExec(ssh, "sudo nginx -t && sudo systemctl reload nginx");
-    console.log(`  nginx: ${cfHost} :443 → 127.0.0.1:${gatewayPort}`);
-  }
-
-  // Step 6: Write .env.toml on the server
-  if (!dryRun) {
-    console.log("\n=== Writing server .env.toml ===\n");
-    // Build a self-contained .env.toml — no environment reference needed on the
-    // remote since the server is effectively running locally.  Inline gateway and
-    // telemetry config so the scheduler has everything it needs.
-    const remoteEnv: Record<string, unknown> = {
-      gateway: { ...globalConfig.gateway, port: gatewayPort },
-    };
-    if (globalConfig.telemetry) {
-      remoteEnv.telemetry = globalConfig.telemetry;
-    }
-    const envToml = stringifyTOML(remoteEnv);
-    // Escape for shell
-    const escaped = envToml.replace(/'/g, "'\\''");
-    await sshExec(ssh, `cat > ${basePath}/project/.env.toml << 'ENVEOF'\n${escaped}\nENVEOF`);
-    console.log("Server .env.toml written.");
-
-    // Symlink credentials dir so al can find them
-    await sshExec(ssh, `mkdir -p ~/.action-llama && ln -sfn ${basePath}/credentials ~/.action-llama/credentials`);
-  }
+  await Promise.all(phaseA);
 
   if (dryRun) {
     console.log("\n=== Dry run complete ===\n");
@@ -158,21 +167,33 @@ export async function pushToServer(opts: PushOptions): Promise<void> {
     return;
   }
 
-  // Step 6: Install systemd unit
-  console.log("\n=== Setting up systemd service ===\n");
-  const unitContent = buildSystemdUnit(projectName, basePath, binPaths, gatewayPort);
-  const unitEscaped = unitContent.replace(/'/g, "'\\''");
-  await sshExec(ssh, `sudo tee /etc/systemd/system/action-llama.service > /dev/null << 'UNITEOF'\n${unitEscaped}\nUNITEOF`);
-  await sshExec(ssh, "sudo systemctl daemon-reload");
-  await sshExec(ssh, "sudo systemctl enable action-llama");
-  console.log("Systemd service installed.");
+  // Phase B: Parallel setup — npm install (if needed), nginx, env.toml, systemd
+  const phaseB: Promise<void>[] = [];
 
-  // Step 7: Restart service
+  // npm install (conditional on package hash)
+  if (!noFiles) {
+    phaseB.push(conditionalNpmInstall(ssh, projectPath, basePath, forceInstall));
+  }
+
+  // nginx setup (batched into one SSH call)
+  if (!noCreds && serverConfig.cloudflareHostname) {
+    phaseB.push(setupNginx(ssh, basePath, serverConfig.cloudflareHostname, gatewayPort));
+  }
+
+  // .env.toml + credentials symlink (batched into one SSH call)
+  phaseB.push(writeEnvAndSymlink(ssh, basePath, gatewayPort, globalConfig));
+
+  // systemd unit install (batched into one SSH call)
+  const unitContent = buildSystemdUnit(projectName, basePath, binPaths, gatewayPort);
+  phaseB.push(installSystemdUnit(ssh, unitContent));
+
+  await Promise.all(phaseB);
+
+  // Phase C: Restart + health check (sequential)
   console.log("\n=== Restarting service ===\n");
   await sshExec(ssh, "sudo systemctl restart action-llama");
   console.log("Service restarted.");
 
-  // Step 8: Health check
   console.log("\n=== Health check ===\n");
   await healthCheck(ssh, gatewayPort);
 
@@ -184,9 +205,88 @@ export async function pushToServer(opts: PushOptions): Promise<void> {
   console.log(`  Logs:    journalctl -u action-llama -f`);
 }
 
+async function conditionalNpmInstall(
+  ssh: SshOptions, projectPath: string, basePath: string, forceInstall?: boolean,
+): Promise<void> {
+  const localHash = computePkgHash(projectPath);
+
+  if (!forceInstall) {
+    const remoteHash = (await sshExec(ssh, `cat ${basePath}/.pkg-hash 2>/dev/null || true`)).trim();
+    if (remoteHash === localHash) {
+      console.log("\n=== Dependencies unchanged, skipping npm install ===\n");
+      return;
+    }
+  }
+
+  console.log("\n=== Installing dependencies ===\n");
+  await sshExec(ssh, `cd ${basePath}/project && npm install`);
+  await sshExec(ssh, `cat > ${basePath}/.pkg-hash << 'HASHEOF'\n${localHash}\nHASHEOF`);
+  console.log("Dependencies installed.");
+}
+
+async function setupNginx(
+  ssh: SshOptions, basePath: string, cfHost: string, gatewayPort: number,
+): Promise<void> {
+  console.log("\n=== Configuring nginx ===\n");
+  const certSrc = `${basePath}/credentials/cloudflare_origin_cert/${cfHost}/certificate`;
+  const keySrc = `${basePath}/credentials/cloudflare_origin_cert/${cfHost}/private_key`;
+
+  const { generateNginxConfig } = await import("../cloud/vps/nginx.js");
+  const nginxConf = generateNginxConfig(cfHost, gatewayPort);
+  const nginxEscaped = nginxConf.replace(/'/g, "'\\''");
+
+  // Batch all nginx setup into one SSH call
+  await sshExec(ssh, [
+    `sudo mkdir -p ${VPS_CONSTANTS.NGINX_CERT_DIR}`,
+    `sudo cp ${certSrc} ${VPS_CONSTANTS.NGINX_CERT_PATH}`,
+    `sudo cp ${keySrc} ${VPS_CONSTANTS.NGINX_KEY_PATH}`,
+    `sudo tee ${VPS_CONSTANTS.NGINX_SITE_CONFIG} > /dev/null << 'NGINXEOF'\n${nginxEscaped}\nNGINXEOF`,
+    `sudo ln -sfn ${VPS_CONSTANTS.NGINX_SITE_CONFIG} /etc/nginx/sites-enabled/action-llama`,
+    "sudo rm -f /etc/nginx/sites-enabled/default",
+    "sudo nginx -t && sudo systemctl reload nginx",
+  ].join(" && "));
+  console.log(`  nginx: ${cfHost} :443 → 127.0.0.1:${gatewayPort}`);
+}
+
+async function writeEnvAndSymlink(
+  ssh: SshOptions, basePath: string, gatewayPort: number, globalConfig: GlobalConfig,
+): Promise<void> {
+  console.log("\n=== Writing server .env.toml ===\n");
+  const remoteEnv: Record<string, unknown> = {
+    gateway: { ...globalConfig.gateway, port: gatewayPort },
+  };
+  if (globalConfig.telemetry) {
+    remoteEnv.telemetry = globalConfig.telemetry;
+  }
+  const envToml = stringifyTOML(remoteEnv);
+  const escaped = envToml.replace(/'/g, "'\\''");
+
+  // Batch .env.toml write + credentials symlink into one SSH call
+  await sshExec(ssh, [
+    `cat > ${basePath}/project/.env.toml << 'ENVEOF'\n${escaped}\nENVEOF`,
+    `mkdir -p ~/.action-llama && ln -sfn ${basePath}/credentials ~/.action-llama/credentials`,
+  ].join(" && "));
+  console.log("Server .env.toml written.");
+}
+
+async function installSystemdUnit(ssh: SshOptions, unitContent: string): Promise<void> {
+  console.log("\n=== Setting up systemd service ===\n");
+  const unitEscaped = unitContent.replace(/'/g, "'\\''");
+
+  // Batch tee + daemon-reload + enable into one SSH call
+  await sshExec(ssh, [
+    `sudo tee /etc/systemd/system/action-llama.service > /dev/null << 'UNITEOF'\n${unitEscaped}\nUNITEOF`,
+    "sudo systemctl daemon-reload",
+    "sudo systemctl enable action-llama",
+  ].join(" && "));
+  console.log("Systemd service installed.");
+}
+
+/** Ramp-up intervals: faster initial polling, then backs off. */
+const HEALTH_CHECK_INTERVALS_MS = [1000, 1000, 2000, 3000, 3000];
+
 async function healthCheck(ssh: SshOptions, port: number): Promise<void> {
   const TIMEOUT_MS = 180_000; // 3 minutes — first push builds Docker images
-  const POLL_MS = 3_000;
 
   console.log("  Waiting for service to start...\n");
 
@@ -203,6 +303,7 @@ async function healthCheck(ssh: SshOptions, port: number): Promise<void> {
 
   const startTime = Date.now();
   let serviceFailed = false;
+  let pollIndex = 0;
 
   try {
     while (Date.now() - startTime < TIMEOUT_MS) {
@@ -220,7 +321,9 @@ async function healthCheck(ssh: SshOptions, port: number): Promise<void> {
         }
       }
 
-      await new Promise((r) => setTimeout(r, POLL_MS));
+      const delay = HEALTH_CHECK_INTERVALS_MS[Math.min(pollIndex, HEALTH_CHECK_INTERVALS_MS.length - 1)];
+      pollIndex++;
+      await new Promise((r) => setTimeout(r, delay));
     }
   } finally {
     journal.kill();

@@ -63,6 +63,8 @@ describe("chat", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     capturedOptions = undefined;
+    // Mock fetch so probeGateway always reports no gateway running
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")));
   });
 
   it("launches console with agent summary when agents exist", async () => {

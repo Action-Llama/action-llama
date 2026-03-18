@@ -184,6 +184,7 @@ program
   .option("--creds-only", "sync only credentials (skip project files)")
   .option("--files-only", "sync only project files (skip credentials)")
   .option("-a, --all", "sync project files, credentials, and restart service")
+  .option("--force-install", "force npm install even if dependencies appear unchanged")
   .action(withCommand(async (opts) => {
     const { execute } = await import("./commands/push.js");
     await execute(opts);
