@@ -255,7 +255,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // Import necessary classes for container runners
   const { ContainerAgentRunner: ContainerAgentRunnerClass } = await import("../agents/container-runner.js");
-  const gatewayUrl = process.env.GATEWAY_URL || `http://host.docker.internal:${gatewayPort}`;
+  const gatewayUrl = process.env.GATEWAY_URL || `http://gateway:8080`;
 
   // Gateway callbacks — async (ContainerRegistry persists to StateStore).
   const registerContainer = gateway
