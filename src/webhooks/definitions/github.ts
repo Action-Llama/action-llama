@@ -38,5 +38,18 @@ export const github: WebhookDefinition = {
     { field: "labels", label: "Labels", type: "text[]" },
     { field: "assignee", label: "Assignee", type: "text" },
     { field: "branches", label: "Branches", type: "text[]" },
+    {
+      field: "conclusions",
+      label: "Conclusions",
+      type: "multi-select",
+      options: [
+        { value: "success", label: "Success" },
+        { value: "failure", label: "Failure" },
+        { value: "cancelled", label: "Cancelled" },
+        { value: "skipped", label: "Skipped" },
+        { value: "timed_out", label: "Timed Out" },
+        { value: "action_required", label: "Action Required" },
+      ],
+    },
   ],
 };

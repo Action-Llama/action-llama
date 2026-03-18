@@ -15,6 +15,7 @@ export interface WebhookContext {
   assignee?: string;
   labels?: string[];
   branch?: string;
+  conclusion?: string;
   comment?: string;
   sender: string;
   timestamp: string;
@@ -32,6 +33,7 @@ export interface GitHubWebhookFilter {
   assignee?: string;
   author?: string;
   branches?: string[];
+  conclusions?: string[];
 }
 
 export interface SentryWebhookFilter {

@@ -122,6 +122,8 @@ export class GitHubWebhookProvider implements WebhookProvider {
           url: run.html_url,
           branch: run.head_branch,
           author: run.actor?.login,
+          conclusion: run.conclusion,
+          number: run.pull_requests?.length > 0 ? run.pull_requests[0].number : undefined,
         } as WebhookContext;
       }
 
@@ -181,6 +183,11 @@ export class GitHubWebhookProvider implements WebhookProvider {
     // without a branch (e.g., issues, comments) through. This is intentional —
     // a user filtering branches: ["main"] still wants issue events.
     if (f.branches?.length && context.branch && !f.branches.includes(context.branch)) {
+      return false;
+    }
+
+    // Conclusion filter: only check if context has a conclusion (workflow_run events)
+    if (f.conclusions?.length && context.conclusion && !f.conclusions.includes(context.conclusion)) {
       return false;
     }
 
