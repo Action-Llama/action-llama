@@ -1,6 +1,7 @@
 import { resolve } from "path";
 import { discoverAgents, loadAgentConfig, loadGlobalConfig } from "../../shared/config.js";
 import { gatewayFetch } from "../gateway-client.js";
+import { resolveEnvironmentName } from "../../shared/environment.js";
 import type { AgentInstance } from "../../scheduler/types.js";
 import type { AgentConfig } from "../../shared/config.js";
 
@@ -90,6 +91,9 @@ function printLocalInstances(instances: AgentInstance[]): void {
 export async function execute(opts: { project: string; env?: string; agent?: string }): Promise<void> {
   const projectPath = resolve(opts.project);
 
+  const envName = resolveEnvironmentName(opts.env, projectPath);
+  const isRemote = !!envName;
+
   let schedulerInfo = null;
   let instances: AgentInstance[] = [];
   let agentStatuses: Array<{ name: string; enabled: boolean }> = [];
@@ -101,9 +105,21 @@ export async function execute(opts: { project: string; env?: string; agent?: str
       schedulerInfo = data.scheduler;
       instances = data.instances || [];
       agentStatuses = data.agents || [];
+    } else if (isRemote) {
+      const globalConfig = loadGlobalConfig(projectPath, opts.env);
+      const url = globalConfig.gateway?.url || `localhost:${globalConfig.gateway?.port || 8080}`;
+      console.error(`Failed to reach gateway at ${url} (HTTP ${response.status})`);
+      process.exit(1);
     }
   } catch (error) {
-    // Gateway not running or not accessible, continue with basic info
+    if (isRemote) {
+      const globalConfig = loadGlobalConfig(projectPath, opts.env);
+      const url = globalConfig.gateway?.url || `localhost:${globalConfig.gateway?.port || 8080}`;
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error(`Cannot connect to gateway at ${url}: ${msg}`);
+      process.exit(1);
+    }
+    // Local mode: gateway not running, continue with basic info
   }
 
   // --- Per-agent detail view ---

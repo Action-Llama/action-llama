@@ -113,10 +113,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     registerLoginRoutes(app, opts.apiKey);
   }
 
-  const isPublic = opts.hostname === "0.0.0.0";
-  registerLockRoutes(app, containerRegistry, lockStore, logger, {
-    skipStatusEndpoint: isPublic,
-  });
+  registerLockRoutes(app, containerRegistry, lockStore, logger);
   registerCallRoutes(app, containerRegistry, callStore, () => callDispatcher, logger);
 
   // Signal routes
