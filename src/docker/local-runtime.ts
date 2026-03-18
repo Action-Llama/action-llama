@@ -402,8 +402,11 @@ export class LocalDockerRuntime implements ContainerRuntime {
     return null;
   }
 
+  private _gatewayProxyName = "al-gateway-proxy";
+
   async startGatewayProxy(gatewayPort: number): Promise<void> {
-    const proxyName = "al-gateway-proxy";
+    const proxyName = `al-gateway-proxy-${gatewayPort}`;
+    this._gatewayProxyName = proxyName;
 
     // Check if proxy is already running
     try {
@@ -438,7 +441,7 @@ export class LocalDockerRuntime implements ContainerRuntime {
   }
 
   async stopGatewayProxy(): Promise<void> {
-    const proxyName = "al-gateway-proxy";
+    const proxyName = this._gatewayProxyName;
     try {
       docker("rm", "-f", proxyName);
     } catch {
