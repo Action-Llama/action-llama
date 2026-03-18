@@ -23,11 +23,15 @@ credential = "SentryProd"     # credential instance name (sentry_client_secret:S
 [webhooks.my-linear]
 type = "linear"
 credential = "LinearMain"     # credential instance name (linear_webhook_secret:LinearMain)
+
+[webhooks.my-mintlify]
+type = "mintlify"
+credential = "MintlifyMain"   # credential instance name (mintlify_webhook_secret:MintlifyMain)
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `type` | string | Yes | Provider type: `"github"`, `"sentry"`, or `"linear"` |
+| `type` | string | Yes | Provider type: `"github"`, `"sentry"`, `"linear"`, or `"mintlify"` |
 | `credential` | string | No | Credential instance name for HMAC signature validation. Omit for unsigned webhooks. |
 
 ## Agent Webhook Triggers
@@ -158,6 +162,47 @@ actions = ["create", "update"]
 organizations = ["your-org-id"]
 labels = ["bug", "ready-for-dev"]
 ```
+
+## Mintlify Webhooks
+
+### Filter Fields (all optional)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `projects` | string[] | Only trigger for these Mintlify projects |
+| `events` | string[] | Mintlify event types (build, etc.) |
+| `actions` | string[] | Event actions (failed, succeeded, etc.) |
+| `branches` | string[] | Only for these branches |
+
+### Setup
+
+1. In Mintlify, go to your project settings
+2. Navigate to **Webhooks** or **Integrations** 
+3. Add a webhook with URL: `https://your-server:8080/webhooks/mintlify`
+4. Set the secret to match the `mintlify_webhook_secret` credential instance referenced by the webhook source in `config.toml`
+5. Select build events you want to receive (build failures, successes, etc.)
+
+### Example Configuration
+
+```toml
+# In config.toml
+[webhooks.mintlify-docs]
+type = "mintlify"
+credential = "docs-project"
+
+# In agent-config.toml  
+[[webhooks]]
+source = "mintlify-docs"
+events = ["build"]
+actions = ["failed"]    # Only trigger on build failures
+projects = ["my-docs"]
+```
+
+This webhook will trigger agents when documentation builds fail, allowing them to:
+- Access build logs via the Mintlify API (using `mintlify_token` credential)
+- Diagnose build issues
+- Fix documentation problems  
+- Trigger rebuilds
 
 ## Hybrid Agents
 

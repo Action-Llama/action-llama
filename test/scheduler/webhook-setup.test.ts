@@ -6,6 +6,7 @@ const webhookSources: Record<string, WebhookSourceConfig> = {
   "my-github": { type: "github", credential: "default" },
   "my-sentry": { type: "sentry", credential: "default" },
   "my-linear": { type: "linear", credential: "default" },
+  "my-mintlify": { type: "mintlify", credential: "default" },
 };
 
 describe("resolveWebhookSource", () => {
@@ -63,10 +64,27 @@ describe("buildFilterFromTrigger", () => {
     expect(filter).toEqual({ events: ["Issue"], organizations: ["acme"] });
   });
 
+  it("builds Mintlify filter with events and projects", () => {
+    const filter = buildFilterFromTrigger(
+      { source: "my-mintlify", events: ["build"], repos: ["my-docs"] },
+      "mintlify"
+    );
+    expect(filter).toEqual({ events: ["build"], projects: ["my-docs"] });
+  });
+
+  it("builds Mintlify filter with actions and branches", () => {
+    const filter = buildFilterFromTrigger(
+      { source: "my-mintlify", actions: ["failed"], branches: ["main"] },
+      "mintlify"
+    );
+    expect(filter).toEqual({ actions: ["failed"], branches: ["main"] });
+  });
+
   it("returns undefined when no filter fields set", () => {
     expect(buildFilterFromTrigger({ source: "my-github" }, "github")).toBeUndefined();
     expect(buildFilterFromTrigger({ source: "my-sentry" }, "sentry")).toBeUndefined();
     expect(buildFilterFromTrigger({ source: "my-linear" }, "linear")).toBeUndefined();
+    expect(buildFilterFromTrigger({ source: "my-mintlify" }, "mintlify")).toBeUndefined();
   });
 
   it("returns undefined for unknown provider type", () => {
@@ -112,6 +130,15 @@ describe("validateTriggerFields", () => {
     const errors = validateTriggerFields(
       { source: "my-sentry", resources: ["issue"] },
       "sentry",
+      "agent1"
+    );
+    expect(errors).toEqual([]);
+  });
+
+  it("returns no errors for valid mintlify fields", () => {
+    const errors = validateTriggerFields(
+      { source: "my-mintlify", events: ["build"], actions: ["failed"], repos: ["my-docs"], branches: ["main"] },
+      "mintlify",
       "agent1"
     );
     expect(errors).toEqual([]);
