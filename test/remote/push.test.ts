@@ -29,7 +29,7 @@ describe("buildSystemdUnit", () => {
     expect(unit).toContain("[Install]");
     expect(unit).toContain("Description=Action Llama scheduler (my-project)");
     expect(unit).toContain("WorkingDirectory=/opt/action-llama/project");
-    expect(unit).toContain("al start --headless --expose -w");
+    expect(unit).toContain("node_modules/.bin/al start --headless --expose -w");
     expect(unit).toContain("Requires=docker.service");
   });
 
@@ -38,28 +38,25 @@ describe("buildSystemdUnit", () => {
     expect(unit).toContain("WorkingDirectory=/srv/al/project");
   });
 
-  it("uses absolute al path and adds PATH when binPaths provided", () => {
+  it("uses project-local al binary and adds node to PATH", () => {
     const unit = buildSystemdUnit("proj", "/opt/al", {
-      alPath: "/usr/local/bin/al",
       nodePath: "/usr/local/bin/node",
     });
-    expect(unit).toContain("ExecStart=/usr/local/bin/al start --headless --expose -w");
+    expect(unit).toContain("ExecStart=/opt/al/project/node_modules/.bin/al start --headless --expose -w");
     expect(unit).toContain("Environment=PATH=/usr/local/bin:");
   });
 
-  it("includes both node and al dirs in PATH when they differ", () => {
+  it("includes nvm node dir in PATH", () => {
     const unit = buildSystemdUnit("proj", "/opt/al", {
-      alPath: "/usr/local/bin/al",
       nodePath: "/home/user/.nvm/versions/node/v22/bin/node",
     });
-    expect(unit).toContain("ExecStart=/usr/local/bin/al start --headless --expose -w");
+    expect(unit).toContain("ExecStart=/opt/al/project/node_modules/.bin/al start --headless --expose -w");
     expect(unit).toContain("/home/user/.nvm/versions/node/v22/bin");
-    expect(unit).toContain("/usr/local/bin");
   });
 
-  it("falls back to bare al when no binPaths", () => {
+  it("uses project-local al path even without binPaths", () => {
     const unit = buildSystemdUnit("proj", "/opt/al");
-    expect(unit).toContain("ExecStart=al start --headless --expose -w");
+    expect(unit).toContain("ExecStart=/opt/al/project/node_modules/.bin/al start --headless --expose -w");
     expect(unit).not.toContain("Environment=PATH=");
   });
 });
@@ -72,7 +69,7 @@ describe("pushToServer", () => {
     mockSshOptionsFromConfig.mockReturnValue(sshOpts);
     mockSshExec.mockResolvedValue("");
     mockRsyncTo.mockResolvedValue(undefined);
-    mockBootstrapServer.mockResolvedValue({ alPath: "/usr/local/bin/al", nodePath: "/usr/local/bin/node" });
+    mockBootstrapServer.mockResolvedValue({ nodePath: "/usr/local/bin/node" });
     // Mock sshSpawn to return a fake journal-tailing process
     mockSshSpawn.mockReturnValue({
       stdout: { on: vi.fn() },

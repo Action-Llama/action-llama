@@ -29,11 +29,11 @@ export function buildSystemdUnit(
   basePath: string,
   binPaths?: BootstrapResult,
 ): string {
-  const alExec = binPaths?.alPath ?? "al";
-  // Collect unique directories containing node and al so systemd can find them
+  // al is installed as a project dependency — use the local binary
+  const alExec = `${basePath}/project/node_modules/.bin/al`;
+  // Ensure node is on PATH so the al binary can find it
   const extraDirs = new Set<string>();
   if (binPaths?.nodePath) extraDirs.add(dirname(binPaths.nodePath));
-  if (binPaths?.alPath) extraDirs.add(dirname(binPaths.alPath));
   const pathEnv = extraDirs.size > 0
     ? `\nEnvironment=PATH=${[...extraDirs].join(":")}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`
     : "";
