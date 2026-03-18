@@ -401,19 +401,20 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
         type: providerType,
         filter,
         trigger: (context: WebhookContext) => {
-          if (ctx.statusTracker && !ctx.statusTracker.isAgentEnabled(agentConfig.name)) return;
+          if (ctx.statusTracker && !ctx.statusTracker.isAgentEnabled(agentConfig.name)) return false;
           const runner = pool.getAvailableRunner();
           if (!runner) {
             const { dropped } = ctx.schedulerCtx.workQueue.enqueue(agentConfig.name, { type: 'webhook', context });
             ctx.logger.info({ agent: agentConfig.name, event: context.event }, "webhook queued");
             if (dropped) ctx.logger.warn({ agent: agentConfig.name }, "queue full, oldest event dropped");
-            return;
+            return true;
           }
           ctx.logger.info({ agent: agentConfig.name, event: context.event }, "webhook triggering agent");
           const prompt = makeWebhookPrompt(agentConfig, context, ctx.schedulerCtx);
           executeRun(runner, prompt, { type: 'webhook', source: context.event }, agentConfig.name, 0, ctx.schedulerCtx)
             .then(() => drainQueues(ctx.schedulerCtx))
             .catch((err) => ctx.logger.error({ err, agent: agentConfig.name }, "webhook run failed"));
+          return true;
         },
       });
     }

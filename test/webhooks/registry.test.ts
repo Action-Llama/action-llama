@@ -72,7 +72,7 @@ describe("WebhookRegistry", () => {
 
   it("dispatches to matching binding by type and source", () => {
     registry.registerProvider(makeProvider());
-    const trigger = vi.fn();
+    const trigger = vi.fn().mockReturnValue(true);
     registry.addBinding({
       agentName: "dev",
       type: "github",
@@ -91,8 +91,8 @@ describe("WebhookRegistry", () => {
 
   it("dispatches to multiple matching bindings", () => {
     registry.registerProvider(makeProvider());
-    const trigger1 = vi.fn();
-    const trigger2 = vi.fn();
+    const trigger1 = vi.fn().mockReturnValue(true);
+    const trigger2 = vi.fn().mockReturnValue(true);
     registry.addBinding({
       agentName: "dev",
       type: "github",
@@ -129,7 +129,7 @@ describe("WebhookRegistry", () => {
 
   it("matches binding with no source (triggers on any org)", () => {
     registry.registerProvider(makeProvider());
-    const trigger = vi.fn();
+    const trigger = vi.fn().mockReturnValue(true);
     registry.addBinding({
       agentName: "dev",
       type: "github",
@@ -160,7 +160,7 @@ describe("WebhookRegistry", () => {
 
   it("matches binding with no filter (triggers on everything)", () => {
     registry.registerProvider(makeProvider());
-    const trigger = vi.fn();
+    const trigger = vi.fn().mockReturnValue(true);
     registry.addBinding({
       agentName: "dev",
       type: "github",
@@ -185,6 +185,23 @@ describe("WebhookRegistry", () => {
     const result = registry.dispatch("github", {}, '{}');
     expect(result.matched).toBe(0);
     expect(trigger).not.toHaveBeenCalled();
+  });
+
+  it("counts trigger returning false as skipped (agent disabled)", () => {
+    registry.registerProvider(makeProvider());
+    const trigger = vi.fn().mockReturnValue(false);
+    registry.addBinding({
+      agentName: "dev",
+      type: "github",
+      source: "MyOrg",
+      trigger,
+    });
+
+    const result = registry.dispatch("github", {}, '{}');
+    expect(result.ok).toBe(true);
+    expect(result.matched).toBe(0);
+    expect(result.skipped).toBe(1);
+    expect(trigger).toHaveBeenCalledTimes(1);
   });
 
   it("counts trigger errors as skipped", () => {

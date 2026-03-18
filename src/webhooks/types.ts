@@ -82,7 +82,7 @@ export interface WebhookBinding {
   type: string;       // provider type: "github", "sentry"
   source?: string;    // credential instance name (optional — omit to match any source)
   filter?: WebhookFilter;
-  trigger: (context: WebhookContext) => void;
+  trigger: (context: WebhookContext) => boolean;
 }
 
 // --- Dispatch result ---

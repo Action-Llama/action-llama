@@ -354,14 +354,14 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
           type: providerType,
           filter,
           trigger: (context: WebhookContext) => {
-            if (statusTracker && !statusTracker.isAgentEnabled(agentConfig.name)) return;
+            if (statusTracker && !statusTracker.isAgentEnabled(agentConfig.name)) return false;
 
             const runner = pool.getAvailableRunner();
             if (!runner) {
               const { dropped } = schedulerCtx.workQueue.enqueue(agentConfig.name, { type: 'webhook', context });
               logger.info({ agent: agentConfig.name, event: context.event, queueSize: schedulerCtx.workQueue.size(agentConfig.name) }, "webhook queued");
               if (dropped) logger.warn({ agent: agentConfig.name }, "queue full, oldest event dropped");
-              return;
+              return true;
             }
 
             logger.info({ agent: agentConfig.name, event: context.event, action: context.action }, "webhook triggering agent");
@@ -369,6 +369,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
             executeRun(runner, prompt, { type: 'webhook', source: context.event }, agentConfig.name, 0, schedulerCtx)
               .then(() => drainQueues(schedulerCtx))
               .catch((err) => logger.error({ err, agent: agentConfig.name }, "webhook run failed"));
+            return true;
           },
         });
       }

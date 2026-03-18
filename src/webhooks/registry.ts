@@ -112,12 +112,20 @@ export class WebhookRegistry {
 
       if (matches) {
         try {
-          binding.trigger(context);
-          matched++;
-          this.logger.info(
-            { agent: binding.agentName, event: context.event, action: context.action },
-            "webhook triggered agent"
-          );
+          const accepted = binding.trigger(context);
+          if (accepted) {
+            matched++;
+            this.logger.info(
+              { agent: binding.agentName, event: context.event, action: context.action },
+              "webhook triggered agent"
+            );
+          } else {
+            skipped++;
+            this.logger.info(
+              { agent: binding.agentName, event: context.event },
+              "webhook matched but agent skipped (disabled or busy)"
+            );
+          }
         } catch (err: any) {
           skipped++;
           this.logger.error(
