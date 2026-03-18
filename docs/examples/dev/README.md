@@ -6,15 +6,29 @@ A developer agent that picks up GitHub issues and implements the requested chang
 
 1. Copy `agent-config.toml` and `ACTIONS.md` into `agents/dev/` in your project
 2. Edit `agent-config.toml`:
-   - Set `assignee` to your GitHub username
-   - Optionally set `repos` for scheduled mode (without webhooks)
+   - Set `orgs` to your GitHub organization
+   - Set `author` to the GitHub username whose issues should be picked up
+   - Set `triggerLabel` to the label that marks issues as ready for development
 3. Run `al doctor` to verify credentials
 
 ## Trigger modes
 
-**Webhook (recommended):** Fires when an issue is labeled with `agent`. Requires a GitHub webhook configured in `config.toml` — see [Webhooks docs](../../docs/webhooks.md).
+**Webhook (recommended):** Fires when an issue is labeled with `ready-for-dev` (configurable via `triggerLabel`). Requires a GitHub webhook configured in `config.toml` — see [Webhooks docs](../../docs/webhooks.md).
 
-**Scheduled:** Set a `schedule` field in `agent-config.toml` (e.g., `schedule = "*/5 * * * *"`) and configure `repos` in `[params]`. The agent polls for matching issues.
+**Scheduled:** Runs on a cron schedule (default: hourly). Searches for open issues matching the configured `org`, `author`, and `triggerLabel`.
+
+## How it works
+
+Each run, the agent:
+
+1. Finds an issue to work on (from webhook trigger or scheduled search)
+2. Acquires a resource lock to prevent duplicate work
+3. Clones the repo and creates a branch (`agent/<issue-number>`)
+4. Reads the issue and any planner comments for context
+5. Implements the changes, following project conventions
+6. Runs all available checks (lint, type check, tests, build) and fixes failures
+7. Commits, pushes, and opens a PR
+8. Labels the issue as `agent-completed`
 
 ## Custom Dockerfile
 

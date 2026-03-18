@@ -1,12 +1,12 @@
 credentials = ["github_token", "git_ssh"]
 schedule = "0 * * * *"
-scale = 4
-timeout = 1800
+timeout = 600
+scale = 1
 
 [model]
 provider = "anthropic"
-model = "claude-sonnet-4-20250514"
-thinkingLevel = "medium"
+model = "claude-opus-4-20250514"
+thinkingLevel = "xhigh"
 authType = "api_key"
 
 [[webhooks]]
@@ -14,11 +14,18 @@ source = "github"
 orgs = ["your-org"]
 events = ["issues"]
 actions = ["labeled"]
-labels = ["ready-for-dev"]
+labels = ["plan"]
+author = "your-github-username"
+
+[[webhooks]]
+source = "github"
+orgs = ["your-org"]
+events = ["issue_comment"]
+actions = ["created"]
+labels = ["plan"]
 author = "your-github-username"
 
 [params]
-# Organization to monitor during scheduled runs (webhook runs use repo from trigger)
 org = "your-org"
-triggerLabel = "ready-for-dev"
+triggerLabel = "plan"
 author = "your-github-username"

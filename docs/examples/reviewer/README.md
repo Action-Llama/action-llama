@@ -1,22 +1,39 @@
 # Reviewer Agent
 
-A code review agent that reviews open pull requests, approves good ones, requests changes on problematic ones, and auto-merges approved PRs with passing CI.
+A code review agent that automatically reviews open pull requests, runs checks, fixes failures, and merges approved PRs.
 
 ## Setup
 
 1. Copy `agent-config.toml` and `ACTIONS.md` into `agents/reviewer/` in your project
 2. Edit `agent-config.toml`:
-   - Set `repos` to the repositories you want reviewed
-   - Adjust `schedule` as needed (default: every 5 minutes)
+   - Set `orgs` to your GitHub organization
+   - Set `author` in `[params]` to filter PRs by author (optional)
 3. Run `al doctor` to verify credentials
+
+## Trigger modes
+
+**Webhook (recommended):** Fires on PR events (`opened`, `synchronize`, `ready_for_review`) and when check suites complete. Requires a GitHub webhook configured in `config.toml` — see [Webhooks docs](../../docs/webhooks.md).
+
+**Scheduled:** Runs on a cron schedule (default: hourly). Searches for open PRs across the configured organization.
 
 ## How it works
 
-Each run, the agent:
+Each run, the agent works on one PR:
 
-1. Lists all open PRs across configured repos
-2. Reads the diff for each PR
-3. Evaluates correctness, style, tests, security, and performance
-4. Submits a review: approve + merge, request changes, or comment (if CI is failing)
+1. Finds a PR to review (from webhook trigger or scheduled search)
+2. Acquires a resource lock to prevent duplicate reviews
+3. Clones the repo and checks out the PR branch
+4. Reviews code for security issues and quality
+5. Runs tests, lint, and build — fixes failures (up to 3 rounds)
+6. Squash-merges if all checks pass, or comments with issues found
 
-The agent reviews **all** open PRs in a single run and never approves a PR with failing CI.
+## Custom Dockerfile
+
+The reviewer agent uses the `gh` CLI, which isn't in the base image. Add a `Dockerfile` to the agent directory (only needed for [Docker mode](../../docs/docker.md)):
+
+```dockerfile
+FROM al-agent:latest
+USER root
+RUN apk add --no-cache github-cli
+USER node
+```

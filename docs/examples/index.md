@@ -10,6 +10,6 @@ Ready-to-use agent configurations. Each directory contains everything you need t
 
 | Agent | Description | Trigger |
 |-------|-------------|---------|
+| [planner](planner/) | Triages new GitHub issues — asks clarifying questions or writes detailed implementation plans for the dev agent | Webhook (issue labeled/commented) or scheduled |
 | [dev](dev/) | Picks up GitHub issues and implements the requested changes — clones, branches, codes, tests, and opens a PR | Webhook (issue labeled) or scheduled |
-| [reviewer](reviewer/) | Reviews open pull requests, approves good ones, and requests changes on problematic ones | Scheduled |
-| [devops](devops/) | Monitors CI/CD failures and Sentry errors, then files deduplicated GitHub issues | Scheduled |
+| [reviewer](reviewer/) | Reviews open pull requests, runs checks, fixes failures, and auto-merges approved PRs | Webhook (PR events, check suite) or scheduled |

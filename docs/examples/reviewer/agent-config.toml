@@ -1,11 +1,21 @@
 credentials = ["github_token", "git_ssh"]
-schedule = "*/5 * * * *"
+schedule = "0 * * * *"
+scale = 4
+timeout = 1800
+
+[[webhooks]]
+source = "github"
+orgs = ["your-org"]
+events = ["pull_request"]
+actions = ["opened", "synchronize", "ready_for_review"]
+
+[[webhooks]]
+source = "github"
+orgs = ["your-org"]
+events = ["check_suite"]
+actions = ["completed"]
 
 [params]
-repos = ["acme/app"]
-
-[model]
-provider = "anthropic"
-model = "claude-sonnet-4-20250514"
-thinkingLevel = "medium"
-authType = "api_key"
+# Organization to monitor during scheduled runs (webhook runs use repo from trigger)
+org = "your-org"
+author = "your-github-username"
