@@ -6,6 +6,7 @@ vi.stubGlobal("fetch", mockFetch);
 
 import {
   verifyToken,
+  listAllZones,
   listZones,
   findDnsRecord,
   createDnsRecord,
@@ -13,6 +14,7 @@ import {
   deleteDnsRecord,
   upsertDnsRecord,
   createOriginCertificate,
+  getSslMode,
   setSslMode,
   CloudflareApiError,
 } from "../../../src/cloud/vps/cloudflare-api.js";
@@ -59,6 +61,63 @@ describe("Cloudflare API client", () => {
     mockFetch.mockResolvedValueOnce(mockResponse({ status: "disabled" }));
     const active = await verifyToken(TOKEN);
     expect(active).toBe(false);
+  });
+
+  it("verifyToken falls back to /zones for account API tokens", async () => {
+    // /user/tokens/verify fails for account tokens
+    mockFetch.mockResolvedValueOnce(mockErrorResponse(403, "Forbidden"));
+    // Fallback /zones?per_page=1 succeeds
+    mockFetch.mockResolvedValueOnce(mockResponse([{ id: "zone-1", name: "example.com", status: "active" }]));
+
+    const active = await verifyToken(TOKEN);
+    expect(active).toBe(true);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      2,
+      "https://api.cloudflare.com/client/v4/zones?per_page=1",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: `Bearer ${TOKEN}` }),
+      }),
+    );
+  });
+
+  it("verifyToken returns false when both verify and zones fail", async () => {
+    mockFetch.mockResolvedValueOnce(mockErrorResponse(403, "Forbidden"));
+    mockFetch.mockResolvedValueOnce(mockErrorResponse(403, "Forbidden"));
+
+    const active = await verifyToken(TOKEN);
+    expect(active).toBe(false);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("listAllZones returns all zones across pages", async () => {
+    const page1 = Array.from({ length: 50 }, (_, i) => ({ id: `z-${i}`, name: `d${i}.com`, status: "active" }));
+    const page2 = [{ id: "z-50", name: "d50.com", status: "active" }];
+    mockFetch.mockResolvedValueOnce(mockResponse(page1));
+    mockFetch.mockResolvedValueOnce(mockResponse(page2));
+
+    const result = await listAllZones(TOKEN);
+    expect(result).toHaveLength(51);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      1,
+      "https://api.cloudflare.com/client/v4/zones?per_page=50&page=1",
+      expect.anything(),
+    );
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      2,
+      "https://api.cloudflare.com/client/v4/zones?per_page=50&page=2",
+      expect.anything(),
+    );
+  });
+
+  it("listAllZones returns single page when fewer than 50 zones", async () => {
+    const zones = [{ id: "z-1", name: "example.com", status: "active" }];
+    mockFetch.mockResolvedValueOnce(mockResponse(zones));
+
+    const result = await listAllZones(TOKEN);
+    expect(result).toHaveLength(1);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
   it("listZones returns zones for a domain", async () => {
@@ -170,6 +229,19 @@ describe("Cloudflare API client", () => {
     );
   });
 
+  it("getSslMode returns current SSL mode", async () => {
+    mockFetch.mockResolvedValueOnce(mockResponse({ value: "strict" }));
+
+    const mode = await getSslMode(TOKEN, "zone-1");
+    expect(mode).toBe("strict");
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://api.cloudflare.com/client/v4/zones/zone-1/settings/ssl",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: `Bearer ${TOKEN}` }),
+      }),
+    );
+  });
+
   it("setSslMode sends PATCH request", async () => {
     mockFetch.mockResolvedValueOnce(mockResponse({}));
 
@@ -186,6 +258,6 @@ describe("Cloudflare API client", () => {
   it("throws CloudflareApiError on HTTP error", async () => {
     mockFetch.mockResolvedValueOnce(mockErrorResponse(403, "Forbidden"));
 
-    await expect(verifyToken("bad-token")).rejects.toThrow(CloudflareApiError);
+    await expect(listZones("bad-token", "example.com")).rejects.toThrow(CloudflareApiError);
   });
 });

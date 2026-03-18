@@ -116,40 +116,43 @@ async function promptCloudflareHttps(): Promise<CloudflareConfig | null> {
     console.log("Cloudflare API token saved.");
   }
 
-  const { listZones } = await import("./cloudflare-api.js");
+  const { listAllZones } = await import("./cloudflare-api.js");
 
-  // Collect zone name
-  const zoneName = await input({
-    message: "Cloudflare zone (domain, e.g. example.com):",
-    validate: (v: string) => v.trim() ? true : "Zone name is required",
-  });
-
-  // Validate zone
-  let zoneId: string;
+  // Fetch available zones
+  let zones: Array<{ id: string; name: string; status: string }>;
   try {
-    const zones = await listZones(apiToken, zoneName.trim());
+    zones = await listAllZones(apiToken);
     if (zones.length === 0) {
-      console.error(`No Cloudflare zone found for "${zoneName}". Check your domain and API token permissions.`);
+      console.error("No Cloudflare zones found. Check your API token permissions.");
       return null;
     }
-    zoneId = zones[0].id;
-    console.log(`Zone "${zoneName}" found (${zoneId}).`);
   } catch (err: any) {
     console.error(`Failed to list Cloudflare zones: ${err.message}`);
     return null;
   }
 
-  // Collect hostname
-  const hostname = await input({
-    message: `Hostname (e.g. agents.${zoneName.trim()}):`,
+  // Pick a zone
+  const zoneChoice = await searchWithEsc({
+    message: "Select Cloudflare zone:",
+    choices: zones.map((z) => ({ name: `${z.name} (${z.status})`, value: { id: z.id, name: z.name } })),
+  });
+  if (!zoneChoice) return null;
+  const { id: zoneId, name: zoneName } = zoneChoice;
+  console.log(`Zone "${zoneName}" selected (${zoneId}).`);
+
+  // Collect subdomain
+  const subdomain = await input({
+    message: `Subdomain for ${zoneName} (e.g. agents):`,
     validate: (v: string) => {
-      if (!v.trim()) return "Hostname is required";
-      if (!v.trim().endsWith(zoneName.trim())) return `Hostname must be under ${zoneName.trim()}`;
+      if (!v.trim()) return "Subdomain is required";
+      if (v.trim().includes(" ")) return "Subdomain must not contain spaces";
+      if (v.trim().endsWith(`.${zoneName}`) || v.trim() === zoneName) return "Enter only the subdomain part, not the full domain";
       return true;
     },
   });
+  const hostname = `${subdomain.trim()}.${zoneName}`;
 
-  return { apiToken, zoneId, zoneName: zoneName.trim(), hostname: hostname.trim() };
+  return { apiToken, zoneId, zoneName, hostname };
 }
 
 async function setupExistingServer(): Promise<Record<string, unknown> | null> {
@@ -557,6 +560,19 @@ async function provisionVultr(onInstanceCreated?: OnInstanceCreated, cfConfig?: 
         cert = originCert.certificate;
         key = originCert.private_key;
         console.log("Origin CA certificate generated.");
+
+        // Persist cert + key locally so they survive VPS rebuilds
+        const existingCert = await backend.read("cloudflare_origin_cert", cfConfig.hostname, "certificate");
+        const saveCert = existingCert
+          ? await confirm({ message: "Overwrite existing Origin CA certificate?", default: false })
+          : true;
+        if (saveCert) {
+          await writeCredentialFields("cloudflare_origin_cert", cfConfig.hostname, {
+            certificate: cert,
+            private_key: key,
+          });
+          console.log(`Origin CA cert saved to credentials (cloudflare_origin_cert/${cfConfig.hostname}).`);
+        }
       } catch (err: any) {
         console.error(`Warning: Origin CA certificate creation failed: ${err.message}`);
         console.error("You can generate one manually at https://dash.cloudflare.com → SSL/TLS → Origin Server.");

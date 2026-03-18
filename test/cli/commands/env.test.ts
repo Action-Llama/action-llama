@@ -27,6 +27,13 @@ vi.mock("../../../src/cloud/vps/ssh.js", () => ({
   sshExec: (...args: any[]) => mockSshExec(...args),
 }));
 
+// Mock FilesystemBackend for credential-dependent checks
+vi.mock("../../../src/shared/filesystem-backend.js", () => ({
+  FilesystemBackend: class {
+    read = () => Promise.resolve(undefined);
+  },
+}));
+
 import { set, prov, deprov } from "../../../src/cli/commands/env.js";
 
 describe("env set", () => {
@@ -131,18 +138,17 @@ describe("env prov", () => {
     });
 
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     await prov(testEnvName);
 
-    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("Installing Node.js"));
+    // verifyEnvironment in fix mode installs Node.js and reports "fixed"
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("fixed"));
     expect(mockSshExec).toHaveBeenCalledWith(
       expect.objectContaining({ host: "1.2.3.4" }),
       expect.stringContaining("nodesource"),
       120_000,
     );
     logSpy.mockRestore();
-    errSpy.mockRestore();
     mockTestConnection.mockReset();
     mockSshExec.mockReset();
   });

@@ -231,6 +231,15 @@ envCmd
   }));
 
 envCmd
+  .command("check")
+  .description("Verify environment is provisioned correctly")
+  .argument("<name>", "environment name")
+  .action(withCommand(async (name: string) => {
+    const { check } = await import("./commands/env.js");
+    await check(name);
+  }));
+
+envCmd
   .command("prov")
   .description("Provision a new VPS and save as an environment")
   .argument("[name]", "environment name (prompted if omitted)")

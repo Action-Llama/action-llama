@@ -13,6 +13,7 @@ import {
 import { ConfigError } from "../../shared/errors.js";
 import { VPS_CONSTANTS } from "../../cloud/vps/constants.js";
 import type { ServerConfig } from "../../shared/server.js";
+import type { CheckResult } from "../../cloud/vps/verify.js";
 
 const VALID_TYPES = ["server"] as const;
 type EnvType = typeof VALID_TYPES[number];
@@ -98,52 +99,30 @@ export async function set(name: string | undefined, opts: { project: string }): 
   }
 }
 
+function renderResults(results: CheckResult[]): void {
+  for (const r of results) {
+    const icon =
+      r.status === "pass" ? "\u2713" :
+      r.status === "fixed" ? "\u2713 fixed" :
+      r.status === "fail" ? "\u2717" :
+      r.status === "warn" ? "!" :
+      "-";
+    const detail = r.detail ? ` (${r.detail})` : "";
+    console.log(`  ${icon} ${r.name}${detail}`);
+  }
+}
+
 async function verifyServerReady(server: ServerConfig): Promise<void> {
-  const { testConnection, sshExec } = await import("../../cloud/vps/ssh.js");
-  const sshConfig = {
-    host: server.host,
-    user: server.user ?? VPS_CONSTANTS.DEFAULT_SSH_USER,
-    port: server.port ?? VPS_CONSTANTS.DEFAULT_SSH_PORT,
-    keyPath: server.keyPath ?? VPS_CONSTANTS.DEFAULT_SSH_KEY_PATH,
-  };
+  const { verifyEnvironment } = await import("../../cloud/vps/verify.js");
+  const results = await verifyEnvironment({ server, mode: "fix" });
+  renderResults(results);
 
-  console.log("\nChecking SSH...");
-  const connected = await testConnection(sshConfig);
-  if (!connected) {
-    console.error("SSH connection failed. Check host, credentials, and firewall rules.");
-    return;
-  }
-  console.log("  SSH OK");
-
-  console.log("Checking Node.js...");
-  const nodeResult = await sshExec(sshConfig, "node --version");
-  if (nodeResult.exitCode === 0) {
-    console.log(`  Node.js ${nodeResult.stdout.trim()}`);
+  const issues = results.filter((r) => r.status === "fail");
+  if (issues.length > 0) {
+    console.log(`\n${issues.length} issue(s) could not be auto-fixed.`);
   } else {
-    console.error("  Node.js not found. Installing Node.js 22.x...");
-    const installResult = await sshExec(
-      sshConfig,
-      "curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs",
-      120_000,
-    );
-    if (installResult.exitCode === 0) {
-      const ver = await sshExec(sshConfig, "node --version");
-      console.log(`  Node.js ${ver.stdout.trim()} installed.`);
-    } else {
-      console.error("  Failed to install Node.js. Install Node.js >= 20 manually.");
-    }
+    console.log("\nAll checks passed.");
   }
-
-  console.log("Checking Docker...");
-  const dockerResult = await sshExec(sshConfig, "docker info --format '{{.ServerVersion}}'");
-  if (dockerResult.exitCode === 0) {
-    console.log(`  Docker ${dockerResult.stdout.trim()}`);
-  } else {
-    console.error("  Docker not found. Install Docker before running al push.");
-    console.error(`  ssh ${sshConfig.user}@${sshConfig.host} 'curl -fsSL https://get.docker.com | sh'`);
-  }
-
-  console.log("\nServer readiness check complete.");
 }
 
 export async function prov(name: string | undefined): Promise<void> {
@@ -213,6 +192,35 @@ export async function prov(name: string | undefined): Promise<void> {
 
   writeEnvironmentConfig(name, config);
   console.log(`Environment "${name}" created at ${environmentPath(name)}`);
+}
+
+export async function check(name: string): Promise<void> {
+  if (!environmentExists(name)) {
+    throw new ConfigError(
+      `Environment "${name}" not found. Run 'al env list' to see available environments.`
+    );
+  }
+
+  const config = loadEnvironmentConfig(name);
+  if (!config.server) {
+    throw new ConfigError(`Environment "${name}" has no [server] config — nothing to check.`);
+  }
+
+  if (config.server.host === "REPLACE_ME") {
+    throw new ConfigError(`Environment "${name}" has a placeholder host. Run 'al env prov ${name}' to provision it.`);
+  }
+
+  console.log(`Checking environment "${name}"...`);
+  const { verifyEnvironment } = await import("../../cloud/vps/verify.js");
+  const results = await verifyEnvironment({ server: config.server, mode: "check" });
+  renderResults(results);
+
+  const issues = results.filter((r) => r.status === "fail");
+  if (issues.length > 0) {
+    console.log(`\n${issues.length} issue(s) found. Run 'al env prov ${name}' to fix.`);
+  } else {
+    console.log("\nAll checks passed.");
+  }
 }
 
 export async function deprov(name: string, opts: { project: string }): Promise<void> {

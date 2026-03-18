@@ -3,6 +3,11 @@
  * Plain fetch() wrapper — no SDK dependency.
  */
 
+import { execFileSync } from "child_process";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
+
 const BASE_URL = "https://api.cloudflare.com/client/v4";
 
 // Origin CA uses a separate endpoint
@@ -68,8 +73,33 @@ async function cfFetch(
 }
 
 export async function verifyToken(token: string): Promise<boolean> {
-  const data = await cfFetch(token, "/user/tokens/verify");
-  return data.result?.status === "active";
+  // User API tokens: verified via dedicated endpoint
+  try {
+    const data = await cfFetch(token, "/user/tokens/verify");
+    return data.result?.status === "active";
+  } catch {
+    // Account API tokens don't support /user/tokens/verify — fall back
+  }
+
+  // Account API tokens: verify by attempting a lightweight zones list
+  try {
+    await cfFetch(token, "/zones?per_page=1");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function listAllZones(token: string): Promise<CloudflareZone[]> {
+  const zones: CloudflareZone[] = [];
+  let page = 1;
+  while (true) {
+    const data = await cfFetch(token, `/zones?per_page=50&page=${page}`);
+    zones.push(...data.result);
+    if (data.result.length < 50) break;
+    page++;
+  }
+  return zones;
 }
 
 export async function listZones(token: string, name: string): Promise<CloudflareZone[]> {
@@ -142,14 +172,39 @@ export async function upsertDnsRecord(
 }
 
 /**
+ * Generate an RSA private key and CSR using openssl.
+ * Returns { key, csr } as PEM strings.
+ */
+function generateCsr(hostname: string): { key: string; csr: string } {
+  const tmp = mkdtempSync(join(tmpdir(), "al-csr-"));
+  const keyPath = join(tmp, "key.pem");
+  const csrPath = join(tmp, "csr.pem");
+  try {
+    execFileSync("openssl", [
+      "req", "-new", "-newkey", "rsa:2048", "-nodes",
+      "-keyout", keyPath, "-out", csrPath,
+      "-subj", `/CN=${hostname}`,
+    ], { stdio: "pipe" });
+    return {
+      key: readFileSync(keyPath, "utf-8"),
+      csr: readFileSync(csrPath, "utf-8"),
+    };
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+/**
  * Create a Cloudflare Origin CA certificate.
- * Uses the Origin CA endpoint (same API token).
+ * Generates a CSR locally via openssl, sends it to the Origin CA endpoint,
+ * and returns the signed certificate along with the locally-generated private key.
  */
 export async function createOriginCertificate(
   token: string,
   hostnames: string[],
   validityDays: number = 5475, // 15 years (CF Origin CA max)
 ): Promise<CloudflareOriginCertificate> {
+  const { key, csr } = generateCsr(hostnames[0]);
   const data = await cfFetch(
     token,
     "",
@@ -159,12 +214,20 @@ export async function createOriginCertificate(
         hostnames,
         requested_validity: validityDays,
         request_type: "origin-rsa",
-        csr: "", // Let CF generate the key pair
+        csr,
       }),
     },
     ORIGIN_CA_URL,
   );
-  return data.result;
+  return { ...data.result, private_key: key };
+}
+
+/**
+ * Get the current SSL/TLS mode for a zone.
+ */
+export async function getSslMode(token: string, zoneId: string): Promise<string> {
+  const data = await cfFetch(token, `/zones/${zoneId}/settings/ssl`);
+  return data.result.value;
 }
 
 /**
