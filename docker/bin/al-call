@@ -1,8 +1,14 @@
 #!/bin/sh
-if [ -z "$GATEWAY_URL" ]; then echo '{"ok":false,"reason":"no gateway"}'; exit 1; fi
-if [ -z "$1" ]; then echo '{"ok":false,"reason":"usage: echo ctx | al-call <agent>"}'; exit 1; fi
+# al-call — dispatch a call to another agent
+# Exit codes: 0=dispatched, 1=rejected, 3=auth, 4=bad request, 5=no gateway, 6=unreachable
+. "$(dirname "$0")/_http-exit"
+if [ -z "$GATEWAY_URL" ]; then echo '{"ok":false,"reason":"no gateway"}'; exit 5; fi
+if [ -z "$1" ]; then echo '{"ok":false,"reason":"usage: echo ctx | al-call <agent>"}'; exit 4; fi
 CONTEXT=$(cat)
-curl -s -X POST "$GATEWAY_URL/calls" \
+_raw=$(curl -s -w '\n%{http_code}' -X POST "$GATEWAY_URL/calls" \
   -H 'Content-Type: application/json' \
   -d "$(jq -n --arg s "$SHUTDOWN_SECRET" --arg t "$1" --arg c "$CONTEXT" \
-    '{secret:$s,targetAgent:$t,context:$c}')"
+    '{secret:$s,targetAgent:$t,context:$c}')")
+AL_HTTP_CODE=$(printf '%s' "$_raw" | tail -n1)
+printf '%s' "$_raw" | sed '$d'
+http_exit "$AL_HTTP_CODE"

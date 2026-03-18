@@ -1,5 +1,12 @@
 #!/bin/sh
+# runlock — release a resource lock
+# Exit codes: 0=released, 1=conflict, 2=not found, 3=auth, 4=bad request, 6=unreachable
+. "$(dirname "$0")/_http-exit"
 if [ -z "$GATEWAY_URL" ]; then echo '{"ok":true}'; exit 0; fi
-curl -s -X POST "$GATEWAY_URL/locks/release" \
+if [ -z "$1" ]; then echo '{"ok":false,"error":"usage: runlock <resourceKey>"}'; exit 4; fi
+_raw=$(curl -s -w '\n%{http_code}' -X POST "$GATEWAY_URL/locks/release" \
   -H 'Content-Type: application/json' \
-  -d '{"secret":"'"$SHUTDOWN_SECRET"'","resourceKey":"'"$1"'"}' || echo '{"ok":true,"note":"gateway unreachable, lock will expire"}'
+  -d '{"secret":"'"$SHUTDOWN_SECRET"'","resourceKey":"'"$1"'"}')
+AL_HTTP_CODE=$(printf '%s' "$_raw" | tail -n1)
+printf '%s' "$_raw" | sed '$d'
+http_exit "$AL_HTTP_CODE"

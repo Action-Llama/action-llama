@@ -1,0 +1,17 @@
+#!/bin/sh
+# Shared HTTP status → exit code mapping for gateway-calling commands.
+# Source this file: . "$(dirname "$0")/_http-exit"
+# Then call: http_exit <http_code>
+
+http_exit() {
+  case "$1" in
+    200) exit 0;;
+    409) exit 1;;
+    404) exit 2;;
+    403) exit 3;;
+    400) exit 4;;
+    503) exit 5;;
+    000) exit 6;;
+    *)   exit 7;;
+  esac
+}
