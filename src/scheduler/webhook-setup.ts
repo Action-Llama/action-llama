@@ -12,8 +12,9 @@ import { WebhookRegistry } from "../webhooks/registry.js";
 import { GitHubWebhookProvider } from "../webhooks/providers/github.js";
 import { SentryWebhookProvider } from "../webhooks/providers/sentry.js";
 import { LinearWebhookProvider } from "../webhooks/providers/linear.js";
+import { MintlifyWebhookProvider } from "../webhooks/providers/mintlify.js";
 import { TestWebhookProvider } from "../webhooks/providers/test.js";
-import type { WebhookFilter, WebhookTrigger, GitHubWebhookFilter, SentryWebhookFilter, LinearWebhookFilter } from "../webhooks/types.js";
+import type { WebhookFilter, WebhookTrigger, GitHubWebhookFilter, SentryWebhookFilter, LinearWebhookFilter, MintlifyWebhookFilter } from "../webhooks/types.js";
 import type { TestWebhookFilter } from "../webhooks/providers/test.js";
 
 // Provider type → credential type for loading secrets
@@ -21,6 +22,7 @@ export const PROVIDER_TO_CREDENTIAL: Record<string, string> = {
   github: "github_webhook_secret",
   sentry: "sentry_client_secret",
   linear: "linear_webhook_secret",
+  mintlify: "mintlify_webhook_secret",
 };
 
 export function resolveWebhookSource(
@@ -75,6 +77,14 @@ export function buildFilterFromTrigger(trigger: WebhookTrigger, providerType: st
     if (trigger.repos) f.repos = trigger.repos;
     return Object.keys(f).length > 0 ? f : undefined;
   }
+  if (providerType === "mintlify") {
+    const f: MintlifyWebhookFilter = {};
+    if (trigger.events) f.events = trigger.events;
+    if (trigger.actions) f.actions = trigger.actions;
+    if (trigger.repos) f.projects = trigger.repos; // Map repos to projects for Mintlify
+    if (trigger.branches) f.branches = trigger.branches;
+    return Object.keys(f).length > 0 ? f : undefined;
+  }
   return undefined;
 }
 
@@ -84,6 +94,7 @@ const VALID_TRIGGER_FIELDS: Record<string, Set<string>> = {
   sentry: new Set(["source", "resources"]),
   linear: new Set(["source", "events", "actions", "organizations", "labels", "assignee", "author"]),
   test: new Set(["source", "events", "actions", "repos"]),
+  mintlify: new Set(["source", "events", "actions", "repos", "branches"]),
 };
 
 // Suggest similar valid fields for common typos
@@ -145,6 +156,7 @@ export async function setupWebhookRegistry(
   registry.registerProvider(new GitHubWebhookProvider());
   registry.registerProvider(new SentryWebhookProvider());
   registry.registerProvider(new LinearWebhookProvider());
+  registry.registerProvider(new MintlifyWebhookProvider());
   registry.registerProvider(new TestWebhookProvider());
 
   // Load secrets for each provider type referenced by webhook sources

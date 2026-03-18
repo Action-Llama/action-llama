@@ -49,7 +49,14 @@ export interface LinearWebhookFilter {
   author?: string;
 }
 
-export type WebhookFilter = GitHubWebhookFilter | SentryWebhookFilter | LinearWebhookFilter;
+export interface MintlifyWebhookFilter {
+  projects?: string[];
+  events?: string[];     // build.failed, build.succeeded
+  actions?: string[];    // failed, succeeded  
+  branches?: string[];
+}
+
+export type WebhookFilter = GitHubWebhookFilter | SentryWebhookFilter | LinearWebhookFilter | MintlifyWebhookFilter;
 
 // --- Webhook trigger (used in agent config) ---
 
