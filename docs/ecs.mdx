@@ -52,7 +52,7 @@ Local Docker settings (`[local]`) control resource limits:
 | `local.cpus` | `2` | CPUs per task |
 | `local.timeout` | `900` | Default max execution time in seconds (overridable per-agent) |
 
-Individual agents can override the timeout in their `agent-config.toml` with the `timeout` field. On ECS, agents with effective timeout <= 900s automatically route to Lambda for faster startup. See [Per-agent timeout](#per-agent-timeout-and-lambda-routing).
+Individual agents can override the timeout in their `agent-config.toml` with the `timeout` field. On ECS, agents with effective timeout ≤ 900s automatically route to Lambda for faster startup. See [Per-agent timeout](#per-agent-timeout-and-lambda-routing).
 
 Optional Lambda configuration (for agents that auto-route to Lambda):
 
@@ -219,7 +219,7 @@ The scheduler will:
 
 When using the ECS provider, agents are automatically routed to the most efficient AWS compute service based on their timeout:
 
-- **Timeout <= 900s (15 min):** Routes to **AWS Lambda** — cold starts in ~1-2 seconds, pay-per-100ms pricing
+- **Timeout ≤ 900s (15 min):** Routes to **AWS Lambda** — cold starts in ~1-2 seconds, pay-per-100ms pricing
 - **Timeout > 900s:** Routes to **ECS Fargate** — cold starts in ~30-60 seconds, pay-per-second pricing
 
 This happens automatically. You control it by setting `timeout` in each agent's `agent-config.toml`:
@@ -263,7 +263,7 @@ Both Lambda and ECS Fargate use the same infrastructure:
 
 ### Lambda IAM roles
 
-`al doctor -c` automatically creates Lambda execution roles (`al-{agentName}-lambda-role`) for agents with timeout <= 900s. These roles include:
+`al doctor -c` automatically creates Lambda execution roles (`al-{agentName}-lambda-role`) for agents with timeout ≤ 900s. These roles include:
 
 - `secretsmanager:GetSecretValue` scoped to the agent's declared secrets
 - `logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents` for CloudWatch
@@ -423,7 +423,7 @@ Logs are streamed from CloudWatch Logs by polling. There is a ~5-10 second delay
 
 ## Comparison with local Docker
 
-| Aspect | Local Docker | ECS Fargate | Lambda (auto, <=900s) |
+| Aspect | Local Docker | ECS Fargate | Lambda (auto, ≤900s) |
 |--------|-------------|-------------|----------------------|
 | Where containers run | Your machine | AWS | AWS |
 | Cold start | Instant (image cached) | ~30-60s | ~1-2s |
