@@ -9,6 +9,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
 import { execFileSync } from "child_process";
+import { createServer } from "net";
 import { stringify as stringifyTOML } from "smol-toml";
 import type { GlobalConfig, AgentConfig } from "../../src/shared/config.js";
 import type { WebhookContext } from "../../src/webhooks/types.js";
@@ -49,11 +50,26 @@ export function isDockerAvailable(): boolean {
 }
 
 /**
- * Get a random available port.
+ * Get an available port in the dynamic range.
+ * Uses Node.js built-in port allocation to find an actually available port.
  */
-function getRandomPort(): number {
-  // Use a port in the dynamic range
-  return 30000 + Math.floor(Math.random() * 20000);
+function getAvailablePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.unref();
+    server.on('error', reject);
+    server.listen(0, () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : null;
+      server.close(() => {
+        if (port) {
+          resolve(port);
+        } else {
+          reject(new Error('Failed to get port from server address'));
+        }
+      });
+    });
+  });
 }
 
 export class IntegrationHarness {
@@ -74,7 +90,7 @@ export class IntegrationHarness {
   static async create(opts: HarnessOptions): Promise<IntegrationHarness> {
     const projectPath = mkdtempSync(join(tmpdir(), "al-integration-"));
     const credentialDir = mkdtempSync(join(tmpdir(), "al-creds-"));
-    const gatewayPort = getRandomPort();
+    const gatewayPort = await getAvailablePort();
     const apiKey = "test-api-key-" + Math.random().toString(36).slice(2);
 
     // Set up credential stubs
