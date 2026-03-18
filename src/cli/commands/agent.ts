@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, copyFileSync, readFileSync, writeFileSync } from "fs";
 import { resolve } from "path";
 import { select, input, checkbox, confirm } from "@inquirer/prompts";
-import { stringify as stringifyTOML } from "smol-toml";
+import { parse as parseTOML, stringify as stringifyTOML } from "smol-toml";
 import {
   validateAgentName,
   loadAgentConfig,
@@ -258,6 +258,43 @@ async function editSchedule(config: AgentConfig): Promise<void> {
   }
 }
 
+const WEBHOOK_PROVIDER_TYPES = ["github", "sentry", "linear", "test"] as const;
+
+async function addWebhookSource(projectPath: string): Promise<Record<string, { type: string; credential?: string }>> {
+  const configPath = resolve(projectPath, "config.toml");
+  let existing: Record<string, unknown> = {};
+  if (existsSync(configPath)) {
+    existing = parseTOML(readFileSync(configPath, "utf-8")) as Record<string, unknown>;
+  }
+
+  const sourceName = await input({
+    message: "Webhook source name (e.g. my-github):",
+    validate: (v) => v.trim() ? true : "Name is required",
+  });
+
+  const providerType = await select({
+    message: "Provider type:",
+    choices: WEBHOOK_PROVIDER_TYPES.map((t) => ({ name: t, value: t })),
+  });
+
+  const credential = await input({
+    message: "Credential instance for HMAC validation (empty to skip):",
+    default: "",
+  });
+
+  const sourceConfig: { type: string; credential?: string } = { type: providerType };
+  if (credential.trim()) sourceConfig.credential = credential.trim();
+
+  // Merge into config.toml
+  const webhooks = (existing.webhooks ?? {}) as Record<string, unknown>;
+  webhooks[sourceName] = sourceConfig;
+  existing.webhooks = webhooks;
+  writeFileSync(configPath, stringifyTOML(existing) + "\n");
+  console.log(`Added webhook source "${sourceName}" (${providerType}) to config.toml.`);
+
+  return { ...webhooks, [sourceName]: sourceConfig } as Record<string, { type: string; credential?: string }>;
+}
+
 async function editWebhooks(config: AgentConfig, projectPath: string): Promise<void> {
   let globalConfig;
   try {
@@ -266,10 +303,16 @@ async function editWebhooks(config: AgentConfig, projectPath: string): Promise<v
     globalConfig = {};
   }
 
-  const sources = globalConfig.webhooks;
+  let sources = globalConfig.webhooks;
   if (!sources || Object.keys(sources).length === 0) {
-    console.log("No webhook sources in config.toml — add [webhooks.<name>] first.");
-    return;
+    console.log("No webhook sources configured in config.toml.");
+    const shouldAdd = await confirm({
+      message: "Would you like to add a webhook source now?",
+      default: true,
+    });
+    if (!shouldAdd) return;
+
+    sources = await addWebhookSource(projectPath);
   }
 
   const sourceNames = Object.keys(sources);
@@ -281,6 +324,7 @@ async function editWebhooks(config: AgentConfig, projectPath: string): Promise<v
       message: "Webhooks:",
       choices: [
         { name: "Add trigger", value: "add" },
+        { name: "Add webhook source to config.toml", value: "add-source" },
         { name: "Remove trigger", value: "remove" },
         { name: "Back", value: "back" },
       ],
@@ -288,10 +332,14 @@ async function editWebhooks(config: AgentConfig, projectPath: string): Promise<v
 
     if (action === "back") {
       back = true;
+    } else if (action === "add-source") {
+      sources = await addWebhookSource(projectPath);
+      sourceNames.length = 0;
+      sourceNames.push(...Object.keys(sources));
     } else if (action === "add") {
       const source = await select({
         message: "Webhook source:",
-        choices: sourceNames.map((s) => ({ name: `${s} (${sources[s].type})`, value: s })),
+        choices: sourceNames.map((s) => ({ name: `${s} (${sources![s].type})`, value: s })),
       });
 
       const events = await input({ message: "Events (comma-separated, empty for all):", default: "" });
@@ -335,36 +383,43 @@ async function editParams(config: AgentConfig): Promise<void> {
 
   let back = false;
   while (!back) {
-    const action = await select({
-      message: "Params:",
-      choices: [
-        { name: "Add/edit param", value: "add" },
-        { name: "Remove param", value: "remove" },
-        { name: "Back", value: "back" },
-      ],
-    });
+    const keys = Object.keys(config.params!);
+
+    // Build choices: existing params as selectable items, plus add/back
+    const choices: Array<{ name: string; value: string }> = keys.map((k) => ({
+      name: `${k} = ${config.params![k]}`,
+      value: `edit:${k}`,
+    }));
+    choices.push({ name: "+ Add new param", value: "add" });
+    choices.push({ name: "Back", value: "back" });
+
+    const action = await select({ message: "Params:", choices });
 
     if (action === "back") {
       back = true;
     } else if (action === "add") {
       const key = await input({ message: "Param key:" });
-      const value = await input({
-        message: "Param value:",
-        default: config.params![key] != null ? String(config.params![key]) : "",
-      });
+      const value = await input({ message: "Param value:" });
       config.params![key] = value;
-    } else if (action === "remove") {
-      const keys = Object.keys(config.params!);
-      if (keys.length === 0) {
-        console.log("No params to remove.");
-        continue;
-      }
-      const toRemove = await checkbox({
-        message: "Select params to remove:",
-        choices: keys.map((k) => ({ name: `${k} = ${config.params![k]}`, value: k })),
+    } else if (action.startsWith("edit:")) {
+      const key = action.slice(5);
+      const editAction = await select({
+        message: `${key} = ${config.params![key]}`,
+        choices: [
+          { name: "Edit value", value: "edit" },
+          { name: "Remove", value: "remove" },
+          { name: "Back", value: "back" },
+        ],
       });
-      for (const key of toRemove) {
+      if (editAction === "edit") {
+        const value = await input({
+          message: `New value for "${key}":`,
+          default: String(config.params![key]),
+        });
+        config.params![key] = value;
+      } else if (editAction === "remove") {
         delete (config.params as Record<string, unknown>)[key];
+        console.log(`Removed param "${key}".`);
       }
     }
   }

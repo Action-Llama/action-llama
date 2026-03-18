@@ -9,6 +9,16 @@ import {
   environmentExists,
   environmentPath,
 } from "../../../src/shared/environment.js";
+
+// Mock inquirer prompts
+const mockInput = vi.fn();
+vi.mock("@inquirer/prompts", () => ({
+  select: vi.fn(),
+  input: (...args: any[]) => mockInput(...args),
+  checkbox: vi.fn(),
+  confirm: vi.fn(),
+}));
+
 import { set, prov, deprov } from "../../../src/cli/commands/env.js";
 
 describe("env set", () => {

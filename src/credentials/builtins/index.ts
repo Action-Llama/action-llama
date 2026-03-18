@@ -19,6 +19,7 @@ import netlifyToken from "./netlify-token.js";
 import xTwitterApi from "./x-twitter-api.js";
 import bugsnagToken from "./bugsnag-token.js";
 import vultrApiKey from "./vultr-api-key.js";
+import vpsSsh from "./vps-ssh.js";
 
 export const builtinCredentials: Record<string, CredentialDefinition> = {
   "github_token": githubToken,
@@ -41,4 +42,5 @@ export const builtinCredentials: Record<string, CredentialDefinition> = {
   "x_twitter_api": xTwitterApi,
   "bugsnag_token": bugsnagToken,
   "vultr_api_key": vultrApiKey,
+  "vps_ssh": vpsSsh,
 };

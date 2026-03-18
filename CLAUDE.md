@@ -156,3 +156,4 @@ Environment types (for `al env init <name> --type <type>`): `server`, `ecs`, `cl
 - Cloud is opt-in via `--env <name>` flag or `.env.toml` environment binding; server deploy via `al push --env <name>`
 - `"default"` is a reserved name — cannot be used as an agent name
 - Tests use vitest with `test/` mirroring `src/`
+- **Secret prompts**: When prompting for API keys, tokens, or any secret value, **always** use `password` from `@inquirer/prompts` with `mask: "*"` — never use plaintext `input`. See `src/credentials/prompter.ts` for the canonical pattern.

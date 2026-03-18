@@ -1,4 +1,5 @@
 import { readFileSync, unlinkSync } from "fs";
+import { input } from "@inquirer/prompts";
 import {
   listEnvironments,
   loadEnvironmentConfig,
@@ -96,7 +97,16 @@ export async function set(name: string | undefined, opts: { project: string }): 
   }
 }
 
-export async function prov(name: string): Promise<void> {
+export async function prov(name: string | undefined): Promise<void> {
+  // Prompt for name if not provided
+  if (!name) {
+    name = await input({
+      message: "Environment name:",
+      validate: (v) => v.trim() ? true : "Name is required",
+    });
+    name = name.trim();
+  }
+
   // If env already exists with a real host, skip
   if (environmentExists(name)) {
     const existing = loadEnvironmentConfig(name);
@@ -107,9 +117,29 @@ export async function prov(name: string): Promise<void> {
   }
 
   const { setupVpsCloud } = await import("../../cloud/vps/provision.js");
-  const result = await setupVpsCloud();
+
+  // Write env file as soon as the instance is created so it can be deprovisioned if interrupted
+  const persistResult = (partial: Record<string, unknown>) => {
+    const host = partial.host as string;
+    const config: EnvironmentConfig = {
+      server: {
+        host,
+        user: (partial.sshUser as string) ?? VPS_CONSTANTS.DEFAULT_SSH_USER,
+        port: (partial.sshPort as number) ?? VPS_CONSTANTS.DEFAULT_SSH_PORT,
+        basePath: "/opt/action-llama",
+        provider: (partial.provider as string) ?? "vps",
+        vultrInstanceId: partial.vultrInstanceId as string | undefined,
+        vultrRegion: partial.vultrRegion as string | undefined,
+      },
+      gateway: { url: host !== "PENDING" ? `http://${host}:${VPS_CONSTANTS.DEFAULT_GATEWAY_PORT}` : undefined },
+    };
+    writeEnvironmentConfig(name!, config);
+  };
+
+  const result = await setupVpsCloud(persistResult);
   if (!result) return;
 
+  // Final write with the confirmed host
   const host = result.host as string;
   const config: EnvironmentConfig = {
     server: {

@@ -3,16 +3,55 @@
  * Supports both connecting to an existing server and provisioning a new Vultr VPS.
  */
 
-import { select, input, confirm } from "@inquirer/prompts";
+import { select, input, confirm, password, search } from "@inquirer/prompts";
+import { AbortPromptError } from "@inquirer/core";
 import { readFileSync } from "fs";
-import { homedir } from "os";
 import { resolve } from "path";
 import { VPS_CONSTANTS } from "./constants.js";
 import { testConnection, sshExec, type SshConfig } from "./ssh.js";
 import type { VpsCloudConfig } from "../../shared/config.js";
 import { FilesystemBackend } from "../../shared/filesystem-backend.js";
+import { writeCredentialField, writeCredentialFields } from "../../shared/credentials.js";
 
-export async function setupVpsCloud(): Promise<Record<string, unknown> | null> {
+/**
+ * Run a search prompt with Esc-to-back support.
+ * Listens for the Escape key on stdin and aborts the prompt via AbortController.
+ * Returns null when the user presses Esc.
+ */
+async function searchWithEsc<T>(opts: {
+  message: string;
+  choices: Array<{ name: string; value: T }>;
+}): Promise<T | null> {
+  const ac = new AbortController();
+  const onKeypress = (_ch: string, key: { name: string }) => {
+    if (key?.name === "escape") ac.abort();
+  };
+
+  process.stdin.on("keypress", onKeypress);
+  try {
+    const allChoices = opts.choices;
+    const result = await search({
+      message: opts.message,
+      instructions: { pager: "↑↓ navigate • ⏎ select • esc back", navigation: "↑↓ navigate • ⏎ select • esc back" },
+      source: (term: string | undefined) => {
+        if (!term) return allChoices;
+        const lower = term.toLowerCase();
+        return allChoices.filter((c) => c.name.toLowerCase().includes(lower));
+      },
+      signal: ac.signal,
+    } as any);
+    return result as T;
+  } catch (err) {
+    if (err instanceof AbortPromptError) return null;
+    throw err;
+  } finally {
+    process.stdin.removeListener("keypress", onKeypress);
+  }
+}
+
+export type OnInstanceCreated = (partial: Record<string, unknown>) => void;
+
+export async function setupVpsCloud(onInstanceCreated?: OnInstanceCreated): Promise<Record<string, unknown> | null> {
   const mode = await select({
     message: "VPS setup mode:",
     choices: [
@@ -24,7 +63,7 @@ export async function setupVpsCloud(): Promise<Record<string, unknown> | null> {
   if (mode === "existing") {
     return setupExistingServer();
   }
-  return provisionVultr();
+  return provisionVultr(onInstanceCreated);
 }
 
 async function setupExistingServer(): Promise<Record<string, unknown> | null> {
@@ -84,117 +123,232 @@ async function setupExistingServer(): Promise<Record<string, unknown> | null> {
   return config;
 }
 
-async function provisionVultr(): Promise<Record<string, unknown> | null> {
-  // 1. Read Vultr API key
+async function provisionVultr(onInstanceCreated?: OnInstanceCreated): Promise<Record<string, unknown> | null> {
+  // 1. Read Vultr API key — prompt inline if missing
   const backend = new FilesystemBackend();
-  const apiKeyValue = await backend.read("vultr_api_key", "default", "api_key");
+  let apiKeyValue = await backend.read("vultr_api_key", "default", "api_key");
   if (!apiKeyValue) {
-    console.error("Vultr API key not found. Run 'al doctor' to configure vultr_api_key first.");
-    return null;
+    console.log("Vultr API key not found.");
+    const enteredKey = await password({
+      message: "Enter your Vultr API key (from https://my.vultr.com/settings/#settingsapi):",
+      mask: "*",
+      validate: (v: string) => v.trim() ? true : "API key is required",
+    });
+    apiKeyValue = enteredKey.trim();
+    await writeCredentialField("vultr_api_key", "default", "api_key", apiKeyValue);
+    console.log("Vultr API key saved.");
   }
 
   const {
     listRegions,
     listPlans,
+    listOsImages,
     listSshKeys,
     createSshKey,
     createInstance,
     getInstance,
   } = await import("./vultr-api.js");
 
-  // 2. Pick region
-  console.log("\nFetching Vultr regions...");
-  const regions = await listRegions(apiKeyValue);
-  const regionChoice = await select({
-    message: "Region:",
-    choices: regions
-      .sort((a, b) => a.city.localeCompare(b.city))
-      .map((r) => ({
-        name: `${r.city}, ${r.country} (${r.id})`,
-        value: r.id,
-      })),
-  });
+  // Fetch plans + regions + OS images + SSH keys in parallel
+  console.log("\nFetching Vultr catalog...");
+  const [allPlans, regions, allOsImages, existingKeys] = await Promise.all([
+    listPlans(apiKeyValue),
+    listRegions(apiKeyValue),
+    listOsImages(apiKeyValue),
+    listSshKeys(apiKeyValue),
+  ]);
 
-  // 3. Pick plan (filter to usable specs)
-  console.log("Fetching available plans...");
-  const allPlans = await listPlans(apiKeyValue);
-  const plans = allPlans
-    .filter(
-      (p) =>
-        p.vcpu_count >= VPS_CONSTANTS.MIN_VCPUS &&
-        p.ram >= VPS_CONSTANTS.MIN_RAM_MB &&
-        p.locations.includes(regionChoice) &&
-        p.type === "vc2",
-    )
-    .sort((a, b) => a.monthly_cost - b.monthly_cost);
-
-  if (plans.length === 0) {
-    console.error("No suitable plans found in this region. Try a different region.");
-    return null;
-  }
-
-  const planChoice = await select({
-    message: "Plan:",
-    choices: plans.map((p) => ({
-      name: `${p.vcpu_count} vCPU / ${p.ram}MB RAM / ${p.disk}GB SSD — $${p.monthly_cost}/mo (${p.id})`,
+  const planChoices = allPlans
+    .sort((a, b) => a.monthly_cost - b.monthly_cost)
+    .map((p) => ({
+      name: `${p.vcpu_count} vCPU / ${p.ram}MB RAM / ${p.disk}GB SSD — $${p.monthly_cost}/mo (${p.type}: ${p.id})`,
       value: p.id,
-    })),
-  });
-
-  // 4. SSH key
-  console.log("Fetching SSH keys...");
-  const existingKeys = await listSshKeys(apiKeyValue);
-  let sshKeyId: string;
-
-  const defaultPubKeyPath = resolve(homedir(), ".ssh", "id_rsa.pub");
-  let localPubKey: string | undefined;
-  try {
-    localPubKey = readFileSync(defaultPubKeyPath, "utf-8").trim();
-  } catch {
-    // No default key found
-  }
-
-  if (existingKeys.length > 0) {
-    const keyChoices: Array<{ name: string; value: string }> = existingKeys.map((k) => ({
-      name: `${k.name} (${k.ssh_key.slice(0, 30)}...)`,
-      value: k.id,
     }));
-    if (localPubKey) {
-      keyChoices.push({ name: "Upload ~/.ssh/id_rsa.pub as new key", value: "__upload__" });
-    }
 
-    const keyChoice = await select({ message: "SSH key:", choices: keyChoices });
-    if (keyChoice === "__upload__") {
-      const uploaded = await createSshKey(apiKeyValue, "action-llama", localPubKey!);
-      sshKeyId = uploaded.id;
-      console.log("SSH key uploaded.");
-    } else {
-      sshKeyId = keyChoice;
+  // Step-based wizard: Esc goes back to the previous step
+  // Steps: 0=Plan, 1=Region, 2=OS, 3=SSH key
+  let step = 0;
+  let planChoice = "";
+  let regionChoice = "";
+  let osChoice: number = VPS_CONSTANTS.PREFERRED_OS_ID;
+  let sshKeyId = "";
+
+  while (step < 4) {
+    if (step === 0) {
+      // 2. Pick plan first (searchable, all types)
+      const result = await searchWithEsc({ message: "Plan:", choices: planChoices });
+      if (result === null) return null; // Esc at first step → abort
+      planChoice = result;
+      step++;
+    } else if (step === 1) {
+      // 3. Pick region (filtered to where the selected plan is available)
+      const selectedPlan = allPlans.find((p) => p.id === planChoice)!;
+      const availableRegionIds = new Set(selectedPlan.locations);
+      const regionChoices = regions
+        .filter((r) => availableRegionIds.has(r.id))
+        .sort((a, b) => a.city.localeCompare(b.city))
+        .map((r) => ({
+          name: `${r.city}, ${r.country} (${r.id})`,
+          value: r.id,
+        }));
+
+      if (regionChoices.length === 0) {
+        console.error("This plan is not available in any region.");
+        step--;
+        continue;
+      }
+
+      const result = await searchWithEsc({ message: "Region:", choices: regionChoices });
+      if (result === null) { step--; continue; }
+      regionChoice = result;
+      step++;
+    } else if (step === 2) {
+      // 4. Pick OS — filter to x64 Linux images, sorted with Ubuntu/Debian first
+      const selectedPlan = allPlans.find((p) => p.id === planChoice)!;
+      const osChoices = allOsImages
+        .filter((o) => o.arch === "x64" && o.family !== "windows" && o.family !== "iso")
+        .sort((a, b) => {
+          // Prefer Ubuntu, then Debian, then alphabetical
+          const rank = (o: typeof a) => o.family === "ubuntu" ? 0 : o.family === "debian" ? 1 : 2;
+          return rank(a) - rank(b) || a.name.localeCompare(b.name);
+        })
+        .map((o) => ({ name: o.name, value: o.id }));
+
+      if (selectedPlan.ram < 1024) {
+        console.log(`Note: plan has ${selectedPlan.ram}MB RAM — some OS images (e.g. Ubuntu 24.04) require at least 1GB.`);
+      }
+
+      // Auto-select Ubuntu 24.04 if it's in the list and plan has enough RAM
+      const preferredExists = osChoices.some((o) => o.value === VPS_CONSTANTS.PREFERRED_OS_ID);
+      if (preferredExists && selectedPlan.ram >= 1024) {
+        osChoice = VPS_CONSTANTS.PREFERRED_OS_ID;
+        const osName = allOsImages.find((o) => o.id === osChoice)!.name;
+        console.log(`OS: ${osName} (auto-selected)`);
+      } else {
+        const result = await searchWithEsc({ message: "OS image:", choices: osChoices });
+        if (result === null) { step--; continue; }
+        osChoice = result;
+      }
+      step++;
+    } else if (step === 3) {
+      // 5. SSH key — use vps_ssh credential, Vultr keys, or create new
+      const { loadCredentialFields, credentialExists: credExists } = await import("../../shared/credentials.js");
+      const { promptCredential } = await import("../../credentials/prompter.js");
+      const { resolveCredential } = await import("../../credentials/registry.js");
+
+      // Check for existing vps_ssh credential
+      const hasVpsSsh = await credExists("vps_ssh", "default");
+      const vpsSshFields = hasVpsSsh ? await loadCredentialFields("vps_ssh", "default") : undefined;
+
+      // Build choices
+      const keyChoices: Array<{ name: string; value: string }> = [];
+
+      if (vpsSshFields?.public_key) {
+        const preview = vpsSshFields.public_key.slice(0, 40) + "...";
+        keyChoices.push({ name: `Action Llama VPS key (${preview})`, value: "__al_credential__" });
+      }
+
+      for (const k of existingKeys) {
+        keyChoices.push({
+          name: `Vultr: ${k.name} (${k.ssh_key.slice(0, 30)}...)`,
+          value: k.id,
+        });
+      }
+
+      keyChoices.push({ name: "Set up a new VPS SSH key", value: "__new__" });
+
+      const result = await searchWithEsc({ message: "SSH key:", choices: keyChoices });
+      if (result === null) { step--; continue; }
+
+      if (result === "__new__") {
+        // Run the vps_ssh credential prompt
+        const def = resolveCredential("vps_ssh");
+        const promptResult = await promptCredential(def, "default");
+        if (!promptResult) {
+          continue; // User cancelled — stay on this step
+        }
+        // Persist the credential before uploading to Vultr
+        await writeCredentialFields("vps_ssh", "default", promptResult.values);
+        const pubKey = promptResult.values.public_key;
+        // Upload to Vultr
+        const uploaded = await createSshKey(apiKeyValue, "action-llama", pubKey);
+        sshKeyId = uploaded.id;
+        console.log("SSH key uploaded to Vultr.");
+      } else if (result === "__al_credential__") {
+        // Upload the existing vps_ssh public key to Vultr if not already there
+        const pubKey = vpsSshFields!.public_key;
+        const alreadyOnVultr = existingKeys.find((k) => k.ssh_key.trim() === pubKey.trim());
+        if (alreadyOnVultr) {
+          sshKeyId = alreadyOnVultr.id;
+        } else {
+          const uploaded = await createSshKey(apiKeyValue, "action-llama", pubKey);
+          sshKeyId = uploaded.id;
+          console.log("VPS SSH key uploaded to Vultr.");
+        }
+      } else {
+        sshKeyId = result;
+      }
+      step++;
     }
-  } else if (localPubKey) {
-    console.log("No SSH keys on Vultr. Uploading ~/.ssh/id_rsa.pub...");
-    const uploaded = await createSshKey(apiKeyValue, "action-llama", localPubKey);
-    sshKeyId = uploaded.id;
-    console.log("SSH key uploaded.");
-  } else {
-    console.error("No SSH keys found locally or on Vultr. Generate one with: ssh-keygen -t ed25519");
-    return null;
   }
 
-  // 5. Create instance
-  console.log("\nProvisioning Vultr instance...");
+  // 5. Set up Vultr firewall group (allow SSH + gateway inbound)
+  const {
+    listFirewallGroups,
+    createFirewallGroup,
+    createFirewallRule,
+    listFirewallRules,
+  } = await import("./vultr-api.js");
+
+  const AL_FW_DESCRIPTION = "action-llama";
+  let firewallGroupId: string | undefined;
+
+  console.log("\nConfiguring Vultr firewall...");
+  const fwGroups = await listFirewallGroups(apiKeyValue);
+  const existing = fwGroups.find((g) => g.description === AL_FW_DESCRIPTION);
+
+  if (existing) {
+    firewallGroupId = existing.id;
+  } else {
+    const group = await createFirewallGroup(apiKeyValue, AL_FW_DESCRIPTION);
+    firewallGroupId = group.id;
+
+    // Allow SSH (22) and gateway port inbound from anywhere, IPv4 + IPv6
+    const rules = [
+      { ip_type: "v4" as const, protocol: "tcp" as const, subnet: "0.0.0.0", subnet_size: 0, port: "22", notes: "SSH" },
+      { ip_type: "v4" as const, protocol: "tcp" as const, subnet: "0.0.0.0", subnet_size: 0, port: String(VPS_CONSTANTS.DEFAULT_GATEWAY_PORT), notes: "Gateway" },
+      { ip_type: "v6" as const, protocol: "tcp" as const, subnet: "::", subnet_size: 0, port: "22", notes: "SSH IPv6" },
+      { ip_type: "v6" as const, protocol: "tcp" as const, subnet: "::", subnet_size: 0, port: String(VPS_CONSTANTS.DEFAULT_GATEWAY_PORT), notes: "Gateway IPv6" },
+    ];
+    await Promise.all(rules.map((r) => createFirewallRule(apiKeyValue, firewallGroupId!, r)));
+  }
+  console.log("Vultr firewall group ready (SSH + gateway allowed).");
+
+  // 6. Create instance with firewall group attached
+  console.log("Provisioning Vultr instance...");
   const userData = Buffer.from(VPS_CONSTANTS.CLOUD_INIT_SCRIPT).toString("base64");
   const instance = await createInstance(apiKeyValue, {
     region: regionChoice,
     plan: planChoice,
-    os_id: VPS_CONSTANTS.PREFERRED_OS_ID,
+    os_id: osChoice,
     sshkey_id: [sshKeyId],
     label: "action-llama",
     user_data: userData,
+    firewall_group_id: firewallGroupId,
   });
-  console.log(`Instance ${instance.id} created. Waiting for it to become active...`);
+  console.log(`Instance ${instance.id} created.`);
 
-  // 6. Poll until active + SSH available + Docker installed
+  // Persist immediately so the instance can be deprovisioned even if we're interrupted
+  const partialResult: Record<string, unknown> = {
+    provider: "vps",
+    host: "PENDING",
+    vultrInstanceId: instance.id,
+    vultrRegion: regionChoice,
+  };
+  if (onInstanceCreated) onInstanceCreated(partialResult);
+
+  // 7. Poll until active + SSH available + Docker installed
+  console.log("Waiting for it to become active...");
   const sshConfig: SshConfig = {
     host: "",
     user: VPS_CONSTANTS.DEFAULT_SSH_USER,
@@ -210,7 +364,13 @@ async function provisionVultr(): Promise<Record<string, unknown> | null> {
 
     if (current.status === "active" && current.main_ip !== "0.0.0.0") {
       sshConfig.host = current.main_ip;
-      console.log(`Instance active at ${current.main_ip}. Waiting for SSH...`);
+
+      // Update persisted config with real IP as soon as we know it
+      if (partialResult.host === "PENDING") {
+        partialResult.host = current.main_ip;
+        if (onInstanceCreated) onInstanceCreated(partialResult);
+        console.log(`Instance active at ${current.main_ip}. Waiting for SSH...`);
+      }
 
       // Wait for SSH
       const sshReady = await testConnection(sshConfig);
@@ -232,20 +392,17 @@ async function provisionVultr(): Promise<Record<string, unknown> | null> {
 
   if (!sshConfig.host || sshConfig.host === "0.0.0.0") {
     console.error("\nTimed out waiting for VPS to become ready.");
+    console.error(`Instance ${instance.id} was created. Use 'al env deprov' to clean up.`);
     return null;
   }
 
   // Final SSH check
   const ok = await testConnection(sshConfig);
   if (!ok) {
-    console.error("\nVPS is active but SSH connection failed. Check firewall rules.");
+    console.error("\nVPS is active but SSH connection failed.");
+    console.error(`Instance ${instance.id} at ${sshConfig.host} was created. Use 'al env deprov' to clean up.`);
     return null;
   }
-
-  // Configure firewall
-  console.log("Configuring firewall...");
-  await sshExec(sshConfig, `ufw allow 22/tcp && ufw allow ${VPS_CONSTANTS.DEFAULT_GATEWAY_PORT}/tcp && ufw --force enable`);
-  console.log("Firewall enabled (SSH + gateway only).");
 
   const shouldContinue = await confirm({
     message: `VPS ready at ${sshConfig.host}. Continue with setup?`,

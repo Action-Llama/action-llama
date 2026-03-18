@@ -90,8 +90,9 @@ export async function listRegions(apiKey: string): Promise<VultrRegion[]> {
   return data.regions;
 }
 
-export async function listPlans(apiKey: string): Promise<VultrPlan[]> {
-  const data = await vultrFetch(apiKey, "/plans");
+export async function listPlans(apiKey: string, type?: string): Promise<VultrPlan[]> {
+  const query = type ? `?type=${encodeURIComponent(type)}` : "";
+  const data = await vultrFetch(apiKey, `/plans${query}`);
   return data.plans;
 }
 
@@ -122,6 +123,7 @@ export async function createInstance(
     sshkey_id: string[];
     label: string;
     user_data?: string; // base64 cloud-init script
+    firewall_group_id?: string;
   },
 ): Promise<VultrInstance> {
   const data = await vultrFetch(apiKey, "/instances", {
@@ -138,4 +140,52 @@ export async function getInstance(apiKey: string, instanceId: string): Promise<V
 
 export async function deleteInstance(apiKey: string, instanceId: string): Promise<void> {
   await vultrFetch(apiKey, `/instances/${instanceId}`, { method: "DELETE" });
+}
+
+// --- Firewall Groups ---
+
+export interface VultrFirewallGroup {
+  id: string;
+  description: string;
+  date_created: string;
+  date_modified: string;
+  instance_count: number;
+  rule_count: number;
+  max_rule_count: number;
+}
+
+export async function listFirewallGroups(apiKey: string): Promise<VultrFirewallGroup[]> {
+  const data = await vultrFetch(apiKey, "/firewalls");
+  return data.firewall_groups;
+}
+
+export async function createFirewallGroup(apiKey: string, description: string): Promise<VultrFirewallGroup> {
+  const data = await vultrFetch(apiKey, "/firewalls", {
+    method: "POST",
+    body: JSON.stringify({ description }),
+  });
+  return data.firewall_group;
+}
+
+export async function createFirewallRule(
+  apiKey: string,
+  groupId: string,
+  rule: {
+    ip_type: "v4" | "v6";
+    protocol: "tcp" | "udp" | "icmp";
+    subnet: string;
+    subnet_size: number;
+    port: string; // e.g. "22", "3000", "8000:8080"
+    notes?: string;
+  },
+): Promise<void> {
+  await vultrFetch(apiKey, `/firewalls/${groupId}/rules`, {
+    method: "POST",
+    body: JSON.stringify(rule),
+  });
+}
+
+export async function listFirewallRules(apiKey: string, groupId: string): Promise<any[]> {
+  const data = await vultrFetch(apiKey, `/firewalls/${groupId}/rules`);
+  return data.firewall_rules;
 }

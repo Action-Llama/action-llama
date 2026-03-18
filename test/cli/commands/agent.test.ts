@@ -209,7 +209,7 @@ describe("agent config", () => {
 
     mockSelect
       .mockResolvedValueOnce("params")    // menu: params
-      .mockResolvedValueOnce("add")       // params: add
+      .mockResolvedValueOnce("add")       // params: + Add new param
       .mockResolvedValueOnce("back")      // params: back
       .mockResolvedValueOnce("done");     // menu: done
     mockInput
@@ -223,16 +223,76 @@ describe("agent config", () => {
     expect(parsed.params.myKey).toBe("myValue");
   });
 
-  it("webhooks shows message when no sources configured", async () => {
+  it("edits params — shows existing params and allows editing", async () => {
+    createAgentConfig("params-edit", 'credentials = []\n\n[model]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-20250514"\nauthType = "api_key"\n\n[params]\nexisting = "old-value"\n');
+
+    mockSelect
+      .mockResolvedValueOnce("params")         // menu: params
+      .mockResolvedValueOnce("edit:existing")  // select existing param
+      .mockResolvedValueOnce("edit")           // choose to edit
+      .mockResolvedValueOnce("back")           // params: back
+      .mockResolvedValueOnce("done");          // menu: done
+    mockInput
+      .mockResolvedValueOnce("new-value");     // new value
+
+    await configAgent("params-edit", { project: tmpDir });
+
+    const written = readFileSync(resolve(tmpDir, "agents", "params-edit", "agent-config.toml"), "utf-8");
+    const parsed = parseTOML(written) as any;
+    expect(parsed.params.existing).toBe("new-value");
+  });
+
+  it("edits params — remove existing param", async () => {
+    createAgentConfig("params-rm", 'credentials = []\n\n[model]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-20250514"\nauthType = "api_key"\n\n[params]\nremoveme = "gone"\nkeepme = "stay"\n');
+
+    mockSelect
+      .mockResolvedValueOnce("params")          // menu: params
+      .mockResolvedValueOnce("edit:removeme")   // select param
+      .mockResolvedValueOnce("remove")          // choose to remove
+      .mockResolvedValueOnce("back")            // params: back
+      .mockResolvedValueOnce("done");           // menu: done
+
+    await configAgent("params-rm", { project: tmpDir });
+
+    const written = readFileSync(resolve(tmpDir, "agents", "params-rm", "agent-config.toml"), "utf-8");
+    const parsed = parseTOML(written) as any;
+    expect(parsed.params.removeme).toBeUndefined();
+    expect(parsed.params.keepme).toBe("stay");
+  });
+
+  it("webhooks offers to create source when none configured", async () => {
     createAgentConfig("wh-agent", 'credentials = []\n\n[model]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-20250514"\nauthType = "api_key"\n');
 
     mockSelect
       .mockResolvedValueOnce("webhooks")  // menu: webhooks
       .mockResolvedValueOnce("done");     // menu: done
+    mockConfirm.mockResolvedValueOnce(false); // decline to add source
 
     await configAgent("wh-agent", { project: tmpDir });
 
     const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
     expect(output).toContain("No webhook sources");
+  });
+
+  it("webhooks walks through source creation when user accepts", async () => {
+    createAgentConfig("wh-setup", 'credentials = []\n\n[model]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-20250514"\nauthType = "api_key"\n');
+
+    // No config.toml exists yet — no webhook sources
+    mockSelect
+      .mockResolvedValueOnce("webhooks")    // menu: webhooks
+      .mockResolvedValueOnce("github")      // provider type for new source
+      .mockResolvedValueOnce("back")        // webhooks: back (after source created)
+      .mockResolvedValueOnce("done");       // menu: done
+    mockConfirm.mockResolvedValueOnce(true);  // accept to add source
+    mockInput
+      .mockResolvedValueOnce("my-github")   // source name
+      .mockResolvedValueOnce("");           // credential (skip)
+
+    await configAgent("wh-setup", { project: tmpDir });
+
+    // config.toml should have been created with the webhook source
+    const configToml = readFileSync(resolve(tmpDir, "config.toml"), "utf-8");
+    expect(configToml).toContain("my-github");
+    expect(configToml).toContain("github");
   });
 });

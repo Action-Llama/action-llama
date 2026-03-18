@@ -230,8 +230,8 @@ envCmd
 envCmd
   .command("prov")
   .description("Provision a new VPS and save as an environment")
-  .argument("<name>", "environment name")
-  .action(withCommand(async (name: string) => {
+  .argument("[name]", "environment name (prompted if omitted)")
+  .action(withCommand(async (name: string | undefined) => {
     const { prov } = await import("./commands/env.js");
     await prov(name);
   }));
