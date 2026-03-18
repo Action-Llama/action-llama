@@ -245,6 +245,8 @@ export async function deprov(name: string, opts: { project: string }): Promise<v
     sshKeyPath: config.server.keyPath,
     vultrInstanceId: config.server.vultrInstanceId,
     vultrRegion: config.server.vultrRegion,
+    hetznerServerId: config.server.hetznerServerId,
+    hetznerLocation: config.server.hetznerLocation,
     cloudflareZoneId: config.server.cloudflareZoneId,
     cloudflareDnsRecordId: config.server.cloudflareDnsRecordId,
     cloudflareHostname: config.server.cloudflareHostname,

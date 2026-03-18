@@ -27,6 +27,12 @@ vi.mock("../../../src/cloud/vps/ssh.js", () => ({
   sshExec: (...args: any[]) => mockSshExec(...args),
 }));
 
+// Mock VPS teardown
+const mockTeardownVps = vi.fn().mockResolvedValue(undefined);
+vi.mock("../../../src/cloud/vps/teardown.js", () => ({
+  teardownVps: (...args: any[]) => mockTeardownVps(...args),
+}));
+
 // Mock FilesystemBackend for credential-dependent checks
 vi.mock("../../../src/shared/filesystem-backend.js", () => ({
   FilesystemBackend: class {
@@ -177,5 +183,57 @@ describe("env deprov", () => {
     });
 
     await expect(deprov(testEnvName, { project: tmpDir })).rejects.toThrow("no [server] config");
+  });
+
+  it("passes Hetzner fields to teardownVps", async () => {
+    writeEnvironmentConfig(testEnvName, {
+      server: {
+        host: "5.6.7.8",
+        user: "root",
+        hetznerServerId: 12345678,
+        hetznerLocation: "nbg1",
+      },
+    });
+
+    await deprov(testEnvName, { project: tmpDir });
+
+    expect(mockTeardownVps).toHaveBeenCalledWith(
+      tmpDir,
+      expect.objectContaining({
+        hetznerServerId: 12345678,
+        hetznerLocation: "nbg1",
+      }),
+    );
+  });
+
+  it("passes Vultr fields to teardownVps", async () => {
+    writeEnvironmentConfig(testEnvName, {
+      server: {
+        host: "1.2.3.4",
+        user: "root",
+        vultrInstanceId: "abc-123",
+        vultrRegion: "ewr",
+      },
+    });
+
+    await deprov(testEnvName, { project: tmpDir });
+
+    expect(mockTeardownVps).toHaveBeenCalledWith(
+      tmpDir,
+      expect.objectContaining({
+        vultrInstanceId: "abc-123",
+        vultrRegion: "ewr",
+      }),
+    );
+  });
+
+  it("deletes environment file after teardown", async () => {
+    writeEnvironmentConfig(testEnvName, {
+      server: { host: "1.2.3.4" },
+    });
+
+    await deprov(testEnvName, { project: tmpDir });
+
+    expect(environmentExists(testEnvName)).toBe(false);
   });
 });
