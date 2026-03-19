@@ -147,7 +147,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
 
   // Webhook routes
   if (webhookRegistry) {
-    registerWebhookRoutes(app, webhookRegistry, webhookSecrets || {}, logger, statusTracker);
+    registerWebhookRoutes(app, webhookRegistry, webhookSecrets || {}, logger, statusTracker, stateStore);
   }
 
   // Dashboard routes (login/logout are unprotected; dashboard pages are behind authMiddleware above)
