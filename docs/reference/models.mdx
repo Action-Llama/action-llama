@@ -91,7 +91,7 @@ authType = "api_key"
 |-------|-------------|
 | `llama-3.3-70b-versatile` | Llama 3.3 70B on Groq inference |
 
-Groq runs open-source models at high speed. Check [Groq's docs](https://console.groq.com/docs/models) for the full list of available model IDs.
+Groq runs open-source models at high speed. Check Groq's docs for the full list of available model IDs.
 
 **Credential:** `groq_key` (field: `token`)
 
@@ -108,7 +108,7 @@ authType = "api_key"
 |-------|-------------|
 | `gemini-2.0-flash-exp` | Fast experimental model |
 
-Check [Google AI Studio](https://ai.google.dev/models) for the full list of available model IDs.
+Check Google AI Studio for the full list of available model IDs.
 
 **Credential:** `google_key` (field: `token`)
 
@@ -140,7 +140,7 @@ authType = "api_key"
 |-------|-------------|
 | `mistral-large-2411` | Mistral Large (November 2024) |
 
-Check [Mistral's docs](https://docs.mistral.ai/getting-started/models/) for the full list of available model IDs.
+Check Mistral's docs for the full list of available model IDs.
 
 **Credential:** `mistral_key` (field: `token`)
 
@@ -155,13 +155,13 @@ model = "anthropic/claude-3.5-sonnet"
 authType = "api_key"
 ```
 
-Model IDs use the `provider/model` format. See [OpenRouter's model list](https://openrouter.ai/models) for all available models.
+Model IDs use the `provider/model` format. See OpenRouter's model list for all available models.
 
 **Credential:** `openrouter_key` (field: `token`)
 
 ### Custom
 
-For any provider not listed above. The model ID and API routing are handled by the underlying [pi.dev agent harness](https://github.com/badlogic/pi-mono).
+For any provider not listed above. The model ID and API routing are handled by the underlying pi.dev agent harness.
 
 ```toml
 [model]
@@ -191,4 +191,4 @@ Each provider requires a corresponding credential in `~/.action-llama/credential
 
 The LLM credential does not need to be listed in your agent's `credentials` array — it is loaded automatically based on the `[model]` config. The `credentials` array is for runtime credentials the agent uses during execution (GitHub tokens, SSH keys, etc.).
 
-See [Credentials](/credentials) for the full credential reference.
+See [Credentials](/reference/credentials) for the full credential reference.

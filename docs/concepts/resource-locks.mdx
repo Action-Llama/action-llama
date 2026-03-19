@@ -1,0 +1,111 @@
+---
+title: "Resource Locks"
+description: "How resource locks work — coordination, TTL, heartbeat, deadlock detection"
+---
+
+When you set `scale > 1` on an agent, multiple instances run concurrently. Without coordination, two instances might pick up the same GitHub issue, review the same PR, or deploy the same service at the same time. Resource locks prevent this.
+
+## Why Locks Exist
+
+Locks let concurrent agent instances claim exclusive ownership of a resource before working on it. If another instance already holds the lock, the agent skips that resource and moves on.
+
+## How It Works
+
+1. Before working on a shared resource, the agent calls `LOCK("resource key")`.
+2. If the lock is free, the agent gets it and proceeds.
+3. If another instance already holds the lock, the agent gets back the holder's name and skips that resource.
+4. When done, the agent calls `UNLOCK("resource key")`.
+
+The agent learns the lock API from a preamble injected before the actions run. Agent authors just write the shorthand — no need to think about HTTP endpoints or authentication.
+
+## Operations
+
+| Operation | Command | Description |
+|-----------|---------|-------------|
+| Acquire | `rlock "resource key"` | Acquire an exclusive lock. Fails if another instance holds it. |
+| Release | `runlock "resource key"` | Release a lock. Only the holder can release. |
+| Heartbeat | `rlock-heartbeat "resource key"` | Reset the TTL on a held lock. |
+
+In `ACTIONS.md`, these are written as shorthand: `LOCK(...)`, `UNLOCK(...)`, `HEARTBEAT(...)`.
+
+See [Agent Commands — Locks](/reference/agent-commands#lock-commands) for the full command reference with response JSON.
+
+## TTL and Expiry
+
+Locks expire automatically after **30 minutes** by default. This prevents deadlocks if an agent crashes or hangs without releasing its lock. The timeout is configurable via `gateway.lockTimeout` in `config.toml` (value in seconds).
+
+For work that takes longer than the timeout, use `HEARTBEAT` to extend the TTL. Each heartbeat resets the clock to another full TTL period. If the agent forgets to heartbeat and the lock expires, another instance can claim it.
+
+## Heartbeat
+
+During long-running work, periodically call `HEARTBEAT("resource key")` to keep the lock alive:
+
+```markdown
+## Workflow
+
+1. LOCK("deploy api-prod")
+2. Run the deployment (may take 45+ minutes)
+   - Every 10 minutes, run HEARTBEAT("deploy api-prod")
+3. UNLOCK("deploy api-prod")
+```
+
+Each heartbeat resets the expiry to a full TTL period from the current time.
+
+## Multiple Locks and Deadlock Detection
+
+An agent instance can hold multiple locks simultaneously when working across related resources. However, this introduces the possibility of circular waits — agent A holds lock X and waits for lock Y, while agent B holds lock Y and waits for lock X.
+
+The gateway detects these cycles automatically. When a `LOCK()` request would create a circular wait in the wait-for graph, it returns a `possible deadlock` error with the cycle path instead of blocking forever. The agent can then release its held locks and retry.
+
+```
+# Example deadlock cycle:
+# Agent A holds "github pr acme/app#10", wants "deploy api-prod"
+# Agent B holds "deploy api-prod", wants "github pr acme/app#10"
+# → LOCK("deploy api-prod") returns: possible deadlock detected
+```
+
+Note: The agent preamble constrains agents to one lock at a time for simplicity. Multi-lock is available for advanced use cases where the agent is explicitly instructed to hold multiple locks.
+
+## Authentication
+
+Each container gets a unique per-run secret (the same one used for the shutdown API). Lock requests are authenticated with this secret, so only the container that acquired a lock can release or heartbeat it. There is no way for one agent instance to release another's lock — it must wait for the TTL to expire.
+
+## Auto-release on Exit
+
+When a container exits — whether it finishes successfully, hits an error, or times out — all of its locks are released automatically by the scheduler. You don't need to worry about cleanup in error paths.
+
+## Resource Key Conventions
+
+Use descriptive, unique keys:
+
+| Resource key | Example |
+|-------------|---------|
+| `github issue owner/repo#number` | `LOCK("github issue acme/app#42")` |
+| `github pr owner/repo#number` | `LOCK("github pr acme/app#17")` |
+| `deploy service-name` | `LOCK("deploy api-prod")` |
+
+## Example in ACTIONS.md
+
+```markdown
+## Workflow
+
+1. List open issues labeled "agent" in repos from `<agent-config>`
+2. For each issue:
+   - LOCK("github issue owner/repo#123")
+   - If the lock fails, skip this issue — another instance is handling it
+   - Clone the repo, create a branch, implement the fix
+   - Open a PR and link it to the issue
+   - UNLOCK("github issue owner/repo#123")
+3. If you completed work and there may be more issues, run `al-rerun`
+```
+
+## Configuration
+
+| Setting | Location | Default | Description |
+|---------|----------|---------|-------------|
+| `gateway.lockTimeout` | `config.toml` | `1800` (30 min) | Default TTL for locks in seconds |
+
+## See Also
+
+- [Agent Commands — Locks](/reference/agent-commands#lock-commands) — full command syntax and response JSON
+- [Scaling Agents](/guides/scaling-agents) — guide on scaling with locks

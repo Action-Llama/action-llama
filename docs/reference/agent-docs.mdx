@@ -1,0 +1,106 @@
+---
+title: "Agent Docs"
+description: "ACTIONS.md, AGENTS.md, and CLAUDE.md — what they do and how to write them"
+---
+
+Action Llama uses three markdown files with distinct purposes. Only `ACTIONS.md` is required.
+
+## ACTIONS.md
+
+The system prompt that defines an agent's behavior. This is the most important file in an agent directory.
+
+### What it is
+
+`ACTIONS.md` lives inside each agent's directory (e.g. `agents/dev/ACTIONS.md`). At runtime, its contents are injected as the LLM's system prompt. Everything the agent does is driven by these instructions.
+
+### How it's used
+
+The scheduler reads `ACTIONS.md` and sends it as the system prompt. A preamble is prepended that teaches the agent its [language skills](/reference/agent-commands) (signals, calls, locks, credentials). The LLM then receives a user-message prompt with:
+
+1. **`<agent-config>`** — JSON of the `[params]` table from `agent-config.toml`
+2. **`<credential-context>`** — describes available environment variables and tools
+3. **`<environment>`** — filesystem constraints (read-only root, `/tmp` for work)
+4. **Trigger context** — schedule, webhook payload, manual, or agent call context
+
+### Writing tips
+
+- **Write as direct instructions to an LLM.** "You are an automation agent. Your job is to..."
+- **Be specific about workflow.** Numbered steps are better than vague descriptions.
+- **Reference `<agent-config>` for parameter values.** Don't hardcode repo names or labels — put them in `[params]` and reference them.
+- **Handle both trigger types** if the agent uses both schedule and webhooks.
+- **Use signal commands** like `al-rerun` for backlog draining and `al-status` for TUI updates.
+- **Keep it concise.** The system prompt consumes tokens every run. Avoid lengthy explanations of things the LLM already knows.
+
+### Example
+
+```markdown
+# Dev Agent
+
+You are an automation agent. Your job is to pick up GitHub issues and implement the requested changes.
+
+Your configuration is in the `<agent-config>` block at the start of your prompt.
+`GITHUB_TOKEN` is already set in your environment. Use `gh` CLI and `git` directly.
+
+## Workflow
+
+1. **Find work** — If triggered by webhook, work on the issue from the trigger. If scheduled, search for open issues labeled with the label from `<agent-config>`.triggerLabel.
+2. **Lock the issue** — LOCK("github issue owner/repo#N"). If locked, skip it.
+3. **Implement** — Clone the repo, create a branch, make changes, run tests.
+4. **Open a PR** — Push and open a PR linking to the issue.
+5. **Unlock** — UNLOCK("github issue owner/repo#N").
+6. **Continue** — If you completed work and there may be more issues, run `al-rerun`.
+
+## Rules
+
+- Never force-push
+- Run tests before opening a PR
+- If tests fail after 3 attempts, comment on the issue and move on
+```
+
+### Handling trigger context
+
+Your `ACTIONS.md` should handle different trigger types if the agent uses both:
+
+```markdown
+## Trigger handling
+
+- **Webhook trigger**: The `<webhook-trigger>` block contains the full event payload. Work on the specific issue/PR from the event.
+- **Scheduled trigger**: Search for open work matching your configured filters.
+- **Agent call**: The `<agent-call>` block contains context from the calling agent. Do what was requested and use `al-return` to send back results.
+```
+
+## AGENTS.md
+
+Project-level shared instructions that are loaded by `al chat`.
+
+### What it is
+
+`AGENTS.md` lives at the project root (e.g. `my-project/AGENTS.md`). It provides shared context about the project that is relevant when interacting with agents via the chat console.
+
+### How it's used
+
+When you run `al chat` (project-level console), the contents of `AGENTS.md` are loaded as reference context. It is **not** injected into automated agent runs — only into the interactive chat session.
+
+### When to use it
+
+Use `AGENTS.md` to document:
+
+- Project conventions that are relevant when working with agents interactively
+- How agents in the project relate to each other
+- Common tasks and how to accomplish them via chat
+
+## CLAUDE.md
+
+Instructions for AI development tools (like Claude Code). Not used by Action Llama at runtime.
+
+### What it is
+
+`CLAUDE.md` lives at the project root and provides instructions to AI coding assistants that may be editing the project's source code.
+
+### How it's used
+
+`CLAUDE.md` is **not** read by Action Llama. It has no effect on agent runs, the scheduler, or the chat console. It exists purely for developer tooling context.
+
+### When to use it
+
+If you use Claude Code or similar AI development tools to work on your Action Llama project, put project conventions, build commands, and coding guidelines in `CLAUDE.md`.

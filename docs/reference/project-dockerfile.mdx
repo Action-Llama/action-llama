@@ -1,0 +1,133 @@
+---
+title: "Project Dockerfile"
+description: "Customize the shared base Docker image for all agents in a project"
+---
+
+Every project has a `Dockerfile` at the root (created by `al new`) that defines the shared base image for all agents. This is the project Dockerfile.
+
+## Location
+
+```
+my-project/
+  Dockerfile              <-- project base image (shared by all agents)
+  config.toml
+  dev/
+    agent-config.toml
+    ACTIONS.md
+  reviewer/
+    agent-config.toml
+    ACTIONS.md
+```
+
+## Default Behavior
+
+By default, the project Dockerfile is a bare `FROM al-agent:latest` with no customizations. In this state, it is skipped entirely — agents build directly on `al-agent:latest` with no overhead.
+
+## Customizing
+
+To add packages shared by all agents, add `RUN`, `ENV`, or other instructions:
+
+```dockerfile
+FROM al-agent:latest
+
+# Install tools shared by all agents
+RUN apk add --no-cache python3 py3-pip github-cli
+
+# Set shared environment variables
+ENV MY_ORG=acme
+```
+
+When the project Dockerfile has customizations beyond the bare `FROM`, the build pipeline creates an intermediate image (`al-project-base:latest`) that all per-agent images layer on top of.
+
+**Tip:** If multiple agents need the same tool, put it here instead of duplicating it across agent Dockerfiles.
+
+## Image Build Order
+
+```
+al-agent:latest            <-- Action Llama package (automatic)
+    |
+    v
+al-project-base:latest     <-- project Dockerfile (if customized)
+    |
+    v
+al-<agent>:latest          <-- per-agent Dockerfile (if present)
+```
+
+If the project Dockerfile is unmodified, the middle layer is skipped.
+
+## Base Image Contents
+
+The base image (`al-agent:latest`) is built automatically from the Action Llama package and includes:
+
+| Package | Why |
+|---------|-----|
+| `node:20-slim` | Runs the container entry point and pi-coding-agent SDK |
+| `git` | Clone repos, create branches, push commits |
+| `curl` | API calls (Sentry, arbitrary HTTP), anti-exfiltration shutdown |
+| `ca-certificates` | HTTPS for git, curl, npm |
+| `openssh-client` | SSH for `GIT_SSH_COMMAND` — git clone/push over SSH |
+
+The base image also copies the compiled Action Llama application (`dist/`) and installs its npm dependencies. The entry point is `node /app/dist/agents/container-entry.js`.
+
+## Build Behavior
+
+- The base image (`al-agent:latest`) is only built if it doesn't exist yet
+- The project base image (`al-project-base:latest`) is rebuilt on every `al start` if the project Dockerfile has customizations
+- The build context is the Action Llama package root (not the project directory), so `COPY` paths reference the package's `dist/`, `package.json`, etc.
+
+## Common Additions
+
+```dockerfile
+# GitHub CLI (for gh issue list, gh pr create, etc.)
+RUN apk add --no-cache github-cli
+
+# Python (for agents that run Python scripts)
+RUN apk add --no-cache python3 py3-pip
+
+# jq (for JSON processing in bash) — already in the base image
+# RUN apk add --no-cache jq
+```
+
+## Container Filesystem Layout
+
+| Path | Mode | Contents |
+|------|------|----------|
+| `/app` | read-only | Action Llama application + node_modules |
+| `/credentials` | read-only | Mounted credential files (`/<type>/<instance>/<field>`) |
+| `/tmp` | read-write (tmpfs, 2GB) | Agent working directory — repos, scratch files, SSH keys |
+| `/workspace` | read-write (2GB) | Persistent workspace |
+| `/home/node` | read-write (64MB) | Home directory |
+
+## Configuration
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `local.image` | `"al-agent:latest"` | Base Docker image name |
+| `local.memory` | `"4g"` | Memory limit per container |
+| `local.cpus` | `2` | CPU limit per container |
+| `local.timeout` | `900` | Max container runtime in seconds |
+
+## Troubleshooting
+
+**"Docker is not running"** — Start Docker Desktop or the Docker daemon before running `al start`.
+
+```bash
+# macOS — open Docker Desktop
+open -a Docker
+
+# Linux
+sudo systemctl start docker
+```
+
+**Base image build fails** — Run `docker build -t al-agent:latest -f docker/Dockerfile .` from the Action Llama package directory to see the full build output.
+
+**Project base image build fails** — Check that the project `Dockerfile` starts with `FROM al-agent:latest` and that any `apk add` packages are spelled correctly. The base image uses Alpine Linux.
+
+**Container out of memory** — Increase the memory limit in `config.toml`:
+
+```toml
+[local]
+memory = "8g"    # default: "4g"
+```
+
+**Container exits immediately** — Check `al logs <agent>` for the error. Common causes: missing credentials, missing `ACTIONS.md`, invalid model config.

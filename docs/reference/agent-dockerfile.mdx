@@ -1,0 +1,107 @@
+---
+title: "Agent Dockerfile"
+description: "Custom Docker images for individual agents"
+---
+
+Agents that need extra tools beyond the project base image can add a `Dockerfile` to their own directory.
+
+## Location
+
+```
+my-project/
+  Dockerfile              <-- project base (shared tools)
+  dev/
+    agent-config.toml
+    ACTIONS.md
+    Dockerfile            <-- custom image for this agent only
+  reviewer/
+    agent-config.toml
+    ACTIONS.md
+                          <-- no Dockerfile, uses project base
+```
+
+Agents without a Dockerfile use the project base image (or `al-agent:latest` if the project Dockerfile is unmodified).
+
+## Extending the Base Image
+
+Use `FROM al-agent:latest` and add what you need. The build pipeline automatically rewrites the `FROM` line to point at the correct base (`al-project-base:latest` if the project Dockerfile has customizations). Switch to `root` to install packages, then back to `node`:
+
+```dockerfile
+FROM al-agent:latest
+
+USER root
+RUN apk add --no-cache github-cli
+USER node
+```
+
+This is a thin layer on top of the base — fast to build and shares most of the image.
+
+## Common Additions
+
+```dockerfile
+# GitHub CLI (for gh issue list, gh pr create, etc.)
+RUN apk add --no-cache github-cli
+
+# Python (for agents that run Python scripts)
+RUN apk add --no-cache python3 py3-pip
+
+# jq (for JSON processing in bash) — already in the base image
+# RUN apk add --no-cache jq
+```
+
+## Writing a Standalone Dockerfile
+
+If you need full control, you can write a Dockerfile from scratch. It must:
+
+1. Include Node.js 20+
+2. Copy the application code from the base image or install it
+3. Set `ENTRYPOINT ["node", "/app/dist/agents/container-entry.js"]`
+4. Use uid 1000 (`USER node` on node images) for compatibility with the container launcher
+
+Example standalone Dockerfile:
+
+```dockerfile
+FROM node:20-slim
+
+# Install your tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl ca-certificates openssh-client gh jq python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy app from the base image (avoids rebuilding from source)
+COPY --from=al-agent:latest /app /app
+WORKDIR /app
+
+USER node
+ENTRYPOINT ["node", "/app/dist/agents/container-entry.js"]
+```
+
+The key requirement is that `/app/dist/agents/container-entry.js` exists and can run. The entry point reads `AGENT_CONFIG`, `PROMPT`, `GATEWAY_URL`, and `SHUTDOWN_SECRET` from environment variables, and credentials from `/credentials/`.
+
+## Build Behavior
+
+- Agent images are named `al-<agent-name>:latest` (e.g. `al-dev:latest`) and are rebuilt on every `al start` to pick up Dockerfile changes
+- The build context is the Action Llama package root (not the project directory), so `COPY` paths in per-agent Dockerfiles reference the package's `dist/`, `package.json`, etc.
+- The `FROM` line is automatically rewritten to point at the correct base image
+
+## Image Build Order
+
+```
+al-agent:latest            <-- Action Llama package (automatic)
+    |
+    v
+al-project-base:latest     <-- project Dockerfile (if customized)
+    |
+    v
+al-<agent>:latest          <-- per-agent Dockerfile (if present)
+```
+
+See [Project Dockerfile](/reference/project-dockerfile) for the project-level Dockerfile reference.
+
+## Troubleshooting
+
+**Agent image build fails** — Check that your agent's `Dockerfile` starts with `FROM al-agent:latest` (the build pipeline rewrites this to the correct base) and that any package install commands are correct.
+
+**Image build fails** — Check that your `Dockerfile` uses `apk add` (Alpine) or `apt-get` (Debian) depending on the base. The default base is Alpine.
+
+**Container exits immediately** — Check `al logs <agent>` for the error. Common causes: missing credentials, missing `ACTIONS.md`, invalid model config.

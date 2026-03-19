@@ -26,9 +26,9 @@ timeout = 600
 
 # Required: LLM model configuration
 [model]
-provider = "anthropic"                    # LLM provider: anthropic, openai, groq, google, xai, mistral, openrouter, or custom
-model = "claude-sonnet-4-20250514"        # Model ID (e.g., claude-sonnet-4-20250514, gpt-4o, gemini-2.0-flash-exp)
-thinkingLevel = "medium"                  # Optional: off | minimal | low | medium | high | xhigh (for models with reasoning support)
+provider = "anthropic"                    # LLM provider
+model = "claude-sonnet-4-20250514"        # Model ID
+thinkingLevel = "medium"                  # Optional: off | minimal | low | medium | high | xhigh
 authType = "api_key"                      # api_key | oauth_token | pi_auth
 
 # Optional: webhook triggers (instead of or in addition to schedule)
@@ -41,8 +41,19 @@ actions = ["labeled"]                     # GitHub event actions (optional)
 labels = ["agent"]                        # Only trigger on issues with these labels (optional)
 
 [[webhooks]]
-source = "my-sentry"                      # Required: references [webhooks.my-sentry] in config.toml
+source = "my-sentry"
 resources = ["error", "event_alert"]      # Sentry resource types (optional)
+
+[[webhooks]]
+source = "my-linear"
+events = ["issues"]                       # Linear event types (optional)
+actions = ["create", "update"]            # Linear event actions (optional)
+labels = ["bug"]                          # Filter by Linear labels (optional)
+
+[[webhooks]]
+source = "my-mintlify"
+events = ["build"]                        # Mintlify event types (optional)
+actions = ["failed"]                      # Mintlify event actions (optional)
 
 # Optional: preflight steps — run before the LLM session starts
 # Each step runs a built-in provider to stage data the agent will reference
@@ -81,16 +92,16 @@ sentryProjects = ["web-app", "api"]
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `credentials` | string[] | Yes | Credential refs: `"type"` for default instance, `"type:instance"` for named instance |
+| `credentials` | string[] | Yes | Credential refs: `"type"` for default instance, `"type:instance"` for named instance. See [Credentials](/reference/credentials). |
 | `schedule` | string | No* | Cron expression for polling |
-| `scale` | number | No | Number of concurrent runs allowed (default: 1). Set to `0` to disable the agent. Use lock skills in your actions to coordinate instances. See [Resource Locks](/agents#resource-locks). |
+| `scale` | number | No | Number of concurrent runs allowed (default: 1). Set to `0` to disable the agent. Use lock skills in your actions to coordinate instances. See [Resource Locks](/concepts/resource-locks). |
 | `timeout` | number | No | Max runtime in seconds. Falls back to `[local].timeout` in project config, then `900`. See [Timeout](#timeout). |
 | `model` | table | No | LLM model configuration (falls back to `[model]` in project `config.toml`) |
-| `model.provider` | string | Yes* | LLM provider ("anthropic", "openai", "groq", "google", "xai", "mistral", "openrouter", or "custom") |
+| `model.provider` | string | Yes* | LLM provider (`"anthropic"`, `"openai"`, `"groq"`, `"google"`, `"xai"`, `"mistral"`, `"openrouter"`, or `"custom"`) |
 | `model.model` | string | Yes* | Model ID |
-| `model.thinkingLevel` | string | No | Thinking budget level: off, minimal, low, medium, high, xhigh. Only relevant for Claude Sonnet/Opus. Omit for other models. |
+| `model.thinkingLevel` | string | No | Thinking budget level: off, minimal, low, medium, high, xhigh. Only relevant for Claude Sonnet/Opus. |
 | `model.authType` | string | Yes* | Auth method for the provider |
-| `webhooks` | array | No* | Array of webhook trigger objects |
+| `webhooks` | array | No* | Array of webhook trigger objects. See [Webhooks](/reference/webhooks). |
 | `preflight` | array | No | Array of preflight steps that run before the LLM session. See [Preflight](#preflight). |
 | `params` | table | No | Custom key-value params for the agent prompt |
 
@@ -98,7 +109,7 @@ sentryProjects = ["web-app", "api"]
 
 ## Scale
 
-The `scale` field controls how many instances of an agent can run concurrently. This is useful for agents that handle high-volume workloads or when you want to process multiple tasks simultaneously.
+The `scale` field controls how many instances of an agent can run concurrently.
 
 - **Default**: 1 (only one instance can run at a time)
 - **Minimum**: 0 (disables the agent — no runners, cron jobs, or webhook bindings are created)
@@ -108,7 +119,7 @@ The `scale` field controls how many instances of an agent can run concurrently. 
 
 1. **Scheduled runs**: If a cron trigger fires but all agent instances are busy, the scheduled run is skipped with a warning
 2. **Webhook events**: If a webhook arrives but all instances are busy, the event is queued (up to `workQueueSize` limit in global config, default: 100)
-3. **Agent calls**: If one agent calls another but all target instances are busy, the call is queued in the same work queue and processed when a runner frees up
+3. **Agent calls**: If one agent calls another but all target instances are busy, the call is queued in the same work queue
 
 ### Example use cases
 
@@ -120,14 +131,16 @@ The `scale` field controls how many instances of an agent can run concurrently. 
 ### Resource considerations
 
 Each parallel instance:
-- Uses separate Docker containers (in Docker mode)
+- Uses a separate Docker container
 - Has independent logging streams
 - May consume LLM API quota concurrently
 - Uses system memory and CPU
 
+See [Scaling Agents](/guides/scaling-agents) for a guide on scaling with resource locks.
+
 ## Timeout
 
-The `timeout` field controls the maximum runtime for an agent invocation. When the timeout expires, the container is terminated.
+The `timeout` field controls the maximum runtime for an agent invocation. When the timeout expires, the container is terminated with exit code 124.
 
 **Resolution order:** `agent-config.toml timeout` -> `config.toml [local].timeout` -> `900` (default)
 
@@ -151,6 +164,8 @@ timeout = 3600      # 1 hour
 ## Preflight
 
 Preflight steps run mechanical data-staging tasks after credentials are loaded but before the LLM session starts. They fetch data, clone repos, or run commands to prepare the workspace so the agent starts with everything it needs — instead of spending tokens fetching context at runtime.
+
+See [Optimizing Agents](/guides/optimizing-agents) for a guide on using preflight effectively.
 
 ### How it works
 
@@ -231,17 +246,6 @@ branch = "main"
 depth = 1
 ```
 
-### Referencing staged files in ACTIONS.md
-
-Preflight writes files to disk — your ACTIONS.md tells the LLM what's there:
-
-```markdown
-## Context
-- The repo is cloned at `/tmp/repo`
-- Open P1 issues are at `/tmp/context/issues.json`
-- Feature flags (if available) are at `/tmp/context/flags.json`
-```
-
 ### Notes
 
 - The `shell` provider is the escape hatch — anything a built-in provider doesn't cover can be expressed as a shell command
@@ -256,19 +260,22 @@ Each `[[webhooks]]` entry has the following fields:
 |-------|------|----------|-------------|
 | `source` | string | Yes | Name of a webhook source from the project's `config.toml` (e.g. `"my-github"`) |
 
-All filter fields below are optional. Omit all of them to trigger on everything from that source.
+All filter fields below are optional. Omit all of them to trigger on everything from that source. See [Webhooks](/reference/webhooks) for complete filter field tables per provider.
 
 ### GitHub filter fields
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `repos` | string[] | Filter to specific repos |
+| `orgs` | string[] | Filter to specific organizations |
+| `org` | string | Filter to a single organization |
 | `events` | string[] | Event types: issues, pull_request, push, etc. |
 | `actions` | string[] | Event actions: opened, labeled, closed, etc. |
 | `labels` | string[] | Only trigger when issue/PR has these labels |
 | `assignee` | string | Only trigger when assigned to this user |
 | `author` | string | Only trigger for this author |
 | `branches` | string[] | Only trigger for these branches |
+| `conclusions` | string[] | Only for workflow_run events with these conclusions |
 
 ### Sentry filter fields
 
@@ -276,9 +283,28 @@ All filter fields below are optional. Omit all of them to trigger on everything 
 |-------|------|-------------|
 | `resources` | string[] | Resource types: event_alert, metric_alert, issue, error, comment |
 
+### Linear filter fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `organizations` | string[] | Filter to specific Linear organizations |
+| `events` | string[] | Linear event types: issues, issue_comment, etc. |
+| `actions` | string[] | Event actions: create, update, delete, etc. |
+| `labels` | string[] | Only when issue has these labels |
+| `assignee` | string | Only when assigned to this user (email) |
+| `author` | string | Only for this author (email) |
+
+### Mintlify filter fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `projects` | string[] | Filter to specific Mintlify projects |
+| `events` | string[] | Mintlify event types: build, etc. |
+| `actions` | string[] | Event actions: failed, succeeded, etc. |
+| `branches` | string[] | Only for these branches |
+
 ## Model Configuration
 
 The `[model]` section is optional — agents inherit the default model from the project's `config.toml`. Only add `[model]` to an agent config if you want to override the default for that specific agent.
 
-See [Models](/models) for all supported providers, model IDs, auth types, thinking levels, and credential setup.
-
+See [Models](/reference/models) for all supported providers, model IDs, auth types, thinking levels, and credential setup.
