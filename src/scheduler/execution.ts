@@ -42,8 +42,10 @@ export interface SchedulerContext {
   events?: SchedulerEventBus;
   /** Optional call store for updating al-call lifecycle status. */
   callStore?: CallStore;
-  /** Optional status tracker — used to check pause state. */
+  /** Optional status tracker — used to check global pause state. */
   statusTracker?: StatusTracker;
+  /** Returns false if the named agent has been paused/disabled; undefined = treat as enabled. */
+  isAgentEnabled?: (name: string) => boolean;
 }
 
 // Prompt helpers: when images have baked-in static files, only pass the dynamic suffix.
@@ -111,6 +113,10 @@ export function dispatchTriggers(
       ctx.logger.info({ source: sourceAgent, target: agent }, "target disabled (scale=0), skipping");
       continue;
     }
+    if (ctx.isAgentEnabled && !ctx.isAgentEnabled(agent)) {
+      ctx.logger.info({ source: sourceAgent, target: agent }, "target agent is paused, skipping trigger");
+      continue;
+    }
     const runner = pool.getAvailableRunner();
     if (!runner) {
       ctx.workQueue.enqueue(agent, { type: 'agent-trigger', sourceAgent, context, depth });
@@ -130,6 +136,7 @@ export async function drainQueues(ctx: SchedulerContext): Promise<void> {
   if (ctx.shuttingDown) return;
   if (ctx.statusTracker?.isPaused()) return;
   for (const agentConfig of ctx.agentConfigs) {
+    if (ctx.isAgentEnabled && !ctx.isAgentEnabled(agentConfig.name)) continue;
     const pool = ctx.runnerPools[agentConfig.name];
     if (!pool || ctx.workQueue.size(agentConfig.name) === 0) continue;
     for (const runner of pool.getAllAvailableRunners()) {
@@ -189,6 +196,10 @@ export async function runWithReruns(
 
   let reruns = 0;
   while (result === "rerun" && reruns < ctx.maxReruns) {
+    if (ctx.isAgentEnabled && !ctx.isAgentEnabled(agentConfig.name)) {
+      ctx.logger.info({ agent: agentConfig.name }, "agent paused, stopping reruns");
+      break;
+    }
     reruns++;
     ctx.logger.info({ rerun: reruns, maxReruns: ctx.maxReruns }, `${agentConfig.name} requested rerun`);
     ({ result } = await executeRun(

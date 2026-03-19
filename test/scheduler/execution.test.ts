@@ -165,6 +165,24 @@ describe("dispatchTriggers", () => {
     );
     expect(targetRunner.run).toHaveBeenCalled();
   });
+
+  it("skips trigger for paused target agent", () => {
+    const targetRunner = makeRunner({ instanceId: "b" });
+    const ctx = makeCtx({
+      agentConfigs: [makeAgentConfig("a"), makeAgentConfig("b")],
+      runnerPools: {
+        a: new RunnerPool([makeRunner()]),
+        b: new RunnerPool([targetRunner]),
+      },
+      isAgentEnabled: (name) => name !== "b",
+    });
+    dispatchTriggers([{ agent: "b", context: "hi" }], "a", 0, ctx);
+    expect(ctx.logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ target: "b" }),
+      "target agent is paused, skipping trigger"
+    );
+    expect(targetRunner.run).not.toHaveBeenCalled();
+  });
 });
 
 describe("drainQueues", () => {
@@ -274,6 +292,21 @@ describe("drainQueues", () => {
     // Should complete immediately with no work
     await drainQueues(ctx);
   });
+
+  it("skips queued work for disabled agents", async () => {
+    const runner = makeRunner({ instanceId: "a" });
+    const config = makeAgentConfig("a");
+    const ctx = makeCtx({
+      agentConfigs: [config],
+      runnerPools: { a: new RunnerPool([runner]) },
+      isAgentEnabled: (name) => name !== "a",
+    });
+    ctx.workQueue.enqueue("a", { type: "schedule" });
+
+    await drainQueues(ctx);
+
+    expect(runner.run).not.toHaveBeenCalled();
+  });
 });
 
 describe("runWithReruns", () => {
@@ -311,6 +344,35 @@ describe("runWithReruns", () => {
     expect(ctx.logger.info).toHaveBeenCalledWith(
       expect.objectContaining({ rerun: 1 }),
       expect.stringContaining("requested rerun")
+    );
+  });
+
+  it("stops reruns when agent is paused mid-run", async () => {
+    let callCount = 0;
+    const runner = makeRunner({
+      run: vi.fn().mockImplementation(async () => {
+        callCount++;
+        return { result: "rerun", triggers: [] };
+      }),
+    });
+    const config = makeAgentConfig("a");
+    // Agent is disabled after the first run
+    const ctx = makeCtx({
+      maxReruns: DEFAULT_MAX_RERUNS,
+      agentConfigs: [config],
+      runnerPools: { a: new RunnerPool([runner]) },
+      isAgentEnabled: () => callCount < 2,
+    });
+
+    await runWithReruns(runner, config, 0, ctx);
+
+    // First run (callCount becomes 1, still enabled), then check: callCount=1 < 2 → enabled
+    // Before second run: callCount=1, isAgentEnabled returns 1 < 2 = true (enabled), run happens, callCount=2
+    // Before third run: isAgentEnabled returns 2 < 2 = false → stop
+    expect(runner.run).toHaveBeenCalledTimes(2);
+    expect(ctx.logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "a" }),
+      "agent paused, stopping reruns"
     );
   });
 
