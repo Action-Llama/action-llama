@@ -166,7 +166,7 @@ describe("dispatchTriggers", () => {
     expect(targetRunner.run).toHaveBeenCalled();
   });
 
-  it("skips trigger for paused target agent", () => {
+  it("queues trigger for paused target agent instead of dropping", () => {
     const targetRunner = makeRunner({ instanceId: "b" });
     const ctx = makeCtx({
       agentConfigs: [makeAgentConfig("a"), makeAgentConfig("b")],
@@ -177,9 +177,10 @@ describe("dispatchTriggers", () => {
       isAgentEnabled: (name) => name !== "b",
     });
     dispatchTriggers([{ agent: "b", context: "hi" }], "a", 0, ctx);
+    expect(ctx.workQueue.size("b")).toBe(1);
     expect(ctx.logger.info).toHaveBeenCalledWith(
       expect.objectContaining({ target: "b" }),
-      "target agent is paused, skipping trigger"
+      "target agent is paused, trigger queued"
     );
     expect(targetRunner.run).not.toHaveBeenCalled();
   });

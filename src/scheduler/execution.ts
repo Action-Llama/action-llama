@@ -114,7 +114,8 @@ export function dispatchTriggers(
       continue;
     }
     if (ctx.isAgentEnabled && !ctx.isAgentEnabled(agent)) {
-      ctx.logger.info({ source: sourceAgent, target: agent }, "target agent is paused, skipping trigger");
+      ctx.workQueue.enqueue(agent, { type: 'agent-trigger', sourceAgent, context, depth });
+      ctx.logger.info({ source: sourceAgent, target: agent }, "target agent is paused, trigger queued");
       continue;
     }
     const runner = pool.getAvailableRunner();
