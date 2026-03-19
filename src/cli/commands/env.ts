@@ -8,6 +8,7 @@ import {
   environmentPath,
   loadEnvToml,
   writeEnvToml,
+  resolveEnvironmentName,
   type EnvironmentConfig,
 } from "../../shared/environment.js";
 import { ConfigError } from "../../shared/errors.js";
@@ -271,18 +272,25 @@ export async function deprov(name: string, opts: { project: string }): Promise<v
 }
 
 export async function logs(
-  name: string,
-  opts: { lines?: string; follow?: boolean },
+  name: string | undefined,
+  opts: { project: string; lines?: string; follow?: boolean },
 ): Promise<void> {
-  if (!environmentExists(name)) {
+  const resolvedName = resolveEnvironmentName(name, opts.project);
+  if (!resolvedName) {
     throw new ConfigError(
-      `Environment "${name}" not found. Run 'al env list' to see available environments.`
+      "No environment specified. Specify an environment name or configure one in .env.toml"
     );
   }
 
-  const config = loadEnvironmentConfig(name);
+  if (!environmentExists(resolvedName)) {
+    throw new ConfigError(
+      `Environment "${resolvedName}" not found. Run 'al env list' to see available environments.`
+    );
+  }
+
+  const config = loadEnvironmentConfig(resolvedName);
   if (!config.server) {
-    throw new ConfigError(`Environment "${name}" has no [server] config.`);
+    throw new ConfigError(`Environment "${resolvedName}" has no [server] config.`);
   }
 
   const serverConfig = validateServerConfig(config.server);
