@@ -6,6 +6,7 @@ export interface ServerConfig {
   port?: number;         // default: 22
   keyPath?: string;      // default: ssh-agent
   basePath?: string;     // default: "/opt/action-llama"
+  expose?: boolean;      // bind gateway to 0.0.0.0 (default: true for backward compat)
   provider?: string;        // "vultr" or "hetzner" when AL-provisioned
   vultrInstanceId?: string;
   vultrRegion?: string;
@@ -45,6 +46,10 @@ export function validateServerConfig(raw: unknown): ServerConfig {
 
   if (config.keyPath !== undefined && typeof config.keyPath !== "string") {
     throw new ConfigError("server.keyPath must be a string");
+  }
+
+  if (config.expose !== undefined && typeof config.expose !== "boolean") {
+    throw new ConfigError("server.expose must be a boolean");
   }
 
   return config as unknown as ServerConfig;
