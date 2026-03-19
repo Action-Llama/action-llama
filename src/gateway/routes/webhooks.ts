@@ -2,7 +2,6 @@ import type { Hono } from "hono";
 import type { WebhookRegistry } from "../../webhooks/registry.js";
 import type { Logger } from "../../shared/logger.js";
 import type { StatusTracker } from "../../tui/status-tracker.js";
-import { rateLimiter } from "../rate-limiter.js";
 
 export function registerWebhookRoutes(
   app: Hono,
@@ -11,9 +10,6 @@ export function registerWebhookRoutes(
   logger: Logger,
   statusTracker?: StatusTracker
 ): void {
-  // Rate limit webhook endpoint: 120 requests per minute per IP
-  app.use("/webhooks/*", rateLimiter({ max: 120, windowMs: 60_000 }));
-
   app.post("/webhooks/:source", async (c) => {
     const source = c.req.param("source");
     logger.debug({ source }, "webhook request received");
