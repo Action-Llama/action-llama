@@ -544,7 +544,7 @@ branch = "main"
 depth = 1
 ```
 
-`shell` is the escape hatch. No per-step timeout. Shell env vars don't propagate back.
+`shell` is the escape hatch. No per-step timeout. Shell env vars don't propagate back (see [Environment variable persistence](#environment-variable-persistence) for a workaround).
 
 ### Webhook Trigger Fields
 
@@ -989,8 +989,6 @@ al run dev -E production
 al run dev --headless
 ```
 
-Extra: `-H, --headless` for non-interactive mode.
-
 ### `al start`
 
 Start scheduler. Runs agents on schedules and listens for webhooks.
@@ -1002,8 +1000,6 @@ al start -e                   # VPS deployment: expose gateway publicly
 al start --port 3000          # Custom gateway port
 al start -H                   # Headless (no TUI)
 ```
-
-Extra: `-w` web dashboard, `-e` expose gateway publicly, `-H` headless, `--port <N>` gateway port.
 
 ### `al stop`
 
@@ -1036,8 +1032,6 @@ al logs dev -r                # Raw JSON log output
 al logs dev -i abc123         # Specific instance
 al logs dev -E production     # Remote agent logs
 ```
-
-Extra: `-n <N>` lines (default: 50), `-f` follow, `-d <YYYY-MM-DD>` date, `-r` raw JSON, `-i <id>` instance filter.
 
 ### `al pause [name]`
 
@@ -1090,8 +1084,6 @@ al push --creds-only -E production       # Sync only credentials
 
 No agent name: full project push. With agent name: hot-reload that agent only.
 
-Extra: `--dry-run`, `--no-creds`, `--creds-only`, `--files-only`, `-a`, `--force-install`.
-
 ### Environment commands
 
 #### `al env init <name>`
@@ -1133,7 +1125,7 @@ Tear down environment. Stops containers, cleans remote creds, optionally deletes
 
 #### `al env logs [name]`
 
-View server system logs via SSH. Extra: `-n <N>` lines, `-f` follow.
+View server system logs via SSH.
 
 ### Credential commands
 
@@ -1269,6 +1261,18 @@ Isolated containers: read-only root, dropped capabilities, non-root user, resour
 | `/tmp` | read-write (tmpfs, 2GB) | Agent working directory — repos, scratch files, SSH keys |
 | `/workspace` | read-write (2GB) | Persistent workspace |
 | `/home/node` | read-write (64MB) | Home directory |
+
+### Environment variable persistence
+
+Write to `/tmp/env.sh` to persist environment variables across bash commands:
+
+```bash
+echo 'export REPO="owner/repo"' > /tmp/env.sh
+echo 'export ISSUE_NUMBER=42' >> /tmp/env.sh
+gh issue view $ISSUE_NUMBER --repo $REPO
+```
+
+File is automatically sourced before each bash command.
 
 ### Docker config options (`config.toml [local]`)
 
