@@ -55,7 +55,7 @@ Configuration uses a three-layer merge system so project settings are portable a
 |-------|------|---------|
 | 1 | `config.toml` (committed) | Project settings: model defaults, Docker limits, gateway port, webhook sources |
 | 2 | `.env.toml` (gitignored) | Per-machine environment binding and config overrides |
-| 3 | `~/.action-llama/environments/<name>.toml` | Server/cloud infrastructure config |
+| 3 | `~/.action-llama/environments/<name>.toml` | Server infrastructure config |
 
 Later layers override earlier ones (deep merge). See [config.toml Reference](/config-reference) for all fields.
 
@@ -69,4 +69,4 @@ Later layers override earlier ones (deep merge). See [config.toml Reference](/co
 | **Credentials** | `~/.action-llama/credentials/` | Pushed via SSH |
 | **Management** | TUI or web dashboard | `al push`, `al env`, web dashboard |
 
-Start locally for development, then `al push` to a server for production. See [Deployment](/cloud) for details.
+Start locally for development, then `al push` to a server for production. See [Deployment](/deployment) for details.

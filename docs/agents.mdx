@@ -133,7 +133,7 @@ Each agent run is an isolated, short-lived container. Here's what happens from t
 
 1. **Trigger fires** — a cron tick, webhook event, manual `al run`, or `al-call` from another agent.
 2. **Container launches** — a fresh container starts with credentials and config passed via environment variables and volume mounts.
-3. **Credentials are loaded** — the entry point reads credential files from `/credentials/<type>/<instance>/<field>` (local Docker and Cloud Run) or from `AL_SECRET_*` environment variables (ECS). Key credentials are injected as env vars the LLM can use directly: `GITHUB_TOKEN`, `GH_TOKEN`, `SENTRY_AUTH_TOKEN`, `GIT_SSH_COMMAND`, git author identity, etc.
+3. **Credentials are loaded** — the entry point reads credential files from `/credentials/<type>/<instance>/<field>`. Key credentials are injected as env vars the LLM can use directly: `GITHUB_TOKEN`, `GH_TOKEN`, `SENTRY_AUTH_TOKEN`, `GIT_SSH_COMMAND`, git author identity, etc.
 4. **LLM session starts** — the model is initialized and receives two inputs:
    - **System prompt:** the contents of `ACTIONS.md`
    - **User prompt:** `<agent-config>` (params JSON) + `<credential-context>` (available env vars, tools, and security policy) + trigger context (schedule, webhook payload, or agent call)

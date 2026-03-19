@@ -28,7 +28,7 @@ export interface LocalConfig {
   timeout?: number;        // Max container runtime in seconds
 }
 
-export interface VpsCloudConfig {
+export interface VpsConfig {
   provider: "vps";
   host: string;
   sshUser?: string;         // default: "root"
@@ -46,7 +46,7 @@ export interface VpsCloudConfig {
   cloudflareHostname?: string;
 }
 
-export type CloudConfig = VpsCloudConfig;
+export type CloudConfig = VpsConfig;
 
 
 export interface GatewayConfig {
@@ -160,26 +160,6 @@ export function loadGlobalConfig(projectPath: string, envName?: string): GlobalC
   }
 
   return config;
-}
-
-export function validateCloudConfig(raw: any): CloudConfig {
-  if (!raw.provider) {
-    throw new ConfigError("cloud.provider is required");
-  }
-
-  if (raw.provider === "vps") {
-    const required = ["host"] as const;
-    const missing = required.filter((k) => !raw[k]);
-    if (missing.length > 0) {
-      throw new ConfigError(
-        `VPS cloud config is missing required fields: ${missing.map((k) => `cloud.${k}`).join(", ")}. ` +
-        `Run 'al setup cloud' to configure.`
-      );
-    }
-    return raw as VpsCloudConfig;
-  }
-
-  throw new ConfigError(`Unknown cloud provider: "${raw.provider}". Supported: vps`);
 }
 
 

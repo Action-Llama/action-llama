@@ -143,7 +143,7 @@ async function checkDns(
     return { name: "DNS", status: "warn", detail: "no Cloudflare API token credential", fixable: false };
   }
 
-  const { findDnsRecord, upsertDnsRecord } = await import("./cloudflare-api.js");
+  const { findDnsRecord, upsertDnsRecord } = await import("../cloudflare/api.js");
   const hostname = server.cloudflareHostname!;
   const zoneId = server.cloudflareZoneId!;
 
@@ -193,7 +193,7 @@ async function checkSslMode(
     return { name: "Cloudflare SSL", status: "warn", detail: "no Cloudflare API token credential", fixable: false };
   }
 
-  const { getSslMode, setSslMode } = await import("./cloudflare-api.js");
+  const { getSslMode, setSslMode } = await import("../cloudflare/api.js");
   const zoneId = server.cloudflareZoneId!;
   const current = await getSslMode(cfToken, zoneId);
 

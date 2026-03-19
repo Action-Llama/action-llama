@@ -11,10 +11,10 @@ vi.mock("child_process", async (importOriginal) => {
   return { ...actual, execFile: mockExecFile, spawn: mockSpawn };
 });
 
-const { VpsCloudProvider } = await import("../../../src/cloud/vps/provider.js");
-type VpsCloudConfig = import("../../../src/shared/config.js").VpsCloudConfig;
+const { VpsProvider } = await import("../../../src/cloud/vps/provider.js");
+type VpsConfig = import("../../../src/shared/config.js").VpsConfig;
 
-const testConfig: VpsCloudConfig = {
+const testConfig: VpsConfig = {
   provider: "vps",
   host: "1.2.3.4",
   sshUser: "root",
@@ -22,13 +22,13 @@ const testConfig: VpsCloudConfig = {
   sshKeyPath: "/home/test/.ssh/id_rsa",
 };
 
-describe("VpsCloudProvider", () => {
-  let provider: InstanceType<typeof VpsCloudProvider>;
+describe("VpsProvider", () => {
+  let provider: InstanceType<typeof VpsProvider>;
 
   beforeEach(() => {
     mockExecFile.mockReset();
     mockSpawn.mockReset();
-    provider = new VpsCloudProvider(testConfig);
+    provider = new VpsProvider(testConfig);
   });
 
   it("has correct providerName", () => {

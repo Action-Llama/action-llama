@@ -3,12 +3,12 @@
  * Handles both removing containers and optionally deleting the Vultr instance.
  */
 
-import type { VpsCloudConfig } from "../../shared/config.js";
+import type { VpsConfig } from "../../shared/config.js";
 import { sshExec, type SshConfig } from "./ssh.js";
 import { VPS_CONSTANTS } from "./constants.js";
 import { FilesystemBackend } from "../../shared/filesystem-backend.js";
 
-function sshConfigFromCloud(config: VpsCloudConfig): SshConfig {
+function sshConfigFromVps(config: VpsConfig): SshConfig {
   return {
     host: config.host,
     user: config.sshUser ?? VPS_CONSTANTS.DEFAULT_SSH_USER,
@@ -17,8 +17,8 @@ function sshConfigFromCloud(config: VpsCloudConfig): SshConfig {
   };
 }
 
-export async function teardownVps(_projectPath: string, config: VpsCloudConfig): Promise<void> {
-  const sshConfig = sshConfigFromCloud(config);
+export async function teardownVps(_projectPath: string, config: VpsConfig): Promise<void> {
+  const sshConfig = sshConfigFromVps(config);
   const backend = new FilesystemBackend();
 
   // 1. Stop and remove all action-llama containers
@@ -53,7 +53,7 @@ export async function teardownVps(_projectPath: string, config: VpsCloudConfig):
     try {
       const cfToken = await backend.read("cloudflare_api_token", "default", "api_token");
       if (cfToken) {
-        const { deleteDnsRecord } = await import("./cloudflare-api.js");
+        const { deleteDnsRecord } = await import("../cloudflare/api.js");
         await deleteDnsRecord(cfToken, config.cloudflareZoneId, config.cloudflareDnsRecordId);
         console.log(`Cloudflare DNS record deleted${config.cloudflareHostname ? ` (${config.cloudflareHostname})` : ""}.`);
       } else {

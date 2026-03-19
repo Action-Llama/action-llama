@@ -30,7 +30,7 @@
           },
           {
             "group": "Deployment",
-            "pages": ["cloud", "vps-deployment"]
+            "pages": ["deployment", "vps-deployment"]
           },
           {
             "group": "Examples",
