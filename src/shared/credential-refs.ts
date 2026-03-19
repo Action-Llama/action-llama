@@ -8,7 +8,7 @@ export const WEBHOOK_SECRET_TYPES: Record<string, string> = {
 
 /** Credentials that are always required but may not be explicitly referenced */
 export const IMPLICIT_CREDENTIAL_REFS = new Set([
-  "gateway_api_key:default",  // Required for gateway authentication
+  "gateway_api_key",  // Required for gateway authentication
 ]);
 
 /**
@@ -46,11 +46,6 @@ export function collectCredentialRefs(projectPath: string, globalConfig: GlobalC
         credentialRefs.add(`${credType}:${sourceConfig.credential}`);
       }
     }
-  }
-
-  // Add implicit credentials that are always required
-  for (const ref of IMPLICIT_CREDENTIAL_REFS) {
-    credentialRefs.add(ref);
   }
 
   return credentialRefs;

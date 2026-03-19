@@ -7,7 +7,7 @@ vi.mock("../../src/shared/config.js", () => ({
   loadAgentConfig: (...args: any[]) => mockLoadAgentConfig(...args),
 }));
 
-import { collectCredentialRefs, credentialRefsToRelativePaths, WEBHOOK_SECRET_TYPES } from "../../src/shared/credential-refs.js";
+import { collectCredentialRefs, credentialRefsToRelativePaths, WEBHOOK_SECRET_TYPES, IMPLICIT_CREDENTIAL_REFS } from "../../src/shared/credential-refs.js";
 
 describe("collectCredentialRefs", () => {
   beforeEach(() => {
@@ -21,7 +21,7 @@ describe("collectCredentialRefs", () => {
       .mockReturnValueOnce({ name: "reviewer", credentials: ["github_token", "slack_token"] });
 
     const refs = collectCredentialRefs("/tmp/project", {});
-    expect(refs).toEqual(new Set(["github_token", "slack_token", "gateway_api_key:default"]));
+    expect(refs).toEqual(new Set(["github_token", "slack_token"]));
   });
 
   it("collects webhook secret refs from agent triggers", () => {
@@ -50,13 +50,13 @@ describe("collectCredentialRefs", () => {
     const refs = collectCredentialRefs("/tmp/project", {
       webhooks: { "my-github": { type: "github" } },
     });
-    expect(refs.size).toBe(1); // Only the implicit gateway_api_key:default
+    expect(refs.size).toBe(0);
   });
 
   it("returns empty set when no agents", () => {
     mockDiscoverAgents.mockReturnValue([]);
     const refs = collectCredentialRefs("/tmp/project", {});
-    expect(refs.size).toBe(1); // Only the implicit gateway_api_key:default
+    expect(refs.size).toBe(0);
   });
 
   it("deduplicates refs across agents", () => {
@@ -66,7 +66,7 @@ describe("collectCredentialRefs", () => {
       .mockReturnValueOnce({ name: "b", credentials: ["github_token"] });
 
     const refs = collectCredentialRefs("/tmp/project", {});
-    expect(refs.size).toBe(2); // github_token + gateway_api_key:default
+    expect(refs.size).toBe(1); // github_token (deduped)
   });
 });
 
@@ -84,6 +84,28 @@ describe("credentialRefsToRelativePaths", () => {
     const refs = new Set<string>();
     const paths = credentialRefsToRelativePaths(refs);
     expect(paths).toEqual([]);
+  });
+});
+
+describe("collectCredentialRefs — implicit refs", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("does not include implicit refs (they bypass the credential registry)", () => {
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["github_token"] });
+
+    const refs = collectCredentialRefs("/tmp/project", {});
+    for (const implicit of IMPLICIT_CREDENTIAL_REFS) {
+      expect(refs.has(implicit)).toBe(false);
+    }
+  });
+});
+
+describe("IMPLICIT_CREDENTIAL_REFS", () => {
+  it("contains gateway_api_key:default", () => {
+    expect(IMPLICIT_CREDENTIAL_REFS.has("gateway_api_key")).toBe(true);
   });
 });
 

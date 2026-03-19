@@ -44,7 +44,7 @@ const mockCredentialRefsToRelativePaths = vi.fn();
 vi.mock("../../src/shared/credential-refs.js", () => ({
   collectCredentialRefs: (...args: any[]) => mockCollectCredentialRefs(...args),
   credentialRefsToRelativePaths: (...args: any[]) => mockCredentialRefsToRelativePaths(...args),
-  IMPLICIT_CREDENTIAL_REFS: new Set(["gateway_api_key:default"]),
+  IMPLICIT_CREDENTIAL_REFS: new Set(["gateway_api_key"]),
 }));
 
 // Mock config module

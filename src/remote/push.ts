@@ -8,7 +8,7 @@ import { loadGlobalConfig } from "../shared/config.js";
 import { CREDENTIALS_DIR } from "../shared/paths.js";
 import { VPS_CONSTANTS } from "../cloud/vps/constants.js";
 import { sshOptionsFromConfig, sshExec, sshSpawn, rsyncTo, buildSshArgs, type SshOptions } from "./ssh.js";
-import { collectCredentialRefs, credentialRefsToRelativePaths } from "../shared/credential-refs.js";
+import { collectCredentialRefs, credentialRefsToRelativePaths, IMPLICIT_CREDENTIAL_REFS } from "../shared/credential-refs.js";
 import { execFile as execFileCb } from "child_process";
 import { promisify } from "util";
 
@@ -64,6 +64,11 @@ async function syncRequiredCredentials(
   rsyncFlags: string[],
 ): Promise<void> {
   const credentialRefs = collectCredentialRefs(projectPath, globalConfig);
+  // Add implicit credentials (e.g. gateway_api_key) — these are auto-generated
+  // and not in the credential registry, so they must not go through doctor/resolveCredential.
+  for (const ref of IMPLICIT_CREDENTIAL_REFS) {
+    credentialRefs.add(ref);
+  }
   const relativePaths = credentialRefsToRelativePaths(credentialRefs);
   
   if (relativePaths.length === 0) return;
