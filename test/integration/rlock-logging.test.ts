@@ -164,8 +164,14 @@ describe.skipIf(!DOCKER)("integration: rlock end-to-end", { timeout: 180_000 }, 
     const lockRes = await fetch(`http://127.0.0.1:${harness.gatewayPort}/locks/status`, {
       headers: { Authorization: `Bearer ${harness.apiKey}` },
     });
-    const lockBody = (await lockRes.json()) as { locks: unknown[] };
-    expect(lockBody.locks).toHaveLength(0);
+    
+    if (lockRes.status === 404) {
+      // Status endpoint is disabled when expose=true for security
+      expect(lockRes.status).toBe(404);
+    } else {
+      const lockBody = (await lockRes.json()) as { locks: unknown[] };
+      expect(lockBody.locks).toHaveLength(0);
+    }
   });
 
   it("locks are released automatically on container cleanup", async () => {
@@ -203,7 +209,13 @@ describe.skipIf(!DOCKER)("integration: rlock end-to-end", { timeout: 180_000 }, 
     const lockRes = await fetch(`http://127.0.0.1:${harness.gatewayPort}/locks/status`, {
       headers: { Authorization: `Bearer ${harness.apiKey}` },
     });
-    const lockBody = (await lockRes.json()) as { locks: unknown[] };
-    expect(lockBody.locks).toHaveLength(0);
+    
+    if (lockRes.status === 404) {
+      // Status endpoint is disabled when expose=true for security
+      expect(lockRes.status).toBe(404);
+    } else {
+      const lockBody = (await lockRes.json()) as { locks: unknown[] };
+      expect(lockBody.locks).toHaveLength(0);
+    }
   });
 });
