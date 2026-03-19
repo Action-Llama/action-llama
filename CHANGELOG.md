@@ -1,5 +1,13 @@
 # @action-llama/action-llama
 
+## 0.13.5
+
+### Patch Changes
+
+- [#185](https://github.com/Action-Llama/action-llama/pull/185) [`f7d6dfe`](https://github.com/Action-Llama/action-llama/commit/f7d6dfe7819c501dd6c718748190bc03f8d1c66c) Thanks [@asselstine](https://github.com/asselstine)! - Restructured documentation into four intent-based sections: First Steps, Guides, Concepts, and Reference. Added documentation for previously undocumented CLI flags (`-E/--env` on stat/kill/pause/resume/doctor, `--port` on start, `-r/--raw` and `-i/--instance` on logs, `al creds types`), infrastructure credentials (`hetzner_api_key`, `vps_ssh`, `cloudflare_api_token`), and Linear/Mintlify webhook filter fields. Fixed incorrect SSH passphrase guidance in VPS deployment docs.
+
+- [`e1a0550`](https://github.com/Action-Llama/action-llama/commit/e1a05502410b9e1ed6b91f143d43dd1cfde1334b) Thanks [@asselstine](https://github.com/asselstine)! - Fixed docs accent color for light mode. The previous light-mode color (#e8a849) was too bright against white backgrounds, making text and UI elements hard to read. Darkened to #9a6c2e for proper contrast.
+
 ## 0.13.4
 
 ### Patch Changes
