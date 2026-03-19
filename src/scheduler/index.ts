@@ -223,6 +223,9 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
         }
         process.exit(0);
       },
+      workQueue: {
+        size: (agentName: string) => schedulerCtx.workQueue.size(agentName),
+      },
     },
   });
   logger.info({ port: gatewayPort }, "Gateway started early to show build progress");
