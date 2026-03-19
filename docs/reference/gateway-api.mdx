@@ -1,0 +1,83 @@
+---
+title: "Gateway API"
+description: "HTTP API for controlling the scheduler, triggering agent runs, and streaming status"
+---
+
+The gateway is the HTTP server that runs alongside the scheduler. It handles webhooks, serves the [web dashboard](/reference/web-dashboard), and exposes control and status APIs used by CLI commands and the dashboard.
+
+The gateway starts automatically when needed — either when webhooks are configured, when `--web-ui` is passed to `al start`, or when Docker container communication is required. The port is controlled by the `[gateway].port` setting in `config.toml` (default: `8080`).
+
+## Authentication
+
+The gateway API is protected by an API key. The same key is used for both browser sessions and CLI access.
+
+**Key location:** `~/.action-llama/credentials/gateway_api_key/default/key`
+
+The key is generated automatically by `al doctor` or on first `al start`. To view or regenerate it, run `al doctor`.
+
+### CLI access
+
+CLI commands (`al stat`, `al pause`, `al resume`, `al kill`) automatically read the API key from the credential store and send it as a `Bearer` token in the `Authorization` header.
+
+### Browser access
+
+The [web dashboard](/reference/web-dashboard) uses cookie-based authentication. After logging in with the API key, an `al_session` cookie is set (HttpOnly, SameSite=Strict) so all subsequent requests — including SSE streams — are authenticated automatically.
+
+### Protected routes
+
+The following routes require authentication:
+
+- `/dashboard` and `/dashboard/*` — all dashboard pages and SSE streams
+- `/control/*` — scheduler and agent control endpoints
+- `/locks/status` — active lock information
+
+Health checks (`/health`), webhook endpoints (`/webhooks/*`), and container management routes are **not** protected.
+
+### Migrating from `AL_DASHBOARD_SECRET`
+
+The old `AL_DASHBOARD_SECRET` environment variable (HTTP Basic Auth) is no longer used. If it's still set, a deprecation warning is logged. Remove it from your environment and run `al doctor` to set up the new API key.
+
+## Control API
+
+All control endpoints use `POST` and require authentication.
+
+### Scheduler control
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /control/pause` | Pause the scheduler (all cron jobs) |
+| `POST /control/resume` | Resume the scheduler |
+
+### Agent control
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /control/trigger/<name>` | Trigger an immediate agent run |
+| `POST /control/agents/<name>/enable` | Enable a disabled agent |
+| `POST /control/agents/<name>/disable` | Disable an agent (pauses its cron job) |
+| `POST /control/agents/<name>/pause` | Pause an agent (alias for disable) |
+| `POST /control/agents/<name>/resume` | Resume an agent (alias for enable) |
+| `POST /control/agents/<name>/kill` | Kill all running instances of an agent |
+
+## Status API
+
+### SSE streams
+
+Live updates use **Server-Sent Events (SSE)**:
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /dashboard/api/status-stream` | Pushes agent status and scheduler info whenever state changes |
+| `GET /dashboard/api/logs/<agent>/stream` | Streams log lines for a specific agent (500ms poll interval) |
+
+### Health check
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /health` | Health check (no authentication required) |
+
+### Lock status
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /locks/status` | Active resource lock information (requires authentication) |

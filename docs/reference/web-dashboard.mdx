@@ -23,35 +23,11 @@ The port is controlled by the `[gateway].port` setting in `config.toml` (default
 
 ## Authentication
 
-The dashboard is protected by a gateway API key. The same key is used for both browser sessions and CLI access.
-
-**Key location:** `~/.action-llama/credentials/gateway_api_key/default/key`
-
-The key is generated automatically by `al doctor` or on first `al start`. To view or regenerate it, run `al doctor`.
-
-### Browser login
-
-Navigate to `http://localhost:8080/dashboard`. You'll be redirected to a login page where you paste your API key. On success, an `al_session` cookie is set (HttpOnly, SameSite=Strict) so all subsequent requests — including SSE streams — are authenticated automatically.
+The dashboard is protected by the gateway API key. Navigate to `http://localhost:8080/dashboard` and you'll be redirected to a login page where you paste your API key. On success, an `al_session` cookie is set (HttpOnly, SameSite=Strict) so all subsequent requests — including SSE streams — are authenticated automatically.
 
 A **Logout** link is available in the dashboard header.
 
-### CLI access
-
-CLI commands (`al stat`, `al pause`, `al resume`, `al kill`) automatically read the API key from the credential store and send it as a `Bearer` token in the `Authorization` header.
-
-### What's protected
-
-The following routes require authentication:
-
-- `/dashboard` and `/dashboard/*` — all dashboard pages and SSE streams
-- `/control/*` — scheduler and agent control endpoints (pause, resume, kill, trigger, enable/disable)
-- `/locks/status` — active lock information
-
-Health checks (`/health`), webhook endpoints (`/webhooks/*`), and container management routes are **not** protected.
-
-### Migrating from `AL_DASHBOARD_SECRET`
-
-The old `AL_DASHBOARD_SECRET` environment variable (HTTP Basic Auth) is no longer used. If it's still set, a deprecation warning is logged. Remove it from your environment and run `al doctor` to set up the new API key.
+See [Gateway API — Authentication](/reference/gateway-api#authentication) for details on key management and protected routes.
 
 ## Dashboard Pages
 
@@ -92,24 +68,8 @@ On initial load, the last 100 log entries from the agent's log file are displaye
 
 ## How It Works
 
-The dashboard is served by the same gateway that handles webhooks and container communication. When `--web-ui` is enabled, the gateway starts even if Docker and webhooks are not configured.
+The dashboard is served by the same [gateway](/reference/gateway-api) that handles webhooks and container communication. When `--web-ui` is enabled, the gateway starts even if Docker and webhooks are not configured.
 
-Live updates use **Server-Sent Events (SSE)** on two endpoints:
-
-- `GET /dashboard/api/status-stream` — pushes agent status and scheduler info whenever state changes
-- `GET /dashboard/api/logs/<agent>/stream` — streams log lines for a specific agent by tailing its log file (500ms poll interval)
-
-Dashboard actions (Run, Enable/Disable, Pause/Resume) call the control API endpoints:
-
-- `POST /control/trigger/<name>` — trigger an immediate agent run
-- `POST /control/agents/<name>/enable` — enable a disabled agent
-- `POST /control/agents/<name>/disable` — disable an agent (pauses its cron job)
-- `POST /control/agents/<name>/pause` — pause an agent (alias for disable)
-- `POST /control/agents/<name>/resume` — resume an agent (alias for enable)
-- `POST /control/agents/<name>/kill` — kill all running instances of an agent
-- `POST /control/pause` — pause the scheduler
-- `POST /control/resume` — resume the scheduler
-
-All control requests use `credentials: 'same-origin'` to carry the session cookie.
+Dashboard actions (Run, Enable/Disable, Pause/Resume) call the [control API](/reference/gateway-api#control-api) endpoints. Live updates are delivered via [SSE streams](/reference/gateway-api#sse-streams).
 
 No additional dependencies or frontend build steps are required. The dashboard is rendered as plain HTML with inline CSS and JavaScript.

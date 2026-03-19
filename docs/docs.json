@@ -50,6 +50,7 @@
               "reference/models",
               "reference/agent-docs",
               "reference/webhooks",
+              "reference/gateway-api",
               "reference/web-dashboard"
             ]
           }
