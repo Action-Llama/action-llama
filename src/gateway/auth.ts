@@ -1,5 +1,6 @@
 import type { Context, Next } from "hono";
 import { timingSafeEqual } from "crypto";
+import type { SessionStore } from "./session-store.js";
 
 /**
  * Timing-safe string comparison.
@@ -16,9 +17,13 @@ export function safeCompare(a: string, b: string): boolean {
  * 1. `Authorization: Bearer <key>` header (CLI / programmatic)
  * 2. `al_session` cookie (browser / Web UI)
  *
+ * When a SessionStore is provided, the cookie value is treated as an opaque
+ * session ID looked up server-side. Without a SessionStore, the cookie value
+ * is compared directly to the API key (backward compatibility).
+ *
  * Browser HTML requests to protected paths are redirected to /login on 401.
  */
-export function authMiddleware(apiKey: string) {
+export function authMiddleware(apiKey: string, sessionStore?: SessionStore) {
   return async (c: Context, next: Next) => {
     // 1. Check Bearer token
     const authHeader = c.req.header("Authorization");
@@ -33,9 +38,21 @@ export function authMiddleware(apiKey: string) {
     // 2. Check session cookie
     const cookie = parseCookie(c.req.header("Cookie") || "");
     const sessionToken = cookie["al_session"];
-    if (sessionToken && safeCompare(sessionToken, apiKey)) {
-      await next();
-      return;
+    if (sessionToken) {
+      if (sessionStore) {
+        // Session store present: validate as opaque session ID
+        const session = await sessionStore.getSession(sessionToken);
+        if (session) {
+          await next();
+          return;
+        }
+      } else {
+        // Backward compatibility: compare cookie value directly to API key
+        if (safeCompare(sessionToken, apiKey)) {
+          await next();
+          return;
+        }
+      }
     }
 
     // 401 — redirect browsers to login page, return JSON for API clients

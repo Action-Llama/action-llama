@@ -10,6 +10,7 @@ import { registerSignalRoutes, type SignalContext } from "./routes/signals.js";
 import { LockStore } from "./lock-store.js";
 import { CallStore } from "./call-store.js";
 import { ContainerRegistry } from "./container-registry.js";
+import { SessionStore } from "./session-store.js";
 import type { ContainerRegistration } from "./types.js";
 import type { StateStore } from "../shared/state-store.js";
 import type { WebhookRegistry } from "../webhooks/registry.js";
@@ -126,7 +127,8 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
   registerShutdownRoute(app, containerRegistry, killFn, logger);
   // Apply auth middleware to protected routes when an API key is configured
   if (opts.apiKey) {
-    const auth = authMiddleware(opts.apiKey);
+    const sessionStore = stateStore ? new SessionStore(stateStore) : undefined;
+    const auth = authMiddleware(opts.apiKey, sessionStore);
     app.use("/control/*", auth);
     app.use("/dashboard/*", auth);
     app.use("/dashboard", auth);
@@ -134,7 +136,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     app.use("/api/logs/*", auth);
 
     // Always register login/logout so the auth redirect has a target
-    registerLoginRoutes(app, opts.apiKey);
+    registerLoginRoutes(app, opts.apiKey, sessionStore);
   }
 
   registerLockRoutes(app, containerRegistry, lockStore, logger, { skipStatusEndpoint: opts.skipStatusEndpoint, events: opts.events });
