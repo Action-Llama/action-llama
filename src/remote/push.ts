@@ -1,12 +1,14 @@
 import { resolve, basename, dirname } from "path";
 import { createHash } from "crypto";
-import { readFileSync, unlinkSync } from "fs";
+import { readFileSync, unlinkSync, existsSync } from "fs";
 import { stringify as stringifyTOML } from "smol-toml";
 import type { ServerConfig } from "../shared/server.js";
 import type { GlobalConfig } from "../shared/config.js";
+import { loadGlobalConfig } from "../shared/config.js";
 import { CREDENTIALS_DIR } from "../shared/paths.js";
 import { VPS_CONSTANTS } from "../cloud/vps/constants.js";
 import { sshOptionsFromConfig, sshExec, sshSpawn, rsyncTo, buildSshArgs, type SshOptions } from "./ssh.js";
+import { collectCredentialRefs, credentialRefsToRelativePaths } from "../shared/credential-refs.js";
 import { execFile as execFileCb } from "child_process";
 import { promisify } from "util";
 
@@ -48,6 +50,47 @@ export function computePkgHash(projectPath: string): string {
     }
   }
   return hash.digest("hex");
+}
+
+/**
+ * Sync only the required credentials to the remote server.
+ * Creates the directory structure and copies individual credential directories.
+ */
+async function syncRequiredCredentials(
+  ssh: SshOptions,
+  projectPath: string,
+  globalConfig: GlobalConfig,
+  remotePath: string,
+  rsyncFlags: string[],
+): Promise<void> {
+  const credentialRefs = collectCredentialRefs(projectPath, globalConfig);
+  const relativePaths = credentialRefsToRelativePaths(credentialRefs);
+  
+  if (relativePaths.length === 0) return;
+  
+  // Create remote credential directories
+  const mkdirCommands = relativePaths
+    .map(path => dirname(path))
+    .filter((dir, index, self) => dir !== "." && self.indexOf(dir) === index)
+    .map(dir => `mkdir -p ${remotePath}/${dir}`);
+  
+  if (mkdirCommands.length > 0 && !rsyncFlags.includes("--dry-run")) {
+    await sshExec(ssh, mkdirCommands.join(" && "));
+  }
+  
+  // Rsync each credential directory
+  const tasks: Promise<void>[] = [];
+  for (const relPath of relativePaths) {
+    const localPath = resolve(CREDENTIALS_DIR, relPath);
+    const remoteDir = `${remotePath}/${relPath}`;
+    
+    // Check if local path exists before trying to sync
+    if (existsSync(localPath)) {
+      tasks.push(rsyncTo(ssh, localPath, remoteDir, undefined, rsyncFlags));
+    }
+  }
+  
+  await Promise.all(tasks);
 }
 
 /**
@@ -119,7 +162,7 @@ export async function pushToServer(opts: PushOptions): Promise<void> {
  * watcher detects the change and hot-reloads the agent — no service restart.
  */
 export async function pushAgentToServer(opts: PushAgentOptions): Promise<void> {
-  const { projectPath, serverConfig, agentName, dryRun, noCreds, noFiles } = opts;
+  const { projectPath, serverConfig, globalConfig, agentName, dryRun, noCreds, noFiles } = opts;
   const ssh = sshOptionsFromConfig(serverConfig);
   const basePath = serverConfig.basePath ?? "/opt/action-llama";
 
@@ -149,7 +192,7 @@ export async function pushAgentToServer(opts: PushAgentOptions): Promise<void> {
         tasks.push(rsyncTo(ssh, agentLocalPath, agentRemotePath, undefined, rsyncFlags));
       }
       if (!noCreds) {
-        tasks.push(rsyncTo(ssh, CREDENTIALS_DIR, `${basePath}/credentials`, undefined, rsyncFlags));
+        tasks.push(syncRequiredCredentials(ssh, projectPath, globalConfig, `${basePath}/credentials`, rsyncFlags));
       }
 
       await Promise.all(tasks);
@@ -214,7 +257,7 @@ async function pushToServerInner(ssh: SshOptions, opts: InnerOpts): Promise<void
       phaseA.push(rsyncTo(ssh, projectPath, `${basePath}/project`, excludes, rsyncFlags));
     }
     if (!noCreds) {
-      phaseA.push(rsyncTo(ssh, CREDENTIALS_DIR, `${basePath}/credentials`, undefined, rsyncFlags));
+      phaseA.push(syncRequiredCredentials(ssh, projectPath, globalConfig, `${basePath}/credentials`, rsyncFlags));
     }
     await Promise.all(phaseA);
     console.log(dryRun ? "  (dry-run) No changes made." : "  Done.");
