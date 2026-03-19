@@ -10,6 +10,9 @@ import { sshExec, scpBuffer, type SshConfig } from "./ssh.js";
  */
 export function generateNginxConfig(hostname: string, gatewayPort: number): string {
   return `# Action Llama — Cloudflare Origin CA TLS termination
+
+# Rate limiting: 5 req/sec per IP with burst of 10
+limit_req_zone $binary_remote_addr zone=al_rate_limit:10m rate=5r/s;
 server {
     listen 80;
     listen [::]:80;
@@ -27,6 +30,10 @@ server {
 
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers on;
+
+    # Apply rate limit to all requests
+    limit_req zone=al_rate_limit burst=10 nodelay;
+    limit_req_status 429;
 
     location / {
         proxy_pass http://127.0.0.1:${gatewayPort};

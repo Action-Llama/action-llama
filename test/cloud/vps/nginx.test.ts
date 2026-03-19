@@ -43,4 +43,13 @@ describe("generateNginxConfig", () => {
 
     expect(config).toContain("proxy_pass http://127.0.0.1:8080");
   });
+
+  it("includes rate limiting configuration", () => {
+    const config = generateNginxConfig("agents.example.com", 3000);
+
+    expect(config).toContain("limit_req_zone");
+    expect(config).toContain("zone=al_rate_limit:10m rate=5r/s");
+    expect(config).toContain("limit_req zone=al_rate_limit burst=10 nodelay");
+    expect(config).toContain("limit_req_status 429");
+  });
 });
