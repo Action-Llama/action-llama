@@ -185,6 +185,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
         logger.info("Scheduler resumed via control API");
       },
       triggerAgent: async (name: string) => {
+        if (statusTracker?.isPaused()) return false;
         const pool = runnerPools[name];
         if (!pool) return false;
         const runner = pool.getAvailableRunner();
@@ -342,11 +343,14 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   await workQueue.init();
   const skills: PromptSkills = { locking: true };
   const callStore = gateway?.callStore;
-  const schedulerCtx: SchedulerContext = { runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, workQueue, shuttingDown: false, skills, useBakedImages: true, events, callStore };
+  const schedulerCtx: SchedulerContext = { runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, workQueue, shuttingDown: false, skills, useBakedImages: true, isPaused: () => statusTracker?.isPaused() ?? false, events, callStore };
 
   // Wire up the call dispatcher so al-call works from inside containers
   if (gateway) {
     gateway.setCallDispatcher((entry) => {
+      if (statusTracker?.isPaused()) {
+        return { ok: false, reason: "scheduler is paused" };
+      }
       if (entry.callerAgent === entry.targetAgent) {
         return { ok: false, reason: "agent cannot call itself" };
       }
@@ -414,6 +418,10 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
           type: providerType,
           filter,
           trigger: (context: WebhookContext) => {
+            if (statusTracker?.isPaused()) {
+              logger.info({ agent: agentConfig.name, event: context.event }, "scheduler paused, webhook rejected");
+              return false;
+            }
             if (statusTracker && !statusTracker.isAgentEnabled(agentConfig.name)) return false;
 
             const runner = pool.getAvailableRunner();

@@ -231,6 +231,25 @@ describe("drainQueues", () => {
     expect(runner.run).not.toHaveBeenCalled();
   });
 
+  it("stops when isPaused returns true", async () => {
+    const runner = makeRunner({ instanceId: "a" });
+    const ctx = makeCtx({
+      agentConfigs: [makeAgentConfig("a")],
+      runnerPools: { a: new RunnerPool([runner]) },
+      isPaused: () => true,
+    });
+    ctx.workQueue.enqueue("a", {
+      type: "webhook",
+      context: { event: "push", action: "", payload: {}, headers: {}, source: "github" } as any,
+    });
+
+    await drainQueues(ctx);
+
+    expect(runner.run).not.toHaveBeenCalled();
+    // Items remain in the queue (not lost)
+    expect(ctx.workQueue.size("a")).toBe(1);
+  });
+
   it("stops when shuttingDown is true", async () => {
     const runner = makeRunner({ instanceId: "a" });
     const ctx = makeCtx({

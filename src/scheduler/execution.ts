@@ -35,6 +35,8 @@ export interface SchedulerContext {
   shuttingDown: boolean;
   skills?: PromptSkills;
   useBakedImages: boolean;
+  /** Returns true when the scheduler is paused — all new work should be rejected. */
+  isPaused?: () => boolean;
   /** Optional hook called after every agent run completes. Used for test instrumentation. */
   onRunComplete?: (event: RunCompleteEvent) => void;
   /** Optional event bus for lifecycle instrumentation (used by integration tests). */
@@ -124,7 +126,7 @@ export function dispatchTriggers(
 
 /** Drain all agents' work queues — fires runs without blocking. */
 export async function drainQueues(ctx: SchedulerContext): Promise<void> {
-  if (ctx.shuttingDown) return;
+  if (ctx.shuttingDown || ctx.isPaused?.()) return;
   for (const agentConfig of ctx.agentConfigs) {
     const pool = ctx.runnerPools[agentConfig.name];
     if (!pool || ctx.workQueue.size(agentConfig.name) === 0) continue;
