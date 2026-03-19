@@ -525,7 +525,7 @@ branch = "main"
 depth = 1
 ```
 
-`shell` is the escape hatch. No per-step timeout.
+`shell` is the escape hatch. No per-step timeout. Shell env vars don't propagate back (see [Environment variable persistence](#environment-variable-persistence) for a workaround).
 
 ### Webhook Trigger Fields
 
@@ -1004,7 +1004,19 @@ Read-only root, non-root user, resource limits.
 | `/workspace` | read-write (2GB) | Persistent workspace |
 | `/home/node` | read-write (64MB) | Home directory |
 
-See `[local]` in config.toml.
+### Environment variable persistence
+
+Write to `/tmp/env.sh` to persist environment variables across bash commands:
+
+```bash
+echo 'export REPO="owner/repo"' > /tmp/env.sh
+echo 'export ISSUE_NUMBER=42' >> /tmp/env.sh
+gh issue view $ISSUE_NUMBER --repo $REPO
+```
+
+File is automatically sourced before each bash command.
+
+See `[local]` in config.toml for Docker configuration options.
 
 ## Gateway API
 
