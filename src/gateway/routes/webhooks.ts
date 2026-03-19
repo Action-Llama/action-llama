@@ -2,7 +2,6 @@ import type { Hono } from "hono";
 import type { WebhookRegistry } from "../../webhooks/registry.js";
 import type { Logger } from "../../shared/logger.js";
 import type { StatusTracker } from "../../tui/status-tracker.js";
-import type { StateStore } from "../../shared/state-store.js";
 import { rateLimiter } from "../rate-limiter.js";
 
 export function registerWebhookRoutes(
@@ -10,12 +9,10 @@ export function registerWebhookRoutes(
   registry: WebhookRegistry,
   webhookSecrets: Record<string, Record<string, string>>,
   logger: Logger,
-  statusTracker?: StatusTracker,
-  stateStore?: StateStore
+  statusTracker?: StatusTracker
 ): void {
-  // Rate limit webhook endpoint: 120 requests per minute per IP.
-  // When a StateStore is provided, state is persisted so limits survive restarts.
-  app.use("/webhooks/*", rateLimiter({ max: 120, windowMs: 60_000, store: stateStore }));
+  // Rate limit webhook endpoint: 120 requests per minute per IP
+  app.use("/webhooks/*", rateLimiter({ max: 120, windowMs: 60_000 }));
 
   app.post("/webhooks/:source", async (c) => {
     const source = c.req.param("source");
