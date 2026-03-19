@@ -1,5 +1,19 @@
 # @action-llama/action-llama
 
+## 0.13.2
+
+### Patch Changes
+
+- [`c28b803`](https://github.com/Action-Llama/action-llama/commit/c28b803707e4c1afd174a2fc068858b5b2ac096b) Thanks [@asselstine](https://github.com/asselstine)! - Fixed integration test race conditions on slow CI (GitHub Actions) by replacing
+  fixed-duration sleeps with polling helpers (`waitForIdle`, `waitForRunning`).
+  Removes the flaky `waitForSettle` method entirely.
+
+- [`62830f8`](https://github.com/Action-Llama/action-llama/commit/62830f81f44159b3d51e14ac62906ecc954e67c4) Thanks [@asselstine](https://github.com/asselstine)! - Replaced the nginx gateway proxy container with Docker's built-in `--add-host gateway:host-gateway`, simplifying container-to-host networking and removing the `startGatewayProxy`/`stopGatewayProxy` runtime methods. Added a health-check retry loop in the container entry so agents wait for the gateway to become reachable before proceeding.
+
+  Added a typed scheduler event bus for lifecycle instrumentation (run start/end, locks, calls, signals, webhooks), request/response logging middleware on all gateway routes, and al-call lifecycle tracking in the scheduler so call status is updated when triggered runs complete.
+
+  Improved container command exit codes: added HTTP 500/502/504 mappings to `_http-exit` and standardized usage errors to exit code 9. Rewrote integration tests to use event-driven assertions instead of polling, with proper exit code and JSON validation in shell test scripts.
+
 ## 0.13.1
 
 ### Patch Changes
