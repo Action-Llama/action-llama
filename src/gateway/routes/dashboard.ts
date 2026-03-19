@@ -16,7 +16,7 @@ import type { SessionStore } from "../session-store.js";
  * server-side and sets that ID in the cookie. Logout deletes the session.
  * Without a SessionStore the behavior is unchanged (backward compatibility).
  */
-export function registerLoginRoutes(app: Hono, apiKey?: string, sessionStore?: SessionStore): void {
+export function registerLoginRoutes(app: Hono, apiKey?: string, sessionStore?: SessionStore, hostname?: string): void {
   app.get("/login", (c) => {
     return c.html(renderLoginPage());
   });
@@ -35,11 +35,13 @@ export function registerLoginRoutes(app: Hono, apiKey?: string, sessionStore?: S
       } else {
         sessionValue = apiKey;
       }
+      const isLocalhost = !hostname || hostname === "127.0.0.1" || hostname === "localhost";
+      const securePart = isLocalhost ? "" : "; Secure";
       return c.html("", {
         status: 302,
         headers: {
           Location: "/dashboard",
-          "Set-Cookie": `al_session=${sessionValue}; HttpOnly; SameSite=Strict; Path=/`,
+          "Set-Cookie": `al_session=${sessionValue}; HttpOnly; SameSite=Strict; Path=/${securePart}`,
         },
       });
     }

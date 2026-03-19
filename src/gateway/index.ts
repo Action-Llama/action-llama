@@ -136,7 +136,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     app.use("/api/logs/*", auth);
 
     // Always register login/logout so the auth redirect has a target
-    registerLoginRoutes(app, opts.apiKey, sessionStore);
+    registerLoginRoutes(app, opts.apiKey, sessionStore, opts.hostname);
   }
 
   registerLockRoutes(app, containerRegistry, lockStore, logger, { skipStatusEndpoint: opts.skipStatusEndpoint, events: opts.events });
@@ -160,15 +160,12 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     }
   }
 
-  // Log API routes — available regardless of webUI flag (CLI needs them)
-  if (projectPath) {
+  // Log API routes — only register if auth is configured for security
+  if (projectPath && opts.apiKey) {
     const { registerLogRoutes } = await import("./routes/logs.js");
     registerLogRoutes(app, projectPath);
-    
-    // Warn if log endpoints are exposed without authentication
-    if (!opts.apiKey) {
-      logger.warn("Log and dashboard endpoints are exposed without authentication. Consider setting up a gateway API key for security.");
-    }
+  } else if (projectPath && !opts.apiKey) {
+    logger.warn("Log API routes disabled — gateway API key required for security.");
   }
 
   // Control routes (for kill, pause, resume commands)
