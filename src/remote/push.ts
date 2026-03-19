@@ -48,6 +48,7 @@ export function buildSystemdUnit(
   basePath: string,
   binPaths?: BootstrapResult,
   gatewayPort?: number,
+  expose?: boolean,
 ): string {
   // al is installed as a project dependency — use the local binary
   const alExec = `${basePath}/project/node_modules/.bin/al`;
@@ -57,6 +58,8 @@ export function buildSystemdUnit(
   const pathEnv = extraDirs.size > 0
     ? `\nEnvironment=PATH=${[...extraDirs].join(":")}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`
     : "";
+  // Default to true for backward compatibility — existing server deployments expect public exposure
+  const exposeFlag = expose === false ? "" : " -e";
 
   return `[Unit]
 Description=Action Llama scheduler (${projectName})
@@ -66,7 +69,7 @@ Requires=docker.service
 [Service]
 Type=simple
 WorkingDirectory=${basePath}/project
-ExecStart=${alExec} start --headless -w -e${gatewayPort ? ` --port ${gatewayPort}` : ""}
+ExecStart=${alExec} start --headless -w${exposeFlag}${gatewayPort ? ` --port ${gatewayPort}` : ""}
 Restart=on-failure
 RestartSec=5
 Environment=NODE_ENV=production${pathEnv}
@@ -173,7 +176,7 @@ async function pushToServerInner(ssh: SshOptions, opts: InnerOpts): Promise<void
     phaseB.push(setupNginx(ssh, basePath, serverConfig.cloudflareHostname, gatewayPort));
   }
   phaseB.push(writeEnvAndSymlink(ssh, basePath, gatewayPort, globalConfig));
-  const unitContent = buildSystemdUnit(projectName, basePath, binPaths, gatewayPort);
+  const unitContent = buildSystemdUnit(projectName, basePath, binPaths, gatewayPort, serverConfig.expose);
   phaseB.push(installSystemdUnit(ssh, unitContent));
 
   const results = await Promise.all(phaseB);
