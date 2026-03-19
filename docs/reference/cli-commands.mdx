@@ -17,8 +17,6 @@ Creates:
 - `my-project/.workspace/` — runtime state directory
 - Credential files in `~/.action-llama/credentials/`
 
-After setup, create agents by following [Creating Agents](/creating-agents).
-
 ## `al doctor`
 
 Checks all agent credentials and interactively prompts for any that are missing. Discovers agents in the project, collects their credential requirements (plus any webhook secret credentials), and ensures each one exists on disk. Also generates a gateway API key if one doesn't exist yet (used for dashboard and CLI authentication).
@@ -28,156 +26,114 @@ Additionally validates webhook trigger field configurations to catch common erro
 - Misspelled field names
 - Invalid field types
 
-This helps catch configuration mistakes early and ensures webhook triggers are properly configured.
-
 ```bash
-al doctor -p .
-al doctor -p ./my-project
+al doctor
+al doctor -E production
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
-
-
-
-## `al creds ls`
-
-Lists all stored credentials grouped by type, showing field names but not values.
-
-```bash
-al creds ls
-```
-
-Example output:
-
-```
-  Anthropic API Key (anthropic_key)
-    anthropic_key  (token)
-
-  GitHub Token (github_token)
-    github_token  (token)
-
-  GitHub Webhook Secret (github_webhook_secret)
-    github_webhook_secret:myapp  (secret)
-    github_webhook_secret:staging  (secret)
-```
-
-Default instances are shown without the `:default` suffix.
-
-## `al creds add <ref>`
-
-Add or update a credential. Runs the interactive prompter with validation for the credential type.
-
-```bash
-al creds add github_token              # adds github_token:default
-al creds add github_webhook_secret:myapp
-al creds add git_ssh:prod
-```
-
-The `<ref>` format is `type` or `type:instance`. If no instance is specified, defaults to `default`. If the credential already exists, you'll be prompted to update it.
-
-## `al creds rm <ref>`
-
-Remove a credential from disk.
-
-```bash
-al creds rm github_token               # removes github_token:default
-al creds rm github_webhook_secret:myapp
-```
-
-Removes all field files for the credential instance. If the type directory becomes empty, it is also removed.
-
-
-
-
-
-## `al agent new`
-
-Interactive wizard to create a new agent from a template. Prompts for agent type (dev, reviewer, devops, or custom), agent name, and then runs `al agent config` to configure the new agent.
-
-```bash
-al agent new -p .
-```
-
-| Option | Description |
-|--------|-------------|
-| `-p, --project <dir>` | Project directory (default: `.`) |
-
-## `al agent config <name>`
-
-Interactively configure an existing agent. Opens a menu to edit each section of `agent-config.toml`: credentials, model, schedule, webhooks, and params. Runs `al doctor` on completion to validate the configuration.
-
-```bash
-al agent config dev -p .
-```
-
-| Option | Description |
-|--------|-------------|
-| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment name — pushes credentials to server and reconciles IAM |
 
 ## `al run <agent>`
 
 Manually triggers a single agent run. The agent runs once and the process exits when it completes. Useful for testing, debugging, or one-off runs without starting the full scheduler.
 
 ```bash
-al run dev -p .
+al run dev
 al run reviewer -p ./my-project
+al run dev -E production
+al run dev --headless
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment name |
+| `-H, --headless` | Non-interactive mode (no TUI, no credential prompts) |
 
 ## `al start`
 
 Starts the scheduler. Runs all agents on their configured schedules and listens for webhooks.
 
 ```bash
-al start -p .
-al start -p ./my-project
+al start
 al start -w                   # Enable web dashboard
 al start -e                   # VPS deployment: expose gateway publicly
+al start --port 3000          # Custom gateway port
+al start -H                   # Headless (no TUI)
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
-| `-w, --web-ui` | Enable web dashboard (see [Web Dashboard](/web-dashboard)) |
+| `-E, --env <name>` | Environment name |
+| `-w, --web-ui` | Enable web dashboard (see [Web Dashboard](/reference/web-dashboard)) |
 | `-e, --expose` | Bind gateway to `0.0.0.0` (public) while keeping local-mode features |
 | `-H, --headless` | Non-interactive mode (no TUI, no credential prompts) |
+| `--port <number>` | Gateway port (overrides `[gateway].port` in config) |
+
+## `al stop`
+
+Stops the scheduler and clears all pending agent work queues. Sends a stop signal to the gateway. In-flight runs continue until they finish, but no new runs will start.
+
+```bash
+al stop
+al stop -E production
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment name |
 
 ## `al stat`
 
-Shows status of all discovered agents in the project.
+Shows status of all discovered agents in the project. Displays each agent's schedule, credentials, webhook configuration, and queue depth.
 
 ```bash
-al stat -p .
+al stat
+al stat -E production
 ```
-
-Displays each agent's schedule, credentials, and webhook configuration.
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment name |
 
 ## `al logs <agent>`
 
 View log files for a specific agent.
 
 ```bash
-al logs dev -p .
-al logs dev -n 100          # Show last 100 entries
-al logs dev -f              # Follow/tail mode
-al logs dev -d 2025-01-15   # Specific date
+al logs dev
+al logs dev -n 100            # Show last 100 entries
+al logs dev -f                # Follow/tail mode
+al logs dev -d 2025-01-15    # Specific date
+al logs dev -r                # Raw JSON log output
+al logs dev -i abc123         # Specific instance
+al logs dev -E production     # Remote agent logs
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment name |
 | `-n, --lines <N>` | Number of log entries (default: 50) |
 | `-f, --follow` | Tail mode — watch for new entries |
 | `-d, --date <YYYY-MM-DD>` | View a specific date's log file |
+| `-r, --raw` | Raw JSON log output (no formatting) |
+| `-i, --instance <id>` | Filter to a specific instance ID |
+
+### Troubleshooting logs
+
+```bash
+al logs <agent>               # Local logs
+al logs <agent> -f            # Follow mode
+al logs <agent> -d 2025-01-15 # Specific date
+al env logs production -f     # Server system logs via SSH
+```
 
 ## `al pause [name]`
 
@@ -186,12 +142,13 @@ Pause the scheduler or a single agent. Without a name, pauses the entire schedul
 ```bash
 al pause                              # Pause the scheduler
 al pause dev                          # Pause a single agent
-al pause reviewer -p ./my-project
+al pause dev -E production
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment name |
 
 ## `al resume [name]`
 
@@ -200,12 +157,13 @@ Resume the scheduler or a single agent. Without a name, resumes the entire sched
 ```bash
 al resume                             # Resume the scheduler
 al resume dev                         # Resume a single agent
-al resume reviewer -p ./my-project
+al resume dev -E production
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment name |
 
 ## `al kill <target>`
 
@@ -214,14 +172,15 @@ Kill an agent (all running instances) or a single instance by ID. Tries the targ
 ```bash
 al kill dev                           # Kill all instances of an agent
 al kill my-agent-abc123               # Kill a single instance by ID
-al kill dev -p ./my-project
+al kill dev -E production
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment name |
 
-## `al chat`
+## `al chat [agent]`
 
 Open an interactive console. Without an agent name, opens the project-level console for creating and managing agents. With an agent name, opens an interactive session scoped to that agent's environment — credentials are loaded and injected as environment variables (e.g. `GITHUB_TOKEN`, `GIT_SSH_COMMAND`), and the working directory is set to the agent's directory.
 
@@ -238,29 +197,15 @@ al chat dev            # interactive session with dev agent's credentials
 When running in agent mode, the command probes the gateway and warns if it is not reachable:
 
 ```
-⚠ No gateway detected at http://localhost:8080. Resource locks, agent calls, and signals are unavailable.
-  Start the scheduler with `al start -g` to enable these features.
+Warning: No gateway detected at http://localhost:8080. Resource locks, agent calls, and signals are unavailable.
+Start the scheduler with `al start` to enable these features.
 ```
 
 The agent's ACTIONS.md is loaded as reference context but is **not** auto-executed — you drive the session interactively.
 
-## `al stop`
-
-Stops the scheduler and clears all pending agent work queues. Sends a stop signal to the gateway. In-flight runs continue until they finish, but no new runs will start.
-
-```bash
-al stop -p .
-al stop -E production
-```
-
-| Option | Description |
-|--------|-------------|
-| `-p, --project <dir>` | Project directory (default: `.`) |
-| `-E, --env <name>` | Environment name |
-
 ## `al push [agent]`
 
-Deploy your project to a server over SSH. Requires a `[server]` section in your environment file. See [VPS Deployment](/vps-deployment) for server configuration.
+Deploy your project to a server over SSH. Requires a `[server]` section in your environment file. See [VPS Deployment](/concepts/vps-deployment) for how it works under the hood.
 
 ```bash
 al push -E production                    # Full project push
@@ -283,7 +228,9 @@ Without an agent name, pushes the entire project and can restart the remote serv
 | `-a, --all` | Sync project files, credentials, and restart service |
 | `--force-install` | Force `npm install` even if dependencies appear unchanged |
 
-## `al env init <name>`
+## Environment Commands
+
+### `al env init <name>`
 
 Create a new environment configuration file at `~/.action-llama/environments/<name>.toml`.
 
@@ -295,7 +242,7 @@ al env init production --type server
 |--------|-------------|
 | `--type <type>` | Environment type: `server` |
 
-## `al env list`
+### `al env list`
 
 List all configured environments.
 
@@ -303,7 +250,7 @@ List all configured environments.
 al env list
 ```
 
-## `al env show <name>`
+### `al env show <name>`
 
 Display the contents of an environment configuration file.
 
@@ -311,20 +258,20 @@ Display the contents of an environment configuration file.
 al env show production
 ```
 
-## `al env set [name]`
+### `al env set [name]`
 
 Bind the current project to an environment by writing the environment name to `.env.toml`. Omit the name to unbind.
 
 ```bash
-al env set production -p .     # Bind project to "production"
-al env set -p .                # Unbind project from any environment
+al env set production        # Bind project to "production"
+al env set                   # Unbind project from any environment
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
 
-## `al env check <name>`
+### `al env check <name>`
 
 Verify that an environment is provisioned and configured correctly. Checks SSH connectivity, Docker availability, and server readiness.
 
@@ -332,27 +279,27 @@ Verify that an environment is provisioned and configured correctly. Checks SSH c
 al env check production
 ```
 
-## `al env prov [name]`
+### `al env prov [name]`
 
-Provision a new VPS and save it as an environment. Supports Vultr and Hetzner. If the name is omitted, you'll be prompted for one.
+Provision a new VPS and save it as an environment. Supports Vultr and Hetzner. If the name is omitted, you'll be prompted for one. See [Deploying to a VPS](/guides/deploying-to-vps) for a walkthrough.
 
 ```bash
 al env prov production
 ```
 
-## `al env deprov <name>`
+### `al env deprov <name>`
 
-Tear down a provisioned environment. Stops containers, cleans up remote credentials, and optionally deletes the VPS instance if it was provisioned via `al env prov`.
+Tear down a provisioned environment. Stops containers, cleans up remote credentials, optionally deletes DNS records, and optionally deletes the VPS instance if it was provisioned via `al env prov`.
 
 ```bash
-al env deprov staging -p .
+al env deprov staging
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
 
-## `al env logs [name]`
+### `al env logs [name]`
 
 View server system logs (systemd journal) via SSH. If the name is omitted, uses the project's bound environment.
 
@@ -367,3 +314,77 @@ al env logs production -f          # Follow mode
 | `-p, --project <dir>` | Project directory (default: `.`) |
 | `-n, --lines <N>` | Number of log lines (default: 50) |
 | `-f, --follow` | Tail mode — watch for new entries |
+
+## Credential Commands
+
+### `al creds ls`
+
+Lists all stored credentials grouped by type, showing field names but not values.
+
+```bash
+al creds ls
+```
+
+### `al creds add <ref>`
+
+Add or update a credential. Runs the interactive prompter with validation for the credential type.
+
+```bash
+al creds add github_token              # adds github_token:default
+al creds add github_webhook_secret:myapp
+al creds add git_ssh:prod
+```
+
+The `<ref>` format is `type` or `type:instance`. If no instance is specified, defaults to `default`. If the credential already exists, you'll be prompted to update it.
+
+### `al creds rm <ref>`
+
+Remove a credential from disk.
+
+```bash
+al creds rm github_token               # removes github_token:default
+al creds rm github_webhook_secret:myapp
+```
+
+### `al creds types`
+
+Browse available credential types interactively. Presents a searchable list of all built-in credential types. On selection, shows the credential's fields, environment variables, and agent context, then offers to add it immediately.
+
+```bash
+al creds types
+```
+
+## Agent Commands
+
+### `al agent new`
+
+Interactive wizard to create a new agent from a template. Prompts for agent type (dev, reviewer, devops, or custom), agent name, and then runs `al agent config` to configure the new agent.
+
+```bash
+al agent new
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
+### `al agent config <name>`
+
+Interactively configure an existing agent. Opens a menu to edit each section of `agent-config.toml`: credentials, model, schedule, webhooks, and params. Runs `al doctor` on completion to validate the configuration.
+
+```bash
+al agent config dev
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
+## Global Options
+
+These options are available on most commands:
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment name (also `AL_ENV` env var or `environment` field in `.env.toml`) |

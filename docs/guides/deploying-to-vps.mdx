@@ -1,0 +1,101 @@
+---
+title: "Deploying to a VPS"
+description: "Step-by-step guide to deploying your agents to a VPS with Hetzner or Vultr"
+---
+
+This guide walks you through deploying your Action Llama project to a VPS for 24/7 agent operation. We'll use `al push` (the recommended SSH push deploy approach).
+
+## Overview
+
+Once deployed, your agents run continuously on the server — cron jobs fire on schedule, webhooks are publicly reachable, and the scheduler restarts automatically if it crashes.
+
+## 1. Provision a server
+
+```bash
+al env prov production
+```
+
+The interactive wizard guides you through:
+
+1. **Choose a provider** — Vultr or Hetzner (or connect an existing server)
+2. **Pick a plan** — 1 vCPU / 1-2GB RAM is enough for most projects ($5-6/month)
+3. **Pick a region** — choose one close to your webhook sources
+4. **SSH key** — generate a new key or use an existing one
+5. **HTTPS (optional)** — set up TLS via Cloudflare
+
+### TLS with Cloudflare (optional)
+
+If you choose HTTPS, you'll need a Cloudflare API token with these permissions:
+
+- `Zone:DNS:Edit`
+- `Zone:SSL and Certificates:Edit`
+
+What Action Llama sets up:
+
+- DNS A record pointing to your VPS (proxied through Cloudflare)
+- Cloudflare Origin CA certificate on the server
+- nginx reverse proxy with TLS termination
+- Cloudflare SSL mode set to Full (Strict)
+
+## 2. Deploy
+
+```bash
+al push -E production
+```
+
+This syncs your project files and credentials to the server, installs dependencies, and starts the scheduler as a systemd service. The first push takes a minute or two; subsequent pushes are faster (rsync only transfers changes).
+
+## 3. Verify
+
+```bash
+al env check production       # SSH + Docker + health check
+al stat -E production         # Agent status on the server
+al env logs production -f     # Tail server logs
+```
+
+## 4. Update a single agent
+
+After making changes to one agent, push just that agent:
+
+```bash
+al push dev -E production
+```
+
+This hot-reloads the agent without restarting the scheduler. The file watcher detects the change and picks up the new config/actions automatically.
+
+## 5. Tear down
+
+```bash
+al env deprov production
+```
+
+Stops containers, cleans credentials, optionally deletes DNS records and the VPS instance.
+
+## Cost comparison
+
+| Provider | vCPU | RAM | Storage | Price/month |
+|----------|------|-----|---------|-------------|
+| Hetzner | 1 | 2GB | 20GB SSD | ~$4 |
+| Vultr | 1 | 1GB | 25GB SSD | $6 |
+| DigitalOcean | 1 | 1GB | 25GB SSD | $6 |
+| Linode | 1 | 1GB | 25GB SSD | $5 |
+
+## Alternative: manual deployment
+
+If you prefer to manage the server directly:
+
+```bash
+# On your VPS:
+npm install -g @action-llama/action-llama
+al new my-project && cd my-project
+al doctor
+al start -w --expose --headless
+```
+
+Then set up systemd for automatic restarts. See [VPS Deployment — concepts](/concepts/vps-deployment) for the full systemd unit file.
+
+## Next steps
+
+- [VPS Deployment (concepts)](/concepts/vps-deployment) — understand what happens under the hood
+- [CLI Commands](/reference/cli-commands) — full `al push` and `al env` reference
+- [Web Dashboard](/reference/web-dashboard) — monitor your deployed agents in a browser

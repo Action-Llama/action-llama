@@ -1,9 +1,9 @@
 ---
 title: "Webhooks"
-description: "Webhook setup, providers, and filter configuration"
+description: "Webhook setup, providers, filter fields, and troubleshooting"
 ---
 
-Action Llama agents can be triggered by webhooks in addition to (or instead of) cron schedules.
+Action Llama agents can be triggered by webhooks in addition to (or instead of) cron schedules. Four providers are supported: GitHub, Sentry, Linear, and Mintlify.
 
 ## Defining Webhook Sources
 
@@ -43,27 +43,9 @@ repos = ["acme/app"]
 events = ["issues"]
 actions = ["labeled"]
 labels = ["agent"]
-
-# Filter by organization
-[[webhooks]]
-source = "my-github"
-orgs = ["acme", "example-org"]
-events = ["issues"]
-
-# Or using the singular form
-[[webhooks]]
-source = "my-github"
-org = "acme"
-events = ["pull_request"]
-
-# Filter workflow runs by conclusion (only failed workflows)
-[[webhooks]]
-source = "my-github"
-events = ["workflow_run"]
-conclusions = ["failure"]
 ```
 
-Each `[[webhooks]]` entry is a trigger. The `source` field (referencing a name from `config.toml`) is required. All filter fields (`repos`, `events`, `actions`, `labels`, etc.) are optional — omit all of them to trigger on everything from that source.
+Each `[[webhooks]]` entry is a trigger. The `source` field (referencing a name from `config.toml`) is required. All filter fields are optional — omit all of them to trigger on everything from that source.
 
 An agent must have at least one of `schedule` or `webhooks` (or both).
 
@@ -98,11 +80,11 @@ An agent must have at least one of `schedule` or `webhooks` (or both).
 ngrok http 8080
 ```
 
-Use the ngrok URL as your webhook payload URL in GitHub.
+Use the ngrok URL as your webhook payload URL in GitHub. See [Using Webhooks](/first-steps/using-webhooks) for a full tutorial.
 
 ## Sentry Webhooks
 
-### Filter Fields
+### Filter Fields (all optional)
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -114,14 +96,6 @@ Use the ngrok URL as your webhook payload URL in GitHub.
 2. Set the webhook URL to your gateway (e.g. `https://your-server:8080/webhooks/sentry`)
 3. Copy the client secret to `~/.action-llama/credentials/sentry_client_secret/<instance>/secret`
 4. Select the resource types you want to receive
-
-## How Webhooks Work at Runtime
-
-1. The gateway receives a webhook POST request at `/webhooks/<type>` (e.g. `/webhooks/github`)
-2. It verifies the payload signature using secrets loaded from the credential instances defined in `config.toml` webhook sources
-3. It parses the event into a `WebhookContext` (source, event, action, repo, etc.)
-4. It matches the context against each agent's webhook triggers
-5. Matching agents are triggered with the webhook context injected into their prompt
 
 ## Linear Webhooks
 
@@ -175,7 +149,7 @@ labels = ["bug", "ready-for-dev"]
 ### Setup
 
 1. In Mintlify, go to your project settings
-2. Navigate to **Webhooks** or **Integrations** 
+2. Navigate to **Webhooks** or **Integrations**
 3. Add a webhook with URL: `https://your-server:8080/webhooks/mintlify`
 4. Set the secret to match the `mintlify_webhook_secret` credential instance referenced by the webhook source in `config.toml`
 5. Select build events you want to receive (build failures, successes, etc.)
@@ -188,7 +162,7 @@ labels = ["bug", "ready-for-dev"]
 type = "mintlify"
 credential = "docs-project"
 
-# In agent-config.toml  
+# In agent-config.toml
 [[webhooks]]
 source = "mintlify-docs"
 events = ["build"]
@@ -196,12 +170,36 @@ actions = ["failed"]    # Only trigger on build failures
 projects = ["my-docs"]
 ```
 
-This webhook will trigger agents when documentation builds fail, allowing them to:
-- Access build logs via the Mintlify API (using `mintlify_token` credential)
-- Diagnose build issues
-- Fix documentation problems  
-- Trigger rebuilds
+## How Webhooks Work at Runtime
+
+1. The gateway receives a webhook POST request at `/webhooks/<type>` (e.g. `/webhooks/github`)
+2. It verifies the payload signature using secrets loaded from the credential instances defined in `config.toml` webhook sources
+3. It parses the event into a `WebhookContext` (source, event, action, repo, etc.)
+4. It matches the context against each agent's webhook triggers
+5. Matching agents are triggered with the webhook context injected into their prompt
 
 ## Hybrid Agents
 
-Agents can have both `schedule` and `webhooks`. Scheduled runs poll for work; webhook runs respond to events immediately.
+Agents can have both `schedule` and `webhooks`. Scheduled runs poll for work proactively; webhook runs respond to events immediately.
+
+## Troubleshooting
+
+### Webhooks not firing
+
+1. **Check the webhook URL** — GitHub/Sentry/Linear must be able to reach your gateway. For local development, use a tunnel (e.g. ngrok, Cloudflare Tunnel).
+2. **Check the webhook secret** — if using HMAC validation, the secret in `al creds` must match the one configured in the external service.
+3. **Check event filters** — verify the `events`, `actions`, and other filter fields in `agent-config.toml` match the incoming event.
+
+```bash
+al doctor    # Validates webhook trigger field names and types
+```
+
+### Webhook events being dropped
+
+If runners are busy, events are queued (up to `workQueueSize`, default 100). If the queue is full, old events are dropped. Check queue depth with `al stat`.
+
+To handle more concurrent events, increase `scale` in `agent-config.toml`:
+
+```toml
+scale = 3    # Run up to 3 instances concurrently
+```

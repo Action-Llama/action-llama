@@ -1,6 +1,6 @@
 ---
 title: "config.toml Reference"
-description: "Project-level configuration reference"
+description: "Project-level configuration reference — all fields and sections"
 ---
 
 The project-level `config.toml` lives at the root of your Action Llama project. All sections and fields are optional — sensible defaults are used for anything you omit. If the file doesn't exist at all, an empty config is assumed.
@@ -36,6 +36,11 @@ credential = "MyOrg"              # credential instance for HMAC validation
 maxReruns = 10              # Max consecutive reruns for successful agent runs (default: 10)
 maxCallDepth = 3            # Max depth for agent-to-agent call chains (default: 3)
 workQueueSize = 100         # Max queued work items (webhooks + calls) per agent (default: 100)
+scale = 10                  # Project-wide max concurrent runners across all agents (default: unlimited)
+
+# Telemetry settings
+[telemetry]
+endpoint = "https://telemetry.example.com/v1"   # OpenTelemetry endpoint
 ```
 
 ## Field Reference
@@ -47,6 +52,7 @@ workQueueSize = 100         # Max queued work items (webhooks + calls) per agent
 | `maxReruns` | number | `10` | Maximum consecutive reruns when an agent requests a rerun via `al-rerun` before stopping |
 | `maxCallDepth` | number | `3` | Maximum depth for agent-to-agent call chains (A calls B calls C = depth 2) |
 | `workQueueSize` | number | `100` | Maximum queued work items (webhook events + agent calls) per agent when all runners are busy |
+| `scale` | number | _(unlimited)_ | Project-wide cap on total concurrent runners across all agents |
 
 ### `[model]` — Default LLM
 
@@ -59,7 +65,7 @@ Default model configuration inherited by all agents that don't define their own 
 | `authType` | string | Yes | Auth method: `"api_key"`, `"oauth_token"`, or `"pi_auth"` |
 | `thinkingLevel` | string | No | Thinking budget: `"off"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, `"xhigh"`. Only applies to Anthropic models with reasoning support. Ignored for other providers. |
 
-See [Models](/models) for all supported providers, model IDs, auth types, and thinking levels.
+See [Models](/reference/models) for all supported providers, model IDs, auth types, and thinking levels.
 
 ### `[local]` — Docker Container Settings
 
@@ -70,7 +76,7 @@ Controls local Docker container isolation.
 | `image` | string | `"al-agent:latest"` | Base Docker image name |
 | `memory` | string | `"4g"` | Memory limit per container (e.g. `"4g"`, `"8g"`) |
 | `cpus` | number | `2` | CPU limit per container |
-| `timeout` | number | `900` | Default max container runtime in seconds. Individual agents can override this with `timeout` in their `agent-config.toml`. See [agent timeout docs](/agent-config-reference#timeout). |
+| `timeout` | number | `900` | Default max container runtime in seconds. Individual agents can override this with `timeout` in their `agent-config.toml`. See [agent timeout](/reference/agent-config#timeout). |
 
 ### `[gateway]` — HTTP Server
 
@@ -79,7 +85,7 @@ The gateway starts automatically when Docker mode or webhooks are enabled. It ha
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `port` | number | `8080` | Port for the gateway HTTP server |
-| `lockTimeout` | number | `1800` | Default lock TTL in seconds. Locks expire automatically after this duration unless refreshed via heartbeat. |
+| `lockTimeout` | number | `1800` | Default lock TTL in seconds. Locks expire automatically after this duration unless refreshed via heartbeat. See [Resource Locks](/concepts/resource-locks). |
 
 ### `[webhooks.*]` — Webhook Sources
 
@@ -87,7 +93,7 @@ Named webhook sources that agents can reference in their `[[webhooks]]` triggers
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `type` | string | Yes | Provider type: `"github"` or `"sentry"` |
+| `type` | string | Yes | Provider type: `"github"`, `"sentry"`, `"linear"`, or `"mintlify"` |
 | `credential` | string | No | Credential instance name for HMAC signature validation (e.g. `"MyOrg"` maps to `github_webhook_secret:MyOrg`). Omit for unsigned webhooks. |
 
 ```toml
@@ -98,6 +104,14 @@ credential = "MyOrg"              # uses github_webhook_secret:MyOrg for HMAC va
 [webhooks.my-sentry]
 type = "sentry"
 credential = "SentryProd"         # uses sentry_client_secret:SentryProd
+
+[webhooks.my-linear]
+type = "linear"
+credential = "LinearMain"         # uses linear_webhook_secret:LinearMain
+
+[webhooks.my-mintlify]
+type = "mintlify"
+credential = "MintlifyMain"       # uses mintlify_webhook_secret:MintlifyMain
 
 [webhooks.unsigned-github]
 type = "github"                   # no credential — accepts unsigned webhooks
@@ -110,6 +124,16 @@ Agents reference these sources by name in their `agent-config.toml`:
 source = "my-github"
 events = ["issues"]
 ```
+
+See [Webhooks](/reference/webhooks) for setup instructions and filter fields per provider.
+
+### `[telemetry]` — Observability
+
+Optional OpenTelemetry integration.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `endpoint` | string | Yes | OpenTelemetry collector endpoint URL |
 
 ## Minimal Examples
 
@@ -127,7 +151,7 @@ Everything else uses defaults: Docker enabled, 4GB memory, 2 CPUs, 15min timeout
 
 ### VPS production (environment file)
 
-Server configuration lives in an environment file (`~/.action-llama/environments/<name>.toml`), not in `config.toml`. See [VPS Deployment](/vps-deployment) for full setup.
+Server configuration lives in an environment file (`~/.action-llama/environments/<name>.toml`), not in `config.toml`. See [VPS Deployment](/concepts/vps-deployment) for full setup.
 
 ```toml
 # ~/.action-llama/environments/production.toml

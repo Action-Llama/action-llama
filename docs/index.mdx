@@ -1,59 +1,44 @@
 ---
 title: "Action Llama"
-description: "CLI tool for running LLM agents as automated scripts, triggered by cron schedules or webhooks"
+description: "Run LLM agents like scripts — triggered by cron or webhooks, isolated in Docker, deployed anywhere"
 ---
 
-Run agents like scripts: triggered by cron or webhooks.
+Run LLM agents like scripts — triggered by cron or webhooks, isolated in Docker, deployed anywhere.
 
-<CardGroup cols={2}>
-  <Card title="Quick Start" icon="rocket" href="/creating-agents">
-    Create your first agent in minutes
-  </Card>
-  <Card title="CLI Reference" icon="terminal" href="/commands">
-    All available CLI commands
-  </Card>
-  <Card title="Configuration" icon="gear" href="/config-reference">
-    Project and agent configuration
-  </Card>
-  <Card title="Examples" icon="book" href="/examples/index">
-    Ready-to-use agent configurations
-  </Card>
-</CardGroup>
+- **Automate your dev workflow** — agents handle issues, PRs, monitoring, moderation, and more
+- **Define agents in code** — `ACTIONS.md` + `agent-config.toml`, version controlled, shareable
+- **Deploy for $5/month** — one command to provision a VPS, one command to deploy
 
-## How it works
-
-1. An agent is triggered by a webhook, cron schedule, or another agent
-2. The agent runs according to the instructions you define in `ACTIONS.md`
-3. The agent shuts down
-
-## Key features
-
-- **Contained runs** — each agent run is isolated in a Docker container with only the credentials it needs
-- **Git-native** — define agents in a git repo, add custom ones, and share them
-- **BYOM** — bring your own model (Anthropic, OpenAI, Groq, Google Gemini, xAI, Mistral, OpenRouter, or any custom provider)
-- **Deploy anywhere** — run locally or on a VPS
-
-## Get started
-
-### 1. Create a project
+## Quick start
 
 ```bash
 npx @action-llama/action-llama@next new my-project
 cd my-project
-```
-
-### 2. Create and manage agents
-
-```bash
-npx al chat
-```
-
-The chat console helps you create and manage agents. You can also create agents manually — see the [creating agents guide](/creating-agents).
-
-### 3. Run
-
-```bash
 npx al start
 ```
 
-If any credentials are missing, it will prompt you for them. Credentials are stored in `~/.action-llama/credentials/` — see [credentials](/credentials) for details.
+<CardGroup cols={2}>
+  <Card title="First Steps" icon="rocket" href="/first-steps/getting-started">
+    Zero to running agent in minutes
+  </Card>
+  <Card title="Guides" icon="book" href="/guides/deploying-to-vps">
+    Deploy, scale, optimize, and orchestrate
+  </Card>
+  <Card title="Concepts" icon="lightbulb" href="/concepts/agents">
+    Understand agents, scheduling, and locks
+  </Card>
+  <Card title="Reference" icon="terminal" href="/reference/cli-commands">
+    Every CLI flag, config field, and command
+  </Card>
+</CardGroup>
+
+## Key features
+
+- **Docker isolation** — each run gets its own container with only the credentials it needs
+- **Git-native** — define agents in a git repo, add custom ones, share them across teams
+- **BYOM** — bring your own model (Anthropic, OpenAI, Groq, Google Gemini, xAI, Mistral, OpenRouter, or any custom provider)
+- **Deploy anywhere** — run locally for development, `al push` to a VPS for production
+- **Webhook + cron** — react to GitHub issues, Sentry alerts, Linear tickets, or poll on a schedule
+- **Multi-agent** — agents can call other agents with `al-call` and collect results with `al-wait`
+- **Resource locks** — coordinate parallel instances with automatic deadlock detection
+- **Web dashboard** — live agent status and streaming logs in your browser

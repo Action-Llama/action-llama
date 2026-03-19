@@ -1,0 +1,85 @@
+---
+title: "Getting Started"
+description: "Create and run your first Action Llama agent in minutes"
+---
+
+This guide gets you from zero to a running agent. Happy path only — we'll skip optional features and explain just enough to get going.
+
+## Prerequisites
+
+- **Node.js 20+** — [nodejs.org](https://nodejs.org)
+- **Docker** — [docker.com](https://www.docker.com) (Docker Desktop on macOS/Windows, or Docker Engine on Linux)
+
+## 1. Create a project
+
+```bash
+npx @action-llama/action-llama@next new my-project
+cd my-project
+```
+
+The wizard prompts for your LLM API key (Anthropic recommended) and basic configuration. This creates:
+
+- `config.toml` — project-level settings
+- `Dockerfile` — shared base Docker image
+- `.env.toml` — local environment binding (gitignored)
+- `package.json` — with `@action-llama/action-llama` as a dependency
+
+## 2. Create an agent
+
+```bash
+npx al agent new
+```
+
+Choose a template (dev, reviewer, devops, or custom), give it a name, and configure its schedule, credentials, and model. This creates a directory like:
+
+```
+agents/dev/
+  agent-config.toml    # Credentials, model, schedule, params
+  ACTIONS.md           # System prompt — the agent's instructions
+```
+
+## 3. Run
+
+```bash
+npx al start
+```
+
+If any credentials are missing, you'll be prompted for them. The scheduler starts, discovers your agents, and begins running them on their configured schedules.
+
+The terminal shows a live TUI with agent status, or use `-w` to enable the [web dashboard](/reference/web-dashboard):
+
+```bash
+npx al start -w
+```
+
+## What just happened?
+
+1. The scheduler scanned for directories with `agent-config.toml` and found your agent
+2. It built a Docker image with your agent's tools
+3. On the first cron tick, it launched a container, loaded credentials, and started an LLM session
+4. The LLM received your `ACTIONS.md` as instructions and ran autonomously
+5. When it finished, the container was removed and logs were saved
+
+## Key files
+
+| File | Purpose |
+|------|---------|
+| `config.toml` | Project settings: default model, Docker limits, webhook sources |
+| `agents/<name>/agent-config.toml` | Agent settings: credentials, schedule, model, params |
+| `agents/<name>/ACTIONS.md` | System prompt — instructions for the LLM |
+
+## Manual test run
+
+Run a single agent once without starting the scheduler:
+
+```bash
+npx al run dev
+```
+
+## What's next
+
+- [Using Webhooks](/first-steps/using-webhooks) — trigger agents from GitHub events
+- [Optimizing Agents](/guides/optimizing-agents) — use preflight to stage context
+- [Deploying to a VPS](/guides/deploying-to-vps) — run agents 24/7 on a server
+- [Agents (concepts)](/concepts/agents) — understand the runtime lifecycle
+- [CLI Commands](/reference/cli-commands) — all available commands and flags

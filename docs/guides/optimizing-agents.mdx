@@ -1,0 +1,140 @@
+---
+title: "Optimizing Agents"
+description: "Use preflight steps to stage context before the LLM session starts"
+---
+
+Agents spend tokens every time they fetch context at runtime — cloning repos, listing issues, calling APIs. Preflight steps let you stage this data before the LLM session starts, so the agent begins with everything it needs.
+
+## The Problem
+
+Without preflight, a typical agent run looks like:
+
+1. LLM starts
+2. LLM runs `git clone` (waits, uses tokens to read output)
+3. LLM runs `gh issue list` (waits, uses tokens to parse JSON)
+4. LLM starts actual work
+
+Steps 2-3 are mechanical — the agent always needs to do them, and they don't benefit from LLM reasoning.
+
+## The Solution: Preflight
+
+Preflight steps run **after credentials are loaded** but **before the LLM session starts**. They execute inside the container with full access to credentials and environment variables.
+
+```toml
+# agent-config.toml
+
+[[preflight]]
+provider = "git-clone"
+[preflight.params]
+repo = "acme/app"
+dest = "/tmp/repo"
+depth = 1
+
+[[preflight]]
+provider = "shell"
+[preflight.params]
+command = "gh issue list --repo acme/app --label bug --json number,title,body --limit 20"
+output = "/tmp/context/issues.json"
+```
+
+Then reference the staged files in your `ACTIONS.md`:
+
+```markdown
+## Context
+
+- The repo is cloned at `/tmp/repo`
+- Open bug issues are at `/tmp/context/issues.json`
+```
+
+## Example: Git clone
+
+The most common preflight step — clone the repo the agent will work on:
+
+```toml
+[[preflight]]
+provider = "git-clone"
+[preflight.params]
+repo = "acme/app"
+dest = "/tmp/repo"
+depth = 1              # shallow clone for speed
+branch = "main"        # optional: specific branch
+```
+
+Short `"owner/repo"` names are expanded to `git@github.com:owner/repo.git`. Full URLs work too.
+
+## Example: Shell command
+
+Run any shell command. `GITHUB_TOKEN`, `GH_TOKEN`, and other credential env vars are already set:
+
+```toml
+[[preflight]]
+provider = "shell"
+[preflight.params]
+command = "gh issue list --repo acme/app --label P1 --json number,title,body --limit 20"
+output = "/tmp/context/issues.json"
+```
+
+Without `output`, the command runs but stdout is discarded. Use `output` to capture it to a file.
+
+## Example: HTTP fetch
+
+Fetch data from an API endpoint:
+
+```toml
+[[preflight]]
+provider = "http"
+required = false          # optional — warn and continue on failure
+[preflight.params]
+url = "https://api.internal/v1/feature-flags"
+output = "/tmp/context/flags.json"
+headers = { Authorization = "Bearer ${INTERNAL_TOKEN}" }
+```
+
+Environment variable interpolation (`${VAR_NAME}`) is supported in string params.
+
+## Required vs Optional Steps
+
+By default, preflight steps are required — if one fails, the agent aborts:
+
+```toml
+[[preflight]]
+provider = "git-clone"
+required = true                    # default — abort on failure
+[preflight.params]
+repo = "acme/app"
+dest = "/tmp/repo"
+
+[[preflight]]
+provider = "http"
+required = false                   # optional — warn and continue
+[preflight.params]
+url = "https://api.internal/v1/flags"
+output = "/tmp/context/flags.json"
+```
+
+Use `required = false` for nice-to-have context that shouldn't block the agent.
+
+## Referencing Staged Files in ACTIONS.md
+
+After preflight runs, tell the agent what's available:
+
+```markdown
+## Context
+
+- The repo is cloned at `/tmp/repo`
+- Open P1 issues are at `/tmp/context/issues.json`
+- Feature flags (if available) are at `/tmp/context/flags.json`
+```
+
+## Tips
+
+- **Shell is the escape hatch** — anything a built-in provider doesn't cover can be expressed as a shell command
+- **Env var interpolation** works in all string params: `${GITHUB_TOKEN}`, `${SENTRY_AUTH_TOKEN}`, etc.
+- **Steps run sequentially** in the order defined in `agent-config.toml`
+- **No per-step timeout** — steps are bounded by the container-level timeout
+- **Environment variables** set inside `shell` child processes do not propagate back to the agent's `process.env`
+
+## Next steps
+
+- [agent-config.toml — Preflight](/reference/agent-config#preflight) — full field reference
+- [Agents (concepts)](/concepts/agents) — full runtime lifecycle

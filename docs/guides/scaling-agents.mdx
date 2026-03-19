@@ -1,0 +1,118 @@
+---
+title: "Scaling Agents"
+description: "Scale agents to handle concurrent work and use locks to prevent contention"
+---
+
+By default, each agent runs one instance at a time. This guide shows how to scale up and use resource locks to prevent duplicate work.
+
+## The Problem
+
+With `scale = 1`, a single agent instance handles all work sequentially. If 5 GitHub issues arrive via webhook while the agent is working on one, those 5 events queue up and wait. For high-volume workloads, this creates a bottleneck.
+
+## Increase Scale
+
+In your agent's `agent-config.toml`:
+
+```toml
+scale = 3    # Run up to 3 instances concurrently
+```
+
+Now when 5 issues arrive, up to 3 are processed simultaneously. The remaining 2 wait in the work queue.
+
+## Add Locking
+
+With multiple instances, two agents might try to work on the same issue. Add lock/skip/work/unlock to your `ACTIONS.md`:
+
+```markdown
+## Workflow
+
+1. List open issues labeled "agent" in repos from `<agent-config>`
+2. For each issue:
+   - LOCK("github issue owner/repo#123")
+   - If the lock fails, skip this issue — another instance is handling it
+   - Clone the repo, create a branch, implement the fix
+   - Open a PR and link it to the issue
+   - UNLOCK("github issue owner/repo#123")
+3. If you completed work and there may be more issues, run `al-rerun`
+```
+
+### How lock commands work
+
+When the agent runs `LOCK("resource key")`:
+
+- **Lock acquired:** `{"ok": true}` — proceed with work
+- **Already held:** `{"ok": false, "holder": "dev-abc123", ...}` — skip this resource
+
+When done: `UNLOCK("resource key")` releases the lock.
+
+If the agent crashes or times out, locks are auto-released.
+
+## Monitor with `al stat`
+
+Check queue depth and running instances:
+
+```bash
+al stat
+al stat -E production
+```
+
+The `queue` column shows how many events are waiting. If it's consistently high, consider increasing `scale`.
+
+## Resource Considerations
+
+Each parallel instance:
+
+- Uses a separate Docker container
+- Consumes memory (`local.memory` per container, default 4GB)
+- Consumes CPU (`local.cpus` per container, default 2)
+- Makes independent LLM API calls (watch your rate limits and quota)
+
+### Tune work queue size
+
+If events arrive faster than agents can process them, the queue buffers them:
+
+```toml
+# config.toml
+workQueueSize = 200    # default: 100 per agent
+```
+
+When the queue is full, the oldest items are dropped.
+
+### Project-wide scale cap
+
+Limit total concurrent runners across all agents:
+
+```toml
+# config.toml
+scale = 10    # max 10 runners total across all agents
+```
+
+## Example Configuration
+
+```toml
+# agent-config.toml
+credentials = ["github_token", "git_ssh"]
+schedule = "*/5 * * * *"
+scale = 3
+
+[model]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+thinkingLevel = "medium"
+authType = "api_key"
+
+[[webhooks]]
+source = "my-github"
+events = ["issues"]
+actions = ["labeled"]
+labels = ["agent"]
+
+[params]
+repos = ["acme/app", "acme/api"]
+triggerLabel = "agent"
+```
+
+## Next steps
+
+- [Resource Locks (concepts)](/concepts/resource-locks) — TTL, heartbeat, deadlock detection
+- [Agent Commands — Locks](/reference/agent-commands#lock-commands) — full command syntax and responses

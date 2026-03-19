@@ -13,32 +13,45 @@
         "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting Started",
-            "pages": ["index", "how-it-works", "creating-agents", "agents"]
+            "group": "First Steps",
+            "pages": [
+              "first-steps/getting-started",
+              "first-steps/using-webhooks"
+            ]
           },
           {
-            "group": "Configuration",
-            "pages": ["config-reference", "agent-config-reference", "credentials", "models"]
+            "group": "Guides",
+            "pages": [
+              "guides/deploying-to-vps",
+              "guides/optimizing-agents",
+              "guides/scaling-agents",
+              "guides/subagents"
+            ]
           },
           {
-            "group": "CLI",
-            "pages": ["commands"]
+            "group": "Concepts",
+            "pages": [
+              "concepts/agents",
+              "concepts/resource-locks",
+              "concepts/vps-deployment",
+              "concepts/scheduler"
+            ]
           },
           {
-            "group": "Features",
-            "pages": ["webhooks", "docker", "web-dashboard"]
-          },
-          {
-            "group": "Deployment",
-            "pages": ["deployment", "vps-deployment"]
-          },
-          {
-            "group": "Examples",
-            "pages": ["examples/index", "examples/dev/README", "examples/reviewer/README", "examples/planner/README", "examples/reddit-moderator/README"]
-          },
-          {
-            "group": "Help",
-            "pages": ["troubleshooting"]
+            "group": "Reference",
+            "pages": [
+              "reference/cli-commands",
+              "reference/project-config",
+              "reference/agent-config",
+              "reference/project-dockerfile",
+              "reference/agent-dockerfile",
+              "reference/agent-commands",
+              "reference/credentials",
+              "reference/models",
+              "reference/agent-docs",
+              "reference/webhooks",
+              "reference/web-dashboard"
+            ]
           }
         ]
       }
