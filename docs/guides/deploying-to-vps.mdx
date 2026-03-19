@@ -12,18 +12,18 @@ Once deployed, your agents run continuously on the server — cron jobs fire on 
 ## 1. Provision a server
 
 ```bash
-al env prov production
+al env prov myserver
 ```
 
 The interactive wizard guides you through:
 
-1. **Choose a provider** — Vultr or Hetzner (or connect an existing server)
-2. **Pick a plan** — 1 vCPU / 1-2GB RAM is enough for most projects ($5-6/month)
+1. **Choose a provider** — Hetzner or Vultr (or connect an existing server)
+2. **Pick a plan** — 2 vCPU / 4GB RAM works well for most projects ($5-6/month)
 3. **Pick a region** — choose one close to your webhook sources
 4. **SSH key** — generate a new key or use an existing one
 5. **HTTPS (optional)** — set up TLS via Cloudflare
 
-### TLS with Cloudflare (optional)
+### TLS with Cloudflare (recommended)
 
 If you choose HTTPS, you'll need a Cloudflare API token with these permissions:
 
@@ -37,10 +37,16 @@ What Action Llama sets up:
 - nginx reverse proxy with TLS termination
 - Cloudflare SSL mode set to Full (Strict)
 
+For convenience, set the environment as the default:
+
+```bash
+al env set myserver
+```
+
 ## 2. Deploy
 
 ```bash
-al push -E production
+al push
 ```
 
 This syncs your project files and credentials to the server, installs dependencies, and starts the scheduler as a systemd service. The first push takes a minute or two; subsequent pushes are faster (rsync only transfers changes).
