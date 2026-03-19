@@ -1,0 +1,72 @@
+---
+title: "How it Works"
+description: "The execution model, core components, and how agents run"
+---
+
+Action Llama runs LLM agents as automated scripts — triggered by cron schedules or webhooks, executed in isolated Docker containers, and managed by a local scheduler.
+
+## Core components
+
+```
+┌─────────────────────────────────────────────┐
+│                 Scheduler                    │
+│  Discovers agents, fires cron triggers,      │
+│  manages runner pool and work queue          │
+├─────────────────────────────────────────────┤
+│                  Gateway                     │
+│  HTTP server: webhooks, resource locks,      │
+│  dashboard, agent signals, control API       │
+├───────────┬───────────┬─────────────────────┤
+│ Container │ Container │      Container       │
+│  Agent A  │  Agent A  │       Agent B        │
+│ (run 1)   │ (run 2)   │      (run 1)         │
+└───────────┴───────────┴─────────────────────┘
+```
+
+- **Scheduler** — discovers agents by scanning for directories with `agent-config.toml`. Registers cron jobs and webhook triggers. Manages a pool of runners per agent (configurable via `scale`) and a durable work queue for buffering events when runners are busy.
+- **Gateway** — HTTP server that receives webhooks from external services (GitHub, Sentry, etc.), serves the web dashboard, handles resource locking, and processes agent signals (`al-rerun`, `al-status`, etc.).
+- **Containers** — each agent run is an isolated Docker container with its own filesystem, credentials, and environment variables. Containers are ephemeral — they start, do their work, and are removed.
+
+## Trigger → Run pipeline
+
+1. **Trigger fires** — a cron tick, incoming webhook, manual `al run`, or `al-call` from another agent.
+2. **Work is queued** — if all runners for the target agent are busy, the trigger is placed in a SQLite-backed work queue until a runner becomes available.
+3. **Container starts** — a fresh Docker container launches with credentials mounted and configuration injected as environment variables.
+4. **LLM session runs** — the model receives the agent's `ACTIONS.md` as a system prompt and a user prompt containing configuration, credential context, and trigger details (schedule, webhook payload, or call context). The model executes tools (bash, file I/O, API calls) autonomously.
+5. **Signals are processed** — the agent uses `al-rerun` (request immediate re-run), `al-status` (update TUI status), `al-return` (return value to caller), or `al-exit` (abort with error).
+6. **Container exits** — locks are released, logs are written, and the container is removed. If the agent called `al-rerun`, the scheduler immediately starts a new run.
+
+## Trigger types
+
+| Type | Source | Use case |
+|------|--------|----------|
+| **Cron** | `schedule` field in `agent-config.toml` | Periodic polling — check for new issues, review PRs, clean up stale resources |
+| **Webhook** | External HTTP POST to the gateway | React to events — new issue opened, PR pushed, Sentry alert fired |
+| **Manual** | `al run <agent>` CLI command | Testing, debugging, one-off runs |
+| **Agent call** | `al-call <agent>` from another agent | Multi-agent workflows — planner calls dev, dev calls reviewer |
+
+Agents can have both a cron schedule and webhook triggers. Cron runs check for work proactively; webhooks react to events immediately.
+
+## Configuration layers
+
+Configuration uses a three-layer merge system so project settings are portable across machines:
+
+| Layer | File | Purpose |
+|-------|------|---------|
+| 1 | `config.toml` (committed) | Project settings: model defaults, Docker limits, gateway port, webhook sources |
+| 2 | `.env.toml` (gitignored) | Per-machine environment binding and config overrides |
+| 3 | `~/.action-llama/environments/<name>.toml` | Server/cloud infrastructure config |
+
+Later layers override earlier ones (deep merge). See [config.toml Reference](/config-reference) for all fields.
+
+## Local vs remote
+
+| | Local (`al start`) | Remote (`al push`) |
+|---|---|---|
+| **Where** | Your machine | Any VPS or server |
+| **Trigger** | Cron + local webhooks (needs tunnel) | Cron + public webhooks |
+| **State** | SQLite in `.al/` | SQLite on server |
+| **Credentials** | `~/.action-llama/credentials/` | Pushed via SSH |
+| **Management** | TUI or web dashboard | `al push`, `al env`, web dashboard |
+
+Start locally for development, then `al push` to a server for production. See [Deployment](/cloud) for details.
