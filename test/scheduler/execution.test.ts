@@ -231,6 +231,23 @@ describe("drainQueues", () => {
     expect(runner.run).not.toHaveBeenCalled();
   });
 
+  it("stops when scheduler is paused", async () => {
+    const runner = makeRunner({ instanceId: "a" });
+    const ctx = makeCtx({
+      agentConfigs: [makeAgentConfig("a")],
+      runnerPools: { a: new RunnerPool([runner]) },
+      statusTracker: { isPaused: () => true } as any,
+    });
+    ctx.workQueue.enqueue("a", {
+      type: "webhook",
+      context: { event: "push", action: "", payload: {}, headers: {}, source: "github" } as any,
+    });
+
+    await drainQueues(ctx);
+
+    expect(runner.run).not.toHaveBeenCalled();
+  });
+
   it("stops when shuttingDown is true", async () => {
     const runner = makeRunner({ instanceId: "a" });
     const ctx = makeCtx({
