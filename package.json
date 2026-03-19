@@ -40,6 +40,7 @@
     "build:info": "printf '{\"gitSha\":\"%s\"}' \"$(git rev-parse --short=8 HEAD 2>/dev/null || echo dev)\" > dist/build-info.json",
     "build:assets": "echo 'No assets to copy'",
     "clean": "rm -rf dist",
+    "dev-docs": "cd docs && npx mintlify dev",
     "prebuild": "npm run clean",
     "prepublishOnly": "npm run build && npm test",
     "changeset": "changeset",

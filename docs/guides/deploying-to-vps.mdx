@@ -9,6 +9,18 @@ This guide walks you through deploying your Action Llama project to a VPS for 24
 
 Once deployed, your agents run continuously on the server — cron jobs fire on schedule, webhooks are publicly reachable, and the scheduler restarts automatically if it crashes.
 
+### Prerequisites
+
+- **[Cloudflare](https://www.cloudflare.com/)** account
+- DNS for a domain managed on Cloudflare (so you can point it at your AL server)
+- Cloudflare account API key with Zone editing permissions:
+  - *Zone Settings*
+  - *SSL and Certificates*
+  - *DNS*
+- **[Hertzner](https://hetzner.com)** or **[Vultr](https://www.vultr.com/)** account and corresponding API keys
+
+You should already have a domain whose DNS is hosted on Cloudflare. This is **strongly** recommended so that you can have HTTPS without additional configuration.
+
 ## 1. Provision a server
 
 ```bash
@@ -25,10 +37,7 @@ The interactive wizard guides you through:
 
 ### TLS with Cloudflare (recommended)
 
-If you choose HTTPS, you'll need a Cloudflare API token with these permissions:
-
-- `Zone:DNS:Edit`
-- `Zone:SSL and Certificates:Edit`
+If you choose HTTPS, you'll need the Cloudflare account API token.
 
 What Action Llama sets up:
 
@@ -75,7 +84,7 @@ This hot-reloads the agent without restarting the scheduler. The file watcher de
 al env deprov production
 ```
 
-Stops containers, cleans credentials, optionally deletes DNS records and the VPS instance.
+Stops containers, cleans credentials, deletes DNS records, and destroy the VPS instance.
 
 ## Cost comparison
 

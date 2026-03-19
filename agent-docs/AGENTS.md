@@ -1,6 +1,6 @@
 # Action Llama Reference
 
-Action Llama is a CLI tool for running LLM agents as automated scripts. Agents run on cron schedules and/or in response to webhooks (GitHub, Sentry, Linear, Mintlify). Each agent is an LLM session that receives a system prompt (ACTIONS.md), gets credentials injected, and runs inside an isolated Docker container. The scheduler manages agent lifecycles, and a gateway HTTP server handles webhooks, resource locking, agent-to-agent calls, and an optional web dashboard.
+CLI tool for running LLM agents as automated scripts on cron schedules and/or webhooks (GitHub, Sentry, Linear, Mintlify). Agents get a system prompt (ACTIONS.md), credentials, and run in isolated Docker containers. Scheduler manages lifecycles; gateway handles webhooks, locking, agent calls, and web dashboard.
 
 Package: `@action-llama/action-llama`. CLI binary: `al`.
 
@@ -19,7 +19,7 @@ my-project/
     Dockerfile             # Custom Docker image for this agent (optional)
 ```
 
-Agent names are derived from the directory name. `"default"` is a reserved name and cannot be used as an agent name.
+Agent names derive from directory name. `"default"` is reserved.
 
 ## Agent Docs
 
@@ -31,25 +31,21 @@ Agent names are derived from the directory name. `"default"` is a reserved name 
 
 ### ACTIONS.md — Writing Tips
 
-- Write as direct instructions to an LLM: "You are an automation agent. Your job is to..."
-- Use numbered steps for the workflow — be specific about what commands to run
-- Reference `<agent-config>` for parameter values instead of hardcoding repo names, labels, etc.
-- Handle both trigger types if the agent uses both schedule and webhooks
-- Use `al-status` at natural milestones so operators can see progress in the TUI/dashboard
-- Use `al-rerun` when the agent completed work and there may be more items in the backlog
-- Keep it concise — the system prompt consumes tokens every run
+- Write as direct LLM instructions: "You are an automation agent. Your job is to..."
+- Use numbered steps; reference `<agent-config>` for params instead of hardcoding
+- Handle both schedule and webhook triggers if using both
+- Use `al-status` at milestones, `al-rerun` when backlog remains
+- Keep concise — system prompt consumes tokens every run
 
 ## Prompt Assembly
 
-Understanding how the prompt is assembled is critical for writing effective ACTIONS.md files. The LLM receives two messages:
+The LLM receives two messages:
 
 ### System message
 
-The contents of `ACTIONS.md` are sent as the system prompt. If the agent has locking or calling skills enabled (determined by the scheduler based on gateway availability and agent config), **skill blocks** are appended to teach the agent how to use those capabilities.
+`ACTIONS.md` is the system prompt. With gateway, **skill blocks** appended:
 
 #### Locking skill block (injected when gateway is available)
-
-The following is prepended when the agent may need resource locking:
 
 ```xml
 <skill-lock>
@@ -98,8 +94,6 @@ rlock-heartbeat "github issue acme/app#42"
 ```
 
 #### Calling skill block (injected when gateway is available)
-
-The following is prepended when agent-to-agent calling is available:
 
 ```xml
 <skill-call>
@@ -150,11 +144,11 @@ echo "Line 1\nLine 2" | al-return
 
 ### User message
 
-The user message is built from a **static skeleton** (baked into the Docker image at build time) plus a **dynamic suffix** (passed at runtime based on trigger type).
+Built from a **static skeleton** (baked at build time) plus a **dynamic suffix** (trigger-dependent).
 
-The static skeleton contains these XML blocks in order:
+Static blocks in order:
 
-**`<agent-config>`** — JSON of the `[params]` table from `agent-config.toml`:
+**`<agent-config>`** — JSON of `[params]` from `agent-config.toml`:
 
 ```xml
 <agent-config>
@@ -162,7 +156,7 @@ The static skeleton contains these XML blocks in order:
 </agent-config>
 ```
 
-**`<credential-context>`** — Lists available environment variables and tools based on the agent's credentials. Also includes git clone protocol guidance and the anti-exfiltration policy:
+**`<credential-context>`** — Available env vars, tools, git protocol, anti-exfiltration policy:
 
 ```xml
 <credential-context>
@@ -183,7 +177,7 @@ Use standard tools directly: `gh` CLI, `git`, `curl`.
 </credential-context>
 ```
 
-**`<environment>`** — Filesystem constraints:
+**`<environment>`** — Filesystem:
 
 ```xml
 <environment>
@@ -194,7 +188,7 @@ All write operations (git clone, file creation, etc.) must target `/tmp`.
 </environment>
 ```
 
-**Dynamic suffix** — appended based on trigger type:
+**Dynamic suffix** — by trigger type:
 
 | Trigger | Suffix |
 |---------|--------|
@@ -203,7 +197,7 @@ All write operations (git clone, file creation, etc.) must target `/tmp`.
 | Webhook | `<webhook-trigger>` block with event JSON, then `"A webhook event just fired. Review the trigger context above and take appropriate action."` |
 | Agent call | `<agent-call>` block with caller/context JSON, then `"You were called by the "<name>" agent. Review the call context above, do the requested work, and use al-return to send back your result."` |
 
-**`<webhook-trigger>`** example (webhook runs only):
+**`<webhook-trigger>`** example:
 
 ```json
 {
@@ -225,7 +219,7 @@ All write operations (git clone, file creation, etc.) must target `/tmp`.
 }
 ```
 
-**`<agent-call>`** example (agent call runs only):
+**`<agent-call>`** example:
 
 ```json
 {
@@ -236,7 +230,7 @@ All write operations (git clone, file creation, etc.) must target `/tmp`.
 
 ## config.toml
 
-The project-level `config.toml` lives at the root of your Action Llama project. All sections and fields are optional — sensible defaults are used for anything you omit.
+Project root. All sections optional — sensible defaults apply.
 
 ### Full Annotated Example
 
@@ -302,7 +296,7 @@ endpoint = "https://telemetry.example.com/v1"   # OpenTelemetry endpoint
 
 ### `[model]` — Default LLM
 
-Default model configuration inherited by all agents that don't define their own `[model]` section in `agent-config.toml`.
+Default model for all agents without their own `[model]` in `agent-config.toml`.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -313,7 +307,7 @@ Default model configuration inherited by all agents that don't define their own 
 
 ### `[local]` — Docker Container Settings
 
-Controls local Docker container isolation.
+Local Docker container settings.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -324,7 +318,7 @@ Controls local Docker container isolation.
 
 ### `[gateway]` — HTTP Server
 
-The gateway starts automatically when Docker mode or webhooks are enabled. It handles health checks, webhook reception, credential serving (local Docker only), resource locking, and the shutdown kill switch.
+Starts automatically when Docker mode or webhooks enabled.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -333,14 +327,14 @@ The gateway starts automatically when Docker mode or webhooks are enabled. It ha
 
 ### `[webhooks.<name>]` — Webhook Sources
 
-Named webhook sources that agents can reference in their `[[webhooks]]` triggers. Each source defines a provider type and an optional credential for signature validation.
+Named sources agents reference in `[[webhooks]]` triggers.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `type` | string | Yes | Provider type: `"github"`, `"sentry"`, `"linear"`, or `"mintlify"` |
-| `credential` | string | No | Credential instance name for HMAC signature validation (e.g. `"MyOrg"` maps to `github_webhook_secret:MyOrg`). Omit for unsigned webhooks. |
+| `credential` | string | No | Instance name for HMAC validation (e.g. `"MyOrg"` -> `github_webhook_secret:MyOrg`). Omit for unsigned. |
 
-Agents reference these sources by name in their `agent-config.toml`:
+Agents reference by name:
 
 ```toml
 [[webhooks]]
@@ -356,7 +350,7 @@ events = ["issues"]
 
 ## agent-config.toml
 
-Each agent has an `agent-config.toml` file in its directory. The agent name is derived from the directory name and should not be included in the config.
+Per-agent config in its directory. Agent name derives from directory name.
 
 ### Full Annotated Example
 
@@ -458,41 +452,31 @@ sentryProjects = ["web-app", "api"]
 | `preflight` | array | No | Array of preflight steps that run before the LLM session. |
 | `params` | table | No | Custom key-value params injected into the prompt as `<agent-config>` |
 
-*At least one of `schedule` or `webhooks` is required (unless `scale = 0`). *Required within `[model]` if the agent defines its own model block (otherwise inherits from project `config.toml`).
+*Need `schedule` or `webhooks` (unless `scale = 0`). *Required in `[model]` if agent defines own model block.
 
 ### Scale
 
-The `scale` field controls how many instances of an agent can run concurrently.
+Concurrent instances per agent. Default: 1. Set to 0 to disable (no runners/cron/webhooks created).
 
-- **Default**: 1 (only one instance can run at a time)
-- **Minimum**: 0 (disables the agent — no runners, cron jobs, or webhook bindings are created)
-- **Maximum**: No hard limit, but consider system resources and model API rate limits
+- Scheduled runs: skipped if all instances busy
+- Webhook events: queued if all busy (up to `workQueueSize`, default: 100)
+- Agent calls: queued same way
 
-How it works:
-
-1. **Scheduled runs**: If a cron trigger fires but all agent instances are busy, the scheduled run is skipped with a warning
-2. **Webhook events**: If a webhook arrives but all instances are busy, the event is queued (up to `workQueueSize` limit in global config, default: 100)
-3. **Agent calls**: If one agent calls another but all target instances are busy, the call is queued in the same work queue
-
-Each parallel instance uses a separate Docker container, has independent logging, and may consume LLM API quota concurrently.
+Each instance uses a separate container with independent logging.
 
 ### Timeout
 
-The `timeout` field controls the maximum runtime for an agent invocation. When the timeout expires, the container is terminated with exit code 124.
+Max runtime per invocation. Container terminated with exit 124 on expiry.
 
-**Resolution order:** `agent-config.toml timeout` → `config.toml [local].timeout` → `900` (default)
-
-This means you can set a project-wide default in `[local].timeout` and override it per-agent.
+**Resolution:** `agent-config.toml timeout` -> `config.toml [local].timeout` -> `900`.
 
 ### Preflight
 
-Preflight steps run mechanical data-staging tasks after credentials are loaded but before the LLM session starts. They fetch data, clone repos, or run commands to prepare the workspace so the agent starts with everything it needs — instead of spending tokens fetching context at runtime.
+Stage data after credentials load, before LLM session.
 
-Steps run **sequentially** in the order they appear in `agent-config.toml`, **inside the container** (or host process in `--no-docker` mode) after credential/env setup. Providers write files to disk — your ACTIONS.md references the staged files.
+Sequential, inside container. `${VAR_NAME}` interpolation in params.
 
-Environment variable interpolation is supported: `${VAR_NAME}` in string params is resolved against `process.env` (which already has credentials injected).
-
-Each `[[preflight]]` entry has these fields:
+Fields:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -502,7 +486,7 @@ Each `[[preflight]]` entry has these fields:
 
 #### `shell` provider
 
-Runs a command via `/bin/sh`. Optionally captures stdout to a file.
+Runs a command via `/bin/sh`.
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -519,7 +503,7 @@ output = "/tmp/context/issues.json"
 
 #### `http` provider
 
-Fetches a URL and writes the response body to a file.
+Fetches a URL, writes response to file.
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -541,7 +525,7 @@ headers = { Authorization = "Bearer ${INTERNAL_TOKEN}" }
 
 #### `git-clone` provider
 
-Clones a git repository. Short `"owner/repo"` names are expanded to `git@github.com:owner/repo.git`; full URLs are passed through. Git credentials (SSH key, HTTPS token) are already configured from the agent's credentials.
+`"owner/repo"` expands to `git@github.com:owner/repo.git`.
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -560,14 +544,11 @@ branch = "main"
 depth = 1
 ```
 
-Notes:
-- The `shell` provider is the escape hatch — anything a built-in provider doesn't cover can be expressed as a shell command
-- There is no per-step timeout — steps are bounded by the container-level timeout
-- Environment variables set inside `shell` child processes do not propagate back to the agent's `process.env`
+`shell` is the escape hatch. No per-step timeout. Shell env vars don't propagate back.
 
 ### Webhook Trigger Fields
 
-Each `[[webhooks]]` entry has a required `source` field referencing a named webhook source from the project's `config.toml`. All filter fields below are optional. Omit all of them to trigger on everything from that source. All specified filters use AND logic — all must match for the agent to trigger.
+Required `source` from `config.toml`. All filters optional (AND logic). Omit all = trigger on everything.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -614,61 +595,27 @@ Each `[[webhooks]]` entry has a required `source` field referencing a named webh
 | `actions` | string[] | Event actions: failed, succeeded, etc. |
 | `branches` | string[] | Only for these branches |
 
-### TOML Syntax Reminders
-
-- Strings: `key = "value"`
-- Arrays: `key = ["a", "b"]`
-- Tables (objects): `[tableName]` on its own line, followed by key-value pairs
-- Array of tables: `[[arrayName]]` on its own line — each block is one entry in the array
-- Inline tables: `headers = { Authorization = "Bearer ${TOKEN}" }`
-- Comments: `# comment`
-
-Example with multiple webhooks (each `[[webhooks]]` is a separate trigger):
-
-```toml
-[[webhooks]]
-source = "my-github"
-events = ["issues"]
-actions = ["labeled"]
-labels = ["agent"]
-
-[[webhooks]]
-source = "my-github"
-events = ["pull_request"]
-
-[[webhooks]]
-source = "my-sentry"
-resources = ["error", "event_alert"]
-```
-
 ### Model Configuration
 
-The `[model]` section is optional — agents inherit the default model from the project's `config.toml`. Only add `[model]` to an agent config if you want to override the default for that specific agent. If an agent defines its own `[model]` section, it fully overrides the project default — there is no field-level merging.
+Optional. If defined, fully overrides project default (no merging).
 
 ## Credentials
 
-Credentials are stored in `~/.action-llama/credentials/<type>/<instance>/<field>`. Each credential type is a directory containing one file per field. Reference them in `agent-config.toml` by type name (e.g. `"github_token"`) for the `default` instance, or use `"type:instance"` for a named instance (e.g. `"git_ssh:botty"`).
+Path: `~/.action-llama/credentials/<type>/<instance>/<field>`. Ref as `"type"` or `"type:instance"`.
 
-**IMPORTANT:** Agents MUST NEVER ask users for credentials directly (API keys, tokens, passwords, etc.). Agents MUST NEVER run `al doctor` or interact with the credential system on behalf of the user. If a credential is missing at runtime, the agent should report the error and stop — the user will run `al doctor` and `al start` themselves.
+**IMPORTANT:** Agents MUST NEVER ask for credentials or run `al doctor`. Missing creds = report and stop.
 
 ### How credentials work
 
-1. **Configuration**: List credential types in your agent's `agent-config.toml`:
-   ```toml
-   credentials = ["github_token", "git_ssh"]
-   ```
-
-2. **Storage**: Credential values live in `~/.action-llama/credentials/<type>/<instance>/<field>`. Each field is a plain text file.
-
-3. **Injection**: When an agent runs, the credentials it requires are mounted into the container at `/credentials/<type>/<instance>/<field>` and key values are injected as environment variables.
-
-4. **Git identity**: The `git_ssh` credential includes `username` and `email` fields. These are injected as `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL` and `GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` env vars at runtime, so `git commit` works without requiring `git config`.
-
-5. **LLM credentials**: The LLM credential (e.g. `anthropic_key`) does not need to be listed in the agent's `credentials` array — it is loaded automatically based on the `[model]` config.
+1. **Config**: List in `agent-config.toml`: `credentials = ["github_token", "git_ssh"]`
+2. **Storage**: `~/.action-llama/credentials/<type>/<instance>/<field>` (plain text files)
+3. **Injection**: Mounted at `/credentials/...` in container; key values set as env vars
+4. **Git identity**: `git_ssh` fields set `GIT_AUTHOR_*`/`GIT_COMMITTER_*` env vars
+5. **LLM creds**: Auto-loaded from `[model]` config — don't list in `credentials` array
 
 ### Named instances
 
-Each credential type supports named instances. Reference `"git_ssh"` for the default instance, or `"git_ssh:botty"` for a named instance:
+Use `"git_ssh"` for default instance, `"git_ssh:botty"` for named:
 
 ```
 ~/.action-llama/credentials/git_ssh/default/id_rsa
@@ -710,11 +657,11 @@ Each credential type supports named instances. Reference `"git_ssh"` for the def
 | `linear_webhook_secret` | `secret` | Shared secret for Linear webhook verification |
 | `mintlify_webhook_secret` | `secret` | Shared secret for Mintlify webhook verification |
 
-Used by the gateway for payload verification — not injected into agent containers. The gateway automatically loads secrets from all credential instances and uses them to verify incoming webhook payloads.
+Used by gateway for payload verification — not injected into agent containers.
 
 ### Infrastructure credentials
 
-These are used by CLI commands (provisioning, deployment) and are not injected into agent containers.
+Used by CLI commands (provisioning, deployment), not injected into containers.
 
 | Type | Fields | Description |
 |------|--------|-------------|
@@ -734,7 +681,7 @@ These are used by CLI commands (provisioning, deployment) and are not injected i
 
 ## Models
 
-Action Llama supports 8 LLM providers. Each agent can use a different provider and model — configure a project-wide default in `config.toml` under `[model]`, and override per agent in `agent-config.toml`.
+8 providers. Default in `config.toml [model]`, override per agent.
 
 | Provider | Credential | Example Models | Auth Types |
 |----------|-----------|---------------|------------|
@@ -758,54 +705,21 @@ Action Llama supports 8 LLM providers. Each agent can use a different provider a
 | `high` | Deep reasoning |
 | `xhigh` | Maximum reasoning budget |
 
-If omitted, thinking is not explicitly configured. For non-Anthropic providers, `thinkingLevel` is ignored.
-
-### Model inheritance
-
-Agents without a `[model]` section inherit from the project `config.toml`. If an agent defines its own `[model]`, it fully overrides the project default — there is no field-level merging between the two.
-
-```
-config.toml               → [model] provider = "anthropic", model = "claude-sonnet-4-20250514"
-dev/agent-config.toml      → (no [model] section — inherits Claude Sonnet)
-reviewer/agent-config.toml → [model] provider = "openai", model = "gpt-4o"
-devops/agent-config.toml   → [model] provider = "groq", model = "llama-3.3-70b-versatile"
-```
-
-The LLM credential does not need to be listed in the agent's `credentials` array — it is loaded automatically based on the `[model]` config.
+Omitted = not configured. Non-Anthropic providers ignore `thinkingLevel`.
 
 ## Webhooks
 
-Agents can be triggered by webhooks in addition to (or instead of) cron schedules. Four providers are supported: GitHub, Sentry, Linear, and Mintlify.
+Trigger agents via webhooks (GitHub, Sentry, Linear, Mintlify) instead of or alongside cron.
 
-### Defining webhook sources
-
-Webhook sources are defined once in the project's `config.toml`. Each source has a name, a provider type, and an optional credential for signature validation:
-
-```toml
-[webhooks.my-github]
-type = "github"
-credential = "MyOrg"          # credential instance name (github_webhook_secret:MyOrg)
-
-[webhooks.my-sentry]
-type = "sentry"
-credential = "SentryProd"     # credential instance name (sentry_client_secret:SentryProd)
-
-[webhooks.my-linear]
-type = "linear"
-credential = "LinearMain"     # credential instance name (linear_webhook_secret:LinearMain)
-
-[webhooks.my-mintlify]
-type = "mintlify"
-credential = "MintlifyMain"   # credential instance name (mintlify_webhook_secret:MintlifyMain)
-```
+Sources defined in `config.toml` `[webhooks.<name>]` (see config.toml section above).
 
 ### Runtime flow
 
-1. The gateway receives a webhook POST request at `/webhooks/<type>` (e.g. `/webhooks/github`)
-2. It verifies the payload signature using secrets loaded from the credential instances defined in `config.toml` webhook sources
-3. It parses the event into a `WebhookContext` (source, event, action, repo, etc.)
-4. It matches the context against each agent's webhook triggers (AND logic — all specified filter fields must match; omitted fields are not checked)
-5. Matching agents are triggered with the webhook context injected into their prompt as a `<webhook-trigger>` block
+1. Gateway receives POST at `/webhooks/<type>`
+2. Verifies payload signature from credential instances
+3. Parses into `WebhookContext`
+4. Matches against agent webhook triggers (AND logic)
+5. Triggers matching agents with `<webhook-trigger>` block in prompt
 
 ### Webhook endpoints
 
@@ -818,34 +732,33 @@ credential = "MintlifyMain"   # credential instance name (mintlify_webhook_secre
 
 ### Queue behavior
 
-If all runners for a matching agent are busy, webhook events are queued (up to `workQueueSize`, default: 100). Scheduled runs are skipped if all busy.
+All runners busy: webhooks queued (up to `workQueueSize`, default: 100), scheduled runs skipped.
 
 ### Hybrid agents
 
-Agents can have both `schedule` and `webhooks`. Scheduled runs poll for work proactively; webhook runs respond to events immediately.
+Agents can have both `schedule` and `webhooks`.
 
 ## Agent Commands
 
-Agents have access to shell commands for signaling the scheduler, calling other agents, and coordinating with resource locks. These commands are installed at `/app/bin/` (baked into the Docker image) and added to `PATH` at container startup. The preamble skill blocks (see Prompt Assembly above) teach agents the commands and their response formats.
+Commands at `/app/bin/` (added to `PATH`). Skill blocks in prompt teach usage.
 
 ### Signal commands
 
-Signal commands write signal files that the scheduler reads after the session ends.
+Write signal files read by scheduler after session ends.
 
 #### `al-rerun`
 
-Request an immediate rerun to drain remaining backlog. Without this, the scheduler treats the run as complete and waits for the next scheduled tick.
+Request immediate rerun to drain backlog.
 
 ```bash
 al-rerun
 ```
 
-- Only applies to **scheduled** runs. Webhook-triggered and agent-called runs do not re-run.
-- Reruns continue until the agent completes without calling `al-rerun`, hits an error, or reaches the `maxReruns` limit (default: 10).
+Scheduled runs only. Continues until no `al-rerun`, error, or `maxReruns` (10).
 
 #### `al-status "<text>"`
 
-Update the status text shown in the TUI and web dashboard.
+Update status text in TUI/dashboard.
 
 ```bash
 al-status "reviewing PR #42"
@@ -854,39 +767,37 @@ al-status "found 3 issues to work on"
 
 #### `al-return "<value>"`
 
-Return a value to the calling agent. Used when this agent was invoked via `al-call`.
+Return a value to the calling agent (when invoked via `al-call`).
 
 ```bash
 al-return "PR looks good. Approved with minor suggestions."
 al-return '{"approved": true, "comments": 2}'
 ```
 
-For multiline results, pipe via stdin:
+For multiline, pipe via stdin:
 
 ```bash
 echo "Line 1\nLine 2" | al-return
 ```
 
-The calling agent receives this value when it calls `al-wait`.
-
 #### `al-exit [code]`
 
-Terminate the agent with an exit code indicating an unrecoverable error. Defaults to exit code 15.
+Terminate with exit code (default: 15).
 
 ```bash
 al-exit          # exit code 15
 al-exit 1        # exit code 1
 ```
 
-Standard exit codes: 10 (auth failure), 11 (permission denied), 12 (rate limited), 13 (config error), 14 (dependency error), 15 (unrecoverable), 16 (user abort).
+Codes: 10=auth, 11=permission, 12=rate limit, 13=config, 14=dependency, 15=unrecoverable, 16=user abort.
 
 ### Call commands
 
-Agent-to-agent calls allow agents to delegate work and collect results. These commands require the gateway (`GATEWAY_URL` must be set).
+Delegate work to other agents. Require gateway (`GATEWAY_URL`).
 
 #### `al-call <agent>`
 
-Call another agent. Pass context via stdin. Returns a JSON response with a `callId`.
+Call another agent. Pass context via stdin.
 
 ```bash
 echo "Review PR #42 on acme/app" | al-call reviewer
@@ -907,7 +818,7 @@ echo "Review PR #42 on acme/app" | al-call reviewer
 
 #### `al-check <callId>`
 
-Non-blocking status check on a call. Never blocks.
+Non-blocking status check.
 
 ```bash
 al-check abc123
@@ -924,7 +835,7 @@ al-check abc123
 
 #### `al-wait <callId> [...] [--timeout N]`
 
-Wait for one or more calls to complete. Polls every 5 seconds. Default timeout: 900 seconds.
+Wait for calls. Polls every 5s. Default timeout: 900s.
 
 ```bash
 al-wait abc123 --timeout 600
@@ -957,20 +868,18 @@ echo "$RESULTS" | jq ".\"$TEST_ID\".returnValue"
 
 #### Call rules
 
-- An agent cannot call itself (self-calls are rejected)
-- If all runners for the target agent are busy, the call is queued (up to `workQueueSize`, default: 100)
-- Call chains are allowed (A calls B, B calls C) up to `maxCallDepth` (default: 3)
-- Called runs do not re-run — they respond to the single call
-- The called agent receives an `<agent-call>` block with the caller name and context
-- To return a value, the called agent uses `al-return`
+- No self-calls
+- Busy target: queued (up to `workQueueSize`, default: 100)
+- Chains allowed up to `maxCallDepth` (default: 3)
+- Called runs don't re-run; receive `<agent-call>` block; use `al-return` to respond
 
 ### Lock commands
 
-Resource locks prevent multiple agent instances from working on the same resource. The underlying shell commands are `rlock`, `runlock`, and `rlock-heartbeat`.
+Prevent multiple instances working on same resource. Commands: `rlock`, `runlock`, `rlock-heartbeat`.
 
 #### `rlock`
 
-Acquire an exclusive lock on a resource.
+Acquire exclusive lock.
 
 ```bash
 rlock "github issue acme/app#42"
@@ -1002,7 +911,7 @@ rlock "github issue acme/app#42"
 
 #### `runlock`
 
-Release a lock. Only the holder can release.
+Release a lock (holder only).
 
 ```bash
 runlock "github issue acme/app#42"
@@ -1022,7 +931,7 @@ runlock "github issue acme/app#42"
 
 #### `rlock-heartbeat`
 
-Reset the TTL on a held lock. Use during long-running work to prevent the lock from expiring.
+Reset TTL on held lock during long work.
 
 ```bash
 rlock-heartbeat "github issue acme/app#42"
@@ -1036,53 +945,42 @@ rlock-heartbeat "github issue acme/app#42"
 
 #### Lock behavior
 
-- Each container gets a unique per-run secret. Lock requests are authenticated with this secret, so only the container that acquired a lock can release or heartbeat it.
-- When a container exits — whether it finishes successfully, hits an error, or times out — all of its locks are released automatically by the scheduler.
-- An agent can hold **at most one lock at a time**. Release your current lock before acquiring another.
-- Locks expire automatically after `lockTimeout` seconds (default: 1800 / 30 minutes) if not refreshed via heartbeat.
+- Per-run secret authenticates lock requests — only acquirer can release/heartbeat
+- Container exit auto-releases all locks
+- **One lock at a time** — release before acquiring another
+- Expire after `lockTimeout` seconds (default: 1800) without heartbeat
 - Use descriptive keys: `"github issue acme/app#42"`, `"deploy api-prod"`
 
 #### Lock graceful degradation
 
-When `GATEWAY_URL` is not set (e.g. non-containerized local runs), lock commands exit 0 with `{"ok":true}` — graceful degradation so agents work without a gateway.
-
-Call commands (`al-call`, `al-check`, `al-wait`) exit 5 when `GATEWAY_URL` is not set — they require a gateway.
+No gateway: locks degrade gracefully (exit 0). Calls exit 5.
 
 ## CLI Commands
 
 ### `al new <name>`
 
-Creates a new Action Llama project. Runs interactive setup to configure credentials and LLM defaults.
+Create new project with interactive setup.
 
 ```bash
 npx @action-llama/action-llama new my-project
 ```
 
-Creates:
-- `my-project/package.json` — with `@action-llama/action-llama` dependency
-- `my-project/.gitignore`
-- `my-project/.workspace/` — runtime state directory
-- Credential files in `~/.action-llama/credentials/`
+Creates `package.json`, `.gitignore`, `.workspace/`, and credential files.
 
 ### `al doctor`
 
-Checks all agent credentials and interactively prompts for any that are missing. Discovers agents in the project, collects their credential requirements (plus any webhook secret credentials), and ensures each one exists on disk. Also generates a gateway API key if one doesn't exist yet.
-
-Additionally validates webhook trigger field configurations to catch common errors like using `repository` instead of `repos`, misspelled field names, or invalid field types.
+Check/prompt for missing credentials. Validates webhooks. Generates gateway key.
 
 ```bash
 al doctor
 al doctor -E production
 ```
 
-| Option | Description |
-|--------|-------------|
-| `-p, --project <dir>` | Project directory (default: `.`) |
-| `-E, --env <name>` | Environment name — pushes credentials to server and reconciles IAM |
+With `-E`, pushes credentials to server and reconciles IAM.
 
 ### `al run <agent>`
 
-Manually triggers a single agent run. The agent runs once and the process exits when it completes. Useful for testing, debugging, or one-off runs without starting the full scheduler.
+Single agent run (exits on completion). For testing/debugging.
 
 ```bash
 al run dev
@@ -1091,15 +989,11 @@ al run dev -E production
 al run dev --headless
 ```
 
-| Option | Description |
-|--------|-------------|
-| `-p, --project <dir>` | Project directory (default: `.`) |
-| `-E, --env <name>` | Environment name |
-| `-H, --headless` | Non-interactive mode (no TUI, no credential prompts) |
+Extra: `-H, --headless` for non-interactive mode.
 
 ### `al start`
 
-Starts the scheduler. Runs all agents on their configured schedules and listens for webhooks.
+Start scheduler. Runs agents on schedules and listens for webhooks.
 
 ```bash
 al start
@@ -1109,46 +1003,29 @@ al start --port 3000          # Custom gateway port
 al start -H                   # Headless (no TUI)
 ```
 
-| Option | Description |
-|--------|-------------|
-| `-p, --project <dir>` | Project directory (default: `.`) |
-| `-E, --env <name>` | Environment name |
-| `-w, --web-ui` | Enable web dashboard |
-| `-e, --expose` | Bind gateway to `0.0.0.0` (public) while keeping local-mode features |
-| `-H, --headless` | Non-interactive mode (no TUI, no credential prompts) |
-| `--port <number>` | Gateway port (overrides `[gateway].port` in config) |
+Extra: `-w` web dashboard, `-e` expose gateway publicly, `-H` headless, `--port <N>` gateway port.
 
 ### `al stop`
 
-Stops the scheduler and clears all pending agent work queues. Sends a stop signal to the gateway. In-flight runs continue until they finish, but no new runs will start.
+Stop scheduler, clear queues. In-flight runs finish but no new runs start.
 
 ```bash
 al stop
 al stop -E production
 ```
 
-| Option | Description |
-|--------|-------------|
-| `-p, --project <dir>` | Project directory (default: `.`) |
-| `-E, --env <name>` | Environment name |
-
 ### `al stat`
 
-Shows status of all discovered agents in the project. Displays each agent's schedule, credentials, webhook configuration, and queue depth.
+Show status of all agents (schedule, credentials, webhooks, queue depth).
 
 ```bash
 al stat
 al stat -E production
 ```
 
-| Option | Description |
-|--------|-------------|
-| `-p, --project <dir>` | Project directory (default: `.`) |
-| `-E, --env <name>` | Environment name |
-
 ### `al logs <agent>`
 
-View log files for a specific agent.
+View agent logs.
 
 ```bash
 al logs dev
@@ -1160,87 +1037,49 @@ al logs dev -i abc123         # Specific instance
 al logs dev -E production     # Remote agent logs
 ```
 
-| Option | Description |
-|--------|-------------|
-| `-p, --project <dir>` | Project directory (default: `.`) |
-| `-E, --env <name>` | Environment name |
-| `-n, --lines <N>` | Number of log entries (default: 50) |
-| `-f, --follow` | Tail mode — watch for new entries |
-| `-d, --date <YYYY-MM-DD>` | View a specific date's log file |
-| `-r, --raw` | Raw JSON log output (no formatting) |
-| `-i, --instance <id>` | Filter to a specific instance ID |
+Extra: `-n <N>` lines (default: 50), `-f` follow, `-d <YYYY-MM-DD>` date, `-r` raw JSON, `-i <id>` instance filter.
 
 ### `al pause [name]`
 
-Pause the scheduler or a single agent. Without a name, pauses the entire scheduler — all cron jobs stop firing. With a name, pauses that agent — its cron job stops firing and webhook events are ignored. In-flight runs continue until they finish. Requires the gateway.
+Pause scheduler (no name) or single agent (with name). In-flight runs finish. Requires gateway.
 
 ```bash
-al pause                              # Pause the scheduler
-al pause dev                          # Pause a single agent
-al pause dev -E production
+al pause              # Pause scheduler
+al pause dev          # Pause single agent
 ```
-
-| Option | Description |
-|--------|-------------|
-| `-p, --project <dir>` | Project directory (default: `.`) |
-| `-E, --env <name>` | Environment name |
 
 ### `al resume [name]`
 
-Resume the scheduler or a single agent. Without a name, resumes the entire scheduler. With a name, resumes that agent — its cron job resumes firing and webhooks are accepted again.
+Resume scheduler (no name) or single agent (with name).
 
 ```bash
-al resume                             # Resume the scheduler
-al resume dev                         # Resume a single agent
-al resume dev -E production
+al resume             # Resume scheduler
+al resume dev         # Resume single agent
 ```
-
-| Option | Description |
-|--------|-------------|
-| `-p, --project <dir>` | Project directory (default: `.`) |
-| `-E, --env <name>` | Environment name |
 
 ### `al kill <target>`
 
-Kill an agent (all running instances) or a single instance by ID. Tries the target as an agent name first; if not found, falls back to instance ID. This does **not** pause the agent — if it has a schedule, a new run will start at the next cron tick. To fully stop an agent, pause it first, then kill.
+Kill agent or instance by ID. Does **not** pause — `al pause` first to stop.
 
 ```bash
-al kill dev                           # Kill all instances of an agent
-al kill my-agent-abc123               # Kill a single instance by ID
-al kill dev -E production
+al kill dev           # Kill all instances
+al kill my-agent-abc123   # Kill single instance
 ```
-
-| Option | Description |
-|--------|-------------|
-| `-p, --project <dir>` | Project directory (default: `.`) |
-| `-E, --env <name>` | Environment name |
 
 ### `al chat [agent]`
 
-Open an interactive console. Without an agent name, opens the project-level console for creating and managing agents. With an agent name, opens an interactive session scoped to that agent's environment — credentials are loaded and injected as environment variables (e.g. `GITHUB_TOKEN`, `GIT_SSH_COMMAND`), and the working directory is set to the agent's directory.
+Interactive console. With agent name: session with agent's credentials as env vars.
 
 ```bash
 al chat                # project-level console
 al chat dev            # interactive session with dev agent's credentials
 ```
 
-| Option | Description |
-|--------|-------------|
-| `[agent]` | Agent name — loads its credentials and environment |
-| `-p, --project <dir>` | Project directory (default: `.`) |
-
-When running in agent mode, the command probes the gateway and warns if it is not reachable:
-
-```
-Warning: No gateway detected at http://localhost:8080. Resource locks, agent calls, and signals are unavailable.
-Start the scheduler with `al start` to enable these features.
-```
-
-The agent's ACTIONS.md is loaded as reference context but is **not** auto-executed — you drive the session interactively.
+Warns if gateway unreachable. ACTIONS.md loaded as reference but not auto-executed.
 
 ### `al push [agent]`
 
-Deploy your project to a server over SSH. Requires a `[server]` section in your environment file.
+Deploy project to server over SSH. Requires `[server]` in environment file.
 
 ```bash
 al push -E production                    # Full project push
@@ -1249,96 +1088,62 @@ al push --dry-run -E production          # Preview what would be synced
 al push --creds-only -E production       # Sync only credentials
 ```
 
-Without an agent name, pushes the entire project and can restart the remote service. With an agent name, pushes only that agent's files and credentials — the running scheduler detects the change and hot-reloads the agent without a full restart.
+No agent name: full project push. With agent name: hot-reload that agent only.
 
-| Option | Description |
-|--------|-------------|
-| `[agent]` | Agent name — push only this agent (hot-reloaded, no restart) |
-| `-p, --project <dir>` | Project directory (default: `.`) |
-| `-E, --env <name>` | Environment with `[server]` config |
-| `--dry-run` | Show what would be synced without making changes |
-| `--no-creds` | Skip credential sync |
-| `--creds-only` | Sync only credentials (skip project files) |
-| `--files-only` | Sync only project files (skip credentials) |
-| `-a, --all` | Sync project files, credentials, and restart service |
-| `--force-install` | Force `npm install` even if dependencies appear unchanged |
+Extra: `--dry-run`, `--no-creds`, `--creds-only`, `--files-only`, `-a`, `--force-install`.
 
 ### Environment commands
 
 #### `al env init <name>`
 
-Create a new environment configuration file at `~/.action-llama/environments/<name>.toml`.
+Create environment file at `~/.action-llama/environments/<name>.toml`.
 
 ```bash
 al env init production --type server
 ```
 
-| Option | Description |
-|--------|-------------|
-| `--type <type>` | Environment type: `server` |
-
 #### `al env list`
 
-List all configured environments.
+List environments.
 
 #### `al env show <name>`
 
-Display the contents of an environment configuration file.
+Show environment config.
 
 #### `al env set [name]`
 
-Bind the current project to an environment by writing the environment name to `.env.toml`. Omit the name to unbind.
+Bind project to environment (writes to `.env.toml`). Omit name to unbind.
 
 ```bash
-al env set production        # Bind project to "production"
-al env set                   # Unbind project from any environment
+al env set production        # Bind
+al env set                   # Unbind
 ```
-
-| Option | Description |
-|--------|-------------|
-| `-p, --project <dir>` | Project directory (default: `.`) |
 
 #### `al env check <name>`
 
-Verify that an environment is provisioned and configured correctly. Checks SSH connectivity, Docker availability, and server readiness.
+Verify environment: SSH, Docker, server readiness.
 
 #### `al env prov [name]`
 
-Provision a new VPS and save it as an environment. Supports Vultr and Hetzner. If the name is omitted, you'll be prompted for one.
+Provision VPS (Vultr/Hetzner) and save as environment.
 
 #### `al env deprov <name>`
 
-Tear down a provisioned environment. Stops containers, cleans up remote credentials, optionally deletes DNS records, and optionally deletes the VPS instance if it was provisioned via `al env prov`.
-
-| Option | Description |
-|--------|-------------|
-| `-p, --project <dir>` | Project directory (default: `.`) |
+Tear down environment. Stops containers, cleans remote creds, optionally deletes DNS/VPS.
 
 #### `al env logs [name]`
 
-View server system logs (systemd journal) via SSH. If the name is omitted, uses the project's bound environment.
-
-```bash
-al env logs production
-al env logs production -n 200     # Last 200 lines
-al env logs production -f          # Follow mode
-```
-
-| Option | Description |
-|--------|-------------|
-| `-p, --project <dir>` | Project directory (default: `.`) |
-| `-n, --lines <N>` | Number of log lines (default: 50) |
-| `-f, --follow` | Tail mode — watch for new entries |
+View server system logs via SSH. Extra: `-n <N>` lines, `-f` follow.
 
 ### Credential commands
 
 #### `al creds ls`
 
-Lists all stored credentials grouped by type, showing field names but not values.
+List stored credentials (field names, not values).
 
 #### `al creds add <ref>`
 
-Add or update a credential. Runs the interactive prompter with validation for the credential type.
+Add/update credential interactively.
 
 ```bash
 al creds add github_token              # adds github_token:default
@@ -1346,42 +1151,29 @@ al creds add github_webhook_secret:myapp
 al creds add git_ssh:prod
 ```
 
-The `<ref>` format is `type` or `type:instance`. If no instance is specified, defaults to `default`. If the credential already exists, you'll be prompted to update it.
+Format: `type` or `type:instance` (default instance if omitted).
 
 #### `al creds rm <ref>`
 
-Remove a credential from disk.
-
-```bash
-al creds rm github_token               # removes github_token:default
-al creds rm github_webhook_secret:myapp
-```
+Remove credential. Same ref format as `add`.
 
 #### `al creds types`
 
-Browse available credential types interactively. Presents a searchable list of all built-in credential types. On selection, shows the credential's fields, environment variables, and agent context, then offers to add it immediately.
+Browse credential types interactively. Shows fields/env vars, offers to add.
 
 ### Agent commands
 
 #### `al agent new`
 
-Interactive wizard to create a new agent from a template. Prompts for agent type (dev, reviewer, devops, or custom), agent name, and then runs `al agent config` to configure the new agent.
-
-| Option | Description |
-|--------|-------------|
-| `-p, --project <dir>` | Project directory (default: `.`) |
+Create agent from template (dev, reviewer, devops, custom).
 
 #### `al agent config <name>`
 
-Interactively configure an existing agent. Opens a menu to edit each section of `agent-config.toml`: credentials, model, schedule, webhooks, and params. Runs `al doctor` on completion to validate the configuration.
-
-| Option | Description |
-|--------|-------------|
-| `-p, --project <dir>` | Project directory (default: `.`) |
+Configure agent interactively (credentials, model, schedule, webhooks, params). Runs `al doctor` after.
 
 ### Global options
 
-These options are available on most commands:
+Available on most commands:
 
 | Option | Description |
 |--------|-------------|
@@ -1400,11 +1192,11 @@ al-project-base:latest     ← project Dockerfile (skipped if unmodified from ba
 al-<agent>:latest          ← per-agent Dockerfile (if present)
 ```
 
-If the project Dockerfile is unmodified (bare `FROM al-agent:latest`), the middle layer is skipped — agents build directly on `al-agent:latest`.
+Unmodified project Dockerfile (bare `FROM`) skips middle layer.
 
 ### Base image contents
 
-The base image (`al-agent:latest`) is built from `node:20-alpine` and includes:
+Built from `node:20-alpine`:
 
 | Package | Purpose |
 |---------|---------|
@@ -1415,19 +1207,14 @@ The base image (`al-agent:latest`) is built from `node:20-alpine` and includes:
 | `ca-certificates` | HTTPS for git, curl, npm |
 | `openssh-client` | SSH for `GIT_SSH_COMMAND` — git clone/push over SSH |
 
-The base image also copies the compiled Action Llama application (`dist/`) and installs its npm dependencies.
-
-Entry point: `node /app/dist/agents/container-entry.js`
-
-Shell commands are baked into the image at `/app/bin/` (al-rerun, al-status, al-return, al-exit, al-call, al-check, al-wait, rlock, runlock, rlock-heartbeat).
+Entry: `node /app/dist/agents/container-entry.js`. Commands at `/app/bin/`.
 
 ### Dockerfile conventions
 
-- `FROM al-agent:latest` — the build pipeline automatically rewrites the `FROM` line to point at the correct base
-- Switch to `root` for package installs, back to `node` (uid 1000) for the entry point
-- Alpine base: use `apk add --no-cache`
-- Agent images are named `al-<agent-name>:latest` (e.g. `al-dev:latest`) and are rebuilt on every `al start`
-- The build context is the Action Llama package root (not the project directory), so `COPY` paths reference the package's `dist/`, `package.json`, etc.
+- `FROM al-agent:latest` — build pipeline rewrites `FROM` to correct base
+- `root` for installs, `node` (uid 1000) for entry point; Alpine: `apk add --no-cache`
+- Agent images: `al-<name>:latest`, rebuilt on `al start`
+- Build context is package root, not project dir
 
 #### Project Dockerfile example
 
@@ -1453,11 +1240,7 @@ USER node
 
 #### Standalone Dockerfile (full control)
 
-If you need full control, the requirements are:
-1. Node.js 20+
-2. `/app/dist/agents/container-entry.js` must exist
-3. `ENTRYPOINT ["node", "/app/dist/agents/container-entry.js"]`
-4. `USER node` (uid 1000) for compatibility
+Needs Node.js 20+, entry.js, `ENTRYPOINT`, `USER node`.
 
 ```dockerfile
 FROM node:20-alpine
@@ -1471,11 +1254,11 @@ USER node
 ENTRYPOINT ["node", "/app/dist/agents/container-entry.js"]
 ```
 
-The entry point reads `AGENT_CONFIG`, `PROMPT`, `GATEWAY_URL`, and `SHUTDOWN_SECRET` from environment variables, and credentials from `/credentials/`.
+Reads `AGENT_CONFIG`, `PROMPT`, `GATEWAY_URL`, `SHUTDOWN_SECRET` from env.
 
 ### Container filesystem
 
-All agents run in isolated containers with a read-only root filesystem, dropped capabilities, non-root user, and resource limits.
+Isolated containers: read-only root, dropped capabilities, non-root user, resource limits.
 
 | Path | Mode | Contents |
 |------|------|----------|
@@ -1487,9 +1270,7 @@ All agents run in isolated containers with a read-only root filesystem, dropped 
 | `/workspace` | read-write (2GB) | Persistent workspace |
 | `/home/node` | read-write (64MB) | Home directory |
 
-### Docker config options
-
-These go in `config.toml` under `[local]`:
+### Docker config options (`config.toml [local]`)
 
 | Key | Default | Description |
 |-----|---------|-------------|
@@ -1500,21 +1281,11 @@ These go in `config.toml` under `[local]`:
 
 ## Gateway API
 
-The gateway is the HTTP server that runs alongside the scheduler. It handles webhooks, serves the web dashboard, and exposes control and status APIs used by CLI commands and the dashboard.
-
-The gateway starts automatically when needed — either when webhooks are configured, when `--web-ui` is passed to `al start`, or when Docker container communication is required. The port is controlled by the `[gateway].port` setting in `config.toml` (default: `8080`).
+HTTP server for webhooks, dashboard, control APIs. Auto-starts when needed. Port: `[gateway].port` (default: 8080).
 
 ### Authentication
 
-The gateway API is protected by an API key. The same key is used for both browser sessions and CLI access.
-
-**Key location:** `~/.action-llama/credentials/gateway_api_key/default/key`
-
-The key is generated automatically by `al doctor` or on first `al start`. To view or regenerate it, run `al doctor`.
-
-**CLI access:** CLI commands (`al stat`, `al pause`, `al resume`, `al kill`) automatically read the API key from the credential store and send it as a `Bearer` token in the `Authorization` header.
-
-**Browser access:** The web dashboard uses cookie-based authentication. After logging in with the API key, an `al_session` cookie is set (HttpOnly, SameSite=Strict) so all subsequent requests — including SSE streams — are authenticated automatically.
+API key at `~/.action-llama/credentials/gateway_api_key/default/key` (auto-generated). CLI: Bearer token. Dashboard: `al_session` cookie.
 
 ### Protected routes
 
@@ -1528,16 +1299,16 @@ The key is generated automatically by `al doctor` or on first `al start`. To vie
 
 ### Control API
 
-All control endpoints use `POST` and require authentication.
+All `POST`, require auth.
 
-**Scheduler control:**
+**Scheduler:**
 
 | Endpoint | Description |
 |----------|-------------|
 | `POST /control/pause` | Pause the scheduler (all cron jobs) |
 | `POST /control/resume` | Resume the scheduler |
 
-**Agent control:**
+**Agents:**
 
 | Endpoint | Description |
 |----------|-------------|
@@ -1550,7 +1321,7 @@ All control endpoints use `POST` and require authentication.
 
 ### SSE Streams
 
-Live updates use **Server-Sent Events (SSE)**:
+Live updates via **SSE**:
 
 | Endpoint | Description |
 |----------|-------------|
@@ -1566,31 +1337,21 @@ Live updates use **Server-Sent Events (SSE)**:
 
 ## Web Dashboard
 
-Action Llama includes an optional web-based dashboard for monitoring agents in your browser. It provides a live view of agent statuses and streaming logs.
+Optional browser dashboard for monitoring agents.
 
 ### Enabling
-
-Pass `-w` or `--web-ui` to `al start`:
 
 ```bash
 al start -w
 ```
 
-The dashboard URL is shown in the TUI header once the scheduler starts:
-
-```
-Dashboard: http://localhost:8080/dashboard
-```
-
-The port is controlled by the `[gateway].port` setting in `config.toml` (default: `8080`).
+URL: `http://localhost:<port>/dashboard`.
 
 ### Authentication
 
-The dashboard is protected by the gateway API key. Navigate to `http://localhost:8080/dashboard` and you'll be redirected to a login page where you paste your API key. On success, an `al_session` cookie is set (HttpOnly, SameSite=Strict).
+Protected by gateway API key. Login sets `al_session` cookie.
 
 ### Main Page — `/dashboard`
-
-Displays a live overview of all agents:
 
 | Column | Description |
 |--------|-------------|
@@ -1602,24 +1363,15 @@ Displays a live overview of all agents:
 | Next Run | When the next scheduled run will happen |
 | Actions | **Run** (trigger an immediate run) and **Enable/Disable** (toggle the agent) |
 
-The header includes a **Pause/Resume** button for the scheduler and a **Logout** link. Below the table, a **Recent Activity** section shows the last 20 log lines across all agents.
-
-All data updates in real time via Server-Sent Events (SSE) — no manual refresh needed.
+Header: Pause/Resume, Logout. Recent Activity shows last 20 log lines. Updates in real time via SSE.
 
 ### Agent Logs — `/dashboard/agents/<name>/logs`
 
-Displays a live-streaming log view for a single agent. Logs follow automatically by default (new entries scroll into view as they arrive). Features:
-
-- **Follow mode** — enabled by default, auto-scrolls. Scrolling up pauses follow; scrolling back to the bottom re-enables it.
-- **Clear** — clears the log display (does not delete log files).
-- **Connection status** — shows whether the SSE connection is active.
-- **Log levels** — color-coded: green for INFO, yellow for WARN, red for ERROR.
-
-On initial load, the last 100 log entries from the agent's log file are displayed, then new entries stream in as they are written. No additional dependencies or frontend build steps are required — the dashboard is rendered as plain HTML with inline CSS and JavaScript.
+Live log stream. Auto-follow. Color-coded levels. Plain HTML, no build step.
 
 ## Environments
 
-Projects are portable — cloud infrastructure details live outside the project directory using a three-layer config merge system (later values win, deep merge).
+Three-layer config merge (later wins, deep merge):
 
 | Layer | File | Scope | Contents |
 |-------|------|-------|----------|
@@ -1627,7 +1379,7 @@ Projects are portable — cloud infrastructure details live outside the project 
 | 2 | `.env.toml` | Project (gitignored) | `environment` field to select env, can override any config value |
 | 3 | `~/.action-llama/environments/<name>.toml` | Machine | `[server]` (SSH push deploy), `gateway.url`, `telemetry.endpoint` |
 
-`[cloud]` and `[server]` must be in Layer 3 (environment file). Placing `[cloud]` in `config.toml` is an error. `[cloud]` and `[server]` are mutually exclusive within an environment.
+`[cloud]`/`[server]` must be in Layer 3. `[cloud]` in `config.toml` is an error. Mutually exclusive.
 
 ### Environment selection priority
 
@@ -1651,23 +1403,21 @@ expose = true
 
 ### VPS credential sync
 
-When deploying to a VPS, credentials are transferred to the remote server via SSH. The remote layout mirrors the local one: `~/.action-llama/credentials/{type}/{instance}/{field}`. No external secrets manager is needed — same trust model as SSH access.
+Credentials transferred via SSH. Remote layout mirrors local. Same trust model as SSH access.
 
 ## Running Agents
 
-Start all agents with `al start` (or `npx al start`). This starts the scheduler which runs all discovered agents on their configured schedules/webhooks. There is no per-agent start command — `al start` always starts the entire project.
+`al start` runs all agents. No per-agent start.
 
 ### Automatic re-runs
 
-When a scheduled agent runs `al-rerun`, the scheduler immediately re-runs it. This continues until the agent completes without `al-rerun` (no more work), hits an error, or reaches the `maxReruns` limit. This way an agent drains its work queue without waiting for the next cron tick.
-
-Webhook-triggered and agent-triggered runs do not re-run — they respond to a single event.
+`al-rerun` triggers immediate re-run until done, error, or `maxReruns`. Webhook/call runs don't re-run.
 
 ## Exit Codes
 
 ### Shell command exit codes
 
-All gateway-calling shell commands (`rlock`, `runlock`, `rlock-heartbeat`, `al-call`, `al-check`, `al-wait`) share a common exit code scheme. **Always check exit codes** — do not assume success.
+Common exit codes for gateway-calling commands. **Always check exit codes.**
 
 | Exit | Meaning | HTTP | When |
 |------|---------|------|------|
@@ -1697,10 +1447,4 @@ All gateway-calling shell commands (`rlock`, `runlock`, `rlock-heartbeat`, `al-c
 | 15 | Unrecoverable (default) |
 | 16 | User abort |
 
-Shell command codes (0-12) don't overlap with agent codes (10-16) or POSIX signal codes (128+).
-
-**Lock commands** (`rlock`, `runlock`, `rlock-heartbeat`) exit 0 with `{"ok":true}` when `GATEWAY_URL` is unset (graceful degradation for local/non-containerized runs).
-
-**Call commands** (`al-call`, `al-check`, `al-wait`) exit 5 when `GATEWAY_URL` is unset — they require a gateway.
-
-**Timeout:** Container terminated by timeout exits with code 124.
+Timeout: exit 124.
