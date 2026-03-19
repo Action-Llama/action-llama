@@ -3,7 +3,7 @@ import {
   buildScheduledSuffix, buildWebhookSuffix, buildCalledSuffix,
   type PromptSkills,
 } from "../agents/prompt.js";
-import { WorkQueue, type QueuedWorkItem } from "./event-queue.js";
+import type { WorkQueue, QueuedWorkItem } from "./event-queue.js";
 import { RunnerPool, type PoolRunner } from "./runner-pool.js";
 import type { AgentConfig } from "../shared/config.js";
 import type { WebhookContext } from "../webhooks/types.js";

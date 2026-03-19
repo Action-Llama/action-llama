@@ -1,5 +1,3 @@
-import type { StateStore } from "../shared/state-store.js";
-
 export interface QueuedWorkItem<T> {
   context: T;
   receivedAt: Date;
@@ -10,28 +8,25 @@ export interface EnqueueResult<T> {
   dropped?: QueuedWorkItem<T>;
 }
 
-const NS = "queues";
+export interface WorkQueue<T> {
+  enqueue(agentName: string, context: T, receivedAt?: Date): EnqueueResult<T>;
+  dequeue(agentName: string): QueuedWorkItem<T> | undefined;
+  size(agentName: string): number;
+  clear(agentName: string): void;
+  clearAll(): void;
+  close(): void;
+}
 
-export class WorkQueue<T> {
+/**
+ * In-memory WorkQueue — suitable for tests and single-process use
+ * where durability is not required. State is lost when the process exits.
+ */
+export class MemoryWorkQueue<T> implements WorkQueue<T> {
   private queues = new Map<string, QueuedWorkItem<T>[]>();
   private maxSize: number;
-  private store?: StateStore;
 
-  constructor(maxSize = 100, store?: StateStore) {
+  constructor(maxSize = 100) {
     this.maxSize = maxSize;
-    this.store = store;
-  }
-
-  /** Hydrate in-memory state from the persistent store. */
-  async init(): Promise<void> {
-    if (!this.store) return;
-    const entries = await this.store.list<Array<{ context: T; receivedAt: string }>>(NS);
-    for (const { key, value } of entries) {
-      this.queues.set(
-        key,
-        value.map((item) => ({ context: item.context, receivedAt: new Date(item.receivedAt) }))
-      );
-    }
   }
 
   enqueue(agentName: string, context: T, receivedAt?: Date): EnqueueResult<T> {
@@ -45,16 +40,13 @@ export class WorkQueue<T> {
       dropped = queue.shift();
     }
     queue.push({ context, receivedAt: receivedAt || new Date() });
-    this.persist(agentName);
     return { accepted: true, dropped };
   }
 
   dequeue(agentName: string): QueuedWorkItem<T> | undefined {
     const queue = this.queues.get(agentName);
     if (!queue || queue.length === 0) return undefined;
-    const item = queue.shift();
-    this.persist(agentName);
-    return item;
+    return queue.shift();
   }
 
   size(agentName: string): number {
@@ -63,26 +55,44 @@ export class WorkQueue<T> {
 
   clear(agentName: string): void {
     this.queues.delete(agentName);
-    this.store?.delete(NS, agentName).catch(() => {});
   }
 
   clearAll(): void {
     this.queues.clear();
-    this.store?.deleteAll(NS).catch(() => {});
   }
 
-  /** Clear in-memory queues only — persistent state survives for the next instance. */
-  clearInMemory(): void {
+  close(): void {
     this.queues.clear();
-    // Does NOT touch this.store — persistent state survives for the next instance
   }
+}
 
-  private persist(agentName: string): void {
-    const queue = this.queues.get(agentName);
-    if (!queue || queue.length === 0) {
-      this.store?.delete(NS, agentName).catch(() => {});
-    } else {
-      this.store?.set(NS, agentName, queue, { ttl: 86400 }).catch(() => {}); // 24h TTL
-    }
+// --- Factory ---
+
+export interface SqliteWorkQueueOpts {
+  type: "sqlite";
+  /** Path to the .db file (created if missing). */
+  path: string;
+}
+
+export interface MemoryWorkQueueOpts {
+  type: "memory";
+}
+
+export type WorkQueueOpts = SqliteWorkQueueOpts | MemoryWorkQueueOpts;
+
+/**
+ * Create a WorkQueue from configuration.
+ *
+ * Uses dynamic imports so native modules (better-sqlite3)
+ * are only loaded when actually needed.
+ */
+export async function createWorkQueue<T>(
+  maxSize: number,
+  opts: WorkQueueOpts,
+): Promise<WorkQueue<T>> {
+  if (opts.type === "sqlite") {
+    const { SqliteWorkQueue } = await import("./event-queue-sqlite.js");
+    return new SqliteWorkQueue<T>(maxSize, opts.path);
   }
+  return new MemoryWorkQueue<T>(maxSize);
 }
