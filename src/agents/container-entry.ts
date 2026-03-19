@@ -342,7 +342,9 @@ export async function handleInvocation(init: AgentInit): Promise<number> {
     thinkingLevel: modelThinking,
     authStorage,
     resourceLoader,
-    tools: createCodingTools(cwd),
+    tools: createCodingTools(cwd, {
+      bash: { commandPrefix: '[ -f /tmp/env.sh ] && source /tmp/env.sh' },
+    }),
     sessionManager: SessionManager.inMemory(),
     settingsManager,
   });

@@ -103,7 +103,9 @@ export class ExecutionEngine {
       thinkingLevel: model.thinkingLevel,
       authStorage,
       resourceLoader,
-      tools: createCodingTools(cwd),
+      tools: createCodingTools(cwd, {
+        bash: { commandPrefix: '[ -f /tmp/env.sh ] && source /tmp/env.sh' },
+      }),
       sessionManager: SessionManager.inMemory(),
       settingsManager,
     });
