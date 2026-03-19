@@ -152,6 +152,18 @@ When a scheduled agent runs `al-rerun`, the scheduler immediately re-runs it. Th
 
 Webhook-triggered and agent-called runs do not re-run — they respond to a single event.
 
+### Work queue
+
+When a trigger fires (webhook event or agent call) but all runner instances for the target agent are busy, the event is placed in a **work queue** instead of being dropped. Items are dequeued and executed as runners become available.
+
+The queue is backed by SQLite (`.al/work-queue.db`), so pending items survive scheduler restarts. Each agent has its own queue. If the queue is full, the oldest items are dropped.
+
+You can see queue depth per agent in `al stat` output (the `queue` column).
+
+| Setting | Location | Default | Description |
+|---------|----------|---------|-------------|
+| `workQueueSize` | `config.toml` | `100` | Maximum queued work items per agent |
+
 See [Docker docs](/docker) for the full container reference including the startup sequence, log protocol, filesystem layout, and exit codes.
 
 ## Resource locks
@@ -177,9 +189,18 @@ The agent learns the lock API from a preamble injected before the actions run. A
 | `UNLOCK(resourceKey)` | Release a lock. Only the holder can release. |
 | `HEARTBEAT(resourceKey)` | Reset the TTL on a held lock. Use during long-running work to prevent expiry. |
 
-### One lock at a time
+### Multiple locks and deadlock detection
 
-Each agent instance can hold **at most one lock**. This keeps the model simple — the agent locks a resource, does the work, unlocks, then moves to the next item. If it tries to acquire a second lock without releasing the first, the request is rejected with a clear error message.
+An agent instance can hold multiple locks simultaneously when working across related resources. However, this introduces the possibility of circular waits — agent A holds lock X and waits for lock Y, while agent B holds lock Y and waits for lock X.
+
+The scheduler detects these cycles automatically. When a `LOCK()` request would create a circular wait in the dependency graph, it returns a `possible deadlock` error with the cycle path instead of blocking forever. The agent can then release its held locks and retry.
+
+```
+# Example deadlock cycle:
+# Agent A holds "github pr acme/app#10", wants "deploy api-prod"
+# Agent B holds "deploy api-prod", wants "github pr acme/app#10"
+# → LOCK("deploy api-prod") returns: possible deadlock detected
+```
 
 ### Timeout (TTL)
 
@@ -247,7 +268,7 @@ See [Docker docs](/docker) for the full container reference including the base i
 |-------|-------------|
 | [Dev Agent](examples/dev/) | Picks up GitHub issues and implements changes |
 | [Reviewer Agent](examples/reviewer/) | Reviews and merges open pull requests |
-| [DevOps Agent](examples/devops/) | Monitors CI failures and Sentry errors, files issues |
+| [Reddit Moderator](examples/reddit-moderator/) | Moderates Reddit posts and comments, removes violations |
 
 ## See also
 

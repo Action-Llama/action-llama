@@ -1,6 +1,6 @@
 ---
 title: "VPS Deployment"
-description: "Deploy to a VPS with SSH push"
+description: "Deploy to any VPS via SSH push, with TLS setup, systemd, and server provisioning"
 ---
 
 Deploy Action Llama on any VPS (DigitalOcean, Vultr, Hetzner, etc.) for cost-effective remote hosting.
@@ -215,6 +215,8 @@ sudo ufw enable
 ## SSH Push Deploy (`al push`)
 
 `al push` deploys your project to a server over SSH and manages the scheduler as a systemd service. It requires a `[server]` section in your environment file.
+
+To push only a single agent without restarting the scheduler, pass the agent name: `al push dev -E production`. The running scheduler detects the change and hot-reloads the agent automatically.
 
 In your environment file (`~/.action-llama/environments/<name>.toml`):
 

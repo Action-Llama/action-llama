@@ -92,6 +92,30 @@ Removes all field files for the credential instance. If the type directory becom
 
 
 
+## `al agent new`
+
+Interactive wizard to create a new agent from a template. Prompts for agent type (dev, reviewer, devops, or custom), agent name, and then runs `al agent config` to configure the new agent.
+
+```bash
+al agent new -p .
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
+## `al agent config <name>`
+
+Interactively configure an existing agent. Opens a menu to edit each section of `agent-config.toml`: credentials, model, schedule, webhooks, and params. Runs `al doctor` on completion to validate the configuration.
+
+```bash
+al agent config dev -p .
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
 ## `al run <agent>`
 
 Manually triggers a single agent run. The agent runs once and the process exits when it completes. Useful for testing, debugging, or one-off runs without starting the full scheduler.
@@ -233,3 +257,127 @@ When running in agent mode, the command probes the gateway and warns if it is no
 ```
 
 The agent's ACTIONS.md is loaded as reference context but is **not** auto-executed — you drive the session interactively.
+
+## `al stop`
+
+Stops the scheduler and clears all pending agent work queues. Sends a stop signal to the gateway. In-flight runs continue until they finish, but no new runs will start.
+
+```bash
+al stop -p .
+al stop -E production
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment name |
+
+## `al push [agent]`
+
+Deploy your project to a server over SSH. Requires a `[server]` section in your environment file. See [VPS Deployment](/vps-deployment) for server configuration.
+
+```bash
+al push -E production                    # Full project push
+al push dev -E production                # Push only the dev agent (hot-reloaded)
+al push --dry-run -E production          # Preview what would be synced
+al push --creds-only -E production       # Sync only credentials
+```
+
+Without an agent name, pushes the entire project and can restart the remote service. With an agent name, pushes only that agent's files and credentials — the running scheduler detects the change and hot-reloads the agent without a full restart.
+
+| Option | Description |
+|--------|-------------|
+| `[agent]` | Agent name — push only this agent (hot-reloaded, no restart) |
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment with `[server]` config |
+| `--dry-run` | Show what would be synced without making changes |
+| `--no-creds` | Skip credential sync |
+| `--creds-only` | Sync only credentials (skip project files) |
+| `--files-only` | Sync only project files (skip credentials) |
+| `-a, --all` | Sync project files, credentials, and restart service |
+| `--force-install` | Force `npm install` even if dependencies appear unchanged |
+
+## `al env init <name>`
+
+Create a new environment configuration file at `~/.action-llama/environments/<name>.toml`.
+
+```bash
+al env init production --type server
+```
+
+| Option | Description |
+|--------|-------------|
+| `--type <type>` | Environment type: `server` |
+
+## `al env list`
+
+List all configured environments.
+
+```bash
+al env list
+```
+
+## `al env show <name>`
+
+Display the contents of an environment configuration file.
+
+```bash
+al env show production
+```
+
+## `al env set [name]`
+
+Bind the current project to an environment by writing the environment name to `.env.toml`. Omit the name to unbind.
+
+```bash
+al env set production -p .     # Bind project to "production"
+al env set -p .                # Unbind project from any environment
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
+## `al env check <name>`
+
+Verify that an environment is provisioned and configured correctly. Checks SSH connectivity, Docker availability, and server readiness.
+
+```bash
+al env check production
+```
+
+## `al env prov [name]`
+
+Provision a new VPS and save it as an environment. Supports Vultr and Hetzner. If the name is omitted, you'll be prompted for one.
+
+```bash
+al env prov production
+```
+
+## `al env deprov <name>`
+
+Tear down a provisioned environment. Stops containers, cleans up remote credentials, and optionally deletes the VPS instance if it was provisioned via `al env prov`.
+
+```bash
+al env deprov staging -p .
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
+## `al env logs [name]`
+
+View server system logs (systemd journal) via SSH. If the name is omitted, uses the project's bound environment.
+
+```bash
+al env logs production
+al env logs production -n 200     # Last 200 lines
+al env logs production -f          # Follow mode
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-n, --lines <N>` | Number of log lines (default: 50) |
+| `-f, --follow` | Tail mode — watch for new entries |

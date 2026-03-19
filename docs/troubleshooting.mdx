@@ -1,0 +1,149 @@
+---
+title: "Troubleshooting"
+description: "Common issues and solutions for Action Llama"
+---
+
+## Docker
+
+### Docker daemon not running
+
+```
+Error: Cannot connect to the Docker daemon
+```
+
+Start Docker Desktop or the Docker daemon:
+
+```bash
+# macOS — open Docker Desktop
+open -a Docker
+
+# Linux
+sudo systemctl start docker
+```
+
+### Container out of memory
+
+If agents are being killed mid-run, increase the memory limit in `config.toml`:
+
+```toml
+[local]
+memory = "8g"    # default: "4g"
+```
+
+### Image build fails
+
+Check that your agent's `Dockerfile` uses the correct base image:
+
+```dockerfile
+FROM al-agent:latest
+```
+
+Run `al start` once to build the base image before using `al run`.
+
+## Credentials
+
+### "Bad credentials" or "401 Unauthorized"
+
+```bash
+al doctor -p .    # Re-prompts for missing or invalid credentials
+al creds ls       # Verify stored credentials
+```
+
+For GitHub tokens, ensure the token has the required scopes (`repo`, `read:org`, `workflow`).
+
+### Credential not found at runtime
+
+Agents only receive credentials listed in their `agent-config.toml`:
+
+```toml
+credentials = ["github_token", "git_ssh"]
+```
+
+If a credential is missing from this list, the agent won't have access to it. Add it and re-run.
+
+## Webhooks
+
+### Webhooks not firing
+
+1. **Check the webhook URL** — GitHub/Sentry must be able to reach your gateway. For local development, use a tunnel (e.g. ngrok, Cloudflare Tunnel).
+2. **Check the webhook secret** — if using HMAC validation, the secret in `al creds` must match the one configured in GitHub/Sentry.
+3. **Check event filters** — verify the `events`, `actions`, and other filter fields in `agent-config.toml` match the incoming event.
+
+```bash
+al doctor -p .    # Validates webhook trigger field names and types
+```
+
+### Webhook events being dropped
+
+If runners are busy, events are queued (up to `workQueueSize`, default 100). If the queue is full, old events are dropped. Check queue depth with `al stat`.
+
+To handle more concurrent events, increase `scale` in `agent-config.toml`:
+
+```toml
+scale = 3    # Run up to 3 instances concurrently
+```
+
+## Scheduler
+
+### Agent not running on schedule
+
+- Verify the cron expression in `agent-config.toml` is valid
+- Check if the agent or scheduler is paused: `al stat -p .`
+- Resume if paused: `al resume` (scheduler) or `al resume <agent>`
+
+### Agent keeps re-running
+
+An agent that calls `al-rerun` will re-run immediately, up to `maxReruns` (default: 10). If it's re-running more than expected, check the agent's `ACTIONS.md` — it may be calling `al-rerun` even when there's no remaining work.
+
+```toml
+# config.toml — lower the limit if needed
+maxReruns = 5
+```
+
+### Agent timing out
+
+Default timeout is 900 seconds (15 minutes). Increase it in `config.toml` or per-agent in `agent-config.toml`:
+
+```toml
+# config.toml — project-wide default
+[local]
+timeout = 3600    # 1 hour
+
+# agent-config.toml — per-agent override
+timeout = 7200    # 2 hours
+```
+
+## Deployment
+
+### SSH connection failures
+
+```bash
+# Test SSH manually
+ssh -o ConnectTimeout=10 root@your-vps-ip echo ok
+
+# Check key permissions
+chmod 600 ~/.ssh/id_rsa
+
+# Verify environment config
+al env show production
+al env check production
+```
+
+### Gateway not accessible externally
+
+- Ensure `--expose` flag is used (manual deployment) or `expose = true` in `[server]` config
+- Check firewall: ports 80/443 (if using reverse proxy) or 8080 (direct)
+- Verify TLS certificate is valid if using Caddy/nginx
+
+See [VPS Deployment — Troubleshooting](/vps-deployment#troubleshooting) for more deployment-specific issues.
+
+## Logs
+
+View agent logs for debugging:
+
+```bash
+al logs <agent> -p .          # Local logs
+al logs <agent> -f            # Follow mode
+al logs <agent> -d 2025-01-15 # Specific date
+al env logs production -f     # Server system logs via SSH
+```
