@@ -1,5 +1,49 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { LockStore } from "../../src/gateway/lock-store.js";
+import type { StateStore } from "../../src/shared/state-store.js";
+
+// Minimal in-memory StateStore for testing persistence without SQLite.
+function makeStore(): StateStore {
+  const data = new Map<string, { value: unknown; expiresAt?: number }>();
+  const k = (ns: string, key: string) => `${ns}:${key}`;
+  return {
+    async get<T>(ns: string, key: string): Promise<T | null> {
+      const entry = data.get(k(ns, key));
+      if (!entry) return null;
+      if (entry.expiresAt !== undefined && Math.floor(Date.now() / 1000) > entry.expiresAt) {
+        data.delete(k(ns, key));
+        return null;
+      }
+      return entry.value as T;
+    },
+    async set<T>(ns: string, key: string, value: T, opts?: { ttl?: number }): Promise<void> {
+      data.set(k(ns, key), {
+        value,
+        expiresAt: opts?.ttl ? Math.floor(Date.now() / 1000) + opts.ttl : undefined,
+      });
+    },
+    async delete(ns: string, key: string): Promise<void> {
+      data.delete(k(ns, key));
+    },
+    async deleteAll(ns: string): Promise<void> {
+      for (const key of data.keys()) {
+        if (key.startsWith(`${ns}:`)) data.delete(key);
+      }
+    },
+    async list<T>(ns: string): Promise<Array<{ key: string; value: T }>> {
+      const prefix = `${ns}:`;
+      const nowSec = Math.floor(Date.now() / 1000);
+      const results: Array<{ key: string; value: T }> = [];
+      for (const [key, entry] of data) {
+        if (!key.startsWith(prefix)) continue;
+        if (entry.expiresAt !== undefined && nowSec > entry.expiresAt) continue;
+        results.push({ key: key.slice(prefix.length), value: entry.value as T });
+      }
+      return results;
+    },
+    async close(): Promise<void> {},
+  };
+}
 
 describe("LockStore", () => {
   let store: LockStore;
@@ -252,5 +296,69 @@ describe("LockStore", () => {
       store.dispose();
       expect(store.list()).toHaveLength(0);
     });
+  });
+});
+
+describe("LockStore — durable persistence", () => {
+  it("persists an acquired lock to the backing store", async () => {
+    const stateStore = makeStore();
+    const ls = new LockStore(300, 9999, stateStore);
+
+    ls.acquire("github issue acme/app#42", "agent-a");
+
+    const entries = await stateStore.list("locks");
+    expect(entries).toHaveLength(1);
+    expect(entries[0].key).toBe("github issue acme/app#42");
+
+    ls.dispose();
+  });
+
+  it("hydrates locks from the backing store on init", async () => {
+    const stateStore = makeStore();
+
+    // First instance acquires a lock then disposes
+    const ls1 = new LockStore(300, 9999, stateStore);
+    ls1.acquire("github issue acme/app#42", "agent-a");
+    ls1.dispose();
+
+    // Second instance sharing the same store should see the lock after init
+    const ls2 = new LockStore(300, 9999, stateStore);
+    await ls2.init();
+
+    const conflict = ls2.acquire("github issue acme/app#42", "agent-b");
+    expect(conflict.ok).toBe(false);
+    expect(conflict.holder).toBe("agent-a");
+
+    ls2.dispose();
+  });
+
+  it("removes a released lock from the backing store", async () => {
+    const stateStore = makeStore();
+    const ls = new LockStore(300, 9999, stateStore);
+
+    ls.acquire("github issue acme/app#42", "agent-a");
+    ls.release("github issue acme/app#42", "agent-a");
+
+    const entries = await stateStore.list("locks");
+    expect(entries).toHaveLength(0);
+
+    ls.dispose();
+  });
+
+  it("new instance can acquire a lock that was released by a previous instance", async () => {
+    const stateStore = makeStore();
+
+    const ls1 = new LockStore(300, 9999, stateStore);
+    ls1.acquire("github issue acme/app#42", "agent-a");
+    ls1.release("github issue acme/app#42", "agent-a");
+    ls1.dispose();
+
+    const ls2 = new LockStore(300, 9999, stateStore);
+    await ls2.init();
+
+    const result = ls2.acquire("github issue acme/app#42", "agent-b");
+    expect(result.ok).toBe(true);
+
+    ls2.dispose();
   });
 });
