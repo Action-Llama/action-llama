@@ -6,11 +6,11 @@ import type { ContainerRegistration } from "../../../src/gateway/types.js";
 
 const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 
-function setup() {
+function setup(opts?: { skipStatusEndpoint?: boolean }) {
   const registry = new Map<string, ContainerRegistration>();
   const lockStore = new LockStore(300, 9999);
   const app = new Hono();
-  registerLockRoutes(app, registry, lockStore, logger as any);
+  registerLockRoutes(app, registry, lockStore, logger as any, opts);
   return { app, registry, lockStore };
 }
 
@@ -279,5 +279,40 @@ describe("GET /locks/status", () => {
     const body = await res.json();
     expect(body.locks).toHaveLength(1);
     expect(body.locks[0].agentName).toBe("my-complex-agent");
+  });
+});
+
+describe("GET /locks/status with skipStatusEndpoint", () => {
+  it("returns 404 when skipStatusEndpoint is true", async () => {
+    const { app, registry } = setup({ skipStatusEndpoint: true });
+    register(registry, "secret-a", "agent-a");
+    await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#1" });
+    
+    const res = await app.request("/locks/status");
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 200 when skipStatusEndpoint is false", async () => {
+    const { app, registry } = setup({ skipStatusEndpoint: false });
+    register(registry, "secret-a", "agent-a");
+    await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#1" });
+    
+    const res = await app.request("/locks/status");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.locks).toHaveLength(1);
+    expect(body.locks[0].resourceKey).toBe("github issue acme/app#1");
+  });
+
+  it("returns 200 when skipStatusEndpoint is undefined (default behavior)", async () => {
+    const { app, registry } = setup(); // No opts parameter
+    register(registry, "secret-a", "agent-a");
+    await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#1" });
+    
+    const res = await app.request("/locks/status");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.locks).toHaveLength(1);
+    expect(body.locks[0].resourceKey).toBe("github issue acme/app#1");
   });
 });

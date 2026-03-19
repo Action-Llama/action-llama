@@ -153,6 +153,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     apiKey: gatewayApiKey,
     stateStore,
     events,
+    skipStatusEndpoint: expose,
     controlDeps: {
       statusTracker,
       logger,

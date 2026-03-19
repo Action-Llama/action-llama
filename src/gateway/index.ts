@@ -38,6 +38,7 @@ export interface GatewayOptions {
   controlDeps?: ControlRoutesDeps;
   apiKey?: string;
   stateStore?: StateStore;
+  skipStatusEndpoint?: boolean;
   /** Optional event bus for lifecycle instrumentation. */
   events?: SchedulerEventBus;
 }
@@ -136,7 +137,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     registerLoginRoutes(app, opts.apiKey);
   }
 
-  registerLockRoutes(app, containerRegistry, lockStore, logger, { events: opts.events });
+  registerLockRoutes(app, containerRegistry, lockStore, logger, { skipStatusEndpoint: opts.skipStatusEndpoint, events: opts.events });
   registerCallRoutes(app, containerRegistry, callStore, () => callDispatcher, logger, opts.events);
 
   // Signal routes
