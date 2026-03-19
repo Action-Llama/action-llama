@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { PoolRunner } from "../../src/scheduler/runner-pool.js";
 import { RunnerPool } from "../../src/scheduler/runner-pool.js";
-import { WorkQueue } from "../../src/scheduler/event-queue.js";
+import { MemoryWorkQueue } from "../../src/scheduler/event-queue.js";
 import {
   executeRun,
   dispatchTriggers,
@@ -44,7 +44,7 @@ function makeCtx(overrides: Partial<SchedulerContext> = {}): SchedulerContext {
     maxReruns: DEFAULT_MAX_RERUNS,
     maxTriggerDepth: DEFAULT_MAX_TRIGGER_DEPTH,
     logger: makeLogger(),
-    workQueue: new WorkQueue<WorkItem>(20),
+    workQueue: new MemoryWorkQueue<WorkItem>(20),
     shuttingDown: false,
     useBakedImages: true,
     ...overrides,

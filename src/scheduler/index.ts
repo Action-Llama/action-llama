@@ -9,7 +9,7 @@ import type { GatewayServer } from "../gateway/index.js";
 import { CONSTANTS } from "../shared/constants.js";
 import { ConfigError, AgentError } from "../shared/errors.js";
 import type { WebhookContext } from "../webhooks/types.js";
-import { WorkQueue } from "./event-queue.js";
+import { createWorkQueue } from "./event-queue.js";
 import { RunnerPool, type PoolRunner } from "./runner-pool.js";
 import { createContainerRuntime, buildAgentImages } from "./runtime-factory.js";
 import { resolveWebhookSource, buildFilterFromTrigger, setupWebhookRegistry } from "./webhook-setup.js";
@@ -216,6 +216,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
         logger.info("Stop requested via control API");
         schedulerCtx.shuttingDown = true;
         schedulerCtx.workQueue.clearAll();
+        schedulerCtx.workQueue.close();
         for (const job of cronJobs) job.stop();
         if (gateway) await gateway.close();
         if (stateStore) await stateStore.close();
@@ -342,8 +343,10 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   }
 
   const queueSize = globalConfig.workQueueSize ?? globalConfig.webhookQueueSize ?? 20;
-  const workQueue = new WorkQueue<WorkItem>(queueSize, stateStore);
-  await workQueue.init();
+  const workQueue = await createWorkQueue<WorkItem>(queueSize, {
+    type: "sqlite",
+    path: (await import("path")).resolve(projectPath, ".al", "work-queue.db"),
+  });
   const skills: PromptSkills = { locking: true };
   const callStore = gateway?.callStore;
   const schedulerCtx: SchedulerContext = { runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, workQueue, shuttingDown: false, skills, useBakedImages: true, events, callStore, statusTracker };
@@ -594,6 +597,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     watcherHandle.stop();
     schedulerCtx.shuttingDown = true;
     schedulerCtx.workQueue.clearAll();
+    schedulerCtx.workQueue.close();
     for (const job of cronJobs) {
       job.stop();
     }
