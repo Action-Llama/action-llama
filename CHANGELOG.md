@@ -1,5 +1,15 @@
 # @action-llama/action-llama
 
+## 0.13.7
+
+### Patch Changes
+
+- [`039ce2f`](https://github.com/Action-Llama/action-llama/commit/039ce2fae87663b79479797a7682dd63bce3a1de) Thanks [@asselstine](https://github.com/asselstine)! - Fixed `al push` deployments crashing on startup with "Unknown credential gateway_api_key".
+  The gateway API key is auto-generated and not in the credential registry, but
+  `collectCredentialRefs` was feeding it into `doctor`'s `resolveCredential()` which
+  only knows about user-prompted credentials. Implicit credentials are now added
+  only in the push sync path, not in the doctor validation path.
+
 ## 0.13.6
 
 ### Patch Changes
