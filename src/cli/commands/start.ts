@@ -8,6 +8,8 @@ import { resolveEnvironmentName, loadEnvironmentConfig } from "../../shared/envi
 import { validateServerConfig } from "../../shared/server.js";
 import { sshOptionsFromConfig, sshExec } from "../../remote/ssh.js";
 import { gatewayFetch } from "../gateway-client.js";
+import { credentialExists } from "../../shared/credentials.js";
+import { ConfigError } from "../../shared/errors.js";
 
 export async function execute(opts: { project: string; env?: string; headless?: boolean; webUi?: boolean; expose?: boolean; port?: number }): Promise<void> {
   const projectPath = resolve(opts.project);
@@ -29,6 +31,14 @@ export async function execute(opts: { project: string; env?: string; headless?: 
       await startRemoteService(projectPath, envName, serverConfig);
       return;
     }
+  }
+
+  // Security validation: require API key for exposed services
+  if ((opts.webUi || opts.expose) && !await credentialExists("gateway_api_key", "default")) {
+    throw new ConfigError(
+      "Gateway API key required when using --web-ui or --expose. " +
+      "Run 'al doctor' to configure it."
+    );
   }
 
   // Ensure all credentials are present before starting (silent unless something is missing)

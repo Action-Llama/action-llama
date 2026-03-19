@@ -52,6 +52,9 @@ export async function setupGateway(opts: {
   const { key: gatewayApiKey, generated } = await ensureGatewayApiKey();
   if (generated) {
     logger.info("Generated gateway API key (run 'al doctor' to view it)");
+    if (webUI || expose) {
+      logger.warn("Security: API key authentication is now required for --web-ui and --expose modes");
+    }
   }
 
   const { startGateway } = await import("../gateway/index.js");
