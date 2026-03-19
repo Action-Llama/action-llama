@@ -290,7 +290,7 @@ describe("command exit codes", () => {
     });
 
     it("exit 5 — no gateway", async () => {
-      const r = await run("al-call", ["agent-b"], { GATEWAY_URL: "", SHUTDOWN_SECRET: "x" }, "ctx");
+      const r = await run("al-call", ["agent-b"], { GATEWAY_URL: "", SHUTDOWN_SECRET: "x" });
       expect(r.exitCode).toBe(5);
     });
   });
