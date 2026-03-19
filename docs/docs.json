@@ -2,10 +2,11 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
   "name": "Action Llama",
+  "favicon": "/favicon.ico",
   "colors": {
-    "primary": "#6D28D9",
-    "light": "#A78BFA",
-    "dark": "#4C1D95"
+    "primary": "#ffe970",
+    "light": "#e8a849",
+    "dark": "#d4a574"
   },
   "navigation": {
     "tabs": [
