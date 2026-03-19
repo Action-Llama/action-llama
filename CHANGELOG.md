@@ -1,5 +1,15 @@
 # @action-llama/action-llama
 
+## 0.13.6
+
+### Patch Changes
+
+- [#188](https://github.com/Action-Llama/action-llama/pull/188) [`694cab5`](https://github.com/Action-Llama/action-llama/commit/694cab564be9a488401c707a131e81fbef8bb814) Thanks [@asselstine](https://github.com/asselstine)! - Added `--headless` flag to `al push` command for non-interactive mode. When used, the doctor runs in check-only mode without prompting to fix credential issues. Default behavior now runs doctor interactively to allow fixing issues during push. Closes [#186](https://github.com/Action-Llama/action-llama/issues/186).
+
+- [#190](https://github.com/Action-Llama/action-llama/pull/190) [`9216c0b`](https://github.com/Action-Llama/action-llama/commit/9216c0b2808429247e9464c785a6e3ae38468067) Thanks [@asselstine](https://github.com/asselstine)! - Improve gateway security by requiring authentication when exposing services. API keys are now required for --web-ui and --expose modes, cookies use the Secure flag for non-localhost connections, and log routes are disabled without authentication. Run 'al doctor' to configure the gateway API key. Closes [#183](https://github.com/Action-Llama/action-llama/issues/183).
+
+- [#191](https://github.com/Action-Llama/action-llama/pull/191) [`0cfcaf1`](https://github.com/Action-Llama/action-llama/commit/0cfcaf170902154f36158390736f1c942a7280e6) Thanks [@asselstine](https://github.com/asselstine)! - Deploy only required credentials instead of entire credentials directory. The `al push` command now selectively syncs only the credentials actually needed by project agents, plus implicit credentials like gateway_api_key. This improves security by ensuring deployments only have access to required credentials. Closes [#184](https://github.com/Action-Llama/action-llama/issues/184).
+
 ## 0.13.5
 
 ### Patch Changes
