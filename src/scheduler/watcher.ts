@@ -193,7 +193,9 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
         if (ctx.statusTracker && !ctx.statusTracker.isAgentEnabled(agentName)) return;
         const runner = pool.getAvailableRunner();
         if (!runner) {
-          ctx.logger.warn({ agent: agentName }, "all runners busy, skipping scheduled run");
+          const { dropped } = ctx.schedulerCtx.workQueue.enqueue(agentName, { type: 'schedule' });
+          ctx.logger.info({ agent: agentName }, "all runners busy, scheduled run queued");
+          if (dropped) ctx.logger.warn({ agent: agentName }, "queue full, oldest event dropped");
           return;
         }
         await runWithReruns(runner, agentConfig, 0, ctx.schedulerCtx);
@@ -327,7 +329,12 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
         const job = new Cron(newConfig.schedule, { timezone: ctx.timezone }, async () => {
           if (ctx.statusTracker && !ctx.statusTracker.isAgentEnabled(agentName)) return;
           const runner = pool.getAvailableRunner();
-          if (!runner) return;
+          if (!runner) {
+            const { dropped } = ctx.schedulerCtx.workQueue.enqueue(agentName, { type: 'schedule' });
+            ctx.logger.info({ agent: agentName }, "all runners busy, scheduled run queued");
+            if (dropped) ctx.logger.warn({ agent: agentName }, "queue full, oldest event dropped");
+            return;
+          }
           await runWithReruns(runner, newConfig, 0, ctx.schedulerCtx);
         });
         ctx.cronJobs.push(job);
@@ -371,7 +378,12 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
       const job = new Cron(agentConfig.schedule, { timezone: ctx.timezone }, async () => {
         if (ctx.statusTracker && !ctx.statusTracker.isAgentEnabled(agentConfig.name)) return;
         const runner = pool.getAvailableRunner();
-        if (!runner) return;
+        if (!runner) {
+          const { dropped } = ctx.schedulerCtx.workQueue.enqueue(agentConfig.name, { type: 'schedule' });
+          ctx.logger.info({ agent: agentConfig.name }, "all runners busy, scheduled run queued");
+          if (dropped) ctx.logger.warn({ agent: agentConfig.name }, "queue full, oldest event dropped");
+          return;
+        }
         await runWithReruns(runner, agentConfig, 0, ctx.schedulerCtx);
       });
       ctx.cronJobs.push(job);
