@@ -74,7 +74,7 @@ describe("push command", () => {
     ).rejects.toThrow("No agents found");
   });
 
-  it("runs doctor checkOnly before pushing", async () => {
+  it("runs doctor interactively by default (checkOnly: false)", async () => {
     mockResolveEnvironmentName.mockReturnValue("srv");
     mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
 
@@ -83,7 +83,33 @@ describe("push command", () => {
     expect(mockDoctorExecute).toHaveBeenCalledOnce();
     expect(mockDoctorExecute.mock.calls[0][0]).toMatchObject({
       env: "srv",
+      checkOnly: false,
+    });
+  });
+
+  it("runs doctor in check-only mode when --headless is passed", async () => {
+    mockResolveEnvironmentName.mockReturnValue("srv");
+    mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
+
+    await captureLog(() => execute({ project: ".", env: "srv", headless: true }));
+
+    expect(mockDoctorExecute).toHaveBeenCalledOnce();
+    expect(mockDoctorExecute.mock.calls[0][0]).toMatchObject({
+      env: "srv",
       checkOnly: true,
+    });
+  });
+
+  it("runs doctor interactively when --headless is explicitly false", async () => {
+    mockResolveEnvironmentName.mockReturnValue("srv");
+    mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
+
+    await captureLog(() => execute({ project: ".", env: "srv", headless: false }));
+
+    expect(mockDoctorExecute).toHaveBeenCalledOnce();
+    expect(mockDoctorExecute.mock.calls[0][0]).toMatchObject({
+      env: "srv",
+      checkOnly: false,
     });
   });
 
