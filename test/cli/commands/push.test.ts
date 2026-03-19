@@ -29,8 +29,10 @@ vi.mock("../../../src/cli/commands/doctor.js", () => ({
 }));
 
 const mockPushToServer = vi.fn();
+const mockPushAgentToServer = vi.fn();
 vi.mock("../../../src/remote/push.js", () => ({
   pushToServer: (...args: any[]) => mockPushToServer(...args),
+  pushAgentToServer: (...args: any[]) => mockPushAgentToServer(...args),
 }));
 
 import { execute } from "../../../src/cli/commands/push.js";
@@ -42,6 +44,7 @@ describe("push command", () => {
     mockLoadGlobalConfig.mockReturnValue({});
     mockDoctorExecute.mockResolvedValue(undefined);
     mockPushToServer.mockResolvedValue(undefined);
+    mockPushAgentToServer.mockResolvedValue(undefined);
   });
 
   it("throws when no environment is specified", async () => {
@@ -144,5 +147,58 @@ describe("push command", () => {
 
     expect(mockPushToServer.mock.calls[0][0].noCreds).toBe(false);
     expect(mockPushToServer.mock.calls[0][0].noFiles).toBe(false);
+  });
+
+  // --- Single-agent push ---
+
+  it("throws when named agent does not exist", async () => {
+    mockResolveEnvironmentName.mockReturnValue("srv");
+    mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+
+    await expect(
+      captureLog(() => execute({ project: ".", env: "srv", agent: "ghost" }))
+    ).rejects.toThrow('Agent "ghost" not found');
+  });
+
+  it("delegates to pushAgentToServer for single-agent push", async () => {
+    mockResolveEnvironmentName.mockReturnValue("srv");
+    mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+
+    await captureLog(() => execute({ project: ".", env: "srv", agent: "dev" }));
+
+    expect(mockPushAgentToServer).toHaveBeenCalledOnce();
+    expect(mockPushAgentToServer.mock.calls[0][0]).toMatchObject({
+      agentName: "dev",
+      serverConfig: { host: "h" },
+    });
+    // Full push should NOT be called
+    expect(mockPushToServer).not.toHaveBeenCalled();
+  });
+
+  it("skips doctor for single-agent push", async () => {
+    mockResolveEnvironmentName.mockReturnValue("srv");
+    mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+
+    await captureLog(() => execute({ project: ".", env: "srv", agent: "dev" }));
+
+    expect(mockDoctorExecute).not.toHaveBeenCalled();
+  });
+
+  it("passes sync flags through for single-agent push", async () => {
+    mockResolveEnvironmentName.mockReturnValue("srv");
+    mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+
+    await captureLog(() => execute({ project: ".", env: "srv", agent: "dev", filesOnly: true, dryRun: true }));
+
+    expect(mockPushAgentToServer.mock.calls[0][0]).toMatchObject({
+      agentName: "dev",
+      noCreds: true,
+      noFiles: false,
+      dryRun: true,
+    });
   });
 });

@@ -23,6 +23,16 @@ export interface PushOptions {
   forceInstall?: boolean;
 }
 
+export interface PushAgentOptions {
+  projectPath: string;
+  serverConfig: ServerConfig;
+  globalConfig: GlobalConfig;
+  agentName: string;
+  dryRun?: boolean;
+  noCreds?: boolean;
+  noFiles?: boolean;
+}
+
 /**
  * Compute a SHA-256 hash of package.json + package-lock.json contents.
  * Used to skip `npm install` when dependencies haven't changed.
@@ -99,6 +109,59 @@ export async function pushToServer(opts: PushOptions): Promise<void> {
       projectPath, serverConfig, globalConfig, dryRun, noCreds, noFiles, forceInstall,
       basePath, gatewayPort, projectName,
     });
+  } finally {
+    try { unlinkSync(controlPath); } catch {}
+  }
+}
+
+/**
+ * Push a single agent's files to the server. The running scheduler's file
+ * watcher detects the change and hot-reloads the agent — no service restart.
+ */
+export async function pushAgentToServer(opts: PushAgentOptions): Promise<void> {
+  const { projectPath, serverConfig, agentName, dryRun, noCreds, noFiles } = opts;
+  const ssh = sshOptionsFromConfig(serverConfig);
+  const basePath = serverConfig.basePath ?? "/opt/action-llama";
+
+  // Set up SSH ControlMaster for connection multiplexing
+  const hostHash = createHash("sha256").update(ssh.host).digest("hex").slice(0, 8);
+  const controlPath = `/tmp/al-ssh-${hostHash}-${process.pid}`;
+  ssh.controlPath = controlPath;
+
+  try {
+    const syncItems: string[] = [];
+    if (!noFiles) syncItems.push("agent files");
+    if (!noCreds) syncItems.push("credentials");
+
+    if (syncItems.length > 0) {
+      console.log(`\nSyncing ${syncItems.join(" and ")}...`);
+
+      if (!dryRun) {
+        await sshExec(ssh, `mkdir -p ${basePath}/project/agents/${agentName} ${basePath}/credentials`);
+      }
+
+      const rsyncFlags = dryRun ? ["--dry-run", "-v"] : [];
+      const tasks: Promise<void>[] = [];
+
+      if (!noFiles) {
+        const agentLocalPath = resolve(projectPath, "agents", agentName);
+        const agentRemotePath = `${basePath}/project/agents/${agentName}`;
+        tasks.push(rsyncTo(ssh, agentLocalPath, agentRemotePath, undefined, rsyncFlags));
+      }
+      if (!noCreds) {
+        tasks.push(rsyncTo(ssh, CREDENTIALS_DIR, `${basePath}/credentials`, undefined, rsyncFlags));
+      }
+
+      await Promise.all(tasks);
+      console.log(dryRun ? "  (dry-run) No changes made." : "  Done.");
+    }
+
+    if (dryRun) {
+      console.log("\nDry run complete — no changes were made.");
+      return;
+    }
+
+    console.log(`\nAgent "${agentName}" pushed — the scheduler will hot-reload it.`);
   } finally {
     try { unlinkSync(controlPath); } catch {}
   }

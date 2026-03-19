@@ -177,6 +177,7 @@ program
 program
   .command("push")
   .description("Deploy project to a self-hosted server via SSH")
+  .argument("[agent]", "agent name — push only this agent (hot-reloaded, no restart)")
   .option("-p, --project <dir>", "project directory", ".")
   .option("-E, --env <name>", "use named environment with [server] config")
   .option("--dry-run", "show what would be synced without making changes")
@@ -185,9 +186,9 @@ program
   .option("--files-only", "sync only project files (skip credentials)")
   .option("-a, --all", "sync project files, credentials, and restart service")
   .option("--force-install", "force npm install even if dependencies appear unchanged")
-  .action(withCommand(async (opts) => {
+  .action(withCommand(async (agent: string | undefined, opts) => {
     const { execute } = await import("./commands/push.js");
-    await execute(opts);
+    await execute({ ...opts, agent });
   }));
 
 // --- Environment management ---
