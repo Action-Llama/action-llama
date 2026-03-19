@@ -36,7 +36,7 @@ vi.mock("fs", async (importOriginal) => {
   };
 });
 
-import { buildSystemdUnit, pushToServer, computePkgHash } from "../../src/remote/push.js";
+import { buildSystemdUnit, pushToServer, pushAgentToServer, computePkgHash } from "../../src/remote/push.js";
 
 describe("buildSystemdUnit", () => {
   it("generates a valid systemd unit", () => {
@@ -444,5 +444,179 @@ describe("pushToServer", () => {
     // The SSH options object passed to bootstrapServer should have controlPath
     const sshArg = mockBootstrapServer.mock.calls[0][0];
     expect(sshArg.controlPath).toMatch(/^\/tmp\/al-ssh-/);
+  });
+});
+
+describe("pushAgentToServer", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSshOptionsFromConfig.mockReturnValue({ host: "h", user: "root", port: 22 });
+    mockSshExec.mockResolvedValue("");
+    mockRsyncTo.mockResolvedValue(undefined);
+    mockUnlinkSync.mockReturnValue(undefined);
+  });
+
+  it("rsyncs only the agent directory", async () => {
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: any[]) => logs.push(args.join(" "));
+    try {
+      await pushAgentToServer({
+        projectPath: "/tmp/project",
+        serverConfig: { host: "h" },
+        globalConfig: {},
+        agentName: "my-agent",
+      });
+    } finally {
+      console.log = origLog;
+    }
+
+    // Should rsync agent directory + credentials (2 calls)
+    expect(mockRsyncTo).toHaveBeenCalledTimes(2);
+    // First call: agent files
+    expect(mockRsyncTo.mock.calls[0][1]).toBe("/tmp/project/agents/my-agent");
+    expect(mockRsyncTo.mock.calls[0][2]).toContain("agents/my-agent");
+  });
+
+  it("skips bootstrap and systemd (no restart)", async () => {
+    const origLog = console.log;
+    console.log = () => {};
+    try {
+      await pushAgentToServer({
+        projectPath: "/tmp/project",
+        serverConfig: { host: "h" },
+        globalConfig: {},
+        agentName: "my-agent",
+      });
+    } finally {
+      console.log = origLog;
+    }
+
+    // No bootstrap
+    expect(mockBootstrapServer).not.toHaveBeenCalled();
+    // No systemd restart
+    const sshCommands = mockSshExec.mock.calls.map((c: any[]) => c[1]);
+    expect(sshCommands.some((cmd: string) => cmd.includes("systemctl restart"))).toBe(false);
+    expect(sshCommands.some((cmd: string) => cmd.includes("daemon-reload"))).toBe(false);
+    expect(sshCommands.some((cmd: string) => cmd.includes("npm install"))).toBe(false);
+  });
+
+  it("skips credential sync with noCreds", async () => {
+    const origLog = console.log;
+    console.log = () => {};
+    try {
+      await pushAgentToServer({
+        projectPath: "/tmp/project",
+        serverConfig: { host: "h" },
+        globalConfig: {},
+        agentName: "my-agent",
+        noCreds: true,
+      });
+    } finally {
+      console.log = origLog;
+    }
+
+    // Only 1 rsync call (agent files), not 2
+    expect(mockRsyncTo).toHaveBeenCalledTimes(1);
+    expect(mockRsyncTo.mock.calls[0][1]).toBe("/tmp/project/agents/my-agent");
+  });
+
+  it("skips file sync with noFiles", async () => {
+    const origLog = console.log;
+    console.log = () => {};
+    try {
+      await pushAgentToServer({
+        projectPath: "/tmp/project",
+        serverConfig: { host: "h" },
+        globalConfig: {},
+        agentName: "my-agent",
+        noFiles: true,
+      });
+    } finally {
+      console.log = origLog;
+    }
+
+    // Only 1 rsync call (credentials), not 2
+    expect(mockRsyncTo).toHaveBeenCalledTimes(1);
+    expect(mockRsyncTo.mock.calls[0][2]).toContain("credentials");
+  });
+
+  it("supports dry-run mode", async () => {
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: any[]) => logs.push(args.join(" "));
+    try {
+      await pushAgentToServer({
+        projectPath: "/tmp/project",
+        serverConfig: { host: "h" },
+        globalConfig: {},
+        agentName: "my-agent",
+        dryRun: true,
+      });
+    } finally {
+      console.log = origLog;
+    }
+
+    expect(logs.some((l) => l.includes("Dry run complete"))).toBe(true);
+    for (const call of mockRsyncTo.mock.calls) {
+      const extraFlags = call[4] || [];
+      expect(extraFlags).toContain("--dry-run");
+    }
+  });
+
+  it("creates remote agent directory before rsync", async () => {
+    const origLog = console.log;
+    console.log = () => {};
+    try {
+      await pushAgentToServer({
+        projectPath: "/tmp/project",
+        serverConfig: { host: "h" },
+        globalConfig: {},
+        agentName: "my-agent",
+      });
+    } finally {
+      console.log = origLog;
+    }
+
+    const mkdirCall = mockSshExec.mock.calls.find(
+      (c: any[]) => typeof c[1] === "string" && c[1].includes("mkdir -p") && c[1].includes("agents/my-agent"),
+    );
+    expect(mkdirCall).toBeDefined();
+  });
+
+  it("cleans up ControlMaster socket", async () => {
+    const origLog = console.log;
+    console.log = () => {};
+    try {
+      await pushAgentToServer({
+        projectPath: "/tmp/project",
+        serverConfig: { host: "h" },
+        globalConfig: {},
+        agentName: "my-agent",
+      });
+    } finally {
+      console.log = origLog;
+    }
+
+    expect(mockUnlinkSync).toHaveBeenCalled();
+    expect(mockUnlinkSync.mock.calls[0][0]).toMatch(/^\/tmp\/al-ssh-/);
+  });
+
+  it("prints hot-reload message on success", async () => {
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: any[]) => logs.push(args.join(" "));
+    try {
+      await pushAgentToServer({
+        projectPath: "/tmp/project",
+        serverConfig: { host: "h" },
+        globalConfig: {},
+        agentName: "my-agent",
+      });
+    } finally {
+      console.log = origLog;
+    }
+
+    expect(logs.some((l) => l.includes("hot-reload"))).toBe(true);
   });
 });

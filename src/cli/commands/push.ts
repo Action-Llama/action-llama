@@ -3,10 +3,11 @@ import { loadGlobalConfig, discoverAgents } from "../../shared/config.js";
 import { resolveEnvironmentName, loadEnvironmentConfig } from "../../shared/environment.js";
 import { validateServerConfig } from "../../shared/server.js";
 import { ConfigError } from "../../shared/errors.js";
-import { pushToServer } from "../../remote/push.js";
+import { pushToServer, pushAgentToServer } from "../../remote/push.js";
 
 export async function execute(opts: {
   project: string;
+  agent?: string;
   env?: string;
   dryRun?: boolean;
   noCreds?: boolean;
@@ -43,13 +44,36 @@ export async function execute(opts: {
     throw new ConfigError("No agents found. Create agents first, then re-run al push.");
   }
 
-  // Run doctor in checkOnly mode to validate full config before pushing
-  const { execute: doctorExecute } = await import("./doctor.js");
-  await doctorExecute({ project: projectPath, env: envName, checkOnly: true, silent: true });
+  // Validate the named agent exists
+  if (opts.agent && !agents.includes(opts.agent)) {
+    throw new ConfigError(
+      `Agent "${opts.agent}" not found. Available agents: ${agents.join(", ")}`
+    );
+  }
 
   // Determine what to sync
   const syncCreds = opts.credsOnly || opts.all || (!opts.filesOnly);
   const syncFiles = opts.filesOnly || opts.all || (!opts.credsOnly);
+
+  // Single-agent push — lightweight path (no restart, hot-reloaded)
+  if (opts.agent) {
+    console.log(`\n=== Push ${opts.agent} to ${serverConfig.host} (env: ${envName}) ===`);
+
+    await pushAgentToServer({
+      projectPath,
+      serverConfig,
+      globalConfig,
+      agentName: opts.agent,
+      dryRun: opts.dryRun,
+      noCreds: !syncCreds,
+      noFiles: !syncFiles,
+    });
+    return;
+  }
+
+  // Full push — run doctor in checkOnly mode to validate full config before pushing
+  const { execute: doctorExecute } = await import("./doctor.js");
+  await doctorExecute({ project: projectPath, env: envName, checkOnly: true, silent: true });
 
   console.log(`\n=== Push to ${serverConfig.host} (env: ${envName}) ===`);
   console.log(`Agents: ${agents.join(", ")}`);
