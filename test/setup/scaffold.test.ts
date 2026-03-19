@@ -128,7 +128,7 @@ describe("scaffoldProject", () => {
     const target = readlinkSync(agentsMdPath);
     expect(target).toContain("agent-docs/AGENTS.md");
     const content = readFileSync(agentsMdPath, "utf-8");
-    expect(content).toContain("Action Llama Project");
+    expect(content).toContain("Action Llama Reference");
   });
 
   it("creates CLAUDE.md as a symlink to agent-docs/AGENTS.md", () => {
@@ -142,7 +142,7 @@ describe("scaffoldProject", () => {
     const target = readlinkSync(claudeMdPath);
     expect(target).toContain("agent-docs/AGENTS.md");
     const content = readFileSync(claudeMdPath, "utf-8");
-    expect(content).toContain("Action Llama Project");
+    expect(content).toContain("Action Llama Reference");
   });
 
   it("does not create skills/ directory in project", () => {
