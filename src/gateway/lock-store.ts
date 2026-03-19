@@ -12,6 +12,8 @@ export interface AcquireResult {
   holder?: string;
   heldSince?: number;
   reason?: string;
+  deadlock?: boolean;
+  cycle?: string[];
 }
 
 export interface ReleaseResult {
@@ -30,7 +32,8 @@ const NS_HOLDERS = "lock-holders";
 
 export class LockStore {
   private locks = new Map<string, LockEntry>();
-  private holderLocks = new Map<string, string>(); // holder -> resourceKey
+  private holderLocks = new Map<string, Set<string>>(); // holder -> resourceKeys
+  private waitingFor = new Map<string, string>(); // holder -> resourceKey they failed to acquire
   private sweepTimer: ReturnType<typeof setInterval> | undefined;
   private defaultTTL: number;
   private store?: StateStore;
@@ -50,7 +53,7 @@ export class LockStore {
     for (const { value } of entries) {
       if (now < value.expiresAt) {
         this.locks.set(value.resourceKey, value);
-        this.holderLocks.set(value.holder, value.resourceKey);
+        this.addHolderLock(value.holder, value.resourceKey);
       }
     }
   }
@@ -58,39 +61,38 @@ export class LockStore {
   acquire(resourceKey: string, holder: string, ttlSeconds?: number): AcquireResult {
     const existing = this.locks.get(resourceKey);
 
-    // Check if this holder already holds a different lock
-    const existingHolderKey = this.holderLocks.get(holder);
-    if (existingHolderKey && existingHolderKey !== resourceKey) {
-      const existingHolderLock = this.locks.get(existingHolderKey);
-      if (existingHolderLock && Date.now() < existingHolderLock.expiresAt) {
-        return {
-          ok: false,
-          reason: `already holding lock on ${existingHolderLock.resourceKey} — release it first`,
-        };
-      }
-      // Expired — clean up
-      this.locks.delete(existingHolderKey);
-      this.holderLocks.delete(holder);
-      this.persistDelete(existingHolderKey, holder);
-    }
-
     if (existing) {
       if (Date.now() >= existing.expiresAt) {
         // Expired — evict
-        this.holderLocks.delete(existing.holder);
+        this.removeHolderLock(existing.holder, resourceKey);
         this.locks.delete(resourceKey);
         this.persistDelete(resourceKey, existing.holder);
       } else if (existing.holder !== holder) {
+        // Resource held by another — check for deadlock cycle
+        const cycle = this.detectCycle(holder, resourceKey);
+        if (cycle) {
+          this.waitingFor.set(holder, resourceKey);
+          return {
+            ok: false,
+            reason: `possible deadlock: ${[...cycle, cycle[0]].join(" \u2192 ")}`,
+            deadlock: true,
+            cycle,
+          };
+        }
+        this.waitingFor.set(holder, resourceKey);
         return { ok: false, holder: existing.holder, heldSince: existing.heldSince };
       }
       // Same holder re-acquiring — refresh below
     }
 
+    // Acquired — clear waiting state
+    this.waitingFor.delete(holder);
+
     const now = Date.now();
     const ttl = ttlSeconds ? ttlSeconds * 1000 : this.defaultTTL;
     const entry: LockEntry = { resourceKey, holder, heldSince: now, expiresAt: now + ttl };
     this.locks.set(resourceKey, entry);
-    this.holderLocks.set(holder, resourceKey);
+    this.addHolderLock(holder, resourceKey);
     this.persistSet(entry);
     return { ok: true };
   }
@@ -100,7 +102,7 @@ export class LockStore {
 
     if (!existing || Date.now() >= existing.expiresAt) {
       this.locks.delete(resourceKey);
-      if (this.holderLocks.get(holder) === resourceKey) this.holderLocks.delete(holder);
+      this.removeHolderLock(holder, resourceKey);
       this.persistDelete(resourceKey, holder);
       return { ok: false, reason: "lock not found" };
     }
@@ -110,7 +112,7 @@ export class LockStore {
     }
 
     this.locks.delete(resourceKey);
-    this.holderLocks.delete(holder);
+    this.removeHolderLock(holder, resourceKey);
     this.persistDelete(resourceKey, holder);
     return { ok: true };
   }
@@ -135,14 +137,17 @@ export class LockStore {
 
   releaseAll(holder: string): number {
     let count = 0;
-    for (const [rk, entry] of this.locks) {
-      if (entry.holder === holder) {
+    const holderKeys = this.holderLocks.get(holder);
+    if (holderKeys) {
+      for (const rk of holderKeys) {
         this.locks.delete(rk);
-        this.persistDelete(rk, holder);
+        this.store?.delete(NS_LOCKS, rk).catch(() => {});
         count++;
       }
     }
     this.holderLocks.delete(holder);
+    this.waitingFor.delete(holder);
+    this.store?.delete(NS_HOLDERS, holder).catch(() => {});
     return count;
   }
 
@@ -157,13 +162,70 @@ export class LockStore {
     return result;
   }
 
+  /**
+   * Detect a deadlock cycle if `holder` tries to acquire `targetResource`.
+   *
+   * Follows the wait-for graph: holder wants targetResource (held by B),
+   * B is waiting for something (held by C), ... until we reach holder again
+   * (cycle) or a dead end (no cycle).
+   *
+   * Returns the cycle path as alternating [holder, resource, holder, resource, ...]
+   * or null if no cycle exists.
+   */
+  private detectCycle(holder: string, targetResource: string): string[] | null {
+    const visited = new Set<string>([holder]);
+    const path: string[] = [holder, targetResource];
+    let currentResource = targetResource;
+
+    for (;;) {
+      const lock = this.locks.get(currentResource);
+      if (!lock || Date.now() >= lock.expiresAt) return null;
+
+      const blocker = lock.holder;
+      if (blocker === holder) return path; // cycle back to the requesting holder
+
+      if (visited.has(blocker)) return null; // cycle doesn't involve the requesting holder
+      visited.add(blocker);
+      path.push(blocker);
+
+      const waitingResource = this.waitingFor.get(blocker);
+      if (!waitingResource) return null;
+
+      path.push(waitingResource);
+      currentResource = waitingResource;
+    }
+  }
+
+  private addHolderLock(holder: string, resourceKey: string): void {
+    let keys = this.holderLocks.get(holder);
+    if (!keys) {
+      keys = new Set();
+      this.holderLocks.set(holder, keys);
+    }
+    keys.add(resourceKey);
+  }
+
+  private removeHolderLock(holder: string, resourceKey: string): void {
+    const keys = this.holderLocks.get(holder);
+    if (keys) {
+      keys.delete(resourceKey);
+      if (keys.size === 0) this.holderLocks.delete(holder);
+    }
+  }
+
   private sweep(): void {
     const now = Date.now();
     for (const [rk, entry] of this.locks) {
       if (now >= entry.expiresAt) {
-        this.holderLocks.delete(entry.holder);
+        this.removeHolderLock(entry.holder, rk);
         this.locks.delete(rk);
         this.persistDelete(rk, entry.holder);
+      }
+    }
+    // Clean up stale waiting-for entries where the holder no longer holds locks
+    for (const [holder] of this.waitingFor) {
+      if (!this.holderLocks.has(holder)) {
+        this.waitingFor.delete(holder);
       }
     }
   }
@@ -171,12 +233,28 @@ export class LockStore {
   private persistSet(entry: LockEntry): void {
     const ttlSec = Math.max(1, Math.ceil((entry.expiresAt - Date.now()) / 1000));
     this.store?.set(NS_LOCKS, entry.resourceKey, entry, { ttl: ttlSec }).catch(() => {});
-    this.store?.set(NS_HOLDERS, entry.holder, entry.resourceKey, { ttl: ttlSec }).catch(() => {});
+    this.persistHolderIndex(entry.holder);
   }
 
   private persistDelete(resourceKey: string, holder: string): void {
     this.store?.delete(NS_LOCKS, resourceKey).catch(() => {});
-    this.store?.delete(NS_HOLDERS, holder).catch(() => {});
+    this.persistHolderIndex(holder);
+  }
+
+  private persistHolderIndex(holder: string): void {
+    const keys = this.holderLocks.get(holder);
+    if (!keys || keys.size === 0) {
+      this.store?.delete(NS_HOLDERS, holder).catch(() => {});
+      return;
+    }
+    // Use the max remaining TTL across all held locks
+    let maxExpiry = 0;
+    for (const rk of keys) {
+      const lock = this.locks.get(rk);
+      if (lock) maxExpiry = Math.max(maxExpiry, lock.expiresAt);
+    }
+    const ttlSec = Math.max(1, Math.ceil((maxExpiry - Date.now()) / 1000));
+    this.store?.set(NS_HOLDERS, holder, [...keys], { ttl: ttlSec }).catch(() => {});
   }
 
   dispose(): void {
@@ -186,5 +264,6 @@ export class LockStore {
     }
     this.locks.clear();
     this.holderLocks.clear();
+    this.waitingFor.clear();
   }
 }

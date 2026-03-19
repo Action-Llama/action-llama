@@ -120,12 +120,12 @@ describe("LockStore", () => {
       expect(result).toEqual({ ok: true });
     });
 
-    it("rejects when holder already holds a different lock", () => {
-      store.acquire("github issue acme/app#1", "agent-a");
-      const result = store.acquire("github issue acme/app#2", "agent-a");
-      expect(result.ok).toBe(false);
-      expect(result.reason).toContain("already holding lock");
-      expect(result.reason).toContain("acme/app#1");
+    it("allows holder to acquire multiple different locks", () => {
+      const r1 = store.acquire("github issue acme/app#1", "agent-a");
+      const r2 = store.acquire("github issue acme/app#2", "agent-a");
+      expect(r1).toEqual({ ok: true });
+      expect(r2).toEqual({ ok: true });
+      expect(store.list("agent-a")).toHaveLength(2);
     });
 
     it("allows acquiring a different lock after releasing the first", () => {
@@ -145,6 +145,89 @@ describe("LockStore", () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+  });
+
+  describe("deadlock detection", () => {
+    it("detects simple deadlock cycle (A holds X, B holds Y, B→X fails, A→Y)", () => {
+      store.acquire("res-X", "agent-a");
+      store.acquire("res-Y", "agent-b");
+
+      // B tries to acquire X (held by A) — fails, records B waiting for X
+      const bResult = store.acquire("res-X", "agent-b");
+      expect(bResult.ok).toBe(false);
+      expect(bResult.holder).toBe("agent-a");
+
+      // A tries to acquire Y (held by B) — detects cycle: A→Y→B→X→A
+      const aResult = store.acquire("res-Y", "agent-a");
+      expect(aResult.ok).toBe(false);
+      expect(aResult.deadlock).toBe(true);
+      expect(aResult.reason).toContain("possible deadlock");
+      expect(aResult.cycle).toBeDefined();
+      expect(aResult.cycle).toContain("agent-a");
+      expect(aResult.cycle).toContain("agent-b");
+    });
+
+    it("detects 3-way deadlock cycle (A→B→C→A)", () => {
+      store.acquire("res-X", "agent-a");
+      store.acquire("res-Y", "agent-b");
+      store.acquire("res-Z", "agent-c");
+
+      // B tries X (held by A) → fails
+      store.acquire("res-X", "agent-b");
+      // C tries Y (held by B) → fails
+      store.acquire("res-Y", "agent-c");
+      // A tries Z (held by C) → cycle: A→Z→C→Y→B→X→A
+      const result = store.acquire("res-Z", "agent-a");
+      expect(result.ok).toBe(false);
+      expect(result.deadlock).toBe(true);
+      expect(result.cycle).toContain("agent-a");
+      expect(result.cycle).toContain("agent-b");
+      expect(result.cycle).toContain("agent-c");
+    });
+
+    it("returns regular conflict when no cycle exists", () => {
+      store.acquire("res-X", "agent-a");
+      store.acquire("res-Y", "agent-b");
+
+      // A tries Y (held by B), but B is NOT waiting for anything → no cycle
+      const result = store.acquire("res-Y", "agent-a");
+      expect(result.ok).toBe(false);
+      expect(result.deadlock).toBeUndefined();
+      expect(result.holder).toBe("agent-b");
+    });
+
+    it("clears waiting state on successful acquire", () => {
+      store.acquire("res-X", "agent-a");
+      store.acquire("res-Y", "agent-b");
+
+      // B tries X → fails (B waiting for X)
+      store.acquire("res-X", "agent-b");
+
+      // A releases X, B acquires X → clears B's waiting state
+      store.release("res-X", "agent-a");
+      expect(store.acquire("res-X", "agent-b").ok).toBe(true);
+
+      // A acquires a new lock and tries Y (held by B) — B no longer waiting, no cycle
+      store.acquire("res-Z", "agent-a");
+      const result = store.acquire("res-Y", "agent-a");
+      expect(result.ok).toBe(false);
+      expect(result.deadlock).toBeUndefined();
+      expect(result.holder).toBe("agent-b");
+    });
+
+    it("includes the full cycle path in the result", () => {
+      store.acquire("res-X", "agent-a");
+      store.acquire("res-Y", "agent-b");
+
+      store.acquire("res-X", "agent-b"); // B waits for X
+      const result = store.acquire("res-Y", "agent-a"); // A→Y→B→X→A
+
+      expect(result.cycle).toEqual(["agent-a", "res-Y", "agent-b", "res-X"]);
+      expect(result.reason).toContain("agent-a");
+      expect(result.reason).toContain("agent-b");
+      expect(result.reason).toContain("res-X");
+      expect(result.reason).toContain("res-Y");
     });
   });
 
@@ -223,11 +306,13 @@ describe("LockStore", () => {
   });
 
   describe("releaseAll", () => {
-    it("releases the lock held by an agent", () => {
+    it("releases all locks held by an agent", () => {
       store.acquire("github issue acme/app#1", "agent-a");
+      store.acquire("github issue acme/app#2", "agent-a");
       const count = store.releaseAll("agent-a");
-      expect(count).toBe(1);
+      expect(count).toBe(2);
       expect(store.acquire("github issue acme/app#1", "agent-b").ok).toBe(true);
+      expect(store.acquire("github issue acme/app#2", "agent-c").ok).toBe(true);
     });
 
     it("does not release locks held by other agents", () => {
@@ -248,6 +333,21 @@ describe("LockStore", () => {
       store.releaseAll("agent-a");
       const result = store.acquire("github issue acme/app#2", "agent-a");
       expect(result).toEqual({ ok: true });
+    });
+
+    it("clears waiting state", () => {
+      store.acquire("res-X", "agent-a");
+      store.acquire("res-Y", "agent-b");
+      store.acquire("res-X", "agent-b"); // B waits for X
+
+      store.releaseAll("agent-b");
+
+      // B's waiting state is cleared, so no deadlock when A tries something
+      store.acquire("res-Y", "agent-b"); // B re-acquires Y
+      store.acquire("res-Z", "agent-a");
+      const result = store.acquire("res-Y", "agent-a");
+      expect(result.ok).toBe(false);
+      expect(result.deadlock).toBeUndefined();
     });
   });
 
@@ -287,6 +387,14 @@ describe("LockStore", () => {
       entry.holder = "tampered";
       const [fresh] = store.list();
       expect(fresh.holder).toBe("agent-a");
+    });
+
+    it("returns multiple locks for the same holder", () => {
+      store.acquire("res-1", "agent-a");
+      store.acquire("res-2", "agent-a");
+      store.acquire("res-3", "agent-a");
+      const locks = store.list("agent-a");
+      expect(locks).toHaveLength(3);
     });
   });
 
@@ -328,6 +436,26 @@ describe("LockStore — durable persistence", () => {
     const conflict = ls2.acquire("github issue acme/app#42", "agent-b");
     expect(conflict.ok).toBe(false);
     expect(conflict.holder).toBe("agent-a");
+
+    ls2.dispose();
+  });
+
+  it("hydrates multiple locks per holder from the backing store on init", async () => {
+    const stateStore = makeStore();
+
+    const ls1 = new LockStore(300, 9999, stateStore);
+    ls1.acquire("res-1", "agent-a");
+    ls1.acquire("res-2", "agent-a");
+    ls1.dispose();
+
+    const ls2 = new LockStore(300, 9999, stateStore);
+    await ls2.init();
+
+    const locks = ls2.list("agent-a");
+    expect(locks).toHaveLength(2);
+
+    expect(ls2.acquire("res-1", "agent-b").ok).toBe(false);
+    expect(ls2.acquire("res-2", "agent-b").ok).toBe(false);
 
     ls2.dispose();
   });

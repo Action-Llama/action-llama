@@ -524,7 +524,7 @@ All gateway-calling shell commands (`rlock`, `runlock`, `rlock-heartbeat`, `al-c
 | Exit | Meaning | HTTP | When |
 |------|---------|------|------|
 | 0 | Success | 200 | Operation completed |
-| 1 | Conflict | 409 | Resource held by another, dispatch rejected |
+| 1 | Conflict | 409 | Resource held by another, deadlock detected, or dispatch rejected |
 | 2 | Not found | 404 | Resource or call doesn't exist |
 | 3 | Auth error | 403 | Invalid or expired secret |
 | 4 | Bad request | 400 | Server rejected the request (malformed payload) |
