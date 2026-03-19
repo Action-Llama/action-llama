@@ -180,6 +180,7 @@ program
   .argument("[agent]", "agent name — push only this agent (hot-reloaded, no restart)")
   .option("-p, --project <dir>", "project directory", ".")
   .option("-E, --env <name>", "use named environment with [server] config")
+  .option("-H, --headless", "non-interactive mode (no credential prompts, for CI/deploy environments)")
   .option("--dry-run", "show what would be synced without making changes")
   .option("--no-creds", "skip credential sync")
   .option("--creds-only", "sync only credentials (skip project files)")
