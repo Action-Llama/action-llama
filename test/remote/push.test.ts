@@ -27,12 +27,33 @@ vi.mock("../../src/cloud/vps/nginx.js", () => ({
 // Mock fs for computePkgHash / unlinkSync
 const mockReadFileSync = vi.fn();
 const mockUnlinkSync = vi.fn();
+const mockExistsSync = vi.fn();
 vi.mock("fs", async (importOriginal) => {
   const actual = await importOriginal() as any;
   return {
     ...actual,
     readFileSync: (...args: any[]) => mockReadFileSync(...args),
     unlinkSync: (...args: any[]) => mockUnlinkSync(...args),
+    existsSync: (...args: any[]) => mockExistsSync(...args),
+  };
+});
+
+// Mock credential-refs module
+const mockCollectCredentialRefs = vi.fn();
+const mockCredentialRefsToRelativePaths = vi.fn();
+vi.mock("../../src/shared/credential-refs.js", () => ({
+  collectCredentialRefs: (...args: any[]) => mockCollectCredentialRefs(...args),
+  credentialRefsToRelativePaths: (...args: any[]) => mockCredentialRefsToRelativePaths(...args),
+  IMPLICIT_CREDENTIAL_REFS: new Set(["gateway_api_key:default"]),
+}));
+
+// Mock config module
+const mockLoadGlobalConfig = vi.fn();
+vi.mock("../../src/shared/config.js", async (importOriginal) => {
+  const actual = await importOriginal() as any;
+  return {
+    ...actual,
+    loadGlobalConfig: (...args: any[]) => mockLoadGlobalConfig(...args),
   };
 });
 
@@ -173,6 +194,13 @@ describe("pushToServer", () => {
       if (path.endsWith("package-lock.json")) return Buffer.from('{"lockfileVersion":3}');
       throw new Error("ENOENT");
     });
+    // Mock credential functions to simulate having some credentials
+    mockCollectCredentialRefs.mockReturnValue(new Set(["github_token:default", "gateway_api_key:default"]));
+    mockCredentialRefsToRelativePaths.mockReturnValue(["github_token/default", "gateway_api_key/default"]);
+    // Mock existsSync to return true for credential files
+    mockExistsSync.mockReturnValue(true);
+    // Mock loadGlobalConfig
+    mockLoadGlobalConfig.mockReturnValue({});
   });
 
   it("runs full push flow", async () => {
@@ -194,7 +222,7 @@ describe("pushToServer", () => {
     }
 
     expect(mockBootstrapServer).toHaveBeenCalled();
-    expect(mockRsyncTo).toHaveBeenCalledTimes(2); // project + credentials in parallel
+    expect(mockRsyncTo).toHaveBeenCalledTimes(3); // project + individual credentials
     expect(mockSshExec).toHaveBeenCalled();
     // Verify npm install runs on the remote
     const sshCommands = mockSshExec.mock.calls.map((c: any[]) => c[1]);
@@ -454,6 +482,13 @@ describe("pushAgentToServer", () => {
     mockSshExec.mockResolvedValue("");
     mockRsyncTo.mockResolvedValue(undefined);
     mockUnlinkSync.mockReturnValue(undefined);
+    // Mock credential functions to simulate having some credentials
+    mockCollectCredentialRefs.mockReturnValue(new Set(["github_token:default", "gateway_api_key:default"]));
+    mockCredentialRefsToRelativePaths.mockReturnValue(["github_token/default", "gateway_api_key/default"]);
+    // Mock existsSync to return true for credential files
+    mockExistsSync.mockReturnValue(true);
+    // Mock loadGlobalConfig
+    mockLoadGlobalConfig.mockReturnValue({});
   });
 
   it("rsyncs only the agent directory", async () => {
@@ -471,8 +506,8 @@ describe("pushAgentToServer", () => {
       console.log = origLog;
     }
 
-    // Should rsync agent directory + credentials (2 calls)
-    expect(mockRsyncTo).toHaveBeenCalledTimes(2);
+    // Should rsync agent directory + individual credentials (3 calls)
+    expect(mockRsyncTo).toHaveBeenCalledTimes(3);
     // First call: agent files
     expect(mockRsyncTo.mock.calls[0][1]).toBe("/tmp/project/agents/my-agent");
     expect(mockRsyncTo.mock.calls[0][2]).toContain("agents/my-agent");
@@ -536,8 +571,8 @@ describe("pushAgentToServer", () => {
       console.log = origLog;
     }
 
-    // Only 1 rsync call (credentials), not 2
-    expect(mockRsyncTo).toHaveBeenCalledTimes(1);
+    // Only 2 rsync calls (individual credentials), not 3
+    expect(mockRsyncTo).toHaveBeenCalledTimes(2);
     expect(mockRsyncTo.mock.calls[0][2]).toContain("credentials");
   });
 

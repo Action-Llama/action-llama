@@ -6,6 +6,24 @@ export const WEBHOOK_SECRET_TYPES: Record<string, string> = {
   sentry: "sentry_client_secret",
 };
 
+/** Credentials that are always required but may not be explicitly referenced */
+export const IMPLICIT_CREDENTIAL_REFS = new Set([
+  "gateway_api_key:default",  // Required for gateway authentication
+]);
+
+/**
+ * Convert credential refs to relative file paths within the credentials directory.
+ * Example: "github_token:default" -> "github_token/default"
+ */
+export function credentialRefsToRelativePaths(refs: Set<string>): string[] {
+  const paths: string[] = [];
+  for (const ref of refs) {
+    const [type, instance] = ref.split(":");
+    paths.push(`${type}/${instance || "default"}`);
+  }
+  return paths;
+}
+
 /**
  * Collect all credential refs needed by agents in the project,
  * including webhook secret credentials derived from global webhook sources.
@@ -28,6 +46,11 @@ export function collectCredentialRefs(projectPath: string, globalConfig: GlobalC
         credentialRefs.add(`${credType}:${sourceConfig.credential}`);
       }
     }
+  }
+
+  // Add implicit credentials that are always required
+  for (const ref of IMPLICIT_CREDENTIAL_REFS) {
+    credentialRefs.add(ref);
   }
 
   return credentialRefs;
