@@ -1,7 +1,9 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
-  "appearance": "dark",
+  "appearance": {
+    "default": "dark"
+  },
   "name": "Action Llama",
   "favicon": "/favicon.svg",
   "colors": {
