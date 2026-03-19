@@ -16,6 +16,7 @@ describe("status summary", () => {
     expect(output).toContain("TRIGGER");
     expect(output).toContain("STATUS");
     expect(output).toContain("INSTANCES");
+    expect(output).toContain("QUEUE");
     // Agents appear in the table
     expect(output).toContain("dev");
     expect(output).toContain("reviewer");
@@ -76,6 +77,65 @@ describe("status per-agent detail", () => {
     expect(output).toContain("Agent: wh-agent");
     expect(output).toContain("Webhooks:");
     expect(output).toContain("github: issues.opened, pull_request");
+  });
+});
+
+describe("status with queue sizes", () => {
+  let tmpDir: string;
+  let fetchSpy: any;
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, "fetch");
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it("displays queue sizes from gateway response", async () => {
+    tmpDir = makeTmpProject({
+      agents: [{ name: "wh-agent", webhooks: [{ source: "github" }] }],
+    });
+
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      text: () => Promise.resolve(JSON.stringify({
+        scheduler: { paused: false, mode: "local" },
+        instances: [],
+        agents: [{ name: "wh-agent", enabled: true }],
+        running: 0,
+        queueSizes: { "wh-agent": 3 },
+      })),
+    });
+    // /locks/status
+    fetchSpy.mockResolvedValueOnce({ ok: false });
+
+    const output = await captureLog(() => execute({ project: tmpDir }));
+    expect(output).toContain("QUEUE");
+    expect(output).toContain("3");
+  });
+
+  it("shows 0 queue size when queueSizes absent from response", async () => {
+    tmpDir = makeTmpProject({
+      agents: [{ name: "wh-agent", webhooks: [{ source: "github" }] }],
+    });
+
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      text: () => Promise.resolve(JSON.stringify({
+        scheduler: { paused: false, mode: "local" },
+        instances: [],
+        agents: [{ name: "wh-agent", enabled: true }],
+        running: 0,
+      })),
+    });
+    fetchSpy.mockResolvedValueOnce({ ok: false });
+
+    const output = await captureLog(() => execute({ project: tmpDir }));
+    expect(output).toContain("QUEUE");
+    // Queue size defaults to 0
+    expect(output).toMatch(/wh-agent.+0\s*$/m);
   });
 });
 

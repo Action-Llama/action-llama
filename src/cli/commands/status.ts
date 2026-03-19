@@ -15,18 +15,19 @@ function formatTriggerShort(config: AgentConfig): string {
 
 /** Print the unified agents summary table. */
 function printAgentsTable(
-  rows: Array<{ config: AgentConfig; status: string; instanceCount: number; paused: boolean }>,
+  rows: Array<{ config: AgentConfig; status: string; instanceCount: number; paused: boolean; queueSize: number }>,
 ): void {
-  const cols = { agent: 16, trigger: 16, status: 12, instances: 12 };
+  const cols = { agent: 16, trigger: 16, status: 12, instances: 12, queue: 8 };
   console.log(
     "AGENT".padEnd(cols.agent) +
     "TRIGGER".padEnd(cols.trigger) +
     "STATUS".padEnd(cols.status) +
-    "INSTANCES"
+    "INSTANCES".padEnd(cols.instances) +
+    "QUEUE"
   );
-  console.log("-".repeat(cols.agent + cols.trigger + cols.status + cols.instances));
+  console.log("-".repeat(cols.agent + cols.trigger + cols.status + cols.instances + cols.queue));
 
-  for (const { config, status, instanceCount, paused } of rows) {
+  for (const { config, status, instanceCount, paused, queueSize } of rows) {
     const trigger = formatTriggerShort(config);
     const statusStr = paused ? "PAUSED" : status;
     const instanceStr = instanceCount > 0 ? `${instanceCount} running` : "0";
@@ -35,7 +36,8 @@ function printAgentsTable(
       config.name.padEnd(cols.agent) +
       trigger.padEnd(cols.trigger) +
       statusStr.padEnd(cols.status) +
-      instanceStr
+      instanceStr.padEnd(cols.instances) +
+      String(queueSize)
     );
   }
 }
@@ -97,6 +99,7 @@ export async function execute(opts: { project: string; env?: string; agent?: str
   let schedulerInfo = null;
   let instances: AgentInstance[] = [];
   let agentStatuses: Array<{ name: string; enabled: boolean }> = [];
+  let queueSizes: Record<string, number> = {};
 
   try {
     const response = await gatewayFetch({ project: projectPath, path: "/control/status", env: envName || undefined });
@@ -105,6 +108,7 @@ export async function execute(opts: { project: string; env?: string; agent?: str
       schedulerInfo = data.scheduler;
       instances = data.instances || [];
       agentStatuses = data.agents || [];
+      queueSizes = data.queueSizes || {};
     } else if (isRemote) {
       const globalConfig = loadGlobalConfig(projectPath, opts.env);
       const url = globalConfig.gateway?.url || `localhost:${globalConfig.gateway?.port || 8080}`;
@@ -172,6 +176,7 @@ export async function execute(opts: { project: string; env?: string; agent?: str
       status: count > 0 ? "Running" : "Idle",
       instanceCount: count,
       paused,
+      queueSize: queueSizes[name] || 0,
     };
   });
   printAgentsTable(agentRows);

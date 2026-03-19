@@ -13,6 +13,7 @@ export interface ControlRoutesDeps {
   disableAgent?: (name: string) => Promise<boolean>;
   stopScheduler?: () => Promise<void>;
   logger?: Logger;
+  workQueue?: { size(agentName: string): number };
 }
 
 export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps) {
@@ -220,16 +221,24 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps) {
     if (!statusTracker) {
       return c.json({ error: "Status tracker not available" }, 503);
     }
-    
+
     const schedulerInfo = statusTracker.getSchedulerInfo();
     const instances = statusTracker.getInstances();
     const agents = statusTracker.getAllAgents();
+
+    const queueSizes: Record<string, number> = {};
+    if (deps.workQueue) {
+      for (const agent of agents) {
+        queueSizes[agent.name] = deps.workQueue.size(agent.name);
+      }
+    }
 
     return c.json({
       scheduler: schedulerInfo,
       instances,
       agents,
       running: instances.length,
+      queueSizes,
     });
   });
 }
