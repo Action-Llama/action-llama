@@ -22,7 +22,7 @@ describe.skipIf(!DOCKER)("integration: control API", { timeout: 180_000 }, () =>
     });
 
     await harness.start();
-    await harness.waitForAgentRun("ctrl-agent");
+    await harness.waitForRunResult("ctrl-agent");
 
     // Pause
     const pauseRes = await harness.controlAPI("POST", "/pause");
@@ -49,14 +49,14 @@ describe.skipIf(!DOCKER)("integration: control API", { timeout: 180_000 }, () =>
     });
 
     await harness.start();
-    await harness.waitForAgentRun("manual-agent");
+    await harness.waitForRunResult("manual-agent");
 
     // Trigger again via control API
     const triggerRes = await harness.controlAPI("POST", "/trigger/manual-agent");
     expect(triggerRes.ok).toBe(true);
 
-    await harness.waitForAgentRun("manual-agent");
-    expect(harness.getRunnerPool("manual-agent")?.hasRunningJobs).toBe(false);
+    const secondRun = await harness.waitForRunResult("manual-agent");
+    expect(secondRun.result).toBe("completed");
   });
 
   it("kill agent via control API", async () => {
@@ -76,16 +76,21 @@ describe.skipIf(!DOCKER)("integration: control API", { timeout: 180_000 }, () =>
     });
 
     await harness.start();
-    // Wait until agent is running
-    await harness.waitForSettle(10000);
+
+    // Brief wait for the container to be running (run:start fires during
+    // startScheduler before listeners are registered, so we poll the pool)
+    await harness.waitForSettle(5000);
 
     const pool = harness.getRunnerPool("kill-agent");
-    if (pool?.hasRunningJobs) {
-      const killRes = await harness.controlAPI("POST", "/agents/kill-agent/kill");
-      expect(killRes.ok).toBe(true);
-      const killBody = await killRes.json();
-      expect(killBody.success).toBe(true);
-    }
+    expect(pool?.hasRunningJobs).toBe(true);
+
+    const killRes = await harness.controlAPI("POST", "/agents/kill-agent/kill");
+    expect(killRes.ok).toBe(true);
+    const killBody = await killRes.json();
+    expect(killBody.success).toBe(true);
+
+    // Wait for the run to end (killed)
+    await harness.events.waitFor("run:end", (e) => e.agentName === "kill-agent", 60_000);
   });
 
   it("trigger nonexistent agent returns 404", async () => {
@@ -100,7 +105,7 @@ describe.skipIf(!DOCKER)("integration: control API", { timeout: 180_000 }, () =>
     });
 
     await harness.start();
-    await harness.waitForAgentRun("existing-agent");
+    await harness.waitForRunResult("existing-agent");
 
     const res = await harness.controlAPI("POST", "/trigger/nonexistent");
     expect(res.status).toBe(404);

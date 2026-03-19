@@ -2,6 +2,21 @@
 # Shared HTTP status → exit code mapping for gateway-calling commands.
 # Source this file: . "$(dirname "$0")/_http-exit"
 # Then call: http_exit <http_code>
+#
+# Exit code table:
+#   0  = success          (HTTP 200)
+#   1  = conflict         (HTTP 409)
+#   2  = not found        (HTTP 404)
+#   3  = auth error       (HTTP 403)
+#   4  = bad request      (HTTP 400) — server rejected the request
+#   5  = unavailable      (HTTP 503) — gateway not ready
+#   6  = unreachable      (curl 000) — connection failed / DNS error
+#   7  = unexpected       (any other HTTP status)
+#   8  = timeout          (used by al-wait; not mapped here)
+#   9  = usage error      (missing argument — local check, never hit network)
+#  10  = bad gateway      (HTTP 502) — proxy could not reach the gateway
+#  11  = gateway timeout  (HTTP 504) — proxy timed out reaching the gateway
+#  12  = server error     (HTTP 500) — internal gateway error
 
 http_exit() {
   case "$1" in
@@ -12,6 +27,9 @@ http_exit() {
     400) exit 4;;
     503) exit 5;;
     000) exit 6;;
+    502) exit 10;;
+    504) exit 11;;
+    500) exit 12;;
     *)   exit 7;;
   esac
 }

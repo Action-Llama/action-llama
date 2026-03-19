@@ -22,8 +22,8 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
     });
 
     await harness.start();
-    await harness.waitForAgentRun("exit-zero");
-    expect(harness.getRunnerPool("exit-zero")?.hasRunningJobs).toBe(false);
+    const run = await harness.waitForRunResult("exit-zero");
+    expect(run.result).toBe("completed");
   });
 
   it("exit 1 is treated as error", async () => {
@@ -38,8 +38,8 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
     });
 
     await harness.start();
-    await harness.waitForAgentRun("exit-error");
-    expect(harness.getRunnerPool("exit-error")?.hasRunningJobs).toBe(false);
+    const run = await harness.waitForRunResult("exit-error");
+    expect(run.result).toBe("error");
   });
 
   it("exit 42 triggers rerun", async () => {
@@ -66,10 +66,14 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
     });
 
     await harness.start();
-    await harness.waitForAgentRun("rerun-agent");
-    await harness.waitForSettle(10000);
-    await harness.waitForAgentRun("rerun-agent");
-    expect(harness.getRunnerPool("rerun-agent")?.hasRunningJobs).toBe(false);
+
+    // First run exits 42, triggers rerun
+    const firstRun = await harness.waitForRunResult("rerun-agent");
+    expect(firstRun.result).toBe("rerun");
+
+    // At least one rerun was triggered (marker doesn't persist across
+    // Docker containers, so all runs exit 42 until maxReruns is hit)
+    await harness.waitForRunResult("rerun-agent");
   });
 
   it("max reruns is enforced — agent stops after limit", async () => {
@@ -86,9 +90,13 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
     });
 
     await harness.start();
-    // 1 initial run + 2 reruns = 3 total runs, then stops
-    await harness.waitForAgentRun("forever-rerun");
-    await harness.waitForSettle(15000);
+
+    // 1 initial + 2 reruns = 3 total runs, then stops
+    await harness.waitForRunResult("forever-rerun");
+    await harness.waitForRunResult("forever-rerun");
+    await harness.waitForRunResult("forever-rerun");
+    // Brief settle for the rerun loop to fully exit and release the runner
+    await harness.waitForSettle(2000);
     expect(harness.getRunnerPool("forever-rerun")?.hasRunningJobs).toBe(false);
   });
 
@@ -102,8 +110,14 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
             "#!/bin/sh",
             "export AL_SIGNAL_DIR=/tmp/signals",
             "mkdir -p $AL_SIGNAL_DIR",
-            // al-return writes signal file AND posts to gateway
-            'al-return "hello-from-return-agent"',
+            // al-return — verify exit 0 + ok=true
+            "set +e",
+            'RESULT=$(al-return "hello-from-return-agent")',
+            "RC=$?",
+            "set -e",
+            'test "$RC" -eq 0 || { echo "al-return exit=$RC: $RESULT"; exit 1; }',
+            'OK=$(echo "$RESULT" | jq -r .ok)',
+            'test "$OK" = "true" || { echo "al-return ok=$OK: $RESULT"; exit 1; }',
             // Also emit the structured log line that container runner parses
             'echo \'{"_log":true,"msg":"signal-result","type":"return","value":"hello-from-return-agent"}\'',
             "exit 0",
@@ -113,8 +127,8 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
     });
 
     await harness.start();
-    await harness.waitForAgentRun("return-agent");
-    expect(harness.getRunnerPool("return-agent")?.hasRunningJobs).toBe(false);
+    const run = await harness.waitForRunResult("return-agent");
+    expect(run.result).toBe("completed");
   });
 
   it("al-status updates agent status via gateway", async () => {
@@ -127,10 +141,21 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
             "#!/bin/sh",
             "export AL_SIGNAL_DIR=/tmp/signals",
             "mkdir -p $AL_SIGNAL_DIR",
-            // al-status posts to GATEWAY_URL/signals/status
-            'al-status "processing step 1"',
+            // al-status — verify exit 0 + ok=true
+            "set +e",
+            'RESULT=$(al-status "processing step 1")',
+            "RC=$?",
+            "set -e",
+            'test "$RC" -eq 0 || { echo "al-status exit=$RC: $RESULT"; exit 1; }',
+            'OK=$(echo "$RESULT" | jq -r .ok)',
+            'test "$OK" = "true" || { echo "al-status ok=$OK: $RESULT"; exit 1; }',
             "sleep 1",
-            'al-status "processing step 2"',
+            // Second call
+            "set +e",
+            'RESULT=$(al-status "processing step 2")',
+            "RC=$?",
+            "set -e",
+            'test "$RC" -eq 0 || { echo "al-status exit=$RC: $RESULT"; exit 1; }',
             "exit 0",
           ].join("\n"),
         },
@@ -138,8 +163,8 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
     });
 
     await harness.start();
-    await harness.waitForAgentRun("status-agent");
-    expect(harness.getRunnerPool("status-agent")?.hasRunningJobs).toBe(false);
+    const run = await harness.waitForRunResult("status-agent");
+    expect(run.result).toBe("completed");
   });
 
   it("al-rerun command works (posts to gateway, then exit 42 causes actual rerun)", async () => {
@@ -155,7 +180,14 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
             'MARKER="/tmp/al-rerun-agent-ran"',
             'if [ ! -f "$MARKER" ]; then',
             '  touch "$MARKER"',
-            "  al-rerun",   // posts to gateway
+            // al-rerun — verify exit 0 + ok=true
+            "  set +e",
+            '  RESULT=$(al-rerun)',
+            "  RC=$?",
+            "  set -e",
+            '  test "$RC" -eq 0 || { echo "al-rerun exit=$RC: $RESULT"; exit 1; }',
+            '  OK=$(echo "$RESULT" | jq -r .ok)',
+            '  test "$OK" = "true" || { echo "al-rerun ok=$OK: $RESULT"; exit 1; }',
             "  exit 42",    // container runner checks exit code
             "fi",
             'echo "second run after al-rerun"',
@@ -168,10 +200,13 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
     });
 
     await harness.start();
-    await harness.waitForAgentRun("al-rerun-agent");
-    await harness.waitForSettle(10000);
-    await harness.waitForAgentRun("al-rerun-agent");
-    expect(harness.getRunnerPool("al-rerun-agent")?.hasRunningJobs).toBe(false);
+
+    // First run calls al-rerun then exits 42
+    const firstRun = await harness.waitForRunResult("al-rerun-agent");
+    expect(firstRun.result).toBe("rerun");
+
+    // At least one rerun was triggered
+    await harness.waitForRunResult("al-rerun-agent");
   });
 
   it("structured log lines are forwarded by container runner", async () => {
@@ -195,7 +230,7 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
     });
 
     await harness.start();
-    await harness.waitForAgentRun("structured-log-agent");
-    expect(harness.getRunnerPool("structured-log-agent")?.hasRunningJobs).toBe(false);
+    const run = await harness.waitForRunResult("structured-log-agent");
+    expect(run.result).toBe("completed");
   });
 });

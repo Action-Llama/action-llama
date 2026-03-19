@@ -153,10 +153,10 @@ describe("command exit codes", () => {
       expect(r.exitCode).toBe(3);
     });
 
-    it("exit 4 — missing arg", async () => {
+    it("exit 9 — missing arg (usage error)", async () => {
       register("sec-a", "agent-a");
       const r = await run("rlock", [], env("sec-a"));
-      expect(r.exitCode).toBe(4);
+      expect(r.exitCode).toBe(9);
       const body = JSON.parse(r.stdout);
       expect(body.ok).toBe(false);
     });
@@ -200,10 +200,10 @@ describe("command exit codes", () => {
       expect(r.exitCode).toBe(3);
     });
 
-    it("exit 4 — missing arg", async () => {
+    it("exit 9 — missing arg (usage error)", async () => {
       register("sec-a", "agent-a");
       const r = await run("runlock", [], env("sec-a"));
-      expect(r.exitCode).toBe(4);
+      expect(r.exitCode).toBe(9);
     });
 
     it("exit 0 — graceful degradation when no gateway", async () => {
@@ -244,10 +244,10 @@ describe("command exit codes", () => {
       expect(r.exitCode).toBe(3);
     });
 
-    it("exit 4 — missing arg", async () => {
+    it("exit 9 — missing arg (usage error)", async () => {
       register("sec-a", "agent-a");
       const r = await run("rlock-heartbeat", [], env("sec-a"));
-      expect(r.exitCode).toBe(4);
+      expect(r.exitCode).toBe(9);
     });
 
     it("exit 0 — graceful degradation when no gateway", async () => {
@@ -283,10 +283,10 @@ describe("command exit codes", () => {
       expect(r.exitCode).toBe(3);
     });
 
-    it("exit 4 — missing arg", async () => {
+    it("exit 9 — missing arg (usage error)", async () => {
       register("sec-a", "agent-a");
       const r = await run("al-call", [], env("sec-a"), "do work");
-      expect(r.exitCode).toBe(4);
+      expect(r.exitCode).toBe(9);
     });
 
     it("exit 5 — no gateway", async () => {
@@ -320,10 +320,10 @@ describe("command exit codes", () => {
       expect(r.exitCode).toBe(3);
     });
 
-    it("exit 4 — missing arg", async () => {
+    it("exit 9 — missing arg (usage error)", async () => {
       register("sec-a", "agent-a");
       const r = await run("al-check", [], env("sec-a"));
-      expect(r.exitCode).toBe(4);
+      expect(r.exitCode).toBe(9);
     });
 
     it("exit 5 — no gateway", async () => {
@@ -358,9 +358,9 @@ describe("command exit codes", () => {
       expect(r.exitCode).toBe(8);
     }, 15_000);
 
-    it("exit 4 — missing arg", async () => {
+    it("exit 9 — missing arg (usage error)", async () => {
       const r = await run("al-wait", [], env("sec-a"));
-      expect(r.exitCode).toBe(4);
+      expect(r.exitCode).toBe(9);
     });
 
     it("exit 5 — no gateway", async () => {
@@ -372,13 +372,13 @@ describe("command exit codes", () => {
   // ---------- al-status ----------
 
   describe("al-status", () => {
-    it("exit 4 — missing arg", async () => {
+    it("exit 9 — missing arg (usage error)", async () => {
       const r = await run("al-status", [], {
         GATEWAY_URL: "",
         SHUTDOWN_SECRET: "",
         AL_SIGNAL_DIR: "/tmp/al-test-signals",
       });
-      expect(r.exitCode).toBe(4);
+      expect(r.exitCode).toBe(9);
       const body = JSON.parse(r.stdout);
       expect(body.ok).toBe(false);
     });

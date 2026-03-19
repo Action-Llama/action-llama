@@ -11,7 +11,7 @@ while [ $# -gt 0 ]; do
     *) IDS="$IDS $1"; shift;;
   esac
 done
-if [ -z "$IDS" ]; then echo '{"error":"usage: al-wait <callId> [callId...] [--timeout N]"}'; exit 4; fi
+if [ -z "$IDS" ]; then echo '{"error":"usage: al-wait <callId> [callId...] [--timeout N]"}'; exit 9; fi
 ELAPSED=0
 while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
   ALL_DONE=true

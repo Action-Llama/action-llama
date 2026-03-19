@@ -8,13 +8,21 @@ import { RunnerPool, type PoolRunner } from "./runner-pool.js";
 import type { AgentConfig } from "../shared/config.js";
 import type { WebhookContext } from "../webhooks/types.js";
 import type { createLogger } from "../shared/logger.js";
+import type { SchedulerEventBus } from "./events.js";
+import type { CallStore } from "../gateway/call-store.js";
 
 export const DEFAULT_MAX_RERUNS = 10;
 export const DEFAULT_MAX_TRIGGER_DEPTH = 3;
 
 export type WorkItem =
   | { type: 'webhook'; context: WebhookContext }
-  | { type: 'agent-trigger'; sourceAgent: string; context: string; depth: number };
+  | { type: 'agent-trigger'; sourceAgent: string; context: string; depth: number; callId?: string };
+
+export interface RunCompleteEvent {
+  agentName: string;
+  result: string;
+  triggerType: string;
+}
 
 export interface SchedulerContext {
   runnerPools: Record<string, RunnerPool>;
@@ -26,6 +34,12 @@ export interface SchedulerContext {
   shuttingDown: boolean;
   skills?: PromptSkills;
   useBakedImages: boolean;
+  /** Optional hook called after every agent run completes. Used for test instrumentation. */
+  onRunComplete?: (event: RunCompleteEvent) => void;
+  /** Optional event bus for lifecycle instrumentation (used by integration tests). */
+  events?: SchedulerEventBus;
+  /** Optional call store for updating al-call lifecycle status. */
+  callStore?: CallStore;
 }
 
 // Prompt helpers: when images have baked-in static files, only pass the dynamic suffix.
@@ -47,11 +61,27 @@ export async function executeRun(
   runner: PoolRunner, prompt: string,
   triggerInfo: { type: 'schedule' | 'webhook' | 'agent'; source?: string },
   agentName: string, depth: number, ctx: SchedulerContext
-): Promise<{ result: string; triggers: Array<{ agent: string; context: string }> }> {
+): Promise<{ result: string; triggers: Array<{ agent: string; context: string }>; returnValue?: string }> {
+  ctx.events?.emit("run:start", {
+    agentName,
+    instanceId: runner.instanceId,
+    trigger: triggerInfo.source ? `${triggerInfo.type}:${triggerInfo.source}` : triggerInfo.type,
+  });
+
   const outcome = await runner.run(prompt, triggerInfo);
   const triggers = outcome.triggers ?? [];
   if (triggers.length > 0) dispatchTriggers(triggers, agentName, depth, ctx);
-  return { result: outcome.result, triggers };
+
+  ctx.events?.emit("run:end", {
+    agentName,
+    instanceId: runner.instanceId,
+    result: outcome.result,
+    exitCode: outcome.exitCode,
+    error: outcome.exitReason,
+  });
+
+  ctx.onRunComplete?.({ agentName, result: outcome.result, triggerType: triggerInfo.type });
+  return { result: outcome.result, triggers, returnValue: outcome.returnValue };
 }
 
 export function dispatchTriggers(
@@ -119,8 +149,21 @@ export async function drainQueues(ctx: SchedulerContext): Promise<void> {
         if (work.depth >= ctx.maxTriggerDepth) return Promise.resolve();
         ctx.logger.info({ source: work.sourceAgent, target: agentConfig.name, depth: work.depth, ageMs }, "draining queued trigger");
         const prompt = makeTriggeredPrompt(agentConfig, work.sourceAgent, work.context, ctx);
+        if (work.callId) ctx.callStore?.setRunning(work.callId);
         return executeRun(runner, prompt, { type: 'agent', source: work.sourceAgent }, agentConfig.name, work.depth + 1, ctx)
-          .catch((err) => ctx.logger.error({ err, agent: agentConfig.name }, "queued trigger failed"));
+          .then(({ result, returnValue }) => {
+            if (work.callId) {
+              if (result === "completed" || result === "rerun") {
+                ctx.callStore?.complete(work.callId, returnValue);
+              } else {
+                ctx.callStore?.fail(work.callId, "agent run failed");
+              }
+            }
+          })
+          .catch((err) => {
+            if (work.callId) ctx.callStore?.fail(work.callId, err?.message || "unknown error");
+            ctx.logger.error({ err, agent: agentConfig.name }, "queued trigger failed");
+          });
       }
     }));
   }

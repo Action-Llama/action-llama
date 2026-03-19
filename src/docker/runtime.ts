@@ -131,10 +131,4 @@ export interface ContainerRuntime {
 
   /** Return a URL for this task/execution, or null. */
   getTaskUrl(containerName: string): string | null;
-
-  /** Start a gateway proxy container for local runtimes. */
-  startGatewayProxy?(gatewayPort: number): Promise<void>;
-
-  /** Stop the gateway proxy container for local runtimes. */
-  stopGatewayProxy?(): Promise<void>;
 }

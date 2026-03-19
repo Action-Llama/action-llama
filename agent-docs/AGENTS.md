@@ -527,13 +527,17 @@ All gateway-calling shell commands (`rlock`, `runlock`, `rlock-heartbeat`, `al-c
 | 1 | Conflict | 409 | Resource held by another, dispatch rejected |
 | 2 | Not found | 404 | Resource or call doesn't exist |
 | 3 | Auth error | 403 | Invalid or expired secret |
-| 4 | Bad request | 400 | Missing arguments, usage error |
+| 4 | Bad request | 400 | Server rejected the request (malformed payload) |
 | 5 | Unavailable | 503 | Service not ready, no gateway configured |
 | 6 | Unreachable | — | Gateway connection failed |
 | 7 | Unexpected | other | Unknown HTTP status |
 | 8 | Timeout | — | `al-wait` only: polling deadline exceeded |
+| 9 | Usage error | — | Missing argument (local check, never hits network) |
+| 10 | Bad gateway | 502 | Proxy could not reach the gateway |
+| 11 | Gateway timeout | 504 | Proxy timed out reaching the gateway |
+| 12 | Server error | 500 | Internal gateway error |
 
-These codes (0–8) don't overlap with agent exit codes (10–16 in `al-exit`) or POSIX signal codes (128+).
+These codes (0–12) don't overlap with agent exit codes (10–16 in `al-exit`) or POSIX signal codes (128+).
 
 **Lock commands** (`rlock`, `runlock`, `rlock-heartbeat`) exit 0 with `{"ok":true}` when `GATEWAY_URL` is unset (graceful degradation for local/non-containerized runs).
 

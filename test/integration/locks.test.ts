@@ -18,26 +18,34 @@ describe.skipIf(!DOCKER)("integration: resource locking", { timeout: 180_000 }, 
           schedule: "0 0 31 2 *",
           testScript: [
             "#!/bin/sh",
-            "set -e",
-            // Acquire lock
+            // Acquire lock — verify exit 0 + ok=true
+            "set +e",
             'ACQUIRE=$(rlock "my-resource")',
-            'echo "acquire result: $ACQUIRE"',
+            "RC=$?",
+            "set -e",
+            'test "$RC" -eq 0 || { echo "rlock exit=$RC: $ACQUIRE"; exit 1; }',
             'OK=$(echo "$ACQUIRE" | jq -r .ok)',
-            'test "$OK" = "true" || { echo "failed to acquire lock"; exit 1; }',
+            'test "$OK" = "true" || { echo "rlock ok=$OK: $ACQUIRE"; exit 1; }',
             "",
-            // Heartbeat (extend TTL)
+            // Heartbeat — verify exit 0 + ok=true + expiresAt present
+            "set +e",
             'HEARTBEAT=$(rlock-heartbeat "my-resource")',
-            'echo "heartbeat result: $HEARTBEAT"',
+            "RC=$?",
+            "set -e",
+            'test "$RC" -eq 0 || { echo "rlock-heartbeat exit=$RC: $HEARTBEAT"; exit 1; }',
             'OK=$(echo "$HEARTBEAT" | jq -r .ok)',
-            'test "$OK" = "true" || { echo "failed to heartbeat lock"; exit 1; }',
+            'test "$OK" = "true" || { echo "rlock-heartbeat ok=$OK: $HEARTBEAT"; exit 1; }',
+            'EXPIRES=$(echo "$HEARTBEAT" | jq -r .expiresAt)',
+            'test -n "$EXPIRES" && test "$EXPIRES" != "null" || { echo "no expiresAt: $HEARTBEAT"; exit 1; }',
             "",
-            // Release lock
+            // Release — verify exit 0 + ok=true
+            "set +e",
             'RELEASE=$(runlock "my-resource")',
-            'echo "release result: $RELEASE"',
+            "RC=$?",
+            "set -e",
+            'test "$RC" -eq 0 || { echo "runlock exit=$RC: $RELEASE"; exit 1; }',
             'OK=$(echo "$RELEASE" | jq -r .ok)',
-            'test "$OK" = "true" || { echo "failed to release lock"; exit 1; }',
-            "",
-            'echo "lock lifecycle complete"',
+            'test "$OK" = "true" || { echo "runlock ok=$OK: $RELEASE"; exit 1; }',
             "exit 0",
           ].join("\n"),
         },
@@ -45,8 +53,20 @@ describe.skipIf(!DOCKER)("integration: resource locking", { timeout: 180_000 }, 
     });
 
     await harness.start();
-    await harness.waitForAgentRun("lock-agent");
-    expect(harness.getRunnerPool("lock-agent")?.hasRunningJobs).toBe(false);
+
+    // Collect lock events to verify the full lifecycle
+    const lockCollector = harness.events.collect("lock");
+
+    const run = await harness.waitForRunResult("lock-agent");
+    expect(run.result).toBe("completed");
+
+    const lockEvents = lockCollector.stop();
+    const acquire = lockEvents.find((e) => e.action === "acquire" && e.ok);
+    const heartbeat = lockEvents.find((e) => e.action === "heartbeat" && e.ok);
+    const release = lockEvents.find((e) => e.action === "release" && e.ok);
+    expect(acquire).toBeTruthy();
+    expect(heartbeat).toBeTruthy();
+    expect(release).toBeTruthy();
   });
 
   it("lock contention: second agent sees conflict when first holds lock", async () => {
@@ -60,10 +80,22 @@ describe.skipIf(!DOCKER)("integration: resource locking", { timeout: 180_000 }, 
           schedule: "0 0 31 2 *",
           testScript: [
             "#!/bin/sh",
-            // Acquire and hold lock for a few seconds
-            'rlock "contested-resource"',
+            // Acquire lock — verify exit 0 + ok=true
+            "set +e",
+            'ACQUIRE=$(rlock "contested-resource")',
+            "RC=$?",
+            "set -e",
+            'test "$RC" -eq 0 || { echo "rlock exit=$RC: $ACQUIRE"; exit 1; }',
+            'OK=$(echo "$ACQUIRE" | jq -r .ok)',
+            'test "$OK" = "true" || { echo "rlock ok=$OK: $ACQUIRE"; exit 1; }',
+            // Hold for a few seconds
             "sleep 5",
-            'runlock "contested-resource"',
+            // Release — verify exit 0
+            "set +e",
+            'RELEASE=$(runlock "contested-resource")',
+            "RC=$?",
+            "set -e",
+            'test "$RC" -eq 0 || { echo "runlock exit=$RC: $RELEASE"; exit 1; }',
             "exit 0",
           ].join("\n"),
         },
@@ -74,11 +106,23 @@ describe.skipIf(!DOCKER)("integration: resource locking", { timeout: 180_000 }, 
             "#!/bin/sh",
             // Wait a moment for holder to grab lock first
             "sleep 2",
-            // Try to acquire — may get conflict, that's OK
+            // Try to acquire — expect exit 1 (conflict) or exit 0 (race win)
+            "set +e",
             'RESULT=$(rlock "contested-resource")',
-            'echo "lock attempt: $RESULT"',
-            // Whether we got it or not, clean up
-            'runlock "contested-resource" 2>/dev/null || true',
+            "RC=$?",
+            "set -e",
+            'if [ "$RC" -eq 1 ]; then',
+            "  # Conflict — verify ok=false + holder field",
+            '  OK=$(echo "$RESULT" | jq -r .ok)',
+            '  test "$OK" = "false" || { echo "conflict but ok=$OK: $RESULT"; exit 1; }',
+            '  HOLDER=$(echo "$RESULT" | jq -r .holder)',
+            '  test -n "$HOLDER" && test "$HOLDER" != "null" || { echo "no holder: $RESULT"; exit 1; }',
+            'elif [ "$RC" -eq 0 ]; then',
+            "  # Won the race — release and exit",
+            '  runlock "contested-resource" || true',
+            "else",
+            '  echo "unexpected rlock exit=$RC: $RESULT"; exit 1',
+            "fi",
             "exit 0",
           ].join("\n"),
         },
@@ -86,10 +130,23 @@ describe.skipIf(!DOCKER)("integration: resource locking", { timeout: 180_000 }, 
     });
 
     await harness.start();
-    await harness.waitForAgentRun("lock-holder");
-    await harness.waitForAgentRun("lock-waiter");
-    expect(harness.getRunnerPool("lock-holder")?.hasRunningJobs).toBe(false);
-    expect(harness.getRunnerPool("lock-waiter")?.hasRunningJobs).toBe(false);
+
+    // Collect lock events to verify contention
+    const lockCollector = harness.events.collect("lock");
+
+    const [holderRun, waiterRun] = await Promise.all([
+      harness.waitForRunResult("lock-holder"),
+      harness.waitForRunResult("lock-waiter"),
+    ]);
+    expect(holderRun.result).toBe("completed");
+    expect(waiterRun.result).toBe("completed");
+
+    const lockEvents = lockCollector.stop();
+    // The holder should have acquired the lock
+    const holderAcquire = lockEvents.find(
+      (e) => e.agentName === "lock-holder" && e.action === "acquire" && e.ok,
+    );
+    expect(holderAcquire).toBeTruthy();
   });
 
   it("locks are released on container cleanup (no leaked locks)", async () => {
@@ -100,9 +157,15 @@ describe.skipIf(!DOCKER)("integration: resource locking", { timeout: 180_000 }, 
           schedule: "0 0 31 2 *",
           testScript: [
             "#!/bin/sh",
-            // Acquire lock but exit without releasing — container cleanup should release it
-            'rlock "leaked-resource"',
-            'echo "exiting without releasing lock"',
+            // Acquire lock — verify exit 0
+            "set +e",
+            'RESULT=$(rlock "leaked-resource")',
+            "RC=$?",
+            "set -e",
+            'test "$RC" -eq 0 || { echo "rlock exit=$RC: $RESULT"; exit 1; }',
+            'OK=$(echo "$RESULT" | jq -r .ok)',
+            'test "$OK" = "true" || { echo "rlock ok=$OK: $RESULT"; exit 1; }',
+            // Exit without releasing — container cleanup should release it
             "exit 0",
           ].join("\n"),
         },
@@ -110,7 +173,16 @@ describe.skipIf(!DOCKER)("integration: resource locking", { timeout: 180_000 }, 
     });
 
     await harness.start();
-    await harness.waitForAgentRun("leaky-locker");
+
+    // Wait for the run to complete via event bus
+    const run = await harness.events.waitFor(
+      "run:end",
+      (e) => e.agentName === "leaky-locker",
+      60_000,
+    );
+    expect(run.result).toBe("completed");
+
+    // Give the container cleanup a moment to release locks
     await harness.waitForSettle(2000);
 
     // Check lock status — should be empty since container cleanup releases locks

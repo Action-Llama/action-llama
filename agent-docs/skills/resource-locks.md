@@ -19,7 +19,7 @@ rlock "github issue acme/app#42"
 - Conflict: `{"ok":false,"holder":"<other-agent>","heldSince":...}` (exit 1) — another instance has it. Skip this resource.
 - Already holding another lock: `{"ok":false,"reason":"already holding lock on ..."}` (exit 1) — release your current lock first.
 
-**Exit codes:** 0=acquired, 1=conflict, 3=auth error, 4=missing arg, 6=unreachable, 7=unexpected — see [exit code table](../AGENTS.md#shell-command-exit-codes)
+**Exit codes:** 0=acquired, 1=conflict, 3=auth error, 9=missing arg, 6=unreachable, 7=unexpected — see [exit code table](../AGENTS.md#shell-command-exit-codes)
 
 ### `runlock <resourceKey>`
 
@@ -31,7 +31,7 @@ runlock "github issue acme/app#42"
 
 **Response:** `{"ok":true}` (exit 0)
 
-**Exit codes:** 0=released, 1=conflict (held by another), 2=not found, 3=auth error, 4=missing arg, 6=unreachable, 7=unexpected — see [exit code table](../AGENTS.md#shell-command-exit-codes)
+**Exit codes:** 0=released, 1=conflict (held by another), 2=not found, 3=auth error, 9=missing arg, 6=unreachable, 7=unexpected — see [exit code table](../AGENTS.md#shell-command-exit-codes)
 
 ### `rlock-heartbeat <resourceKey>`
 
@@ -43,7 +43,7 @@ rlock-heartbeat "github issue acme/app#42"
 
 **Response:** `{"ok":true,"expiresAt":...}` (exit 0)
 
-**Exit codes:** 0=extended, 1=conflict (held by another), 2=not found, 3=auth error, 4=missing arg, 6=unreachable, 7=unexpected — see [exit code table](../AGENTS.md#shell-command-exit-codes)
+**Exit codes:** 0=extended, 1=conflict (held by another), 2=not found, 3=auth error, 9=missing arg, 6=unreachable, 7=unexpected — see [exit code table](../AGENTS.md#shell-command-exit-codes)
 
 ## Resource key conventions
 

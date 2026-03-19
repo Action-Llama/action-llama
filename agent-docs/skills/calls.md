@@ -14,7 +14,7 @@ echo "Review PR #42 on acme/app" | al-call reviewer
 
 **Response:** `{"ok":true,"callId":"<uuid>"}`
 
-**Exit codes:** 0=dispatched, 1=rejected, 3=auth error, 4=missing arg, 5=no gateway, 6=unreachable, 7=unexpected — see [exit code table](#exit-codes)
+**Exit codes:** 0=dispatched, 1=rejected, 3=auth error, 9=missing arg, 5=no gateway, 6=unreachable, 7=unexpected — see [exit code table](#exit-codes)
 
 ### `al-check <callId>`
 
@@ -26,7 +26,7 @@ al-check "abc-123"
 
 **Response:** `{"status":"pending|running|completed|error","returnValue":"...","errorMessage":"..."}`
 
-**Exit codes:** 0=found, 2=not found, 3=auth error, 4=missing arg, 5=no gateway, 6=unreachable, 7=unexpected — see [exit code table](#exit-codes)
+**Exit codes:** 0=found, 2=not found, 3=auth error, 9=missing arg, 5=no gateway, 6=unreachable, 7=unexpected — see [exit code table](#exit-codes)
 
 ### `al-wait <callId> [...] [--timeout N]`
 
@@ -38,7 +38,7 @@ al-wait "abc-123" "def-456" --timeout 300
 
 **Response:** JSON object keyed by callId, each value is the call status object.
 
-**Exit codes:** 0=all complete, 4=missing arg, 5=no gateway, 8=timeout — see [exit code table](#exit-codes)
+**Exit codes:** 0=all complete, 9=missing arg, 5=no gateway, 8=timeout — see [exit code table](#exit-codes)
 
 ## Patterns
 

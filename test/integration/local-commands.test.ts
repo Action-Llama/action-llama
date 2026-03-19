@@ -2,8 +2,7 @@
  * Integration test: verify that all agent commands (rlock, al-call, etc.)
  * work inside Docker containers when running `al start` locally.
  *
- * This tests the gateway proxy path — containers POST to http://gateway:8080
- * on the Docker network, which proxies to the host gateway.
+ * Containers reach the host gateway via --add-host gateway:host-gateway.
  */
 
 import { describe, it, expect, afterEach } from "vitest";
@@ -11,7 +10,7 @@ import { IntegrationHarness, isDockerAvailable } from "./harness.js";
 
 const DOCKER = isDockerAvailable();
 
-describe.skipIf(!DOCKER)("integration: local commands via gateway proxy", { timeout: 180_000 }, () => {
+describe.skipIf(!DOCKER)("integration: local commands via gateway", { timeout: 180_000 }, () => {
   let harness: IntegrationHarness;
 
   afterEach(async () => {
@@ -26,21 +25,35 @@ describe.skipIf(!DOCKER)("integration: local commands via gateway proxy", { time
           schedule: "0 0 31 2 *",
           testScript: [
             "#!/bin/sh",
-            "set -e",
             // Verify rlock is on PATH
             'which rlock || { echo "rlock not found on PATH"; exit 1; }',
-            // Acquire
+            "",
+            // Acquire — verify exit 0 + ok=true
+            "set +e",
             'ACQUIRE=$(rlock "cmd-test-resource")',
-            'echo "acquire: $ACQUIRE"',
-            'echo "$ACQUIRE" | jq -e .ok || exit 1',
-            // Heartbeat
+            "RC=$?",
+            "set -e",
+            'test "$RC" -eq 0 || { echo "rlock exit=$RC: $ACQUIRE"; exit 1; }',
+            'OK=$(echo "$ACQUIRE" | jq -r .ok)',
+            'test "$OK" = "true" || { echo "rlock ok=$OK: $ACQUIRE"; exit 1; }',
+            "",
+            // Heartbeat — verify exit 0 + ok=true
+            "set +e",
             'HEARTBEAT=$(rlock-heartbeat "cmd-test-resource")',
-            'echo "heartbeat: $HEARTBEAT"',
-            'echo "$HEARTBEAT" | jq -e .ok || exit 1',
-            // Release
+            "RC=$?",
+            "set -e",
+            'test "$RC" -eq 0 || { echo "rlock-heartbeat exit=$RC: $HEARTBEAT"; exit 1; }',
+            'OK=$(echo "$HEARTBEAT" | jq -r .ok)',
+            'test "$OK" = "true" || { echo "rlock-heartbeat ok=$OK: $HEARTBEAT"; exit 1; }',
+            "",
+            // Release — verify exit 0 + ok=true
+            "set +e",
             'RELEASE=$(runlock "cmd-test-resource")',
-            'echo "release: $RELEASE"',
-            'echo "$RELEASE" | jq -e .ok || exit 1',
+            "RC=$?",
+            "set -e",
+            'test "$RC" -eq 0 || { echo "runlock exit=$RC: $RELEASE"; exit 1; }',
+            'OK=$(echo "$RELEASE" | jq -r .ok)',
+            'test "$OK" = "true" || { echo "runlock ok=$OK: $RELEASE"; exit 1; }',
             "exit 0",
           ].join("\n"),
         },
@@ -48,8 +61,20 @@ describe.skipIf(!DOCKER)("integration: local commands via gateway proxy", { time
     });
 
     await harness.start();
-    await harness.waitForAgentRun("cmd-lock");
-    expect(harness.getRunnerPool("cmd-lock")?.hasRunningJobs).toBe(false);
+
+    // Collect lock events to verify the full lifecycle
+    const lockCollector = harness.events.collect("lock");
+
+    const run = await harness.waitForRunResult("cmd-lock");
+    expect(run.result).toBe("completed");
+
+    const lockEvents = lockCollector.stop();
+    const acquire = lockEvents.find((e) => e.action === "acquire" && e.ok);
+    const heartbeat = lockEvents.find((e) => e.action === "heartbeat" && e.ok);
+    const release = lockEvents.find((e) => e.action === "release" && e.ok);
+    expect(acquire).toBeTruthy();
+    expect(heartbeat).toBeTruthy();
+    expect(release).toBeTruthy();
   });
 
   it("al-rerun command works inside a container", async () => {
@@ -65,7 +90,14 @@ describe.skipIf(!DOCKER)("integration: local commands via gateway proxy", { time
             'MARKER="/tmp/cmd-rerun-ran"',
             'if [ ! -f "$MARKER" ]; then',
             '  touch "$MARKER"',
-            "  al-rerun",
+            // al-rerun — verify exit 0 + ok=true
+            "  set +e",
+            '  RESULT=$(al-rerun)',
+            "  RC=$?",
+            "  set -e",
+            '  test "$RC" -eq 0 || { echo "al-rerun exit=$RC: $RESULT"; exit 1; }',
+            '  OK=$(echo "$RESULT" | jq -r .ok)',
+            '  test "$OK" = "true" || { echo "al-rerun ok=$OK: $RESULT"; exit 1; }',
             "  exit 42",
             "fi",
             'echo "second run after al-rerun"',
@@ -78,10 +110,13 @@ describe.skipIf(!DOCKER)("integration: local commands via gateway proxy", { time
     });
 
     await harness.start();
-    await harness.waitForAgentRun("cmd-rerun");
-    await harness.waitForSettle(10000);
-    await harness.waitForAgentRun("cmd-rerun");
-    expect(harness.getRunnerPool("cmd-rerun")?.hasRunningJobs).toBe(false);
+
+    // First run calls al-rerun then exits 42
+    const firstRun = await harness.waitForRunResult("cmd-rerun");
+    expect(firstRun.result).toBe("rerun");
+
+    // At least one rerun was triggered
+    await harness.waitForRunResult("cmd-rerun");
   });
 
   it("al-status command works inside a container", async () => {
@@ -94,9 +129,14 @@ describe.skipIf(!DOCKER)("integration: local commands via gateway proxy", { time
             "#!/bin/sh",
             "export AL_SIGNAL_DIR=/tmp/signals",
             "mkdir -p $AL_SIGNAL_DIR",
+            // al-status — verify exit 0 + ok=true
+            "set +e",
             'RESULT=$(al-status "processing step 1")',
-            'echo "al-status result: $RESULT"',
-            'echo "$RESULT" | jq -e .ok || exit 1',
+            "RC=$?",
+            "set -e",
+            'test "$RC" -eq 0 || { echo "al-status exit=$RC: $RESULT"; exit 1; }',
+            'OK=$(echo "$RESULT" | jq -r .ok)',
+            'test "$OK" = "true" || { echo "al-status ok=$OK: $RESULT"; exit 1; }',
             "exit 0",
           ].join("\n"),
         },
@@ -104,8 +144,8 @@ describe.skipIf(!DOCKER)("integration: local commands via gateway proxy", { time
     });
 
     await harness.start();
-    await harness.waitForAgentRun("cmd-status");
-    expect(harness.getRunnerPool("cmd-status")?.hasRunningJobs).toBe(false);
+    const run = await harness.waitForRunResult("cmd-status");
+    expect(run.result).toBe("completed");
   });
 
   it("al-shutdown command exits cleanly inside a container", async () => {
@@ -116,8 +156,12 @@ describe.skipIf(!DOCKER)("integration: local commands via gateway proxy", { time
           schedule: "0 0 31 2 *",
           testScript: [
             "#!/bin/sh",
-            // al-shutdown should not error (it posts to gateway, result is ignored)
-            "al-shutdown 'test shutdown' || true",
+            // al-shutdown posts to gateway — verify it exits 0
+            "set +e",
+            "al-shutdown 'test shutdown'",
+            "RC=$?",
+            "set -e",
+            'test "$RC" -eq 0 || { echo "al-shutdown exit=$RC"; exit 1; }',
             "exit 0",
           ].join("\n"),
         },
@@ -125,7 +169,7 @@ describe.skipIf(!DOCKER)("integration: local commands via gateway proxy", { time
     });
 
     await harness.start();
-    await harness.waitForAgentRun("cmd-shutdown");
-    expect(harness.getRunnerPool("cmd-shutdown")?.hasRunningJobs).toBe(false);
+    const run = await harness.waitForRunResult("cmd-shutdown");
+    expect(run.result).toBe("completed");
   });
 });

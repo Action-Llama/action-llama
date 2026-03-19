@@ -213,6 +213,20 @@ export async function handleInvocation(init: AgentInit): Promise<number> {
   }, timeoutSeconds * 1000);
   timer.unref();
 
+  // Wait for the gateway proxy to become reachable before proceeding.
+  // On Docker Desktop the proxy container may need a moment to establish
+  // connectivity back to the host gateway (502 Bad Gateway until ready).
+  if (gatewayUrl) {
+    const maxAttempts = 30;
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        const res = await fetch(`${gatewayUrl}/health`, { signal: AbortSignal.timeout(2000) });
+        if (res.ok) break;
+      } catch { /* connection refused or timeout — retry */ }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+
   // Load credentials from mounted volume or env vars (ECS/Lambda/Cloud Run).
   if (hasLocalCredentials()) {
     loadCredentialsFromVolume();

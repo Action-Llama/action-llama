@@ -32,7 +32,8 @@ describe.skipIf(!DOCKER)("integration: webhooks", { timeout: 180_000 }, () => {
     });
 
     await harness.start();
-    await harness.waitForSettle(5000);
+    // Allow time for image build and webhook source registration
+    await harness.waitForSettle(3000);
 
     const res = await harness.sendWebhook({
       source: "test",
@@ -47,8 +48,9 @@ describe.skipIf(!DOCKER)("integration: webhooks", { timeout: 180_000 }, () => {
     const body = await res.json();
     expect(body.matched).toBeGreaterThanOrEqual(1);
 
-    await harness.waitForAgentRun("webhook-agent");
-    expect(harness.getRunnerPool("webhook-agent")?.hasRunningJobs).toBe(false);
+    // Wait for the webhook-triggered run via event bus
+    const run = await harness.waitForRunResult("webhook-agent");
+    expect(run.result).toBe("completed");
   });
 
   it("filters webhooks — non-matching events are skipped", async () => {
@@ -66,7 +68,8 @@ describe.skipIf(!DOCKER)("integration: webhooks", { timeout: 180_000 }, () => {
     });
 
     await harness.start();
-    await harness.waitForSettle(5000);
+    // Allow time for image build and webhook source registration
+    await harness.waitForSettle(3000);
 
     // Non-matching event → matched=0
     const res1 = await harness.sendWebhook({
@@ -95,7 +98,14 @@ describe.skipIf(!DOCKER)("integration: webhooks", { timeout: 180_000 }, () => {
           webhooks: [{ source: "test-hook" }],
           testScript: [
             "#!/bin/sh",
-            'echo "triggering responder" | al-call responder',
+            // al-call — verify exit 0 + ok=true
+            "set +e",
+            'RESULT=$(echo "triggering responder" | al-call responder)',
+            "RC=$?",
+            "set -e",
+            'test "$RC" -eq 0 || { echo "al-call exit=$RC: $RESULT"; exit 1; }',
+            'OK=$(echo "$RESULT" | jq -r .ok)',
+            'test "$OK" = "true" || { echo "al-call ok=$OK: $RESULT"; exit 1; }',
             "exit 0",
           ].join("\n"),
         },
@@ -115,9 +125,9 @@ describe.skipIf(!DOCKER)("integration: webhooks", { timeout: 180_000 }, () => {
     });
 
     await harness.start();
+
     // Wait for responder's initial cron run
-    await harness.waitForAgentRun("responder");
-    await harness.waitForSettle(3000);
+    await harness.waitForRunResult("responder");
 
     // Fire webhook
     await harness.sendWebhook({
@@ -126,9 +136,12 @@ describe.skipIf(!DOCKER)("integration: webhooks", { timeout: 180_000 }, () => {
       sender: "tester",
     });
 
-    await harness.waitForAgentRun("webhook-caller");
-    await harness.waitForSettle(10000);
-    // responder should have been triggered by webhook-caller
-    expect(harness.getRunnerPool("webhook-caller")?.hasRunningJobs).toBe(false);
+    // Wait for webhook-caller's run (triggered by webhook)
+    const callerRun = await harness.waitForRunResult("webhook-caller");
+    expect(callerRun.result).toBe("completed");
+
+    // Wait for responder's triggered run (triggered by webhook-caller via al-call)
+    const responderRun = await harness.waitForRunResult("responder");
+    expect(responderRun.result).toBe("completed");
   });
 });

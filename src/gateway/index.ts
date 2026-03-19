@@ -19,6 +19,7 @@ import type { ControlRoutesDeps } from "./routes/control.js";
 import { withSpan, getTelemetry } from "../telemetry/index.js";
 import { SpanKind } from "@opentelemetry/api";
 import { authMiddleware } from "./auth.js";
+import type { SchedulerEventBus } from "../scheduler/events.js";
 
 export type { ContainerRegistration } from "./types.js";
 
@@ -37,6 +38,8 @@ export interface GatewayOptions {
   controlDeps?: ControlRoutesDeps;
   apiKey?: string;
   stateStore?: StateStore;
+  /** Optional event bus for lifecycle instrumentation. */
+  events?: SchedulerEventBus;
 }
 
 export interface GatewayServer {
@@ -94,6 +97,26 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     });
   }
 
+  // Request/response logging middleware for command routes.
+  // Skips /health to avoid noise; logs method, path, status, and duration.
+  app.use("*", async (c, next) => {
+    if (c.req.path === "/health") {
+      await next();
+      return;
+    }
+    const start = Date.now();
+    logger.debug({ method: c.req.method, path: c.req.path }, "request received");
+    await next();
+    const duration = Date.now() - start;
+    const status = c.res.status;
+    const logData = { method: c.req.method, path: c.req.path, status, duration };
+    if (status >= 400) {
+      logger.warn(logData, "request completed with error");
+    } else {
+      logger.debug(logData, "request completed");
+    }
+  });
+
   // Health check
   app.get("/health", (c) => c.json({ status: "ok" }));
 
@@ -113,11 +136,11 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     registerLoginRoutes(app, opts.apiKey);
   }
 
-  registerLockRoutes(app, containerRegistry, lockStore, logger);
-  registerCallRoutes(app, containerRegistry, callStore, () => callDispatcher, logger);
+  registerLockRoutes(app, containerRegistry, lockStore, logger, { events: opts.events });
+  registerCallRoutes(app, containerRegistry, callStore, () => callDispatcher, logger, opts.events);
 
   // Signal routes
-  registerSignalRoutes(app, containerRegistry, logger, statusTracker, signalContext);
+  registerSignalRoutes(app, containerRegistry, logger, statusTracker, signalContext, opts.events);
 
   // Webhook routes
   if (webhookRegistry) {

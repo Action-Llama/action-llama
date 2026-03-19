@@ -22,8 +22,10 @@ import {
   makeWebhookPrompt, makeTriggeredPrompt,
   type WorkItem, type SchedulerContext,
 } from "./execution.js";
+import { SchedulerEventBus } from "./events.js";
 
 export type { SchedulerContext, WorkItem } from "./execution.js";
+export { SchedulerEventBus } from "./events.js";
 
 export async function startScheduler(projectPath: string, globalConfigOverride?: GlobalConfig, statusTracker?: StatusTracker, webUI?: boolean, expose?: boolean) {
   const mkLogger = statusTracker ? createFileOnlyLogger : createLogger;
@@ -123,6 +125,9 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     logger.info("State store: SQLite (.al/state.db)");
   }
 
+  // Create the lifecycle event bus (no-op in production when no listeners are attached)
+  const events = new SchedulerEventBus();
+
   // Start gateway early (before Docker builds) so users can see build status
   let gateway: GatewayServer | undefined;
 
@@ -147,8 +152,10 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     lockTimeout: globalConfig.gateway?.lockTimeout,
     apiKey: gatewayApiKey,
     stateStore,
+    events,
     controlDeps: {
       statusTracker,
+      logger,
       killInstance: async (instanceId: string) => {
         for (const pool of Object.values(runnerPools)) {
           if (pool.killInstance(instanceId)) return true;
@@ -225,13 +232,6 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   );
   logger.info({ runtime: "local" }, "Container mode enabled — initializing infrastructure");
 
-  // Start gateway proxy container so containers can reach the host gateway
-  // via http://gateway:8080 on the Docker network.
-  if (runtime.startGatewayProxy) {
-    logger.info({ port: gatewayPort }, "Starting gateway proxy container");
-    await runtime.startGatewayProxy(gatewayPort);
-  }
-
   // Check for orphan containers from a previous scheduler run.
   // Only clean up containers belonging to agents in this project to avoid
   // killing containers from other schedulers running in parallel (e.g. tests).
@@ -262,7 +262,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // Import necessary classes for container runners
   const { ContainerAgentRunner: ContainerAgentRunnerClass } = await import("../agents/container-runner.js");
-  const gatewayUrl = process.env.GATEWAY_URL || `http://gateway:8080`;
+  const gatewayUrl = process.env.GATEWAY_URL || `http://gateway:${gatewayPort}`;
 
   // Gateway callbacks — async (ContainerRegistry persists to StateStore).
   const registerContainer = gateway
@@ -340,7 +340,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   const workQueue = new WorkQueue<WorkItem>(queueSize, stateStore);
   await workQueue.init();
   const skills: PromptSkills = { locking: true };
-  const schedulerCtx: SchedulerContext = { runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, workQueue, shuttingDown: false, skills, useBakedImages: true };
+  const callStore = gateway?.callStore;
+  const schedulerCtx: SchedulerContext = { runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, workQueue, shuttingDown: false, skills, useBakedImages: true, events, callStore };
 
   // Wire up the call dispatcher so al-call works from inside containers
   if (gateway) {
@@ -363,16 +364,28 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       const runner = pool.getAvailableRunner();
       if (runner) {
         logger.info({ caller: entry.callerAgent, target: entry.targetAgent, depth: entry.depth }, "dispatching call");
+        callStore?.setRunning(entry.callId);
         const prompt = makeTriggeredPrompt(targetConfig, entry.callerAgent, entry.context, schedulerCtx);
         executeRun(runner, prompt, { type: 'agent', source: entry.callerAgent }, entry.targetAgent, entry.depth + 1, schedulerCtx)
-          .then(() => drainQueues(schedulerCtx))
-          .catch((err) => logger.error({ err, target: entry.targetAgent }, "called agent run failed"));
+          .then(({ result, returnValue }) => {
+            if (result === "completed" || result === "rerun") {
+              callStore?.complete(entry.callId, returnValue);
+            } else {
+              callStore?.fail(entry.callId, "agent run failed");
+            }
+            return drainQueues(schedulerCtx);
+          })
+          .catch((err) => {
+            callStore?.fail(entry.callId, err?.message || "unknown error");
+            logger.error({ err, target: entry.targetAgent }, "called agent run failed");
+          });
       } else {
         schedulerCtx.workQueue.enqueue(entry.targetAgent, {
           type: 'agent-trigger',
           sourceAgent: entry.callerAgent,
           context: entry.context,
           depth: entry.depth,
+          callId: entry.callId,
         });
         logger.info({ caller: entry.callerAgent, target: entry.targetAgent }, "all runners busy, call queued");
       }
@@ -568,11 +581,6 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       await gateway.close();
       logger.info("Gateway server stopped");
     }
-    // Stop gateway proxy container
-    if (runtime?.stopGatewayProxy) {
-      await runtime.stopGatewayProxy();
-      logger.info("Gateway proxy container stopped");
-    }
     if (stateStore) {
       await stateStore.close();
     }
@@ -594,5 +602,5 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  return { cronJobs, runnerPools, gateway, webhookRegistry, webhookUrls, statusTracker };
+  return { cronJobs, runnerPools, gateway, webhookRegistry, webhookUrls, statusTracker, schedulerCtx, events };
 }

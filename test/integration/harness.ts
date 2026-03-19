@@ -15,6 +15,8 @@ import type { GlobalConfig, AgentConfig } from "../../src/shared/config.js";
 import type { WebhookContext } from "../../src/webhooks/types.js";
 import { setDefaultBackend, resetDefaultBackend } from "../../src/shared/credentials.js";
 import { FilesystemBackend } from "../../src/shared/filesystem-backend.js";
+import type { RunCompleteEvent } from "../../src/scheduler/execution.js";
+import type { SchedulerEventBus, SchedulerEventMap } from "../../src/scheduler/events.js";
 import { makeAgentConfig, makeModel } from "../helpers.js";
 
 export interface HarnessAgent {
@@ -79,6 +81,14 @@ export class IntegrationHarness {
 
   private _scheduler: Awaited<ReturnType<typeof import("../../src/scheduler/index.js").startScheduler>> | null = null;
   readonly apiKey: string;
+
+  /** The event bus from the scheduler — exposed so tests can subscribe. */
+  private _events: SchedulerEventBus | null = null;
+
+  /** Collected run completion events, keyed by agent name. */
+  private _runResults: Map<string, RunCompleteEvent[]> = new Map();
+  /** Listeners waiting for a specific agent's run to complete. */
+  private _runWaiters: Map<string, Array<(event: RunCompleteEvent) => void>> = new Map();
 
   private constructor(projectPath: string, gatewayPort: number, credentialDir: string, apiKey: string) {
     this.projectPath = projectPath;
@@ -186,8 +196,31 @@ export class IntegrationHarness {
       loadedConfig,
       undefined, // no status tracker
       false,     // no web UI
-      false,     // no expose
+      true,      // expose — bind to 0.0.0.0 so Docker containers can reach gateway via host-gateway
     );
+
+    // Wire up run completion instrumentation via the event bus
+    this._events = this._scheduler.events;
+    if (this._events) {
+      this._events.on("run:end", (event) => {
+        const runComplete: RunCompleteEvent = {
+          agentName: event.agentName,
+          result: event.result,
+          triggerType: "unknown",
+        };
+        const list = this._runResults.get(event.agentName) || [];
+        list.push(runComplete);
+        this._runResults.set(event.agentName, list);
+
+        // Notify any waiters
+        const waiters = this._runWaiters.get(event.agentName);
+        if (waiters) {
+          const waiter = waiters.shift();
+          if (waiter) waiter(runComplete);
+          if (waiters.length === 0) this._runWaiters.delete(event.agentName);
+        }
+      });
+    }
   }
 
   /**
@@ -262,6 +295,48 @@ export class IntegrationHarness {
   }
 
   /**
+   * Wait for a specific agent's run to complete and return the result.
+   * If the agent already completed, returns the next unconsumed result.
+   */
+  async waitForRunResult(agentName: string, timeoutMs = 120_000): Promise<RunCompleteEvent> {
+    // Check if we already have an unconsumed result
+    const existing = this._runResults.get(agentName);
+    if (existing && existing.length > 0) {
+      return existing.shift()!;
+    }
+
+    // Wait for the next result
+    return new Promise<RunCompleteEvent>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`Agent "${agentName}" did not complete within ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      const waiters = this._runWaiters.get(agentName) || [];
+      waiters.push((event) => {
+        clearTimeout(timer);
+        resolve(event);
+      });
+      this._runWaiters.set(agentName, waiters);
+    });
+  }
+
+  /**
+   * Get all collected run results for an agent (non-destructive).
+   */
+  getRunResults(agentName: string): readonly RunCompleteEvent[] {
+    return this._runResults.get(agentName) || [];
+  }
+
+  /**
+   * Get the scheduler event bus for lifecycle instrumentation.
+   * Use `waitFor()` and `collect()` to observe events without polling.
+   */
+  get events(): SchedulerEventBus {
+    if (!this._events) throw new Error("Harness not started — call start() first");
+    return this._events;
+  }
+
+  /**
    * Get the webhook registry.
    */
   get webhookRegistry() {
@@ -296,6 +371,11 @@ export class IntegrationHarness {
         await this._scheduler.gateway.close();
       }
       this._scheduler = null;
+    }
+
+    if (this._events) {
+      this._events.removeAllListeners();
+      this._events = null;
     }
 
     // Reset credential backend

@@ -34,7 +34,7 @@ describe.skipIf(!DOCKER)("integration: agent files accessible in container", { t
     });
 
     await harness.start();
-    await harness.waitForAgentRun("file-reader");
-    expect(harness.getRunnerPool("file-reader")?.hasRunningJobs).toBe(false);
+    const run = await harness.waitForRunResult("file-reader");
+    expect(run.result).toBe("completed");
   });
 });

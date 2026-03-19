@@ -41,9 +41,9 @@ describe.skipIf(!DOCKER)("integration: scheduler", { timeout: 180_000 }, () => {
     expect(healthRes.ok).toBe(true);
     expect((await healthRes.json()).status).toBe("ok");
 
-    // Wait for the initial scheduled run
-    await harness.waitForAgentRun("cron-agent");
-    expect(harness.getRunnerPool("cron-agent")?.hasRunningJobs).toBe(false);
+    // Wait for the initial scheduled run via event bus
+    const run = await harness.waitForRunResult("cron-agent");
+    expect(run.result).toBe("completed");
   });
 
   it("runs multiple agents concurrently", async () => {
@@ -63,10 +63,13 @@ describe.skipIf(!DOCKER)("integration: scheduler", { timeout: 180_000 }, () => {
     });
 
     await harness.start();
-    await harness.waitForAgentRun("agent-a");
-    await harness.waitForAgentRun("agent-b");
 
-    expect(harness.getRunnerPool("agent-a")?.hasRunningJobs).toBe(false);
-    expect(harness.getRunnerPool("agent-b")?.hasRunningJobs).toBe(false);
+    // Wait for both agents to complete via event bus
+    const [runA, runB] = await Promise.all([
+      harness.waitForRunResult("agent-a"),
+      harness.waitForRunResult("agent-b"),
+    ]);
+    expect(runA.result).toBe("completed");
+    expect(runB.result).toBe("completed");
   });
 });

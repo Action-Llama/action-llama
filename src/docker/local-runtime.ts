@@ -253,6 +253,7 @@ export class LocalDockerRuntime implements ContainerRuntime {
       "run", "-d",
       "--name", containerName,
       "--network", NETWORK_NAME,
+      "--add-host", "gateway:host-gateway",
       "--user", "1000:1000",
       "--read-only",
       "--tmpfs", "/tmp:rw,exec,nosuid,uid=1000,gid=1000",
@@ -402,50 +403,4 @@ export class LocalDockerRuntime implements ContainerRuntime {
     return null;
   }
 
-  private _gatewayProxyName = "al-gateway-proxy";
-
-  async startGatewayProxy(gatewayPort: number): Promise<void> {
-    const proxyName = `al-gateway-proxy-${gatewayPort}`;
-    this._gatewayProxyName = proxyName;
-
-    // Check if proxy is already running
-    try {
-      const running = docker("ps", "--filter", `name=${proxyName}`, "--format", "{{.Names}}");
-      if (running.includes(proxyName)) {
-        return;
-      }
-    } catch {
-      // docker ps failed, proceed to start the proxy
-    }
-
-    // Remove any existing proxy container
-    try {
-      docker("rm", "-f", proxyName);
-    } catch {
-      // Container doesn't exist, that's fine
-    }
-
-    // Start proxy container that forwards traffic from containers to host gateway
-    // Use --add-host to map dockerhost to the host IP, which works across platforms
-    docker(
-      "run", "-d",
-      "--name", proxyName,
-      "--network", NETWORK_NAME,
-      "--hostname", "gateway",
-      "--add-host", "dockerhost:host-gateway",
-      "--restart", "unless-stopped",
-      "nginx:alpine",
-      "sh", "-c", 
-      `echo 'events { } http { server { listen 8080; location / { proxy_pass http://dockerhost:${gatewayPort}; proxy_set_header Host \\$host; proxy_set_header X-Real-IP \\$remote_addr; } } }' > /etc/nginx/nginx.conf && exec nginx -g 'daemon off;'`
-    );
-  }
-
-  async stopGatewayProxy(): Promise<void> {
-    const proxyName = this._gatewayProxyName;
-    try {
-      docker("rm", "-f", proxyName);
-    } catch {
-      // Container doesn't exist or is already stopped
-    }
-  }
 }
