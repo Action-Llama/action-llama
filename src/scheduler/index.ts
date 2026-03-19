@@ -185,6 +185,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
         logger.info("Scheduler resumed via control API");
       },
       triggerAgent: async (name: string) => {
+        if (statusTracker?.isPaused()) return false;
         const pool = runnerPools[name];
         if (!pool) return false;
         const runner = pool.getAvailableRunner();
@@ -345,11 +346,14 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   await workQueue.init();
   const skills: PromptSkills = { locking: true };
   const callStore = gateway?.callStore;
-  const schedulerCtx: SchedulerContext = { runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, workQueue, shuttingDown: false, skills, useBakedImages: true, events, callStore };
+  const schedulerCtx: SchedulerContext = { runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, workQueue, shuttingDown: false, skills, useBakedImages: true, events, callStore, statusTracker };
 
   // Wire up the call dispatcher so al-call works from inside containers
   if (gateway) {
     gateway.setCallDispatcher((entry) => {
+      if (statusTracker?.isPaused()) {
+        return { ok: false, reason: "scheduler is paused" };
+      }
       if (entry.callerAgent === entry.targetAgent) {
         return { ok: false, reason: "agent cannot call itself" };
       }
@@ -418,6 +422,10 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
           filter,
           trigger: (context: WebhookContext) => {
             if (statusTracker && !statusTracker.isAgentEnabled(agentConfig.name)) return false;
+            if (statusTracker?.isPaused()) {
+              logger.info({ agent: agentConfig.name, event: context.event }, "scheduler paused, webhook rejected");
+              return false;
+            }
 
             const runner = pool.getAvailableRunner();
             if (!runner) {
@@ -449,6 +457,11 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     const pool = runnerPools[agentConfig.name];
 
     const job = new Cron(agentConfig.schedule, { timezone }, async () => {
+      // Skip if scheduler is paused
+      if (statusTracker?.isPaused()) {
+        logger.info({ agent: agentConfig.name }, "scheduler paused, skipping scheduled run");
+        return;
+      }
       // Skip if agent is disabled
       if (statusTracker && !statusTracker.isAgentEnabled(agentConfig.name)) {
         logger.info({ agent: agentConfig.name }, "agent is disabled, skipping scheduled run");

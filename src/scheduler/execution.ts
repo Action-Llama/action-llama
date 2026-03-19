@@ -10,6 +10,7 @@ import type { WebhookContext } from "../webhooks/types.js";
 import type { createLogger } from "../shared/logger.js";
 import type { SchedulerEventBus } from "./events.js";
 import type { CallStore } from "../gateway/call-store.js";
+import type { StatusTracker } from "../tui/status-tracker.js";
 
 export const DEFAULT_MAX_RERUNS = 10;
 export const DEFAULT_MAX_TRIGGER_DEPTH = 3;
@@ -41,6 +42,8 @@ export interface SchedulerContext {
   events?: SchedulerEventBus;
   /** Optional call store for updating al-call lifecycle status. */
   callStore?: CallStore;
+  /** Optional status tracker — used to check pause state. */
+  statusTracker?: StatusTracker;
 }
 
 // Prompt helpers: when images have baked-in static files, only pass the dynamic suffix.
@@ -125,6 +128,7 @@ export function dispatchTriggers(
 /** Drain all agents' work queues — fires runs without blocking. */
 export async function drainQueues(ctx: SchedulerContext): Promise<void> {
   if (ctx.shuttingDown) return;
+  if (ctx.statusTracker?.isPaused()) return;
   for (const agentConfig of ctx.agentConfigs) {
     const pool = ctx.runnerPools[agentConfig.name];
     if (!pool || ctx.workQueue.size(agentConfig.name) === 0) continue;

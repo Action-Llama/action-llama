@@ -74,10 +74,14 @@ vi.mock("../../src/agents/container-runner.js", () => ({
 
 // Mock croner — capture the callbacks
 const mockCronStop = vi.fn();
+const mockCronPause = vi.fn();
+const mockCronResume = vi.fn();
 const cronCallbacks: Function[] = [];
 vi.mock("croner", () => ({
   Cron: class {
     stop = mockCronStop;
+    pause = mockCronPause;
+    resume = mockCronResume;
     nextRun = () => new Date(Date.now() + 300000);
     constructor(_schedule: string, _opts: any, callback: Function) {
       cronCallbacks.push(callback);
@@ -394,6 +398,57 @@ describe("startScheduler", () => {
       // Should not throw — scale=0 skips schedule/webhook validation
       const { runnerPools } = await startScheduler(tmpDir);
       expect(runnerPools["disabled-agent"].size).toBe(0);
+    });
+  });
+
+  describe("scheduler pause", () => {
+    function makeStatusTracker(paused: boolean) {
+      return {
+        isPaused: vi.fn().mockReturnValue(paused),
+        isAgentEnabled: vi.fn().mockReturnValue(true),
+        registerAgent: vi.fn(),
+        setPaused: vi.fn(),
+        setNextRunAt: vi.fn(),
+        on: vi.fn(),
+        enableAgent: vi.fn(),
+        disableAgent: vi.fn(),
+      } as any;
+    }
+
+    it("cron callback does not run agent when paused", async () => {
+      const tracker = makeStatusTracker(true);
+      await startScheduler(tmpDir, undefined, tracker);
+      vi.clearAllMocks();
+
+      await cronCallbacks[0]();
+
+      expect(mockRun).not.toHaveBeenCalled();
+    });
+
+    it("cron callback does not queue work when paused", async () => {
+      const tracker = makeStatusTracker(true);
+      mockIsRunning = true;
+      await startScheduler(tmpDir, undefined, tracker);
+      vi.clearAllMocks();
+
+      await cronCallbacks[0]();
+
+      // No run, no "queued" log — work is rejected
+      expect(mockRun).not.toHaveBeenCalled();
+      expect(mockLoggerInfo).not.toHaveBeenCalledWith(
+        expect.objectContaining({ agent: "dev" }),
+        "all runners busy, scheduled run queued"
+      );
+    });
+
+    it("cron callback runs agent when not paused", async () => {
+      const tracker = makeStatusTracker(false);
+      await startScheduler(tmpDir, undefined, tracker);
+      vi.clearAllMocks();
+
+      await cronCallbacks[0]();
+
+      expect(mockRun).toHaveBeenCalledTimes(1);
     });
   });
 
