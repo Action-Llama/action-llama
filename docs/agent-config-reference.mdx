@@ -153,9 +153,9 @@ This routing is automatic — you don't need to configure anything beyond settin
 
 **When to use a short timeout:** If your agent typically finishes in under 15 minutes (e.g., responding to a webhook, triaging an issue, reviewing a small PR), set `timeout = 600` or similar. The agent gets faster startup and lower cost on AWS. If an agent needs more than 15 minutes (e.g., large refactoring tasks, long-running monitoring loops), use a longer timeout and it will route to ECS Fargate automatically.
 
-### Lambda IAM roles
+### AWS Lambda execution roles
 
-When `al doctor -c` runs, it automatically creates Lambda execution roles (`al-{agentName}-lambda-role`) for agents whose effective timeout is ≤ 900s. These roles include permissions for Secrets Manager access, CloudWatch Logs, and ECR image pull. You can override the role with `cloud.lambdaRoleArn` in `config.toml`.
+On AWS, when `al doctor` runs, it automatically creates Lambda execution roles (`al-{agentName}-lambda-role`) for agents whose effective timeout is ≤ 900s. These roles include permissions for Secrets Manager access, CloudWatch Logs, and ECR image pull. You can override the role with `cloud.lambdaRoleArn` in `config.toml`.
 
 ### Examples
 
@@ -311,7 +311,7 @@ See [Models](/models) for all supported providers, model IDs, auth types, thinki
 
 ### Cloud Run (GCP)
 
-When using Cloud Run mode (`cloud.provider = "cloud-run"` in `config.toml`), each agent automatically gets a per-agent service account (`al-{agentName}@{gcpProject}.iam.gserviceaccount.com`) that only has access to the credentials listed in that agent's `credentials` array. Run `al doctor -c` to create the service accounts and IAM bindings. See [Cloud Run docs](/cloud-run) for details.
+When using Cloud Run mode (`cloud.provider = "cloud-run"` in `config.toml`), each agent automatically gets a per-agent service account (`al-{agentName}@{gcpProject}.iam.gserviceaccount.com`) that only has access to the credentials listed in that agent's `credentials` array. Run `al doctor` to create the service accounts and IAM bindings. See [Cloud Run docs](/cloud-run) for details.
 
 ### ECS Fargate (AWS)
 
