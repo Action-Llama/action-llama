@@ -1,5 +1,19 @@
 # @action-llama/action-llama
 
+## 0.13.3
+
+### Patch Changes
+
+- [#147](https://github.com/Action-Llama/action-llama/pull/147) [`b9fe680`](https://github.com/Action-Llama/action-llama/commit/b9fe680936d6e7a1aa47628b1853991eb3e08f4a) Thanks [@asselstine](https://github.com/asselstine)! - Made the environment name parameter optional for the `al env logs` command. When no environment is specified, the command now uses the configured environment from `.env.toml` or the `AL_ENV` environment variable, consistent with other AL commands that support environment resolution. Closes [#136](https://github.com/Action-Llama/action-llama/issues/136).
+
+- [#146](https://github.com/Action-Llama/action-llama/pull/146) [`e045d54`](https://github.com/Action-Llama/action-llama/commit/e045d548f5d942f642466022a961be922904317d) Thanks [@asselstine](https://github.com/asselstine)! - Added nginx rate limiting to VPS deployments to protect the gateway from overload. The nginx configuration now includes rate limiting of 5 requests per second per IP address with a burst allowance of 10 requests. Clients exceeding the rate limit receive HTTP 429 responses. Closes [#141](https://github.com/Action-Llama/action-llama/issues/141).
+
+- [`233bc9c`](https://github.com/Action-Llama/action-llama/commit/233bc9c986dcd1f5b03c33a91e4bab8b2e8f9e9e) Thanks [@asselstine](https://github.com/asselstine)! - Suppress false ERROR logs when containers are intentionally killed during shutdown.
+  Added an `_aborting` flag to `ContainerAgentRunner` so that exit code 137 (SIGKILL)
+  after an `abort()` call logs at info level instead of error. Also fixed the cmd-rerun
+  integration test to use `maxReruns: 1`, preventing leftover containers from being
+  killed during teardown.
+
 ## 0.13.2
 
 ### Patch Changes
