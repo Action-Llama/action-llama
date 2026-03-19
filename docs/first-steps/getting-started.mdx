@@ -20,10 +20,11 @@ al new <projectName>
 
 The wizard prompts for your LLM API key (Anthropic recommended) and basic configuration. This creates:
 
-- `config.toml` — project-level settings
-- `Dockerfile` — shared base Docker image
-- `.env.toml` — local environment binding (gitignored)
-- `package.json` — with `@action-llama/action-llama` as a dependency
+- `config.toml`: project-level settings
+- `Dockerfile`: shared base Docker image
+- `.env.toml`: local environment binding (gitignored)
+- `package.json`: with `@action-llama/action-llama` as a dependency
+- `CLAUDE.md`: a symlink to an AGENTS.md file in the npm package that has everything your agent needs to know
 
 ## 2. Create an agent
 
@@ -38,6 +39,8 @@ agents/dev/
   agent-config.toml    # Credentials, model, schedule, params
   ACTIONS.md           # System prompt — the agent's instructions
 ```
+
+<Info>You can also use your agent, such as Claude Code, to create new agents! The CLAUDE.md in the project root has everything it needs to know.</Info>
 
 ## 3. Run
 

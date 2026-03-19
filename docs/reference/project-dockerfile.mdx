@@ -61,7 +61,7 @@ The base image (`al-agent:latest`) is built automatically from the Action Llama 
 
 | Package | Why |
 |---------|-----|
-| `node:20-slim` | Runs the container entry point and pi-coding-agent SDK |
+| `node:20-alpine` | Runs the container entry point and pi-coding-agent SDK |
 | `git` | Clone repos, create branches, push commits |
 | `curl` | API calls (Sentry, arbitrary HTTP), anti-exfiltration shutdown |
 | `ca-certificates` | HTTPS for git, curl, npm |

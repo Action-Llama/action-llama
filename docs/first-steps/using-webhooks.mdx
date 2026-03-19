@@ -22,16 +22,18 @@ Define a named webhook source in your project's `config.toml`:
 ```toml
 [webhooks.my-github]
 type = "github"
-credential = "MyOrg"        # we'll create this credential next
+credential = "MyGithubWebhookSecret"
 ```
 
-## 2. Create the webhook secret credential
+## 2. Add the credential
 
 ```bash
-npx al creds add github_webhook_secret:MyOrg
+npx al doctor
 ```
 
-Enter a random secret string (e.g. generate one with `openssl rand -hex 20`). Save this value — you'll need it when configuring GitHub.
+It will prompt you for any missing credentials.
+
+For the webhook, enter a random secret string (e.g. generate one with `openssl rand -hex 20`). Save this value — you'll need it when configuring GitHub.
 
 ## 3. Add a webhook trigger to your agent
 

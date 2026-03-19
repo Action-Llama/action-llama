@@ -66,8 +66,8 @@ describe("LocalDockerRuntime", () => {
 
 describe("parseBuildKitLine", () => {
   it("extracts step from BuildKit output", () => {
-    expect(parseBuildKitLine("#5 [1/3] FROM docker.io/library/node:20-slim"))
-      .toBe("Step 1/3: FROM docker.io/library/node:20-slim");
+    expect(parseBuildKitLine("#5 [1/3] FROM docker.io/library/node:20-alpine"))
+      .toBe("Step 1/3: FROM docker.io/library/node:20-alpine");
   });
 
   it("extracts error from BuildKit output", () => {

@@ -61,12 +61,10 @@ If you need full control, you can write a Dockerfile from scratch. It must:
 Example standalone Dockerfile:
 
 ```dockerfile
-FROM node:20-slim
+FROM node:20-alpine
 
 # Install your tools
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git curl ca-certificates openssh-client gh jq python3 \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache git curl ca-certificates openssh-client github-cli jq python3
 
 # Copy app from the base image (avoids rebuilding from source)
 COPY --from=al-agent:latest /app /app
