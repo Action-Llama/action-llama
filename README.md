@@ -1,34 +1,12 @@
-<p align="center">
-  <img src="action_llama.jpg" alt="Action Llama" />
-</p>
-
 # Action Llama
 
-Run agents like scripts: triggered by cron or webhooks.
+[![CI](https://github.com/Action-Llama/action-llama/actions/workflows/ci.yml/badge.svg)](https://github.com/Action-Llama/action-llama/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@action-llama/action-llama)](https://www.npmjs.com/package/@action-llama/action-llama)
 
-Dev Experience:
+Deploy agent workflows to the cloud.
 
-1. The agent is triggered by a webhook, agent, or cron schedule.
-2. The agent runs according to the instructions in ACTIONS.md you define
-3. The agent shuts down
-
-Key features:
-
-- Agent runs are contained in a Docker container using only the credentials they need. Credentials are stored separately.
-- Define your agents in a git repo, add custom ones, and share them.
-- BYOM: bring your own model (Anthropic, OpenAI, Groq, Google Gemini, xAI, Mistral, OpenRouter, or any custom provider).
-
-Philosophy:
-
-- AL is a thin wrapper around Claude or GPT. The models move so quickly, it's important to minimize the harness.
-
-Use cases:
-
-- A developer agent that watches for new Github issues and reacts (works great with OpenAI Codex for code generation)
-- A reviewer agent that watches for new Github Pull Requests and reviews them then merges if all ok
-- Deploy on a VPS (DigitalOcean, Vultr, Hetzner) for cost-effective remote hosting
-
-Have as many agents as you like. Customize the behaviour as you wish. The system is MIT licensed and fully extensible.
+- [**Documentation**](https://docs.actionllama.org)
+- [**actionllama.org**](https://actionllama.org)
 
 Built on [pi.dev](https://github.com/badlogic/pi-mono) as the agent harness.
 
