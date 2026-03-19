@@ -106,7 +106,7 @@ describe.skipIf(!DOCKER)("integration: local commands via gateway", { timeout: 1
           config: { timeout: 60 },
         },
       ],
-      globalConfig: { maxReruns: 3 },
+      globalConfig: { maxReruns: 1 },
     });
 
     await harness.start();

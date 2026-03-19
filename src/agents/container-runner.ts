@@ -11,6 +11,7 @@ import type { TokenUsage } from "../shared/usage.js";
 
 export class ContainerAgentRunner {
   private _running = false;
+  private _aborting = false;
   private _returnValue: string | undefined = undefined;
   private _tokenUsage: TokenUsage | undefined = undefined;
   private _containerName: string | undefined = undefined;
@@ -70,6 +71,7 @@ export class ContainerAgentRunner {
   }
 
   abort(): void {
+    this._aborting = true;
     this.logger.info("Container agent runner abort requested");
     if (this._containerName) {
       this.runtime.kill(this._containerName).catch((err) => {
@@ -147,6 +149,7 @@ export class ContainerAgentRunner {
     }
 
     this._running = true;
+    this._aborting = false;
 
     // Generate a unique instance ID for this run
     const runId = randomBytes(4).toString("hex");
@@ -293,7 +296,11 @@ export class ContainerAgentRunner {
         this.logger.info({ exitCode, elapsed: `${elapsed}s` }, "container finished (rerun requested)");
         runResult = "rerun";
       } else if (exitCode !== 0) {
-        this.logger.error({ exitCode, elapsed: `${elapsed}s` }, "container exited with error");
+        if (this._aborting) {
+          this.logger.info({ exitCode, elapsed: `${elapsed}s` }, "container killed (abort requested)");
+        } else {
+          this.logger.error({ exitCode, elapsed: `${elapsed}s` }, "container exited with error");
+        }
         runError = `Container exited with code ${exitCode}`;
         runResult = "error";
       } else {
