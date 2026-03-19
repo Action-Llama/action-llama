@@ -1,9 +1,7 @@
 ---
 title: "Getting Started"
-description: "Create and run your first Action Llama agent in minutes"
+description: "Create and run your first Action Llama agent"
 ---
-
-This guide gets you from zero to a running agent. Happy path only — we'll skip optional features and explain just enough to get going.
 
 ## Prerequisites
 
@@ -13,8 +11,11 @@ This guide gets you from zero to a running agent. Happy path only — we'll skip
 ## 1. Create a project
 
 ```bash
-npx @action-llama/action-llama@next new my-project
-cd my-project
+npm i -g @action-llama/action-llama@next
+```
+
+```bash
+al new <projectName>
 ```
 
 The wizard prompts for your LLM API key (Anthropic recommended) and basic configuration. This creates:

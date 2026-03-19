@@ -1,21 +1,14 @@
 ---
 title: "Action Llama"
-description: "Run LLM agents like scripts — triggered by cron or webhooks, isolated in Docker, deployed anywhere"
+description: "Deploy agentic workflows to your favourite VPS"
 ---
 
-Run LLM agents like scripts — triggered by cron or webhooks, isolated in Docker, deployed anywhere.
+An agentic workflow uses Claude, OpenAI, or other models to:
 
-- **Automate your dev workflow** — agents handle issues, PRs, monitoring, moderation, and more
-- **Define agents in code** — `ACTIONS.md` + `agent-config.toml`, version controlled, shareable
-- **Deploy for $5/month** — one command to provision a VPS, one command to deploy
+- **Automate your dev workflow**: agents handle issues, PRs, monitoring
+- **Automate communications**: have an agent create a summary of product changes for the last week and tweet it out
 
-## Quick start
-
-```bash
-npx @action-llama/action-llama@next new my-project
-cd my-project
-npx al start
-```
+You're **progamming with prompts**: any process can be automated using an agent.
 
 <CardGroup cols={2}>
   <Card title="First Steps" icon="rocket" href="/first-steps/getting-started">
@@ -42,3 +35,10 @@ npx al start
 - **Multi-agent** — agents can call other agents with `al-call` and collect results with `al-wait`
 - **Resource locks** — coordinate parallel instances with automatic deadlock detection
 - **Web dashboard** — live agent status and streaming logs in your browser
+
+## Philosophy
+
+- **Agents are infrastructure**: they should be versioned, repeatable, and deployable. Agents work together, so they should be bundled together.
+- **Stateless by default**: state is easy to add to a stateless system. Dynamic agent context strategies can be added if desired.
+- **Bring your own models**: there are many models out there, each appropriate to a different task. You should be able to use any of them.
+- **Minimize the harness and lean on the model**: models are improving constantly, that's why this framework lets you program with prompts. The harness should focus on orchestration only.
