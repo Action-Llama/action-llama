@@ -23,6 +23,7 @@ vi.mock("../../src/scheduler/image-builder.js", () => ({
 vi.mock("../../src/scheduler/webhook-setup.js", () => ({
   resolveWebhookSource: vi.fn(() => ({ type: "github", credential: "default" })),
   buildFilterFromTrigger: vi.fn(() => undefined),
+  registerWebhookBindings: vi.fn(),
 }));
 
 vi.mock("croner", () => {

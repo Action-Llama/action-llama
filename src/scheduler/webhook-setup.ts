@@ -5,10 +5,14 @@
  * from the main scheduling orchestrator.
  */
 
-import type { GlobalConfig, WebhookSourceConfig } from "../shared/config.js";
+import type { AgentConfig, GlobalConfig, WebhookSourceConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
+import type { StatusTracker } from "../tui/status-tracker.js";
 import { listCredentialInstances, loadCredentialField } from "../shared/credentials.js";
 import { WebhookRegistry } from "../webhooks/registry.js";
+import type { RunnerPool } from "./runner-pool.js";
+import type { SchedulerContext } from "./execution.js";
+import { makeWebhookPrompt, executeRun, drainQueues } from "./execution.js";
 import { GitHubWebhookProvider } from "../webhooks/providers/github.js";
 import { SentryWebhookProvider } from "../webhooks/providers/sentry.js";
 import { LinearWebhookProvider } from "../webhooks/providers/linear.js";
@@ -179,4 +183,63 @@ export async function setupWebhookRegistry(
   }
 
   return { registry, secrets };
+}
+
+/**
+ * Register webhook bindings for a single agent.
+ *
+ * Shared between initial setup (index.ts) and hot-reload (watcher.ts).
+ */
+export function registerWebhookBindings(opts: {
+  agentConfig: AgentConfig;
+  pool: RunnerPool;
+  webhookRegistry: WebhookRegistry;
+  webhookSources: Record<string, WebhookSourceConfig>;
+  schedulerCtx: SchedulerContext;
+  statusTracker?: StatusTracker;
+  logger: Logger;
+}): void {
+  const { agentConfig, pool, webhookRegistry, webhookSources, schedulerCtx, statusTracker, logger } = opts;
+
+  if (!agentConfig.webhooks?.length) return;
+
+  for (const trigger of agentConfig.webhooks) {
+    let sourceConfig: WebhookSourceConfig;
+    try {
+      sourceConfig = resolveWebhookSource(trigger.source, agentConfig.name, webhookSources);
+    } catch {
+      logger.warn({ agent: agentConfig.name, source: trigger.source }, "invalid webhook source, skipping");
+      continue;
+    }
+    const providerType = sourceConfig.type;
+    const filter = buildFilterFromTrigger(trigger, providerType);
+    webhookRegistry.addBinding({
+      agentName: agentConfig.name,
+      source: sourceConfig.credential,
+      type: providerType,
+      filter,
+      trigger: (context) => {
+        if (statusTracker && !statusTracker.isAgentEnabled(agentConfig.name)) return false;
+        if (statusTracker?.isPaused()) {
+          logger.info({ agent: agentConfig.name, event: context.event }, "scheduler paused, webhook rejected");
+          return false;
+        }
+
+        const runner = pool.getAvailableRunner();
+        if (!runner) {
+          const { dropped } = schedulerCtx.workQueue.enqueue(agentConfig.name, { type: 'webhook', context });
+          logger.info({ agent: agentConfig.name, event: context.event, queueSize: schedulerCtx.workQueue.size(agentConfig.name) }, "webhook queued");
+          if (dropped) logger.warn({ agent: agentConfig.name }, "queue full, oldest event dropped");
+          return true;
+        }
+
+        logger.info({ agent: agentConfig.name, event: context.event, action: context.action }, "webhook triggering agent");
+        const prompt = makeWebhookPrompt(agentConfig, context, schedulerCtx);
+        executeRun(runner, prompt, { type: 'webhook', source: context.event }, agentConfig.name, 0, schedulerCtx)
+          .then(() => drainQueues(schedulerCtx))
+          .catch((err) => logger.error({ err, agent: agentConfig.name }, "webhook run failed"));
+        return true;
+      },
+    });
+  }
 }
