@@ -45,11 +45,17 @@ export function registerLockRoutes(
       return c.json({ ok: true, resourceKey });
     }
 
-    // Distinguish "already holding another lock" from "someone else holds this lock"
     if (result.reason) {
-      logger.debug({ agent: reg.agentName, resourceKey }, "lock rejected: " + result.reason);
+      if (result.deadlock) {
+        logger.warn({ agent: reg.agentName, resourceKey, cycle: result.cycle }, "possible deadlock");
+      } else {
+        logger.debug({ agent: reg.agentName, resourceKey }, "lock rejected: " + result.reason);
+      }
       events?.emit("lock", { agentName: reg.agentName, instanceId: reg.instanceId, resourceKey, action: "acquire", ok: false, status: 409, reason: result.reason });
-      return c.json({ ok: false, reason: result.reason }, 409);
+      return c.json(
+        { ok: false, reason: result.reason, ...(result.deadlock ? { deadlock: true, cycle: result.cycle } : {}) },
+        409
+      );
     }
 
     logger.debug(

@@ -69,13 +69,12 @@ describe("POST /locks/acquire", () => {
     expect(body.heldSince).toBeTypeOf("number");
   });
 
-  it("returns 409 when agent already holds a different lock", async () => {
+  it("allows agent to acquire multiple different locks", async () => {
     await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#1" });
     const res = await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#2" });
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.ok).toBe(false);
-    expect(body.reason).toContain("already holding lock");
+    expect(body.ok).toBe(true);
   });
 
   it("returns 403 for invalid secret", async () => {

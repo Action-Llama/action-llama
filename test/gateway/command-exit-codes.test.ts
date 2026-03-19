@@ -138,14 +138,13 @@ describe("command exit codes", () => {
       expect(body.holder).toBeTruthy();
     });
 
-    it("exit 1 — already holding another lock", async () => {
+    it("exit 0 — acquiring multiple locks succeeds", async () => {
       register("sec-a", "agent-a");
       await run("rlock", ["res-1"], env("sec-a"));
       const r = await run("rlock", ["res-2"], env("sec-a"));
-      expect(r.exitCode).toBe(1);
+      expect(r.exitCode).toBe(0);
       const body = JSON.parse(r.stdout);
-      expect(body.ok).toBe(false);
-      expect(body.reason).toMatch(/already holding/);
+      expect(body.ok).toBe(true);
     });
 
     it("exit 3 — invalid secret", async () => {
