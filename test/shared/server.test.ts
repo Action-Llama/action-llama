@@ -52,6 +52,20 @@ describe("validateServerConfig", () => {
     expect(() => validateServerConfig({ host: "h", keyPath: true })).toThrow("server.keyPath must be a string");
   });
 
+  it("accepts expose: true", () => {
+    const config = validateServerConfig({ host: "h", expose: true });
+    expect(config.expose).toBe(true);
+  });
+
+  it("accepts expose: false", () => {
+    const config = validateServerConfig({ host: "h", expose: false });
+    expect(config.expose).toBe(false);
+  });
+
+  it("throws on non-boolean expose", () => {
+    expect(() => validateServerConfig({ host: "h", expose: "yes" })).toThrow("server.expose must be a boolean");
+  });
+
   it("ignores unknown fields", () => {
     const config = validateServerConfig({ host: "h", gatewayPort: 9090 });
     expect(config.host).toBe("h");

@@ -214,6 +214,27 @@ sudo ufw allow https
 sudo ufw enable
 ```
 
+## SSH Push Deploy (`al push`)
+
+`al push` deploys your project to a server over SSH and manages the scheduler as a systemd service. It requires a `[server]` section in your environment file.
+
+In your environment file (`~/.action-llama/environments/<name>.toml`):
+
+```toml
+[server]
+host = "5.6.7.8"
+user = "root"          # default: "root"
+port = 22              # default: 22
+keyPath = "~/.ssh/id_rsa"  # default: ssh-agent
+basePath = "/opt/action-llama"  # default: "/opt/action-llama"
+expose = true          # bind gateway to 0.0.0.0 (default: true)
+```
+
+The `expose` field controls whether the gateway binds to `0.0.0.0` (all interfaces) or `127.0.0.1` (localhost only):
+
+- `expose = true` (default) — gateway listens on all interfaces, reachable from outside the server. Required for incoming webhooks.
+- `expose = false` — gateway listens on localhost only. Use this when a reverse proxy (Caddy, nginx) handles public traffic, or when you don't need external webhook access.
+
 ## Security Considerations
 
 - **Use TLS in production** — Don't expose port 8080 directly without HTTPS
@@ -221,6 +242,7 @@ sudo ufw enable
 - **Credentials isolation** — Each agent runs in a Docker container with only its required credentials
 - **User separation** — Run Action Llama as a non-root user
 - **SSH key security** — The VPS cloud provider uses your SSH key for all operations. Protect it with a passphrase and restrict access.
+- **`expose = false` for reverse proxy setups** — When using Caddy or nginx in front of the gateway, set `expose = false` in your `[server]` config to prevent the gateway port from being directly reachable.
 
 ## Monitoring
 

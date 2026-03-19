@@ -86,6 +86,28 @@ describe("buildSystemdUnit", () => {
     const unit = buildSystemdUnit("proj", "/opt/al");
     expect(unit).not.toContain("--port");
   });
+
+  it("includes -e when expose is true", () => {
+    const unit = buildSystemdUnit("proj", "/opt/al", undefined, undefined, true);
+    expect(unit).toContain("start --headless -w -e\n");
+  });
+
+  it("omits -e when expose is false", () => {
+    const unit = buildSystemdUnit("proj", "/opt/al", undefined, undefined, false);
+    expect(unit).not.toContain(" -e");
+    expect(unit).toContain("start --headless -w\n");
+  });
+
+  it("includes -e when expose is undefined (backward compat default)", () => {
+    const unit = buildSystemdUnit("proj", "/opt/al", undefined, undefined, undefined);
+    expect(unit).toContain("start --headless -w -e\n");
+  });
+
+  it("omits -e but keeps --port when expose is false and gatewayPort is set", () => {
+    const unit = buildSystemdUnit("proj", "/opt/al", undefined, 3000, false);
+    expect(unit).not.toContain(" -e");
+    expect(unit).toContain("start --headless -w --port 3000");
+  });
 });
 
 describe("computePkgHash", () => {
