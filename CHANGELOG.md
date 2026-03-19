@@ -1,5 +1,71 @@
 # @action-llama/action-llama
 
+## 0.13.4
+
+### Patch Changes
+
+- [`1e4b82c`](https://github.com/Action-Llama/action-llama/commit/1e4b82c353d72491daecc31e08053b5eee578713) Thanks [@asselstine](https://github.com/asselstine)! - Auto-source `/tmp/env.sh` before every bash command via `commandPrefix`.
+
+  Agents can now write `export REPO=...` to `/tmp/env.sh` once and have those
+  variables available in all subsequent bash tool calls, without needing to
+  re-export them each time. This fixes issues where agents lost shell variable
+  state between separate bash invocations.
+
+- [#180](https://github.com/Action-Llama/action-llama/pull/180) [`2cce53d`](https://github.com/Action-Llama/action-llama/commit/2cce53d7f2edfc218a680153e24070851976f541) Thanks [@asselstine](https://github.com/asselstine)! - Decomposed the 631-line `startScheduler()` monolith into focused modules: validation,
+  gateway setup, runner pool creation, call dispatching, cron setup, webhook bindings, and
+  shutdown. The orchestrator is now ~170 lines. Extracted a shared `registerWebhookBindings()`
+  used by both initial setup and hot-reload, eliminating duplicated webhook wiring logic.
+  No behavior changes.
+
+- [#181](https://github.com/Action-Llama/action-llama/pull/181) [`4113187`](https://github.com/Action-Llama/action-llama/commit/411318796f748e0ec0b499b795e53341f5151fea) Thanks [@asselstine](https://github.com/asselstine)! - Documentation audit: fix broken navigation links and cross-references, add missing
+  CLI command docs (al stop, al agent, al push hot-reload, al env subcommands),
+  document work queue and deadlock detection features, add "How it Works" and
+  "Troubleshooting" pages, and rewrite deployment overview.
+
+- [#171](https://github.com/Action-Llama/action-llama/pull/171) [`b6845fb`](https://github.com/Action-Llama/action-llama/commit/b6845fb5ba622dea83f722452ec814f350b26958) Thanks [@asselstine](https://github.com/asselstine)! - Resource locks are now durable. `LockStore` persists acquired locks to the
+  SQLite state store so they survive process restarts. The backing store uses
+  a generic `StateStore` interface that can be swapped for a different backend
+  (e.g. PostgreSQL) in the future without changing `LockStore`. Closes [#157](https://github.com/Action-Llama/action-llama/issues/157).
+
+- [#168](https://github.com/Action-Llama/action-llama/pull/168) [`c27d8d0`](https://github.com/Action-Llama/action-llama/commit/c27d8d00ffae6127bf65d9cb7cb0e1d738544471) Thanks [@asselstine](https://github.com/asselstine)! - Added a durable `Queue<T>` abstraction backed by SQLite. The generic `Queue` interface (`enqueue`, `dequeue`, `peek`, `size`) is designed to be swappable — a `MemoryQueue` is provided for tests and single-process use, and `SqliteQueue` persists items across restarts with atomic FIFO dequeue. Use `createQueue({ type: "sqlite", path, name })` to create a named queue within the project's existing state database. Closes [#157](https://github.com/Action-Llama/action-llama/issues/157).
+
+- [#176](https://github.com/Action-Llama/action-llama/pull/176) [`1bbb176`](https://github.com/Action-Llama/action-llama/commit/1bbb17605079bdbc9766b57777ad6d1de24c6cdc) Thanks [@asselstine](https://github.com/asselstine)! - Made the scheduler work queue durable by backing it with SQLite instead of
+  an in-memory map with fire-and-forget persistence. Queued webhook events,
+  scheduled runs, and inter-agent triggers now survive process crashes and
+  restarts without risk of data loss. Closes [#156](https://github.com/Action-Llama/action-llama/issues/156).
+
+- [#175](https://github.com/Action-Llama/action-llama/pull/175) [`7c8abe7`](https://github.com/Action-Llama/action-llama/commit/7c8abe7ca022daeecdeab6593fdfee1e317a4ee9) Thanks [@asselstine](https://github.com/asselstine)! - Fix `al pause <agent>` not preventing new runs from starting. Queued work items, agent-to-agent triggers, and reruns for a paused agent are now suppressed. Closes [#172](https://github.com/Action-Llama/action-llama/issues/172).
+
+- [#167](https://github.com/Action-Llama/action-llama/pull/167) [`065e022`](https://github.com/Action-Llama/action-llama/commit/065e022d23a4384883bfa7b94f871c741c6b2362) Thanks [@asselstine](https://github.com/asselstine)! - Pinned the `croner` dependency to `^10.0.1` instead of `"latest"` to ensure reproducible installs. Closes [#154](https://github.com/Action-Llama/action-llama/issues/154).
+
+- [#164](https://github.com/Action-Llama/action-llama/pull/164) [`05d8f39`](https://github.com/Action-Llama/action-llama/commit/05d8f39ac22ded3f5bdd44f119ac0312fb83a326) Thanks [@asselstine](https://github.com/asselstine)! - Fixed security hole where dashboard routes could be registered without authentication. When `webUI` is enabled but no API key is configured, the gateway now logs an error and skips dashboard registration entirely. `registerDashboardRoutes` also has a defense-in-depth check that returns 503 if called without an API key. Closes [#155](https://github.com/Action-Llama/action-llama/issues/155).
+
+- [#179](https://github.com/Action-Llama/action-llama/pull/179) [`a058c28`](https://github.com/Action-Llama/action-llama/commit/a058c28eb7fd5e1bb98fd5a5174455225ce8f271) Thanks [@asselstine](https://github.com/asselstine)! - Fixed duplicate page headers across all docs pages. Mintlify renders the
+  frontmatter `title` as the page header automatically, but every MDX file also
+  had an explicit `# H1` causing the title to appear twice. Also fixed `cloud.mdx`
+  frontmatter title which was incorrectly set to "VPS Deployment".
+
+- [#174](https://github.com/Action-Llama/action-llama/pull/174) [`f7076e3`](https://github.com/Action-Llama/action-llama/commit/f7076e3fd30f12bc1774341e67d23bd555c15124) Thanks [@asselstine](https://github.com/asselstine)! - Fixed scheduler pause not blocking webhook triggers, queued work, and manual triggers. When the scheduler is paused, all trigger sources (webhooks, cron, manual control API, inter-agent calls) now reject incoming work rather than queuing it. Closes [#162](https://github.com/Action-Llama/action-llama/issues/162).
+
+- [#178](https://github.com/Action-Llama/action-llama/pull/178) [`7e38638`](https://github.com/Action-Llama/action-llama/commit/7e38638d5495c02bf273937a19e2b43ddb7fec1e) Thanks [@asselstine](https://github.com/asselstine)! - Allow agents to hold multiple resource locks simultaneously and detect deadlock cycles.
+  The previous one-lock-per-holder restriction has been removed. When the scheduler detects
+  a cycle in the wait-for graph (e.g. agent A holds X and wants Y while agent B holds Y
+  and wants X), `rlock` returns a `possible deadlock` error with the cycle path, allowing
+  agents to release locks and back off without being killed. Closes [#158](https://github.com/Action-Llama/action-llama/issues/158).
+
+- [#177](https://github.com/Action-Llama/action-llama/pull/177) [`fc7dfd1`](https://github.com/Action-Llama/action-llama/commit/fc7dfd1e4f289fe564abd6aaa5f43e118712e9e4) Thanks [@asselstine](https://github.com/asselstine)! - Added single-agent push support: `al push <agent>` syncs only that agent's
+  files to the remote server. The running scheduler's file watcher detects the
+  change and hot-reloads the agent without restarting the service or disrupting
+  other agents. Closes [#169](https://github.com/Action-Llama/action-llama/issues/169).
+
+- [#166](https://github.com/Action-Llama/action-llama/pull/166) [`b737802`](https://github.com/Action-Llama/action-llama/commit/b737802336a0978d1ffca95dccaa9bfa2df539a1) Thanks [@asselstine](https://github.com/asselstine)! - Remove built-in rate limiting from the gateway. Rate limiting is now handled exclusively by nginx when deployed to a VPS (5 req/sec per IP with burst of 10), which is more appropriate for publicly exposed deployments. Local development instances no longer have rate limiting, which is fine since they are not publicly exposed. Closes [#161](https://github.com/Action-Llama/action-llama/issues/161).
+
+- [#163](https://github.com/Action-Llama/action-llama/pull/163) [`cb8874a`](https://github.com/Action-Llama/action-llama/commit/cb8874a375a995f8413caa5424b68b49ed0baa57) Thanks [@asselstine](https://github.com/asselstine)! - Fix security issue where the raw API key was stored in the browser session cookie. Login now creates an opaque server-side session ID (64-char hex from 32 random bytes) stored in the StateStore, and only that ID is placed in the cookie. Logout invalidates the session server-side. Falls back to direct cookie comparison when no StateStore is configured (backward compatibility). Closes [#151](https://github.com/Action-Llama/action-llama/issues/151).
+
+- [#165](https://github.com/Action-Llama/action-llama/pull/165) [`5f26194`](https://github.com/Action-Llama/action-llama/commit/5f261940eb60f2ae1516aac549706c9ec8a97830) Thanks [@asselstine](https://github.com/asselstine)! - Added `expose` field to `[server]` config for `al push` deployments. Set `expose = false` to bind the gateway to localhost only instead of `0.0.0.0`, which is useful when running behind a reverse proxy. Defaults to `true` for backward compatibility. Closes [#152](https://github.com/Action-Llama/action-llama/issues/152).
+
+- [#170](https://github.com/Action-Llama/action-llama/pull/170) [`85b01e2`](https://github.com/Action-Llama/action-llama/commit/85b01e2d49d23fd6af9df1c4f57fd7daefe48997) Thanks [@asselstine](https://github.com/asselstine)! - `al stat` now shows a QUEUE column in the agents table, displaying the number of pending work items waiting to be processed for each agent. Closes [#160](https://github.com/Action-Llama/action-llama/issues/160).
+
 ## 0.13.3
 
 ### Patch Changes
