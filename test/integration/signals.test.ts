@@ -95,9 +95,8 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
     await harness.waitForRunResult("forever-rerun");
     await harness.waitForRunResult("forever-rerun");
     await harness.waitForRunResult("forever-rerun");
-    // Brief settle for the rerun loop to fully exit and release the runner
-    await harness.waitForSettle(2000);
-    expect(harness.getRunnerPool("forever-rerun")?.hasRunningJobs).toBe(false);
+    // Wait for the rerun loop to fully exit and release the runner
+    await harness.waitForIdle("forever-rerun");
   });
 
   it("al-return emits structured log line that container runner captures", async () => {

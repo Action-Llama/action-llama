@@ -197,8 +197,8 @@ describe.skipIf(!DOCKER)("integration: rlock end-to-end", { timeout: 180_000 }, 
     );
     expect(runEnd.result).toBe("completed");
 
-    // Give the container cleanup a moment to release locks
-    await harness.waitForSettle(2000);
+    // Wait for container cleanup to release locks
+    await harness.waitForIdle("leaky");
 
     const lockRes = await fetch(`http://127.0.0.1:${harness.gatewayPort}/locks/status`, {
       headers: { Authorization: `Bearer ${harness.apiKey}` },

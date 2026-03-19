@@ -182,8 +182,8 @@ describe.skipIf(!DOCKER)("integration: resource locking", { timeout: 180_000 }, 
     );
     expect(run.result).toBe("completed");
 
-    // Give the container cleanup a moment to release locks
-    await harness.waitForSettle(2000);
+    // Wait for container cleanup to release locks
+    await harness.waitForIdle("leaky-locker");
 
     // Check lock status — should be empty since container cleanup releases locks
     const lockRes = await fetch(`http://127.0.0.1:${harness.gatewayPort}/locks/status`, {

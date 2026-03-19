@@ -32,8 +32,6 @@ describe.skipIf(!DOCKER)("integration: webhooks", { timeout: 180_000 }, () => {
     });
 
     await harness.start();
-    // Allow time for image build and webhook source registration
-    await harness.waitForSettle(3000);
 
     const res = await harness.sendWebhook({
       source: "test",
@@ -68,8 +66,6 @@ describe.skipIf(!DOCKER)("integration: webhooks", { timeout: 180_000 }, () => {
     });
 
     await harness.start();
-    // Allow time for image build and webhook source registration
-    await harness.waitForSettle(3000);
 
     // Non-matching event → matched=0
     const res1 = await harness.sendWebhook({

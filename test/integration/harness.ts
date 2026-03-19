@@ -281,10 +281,29 @@ export class IntegrationHarness {
   }
 
   /**
-   * Wait for a specific number of milliseconds for agent activity to settle.
+   * Poll until a runner pool has no running jobs, with a timeout.
    */
-  async waitForSettle(ms = 2000): Promise<void> {
-    await new Promise((r) => setTimeout(r, ms));
+  async waitForIdle(agentName: string, timeoutMs = 30_000, pollMs = 250): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const pool = this.getRunnerPool(agentName);
+      if (!pool || !pool.hasRunningJobs) return;
+      await new Promise((r) => setTimeout(r, pollMs));
+    }
+    throw new Error(`${agentName} runner pool still has running jobs after ${timeoutMs}ms`);
+  }
+
+  /**
+   * Poll until a runner pool has at least one running job, with a timeout.
+   */
+  async waitForRunning(agentName: string, timeoutMs = 30_000, pollMs = 250): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const pool = this.getRunnerPool(agentName);
+      if (pool?.hasRunningJobs) return;
+      await new Promise((r) => setTimeout(r, pollMs));
+    }
+    throw new Error(`${agentName} runner pool has no running jobs after ${timeoutMs}ms`);
   }
 
   /**

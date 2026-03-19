@@ -77,12 +77,9 @@ describe.skipIf(!DOCKER)("integration: control API", { timeout: 180_000 }, () =>
 
     await harness.start();
 
-    // Brief wait for the container to be running (run:start fires during
+    // Wait for the container to be running (run:start fires during
     // startScheduler before listeners are registered, so we poll the pool)
-    await harness.waitForSettle(5000);
-
-    const pool = harness.getRunnerPool("kill-agent");
-    expect(pool?.hasRunningJobs).toBe(true);
+    await harness.waitForRunning("kill-agent");
 
     const killRes = await harness.controlAPI("POST", "/agents/kill-agent/kill");
     expect(killRes.ok).toBe(true);

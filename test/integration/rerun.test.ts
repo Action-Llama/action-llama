@@ -63,8 +63,7 @@ describe.skipIf(!DOCKER)("integration: rerun", { timeout: 180_000 }, () => {
     await harness.waitForRunResult("infinite-rerun");
     await harness.waitForRunResult("infinite-rerun");
     await harness.waitForRunResult("infinite-rerun");
-    // Brief settle for the rerun loop to fully exit and release the runner
-    await harness.waitForSettle(2000);
-    expect(harness.getRunnerPool("infinite-rerun")?.hasRunningJobs).toBe(false);
+    // Wait for the rerun loop to fully exit and release the runner
+    await harness.waitForIdle("infinite-rerun");
   });
 });
