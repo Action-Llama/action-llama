@@ -346,7 +346,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   await workQueue.init();
   const skills: PromptSkills = { locking: true };
   const callStore = gateway?.callStore;
-  const schedulerCtx: SchedulerContext = { runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, workQueue, shuttingDown: false, skills, useBakedImages: true, events, callStore, statusTracker };
+  const schedulerCtx: SchedulerContext = { runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, workQueue, shuttingDown: false, skills, useBakedImages: true, events, callStore, statusTracker, isAgentEnabled: statusTracker ? (name: string) => statusTracker.isAgentEnabled(name) : undefined };
 
   // Wire up the call dispatcher so al-call works from inside containers
   if (gateway) {
