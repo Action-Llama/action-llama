@@ -15,7 +15,7 @@ vi.mock("../../../src/cloud/vps/vultr-api.js", () => ({
 }));
 
 // Mock Cloudflare API
-vi.mock("../../../src/cloud/vps/cloudflare-api.js", () => ({
+vi.mock("../../../src/cloud/cloudflare/api.js", () => ({
   findDnsRecord: vi.fn(),
   upsertDnsRecord: vi.fn(),
   getSslMode: vi.fn(),
@@ -33,7 +33,7 @@ vi.mock("../../../src/shared/filesystem-backend.js", () => ({
 import { verifyEnvironment } from "../../../src/cloud/vps/verify.js";
 import { testConnection, sshExec } from "../../../src/cloud/vps/ssh.js";
 import { listFirewallGroups, listFirewallRules, createFirewallRule } from "../../../src/cloud/vps/vultr-api.js";
-import { findDnsRecord, upsertDnsRecord, getSslMode, setSslMode } from "../../../src/cloud/vps/cloudflare-api.js";
+import { findDnsRecord, upsertDnsRecord, getSslMode, setSslMode } from "../../../src/cloud/cloudflare/api.js";
 const mockTestConnection = vi.mocked(testConnection);
 const mockSshExec = vi.mocked(sshExec);
 const mockListFirewallGroups = vi.mocked(listFirewallGroups);

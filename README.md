@@ -72,7 +72,7 @@ my-project/
   package.json              # Includes @action-llama/action-llama as a dependency
   Dockerfile                # Project base image. Generated. Shared customizations for all agents
   AGENTS.md                 # Project overview, Generated. Credential/webhook reference, example agent
-  config.toml               # Global config: [local], [cloud], gateway, webhooks (no secrets)
+  config.toml               # Global config: [local], [model], gateway, webhooks (no secrets)
 ```
 
 Each agent subdirectory:
@@ -84,7 +84,7 @@ Each agent subdirectory:
     Dockerfile              # (optional) Custom Docker image for this agent
 ```
 
-## Cloud
+## Deployment
 
 For production, deploy agents to a VPS for cost-effective remote hosting.
 
@@ -118,7 +118,7 @@ Most commands accept `-p <dir>` to set the project directory. See the [CLI comma
 
 Configuration lives in two places:
 
-- [**`config.toml`**](docs/config-reference.md) (project root) — global settings: default model (`[model]`), local Docker options (`[local]`), cloud provider config (`[cloud]`), and scheduler options like `maxReruns`.
+- [**`config.toml`**](docs/config-reference.md) (project root) — global settings: default model (`[model]`), local Docker options (`[local]`), gateway, webhooks, and scheduler options like `maxReruns`.
 - [**`agent-config.toml`**](docs/agent-config-reference.md) (per agent) — model, credentials, schedule, webhooks, and parameters. Each agent can use a different model or provider (e.g., Claude Opus for dev, GPT-4o for review, Gemini for devops).
 
 Credentials are stored outside the project in `~/.action-llama/credentials/` and referenced by name in agent configs. Run `al doctor` to configure them interactively.
@@ -134,13 +134,13 @@ See also the [credentials](docs/credentials.md), [webhooks](docs/webhooks.md), a
 | [Agents](docs/agents.md) | What an agent is: config, ACTIONS.md, Dockerfile, runtime prompt |
 | [CLI Commands](docs/commands.md) | All CLI commands with options and flags |
 | [Creating Agents](docs/creating-agents.md) | Step-by-step guide to creating a new agent |
-| [config.toml Reference](docs/config-reference.md) | Project-level config: model, Docker, cloud, gateway, webhooks |
+| [config.toml Reference](docs/config-reference.md) | Project-level config: model, Docker, gateway, webhooks |
 | [agent-config.toml Reference](docs/agent-config-reference.md) | Per-agent config fields with examples |
 | [Models](docs/models.md) | Supported LLM providers, model IDs, auth types, thinking levels |
 | [Credentials](docs/credentials.md) | Credential types, storage layout, named instances |
 | [Webhooks](docs/webhooks.md) | Webhook setup, filter fields, Sentry integration |
 | [Docker](docs/docker.md) | Container isolation, custom Dockerfiles, filesystem layout |
-| [Cloud](docs/cloud.md) | Cloud overview, VPS deployment guide |
+| [Deployment](docs/deployment.md) | Deployment overview, VPS deployment guide |
 | [VPS Deployment](docs/vps-deployment.md) | Running agents on any VPS via SSH + Docker |
 | [Example Agents](docs/examples/index.md) | Dev, reviewer, and devops agent templates |
 
@@ -176,7 +176,7 @@ npm test
 
 ```
 src/
-  cli/              # Command definitions (new, doctor, cloud-setup, cloud-teardown, start, status, logs)
+  cli/              # Command definitions (new, doctor, start, status, logs, push, env)
   setup/            # Project scaffolding
   scheduler/        # Scheduler: discovers agents, starts gateway, wires cron + webhooks
   agents/           # Agent runners (host + Docker), prompt builder

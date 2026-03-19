@@ -9,7 +9,7 @@ import { readFileSync } from "fs";
 import { resolve } from "path";
 import { VPS_CONSTANTS } from "./constants.js";
 import { testConnection, sshExec, clearKnownHost, type SshConfig } from "./ssh.js";
-import type { VpsCloudConfig } from "../../shared/config.js";
+import type { VpsConfig } from "../../shared/config.js";
 import { FilesystemBackend } from "../../shared/filesystem-backend.js";
 import { writeCredentialField, writeCredentialFields, credentialDir } from "../../shared/credentials.js";
 
@@ -105,7 +105,7 @@ async function promptCloudflareHttps(): Promise<CloudflareConfig | null> {
     apiToken = entered.trim();
 
     // Verify token before saving
-    const { verifyToken } = await import("./cloudflare-api.js");
+    const { verifyToken } = await import("../cloudflare/api.js");
     try {
       const active = await verifyToken(apiToken);
       if (!active) {
@@ -121,7 +121,7 @@ async function promptCloudflareHttps(): Promise<CloudflareConfig | null> {
     console.log("Cloudflare API token saved.");
   }
 
-  const { listAllZones } = await import("./cloudflare-api.js");
+  const { listAllZones } = await import("../cloudflare/api.js");
 
   // Fetch available zones
   let zones: Array<{ id: string; name: string; status: string }>;
@@ -546,7 +546,7 @@ async function provisionVultr(onInstanceCreated?: OnInstanceCreated, cfConfig?: 
         upsertDnsRecord,
         createOriginCertificate,
         setSslMode,
-      } = await import("./cloudflare-api.js");
+      } = await import("../cloudflare/api.js");
       const { installNginx, configureNginx } = await import("./nginx.js");
 
       // 1. DNS record
@@ -1003,7 +1003,7 @@ async function provisionHetzner(onInstanceCreated?: OnInstanceCreated, cfConfig?
         upsertDnsRecord,
         createOriginCertificate,
         setSslMode,
-      } = await import("./cloudflare-api.js");
+      } = await import("../cloudflare/api.js");
       const { installNginx, configureNginx } = await import("./nginx.js");
 
       // 1. DNS record

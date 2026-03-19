@@ -12,7 +12,7 @@ const cloudflareApiToken: CredentialDefinition = {
   agentContext: "`CLOUDFLARE_API_TOKEN` — Cloudflare API access (provisioning only, not typically needed by agents)",
 
   async validate(values) {
-    const { verifyToken } = await import("../../cloud/vps/cloudflare-api.js");
+    const { verifyToken } = await import("../../cloud/cloudflare/api.js");
     const active = await verifyToken(values.api_token);
     if (!active) {
       throw new Error("Cloudflare API token is not active");

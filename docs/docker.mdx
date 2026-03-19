@@ -41,10 +41,8 @@ Credentials are injected in one of three ways depending on the runtime:
 | Runtime | Strategy | How it works |
 |---------|----------|--------------|
 | Local Docker | Volume mount | Files staged to a temp dir, mounted read-only at `/credentials/<type>/<instance>/<field>` |
-| Cloud Run | Gateway fetch | Container fetches credentials from `GATEWAY_URL/credentials/<secret>` on startup |
-| ECS Fargate | Env vars | Secrets Manager values injected as `AL_SECRET_<type>__<instance>__<field>` env vars |
 
-The container tries each strategy in order: volume mount, env vars, gateway. The first one that has data wins.
+The container reads credentials from the volume mount.
 
 ### Startup sequence
 
@@ -231,7 +229,7 @@ my-project/
 
 ### Extending the base image
 
-Use `FROM al-agent:latest` and add what you need. The build pipeline automatically rewrites the `FROM` line to point at the correct base (either `al-project-base:latest` or the cloud registry URI). Switch to `root` to install packages, then back to `node`:
+Use `FROM al-agent:latest` and add what you need. The build pipeline automatically rewrites the `FROM` line to point at the correct base (`al-project-base:latest` if the project Dockerfile has customizations). Switch to `root` to install packages, then back to `node`:
 
 ```dockerfile
 FROM al-agent:latest
@@ -303,7 +301,7 @@ The key requirement is that `/app/dist/agents/container-entry.js` exists and can
 | `local.cpus` | `2` | CPU limit per container |
 | `local.timeout` | `3600` | Max container runtime in seconds |
 
-For Cloud Run configuration, see [Cloud Run docs](/cloud-run). For ECS Fargate configuration, see [ECS docs](/ecs).
+See [VPS Deployment](/vps-deployment) for remote deployment configuration.
 
 ## Container filesystem layout
 

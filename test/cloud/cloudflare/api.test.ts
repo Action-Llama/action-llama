@@ -40,7 +40,7 @@ import {
   getSslMode,
   setSslMode,
   CloudflareApiError,
-} from "../../../src/cloud/vps/cloudflare-api.js";
+} from "../../../src/cloud/cloudflare/api.js";
 
 const TOKEN = "test-cf-token";
 

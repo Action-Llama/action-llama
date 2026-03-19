@@ -83,8 +83,8 @@ export async function createCloudProvider(
   cloudConfig: import("../shared/config.js").CloudConfig,
 ): Promise<CloudProvider> {
   if (cloudConfig.provider === "vps") {
-    const { VpsCloudProvider } = await import("./vps/provider.js");
-    return new VpsCloudProvider(cloudConfig);
+    const { VpsProvider } = await import("./vps/provider.js");
+    return new VpsProvider(cloudConfig);
   }
 
   throw new Error(`Unknown cloud provider: "${(cloudConfig as any).provider}"`);

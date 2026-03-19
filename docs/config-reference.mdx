@@ -22,11 +22,6 @@ memory = "4g"               # Memory limit per container (default: "4g")
 cpus = 2                    # CPU limit per container (default: 2)
 timeout = 900               # Default max container runtime in seconds (default: 900, overridable per-agent)
 
-# Cloud provider config (optional — only needed for `al start -c`)
-[cloud]
-provider = "cloud-run"      # "cloud-run", "ecs", or "vps"
-# ... provider-specific fields (see below)
-
 # Gateway HTTP server settings
 [gateway]
 port = 8080                 # Gateway port (default: 8080)
@@ -68,37 +63,14 @@ See [Models](/models) for all supported providers, model IDs, auth types, and th
 
 ### `[local]` — Docker Container Settings
 
-Controls local Docker container isolation. These settings also apply as resource limits for Cloud Run jobs and ECS Fargate tasks.
+Controls local Docker container isolation.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `image` | string | `"al-agent:latest"` | Base Docker image name |
-| `memory` | string | `"4g"` | Memory limit per container (e.g. `"4g"`, `"8g"`, `"4096"` for ECS in MiB) |
+| `memory` | string | `"4g"` | Memory limit per container (e.g. `"4g"`, `"8g"`) |
 | `cpus` | number | `2` | CPU limit per container |
 | `timeout` | number | `900` | Default max container runtime in seconds. Individual agents can override this with `timeout` in their `agent-config.toml`. See [agent timeout docs](/agent-config-reference#timeout). |
-
-### `[cloud]` — Cloud Provider
-
-Only needed when running agents on VPS infrastructure. Configure manually or use deployment tools.
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `provider` | string | Yes | `"vps"` (SSH + Docker) |
-
-
-
-#### VPS fields (`provider = "vps"`)
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `host` | string | Yes | — | Server IP address or hostname |
-| `sshUser` | string | No | `"root"` | SSH username |
-| `sshPort` | number | No | `22` | SSH port |
-| `sshKeyPath` | string | No | `"~/.ssh/id_rsa"` | Path to SSH private key |
-| `vultrInstanceId` | string | No | — | Vultr instance ID (set automatically if provisioned) |
-| `vultrRegion` | string | No | — | Vultr region (set automatically if provisioned) |
-
-See [VPS docs](/vps-deployment) for full setup.
 
 ### `[gateway]` — HTTP Server
 
@@ -153,64 +125,16 @@ authType = "api_key"
 
 Everything else uses defaults: Docker enabled, 4GB memory, 2 CPUs, 15min timeout, gateway on port 8080.
 
-### Cloud Run production
+### VPS production (environment file)
+
+Server configuration lives in an environment file (`~/.action-llama/environments/<name>.toml`), not in `config.toml`. See [VPS Deployment](/vps-deployment) for full setup.
 
 ```toml
-[model]
-provider = "anthropic"
-model = "claude-sonnet-4-20250514"
-thinkingLevel = "medium"
-authType = "api_key"
-
-[local]
-memory = "8g"
-cpus = 4
-timeout = 7200
-
-[cloud]
-provider = "cloud-run"
-gcpProject = "my-gcp-project"
-region = "us-central1"
-artifactRegistry = "us-central1-docker.pkg.dev/my-gcp-project/al-images"
-
-[gateway]
-port = 3000
-```
-
-### ECS Fargate production
-
-```toml
-[model]
-provider = "anthropic"
-model = "claude-sonnet-4-20250514"
-thinkingLevel = "medium"
-authType = "api_key"
-
-# AWS-specific configuration example:
-[cloud]
-provider = "ecs"
-awsRegion = "us-east-1"
-ecsCluster = "al-cluster"
-ecrRepository = "123456789012.dkr.ecr.us-east-1.amazonaws.com/al-images"
-executionRoleArn = "arn:aws:iam::123456789012:role/ecsTaskExecutionRole"
-taskRoleArn = "arn:aws:iam::123456789012:role/al-default-task-role"
-subnets = ["subnet-abc123"]
-
-maxReruns = 5
-maxCallDepth = 2
-```
-
-### VPS production
-
-```toml
-[model]
-provider = "anthropic"
-model = "claude-sonnet-4-20250514"
-thinkingLevel = "medium"
-authType = "api_key"
-
-[cloud]
-provider = "vps"
+# ~/.action-llama/environments/production.toml
+[server]
 host = "5.6.7.8"
-sshUser = "root"
+user = "root"
+keyPath = "~/.ssh/id_rsa"
+basePath = "/opt/action-llama"
+expose = true
 ```

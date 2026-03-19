@@ -1,5 +1,5 @@
 /**
- * VpsCloudProvider — CloudProvider implementation for VPS (SSH + Docker).
+ * VpsProvider — CloudProvider implementation for VPS (SSH + Docker).
  *
  * Uses SSH to run Docker commands on a remote server.
  * Vultr is the first provisioning backend; the runtime works with any server.
@@ -8,14 +8,14 @@
 import type { CloudProvider, SchedulerServiceInfo, RuntimeResult } from "../provider.js";
 import type { ContainerRuntime } from "../../docker/runtime.js";
 import type { CredentialBackend } from "../../shared/credential-backend.js";
-import type { AgentConfig, GlobalConfig, VpsCloudConfig } from "../../shared/config.js";
+import type { AgentConfig, GlobalConfig, VpsConfig } from "../../shared/config.js";
 import { SshDockerRuntime } from "../../docker/ssh-docker-runtime.js";
 import { SshFilesystemBackend } from "../../shared/ssh-fs-backend.js";
 import { sshExec, sshSpawn, testConnection, type SshConfig } from "./ssh.js";
 import { VPS_CONSTANTS } from "./constants.js";
 import { CONSTANTS } from "../../shared/constants.js";
 
-function sshConfigFromCloud(config: VpsCloudConfig): SshConfig {
+function sshConfigFromVps(config: VpsConfig): SshConfig {
   return {
     host: config.host,
     user: config.sshUser ?? VPS_CONSTANTS.DEFAULT_SSH_USER,
@@ -24,15 +24,15 @@ function sshConfigFromCloud(config: VpsCloudConfig): SshConfig {
   };
 }
 
-export class VpsCloudProvider implements CloudProvider {
+export class VpsProvider implements CloudProvider {
   readonly providerName = "vps" as const;
 
-  private config: VpsCloudConfig;
+  private config: VpsConfig;
   private sshConfig: SshConfig;
 
-  constructor(config: VpsCloudConfig) {
+  constructor(config: VpsConfig) {
     this.config = config;
-    this.sshConfig = sshConfigFromCloud(config);
+    this.sshConfig = sshConfigFromVps(config);
   }
 
   async provision(): Promise<Record<string, unknown> | null> {

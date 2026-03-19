@@ -123,13 +123,11 @@ Manually triggers a single agent run. The agent runs once and the process exits 
 ```bash
 al run dev -p .
 al run reviewer -p ./my-project
-al run dev -c                 # Run on cloud
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
-| `-c, --cloud` | Run on cloud infrastructure |
 
 ## `al start`
 
@@ -155,7 +153,6 @@ Shows status of all discovered agents in the project.
 
 ```bash
 al stat -p .
-al stat -c                    # Show cloud status
 ```
 
 Displays each agent's schedule, credentials, and webhook configuration.
@@ -163,7 +160,6 @@ Displays each agent's schedule, credentials, and webhook configuration.
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
-| `-c, --cloud` | Show cloud infrastructure status |
 
 ## `al logs <agent>`
 
@@ -174,7 +170,6 @@ al logs dev -p .
 al logs dev -n 100          # Show last 100 entries
 al logs dev -f              # Follow/tail mode
 al logs dev -d 2025-01-15   # Specific date
-al logs dev -c              # Cloud logs
 ```
 
 | Option | Description |
@@ -183,7 +178,6 @@ al logs dev -c              # Cloud logs
 | `-n, --lines <N>` | Number of log entries (default: 50) |
 | `-f, --follow` | Tail mode — watch for new entries |
 | `-d, --date <YYYY-MM-DD>` | View a specific date's log file |
-| `-c, --cloud` | View cloud logs (Cloud Logging / CloudWatch) |
 
 ## `al pause [name]`
 
@@ -193,13 +187,11 @@ Pause the scheduler or a single agent. Without a name, pauses the entire schedul
 al pause                              # Pause the scheduler
 al pause dev                          # Pause a single agent
 al pause reviewer -p ./my-project
-al pause dev -c                       # Pause via cloud gateway
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
-| `-c, --cloud` | Forward pause request to the cloud-deployed scheduler's gateway |
 
 ## `al resume [name]`
 
@@ -209,13 +201,11 @@ Resume the scheduler or a single agent. Without a name, resumes the entire sched
 al resume                             # Resume the scheduler
 al resume dev                         # Resume a single agent
 al resume reviewer -p ./my-project
-al resume dev -c                      # Resume via cloud gateway
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
-| `-c, --cloud` | Forward resume request to the cloud-deployed scheduler's gateway |
 
 ## `al kill <target>`
 
@@ -225,13 +215,11 @@ Kill an agent (all running instances) or a single instance by ID. Tries the targ
 al kill dev                           # Kill all instances of an agent
 al kill my-agent-abc123               # Kill a single instance by ID
 al kill dev -p ./my-project
-al kill dev -c                        # Kill cloud tasks directly
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
-| `-c, --cloud` | Kill cloud tasks directly via ECS StopTask / Cloud Run cancel APIs |
 
 ## `al chat`
 
@@ -240,14 +228,12 @@ Open an interactive console. Without an agent name, opens the project-level cons
 ```bash
 al chat                # project-level console
 al chat dev            # interactive session with dev agent's credentials
-al chat dev -c         # same, but credentials from cloud secrets manager
 ```
 
 | Option | Description |
 |--------|-------------|
 | `[agent]` | Agent name — loads its credentials and environment |
 | `-p, --project <dir>` | Project directory (default: `.`) |
-| `-c, --cloud` | Load credentials from cloud secrets manager |
 
 When running in agent mode, the command probes the gateway and warns if it is not reachable:
 
