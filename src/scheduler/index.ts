@@ -389,6 +389,9 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
           callId: entry.callId,
         });
         logger.info({ caller: entry.callerAgent, target: entry.targetAgent }, "all runners busy, call queued");
+        drainQueues(schedulerCtx).catch((err) => {
+          logger.error({ err }, "drain after al-call queue failed");
+        });
       }
       return { ok: true };
     });
@@ -434,6 +437,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   }
 
   // Set up cron jobs (only for agents with a schedule)
+  const agentCronJobs = new Map<string, Cron>();
   cronJobs = [];
 
   for (const agentConfig of activeAgentConfigs) {
@@ -450,7 +454,9 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
       const availableRunner = pool.getAvailableRunner();
       if (!availableRunner) {
-        logger.warn({ agent: agentConfig.name, running: pool.runningJobCount, scale: pool.size }, "all agent runners busy, skipping scheduled run");
+        const { dropped } = schedulerCtx.workQueue.enqueue(agentConfig.name, { type: 'schedule' });
+        logger.info({ agent: agentConfig.name, running: pool.runningJobCount, scale: pool.size }, "all runners busy, scheduled run queued");
+        if (dropped) logger.warn({ agent: agentConfig.name }, "queue full, oldest event dropped");
         return;
       }
       logger.info({ agent: agentConfig.name, running: pool.runningJobCount, scale: pool.size }, "triggering scheduled run");
@@ -458,6 +464,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     });
 
     cronJobs.push(job);
+    agentCronJobs.set(agentConfig.name, job);
     const nextRun = job.nextRun();
     if (nextRun) {
       statusTracker?.setNextRunAt(agentConfig.name, nextRun);
@@ -485,15 +492,6 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // Handle agent enable/disable events
   if (statusTracker) {
-    // Create a map of agent name to cron job for easy lookup
-    const agentCronJobs = new Map<string, Cron>();
-    for (let i = 0; i < agentConfigs.length; i++) {
-      const config = agentConfigs[i];
-      if (config.schedule && cronJobs[i]) {
-        agentCronJobs.set(config.name, cronJobs[i]);
-      }
-    }
-
     statusTracker.on("agent-enabled", (agentName: string) => {
       const job = agentCronJobs.get(agentName);
       if (job) {
@@ -531,6 +529,11 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       logger.warn(`${agentConfig.name}: all runners busy, skipping initial run`);
     }
   }
+
+  // Drain any persisted queue items from the previous session
+  drainQueues(schedulerCtx).catch((err) => {
+    logger.error({ err }, "initial queue drain failed");
+  });
 
   // Start hot-reload watcher on agents/ directory
   const { watchAgents } = await import("./watcher.js");

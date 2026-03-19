@@ -107,8 +107,8 @@ vi.mock("../../src/gateway/api-key.js", () => ({
 vi.mock("../../src/shared/state-store.js", () => ({
   createStateStore: vi.fn().mockResolvedValue({
     get: vi.fn(),
-    set: vi.fn(),
-    delete: vi.fn(),
+    set: vi.fn().mockResolvedValue(undefined),
+    delete: vi.fn().mockResolvedValue(undefined),
     list: vi.fn().mockResolvedValue([]),
     close: vi.fn().mockResolvedValue(undefined),
   }),
@@ -201,20 +201,20 @@ describe("startScheduler", () => {
     expect(mockRun).toHaveBeenCalledTimes(1);
   });
 
-  it("cron callback skips when agent is busy", async () => {
+  it("cron callback queues when agent is busy", async () => {
     await startScheduler(tmpDir);
     vi.clearAllMocks();
 
     mockIsRunning = true;
     await cronCallbacks[0]();
     expect(mockRun).not.toHaveBeenCalled();
-    expect(mockLoggerWarn).toHaveBeenCalledWith(
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
       expect.objectContaining({
         agent: "dev",
         running: 1,
         scale: 1,
       }),
-      "all agent runners busy, skipping scheduled run"
+      "all runners busy, scheduled run queued"
     );
   });
 
