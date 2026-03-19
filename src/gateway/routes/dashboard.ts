@@ -5,13 +5,18 @@ import { renderLogsPage } from "../views/logs-page.js";
 import { renderLoginPage } from "../views/login-page.js";
 import { safeCompare } from "../auth.js";
 import type { StatusTracker } from "../../tui/status-tracker.js";
+import type { SessionStore } from "../session-store.js";
 
 /**
  * Register login/logout routes. Call this whenever auth is active so
  * the auth middleware's redirect to /login always has a target — even
  * when the full dashboard (webUI) is disabled.
+ *
+ * When a SessionStore is provided, login creates an opaque session ID stored
+ * server-side and sets that ID in the cookie. Logout deletes the session.
+ * Without a SessionStore the behavior is unchanged (backward compatibility).
  */
-export function registerLoginRoutes(app: Hono, apiKey?: string): void {
+export function registerLoginRoutes(app: Hono, apiKey?: string, sessionStore?: SessionStore): void {
   app.get("/login", (c) => {
     return c.html(renderLoginPage());
   });
@@ -24,18 +29,31 @@ export function registerLoginRoutes(app: Hono, apiKey?: string): void {
     const body = await c.req.parseBody();
     const key = typeof body["key"] === "string" ? body["key"] : "";
     if (safeCompare(key, apiKey)) {
+      let sessionValue: string;
+      if (sessionStore) {
+        sessionValue = await sessionStore.createSession();
+      } else {
+        sessionValue = apiKey;
+      }
       return c.html("", {
         status: 302,
         headers: {
           Location: "/dashboard",
-          "Set-Cookie": `al_session=${apiKey}; HttpOnly; SameSite=Strict; Path=/`,
+          "Set-Cookie": `al_session=${sessionValue}; HttpOnly; SameSite=Strict; Path=/`,
         },
       });
     }
     return c.html(renderLoginPage("Invalid API key"), 401);
   });
 
-  app.post("/logout", (c) => {
+  app.post("/logout", async (c) => {
+    if (sessionStore) {
+      const cookie = c.req.header("Cookie") || "";
+      const sessionId = parseCookieValue(cookie, "al_session");
+      if (sessionId) {
+        await sessionStore.deleteSession(sessionId);
+      }
+    }
     return c.html("", {
       status: 302,
       headers: {
@@ -44,6 +62,15 @@ export function registerLoginRoutes(app: Hono, apiKey?: string): void {
       },
     });
   });
+}
+
+function parseCookieValue(header: string, name: string): string | undefined {
+  for (const part of header.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
+  }
+  return undefined;
 }
 
 export function registerDashboardRoutes(

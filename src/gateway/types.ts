@@ -24,3 +24,9 @@ export interface ReturnRequest {
   secret: string;
   value: string;
 }
+
+export interface Session {
+  id: string;
+  createdAt: number;
+  lastAccessed: number;
+}
