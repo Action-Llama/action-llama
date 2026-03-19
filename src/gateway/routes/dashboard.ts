@@ -61,6 +61,13 @@ export function registerDashboardRoutes(
     );
   }
 
+  // Defense in depth: refuse to serve dashboard routes without an API key
+  if (!apiKey) {
+    app.get("/dashboard", (c) => c.text("Dashboard disabled: No API key configured", 503));
+    app.get("/dashboard/*", (c) => c.text("Dashboard disabled: No API key configured", 503));
+    return;
+  }
+
   // Main dashboard page
   app.get("/dashboard", (c) => {
     const agents = statusTracker.getAllAgents();

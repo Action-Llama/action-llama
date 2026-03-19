@@ -150,8 +150,12 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
 
   // Dashboard routes (login/logout are unprotected; dashboard pages are behind authMiddleware above)
   if (webUI && statusTracker) {
-    registerDashboardRoutes(app, statusTracker, projectPath, opts.apiKey);
-    app.get("/", (c) => c.redirect("/dashboard"));
+    if (!opts.apiKey) {
+      logger.error("Dashboard UI requested but no API key configured. Dashboard will not be enabled for security.");
+    } else {
+      registerDashboardRoutes(app, statusTracker, projectPath, opts.apiKey);
+      app.get("/", (c) => c.redirect("/dashboard"));
+    }
   }
 
   // Log API routes — available regardless of webUI flag (CLI needs them)
@@ -161,7 +165,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     
     // Warn if log endpoints are exposed without authentication
     if (!opts.apiKey) {
-      logger.warn("Log endpoints are exposed without authentication. Consider setting up a gateway API key for security.");
+      logger.warn("Log and dashboard endpoints are exposed without authentication. Consider setting up a gateway API key for security.");
     }
   }
 

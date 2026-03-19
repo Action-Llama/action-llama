@@ -50,10 +50,12 @@ describe("dashboard auth", () => {
     }
   });
 
-  it("serves dashboard without auth when no apiKey provided", async () => {
+  it("returns 503 when no apiKey provided (dashboard disabled for security)", async () => {
     const app = createTestApp();
     const res = await app.request("/dashboard");
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(503);
+    const text = await res.text();
+    expect(text).toContain("Dashboard disabled");
   });
 
   it("redirects browser requests to /login when apiKey set and no auth", async () => {
