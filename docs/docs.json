@@ -3,7 +3,7 @@
   "theme": "mint",
   "appearance": "dark",
   "name": "Action Llama",
-  "favicon": "/favicon.ico",
+  "favicon": "/favicon.svg",
   "colors": {
     "primary": "#ffe970",
     "light": "#e8a849",
