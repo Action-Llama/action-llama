@@ -1,28 +1,24 @@
-import { Cron } from "croner";
-import { loadGlobalConfig, loadAgentConfig, discoverAgents, validateAgentConfig } from "../shared/config.js";
-import type { GlobalConfig, AgentConfig } from "../shared/config.js";
-import { requireCredentialRef } from "../shared/credentials.js";
+import { loadGlobalConfig } from "../shared/config.js";
+import type { GlobalConfig } from "../shared/config.js";
 import { createLogger, createFileOnlyLogger } from "../shared/logger.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import type { PromptSkills } from "../agents/prompt.js";
-import type { GatewayServer } from "../gateway/index.js";
 import { CONSTANTS } from "../shared/constants.js";
-import { ConfigError, AgentError } from "../shared/errors.js";
-import type { WebhookContext } from "../webhooks/types.js";
 import { createWorkQueue } from "./event-queue.js";
-import { RunnerPool, type PoolRunner } from "./runner-pool.js";
 import { createContainerRuntime, buildAgentImages } from "./runtime-factory.js";
-import { resolveWebhookSource, buildFilterFromTrigger, setupWebhookRegistry } from "./webhook-setup.js";
+import { setupWebhookRegistry, registerWebhookBindings } from "./webhook-setup.js";
 import { initTelemetry } from "../telemetry/index.js";
-import { ensureGatewayApiKey } from "../gateway/api-key.js";
 import type { StateStore } from "../shared/state-store.js";
-import {
-  DEFAULT_MAX_RERUNS, DEFAULT_MAX_TRIGGER_DEPTH,
-  executeRun, drainQueues, runWithReruns,
-  makeWebhookPrompt, makeTriggeredPrompt,
-  type WorkItem, type SchedulerContext,
-} from "./execution.js";
+import type { WorkItem, SchedulerContext } from "./execution.js";
+import { drainQueues } from "./execution.js";
 import { SchedulerEventBus } from "./events.js";
+import type { SchedulerState } from "./state.js";
+import { validateAndDiscover } from "./validation.js";
+import { setupGateway } from "./gateway-setup.js";
+import { createRunnerPools } from "./runner-setup.js";
+import { wireCallDispatcher } from "./call-dispatcher.js";
+import { setupCronJobs, setupEnableDisableHandlers, fireInitialRuns } from "./cron-setup.js";
+import { registerShutdownHandlers } from "./shutdown.js";
 
 export type { SchedulerContext, WorkItem } from "./execution.js";
 export { SchedulerEventBus } from "./events.js";
@@ -46,54 +42,9 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     }
   }
 
-  // Discover all agents in the project
-  const agentNames = discoverAgents(projectPath);
-  if (agentNames.length === 0) {
-    throw new ConfigError("No agents found. Run 'al new' to create a project with agents.");
-  }
-
-  const agentConfigs: AgentConfig[] = agentNames.map((name) => loadAgentConfig(projectPath, name));
-
-  // Validate each agent has schedule, webhooks, or both
-  for (const config of agentConfigs) {
-    validateAgentConfig(config);
-  }
-
-  const activeAgentConfigs = agentConfigs.filter((a) => (a.scale ?? 1) > 0);
-
-  // Validate credentials exist for each active agent
-  const allCredentials = new Set(activeAgentConfigs.flatMap((a) => a.credentials));
-  for (const credRef of allCredentials) {
-    await requireCredentialRef(credRef);
-  }
-
-  const maxReruns = globalConfig.maxReruns ?? DEFAULT_MAX_RERUNS;
-  const maxTriggerDepth = globalConfig.maxCallDepth ?? globalConfig.maxTriggerDepth ?? DEFAULT_MAX_TRIGGER_DEPTH;
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const dockerEnabled = true;
-  const anyWebhooks = activeAgentConfigs.some((a) => a.webhooks?.length);
-
-  // Validate pi_auth is not used with Docker (containers can't access host auth storage)
-  for (const config of activeAgentConfigs) {
-    if (config.model.authType === "pi_auth") {
-      throw new ConfigError(
-        `Agent "${config.name}" uses pi_auth which is not supported in container mode. ` +
-        `Switch to api_key/oauth_token (run 'al doctor').`
-      );
-    }
-  }
-
-  // Resolve webhook sources from global config
-  const webhookSources = globalConfig.webhooks ?? {};
-
-  // Validate all agent webhook sources reference valid global config entries
-  if (anyWebhooks) {
-    for (const config of activeAgentConfigs) {
-      for (const trigger of config.webhooks ?? []) {
-        resolveWebhookSource(trigger.source, config.name, webhookSources);
-      }
-    }
-  }
+  // Discover agents and validate config
+  const validated = await validateAndDiscover(projectPath, globalConfig, logger);
+  const { agentConfigs, activeAgentConfigs, maxReruns, maxTriggerDepth, timezone, anyWebhooks, webhookSources } = validated;
 
   // Set up webhook registry if any agents use webhooks
   const { registry: webhookRegistry, secrets: webhookSecrets } = anyWebhooks
@@ -108,11 +59,6 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     statusTracker?.registerAgent(agentConfig.name, agentConfig.scale ?? 1);
   }
 
-  // Declare runner pools and cron jobs early so control route closures can reference them.
-  // They are populated after image builds complete.
-  const runnerPools: Record<string, RunnerPool> = {};
-  let cronJobs: Cron[] = [];
-
   // Create persistent state store (SQLite)
   let stateStore: StateStore | undefined;
   {
@@ -125,122 +71,30 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     logger.info("State store: SQLite (.al/state.db)");
   }
 
-  // Create the lifecycle event bus (no-op in production when no listeners are attached)
+  // Create the lifecycle event bus
   const events = new SchedulerEventBus();
 
+  // Create the shared mutable state container for late-binding closures
+  const state: SchedulerState = {
+    runnerPools: {},
+    cronJobs: [],
+    schedulerCtx: null,
+  };
+
   // Start gateway early (before Docker builds) so users can see build status
-  let gateway: GatewayServer | undefined;
-
-  // Ensure gateway API key exists (fallback generation if doctor wasn't run)
-  const { key: gatewayApiKey, generated } = await ensureGatewayApiKey();
-  if (generated) {
-    logger.info("Generated gateway API key (run 'al doctor' to view it)");
-  }
-
-  const { startGateway } = await import("../gateway/index.js");
-  const gatewayPort = globalConfig.gateway?.port || 8080;
-  gateway = await startGateway({
-    port: gatewayPort,
-    hostname: expose ? "0.0.0.0" : "127.0.0.1",
-    logger: mkLogger(projectPath, "gateway"),
-    killContainer: undefined, // Runtime not ready yet, will handle container ops later
-    webhookRegistry,
-    webhookSecrets,
-    statusTracker,
-    projectPath,
-    webUI,
-    lockTimeout: globalConfig.gateway?.lockTimeout,
-    apiKey: gatewayApiKey,
-    stateStore,
-    events,
-    skipStatusEndpoint: expose,
-    controlDeps: {
-      statusTracker,
-      logger,
-      killInstance: async (instanceId: string) => {
-        for (const pool of Object.values(runnerPools)) {
-          if (pool.killInstance(instanceId)) return true;
-        }
-        return false;
-      },
-      killAgent: async (name: string) => {
-        const pool = runnerPools[name];
-        if (!pool) return null;
-        const killed = pool.killAll();
-        logger.info({ agent: name, killed }, "kill all instances requested via control API");
-        return { killed };
-      },
-      pauseScheduler: async () => {
-        for (const job of cronJobs) {
-          job.pause();
-        }
-        statusTracker?.setPaused(true);
-        logger.info("Scheduler paused via control API");
-      },
-      resumeScheduler: async () => {
-        for (const job of cronJobs) {
-          job.resume();
-        }
-        statusTracker?.setPaused(false);
-        logger.info("Scheduler resumed via control API");
-      },
-      triggerAgent: async (name: string) => {
-        if (statusTracker?.isPaused()) return false;
-        const pool = runnerPools[name];
-        if (!pool) return false;
-        const runner = pool.getAvailableRunner();
-        if (!runner) return false;
-        const config = agentConfigs.find((a) => a.name === name);
-        if (!config) return false;
-        logger.info({ agent: name }, "manual trigger via control API");
-        runWithReruns(runner, config, 0, schedulerCtx).catch((err) => {
-          logger.error({ err, agent: name }, "manual trigger run failed");
-        });
-        return true;
-      },
-      enableAgent: async (name: string) => {
-        if (!statusTracker) return false;
-        const config = agentConfigs.find((a) => a.name === name);
-        if (!config) return false;
-        statusTracker.enableAgent(name);
-        return true;
-      },
-      disableAgent: async (name: string) => {
-        if (!statusTracker) return false;
-        const config = agentConfigs.find((a) => a.name === name);
-        if (!config) return false;
-        statusTracker.disableAgent(name);
-        return true;
-      },
-      stopScheduler: async () => {
-        logger.info("Stop requested via control API");
-        schedulerCtx.shuttingDown = true;
-        schedulerCtx.workQueue.clearAll();
-        schedulerCtx.workQueue.close();
-        for (const job of cronJobs) job.stop();
-        if (gateway) await gateway.close();
-        if (stateStore) await stateStore.close();
-        if (telemetry) {
-          try { await telemetry.shutdown(); } catch {}
-        }
-        process.exit(0);
-      },
-      workQueue: {
-        size: (agentName: string) => schedulerCtx.workQueue.size(agentName),
-      },
-    },
+  const { gateway, gatewayPort, registerContainer, unregisterContainer } = await setupGateway({
+    projectPath, globalConfig, state, agentConfigs,
+    webhookRegistry, webhookSecrets, stateStore, events, telemetry,
+    mkLogger, statusTracker, webUI, expose, logger,
   });
-  logger.info({ port: gatewayPort }, "Gateway started early to show build progress");
 
-  // 1. Create the container runtime
+  // Create the container runtime
   const { runtime, agentRuntimeOverrides } = await createContainerRuntime(
     globalConfig, activeAgentConfigs, logger,
   );
   logger.info({ runtime: "local" }, "Container mode enabled — initializing infrastructure");
 
-  // Check for orphan containers from a previous scheduler run.
-  // Only clean up containers belonging to agents in this project to avoid
-  // killing containers from other schedulers running in parallel (e.g. tests).
+  // Check for orphan containers from a previous scheduler run
   try {
     const ownAgentNames = new Set(activeAgentConfigs.map((a) => a.name));
     const orphans = (await runtime.listRunningAgents()).filter((o) => ownAgentNames.has(o.agentName));
@@ -257,7 +111,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     logger.debug({ err }, "orphan detection skipped (runtime does not support listing)");
   }
 
-  // 2. Build base + per-agent images via shared image builder
+  // Build base + per-agent images
   const buildSkills: PromptSkills = { locking: true };
   const buildResult = await buildAgentImages({
     projectPath, globalConfig, activeAgentConfigs,
@@ -266,243 +120,60 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   baseImage = buildResult.baseImage;
   Object.assign(agentImages, buildResult.agentImages);
 
-  // Import necessary classes for container runners
-  const { ContainerAgentRunner: ContainerAgentRunnerClass } = await import("../agents/container-runner.js");
-  const gatewayUrl = process.env.GATEWAY_URL || `http://gateway:${gatewayPort}`;
+  // Create runner pools
+  const { runnerPools, createRunner } = await createRunnerPools({
+    globalConfig, agentConfigs, runtime, agentRuntimeOverrides,
+    agentImages, baseImage, gatewayPort, registerContainer, unregisterContainer,
+    statusTracker, mkLogger, projectPath, logger,
+  });
 
-  // Gateway callbacks — async (ContainerRegistry persists to StateStore).
-  const registerContainer = gateway
-    ? gateway.registerContainer
-    : async (_secret: string, _reg: any) => {};
-  const unregisterContainer = gateway
-    ? gateway.unregisterContainer
-    : async (_secret: string) => {};
+  // Populate late-binding state
+  Object.assign(state.runnerPools, runnerPools);
 
-  // Enforce project-wide scale limit
-  let totalScale = 0;
-  const adjustedConfigs = agentConfigs.map(config => ({ ...config }));
-  
-  if (globalConfig.scale !== undefined) {
-    for (let i = 0; i < adjustedConfigs.length; i++) {
-      const config = adjustedConfigs[i];
-      const requestedScale = config.scale ?? 1;
-      const remainingCapacity = globalConfig.scale - totalScale;
-      
-      if (remainingCapacity <= 0) {
-        config.scale = 1; // Ensure at least 1 runner per agent
-        if (requestedScale > 1) {
-          logger.warn({ 
-            agent: config.name, 
-            requested: requestedScale, 
-            reduced: 1,
-            projectLimit: globalConfig.scale
-          }, "Agent scale reduced due to project scale limit");
-        }
-        totalScale += 1;
-      } else if (requestedScale > remainingCapacity) {
-        config.scale = remainingCapacity;
-        logger.warn({ 
-          agent: config.name, 
-          requested: requestedScale, 
-          reduced: remainingCapacity,
-          projectLimit: globalConfig.scale
-        }, "Agent scale reduced due to project scale limit");
-        totalScale += remainingCapacity;
-      } else {
-        totalScale += requestedScale;
-      }
-    }
-  }
-
-  for (const agentConfig of adjustedConfigs) {
-    const scale = agentConfig.scale ?? 1;
-    const runners: PoolRunner[] = [];
-
-    // Single log file per agent — instances share the file and are distinguished
-    // by the `instance` field in each log entry (generated per-run by the runner).
-    const agentLogger = mkLogger(projectPath, agentConfig.name);
-
-    for (let i = 0; i < scale; i++) {
-      const agentRuntime = agentRuntimeOverrides[agentConfig.name] || runtime;
-      runners.push(new ContainerAgentRunnerClass(
-        agentRuntime,
-        globalConfig,
-        agentConfig,
-        agentLogger,
-        registerContainer,
-        unregisterContainer,
-        gatewayUrl,
-        projectPath,
-        agentImages[agentConfig.name] || baseImage,
-        statusTracker,
-      ));
-    }
-
-    runnerPools[agentConfig.name] = new RunnerPool(runners);
-    logger.info({ agent: agentConfig.name, scale }, "Created runner pool");
-  }
-
+  // Create work queue + scheduler context
   const queueSize = globalConfig.workQueueSize ?? globalConfig.webhookQueueSize ?? 20;
   const workQueue = await createWorkQueue<WorkItem>(queueSize, {
     type: "sqlite",
     path: (await import("path")).resolve(projectPath, ".al", "work-queue.db"),
   });
   const skills: PromptSkills = { locking: true };
-  const callStore = gateway?.callStore;
-  const schedulerCtx: SchedulerContext = { runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, workQueue, shuttingDown: false, skills, useBakedImages: true, events, callStore, statusTracker, isAgentEnabled: statusTracker ? (name: string) => statusTracker.isAgentEnabled(name) : undefined };
+  const callStore = gateway.callStore;
+  const schedulerCtx: SchedulerContext = {
+    runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, workQueue,
+    shuttingDown: false, skills, useBakedImages: true, events, callStore, statusTracker,
+    isAgentEnabled: statusTracker ? (name: string) => statusTracker.isAgentEnabled(name) : undefined,
+  };
 
-  // Wire up the call dispatcher so al-call works from inside containers
-  if (gateway) {
-    gateway.setCallDispatcher((entry) => {
-      if (statusTracker?.isPaused()) {
-        return { ok: false, reason: "scheduler is paused" };
-      }
-      if (entry.callerAgent === entry.targetAgent) {
-        return { ok: false, reason: "agent cannot call itself" };
-      }
-      if (entry.depth >= maxTriggerDepth) {
-        return { ok: false, reason: "trigger depth limit reached" };
-      }
-      const targetConfig = agentConfigs.find((a) => a.name === entry.targetAgent);
-      if (!targetConfig) {
-        return { ok: false, reason: `target agent "${entry.targetAgent}" not found` };
-      }
-      const pool = runnerPools[entry.targetAgent];
-      if (!pool || pool.size === 0) {
-        return { ok: false, reason: `target agent "${entry.targetAgent}" is disabled` };
-      }
+  // Populate late-binding state
+  state.schedulerCtx = schedulerCtx;
 
-      const runner = pool.getAvailableRunner();
-      if (runner) {
-        logger.info({ caller: entry.callerAgent, target: entry.targetAgent, depth: entry.depth }, "dispatching call");
-        callStore?.setRunning(entry.callId);
-        const prompt = makeTriggeredPrompt(targetConfig, entry.callerAgent, entry.context, schedulerCtx);
-        executeRun(runner, prompt, { type: 'agent', source: entry.callerAgent }, entry.targetAgent, entry.depth + 1, schedulerCtx)
-          .then(({ result, returnValue }) => {
-            if (result === "completed" || result === "rerun") {
-              callStore?.complete(entry.callId, returnValue);
-            } else {
-              callStore?.fail(entry.callId, "agent run failed");
-            }
-            return drainQueues(schedulerCtx);
-          })
-          .catch((err) => {
-            callStore?.fail(entry.callId, err?.message || "unknown error");
-            logger.error({ err, target: entry.targetAgent }, "called agent run failed");
-          });
-      } else {
-        schedulerCtx.workQueue.enqueue(entry.targetAgent, {
-          type: 'agent-trigger',
-          sourceAgent: entry.callerAgent,
-          context: entry.context,
-          depth: entry.depth,
-          callId: entry.callId,
-        });
-        logger.info({ caller: entry.callerAgent, target: entry.targetAgent }, "all runners busy, call queued");
-        drainQueues(schedulerCtx).catch((err) => {
-          logger.error({ err }, "drain after al-call queue failed");
-        });
-      }
-      return { ok: true };
-    });
-  }
+  // Wire up call dispatcher
+  wireCallDispatcher(gateway, schedulerCtx, statusTracker);
 
-  // Set up webhook bindings (only when gateway is enabled)
+  // Set up webhook bindings
   if (webhookRegistry) {
     for (const agentConfig of activeAgentConfigs) {
       if (!agentConfig.webhooks?.length) continue;
-
-      const pool = runnerPools[agentConfig.name];
-
-      for (const trigger of agentConfig.webhooks) {
-        const sourceConfig = webhookSources[trigger.source];
-        const providerType = sourceConfig.type;
-        const filter = buildFilterFromTrigger(trigger, providerType);
-        webhookRegistry.addBinding({
-          agentName: agentConfig.name,
-          source: sourceConfig.credential,
-          type: providerType,
-          filter,
-          trigger: (context: WebhookContext) => {
-            if (statusTracker && !statusTracker.isAgentEnabled(agentConfig.name)) return false;
-            if (statusTracker?.isPaused()) {
-              logger.info({ agent: agentConfig.name, event: context.event }, "scheduler paused, webhook rejected");
-              return false;
-            }
-
-            const runner = pool.getAvailableRunner();
-            if (!runner) {
-              const { dropped } = schedulerCtx.workQueue.enqueue(agentConfig.name, { type: 'webhook', context });
-              logger.info({ agent: agentConfig.name, event: context.event, queueSize: schedulerCtx.workQueue.size(agentConfig.name) }, "webhook queued");
-              if (dropped) logger.warn({ agent: agentConfig.name }, "queue full, oldest event dropped");
-              return true;
-            }
-
-            logger.info({ agent: agentConfig.name, event: context.event, action: context.action }, "webhook triggering agent");
-            const prompt = makeWebhookPrompt(agentConfig, context, schedulerCtx);
-            executeRun(runner, prompt, { type: 'webhook', source: context.event }, agentConfig.name, 0, schedulerCtx)
-              .then(() => drainQueues(schedulerCtx))
-              .catch((err) => logger.error({ err, agent: agentConfig.name }, "webhook run failed"));
-            return true;
-          },
-        });
-      }
+      registerWebhookBindings({
+        agentConfig,
+        pool: runnerPools[agentConfig.name],
+        webhookRegistry,
+        webhookSources,
+        schedulerCtx,
+        statusTracker,
+        logger,
+      });
     }
   }
 
-  // Set up cron jobs (only for agents with a schedule)
-  const agentCronJobs = new Map<string, Cron>();
-  cronJobs = [];
+  // Set up cron jobs
+  const { cronJobs, agentCronJobs, webhookUrls } = setupCronJobs({
+    activeAgentConfigs, runnerPools, schedulerCtx, webhookSources,
+    globalConfig, agentConfigs, gateway, statusTracker, logger, timezone, anyWebhooks,
+  });
 
-  for (const agentConfig of activeAgentConfigs) {
-    if (!agentConfig.schedule) continue;
-
-    const pool = runnerPools[agentConfig.name];
-
-    const job = new Cron(agentConfig.schedule, { timezone }, async () => {
-      // Skip if scheduler is paused
-      if (statusTracker?.isPaused()) {
-        logger.info({ agent: agentConfig.name }, "scheduler paused, skipping scheduled run");
-        return;
-      }
-      // Skip if agent is disabled
-      if (statusTracker && !statusTracker.isAgentEnabled(agentConfig.name)) {
-        logger.info({ agent: agentConfig.name }, "agent is disabled, skipping scheduled run");
-        return;
-      }
-
-      const availableRunner = pool.getAvailableRunner();
-      if (!availableRunner) {
-        const { dropped } = schedulerCtx.workQueue.enqueue(agentConfig.name, { type: 'schedule' });
-        logger.info({ agent: agentConfig.name, running: pool.runningJobCount, scale: pool.size }, "all runners busy, scheduled run queued");
-        if (dropped) logger.warn({ agent: agentConfig.name }, "queue full, oldest event dropped");
-        return;
-      }
-      logger.info({ agent: agentConfig.name, running: pool.runningJobCount, scale: pool.size }, "triggering scheduled run");
-      await runWithReruns(availableRunner, agentConfig, 0, schedulerCtx);
-    });
-
-    cronJobs.push(job);
-    agentCronJobs.set(agentConfig.name, job);
-    const nextRun = job.nextRun();
-    if (nextRun) {
-      statusTracker?.setNextRunAt(agentConfig.name, nextRun);
-    }
-    logger.info(`Scheduled ${agentConfig.name}: "${agentConfig.schedule}" (${timezone})`);
-  }
-
-  const webhookUrls: string[] = [];
-  if (anyWebhooks && gateway) {
-    const gatewayPort = globalConfig.gateway?.port || 8080;
-    const providerTypes = new Set(
-      agentConfigs.flatMap((a) =>
-        a.webhooks?.map((t) => webhookSources[t.source]?.type).filter(Boolean) || []
-      )
-    );
-    for (const pt of providerTypes) {
-      webhookUrls.push(`http://localhost:${gatewayPort}/webhooks/${pt}`);
-    }
-  }
+  // Populate late-binding state
+  state.cronJobs.push(...cronJobs);
 
   for (const url of webhookUrls) {
     logger.info({ url }, "Webhook endpoint registered");
@@ -511,120 +182,29 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // Handle agent enable/disable events
   if (statusTracker) {
-    statusTracker.on("agent-enabled", (agentName: string) => {
-      const job = agentCronJobs.get(agentName);
-      if (job) {
-        job.resume();
-        const nextRun = job.nextRun();
-        if (nextRun) {
-          statusTracker.setNextRunAt(agentName, nextRun);
-        }
-        logger.info({ agent: agentName }, "agent enabled, cron job resumed");
-      }
-    });
-
-    statusTracker.on("agent-disabled", (agentName: string) => {
-      const job = agentCronJobs.get(agentName);
-      if (job) {
-        job.pause();
-        statusTracker.setNextRunAt(agentName, null);
-        logger.info({ agent: agentName }, "agent disabled, cron job paused");
-      }
-    });
+    setupEnableDisableHandlers({ statusTracker, agentCronJobs, logger });
   }
 
-  // Fire initial run for scheduled agents
-  for (const agentConfig of agentConfigs) {
-    if (!agentConfig.schedule) continue;
-
-    const pool = runnerPools[agentConfig.name];
-    const availableRunner = pool.getAvailableRunner();
-    if (availableRunner) {
-      logger.info(`Initial run for ${agentConfig.name}`);
-      runWithReruns(availableRunner, agentConfig, 0, schedulerCtx).catch((err) => {
-        logger.error({ err }, `Initial ${agentConfig.name} run failed`);
-      });
-    } else {
-      logger.warn(`${agentConfig.name}: all runners busy, skipping initial run`);
-    }
-  }
-
-  // Drain any persisted queue items from the previous session
+  // Fire initial runs + drain persisted queue items
+  fireInitialRuns({ agentConfigs, runnerPools, schedulerCtx, logger });
   drainQueues(schedulerCtx).catch((err) => {
     logger.error({ err }, "initial queue drain failed");
   });
 
-  // Start hot-reload watcher on agents/ directory
+  // Start hot-reload watcher
   const { watchAgents } = await import("./watcher.js");
   const watcherHandle = watchAgents({
-    projectPath,
-    globalConfig,
-    runtime,
-    agentRuntimeOverrides,
-    runnerPools,
-    agentConfigs,
-    agentImages,
-    cronJobs,
-    schedulerCtx,
-    webhookRegistry,
-    webhookSources,
-    statusTracker,
-    logger,
-    skills,
-    timezone,
-    baseImage,
-    createRunner: (agentConfig: AgentConfig, image: string) => {
-      const agentRuntime = agentRuntimeOverrides[agentConfig.name] || runtime;
-      return new ContainerAgentRunnerClass(
-        agentRuntime,
-        globalConfig,
-        agentConfig,
-        mkLogger(projectPath, agentConfig.name),
-        registerContainer,
-        unregisterContainer,
-        gatewayUrl,
-        projectPath,
-        image,
-        statusTracker,
-      );
-    },
+    projectPath, globalConfig, runtime, agentRuntimeOverrides,
+    runnerPools, agentConfigs, agentImages, cronJobs,
+    schedulerCtx, webhookRegistry, webhookSources, statusTracker,
+    logger, skills, timezone, baseImage, createRunner,
   });
   logger.info("Watching agents/ for changes (hot reload enabled)");
 
   // Graceful shutdown
-  const shutdown = async () => {
-    logger.info("Shutting down scheduler...");
-    watcherHandle.stop();
-    schedulerCtx.shuttingDown = true;
-    schedulerCtx.workQueue.clearAll();
-    schedulerCtx.workQueue.close();
-    for (const job of cronJobs) {
-      job.stop();
-    }
-    if (gateway) {
-      await gateway.close();
-      logger.info("Gateway server stopped");
-    }
-    if (stateStore) {
-      await stateStore.close();
-    }
-
-    // Shutdown telemetry
-    if (telemetry) {
-      try {
-        await telemetry.shutdown();
-        logger.info("Telemetry shutdown completed");
-      } catch (error: any) {
-        logger.warn({ error: error.message }, "Error during telemetry shutdown");
-      }
-    }
-
-    logger.info("All cron jobs stopped");
-    process.exit(0);
-  };
-
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  registerShutdownHandlers({
+    logger, schedulerCtx, cronJobs, gateway, stateStore, telemetry, watcherHandle,
+  });
 
   return { cronJobs, runnerPools, gateway, webhookRegistry, webhookUrls, statusTracker, schedulerCtx, events };
 }
