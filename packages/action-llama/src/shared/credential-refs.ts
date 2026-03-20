@@ -4,6 +4,8 @@ import { discoverAgents, loadAgentConfig, type GlobalConfig } from "./config.js"
 export const WEBHOOK_SECRET_TYPES: Record<string, string> = {
   github: "github_webhook_secret",
   sentry: "sentry_client_secret",
+  linear: "linear_webhook_secret",
+  mintlify: "mintlify_webhook_secret",
 };
 
 /** Credentials that are always required but may not be explicitly referenced */

@@ -61,6 +61,7 @@ const mockResolveWebhookSource = vi.fn();
 vi.mock("../../../src/scheduler/webhook-setup.js", () => ({
   validateTriggerFields: (...args: any[]) => mockValidateTriggerFields(...args),
   resolveWebhookSource: (...args: any[]) => mockResolveWebhookSource(...args),
+  KNOWN_PROVIDER_TYPES: new Set(["github", "sentry", "linear", "mintlify", "test"]),
 }));
 
 const mockCollectCredentialRefs = vi.fn();
@@ -335,6 +336,100 @@ describe("doctor", () => {
 
     const output = await captureLog(() => execute({ project: "." }));
     expect(output).toContain("[ok] GitHub Token");
+  });
+
+  it("throws ConfigError when webhook source has unknown provider type", async () => {
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadGlobalConfig.mockReturnValue({
+      webhooks: { "my-hook": { type: "githib", credential: "Org" } },
+    });
+    mockLoadAgentConfig.mockReturnValue({
+      name: "dev",
+      credentials: [],
+      webhooks: [{ source: "my-hook", events: ["issues"] }],
+    });
+
+    await expect(
+      captureLog(() => execute({ project: "." }))
+    ).rejects.toThrow('unknown type "githib"');
+  });
+
+  it("warns when webhook source has no credential (unsigned)", async () => {
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadGlobalConfig.mockReturnValue({
+      webhooks: { "my-github": { type: "github" } },
+    });
+    mockLoadAgentConfig.mockReturnValue({
+      name: "dev",
+      credentials: ["github_token"],
+      webhooks: [{ source: "my-github", events: ["issues"] }],
+    });
+    mockResolveCredential.mockReturnValue({
+      id: "github_token",
+      label: "GitHub Token",
+      fields: [{ name: "token" }],
+    });
+    mockCredentialExists.mockReturnValue(true);
+
+    const output = await captureLog(() => execute({ project: "." }));
+    expect(output).toContain("[warn]");
+    expect(output).toContain("no credential");
+    expect(output).toContain("my-github");
+  });
+
+  it("does not warn about unsigned webhooks for test provider", async () => {
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadGlobalConfig.mockReturnValue({
+      webhooks: { "my-test": { type: "test" } },
+    });
+    mockLoadAgentConfig.mockReturnValue({
+      name: "dev",
+      credentials: [],
+      webhooks: [{ source: "my-test", events: ["test"] }],
+    });
+    mockCredentialExists.mockReturnValue(true);
+
+    const output = await captureLog(() => execute({ project: "." }));
+    expect(output).not.toContain("[warn]");
+  });
+
+  it("does not warn about unsigned webhooks in silent mode", async () => {
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadGlobalConfig.mockReturnValue({
+      webhooks: { "my-github": { type: "github" } },
+    });
+    mockLoadAgentConfig.mockReturnValue({
+      name: "dev",
+      credentials: [],
+      webhooks: [{ source: "my-github", events: ["issues"] }],
+    });
+    mockCredentialExists.mockReturnValue(true);
+
+    const output = await captureLog(() => execute({ project: ".", silent: true }));
+    expect(output).not.toContain("[warn]");
+  });
+
+  it("discovers linear webhook secrets from credential-refs", async () => {
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadGlobalConfig.mockReturnValue({
+      webhooks: { "my-linear": { type: "linear", credential: "LinearMain" } },
+    });
+    // Override the collectCredentialRefs mock to include linear credential
+    mockCollectCredentialRefs.mockReturnValue(new Set(["linear_webhook_secret:LinearMain"]));
+    mockLoadAgentConfig.mockReturnValue({
+      name: "dev",
+      credentials: [],
+      webhooks: [{ source: "my-linear", events: ["issues"] }],
+    });
+    mockResolveCredential.mockReturnValue({
+      id: "linear_webhook_secret",
+      label: "Linear Webhook Secret",
+      fields: [{ name: "secret" }],
+    });
+    mockCredentialExists.mockReturnValue(true);
+
+    const output = await captureLog(() => execute({ project: "." }));
+    expect(output).toContain("[ok] Linear Webhook Secret (linear_webhook_secret:LinearMain)");
   });
 
   describe("project-wide scale validation", () => {

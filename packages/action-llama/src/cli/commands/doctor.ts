@@ -6,7 +6,7 @@ import { promptCredential } from "../../credentials/prompter.js";
 import { parseCredentialRef, credentialExists, writeCredentialFields } from "../../shared/credentials.js";
 import { ConfigError, CredentialError } from "../../shared/errors.js";
 import { ensureGatewayApiKey } from "../../gateway/api-key.js";
-import { resolveWebhookSource, validateTriggerFields } from "../../scheduler/webhook-setup.js";
+import { resolveWebhookSource, validateTriggerFields, KNOWN_PROVIDER_TYPES } from "../../scheduler/webhook-setup.js";
 import { collectCredentialRefs } from "../../shared/credential-refs.js";
 
 export async function execute(opts: { project: string; env?: string; checkOnly?: boolean; silent?: boolean }): Promise<void> {
@@ -67,8 +67,18 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
     }
   }
 
-  // Validate webhook sources exist and trigger fields are correct
+  // Validate webhook source definitions have known provider types
   const configErrors: string[] = [];
+  for (const [sourceName, sourceConfig] of Object.entries(webhookSources)) {
+    if (!KNOWN_PROVIDER_TYPES.has(sourceConfig.type)) {
+      const known = [...KNOWN_PROVIDER_TYPES].join(", ");
+      configErrors.push(
+        `Webhook source "${sourceName}" has unknown type "${sourceConfig.type}". Known types: ${known}`
+      );
+    }
+  }
+
+  // Validate agent webhook triggers reference valid sources with correct fields
   for (const name of agents) {
     const config = loadAgentConfig(projectPath, name);
     for (const trigger of config.webhooks || []) {
@@ -90,6 +100,18 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
       "Invalid webhook configuration:\n" +
       configErrors.map(e => `  - ${e}`).join("\n")
     );
+  }
+
+  // Warn about webhook sources that accept unsigned webhooks (no credential)
+  for (const [sourceName, sourceConfig] of Object.entries(webhookSources)) {
+    if (!sourceConfig.credential && sourceConfig.type !== "test") {
+      if (!opts.silent) {
+        console.log(
+          `  [warn] Webhook source "${sourceName}" (${sourceConfig.type}) has no credential — ` +
+          `unsigned webhooks will be accepted. Set credential in config.toml to enable HMAC validation.`
+        );
+      }
+    }
   }
 
   if (credentialRefs.size === 0) {
