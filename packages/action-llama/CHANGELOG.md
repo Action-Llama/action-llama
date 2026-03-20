@@ -1,5 +1,11 @@
 # @action-llama/action-llama
 
+## 0.14.1
+
+### Patch Changes
+
+- [`51b475e`](https://github.com/Action-Llama/action-llama/commit/51b475eabde69d5a1b1e3ada00fe6973b7adcaf4) Thanks [@asselstine](https://github.com/asselstine)! - Fix release workflow failing because `prepublishOnly` called `npm test` which doesn't exist in the workspace package. Build and test now run explicitly at the monorepo root in CI before publishing.
+
 ## 0.14.0
 
 ### Minor Changes
