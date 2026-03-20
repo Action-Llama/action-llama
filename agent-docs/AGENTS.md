@@ -243,7 +243,6 @@ timeout = 900               # Default max container runtime in seconds (default:
 # Gateway HTTP server settings
 [gateway]
 port = 8080                 # Gateway port (default: 8080)
-lockTimeout = 1800          # Lock TTL in seconds (default: 1800 / 30 minutes)
 
 # Webhook sources — named webhook endpoints with provider type and credential
 [webhooks.my-github]
@@ -266,6 +265,7 @@ credential = "MintlifyMain"       # credential instance (mintlify_webhook_secret
 type = "github"                   # no credential — accepts unsigned webhooks
 
 # Scheduler settings
+resourceLockTimeout = 1800  # Lock TTL in seconds (default: 1800 / 30 minutes)
 maxReruns = 10              # Max consecutive reruns for successful agent runs (default: 10)
 maxCallDepth = 3            # Max depth for agent-to-agent call chains (default: 3)
 workQueueSize = 100         # Max queued work items (webhooks + calls) per agent (default: 100)
@@ -284,6 +284,7 @@ endpoint = "https://telemetry.example.com/v1"   # OpenTelemetry endpoint
 | `maxCallDepth` | number | `3` | Maximum depth for agent-to-agent call chains (A calls B calls C = depth 2) |
 | `workQueueSize` | number | `100` | Maximum queued work items (webhook events + agent calls) per agent when all runners are busy |
 | `scale` | number | _(unlimited)_ | Project-wide cap on total concurrent runners across all agents |
+| `resourceLockTimeout` | number | `1800` | Default lock TTL in seconds. Locks expire automatically after this duration unless refreshed via heartbeat. |
 
 ### `[models.<name>]` — Named Models
 
@@ -314,7 +315,6 @@ Starts automatically when Docker mode or webhooks enabled.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `port` | number | `8080` | Port for the gateway HTTP server |
-| `lockTimeout` | number | `1800` | Default lock TTL in seconds. Locks expire automatically after this duration unless refreshed via heartbeat. |
 
 ### `[webhooks.<name>]` — Webhook Sources
 
@@ -765,7 +765,7 @@ rlock-heartbeat "github issue acme/app#42"
 
 #### Lock behavior
 
-Per-run secret auth. Auto-release on exit. **One at a time**. Expire after `lockTimeout` (1800s).
+Per-run secret auth. Auto-release on exit. **One at a time**. Expire after `resourceLockTimeout` (1800s).
 
 #### Lock graceful degradation
 

@@ -70,7 +70,7 @@ export async function setupGateway(opts: {
     statusTracker,
     projectPath,
     webUI,
-    lockTimeout: globalConfig.gateway?.lockTimeout,
+    lockTimeout: globalConfig.resourceLockTimeout,
     apiKey: gatewayApiKey,
     stateStore,
     events,

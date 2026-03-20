@@ -32,7 +32,7 @@ See [Agent Commands — Locks](/reference/agent-commands#lock-commands) for the 
 
 ## TTL and Expiry
 
-Locks expire automatically after **30 minutes** by default. This prevents deadlocks if an agent crashes or hangs without releasing its lock. The timeout is configurable via `gateway.lockTimeout` in `config.toml` (value in seconds).
+Locks expire automatically after **30 minutes** by default. This prevents deadlocks if an agent crashes or hangs without releasing its lock. The timeout is configurable via `resourceLockTimeout` in `config.toml` (value in seconds).
 
 For work that takes longer than the timeout, use `HEARTBEAT` to extend the TTL. Each heartbeat resets the clock to another full TTL period. If the agent forgets to heartbeat and the lock expires, another instance can claim it.
 
@@ -103,7 +103,7 @@ Use descriptive, unique keys:
 
 | Setting | Location | Default | Description |
 |---------|----------|---------|-------------|
-| `gateway.lockTimeout` | `config.toml` | `1800` (30 min) | Default TTL for locks in seconds |
+| `resourceLockTimeout` | `config.toml` | `1800` (30 min) | Default TTL for locks in seconds |
 
 ## See Also
 

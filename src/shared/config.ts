@@ -51,7 +51,6 @@ export type CloudConfig = VpsConfig;
 
 export interface GatewayConfig {
   port?: number;
-  lockTimeout?: number;
   url?: string;
 }
 
@@ -83,6 +82,7 @@ export interface GlobalConfig {
   /** @deprecated Use workQueueSize instead */
   webhookQueueSize?: number;
   workQueueSize?: number;
+  resourceLockTimeout?: number;
   // Max simultaneous agent runs project-wide
   scale?: number;
 }

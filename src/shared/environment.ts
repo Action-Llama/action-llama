@@ -7,7 +7,7 @@ import type { ServerConfig } from "./server.js";
 
 export interface EnvironmentConfig {
   server?: ServerConfig;
-  gateway?: { url?: string; port?: number; lockTimeout?: number };
+  gateway?: { url?: string; port?: number };
   telemetry?: { enabled?: boolean; provider?: string; endpoint?: string; serviceName?: string; headers?: Record<string, string>; samplingRate?: number };
 }
 
