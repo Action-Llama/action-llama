@@ -55,29 +55,14 @@ webhooks:
     events: [build]                       # Mintlify event types (optional)
     actions: [failed]                     # Mintlify event actions (optional)
 
-# Optional: hooks — run before or after the LLM session
-# Each hook runs a built-in provider to stage data or perform cleanup
+# Optional: hooks — shell commands that run before or after the LLM session
 hooks:
   pre:
-    - provider: git-clone                 # Clone a repo into the workspace
-      required: true                      # If true (default), abort if this step fails
-      params:
-        repo: acme/app                    # Short "owner/repo" or full URL
-        dest: /tmp/repo
-        depth: 1                          # Optional: shallow clone
-
-    - provider: http                      # Fetch a URL and write the response to a file
-      required: false                     # Optional step — warn and continue on failure
-      params:
-        url: https://api.internal/v1/flags
-        output: /tmp/context/flags.json
-        headers:
-          Authorization: "Bearer ${INTERNAL_TOKEN}"
-
-    - provider: shell                     # Run a shell command
-      params:
-        command: "gh issue list --repo acme/app --label P1 --json number,title,body --limit 20"
-        output: /tmp/context/issues.json  # Optional: capture stdout to file
+    - "gh repo clone acme/app /tmp/repo --depth 1"
+    - "curl -o /tmp/context/flags.json https://api.internal/v1/flags"
+    - "gh issue list --repo acme/app --label P1 --json number,title,body --limit 20 > /tmp/context/issues.json"
+  post:
+    - "upload-artifacts.sh"
 
 # Optional: custom parameters injected into the agent prompt
 params:
@@ -160,98 +145,42 @@ timeout = 3600      # 1 hour
 
 ## Hooks
 
-Hooks run mechanical data-staging or cleanup tasks around the LLM session. Pre-hooks (`hooks.pre`) run after credentials are loaded but before the LLM session starts — they fetch data, clone repos, or run commands to prepare the workspace so the agent starts with everything it needs. Post-hooks (`hooks.post`) run after the session completes.
+Hooks run shell commands before and after the LLM session, inside the container. Pre-hooks (`hooks.pre`) run after credentials are loaded but before the LLM session starts — use them for cloning repos, fetching data, or staging files. Post-hooks (`hooks.post`) run after the session completes — use them for cleanup, artifact upload, or reporting.
 
 See [Optimizing Agents](/guides/optimizing-agents) for a guide on using hooks effectively.
 
 ### How it works
 
-1. Steps run **sequentially** in the order they appear in `SKILL.md` frontmatter
-2. Steps run **inside the container** (or host process in `--no-docker` mode) after credential/env setup
-3. Providers write files to disk — your SKILL.md instructions reference the staged files
-4. Environment variable interpolation is supported: `${VAR_NAME}` in string params is resolved against `process.env` (which already has credentials injected)
+1. Commands run **sequentially** in the order they appear in `SKILL.md` frontmatter
+2. Commands run **inside the container** (or host process in `--no-docker` mode) after credential/env setup
+3. Each command runs via `/bin/sh -c "..."`
+4. If any command exits non-zero, the run aborts with an error
+5. Credential env vars (`GITHUB_TOKEN`, `GH_TOKEN`, etc.) are available to hook commands
 
-### Step fields
-
-Each entry in `hooks.pre` or `hooks.post` has these fields:
+### Fields
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `provider` | string | Yes | Provider name: `shell`, `http`, or `git-clone` |
-| `required` | boolean | No | If `true` (default), the agent aborts on failure. If `false`, logs a warning and continues. |
-| `params` | table | Yes | Provider-specific parameters (see below) |
+| `hooks.pre` | string[] | No | Shell commands to run before the LLM session |
+| `hooks.post` | string[] | No | Shell commands to run after the LLM session |
 
-### Built-in providers
-
-#### `shell`
-
-Runs a command via `/bin/sh`. Optionally captures stdout to a file.
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `command` | string | Yes | Shell command to execute |
-| `output` | string | No | File path to write stdout to. Parent directories are created automatically. |
+### Examples
 
 ```yaml
 hooks:
   pre:
-    - provider: shell
-      params:
-        command: "gh issue list --repo acme/app --label P1 --json number,title,body --limit 20"
-        output: /tmp/context/issues.json
-```
-
-#### `http`
-
-Fetches a URL and writes the response body to a file.
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `url` | string | Yes | URL to fetch |
-| `output` | string | Yes | File path to write the response body |
-| `method` | string | No | HTTP method (default: `GET`) |
-| `headers` | table | No | HTTP headers as key-value pairs |
-| `body` | string | No | Request body (for POST/PUT) |
-
-```yaml
-hooks:
-  pre:
-    - provider: http
-      required: false
-      params:
-        url: https://api.internal/v1/feature-flags
-        output: /tmp/context/flags.json
-        headers:
-          Authorization: "Bearer ${INTERNAL_TOKEN}"
-```
-
-#### `git-clone`
-
-Clones a git repository. Short `"owner/repo"` names are expanded to `git@github.com:owner/repo.git`; full URLs are passed through. Git credentials (SSH key, HTTPS token) are already configured from the agent's credentials.
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `repo` | string | Yes | Repository: `"owner/repo"` or full URL |
-| `dest` | string | Yes | Local path to clone into |
-| `branch` | string | No | Branch to check out |
-| `depth` | number | No | Shallow clone depth (e.g., `1`) |
-
-```yaml
-hooks:
-  pre:
-    - provider: git-clone
-      params:
-        repo: acme/app
-        dest: /tmp/repo
-        branch: main
-        depth: 1
+    - "gh repo clone acme/app /tmp/repo --depth 1"
+    - "gh issue list --repo acme/app --label P1 --json number,title,body --limit 20 > /tmp/context/issues.json"
+    - "curl -o /tmp/context/flags.json https://api.internal/v1/flags"
+  post:
+    - "upload-artifacts.sh"
 ```
 
 ### Notes
 
-- The `shell` provider is the escape hatch — anything a built-in provider doesn't cover can be expressed as a shell command
-- There is no per-hook timeout — hooks are bounded by the container-level timeout
-- Environment variables set inside `shell` child processes do not propagate back to the agent's `process.env`
+- Each hook has a 5-minute timeout
+- Hooks are bounded by the container-level timeout
+- Environment variables set inside hook commands do not propagate back to the agent's `process.env`
 
 ## Webhook Trigger Fields
 

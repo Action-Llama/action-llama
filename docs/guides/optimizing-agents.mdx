@@ -24,15 +24,8 @@ Pre-hooks run **after credentials are loaded** but **before the LLM session star
 # SKILL.md frontmatter
 hooks:
   pre:
-    - provider: git-clone
-      params:
-        repo: acme/app
-        dest: /tmp/repo
-        depth: 1
-    - provider: shell
-      params:
-        command: "gh issue list --repo acme/app --label bug --json number,title,body --limit 20"
-        output: /tmp/context/issues.json
+    - "gh repo clone acme/app /tmp/repo --depth 1"
+    - "gh issue list --repo acme/app --label bug --json number,title,body --limit 20 > /tmp/context/issues.json"
 ```
 
 Then reference the staged files in the body of your `SKILL.md`:
@@ -51,15 +44,8 @@ The most common hook — clone the repo the agent will work on:
 ```yaml
 hooks:
   pre:
-    - provider: git-clone
-      params:
-        repo: acme/app
-        dest: /tmp/repo
-        depth: 1              # shallow clone for speed
-        branch: main          # optional: specific branch
+    - "gh repo clone acme/app /tmp/repo --depth 1"
 ```
-
-Short `"owner/repo"` names are expanded to `git@github.com:owner/repo.git`. Full URLs work too.
 
 ## Example: Shell command
 
@@ -68,13 +54,8 @@ Run any shell command. `GITHUB_TOKEN`, `GH_TOKEN`, and other credential env vars
 ```yaml
 hooks:
   pre:
-    - provider: shell
-      params:
-        command: "gh issue list --repo acme/app --label P1 --json number,title,body --limit 20"
-        output: /tmp/context/issues.json
+    - "gh issue list --repo acme/app --label P1 --json number,title,body --limit 20 > /tmp/context/issues.json"
 ```
-
-Without `output`, the command runs but stdout is discarded. Use `output` to capture it to a file.
 
 ## Example: HTTP fetch
 
@@ -83,37 +64,23 @@ Fetch data from an API endpoint:
 ```yaml
 hooks:
   pre:
-    - provider: http
-      required: false          # optional — warn and continue on failure
-      params:
-        url: "https://api.internal/v1/feature-flags"
-        output: /tmp/context/flags.json
-        headers:
-          Authorization: "Bearer ${INTERNAL_TOKEN}"
+    - "curl -sf -H 'Authorization: Bearer ${INTERNAL_TOKEN}' https://api.internal/v1/feature-flags -o /tmp/context/flags.json"
 ```
 
-Environment variable interpolation (`${VAR_NAME}`) is supported in string params.
+Environment variable interpolation (`${VAR_NAME}`) is supported since commands run via `/bin/sh`.
 
-## Required vs Optional Hooks
+## Post-hooks
 
-By default, hooks are required — if one fails, the agent aborts:
+Post-hooks run after the LLM session completes. Use them for cleanup, artifact upload, or reporting:
 
 ```yaml
 hooks:
   pre:
-    - provider: git-clone
-      required: true                    # default — abort on failure
-      params:
-        repo: acme/app
-        dest: /tmp/repo
-    - provider: http
-      required: false                   # optional — warn and continue
-      params:
-        url: "https://api.internal/v1/flags"
-        output: /tmp/context/flags.json
+    - "gh repo clone acme/app /tmp/repo --depth 1"
+  post:
+    - "upload-artifacts.sh"
+    - "curl -X POST https://hooks.slack.com/... -d '{\"text\": \"Agent run complete\"}'"
 ```
-
-Use `required: false` for nice-to-have context that shouldn't block the agent.
 
 ## Referencing Staged Files in SKILL.md
 
@@ -129,11 +96,10 @@ After hooks run, tell the agent what's available in the body of your `SKILL.md`:
 
 ## Tips
 
-- **Shell is the escape hatch** — anything a built-in provider doesn't cover can be expressed as a shell command
-- **Env var interpolation** works in all string params: `${GITHUB_TOKEN}`, `${SENTRY_AUTH_TOKEN}`, etc.
 - **Hooks run sequentially** in the order defined in the `SKILL.md` frontmatter
-- **No per-hook timeout** — hooks are bounded by the container-level timeout
-- **Environment variables** set inside `shell` child processes do not propagate back to the agent's `process.env`
+- **Each hook has a 5-minute timeout** — hooks are also bounded by the container-level timeout
+- **If a command fails** (non-zero exit), the run aborts with an error
+- **Environment variables** set inside hook commands do not propagate back to the agent's `process.env`
 
 ## Next steps
 
