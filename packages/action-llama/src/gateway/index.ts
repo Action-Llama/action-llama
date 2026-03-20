@@ -21,6 +21,7 @@ import { withSpan, getTelemetry } from "../telemetry/index.js";
 import { SpanKind } from "@opentelemetry/api";
 import { authMiddleware } from "./auth.js";
 import type { SchedulerEventBus } from "../scheduler/events.js";
+import type { StatsStore } from "../stats/store.js";
 
 export type { ContainerRegistration } from "./types.js";
 
@@ -42,6 +43,8 @@ export interface GatewayOptions {
   skipStatusEndpoint?: boolean;
   /** Optional event bus for lifecycle instrumentation. */
   events?: SchedulerEventBus;
+  /** Optional stats store for dashboard aggregate stats. */
+  statsStore?: StatsStore;
 }
 
 export interface GatewayServer {
@@ -134,6 +137,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     app.use("/dashboard", auth);
     app.use("/locks/status", auth);
     app.use("/api/logs/*", auth);
+    app.use("/api/stats/*", auth);
 
     // Always register login/logout so the auth redirect has a target
     registerLoginRoutes(app, opts.apiKey, sessionStore, opts.hostname);
@@ -155,7 +159,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     if (!opts.apiKey) {
       logger.error("Dashboard UI requested but no API key configured. Dashboard will not be enabled for security.");
     } else {
-      registerDashboardRoutes(app, statusTracker, projectPath, opts.apiKey);
+      registerDashboardRoutes(app, statusTracker, projectPath, opts.apiKey, opts.statsStore);
       app.get("/", (c) => c.redirect("/dashboard"));
     }
   }
@@ -166,6 +170,12 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     registerLogRoutes(app, projectPath);
   } else if (projectPath && !opts.apiKey) {
     logger.warn("Log API routes disabled — gateway API key required for security.");
+  }
+
+  // Stats API routes — only register if auth is configured for security
+  if (opts.apiKey) {
+    const { registerStatsRoutes } = await import("./routes/stats.js");
+    registerStatsRoutes(app, opts.statsStore);
   }
 
   // Control routes (for kill, pause, resume commands)

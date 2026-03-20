@@ -244,6 +244,57 @@ describe("StatsStore", () => {
     store.close();
   });
 
+  it("queries runs paginated by agent", () => {
+    const store = createStore();
+    const now = Date.now();
+    for (let i = 0; i < 15; i++) {
+      store.recordRun(makeRun({ agentName: "reporter", startedAt: now - i * 1000, instanceId: `reporter-${i}` }));
+    }
+    store.recordRun(makeRun({ agentName: "reviewer", startedAt: now }));
+
+    // Page 1
+    const page1 = store.queryRunsByAgentPaginated("reporter", 5, 0);
+    expect(page1).toHaveLength(5);
+    expect(page1[0].instance_id).toBe("reporter-0"); // most recent first
+
+    // Page 2
+    const page2 = store.queryRunsByAgentPaginated("reporter", 5, 5);
+    expect(page2).toHaveLength(5);
+    expect(page2[0].instance_id).toBe("reporter-5");
+
+    // Page 4 (partial)
+    const page4 = store.queryRunsByAgentPaginated("reporter", 5, 15);
+    expect(page4).toHaveLength(0);
+
+    store.close();
+  });
+
+  it("counts runs by agent", () => {
+    const store = createStore();
+    store.recordRun(makeRun({ agentName: "reporter" }));
+    store.recordRun(makeRun({ agentName: "reporter" }));
+    store.recordRun(makeRun({ agentName: "reviewer" }));
+
+    expect(store.countRunsByAgent("reporter")).toBe(2);
+    expect(store.countRunsByAgent("reviewer")).toBe(1);
+    expect(store.countRunsByAgent("nonexistent")).toBe(0);
+    store.close();
+  });
+
+  it("queries single run by instance ID", () => {
+    const store = createStore();
+    store.recordRun(makeRun({ instanceId: "reporter-abc123", agentName: "reporter" }));
+    store.recordRun(makeRun({ instanceId: "reviewer-xyz789", agentName: "reviewer" }));
+
+    const run = store.queryRunByInstanceId("reporter-abc123");
+    expect(run).toBeDefined();
+    expect(run.agent_name).toBe("reporter");
+
+    const missing = store.queryRunByInstanceId("nonexistent");
+    expect(missing).toBeUndefined();
+    store.close();
+  });
+
   it("counts rerun as ok in summary", () => {
     const store = createStore();
     store.recordRun(makeRun({ result: "rerun", startedAt: Date.now() }));

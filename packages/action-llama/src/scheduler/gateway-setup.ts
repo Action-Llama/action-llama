@@ -12,6 +12,7 @@ import type { GatewayServer } from "../gateway/index.js";
 import type { WebhookRegistry } from "../webhooks/registry.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import type { StateStore } from "../shared/state-store.js";
+import type { StatsStore } from "../stats/store.js";
 import type { Logger } from "../shared/logger.js";
 import { createLogger, createFileOnlyLogger } from "../shared/logger.js";
 import { ensureGatewayApiKey } from "../gateway/api-key.js";
@@ -34,6 +35,7 @@ export async function setupGateway(opts: {
   webhookRegistry?: WebhookRegistry;
   webhookSecrets: Record<string, Record<string, string>>;
   stateStore?: StateStore;
+  statsStore?: StatsStore;
   events: SchedulerEventBus;
   telemetry?: any;
   mkLogger: typeof createLogger | typeof createFileOnlyLogger;
@@ -44,7 +46,7 @@ export async function setupGateway(opts: {
 }): Promise<GatewaySetupResult> {
   const {
     projectPath, globalConfig, state, agentConfigs,
-    webhookRegistry, webhookSecrets, stateStore, events, telemetry,
+    webhookRegistry, webhookSecrets, stateStore, statsStore, events, telemetry,
     mkLogger, statusTracker, webUI, expose, logger,
   } = opts;
 
@@ -73,6 +75,7 @@ export async function setupGateway(opts: {
     lockTimeout: globalConfig.resourceLockTimeout,
     apiKey: gatewayApiKey,
     stateStore,
+    statsStore,
     events,
     skipStatusEndpoint: expose,
     controlDeps: {

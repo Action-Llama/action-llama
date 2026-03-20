@@ -185,6 +185,15 @@ export class StatsStore {
         GROUP BY caller_agent, target_agent
         ORDER BY count DESC
       `),
+      queryRunsByAgentPaginated: this.db.prepare(`
+        SELECT * FROM runs WHERE agent_name = @agent ORDER BY started_at DESC LIMIT @limit OFFSET @offset
+      `),
+      countRunsByAgent: this.db.prepare(`
+        SELECT COUNT(*) as count FROM runs WHERE agent_name = @agent
+      `),
+      queryRunByInstanceId: this.db.prepare(`
+        SELECT * FROM runs WHERE instance_id = @instanceId LIMIT 1
+      `),
       pruneRuns: this.db.prepare("DELETE FROM runs WHERE started_at < @threshold"),
       pruneCallEdges: this.db.prepare("DELETE FROM call_edges WHERE started_at < @threshold"),
       globalSummary: this.db.prepare(`
@@ -244,6 +253,19 @@ export class StatsStore {
       status: updates.status ?? null,
       targetInstance: updates.targetInstance ?? null,
     });
+  }
+
+  queryRunsByAgentPaginated(agent: string, limit: number, offset: number): any[] {
+    return this.stmts.queryRunsByAgentPaginated.all({ agent, limit, offset });
+  }
+
+  countRunsByAgent(agent: string): number {
+    const row = this.stmts.countRunsByAgent.get({ agent }) as any;
+    return row?.count ?? 0;
+  }
+
+  queryRunByInstanceId(instanceId: string): any | undefined {
+    return this.stmts.queryRunByInstanceId.get({ instanceId });
   }
 
   queryRuns(query: RunQuery = {}): any[] {

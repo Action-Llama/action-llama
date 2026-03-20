@@ -9,12 +9,23 @@ function mockStatusTracker() {
     getAllAgents: () => [],
     getSchedulerInfo: () => null,
     getRecentLogs: () => [],
+    getInstances: () => [],
     on: vi.fn(),
     removeListener: vi.fn(),
   } as any;
 }
 
-function createTestApp(apiKey?: string, sessionStore?: SessionStore) {
+function mockStatsStore() {
+  return {
+    queryGlobalSummary: vi.fn().mockReturnValue({ totalRuns: 0, okRuns: 0, errorRuns: 0, totalTokens: 0, totalCost: 0 }),
+    queryAgentSummary: vi.fn().mockReturnValue([]),
+    queryRunsByAgentPaginated: vi.fn().mockReturnValue([]),
+    countRunsByAgent: vi.fn().mockReturnValue(0),
+    queryRunByInstanceId: vi.fn().mockReturnValue(undefined),
+  } as any;
+}
+
+function createTestApp(apiKey?: string, sessionStore?: SessionStore, statsStore?: any) {
   const app = new Hono();
   if (apiKey) {
     const auth = authMiddleware(apiKey, sessionStore);
@@ -24,7 +35,7 @@ function createTestApp(apiKey?: string, sessionStore?: SessionStore) {
     app.use("/locks/status", auth);
     registerLoginRoutes(app, apiKey, sessionStore);
   }
-  registerDashboardRoutes(app, mockStatusTracker(), undefined, apiKey);
+  registerDashboardRoutes(app, mockStatusTracker(), undefined, apiKey, statsStore);
   return app;
 }
 
@@ -125,12 +136,12 @@ describe("dashboard auth", () => {
   it("protects sub-routes under /dashboard/", async () => {
     const app = createTestApp("test-key");
 
-    const res = await app.request("/dashboard/agents/dev/logs", {
+    const res = await app.request("/dashboard/agents/dev", {
       headers: { Accept: "application/json" },
     });
     expect(res.status).toBe(401);
 
-    const authedRes = await app.request("/dashboard/agents/dev/logs", {
+    const authedRes = await app.request("/dashboard/agents/dev", {
       headers: { Authorization: "Bearer test-key" },
     });
     expect(authedRes.status).toBe(200);
@@ -267,6 +278,55 @@ describe("dashboard auth", () => {
       });
       expect(res.status).toBe(302);
       expect(store.deleteSession).toHaveBeenCalledWith("my-session");
+    });
+  });
+
+  describe("new routes", () => {
+    it("serves agent detail page", async () => {
+      const stats = mockStatsStore();
+      const app = createTestApp("test-key", undefined, stats);
+      const res = await app.request("/dashboard/agents/reporter", {
+        headers: { Authorization: "Bearer test-key" },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain("reporter");
+    });
+
+    it("serves instance detail page", async () => {
+      const stats = mockStatsStore();
+      stats.queryRunByInstanceId.mockReturnValue({
+        instance_id: "reporter-abc123",
+        agent_name: "reporter",
+        trigger_type: "schedule",
+        result: "completed",
+        started_at: Date.now() - 30000,
+        duration_ms: 30000,
+        input_tokens: 1000,
+        output_tokens: 500,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        total_tokens: 1500,
+        cost_usd: 0.05,
+        turn_count: 3,
+      });
+      const app = createTestApp("test-key", undefined, stats);
+      const res = await app.request("/dashboard/agents/reporter/instances/reporter-abc123", {
+        headers: { Authorization: "Bearer test-key" },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain("reporter-abc123");
+      expect(html).toContain("completed");
+    });
+
+    it("redirects old logs route to agent detail", async () => {
+      const app = createTestApp("test-key");
+      const res = await app.request("/dashboard/agents/reporter/logs", {
+        headers: { Authorization: "Bearer test-key" },
+      });
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/dashboard/agents/reporter");
     });
   });
 });

@@ -22,6 +22,7 @@ describe("Gateway log endpoints authentication", () => {
         getAllAgents: () => [],
         getSchedulerInfo: () => ({}),
         getRecentLogs: () => [],
+        getInstances: () => [],
         on: vi.fn(),
         removeListener: vi.fn(),
       } as any, // Mock status tracker
@@ -91,13 +92,15 @@ describe("Gateway log endpoints authentication", () => {
     expect(res1.status).toBe(302);
     expect(res1.headers.get("location")).toBe("/login");
 
-    // With session cookie - should work
+    // With session cookie - logs route now redirects to agent detail page
     const res2 = await fetch(`${baseUrl}/dashboard/agents/test-agent/logs`, {
       headers: {
         Accept: "text/html",
         Cookie: `al_session=${TEST_API_KEY}`,
       },
+      redirect: "manual",
     });
-    expect(res2.status).toBe(200);
+    expect(res2.status).toBe(302);
+    expect(res2.headers.get("location")).toBe("/dashboard/agents/test-agent");
   });
 });

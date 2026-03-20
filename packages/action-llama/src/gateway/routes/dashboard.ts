@@ -1,10 +1,12 @@
 import type { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { renderDashboardPage } from "../views/dashboard-page.js";
-import { renderLogsPage } from "../views/logs-page.js";
+import { renderAgentDetailPage } from "../views/agent-detail-page.js";
+import { renderInstanceDetailPage } from "../views/instance-detail-page.js";
 import { renderLoginPage } from "../views/login-page.js";
 import { safeCompare } from "../auth.js";
 import type { StatusTracker } from "../../tui/status-tracker.js";
+import type { StatsStore } from "../../stats/store.js";
 import type { SessionStore } from "../session-store.js";
 
 /**
@@ -80,6 +82,7 @@ export function registerDashboardRoutes(
   statusTracker: StatusTracker,
   projectPath?: string,
   apiKey?: string,
+  statsStore?: StatsStore,
 ): void {
   // Deprecation warning for old env var
   if (process.env.AL_DASHBOARD_SECRET) {
@@ -102,15 +105,36 @@ export function registerDashboardRoutes(
     const agents = statusTracker.getAllAgents();
     const info = statusTracker.getSchedulerInfo();
     const logs = statusTracker.getRecentLogs(20);
-    const html = renderDashboardPage(agents, info, logs);
+    const globalSummary = statsStore ? statsStore.queryGlobalSummary(0) : null;
+    const html = renderDashboardPage(agents, info, logs, globalSummary);
     return c.html(html);
   });
 
-  // Agent logs page
+  // Agent detail page
+  app.get("/dashboard/agents/:name", (c) => {
+    const name = c.req.param("name");
+    const agents = statusTracker.getAllAgents();
+    const agent = agents.find((a) => a.name === name) || null;
+    const summary = statsStore ? (statsStore.queryAgentSummary({ agent: name })[0] || null) : null;
+    const instances = statusTracker.getInstances().filter((i) => i.agentName === name);
+    const totalHistorical = statsStore ? statsStore.countRunsByAgent(name) : 0;
+    const html = renderAgentDetailPage({ agentName: name, agent, summary, runningInstances: instances, totalHistorical });
+    return c.html(html);
+  });
+
+  // Instance detail page
+  app.get("/dashboard/agents/:name/instances/:id", (c) => {
+    const name = c.req.param("name");
+    const id = c.req.param("id");
+    const run = statsStore ? statsStore.queryRunByInstanceId(id) : null;
+    const html = renderInstanceDetailPage({ agentName: name, instanceId: id, run });
+    return c.html(html);
+  });
+
+  // Redirect old logs route to agent detail page
   app.get("/dashboard/agents/:name/logs", (c) => {
     const name = c.req.param("name");
-    const html = renderLogsPage(name);
-    return c.html(html);
+    return c.redirect(`/dashboard/agents/${encodeURIComponent(name)}`);
   });
 
   // SSE: status stream
@@ -120,8 +144,9 @@ export function registerDashboardRoutes(
         const agents = statusTracker.getAllAgents();
         const info = statusTracker.getSchedulerInfo();
         const recentLogs = statusTracker.getRecentLogs(20);
+        const instances = statusTracker.getInstances();
         stream.writeSSE({
-          data: JSON.stringify({ agents, schedulerInfo: info, recentLogs }),
+          data: JSON.stringify({ agents, schedulerInfo: info, recentLogs, instances }),
         });
       };
 
