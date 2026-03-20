@@ -335,12 +335,12 @@ describe("log API routes", () => {
       const app = createTestApp(tmpDir);
       const res = await app.request("/api/logs/scheduler");
       const data = await res.json();
-      expect(data.entries).toHaveLength(50);
+      expect(data.entries).toHaveLength(100);
     });
 
-    it("caps at 1000", async () => {
+    it("caps at 2000", async () => {
       const app = createTestApp(tmpDir);
-      // Just verify it doesn't error with large value (no need for 1001 lines)
+      // Just verify it doesn't error with large value (no need for 2001 lines)
       const res = await app.request("/api/logs/scheduler?lines=9999");
       expect(res.status).toBe(200);
     });

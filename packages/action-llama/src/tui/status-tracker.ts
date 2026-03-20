@@ -243,10 +243,20 @@ export class StatusTracker extends EventEmitter {
   }
 
   /**
-   * Unregister an agent instance
+   * Unregister an agent instance (remove completely)
    */
   unregisterInstance(id: string): void {
     this.instances.delete(id);
+    this.emit("update");
+  }
+
+  /**
+   * Update an instance's status (e.g. running -> completed)
+   */
+  completeInstance(id: string, status: 'completed' | 'error' | 'killed'): void {
+    const inst = this.instances.get(id);
+    if (!inst) return;
+    inst.status = status;
     this.emit("update");
   }
 

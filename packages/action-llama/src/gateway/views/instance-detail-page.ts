@@ -56,7 +56,10 @@ export function renderInstanceDetailPage(data: InstanceDetailData): string {
     const content = `
       <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
         <h1 class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white font-mono">${escapeHtml(instanceId)}</h1>
-        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400">running / pending</span>
+        <div class="flex items-center gap-2">
+          <button class="px-3 py-1.5 text-sm rounded-md font-bold bg-red-600 hover:bg-red-700 text-white transition-colors" onclick="killThisInstance()">Kill</button>
+          <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400">running / pending</span>
+        </div>
       </div>
       ${notFoundContent}
       <h2 class="text-base font-semibold text-slate-900 dark:text-white mb-3 mt-8">Logs</h2>
@@ -80,7 +83,10 @@ export function renderInstanceDetailPage(data: InstanceDetailData): string {
   const content = `
     <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
       <h1 class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white font-mono">${escapeHtml(run.instance_id)}</h1>
-      ${resultBadge(run.result)}
+      <div class="flex items-center gap-2">
+        ${run.result === "running" ? `<button class="px-3 py-1.5 text-sm rounded-md font-bold bg-red-600 hover:bg-red-700 text-white transition-colors" onclick="killThisInstance()">Kill</button>` : ""}
+        ${resultBadge(run.result)}
+      </div>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
@@ -125,8 +131,8 @@ export function renderInstanceDetailPage(data: InstanceDetailData): string {
 function logViewerHtml(agentName: string, instanceId: string): string {
   return `
     <div class="flex items-center gap-3 mb-2">
-      <button id="follow-btn" class="px-3 py-1 text-xs rounded-md border border-blue-500 bg-blue-500 text-white hover:bg-blue-600 transition-colors" onclick="toggleFollow()">Follow</button>
-      <button class="px-3 py-1 text-xs rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors" onclick="clearLogs()">Clear</button>
+      <button id="follow-btn" class="px-3 py-1 text-xs rounded-md font-bold border border-blue-500 bg-blue-500 text-white hover:bg-blue-600 transition-colors" onclick="toggleFollow()">Follow</button>
+      <button class="px-3 py-1 text-xs rounded-md font-bold border border-orange-500 bg-orange-500 text-white hover:bg-orange-600 transition-colors" onclick="clearLogs()">Clear</button>
       <span id="line-count" class="text-xs text-slate-400">0 lines</span>
       <span id="conn-status" class="text-xs text-green-500">connected</span>
     </div>
@@ -246,12 +252,17 @@ function logViewerScript(agentName: string, instanceId: string): string {
       else if (atBottom && !follow) { follow = true; followBtn.className = "px-3 py-1 text-xs rounded-md border border-blue-500 bg-blue-500 text-white hover:bg-blue-600 transition-colors"; }
     });
 
+    function killThisInstance() {
+      if (!confirm("Kill instance " + instanceId + "?")) return;
+      ctrlPost("/control/kill/" + encodeURIComponent(instanceId));
+    }
+
     // Log polling
     var logCursor = null;
     async function fetchLogs(initial) {
       try {
         var params = new URLSearchParams();
-        if (initial) params.set("lines", "100");
+        if (initial) params.set("lines", "500");
         if (logCursor) params.set("cursor", logCursor);
         var res = await fetch("/api/logs/agents/" + encodeURIComponent(agentName) + "/" + encodeURIComponent(instanceId) + "?" + params, { credentials: "same-origin" });
         if (!res.ok) throw new Error(res.status);

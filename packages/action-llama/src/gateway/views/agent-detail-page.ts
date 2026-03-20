@@ -22,6 +22,35 @@ function instanceStatusColor(status: string): string {
   }
 }
 
+function instanceCardStyle(status: string): { bg: string; border: string; dot: string; pulse: string } {
+  switch (status) {
+    case "running": return { bg: "bg-green-50 dark:bg-green-950/30", border: "border-green-200 dark:border-green-900", dot: "bg-green-500", pulse: "animate-pulse" };
+    case "completed": return { bg: "bg-slate-50 dark:bg-slate-900", border: "border-slate-200 dark:border-slate-800", dot: "bg-slate-400", pulse: "" };
+    case "error": return { bg: "bg-red-50 dark:bg-red-950/30", border: "border-red-200 dark:border-red-900", dot: "bg-red-500", pulse: "" };
+    case "killed": return { bg: "bg-yellow-50 dark:bg-yellow-950/30", border: "border-yellow-200 dark:border-yellow-900", dot: "bg-yellow-500", pulse: "" };
+    default: return { bg: "bg-slate-50 dark:bg-slate-900", border: "border-slate-200 dark:border-slate-800", dot: "bg-slate-400", pulse: "" };
+  }
+}
+
+function renderInstanceCard(inst: AgentInstance, agentName: string): string {
+  const s = instanceCardStyle(inst.status);
+  const killBtn = inst.status === "running"
+    ? `<button class="px-2 py-1 text-xs rounded font-bold bg-red-600 hover:bg-red-700 text-white transition-colors" onclick="killInstance('${escapeHtml(inst.id)}')">Kill</button>`
+    : "";
+  return `<div class="${s.bg} border ${s.border} rounded-lg p-3 flex items-center justify-between" data-instance="${escapeHtml(inst.id)}">
+    <div>
+      <a href="/dashboard/agents/${escapeHtml(agentName)}/instances/${escapeHtml(inst.id)}" class="text-blue-600 dark:text-blue-400 hover:underline font-mono text-sm">${escapeHtml(inst.id)}</a>
+      <span class="ml-2 text-xs text-slate-500">${escapeHtml(inst.trigger)}</span>
+      <span class="ml-2 text-xs text-slate-400">started ${escapeHtml(inst.startedAt.toLocaleTimeString())}</span>
+      <span class="ml-2 text-xs ${instanceStatusColor(inst.status)}">${escapeHtml(inst.status)}</span>
+    </div>
+    <div class="flex items-center gap-2">
+      ${killBtn}
+      <span class="state-dot ${s.dot} inline-block ${s.pulse}"></span>
+    </div>
+  </div>`;
+}
+
 function renderStatCard(label: string, value: string): string {
   return `<div class="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-3">
     <div class="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">${escapeHtml(label)}</div>
@@ -52,8 +81,9 @@ export function renderAgentDetailPage(data: AgentDetailData): string {
         <span id="agent-state" class="text-sm">${stateHtml}</span>
       </div>
       <div class="flex items-center gap-2">
-        <button class="px-3 py-1.5 text-sm rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors" onclick="triggerAgent('${escapeHtml(agentName)}')">Run</button>
-        <button id="toggle-btn" class="px-3 py-1.5 text-sm rounded-md border border-slate-300 dark:border-slate-600 bg-transparent hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors" onclick="toggleEnabled()">${agent?.enabled !== false ? "Disable" : "Enable"}</button>
+        <button class="px-3 py-1.5 text-sm rounded-md font-bold bg-green-600 hover:bg-green-700 text-white transition-colors" onclick="triggerAgent('${escapeHtml(agentName)}')">Run</button>
+        <button class="px-3 py-1.5 text-sm rounded-md font-bold bg-red-600 hover:bg-red-700 text-white transition-colors" onclick="killAgent()">Kill</button>
+        <button id="toggle-btn" class="px-3 py-1.5 text-sm rounded-md font-bold border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors" onclick="toggleEnabled()">${agent?.enabled !== false ? "Disable" : "Enable"}</button>
       </div>
     </div>
 
@@ -66,19 +96,11 @@ export function renderAgentDetailPage(data: AgentDetailData): string {
       ${renderStatCard("Total Cost", formatCost(summary?.totalCost ?? 0))}
     </div>
 
-    <!-- Running instances -->
+    <!-- Session instances -->
     <div id="running-section" class="${runningInstances.length > 0 ? "" : "hidden"} mb-6">
-      <h2 class="text-base font-semibold text-slate-900 dark:text-white mb-3">Running Instances</h2>
+      <h2 class="text-base font-semibold text-slate-900 dark:text-white mb-3">Session Instances</h2>
       <div id="running-instances" class="space-y-2">
-        ${runningInstances.map((inst) => `
-          <div class="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-900 rounded-lg p-3 flex items-center justify-between" data-instance="${escapeHtml(inst.id)}">
-            <div>
-              <a href="/dashboard/agents/${escapeHtml(agentName)}/instances/${escapeHtml(inst.id)}" class="text-blue-600 dark:text-blue-400 hover:underline font-mono text-sm">${escapeHtml(inst.id)}</a>
-              <span class="ml-2 text-xs text-slate-500">${escapeHtml(inst.trigger)}</span>
-              <span class="ml-2 text-xs text-slate-400">started ${escapeHtml(inst.startedAt.toLocaleTimeString())}</span>
-            </div>
-            <span class="state-dot bg-green-500 inline-block animate-pulse"></span>
-          </div>`).join("\n")}
+        ${runningInstances.map((inst) => renderInstanceCard(inst, agentName)).join("\n")}
       </div>
     </div>
 
@@ -102,10 +124,16 @@ export function renderAgentDetailPage(data: AgentDetailData): string {
         </tbody>
       </table>
     </div>
-    <div class="flex justify-between items-center" id="pagination">
+    <div class="flex justify-between items-center mb-8" id="pagination">
       <button id="prev-btn" class="px-3 py-1.5 text-sm rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed" onclick="prevPage()" disabled>Previous</button>
       <span id="page-info" class="text-sm text-slate-400"></span>
       <button id="next-btn" class="px-3 py-1.5 text-sm rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed" onclick="nextPage()" disabled>Next</button>
+    </div>
+
+    <!-- Aggregate logs -->
+    <h2 class="text-base font-semibold text-slate-900 dark:text-white mb-3">Recent Logs</h2>
+    <div id="agent-log-container" class="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-3 sm:p-4 font-mono text-xs sm:text-sm leading-relaxed overflow-y-auto scrollbar-thin" style="height: 300px;">
+      <div id="agent-log-empty" class="text-slate-400 italic">Loading logs...</div>
     </div>`;
 
   const scripts = `<script>
@@ -122,6 +150,20 @@ export function renderAgentDetailPage(data: AgentDetailData): string {
       if (result === "completed" || result === "rerun") return "text-green-600 dark:text-green-400";
       if (result === "error") return "text-red-600 dark:text-red-400";
       return "text-slate-500 dark:text-slate-400";
+    }
+
+    function instStyle(status) {
+      if (status === "running") return { bg: "bg-green-50 dark:bg-green-950/30", border: "border-green-200 dark:border-green-900", dot: "bg-green-500", pulse: "animate-pulse" };
+      if (status === "error") return { bg: "bg-red-50 dark:bg-red-950/30", border: "border-red-200 dark:border-red-900", dot: "bg-red-500", pulse: "" };
+      if (status === "killed") return { bg: "bg-yellow-50 dark:bg-yellow-950/30", border: "border-yellow-200 dark:border-yellow-900", dot: "bg-yellow-500", pulse: "" };
+      return { bg: "bg-slate-50 dark:bg-slate-900", border: "border-slate-200 dark:border-slate-800", dot: "bg-slate-400", pulse: "" };
+    }
+
+    function instStatusColor(status) {
+      if (status === "running") return "text-green-600 dark:text-green-400";
+      if (status === "error") return "text-red-600 dark:text-red-400";
+      if (status === "killed") return "text-yellow-600 dark:text-yellow-400";
+      return "text-slate-600 dark:text-slate-300";
     }
 
     function renderHistoryRow(r) {
@@ -183,11 +225,18 @@ export function renderAgentDetailPage(data: AgentDetailData): string {
         if (mine.length > 0) {
           section.classList.remove("hidden");
           container.innerHTML = mine.map(function(inst) {
-            return '<div class="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-900 rounded-lg p-3 flex items-center justify-between" data-instance="' + esc(inst.id) + '">' +
+            var st = instStyle(inst.status);
+            var killBtn = inst.status === "running"
+              ? '<button class="px-2 py-1 text-xs rounded font-bold bg-red-600 hover:bg-red-700 text-white transition-colors" onclick="killInstance(\\\'' + esc(inst.id) + '\\\')">Kill</button>'
+              : "";
+            var statusColor = instStatusColor(inst.status);
+            return '<div class="' + st.bg + ' border ' + st.border + ' rounded-lg p-3 flex items-center justify-between" data-instance="' + esc(inst.id) + '">' +
               '<div><a href="/dashboard/agents/' + esc(agentName) + '/instances/' + esc(inst.id) + '" class="text-blue-600 dark:text-blue-400 hover:underline font-mono text-sm">' + esc(inst.id) + '</a>' +
               '<span class="ml-2 text-xs text-slate-500">' + esc(inst.trigger) + '</span>' +
-              '<span class="ml-2 text-xs text-slate-400">started ' + fmtTime(inst.startedAt) + '</span></div>' +
-              '<span class="state-dot bg-green-500 inline-block animate-pulse"></span></div>';
+              '<span class="ml-2 text-xs text-slate-400">started ' + fmtTime(inst.startedAt) + '</span>' +
+              '<span class="ml-2 text-xs ' + statusColor + '">' + esc(inst.status) + '</span></div>' +
+              '<div class="flex items-center gap-2">' + killBtn +
+              '<span class="state-dot ' + st.dot + ' inline-block ' + st.pulse + '"></span></div></div>';
           }).join("");
         } else {
           section.classList.add("hidden");
@@ -203,6 +252,63 @@ export function renderAgentDetailPage(data: AgentDetailData): string {
       var action = agentEnabled ? "disable" : "enable";
       ctrlPost("/control/agents/" + encodeURIComponent(agentName) + "/" + action);
     }
+    function killAgent() {
+      if (!confirm("Kill all instances of agent '" + agentName + "'?")) return;
+      ctrlPost("/control/agents/" + encodeURIComponent(agentName) + "/kill");
+    }
+    function killInstance(id) {
+      if (!confirm("Kill instance " + id + "?")) return;
+      ctrlPost("/control/kill/" + encodeURIComponent(id));
+    }
+
+    // Aggregate log viewer
+    var SKIP_LOG_MSGS = { "event": 1, "tool done": 1 };
+    function formatAgentLogEntry(p) {
+      var time = '<span class="text-slate-400">' + esc(new Date(p.time).toLocaleTimeString("en-US", { hour12: false })) + '</span>  ';
+      var msg = p.msg || "";
+      var lvl = p.level || 30;
+      var inst = p.instance ? '<span class="text-purple-400">[' + esc(p.instance.slice(0, 8)) + ']</span> ' : "";
+      if (SKIP_LOG_MSGS[msg]) return null;
+      if (lvl <= 20 && msg !== "tool start") return null;
+      if (msg === "assistant") {
+        var text = p.text || "";
+        if (!text) return null;
+        return time + inst + '<span class="text-slate-900 dark:text-white font-medium">' + esc(text.split("\\n")[0]) + '</span>';
+      }
+      if (msg === "bash") return time + inst + '<span class="text-cyan-500">$ ' + esc(p.cmd || "") + '</span>';
+      if (msg === "tool start") return time + inst + '<span class="text-blue-500">\\u25b8 ' + esc(p.tool || "unknown") + '</span>';
+      if (msg === "run completed" || msg === "run completed, rerun requested") return time + inst + '<span class="text-green-500 font-semibold">Run completed</span>';
+      if (lvl >= 50) return time + inst + '<span class="text-red-500 font-semibold">ERROR: ' + esc(msg) + '</span>';
+      if (lvl >= 40) return time + inst + '<span class="text-yellow-500">WARN: ' + esc(msg) + '</span>';
+      return time + inst + '<span class="text-slate-400">' + esc(msg) + '</span>';
+    }
+
+    var agentLogContainer = document.getElementById("agent-log-container");
+    var agentLogEmpty = document.getElementById("agent-log-empty");
+    var agentLogCursor = null;
+    async function fetchAgentLogs(initial) {
+      try {
+        var params = new URLSearchParams();
+        if (initial) params.set("lines", "200");
+        if (agentLogCursor) params.set("cursor", agentLogCursor);
+        var res = await fetch("/api/logs/agents/" + encodeURIComponent(agentName) + "?" + params, { credentials: "same-origin" });
+        if (!res.ok) return;
+        var data = await res.json();
+        if (data.entries.length > 0 && agentLogEmpty && agentLogEmpty.parentNode) agentLogEmpty.remove();
+        for (var i = 0; i < data.entries.length; i++) {
+          var html = formatAgentLogEntry(data.entries[i]);
+          if (!html) continue;
+          var div = document.createElement("div");
+          div.className = "whitespace-pre-wrap break-all py-px";
+          div.innerHTML = html;
+          agentLogContainer.appendChild(div);
+        }
+        if (data.cursor) agentLogCursor = data.cursor;
+        agentLogContainer.scrollTop = agentLogContainer.scrollHeight;
+      } catch(e) {}
+    }
+    fetchAgentLogs(true);
+    setInterval(function() { fetchAgentLogs(false); }, 2000);
   </script>`;
 
   return renderLayout({

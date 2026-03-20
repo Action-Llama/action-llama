@@ -1,10 +1,7 @@
 import type { AgentStatus, SchedulerInfo, LogLine } from "../../tui/status-tracker.js";
 import { escapeHtml, formatDuration, formatTime, formatCost, formatTokens, renderLayout } from "./layout.js";
 
-interface GlobalSummary {
-  totalRuns: number;
-  okRuns: number;
-  errorRuns: number;
+interface SessionSummary {
   totalTokens: number;
   totalCost: number;
 }
@@ -32,9 +29,19 @@ function renderStatCard(label: string, value: string, id?: string): string {
   </div>`;
 }
 
-function renderAgentRow(agent: AgentStatus): string {
+function renderTokenBar(agent: AgentStatus, totalSessionTokens: number): string {
+  const tokens = agent.cumulativeUsage?.totalTokens ?? 0;
+  const pct = totalSessionTokens > 0 ? Math.round((tokens / totalSessionTokens) * 100) : 0;
+  return `<div class="flex items-center gap-2">
+    <div class="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden" style="min-width:60px">
+      <div class="h-full bg-blue-500 rounded-full" style="width:${pct}%"></div>
+    </div>
+    <span class="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">${formatTokens(tokens)}</span>
+  </div>`;
+}
+
+function renderAgentRow(agent: AgentStatus, totalSessionTokens: number): string {
   const colors = stateColor(agent.state);
-  const statusText = agent.statusText || agent.lastError || "\u2014";
   const toggleLabel = agent.enabled ? "Disable" : "Enable";
   const toggleAction = agent.enabled ? "disable" : "enable";
   const descHtml = agent.description
@@ -46,20 +53,20 @@ function renderAgentRow(agent: AgentStatus): string {
       ${descHtml}
     </td>
     <td class="px-3 py-2.5"><span class="state-dot ${colors.dot} mr-1.5 inline-block"></span><span class="${colors.text} text-sm">${escapeHtml(formatScale(agent))}</span></td>
-    <td class="px-3 py-2.5 max-w-[300px] truncate text-slate-500 dark:text-slate-400 text-sm">${escapeHtml(statusText)}</td>
     <td class="px-3 py-2.5 text-sm text-slate-600 dark:text-slate-300">${formatTime(agent.lastRunAt)}</td>
     <td class="px-3 py-2.5 text-sm text-slate-600 dark:text-slate-300">${agent.lastRunDuration != null ? formatDuration(agent.lastRunDuration) : "\u2014"}</td>
     <td class="px-3 py-2.5 text-sm text-slate-600 dark:text-slate-300">${formatTime(agent.nextRunAt)}</td>
+    <td class="px-3 py-2.5" style="min-width:120px">${renderTokenBar(agent, totalSessionTokens)}</td>
     <td class="px-3 py-2.5 whitespace-nowrap">
-      <button class="px-2 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors mr-1" onclick="triggerAgent('${escapeHtml(agent.name)}')">Run</button>
-      <button class="px-2 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 bg-transparent hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors" onclick="toggleAgent('${escapeHtml(agent.name)}','${toggleAction}')">${toggleLabel}</button>
+      <button class="px-2 py-1 text-xs rounded font-bold bg-green-600 hover:bg-green-700 text-white transition-colors mr-1" onclick="triggerAgent('${escapeHtml(agent.name)}')">Run</button>
+      <button class="px-2 py-1 text-xs rounded font-bold bg-red-600 hover:bg-red-700 text-white transition-colors mr-1" onclick="killAgent('${escapeHtml(agent.name)}')">Kill</button>
+      <button class="px-2 py-1 text-xs rounded font-bold border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors" onclick="toggleAgent('${escapeHtml(agent.name)}','${toggleAction}')">${toggleLabel}</button>
     </td>
   </tr>`;
 }
 
 function renderAgentCard(agent: AgentStatus): string {
   const colors = stateColor(agent.state);
-  const statusText = agent.statusText || agent.lastError || "\u2014";
   const toggleLabel = agent.enabled ? "Disable" : "Enable";
   const toggleAction = agent.enabled ? "disable" : "enable";
   const descHtml = agent.description
@@ -72,7 +79,6 @@ function renderAgentCard(agent: AgentStatus): string {
         <span class="text-xs ${colors.text}"><span class="state-dot ${colors.dot} mr-1 inline-block"></span>${escapeHtml(formatScale(agent))}</span>
       </div>
       ${descHtml}
-      <div class="text-xs text-slate-500 dark:text-slate-400 truncate mb-1.5">${escapeHtml(statusText)}</div>
       <div class="flex gap-3 text-xs text-slate-400">
         <span>Last: ${formatTime(agent.lastRunAt)}</span>
         <span>${agent.lastRunDuration != null ? formatDuration(agent.lastRunDuration) : ""}</span>
@@ -80,8 +86,9 @@ function renderAgentCard(agent: AgentStatus): string {
       </div>
     </a>
     <div class="flex gap-2 mt-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-      <button class="px-2.5 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors" onclick="triggerAgent('${escapeHtml(agent.name)}')">Run</button>
-      <button class="px-2.5 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 bg-transparent hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors" onclick="toggleAgent('${escapeHtml(agent.name)}','${toggleAction}')">${toggleLabel}</button>
+      <button class="px-2.5 py-1 text-xs rounded font-bold bg-green-600 hover:bg-green-700 text-white transition-colors" onclick="triggerAgent('${escapeHtml(agent.name)}')">Run</button>
+      <button class="px-2.5 py-1 text-xs rounded font-bold bg-red-600 hover:bg-red-700 text-white transition-colors" onclick="killAgent('${escapeHtml(agent.name)}')">Kill</button>
+      <button class="px-2.5 py-1 text-xs rounded font-bold border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors" onclick="toggleAgent('${escapeHtml(agent.name)}','${toggleAction}')">${toggleLabel}</button>
     </div>
   </div>`;
 }
@@ -91,25 +98,21 @@ function formatLogLine(log: LogLine): string {
   return `<span class="text-slate-400">${escapeHtml(time)}</span> <span class="text-indigo-400">[${escapeHtml(log.agent)}]</span> ${escapeHtml(log.message)}`;
 }
 
-export function renderDashboardPage(agents: AgentStatus[], schedulerInfo: SchedulerInfo | null, recentLogs: LogLine[], globalSummary?: GlobalSummary | null): string {
-  const cronCount = schedulerInfo?.cronJobCount || 0;
-  const webhooks = schedulerInfo?.webhooksActive ? "active" : "inactive";
-  const summary = globalSummary || { totalRuns: 0, okRuns: 0, errorRuns: 0, totalTokens: 0, totalCost: 0 };
+export function renderDashboardPage(agents: AgentStatus[], schedulerInfo: SchedulerInfo | null, recentLogs: LogLine[]): string {
+  const sessionTokens = agents.reduce((sum, a) => sum + (a.cumulativeUsage?.totalTokens ?? 0), 0);
+  const sessionCost = agents.reduce((sum, a) => sum + (a.cumulativeUsage?.cost ?? 0), 0);
 
   const content = `
     <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
       <h1 class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">Dashboard</h1>
       <div class="flex items-center gap-2">
-        <button id="pause-btn" class="px-3 py-1.5 text-sm rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors" onclick="togglePause()">${schedulerInfo?.paused ? "Resume" : "Pause"}</button>
+        <button id="pause-btn" class="px-3 py-1.5 text-sm rounded-md font-bold border border-yellow-500 bg-yellow-500 hover:bg-yellow-600 text-white transition-colors" onclick="togglePause()">${schedulerInfo?.paused ? "Resume" : "Pause"}</button>
       </div>
     </div>
 
-    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
-      ${renderStatCard("Agents", `${agents.length}`)}
-      ${renderStatCard("Cron Jobs", `${cronCount}`)}
-      ${renderStatCard("Webhooks", webhooks)}
-      ${renderStatCard("Total Runs", `${summary.totalRuns}`, "stat-runs")}
-      ${renderStatCard("Total Cost", formatCost(summary.totalCost), "stat-cost")}
+    <div class="grid grid-cols-2 gap-3 mb-6">
+      ${renderStatCard("Session Tokens", formatTokens(sessionTokens), "stat-tokens")}
+      ${renderStatCard("Session Cost", formatCost(sessionCost), "stat-cost")}
     </div>
 
     <!-- Desktop table -->
@@ -119,15 +122,15 @@ export function renderDashboardPage(agents: AgentStatus[], schedulerInfo: Schedu
           <tr class="border-b-2 border-slate-200 dark:border-slate-700">
             <th class="text-left px-3 py-2 text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">Agent</th>
             <th class="text-left px-3 py-2 text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">State</th>
-            <th class="text-left px-3 py-2 text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">Status</th>
             <th class="text-left px-3 py-2 text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">Last Run</th>
             <th class="text-left px-3 py-2 text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">Duration</th>
             <th class="text-left px-3 py-2 text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">Next Run</th>
+            <th class="text-left px-3 py-2 text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">Tokens Used</th>
             <th class="text-left px-3 py-2 text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">Actions</th>
           </tr>
         </thead>
         <tbody id="agent-table-body" class="divide-y divide-slate-100 dark:divide-slate-800">
-          ${agents.length > 0 ? agents.map(renderAgentRow).join("\n") : '<tr><td colspan="7" class="px-3 py-8 text-center text-slate-400 italic">No agents registered</td></tr>'}
+          ${agents.length > 0 ? agents.map((a) => renderAgentRow(a, sessionTokens)).join("\n") : '<tr><td colspan="7" class="px-3 py-8 text-center text-slate-400 italic">No agents registered</td></tr>'}
         </tbody>
       </table>
     </div>
@@ -152,39 +155,66 @@ export function renderDashboardPage(agents: AgentStatus[], schedulerInfo: Schedu
       return a.state;
     }
 
+    function sessionTotalTokens(agents) {
+      var total = 0;
+      for (var i = 0; i < agents.length; i++) {
+        if (agents[i].cumulativeUsage) total += agents[i].cumulativeUsage.totalTokens || 0;
+      }
+      return total;
+    }
+
+    function sessionTotalCost(agents) {
+      var total = 0;
+      for (var i = 0; i < agents.length; i++) {
+        if (agents[i].cumulativeUsage) total += agents[i].cumulativeUsage.cost || 0;
+      }
+      return total;
+    }
+
+    function tokenBar(a, totalTokens) {
+      var tokens = (a.cumulativeUsage && a.cumulativeUsage.totalTokens) || 0;
+      var pct = totalTokens > 0 ? Math.round((tokens / totalTokens) * 100) : 0;
+      return '<div class="flex items-center gap-2">' +
+        '<div class="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden" style="min-width:60px">' +
+        '<div class="h-full bg-blue-500 rounded-full" style="width:' + pct + '%"></div></div>' +
+        '<span class="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">' + fmtTokens(tokens) + '</span></div>';
+    }
+
+    var _cachedAgents = null;
+
     function renderRow(a) {
       var dotClass = stateColors[a.state] || "bg-slate-400";
       var textClass = stateTextColors[a.state] || "text-slate-400";
-      var status = a.statusText || a.lastError || "\\u2014";
       var toggleLabel = a.enabled ? "Disable" : "Enable";
       var toggleAction = a.enabled ? "disable" : "enable";
+      var totalTok = _cachedAgents ? sessionTotalTokens(_cachedAgents) : 0;
       return '<tr data-agent="' + esc(a.name) + '" class="hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors">' +
         '<td class="px-3 py-2.5"><a href="/dashboard/agents/' + esc(a.name) + '" class="text-blue-600 dark:text-blue-400 hover:underline font-medium">' + esc(a.name) + '</a></td>' +
         '<td class="px-3 py-2.5"><span class="state-dot ' + dotClass + ' mr-1.5 inline-block"></span><span class="' + textClass + ' text-sm">' + esc(fmtScale(a)) + '</span></td>' +
-        '<td class="px-3 py-2.5 max-w-[300px] truncate text-slate-500 dark:text-slate-400 text-sm">' + esc(status) + '</td>' +
         '<td class="px-3 py-2.5 text-sm text-slate-600 dark:text-slate-300">' + fmtTime(a.lastRunAt) + '</td>' +
         '<td class="px-3 py-2.5 text-sm text-slate-600 dark:text-slate-300">' + (a.lastRunDuration != null ? fmtDur(a.lastRunDuration) : "\\u2014") + '</td>' +
         '<td class="px-3 py-2.5 text-sm text-slate-600 dark:text-slate-300">' + fmtTime(a.nextRunAt) + '</td>' +
+        '<td class="px-3 py-2.5" style="min-width:120px">' + tokenBar(a, totalTok) + '</td>' +
         '<td class="px-3 py-2.5 whitespace-nowrap">' +
-        '<button class="px-2 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors mr-1" onclick="triggerAgent(\\'' + esc(a.name) + '\\')">Run</button>' +
-        '<button class="px-2 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 bg-transparent hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors" onclick="toggleAgent(\\'' + esc(a.name) + '\\',\\'' + toggleAction + '\\')">' + toggleLabel + '</button></td></tr>';
+        '<button class="px-2 py-1 text-xs rounded font-bold bg-green-600 hover:bg-green-700 text-white transition-colors mr-1" onclick="triggerAgent(\\'' + esc(a.name) + '\\')">Run</button>' +
+        '<button class="px-2 py-1 text-xs rounded font-bold bg-red-600 hover:bg-red-700 text-white transition-colors mr-1" onclick="killAgent(\\'' + esc(a.name) + '\\')">Kill</button>' +
+        '<button class="px-2 py-1 text-xs rounded font-bold border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors" onclick="toggleAgent(\\'' + esc(a.name) + '\\',\\'' + toggleAction + '\\')">' + toggleLabel + '</button></td></tr>';
     }
 
     function renderCard(a) {
       var dotClass = stateColors[a.state] || "bg-slate-400";
       var textClass = stateTextColors[a.state] || "text-slate-400";
-      var status = a.statusText || a.lastError || "\\u2014";
       var toggleLabel = a.enabled ? "Disable" : "Enable";
       var toggleAction = a.enabled ? "disable" : "enable";
       return '<div class="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-3 mb-2">' +
         '<a href="/dashboard/agents/' + esc(a.name) + '" class="block">' +
         '<div class="flex justify-between items-center mb-1"><span class="text-blue-600 dark:text-blue-400 font-semibold text-sm">' + esc(a.name) + '</span>' +
         '<span class="text-xs ' + textClass + '"><span class="state-dot ' + dotClass + ' mr-1 inline-block"></span>' + esc(fmtScale(a)) + '</span></div>' +
-        '<div class="text-xs text-slate-500 dark:text-slate-400 truncate mb-1.5">' + esc(status) + '</div>' +
         '<div class="flex gap-3 text-xs text-slate-400"><span>Last: ' + fmtTime(a.lastRunAt) + '</span><span>' + (a.lastRunDuration != null ? fmtDur(a.lastRunDuration) : "") + '</span><span>Next: ' + fmtTime(a.nextRunAt) + '</span></div></a>' +
         '<div class="flex gap-2 mt-2 pt-2 border-t border-slate-100 dark:border-slate-800">' +
-        '<button class="px-2.5 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors" onclick="triggerAgent(\\'' + esc(a.name) + '\\')">Run</button>' +
-        '<button class="px-2.5 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 bg-transparent hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors" onclick="toggleAgent(\\'' + esc(a.name) + '\\',\\'' + toggleAction + '\\')">' + toggleLabel + '</button></div></div>';
+        '<button class="px-2.5 py-1 text-xs rounded font-bold bg-green-600 hover:bg-green-700 text-white transition-colors" onclick="triggerAgent(\\'' + esc(a.name) + '\\')">Run</button>' +
+        '<button class="px-2.5 py-1 text-xs rounded font-bold bg-red-600 hover:bg-red-700 text-white transition-colors" onclick="killAgent(\\'' + esc(a.name) + '\\')">Kill</button>' +
+        '<button class="px-2.5 py-1 text-xs rounded font-bold border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors" onclick="toggleAgent(\\'' + esc(a.name) + '\\',\\'' + toggleAction + '\\')">' + toggleLabel + '</button></div></div>';
     }
 
     function renderLog(l) {
@@ -196,6 +226,7 @@ export function renderDashboardPage(agents: AgentStatus[], schedulerInfo: Schedu
     es.onmessage = function(e) {
       var data = JSON.parse(e.data);
       if (data.agents) {
+        _cachedAgents = data.agents;
         var tbody = document.getElementById("agent-table-body");
         if (data.agents.length > 0) {
           tbody.innerHTML = data.agents.map(renderRow).join("");
@@ -208,6 +239,11 @@ export function renderDashboardPage(agents: AgentStatus[], schedulerInfo: Schedu
         } else {
           cards.innerHTML = '<div class="text-slate-400 italic text-center py-6">No agents registered</div>';
         }
+        // Update session stats
+        var tokEl = document.getElementById("stat-tokens");
+        var costEl = document.getElementById("stat-cost");
+        if (tokEl) tokEl.textContent = fmtTokens(sessionTotalTokens(data.agents));
+        if (costEl) costEl.textContent = fmtCost(sessionTotalCost(data.agents));
       }
       if (data.recentLogs && data.recentLogs.length > 0) {
         var logsDiv = document.getElementById("recent-logs");
@@ -230,6 +266,10 @@ export function renderDashboardPage(agents: AgentStatus[], schedulerInfo: Schedu
     }
     function toggleAgent(name, action) {
       ctrlPost("/control/agents/" + encodeURIComponent(name) + "/" + action);
+    }
+    function killAgent(name) {
+      if (!confirm("Kill all instances of agent '" + name + "'?")) return;
+      ctrlPost("/control/agents/" + encodeURIComponent(name) + "/kill");
     }
     function togglePause() {
       ctrlPost(schedulerPaused ? "/control/resume" : "/control/pause");

@@ -89,6 +89,13 @@ export class AgentRunner {
         : triggerInfo.type)
       : undefined;
     this.statusTracker?.startRun(this.agentConfig.name, runReason);
+    this.statusTracker?.registerInstance({
+      id: this.instanceId,
+      agentName: this.agentConfig.name,
+      status: "running",
+      startedAt: new Date(),
+      trigger: triggerInfo?.source ? `${triggerInfo.type}:${triggerInfo.source}` : (triggerInfo?.type ?? "manual"),
+    });
 
     return await withSpan(
       "agent.run",
@@ -414,6 +421,8 @@ export class AgentRunner {
       try { rmSync(signalTmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
 
       const elapsed = Date.now() - runStartTime;
+      const instanceStatus = runError ? "error" as const : "completed" as const;
+      this.statusTracker?.completeInstance(this.instanceId, instanceStatus);
       this.statusTracker?.endRun(this.agentConfig.name, elapsed, runError, usage);
       this.running = false;
     }

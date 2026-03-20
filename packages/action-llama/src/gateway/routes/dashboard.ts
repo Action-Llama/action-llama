@@ -105,8 +105,7 @@ export function registerDashboardRoutes(
     const agents = statusTracker.getAllAgents();
     const info = statusTracker.getSchedulerInfo();
     const logs = statusTracker.getRecentLogs(20);
-    const globalSummary = statsStore ? statsStore.queryGlobalSummary(0) : null;
-    const html = renderDashboardPage(agents, info, logs, globalSummary);
+    const html = renderDashboardPage(agents, info, logs);
     return c.html(html);
   });
 

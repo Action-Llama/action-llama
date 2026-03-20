@@ -4,8 +4,8 @@ import { resolve } from "path";
 import { readdirSync } from "fs";
 
 const SAFE_AGENT_NAME = /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/;
-const MAX_LINES = 1000;
-const DEFAULT_LINES = 50;
+const MAX_LINES = 2000;
+const DEFAULT_LINES = 200;
 
 interface LogEntry {
   level: number;
