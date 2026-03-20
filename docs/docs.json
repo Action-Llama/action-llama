@@ -42,6 +42,12 @@
             ]
           },
           {
+            "group": "Integrations",
+            "pages": [
+              "integrations/claude"
+            ]
+          },
+          {
             "group": "Reference",
             "pages": [
               "reference/cli-commands",

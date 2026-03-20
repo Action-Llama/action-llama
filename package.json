@@ -58,6 +58,7 @@
     "@inquirer/prompts": "^7",
     "@mariozechner/pi-ai": "^0.56.1",
     "@mariozechner/pi-coding-agent": "^0.56.1",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@opentelemetry/api": "^1.8.0",
     "@opentelemetry/auto-instrumentations-node": "^0.50.0",
     "@opentelemetry/exporter-trace-otlp-grpc": "^0.55.0",

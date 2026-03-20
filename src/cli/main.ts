@@ -338,6 +338,31 @@ agentCmd
     await configAgent(name, opts);
   }));
 
+// --- MCP integration ---
+
+const mcpCmd = program
+  .command("mcp")
+  .description("MCP server for Claude Code integration");
+
+mcpCmd
+  .command("serve")
+  .description("Start MCP stdio server for Claude Code integration")
+  .option("-p, --project <dir>", "project directory", ".")
+  .option("-E, --env <name>", "use named deployment environment")
+  .action(withCommand(async (opts) => {
+    const { serve } = await import("./commands/mcp.js");
+    await serve(opts);
+  }));
+
+mcpCmd
+  .command("init")
+  .description("Add Action Llama MCP server to .mcp.json for Claude Code")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(withCommand(async (opts) => {
+    const { init } = await import("./commands/mcp.js");
+    await init(opts);
+  }));
+
 program.parseAsync().catch((err) => {
   // Fallback for errors that escape command handlers (e.g. Commander parse errors)
   console.error(`\nError: ${err.message}`);

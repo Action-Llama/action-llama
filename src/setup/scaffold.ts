@@ -163,4 +163,17 @@ export function scaffoldProject(
       "",
     ].join("\n"));
   }
+
+  // Create .mcp.json for Claude Code MCP integration
+  const mcpJsonPath = resolve(projectPath, ".mcp.json");
+  if (!existsSync(mcpJsonPath)) {
+    writeFileSync(mcpJsonPath, JSON.stringify({
+      mcpServers: {
+        "action-llama": {
+          command: "al",
+          args: ["mcp", "serve"],
+        },
+      },
+    }, null, 2) + "\n");
+  }
 }

@@ -1,0 +1,169 @@
+---
+title: "Claude"
+description: "Use Claude Code to create agents, edit SKILL.md files, and interact with the gateway"
+---
+
+Claude Code can work with Action Llama in two ways: editing your project files using the `CLAUDE.md` context file, and interacting with the running scheduler through the MCP server. Both are set up automatically when you create a new project with `al new`.
+
+## CLAUDE.md — project context for Claude Code
+
+Every `al new` project includes a `CLAUDE.md` at the project root. This is a symlink to a reference document shipped with the `@action-llama/action-llama` package that contains everything Claude Code needs to work on an Action Llama project:
+
+- How `SKILL.md` files work (YAML frontmatter for config, markdown body for instructions)
+- How agent prompts are assembled at runtime (system prompt, user prompt blocks, trigger context)
+- Available agent commands (signals, subagent calls, resource locks)
+- Credential context and environment variables
+- Filesystem constraints inside the Docker container
+
+When you open your project in Claude Code, it reads `CLAUDE.md` automatically. This means you can ask Claude to create new agents, edit SKILL.md instructions, configure webhooks, and adjust agent params — and it understands the full context of how Action Llama works.
+
+### What you can do
+
+- **"Create a new agent that monitors Sentry for new errors and opens GitHub issues"** — Claude writes a `SKILL.md` with the right frontmatter (credentials, schedule, webhooks) and instructions.
+- **"Add webhook support to the dev agent for issue comments"** — Claude edits the frontmatter to add a webhook trigger and updates the instructions to handle both scheduled and webhook triggers.
+- **"Change the reviewer agent to use GPT-4o"** — Claude updates the `model` field in the frontmatter.
+- **"The dev agent keeps force-pushing, fix the instructions"** — Claude reads the SKILL.md body and adds explicit rules.
+
+<Info>Claude Code reads `CLAUDE.md` from the project root automatically. You don't need to paste documentation or explain how Action Llama works — it already knows.</Info>
+
+## MCP server — live gateway interaction
+
+The MCP server lets Claude Code interact with a running Action Llama scheduler over stdio. Instead of switching to a terminal to check status, trigger runs, or read logs, you can ask Claude directly.
+
+### Setup
+
+New projects created with `al new` include a `.mcp.json` file that Claude Code discovers automatically:
+
+```json
+{
+  "mcpServers": {
+    "action-llama": {
+      "command": "al",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+For existing projects, run:
+
+```bash
+al mcp init
+```
+
+This creates or updates `.mcp.json` in the project root. Claude Code picks it up on next launch.
+
+### How it works
+
+When Claude Code starts, it spawns `al mcp serve` as a subprocess. The MCP server communicates over stdin/stdout using JSON-RPC. Under the hood, it calls the same gateway HTTP API that the CLI uses — so anything you can do with `al` commands, Claude can do through the MCP server.
+
+```
+Claude Code  <--stdin/stdout-->  al mcp serve  <--HTTP-->  al start (gateway)
+                                      |
+                                 filesystem (agents/, .al/logs/)
+```
+
+Some tools (like listing agents) work offline by reading the filesystem directly. Others (like triggering runs or reading logs) require the scheduler to be running.
+
+### Available tools
+
+The MCP server exposes nine tools, all prefixed `al_`:
+
+| Tool | Description |
+|------|-------------|
+| `al_start` | Start the scheduler. Spawns `al start --headless` in the background and waits for the gateway to become ready. |
+| `al_stop` | Gracefully stop the scheduler. |
+| `al_status` | Show scheduler state, agent states, running instances, and queue sizes. |
+| `al_agents` | List agents with config, schedule, and webhooks. Pass a name for details including SKILL.md body. Works offline. |
+| `al_run` | Trigger a single agent run. |
+| `al_logs` | View agent or scheduler logs with time, instance, and level filtering. |
+| `al_pause` | Pause the scheduler or a single agent by name. |
+| `al_resume` | Resume the scheduler or a single agent by name. |
+| `al_kill` | Kill an agent (all instances) or a single instance by ID. |
+
+### Example conversations
+
+**Check what's running:**
+
+> "What's the status of my agents?"
+
+Claude calls `al_status` and shows scheduler state, which agents are idle/running/paused, and queue depths.
+
+**Trigger a run and watch the result:**
+
+> "Run the dev agent and show me what it did"
+
+Claude calls `al_run` with name `dev`, waits a moment, then calls `al_logs` to show the agent's actions in conversation format.
+
+**Debug a failing agent:**
+
+> "The reviewer agent keeps erroring out. Show me the last few runs."
+
+Claude calls `al_logs` with name `reviewer`, level `error`, and reviews the output. It can then read the SKILL.md via `al_agents` and suggest fixes.
+
+**Start everything from scratch:**
+
+> "Start the scheduler and pause the devops agent — I only want dev running right now"
+
+Claude calls `al_start`, waits for it to come up, then calls `al_pause` with name `devops`.
+
+### Log viewing
+
+The `al_logs` tool supports the same filtering as the CLI:
+
+| Parameter | Description |
+|-----------|-------------|
+| `name` | Agent name, or `"scheduler"` for scheduler logs |
+| `lines` | Number of entries to fetch (default 100, max 1000) |
+| `instance` | Filter to a specific instance ID |
+| `after` | ISO 8601 timestamp — only entries after this time |
+| `before` | ISO 8601 timestamp — only entries before this time |
+| `level` | Minimum level: `trace`, `debug`, `info`, `warn`, `error` |
+| `raw` | If true, returns full JSON entries instead of conversation view |
+
+By default, logs are formatted in conversation style — showing assistant text, bash commands, tool starts, and errors. This gives Claude a clean view of what the agent actually did, without noise.
+
+### Resources
+
+The MCP server also exposes agent SKILL.md files as resources at `al://agents/{name}/skill`. This lets Claude Code read the full instructions for any agent without going through the filesystem.
+
+## CLI commands
+
+### `al mcp serve`
+
+Starts the MCP stdio server. This is what Claude Code spawns as a subprocess — you don't typically run it directly.
+
+```bash
+al mcp serve
+al mcp serve -p ./my-project
+al mcp serve -E production
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment name — routes gateway calls to a remote environment |
+
+The environment is resolved the same way as all CLI commands: explicit `-E` flag, then `AL_ENV` env var, then `.env.toml`'s `environment` field. If your project is bound to a remote environment, MCP tool calls go to the remote gateway automatically.
+
+### `al mcp init`
+
+Writes (or merges into) `.mcp.json` in the project root so Claude Code discovers the MCP server automatically.
+
+```bash
+al mcp init
+al mcp init -p ./my-project
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
+If `.mcp.json` already exists, merges the `action-llama` entry into the existing `mcpServers` object. If an `action-llama` entry already exists, it is overwritten.
+
+## See Also
+
+- [Agent Docs](/reference/agent-docs) — SKILL.md, AGENTS.md, and CLAUDE.md reference
+- [CLI Commands](/reference/cli-commands) — all CLI commands
+- [Gateway API](/reference/gateway-api) — the HTTP API that the MCP server calls
+- [Getting Started](/first-steps/getting-started) — create your first project

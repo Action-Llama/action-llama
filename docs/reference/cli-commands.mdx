@@ -380,6 +380,36 @@ al agent config dev
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
 
+## MCP Commands
+
+### `al mcp serve`
+
+Starts the MCP stdio server for Claude Code integration. Claude Code spawns this as a subprocess — you don't typically run it directly. See [Claude Integration](/integrations/claude) for setup and usage.
+
+```bash
+al mcp serve
+al mcp serve -p ./my-project
+al mcp serve -E production
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment name |
+
+### `al mcp init`
+
+Writes or updates `.mcp.json` in the project root so Claude Code auto-discovers the MCP server.
+
+```bash
+al mcp init
+al mcp init -p ./my-project
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
 ## Global Options
 
 These options are available on most commands:
