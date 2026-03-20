@@ -59,6 +59,12 @@ export class LockStore {
   }
 
   acquire(resourceKey: string, holder: string, ttlSeconds?: number): AcquireResult {
+    // Validate that resourceKey is a valid URI
+    const validation = this.validateResourceKey(resourceKey);
+    if (!validation.ok) {
+      return { ok: false, reason: validation.error };
+    }
+
     const existing = this.locks.get(resourceKey);
 
     if (existing) {
@@ -98,6 +104,12 @@ export class LockStore {
   }
 
   release(resourceKey: string, holder: string): ReleaseResult {
+    // Validate that resourceKey is a valid URI
+    const validation = this.validateResourceKey(resourceKey);
+    if (!validation.ok) {
+      return { ok: false, reason: validation.error };
+    }
+
     const existing = this.locks.get(resourceKey);
 
     if (!existing || Date.now() >= existing.expiresAt) {
@@ -118,6 +130,12 @@ export class LockStore {
   }
 
   heartbeat(resourceKey: string, holder: string, ttlSeconds?: number): HeartbeatResult {
+    // Validate that resourceKey is a valid URI
+    const validation = this.validateResourceKey(resourceKey);
+    if (!validation.ok) {
+      return { ok: false, reason: validation.error };
+    }
+
     const existing = this.locks.get(resourceKey);
 
     if (!existing || Date.now() >= existing.expiresAt) {
@@ -160,6 +178,29 @@ export class LockStore {
       result.push({ ...entry });
     }
     return result;
+  }
+
+  /**
+   * Validate that the resource key is a valid URI.
+   * 
+   * Accepts common URI schemes: https://, http://, file://, github://, and any scheme
+   * matching the pattern /^[a-z][a-z0-9+.-]*:/ 
+   * 
+   * @param resourceKey The resource key to validate
+   * @returns Object with ok: true if valid, or ok: false with error message
+   */
+  private validateResourceKey(resourceKey: string): { ok: boolean; error?: string } {
+    try {
+      const url = new URL(resourceKey);
+      // Check for valid URI scheme pattern: starts with letter, followed by letters/digits/+/./-, then :
+      const validSchemePattern = /^[a-z][a-z0-9+.-]*$/;
+      if (!validSchemePattern.test(url.protocol.slice(0, -1))) {
+        return { ok: false, error: `Invalid URI scheme '${url.protocol}'. URI schemes must match pattern [a-z][a-z0-9+.-]*:` };
+      }
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: `Invalid URI format: ${error instanceof Error ? error.message : 'unknown error'}` };
+    }
   }
 
   /**

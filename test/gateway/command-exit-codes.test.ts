@@ -121,7 +121,7 @@ describe("command exit codes", () => {
   describe("rlock", () => {
     it("exit 0 — acquires a free lock", async () => {
       register("sec-a", "agent-a");
-      const r = await run("rlock", ["res-1"], env("sec-a"));
+      const r = await run("rlock", ["file:///tmp/res-1"], env("sec-a"));
       expect(r.exitCode).toBe(0);
       const body = JSON.parse(r.stdout);
       expect(body.ok).toBe(true);
@@ -130,8 +130,8 @@ describe("command exit codes", () => {
     it("exit 1 — conflict when held by another", async () => {
       register("sec-a", "agent-a");
       register("sec-b", "agent-b");
-      await run("rlock", ["res-1"], env("sec-a"));
-      const r = await run("rlock", ["res-1"], env("sec-b"));
+      await run("rlock", ["file:///tmp/res-1"], env("sec-a"));
+      const r = await run("rlock", ["file:///tmp/res-1"], env("sec-b"));
       expect(r.exitCode).toBe(1);
       const body = JSON.parse(r.stdout);
       expect(body.ok).toBe(false);
@@ -140,15 +140,15 @@ describe("command exit codes", () => {
 
     it("exit 0 — acquiring multiple locks succeeds", async () => {
       register("sec-a", "agent-a");
-      await run("rlock", ["res-1"], env("sec-a"));
-      const r = await run("rlock", ["res-2"], env("sec-a"));
+      await run("rlock", ["file:///tmp/res-1"], env("sec-a"));
+      const r = await run("rlock", ["file:///tmp/res-2"], env("sec-a"));
       expect(r.exitCode).toBe(0);
       const body = JSON.parse(r.stdout);
       expect(body.ok).toBe(true);
     });
 
     it("exit 3 — invalid secret", async () => {
-      const r = await run("rlock", ["res-1"], env("bad-secret"));
+      const r = await run("rlock", ["file:///tmp/res-1"], env("bad-secret"));
       expect(r.exitCode).toBe(3);
     });
 
@@ -161,7 +161,7 @@ describe("command exit codes", () => {
     });
 
     it("exit 0 — graceful degradation when no gateway", async () => {
-      const r = await run("rlock", ["res-1"], { GATEWAY_URL: "", SHUTDOWN_SECRET: "x" });
+      const r = await run("rlock", ["file:///tmp/res-1"], { GATEWAY_URL: "", SHUTDOWN_SECRET: "x" });
       expect(r.exitCode).toBe(0);
       const body = JSON.parse(r.stdout);
       expect(body.ok).toBe(true);
@@ -173,8 +173,8 @@ describe("command exit codes", () => {
   describe("runlock", () => {
     it("exit 0 — releases held lock", async () => {
       register("sec-a", "agent-a");
-      await run("rlock", ["res-1"], env("sec-a"));
-      const r = await run("runlock", ["res-1"], env("sec-a"));
+      await run("rlock", ["file:///tmp/res-1"], env("sec-a"));
+      const r = await run("runlock", ["file:///tmp/res-1"], env("sec-a"));
       expect(r.exitCode).toBe(0);
       const body = JSON.parse(r.stdout);
       expect(body.ok).toBe(true);
@@ -183,19 +183,19 @@ describe("command exit codes", () => {
     it("exit 1 — lock held by another", async () => {
       register("sec-a", "agent-a");
       register("sec-b", "agent-b");
-      await run("rlock", ["res-1"], env("sec-a"));
-      const r = await run("runlock", ["res-1"], env("sec-b"));
+      await run("rlock", ["file:///tmp/res-1"], env("sec-a"));
+      const r = await run("runlock", ["file:///tmp/res-1"], env("sec-b"));
       expect(r.exitCode).toBe(1);
     });
 
     it("exit 2 — lock not found", async () => {
       register("sec-a", "agent-a");
-      const r = await run("runlock", ["nonexistent"], env("sec-a"));
+      const r = await run("runlock", ["file:///tmp/nonexistent"], env("sec-a"));
       expect(r.exitCode).toBe(2);
     });
 
     it("exit 3 — invalid secret", async () => {
-      const r = await run("runlock", ["res-1"], env("bad-secret"));
+      const r = await run("runlock", ["file:///tmp/res-1"], env("bad-secret"));
       expect(r.exitCode).toBe(3);
     });
 
@@ -206,7 +206,7 @@ describe("command exit codes", () => {
     });
 
     it("exit 0 — graceful degradation when no gateway", async () => {
-      const r = await run("runlock", ["res-1"], { GATEWAY_URL: "", SHUTDOWN_SECRET: "x" });
+      const r = await run("runlock", ["file:///tmp/res-1"], { GATEWAY_URL: "", SHUTDOWN_SECRET: "x" });
       expect(r.exitCode).toBe(0);
     });
   });
@@ -216,8 +216,8 @@ describe("command exit codes", () => {
   describe("rlock-heartbeat", () => {
     it("exit 0 — extends held lock", async () => {
       register("sec-a", "agent-a");
-      await run("rlock", ["res-1"], env("sec-a"));
-      const r = await run("rlock-heartbeat", ["res-1"], env("sec-a"));
+      await run("rlock", ["file:///tmp/res-1"], env("sec-a"));
+      const r = await run("rlock-heartbeat", ["file:///tmp/res-1"], env("sec-a"));
       expect(r.exitCode).toBe(0);
       const body = JSON.parse(r.stdout);
       expect(body.ok).toBe(true);
@@ -227,19 +227,19 @@ describe("command exit codes", () => {
     it("exit 1 — lock held by another", async () => {
       register("sec-a", "agent-a");
       register("sec-b", "agent-b");
-      await run("rlock", ["res-1"], env("sec-a"));
-      const r = await run("rlock-heartbeat", ["res-1"], env("sec-b"));
+      await run("rlock", ["file:///tmp/res-1"], env("sec-a"));
+      const r = await run("rlock-heartbeat", ["file:///tmp/res-1"], env("sec-b"));
       expect(r.exitCode).toBe(1);
     });
 
     it("exit 2 — lock not found", async () => {
       register("sec-a", "agent-a");
-      const r = await run("rlock-heartbeat", ["nonexistent"], env("sec-a"));
+      const r = await run("rlock-heartbeat", ["file:///tmp/nonexistent"], env("sec-a"));
       expect(r.exitCode).toBe(2);
     });
 
     it("exit 3 — invalid secret", async () => {
-      const r = await run("rlock-heartbeat", ["res-1"], env("bad-secret"));
+      const r = await run("rlock-heartbeat", ["file:///tmp/res-1"], env("bad-secret"));
       expect(r.exitCode).toBe(3);
     });
 
@@ -250,7 +250,7 @@ describe("command exit codes", () => {
     });
 
     it("exit 0 — graceful degradation when no gateway", async () => {
-      const r = await run("rlock-heartbeat", ["res-1"], { GATEWAY_URL: "", SHUTDOWN_SECRET: "x" });
+      const r = await run("rlock-heartbeat", ["file:///tmp/res-1"], { GATEWAY_URL: "", SHUTDOWN_SECRET: "x" });
       expect(r.exitCode).toBe(0);
     });
   });
