@@ -3,19 +3,22 @@ import { join, resolve } from "path";
 import { tmpdir } from "os";
 import { stringify as stringifyTOML } from "smol-toml";
 import { stringify as stringifyYAML } from "yaml";
-import type { GlobalConfig, AgentConfig } from "../src/shared/config.js";
+import type { GlobalConfig, AgentConfig, ModelConfig } from "../src/shared/config.js";
 
 // --- Factories ---
 
-const DEFAULT_MODEL = {
+const DEFAULT_MODEL: ModelConfig = {
   provider: "anthropic",
   model: "claude-sonnet-4-20250514",
   thinkingLevel: "medium" as const,
   authType: "api_key" as const,
 };
 
+/** Default model name used in test config.toml [models.*] */
+export const DEFAULT_MODEL_NAME = "sonnet";
+
 /** Build a model config with optional overrides. */
-export function makeModel(overrides?: Partial<typeof DEFAULT_MODEL>): typeof DEFAULT_MODEL {
+export function makeModel(overrides?: Partial<ModelConfig>): ModelConfig {
   return { ...DEFAULT_MODEL, ...overrides };
 }
 
@@ -24,7 +27,7 @@ export function makeAgentConfig(overrides?: Partial<AgentConfig>): AgentConfig {
   return {
     name: "test-agent",
     credentials: ["github_token"],
-    model: makeModel(),
+    models: [makeModel()],
     schedule: "*/5 * * * *",
     params: {},
     ...overrides,
@@ -33,7 +36,10 @@ export function makeAgentConfig(overrides?: Partial<AgentConfig>): AgentConfig {
 
 /** Build a GlobalConfig with optional overrides. */
 export function makeGlobalConfig(overrides?: Partial<GlobalConfig>): GlobalConfig {
-  return { ...overrides };
+  return {
+    models: { [DEFAULT_MODEL_NAME]: makeModel() },
+    ...overrides,
+  };
 }
 
 // --- Temp project scaffolding ---
@@ -41,6 +47,10 @@ export function makeGlobalConfig(overrides?: Partial<GlobalConfig>): GlobalConfi
 export interface TmpProjectOptions {
   global?: Partial<GlobalConfig>;
   agents?: Partial<AgentConfig>[];
+  /** Named model definitions to write to config.toml. Defaults to { sonnet: DEFAULT_MODEL }. */
+  modelDefs?: Record<string, ModelConfig>;
+  /** Model names to reference in agent SKILL.md. Defaults to ["sonnet"]. */
+  modelNames?: string[];
 }
 
 const DEFAULT_AGENTS: AgentConfig[] = [
@@ -62,7 +72,10 @@ const DEFAULT_AGENTS: AgentConfig[] = [
 export function makeTmpProject(opts?: TmpProjectOptions): string {
   const dir = mkdtempSync(join(tmpdir(), "al-cmd-"));
 
-  const globalConfig = makeGlobalConfig(opts?.global);
+  const modelDefs = opts?.modelDefs ?? { [DEFAULT_MODEL_NAME]: makeModel() };
+  const modelNames = opts?.modelNames ?? [DEFAULT_MODEL_NAME];
+
+  const globalConfig = makeGlobalConfig({ models: modelDefs, ...opts?.global });
 
   // [cloud] and [server] belong in environment files, not config.toml.
   // For test convenience, write them to .env.toml (Layer 2 overrides) which
@@ -86,9 +99,11 @@ export function makeTmpProject(opts?: TmpProjectOptions): string {
   for (const agent of agents) {
     const agentPath = resolve(dir, "agents", agent.name!);
     mkdirSync(agentPath, { recursive: true });
-    // Strip name before writing (matches scaffold behavior)
-    const { name: _, ...configToWrite } = agent;
-    const yamlStr = stringifyYAML(configToWrite).trimEnd();
+    // Write SKILL.md with model name references (not inline model configs).
+    // Strip name and models (resolved at load time from config.toml).
+    const { name: _, models: _m, ...configToWrite } = agent;
+    const frontmatter: Record<string, unknown> = { ...configToWrite, models: modelNames };
+    const yamlStr = stringifyYAML(frontmatter).trimEnd();
     writeFileSync(
       resolve(agentPath, "SKILL.md"),
       `---\n${yamlStr}\n---\n\n# ${agent.name} Agent\n\nCustom agent.\n`

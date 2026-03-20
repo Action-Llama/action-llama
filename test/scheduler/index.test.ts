@@ -147,14 +147,17 @@ function writeSkillMd(dir: string, config: Record<string, unknown>) {
 }
 
 function setupProject(tmpDir: string) {
-  const globalConfig = {};
+  const globalConfig = {
+    models: {
+      sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
+    },
+  };
   writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
 
-  const model = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" };
   const agents = [
-    { name: "dev", credentials: ["github_token"], model, schedule: "*/5 * * * *" },
-    { name: "reviewer", credentials: ["github_token"], model, schedule: "*/5 * * * *" },
-    { name: "devops", credentials: ["github_token"], model, schedule: "*/15 * * * *" },
+    { name: "dev", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *" },
+    { name: "reviewer", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *" },
+    { name: "devops", credentials: ["github_token"], models: ["sonnet"], schedule: "*/15 * * * *" },
   ];
 
   for (const agent of agents) {
@@ -255,7 +258,12 @@ describe("startScheduler", () => {
     mockRun.mockResolvedValue({ result: "rerun", triggers: [] });
 
     // Use a small maxReruns via global config
-    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({ maxReruns: 2 } as Record<string, unknown>));
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      maxReruns: 2,
+      models: {
+        sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
+      },
+    } as Record<string, unknown>));
     await startScheduler(tmpDir);
 
     await new Promise((r) => setTimeout(r, 50));
@@ -291,13 +299,16 @@ describe("startScheduler", () => {
 
   describe("scale", () => {
     function setupScaleProject(tmpDir: string) {
-      const globalConfig = {};
+      const globalConfig = {
+        models: {
+          sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
+        },
+      };
       writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
 
-      const model = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" };
       const agents = [
-        { name: "scaled-agent", credentials: ["github_token"], model, schedule: "*/5 * * * *", scale: 3 },
-        { name: "single-agent", credentials: ["github_token"], model, schedule: "*/5 * * * *" }, // defaults to 1
+        { name: "scaled-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *", scale: 3 },
+        { name: "single-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *" }, // defaults to 1
       ];
 
       for (const agent of agents) {
@@ -350,13 +361,16 @@ describe("startScheduler", () => {
 
   describe("scale = 0 (disabled agent)", () => {
     function setupDisabledProject(tmpDir: string) {
-      const globalConfig = {};
+      const globalConfig = {
+        models: {
+          sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
+        },
+      };
       writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
 
-      const model = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" };
       const agents = [
-        { name: "active-agent", credentials: ["github_token"], model, schedule: "*/5 * * * *" },
-        { name: "disabled-agent", credentials: ["github_token"], model, schedule: "*/5 * * * *", scale: 0 },
+        { name: "active-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *" },
+        { name: "disabled-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *", scale: 0 },
       ];
 
       for (const agent of agents) {
@@ -391,9 +405,8 @@ describe("startScheduler", () => {
 
     it("allows scale = 0 agent without schedule or webhooks", async () => {
       // Overwrite disabled-agent config to have no schedule
-      const model = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" };
       const agentDir = resolve(tmpDir, "agents", "disabled-agent");
-      writeSkillMd(agentDir, { name: "disabled-agent", credentials: ["github_token"], model, scale: 0 });
+      writeSkillMd(agentDir, { name: "disabled-agent", credentials: ["github_token"], models: ["sonnet"], scale: 0 });
 
       // Should not throw — scale=0 skips schedule/webhook validation
       const { runnerPools } = await startScheduler(tmpDir);
@@ -454,14 +467,17 @@ describe("startScheduler", () => {
 
   describe("per-agent timeout", () => {
     function setupTimeoutProject(tmpDir: string) {
-      const globalConfig = {};
+      const globalConfig = {
+        models: {
+          sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
+        },
+      };
       writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
 
-      const model = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" };
       const agents = [
-        { name: "fast-agent", credentials: ["github_token"], model, schedule: "*/5 * * * *", timeout: 300 },
-        { name: "slow-agent", credentials: ["github_token"], model, schedule: "*/5 * * * *", timeout: 1800 },
-        { name: "default-agent", credentials: ["github_token"], model, schedule: "*/5 * * * *" },
+        { name: "fast-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *", timeout: 300 },
+        { name: "slow-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *", timeout: 1800 },
+        { name: "default-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *" },
       ];
 
       for (const agent of agents) {

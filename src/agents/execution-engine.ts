@@ -1,11 +1,6 @@
-import { getModel } from "@mariozechner/pi-ai";
 import {
-  AuthStorage,
-  createAgentSession,
   DefaultResourceLoader,
-  SessionManager,
   SettingsManager,
-  createCodingTools,
 } from "@mariozechner/pi-coding-agent";
 import { readFileSync, existsSync, mkdtempSync, rmSync } from "fs";
 import { resolve, join } from "path";
@@ -18,6 +13,8 @@ import { AgentError, isUnrecoverableError, UNRECOVERABLE_THRESHOLD } from "../sh
 import { installSignalCommands, readSignals } from "./signals.js";
 import type { TokenUsage } from "../shared/usage.js";
 import { sessionStatsToUsage } from "../shared/usage.js";
+import { circuitBreaker, selectAvailableModels, isRateLimitError } from "./model-fallback.js";
+import { createSessionForModel } from "./session-factory.js";
 
 export type RunResult = "completed" | "rerun" | "error";
 
@@ -50,7 +47,6 @@ export class ExecutionEngine {
     process.env.AL_SIGNAL_DIR = signalDir;
 
     const agentsFile = resolve(cwd, "SKILL.md");
-    const { model } = this.agentConfig;
 
     // SKILL.md must exist on disk (written during al new)
     if (!existsSync(agentsFile)) {
@@ -59,28 +55,6 @@ export class ExecutionEngine {
       );
     }
     const agentsContent = readFileSync(agentsFile, "utf-8");
-
-    const llmModel = getModel(
-      model.provider as any,
-      model.model as any
-    );
-
-    const authStorage = AuthStorage.create();
-    if (model.authType !== "pi_auth") {
-      // Try to load API key using provider-specific credential type
-      const credentialType = `${model.provider}_key`;
-      try {
-        const credential = await loadCredentialField(credentialType, "default", "token");
-        if (credential) {
-          authStorage.setRuntimeApiKey(model.provider, credential);
-          this.logger.debug(`Loaded ${credentialType} credential for ${model.provider}`);
-        } else {
-          this.logger.warn(`${credentialType} credential not found — agent may fail to authenticate. Run 'al doctor' to configure it.`);
-        }
-      } catch (err) {
-        this.logger.warn(`Failed to load credential for provider ${model.provider}: ${credentialType} credential type may not be configured.`);
-      }
-    }
 
     const resourceLoader = new DefaultResourceLoader({
       noExtensions: true,
@@ -97,114 +71,122 @@ export class ExecutionEngine {
       retry: { enabled: true, maxRetries: 2 },
     });
 
-    const { session } = await createAgentSession({
-      cwd,
-      model: llmModel,
-      thinkingLevel: model.thinkingLevel,
-      authStorage,
-      resourceLoader,
-      tools: createCodingTools(cwd, {
-        bash: { commandPrefix: '[ -f /tmp/env.sh ] && source /tmp/env.sh' },
-      }),
-      sessionManager: SessionManager.inMemory(),
-      settingsManager,
-    });
-
-    // Subscribe to events for logging
+    // Model fallback loop
+    const MAX_PASSES = 3;
+    const DEFAULT_BACKOFF_MS = 30_000;
+    const MAX_BACKOFF_MS = 300_000;
     const pendingCmds = new Map<string, string>();
     let outputText = "";
     let currentTurnText = "";
     let unrecoverableErrors = 0;
+    let usage: TokenUsage | undefined;
 
-    session.subscribe((event) => {
-      if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
-        const delta = event.assistantMessageEvent.delta;
-        outputText += delta;
-        currentTurnText += delta;
-      }
-      if (event.type === "message_end") {
-        if (currentTurnText.trim()) {
-          this.logger.info({ text: currentTurnText.trim() }, "assistant");
-        }
-        currentTurnText = "";
-      }
-      if (event.type === "tool_execution_start") {
-        const cmd = String(event.args?.command || "");
-        if (event.toolName === "bash") {
-          pendingCmds.set(event.toolCallId, cmd);
-          this.logger.info({ cmd: cmd.slice(0, 200) }, "bash");
-        } else {
-          this.logger.debug({ tool: event.toolName }, "tool start");
-        }
-      }
-      if (event.type === "tool_execution_end") {
-        const resultStr = typeof event.result === "string"
-          ? event.result
-          : JSON.stringify(event.result);
-        const originCmd = pendingCmds.get(event.toolCallId);
-        pendingCmds.delete(event.toolCallId);
+    for (let pass = 0; pass <= MAX_PASSES; pass++) {
+      const availableModels = selectAvailableModels(this.agentConfig.models, circuitBreaker);
+      let modelSucceeded = false;
 
-        if (event.isError) {
-          this.logger.error(
-            { tool: event.toolName, result: resultStr.slice(0, 1000) },
-            "tool error"
-          );
-          // Extract a human-readable error message from the result
-          let errorMsg = resultStr;
-          try {
-            const parsed = JSON.parse(resultStr);
-            if (parsed?.content?.[0]?.text) {
-              errorMsg = parsed.content[0].text;
+      for (const modelConfig of availableModels) {
+        this.logger.info({ provider: modelConfig.provider, model: modelConfig.model }, "trying model");
+        const { session } = await createSessionForModel(modelConfig, {
+          cwd,
+          resourceLoader,
+          settingsManager,
+          loadCredential: loadCredentialField,
+        });
+
+        // Subscribe to events for logging
+        session.subscribe((event) => {
+          if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
+            const delta = event.assistantMessageEvent.delta;
+            outputText += delta;
+            currentTurnText += delta;
+          }
+          if (event.type === "message_end") {
+            if (currentTurnText.trim()) {
+              this.logger.info({ text: currentTurnText.trim() }, "assistant");
             }
-          } catch { /* use raw string */ }
-          const cmdPrefix = originCmd ? `$ ${originCmd.slice(0, 80)} — ` : "";
-          const detail = `${cmdPrefix}${errorMsg.slice(0, 200)}`;
-          this.statusTracker?.setAgentError(this.agentConfig.name, detail);
-          this.statusTracker?.addLogLine(this.agentConfig.name, `ERROR: ${detail}`);
-          if (isUnrecoverableError(errorMsg)) {
-            unrecoverableErrors++;
-            if (unrecoverableErrors >= UNRECOVERABLE_THRESHOLD) {
-              this.logger.error("Aborting: repeated auth/permission failures — check credentials");
-              this.statusTracker?.addLogLine(this.agentConfig.name, "ABORT: repeated auth/permission failures — check credentials");
-              session.dispose();
+            currentTurnText = "";
+          }
+          if (event.type === "tool_execution_start") {
+            const cmd = String(event.args?.command || "");
+            if (event.toolName === "bash") {
+              pendingCmds.set(event.toolCallId, cmd);
+              this.logger.info({ cmd: cmd.slice(0, 200) }, "bash");
+            } else {
+              this.logger.debug({ tool: event.toolName }, "tool start");
             }
           }
-        } else {
-          this.logger.debug({ tool: event.toolName, resultLength: resultStr.length }, "tool done");
-        }
-      }
-    });
+          if (event.type === "tool_execution_end") {
+            const resultStr = typeof event.result === "string"
+              ? event.result
+              : JSON.stringify(event.result);
+            const originCmd = pendingCmds.get(event.toolCallId);
+            pendingCmds.delete(event.toolCallId);
 
-    // Retry on rate limit errors with exponential backoff
-    const MAX_PROMPT_RETRIES = 5;
-    const DEFAULT_BACKOFF_MS = 30_000;
-    const MAX_BACKOFF_MS = 300_000;
+            if (event.isError) {
+              this.logger.error(
+                { tool: event.toolName, result: resultStr.slice(0, 1000) },
+                "tool error"
+              );
+              let errorMsg = resultStr;
+              try {
+                const parsed = JSON.parse(resultStr);
+                if (parsed?.content?.[0]?.text) {
+                  errorMsg = parsed.content[0].text;
+                }
+              } catch { /* use raw string */ }
+              const cmdPrefix = originCmd ? `$ ${originCmd.slice(0, 80)} — ` : "";
+              const detail = `${cmdPrefix}${errorMsg.slice(0, 200)}`;
+              this.statusTracker?.setAgentError(this.agentConfig.name, detail);
+              this.statusTracker?.addLogLine(this.agentConfig.name, `ERROR: ${detail}`);
+              if (isUnrecoverableError(errorMsg)) {
+                unrecoverableErrors++;
+                if (unrecoverableErrors >= UNRECOVERABLE_THRESHOLD) {
+                  this.logger.error("Aborting: repeated auth/permission failures — check credentials");
+                  this.statusTracker?.addLogLine(this.agentConfig.name, "ABORT: repeated auth/permission failures — check credentials");
+                  session.dispose();
+                }
+              }
+            } else {
+              this.logger.debug({ tool: event.toolName, resultLength: resultStr.length }, "tool done");
+            }
+          }
+        });
 
-    for (let attempt = 0; attempt <= MAX_PROMPT_RETRIES; attempt++) {
-      try {
-        await session.prompt(prompt);
-        break;
-      } catch (promptErr: any) {
-        const msg = String(promptErr?.message || promptErr || "");
-        const isRateLimit = msg.includes("rate_limit") || msg.includes("429") || msg.includes("529") || msg.includes("overloaded");
-        if (!isRateLimit || attempt === MAX_PROMPT_RETRIES) {
+        try {
+          await session.prompt(prompt);
+          circuitBreaker.recordSuccess(modelConfig.provider, modelConfig.model);
+          const sessionStats = session.getSessionStats();
+          usage = sessionStatsToUsage(sessionStats);
+          session.dispose();
+          modelSucceeded = true;
+          break;
+        } catch (promptErr: any) {
+          const msg = String(promptErr?.message || promptErr || "");
+          if (isRateLimitError(msg)) {
+            circuitBreaker.recordFailure(modelConfig.provider, modelConfig.model);
+            this.logger.warn(
+              { provider: modelConfig.provider, model: modelConfig.model },
+              "rate limited, trying next model"
+            );
+            this.statusTracker?.addLogLine(this.agentConfig.name, `Rate limited on ${modelConfig.model}, trying fallback...`);
+            session.dispose();
+            continue;
+          }
+          session.dispose();
           throw promptErr;
         }
-        const delayMs = Math.min(DEFAULT_BACKOFF_MS * Math.pow(2, attempt), MAX_BACKOFF_MS);
-        this.logger.warn(
-          { attempt: attempt + 1, delayMs },
-          "rate limited, retrying prompt"
-        );
-        this.statusTracker?.addLogLine(this.agentConfig.name, `Rate limited, retrying in ${Math.round(delayMs / 1000)}s...`);
+      }
+
+      if (modelSucceeded) break;
+
+      if (pass < MAX_PASSES) {
+        const delayMs = Math.min(DEFAULT_BACKOFF_MS * Math.pow(2, pass), MAX_BACKOFF_MS);
+        this.logger.warn({ pass: pass + 1, delayMs }, "all models exhausted, backing off");
+        this.statusTracker?.addLogLine(this.agentConfig.name, `All models exhausted, retrying in ${Math.round(delayMs / 1000)}s...`);
         await new Promise((r) => setTimeout(r, delayMs));
       }
     }
-
-    // Capture token usage before disposing the session
-    const sessionStats = session.getSessionStats();
-    const usage = sessionStatsToUsage(sessionStats);
-
-    session.dispose();
 
     // Read signal files
     const signals = readSignals(signalDir);

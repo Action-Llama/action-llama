@@ -30,7 +30,7 @@ function makeAgentConfig(name: string, overrides: Partial<AgentConfig> = {}): Ag
   return {
     name,
     credentials: [],
-    model: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" },
+    models: [{ provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" }],
     schedule: "0 * * * *",
     scale: 1,
     ...overrides,

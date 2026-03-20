@@ -7,6 +7,24 @@ import { promptCredential } from "../credentials/prompter.js";
 import type { CredentialDefinition, CredentialPromptResult } from "../credentials/schema.js";
 
 /**
+ * Derive a short model name from a full model ID.
+ * e.g. "claude-sonnet-4-20250514" → "sonnet", "gpt-4o" → "gpt4o"
+ */
+function deriveModelName(modelId: string): string {
+  // Well-known patterns
+  if (modelId.includes("sonnet")) return "sonnet";
+  if (modelId.includes("opus")) return "opus";
+  if (modelId.includes("haiku")) return "haiku";
+  if (modelId.includes("gpt-4o-mini")) return "gpt4o-mini";
+  if (modelId.includes("gpt-4o")) return "gpt4o";
+  if (modelId.includes("gpt-4")) return "gpt4";
+  if (modelId.includes("gpt-3")) return "gpt3";
+  if (modelId.includes("o1")) return "o1";
+  // Fallback: strip version suffixes and special chars
+  return modelId.replace(/[-_.]\d{4,}.*$/, "").replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "default";
+}
+
+/**
  * Write credential values to disk using the directory-based layout.
  */
 async function writeCredentialValues(def: CredentialDefinition, values: Record<string, string>, instance: string = "default"): Promise<void> {
@@ -157,13 +175,18 @@ export async function runSetup(): Promise<{
     }
   }
 
-  // Build global config
+  // Derive a short name from the model ID (e.g. "claude-sonnet-4-20250514" → "sonnet")
+  const derivedName = deriveModelName(modelName);
+
+  // Build global config with named models
   const globalConfig: GlobalConfig = {
-    model: {
-      provider,
-      model: modelName,
-      ...(thinkingLevel ? { thinkingLevel } : {}),
-      authType: "api_key",
+    models: {
+      [derivedName]: {
+        provider,
+        model: modelName,
+        ...(thinkingLevel ? { thinkingLevel } : {}),
+        authType: "api_key",
+      },
     },
   };
 

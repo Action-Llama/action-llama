@@ -71,7 +71,7 @@ export async function newAgent(opts: { project: string }): Promise<void> {
       config: {
         name,
         credentials: [],
-        model: undefined as unknown as ModelConfig,
+        models: [],
       },
     });
     console.log(`Created agent "${name}" (custom).`);
@@ -96,7 +96,7 @@ export async function configAgent(name: string, opts: { project: string }): Prom
     const credCount = config.credentials?.length ?? 0;
     const webhookCount = config.webhooks?.length ?? 0;
     const paramCount = config.params ? Object.keys(config.params).length : 0;
-    const modelLabel = config.model?.provider ?? "inherited";
+    const modelLabel = config.models[0]?.provider ?? "none";
 
     const section = await select({
       message: `Configure ${name}:`,
@@ -187,7 +187,7 @@ async function editModel(config: AgentConfig): Promise<void> {
       { name: "OpenRouter", value: "openrouter" },
       { name: "Other", value: "custom" },
     ],
-    default: config.model?.provider ?? "anthropic",
+    default: config.models[0]?.provider ?? "anthropic",
   });
 
   let modelName: string;
@@ -199,7 +199,7 @@ async function editModel(config: AgentConfig): Promise<void> {
         { name: "claude-opus-4-20250514", value: "claude-opus-4-20250514" },
         { name: "claude-haiku-3-5-20241022", value: "claude-haiku-3-5-20241022" },
       ],
-      default: config.model?.model ?? "claude-sonnet-4-20250514",
+      default: config.models[0]?.model ?? "claude-sonnet-4-20250514",
     });
   } else if (provider === "openai") {
     modelName = await select({
@@ -236,16 +236,16 @@ async function editModel(config: AgentConfig): Promise<void> {
         { name: "medium (recommended)", value: "medium" as const },
         { name: "high", value: "high" as const },
       ],
-      default: config.model?.thinkingLevel ?? ("medium" as const),
+      default: config.models[0]?.thinkingLevel ?? ("medium" as const),
     });
   }
 
-  config.model = {
+  config.models = [{
     provider,
     model: modelName,
     authType: "api_key",
     ...(thinkingLevel ? { thinkingLevel } : {}),
-  };
+  }];
 }
 
 async function editSchedule(config: AgentConfig): Promise<void> {

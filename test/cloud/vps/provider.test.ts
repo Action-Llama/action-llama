@@ -47,7 +47,7 @@ describe("VpsProvider", () => {
     const agentConfig = {
       name: "test-agent",
       credentials: [],
-      model: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" as const },
+      models: [{ provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" as const }],
       timeout: 300,
     };
 
@@ -58,8 +58,8 @@ describe("VpsProvider", () => {
 
   it("createRuntimes returns empty overrides", () => {
     const agents = [
-      { name: "short", credentials: [], model: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" as const }, timeout: 300 },
-      { name: "long", credentials: [], model: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" as const }, timeout: 1800 },
+      { name: "short", credentials: [], models: [{ provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" as const }], timeout: 300 },
+      { name: "long", credentials: [], models: [{ provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" as const }], timeout: 1800 },
     ];
 
     const result = provider.createRuntimes(agents, {});

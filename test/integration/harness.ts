@@ -132,8 +132,9 @@ export class IntegrationHarness {
       }
     }
 
-    // Write config.toml
+    // Write config.toml (with named model definitions)
     const globalConfig: GlobalConfig = {
+      models: { sonnet: makeModel() },
       gateway: { port: gatewayPort },
       webhooks: Object.keys(webhookSources).length > 0 ? webhookSources : undefined,
       ...opts.globalConfig,
@@ -148,7 +149,7 @@ export class IntegrationHarness {
       const agentPath = resolve(projectPath, "agents", agent.name);
       mkdirSync(agentPath, { recursive: true });
 
-      // Write SKILL.md with YAML frontmatter
+      // Write SKILL.md with YAML frontmatter (model name references, not inline configs)
       const agentConfig = makeAgentConfig({
         name: agent.name,
         schedule: agent.schedule,
@@ -156,8 +157,9 @@ export class IntegrationHarness {
         credentials: ["anthropic_key"],
         ...agent.config,
       });
-      const { name: _, ...configToWrite } = agentConfig;
-      const yamlStr = stringifyYAML(configToWrite).trimEnd();
+      const { name: _, models: _m, ...configToWrite } = agentConfig;
+      const frontmatter: Record<string, unknown> = { ...configToWrite, models: ["sonnet"] };
+      const yamlStr = stringifyYAML(frontmatter).trimEnd();
       writeFileSync(
         resolve(agentPath, "SKILL.md"),
         `---\n${yamlStr}\n---\n\n# ${agent.name}\nTest agent.\n`

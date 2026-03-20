@@ -98,11 +98,8 @@ credentials:
 schedule: "*/5 * * * *"
 scale: 3
 
-model:
-  provider: anthropic
-  model: claude-sonnet-4-20250514
-  thinkingLevel: medium
-  authType: api_key
+models:
+  - sonnet
 
 webhooks:
   - source: my-github

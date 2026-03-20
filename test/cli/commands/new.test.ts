@@ -124,10 +124,12 @@ describe("new", () => {
     expect(mockScaffoldProject).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
-        model: expect.objectContaining({
-          provider: "openai",
-          model: "gpt-4o",
-          authType: "api_key",
+        models: expect.objectContaining({
+          gpt4o: expect.objectContaining({
+            provider: "openai",
+            model: "gpt-4o",
+            authType: "api_key",
+          }),
         }),
       }),
       [],
@@ -180,9 +182,11 @@ describe("new", () => {
     expect(mockScaffoldProject).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
-        model: expect.objectContaining({
-          provider: "openai",
-          authType: "api_key",
+        models: expect.objectContaining({
+          gpt4o: expect.objectContaining({
+            provider: "openai",
+            authType: "api_key",
+          }),
         }),
       }),
       [],

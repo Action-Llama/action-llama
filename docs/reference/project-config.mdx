@@ -8,11 +8,21 @@ The project-level `config.toml` lives at the root of your Action Llama project. 
 ## Full Annotated Example
 
 ```toml
-# Default model for all agents (agents can override in their own SKILL.md frontmatter)
-[model]
+# Named models — define once, reference by name in SKILL.md
+[models.sonnet]
 provider = "anthropic"
 model = "claude-sonnet-4-20250514"
 thinkingLevel = "medium"
+authType = "api_key"
+
+[models.haiku]
+provider = "anthropic"
+model = "claude-haiku-4-5-20251001"
+authType = "api_key"
+
+[models.gpt4o]
+provider = "openai"
+model = "gpt-4o"
 authType = "api_key"
 
 # Local Docker container settings
@@ -54,9 +64,9 @@ endpoint = "https://telemetry.example.com/v1"   # OpenTelemetry endpoint
 | `workQueueSize` | number | `100` | Maximum queued work items (webhook events + agent calls) per agent when all runners are busy |
 | `scale` | number | _(unlimited)_ | Project-wide cap on total concurrent runners across all agents |
 
-### `[model]` — Default LLM
+### `[models.<name>]` — Named Models
 
-Default model configuration inherited by all agents that don't define their own `model` section in their `SKILL.md` frontmatter.
+Define models once in `config.toml`, then reference them by name in each agent's `SKILL.md` frontmatter. Agents list model names in priority order — the first is the primary model, and the rest are fallbacks tried automatically when the primary is rate-limited or unavailable.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -64,6 +74,32 @@ Default model configuration inherited by all agents that don't define their own 
 | `model` | string | Yes | Model ID (e.g. `"claude-sonnet-4-20250514"`, `"gpt-4o"`, `"gemini-2.0-flash-exp"`) |
 | `authType` | string | Yes | Auth method: `"api_key"`, `"oauth_token"`, or `"pi_auth"` |
 | `thinkingLevel` | string | No | Thinking budget: `"off"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, `"xhigh"`. Only applies to Anthropic models with reasoning support. Ignored for other providers. |
+
+```toml
+[models.sonnet]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+thinkingLevel = "medium"
+authType = "api_key"
+
+[models.haiku]
+provider = "anthropic"
+model = "claude-haiku-4-5-20251001"
+authType = "api_key"
+
+[models.gpt4o]
+provider = "openai"
+model = "gpt-4o"
+authType = "api_key"
+```
+
+Agents reference these by name in their `SKILL.md` frontmatter:
+
+```yaml
+models:
+  - sonnet    # primary
+  - haiku     # fallback
+```
 
 See [Models](/reference/models) for all supported providers, model IDs, auth types, and thinking levels.
 
@@ -141,7 +177,7 @@ Optional OpenTelemetry integration.
 ### Anthropic with Docker (typical dev setup)
 
 ```toml
-[model]
+[models.sonnet]
 provider = "anthropic"
 model = "claude-sonnet-4-20250514"
 thinkingLevel = "medium"

@@ -164,8 +164,8 @@ export class ContainerAgentRunner {
           "agent.run_id": this.instanceId,
           "agent.trigger_type": triggerInfo?.type || "manual",
           "agent.trigger_source": triggerInfo?.source || "",
-          "agent.model_provider": this.agentConfig.model?.provider,
-          "agent.model_name": this.agentConfig.model?.model,
+          "agent.model_provider": this.agentConfig.models[0]?.provider,
+          "agent.model_name": this.agentConfig.models[0]?.model,
           "execution.environment": "container",
           "runtime.type": this.runtime.constructor.name,
           "container.image": this.image,
@@ -210,12 +210,13 @@ export class ContainerAgentRunner {
     try {
       const timeout = this.agentConfig.timeout ?? this.globalConfig.local?.timeout ?? 900;
 
-      // Resolve credential refs — always include anthropic_key for non-pi_auth
+      // Resolve credential refs — include provider keys for all models in the chain
       const credRefs = [...new Set(this.agentConfig.credentials)];
-      if (this.agentConfig.model.authType !== "pi_auth") {
-        const hasAnthropicKey = credRefs.some((r) => r === "anthropic_key" || r.startsWith("anthropic_key:"));
-        if (!hasAnthropicKey) {
-          credRefs.push("anthropic_key");
+      for (const mc of this.agentConfig.models) {
+        if (mc.authType === "pi_auth") continue;
+        const providerKey = `${mc.provider}_key`;
+        if (!credRefs.some((r) => r === providerKey || r.startsWith(`${providerKey}:`))) {
+          credRefs.push(providerKey);
         }
       }
 

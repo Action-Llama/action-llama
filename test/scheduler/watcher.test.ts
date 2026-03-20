@@ -59,7 +59,7 @@ function makeAgentConfig(name: string, overrides: Record<string, any> = {}) {
   return {
     name,
     schedule: "0 * * * *",
-    model: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" },
+    models: [{ provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" }],
     credentials: [],
     webhooks: [],
     scale: 1,
