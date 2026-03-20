@@ -33,7 +33,7 @@ describe("scaffoldProject", () => {
         config: {
           name: "dev",
           credentials: ["github_token"],
-          model: defaultModel,
+          models: [defaultModel],
           schedule: "*/5 * * * *",
           params: { repos: ["acme/app"], triggerLabel: "agent", assignee: "bot" },
         },
@@ -43,7 +43,7 @@ describe("scaffoldProject", () => {
         config: {
           name: "reviewer",
           credentials: ["github_token"],
-          model: defaultModel,
+          models: [defaultModel],
           schedule: "*/5 * * * *",
           params: { repos: ["acme/app"] },
         },
@@ -53,7 +53,7 @@ describe("scaffoldProject", () => {
         config: {
           name: "devops",
           credentials: ["github_token"],
-          model: defaultModel,
+          models: [defaultModel],
           schedule: "*/15 * * * *",
           params: { repos: ["acme/app"] },
         },

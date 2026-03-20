@@ -84,13 +84,23 @@ export async function execute(name: string): Promise<void> {
 
   console.log("\n--- Writing configuration ---\n");
 
+  // Derive a short model name from the model ID
+  const derivedName = model.includes("sonnet") ? "sonnet"
+    : model.includes("opus") ? "opus"
+    : model.includes("haiku") ? "haiku"
+    : model.includes("gpt-4o") ? "gpt4o"
+    : model.includes("gpt-4") ? "gpt4"
+    : model.replace(/[-_.]\d{4,}.*$/, "").replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-");
+
   const globalConfig: GlobalConfig = {
-    model: {
-      provider,
-      model,
-      ...(thinkingLevel ? { thinkingLevel } : {}),
-      authType: result && Object.keys(result.values).length > 0 ? "api_key" :
-                (provider === "anthropic" ? "pi_auth" : "api_key"),
+    models: {
+      [derivedName]: {
+        provider,
+        model,
+        ...(thinkingLevel ? { thinkingLevel } : {}),
+        authType: result && Object.keys(result.values).length > 0 ? "api_key" :
+                  (provider === "anthropic" ? "pi_auth" : "api_key"),
+      },
     },
   };
 

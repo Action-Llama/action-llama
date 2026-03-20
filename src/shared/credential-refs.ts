@@ -38,6 +38,12 @@ export function collectCredentialRefs(projectPath: string, globalConfig: GlobalC
     for (const ref of config.credentials) {
       credentialRefs.add(ref);
     }
+    // Add provider credentials for all models in the chain
+    for (const mc of config.models ?? []) {
+      if (mc.authType !== "pi_auth") {
+        credentialRefs.add(`${mc.provider}_key`);
+      }
+    }
     for (const trigger of config.webhooks || []) {
       const sourceConfig = webhookSources[trigger.source];
       if (!sourceConfig) continue;

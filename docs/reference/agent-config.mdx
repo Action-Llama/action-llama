@@ -28,12 +28,11 @@ scale: 2
 # Optional: max runtime in seconds (default: falls back to [local].timeout, then 900)
 timeout: 600
 
-# Required: LLM model configuration
-model:
-  provider: anthropic                     # LLM provider
-  model: claude-sonnet-4-20250514         # Model ID
-  thinkingLevel: medium                   # Optional: off | minimal | low | medium | high | xhigh
-  authType: api_key                       # api_key | oauth_token | pi_auth
+# Required: named model references from config.toml [models.*]
+# First in list is primary; rest are fallbacks tried on rate limits
+models:
+  - sonnet
+  - haiku
 
 # Optional: webhook triggers (instead of or in addition to schedule)
 # Each source references a named webhook defined in the project's config.toml
@@ -98,16 +97,12 @@ params:
 | `schedule` | string | No* | Cron expression for polling |
 | `scale` | number | No | Number of concurrent runs allowed (default: 1). Set to `0` to disable the agent. Use lock skills in your actions to coordinate instances. See [Resource Locks](/concepts/resource-locks). |
 | `timeout` | number | No | Max runtime in seconds. Falls back to `[local].timeout` in project config, then `900`. See [Timeout](#timeout). |
-| `model` | table | No | LLM model configuration (falls back to `[model]` in project `config.toml`) |
-| `model.provider` | string | Yes* | LLM provider (`"anthropic"`, `"openai"`, `"groq"`, `"google"`, `"xai"`, `"mistral"`, `"openrouter"`, or `"custom"`) |
-| `model.model` | string | Yes* | Model ID |
-| `model.thinkingLevel` | string | No | Thinking budget level: off, minimal, low, medium, high, xhigh. Only relevant for Claude Sonnet/Opus. |
-| `model.authType` | string | Yes* | Auth method for the provider |
+| `models` | string[] | Yes | Named model references from `config.toml [models.*]`. First is primary; rest are fallbacks tried automatically on rate limits. |
 | `webhooks` | array | No* | Array of webhook trigger objects. See [Webhooks](/reference/webhooks). |
 | `hooks` | table | No | Pre/post hooks that run around the LLM session. See [Hooks](#hooks). |
 | `params` | table | No | Custom key-value params for the agent prompt |
 
-*At least one of `schedule` or `webhooks` is required (unless `scale = 0`). *Required within `model` if the agent defines its own model block (otherwise inherits from project `config.toml`).
+*At least one of `schedule` or `webhooks` is required (unless `scale = 0`).
 
 ## Scale
 
@@ -311,6 +306,13 @@ All filter fields below are optional. Omit all of them to trigger on everything 
 
 ## Model Configuration
 
-The `model` section is optional — agents inherit the default model from the project's `config.toml`. Only add `model` to the `SKILL.md` frontmatter if you want to override the default for that specific agent.
+The `models` field references named models defined in `config.toml` under `[models.<name>]`. List one or more model names — the first is the primary model, and subsequent entries are fallbacks tried automatically when the primary is rate-limited or unavailable.
+
+```yaml
+models:
+  - sonnet    # primary
+  - haiku     # fallback on rate limit
+  - gpt4o     # second fallback
+```
 
 See [Models](/reference/models) for all supported providers, model IDs, auth types, thinking levels, and credential setup.

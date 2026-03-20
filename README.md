@@ -50,7 +50,7 @@ my-project/
   package.json              # Includes @action-llama/action-llama as a dependency
   Dockerfile                # Project base image. Generated. Shared customizations for all agents
   AGENTS.md                 # Shared instructions loaded by `al chat` (interactive only)
-  config.toml               # Global config: [local], [model], gateway, webhooks (no secrets)
+  config.toml               # Global config: [local], [models.*], gateway, webhooks (no secrets)
 ```
 
 Each agent subdirectory:
@@ -95,8 +95,8 @@ Most commands accept `-p <dir>` to set the project directory. See the [CLI comma
 
 Configuration lives in two places:
 
-- [**`config.toml`**](docs/config-reference.md) (project root) — global settings: default model (`[model]`), local Docker options (`[local]`), gateway, webhooks, and scheduler options like `maxReruns`.
-- [**`SKILL.md`**](docs/agent-config-reference.md) (per agent) — YAML frontmatter with model, credentials, schedule, webhooks, hooks, and parameters. Markdown body is the agent's instructions. Each agent can use a different model or provider.
+- [**`config.toml`**](docs/config-reference.md) (project root) — global settings: named models (`[models.*]`), local Docker options (`[local]`), gateway, webhooks, and scheduler options like `maxReruns`.
+- [**`SKILL.md`**](docs/agent-config-reference.md) (per agent) — YAML frontmatter with model references, credentials, schedule, webhooks, hooks, and parameters. Markdown body is the agent's instructions. Each agent can use a different model or provider.
 
 Credentials are stored outside the project in `~/.action-llama/credentials/` and referenced by name in agent configs. Run `al doctor` to configure them interactively.
 

@@ -7,6 +7,62 @@ import { loadGlobalConfig, loadProjectConfig, loadAgentConfig, loadAgentBody, di
 import type { GlobalConfig } from "../../src/shared/config.js";
 import { ENVIRONMENTS_DIR } from "../../src/shared/paths.js";
 
+/** Helper to write a config.toml with named models. */
+function writeModelsConfig(dir: string, models: Record<string, unknown>, extra?: Record<string, unknown>) {
+  writeFileSync(resolve(dir, "config.toml"), stringifyTOML({ models, ...extra }));
+}
+
+/** Helper to write a SKILL.md referencing named models. */
+function writeSkillMd(dir: string, agentName: string, opts: { models: string[]; credentials?: string[]; schedule?: string; hooks?: unknown; description?: string; params?: unknown }) {
+  const agentDir = resolve(dir, "agents", agentName);
+  mkdirSync(agentDir, { recursive: true });
+  const lines = ["---"];
+  if (opts.description) lines.push(`description: ${opts.description}`);
+  lines.push(`credentials:`);
+  for (const c of opts.credentials ?? []) lines.push(`  - ${c}`);
+  lines.push(`models:`);
+  for (const m of opts.models) lines.push(`  - ${m}`);
+  if (opts.schedule) lines.push(`schedule: "${opts.schedule}"`);
+  if (opts.hooks) {
+    lines.push(`hooks:`);
+    const h = opts.hooks as any;
+    if (h.pre) {
+      lines.push(`  pre:`);
+      for (const cmd of h.pre) lines.push(`    - "${cmd}"`);
+    }
+    if (h.post) {
+      lines.push(`  post:`);
+      for (const cmd of h.post) lines.push(`    - "${cmd}"`);
+    }
+  }
+  if (opts.params) {
+    lines.push(`params:`);
+    for (const [k, v] of Object.entries(opts.params as Record<string, unknown>)) {
+      if (Array.isArray(v)) {
+        lines.push(`  ${k}:`);
+        for (const item of v) lines.push(`    - ${item}`);
+      } else {
+        lines.push(`  ${k}: ${v}`);
+      }
+    }
+  }
+  lines.push("---", "", `# ${agentName} Agent`, "", "Custom agent.", "");
+  writeFileSync(resolve(agentDir, "SKILL.md"), lines.join("\n"));
+}
+
+const SONNET_MODEL = {
+  provider: "anthropic",
+  model: "claude-sonnet-4-20250514",
+  thinkingLevel: "medium",
+  authType: "api_key",
+};
+
+const HAIKU_MODEL = {
+  provider: "anthropic",
+  model: "claude-haiku-4-5-20251001",
+  authType: "api_key",
+};
+
 describe("loadGlobalConfig", () => {
   let tmpDir: string;
 
@@ -45,6 +101,14 @@ describe("loadGlobalConfig", () => {
       },
     });
   });
+
+  it("loads named model definitions", () => {
+    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL, haiku: HAIKU_MODEL });
+    const loaded = loadGlobalConfig(tmpDir);
+    expect(loaded.models).toBeDefined();
+    expect(loaded.models!.sonnet.provider).toBe("anthropic");
+    expect(loaded.models!.haiku.model).toBe("claude-haiku-4-5-20251001");
+  });
 });
 
 describe("loadAgentConfig", () => {
@@ -58,59 +122,44 @@ describe("loadAgentConfig", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("loads SKILL.md frontmatter and injects name from directory", () => {
-    const agentDir = resolve(tmpDir, "agents", "dev");
-    mkdirSync(agentDir, { recursive: true });
-    const skillMd = `---
-credentials:
-  - github_token
-model:
-  provider: anthropic
-  model: claude-sonnet-4-20250514
-  thinkingLevel: medium
-  authType: api_key
-schedule: "*/5 * * * *"
-params:
-  repos:
-    - acme/app
-  triggerLabel: agent
-  assignee: bot
----
-
-# Dev Agent
-
-Custom dev agent.
-`;
-    writeFileSync(resolve(agentDir, "SKILL.md"), skillMd);
+  it("resolves named model references and injects name from directory", () => {
+    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
+    writeSkillMd(tmpDir, "dev", {
+      models: ["sonnet"],
+      credentials: ["github_token"],
+      schedule: "*/5 * * * *",
+      params: { repos: ["acme/app"], triggerLabel: "agent", assignee: "bot" },
+    });
     const loaded = loadAgentConfig(tmpDir, "dev");
     expect(loaded.name).toBe("dev");
     expect((loaded.params as any).repos).toEqual(["acme/app"]);
-    expect(loaded.model.model).toBe("claude-sonnet-4-20250514");
+    expect(loaded.models[0].model).toBe("claude-sonnet-4-20250514");
+  });
+
+  it("resolves multiple models as a fallback chain", () => {
+    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL, haiku: HAIKU_MODEL });
+    writeSkillMd(tmpDir, "dev", {
+      models: ["sonnet", "haiku"],
+      credentials: ["github_token"],
+      schedule: "*/5 * * * *",
+    });
+    const loaded = loadAgentConfig(tmpDir, "dev");
+    expect(loaded.models).toHaveLength(2);
+    expect(loaded.models[0].model).toBe("claude-sonnet-4-20250514");
+    expect(loaded.models[1].model).toBe("claude-haiku-4-5-20251001");
   });
 
   it("loads agent config with hooks", () => {
-    const agentDir = resolve(tmpDir, "agents", "with-hooks");
-    mkdirSync(agentDir, { recursive: true });
-    const skillMd = `---
-credentials:
-  - github_token
-schedule: "0 * * * *"
-model:
-  provider: anthropic
-  model: claude-sonnet-4-20250514
-  thinkingLevel: medium
-  authType: api_key
-hooks:
-  pre:
-    - "gh repo clone acme/app /tmp/repo --depth 1"
-    - "curl -o /tmp/flags.json https://api.test/flags"
-  post:
-    - "upload-artifacts.sh"
----
-
-# With Hooks Agent
-`;
-    writeFileSync(resolve(agentDir, "SKILL.md"), skillMd);
+    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
+    writeSkillMd(tmpDir, "with-hooks", {
+      models: ["sonnet"],
+      credentials: ["github_token"],
+      schedule: "0 * * * *",
+      hooks: {
+        pre: ["gh repo clone acme/app /tmp/repo --depth 1", "curl -o /tmp/flags.json https://api.test/flags"],
+        post: ["upload-artifacts.sh"],
+      },
+    });
     const loaded = loadAgentConfig(tmpDir, "with-hooks");
 
     expect(loaded.hooks?.pre).toHaveLength(2);
@@ -120,21 +169,12 @@ hooks:
   });
 
   it("loads agent config without hooks", () => {
-    const agentDir = resolve(tmpDir, "agents", "no-hooks");
-    mkdirSync(agentDir, { recursive: true });
-    writeFileSync(resolve(agentDir, "SKILL.md"), `---
-credentials:
-  - github_token
-model:
-  provider: anthropic
-  model: claude-sonnet-4-20250514
-  thinkingLevel: medium
-  authType: api_key
-schedule: "*/5 * * * *"
----
-
-# No hooks
-`);
+    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
+    writeSkillMd(tmpDir, "no-hooks", {
+      models: ["sonnet"],
+      credentials: ["github_token"],
+      schedule: "*/5 * * * *",
+    });
     const loaded = loadAgentConfig(tmpDir, "no-hooks");
     expect(loaded.hooks).toBeUndefined();
   });
@@ -143,10 +183,8 @@ schedule: "*/5 * * * *"
     expect(() => loadAgentConfig(tmpDir, "nonexistent")).toThrow("Agent config not found");
   });
 
-  it("falls back to global [model] when agent has no model in frontmatter", () => {
-    const globalModel = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "high", authType: "api_key" };
-    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({ model: globalModel } as Record<string, unknown>));
-
+  it("throws when agent has no models field", () => {
+    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
     const agentDir = resolve(tmpDir, "agents", "dev");
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(resolve(agentDir, "SKILL.md"), `---
@@ -157,53 +195,47 @@ schedule: "*/5 * * * *"
 
 # Dev
 `);
-
-    const loaded = loadAgentConfig(tmpDir, "dev");
-    expect(loaded.model).toEqual(globalModel);
+    expect(() => loadAgentConfig(tmpDir, "dev")).toThrow("must have a \"models\" field");
   });
 
-  it("agent model takes precedence over global model", () => {
-    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
-      model: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "high", authType: "api_key" },
-    } as Record<string, unknown>));
+  it("throws when referenced model name is not defined", () => {
+    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
+    writeSkillMd(tmpDir, "dev", {
+      models: ["nonexistent"],
+      credentials: ["github_token"],
+      schedule: "*/5 * * * *",
+    });
+    expect(() => loadAgentConfig(tmpDir, "dev")).toThrow("not defined in config.toml");
+  });
 
-    const agentDir = resolve(tmpDir, "agents", "dev");
-    mkdirSync(agentDir, { recursive: true });
-    writeFileSync(resolve(agentDir, "SKILL.md"), `---
-credentials:
-  - github_token
-model:
-  provider: openai
-  model: gpt-4o
-  thinkingLevel: "off"
-  authType: api_key
-schedule: "*/5 * * * *"
----
+  it("throws when global config has no models defined", () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({ gateway: { port: 8080 } }));
+    writeSkillMd(tmpDir, "dev", {
+      models: ["sonnet"],
+      credentials: ["github_token"],
+      schedule: "*/5 * * * *",
+    });
+    expect(() => loadAgentConfig(tmpDir, "dev")).toThrow("No models defined");
+  });
 
-# Dev
-`);
-
-    const loaded = loadAgentConfig(tmpDir, "dev");
-    expect(loaded.model.provider).toBe("openai");
-    expect(loaded.model.model).toBe("gpt-4o");
+  it("lists available model names in error message", () => {
+    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL, haiku: HAIKU_MODEL });
+    writeSkillMd(tmpDir, "dev", {
+      models: ["gpt4o"],
+      credentials: ["github_token"],
+      schedule: "*/5 * * * *",
+    });
+    expect(() => loadAgentConfig(tmpDir, "dev")).toThrow("Available: sonnet, haiku");
   });
 
   it("loads description from frontmatter", () => {
-    const agentDir = resolve(tmpDir, "agents", "dev");
-    mkdirSync(agentDir, { recursive: true });
-    writeFileSync(resolve(agentDir, "SKILL.md"), `---
-description: Solves GitHub issues by writing code
-credentials:
-  - github_token
-schedule: "*/5 * * * *"
-model:
-  provider: anthropic
-  model: claude-sonnet-4-20250514
-  authType: api_key
----
-
-# Dev
-`);
+    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
+    writeSkillMd(tmpDir, "dev", {
+      models: ["sonnet"],
+      credentials: ["github_token"],
+      schedule: "*/5 * * * *",
+      description: "Solves GitHub issues by writing code",
+    });
 
     const loaded = loadAgentConfig(tmpDir, "dev");
     expect(loaded.description).toBe("Solves GitHub issues by writing code");

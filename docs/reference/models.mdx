@@ -3,9 +3,9 @@ title: "Models"
 description: "Supported LLM providers, model IDs, and configuration"
 ---
 
-Action Llama supports 8 LLM providers. Each agent can use a different provider and model — configure a project-wide default in `config.toml` under `[model]`, and override per agent in `SKILL.md` frontmatter.
+Action Llama supports 8 LLM providers. Define named models in `config.toml` under `[models.<name>]`, then reference them by name in each agent's `SKILL.md` frontmatter. Agents list models in priority order — the first is the primary, the rest are fallbacks tried automatically on rate limits.
 
-## `[model]` Fields
+## `[models.<name>]` Fields
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -21,7 +21,7 @@ Action Llama supports 8 LLM providers. Each agent can use a different provider a
 Claude models with optional extended thinking.
 
 ```toml
-[model]
+[models.sonnet]
 provider = "anthropic"
 model = "claude-sonnet-4-20250514"
 thinkingLevel = "medium"
@@ -62,7 +62,7 @@ If omitted, thinking is not explicitly configured. For other providers, `thinkin
 ### OpenAI
 
 ```toml
-[model]
+[models.gpt4o]
 provider = "openai"
 model = "gpt-4o"
 authType = "api_key"
@@ -81,7 +81,7 @@ authType = "api_key"
 ### Groq
 
 ```toml
-[model]
+[models.groq-llama]
 provider = "groq"
 model = "llama-3.3-70b-versatile"
 authType = "api_key"
@@ -98,7 +98,7 @@ Groq runs open-source models at high speed. Check Groq's docs for the full list 
 ### Google Gemini
 
 ```toml
-[model]
+[models.gemini]
 provider = "google"
 model = "gemini-2.0-flash-exp"
 authType = "api_key"
@@ -115,7 +115,7 @@ Check Google AI Studio for the full list of available model IDs.
 ### xAI
 
 ```toml
-[model]
+[models.grok]
 provider = "xai"
 model = "grok-beta"
 authType = "api_key"
@@ -130,7 +130,7 @@ authType = "api_key"
 ### Mistral
 
 ```toml
-[model]
+[models.mistral]
 provider = "mistral"
 model = "mistral-large-2411"
 authType = "api_key"
@@ -149,7 +149,7 @@ Check Mistral's docs for the full list of available model IDs.
 OpenRouter provides access to models from many providers through a single API.
 
 ```toml
-[model]
+[models.or-sonnet]
 provider = "openrouter"
 model = "anthropic/claude-3.5-sonnet"
 authType = "api_key"
@@ -164,7 +164,7 @@ Model IDs use the `provider/model` format. See OpenRouter's model list for all a
 For any provider not listed above. The model ID and API routing are handled by the underlying pi.dev agent harness.
 
 ```toml
-[model]
+[models.my-model]
 provider = "custom"
 model = "your-model-name"
 authType = "api_key"
@@ -174,21 +174,34 @@ authType = "api_key"
 
 ## Mixing Models
 
-Each agent can use a different model. Define a project default in `config.toml`, then override in specific agents' `SKILL.md` frontmatter:
+Each agent can use a different model. Define all models in `config.toml`, then reference them by name in each agent's `SKILL.md`:
 
 ```
-config.toml        → [model] provider = "anthropic", model = "claude-sonnet-4-20250514"
-dev/SKILL.md       → (no model section — inherits Claude Sonnet)
-reviewer/SKILL.md  → model: { provider: "openai", model: "gpt-4o" }
-devops/SKILL.md    → model: { provider: "groq", model: "llama-3.3-70b-versatile" }
+config.toml        → [models.sonnet], [models.gpt4o], [models.groq-llama]
+dev/SKILL.md       → models: [sonnet]
+reviewer/SKILL.md  → models: [gpt4o]
+devops/SKILL.md    → models: [groq-llama]
 ```
 
-If an agent defines its own `model` section in its `SKILL.md` frontmatter, it fully overrides the project default — there is no field-level merging.
+## Model Fallback
+
+Agents can list multiple models to create a fallback chain. When the primary model is rate-limited or unavailable, Action Llama automatically tries the next model in the list:
+
+```yaml
+models:
+  - sonnet    # primary
+  - haiku     # fallback on rate limit
+  - gpt4o     # second fallback
+```
+
+Fallback switching is instant — there is no delay when moving to the next model. Exponential backoff only kicks in after all models in the chain have been exhausted.
+
+A circuit breaker tracks model availability in memory. When a model returns a rate limit or overload error, it is marked unavailable for 60 seconds. After the cooldown expires, the model is retried.
 
 ## Credential Setup
 
 Each provider requires a corresponding credential in `~/.action-llama/credentials/`. Run `al doctor` to configure them interactively.
 
-The LLM credential does not need to be listed in your agent's `credentials` array — it is loaded automatically based on the `[model]` config. The `credentials` array is for runtime credentials the agent uses during execution (GitHub tokens, SSH keys, etc.).
+LLM credentials are loaded automatically based on the models referenced in the agent's `models` list — they do not need to be listed in the agent's `credentials` array. The `credentials` array is for runtime credentials the agent uses during execution (GitHub tokens, SSH keys, etc.).
 
 See [Credentials](/reference/credentials) for the full credential reference.

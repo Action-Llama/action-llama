@@ -37,11 +37,13 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
     validateAgentConfig(config);
 
     // Validate pi_auth is not used (incompatible with container mode)
-    if (config.model?.authType === "pi_auth") {
-      throw new ConfigError(
-        `Agent "${name}" uses pi_auth which is not supported in container mode. ` +
-        `Switch to api_key/oauth_token (run 'al doctor').`
-      );
+    for (const mc of config.models ?? []) {
+      if (mc.authType === "pi_auth") {
+        throw new ConfigError(
+          `Agent "${name}" uses pi_auth (model "${mc.model}") which is not supported in container mode. ` +
+          `Switch to api_key/oauth_token (run 'al doctor').`
+        );
+      }
     }
   }
 

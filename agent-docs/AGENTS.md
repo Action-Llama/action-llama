@@ -8,7 +8,7 @@ Package: `@action-llama/action-llama`. CLI binary: `al`.
 
 ```
 my-project/
-  config.toml              # Project config — model, local, gateway, webhooks, telemetry (committed)
+  config.toml              # Project config — models, local, gateway, webhooks, telemetry (committed)
   .env.toml                # Environment binding — selects an environment, can override config (gitignored)
   Dockerfile               # Project base Docker image — shared tools for all agents (committed)
   AGENTS.md                # Shared instructions loaded by `al chat` (interactive only)
@@ -221,11 +221,16 @@ Project root. All sections optional — sensible defaults apply.
 ### Full Annotated Example
 
 ```toml
-# Default model for all agents (agents can override in their own SKILL.md frontmatter)
-[model]
+# Named models — define once, reference by name in SKILL.md
+[models.sonnet]
 provider = "anthropic"
 model = "claude-sonnet-4-20250514"
 thinkingLevel = "medium"
+authType = "api_key"
+
+[models.haiku]
+provider = "anthropic"
+model = "claude-haiku-4-5-20251001"
 authType = "api_key"
 
 # Local Docker container settings
@@ -280,9 +285,9 @@ endpoint = "https://telemetry.example.com/v1"   # OpenTelemetry endpoint
 | `workQueueSize` | number | `100` | Maximum queued work items (webhook events + agent calls) per agent when all runners are busy |
 | `scale` | number | _(unlimited)_ | Project-wide cap on total concurrent runners across all agents |
 
-### `[model]` — Default LLM
+### `[models.<name>]` — Named Models
 
-Default for agents without `model` in SKILL.md frontmatter.
+Define models once, reference by name in SKILL.md `models:` list. First in list is primary; rest are fallbacks tried in order on rate limits.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -350,11 +355,9 @@ credentials:
 schedule: "*/5 * * * *"
 scale: 2
 timeout: 600
-model:
-  provider: anthropic
-  model: claude-sonnet-4-20250514
-  thinkingLevel: medium
-  authType: api_key
+models:
+  - sonnet
+  - haiku
 webhooks:
   - source: my-github
     repos: [acme/app]
@@ -402,7 +405,7 @@ You are a development agent. Pick the highest priority issue and fix it.
 | `schedule` | string | No* | Cron expression for polling |
 | `scale` | number | No | Number of concurrent runs allowed (default: 1). Set to `0` to disable the agent. |
 | `timeout` | number | No | Max runtime in seconds. Falls back to `[local].timeout` in project config, then `900`. |
-| `model` | object | No | LLM model configuration (falls back to `[model]` in project `config.toml`) |
+| `models` | string[] | Yes | Named model references from `config.toml [models.*]`. First is primary; rest are fallbacks. |
 | `webhooks` | array | No* | Array of webhook trigger objects. |
 | `hooks.pre` | string[] | No | Shell commands to run before LLM session |
 | `hooks.post` | string[] | No | Shell commands to run after LLM session |
@@ -501,7 +504,7 @@ Path: `~/.action-llama/credentials/<type>/<instance>/<field>`.
 
 ### How credentials work
 
-List in SKILL.md frontmatter. Mounted at `/credentials/...`, key values as env vars. `git_ssh` sets `GIT_AUTHOR_*`/`GIT_COMMITTER_*`. LLM creds auto-loaded from `[model]`.
+List in SKILL.md frontmatter. Mounted at `/credentials/...`, key values as env vars. `git_ssh` sets `GIT_AUTHOR_*`/`GIT_COMMITTER_*`. LLM creds auto-loaded from `[models.*]`.
 
 ### Agent runtime credentials
 
@@ -560,7 +563,7 @@ CLI only (provisioning, deployment).
 
 ## Models
 
-8 providers. Default in `config.toml [model]`, override per agent.
+8 providers. Define named models in `config.toml [models.*]`, reference by name in agent SKILL.md.
 
 | Provider | Credential | Example Models | Auth Types |
 |----------|-----------|---------------|------------|
@@ -1011,7 +1014,7 @@ Three-layer config merge (later wins):
 
 | Layer | File | Scope | Contents |
 |-------|------|-------|----------|
-| 1 | `config.toml` | Project (committed) | `[model]`, `[local]`, `[gateway]`, `[webhooks]`, `[telemetry]`, top-level scheduler fields |
+| 1 | `config.toml` | Project (committed) | `[models.*]`, `[local]`, `[gateway]`, `[webhooks]`, `[telemetry]`, top-level scheduler fields |
 | 2 | `.env.toml` | Project (gitignored) | `environment` field to select env, can override any config value |
 | 3 | `~/.action-llama/environments/<name>.toml` | Machine | `[server]` (SSH push deploy), `gateway.url`, `telemetry.endpoint` |
 

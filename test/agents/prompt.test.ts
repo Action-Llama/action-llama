@@ -58,7 +58,7 @@ describe("buildScheduledPrompt", () => {
     const minimal: AgentConfig = {
       name: "test",
       credentials: [],
-      model: { provider: "anthropic", model: "test", thinkingLevel: "off", authType: "api_key" },
+      models: [{ provider: "anthropic", model: "test", thinkingLevel: "off", authType: "api_key" }],
     };
     const result = buildScheduledPrompt(minimal);
     expect(result).not.toContain("triggerLabel");

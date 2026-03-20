@@ -137,7 +137,7 @@ src/
 
 Config uses a three-layer merge system for portable projects:
 
-1. **`config.toml`** (committed) — portable project settings: `[model]`, `[local]`, `[gateway]`, `[webhooks]`, `[telemetry]`
+1. **`config.toml`** (committed) — portable project settings: `[models.*]`, `[local]`, `[gateway]`, `[webhooks]`, `[telemetry]`
 2. **`.env.toml`** (gitignored) — per-project environment binding + config overrides. Has an `environment` field to select a named environment
 3. **`~/.action-llama/environments/<name>.toml`** (machine-level) — infrastructure config: `[server]` (SSH push deploy), plus `gateway.url`, `telemetry.endpoint`
 

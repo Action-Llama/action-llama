@@ -55,11 +55,13 @@ export async function validateAndDiscover(
 
   // Validate pi_auth is not used with Docker (containers can't access host auth storage)
   for (const config of activeAgentConfigs) {
-    if (config.model.authType === "pi_auth") {
-      throw new ConfigError(
-        `Agent "${config.name}" uses pi_auth which is not supported in container mode. ` +
-        `Switch to api_key/oauth_token (run 'al doctor').`
-      );
+    for (const mc of config.models) {
+      if (mc.authType === "pi_auth") {
+        throw new ConfigError(
+          `Agent "${config.name}" uses pi_auth (model "${mc.model}") which is not supported in container mode. ` +
+          `Switch to api_key/oauth_token (run 'al doctor').`
+        );
+      }
     }
   }
 

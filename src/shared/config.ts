@@ -70,7 +70,7 @@ export interface TelemetryConfig {
 }
 
 export interface GlobalConfig {
-  model?: ModelConfig;
+  models?: Record<string, ModelConfig>;
   local?: LocalConfig;
   gateway?: GatewayConfig;
   webhooks?: Record<string, WebhookSourceConfig>;
@@ -98,7 +98,7 @@ export interface AgentConfig {
   name: string;
   description?: string;
   credentials: string[];
-  model: ModelConfig;
+  models: ModelConfig[];
   schedule?: string;
   webhooks?: WebhookTrigger[];
   hooks?: AgentHooks;
@@ -182,18 +182,38 @@ export function loadAgentConfig(projectPath: string, agentName: string): AgentCo
 
   const raw = readFileSync(skillPath, "utf-8");
   const { data } = parseFrontmatter(raw);
-  const parsed = data as unknown as AgentConfig;
+  const parsed = data as Record<string, unknown>;
   parsed.name = agentName;
 
-  // Fall back to global [model] if agent doesn't define its own
-  if (!parsed.model) {
-    const global = loadGlobalConfig(projectPath);
-    if (global.model) {
-      parsed.model = global.model;
-    }
+  // Resolve named model references from global config
+  const rawModels = parsed.models as string[] | undefined;
+  if (!rawModels || !Array.isArray(rawModels) || rawModels.length === 0) {
+    throw new ConfigError(
+      `Agent "${agentName}" must have a "models" field listing at least one named model.`
+    );
   }
 
-  return parsed;
+  const global = loadGlobalConfig(projectPath);
+  if (!global.models || Object.keys(global.models).length === 0) {
+    throw new ConfigError(
+      `No models defined in config.toml [models]. Define at least one named model.`
+    );
+  }
+
+  const resolvedModels: ModelConfig[] = [];
+  for (const name of rawModels) {
+    const modelDef = global.models[name];
+    if (!modelDef) {
+      const available = Object.keys(global.models).join(", ");
+      throw new ConfigError(
+        `Agent "${agentName}" references model "${name}" which is not defined in config.toml. Available: ${available}`
+      );
+    }
+    resolvedModels.push(modelDef);
+  }
+
+  parsed.models = resolvedModels;
+  return parsed as unknown as AgentConfig;
 }
 
 /**

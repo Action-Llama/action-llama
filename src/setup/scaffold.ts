@@ -193,8 +193,8 @@ export function scaffoldAgent(projectPath: string, agent: ScaffoldAgent): void {
   const skillPath = resolve(agentPath, "SKILL.md");
   if (!existsSync(skillPath)) {
     // Strip `name` before serializing — it's derived from the directory name.
-    // Also strip undefined values and model (inherited from global).
-    const { name: _, model: _m, ...rest } = agent.config;
+    // Also strip undefined values and models (resolved at load time from global config).
+    const { name: _, models: _m, ...rest } = agent.config;
     const frontmatter: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(rest)) {
       if (v !== undefined) frontmatter[k] = v;

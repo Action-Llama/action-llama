@@ -56,7 +56,7 @@ When the user picks a template:
 
 1. **Ask what they need** — which template, which repos, any customization
 2. **Create the agent directory** (\`agents/<name>/\`)
-3. **Write SKILL.md** — a single file with YAML frontmatter (config) and markdown body (instructions). Use the template below as a starting point. Customize the frontmatter \`params\` based on the user's answers (repos, triggerLabel, assignee, etc.). Do NOT include a \`model\` field unless the user specifically asks for a different model — agents inherit the project default from \`config.toml\`.
+3. **Write SKILL.md** — a single file with YAML frontmatter (config) and markdown body (instructions). Use the template below as a starting point. Customize the frontmatter \`params\` based on the user's answers (repos, triggerLabel, assignee, etc.). Always include a \`models:\` field listing named models from \`config.toml [models.*]\` — e.g. \`models: [sonnet]\`.
 4. **Create a Dockerfile if needed** — analyze the SKILL.md to determine what CLI tools the agent needs. The base image (\`al-agent\`) is Alpine-based (\`node:20-alpine\`) and includes: Node.js, git, curl, jq, openssh-client, ca-certificates. If the agent needs anything else (e.g. \`gh\` CLI), create a Dockerfile:
 
 \`\`\`dockerfile
@@ -228,12 +228,7 @@ async function executeAgentChat(opts: ChatOpts & { agent: string }): Promise<voi
   } = await import("@mariozechner/pi-coding-agent");
   const { getModel } = await import("@mariozechner/pi-ai");
 
-  const modelConfig = agentConfig.model || globalConfig.model || {
-    provider: "anthropic",
-    model: "claude-sonnet-4-20250514",
-    thinkingLevel: "medium" as const,
-    authType: "api_key" as const,
-  };
+  const modelConfig = agentConfig.models[0];
 
   const authStorage = AuthStorage.create();
   if (modelConfig.authType !== "pi_auth") {
@@ -350,25 +345,18 @@ async function executeProjectChat(opts: ChatOpts): Promise<void> {
   const { getModel } = await import("@mariozechner/pi-ai");
 
   const globalConfig = loadGlobalConfig(projectPath);
-  const modelConfig = globalConfig.model || {
-    provider: "anthropic",
-    model: "claude-sonnet-4-20250514",
-    thinkingLevel: "medium" as const,
-    authType: "api_key" as const,
-  };
+  // Use the first named model for project-level chat
+  const modelNames = globalConfig.models ? Object.keys(globalConfig.models) : [];
+  const modelConfig = modelNames.length > 0
+    ? globalConfig.models![modelNames[0]]
+    : { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium" as const, authType: "api_key" as const };
 
   const authStorage = AuthStorage.create();
   if (modelConfig.authType !== "pi_auth") {
-    if (modelConfig.provider === "anthropic") {
-      const credential = await loadCredentialField("anthropic_key", "default", "token");
-      if (credential) {
-        authStorage.setRuntimeApiKey("anthropic", credential);
-      }
-    } else if (modelConfig.provider === "openai") {
-      const credential = await loadCredentialField("openai_key", "default", "token");
-      if (credential) {
-        authStorage.setRuntimeApiKey("openai", credential);
-      }
+    const credentialType = `${modelConfig.provider}_key`;
+    const credential = await loadCredentialField(credentialType, "default", "token");
+    if (credential) {
+      authStorage.setRuntimeApiKey(modelConfig.provider, credential);
     }
   }
 

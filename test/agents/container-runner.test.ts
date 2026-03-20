@@ -38,7 +38,7 @@ const globalConfig: GlobalConfig = {};
 const agentConfig: AgentConfig = {
   name: "test-agent",
   credentials: [],
-  model: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" },
+  models: [{ provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" }],
   schedule: "*/5 * * * *",
 };
 

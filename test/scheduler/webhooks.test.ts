@@ -137,9 +137,10 @@ vi.mock("../../src/shared/logger.js", () => ({
 
 import { startScheduler } from "../../src/scheduler/index.js";
 
-const model = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" };
+const modelDef = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" };
 
 const globalConfigWithWebhooks = stringifyTOML({
+  models: { sonnet: modelDef },
   webhooks: {
     "my-github": { type: "github", credential: "MyOrg" },
   },
@@ -151,7 +152,7 @@ function setupProjectWithWebhooks(tmpDir: string) {
   // Webhook-only agent
   const webhookAgent = {
     credentials: ["github_token"],
-    model,
+    models: ["sonnet"],
     webhooks: [{ source: "my-github", events: ["issues"], actions: ["labeled"], labels: ["agent"] }],
   };
   const agentDir = resolve(tmpDir, "agents", "webhook-dev");
@@ -166,7 +167,7 @@ function setupProjectWithHybrid(tmpDir: string) {
   // Hybrid agent (schedule + webhooks)
   const hybridAgent = {
     credentials: ["github_token"],
-    model,
+    models: ["sonnet"],
     schedule: "*/15 * * * *",
     webhooks: [{ source: "my-github", events: ["pull_request"], actions: ["opened"] }],
   };
@@ -177,12 +178,14 @@ function setupProjectWithHybrid(tmpDir: string) {
 }
 
 function setupProjectWithNoTrigger(tmpDir: string) {
-  writeFileSync(resolve(tmpDir, "config.toml"), "");
+  writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+    models: { sonnet: modelDef },
+  } as Record<string, unknown>));
 
   // Agent with neither schedule nor webhooks
   const badAgent = {
     credentials: ["github_token"],
-    model,
+    models: ["sonnet"],
   };
   const agentDir = resolve(tmpDir, "agents", "bad-agent");
   mkdirSync(agentDir, { recursive: true });

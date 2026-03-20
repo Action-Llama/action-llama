@@ -4,17 +4,21 @@ import { join, resolve } from "path";
 import { tmpdir } from "os";
 
 // Mock dependencies
-vi.mock("@mariozechner/pi-ai", () => ({
-  getModel: vi.fn((provider: string, model: string) => ({ provider, model })),
-}));
-
 const mockSubscribe = vi.fn();
 const mockPrompt = vi.fn();
 const mockDispose = vi.fn();
 const mockGetSessionStats = vi.fn();
+
 vi.mock("@mariozechner/pi-coding-agent", () => ({
-  AuthStorage: { create: () => ({ setRuntimeApiKey: vi.fn() }) },
-  createAgentSession: vi.fn(() =>
+  DefaultResourceLoader: class {
+    constructor(_opts: any) {}
+    reload() { return Promise.resolve(); }
+  },
+  SettingsManager: { inMemory: (opts: any) => opts },
+}));
+
+vi.mock("../../src/agents/session-factory.js", () => ({
+  createSessionForModel: vi.fn(() =>
     Promise.resolve({
       session: {
         subscribe: mockSubscribe,
@@ -22,16 +26,20 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
         dispose: mockDispose,
         getSessionStats: mockGetSessionStats,
       },
+      authStorage: { setRuntimeApiKey: vi.fn() },
     })
   ),
-  DefaultResourceLoader: class {
-    constructor(_opts: any) {}
-    reload() { return Promise.resolve(); }
-  },
-  SessionManager: { inMemory: () => ({}) },
-  SettingsManager: { inMemory: (opts: any) => opts },
-  createCodingTools: vi.fn(() => []),
 }));
+
+vi.mock("../../src/agents/model-fallback.js", () => {
+  const { ModelCircuitBreaker } = vi.importActual<any>("../../src/agents/model-fallback.js");
+  return {
+    circuitBreaker: { recordSuccess: vi.fn(), recordFailure: vi.fn(), isAvailable: () => true },
+    selectAvailableModels: (models: any[]) => models,
+    isRateLimitError: (msg: string) => msg.includes("rate_limit") || msg.includes("429"),
+    ModelCircuitBreaker,
+  };
+});
 
 vi.mock("../../src/shared/credentials.js", () => ({
   loadCredentialField: () => "fake-key",
@@ -352,12 +360,12 @@ describe("AgentRunner", () => {
 
   it("uses pi_auth when configured", async () => {
     const agentConfig = makeRunnerAgentConfig({
-      model: {
+      models: [{
         provider: "anthropic",
         model: "claude-sonnet-4-20250514",
         thinkingLevel: "medium",
         authType: "pi_auth",
-      },
+      }],
     });
     const runner = new AgentRunner(agentConfig, makeLogger(), tmpDir);
     mockPrompt.mockResolvedValue(undefined);
@@ -369,12 +377,12 @@ describe("AgentRunner", () => {
 
   it("works with openai provider and api_key auth", async () => {
     const agentConfig = makeRunnerAgentConfig({
-      model: {
+      models: [{
         provider: "openai",
         model: "gpt-4",
         thinkingLevel: "medium",
         authType: "api_key",
-      },
+      }],
     });
     const runner = new AgentRunner(agentConfig, makeLogger(), tmpDir);
     mockPrompt.mockResolvedValue(undefined);
@@ -386,12 +394,12 @@ describe("AgentRunner", () => {
 
   it("works with openai codex model", async () => {
     const agentConfig = makeRunnerAgentConfig({
-      model: {
+      models: [{
         provider: "openai",
         model: "gpt-4o",
         thinkingLevel: "low",
         authType: "api_key",
-      },
+      }],
     });
     const runner = new AgentRunner(agentConfig, makeLogger(), tmpDir);
     mockPrompt.mockResolvedValue(undefined);
@@ -403,23 +411,21 @@ describe("AgentRunner", () => {
 
   it("supports arbitrary LLM providers", async () => {
     const logger = makeLogger();
-    const debugSpy = vi.spyOn(logger, "debug");
-    
+
     const agentConfig = makeRunnerAgentConfig({
-      model: {
+      models: [{
         provider: "groq",
         model: "llama-3.3-70b-versatile",
         thinkingLevel: "medium",
         authType: "api_key",
-      },
+      }],
     });
     const runner = new AgentRunner(agentConfig, logger, tmpDir);
     mockPrompt.mockResolvedValue(undefined);
     mockSubscribe.mockImplementation(() => {});
 
     await runner.run("Test");
-    // Should successfully load groq_key credential and run without warnings
-    expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining("Loaded groq_key credential for groq"));
+    // Should successfully create session and run without warnings
     expect(mockPrompt).toHaveBeenCalled();
   });
 
