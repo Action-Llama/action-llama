@@ -22,3 +22,7 @@ export function eventsDir(projectPath: string): string {
 export function agentDir(projectPath: string, agentType: string): string {
   return resolve(projectPath, "agents", agentType);
 }
+
+export function statsDbPath(projectPath: string): string {
+  return resolve(projectPath, ".al", "stats.db");
+}

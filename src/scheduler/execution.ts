@@ -11,6 +11,7 @@ import type { createLogger } from "../shared/logger.js";
 import type { SchedulerEventBus } from "./events.js";
 import type { CallStore } from "../gateway/call-store.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
+import type { StatsStore } from "../stats/index.js";
 
 export const DEFAULT_MAX_RERUNS = 10;
 export const DEFAULT_MAX_TRIGGER_DEPTH = 3;
@@ -46,6 +47,8 @@ export interface SchedulerContext {
   statusTracker?: StatusTracker;
   /** Returns false if the named agent has been paused/disabled; undefined = treat as enabled. */
   isAgentEnabled?: (name: string) => boolean;
+  /** Optional stats store for recording run history and call edges. */
+  statsStore?: StatsStore;
 }
 
 // Prompt helpers: when images have baked-in static files, only pass the dynamic suffix.
@@ -68,6 +71,8 @@ export async function executeRun(
   triggerInfo: { type: 'schedule' | 'webhook' | 'agent'; source?: string },
   agentName: string, depth: number, ctx: SchedulerContext
 ): Promise<{ result: string; triggers: Array<{ agent: string; context: string }>; returnValue?: string }> {
+  const startedAt = Date.now();
+
   ctx.events?.emit("run:start", {
     agentName,
     instanceId: runner.instanceId,
@@ -75,8 +80,9 @@ export async function executeRun(
   });
 
   const outcome = await runner.run(prompt, triggerInfo);
+  const durationMs = Date.now() - startedAt;
   const triggers = outcome.triggers ?? [];
-  if (triggers.length > 0) dispatchTriggers(triggers, agentName, depth, ctx);
+  if (triggers.length > 0) dispatchTriggers(triggers, agentName, depth, ctx, runner.instanceId);
 
   ctx.events?.emit("run:end", {
     agentName,
@@ -86,13 +92,42 @@ export async function executeRun(
     error: outcome.exitReason,
   });
 
+  // Record run in stats store
+  if (ctx.statsStore) {
+    try {
+      ctx.statsStore.recordRun({
+        instanceId: runner.instanceId,
+        agentName,
+        triggerType: triggerInfo.type,
+        triggerSource: triggerInfo.source,
+        result: outcome.result,
+        exitCode: outcome.exitCode,
+        startedAt,
+        durationMs,
+        inputTokens: outcome.usage?.inputTokens,
+        outputTokens: outcome.usage?.outputTokens,
+        cacheReadTokens: outcome.usage?.cacheReadTokens,
+        cacheWriteTokens: outcome.usage?.cacheWriteTokens,
+        totalTokens: outcome.usage?.totalTokens,
+        costUsd: outcome.usage?.cost,
+        turnCount: outcome.usage?.turnCount,
+        errorMessage: outcome.exitReason,
+        preHookMs: outcome.preHookMs,
+        postHookMs: outcome.postHookMs,
+      });
+    } catch (err) {
+      ctx.logger.warn({ err, agent: agentName }, "failed to record run stats");
+    }
+  }
+
   ctx.onRunComplete?.({ agentName, result: outcome.result, triggerType: triggerInfo.type });
   return { result: outcome.result, triggers, returnValue: outcome.returnValue };
 }
 
 export function dispatchTriggers(
   triggers: Array<{ agent: string; context: string }>,
-  sourceAgent: string, depth: number, ctx: SchedulerContext
+  sourceAgent: string, depth: number, ctx: SchedulerContext,
+  callerInstanceId?: string,
 ): void {
   for (const { agent, context } of triggers) {
     if (agent === sourceAgent) {
@@ -113,6 +148,24 @@ export function dispatchTriggers(
       ctx.logger.info({ source: sourceAgent, target: agent }, "target disabled (scale=0), skipping");
       continue;
     }
+
+    // Record call edge
+    let callEdgeId: number | undefined;
+    if (ctx.statsStore && callerInstanceId) {
+      try {
+        callEdgeId = ctx.statsStore.recordCallEdge({
+          callerAgent: sourceAgent,
+          callerInstance: callerInstanceId,
+          targetAgent: agent,
+          depth: depth + 1,
+          startedAt: Date.now(),
+          status: "pending",
+        });
+      } catch (err) {
+        ctx.logger.warn({ err }, "failed to record call edge");
+      }
+    }
+
     if (ctx.isAgentEnabled && !ctx.isAgentEnabled(agent)) {
       ctx.workQueue.enqueue(agent, { type: 'agent-trigger', sourceAgent, context, depth });
       ctx.logger.info({ source: sourceAgent, target: agent }, "target agent is paused, trigger queued");
@@ -126,9 +179,31 @@ export function dispatchTriggers(
     }
     ctx.logger.info({ source: sourceAgent, target: agent, depth }, "agent trigger firing");
     const prompt = makeTriggeredPrompt(targetConfig, sourceAgent, context, ctx);
+    const edgeStartedAt = Date.now();
     executeRun(runner, prompt, { type: 'agent', source: sourceAgent }, agent, depth + 1, ctx)
-      .then(() => drainQueues(ctx))
-      .catch((err) => ctx.logger.error({ err, target: agent }, "triggered run failed"));
+      .then((outcome) => {
+        if (callEdgeId != null && ctx.statsStore) {
+          try {
+            ctx.statsStore.updateCallEdge(callEdgeId, {
+              durationMs: Date.now() - edgeStartedAt,
+              status: outcome.result === "error" ? "error" : "completed",
+              targetInstance: runner.instanceId,
+            });
+          } catch { /* best-effort */ }
+        }
+        return drainQueues(ctx);
+      })
+      .catch((err) => {
+        if (callEdgeId != null && ctx.statsStore) {
+          try {
+            ctx.statsStore.updateCallEdge(callEdgeId, {
+              durationMs: Date.now() - edgeStartedAt,
+              status: "error",
+            });
+          } catch { /* best-effort */ }
+        }
+        ctx.logger.error({ err, target: agent }, "triggered run failed");
+      });
   }
 }
 

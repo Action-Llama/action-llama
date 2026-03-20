@@ -170,6 +170,6 @@ async function startRemoteService(
   if (healthy) {
     console.log(`Service started on ${serverConfig.host}.`);
   } else {
-    console.warn(`Service start command succeeded but health check did not respond within 30s. Check with 'al stat --env ${envName}'.`);
+    console.warn(`Service start command succeeded but health check did not respond within 30s. Check with 'al status --env ${envName}'.`);
   }
 }

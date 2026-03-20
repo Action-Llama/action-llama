@@ -35,7 +35,9 @@ export interface RunOutcome {
   returnValue?: string;
   exitCode?: number;
   exitReason?: string;
-  usage?: TokenUsage;  // NEW
+  usage?: TokenUsage;
+  preHookMs?: number;
+  postHookMs?: number;
 }
 
 
@@ -123,6 +125,8 @@ export class AgentRunner {
     const runStartTime = Date.now();
     let runError: string | undefined;
     let usage: TokenUsage | undefined;
+    let preHookMs: number | undefined;
+    let postHookMs: number | undefined;
 
     // Declared outside try so the finally block can restore them.
     const GIT_ENV_KEYS = [
@@ -175,7 +179,8 @@ export class AgentRunner {
             else this.logger.info(data ?? {}, msg);
           },
         };
-        await runHooks(this.agentConfig.hooks.pre, "pre", hookCtx);
+        const preResult = await runHooks(this.agentConfig.hooks.pre, "pre", hookCtx);
+        preHookMs = preResult.durationMs;
       }
 
       // SKILL.md must exist on disk (written during al new)
@@ -317,6 +322,20 @@ export class AgentRunner {
         }
       }
 
+      // Run post hooks (cleanup, notifications after LLM session)
+      if (this.agentConfig.hooks?.post && this.agentConfig.hooks.post.length > 0) {
+        const hookCtx = {
+          env: { ...process.env } as Record<string, string>,
+          logger: (level: string, msg: string, data?: Record<string, any>) => {
+            if (level === "error") this.logger.error(data ?? {}, msg);
+            else if (level === "warn") this.logger.warn(data ?? {}, msg);
+            else this.logger.info(data ?? {}, msg);
+          },
+        };
+        const postResult = await runHooks(this.agentConfig.hooks.post, "post", hookCtx);
+        postHookMs = postResult.durationMs;
+      }
+
       // Read signal files written by al-rerun, al-status, al-return, al-exit
       const signals = readSignals(signalDir);
 
@@ -365,6 +384,8 @@ export class AgentRunner {
         triggers: [],
         returnValue: signals.returnValue,
         usage,
+        preHookMs,
+        postHookMs,
         ...(signals.exitCode !== undefined && {
           exitCode: signals.exitCode,
           exitReason: getExitCodeMessage(signals.exitCode)

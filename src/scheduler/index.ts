@@ -9,6 +9,7 @@ import { createContainerRuntime, buildAgentImages } from "./runtime-factory.js";
 import { setupWebhookRegistry, registerWebhookBindings } from "./webhook-setup.js";
 import { initTelemetry } from "../telemetry/index.js";
 import type { StateStore } from "../shared/state-store.js";
+import type { StatsStore } from "../stats/index.js";
 import type { WorkItem, SchedulerContext } from "./execution.js";
 import { drainQueues } from "./execution.js";
 import { SchedulerEventBus } from "./events.js";
@@ -69,6 +70,20 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       path: resolvePath(projectPath, ".al", "state.db"),
     });
     logger.info("State store: SQLite (.al/state.db)");
+  }
+
+  // Create stats store (SQLite)
+  let statsStore: StatsStore | undefined;
+  {
+    const { StatsStore: StatsStoreClass } = await import("../stats/index.js");
+    const { statsDbPath } = await import("../shared/paths.js");
+    statsStore = new StatsStoreClass(statsDbPath(projectPath));
+    // Auto-prune old data on startup
+    const pruned = statsStore.prune(90);
+    if (pruned.runs > 0 || pruned.callEdges > 0) {
+      logger.info({ prunedRuns: pruned.runs, prunedCallEdges: pruned.callEdges }, "Pruned old stats data (>90 days)");
+    }
+    logger.info("Stats store: SQLite (.al/stats.db)");
   }
 
   // Create the lifecycle event bus
@@ -140,7 +155,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   const callStore = gateway.callStore;
   const schedulerCtx: SchedulerContext = {
     runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, workQueue,
-    shuttingDown: false, skills, useBakedImages: true, events, callStore, statusTracker,
+    shuttingDown: false, skills, useBakedImages: true, events, callStore, statusTracker, statsStore,
     isAgentEnabled: statusTracker ? (name: string) => statusTracker.isAgentEnabled(name) : undefined,
   };
 
@@ -203,7 +218,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // Graceful shutdown
   registerShutdownHandlers({
-    logger, schedulerCtx, cronJobs, gateway, stateStore, telemetry, watcherHandle,
+    logger, schedulerCtx, cronJobs, gateway, stateStore, statsStore, telemetry, watcherHandle,
   });
 
   return { cronJobs, runnerPools, gateway, webhookRegistry, webhookUrls, statusTracker, schedulerCtx, events };

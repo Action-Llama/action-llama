@@ -121,12 +121,27 @@ program
   }));
 
 program
-  .command("stat [agent]")
+  .command("status [agent]")
+  .alias("stat")
   .description("Show status of scheduler or agent")
   .option("-p, --project <dir>", "project directory", ".")
   .option("-E, --env <name>", "use named environment")
   .action(withCommand(async (agent, opts) => {
     const { execute } = await import("./commands/status.js");
+    await execute({ ...opts, agent });
+  }));
+
+program
+  .command("stats")
+  .description("Show historical run statistics from local SQLite store")
+  .argument("[agent]", "agent name (omit for global summary)")
+  .option("-p, --project <dir>", "project directory", ".")
+  .option("-s, --since <duration>", "time window: e.g. 24h, 7d, 30d", "7d")
+  .option("-n <N>", "number of recent runs to show", parseInt, 20)
+  .option("--json", "output as JSON")
+  .option("--calls", "show call graph summary")
+  .action(withCommand(async (agent: string | undefined, opts) => {
+    const { execute } = await import("./commands/stats.js");
     await execute({ ...opts, agent });
   }));
 

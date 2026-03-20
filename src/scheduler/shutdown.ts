@@ -7,6 +7,7 @@ import type { GatewayServer } from "../gateway/index.js";
 import type { StateStore } from "../shared/state-store.js";
 import type { Logger } from "../shared/logger.js";
 import type { SchedulerContext } from "./execution.js";
+import type { StatsStore } from "../stats/index.js";
 
 export function registerShutdownHandlers(deps: {
   logger: Logger;
@@ -14,10 +15,11 @@ export function registerShutdownHandlers(deps: {
   cronJobs: Cron[];
   gateway?: GatewayServer;
   stateStore?: StateStore;
+  statsStore?: StatsStore;
   telemetry?: any;
   watcherHandle: { stop: () => void };
 }): void {
-  const { logger, schedulerCtx, cronJobs, gateway, stateStore, telemetry, watcherHandle } = deps;
+  const { logger, schedulerCtx, cronJobs, gateway, stateStore, statsStore, telemetry, watcherHandle } = deps;
 
   const shutdown = async () => {
     logger.info("Shutting down scheduler...");
@@ -34,6 +36,9 @@ export function registerShutdownHandlers(deps: {
     }
     if (stateStore) {
       await stateStore.close();
+    }
+    if (statsStore) {
+      statsStore.close();
     }
 
     // Shutdown telemetry

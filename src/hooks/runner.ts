@@ -13,7 +13,8 @@ export async function runHooks(
   commands: string[],
   phase: "pre" | "post",
   ctx: HookContext,
-): Promise<void> {
+): Promise<{ durationMs: number }> {
+  const start = Date.now();
   ctx.logger("info", `hooks.${phase} starting`, { count: commands.length });
 
   for (let i = 0; i < commands.length; i++) {
@@ -36,5 +37,7 @@ export async function runHooks(
     }
   }
 
-  ctx.logger("info", `hooks.${phase} complete`);
+  const durationMs = Date.now() - start;
+  ctx.logger("info", `hooks.${phase} complete`, { durationMs });
+  return { durationMs };
 }
