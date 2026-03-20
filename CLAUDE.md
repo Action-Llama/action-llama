@@ -4,12 +4,18 @@
 
 Action Llama — CLI tool for running LLM agents as scripts (cron/webhook triggered).
 
-Package: `@action-llama/action-llama`, CLI binary: `al`.
+This is a monorepo with the following packages:
+
+| Package | Path | Published | Description |
+|---------|------|-----------|-------------|
+| `@action-llama/action-llama` | `packages/action-llama` | npm | CLI tool, gateway, scheduler, agent runners |
+| `@action-llama/shared` | `packages/shared` | no (private) | Shared TypeScript types and pure utility functions |
+| `@action-llama/docs` | `packages/docs` | no (private) | Mintlify documentation site |
 
 ## Build & Test
 
 ```bash
-npm run build          # TypeScript build
+npm run build          # build shared, then action-llama
 npm run test:unit      # unit tests only (fast, run during development)
 npm test               # all tests including integration (run before committing)
 npm run test:integration  # integration tests only (Docker-based, slow)
@@ -17,7 +23,9 @@ npm run test:watch     # watch mode (unit tests only)
 npm run test:coverage  # V8 coverage
 ```
 
-Tests live in `test/` mirroring `src/`. Integration tests are in `test/integration/` and require Docker. When asked to run tests, run `npm test` (the full suite) unless explicitly told to run only unit tests. Use `npm run test:unit` only when iterating during development.
+Build order: `shared` first (both web and cli will depend on it), then `action-llama`.
+
+Tests live in `packages/action-llama/test/` mirroring `packages/action-llama/src/`. Integration tests are in `test/integration/` and require Docker. When asked to run tests, run `npm test` (the full suite) unless explicitly told to run only unit tests. Use `npm run test:unit` only when iterating during development.
 
 ## Commits & Changesets
 
@@ -73,25 +81,6 @@ We are pre-1.0 (`0.x.y`), so `minor` = what would be `major` post-1.0. Most chan
 - Reference the issue number if applicable (e.g., "Closes #42")
 - Keep it to 1-3 sentences
 
-Good:
-```markdown
----
-"@action-llama/action-llama": patch
----
-
-Added support for custom LLM providers. Set `provider: "custom"` in SKILL.md
-frontmatter with a `baseUrl` pointing to any OpenAI-compatible endpoint. Closes #27.
-```
-
-Bad:
-```markdown
----
-"@action-llama/action-llama": patch
----
-
-Updated code.
-```
-
 **When to skip a changeset:**
 
 - Pure internal refactors with zero behavior change
@@ -116,39 +105,6 @@ Updated code.
 - Users on `npm install @action-llama/action-llama` get the last promoted stable version
 - Users on `npm install @action-llama/action-llama@next` get the latest daily build
 
-## Source Layout
-
-```
-src/
-  cli/              # Command definitions (--env flag, env subcommand)
-  setup/            # Project scaffolding
-  scheduler/        # Scheduler: agent discovery, cron + webhooks
-  agents/           # Agent runners (host + Docker), prompt builder
-  gateway/          # HTTP server: router, health, shutdown, webhook routes
-  docker/           # Container lifecycle, image + network
-  cloud/            # Cloud providers: vps/ (Vultr, Hetzner, SSH), cloudflare/
-  remote/           # SSH push deploy: ssh/rsync helpers, bootstrap, push orchestration
-  webhooks/         # Webhook registry, provider interface
-  tui/              # Ink-based terminal UI
-  shared/           # Config, credentials, environment, logger, paths, git helpers
-```
-
-## Configuration
-
-Config uses a three-layer merge system for portable projects:
-
-1. **`config.toml`** (committed) — portable project settings: `[models.*]`, `[local]`, `[gateway]`, `[webhooks]`, `[telemetry]`
-2. **`.env.toml`** (gitignored) — per-project environment binding + config overrides. Has an `environment` field to select a named environment
-3. **`~/.action-llama/environments/<name>.toml`** (machine-level) — infrastructure config: `[server]` (SSH push deploy), plus `gateway.url`, `telemetry.endpoint`
-
-Merge order: `config.toml` -> `.env.toml` -> environment file (later values win, deep merge).
-
-`[cloud]` and `[server]` must be in an environment file (Layer 3) — placing `[cloud]` in `config.toml` is an error. `[cloud]` and `[server]` are mutually exclusive within an environment.
-
-Cloud mode is auto-detected from the merged config (presence of `[cloud]` section). Server mode uses `al push` with `[server]`. The `-E`/`--env <name>` flag or `AL_ENV` env var selects an environment explicitly.
-
-Environment types (for `al env init <name> --type <type>`): `server`.
-
 ## Key Conventions
 
 - Config format: TOML for project config (`config.toml`, `.env.toml`, environment files); YAML frontmatter in `SKILL.md` for agent config
@@ -156,4 +112,8 @@ Environment types (for `al env init <name> --type <type>`): `server`.
 - Cloud is opt-in via `--env <name>` flag or `.env.toml` environment binding; server deploy via `al push --env <name>`
 - `"default"` is a reserved name — cannot be used as an agent name
 - Tests use vitest with `test/` mirroring `src/`
-- **Secret prompts**: When prompting for API keys, tokens, or any secret value, **always** use `password` from `@inquirer/prompts` with `mask: "*"` — never use plaintext `input`. See `src/credentials/prompter.ts` for the canonical pattern.
+- **Secret prompts**: When prompting for API keys, tokens, or any secret value, **always** use `password` from `@inquirer/prompts` with `mask: "*"` — never use plaintext `input`. See `packages/action-llama/src/credentials/prompter.ts` for the canonical pattern.
+
+## Package Details
+
+See `packages/action-llama/CLAUDE.md` for CLI/gateway/scheduler internals, source layout, and configuration system details.
