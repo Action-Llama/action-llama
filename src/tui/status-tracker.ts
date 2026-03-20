@@ -5,6 +5,7 @@ import { addTokenUsage, zeroTokenUsage } from "../shared/usage.js";
 
 export interface AgentStatus {
   name: string;
+  description?: string;
   state: "idle" | "running" | "building" | "error";
   enabled: boolean;
   statusText: string | null;

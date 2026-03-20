@@ -36,8 +36,7 @@ Choose a template (dev, reviewer, devops, or custom), give it a name, and config
 
 ```
 agents/dev/
-  agent-config.toml    # Credentials, model, schedule, params
-  ACTIONS.md           # System prompt — the agent's instructions
+  SKILL.md             # YAML frontmatter (config) + markdown body (instructions)
 ```
 
 <Info>You can also use your agent, such as Claude Code, to create new agents! The CLAUDE.md in the project root has everything it needs to know.</Info>
@@ -58,10 +57,10 @@ npx al start -w
 
 ## What just happened?
 
-1. The scheduler scanned for directories with `agent-config.toml` and found your agent
+1. The scheduler scanned for directories with `SKILL.md` and found your agent
 2. It built a Docker image with your agent's tools
 3. On the first cron tick, it launched a container, loaded credentials, and started an LLM session
-4. The LLM received your `ACTIONS.md` as instructions and ran autonomously
+4. The LLM received your `SKILL.md` instructions and ran autonomously
 5. When it finished, the container was removed and logs were saved
 
 ## Key files
@@ -69,8 +68,7 @@ npx al start -w
 | File | Purpose |
 |------|---------|
 | `config.toml` | Project settings: default model, Docker limits, webhook sources |
-| `agents/<name>/agent-config.toml` | Agent settings: credentials, schedule, model, params |
-| `agents/<name>/ACTIONS.md` | System prompt — instructions for the LLM |
+| `agents/<name>/SKILL.md` | Agent config (YAML frontmatter) + instructions (markdown body) |
 
 ## Manual test run
 
@@ -83,7 +81,7 @@ npx al run dev
 ## What's next
 
 - [Using Webhooks](/first-steps/using-webhooks) — trigger agents from GitHub events
-- [Optimizing Agents](/guides/optimizing-agents) — use preflight to stage context
+- [Optimizing Agents](/guides/optimizing-agents) — use hooks to stage context
 - [Deploying to a VPS](/guides/deploying-to-vps) — run agents 24/7 on a server
 - [Agents (concepts)](/concepts/agents) — understand the runtime lifecycle
 - [CLI Commands](/reference/cli-commands) — all available commands and flags

@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
 import { stringify as stringifyTOML } from "smol-toml";
+import { stringify as stringifyYAML } from "yaml";
 
 // Mock child_process for Docker check
 vi.mock("child_process", () => ({
@@ -149,13 +150,13 @@ function setupProjectWithWebhooks(tmpDir: string) {
 
   // Webhook-only agent
   const webhookAgent = {
-    credentials: ["github_token:default"],
+    credentials: ["github_token"],
     model,
     webhooks: [{ source: "my-github", events: ["issues"], actions: ["labeled"], labels: ["agent"] }],
   };
   const agentDir = resolve(tmpDir, "agents", "webhook-dev");
   mkdirSync(agentDir, { recursive: true });
-  writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML(webhookAgent as Record<string, unknown>));
+  writeFileSync(resolve(agentDir, "SKILL.md"), `---\n${stringifyYAML(webhookAgent).trimEnd()}\n---\n\n# Webhook Dev\n`);
   mkdirSync(resolve(tmpDir, ".al", "state", "webhook-dev"), { recursive: true });
 }
 
@@ -164,14 +165,14 @@ function setupProjectWithHybrid(tmpDir: string) {
 
   // Hybrid agent (schedule + webhooks)
   const hybridAgent = {
-    credentials: ["github_token:default"],
+    credentials: ["github_token"],
     model,
     schedule: "*/15 * * * *",
     webhooks: [{ source: "my-github", events: ["pull_request"], actions: ["opened"] }],
   };
   const agentDir = resolve(tmpDir, "agents", "hybrid");
   mkdirSync(agentDir, { recursive: true });
-  writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML(hybridAgent as Record<string, unknown>));
+  writeFileSync(resolve(agentDir, "SKILL.md"), `---\n${stringifyYAML(hybridAgent).trimEnd()}\n---\n\n# Hybrid\n`);
   mkdirSync(resolve(tmpDir, ".al", "state", "hybrid"), { recursive: true });
 }
 
@@ -180,12 +181,12 @@ function setupProjectWithNoTrigger(tmpDir: string) {
 
   // Agent with neither schedule nor webhooks
   const badAgent = {
-    credentials: ["github_token:default"],
+    credentials: ["github_token"],
     model,
   };
   const agentDir = resolve(tmpDir, "agents", "bad-agent");
   mkdirSync(agentDir, { recursive: true });
-  writeFileSync(resolve(agentDir, "agent-config.toml"), stringifyTOML(badAgent as Record<string, unknown>));
+  writeFileSync(resolve(agentDir, "SKILL.md"), `---\n${stringifyYAML(badAgent).trimEnd()}\n---\n\n# Bad\n`);
   mkdirSync(resolve(tmpDir, ".al", "state", "bad-agent"), { recursive: true });
 }
 

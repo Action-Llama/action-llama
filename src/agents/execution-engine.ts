@@ -49,13 +49,13 @@ export class ExecutionEngine {
     process.env.PATH = `${signalBinDir}:${process.env.PATH || ""}`;
     process.env.AL_SIGNAL_DIR = signalDir;
 
-    const agentsFile = resolve(cwd, "ACTIONS.md");
+    const agentsFile = resolve(cwd, "SKILL.md");
     const { model } = this.agentConfig;
 
-    // ACTIONS.md must exist on disk (written during al new)
+    // SKILL.md must exist on disk (written during al new)
     if (!existsSync(agentsFile)) {
       throw new AgentError(
-        `ACTIONS.md not found at ${agentsFile}. Run 'al new' to create it.`
+        `SKILL.md not found at ${agentsFile}. Run 'al new' to create it.`
       );
     }
     const agentsContent = readFileSync(agentsFile, "utf-8");

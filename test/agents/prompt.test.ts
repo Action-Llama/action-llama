@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   buildScheduledPrompt, buildWebhookPrompt, buildManualPrompt, buildCalledPrompt,
-  buildCredentialContext, buildLockSkill, buildCallSkill, buildPromptSkeleton,
+  buildCredentialContext, buildLockSkill, buildSubagentSkill, buildPromptSkeleton,
   buildScheduledSuffix, buildManualSuffix, buildCalledSuffix, buildWebhookSuffix,
 } from "../../src/agents/prompt.js";
+import type { AgentConfig } from "../../src/shared/config.js";
 import type { WebhookContext } from "../../src/webhooks/types.js";
 import { makeAgentConfig } from "../helpers.js";
 
@@ -14,26 +15,26 @@ const agentConfig = makeAgentConfig({
 
 describe("buildCredentialContext", () => {
   it("includes github token context when credential present", () => {
-    const result = buildCredentialContext(["github_token:default"]);
+    const result = buildCredentialContext(["github_token"]);
     expect(result).toContain("GITHUB_TOKEN");
     expect(result).toContain("gh");
     expect(result).toContain("credential-context");
   });
 
   it("includes sentry token context when credential present", () => {
-    const result = buildCredentialContext(["github_token:default", "sentry_token:default"]);
+    const result = buildCredentialContext(["github_token", "sentry_token"]);
     expect(result).toContain("SENTRY_AUTH_TOKEN");
     expect(result).toContain("curl");
   });
 
   it("documents git author identity when git_ssh credential present", () => {
-    const result = buildCredentialContext(["github_token:default", "git_ssh:default"]);
+    const result = buildCredentialContext(["github_token", "git_ssh"]);
     expect(result).toContain("GIT_AUTHOR_NAME");
     expect(result).toContain("GIT_SSH_COMMAND");
   });
 
   it("includes anti-exfiltration policy", () => {
-    const result = buildCredentialContext(["github_token:default"]);
+    const result = buildCredentialContext(["github_token"]);
     expect(result).toContain("Anti-exfiltration");
     expect(result).toContain("NEVER output credentials");
     expect(result).toContain("al-shutdown");
@@ -178,28 +179,43 @@ describe("buildLockSkill", () => {
   });
 });
 
-describe("buildCallSkill", () => {
-  it("includes skill-call tags", () => {
-    const result = buildCallSkill();
-    expect(result).toContain("<skill-call>");
-    expect(result).toContain("</skill-call>");
+describe("buildSubagentSkill", () => {
+  it("includes skill-subagent tags", () => {
+    const result = buildSubagentSkill();
+    expect(result).toContain("<skill-subagent>");
+    expect(result).toContain("</skill-subagent>");
   });
 
-  it("documents al-call, al-check, and al-wait commands", () => {
-    const result = buildCallSkill();
-    expect(result).toContain("al-call");
-    expect(result).toContain("al-check");
-    expect(result).toContain("al-wait");
+  it("documents al-subagent, al-subagent-check, and al-subagent-wait commands", () => {
+    const result = buildSubagentSkill();
+    expect(result).toContain("al-subagent");
+    expect(result).toContain("al-subagent-check");
+    expect(result).toContain("al-subagent-wait");
   });
 
   it("documents al-return command", () => {
-    const result = buildCallSkill();
+    const result = buildSubagentSkill();
     expect(result).toContain("al-return");
   });
 
   it("documents non-blocking nature", () => {
-    const result = buildCallSkill();
+    const result = buildSubagentSkill();
     expect(result).toContain("non-blocking");
+  });
+
+  it("includes available agents catalog when provided", () => {
+    const result = buildSubagentSkill([
+      { name: "researcher", description: "Searches for competitive intelligence" },
+      { name: "reviewer", description: "Reviews pull requests" },
+    ]);
+    expect(result).toContain("### Available Agents");
+    expect(result).toContain("**researcher**: Searches for competitive intelligence");
+    expect(result).toContain("**reviewer**: Reviews pull requests");
+  });
+
+  it("omits available agents section when empty", () => {
+    const result = buildSubagentSkill([]);
+    expect(result).not.toContain("### Available Agents");
   });
 });
 
@@ -237,15 +253,15 @@ describe("prompt skills integration", () => {
     expect(result).toContain("<skill-lock>");
   });
 
-  it("includes call skill in scheduled prompt when enabled", () => {
-    const result = buildScheduledPrompt(agentConfig, { calling: true });
-    expect(result).toContain("<skill-call>");
-    expect(result).toContain("al-call");
+  it("includes subagent skill in scheduled prompt when enabled", () => {
+    const result = buildScheduledPrompt(agentConfig, { subagents: true });
+    expect(result).toContain("<skill-subagent>");
+    expect(result).toContain("al-subagent");
   });
 
-  it("does not include call skill when not enabled", () => {
+  it("does not include subagent skill when not enabled", () => {
     const result = buildScheduledPrompt(agentConfig);
-    expect(result).not.toContain("<skill-call>");
+    expect(result).not.toContain("<skill-subagent>");
   });
 
   it("places lock skill between credentials and trigger instruction", () => {
@@ -292,7 +308,7 @@ describe("environment context", () => {
   it("sets working directory to /app/static for agent file access", () => {
     const result = buildScheduledPrompt(agentConfig);
     expect(result).toContain("/app/static");
-    expect(result).toContain("ACTIONS.md");
+    expect(result).toContain("SKILL.md");
   });
 
   it("instructs writes to /tmp", () => {

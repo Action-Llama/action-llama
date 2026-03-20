@@ -171,6 +171,9 @@ export async function execute(opts: { project: string; env?: string; agent?: str
     const agentStatus = agentStatuses.find(a => a.name === name);
     const count = instanceCounts.get(name) || 0;
     const paused = agentStatus ? !agentStatus.enabled : false;
+    if (config.description) {
+      console.log(`  ${name}: ${config.description}`);
+    }
     return {
       config,
       status: count > 0 ? "Running" : "Idle",

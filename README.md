@@ -31,7 +31,7 @@ The chat console helps you create and manage agents. If no agents exist yet, it 
 
 You can also create agents manually — see the [creating agents guide](docs/creating-agents.md).
 
-Or, if you're using your own coding agent just make sure it reads the AGENTS.md in your project root.
+Or, if you're using your own coding agent just make sure it reads the SKILL.md files in your agent directories.
 
 ### 3. Run
 
@@ -49,7 +49,7 @@ If any credentials are missing, it will prompt you for them. Credentials are sto
 my-project/
   package.json              # Includes @action-llama/action-llama as a dependency
   Dockerfile                # Project base image. Generated. Shared customizations for all agents
-  AGENTS.md                 # Project overview, Generated. Credential/webhook reference, example agent
+  AGENTS.md                 # Shared instructions loaded by `al chat` (interactive only)
   config.toml               # Global config: [local], [model], gateway, webhooks (no secrets)
 ```
 
@@ -57,8 +57,7 @@ Each agent subdirectory:
 
 ```
   dev/                      # Agent name
-    agent-config.toml       # Agent config: credentials, model, schedule, webhooks, params
-    ACTIONS.md             # Agent instructions (system prompt) — edit to customize behavior
+    SKILL.md               # Agent config (YAML frontmatter) + instructions (markdown body)
     Dockerfile              # (optional) Custom Docker image for this agent
 ```
 
@@ -97,7 +96,7 @@ Most commands accept `-p <dir>` to set the project directory. See the [CLI comma
 Configuration lives in two places:
 
 - [**`config.toml`**](docs/config-reference.md) (project root) — global settings: default model (`[model]`), local Docker options (`[local]`), gateway, webhooks, and scheduler options like `maxReruns`.
-- [**`agent-config.toml`**](docs/agent-config-reference.md) (per agent) — model, credentials, schedule, webhooks, and parameters. Each agent can use a different model or provider (e.g., Claude Opus for dev, GPT-4o for review, Gemini for devops).
+- [**`SKILL.md`**](docs/agent-config-reference.md) (per agent) — YAML frontmatter with model, credentials, schedule, webhooks, hooks, and parameters. Markdown body is the agent's instructions. Each agent can use a different model or provider.
 
 Credentials are stored outside the project in `~/.action-llama/credentials/` and referenced by name in agent configs. Run `al doctor` to configure them interactively.
 
@@ -109,11 +108,11 @@ See also the [credentials](docs/credentials.md), [webhooks](docs/webhooks.md), a
 
 | Doc | Description |
 |-----|-------------|
-| [Agents](docs/agents.md) | What an agent is: config, ACTIONS.md, Dockerfile, runtime prompt |
+| [Agents](docs/agents.md) | What an agent is: SKILL.md, Dockerfile, runtime prompt |
 | [CLI Commands](docs/commands.md) | All CLI commands with options and flags |
 | [Creating Agents](docs/creating-agents.md) | Step-by-step guide to creating a new agent |
 | [config.toml Reference](docs/config-reference.md) | Project-level config: model, Docker, gateway, webhooks |
-| [agent-config.toml Reference](docs/agent-config-reference.md) | Per-agent config fields with examples |
+| [SKILL.md Reference](docs/agent-config-reference.md) | Per-agent config fields (YAML frontmatter) with examples |
 | [Models](docs/models.md) | Supported LLM providers, model IDs, auth types, thinking levels |
 | [Credentials](docs/credentials.md) | Credential types, storage layout, named instances |
 | [Webhooks](docs/webhooks.md) | Webhook setup, filter fields, Sentry integration |
@@ -144,7 +143,7 @@ npm test
 
 `al start` runs a single Node.js process (the **scheduler**) that:
 
-1. Discovers agents in the project directory (each subdirectory with an `agent-config.toml`)
+1. Discovers agents in the project directory (each subdirectory with a `SKILL.md`)
 2. Starts a **gateway** HTTP server if webhooks or Docker mode are enabled (health check, webhook receiver, shutdown kill switch)
 3. Creates a **runner** per agent — either `AgentRunner` (host mode) or `ContainerAgentRunner` (Docker mode)
 4. Wires up **cron jobs** and/or **webhook bindings** to trigger each runner

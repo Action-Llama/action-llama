@@ -1,5 +1,5 @@
 /**
- * Integration test: verify that all agent commands (rlock, al-call, etc.)
+ * Integration test: verify that all agent commands (rlock, al-subagent, etc.)
  * work inside Docker containers when running `al start` locally.
  *
  * Containers reach the host gateway via --add-host gateway:host-gateway.

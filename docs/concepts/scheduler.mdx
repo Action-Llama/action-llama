@@ -23,19 +23,19 @@ The scheduler is the heart of Action Llama. It discovers agents, fires cron trig
 └───────────┴───────────┴─────────────────────┘
 ```
 
-- **Scheduler** — discovers agents by scanning for directories with `agent-config.toml`. Registers cron jobs and webhook triggers. Manages a pool of runners per agent (configurable via `scale`) and a durable work queue for buffering events when runners are busy.
+- **Scheduler** — discovers agents by scanning for directories with `SKILL.md`. Registers cron jobs and webhook triggers. Manages a pool of runners per agent (configurable via `scale`) and a durable work queue for buffering events when runners are busy.
 - **Gateway** — HTTP server that receives webhooks from external services (GitHub, Sentry, Linear, Mintlify), serves the web dashboard, handles resource locking, and processes agent signals.
 - **Containers** — each agent run is an isolated Docker container with its own filesystem, credentials, and environment variables. Containers are ephemeral — they start, do their work, and are removed.
 
 ## Agent Discovery
 
-The scheduler scans the project directory for subdirectories containing an `agent-config.toml` file. Each discovered directory becomes an agent. The directory name is the agent name.
+The scheduler scans the project directory for subdirectories containing a `SKILL.md` file. Each discovered directory becomes an agent. The directory name is the agent name.
 
 No registration step is needed. Add a new agent directory, restart the scheduler, and it picks it up automatically.
 
 ## Cron Scheduling
 
-Agents with a `schedule` field in `agent-config.toml` are registered as cron jobs. When a cron tick fires:
+Agents with a `schedule` field in their `SKILL.md` frontmatter are registered as cron jobs. When a cron tick fires:
 
 - If a runner is available, the agent starts immediately
 - If all runners are busy, the scheduled run is **skipped** with a warning (cron runs are not queued)
@@ -55,7 +55,7 @@ Unlike cron, webhook events are queued (not dropped) when runners are busy.
 
 ## Runner Pools
 
-Each agent has its own pool of runners. The pool size is controlled by the `scale` field in `agent-config.toml` (default: 1).
+Each agent has its own pool of runners. The pool size is controlled by the `scale` field in `SKILL.md` frontmatter (default: 1).
 
 - `scale = 1` — only one instance can run at a time (default)
 - `scale = N` — up to N instances can run concurrently
@@ -85,7 +85,7 @@ This lets agents drain their work queue efficiently without waiting for the next
 
 ## Agent Calls
 
-Agents can call other agents via `al-call`. The scheduler routes the call to the target agent's runner pool:
+Agents can call other agents via `al-subagent`. The scheduler routes the call to the target agent's runner pool:
 
 - If a runner is available, the called agent starts immediately
 - If all runners are busy, the call is queued in the work queue
@@ -111,20 +111,20 @@ When the scheduler receives a stop signal (`al stop` or SIGTERM):
 | `maxCallDepth` | `config.toml` | `3` | Max depth for agent call chains |
 | `workQueueSize` | `config.toml` | `100` | Max queued items per agent |
 | `scale` | `config.toml` | _(unlimited)_ | Project-wide max concurrent runners |
-| `scale` | `agent-config.toml` | `1` | Per-agent concurrent runner limit |
+| `scale` | `SKILL.md` frontmatter | `1` | Per-agent concurrent runner limit |
 | `gateway.port` | `config.toml` | `8080` | Gateway HTTP port |
 
 ## Troubleshooting
 
 ### Agent not running on schedule
 
-- Verify the cron expression in `agent-config.toml` is valid
+- Verify the cron expression in `SKILL.md` frontmatter is valid
 - Check if the agent or scheduler is paused: `al stat`
 - Resume if paused: `al resume` (scheduler) or `al resume <agent>`
 
 ### Agent keeps re-running
 
-An agent that calls `al-rerun` will re-run immediately, up to `maxReruns` (default: 10). If it's re-running more than expected, check the agent's `ACTIONS.md` — it may be calling `al-rerun` even when there's no remaining work.
+An agent that calls `al-rerun` will re-run immediately, up to `maxReruns` (default: 10). If it's re-running more than expected, check the agent's `SKILL.md` — it may be calling `al-rerun` even when there's no remaining work.
 
 ```toml
 # config.toml — lower the limit if needed
@@ -133,13 +133,15 @@ maxReruns = 5
 
 ### Agent timing out
 
-Default timeout is 900 seconds (15 minutes). Increase it in `config.toml` or per-agent:
+Default timeout is 900 seconds (15 minutes). Increase it in `config.toml` or per-agent in `SKILL.md` frontmatter:
 
 ```toml
 # config.toml — project-wide default
 [local]
 timeout = 3600    # 1 hour
+```
 
-# agent-config.toml — per-agent override
-timeout = 7200    # 2 hours
+```yaml
+# SKILL.md frontmatter — per-agent override
+timeout: 7200    # 2 hours
 ```

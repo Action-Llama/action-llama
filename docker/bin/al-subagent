@@ -1,9 +1,9 @@
 #!/bin/sh
-# al-call — dispatch a call to another agent
+# al-subagent — dispatch a call to another agent
 # Exit codes: 0=dispatched, 1=rejected, 3=auth, 4=bad request, 5=no gateway, 6=unreachable
 . "$(dirname "$0")/_http-exit"
 if [ -z "$GATEWAY_URL" ]; then echo '{"ok":false,"reason":"no gateway"}'; exit 5; fi
-if [ -z "$1" ]; then echo '{"ok":false,"reason":"usage: echo ctx | al-call <agent>"}'; exit 9; fi
+if [ -z "$1" ]; then echo '{"ok":false,"reason":"usage: echo ctx | al-subagent <agent>"}'; exit 9; fi
 CONTEXT=$(cat)
 _raw=$(curl -s -w '\n%{http_code}' -X POST "$GATEWAY_URL/calls" \
   -H 'Content-Type: application/json' \

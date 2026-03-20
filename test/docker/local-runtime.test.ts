@@ -47,7 +47,7 @@ describe("LocalDockerRuntime", () => {
 
   it("prepareCredentials returns volume strategy with staging dir", async () => {
     const runtime = new LocalDockerRuntime();
-    const creds = await runtime.prepareCredentials(["github_token:default"]);
+    const creds = await runtime.prepareCredentials(["github_token"]);
     expect(creds.strategy).toBe("volume");
     if (creds.strategy === "volume") {
       expect(creds.stagingDir).toMatch(/al-creds-/);

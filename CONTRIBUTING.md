@@ -39,7 +39,7 @@ File format:
 ---
 
 Added support for custom LLM providers via `provider: "custom"` in
-agent-config.toml. Point `baseUrl` to any OpenAI-compatible endpoint.
+SKILL.md frontmatter. Point `baseUrl` to any OpenAI-compatible endpoint.
 Closes #27.
 ```
 

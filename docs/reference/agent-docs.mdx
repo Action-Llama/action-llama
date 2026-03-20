@@ -1,32 +1,32 @@
 ---
 title: "Agent Docs"
-description: "ACTIONS.md, AGENTS.md, and CLAUDE.md — what they do and how to write them"
+description: "SKILL.md, AGENTS.md, and CLAUDE.md — what they do and how to write them"
 ---
 
-Action Llama uses three markdown files with distinct purposes. Only `ACTIONS.md` is required.
+Action Llama uses three markdown files with distinct purposes. Only `SKILL.md` is required.
 
-## ACTIONS.md
+## SKILL.md
 
-The system prompt that defines an agent's behavior. This is the most important file in an agent directory.
+The single file that defines an agent. YAML frontmatter at the top contains the agent's configuration (credentials, schedule, model, webhooks, hooks, params), and the markdown body is the system prompt that drives the agent's behavior. This is the most important file in an agent directory.
 
 ### What it is
 
-`ACTIONS.md` lives inside each agent's directory (e.g. `agents/dev/ACTIONS.md`). At runtime, its contents are injected as the LLM's system prompt. Everything the agent does is driven by these instructions.
+`SKILL.md` lives inside each agent's directory (e.g. `agents/dev/SKILL.md`). The frontmatter is parsed for configuration, and the markdown body is injected as the LLM's system prompt at runtime. Everything the agent does is driven by these instructions.
 
 ### How it's used
 
-The scheduler reads `ACTIONS.md` and sends it as the system prompt. A preamble is prepended that teaches the agent its [language skills](/reference/agent-commands) (signals, calls, locks, credentials). The LLM then receives a user-message prompt with:
+The scheduler reads `SKILL.md`, extracts the frontmatter for configuration, and sends the markdown body as the system prompt. A preamble is prepended that teaches the agent its [language skills](/reference/agent-commands) (signals, calls, locks, credentials). The LLM then receives a user-message prompt with:
 
-1. **`<agent-config>`** — JSON of the `[params]` table from `agent-config.toml`
+1. **`<skill-config>`** — JSON of the `params` table from the `SKILL.md` frontmatter
 2. **`<credential-context>`** — describes available environment variables and tools
 3. **`<environment>`** — filesystem constraints (read-only root, `/tmp` for work)
-4. **Trigger context** — schedule, webhook payload, manual, or agent call context
+4. **Trigger context** — schedule, webhook payload, manual, or subagent call context
 
 ### Writing tips
 
 - **Write as direct instructions to an LLM.** "You are an automation agent. Your job is to..."
 - **Be specific about workflow.** Numbered steps are better than vague descriptions.
-- **Reference `<agent-config>` for parameter values.** Don't hardcode repo names or labels — put them in `[params]` and reference them.
+- **Reference `<skill-config>` for parameter values.** Don't hardcode repo names or labels — put them in `params` and reference them.
 - **Handle both trigger types** if the agent uses both schedule and webhooks.
 - **Use signal commands** like `al-rerun` for backlog draining and `al-status` for TUI updates.
 - **Keep it concise.** The system prompt consumes tokens every run. Avoid lengthy explanations of things the LLM already knows.
@@ -38,12 +38,12 @@ The scheduler reads `ACTIONS.md` and sends it as the system prompt. A preamble i
 
 You are an automation agent. Your job is to pick up GitHub issues and implement the requested changes.
 
-Your configuration is in the `<agent-config>` block at the start of your prompt.
+Your configuration is in the `<skill-config>` block at the start of your prompt.
 `GITHUB_TOKEN` is already set in your environment. Use `gh` CLI and `git` directly.
 
 ## Workflow
 
-1. **Find work** — If triggered by webhook, work on the issue from the trigger. If scheduled, search for open issues labeled with the label from `<agent-config>`.triggerLabel.
+1. **Find work** — If triggered by webhook, work on the issue from the trigger. If scheduled, search for open issues labeled with the label from `<skill-config>`.triggerLabel.
 2. **Lock the issue** — LOCK("github issue owner/repo#N"). If locked, skip it.
 3. **Implement** — Clone the repo, create a branch, make changes, run tests.
 4. **Open a PR** — Push and open a PR linking to the issue.
@@ -59,14 +59,14 @@ Your configuration is in the `<agent-config>` block at the start of your prompt.
 
 ### Handling trigger context
 
-Your `ACTIONS.md` should handle different trigger types if the agent uses both:
+Your `SKILL.md` should handle different trigger types if the agent uses both:
 
 ```markdown
 ## Trigger handling
 
 - **Webhook trigger**: The `<webhook-trigger>` block contains the full event payload. Work on the specific issue/PR from the event.
 - **Scheduled trigger**: Search for open work matching your configured filters.
-- **Agent call**: The `<agent-call>` block contains context from the calling agent. Do what was requested and use `al-return` to send back results.
+- **Subagent call**: The `<skill-subagent>` block contains context from the calling agent. Do what was requested and use `al-return` to send back results.
 ```
 
 ## AGENTS.md
@@ -95,7 +95,7 @@ Instructions for AI development tools (like Claude Code). Not used by Action Lla
 
 ### What it is
 
-`CLAUDE.md` lives at the project root and provides instructions to AI coding assistants that may be editing the project's source code.
+`CLAUDE.md` lives at the project root and provides instructions to AI coding assistants that may be editing the project's source code. Do not confuse it with `SKILL.md`, which is the agent instructions file.
 
 ### How it's used
 

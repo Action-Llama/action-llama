@@ -1,7 +1,7 @@
 /**
- * Wire up the al-call dispatch handler on the gateway.
+ * Wire up the al-subagent dispatch handler on the gateway.
  *
- * When a container issues an al-call, the gateway invokes the dispatcher to
+ * When a container issues an al-subagent call, the gateway invokes the dispatcher to
  * route the call to the target agent's runner pool.
  */
 
@@ -69,7 +69,7 @@ export function wireCallDispatcher(
       });
       logger.info({ caller: entry.callerAgent, target: entry.targetAgent }, "all runners busy, call queued");
       drainQueues(schedulerCtx).catch((err) => {
-        logger.error({ err }, "drain after al-call queue failed");
+        logger.error({ err }, "drain after al-subagent queue failed");
       });
     }
     return { ok: true };

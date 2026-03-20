@@ -121,7 +121,7 @@ describe("doctor", () => {
 
   it("prints ok for all credentials already present", async () => {
     mockDiscoverAgents.mockReturnValue(["dev"]);
-    mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["github_token:default"] });
+    mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["github_token"] });
     mockResolveCredential.mockReturnValue({
       id: "github_token",
       label: "GitHub Token",
@@ -136,7 +136,7 @@ describe("doctor", () => {
 
   it("prompts and writes missing credential", async () => {
     mockDiscoverAgents.mockReturnValue(["dev"]);
-    mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["github_token:default"] });
+    mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["github_token"] });
     mockResolveCredential.mockReturnValue({
       id: "github_token",
       label: "GitHub Token",
@@ -153,7 +153,7 @@ describe("doctor", () => {
 
   it("writes multi-field credential", async () => {
     mockDiscoverAgents.mockReturnValue(["dev"]);
-    mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["git_ssh:default"] });
+    mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["git_ssh"] });
     mockResolveCredential.mockReturnValue({
       id: "git_ssh",
       label: "Git SSH",
@@ -175,8 +175,8 @@ describe("doctor", () => {
   it("deduplicates credentials across agents", async () => {
     mockDiscoverAgents.mockReturnValue(["dev", "reviewer"]);
     mockLoadAgentConfig
-      .mockReturnValueOnce({ name: "dev", credentials: ["github_token:default"] })
-      .mockReturnValueOnce({ name: "reviewer", credentials: ["github_token:default"] });
+      .mockReturnValueOnce({ name: "dev", credentials: ["github_token"] })
+      .mockReturnValueOnce({ name: "reviewer", credentials: ["github_token"] });
     mockResolveCredential.mockReturnValue({
       id: "github_token",
       label: "GitHub Token",
@@ -197,7 +197,7 @@ describe("doctor", () => {
     });
     mockLoadAgentConfig.mockReturnValue({
       name: "dev",
-      credentials: ["github_token:default"],
+      credentials: ["github_token"],
       webhooks: [{ source: "my-github", events: ["issues"] }],
     });
     mockResolveCredential.mockImplementation((id: string) => ({
@@ -220,7 +220,7 @@ describe("doctor", () => {
     });
     mockLoadAgentConfig.mockReturnValue({
       name: "dev",
-      credentials: ["github_token:default"],
+      credentials: ["github_token"],
       webhooks: [{ source: "my-github", events: ["issues"] }],
     });
     mockResolveCredential.mockImplementation((id: string) => ({
@@ -238,7 +238,7 @@ describe("doctor", () => {
 
   it("headless mode checks local creds without prompting and throws on missing", async () => {
     mockDiscoverAgents.mockReturnValue(["dev"]);
-    mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["github_token:default"] });
+    mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["github_token"] });
     mockResolveCredential.mockReturnValue({
       id: "github_token",
       label: "GitHub Token",
@@ -254,7 +254,7 @@ describe("doctor", () => {
 
   it("headless mode succeeds when local creds are present", async () => {
     mockDiscoverAgents.mockReturnValue(["dev"]);
-    mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["github_token:default"] });
+    mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["github_token"] });
     mockResolveCredential.mockReturnValue({
       id: "github_token",
       label: "GitHub Token",
@@ -269,7 +269,7 @@ describe("doctor", () => {
 
   it("skips writing when promptCredential returns undefined", async () => {
     mockDiscoverAgents.mockReturnValue(["dev"]);
-    mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["git_ssh:default"] });
+    mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["git_ssh"] });
     mockResolveCredential.mockReturnValue({
       id: "git_ssh",
       label: "SSH Key",
@@ -322,7 +322,7 @@ describe("doctor", () => {
     });
     mockLoadAgentConfig.mockReturnValue({
       name: "dev",
-      credentials: ["github_token:default"],
+      credentials: ["github_token"],
       webhooks: [{ source: "my-github", events: ["issues"], org: "acme" }],
     });
     mockResolveCredential.mockReturnValue({

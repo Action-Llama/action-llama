@@ -46,8 +46,11 @@ function renderAgentRow(agent: AgentStatus): string {
   const statusText = agent.statusText || agent.lastError || "\u2014";
   const toggleLabel = agent.enabled ? "Disable" : "Enable";
   const toggleAction = agent.enabled ? "disable" : "enable";
+  const nameCell = agent.description
+    ? `${escapeHtml(agent.name)}<br><small style="color:#94a3b8">${escapeHtml(agent.description)}</small>`
+    : escapeHtml(agent.name);
   return `<tr data-agent="${escapeHtml(agent.name)}">
-    <td><a href="/dashboard/agents/${escapeHtml(agent.name)}/logs">${escapeHtml(agent.name)}</a></td>
+    <td><a href="/dashboard/agents/${escapeHtml(agent.name)}/logs">${nameCell}</a></td>
     <td><span class="state-dot" style="background:${color}"></span> ${escapeHtml(formatScale(agent))}</td>
     <td class="status-text">${escapeHtml(statusText)}</td>
     <td>${formatTime(agent.lastRunAt)}</td>
@@ -65,12 +68,14 @@ function renderAgentCard(agent: AgentStatus): string {
   const statusText = agent.statusText || agent.lastError || "\u2014";
   const toggleLabel = agent.enabled ? "Disable" : "Enable";
   const toggleAction = agent.enabled ? "disable" : "enable";
+  const descHtml = agent.description ? `<div class="card-desc" style="color:#94a3b8;font-size:0.8rem;margin-bottom:4px">${escapeHtml(agent.description)}</div>` : "";
   return `<div class="agent-card">
     <a href="/dashboard/agents/${escapeHtml(agent.name)}/logs" class="card-link">
       <div class="card-header">
         <span class="card-name">${escapeHtml(agent.name)}</span>
         <span><span class="state-dot" style="background:${color}"></span>${escapeHtml(formatScale(agent))}</span>
       </div>
+      ${descHtml}
       <div class="card-status">${escapeHtml(statusText)}</div>
       <div class="card-meta">
         <span>Last: ${formatTime(agent.lastRunAt)}</span>

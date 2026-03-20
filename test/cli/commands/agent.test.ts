@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
-import { parse as parseTOML } from "smol-toml";
+import { stringify as stringifyYAML } from "yaml";
+import { parseFrontmatter } from "../../../src/shared/frontmatter.js";
 
 // Mock inquirer prompts
 const mockSelect = vi.fn();
@@ -84,11 +85,10 @@ describe("agent new", () => {
   });
 
   it("creates agent from example template (dev)", async () => {
-    // Set up example template
+    // Set up example template with SKILL.md
     const exampleDir = resolve(mockPackageRoot, "docs", "examples", "dev");
     mkdirSync(exampleDir, { recursive: true });
-    writeFileSync(resolve(exampleDir, "ACTIONS.md"), "# Dev Agent\n");
-    writeFileSync(resolve(exampleDir, "agent-config.toml"), 'credentials = ["github_token"]\n');
+    writeFileSync(resolve(exampleDir, "SKILL.md"), '---\ncredentials:\n  - github_token\n---\n\n# Dev Agent\n');
 
     // Mock: select type=dev, input name=my-dev, then "done" in config menu
     mockSelect
@@ -99,10 +99,9 @@ describe("agent new", () => {
     await newAgent({ project: tmpDir });
 
     const agentDir = resolve(tmpDir, "agents", "my-dev");
-    expect(existsSync(resolve(agentDir, "ACTIONS.md"))).toBe(true);
-    expect(readFileSync(resolve(agentDir, "ACTIONS.md"), "utf-8")).toBe("# Dev Agent\n");
-    expect(existsSync(resolve(agentDir, "agent-config.toml"))).toBe(true);
-    expect(readFileSync(resolve(agentDir, "agent-config.toml"), "utf-8")).toContain("github_token");
+    expect(existsSync(resolve(agentDir, "SKILL.md"))).toBe(true);
+    expect(readFileSync(resolve(agentDir, "SKILL.md"), "utf-8")).toContain("github_token");
+    expect(readFileSync(resolve(agentDir, "SKILL.md"), "utf-8")).toContain("# Dev Agent");
   });
 
   it("creates custom agent with scaffoldAgent", async () => {
@@ -114,8 +113,7 @@ describe("agent new", () => {
     await newAgent({ project: tmpDir });
 
     const agentDir = resolve(tmpDir, "agents", "my-custom");
-    expect(existsSync(resolve(agentDir, "ACTIONS.md"))).toBe(true);
-    expect(existsSync(resolve(agentDir, "agent-config.toml"))).toBe(true);
+    expect(existsSync(resolve(agentDir, "SKILL.md"))).toBe(true);
   });
 
   it("rejects invalid agent names via validate callback", async () => {
@@ -154,11 +152,11 @@ describe("agent config", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  function createAgentConfig(name: string, config: string) {
+  function createAgentConfig(name: string, config: Record<string, unknown>) {
     const agentDir = resolve(tmpDir, "agents", name);
     mkdirSync(agentDir, { recursive: true });
-    writeFileSync(resolve(agentDir, "agent-config.toml"), config);
-    writeFileSync(resolve(agentDir, "ACTIONS.md"), "# Test\n");
+    const yamlStr = stringifyYAML(config).trimEnd();
+    writeFileSync(resolve(agentDir, "SKILL.md"), `---\n${yamlStr}\n---\n\n# Test\n`);
   }
 
   it("throws when agent does not exist", async () => {
@@ -167,7 +165,7 @@ describe("agent config", () => {
   });
 
   it("edits credentials and saves config", async () => {
-    createAgentConfig("test-agent", 'credentials = ["github_token"]\n\n[model]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-20250514"\nauthType = "api_key"\n');
+    createAgentConfig("test-agent", { credentials: ["github_token"], model: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } });
 
     mockSelect
       .mockResolvedValueOnce("credentials") // menu: credentials
@@ -176,14 +174,14 @@ describe("agent config", () => {
 
     await configAgent("test-agent", { project: tmpDir });
 
-    const written = readFileSync(resolve(tmpDir, "agents", "test-agent", "agent-config.toml"), "utf-8");
-    const parsed = parseTOML(written) as any;
-    expect(parsed.credentials).toEqual(["github_token", "anthropic_key"]);
+    const written = readFileSync(resolve(tmpDir, "agents", "test-agent", "SKILL.md"), "utf-8");
+    const { data } = parseFrontmatter(written);
+    expect(data.credentials).toEqual(["github_token", "anthropic_key"]);
     expect(mockDoctorExecute).toHaveBeenCalledWith({ project: tmpDir });
   });
 
   it("edits schedule", async () => {
-    createAgentConfig("sched-agent", 'credentials = []\n\n[model]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-20250514"\nauthType = "api_key"\n');
+    createAgentConfig("sched-agent", { credentials: [], model: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } });
 
     mockSelect
       .mockResolvedValueOnce("schedule")
@@ -192,13 +190,13 @@ describe("agent config", () => {
 
     await configAgent("sched-agent", { project: tmpDir });
 
-    const written = readFileSync(resolve(tmpDir, "agents", "sched-agent", "agent-config.toml"), "utf-8");
-    const parsed = parseTOML(written) as any;
-    expect(parsed.schedule).toBe("*/10 * * * *");
+    const written = readFileSync(resolve(tmpDir, "agents", "sched-agent", "SKILL.md"), "utf-8");
+    const { data } = parseFrontmatter(written);
+    expect(data.schedule).toBe("*/10 * * * *");
   });
 
   it("edits model to openai", async () => {
-    createAgentConfig("model-agent", 'credentials = []\n\n[model]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-20250514"\nauthType = "api_key"\n');
+    createAgentConfig("model-agent", { credentials: [], model: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } });
 
     mockSelect
       .mockResolvedValueOnce("model")      // menu: model
@@ -208,14 +206,14 @@ describe("agent config", () => {
 
     await configAgent("model-agent", { project: tmpDir });
 
-    const written = readFileSync(resolve(tmpDir, "agents", "model-agent", "agent-config.toml"), "utf-8");
-    const parsed = parseTOML(written) as any;
-    expect(parsed.model.provider).toBe("openai");
-    expect(parsed.model.model).toBe("gpt-4o");
+    const written = readFileSync(resolve(tmpDir, "agents", "model-agent", "SKILL.md"), "utf-8");
+    const { data } = parseFrontmatter(written);
+    expect((data.model as any).provider).toBe("openai");
+    expect((data.model as any).model).toBe("gpt-4o");
   });
 
   it("edits params — add and save", async () => {
-    createAgentConfig("params-agent", 'credentials = []\n\n[model]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-20250514"\nauthType = "api_key"\n');
+    createAgentConfig("params-agent", { credentials: [], model: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } });
 
     mockSelect
       .mockResolvedValueOnce("params")    // menu: params
@@ -228,13 +226,13 @@ describe("agent config", () => {
 
     await configAgent("params-agent", { project: tmpDir });
 
-    const written = readFileSync(resolve(tmpDir, "agents", "params-agent", "agent-config.toml"), "utf-8");
-    const parsed = parseTOML(written) as any;
-    expect(parsed.params.myKey).toBe("myValue");
+    const written = readFileSync(resolve(tmpDir, "agents", "params-agent", "SKILL.md"), "utf-8");
+    const { data } = parseFrontmatter(written);
+    expect((data.params as any).myKey).toBe("myValue");
   });
 
   it("edits params — shows existing params and allows editing", async () => {
-    createAgentConfig("params-edit", 'credentials = []\n\n[model]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-20250514"\nauthType = "api_key"\n\n[params]\nexisting = "old-value"\n');
+    createAgentConfig("params-edit", { credentials: [], model: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" }, params: { existing: "old-value" } });
 
     mockSelect
       .mockResolvedValueOnce("params")         // menu: params
@@ -247,13 +245,13 @@ describe("agent config", () => {
 
     await configAgent("params-edit", { project: tmpDir });
 
-    const written = readFileSync(resolve(tmpDir, "agents", "params-edit", "agent-config.toml"), "utf-8");
-    const parsed = parseTOML(written) as any;
-    expect(parsed.params.existing).toBe("new-value");
+    const written = readFileSync(resolve(tmpDir, "agents", "params-edit", "SKILL.md"), "utf-8");
+    const { data } = parseFrontmatter(written);
+    expect((data.params as any).existing).toBe("new-value");
   });
 
   it("edits params — remove existing param", async () => {
-    createAgentConfig("params-rm", 'credentials = []\n\n[model]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-20250514"\nauthType = "api_key"\n\n[params]\nremoveme = "gone"\nkeepme = "stay"\n');
+    createAgentConfig("params-rm", { credentials: [], model: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" }, params: { removeme: "gone", keepme: "stay" } });
 
     mockSelect
       .mockResolvedValueOnce("params")          // menu: params
@@ -264,14 +262,14 @@ describe("agent config", () => {
 
     await configAgent("params-rm", { project: tmpDir });
 
-    const written = readFileSync(resolve(tmpDir, "agents", "params-rm", "agent-config.toml"), "utf-8");
-    const parsed = parseTOML(written) as any;
-    expect(parsed.params.removeme).toBeUndefined();
-    expect(parsed.params.keepme).toBe("stay");
+    const written = readFileSync(resolve(tmpDir, "agents", "params-rm", "SKILL.md"), "utf-8");
+    const { data } = parseFrontmatter(written);
+    expect((data.params as any).removeme).toBeUndefined();
+    expect((data.params as any).keepme).toBe("stay");
   });
 
   it("webhooks offers to create source when none configured", async () => {
-    createAgentConfig("wh-agent", 'credentials = []\n\n[model]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-20250514"\nauthType = "api_key"\n');
+    createAgentConfig("wh-agent", { credentials: [], model: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } });
 
     mockSelect
       .mockResolvedValueOnce("webhooks")  // menu: webhooks
@@ -285,7 +283,7 @@ describe("agent config", () => {
   });
 
   it("webhooks walks through source creation when user accepts", async () => {
-    createAgentConfig("wh-setup", 'credentials = []\n\n[model]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-20250514"\nauthType = "api_key"\n');
+    createAgentConfig("wh-setup", { credentials: [], model: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } });
 
     // No config.toml exists yet — no webhook sources
     mockSelect

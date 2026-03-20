@@ -34,18 +34,22 @@ credential = "MintlifyMain"   # credential instance name (mintlify_webhook_secre
 
 ## Agent Webhook Triggers
 
-Agents reference a webhook source by name and add filters in their `agent-config.toml`:
+Agents reference a webhook source by name and add filters in their `SKILL.md` frontmatter:
 
-```toml
-[[webhooks]]
-source = "my-github"
-repos = ["acme/app"]
-events = ["issues"]
-actions = ["labeled"]
-labels = ["agent"]
+```yaml
+webhooks:
+  - source: my-github
+    repos:
+      - acme/app
+    events:
+      - issues
+    actions:
+      - labeled
+    labels:
+      - agent
 ```
 
-Each `[[webhooks]]` entry is a trigger. The `source` field (referencing a name from `config.toml`) is required. All filter fields are optional — omit all of them to trigger on everything from that source.
+Each webhooks entry is a trigger. The `source` field (referencing a name from `config.toml`) is required. All filter fields are optional — omit all of them to trigger on everything from that source.
 
 An agent must have at least one of `schedule` or `webhooks` (or both).
 
@@ -125,14 +129,23 @@ Use the ngrok URL as your webhook payload URL in GitHub. See [Using Webhooks](/f
 [webhooks.linear-main]
 type = "linear"
 credential = "main-workspace"
+```
 
-# In agent-config.toml
-[[webhooks]]
-source = "linear-main"
-events = ["issues", "issue_comment"]
-actions = ["create", "update"]
-organizations = ["your-org-id"]
-labels = ["bug", "ready-for-dev"]
+```yaml
+# In SKILL.md frontmatter
+webhooks:
+  - source: linear-main
+    events:
+      - issues
+      - issue_comment
+    actions:
+      - create
+      - update
+    organizations:
+      - your-org-id
+    labels:
+      - bug
+      - ready-for-dev
 ```
 
 ## Mintlify Webhooks
@@ -161,13 +174,18 @@ labels = ["bug", "ready-for-dev"]
 [webhooks.mintlify-docs]
 type = "mintlify"
 credential = "docs-project"
+```
 
-# In agent-config.toml
-[[webhooks]]
-source = "mintlify-docs"
-events = ["build"]
-actions = ["failed"]    # Only trigger on build failures
-projects = ["my-docs"]
+```yaml
+# In SKILL.md frontmatter
+webhooks:
+  - source: mintlify-docs
+    events:
+      - build
+    actions:
+      - failed    # Only trigger on build failures
+    projects:
+      - my-docs
 ```
 
 ## How Webhooks Work at Runtime
@@ -188,7 +206,7 @@ Agents can have both `schedule` and `webhooks`. Scheduled runs poll for work pro
 
 1. **Check the webhook URL** — GitHub/Sentry/Linear must be able to reach your gateway. For local development, use a tunnel (e.g. ngrok, Cloudflare Tunnel).
 2. **Check the webhook secret** — if using HMAC validation, the secret in `al creds` must match the one configured in the external service.
-3. **Check event filters** — verify the `events`, `actions`, and other filter fields in `agent-config.toml` match the incoming event.
+3. **Check event filters** — verify the `events`, `actions`, and other filter fields in the agent's `SKILL.md` frontmatter match the incoming event.
 
 ```bash
 al doctor    # Validates webhook trigger field names and types
@@ -198,8 +216,8 @@ al doctor    # Validates webhook trigger field names and types
 
 If runners are busy, events are queued (up to `workQueueSize`, default 100). If the queue is full, old events are dropped. Check queue depth with `al stat`.
 
-To handle more concurrent events, increase `scale` in `agent-config.toml`:
+To handle more concurrent events, increase `scale` in the agent's `SKILL.md` frontmatter:
 
-```toml
-scale = 3    # Run up to 3 instances concurrently
+```yaml
+scale: 3    # Run up to 3 instances concurrently
 ```

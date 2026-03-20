@@ -8,7 +8,7 @@ The project-level `config.toml` lives at the root of your Action Llama project. 
 ## Full Annotated Example
 
 ```toml
-# Default model for all agents (agents can override in their own agent-config.toml)
+# Default model for all agents (agents can override in their own SKILL.md frontmatter)
 [model]
 provider = "anthropic"
 model = "claude-sonnet-4-20250514"
@@ -56,7 +56,7 @@ endpoint = "https://telemetry.example.com/v1"   # OpenTelemetry endpoint
 
 ### `[model]` — Default LLM
 
-Default model configuration inherited by all agents that don't define their own `[model]` section in `agent-config.toml`.
+Default model configuration inherited by all agents that don't define their own `model` section in their `SKILL.md` frontmatter.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -76,7 +76,7 @@ Controls local Docker container isolation.
 | `image` | string | `"al-agent:latest"` | Base Docker image name |
 | `memory` | string | `"4g"` | Memory limit per container (e.g. `"4g"`, `"8g"`) |
 | `cpus` | number | `2` | CPU limit per container |
-| `timeout` | number | `900` | Default max container runtime in seconds. Individual agents can override this with `timeout` in their `agent-config.toml`. See [agent timeout](/reference/agent-config#timeout). |
+| `timeout` | number | `900` | Default max container runtime in seconds. Individual agents can override this with `timeout` in their `SKILL.md` frontmatter. See [agent timeout](/reference/agent-config#timeout). |
 
 ### `[gateway]` — HTTP Server
 
@@ -89,7 +89,7 @@ The gateway starts automatically when Docker mode or webhooks are enabled. It ha
 
 ### `[webhooks.*]` — Webhook Sources
 
-Named webhook sources that agents can reference in their `[[webhooks]]` triggers. Each source defines a provider type and an optional credential for signature validation.
+Named webhook sources that agents can reference in their webhook triggers. Each source defines a provider type and an optional credential for signature validation.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -117,12 +117,13 @@ credential = "MintlifyMain"       # uses mintlify_webhook_secret:MintlifyMain
 type = "github"                   # no credential — accepts unsigned webhooks
 ```
 
-Agents reference these sources by name in their `agent-config.toml`:
+Agents reference these sources by name in their `SKILL.md` frontmatter:
 
-```toml
-[[webhooks]]
-source = "my-github"
-events = ["issues"]
+```yaml
+webhooks:
+  - source: my-github
+    events:
+      - issues
 ```
 
 See [Webhooks](/reference/webhooks) for setup instructions and filter fields per provider.

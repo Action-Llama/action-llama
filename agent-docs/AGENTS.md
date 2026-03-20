@@ -1,6 +1,6 @@
 # Action Llama Reference
 
-CLI for running LLM agents on cron/webhooks. Docker isolation, ACTIONS.md prompt, credentials. Gateway: webhooks, locking, agent calls, dashboard.
+CLI for running LLM agents on cron/webhooks. Docker isolation, SKILL.md prompt, credentials. Gateway: webhooks, locking, agent calls, dashboard.
 
 Package: `@action-llama/action-llama`. CLI binary: `al`.
 
@@ -14,14 +14,13 @@ my-project/
   AGENTS.md                # Shared instructions loaded by `al chat` (interactive only)
   CLAUDE.md                # Instructions for AI dev tools — not read by Action Llama at runtime
   <agent>/
-    agent-config.toml      # Agent config — credentials, schedule, webhooks, model, preflight, params
-    ACTIONS.md             # System prompt — the instructions the LLM follows each run (required)
+    SKILL.md               # Agent config (YAML frontmatter) + instructions (markdown body)
     Dockerfile             # Custom Docker image for this agent (optional)
 ```
 
 Agent names derive from directory name. `"default"` is reserved.
 
-### ACTIONS.md — Writing Tips
+### SKILL.md — Writing Tips
 
 - Direct LLM instructions; numbered steps; reference `<agent-config>` for params
 - `al-status` at milestones, `al-rerun` when backlog remains; keep concise
@@ -32,7 +31,7 @@ The LLM receives two messages:
 
 ### System message
 
-`ACTIONS.md` is the system prompt. With gateway, **skill blocks** appended:
+The SKILL.md body is the system prompt. With gateway, **skill blocks** appended:
 
 #### Locking skill block (injected when gateway is available)
 
@@ -82,32 +81,32 @@ rlock-heartbeat "github issue acme/app#42"
 </skill-lock>
 ```
 
-#### Calling skill block (injected when gateway is available)
+#### Subagent skill block (injected when gateway is available)
 
 ```xml
-<skill-call>
-## Skill: Agent-to-Agent Calls
+<skill-subagent>
+## Skill: Subagents
 
 Call other agents and retrieve their results. Calls are **non-blocking** — fire a call, continue working, then check or wait for results.
 
 ### Commands
 
-**`al-call <agent>`** — Call another agent. Pass the context via stdin. Returns a call ID.
+**`al-subagent <agent>`** — Call another agent. Pass the context via stdin. Returns a call ID.
 ```
-CALL_ID=$(echo "find competitors for Acme" | al-call researcher | jq -r .callId)
+CALL_ID=$(echo "find competitors for Acme" | al-subagent researcher | jq -r .callId)
 ```
 
-**`al-check <callId>`** — Check the status of a call. Never blocks.
+**`al-subagent-check <callId>`** — Check the status of a call. Never blocks.
 ```
-al-check "$CALL_ID"
+al-subagent-check "$CALL_ID"
 ```
 - Running: `{"status":"running"}`
 - Completed: `{"status":"completed","returnValue":"..."}`
 - Error: `{"status":"error","errorMessage":"..."}`
 
-**`al-wait <callId> [callId...] [--timeout N]`** — Wait for one or more calls to complete. Default timeout: 900s.
+**`al-subagent-wait <callId> [callId...] [--timeout N]`** — Wait for one or more calls to complete. Default timeout: 900s.
 ```
-RESULTS=$(al-wait "$CALL_ID1" "$CALL_ID2" --timeout 600)
+RESULTS=$(al-subagent-wait "$CALL_ID1" "$CALL_ID2" --timeout 600)
 ```
 Returns a JSON object keyed by call ID with each call's final status.
 
@@ -124,11 +123,11 @@ echo "Line 1\nLine 2" | al-return
 
 ### Guidelines
 - Calls are non-blocking — fire multiple calls then wait for all at once
-- Use `al-wait` to wait for multiple calls efficiently
-- Use `al-check` for polling when you want to do work between checks
+- Use `al-subagent-wait` to wait for multiple calls efficiently
+- Use `al-subagent-check` for polling when you want to do work between checks
 - Called agents cannot call back to the calling agent (no cycles)
 - There is a depth limit on nested calls to prevent infinite chains
-</skill-call>
+</skill-subagent>
 ```
 
 ### User message
@@ -170,7 +169,7 @@ Use standard tools directly: `gh` CLI, `git`, `curl`.
 <environment>
 **Filesystem:** The root filesystem is read-only. `/tmp` is the only writable directory.
 Use `/tmp` for cloning repos, writing scratch files, and any other disk I/O.
-Your working directory is `/app/static` which contains your agent files (ACTIONS.md, agent-config.json).
+Your working directory is `/app/static` which contains your agent files (SKILL.md, agent-config.json).
 All write operations (git clone, file creation, etc.) must target `/tmp`.
 </environment>
 ```
@@ -222,7 +221,7 @@ Project root. All sections optional — sensible defaults apply.
 ### Full Annotated Example
 
 ```toml
-# Default model for all agents (agents can override in their own agent-config.toml)
+# Default model for all agents (agents can override in their own SKILL.md frontmatter)
 [model]
 provider = "anthropic"
 model = "claude-sonnet-4-20250514"
@@ -283,7 +282,7 @@ endpoint = "https://telemetry.example.com/v1"   # OpenTelemetry endpoint
 
 ### `[model]` — Default LLM
 
-Default for agents without `[model]` in agent-config.
+Default for agents without `model` in SKILL.md frontmatter.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -301,7 +300,7 @@ Local Docker container settings.
 | `image` | string | `"al-agent:latest"` | Base Docker image name |
 | `memory` | string | `"4g"` | Memory limit per container (e.g. `"4g"`, `"8g"`) |
 | `cpus` | number | `2` | CPU limit per container |
-| `timeout` | number | `900` | Default max container runtime in seconds. Individual agents can override this with `timeout` in their `agent-config.toml`. |
+| `timeout` | number | `900` | Default max container runtime in seconds. Individual agents can override this with `timeout` in their SKILL.md frontmatter. |
 
 ### `[gateway]` — HTTP Server
 
@@ -335,111 +334,82 @@ events = ["issues"]
 |-------|------|----------|-------------|
 | `endpoint` | string | Yes | OpenTelemetry collector endpoint URL |
 
-## agent-config.toml
+## SKILL.md
 
-Per-agent config. Name derives from directory.
+Single-file agent configuration. YAML frontmatter contains config, markdown body contains instructions.
 
 ### Full Annotated Example
 
-```toml
-# Required: credential types the agent needs at runtime
-# Use "type" for default instance, "type:instance" for named instance
-credentials = ["github_token", "git_ssh", "sentry_token"]
+```yaml
+---
+description: Solves GitHub issues by writing and testing code
+credentials:
+  - github_token
+  - git_ssh
+  - sentry_token
+schedule: "*/5 * * * *"
+scale: 2
+timeout: 600
+model:
+  provider: anthropic
+  model: claude-sonnet-4-20250514
+  thinkingLevel: medium
+  authType: api_key
+webhooks:
+  - source: my-github
+    repos: [acme/app]
+    events: [issues]
+    actions: [labeled]
+    labels: [agent]
+  - source: my-sentry
+    resources: [error, event_alert]
+  - source: my-linear
+    events: [issues]
+    actions: [create, update]
+    labels: [bug]
+  - source: my-mintlify
+    events: [build]
+    actions: [failed]
+hooks:
+  pre:
+    - "gh repo clone acme/app /tmp/repo --depth 1"
+    - "curl -o /tmp/flags.json https://api.internal/v1/flags"
+  post:
+    - "upload-artifacts.sh"
+params:
+  repos:
+    - acme/app
+    - acme/api
+  triggerLabel: agent
+  assignee: bot-user
+  sentryOrg: acme
+  sentryProjects:
+    - web-app
+    - api
+---
 
-# Optional: cron schedule (standard cron syntax)
-# Agent must have at least one of: schedule, webhooks
-schedule = "*/5 * * * *"
+# Dev Agent
 
-# Optional: number of concurrent runs allowed (default: 1)
-# When scale > 1, use rlock/runlock in your actions to coordinate
-# and prevent instances from working on the same resource.
-scale = 2
-
-# Optional: max runtime in seconds (default: falls back to [local].timeout, then 900)
-timeout = 600
-
-# Required: LLM model configuration
-[model]
-provider = "anthropic"                    # LLM provider
-model = "claude-sonnet-4-20250514"        # Model ID
-thinkingLevel = "medium"                  # Optional: off | minimal | low | medium | high | xhigh
-authType = "api_key"                      # api_key | oauth_token | pi_auth
-
-# Optional: webhook triggers (instead of or in addition to schedule)
-# Each source references a named webhook defined in the project's config.toml
-[[webhooks]]
-source = "my-github"                      # Required: references [webhooks.my-github] in config.toml
-repos = ["acme/app"]                      # Filter to specific repos (optional)
-events = ["issues"]                       # GitHub event types (optional)
-actions = ["labeled"]                     # GitHub event actions (optional)
-labels = ["agent"]                        # Only trigger on issues with these labels (optional)
-
-[[webhooks]]
-source = "my-sentry"
-resources = ["error", "event_alert"]      # Sentry resource types (optional)
-
-[[webhooks]]
-source = "my-linear"
-events = ["issues"]                       # Linear event types (optional)
-actions = ["create", "update"]            # Linear event actions (optional)
-labels = ["bug"]                          # Filter by Linear labels (optional)
-
-[[webhooks]]
-source = "my-mintlify"
-events = ["build"]                        # Mintlify event types (optional)
-actions = ["failed"]                      # Mintlify event actions (optional)
-
-# Optional: preflight steps — run before the LLM session starts
-# Each step runs a built-in provider to stage data the agent will reference
-[[preflight]]
-provider = "git-clone"                    # Clone a repo into the workspace
-required = true                           # If true (default), abort if this step fails
-[preflight.params]
-repo = "acme/app"                         # Short "owner/repo" or full URL
-dest = "/tmp/repo"
-depth = 1                                 # Optional: shallow clone
-
-[[preflight]]
-provider = "http"                         # Fetch a URL and write the response to a file
-required = false                          # Optional step — warn and continue on failure
-[preflight.params]
-url = "https://api.internal/v1/flags"
-output = "/tmp/context/flags.json"
-headers = { Authorization = "Bearer ${INTERNAL_TOKEN}" }
-
-[[preflight]]
-provider = "shell"                        # Run a shell command
-[preflight.params]
-command = "gh issue list --repo acme/app --label P1 --json number,title,body --limit 20"
-output = "/tmp/context/issues.json"       # Optional: capture stdout to file
-
-# Optional: custom parameters injected into the agent prompt
-[params]
-repos = ["acme/app", "acme/api"]
-triggerLabel = "agent"
-assignee = "bot-user"
-sentryOrg = "acme"
-sentryProjects = ["web-app", "api"]
+You are a development agent. Pick the highest priority issue and fix it.
 ```
 
 ### Field Reference
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `description` | string | No | Short description of what the agent does |
 | `credentials` | string[] | Yes | Credential refs: `"type"` for default instance, `"type:instance"` for named instance. |
 | `schedule` | string | No* | Cron expression for polling |
 | `scale` | number | No | Number of concurrent runs allowed (default: 1). Set to `0` to disable the agent. |
 | `timeout` | number | No | Max runtime in seconds. Falls back to `[local].timeout` in project config, then `900`. |
-| `model` | table | No | LLM model configuration (falls back to `[model]` in project `config.toml`) |
-| `model.provider` | string | Yes* | LLM provider (`"anthropic"`, `"openai"`, `"groq"`, `"google"`, `"xai"`, `"mistral"`, `"openrouter"`, or `"custom"`) |
-| `model.model` | string | Yes* | Model ID |
-| `model.thinkingLevel` | string | No | Thinking budget level: off, minimal, low, medium, high, xhigh. Only relevant for Anthropic models. |
-| `model.authType` | string | Yes* | Auth method for the provider |
+| `model` | object | No | LLM model configuration (falls back to `[model]` in project `config.toml`) |
 | `webhooks` | array | No* | Array of webhook trigger objects. |
-| `preflight` | array | No | Array of preflight steps that run before the LLM session. |
-| `params` | table | No | Custom key-value params injected into the prompt as `<agent-config>` |
+| `hooks.pre` | string[] | No | Shell commands to run before LLM session |
+| `hooks.post` | string[] | No | Shell commands to run after LLM session |
+| `params` | object | No | Custom key-value params injected into the prompt as `<agent-config>` |
+| `metadata` | object | No | Arbitrary metadata (author, version, etc.) |
 
-*Need `schedule` or `webhooks` (unless `scale=0`). *Required in `[model]` if defined.
+*Need `schedule` or `webhooks` (unless `scale=0`).
 
 ### Scale
 
@@ -451,81 +421,24 @@ Max runtime per invocation. Container terminated with exit 124 on expiry.
 
 Resolves: agent -> project `[local].timeout` -> `900`.
 
-### Preflight
+### Hooks
 
-Stage data after credentials load, before LLM session.
+Shell commands that run before and after the LLM session, inside the container.
 
-Sequential, inside container. `${VAR_NAME}` interpolation in params.
+**`hooks.pre`** — Run before context injection and LLM session. Use for cloning repos, fetching data, creating directories.
 
-Fields:
+**`hooks.post`** — Run after LLM session completes. Use for cleanup, artifact upload, reporting.
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `provider` | string | Yes | Provider name: `shell`, `http`, or `git-clone` |
-| `required` | boolean | No | If `true` (default), the agent aborts on failure. If `false`, logs a warning and continues. |
-| `params` | table | Yes | Provider-specific parameters (see below) |
+Sequential execution. If a command fails (non-zero exit), the run aborts with error. Commands run via `/bin/sh -c "..."`.
 
-#### `shell` provider
-
-Runs a command via `/bin/sh`.
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `command` | string | Yes | Shell command to execute |
-| `output` | string | No | File path to write stdout to. Parent directories are created automatically. |
-
-```toml
-[[preflight]]
-provider = "shell"
-[preflight.params]
-command = "gh issue list --repo acme/app --label P1 --json number,title,body --limit 20"
-output = "/tmp/context/issues.json"
+```yaml
+hooks:
+  pre:
+    - "gh repo clone acme/app /tmp/repo --depth 1"
+    - "curl -o /tmp/flags.json https://api.internal/v1/flags"
+  post:
+    - "upload-artifacts.sh"
 ```
-
-#### `http` provider
-
-Fetches a URL, writes response to file.
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `url` | string | Yes | URL to fetch |
-| `output` | string | Yes | File path to write the response body |
-| `method` | string | No | HTTP method (default: `GET`) |
-| `headers` | table | No | HTTP headers as key-value pairs |
-| `body` | string | No | Request body (for POST/PUT) |
-
-```toml
-[[preflight]]
-provider = "http"
-required = false
-[preflight.params]
-url = "https://api.internal/v1/feature-flags"
-output = "/tmp/context/flags.json"
-headers = { Authorization = "Bearer ${INTERNAL_TOKEN}" }
-```
-
-#### `git-clone` provider
-
-`"owner/repo"` expands to `git@github.com:owner/repo.git`.
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `repo` | string | Yes | Repository: `"owner/repo"` or full URL |
-| `dest` | string | Yes | Local path to clone into |
-| `branch` | string | No | Branch to check out |
-| `depth` | number | No | Shallow clone depth (e.g., `1`) |
-
-```toml
-[[preflight]]
-provider = "git-clone"
-[preflight.params]
-repo = "acme/app"
-dest = "/tmp/repo"
-branch = "main"
-depth = 1
-```
-
-`shell` is the escape hatch. No per-step timeout. Shell env vars don't propagate back (see [Environment variable persistence](#environment-variable-persistence) for a workaround).
 
 ### Webhook Trigger Fields
 
@@ -588,7 +501,7 @@ Path: `~/.action-llama/credentials/<type>/<instance>/<field>`.
 
 ### How credentials work
 
-List in `agent-config.toml`. Mounted at `/credentials/...`, key values as env vars. `git_ssh` sets `GIT_AUTHOR_*`/`GIT_COMMITTER_*`. LLM creds auto-loaded from `[model]`.
+List in SKILL.md frontmatter. Mounted at `/credentials/...`, key values as env vars. `git_ssh` sets `GIT_AUTHOR_*`/`GIT_COMMITTER_*`. LLM creds auto-loaded from `[model]`.
 
 ### Agent runtime credentials
 
@@ -710,7 +623,7 @@ al-status "found 3 issues to work on"
 
 #### `al-return "<value>"`
 
-Return a value to the calling agent (when invoked via `al-call`).
+Return a value to the calling agent (when invoked via `al-subagent`).
 
 ```bash
 al-return "PR looks good. Approved with minor suggestions."
@@ -738,12 +651,12 @@ Codes: 10=auth, 11=perm, 12=rate, 13=config, 14=dep, 15=unrecoverable, 16=abort.
 
 Require gateway.
 
-#### `al-call <agent>`
+#### `al-subagent <agent>`
 
 Call another agent. Pass context via stdin.
 
 ```bash
-echo "Review PR #42 on acme/app" | al-call reviewer
+echo "Review PR #42 on acme/app" | al-subagent reviewer
 ```
 
 ```json
@@ -752,12 +665,12 @@ echo "Review PR #42 on acme/app" | al-call reviewer
 {"ok": false, "error": "queue full"}
 ```
 
-#### `al-check <callId>`
+#### `al-subagent-check <callId>`
 
 Non-blocking status check.
 
 ```bash
-al-check abc123
+al-subagent-check abc123
 ```
 
 ```json
@@ -766,13 +679,13 @@ al-check abc123
 {"status": "error", "error": "timeout"}
 ```
 
-#### `al-wait <callId> [...] [--timeout N]`
+#### `al-subagent-wait <callId> [...] [--timeout N]`
 
 Wait for calls. Polls every 5s. Default timeout: 900s.
 
 ```bash
-al-wait abc123 --timeout 600
-al-wait abc123 def456 --timeout 300
+al-subagent-wait abc123 --timeout 600
+al-subagent-wait abc123 def456 --timeout 300
 ```
 
 ```json
@@ -786,13 +699,13 @@ al-wait abc123 def456 --timeout 300
 
 ```bash
 # Fire multiple calls
-REVIEW_ID=$(echo "Review PR #42 on acme/app" | al-call reviewer | jq -r .callId)
-TEST_ID=$(echo "Run full test suite for acme/app" | al-call tester | jq -r .callId)
+REVIEW_ID=$(echo "Review PR #42 on acme/app" | al-subagent reviewer | jq -r .callId)
+TEST_ID=$(echo "Run full test suite for acme/app" | al-subagent tester | jq -r .callId)
 
 # ... do other work ...
 
 # Collect results
-RESULTS=$(al-wait "$REVIEW_ID" "$TEST_ID" --timeout 600)
+RESULTS=$(al-subagent-wait "$REVIEW_ID" "$TEST_ID" --timeout 600)
 echo "$RESULTS" | jq ".\"$REVIEW_ID\".returnValue"
 echo "$RESULTS" | jq ".\"$TEST_ID\".returnValue"
 ```
@@ -997,7 +910,7 @@ Read-only root, non-root user, resource limits.
 | Path | Mode | Contents |
 |------|------|----------|
 | `/app` | read-only | Action Llama application + node_modules |
-| `/app/static` | read-only | Agent files baked at build time (ACTIONS.md, agent-config.json, prompt skeleton) |
+| `/app/static` | read-only | Agent files baked at build time (SKILL.md, agent-config.json, prompt skeleton) |
 | `/app/bin` | read-only | Shell commands (al-rerun, al-status, rlock, etc.) — added to PATH at startup |
 | `/credentials` | read-only | Mounted credential files (`/<type>/<instance>/<field>`) |
 | `/tmp` | read-write (tmpfs, 2GB) | Agent working directory — repos, scratch files, SSH keys |
@@ -1146,7 +1059,7 @@ Credentials synced via SSH.
 | 5 | Unavailable | 503 | Service not ready, no gateway configured |
 | 6 | Unreachable | — | Gateway connection failed |
 | 7 | Unexpected | other | Unknown HTTP status |
-| 8 | Timeout | — | `al-wait` only: polling deadline exceeded |
+| 8 | Timeout | — | `al-subagent-wait` only: polling deadline exceeded |
 | 9 | Usage error | — | Missing argument (local check, never hits network) |
 | 10 | Bad gateway | 502 | Proxy could not reach the gateway |
 | 11 | Gateway timeout | 504 | Proxy timed out reaching the gateway |

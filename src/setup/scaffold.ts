@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync, existsSync, copyFileSync, symlinkSync, lstatS
 import { resolve, relative } from "path";
 import { fileURLToPath } from "url";
 import { stringify as stringifyTOML } from "smol-toml";
+import { stringify as stringifyYAML } from "yaml";
 import type { GlobalConfig, AgentConfig } from "../shared/config.js";
 import { writeCredentialField, writeCredentialFields } from "../shared/credentials.js";
 import { CONSTANTS } from "../shared/constants.js";
@@ -36,17 +37,20 @@ export function scaffoldAgent(projectPath: string, agent: ScaffoldAgent): void {
   const agentPath = resolve(projectPath, "agents", agent.name);
   mkdirSync(agentPath, { recursive: true });
 
-  // Strip `name` before serializing — it's derived from the directory name
-  const { name: _, ...configToWrite } = agent.config;
-  writeFileSync(
-    resolve(agentPath, "agent-config.toml"),
-    stringifyTOML(configToWrite as Record<string, unknown>) + "\n"
-  );
-
-  // Write a stub ACTIONS.md if none exists
-  const actionsPath = resolve(agentPath, "ACTIONS.md");
-  if (!existsSync(actionsPath)) {
-    writeFileSync(actionsPath, `# ${agent.name} Agent\n\nCustom agent.\n`);
+  // Write a SKILL.md with YAML frontmatter if none exists
+  const skillPath = resolve(agentPath, "SKILL.md");
+  if (!existsSync(skillPath)) {
+    // Strip `name` before serializing — it's derived from the directory name.
+    // Also strip undefined values and model (inherited from global).
+    const { name: _, model: _m, ...rest } = agent.config;
+    const frontmatter: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(rest)) {
+      if (v !== undefined) frontmatter[k] = v;
+    }
+    const yamlStr = Object.keys(frontmatter).length > 0
+      ? stringifyYAML(frontmatter).trimEnd()
+      : "";
+    writeFileSync(skillPath, `---\n${yamlStr}\n---\n\n# ${agent.name} Agent\n\nCustom agent.\n`);
   }
 }
 

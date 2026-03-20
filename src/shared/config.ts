@@ -2,7 +2,6 @@ import { readFileSync, existsSync, readdirSync, statSync } from "fs";
 import { resolve } from "path";
 import { parse as parseTOML } from "smol-toml";
 import type { WebhookTrigger } from "../webhooks/types.js";
-import type { PreflightStep } from "../preflight/schema.js";
 import { ConfigError } from "./errors.js";
 import {
   resolveEnvironmentName,
@@ -10,6 +9,7 @@ import {
   loadEnvironmentConfig,
   deepMerge,
 } from "./environment.js";
+import { parseFrontmatter } from "./frontmatter.js";
 
 // --- Global config (lives at <project>/config.toml) ---
 
@@ -87,18 +87,27 @@ export interface GlobalConfig {
   scale?: number;
 }
 
-// --- Per-agent config (lives at <project>/<agent>/agent-config.toml) ---
+// --- Per-agent config (lives at <project>/agents/<name>/SKILL.md frontmatter) ---
+
+export interface AgentHooks {
+  pre?: string[];
+  post?: string[];
+}
 
 export interface AgentConfig {
   name: string;
+  description?: string;
   credentials: string[];
   model: ModelConfig;
   schedule?: string;
   webhooks?: WebhookTrigger[];
-  preflight?: PreflightStep[];
+  hooks?: AgentHooks;
   params?: Record<string, unknown>;
   scale?: number; // Number of concurrent runs allowed (default: 1)
   timeout?: number; // Max runtime in seconds (falls back to global local.timeout, then 900)
+  metadata?: Record<string, string>;
+  license?: string;
+  compatibility?: string;
 }
 
 // --- Loaders ---
@@ -165,14 +174,15 @@ export function loadGlobalConfig(projectPath: string, envName?: string): GlobalC
 
 export function loadAgentConfig(projectPath: string, agentName: string): AgentConfig {
   const agentDir = resolve(projectPath, "agents", agentName);
-  const tomlPath = resolve(agentDir, "agent-config.toml");
+  const skillPath = resolve(agentDir, "SKILL.md");
 
-  if (!existsSync(tomlPath)) {
-    throw new ConfigError(`Agent config not found at ${tomlPath}.`);
+  if (!existsSync(skillPath)) {
+    throw new ConfigError(`Agent config not found at ${skillPath}.`);
   }
 
-  const raw = readFileSync(tomlPath, "utf-8");
-  const parsed = parseTOML(raw) as unknown as AgentConfig;
+  const raw = readFileSync(skillPath, "utf-8");
+  const { data } = parseFrontmatter(raw);
+  const parsed = data as unknown as AgentConfig;
   parsed.name = agentName;
 
   // Fall back to global [model] if agent doesn't define its own
@@ -186,17 +196,29 @@ export function loadAgentConfig(projectPath: string, agentName: string): AgentCo
   return parsed;
 }
 
-const AGENT_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/;
+/**
+ * Load the SKILL.md body (markdown content after frontmatter).
+ * Used by image builder and container entry to get agent instructions.
+ */
+export function loadAgentBody(projectPath: string, agentName: string): string {
+  const skillPath = resolve(projectPath, "agents", agentName, "SKILL.md");
+  if (!existsSync(skillPath)) return "";
+  const raw = readFileSync(skillPath, "utf-8");
+  const { body } = parseFrontmatter(raw);
+  return body;
+}
+
+const AGENT_NAME_PATTERN = /^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9]))*$/;
 
 export function validateAgentName(name: string): void {
-  if (!name || name.length > 63) {
+  if (!name || name.length > 64) {
     throw new ConfigError(
-      `Agent name "${name}" is invalid: must be 1-63 characters.`
+      `Agent name "${name}" is invalid: must be 1-64 characters.`
     );
   }
   if (!AGENT_NAME_PATTERN.test(name)) {
     throw new ConfigError(
-      `Agent name "${name}" is invalid: must contain only lowercase letters, numbers, and hyphens (cannot start or end with a hyphen).`
+      `Agent name "${name}" is invalid: must contain only lowercase letters, numbers, and hyphens (cannot start or end with a hyphen, no consecutive hyphens).`
     );
   }
   if (name === "default") {
@@ -233,7 +255,7 @@ export function discoverAgents(projectPath: string): string[] {
     if (entry.startsWith(".")) continue;
     const entryPath = resolve(agentsPath, entry);
     if (!statSync(entryPath).isDirectory()) continue;
-    if (existsSync(resolve(entryPath, "agent-config.toml"))) {
+    if (existsSync(resolve(entryPath, "SKILL.md"))) {
       agents.push(entry);
     }
   }

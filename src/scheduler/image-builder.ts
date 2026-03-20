@@ -167,12 +167,12 @@ export async function buildSingleAgentImage(opts: SingleAgentBuildOpts): Promise
 
   const agentPath = resolvePath(projectPath, "agents", agentConfig.name);
   const hasCustomDockerfile = existsSync(resolvePath(agentPath, "Dockerfile"));
-  const actionsPath = resolvePath(agentPath, "ACTIONS.md");
-  const actionsMd = existsSync(actionsPath) ? readFileSync(actionsPath, "utf-8") : "";
+  const skillPath = resolvePath(agentPath, "SKILL.md");
+  const skillMd = existsSync(skillPath) ? readFileSync(skillPath, "utf-8") : "";
   const timeout = String(agentConfig.timeout ?? globalConfig.local?.timeout ?? 900);
   const extraFiles: Record<string, string> = {
     "agent-config.json": JSON.stringify(agentConfig),
-    "ACTIONS.md": actionsMd,
+    "SKILL.md": skillMd,
     "prompt-static.txt": buildPromptSkeleton(agentConfig, skills),
     "timeout": timeout,
   };

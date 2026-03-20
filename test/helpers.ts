@@ -2,6 +2,7 @@ import { mkdtempSync, writeFileSync, mkdirSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
 import { stringify as stringifyTOML } from "smol-toml";
+import { stringify as stringifyYAML } from "yaml";
 import type { GlobalConfig, AgentConfig } from "../src/shared/config.js";
 
 // --- Factories ---
@@ -22,7 +23,7 @@ export function makeModel(overrides?: Partial<typeof DEFAULT_MODEL>): typeof DEF
 export function makeAgentConfig(overrides?: Partial<AgentConfig>): AgentConfig {
   return {
     name: "test-agent",
-    credentials: ["github_token:default"],
+    credentials: ["github_token"],
     model: makeModel(),
     schedule: "*/5 * * * *",
     params: {},
@@ -87,9 +88,10 @@ export function makeTmpProject(opts?: TmpProjectOptions): string {
     mkdirSync(agentPath, { recursive: true });
     // Strip name before writing (matches scaffold behavior)
     const { name: _, ...configToWrite } = agent;
+    const yamlStr = stringifyYAML(configToWrite).trimEnd();
     writeFileSync(
-      resolve(agentPath, "agent-config.toml"),
-      stringifyTOML(configToWrite as Record<string, unknown>)
+      resolve(agentPath, "SKILL.md"),
+      `---\n${yamlStr}\n---\n\n# ${agent.name} Agent\n\nCustom agent.\n`
     );
   }
 

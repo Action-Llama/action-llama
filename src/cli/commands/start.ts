@@ -15,7 +15,7 @@ export async function execute(opts: { project: string; env?: string; headless?: 
   const projectPath = resolve(opts.project);
 
   // Guard: refuse to run if the project path looks like an agent directory
-  if (existsSync(resolve(projectPath, "agent-config.toml")) || existsSync(resolve(projectPath, "ACTIONS.md"))) {
+  if (existsSync(resolve(projectPath, "SKILL.md"))) {
     throw new Error(
       `"${projectPath}" looks like an agent directory, not a project directory. ` +
       `Run 'al start' from the project root (the parent directory).`

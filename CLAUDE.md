@@ -79,8 +79,8 @@ Good:
 "@action-llama/action-llama": patch
 ---
 
-Added support for custom LLM providers. Set `provider: "custom"` in agent-config.toml
-with a `baseUrl` pointing to any OpenAI-compatible endpoint. Closes #27.
+Added support for custom LLM providers. Set `provider: "custom"` in SKILL.md
+frontmatter with a `baseUrl` pointing to any OpenAI-compatible endpoint. Closes #27.
 ```
 
 Bad:
@@ -151,7 +151,7 @@ Environment types (for `al env init <name> --type <type>`): `server`.
 
 ## Key Conventions
 
-- Config format: TOML (`config.toml`, `agent-config.toml`, `.env.toml`, environment files)
+- Config format: TOML for project config (`config.toml`, `.env.toml`, environment files); YAML frontmatter in `SKILL.md` for agent config
 - Credentials: `~/.action-llama/credentials/<type>/<instance>/<field>` — instance is agent name (agent-specific) or `"default"` (shared)
 - Cloud is opt-in via `--env <name>` flag or `.env.toml` environment binding; server deploy via `al push --env <name>`
 - `"default"` is a reserved name — cannot be used as an agent name

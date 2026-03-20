@@ -3,7 +3,7 @@ title: "Models"
 description: "Supported LLM providers, model IDs, and configuration"
 ---
 
-Action Llama supports 8 LLM providers. Each agent can use a different provider and model — configure a project-wide default in `config.toml` under `[model]`, and override per agent in `agent-config.toml`.
+Action Llama supports 8 LLM providers. Each agent can use a different provider and model — configure a project-wide default in `config.toml` under `[model]`, and override per agent in `SKILL.md` frontmatter.
 
 ## `[model]` Fields
 
@@ -174,16 +174,16 @@ authType = "api_key"
 
 ## Mixing Models
 
-Each agent can use a different model. Define a project default in `config.toml`, then override in specific agents:
+Each agent can use a different model. Define a project default in `config.toml`, then override in specific agents' `SKILL.md` frontmatter:
 
 ```
-config.toml          → [model] provider = "anthropic", model = "claude-sonnet-4-20250514"
-dev/agent-config.toml     → (no [model] section — inherits Claude Sonnet)
-reviewer/agent-config.toml → [model] provider = "openai", model = "gpt-4o"
-devops/agent-config.toml   → [model] provider = "groq", model = "llama-3.3-70b-versatile"
+config.toml        → [model] provider = "anthropic", model = "claude-sonnet-4-20250514"
+dev/SKILL.md       → (no model section — inherits Claude Sonnet)
+reviewer/SKILL.md  → model: { provider: "openai", model: "gpt-4o" }
+devops/SKILL.md    → model: { provider: "groq", model: "llama-3.3-70b-versatile" }
 ```
 
-If an agent defines its own `[model]` section, it fully overrides the project default — there is no field-level merging.
+If an agent defines its own `model` section in its `SKILL.md` frontmatter, it fully overrides the project default — there is no field-level merging.
 
 ## Credential Setup
 

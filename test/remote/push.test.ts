@@ -195,7 +195,7 @@ describe("pushToServer", () => {
       throw new Error("ENOENT");
     });
     // Mock credential functions to simulate having some credentials
-    mockCollectCredentialRefs.mockReturnValue(new Set(["github_token:default", "gateway_api_key:default"]));
+    mockCollectCredentialRefs.mockReturnValue(new Set(["github_token", "gateway_api_key"]));
     mockCredentialRefsToRelativePaths.mockReturnValue(["github_token/default", "gateway_api_key/default"]);
     // Mock existsSync to return true for credential files
     mockExistsSync.mockReturnValue(true);
@@ -483,7 +483,7 @@ describe("pushAgentToServer", () => {
     mockRsyncTo.mockResolvedValue(undefined);
     mockUnlinkSync.mockReturnValue(undefined);
     // Mock credential functions to simulate having some credentials
-    mockCollectCredentialRefs.mockReturnValue(new Set(["github_token:default", "gateway_api_key:default"]));
+    mockCollectCredentialRefs.mockReturnValue(new Set(["github_token", "gateway_api_key"]));
     mockCredentialRefsToRelativePaths.mockReturnValue(["github_token/default", "gateway_api_key/default"]);
     // Mock existsSync to return true for credential files
     mockExistsSync.mockReturnValue(true);

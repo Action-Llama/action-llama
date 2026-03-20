@@ -10,7 +10,7 @@ describe.skipIf(!DOCKER)("integration: agent-to-agent triggers", { timeout: 180_
     if (harness) await harness.shutdown();
   });
 
-  it("al-call triggers another agent", async () => {
+  it("al-subagent triggers another agent", async () => {
     harness = await IntegrationHarness.create({
       agents: [
         {
@@ -19,14 +19,14 @@ describe.skipIf(!DOCKER)("integration: agent-to-agent triggers", { timeout: 180_
           testScript: [
             "#!/bin/sh",
             "set +e",
-            'RESULT=$(echo "review PR #42" | al-call callee)',
+            'RESULT=$(echo "review PR #42" | al-subagent callee)',
             "RC=$?",
             "set -e",
             // Verify exit code 0
-            'test "$RC" -eq 0 || { echo "al-call failed with exit $RC: $RESULT"; exit 1; }',
+            'test "$RC" -eq 0 || { echo "al-subagent failed with exit $RC: $RESULT"; exit 1; }',
             // Verify JSON response
             'OK=$(echo "$RESULT" | jq -r .ok)',
-            'test "$OK" = "true" || { echo "al-call ok=$OK: $RESULT"; exit 1; }',
+            'test "$OK" = "true" || { echo "al-subagent ok=$OK: $RESULT"; exit 1; }',
             'CALL_ID=$(echo "$RESULT" | jq -r .callId)',
             'test "$CALL_ID" != "null" && test -n "$CALL_ID" || { echo "no callId: $RESULT"; exit 1; }',
             "exit 0",
@@ -53,7 +53,7 @@ describe.skipIf(!DOCKER)("integration: agent-to-agent triggers", { timeout: 180_
     await harness.waitForRunResult("callee");
   });
 
-  it("al-call + al-check: caller can check call status", async () => {
+  it("al-subagent + al-subagent-check: caller can check call status", async () => {
     harness = await IntegrationHarness.create({
       agents: [
         {
@@ -61,23 +61,23 @@ describe.skipIf(!DOCKER)("integration: agent-to-agent triggers", { timeout: 180_
           schedule: "0 0 31 2 *",
           testScript: [
             "#!/bin/sh",
-            // al-call: dispatch and verify exit code + JSON
+            // al-subagent: dispatch and verify exit code + JSON
             "set +e",
-            'RESULT=$(echo "do work" | al-call check-worker)',
+            'RESULT=$(echo "do work" | al-subagent check-worker)',
             "RC=$?",
             "set -e",
-            'test "$RC" -eq 0 || { echo "al-call exit=$RC: $RESULT"; exit 1; }',
+            'test "$RC" -eq 0 || { echo "al-subagent exit=$RC: $RESULT"; exit 1; }',
             'OK=$(echo "$RESULT" | jq -r .ok)',
-            'test "$OK" = "true" || { echo "al-call ok=$OK: $RESULT"; exit 1; }',
+            'test "$OK" = "true" || { echo "al-subagent ok=$OK: $RESULT"; exit 1; }',
             'CALL_ID=$(echo "$RESULT" | jq -r .callId)',
             'test -n "$CALL_ID" && test "$CALL_ID" != "null" || { echo "no callId: $RESULT"; exit 1; }',
             "",
-            // al-check: verify exit code 0 and status field present
+            // al-subagent-check: verify exit code 0 and status field present
             "set +e",
-            "CHECK=$(al-check $CALL_ID)",
+            "CHECK=$(al-subagent-check $CALL_ID)",
             "RC=$?",
             "set -e",
-            'test "$RC" -eq 0 || { echo "al-check exit=$RC: $CHECK"; exit 1; }',
+            'test "$RC" -eq 0 || { echo "al-subagent-check exit=$RC: $CHECK"; exit 1; }',
             'STATUS=$(echo "$CHECK" | jq -r .status)',
             'test -n "$STATUS" && test "$STATUS" != "null" || { echo "no status: $CHECK"; exit 1; }',
             "exit 0",
@@ -101,7 +101,7 @@ describe.skipIf(!DOCKER)("integration: agent-to-agent triggers", { timeout: 180_
     expect(callerRun.result).toBe("completed");
   });
 
-  it("al-call + al-wait: caller blocks until callee completes", async () => {
+  it("al-subagent + al-subagent-wait: caller blocks until callee completes", async () => {
     harness = await IntegrationHarness.create({
       agents: [
         {
@@ -109,26 +109,26 @@ describe.skipIf(!DOCKER)("integration: agent-to-agent triggers", { timeout: 180_
           schedule: "0 0 31 2 *",
           testScript: [
             "#!/bin/sh",
-            // al-call: dispatch and verify
+            // al-subagent: dispatch and verify
             "set +e",
-            'RESULT=$(echo "compute something" | al-call wait-worker)',
+            'RESULT=$(echo "compute something" | al-subagent wait-worker)',
             "RC=$?",
             "set -e",
-            'test "$RC" -eq 0 || { echo "al-call exit=$RC: $RESULT"; exit 1; }',
+            'test "$RC" -eq 0 || { echo "al-subagent exit=$RC: $RESULT"; exit 1; }',
             'OK=$(echo "$RESULT" | jq -r .ok)',
-            'test "$OK" = "true" || { echo "al-call ok=$OK: $RESULT"; exit 1; }',
+            'test "$OK" = "true" || { echo "al-subagent ok=$OK: $RESULT"; exit 1; }',
             'CALL_ID=$(echo "$RESULT" | jq -r .callId)',
             'test -n "$CALL_ID" && test "$CALL_ID" != "null" || { echo "no callId: $RESULT"; exit 1; }',
             "",
-            // al-wait: verify exit code 0 and completed status
+            // al-subagent-wait: verify exit code 0 and completed status
             "set +e",
-            "WAIT_RESULT=$(al-wait $CALL_ID --timeout 60)",
+            "WAIT_RESULT=$(al-subagent-wait $CALL_ID --timeout 60)",
             "RC=$?",
             "set -e",
-            'test "$RC" -eq 0 || { echo "al-wait exit=$RC: $WAIT_RESULT"; exit 1; }',
-            // al-wait returns JSON keyed by callId — verify the call completed
+            'test "$RC" -eq 0 || { echo "al-subagent-wait exit=$RC: $WAIT_RESULT"; exit 1; }',
+            // al-subagent-wait returns JSON keyed by callId — verify the call completed
             "STATUS=$(echo \"$WAIT_RESULT\" | jq -r --arg id \"$CALL_ID\" '.[$id].status')",
-            'test "$STATUS" = "completed" || { echo "al-wait status=$STATUS: $WAIT_RESULT"; exit 1; }',
+            'test "$STATUS" = "completed" || { echo "al-subagent-wait status=$STATUS: $WAIT_RESULT"; exit 1; }',
             "exit 0",
           ].join("\n"),
         },
@@ -161,7 +161,7 @@ describe.skipIf(!DOCKER)("integration: agent-to-agent triggers", { timeout: 180_
             "#!/bin/sh",
             // Try to call self — should return exit 1 (HTTP 409 conflict)
             "set +e",
-            'RESULT=$(echo "self-trigger attempt" | al-call self-caller)',
+            'RESULT=$(echo "self-trigger attempt" | al-subagent self-caller)',
             "RC=$?",
             "set -e",
             'test "$RC" -eq 1 || { echo "expected exit 1, got $RC: $RESULT"; exit 1; }',

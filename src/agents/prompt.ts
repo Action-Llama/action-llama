@@ -6,7 +6,8 @@ import { parseCredentialRef } from "../shared/credentials.js";
 
 export interface PromptSkills {
   locking?: boolean;
-  calling?: boolean;
+  subagents?: boolean;
+  availableAgents?: Array<{ name: string; description: string }>;
 }
 
 export function buildLockSkill(): string {
@@ -60,31 +61,43 @@ export function buildLockSkill(): string {
   return lines.join("\n");
 }
 
-export function buildCallSkill(): string {
+export function buildSubagentSkill(availableAgents?: Array<{ name: string; description: string }>): string {
   const lines = [
-    "<skill-call>",
-    "## Skill: Agent-to-Agent Calls",
+    "<skill-subagent>",
+    "## Skill: Subagents",
     "",
     "Call other agents and retrieve their results. Calls are **non-blocking** — fire a call, continue working, then check or wait for results.",
     "",
+  ];
+
+  if (availableAgents && availableAgents.length > 0) {
+    lines.push("### Available Agents");
+    lines.push("");
+    for (const agent of availableAgents) {
+      lines.push(`- **${agent.name}**: ${agent.description}`);
+    }
+    lines.push("");
+  }
+
+  lines.push(
     "### Commands",
     "",
-    '**`al-call <agent>`** — Call another agent. Pass the context via stdin. Returns a call ID.',
+    '**`al-subagent <agent>`** — Call another agent. Pass the context via stdin. Returns a call ID.',
     "```",
-    'CALL_ID=$(echo "find competitors for Acme" | al-call researcher | jq -r .callId)',
+    'CALL_ID=$(echo "find competitors for Acme" | al-subagent researcher | jq -r .callId)',
     "```",
     "",
-    "**`al-check <callId>`** — Check the status of a call. Never blocks.",
+    "**`al-subagent-check <callId>`** — Check the status of a call. Never blocks.",
     "```",
-    'al-check "$CALL_ID"',
+    'al-subagent-check "$CALL_ID"',
     "```",
     '- Running: `{"status":"running"}`',
     '- Completed: `{"status":"completed","returnValue":"..."}`',
     '- Error: `{"status":"error","errorMessage":"..."}`',
     "",
-    "**`al-wait <callId> [callId...] [--timeout N]`** — Wait for one or more calls to complete. Default timeout: 900s.",
+    "**`al-subagent-wait <callId> [callId...] [--timeout N]`** — Wait for one or more calls to complete. Default timeout: 900s.",
     "```",
-    'RESULTS=$(al-wait "$CALL_ID1" "$CALL_ID2" --timeout 600)',
+    'RESULTS=$(al-subagent-wait "$CALL_ID1" "$CALL_ID2" --timeout 600)',
     "```",
     "Returns a JSON object keyed by call ID with each call's final status.",
     "",
@@ -101,12 +114,12 @@ export function buildCallSkill(): string {
     "",
     "### Guidelines",
     "- Calls are non-blocking — fire multiple calls then wait for all at once",
-    "- Use `al-wait` to wait for multiple calls efficiently",
-    "- Use `al-check` for polling when you want to do work between checks",
+    "- Use `al-subagent-wait` to wait for multiple calls efficiently",
+    "- Use `al-subagent-check` for polling when you want to do work between checks",
     "- Called agents cannot call back to the calling agent (no cycles)",
     "- There is a depth limit on nested calls to prevent infinite chains",
-    "</skill-call>",
-  ];
+    "</skill-subagent>",
+  );
   return lines.join("\n");
 }
 
@@ -155,7 +168,7 @@ function buildEnvironmentContext(): string {
     "<environment>",
     "**Filesystem:** The root filesystem is read-only. `/tmp` is the only writable directory.",
     "Use `/tmp` for cloning repos, writing scratch files, and any other disk I/O.",
-    "Your working directory is `/app/static` which contains your agent files (ACTIONS.md, agent-config.json).",
+    "Your working directory is `/app/static` which contains your agent files (SKILL.md, agent-config.json).",
     "All write operations (git clone, file creation, etc.) must target `/tmp`.",
     "</environment>",
   ].join("\n");
@@ -167,8 +180,8 @@ function buildSkillsBlock(skills?: PromptSkills): string {
   if (skills.locking) {
     blocks.push(buildLockSkill());
   }
-  if (skills.calling) {
-    blocks.push(buildCallSkill());
+  if (skills.subagents) {
+    blocks.push(buildSubagentSkill(skills.availableAgents));
   }
   return blocks.length > 0 ? "\n\n" + blocks.join("\n\n") : "";
 }

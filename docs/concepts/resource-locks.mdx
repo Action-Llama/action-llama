@@ -26,7 +26,7 @@ The agent learns the lock API from a preamble injected before the actions run. A
 | Release | `runlock "resource key"` | Release a lock. Only the holder can release. |
 | Heartbeat | `rlock-heartbeat "resource key"` | Reset the TTL on a held lock. |
 
-In `ACTIONS.md`, these are written as shorthand: `LOCK(...)`, `UNLOCK(...)`, `HEARTBEAT(...)`.
+In `SKILL.md`, these are written as shorthand: `LOCK(...)`, `UNLOCK(...)`, `HEARTBEAT(...)`.
 
 See [Agent Commands — Locks](/reference/agent-commands#lock-commands) for the full command reference with response JSON.
 
@@ -84,7 +84,7 @@ Use descriptive, unique keys:
 | `github pr owner/repo#number` | `LOCK("github pr acme/app#17")` |
 | `deploy service-name` | `LOCK("deploy api-prod")` |
 
-## Example in ACTIONS.md
+## Example in SKILL.md
 
 ```markdown
 ## Workflow

@@ -12,11 +12,9 @@ my-project/
   Dockerfile              <-- project base image (shared by all agents)
   config.toml
   dev/
-    agent-config.toml
-    ACTIONS.md
+    SKILL.md
   reviewer/
-    agent-config.toml
-    ACTIONS.md
+    SKILL.md
 ```
 
 ## Default Behavior
@@ -130,4 +128,4 @@ sudo systemctl start docker
 memory = "8g"    # default: "4g"
 ```
 
-**Container exits immediately** — Check `al logs <agent>` for the error. Common causes: missing credentials, missing `ACTIONS.md`, invalid model config.
+**Container exits immediately** — Check `al logs <agent>` for the error. Common causes: missing credentials, missing `SKILL.md`, invalid model config.

@@ -11,12 +11,10 @@ Agents that need extra tools beyond the project base image can add a `Dockerfile
 my-project/
   Dockerfile              <-- project base (shared tools)
   dev/
-    agent-config.toml
-    ACTIONS.md
+    SKILL.md
     Dockerfile            <-- custom image for this agent only
   reviewer/
-    agent-config.toml
-    ACTIONS.md
+    SKILL.md
                           <-- no Dockerfile, uses project base
 ```
 
@@ -102,4 +100,4 @@ See [Project Dockerfile](/reference/project-dockerfile) for the project-level Do
 
 **Image build fails** — Check that your `Dockerfile` uses `apk add` (Alpine) or `apt-get` (Debian) depending on the base. The default base is Alpine.
 
-**Container exits immediately** — Check `al logs <agent>` for the error. Common causes: missing credentials, missing `ACTIONS.md`, invalid model config.
+**Container exits immediately** — Check `al logs <agent>` for the error. Common causes: missing credentials, missing `SKILL.md`, invalid model config.

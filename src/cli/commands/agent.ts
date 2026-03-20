@@ -2,12 +2,14 @@ import { existsSync, mkdirSync, copyFileSync, readFileSync, writeFileSync } from
 import { resolve } from "path";
 import { select, input, checkbox, confirm } from "@inquirer/prompts";
 import { parse as parseTOML, stringify as stringifyTOML } from "smol-toml";
+import { stringify as stringifyYAML } from "yaml";
 import {
   validateAgentName,
   loadAgentConfig,
   loadGlobalConfig,
   discoverAgents,
 } from "../../shared/config.js";
+import { parseFrontmatter } from "../../shared/frontmatter.js";
 import type { AgentConfig, ModelConfig } from "../../shared/config.js";
 import type { WebhookTrigger } from "../../webhooks/types.js";
 import { scaffoldAgent } from "../../setup/scaffold.js";
@@ -55,11 +57,11 @@ export async function newAgent(opts: { project: string }): Promise<void> {
     const exampleDir = resolve(resolvePackageRoot(), "docs", "examples", agentType);
     mkdirSync(agentDir, { recursive: true });
 
-    for (const file of ["ACTIONS.md", "agent-config.toml"]) {
-      const src = resolve(exampleDir, file);
-      if (existsSync(src)) {
-        copyFileSync(src, resolve(agentDir, file));
-      }
+    const skillSrc = resolve(exampleDir, "SKILL.md");
+    if (existsSync(skillSrc)) {
+      copyFileSync(skillSrc, resolve(agentDir, "SKILL.md"));
+    } else {
+      throw new Error(`Example template "${agentType}" is missing SKILL.md at ${exampleDir}`);
     }
     console.log(`Created agent "${name}" from ${agentType} template.`);
   } else {
@@ -83,7 +85,7 @@ export async function configAgent(name: string, opts: { project: string }): Prom
   const projectPath = resolve(opts.project);
   const agentDir = resolve(projectPath, "agents", name);
 
-  if (!existsSync(resolve(agentDir, "agent-config.toml"))) {
+  if (!existsSync(resolve(agentDir, "SKILL.md"))) {
     throw new Error(`Agent "${name}" not found. Run 'al agent new' first.`);
   }
 
@@ -130,17 +132,21 @@ export async function configAgent(name: string, opts: { project: string }): Prom
     }
   }
 
-  // Write config — strip name (derived from dir) and undefined values
+  // Write config back to SKILL.md — preserve the body, update frontmatter
   const { name: _, ...rest } = config;
   const toWrite: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(rest)) {
     if (v !== undefined) toWrite[k] = v;
   }
-  writeFileSync(
-    resolve(agentDir, "agent-config.toml"),
-    stringifyTOML(toWrite) + "\n",
-  );
-  console.log(`Saved ${resolve(agentDir, "agent-config.toml")}`);
+  const skillPath = resolve(agentDir, "SKILL.md");
+  const existingBody = existsSync(skillPath)
+    ? parseFrontmatter(readFileSync(skillPath, "utf-8")).body
+    : `# ${name} Agent\n\nCustom agent.\n`;
+  const yamlStr = Object.keys(toWrite).length > 0
+    ? stringifyYAML(toWrite).trimEnd()
+    : "";
+  writeFileSync(skillPath, `---\n${yamlStr}\n---\n\n${existingBody}`);
+  console.log(`Saved ${skillPath}`);
 
   // Run doctor
   const { execute } = await import("./doctor.js");

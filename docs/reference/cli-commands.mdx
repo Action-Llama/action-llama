@@ -201,7 +201,7 @@ Warning: No gateway detected at http://localhost:8080. Resource locks, agent cal
 Start the scheduler with `al start` to enable these features.
 ```
 
-The agent's ACTIONS.md is loaded as reference context but is **not** auto-executed — you drive the session interactively.
+The agent's SKILL.md is loaded as reference context but is **not** auto-executed — you drive the session interactively.
 
 ## `al push [agent]`
 
@@ -330,7 +330,7 @@ al creds ls
 Add or update a credential. Runs the interactive prompter with validation for the credential type.
 
 ```bash
-al creds add github_token              # adds github_token:default
+al creds add github_token              # default instance
 al creds add github_webhook_secret:myapp
 al creds add git_ssh:prod
 ```
@@ -342,7 +342,7 @@ The `<ref>` format is `type` or `type:instance`. If no instance is specified, de
 Remove a credential from disk.
 
 ```bash
-al creds rm github_token               # removes github_token:default
+al creds rm github_token               # default instance
 al creds rm github_webhook_secret:myapp
 ```
 
@@ -370,7 +370,7 @@ al agent new
 
 ### `al agent config <name>`
 
-Interactively configure an existing agent. Opens a menu to edit each section of `agent-config.toml`: credentials, model, schedule, webhooks, and params. Runs `al doctor` on completion to validate the configuration.
+Interactively configure an existing agent. Opens a menu to edit each section of the `SKILL.md` frontmatter: credentials, model, schedule, webhooks, and params. Runs `al doctor` on completion to validate the configuration.
 
 ```bash
 al agent config dev

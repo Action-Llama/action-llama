@@ -1,13 +1,13 @@
 ---
 title: "Optimizing Agents"
-description: "Use preflight steps to stage context before the LLM session starts"
+description: "Use hooks to stage context before the LLM session starts"
 ---
 
-Agents spend tokens every time they fetch context at runtime — cloning repos, listing issues, calling APIs. Preflight steps let you stage this data before the LLM session starts, so the agent begins with everything it needs.
+Agents spend tokens every time they fetch context at runtime — cloning repos, listing issues, calling APIs. Hooks let you stage this data before the LLM session starts, so the agent begins with everything it needs.
 
 ## The Problem
 
-Without preflight, a typical agent run looks like:
+Without hooks, a typical agent run looks like:
 
 1. LLM starts
 2. LLM runs `git clone` (waits, uses tokens to read output)
@@ -16,28 +16,26 @@ Without preflight, a typical agent run looks like:
 
 Steps 2-3 are mechanical — the agent always needs to do them, and they don't benefit from LLM reasoning.
 
-## The Solution: Preflight
+## The Solution: Hooks
 
-Preflight steps run **after credentials are loaded** but **before the LLM session starts**. They execute inside the container with full access to credentials and environment variables.
+Pre-hooks run **after credentials are loaded** but **before the LLM session starts**. They execute inside the container with full access to credentials and environment variables. Define them in the YAML frontmatter of your `SKILL.md`:
 
-```toml
-# agent-config.toml
-
-[[preflight]]
-provider = "git-clone"
-[preflight.params]
-repo = "acme/app"
-dest = "/tmp/repo"
-depth = 1
-
-[[preflight]]
-provider = "shell"
-[preflight.params]
-command = "gh issue list --repo acme/app --label bug --json number,title,body --limit 20"
-output = "/tmp/context/issues.json"
+```yaml
+# SKILL.md frontmatter
+hooks:
+  pre:
+    - provider: git-clone
+      params:
+        repo: acme/app
+        dest: /tmp/repo
+        depth: 1
+    - provider: shell
+      params:
+        command: "gh issue list --repo acme/app --label bug --json number,title,body --limit 20"
+        output: /tmp/context/issues.json
 ```
 
-Then reference the staged files in your `ACTIONS.md`:
+Then reference the staged files in the body of your `SKILL.md`:
 
 ```markdown
 ## Context
@@ -48,16 +46,17 @@ Then reference the staged files in your `ACTIONS.md`:
 
 ## Example: Git clone
 
-The most common preflight step — clone the repo the agent will work on:
+The most common hook — clone the repo the agent will work on:
 
-```toml
-[[preflight]]
-provider = "git-clone"
-[preflight.params]
-repo = "acme/app"
-dest = "/tmp/repo"
-depth = 1              # shallow clone for speed
-branch = "main"        # optional: specific branch
+```yaml
+hooks:
+  pre:
+    - provider: git-clone
+      params:
+        repo: acme/app
+        dest: /tmp/repo
+        depth: 1              # shallow clone for speed
+        branch: main          # optional: specific branch
 ```
 
 Short `"owner/repo"` names are expanded to `git@github.com:owner/repo.git`. Full URLs work too.
@@ -66,12 +65,13 @@ Short `"owner/repo"` names are expanded to `git@github.com:owner/repo.git`. Full
 
 Run any shell command. `GITHUB_TOKEN`, `GH_TOKEN`, and other credential env vars are already set:
 
-```toml
-[[preflight]]
-provider = "shell"
-[preflight.params]
-command = "gh issue list --repo acme/app --label P1 --json number,title,body --limit 20"
-output = "/tmp/context/issues.json"
+```yaml
+hooks:
+  pre:
+    - provider: shell
+      params:
+        command: "gh issue list --repo acme/app --label P1 --json number,title,body --limit 20"
+        output: /tmp/context/issues.json
 ```
 
 Without `output`, the command runs but stdout is discarded. Use `output` to capture it to a file.
@@ -80,43 +80,44 @@ Without `output`, the command runs but stdout is discarded. Use `output` to capt
 
 Fetch data from an API endpoint:
 
-```toml
-[[preflight]]
-provider = "http"
-required = false          # optional — warn and continue on failure
-[preflight.params]
-url = "https://api.internal/v1/feature-flags"
-output = "/tmp/context/flags.json"
-headers = { Authorization = "Bearer ${INTERNAL_TOKEN}" }
+```yaml
+hooks:
+  pre:
+    - provider: http
+      required: false          # optional — warn and continue on failure
+      params:
+        url: "https://api.internal/v1/feature-flags"
+        output: /tmp/context/flags.json
+        headers:
+          Authorization: "Bearer ${INTERNAL_TOKEN}"
 ```
 
 Environment variable interpolation (`${VAR_NAME}`) is supported in string params.
 
-## Required vs Optional Steps
+## Required vs Optional Hooks
 
-By default, preflight steps are required — if one fails, the agent aborts:
+By default, hooks are required — if one fails, the agent aborts:
 
-```toml
-[[preflight]]
-provider = "git-clone"
-required = true                    # default — abort on failure
-[preflight.params]
-repo = "acme/app"
-dest = "/tmp/repo"
-
-[[preflight]]
-provider = "http"
-required = false                   # optional — warn and continue
-[preflight.params]
-url = "https://api.internal/v1/flags"
-output = "/tmp/context/flags.json"
+```yaml
+hooks:
+  pre:
+    - provider: git-clone
+      required: true                    # default — abort on failure
+      params:
+        repo: acme/app
+        dest: /tmp/repo
+    - provider: http
+      required: false                   # optional — warn and continue
+      params:
+        url: "https://api.internal/v1/flags"
+        output: /tmp/context/flags.json
 ```
 
-Use `required = false` for nice-to-have context that shouldn't block the agent.
+Use `required: false` for nice-to-have context that shouldn't block the agent.
 
-## Referencing Staged Files in ACTIONS.md
+## Referencing Staged Files in SKILL.md
 
-After preflight runs, tell the agent what's available:
+After hooks run, tell the agent what's available in the body of your `SKILL.md`:
 
 ```markdown
 ## Context
@@ -130,11 +131,11 @@ After preflight runs, tell the agent what's available:
 
 - **Shell is the escape hatch** — anything a built-in provider doesn't cover can be expressed as a shell command
 - **Env var interpolation** works in all string params: `${GITHUB_TOKEN}`, `${SENTRY_AUTH_TOKEN}`, etc.
-- **Steps run sequentially** in the order defined in `agent-config.toml`
-- **No per-step timeout** — steps are bounded by the container-level timeout
+- **Hooks run sequentially** in the order defined in the `SKILL.md` frontmatter
+- **No per-hook timeout** — hooks are bounded by the container-level timeout
 - **Environment variables** set inside `shell` child processes do not propagate back to the agent's `process.env`
 
 ## Next steps
 
-- [agent-config.toml — Preflight](/reference/agent-config#preflight) — full field reference
+- [SKILL.md — Hooks](/reference/skill-md#hooks) — full field reference
 - [Agents (concepts)](/concepts/agents) — full runtime lifecycle

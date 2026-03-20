@@ -11,6 +11,7 @@ import { tmpdir } from "os";
 import { execFileSync } from "child_process";
 import { createServer } from "net";
 import { stringify as stringifyTOML } from "smol-toml";
+import { stringify as stringifyYAML } from "yaml";
 import type { GlobalConfig, AgentConfig } from "../../src/shared/config.js";
 import type { WebhookContext } from "../../src/webhooks/types.js";
 import { setDefaultBackend, resetDefaultBackend } from "../../src/shared/credentials.js";
@@ -147,7 +148,7 @@ export class IntegrationHarness {
       const agentPath = resolve(projectPath, "agents", agent.name);
       mkdirSync(agentPath, { recursive: true });
 
-      // Write agent-config.toml
+      // Write SKILL.md with YAML frontmatter
       const agentConfig = makeAgentConfig({
         name: agent.name,
         schedule: agent.schedule,
@@ -156,13 +157,11 @@ export class IntegrationHarness {
         ...agent.config,
       });
       const { name: _, ...configToWrite } = agentConfig;
+      const yamlStr = stringifyYAML(configToWrite).trimEnd();
       writeFileSync(
-        resolve(agentPath, "agent-config.toml"),
-        stringifyTOML(configToWrite as Record<string, unknown>)
+        resolve(agentPath, "SKILL.md"),
+        `---\n${yamlStr}\n---\n\n# ${agent.name}\nTest agent.\n`
       );
-
-      // Write ACTIONS.md
-      writeFileSync(resolve(agentPath, "ACTIONS.md"), `# ${agent.name}\nTest agent.\n`);
 
       // Write test-script.sh — container-entry.js detects this file at
       // /app/static/test-script.sh and runs it instead of the LLM agent.

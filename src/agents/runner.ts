@@ -19,7 +19,7 @@ import type { StatusTracker } from "../tui/status-tracker.js";
 import { getExitCodeMessage } from "../shared/exit-codes.js";
 import { AgentError, isUnrecoverableError, UNRECOVERABLE_THRESHOLD } from "../shared/errors.js";
 import { installSignalCommands, readSignals } from "./signals.js";
-import { runPreflight } from "../preflight/runner.js";
+import { runHooks } from "../hooks/runner.js";
 import { withSpan, getTelemetry } from "../telemetry/index.js";
 import { SpanKind } from "@opentelemetry/api";
 import type { TokenUsage } from "../shared/usage.js";
@@ -150,7 +150,7 @@ export class AgentRunner {
 
     try {
       const cwd = agentDir(this.projectPath, this.agentConfig.name);
-      const agentsFile = resolve(cwd, "ACTIONS.md");
+      const agentsFile = resolve(cwd, "SKILL.md");
 
       const { model } = this.agentConfig;
       const llmModel = getModel(
@@ -191,9 +191,9 @@ export class AgentRunner {
         }
       }
 
-      // Run preflight steps (data staging before LLM session)
-      if (this.agentConfig.preflight && this.agentConfig.preflight.length > 0) {
-        const preflightCtx = {
+      // Run pre hooks (data staging before LLM session)
+      if (this.agentConfig.hooks?.pre && this.agentConfig.hooks.pre.length > 0) {
+        const hookCtx = {
           env: { ...process.env } as Record<string, string>,
           logger: (level: string, msg: string, data?: Record<string, any>) => {
             if (level === "error") this.logger.error(data ?? {}, msg);
@@ -201,13 +201,13 @@ export class AgentRunner {
             else this.logger.info(data ?? {}, msg);
           },
         };
-        await runPreflight(this.agentConfig.preflight, preflightCtx);
+        await runHooks(this.agentConfig.hooks.pre, "pre", hookCtx);
       }
 
-      // ACTIONS.md must exist on disk (written during al new)
+      // SKILL.md must exist on disk (written during al new)
       if (!existsSync(agentsFile)) {
         throw new AgentError(
-          `ACTIONS.md not found at ${agentsFile}. Run 'al new' to create it.`
+          `SKILL.md not found at ${agentsFile}. Run 'al new' to create it.`
         );
       }
       const agentsContent = readFileSync(agentsFile, "utf-8");

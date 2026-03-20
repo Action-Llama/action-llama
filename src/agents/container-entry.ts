@@ -15,7 +15,9 @@ import { parseCredentialRef, unsanitizeEnvPart } from "../shared/credentials.js"
 import { getExitCodeMessage } from "../shared/exit-codes.js";
 import { ensureSignalDir, readSignals } from "./signals.js";
 import { builtinCredentials } from "../credentials/builtins/index.js";
-import { runPreflight } from "../preflight/runner.js";
+import { runHooks } from "../hooks/runner.js";
+import { processContextInjection } from "./context-injection.js";
+import { parseFrontmatter } from "../shared/frontmatter.js";
 import { initTelemetry } from "../telemetry/index.js";
 import type { TelemetryConfig } from "../telemetry/types.js";
 import { sessionStatsToUsage } from "../shared/usage.js";
@@ -84,7 +86,7 @@ function readCredentialFields(type: string, instance: string): Record<string, st
  */
 export interface AgentInit {
   agentConfig: AgentConfig;
-  agentsMd: string;
+  skillBody: string;
   timeoutSeconds: number;
   model: ReturnType<typeof getModel>;
   resourceLoader: InstanceType<typeof DefaultResourceLoader>;
@@ -141,18 +143,25 @@ export async function initAgent(): Promise<AgentInit> {
     }
   }
 
-  // Load agent config and ACTIONS.md from baked-in files or env vars.
+  // Load agent config and SKILL.md from baked-in files or env vars.
   // Images built with extraFiles have static content at /app/static/.
   const STATIC_DIR = "/app/static";
   const hasBakedFiles = existsSync(`${STATIC_DIR}/agent-config.json`);
 
   let agentConfig: AgentConfig;
-  let agentsMd: string;
+  let skillBody: string;
   let timeoutSeconds: number;
 
   if (hasBakedFiles) {
     agentConfig = JSON.parse(readFileSync(`${STATIC_DIR}/agent-config.json`, "utf-8"));
-    agentsMd = readFileSync(`${STATIC_DIR}/ACTIONS.md`, "utf-8");
+    // Read SKILL.md and extract the body (frontmatter was already parsed at build time)
+    const skillPath = `${STATIC_DIR}/SKILL.md`;
+    if (existsSync(skillPath)) {
+      const { body } = parseFrontmatter(readFileSync(skillPath, "utf-8"));
+      skillBody = body;
+    } else {
+      skillBody = "";
+    }
     timeoutSeconds = parseInt(readFileSync(`${STATIC_DIR}/timeout`, "utf-8").trim(), 10) || 3600;
     emitLog("info", "loaded static files from image");
   } else {
@@ -162,8 +171,8 @@ export async function initAgent(): Promise<AgentInit> {
       throw new Error("missing AGENT_CONFIG env var and no baked-in files at /app/static/");
     }
     const parsed = JSON.parse(agentConfigStr);
-    agentsMd = parsed._agentsMd;
-    delete parsed._agentsMd;
+    skillBody = parsed._skillBody || "";
+    delete parsed._skillBody;
     agentConfig = parsed;
     timeoutSeconds = parseInt(process.env.TIMEOUT_SECONDS || "3600", 10);
   }
@@ -172,8 +181,8 @@ export async function initAgent(): Promise<AgentInit> {
   const modelId = agentConfig.model.model;
   const model = getModel(modelProvider as any, modelId as any);
 
-  const agentsContent = agentsMd || `# ${agentConfig.name} Agent\n\nCustom agent.\n`;
-  const agentsFile = "/tmp/ACTIONS.md";
+  const agentsContent = skillBody || `# ${agentConfig.name} Agent\n\nCustom agent.\n`;
+  const agentsFile = "/tmp/SKILL.md";
 
   const resourceLoader = new DefaultResourceLoader({
     noExtensions: true,
@@ -190,7 +199,7 @@ export async function initAgent(): Promise<AgentInit> {
     retry: { enabled: true, maxRetries: 2 },
   });
 
-  return { agentConfig, agentsMd, timeoutSeconds, model, resourceLoader, settingsManager, signalDir };
+  return { agentConfig, skillBody: agentsContent, timeoutSeconds, model, resourceLoader, settingsManager, signalDir };
 }
 
 /**
@@ -304,13 +313,29 @@ export async function handleInvocation(init: AgentInit): Promise<number> {
     }
   }
 
-  // Run preflight steps (data staging before LLM session)
-  if (agentConfig.preflight && agentConfig.preflight.length > 0) {
-    const preflightCtx = {
+  // Run pre hooks (data staging before LLM session)
+  if (agentConfig.hooks?.pre && agentConfig.hooks.pre.length > 0) {
+    await runHooks(agentConfig.hooks.pre, "pre", {
       env: { ...process.env } as Record<string, string>,
       logger: emitLog,
-    };
-    await runPreflight(agentConfig.preflight, preflightCtx);
+    });
+  }
+
+  // Process !`command` context injection in the SKILL.md body.
+  // Runs after hooks.pre (so cloned repos are available) and before the LLM session.
+  const processedBody = processContextInjection(
+    init.skillBody,
+    { ...process.env } as Record<string, string>,
+  );
+  if (processedBody !== init.skillBody) {
+    const updatedLoader = new DefaultResourceLoader({
+      noExtensions: true,
+      agentsFilesOverride: () => ({
+        agentsFiles: [{ path: "/tmp/SKILL.md", content: processedBody }],
+      }),
+    });
+    await updatedLoader.reload();
+    (init as any).resourceLoader = updatedLoader;
   }
 
   // Script mode: if a test script is baked in, run it instead of the LLM.
@@ -497,6 +522,18 @@ export async function handleInvocation(init: AgentInit): Promise<number> {
 
   session.dispose();
   clearTimeout(timer);
+
+  // Run post hooks after LLM session, before container exits
+  if (agentConfig.hooks?.post && agentConfig.hooks.post.length > 0) {
+    try {
+      await runHooks(agentConfig.hooks.post, "post", {
+        env: { ...process.env } as Record<string, string>,
+        logger: emitLog,
+      });
+    } catch (err: any) {
+      emitLog("error", "post hook failed", { error: err?.message });
+    }
+  }
 
   if (abortedDueToErrors) {
     return 1;

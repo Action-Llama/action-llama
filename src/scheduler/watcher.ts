@@ -47,7 +47,7 @@ export interface HotReloadContext {
 
 /**
  * Extract the agent name from a filesystem event path.
- * The path is relative to the watched `agents/` directory, e.g. "my-agent/agent-config.toml".
+ * The path is relative to the watched `agents/` directory, e.g. "my-agent/SKILL.md".
  */
 export function agentNameFromPath(filePath: string): string | null {
   if (!filePath) return null;

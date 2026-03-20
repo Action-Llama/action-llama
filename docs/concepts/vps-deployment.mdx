@@ -138,7 +138,7 @@ expose = true
 - **SSH key-only auth** — password authentication is disabled during `al push` bootstrap
 - **fail2ban** — installed automatically to protect against brute-force SSH attacks
 - **No passphrase on SSH keys** — VPS deployment SSH keys should not have passphrases because agents need unattended access. The `vps_ssh` credential is separate from your personal SSH key.
-- **Credential isolation** — each agent container receives only the credentials listed in its `agent-config.toml`
+- **Credential isolation** — each agent container receives only the credentials listed in its `SKILL.md` frontmatter
 - **`expose = false` for reverse proxy** — when using Caddy or nginx in front of the gateway, set `expose = false` to prevent the gateway port from being directly reachable
 
 ## Troubleshooting

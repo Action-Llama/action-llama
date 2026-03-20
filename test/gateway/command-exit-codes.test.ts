@@ -255,13 +255,13 @@ describe("command exit codes", () => {
     });
   });
 
-  // ---------- al-call ----------
+  // ---------- al-subagent ----------
 
-  describe("al-call", () => {
+  describe("al-subagent", () => {
     it("exit 0 — dispatches call", async () => {
       register("sec-a", "agent-a");
       register("sec-b", "agent-b");
-      const r = await run("al-call", ["agent-b"], env("sec-a"), "do work");
+      const r = await run("al-subagent", ["agent-b"], env("sec-a"), "do work");
       expect(r.exitCode).toBe(0);
       const body = JSON.parse(r.stdout);
       expect(body.ok).toBe(true);
@@ -272,37 +272,37 @@ describe("command exit codes", () => {
       register("sec-a", "agent-a");
       const savedDispatcher = currentDispatcher;
       currentDispatcher = () => ({ ok: false, reason: "agent busy" });
-      const r = await run("al-call", ["agent-b"], env("sec-a"), "do work");
+      const r = await run("al-subagent", ["agent-b"], env("sec-a"), "do work");
       expect(r.exitCode).toBe(1);
       currentDispatcher = savedDispatcher;
     });
 
     it("exit 3 — invalid secret", async () => {
-      const r = await run("al-call", ["agent-b"], env("bad-secret"), "do work");
+      const r = await run("al-subagent", ["agent-b"], env("bad-secret"), "do work");
       expect(r.exitCode).toBe(3);
     });
 
     it("exit 9 — missing arg (usage error)", async () => {
       register("sec-a", "agent-a");
-      const r = await run("al-call", [], env("sec-a"), "do work");
+      const r = await run("al-subagent", [], env("sec-a"), "do work");
       expect(r.exitCode).toBe(9);
     });
 
     it("exit 5 — no gateway", async () => {
-      const r = await run("al-call", ["agent-b"], { GATEWAY_URL: "", SHUTDOWN_SECRET: "x" });
+      const r = await run("al-subagent", ["agent-b"], { GATEWAY_URL: "", SHUTDOWN_SECRET: "x" });
       expect(r.exitCode).toBe(5);
     });
   });
 
-  // ---------- al-check ----------
+  // ---------- al-subagent-check ----------
 
-  describe("al-check", () => {
+  describe("al-subagent-check", () => {
     it("exit 0 — checks running call", async () => {
       register("sec-a", "agent-a");
       register("sec-b", "agent-b");
-      const callResult = await run("al-call", ["agent-b"], env("sec-a"), "do work");
+      const callResult = await run("al-subagent", ["agent-b"], env("sec-a"), "do work");
       const callId = JSON.parse(callResult.stdout).callId;
-      const r = await run("al-check", [callId], env("sec-a"));
+      const r = await run("al-subagent-check", [callId], env("sec-a"));
       expect(r.exitCode).toBe(0);
       const body = JSON.parse(r.stdout);
       expect(body.status).toBeTruthy();
@@ -310,37 +310,37 @@ describe("command exit codes", () => {
 
     it("exit 2 — call not found", async () => {
       register("sec-a", "agent-a");
-      const r = await run("al-check", ["nonexistent-id"], env("sec-a"));
+      const r = await run("al-subagent-check", ["nonexistent-id"], env("sec-a"));
       expect(r.exitCode).toBe(2);
     });
 
     it("exit 3 — invalid secret", async () => {
-      const r = await run("al-check", ["some-id"], env("bad-secret"));
+      const r = await run("al-subagent-check", ["some-id"], env("bad-secret"));
       expect(r.exitCode).toBe(3);
     });
 
     it("exit 9 — missing arg (usage error)", async () => {
       register("sec-a", "agent-a");
-      const r = await run("al-check", [], env("sec-a"));
+      const r = await run("al-subagent-check", [], env("sec-a"));
       expect(r.exitCode).toBe(9);
     });
 
     it("exit 5 — no gateway", async () => {
-      const r = await run("al-check", ["some-id"], { GATEWAY_URL: "", SHUTDOWN_SECRET: "x" });
+      const r = await run("al-subagent-check", ["some-id"], { GATEWAY_URL: "", SHUTDOWN_SECRET: "x" });
       expect(r.exitCode).toBe(5);
     });
   });
 
-  // ---------- al-wait ----------
+  // ---------- al-subagent-wait ----------
 
-  describe("al-wait", () => {
+  describe("al-subagent-wait", () => {
     it("exit 0 — all calls complete", async () => {
       register("sec-a", "agent-a");
       register("sec-b", "agent-b");
-      const callResult = await run("al-call", ["agent-b"], env("sec-a"), "do work");
+      const callResult = await run("al-subagent", ["agent-b"], env("sec-a"), "do work");
       const callId = JSON.parse(callResult.stdout).callId;
       callStore.complete(callId, "done");
-      const r = await run("al-wait", [callId, "--timeout", "10"], env("sec-a"));
+      const r = await run("al-subagent-wait", [callId, "--timeout", "10"], env("sec-a"));
       expect(r.exitCode).toBe(0);
       const body = JSON.parse(r.stdout);
       expect(body[callId]).toBeTruthy();
@@ -350,20 +350,20 @@ describe("command exit codes", () => {
     it("exit 8 — timeout", async () => {
       register("sec-a", "agent-a");
       register("sec-b", "agent-b");
-      const callResult = await run("al-call", ["agent-b"], env("sec-a"), "do work");
+      const callResult = await run("al-subagent", ["agent-b"], env("sec-a"), "do work");
       const callId = JSON.parse(callResult.stdout).callId;
       // Don't complete — it stays running, timeout after 1s (one poll cycle)
-      const r = await run("al-wait", [callId, "--timeout", "1"], env("sec-a"));
+      const r = await run("al-subagent-wait", [callId, "--timeout", "1"], env("sec-a"));
       expect(r.exitCode).toBe(8);
     }, 15_000);
 
     it("exit 9 — missing arg (usage error)", async () => {
-      const r = await run("al-wait", [], env("sec-a"));
+      const r = await run("al-subagent-wait", [], env("sec-a"));
       expect(r.exitCode).toBe(9);
     });
 
     it("exit 5 — no gateway", async () => {
-      const r = await run("al-wait", ["some-id"], { GATEWAY_URL: "", SHUTDOWN_SECRET: "x" });
+      const r = await run("al-subagent-wait", ["some-id"], { GATEWAY_URL: "", SHUTDOWN_SECRET: "x" });
       expect(r.exitCode).toBe(5);
     });
   });

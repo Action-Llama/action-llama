@@ -87,8 +87,8 @@ describe("AgentRunner", () => {
     // Create needed directories
     mkdirSync(resolve(tmpDir, "agents", "dev"), { recursive: true });
     mkdirSync(resolve(tmpDir, ".al", "logs"), { recursive: true });
-    // Write ACTIONS.md (required on disk now)
-    writeFileSync(resolve(tmpDir, "agents", "dev", "ACTIONS.md"), "# Dev Agent\nDefault instructions.");
+    // Write SKILL.md (required on disk now)
+    writeFileSync(resolve(tmpDir, "agents", "dev", "SKILL.md"), "# Dev Agent\nDefault instructions.");
     
     // Configure session stats mock with realistic data
     mockGetSessionStats.mockReturnValue({
@@ -188,7 +188,7 @@ describe("AgentRunner", () => {
     expect(infoSpy).toHaveBeenCalledWith(expect.anything(), "run completed, rerun requested");
   });
 
-  it("returns empty triggers (triggers handled by al-call)", async () => {
+  it("returns empty triggers (triggers handled by al-subagent)", async () => {
     const runner = new AgentRunner(makeRunnerAgentConfig(), makeLogger(), tmpDir);
     mockPrompt.mockResolvedValue(undefined);
     mockSubscribe.mockImplementation(() => {});
@@ -307,12 +307,12 @@ describe("AgentRunner", () => {
     );
   });
 
-  it("throws when ACTIONS.md is missing", async () => {
-    // Create a separate agent dir without ACTIONS.md
+  it("throws when SKILL.md is missing", async () => {
+    // Create a separate agent dir without SKILL.md
     const noMdDir = mkdtempSync(join(tmpdir(), "al-runner-nomd-"));
     mkdirSync(resolve(noMdDir, "agents", "dev"), { recursive: true });
     mkdirSync(resolve(noMdDir, ".al", "logs"), { recursive: true });
-    // No ACTIONS.md written
+    // No SKILL.md written
 
     const logger = makeLogger();
     const errorSpy = vi.spyOn(logger, "error");
@@ -322,14 +322,14 @@ describe("AgentRunner", () => {
 
     await runner.run("Test");
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ err: expect.objectContaining({ message: expect.stringContaining("ACTIONS.md not found") }) }),
+      expect.objectContaining({ err: expect.objectContaining({ message: expect.stringContaining("SKILL.md not found") }) }),
       expect.any(String)
     );
 
     rmSync(noMdDir, { recursive: true, force: true });
   });
 
-  it("reads ACTIONS.md from disk", async () => {
+  it("reads SKILL.md from disk", async () => {
     const runner = new AgentRunner(makeRunnerAgentConfig(), makeLogger(), tmpDir);
     mockPrompt.mockResolvedValue(undefined);
     mockSubscribe.mockImplementation(() => {});
@@ -338,9 +338,9 @@ describe("AgentRunner", () => {
     expect(mockPrompt).toHaveBeenCalled();
   });
 
-  it("uses custom ACTIONS.md when present", async () => {
-    // Overwrite with a custom ACTIONS.md
-    writeFileSync(resolve(tmpDir, "agents", "dev", "ACTIONS.md"), "# Custom Agent\nDo custom things.");
+  it("uses custom SKILL.md when present", async () => {
+    // Overwrite with a custom SKILL.md
+    writeFileSync(resolve(tmpDir, "agents", "dev", "SKILL.md"), "# Custom Agent\nDo custom things.");
 
     const runner = new AgentRunner(makeRunnerAgentConfig(), makeLogger(), tmpDir);
     mockPrompt.mockResolvedValue(undefined);

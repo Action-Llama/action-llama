@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, existsSync, readFileSync, lstatSync, readlinkSync,
 import { join, resolve } from "path";
 import { tmpdir } from "os";
 import { parse as parseTOML } from "smol-toml";
+import { parseFrontmatter } from "../../src/shared/frontmatter.js";
 import { scaffoldProject } from "../../src/setup/scaffold.js";
 import type { ScaffoldAgent } from "../../src/setup/scaffold.js";
 import type { GlobalConfig } from "../../src/shared/config.js";
@@ -31,7 +32,7 @@ describe("scaffoldProject", () => {
         name: "dev",
         config: {
           name: "dev",
-          credentials: ["github_token:default"],
+          credentials: ["github_token"],
           model: defaultModel,
           schedule: "*/5 * * * *",
           params: { repos: ["acme/app"], triggerLabel: "agent", assignee: "bot" },
@@ -41,7 +42,7 @@ describe("scaffoldProject", () => {
         name: "reviewer",
         config: {
           name: "reviewer",
-          credentials: ["github_token:default"],
+          credentials: ["github_token"],
           model: defaultModel,
           schedule: "*/5 * * * *",
           params: { repos: ["acme/app"] },
@@ -51,7 +52,7 @@ describe("scaffoldProject", () => {
         name: "devops",
         config: {
           name: "devops",
-          credentials: ["github_token:default"],
+          credentials: ["github_token"],
           model: defaultModel,
           schedule: "*/15 * * * *",
           params: { repos: ["acme/app"] },
@@ -80,29 +81,18 @@ describe("scaffoldProject", () => {
     expect((config.docker as any).enabled).toBe(true);
   });
 
-  it("creates per-agent agent-config.toml without name", () => {
+  it("creates per-agent SKILL.md with frontmatter (no name field)", () => {
     tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
     const projDir = resolve(tmpDir, "my-project");
     scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
 
     for (const name of ["dev", "reviewer", "devops"]) {
-      const agentConfigPath = resolve(projDir, "agents", name, "agent-config.toml");
-      expect(existsSync(agentConfigPath)).toBe(true);
-      const config = parseTOML(readFileSync(agentConfigPath, "utf-8"));
-      // name should NOT be in the serialized config (injected at load time)
-      expect(config.name).toBeUndefined();
-    }
-  });
-
-  it("writes ACTIONS.md for each agent", () => {
-    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
-    const projDir = resolve(tmpDir, "my-project");
-    scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
-
-    for (const name of ["dev", "reviewer", "devops"]) {
-      const actionsPath = resolve(projDir, "agents", name, "ACTIONS.md");
-      expect(existsSync(actionsPath)).toBe(true);
-      const content = readFileSync(actionsPath, "utf-8");
+      const skillPath = resolve(projDir, "agents", name, "SKILL.md");
+      expect(existsSync(skillPath)).toBe(true);
+      const content = readFileSync(skillPath, "utf-8");
+      const { data } = parseFrontmatter(content);
+      // name should NOT be in the frontmatter (injected at load time from directory)
+      expect(data.name).toBeUndefined();
       expect(content.length).toBeGreaterThan(0);
     }
   });

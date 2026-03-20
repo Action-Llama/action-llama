@@ -1,9 +1,9 @@
 #!/bin/sh
-# al-check — check the status of a dispatched call
+# al-subagent-check — check the status of a dispatched call
 # Exit codes: 0=found, 2=not found, 3=auth, 4=bad request, 5=no gateway, 6=unreachable
 . "$(dirname "$0")/_http-exit"
 if [ -z "$GATEWAY_URL" ]; then echo '{"status":"error","errorMessage":"no gateway"}'; exit 5; fi
-if [ -z "$1" ]; then echo '{"status":"error","errorMessage":"usage: al-check <callId>"}'; exit 9; fi
+if [ -z "$1" ]; then echo '{"status":"error","errorMessage":"usage: al-subagent-check <callId>"}'; exit 9; fi
 _raw=$(curl -s -w '\n%{http_code}' "$GATEWAY_URL/calls/$1?secret=$SHUTDOWN_SECRET")
 AL_HTTP_CODE=$(printf '%s' "$_raw" | tail -n1)
 printf '%s' "$_raw" | sed '$d'

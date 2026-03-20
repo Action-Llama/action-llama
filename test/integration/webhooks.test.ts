@@ -86,7 +86,7 @@ describe.skipIf(!DOCKER)("integration: webhooks", { timeout: 180_000 }, () => {
     expect((await res2.json()).matched).toBeGreaterThanOrEqual(1);
   });
 
-  it("webhook-triggered agent can use al-call to trigger another agent", async () => {
+  it("webhook-triggered agent can use al-subagent to trigger another agent", async () => {
     harness = await IntegrationHarness.create({
       agents: [
         {
@@ -94,14 +94,14 @@ describe.skipIf(!DOCKER)("integration: webhooks", { timeout: 180_000 }, () => {
           webhooks: [{ source: "test-hook" }],
           testScript: [
             "#!/bin/sh",
-            // al-call — verify exit 0 + ok=true
+            // al-subagent — verify exit 0 + ok=true
             "set +e",
-            'RESULT=$(echo "triggering responder" | al-call responder)',
+            'RESULT=$(echo "triggering responder" | al-subagent responder)',
             "RC=$?",
             "set -e",
-            'test "$RC" -eq 0 || { echo "al-call exit=$RC: $RESULT"; exit 1; }',
+            'test "$RC" -eq 0 || { echo "al-subagent exit=$RC: $RESULT"; exit 1; }',
             'OK=$(echo "$RESULT" | jq -r .ok)',
-            'test "$OK" = "true" || { echo "al-call ok=$OK: $RESULT"; exit 1; }',
+            'test "$OK" = "true" || { echo "al-subagent ok=$OK: $RESULT"; exit 1; }',
             "exit 0",
           ].join("\n"),
         },
@@ -136,7 +136,7 @@ describe.skipIf(!DOCKER)("integration: webhooks", { timeout: 180_000 }, () => {
     const callerRun = await harness.waitForRunResult("webhook-caller");
     expect(callerRun.result).toBe("completed");
 
-    // Wait for responder's triggered run (triggered by webhook-caller via al-call)
+    // Wait for responder's triggered run (triggered by webhook-caller via al-subagent)
     const responderRun = await harness.waitForRunResult("responder");
     expect(responderRun.result).toBe("completed");
   });

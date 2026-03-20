@@ -11,14 +11,12 @@ function resolvePackageRoot(): string {
   return resolve(thisFile, "..", "..", "..", "..");
 }
 
-function loadExampleTemplate(agentType: string): { actions: string; config: string } | undefined {
+function loadExampleTemplate(agentType: string): { skill: string } | undefined {
   const dir = resolve(resolvePackageRoot(), "docs", "examples", agentType);
-  const actionsPath = resolve(dir, "ACTIONS.md");
-  const configPath = resolve(dir, "agent-config.toml");
-  if (!existsSync(actionsPath) || !existsSync(configPath)) return undefined;
+  const skillPath = resolve(dir, "SKILL.md");
+  if (!existsSync(skillPath)) return undefined;
   return {
-    actions: readFileSync(actionsPath, "utf-8"),
-    config: readFileSync(configPath, "utf-8"),
+    skill: readFileSync(skillPath, "utf-8"),
   };
 }
 
@@ -36,8 +34,7 @@ function buildNoAgentsContext(): string {
     if (!tpl) continue;
     templateSections.push(
       `### Template: ${name}\n\n` +
-      `#### agent-config.toml\n\n\`\`\`toml\n${tpl.config.trim()}\n\`\`\`\n\n` +
-      `#### ACTIONS.md\n\n\`\`\`markdown\n${tpl.actions.trim()}\n\`\`\``
+      `#### SKILL.md\n\n\`\`\`markdown\n${tpl.skill.trim()}\n\`\`\``
     );
   }
 
@@ -51,7 +48,7 @@ This project has no agents yet. The user has just opened the console to create t
 1. **dev** — Picks up GitHub issues labeled with a trigger label, implements the changes, and opens PRs
 2. **reviewer** — Reviews open pull requests, approves good ones, and requests changes on problematic ones
 3. **devops** — Monitors CI/CD failures and Sentry errors, then files deduplicated GitHub issues
-4. **custom** — Start from scratch with a blank ACTIONS.md
+4. **custom** — Start from scratch with a blank SKILL.md
 
 ### Creating an agent
 
@@ -59,9 +56,8 @@ When the user picks a template:
 
 1. **Ask what they need** — which template, which repos, any customization
 2. **Create the agent directory** (\`agents/<name>/\`)
-3. **Copy ACTIONS.md verbatim** from the template below — do NOT abbreviate, simplify, or rewrite the actions. Write the ACTIONS.md file exactly as shown in the template.
-4. **Write agent-config.toml** using the template as a starting point. Customize \`[params]\` based on the user's answers (repos, triggerLabel, assignee, etc.). Do NOT include a \`[model]\` section unless the user specifically asks for a different model — agents inherit the project default from \`config.toml\`.
-5. **Create a Dockerfile if needed** — analyze the ACTIONS.md to determine what CLI tools the agent needs. The base image (\`al-agent\`) is Alpine-based (\`node:20-alpine\`) and includes: Node.js, git, curl, jq, openssh-client, ca-certificates. If the agent needs anything else (e.g. \`gh\` CLI), create a Dockerfile:
+3. **Write SKILL.md** — a single file with YAML frontmatter (config) and markdown body (instructions). Use the template below as a starting point. Customize the frontmatter \`params\` based on the user's answers (repos, triggerLabel, assignee, etc.). Do NOT include a \`model\` field unless the user specifically asks for a different model — agents inherit the project default from \`config.toml\`.
+4. **Create a Dockerfile if needed** — analyze the SKILL.md to determine what CLI tools the agent needs. The base image (\`al-agent\`) is Alpine-based (\`node:20-alpine\`) and includes: Node.js, git, curl, jq, openssh-client, ca-certificates. If the agent needs anything else (e.g. \`gh\` CLI), create a Dockerfile:
 
 \`\`\`dockerfile
 FROM al-agent
@@ -70,9 +66,9 @@ RUN apk add --no-cache github-cli
 USER node
 \`\`\`
 
-6. **Tell the user to run \`al doctor\`** to set up any missing credentials. Do NOT check for credentials yourself or run any shell commands to verify them.
+5. **Tell the user to run \`al doctor\`** to set up any missing credentials. Do NOT check for credentials yourself or run any shell commands to verify them.
 
-### Credentials in agent-config.toml
+### Credentials in SKILL.md
 
 Reference credentials by type name (e.g. \`"github_token"\`, \`"git_ssh"\`). The instance is resolved automatically at runtime. Do not worry about whether credentials exist yet — \`al doctor\` handles that.
 
@@ -190,10 +186,10 @@ async function executeAgentChat(opts: ChatOpts & { agent: string }): Promise<voi
     }
   }
 
-  // Load ACTIONS.md for context (but not as a prompt — user drives the session)
-  const actionsFile = resolve(projectPath, "agents", agentName, "ACTIONS.md");
-  const actionsContent = existsSync(actionsFile)
-    ? readFileSync(actionsFile, "utf-8")
+  // Load SKILL.md body for context (but not as a prompt — user drives the session)
+  const skillFile = resolve(projectPath, "agents", agentName, "SKILL.md");
+  const skillContent = existsSync(skillFile)
+    ? readFileSync(skillFile, "utf-8")
     : undefined;
 
   const credSummary = agentConfig.credentials
@@ -210,8 +206,8 @@ async function executeAgentChat(opts: ChatOpts & { agent: string }): Promise<voi
   if (agentConfig.params && Object.keys(agentConfig.params).length > 0) {
     fullContext += `\n## Agent Params\n\n\`\`\`json\n${JSON.stringify(agentConfig.params, null, 2)}\n\`\`\`\n`;
   }
-  if (actionsContent) {
-    fullContext += `\n## Agent ACTIONS.md (reference — not auto-executed)\n\n${actionsContent}\n`;
+  if (skillContent) {
+    fullContext += `\n## Agent SKILL.md (reference — not auto-executed)\n\n${skillContent}\n`;
   }
 
   // Suppress pi-coding-agent's "Update Available" banner
@@ -249,7 +245,7 @@ async function executeAgentChat(opts: ChatOpts & { agent: string }): Promise<voi
   }
 
   const model = getModel(modelConfig.provider as any, modelConfig.model as any);
-  const contextFile = resolve(projectPath, "agents", agentName, "ACTIONS.md");
+  const contextFile = skillFile;
 
   const resourceLoader = new DefaultResourceLoader({
     noExtensions: true,

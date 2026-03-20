@@ -40,7 +40,7 @@ export interface SchedulerContext {
   onRunComplete?: (event: RunCompleteEvent) => void;
   /** Optional event bus for lifecycle instrumentation (used by integration tests). */
   events?: SchedulerEventBus;
-  /** Optional call store for updating al-call lifecycle status. */
+  /** Optional call store for updating al-subagent lifecycle status. */
   callStore?: CallStore;
   /** Optional status tracker — used to check global pause state. */
   statusTracker?: StatusTracker;

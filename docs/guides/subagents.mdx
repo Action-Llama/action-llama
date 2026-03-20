@@ -9,12 +9,12 @@ Agents can call other agents to delegate work and collect results. This enables 
 
 A planner agent triages an issue and creates an implementation plan. It calls a dev agent to implement it, then calls a reviewer agent to review the PR.
 
-## `al-call`: Fire a call
+## `al-subagent`: Fire a call
 
 Pass context to another agent via stdin:
 
 ```bash
-echo "Implement the fix for issue #42 on acme/app" | al-call dev
+echo "Implement the fix for issue #42 on acme/app" | al-subagent dev
 ```
 
 **Response:**
@@ -25,12 +25,12 @@ echo "Implement the fix for issue #42 on acme/app" | al-call dev
 
 The call is non-blocking — the calling agent continues working immediately.
 
-## `al-check`: Non-blocking status
+## `al-subagent-check`: Non-blocking status
 
 Check if a call has finished without waiting:
 
 ```bash
-al-check abc123
+al-subagent-check abc123
 ```
 
 **Response:**
@@ -42,13 +42,13 @@ al-check abc123
 {"status": "error", "error": "timeout"}
 ```
 
-## `al-wait`: Block until done
+## `al-subagent-wait`: Block until done
 
 Wait for one or more calls to complete:
 
 ```bash
-al-wait abc123 --timeout 600
-al-wait abc123 def456 --timeout 300
+al-subagent-wait abc123 --timeout 600
+al-subagent-wait abc123 def456 --timeout 300
 ```
 
 **Response:**
@@ -76,18 +76,18 @@ Fire several calls, continue working, then collect all results:
 
 ```bash
 # Fire calls
-DEV_ID=$(echo "Implement fix for #42" | al-call dev | jq -r .callId)
-REVIEW_ID=$(echo "Review PR #17" | al-call reviewer | jq -r .callId)
+DEV_ID=$(echo "Implement fix for #42" | al-subagent dev | jq -r .callId)
+REVIEW_ID=$(echo "Review PR #17" | al-subagent reviewer | jq -r .callId)
 
 # ... do other work while they run ...
 
 # Collect results
-RESULTS=$(al-wait "$DEV_ID" "$REVIEW_ID" --timeout 600)
+RESULTS=$(al-subagent-wait "$DEV_ID" "$REVIEW_ID" --timeout 600)
 echo "$RESULTS" | jq ".\"$DEV_ID\".returnValue"
 echo "$RESULTS" | jq ".\"$REVIEW_ID\".returnValue"
 ```
 
-## Complete Example: ACTIONS.md
+## Complete Example: SKILL.md
 
 Here's a planner agent that delegates to dev and reviewer:
 
@@ -105,15 +105,15 @@ create an implementation plan, and delegate to other agents.
 4. Write an implementation plan as a comment on the issue
 5. Call the dev agent:
    ```
-   echo "Implement the plan in comment #N on issue #M in owner/repo" | al-call dev
+   echo "Implement the plan in comment #N on issue #M in owner/repo" | al-subagent dev
    ```
 6. Wait for dev to finish:
    ```
-   RESULT=$(al-wait "$CALL_ID" --timeout 1800)
+   RESULT=$(al-subagent-wait "$CALL_ID" --timeout 1800)
    ```
 7. If dev succeeded, call the reviewer:
    ```
-   echo "Review PR #P on owner/repo" | al-call reviewer
+   echo "Review PR #P on owner/repo" | al-subagent reviewer
    ```
 8. Comment on the issue with the final status
 ```
@@ -128,17 +128,17 @@ create an implementation plan, and delegate to other agents.
 
 ## What the Called Agent Sees
 
-The called agent receives an `<agent-call>` block in its prompt with:
+The called agent receives a `<skill-subagent>` block in its prompt with:
 
 - The name of the calling agent
 - The context string passed via stdin
 
-The called agent's `ACTIONS.md` should handle this trigger type:
+The called agent's `SKILL.md` should handle this trigger type:
 
 ```markdown
 ## Trigger handling
 
-- **Agent call**: The `<agent-call>` block contains context from the calling agent.
+- **Agent call**: The `<skill-subagent>` block contains context from the calling agent.
   Do what was requested and use `al-return` to send back results.
 ```
 

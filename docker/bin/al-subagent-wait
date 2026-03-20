@@ -1,5 +1,5 @@
 #!/bin/sh
-# al-wait — wait for one or more calls to complete
+# al-subagent-wait — wait for one or more calls to complete
 # Exit codes: 0=all complete, 4=bad request, 5=no gateway, 6=unreachable, 8=timeout
 . "$(dirname "$0")/_http-exit"
 if [ -z "$GATEWAY_URL" ]; then echo '{"error":"no gateway"}'; exit 5; fi
@@ -11,7 +11,7 @@ while [ $# -gt 0 ]; do
     *) IDS="$IDS $1"; shift;;
   esac
 done
-if [ -z "$IDS" ]; then echo '{"error":"usage: al-wait <callId> [callId...] [--timeout N]"}'; exit 9; fi
+if [ -z "$IDS" ]; then echo '{"error":"usage: al-subagent-wait <callId> [callId...] [--timeout N]"}'; exit 9; fi
 ELAPSED=0
 while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
   ALL_DONE=true

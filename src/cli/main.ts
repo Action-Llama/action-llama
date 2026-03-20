@@ -291,7 +291,7 @@ credsCmd
 
 credsCmd
   .command("add <ref>")
-  .description("Add or update a credential (e.g. github_token:default)")
+  .description("Add or update a credential (e.g. github_token)")
   .action(withCommand(async (ref: string) => {
     const { add } = await import("./commands/creds.js");
     await add(ref);
@@ -299,7 +299,7 @@ credsCmd
 
 credsCmd
   .command("rm <ref>")
-  .description("Remove a credential (e.g. github_token:default)")
+  .description("Remove a credential (e.g. github_token)")
   .action(withCommand(async (ref: string) => {
     const { rm } = await import("./commands/creds.js");
     await rm(ref);

@@ -128,7 +128,7 @@ function makeContext(overrides: Partial<HotReloadContext> = {}): HotReloadContex
 
 describe("agentNameFromPath", () => {
   it("extracts agent name from simple path", () => {
-    expect(agentNameFromPath("my-agent/agent-config.toml")).toBe("my-agent");
+    expect(agentNameFromPath("my-agent/SKILL.md")).toBe("my-agent");
   });
 
   it("extracts agent name from nested path", () => {
@@ -148,7 +148,7 @@ describe("agentNameFromPath", () => {
   });
 
   it("handles Windows-style separators", () => {
-    expect(agentNameFromPath("my-agent\\agent-config.toml")).toBe("my-agent");
+    expect(agentNameFromPath("my-agent\\SKILL.md")).toBe("my-agent");
   });
 });
 
@@ -186,8 +186,8 @@ describe("watchAgents", () => {
       watchAgents(ctx);
 
       // Fire three rapid events
-      watchCallback("change", "agent-a/agent-config.toml");
-      watchCallback("change", "agent-a/ACTIONS.md");
+      watchCallback("change", "agent-a/SKILL.md");
+      watchCallback("change", "agent-a/SKILL.md");
       watchCallback("change", "agent-a/Dockerfile");
 
       // Only one timer should be pending (last one replaced the others)

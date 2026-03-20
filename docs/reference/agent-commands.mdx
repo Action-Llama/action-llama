@@ -3,9 +3,9 @@ title: "Agent Commands"
 description: "Shell commands available inside agent containers — signals, calls, and locks"
 ---
 
-Agents running in Docker containers have access to shell commands for signaling the scheduler, calling other agents, and coordinating with resource locks. These commands are installed at `/tmp/bin/` and taught to agents via a preamble injected before `ACTIONS.md`.
+Agents running in Docker containers have access to shell commands for signaling the scheduler, calling other agents, and coordinating with resource locks. These commands are installed at `/tmp/bin/` and taught to agents via a preamble injected before `SKILL.md`.
 
-Agent authors write shorthand in `ACTIONS.md` (e.g. `LOCK("github issue acme/app#42")`). The preamble teaches the agent the underlying shell commands.
+Agent authors write shorthand in `SKILL.md` (e.g. `LOCK("github issue acme/app#42")`). The preamble teaches the agent the underlying shell commands.
 
 ## Signal Commands
 
@@ -33,14 +33,14 @@ al-status "found 3 issues to work on"
 
 ### `al-return "<value>"`
 
-Return a value to the calling agent. Used when this agent was invoked via `al-call`.
+Return a value to the calling agent. Used when this agent was invoked via `al-subagent`.
 
 ```bash
 al-return "PR looks good. Approved with minor suggestions."
 al-return '{"approved": true, "comments": 2}'
 ```
 
-The calling agent receives this value when it calls `al-wait`.
+The calling agent receives this value when it calls `al-subagent-wait`.
 
 ### `al-exit [code]`
 
@@ -55,12 +55,12 @@ al-exit 1        # exit code 1
 
 Agent-to-agent calls allow agents to delegate work and collect results. These commands require the gateway (`GATEWAY_URL` must be set).
 
-### `al-call <agent>`
+### `al-subagent <agent>`
 
 Call another agent. Pass context via stdin. Returns a JSON response with a `callId`.
 
 ```bash
-echo "Review PR #42 on acme/app" | al-call reviewer
+echo "Review PR #42 on acme/app" | al-subagent reviewer
 ```
 
 **Response:**
@@ -76,12 +76,12 @@ echo "Review PR #42 on acme/app" | al-call reviewer
 {"ok": false, "error": "queue full"}
 ```
 
-### `al-check <callId>`
+### `al-subagent-check <callId>`
 
 Non-blocking status check on a call. Never blocks.
 
 ```bash
-al-check abc123
+al-subagent-check abc123
 ```
 
 **Response:**
@@ -93,13 +93,13 @@ al-check abc123
 {"status": "error", "error": "timeout"}
 ```
 
-### `al-wait <callId> [...] [--timeout N]`
+### `al-subagent-wait <callId> [...] [--timeout N]`
 
 Wait for one or more calls to complete. Polls every 5 seconds. Default timeout: 900 seconds.
 
 ```bash
-al-wait abc123 --timeout 600
-al-wait abc123 def456 --timeout 300
+al-subagent-wait abc123 --timeout 600
+al-subagent-wait abc123 def456 --timeout 300
 ```
 
 **Response:**
@@ -115,13 +115,13 @@ al-wait abc123 def456 --timeout 300
 
 ```bash
 # Fire multiple calls
-REVIEW_ID=$(echo "Review PR #42 on acme/app" | al-call reviewer | jq -r .callId)
-TEST_ID=$(echo "Run full test suite for acme/app" | al-call tester | jq -r .callId)
+REVIEW_ID=$(echo "Review PR #42 on acme/app" | al-subagent reviewer | jq -r .callId)
+TEST_ID=$(echo "Run full test suite for acme/app" | al-subagent tester | jq -r .callId)
 
 # ... do other work ...
 
 # Collect results
-RESULTS=$(al-wait "$REVIEW_ID" "$TEST_ID" --timeout 600)
+RESULTS=$(al-subagent-wait "$REVIEW_ID" "$TEST_ID" --timeout 600)
 echo "$RESULTS" | jq ".\"$REVIEW_ID\".returnValue"
 echo "$RESULTS" | jq ".\"$TEST_ID\".returnValue"
 ```
@@ -132,7 +132,7 @@ echo "$RESULTS" | jq ".\"$TEST_ID\".returnValue"
 - If all runners for the target agent are busy, the call is queued (up to `workQueueSize`, default: 100)
 - Call chains are allowed (A calls B, B calls C) up to `maxCallDepth` (default: 3)
 - Called runs do not re-run — they respond to the single call
-- The called agent receives an `<agent-call>` block with the caller name and context
+- The called agent receives a `<skill-subagent>` block with the caller name and context
 - To return a value, the called agent uses `al-return`
 
 ## Lock Commands
@@ -199,14 +199,14 @@ rlock-heartbeat "github issue acme/app#42"
 {"ok": true, "expiresAt": "2025-01-15T11:00:00Z"}
 ```
 
-### Lock shorthand in ACTIONS.md
+### Lock shorthand in SKILL.md
 
-In your `ACTIONS.md`, write the lock operations naturally:
+In your `SKILL.md`, write the lock operations naturally:
 
 ```markdown
 ## Workflow
 
-1. List open issues labeled "agent" in repos from `<agent-config>`
+1. List open issues labeled "agent" in repos from `<skill-config>`
 2. For each issue:
    - LOCK("github issue owner/repo#123")
    - If the lock fails, skip this issue — another instance is handling it
