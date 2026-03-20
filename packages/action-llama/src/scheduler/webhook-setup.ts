@@ -92,6 +92,9 @@ export function buildFilterFromTrigger(trigger: WebhookTrigger, providerType: st
   return undefined;
 }
 
+/** Known webhook provider types (used by doctor for validation) */
+export const KNOWN_PROVIDER_TYPES = new Set(["github", "sentry", "linear", "mintlify", "test"]);
+
 // Valid trigger fields per provider type (filter fields + source)
 const VALID_TRIGGER_FIELDS: Record<string, Set<string>> = {
   github: new Set(["source", "events", "actions", "repos", "orgs", "org", "labels", "assignee", "author", "branches"]),
