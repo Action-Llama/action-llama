@@ -244,7 +244,7 @@ export async function startMcpServer(opts: {
         if (config.description) lines.push(`Description: ${config.description}`);
         if (config.schedule) lines.push(`Schedule: ${config.schedule}`);
         if (config.webhooks?.length) lines.push(`Webhooks: ${config.webhooks.map((w) => `${w.source}:${(w.events || []).join(",")}`).join(", ")}`);
-        lines.push(`Model: ${config.model?.provider}/${config.model?.model || "default"}`);
+        lines.push(`Models: ${config.models.length > 0 ? config.models.map(m => `${m.provider}/${m.model}`).join(", ") : "none"}`);
         if (config.credentials?.length) lines.push(`Credentials: ${config.credentials.join(", ")}`);
         if (config.scale && config.scale > 1) lines.push(`Scale: ${config.scale}`);
         if (config.timeout) lines.push(`Timeout: ${config.timeout}s`);
