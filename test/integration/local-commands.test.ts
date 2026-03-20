@@ -30,7 +30,7 @@ describe.skipIf(!DOCKER)("integration: local commands via gateway", { timeout: 1
             "",
             // Acquire — verify exit 0 + ok=true
             "set +e",
-            'ACQUIRE=$(rlock "cmd-test-resource")',
+            'ACQUIRE=$(rlock "test://integration-test/cmd-test-resource")',
             "RC=$?",
             "set -e",
             'test "$RC" -eq 0 || { echo "rlock exit=$RC: $ACQUIRE"; exit 1; }',
@@ -39,7 +39,7 @@ describe.skipIf(!DOCKER)("integration: local commands via gateway", { timeout: 1
             "",
             // Heartbeat — verify exit 0 + ok=true
             "set +e",
-            'HEARTBEAT=$(rlock-heartbeat "cmd-test-resource")',
+            'HEARTBEAT=$(rlock-heartbeat "test://integration-test/cmd-test-resource")',
             "RC=$?",
             "set -e",
             'test "$RC" -eq 0 || { echo "rlock-heartbeat exit=$RC: $HEARTBEAT"; exit 1; }',
@@ -48,7 +48,7 @@ describe.skipIf(!DOCKER)("integration: local commands via gateway", { timeout: 1
             "",
             // Release — verify exit 0 + ok=true
             "set +e",
-            'RELEASE=$(runlock "cmd-test-resource")',
+            'RELEASE=$(runlock "test://integration-test/cmd-test-resource")',
             "RC=$?",
             "set -e",
             'test "$RC" -eq 0 || { echo "runlock exit=$RC: $RELEASE"; exit 1; }',
