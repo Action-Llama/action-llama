@@ -4,7 +4,7 @@ import { join, resolve } from "path";
 import { tmpdir } from "os";
 import { parse as parseTOML } from "smol-toml";
 import { parseFrontmatter } from "../../src/shared/frontmatter.js";
-import { scaffoldProject } from "../../src/setup/scaffold.js";
+import { scaffoldProject, scaffoldClaudeCommands, CLAUDE_COMMANDS } from "../../src/setup/scaffold.js";
 import type { ScaffoldAgent } from "../../src/setup/scaffold.js";
 import type { GlobalConfig } from "../../src/shared/config.js";
 
@@ -197,6 +197,72 @@ describe("scaffoldProject", () => {
 
     const content = readFileSync(resolve(projDir, "Dockerfile"), "utf-8");
     expect(content).toContain("FROM custom:image");
+  });
+
+  it("creates .claude/commands/ with all 5 command files", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
+    const projDir = resolve(tmpDir, "my-project");
+    scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
+
+    const commandNames = ["new-agent", "run", "debug", "iterate", "status"];
+    for (const name of commandNames) {
+      const filePath = resolve(projDir, ".claude", "commands", `${name}.md`);
+      expect(existsSync(filePath)).toBe(true);
+      const content = readFileSync(filePath, "utf-8");
+      expect(content.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("new-agent.md contains $ARGUMENTS placeholder", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
+    const projDir = resolve(tmpDir, "my-project");
+    scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
+
+    const content = readFileSync(resolve(projDir, ".claude", "commands", "new-agent.md"), "utf-8");
+    expect(content).toContain("$ARGUMENTS");
+  });
+
+  it("command files reference correct MCP tools", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
+    const projDir = resolve(tmpDir, "my-project");
+    scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
+
+    const runContent = readFileSync(resolve(projDir, ".claude", "commands", "run.md"), "utf-8");
+    expect(runContent).toContain("al_run");
+    expect(runContent).toContain("al_start");
+    expect(runContent).toContain("al_logs");
+
+    const debugContent = readFileSync(resolve(projDir, ".claude", "commands", "debug.md"), "utf-8");
+    expect(debugContent).toContain("al_logs");
+    expect(debugContent).toContain("al_agents");
+
+    const statusContent = readFileSync(resolve(projDir, ".claude", "commands", "status.md"), "utf-8");
+    expect(statusContent).toContain("al_status");
+    expect(statusContent).toContain("al_agents");
+  });
+
+  it("does not overwrite existing command files", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
+    const projDir = resolve(tmpDir, "my-project");
+    const commandsDir = resolve(projDir, ".claude", "commands");
+    mkdirSync(commandsDir, { recursive: true });
+    writeFileSync(resolve(commandsDir, "run.md"), "# My custom run command\n");
+
+    scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
+
+    const content = readFileSync(resolve(commandsDir, "run.md"), "utf-8");
+    expect(content).toBe("# My custom run command\n");
+  });
+
+  it("scaffoldClaudeCommands works standalone", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
+    scaffoldClaudeCommands(tmpDir);
+
+    for (const name of Object.keys(CLAUDE_COMMANDS)) {
+      const filePath = resolve(tmpDir, ".claude", "commands", `${name}.md`);
+      expect(existsSync(filePath)).toBe(true);
+      expect(readFileSync(filePath, "utf-8")).toBe(CLAUDE_COMMANDS[name]);
+    }
   });
 
 });

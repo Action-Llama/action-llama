@@ -1,5 +1,157 @@
 import { mkdirSync, writeFileSync, existsSync, copyFileSync, symlinkSync, lstatSync, realpathSync } from "fs";
 import { resolve, relative } from "path";
+
+// ---------------------------------------------------------------------------
+// Claude Code slash-command templates (.claude/commands/*.md)
+// ---------------------------------------------------------------------------
+
+export const CLAUDE_COMMANDS: Record<string, string> = {
+  "new-agent": `# Create a new agent
+
+Create a new Action Llama agent named \`$ARGUMENTS\`.
+
+## Steps
+
+1. Ask the user for:
+   - **Trigger type**: \`schedule\` (cron), \`webhook\`, or both
+   - If schedule: a cron expression (e.g. \`*/5 * * * *\`)
+   - If webhook: the provider and event (e.g. \`github\` / \`issues.opened\`)
+   - **Credentials** needed (e.g. \`github_token\`, \`slack_webhook\`)
+   - A one-sentence description of what the agent should do
+
+2. Use \`al_agents\` to list existing agents and avoid name conflicts.
+
+3. Create \`agents/$ARGUMENTS/SKILL.md\` with:
+   - YAML frontmatter containing the trigger config and credentials
+   - Do NOT include \`name\` or \`model\` in the frontmatter — name is derived from the directory, model is inherited from project config
+   - A markdown body with clear instructions for the agent
+   - Reference AGENTS.md (symlinked at project root) for the full SKILL.md specification
+
+4. Confirm the agent was created and suggest next steps:
+   - \`al doctor\` to verify credentials
+   - \`/run\` to test it
+`,
+
+  "run": `# Run an agent
+
+Trigger an agent run and report the results.
+
+## Steps
+
+1. Call \`al_status\` to check if the scheduler is running.
+   - If not running, call \`al_start\` to start it and wait for it to become ready.
+
+2. Ask the user which agent to run (or use \`$ARGUMENTS\` if provided).
+   - If unclear, call \`al_agents\` to list available agents.
+
+3. Call \`al_run\` with the agent name.
+
+4. Wait a few seconds, then call \`al_logs\` with the agent name, \`lines: 200\`, to fetch the run output.
+   - If the run is still in progress, wait and poll logs again.
+
+5. Summarize the result:
+   - What the agent did (key actions, commits, API calls)
+   - Whether it succeeded or failed
+   - Any warnings or errors
+`,
+
+  "debug": `# Debug a failing agent
+
+Diagnose why an agent is failing and suggest fixes.
+
+## Steps
+
+1. Identify the agent to debug (use \`$ARGUMENTS\` if provided, otherwise ask).
+
+2. Call \`al_logs\` with the agent name, \`level: "warn"\`, \`lines: 500\` to pull recent warnings and errors.
+
+3. Call \`al_agents\` with the agent name to read its full config and SKILL.md body.
+
+4. Analyze the logs and agent configuration to identify the root cause. Common issues:
+   - Missing or expired credentials
+   - Malformed SKILL.md frontmatter
+   - Instructions that lead to tool errors
+   - Rate limiting or API failures
+   - Docker/container issues
+
+5. Present a diagnosis with:
+   - **Root cause**: What's going wrong and why
+   - **Evidence**: Relevant log lines
+   - **Fix**: Concrete changes to make (SKILL.md edits, credential updates, config changes)
+
+6. Offer to apply the fix directly.
+`,
+
+  "iterate": `# Iterate on an agent
+
+Run an agent, analyze its output, and improve its instructions. Repeats up to 3 cycles or until the agent runs cleanly.
+
+## Rules
+
+- Only modify the markdown body (instructions) of SKILL.md, not the YAML frontmatter, unless you ask the user first.
+- Stop iterating when the agent completes without errors or after 3 cycles.
+
+## Steps (per cycle)
+
+1. Call \`al_status\` to ensure the scheduler is running. Start it with \`al_start\` if needed.
+
+2. Call \`al_run\` with the agent name (use \`$ARGUMENTS\` if provided).
+
+3. Wait for the run to complete, then call \`al_logs\` with \`lines: 300\` to get the full output.
+
+4. Analyze the result:
+   - Did the agent complete its task successfully?
+   - Were there errors, unnecessary steps, or suboptimal behavior?
+
+5. If improvements are needed:
+   - Read the current SKILL.md file
+   - Edit the instruction body to address the issues found
+   - Explain what you changed and why
+   - Start the next cycle
+
+6. If the run was clean, report success and summarize what was changed across all cycles.
+`,
+
+  "status": `# Status overview
+
+Show a rich overview of the Action Llama project status.
+
+## Steps
+
+1. Call \`al_status\` and \`al_agents\` in parallel to gather scheduler state and agent details.
+
+2. Present a formatted overview:
+
+   **Scheduler**: running/stopped, uptime, gateway URL
+
+   **Agents**:
+   | Agent | State | Trigger | Last Run | Next Run |
+   |-------|-------|---------|----------|----------|
+   | ...   | ...   | ...     | ...      | ...      |
+
+   Include schedule expressions, webhook configs, and credential status for each agent.
+
+3. Add actionable suggestions if relevant:
+   - Agents that are paused or erroring
+   - Agents that haven't run recently
+   - Missing credentials flagged by \`al_agents\`
+`,
+};
+
+/**
+ * Scaffold Claude Code slash commands into .claude/commands/.
+ * Skips files that already exist to avoid overwriting user customizations.
+ */
+export function scaffoldClaudeCommands(projectPath: string): void {
+  const commandsDir = resolve(projectPath, ".claude", "commands");
+  mkdirSync(commandsDir, { recursive: true });
+  for (const [name, content] of Object.entries(CLAUDE_COMMANDS)) {
+    const filePath = resolve(commandsDir, `${name}.md`);
+    if (!existsSync(filePath)) {
+      writeFileSync(filePath, content);
+    }
+  }
+}
 import { fileURLToPath } from "url";
 import { stringify as stringifyTOML } from "smol-toml";
 import { stringify as stringifyYAML } from "yaml";
@@ -176,4 +328,7 @@ export function scaffoldProject(
       },
     }, null, 2) + "\n");
   }
+
+  // Scaffold Claude Code slash commands
+  scaffoldClaudeCommands(projectPath);
 }

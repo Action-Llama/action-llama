@@ -26,6 +26,40 @@ When you open your project in Claude Code, it reads `CLAUDE.md` automatically. T
 
 <Info>Claude Code reads `CLAUDE.md` from the project root automatically. You don't need to paste documentation or explain how Action Llama works — it already knows.</Info>
 
+## Slash commands — development workflows
+
+Action Llama projects include five Claude Code slash commands in `.claude/commands/`. These are markdown prompt templates that you invoke with `/<name>` in Claude Code to perform common development workflows.
+
+New projects created with `al new` include these automatically. For existing projects, run:
+
+```bash
+al claude init
+```
+
+### Available commands
+
+| Command | Description |
+|---------|-------------|
+| `/new-agent <name>` | Create a new agent interactively — asks for trigger type, schedule, credentials, then writes the SKILL.md |
+| `/run [agent]` | Start the scheduler if needed, trigger an agent run, and summarize the results |
+| `/debug [agent]` | Pull recent warnings/errors, read the agent's SKILL.md, and diagnose the root cause with a concrete fix |
+| `/iterate [agent]` | Run → analyze → edit instructions → repeat (up to 3 cycles) until the agent runs cleanly |
+| `/status` | Rich overview combining scheduler state and agent details into a formatted table with actionable suggestions |
+
+### Usage
+
+Commands that accept an agent name use Claude Code's `$ARGUMENTS` mechanism — type the command followed by the agent name:
+
+```
+/run dev
+/debug reviewer
+/new-agent my-new-agent
+```
+
+These commands use the MCP tools (described below) to interact with the running scheduler, so the MCP server must be configured. This is done automatically by `al new` and `al mcp init`.
+
+<Info>Slash commands live in `.claude/commands/` as plain markdown files. You can customize them or add your own — Claude Code discovers them automatically.</Info>
+
 ## MCP server — live gateway interaction
 
 The MCP server lets Claude Code interact with a running Action Llama scheduler over stdio. Instead of switching to a terminal to check status, trigger runs, or read logs, you can ask Claude directly.
@@ -160,6 +194,19 @@ al mcp init -p ./my-project
 | `-p, --project <dir>` | Project directory (default: `.`) |
 
 If `.mcp.json` already exists, merges the `action-llama` entry into the existing `mcpServers` object. If an `action-llama` entry already exists, it is overwritten.
+
+### `al claude init`
+
+Scaffolds Claude Code slash commands into `.claude/commands/` in the project directory. Existing command files are not overwritten.
+
+```bash
+al claude init
+al claude init -p ./my-project
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
 
 ## See Also
 

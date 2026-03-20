@@ -363,6 +363,21 @@ mcpCmd
     await init(opts);
   }));
 
+// --- Claude Code integration ---
+
+const claudeCmd = program
+  .command("claude")
+  .description("Claude Code integration");
+
+claudeCmd
+  .command("init")
+  .description("Add Claude Code slash commands to .claude/commands/")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(withCommand(async (opts) => {
+    const { init } = await import("./commands/claude.js");
+    await init(opts);
+  }));
+
 program.parseAsync().catch((err) => {
   // Fallback for errors that escape command handlers (e.g. Commander parse errors)
   console.error(`\nError: ${err.message}`);
