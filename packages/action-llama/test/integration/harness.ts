@@ -157,8 +157,12 @@ export class IntegrationHarness {
         credentials: ["anthropic_key"],
         ...agent.config,
       });
-      const { name: _, models: _m, ...configToWrite } = agentConfig;
-      const frontmatter: Record<string, unknown> = { ...configToWrite, models: ["sonnet"] };
+      const { name: _, models: _m, description, license, compatibility, ...alFields } = agentConfig;
+      const frontmatter: Record<string, unknown> = {};
+      if (description) frontmatter.description = description;
+      if (license) frontmatter.license = license;
+      if (compatibility) frontmatter.compatibility = compatibility;
+      frontmatter.metadata = { ...alFields, models: ["sonnet"] };
       const yamlStr = stringifyYAML(frontmatter).trimEnd();
       writeFileSync(
         resolve(agentPath, "SKILL.md"),

@@ -141,8 +141,13 @@ vi.mock("../../src/shared/logger.js", () => ({
 import { startScheduler } from "../../src/scheduler/index.js";
 
 function writeSkillMd(dir: string, config: Record<string, unknown>) {
-  const { name: _, ...configToWrite } = config;
-  const yamlStr = stringifyYAML(configToWrite).trimEnd();
+  const { name: _, description, license, compatibility, ...alFields } = config;
+  const frontmatter: Record<string, unknown> = {};
+  if (description) frontmatter.description = description;
+  if (license) frontmatter.license = license;
+  if (compatibility) frontmatter.compatibility = compatibility;
+  if (Object.keys(alFields).length > 0) frontmatter.metadata = alFields;
+  const yamlStr = stringifyYAML(frontmatter).trimEnd();
   writeFileSync(resolve(dir, "SKILL.md"), `---\n${yamlStr}\n---\n\n# Agent\n`);
 }
 

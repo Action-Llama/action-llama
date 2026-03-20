@@ -18,31 +18,32 @@ function writeSkillMd(dir: string, agentName: string, opts: { models: string[]; 
   mkdirSync(agentDir, { recursive: true });
   const lines = ["---"];
   if (opts.description) lines.push(`description: ${opts.description}`);
-  lines.push(`credentials:`);
-  for (const c of opts.credentials ?? []) lines.push(`  - ${c}`);
-  lines.push(`models:`);
-  for (const m of opts.models) lines.push(`  - ${m}`);
-  if (opts.schedule) lines.push(`schedule: "${opts.schedule}"`);
+  lines.push(`metadata:`);
+  lines.push(`  credentials:`);
+  for (const c of opts.credentials ?? []) lines.push(`    - ${c}`);
+  lines.push(`  models:`);
+  for (const m of opts.models) lines.push(`    - ${m}`);
+  if (opts.schedule) lines.push(`  schedule: "${opts.schedule}"`);
   if (opts.hooks) {
-    lines.push(`hooks:`);
+    lines.push(`  hooks:`);
     const h = opts.hooks as any;
     if (h.pre) {
-      lines.push(`  pre:`);
-      for (const cmd of h.pre) lines.push(`    - "${cmd}"`);
+      lines.push(`    pre:`);
+      for (const cmd of h.pre) lines.push(`      - "${cmd}"`);
     }
     if (h.post) {
-      lines.push(`  post:`);
-      for (const cmd of h.post) lines.push(`    - "${cmd}"`);
+      lines.push(`    post:`);
+      for (const cmd of h.post) lines.push(`      - "${cmd}"`);
     }
   }
   if (opts.params) {
-    lines.push(`params:`);
+    lines.push(`  params:`);
     for (const [k, v] of Object.entries(opts.params as Record<string, unknown>)) {
       if (Array.isArray(v)) {
-        lines.push(`  ${k}:`);
-        for (const item of v) lines.push(`    - ${item}`);
+        lines.push(`    ${k}:`);
+        for (const item of v) lines.push(`      - ${item}`);
       } else {
-        lines.push(`  ${k}: ${v}`);
+        lines.push(`    ${k}: ${v}`);
       }
     }
   }
@@ -188,9 +189,10 @@ describe("loadAgentConfig", () => {
     const agentDir = resolve(tmpDir, "agents", "dev");
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(resolve(agentDir, "SKILL.md"), `---
-credentials:
-  - github_token
-schedule: "*/5 * * * *"
+metadata:
+  credentials:
+    - github_token
+  schedule: "*/5 * * * *"
 ---
 
 # Dev
@@ -257,7 +259,8 @@ describe("loadAgentBody", () => {
     const agentDir = resolve(tmpDir, "agents", "dev");
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(resolve(agentDir, "SKILL.md"), `---
-credentials: []
+metadata:
+  credentials: []
 ---
 
 # Dev Agent

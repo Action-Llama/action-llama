@@ -97,9 +97,10 @@ authType = "api_key"
 Agents reference these by name in their `SKILL.md` frontmatter:
 
 ```yaml
-models:
-  - sonnet    # primary
-  - haiku     # fallback
+metadata:
+  models:
+    - sonnet    # primary
+    - haiku     # fallback
 ```
 
 See [Models](/reference/models) for all supported providers, model IDs, auth types, and thinking levels.
@@ -156,10 +157,11 @@ type = "github"                   # no credential — accepts unsigned webhooks
 Agents reference these sources by name in their `SKILL.md` frontmatter:
 
 ```yaml
-webhooks:
-  - source: my-github
-    events:
-      - issues
+metadata:
+  webhooks:
+    - source: my-github
+      events:
+        - issues
 ```
 
 See [Webhooks](/reference/webhooks) for setup instructions and filter fields per provider.

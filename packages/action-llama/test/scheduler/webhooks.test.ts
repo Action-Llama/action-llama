@@ -151,9 +151,11 @@ function setupProjectWithWebhooks(tmpDir: string) {
 
   // Webhook-only agent
   const webhookAgent = {
-    credentials: ["github_token"],
-    models: ["sonnet"],
-    webhooks: [{ source: "my-github", events: ["issues"], actions: ["labeled"], labels: ["agent"] }],
+    metadata: {
+      credentials: ["github_token"],
+      models: ["sonnet"],
+      webhooks: [{ source: "my-github", events: ["issues"], actions: ["labeled"], labels: ["agent"] }],
+    },
   };
   const agentDir = resolve(tmpDir, "agents", "webhook-dev");
   mkdirSync(agentDir, { recursive: true });
@@ -166,10 +168,12 @@ function setupProjectWithHybrid(tmpDir: string) {
 
   // Hybrid agent (schedule + webhooks)
   const hybridAgent = {
-    credentials: ["github_token"],
-    models: ["sonnet"],
-    schedule: "*/15 * * * *",
-    webhooks: [{ source: "my-github", events: ["pull_request"], actions: ["opened"] }],
+    metadata: {
+      credentials: ["github_token"],
+      models: ["sonnet"],
+      schedule: "*/15 * * * *",
+      webhooks: [{ source: "my-github", events: ["pull_request"], actions: ["opened"] }],
+    },
   };
   const agentDir = resolve(tmpDir, "agents", "hybrid");
   mkdirSync(agentDir, { recursive: true });
@@ -184,8 +188,10 @@ function setupProjectWithNoTrigger(tmpDir: string) {
 
   // Agent with neither schedule nor webhooks
   const badAgent = {
-    credentials: ["github_token"],
-    models: ["sonnet"],
+    metadata: {
+      credentials: ["github_token"],
+      models: ["sonnet"],
+    },
   };
   const agentDir = resolve(tmpDir, "agents", "bad-agent");
   mkdirSync(agentDir, { recursive: true });

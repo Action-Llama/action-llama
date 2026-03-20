@@ -40,22 +40,24 @@ For the webhook, enter a random secret string (e.g. generate one with `openssl r
 In your agent's `SKILL.md` frontmatter, add a webhook trigger:
 
 ```yaml
-webhooks:
-  - source: my-github
-    events: [issues]
-    actions: [labeled]
-    labels: [agent]
+metadata:
+  webhooks:
+    - source: my-github
+      events: [issues]
+      actions: [labeled]
+      labels: [agent]
 ```
 
 This tells the agent to trigger when an issue in any repo is labeled with `"agent"`. You can also filter by repo:
 
 ```yaml
-webhooks:
-  - source: my-github
-    repos: [your-org/your-repo]
-    events: [issues]
-    actions: [labeled]
-    labels: [agent]
+metadata:
+  webhooks:
+    - source: my-github
+      repos: [your-org/your-repo]
+      events: [issues]
+      actions: [labeled]
+      labels: [agent]
 ```
 
 ## 4. Start ngrok for local development

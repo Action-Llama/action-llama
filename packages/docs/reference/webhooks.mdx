@@ -37,16 +37,17 @@ credential = "MintlifyMain"   # credential instance name (mintlify_webhook_secre
 Agents reference a webhook source by name and add filters in their `SKILL.md` frontmatter:
 
 ```yaml
-webhooks:
-  - source: my-github
-    repos:
-      - acme/app
-    events:
-      - issues
-    actions:
-      - labeled
-    labels:
-      - agent
+metadata:
+  webhooks:
+    - source: my-github
+      repos:
+        - acme/app
+      events:
+        - issues
+      actions:
+        - labeled
+      labels:
+        - agent
 ```
 
 Each webhooks entry is a trigger. The `source` field (referencing a name from `config.toml`) is required. All filter fields are optional — omit all of them to trigger on everything from that source.
@@ -133,19 +134,20 @@ credential = "main-workspace"
 
 ```yaml
 # In SKILL.md frontmatter
-webhooks:
-  - source: linear-main
-    events:
-      - issues
-      - issue_comment
-    actions:
-      - create
-      - update
-    organizations:
-      - your-org-id
-    labels:
-      - bug
-      - ready-for-dev
+metadata:
+  webhooks:
+    - source: linear-main
+      events:
+        - issues
+        - issue_comment
+      actions:
+        - create
+        - update
+      organizations:
+        - your-org-id
+      labels:
+        - bug
+        - ready-for-dev
 ```
 
 ## Mintlify Webhooks
@@ -178,14 +180,15 @@ credential = "docs-project"
 
 ```yaml
 # In SKILL.md frontmatter
-webhooks:
-  - source: mintlify-docs
-    events:
-      - build
-    actions:
-      - failed    # Only trigger on build failures
-    projects:
-      - my-docs
+metadata:
+  webhooks:
+    - source: mintlify-docs
+      events:
+        - build
+      actions:
+        - failed    # Only trigger on build failures
+      projects:
+        - my-docs
 ```
 
 ## How Webhooks Work at Runtime
@@ -219,5 +222,6 @@ If runners are busy, events are queued (up to `workQueueSize`, default 100). If 
 To handle more concurrent events, increase `scale` in the agent's `SKILL.md` frontmatter:
 
 ```yaml
-scale: 3    # Run up to 3 instances concurrently
+metadata:
+  scale: 3    # Run up to 3 instances concurrently
 ```

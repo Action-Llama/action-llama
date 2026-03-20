@@ -105,7 +105,6 @@ export interface AgentConfig {
   params?: Record<string, unknown>;
   scale?: number; // Number of concurrent runs allowed (default: 1)
   timeout?: number; // Max runtime in seconds (falls back to global local.timeout, then 900)
-  metadata?: Record<string, string>;
   license?: string;
   compatibility?: string;
 }
@@ -182,8 +181,24 @@ export function loadAgentConfig(projectPath: string, agentName: string): AgentCo
 
   const raw = readFileSync(skillPath, "utf-8");
   const { data } = parseFrontmatter(raw);
-  const parsed = data as Record<string, unknown>;
-  parsed.name = agentName;
+  const meta = ((data as Record<string, unknown>).metadata ?? {}) as Record<string, unknown>;
+
+  const parsed: Record<string, unknown> = {
+    name: agentName,
+    // Top-level (platform-allowed)
+    description: (data as Record<string, unknown>).description,
+    license: (data as Record<string, unknown>).license,
+    compatibility: (data as Record<string, unknown>).compatibility,
+    // From metadata (AL-specific)
+    credentials: meta.credentials,
+    models: meta.models,
+    schedule: meta.schedule,
+    webhooks: meta.webhooks,
+    hooks: meta.hooks,
+    params: meta.params,
+    scale: meta.scale,
+    timeout: meta.timeout,
+  };
 
   // Resolve named model references from global config
   const rawModels = parsed.models as string[] | undefined;

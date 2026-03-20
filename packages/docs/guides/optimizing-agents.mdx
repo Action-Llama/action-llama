@@ -22,10 +22,11 @@ Pre-hooks run **after credentials are loaded** but **before the LLM session star
 
 ```yaml
 # SKILL.md frontmatter
-hooks:
-  pre:
-    - "gh repo clone acme/app /tmp/repo --depth 1"
-    - "gh issue list --repo acme/app --label bug --json number,title,body --limit 20 > /tmp/context/issues.json"
+metadata:
+  hooks:
+    pre:
+      - "gh repo clone acme/app /tmp/repo --depth 1"
+      - "gh issue list --repo acme/app --label bug --json number,title,body --limit 20 > /tmp/context/issues.json"
 ```
 
 Then reference the staged files in the body of your `SKILL.md`:
@@ -42,9 +43,10 @@ Then reference the staged files in the body of your `SKILL.md`:
 The most common hook — clone the repo the agent will work on:
 
 ```yaml
-hooks:
-  pre:
-    - "gh repo clone acme/app /tmp/repo --depth 1"
+metadata:
+  hooks:
+    pre:
+      - "gh repo clone acme/app /tmp/repo --depth 1"
 ```
 
 ## Example: Shell command
@@ -52,9 +54,10 @@ hooks:
 Run any shell command. `GITHUB_TOKEN`, `GH_TOKEN`, and other credential env vars are already set:
 
 ```yaml
-hooks:
-  pre:
-    - "gh issue list --repo acme/app --label P1 --json number,title,body --limit 20 > /tmp/context/issues.json"
+metadata:
+  hooks:
+    pre:
+      - "gh issue list --repo acme/app --label P1 --json number,title,body --limit 20 > /tmp/context/issues.json"
 ```
 
 ## Example: HTTP fetch
@@ -62,9 +65,10 @@ hooks:
 Fetch data from an API endpoint:
 
 ```yaml
-hooks:
-  pre:
-    - "curl -sf -H 'Authorization: Bearer ${INTERNAL_TOKEN}' https://api.internal/v1/feature-flags -o /tmp/context/flags.json"
+metadata:
+  hooks:
+    pre:
+      - "curl -sf -H 'Authorization: Bearer ${INTERNAL_TOKEN}' https://api.internal/v1/feature-flags -o /tmp/context/flags.json"
 ```
 
 Environment variable interpolation (`${VAR_NAME}`) is supported since commands run via `/bin/sh`.
@@ -74,12 +78,13 @@ Environment variable interpolation (`${VAR_NAME}`) is supported since commands r
 Post-hooks run after the LLM session completes. Use them for cleanup, artifact upload, or reporting:
 
 ```yaml
-hooks:
-  pre:
-    - "gh repo clone acme/app /tmp/repo --depth 1"
-  post:
-    - "upload-artifacts.sh"
-    - "curl -X POST https://hooks.slack.com/... -d '{\"text\": \"Agent run complete\"}'"
+metadata:
+  hooks:
+    pre:
+      - "gh repo clone acme/app /tmp/repo --depth 1"
+    post:
+      - "upload-artifacts.sh"
+      - "curl -X POST https://hooks.slack.com/... -d '{\"text\": \"Agent run complete\"}'"
 ```
 
 ## Referencing Staged Files in SKILL.md

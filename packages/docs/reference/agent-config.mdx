@@ -9,68 +9,73 @@ Each agent has a `SKILL.md` file in its directory. The YAML frontmatter at the t
 
 ```yaml
 ---
-# Required: credential types the agent needs at runtime
-# Use "type" for default instance, "type:instance" for named instance
-credentials:
-  - github_token
-  - git_ssh
-  - sentry_token
+# Optional: human-readable description (top-level, platform-allowed)
+description: Solves GitHub issues by writing and testing code
 
-# Optional: cron schedule (standard cron syntax)
-# Agent must have at least one of: schedule, webhooks
-schedule: "*/5 * * * *"
+# All Action Llama-specific fields live under metadata:
+metadata:
+  # Required: credential types the agent needs at runtime
+  # Use "type" for default instance, "type:instance" for named instance
+  credentials:
+    - github_token
+    - git_ssh
+    - sentry_token
 
-# Optional: number of concurrent runs allowed (default: 1)
-# When scale > 1, use LOCK/UNLOCK in your actions to coordinate
-# and prevent instances from working on the same resource.
-scale: 2
+  # Optional: cron schedule (standard cron syntax)
+  # Agent must have at least one of: schedule, webhooks
+  schedule: "*/5 * * * *"
 
-# Optional: max runtime in seconds (default: falls back to [local].timeout, then 900)
-timeout: 600
+  # Optional: number of concurrent runs allowed (default: 1)
+  # When scale > 1, use LOCK/UNLOCK in your actions to coordinate
+  # and prevent instances from working on the same resource.
+  scale: 2
 
-# Required: named model references from config.toml [models.*]
-# First in list is primary; rest are fallbacks tried on rate limits
-models:
-  - sonnet
-  - haiku
+  # Optional: max runtime in seconds (default: falls back to [local].timeout, then 900)
+  timeout: 600
 
-# Optional: webhook triggers (instead of or in addition to schedule)
-# Each source references a named webhook defined in the project's config.toml
-webhooks:
-  - source: my-github                     # Required: references [webhooks.my-github] in config.toml
-    repos: [acme/app]                     # Filter to specific repos (optional)
-    events: [issues]                      # GitHub event types (optional)
-    actions: [labeled]                    # GitHub event actions (optional)
-    labels: [agent]                       # Only trigger on issues with these labels (optional)
+  # Required: named model references from config.toml [models.*]
+  # First in list is primary; rest are fallbacks tried on rate limits
+  models:
+    - sonnet
+    - haiku
 
-  - source: my-sentry
-    resources: [error, event_alert]       # Sentry resource types (optional)
+  # Optional: webhook triggers (instead of or in addition to schedule)
+  # Each source references a named webhook defined in the project's config.toml
+  webhooks:
+    - source: my-github                     # Required: references [webhooks.my-github] in config.toml
+      repos: [acme/app]                     # Filter to specific repos (optional)
+      events: [issues]                      # GitHub event types (optional)
+      actions: [labeled]                    # GitHub event actions (optional)
+      labels: [agent]                       # Only trigger on issues with these labels (optional)
 
-  - source: my-linear
-    events: [issues]                      # Linear event types (optional)
-    actions: [create, update]             # Linear event actions (optional)
-    labels: [bug]                         # Filter by Linear labels (optional)
+    - source: my-sentry
+      resources: [error, event_alert]       # Sentry resource types (optional)
 
-  - source: my-mintlify
-    events: [build]                       # Mintlify event types (optional)
-    actions: [failed]                     # Mintlify event actions (optional)
+    - source: my-linear
+      events: [issues]                      # Linear event types (optional)
+      actions: [create, update]             # Linear event actions (optional)
+      labels: [bug]                         # Filter by Linear labels (optional)
 
-# Optional: hooks — shell commands that run before or after the LLM session
-hooks:
-  pre:
-    - "gh repo clone acme/app /tmp/repo --depth 1"
-    - "curl -o /tmp/context/flags.json https://api.internal/v1/flags"
-    - "gh issue list --repo acme/app --label P1 --json number,title,body --limit 20 > /tmp/context/issues.json"
-  post:
-    - "upload-artifacts.sh"
+    - source: my-mintlify
+      events: [build]                       # Mintlify event types (optional)
+      actions: [failed]                     # Mintlify event actions (optional)
 
-# Optional: custom parameters injected into the agent prompt
-params:
-  repos: [acme/app, acme/api]
-  triggerLabel: agent
-  assignee: bot-user
-  sentryOrg: acme
-  sentryProjects: [web-app, api]
+  # Optional: hooks — shell commands that run before or after the LLM session
+  hooks:
+    pre:
+      - "gh repo clone acme/app /tmp/repo --depth 1"
+      - "curl -o /tmp/context/flags.json https://api.internal/v1/flags"
+      - "gh issue list --repo acme/app --label P1 --json number,title,body --limit 20 > /tmp/context/issues.json"
+    post:
+      - "upload-artifacts.sh"
+
+  # Optional: custom parameters injected into the agent prompt
+  params:
+    repos: [acme/app, acme/api]
+    triggerLabel: agent
+    assignee: bot-user
+    sentryOrg: acme
+    sentryProjects: [web-app, api]
 ---
 ```
 
@@ -78,14 +83,15 @@ params:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `credentials` | string[] | Yes | Credential refs: `"type"` for default instance, `"type:instance"` for named instance. See [Credentials](/reference/credentials). |
-| `schedule` | string | No* | Cron expression for polling |
-| `scale` | number | No | Number of concurrent runs allowed (default: 1). Set to `0` to disable the agent. Use lock skills in your actions to coordinate instances. See [Resource Locks](/concepts/resource-locks). |
-| `timeout` | number | No | Max runtime in seconds. Falls back to `[local].timeout` in project config, then `900`. See [Timeout](#timeout). |
-| `models` | string[] | Yes | Named model references from `config.toml [models.*]`. First is primary; rest are fallbacks tried automatically on rate limits. |
-| `webhooks` | array | No* | Array of webhook trigger objects. See [Webhooks](/reference/webhooks). |
-| `hooks` | table | No | Pre/post hooks that run around the LLM session. See [Hooks](#hooks). |
-| `params` | table | No | Custom key-value params for the agent prompt |
+| `description` | string | No | Short description (top-level, platform-allowed) |
+| `metadata.credentials` | string[] | Yes | Credential refs: `"type"` for default instance, `"type:instance"` for named instance. See [Credentials](/reference/credentials). |
+| `metadata.schedule` | string | No* | Cron expression for polling |
+| `metadata.scale` | number | No | Number of concurrent runs allowed (default: 1). Set to `0` to disable the agent. Use lock skills in your actions to coordinate instances. See [Resource Locks](/concepts/resource-locks). |
+| `metadata.timeout` | number | No | Max runtime in seconds. Falls back to `[local].timeout` in project config, then `900`. See [Timeout](#timeout). |
+| `metadata.models` | string[] | Yes | Named model references from `config.toml [models.*]`. First is primary; rest are fallbacks tried automatically on rate limits. |
+| `metadata.webhooks` | array | No* | Array of webhook trigger objects. See [Webhooks](/reference/webhooks). |
+| `metadata.hooks` | table | No | Pre/post hooks that run around the LLM session. See [Hooks](#hooks). |
+| `metadata.params` | table | No | Custom key-value params for the agent prompt |
 
 *At least one of `schedule` or `webhooks` is required (unless `scale = 0`).
 
@@ -167,13 +173,14 @@ See [Optimizing Agents](/guides/optimizing-agents) for a guide on using hooks ef
 ### Examples
 
 ```yaml
-hooks:
-  pre:
-    - "gh repo clone acme/app /tmp/repo --depth 1"
-    - "gh issue list --repo acme/app --label P1 --json number,title,body --limit 20 > /tmp/context/issues.json"
-    - "curl -o /tmp/context/flags.json https://api.internal/v1/flags"
-  post:
-    - "upload-artifacts.sh"
+metadata:
+  hooks:
+    pre:
+      - "gh repo clone acme/app /tmp/repo --depth 1"
+      - "gh issue list --repo acme/app --label P1 --json number,title,body --limit 20 > /tmp/context/issues.json"
+      - "curl -o /tmp/context/flags.json https://api.internal/v1/flags"
+    post:
+      - "upload-artifacts.sh"
 ```
 
 ### Notes
@@ -238,10 +245,11 @@ All filter fields below are optional. Omit all of them to trigger on everything 
 The `models` field references named models defined in `config.toml` under `[models.<name>]`. List one or more model names — the first is the primary model, and subsequent entries are fallbacks tried automatically when the primary is rate-limited or unavailable.
 
 ```yaml
-models:
-  - sonnet    # primary
-  - haiku     # fallback on rate limit
-  - gpt4o     # second fallback
+metadata:
+  models:
+    - sonnet    # primary
+    - haiku     # fallback on rate limit
+    - gpt4o     # second fallback
 ```
 
 See [Models](/reference/models) for all supported providers, model IDs, auth types, thinking levels, and credential setup.

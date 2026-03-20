@@ -188,10 +188,11 @@ devops/SKILL.md    → models: [groq-llama]
 Agents can list multiple models to create a fallback chain. When the primary model is rate-limited or unavailable, Action Llama automatically tries the next model in the list:
 
 ```yaml
-models:
-  - sonnet    # primary
-  - haiku     # fallback on rate limit
-  - gpt4o     # second fallback
+metadata:
+  models:
+    - sonnet    # primary
+    - haiku     # fallback on rate limit
+    - gpt4o     # second fallback
 ```
 
 Fallback switching is instant — there is no delay when moving to the next model. Exponential backoff only kicks in after all models in the chain have been exhausted.

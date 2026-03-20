@@ -133,11 +133,17 @@ export async function configAgent(name: string, opts: { project: string }): Prom
   }
 
   // Write config back to SKILL.md — preserve the body, update frontmatter
-  const { name: _, ...rest } = config;
+  // Split into platform-allowed top-level fields and AL-specific metadata.
+  const { name: _, description, license, compatibility, ...alFields } = config;
   const toWrite: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(rest)) {
-    if (v !== undefined) toWrite[k] = v;
+  if (description) toWrite.description = description;
+  if (license) toWrite.license = license;
+  if (compatibility) toWrite.compatibility = compatibility;
+  const metadata: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(alFields)) {
+    if (v !== undefined) metadata[k] = v;
   }
+  if (Object.keys(metadata).length > 0) toWrite.metadata = metadata;
   const skillPath = resolve(agentDir, "SKILL.md");
   const existingBody = existsSync(skillPath)
     ? parseFrontmatter(readFileSync(skillPath, "utf-8")).body

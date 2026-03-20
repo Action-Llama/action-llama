@@ -348,47 +348,48 @@ Single-file agent configuration. YAML frontmatter contains config, markdown body
 ```yaml
 ---
 description: Solves GitHub issues by writing and testing code
-credentials:
-  - github_token
-  - git_ssh
-  - sentry_token
-schedule: "*/5 * * * *"
-scale: 2
-timeout: 600
-models:
-  - sonnet
-  - haiku
-webhooks:
-  - source: my-github
-    repos: [acme/app]
-    events: [issues]
-    actions: [labeled]
-    labels: [agent]
-  - source: my-sentry
-    resources: [error, event_alert]
-  - source: my-linear
-    events: [issues]
-    actions: [create, update]
-    labels: [bug]
-  - source: my-mintlify
-    events: [build]
-    actions: [failed]
-hooks:
-  pre:
-    - "gh repo clone acme/app /tmp/repo --depth 1"
-    - "curl -o /tmp/flags.json https://api.internal/v1/flags"
-  post:
-    - "upload-artifacts.sh"
-params:
-  repos:
-    - acme/app
-    - acme/api
-  triggerLabel: agent
-  assignee: bot-user
-  sentryOrg: acme
-  sentryProjects:
-    - web-app
-    - api
+metadata:
+  credentials:
+    - github_token
+    - git_ssh
+    - sentry_token
+  schedule: "*/5 * * * *"
+  scale: 2
+  timeout: 600
+  models:
+    - sonnet
+    - haiku
+  webhooks:
+    - source: my-github
+      repos: [acme/app]
+      events: [issues]
+      actions: [labeled]
+      labels: [agent]
+    - source: my-sentry
+      resources: [error, event_alert]
+    - source: my-linear
+      events: [issues]
+      actions: [create, update]
+      labels: [bug]
+    - source: my-mintlify
+      events: [build]
+      actions: [failed]
+  hooks:
+    pre:
+      - "gh repo clone acme/app /tmp/repo --depth 1"
+      - "curl -o /tmp/flags.json https://api.internal/v1/flags"
+    post:
+      - "upload-artifacts.sh"
+  params:
+    repos:
+      - acme/app
+      - acme/api
+    triggerLabel: agent
+    assignee: bot-user
+    sentryOrg: acme
+    sentryProjects:
+      - web-app
+      - api
 ---
 
 # Dev Agent
@@ -400,17 +401,16 @@ You are a development agent. Pick the highest priority issue and fix it.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `description` | string | No | Short description of what the agent does |
-| `credentials` | string[] | Yes | Credential refs: `"type"` for default instance, `"type:instance"` for named instance. |
-| `schedule` | string | No* | Cron expression for polling |
-| `scale` | number | No | Number of concurrent runs allowed (default: 1). Set to `0` to disable the agent. |
-| `timeout` | number | No | Max runtime in seconds. Falls back to `[local].timeout` in project config, then `900`. |
-| `models` | string[] | Yes | Named model references from `config.toml [models.*]`. First is primary; rest are fallbacks. |
-| `webhooks` | array | No* | Array of webhook trigger objects. |
-| `hooks.pre` | string[] | No | Shell commands to run before LLM session |
-| `hooks.post` | string[] | No | Shell commands to run after LLM session |
-| `params` | object | No | Custom key-value params injected into the prompt as `<agent-config>` |
-| `metadata` | object | No | Arbitrary metadata (author, version, etc.) |
+| `description` | string | No | Short description of what the agent does (top-level) |
+| `metadata.credentials` | string[] | Yes | Credential refs: `"type"` for default instance, `"type:instance"` for named instance. |
+| `metadata.schedule` | string | No* | Cron expression for polling |
+| `metadata.scale` | number | No | Number of concurrent runs allowed (default: 1). Set to `0` to disable the agent. |
+| `metadata.timeout` | number | No | Max runtime in seconds. Falls back to `[local].timeout` in project config, then `900`. |
+| `metadata.models` | string[] | Yes | Named model references from `config.toml [models.*]`. First is primary; rest are fallbacks. |
+| `metadata.webhooks` | array | No* | Array of webhook trigger objects. |
+| `metadata.hooks.pre` | string[] | No | Shell commands to run before LLM session |
+| `metadata.hooks.post` | string[] | No | Shell commands to run after LLM session |
+| `metadata.params` | object | No | Custom key-value params injected into the prompt as `<agent-config>` |
 
 *Need `schedule` or `webhooks` (unless `scale=0`).
 

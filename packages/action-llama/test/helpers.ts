@@ -101,8 +101,13 @@ export function makeTmpProject(opts?: TmpProjectOptions): string {
     mkdirSync(agentPath, { recursive: true });
     // Write SKILL.md with model name references (not inline model configs).
     // Strip name and models (resolved at load time from config.toml).
-    const { name: _, models: _m, ...configToWrite } = agent;
-    const frontmatter: Record<string, unknown> = { ...configToWrite, models: modelNames };
+    // Split into platform-allowed top-level fields and AL-specific metadata.
+    const { name: _, models: _m, description, license, compatibility, ...alFields } = agent;
+    const frontmatter: Record<string, unknown> = {};
+    if (description) frontmatter.description = description;
+    if (license) frontmatter.license = license;
+    if (compatibility) frontmatter.compatibility = compatibility;
+    frontmatter.metadata = { ...alFields, models: modelNames };
     const yamlStr = stringifyYAML(frontmatter).trimEnd();
     writeFileSync(
       resolve(agentPath, "SKILL.md"),

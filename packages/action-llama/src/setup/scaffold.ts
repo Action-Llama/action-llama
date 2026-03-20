@@ -194,11 +194,17 @@ export function scaffoldAgent(projectPath: string, agent: ScaffoldAgent): void {
   if (!existsSync(skillPath)) {
     // Strip `name` before serializing — it's derived from the directory name.
     // Also strip undefined values and models (resolved at load time from global config).
-    const { name: _, models: _m, ...rest } = agent.config;
+    // Split into platform-allowed top-level fields and AL-specific metadata.
+    const { name: _, models: _m, description, license, compatibility, ...alFields } = agent.config;
     const frontmatter: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(rest)) {
-      if (v !== undefined) frontmatter[k] = v;
+    if (description) frontmatter.description = description;
+    if (license) frontmatter.license = license;
+    if (compatibility) frontmatter.compatibility = compatibility;
+    const metadata: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(alFields)) {
+      if (v !== undefined) metadata[k] = v;
     }
+    if (Object.keys(metadata).length > 0) frontmatter.metadata = metadata;
     const yamlStr = Object.keys(frontmatter).length > 0
       ? stringifyYAML(frontmatter).trimEnd()
       : "";

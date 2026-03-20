@@ -29,7 +29,7 @@ vi.mock("../../../src/setup/scaffold.js", async (importOriginal) => {
   return {
     ...orig,
     resolvePackageRoot: () => mockPackageRoot,
-    // Wrap scaffoldAgent to inject models reference (scaffoldAgent strips models,
+    // Wrap scaffoldAgent to inject models reference under metadata (scaffoldAgent strips models,
     // but loadAgentConfig requires them; in production `al new` writes them separately).
     scaffoldAgent: (projectPath: string, agent: any) => {
       orig.scaffoldAgent(projectPath, agent);
@@ -37,7 +37,13 @@ vi.mock("../../../src/setup/scaffold.js", async (importOriginal) => {
       if (exists(skillPath)) {
         const content = readFile(skillPath, "utf-8");
         if (!content.includes("models:")) {
-          const updated = content.replace("---\n", "---\nmodels:\n  - sonnet\n");
+          // Inject models under the existing metadata block, or create one
+          let updated: string;
+          if (content.includes("metadata:")) {
+            updated = content.replace("metadata:\n", "metadata:\n  models:\n    - sonnet\n");
+          } else {
+            updated = content.replace("---\n", "---\nmetadata:\n  models:\n    - sonnet\n");
+          }
           writeFile(skillPath, updated);
         }
       }
@@ -108,7 +114,7 @@ describe("agent new", () => {
     // Set up example template with SKILL.md
     const exampleDir = resolve(mockPackageRoot, "docs", "examples", "dev");
     mkdirSync(exampleDir, { recursive: true });
-    writeFileSync(resolve(exampleDir, "SKILL.md"), '---\ncredentials:\n  - github_token\nmodels:\n  - sonnet\n---\n\n# Dev Agent\n');
+    writeFileSync(resolve(exampleDir, "SKILL.md"), '---\nmetadata:\n  credentials:\n    - github_token\n  models:\n    - sonnet\n---\n\n# Dev Agent\n');
 
     // Mock: select type=dev, input name=my-dev, then "done" in config menu
     mockSelect
@@ -179,7 +185,13 @@ describe("agent config", () => {
   function createAgentConfig(name: string, config: Record<string, unknown>) {
     const agentDir = resolve(tmpDir, "agents", name);
     mkdirSync(agentDir, { recursive: true });
-    const yamlStr = stringifyYAML(config).trimEnd();
+    const { description, license, compatibility, ...alFields } = config;
+    const frontmatter: Record<string, unknown> = {};
+    if (description) frontmatter.description = description;
+    if (license) frontmatter.license = license;
+    if (compatibility) frontmatter.compatibility = compatibility;
+    if (Object.keys(alFields).length > 0) frontmatter.metadata = alFields;
+    const yamlStr = stringifyYAML(frontmatter).trimEnd();
     writeFileSync(resolve(agentDir, "SKILL.md"), `---\n${yamlStr}\n---\n\n# Test\n`);
   }
 
@@ -200,7 +212,7 @@ describe("agent config", () => {
 
     const written = readFileSync(resolve(tmpDir, "agents", "test-agent", "SKILL.md"), "utf-8");
     const { data } = parseFrontmatter(written);
-    expect(data.credentials).toEqual(["github_token", "anthropic_key"]);
+    expect((data.metadata as any).credentials).toEqual(["github_token", "anthropic_key"]);
     expect(mockDoctorExecute).toHaveBeenCalledWith({ project: tmpDir });
   });
 
@@ -216,7 +228,7 @@ describe("agent config", () => {
 
     const written = readFileSync(resolve(tmpDir, "agents", "sched-agent", "SKILL.md"), "utf-8");
     const { data } = parseFrontmatter(written);
-    expect(data.schedule).toBe("*/10 * * * *");
+    expect((data.metadata as any).schedule).toBe("*/10 * * * *");
   });
 
   it("edits model to openai", async () => {
@@ -232,8 +244,8 @@ describe("agent config", () => {
 
     const written = readFileSync(resolve(tmpDir, "agents", "model-agent", "SKILL.md"), "utf-8");
     const { data } = parseFrontmatter(written);
-    expect((data.models as any)[0].provider).toBe("openai");
-    expect((data.models as any)[0].model).toBe("gpt-4o");
+    expect(((data.metadata as any).models as any)[0].provider).toBe("openai");
+    expect(((data.metadata as any).models as any)[0].model).toBe("gpt-4o");
   });
 
   it("edits params — add and save", async () => {
@@ -252,7 +264,7 @@ describe("agent config", () => {
 
     const written = readFileSync(resolve(tmpDir, "agents", "params-agent", "SKILL.md"), "utf-8");
     const { data } = parseFrontmatter(written);
-    expect((data.params as any).myKey).toBe("myValue");
+    expect(((data.metadata as any).params as any).myKey).toBe("myValue");
   });
 
   it("edits params — shows existing params and allows editing", async () => {
@@ -271,7 +283,7 @@ describe("agent config", () => {
 
     const written = readFileSync(resolve(tmpDir, "agents", "params-edit", "SKILL.md"), "utf-8");
     const { data } = parseFrontmatter(written);
-    expect((data.params as any).existing).toBe("new-value");
+    expect(((data.metadata as any).params as any).existing).toBe("new-value");
   });
 
   it("edits params — remove existing param", async () => {
@@ -288,8 +300,8 @@ describe("agent config", () => {
 
     const written = readFileSync(resolve(tmpDir, "agents", "params-rm", "SKILL.md"), "utf-8");
     const { data } = parseFrontmatter(written);
-    expect((data.params as any).removeme).toBeUndefined();
-    expect((data.params as any).keepme).toBe("stay");
+    expect(((data.metadata as any).params as any).removeme).toBeUndefined();
+    expect(((data.metadata as any).params as any).keepme).toBe("stay");
   });
 
   it("webhooks offers to create source when none configured", async () => {

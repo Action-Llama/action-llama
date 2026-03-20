@@ -14,7 +14,8 @@ With `scale = 1`, a single agent instance handles all work sequentially. If 5 Gi
 In your agent's `SKILL.md` frontmatter:
 
 ```yaml
-scale: 3    # Run up to 3 instances concurrently
+metadata:
+  scale: 3    # Run up to 3 instances concurrently
 ```
 
 Now when 5 issues arrive, up to 3 are processed simultaneously. The remaining 2 wait in the work queue.
@@ -92,26 +93,27 @@ scale = 10    # max 10 runners total across all agents
 In your agent's `SKILL.md` frontmatter:
 
 ```yaml
-credentials:
-  - github_token
-  - git_ssh
-schedule: "*/5 * * * *"
-scale: 3
+metadata:
+  credentials:
+    - github_token
+    - git_ssh
+  schedule: "*/5 * * * *"
+  scale: 3
 
-models:
-  - sonnet
+  models:
+    - sonnet
 
-webhooks:
-  - source: my-github
-    events: [issues]
-    actions: [labeled]
-    labels: [agent]
+  webhooks:
+    - source: my-github
+      events: [issues]
+      actions: [labeled]
+      labels: [agent]
 
-params:
-  repos:
-    - acme/app
-    - acme/api
-  triggerLabel: agent
+  params:
+    repos:
+      - acme/app
+      - acme/api
+    triggerLabel: agent
 ```
 
 ## Next steps
