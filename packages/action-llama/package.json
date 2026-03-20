@@ -42,7 +42,8 @@
     "build:assets": "echo 'No assets to copy'",
     "clean": "rm -rf dist",
     "prebuild": "npm run clean",
-    "prepublishOnly": "npm run build && npm test"
+    "prepublishOnly": "npm run build && npm test",
+    "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.11",
