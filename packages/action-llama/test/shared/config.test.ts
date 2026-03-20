@@ -230,6 +230,26 @@ metadata:
     expect(() => loadAgentConfig(tmpDir, "dev")).toThrow("Available: sonnet, haiku");
   });
 
+  it("includes file path in YAML parse error", () => {
+    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
+    const agentDir = resolve(tmpDir, "agents", "bad-yaml");
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(resolve(agentDir, "SKILL.md"), `---
+metadata:
+  models: [
+    - broken
+---
+
+# Bad
+`);
+    expect(() => loadAgentConfig(tmpDir, "bad-yaml")).toThrow(/SKILL\.md/);
+  });
+
+  it("includes file path in TOML parse error for config.toml", () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), "models = {invalid toml");
+    expect(() => loadProjectConfig(tmpDir)).toThrow(/config\.toml/);
+  });
+
   it("loads description from frontmatter", () => {
     writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
     writeSkillMd(tmpDir, "dev", {

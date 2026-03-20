@@ -24,7 +24,15 @@ export function parseFrontmatter(content: string): FrontmatterResult {
   const yamlBlock = trimmed.slice(4, endIdx);
   const body = trimmed.slice(endIdx + 4).replace(/^\r?\n/, "");
 
-  const data = parseYAML(yamlBlock) ?? {};
+  let data: unknown;
+  try {
+    data = parseYAML(yamlBlock) ?? {};
+  } catch (err) {
+    throw new Error(
+      `Failed to parse YAML frontmatter: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
+  }
   if (typeof data !== "object" || Array.isArray(data)) {
     return { data: {}, body: content };
   }

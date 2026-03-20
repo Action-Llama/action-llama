@@ -121,7 +121,14 @@ export function loadProjectConfig(projectPath: string): GlobalConfig {
 
   if (existsSync(configPath)) {
     const raw = readFileSync(configPath, "utf-8");
-    config = parseTOML(raw) as unknown as GlobalConfig;
+    try {
+      config = parseTOML(raw) as unknown as GlobalConfig;
+    } catch (err) {
+      throw new ConfigError(
+        `Error parsing ${configPath}: ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err },
+      );
+    }
   }
 
   return config;
@@ -180,7 +187,15 @@ export function loadAgentConfig(projectPath: string, agentName: string): AgentCo
   }
 
   const raw = readFileSync(skillPath, "utf-8");
-  const { data } = parseFrontmatter(raw);
+  let data: Record<string, unknown>;
+  try {
+    ({ data } = parseFrontmatter(raw));
+  } catch (err) {
+    throw new ConfigError(
+      `Error parsing ${skillPath}: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
+  }
   const meta = ((data as Record<string, unknown>).metadata ?? {}) as Record<string, unknown>;
 
   const parsed: Record<string, unknown> = {
@@ -239,8 +254,15 @@ export function loadAgentBody(projectPath: string, agentName: string): string {
   const skillPath = resolve(projectPath, "agents", agentName, "SKILL.md");
   if (!existsSync(skillPath)) return "";
   const raw = readFileSync(skillPath, "utf-8");
-  const { body } = parseFrontmatter(raw);
-  return body;
+  try {
+    const { body } = parseFrontmatter(raw);
+    return body;
+  } catch (err) {
+    throw new ConfigError(
+      `Error parsing ${skillPath}: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
+  }
 }
 
 const AGENT_NAME_PATTERN = /^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9]))*$/;

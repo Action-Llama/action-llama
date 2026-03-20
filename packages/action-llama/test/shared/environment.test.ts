@@ -75,6 +75,11 @@ describe("loadEnvToml", () => {
     expect(result?.projectName).toBe("my-project");
   });
 
+  it("includes file path in TOML parse error", () => {
+    writeFileSync(resolve(tmpDir, ".env.toml"), "environment = {bad toml");
+    expect(() => loadEnvToml(tmpDir)).toThrow(/\.env\.toml/);
+  });
+
   it("loads .env.toml with config overrides", () => {
     const content = `
 environment = "staging"

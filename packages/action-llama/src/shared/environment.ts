@@ -25,7 +25,14 @@ export function writeEnvToml(projectPath: string, updates: Partial<EnvToml>): vo
   const envPath = resolve(projectPath, ".env.toml");
   let existing: Record<string, unknown> = {};
   if (existsSync(envPath)) {
-    existing = parseTOML(readFileSync(envPath, "utf-8")) as Record<string, unknown>;
+    try {
+      existing = parseTOML(readFileSync(envPath, "utf-8")) as Record<string, unknown>;
+    } catch (err) {
+      throw new ConfigError(
+        `Error parsing ${envPath}: ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err },
+      );
+    }
   }
   for (const [key, value] of Object.entries(updates)) {
     if (value === undefined) {
@@ -45,7 +52,14 @@ export function loadEnvToml(projectPath: string): EnvToml | undefined {
   const envPath = resolve(projectPath, ".env.toml");
   if (!existsSync(envPath)) return undefined;
   const raw = readFileSync(envPath, "utf-8");
-  return parseTOML(raw) as unknown as EnvToml;
+  try {
+    return parseTOML(raw) as unknown as EnvToml;
+  } catch (err) {
+    throw new ConfigError(
+      `Error parsing ${envPath}: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
+  }
 }
 
 /**
@@ -61,7 +75,15 @@ export function loadEnvironmentConfig(name: string): EnvironmentConfig {
     );
   }
   const raw = readFileSync(envPath, "utf-8");
-  const config = parseTOML(raw) as unknown as EnvironmentConfig;
+  let config: EnvironmentConfig;
+  try {
+    config = parseTOML(raw) as unknown as EnvironmentConfig;
+  } catch (err) {
+    throw new ConfigError(
+      `Error parsing ${envPath}: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
+  }
 
   return config;
 }
