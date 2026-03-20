@@ -53,15 +53,15 @@ describe("POST /locks/acquire", () => {
   afterEach(() => lockStore.dispose());
 
   it("acquires a free lock and returns 200", async () => {
-    const res = await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#42" });
+    const res = await acquire(app, { secret: "secret-a", resourceKey: "github://acme/app/issues/42" });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ ok: true, resourceKey: "github issue acme/app#42" });
+    expect(body).toEqual({ ok: true, resourceKey: "github://acme/app/issues/42" });
   });
 
   it("returns 409 when lock is held by another agent", async () => {
-    await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#42" });
-    const res = await acquire(app, { secret: "secret-b", resourceKey: "github issue acme/app#42" });
+    await acquire(app, { secret: "secret-a", resourceKey: "github://acme/app/issues/42" });
+    const res = await acquire(app, { secret: "secret-b", resourceKey: "github://acme/app/issues/42" });
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.ok).toBe(false);
@@ -70,15 +70,15 @@ describe("POST /locks/acquire", () => {
   });
 
   it("allows agent to acquire multiple different locks", async () => {
-    await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#1" });
-    const res = await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#2" });
+    await acquire(app, { secret: "secret-a", resourceKey: "github://acme/app/issues/1" });
+    const res = await acquire(app, { secret: "secret-a", resourceKey: "github://acme/app/issues/2" });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ok).toBe(true);
   });
 
   it("returns 403 for invalid secret", async () => {
-    const res = await acquire(app, { secret: "bad", resourceKey: "github issue x" });
+    const res = await acquire(app, { secret: "bad", resourceKey: "github://repo/issues/x" });
     expect(res.status).toBe(403);
   });
 
@@ -88,13 +88,13 @@ describe("POST /locks/acquire", () => {
   });
 
   it("returns 400 for missing secret", async () => {
-    const res = await acquire(app, { resourceKey: "github issue x" });
+    const res = await acquire(app, { resourceKey: "github://repo/issues/x" });
     expect(res.status).toBe(400);
   });
 
   it("allows same agent to re-acquire its own lock", async () => {
-    await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#42" });
-    const res = await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#42" });
+    await acquire(app, { secret: "secret-a", resourceKey: "github://acme/app/issues/42" });
+    const res = await acquire(app, { secret: "secret-a", resourceKey: "github://acme/app/issues/42" });
     expect(res.status).toBe(200);
   });
 
@@ -102,10 +102,10 @@ describe("POST /locks/acquire", () => {
     register(registry, "secret-inst-1", "my-agent", "my-agent-1");
     register(registry, "secret-inst-2", "my-agent", "my-agent-2");
 
-    const res1 = await acquire(app, { secret: "secret-inst-1", resourceKey: "github issue #1" });
+    const res1 = await acquire(app, { secret: "secret-inst-1", resourceKey: "github://repo/issues/1" });
     expect(res1.status).toBe(200);
 
-    const res2 = await acquire(app, { secret: "secret-inst-2", resourceKey: "github issue #2" });
+    const res2 = await acquire(app, { secret: "secret-inst-2", resourceKey: "github://repo/issues/2" });
     expect(res2.status).toBe(200);
   });
 
@@ -113,8 +113,8 @@ describe("POST /locks/acquire", () => {
     register(registry, "secret-inst-1", "my-agent", "my-agent-1");
     register(registry, "secret-inst-2", "my-agent", "my-agent-2");
 
-    await acquire(app, { secret: "secret-inst-1", resourceKey: "github issue #1" });
-    const res = await acquire(app, { secret: "secret-inst-2", resourceKey: "github issue #1" });
+    await acquire(app, { secret: "secret-inst-1", resourceKey: "github://repo/issues/1" });
+    const res = await acquire(app, { secret: "secret-inst-2", resourceKey: "github://repo/issues/1" });
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.holder).toBe("my-agent-1");
@@ -132,15 +132,15 @@ describe("POST /locks/release", () => {
   afterEach(() => lockStore.dispose());
 
   it("releases a lock held by the caller", async () => {
-    await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#42" });
-    const res = await release(app, { secret: "secret-a", resourceKey: "github issue acme/app#42" });
+    await acquire(app, { secret: "secret-a", resourceKey: "github://acme/app/issues/42" });
+    const res = await release(app, { secret: "secret-a", resourceKey: "github://acme/app/issues/42" });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
   });
 
   it("returns 409 when lock is held by another agent", async () => {
-    await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#42" });
-    const res = await release(app, { secret: "secret-b", resourceKey: "github issue acme/app#42" });
+    await acquire(app, { secret: "secret-a", resourceKey: "github://acme/app/issues/42" });
+    const res = await release(app, { secret: "secret-b", resourceKey: "github://acme/app/issues/42" });
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.ok).toBe(false);
@@ -148,12 +148,12 @@ describe("POST /locks/release", () => {
   });
 
   it("returns 404 for non-existent lock", async () => {
-    const res = await release(app, { secret: "secret-a", resourceKey: "github issue nope" });
+    const res = await release(app, { secret: "secret-a", resourceKey: "github://repo/issues/nope" });
     expect(res.status).toBe(404);
   });
 
   it("returns 403 for invalid secret", async () => {
-    const res = await release(app, { secret: "bad", resourceKey: "github issue x" });
+    const res = await release(app, { secret: "bad", resourceKey: "github://repo/issues/x" });
     expect(res.status).toBe(403);
   });
 });
@@ -169,8 +169,8 @@ describe("POST /locks/heartbeat", () => {
   afterEach(() => lockStore.dispose());
 
   it("extends TTL on a held lock", async () => {
-    await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#42" });
-    const res = await heartbeat(app, { secret: "secret-a", resourceKey: "github issue acme/app#42" });
+    await acquire(app, { secret: "secret-a", resourceKey: "github://acme/app/issues/42" });
+    const res = await heartbeat(app, { secret: "secret-a", resourceKey: "github://acme/app/issues/42" });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ok).toBe(true);
@@ -178,18 +178,18 @@ describe("POST /locks/heartbeat", () => {
   });
 
   it("returns 409 for lock held by another agent", async () => {
-    await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#42" });
-    const res = await heartbeat(app, { secret: "secret-b", resourceKey: "github issue acme/app#42" });
+    await acquire(app, { secret: "secret-a", resourceKey: "github://acme/app/issues/42" });
+    const res = await heartbeat(app, { secret: "secret-b", resourceKey: "github://acme/app/issues/42" });
     expect(res.status).toBe(409);
   });
 
   it("returns 404 for non-existent lock", async () => {
-    const res = await heartbeat(app, { secret: "secret-a", resourceKey: "github issue nope" });
+    const res = await heartbeat(app, { secret: "secret-a", resourceKey: "github://repo/issues/nope" });
     expect(res.status).toBe(404);
   });
 
   it("returns 403 for invalid secret", async () => {
-    const res = await heartbeat(app, { secret: "bad", resourceKey: "github issue x" });
+    const res = await heartbeat(app, { secret: "bad", resourceKey: "github://repo/issues/x" });
     expect(res.status).toBe(403);
   });
 
@@ -210,19 +210,19 @@ describe("GET /locks/list", () => {
   afterEach(() => lockStore.dispose());
 
   it("returns only locks held by the requesting agent", async () => {
-    await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#1" });
-    await acquire(app, { secret: "secret-b", resourceKey: "github pr acme/app#2" });
+    await acquire(app, { secret: "secret-a", resourceKey: "github://acme/app/issues/1" });
+    await acquire(app, { secret: "secret-b", resourceKey: "github://acme/app/pr/2" });
     const resA = await app.request("/locks/list?secret=secret-a");
     expect(resA.status).toBe(200);
     const bodyA = await resA.json();
     expect(bodyA).toHaveLength(1);
-    expect(bodyA[0].resourceKey).toBe("github issue acme/app#1");
+    expect(bodyA[0].resourceKey).toBe("github://acme/app/issues/1");
 
     const resB = await app.request("/locks/list?secret=secret-b");
     expect(resB.status).toBe(200);
     const bodyB = await resB.json();
     expect(bodyB).toHaveLength(1);
-    expect(bodyB[0].resourceKey).toBe("github pr acme/app#2");
+    expect(bodyB[0].resourceKey).toBe("github://acme/app/pr/2");
   });
 
   it("returns 403 for invalid secret", async () => {
@@ -247,18 +247,18 @@ describe("GET /locks/status", () => {
   afterEach(() => lockStore.dispose());
 
   it("returns lock status without authentication", async () => {
-    await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#1" });
-    await acquire(app, { secret: "secret-b", resourceKey: "github pr acme/app#2" });
+    await acquire(app, { secret: "secret-a", resourceKey: "github://acme/app/issues/1" });
+    await acquire(app, { secret: "secret-b", resourceKey: "github://acme/app/pr/2" });
     const res = await app.request("/locks/status");
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.locks).toHaveLength(2);
     
-    const lock1 = body.locks.find((l: any) => l.resourceKey === "github issue acme/app#1");
+    const lock1 = body.locks.find((l: any) => l.resourceKey === "github://acme/app/issues/1");
     expect(lock1.agentName).toBe("agent");
     expect(lock1.heldSince).toBeTypeOf("number");
     
-    const lock2 = body.locks.find((l: any) => l.resourceKey === "github pr acme/app#2");
+    const lock2 = body.locks.find((l: any) => l.resourceKey === "github://acme/app/pr/2");
     expect(lock2.agentName).toBe("dev-agent");
     expect(lock2.heldSince).toBeTypeOf("number");
   });
@@ -272,7 +272,7 @@ describe("GET /locks/status", () => {
 
   it("extracts agent name from holder correctly", async () => {
     register(registry, "secret-c", "my-complex-agent", "my-complex-agent-123");
-    await acquire(app, { secret: "secret-c", resourceKey: "test resource" });
+    await acquire(app, { secret: "secret-c", resourceKey: "test://resource" });
     const res = await app.request("/locks/status");
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -285,7 +285,7 @@ describe("GET /locks/status with skipStatusEndpoint", () => {
   it("returns 404 when skipStatusEndpoint is true", async () => {
     const { app, registry } = setup({ skipStatusEndpoint: true });
     register(registry, "secret-a", "agent-a");
-    await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#1" });
+    await acquire(app, { secret: "secret-a", resourceKey: "github://acme/app/issues/1" });
     
     const res = await app.request("/locks/status");
     expect(res.status).toBe(404);
@@ -294,24 +294,125 @@ describe("GET /locks/status with skipStatusEndpoint", () => {
   it("returns 200 when skipStatusEndpoint is false", async () => {
     const { app, registry } = setup({ skipStatusEndpoint: false });
     register(registry, "secret-a", "agent-a");
-    await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#1" });
+    await acquire(app, { secret: "secret-a", resourceKey: "github://acme/app/issues/1" });
     
     const res = await app.request("/locks/status");
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.locks).toHaveLength(1);
-    expect(body.locks[0].resourceKey).toBe("github issue acme/app#1");
+    expect(body.locks[0].resourceKey).toBe("github://acme/app/issues/1");
   });
 
   it("returns 200 when skipStatusEndpoint is undefined (default behavior)", async () => {
     const { app, registry } = setup(); // No opts parameter
     register(registry, "secret-a", "agent-a");
-    await acquire(app, { secret: "secret-a", resourceKey: "github issue acme/app#1" });
+    await acquire(app, { secret: "secret-a", resourceKey: "github://acme/app/issues/1" });
     
     const res = await app.request("/locks/status");
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.locks).toHaveLength(1);
-    expect(body.locks[0].resourceKey).toBe("github issue acme/app#1");
+    expect(body.locks[0].resourceKey).toBe("github://acme/app/issues/1");
+  });
+});
+
+describe("Lock Routes — URI validation", () => {
+  describe("POST /locks/acquire", () => {
+    it("returns 400 for invalid URI format", async () => {
+      const { app, registry } = setup();
+      register(registry, "secret-a", "agent-a");
+
+      const res = await acquire(app, { secret: "secret-a", resourceKey: "not-a-uri" });
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error).toContain("Invalid URI format");
+    });
+
+    it("returns 400 for invalid URI scheme", async () => {
+      const { app, registry } = setup();
+      register(registry, "secret-a", "agent-a");
+
+      const res = await acquire(app, { secret: "secret-a", resourceKey: "123://invalid-scheme" });
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error).toContain("Invalid URI format");
+    });
+
+    it("succeeds with valid URIs", async () => {
+      const { app, registry } = setup();
+      register(registry, "secret-a", "agent-a");
+
+      const res = await acquire(app, { secret: "secret-a", resourceKey: "https://example.com/resource" });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.ok).toBe(true);
+    });
+  });
+
+  describe("POST /locks/release", () => {
+    it("returns 400 for invalid URI format", async () => {
+      const { app, registry } = setup();
+      register(registry, "secret-a", "agent-a");
+
+      const res = await release(app, { secret: "secret-a", resourceKey: "not-a-uri" });
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error).toContain("Invalid URI format");
+    });
+
+    it("returns 400 for invalid URI scheme", async () => {
+      const { app, registry } = setup();
+      register(registry, "secret-a", "agent-a");
+
+      const res = await release(app, { secret: "secret-a", resourceKey: "123://invalid-scheme" });
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error).toContain("Invalid URI format");
+    });
+
+    it("succeeds with valid URIs", async () => {
+      const { app, registry } = setup();
+      register(registry, "secret-a", "agent-a");
+      await acquire(app, { secret: "secret-a", resourceKey: "https://example.com/resource" });
+
+      const res = await release(app, { secret: "secret-a", resourceKey: "https://example.com/resource" });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.ok).toBe(true);
+    });
+  });
+
+  describe("POST /locks/heartbeat", () => {
+    it("returns 400 for invalid URI format", async () => {
+      const { app, registry } = setup();
+      register(registry, "secret-a", "agent-a");
+
+      const res = await heartbeat(app, { secret: "secret-a", resourceKey: "not-a-uri" });
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error).toContain("Invalid URI format");
+    });
+
+    it("returns 400 for invalid URI scheme", async () => {
+      const { app, registry } = setup();
+      register(registry, "secret-a", "agent-a");
+
+      const res = await heartbeat(app, { secret: "secret-a", resourceKey: "123://invalid-scheme" });
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error).toContain("Invalid URI format");
+    });
+
+    it("succeeds with valid URIs", async () => {
+      const { app, registry } = setup();
+      register(registry, "secret-a", "agent-a");
+      await acquire(app, { secret: "secret-a", resourceKey: "https://example.com/resource" });
+
+      const res = await heartbeat(app, { secret: "secret-a", resourceKey: "https://example.com/resource" });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.ok).toBe(true);
+      expect(body.expiresAt).toBeTypeOf("number");
+    });
   });
 });

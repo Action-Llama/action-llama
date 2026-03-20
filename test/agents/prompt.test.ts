@@ -156,8 +156,8 @@ describe("buildLockSkill", () => {
 
   it("includes command usage examples", () => {
     const result = buildLockSkill();
-    expect(result).toContain('rlock "github issue acme/app#42"');
-    expect(result).toContain('runlock "github issue acme/app#42"');
+    expect(result).toContain('rlock "github://acme/app/issues/42"');
+    expect(result).toContain('runlock "github://acme/app/issues/42"');
   });
 
   it("documents conflict response", () => {
@@ -169,7 +169,7 @@ describe("buildLockSkill", () => {
   it("documents rlock-heartbeat command", () => {
     const result = buildLockSkill();
     expect(result).toContain("rlock-heartbeat");
-    expect(result).toContain('rlock-heartbeat "github issue acme/app#42"');
+    expect(result).toContain('rlock-heartbeat "github://acme/app/issues/42"');
   });
 
   it("documents one-lock-at-a-time constraint", () => {
