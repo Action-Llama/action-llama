@@ -201,7 +201,7 @@ describe("log API routes", () => {
       writeFileSync(join(logsPath, "dev-2024-03-18.log"), lines.join("\n") + "\n");
 
       const app = createTestApp(tmpDir);
-      const res = await app.request("/api/logs/agents/dev/cc33dd44");
+      const res = await app.request("/api/logs/agents/dev/dev-cc33dd44");
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.entries).toHaveLength(2);
@@ -216,7 +216,7 @@ describe("log API routes", () => {
       writeFileSync(join(logsPath, "dev-2024-03-18.log"), lines.join("\n") + "\n");
 
       const app = createTestApp(tmpDir);
-      const res = await app.request("/api/logs/agents/dev/00000099");
+      const res = await app.request("/api/logs/agents/dev/dev-00000099");
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.entries).toEqual([]);
@@ -224,7 +224,7 @@ describe("log API routes", () => {
 
     it("returns empty entries for missing agent log file", async () => {
       const app = createTestApp(tmpDir);
-      const res = await app.request("/api/logs/agents/dev/aa11bb22");
+      const res = await app.request("/api/logs/agents/dev/dev-aa11bb22");
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.entries).toEqual([]);
@@ -246,7 +246,7 @@ describe("log API routes", () => {
       writeFileSync(join(logsPath, "dev-2024-03-18.log"), lines.join("\n") + "\n");
 
       const app = createTestApp(tmpDir);
-      const res1 = await app.request("/api/logs/agents/dev/cc33dd44?lines=10");
+      const res1 = await app.request("/api/logs/agents/dev/dev-cc33dd44?lines=10");
       const data1 = await res1.json();
       expect(data1.entries).toHaveLength(1);
       expect(data1.entries[0].msg).toBe("inst2-a");
@@ -261,7 +261,7 @@ describe("log API routes", () => {
       );
 
       // Only the matching instance entry should be returned
-      const res2 = await app.request(`/api/logs/agents/dev/cc33dd44?cursor=${encodeURIComponent(cursor)}`);
+      const res2 = await app.request(`/api/logs/agents/dev/dev-cc33dd44?cursor=${encodeURIComponent(cursor)}`);
       const data2 = await res2.json();
       expect(data2.entries).toHaveLength(1);
       expect(data2.entries[0].msg).toBe("inst2-new");
