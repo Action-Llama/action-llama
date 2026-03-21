@@ -152,6 +152,23 @@ export async function setupGateway(opts: {
         }
         process.exit(0);
       },
+      updateProjectScale: async (scale: number) => {
+        const { updateProjectScale } = await import("../shared/config.js");
+        updateProjectScale(projectPath, scale);
+        logger.info({ scale }, "project scale updated");
+        return true;
+      },
+      updateAgentScale: async (name: string, scale: number) => {
+        const { updateAgentScale } = await import("../shared/config.js");
+        const config = agentConfigs.find((a) => a.name === name);
+        if (!config) return false;
+        updateAgentScale(projectPath, name, scale);
+        if (statusTracker) {
+          statusTracker.updateAgentScale(name, scale);
+        }
+        logger.info({ agent: name, scale }, "agent scale updated");
+        return true;
+      },
       workQueue: {
         size: (agentName: string) => state.schedulerCtx?.workQueue.size(agentName) ?? 0,
       },

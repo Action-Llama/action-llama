@@ -285,4 +285,25 @@ export class StatusTracker extends EventEmitter {
   isPaused(): boolean {
     return this.schedulerInfo?.paused ?? false;
   }
+
+  /**
+   * Update an agent's scale (runtime only - does not persist to config)
+   */
+  updateAgentScale(name: string, scale: number): void {
+    const agent = this.agents.get(name);
+    if (!agent) return;
+    agent.scale = scale;
+    // If the scale is reduced below current running count, we don't kill instances
+    // The pool will naturally adjust on next run
+    this.emit("update");
+    this.emit("agent-scale-changed", name, scale);
+  }
+
+  /**
+   * Get an agent's current scale
+   */
+  getAgentScale(name: string): number {
+    const agent = this.agents.get(name);
+    return agent?.scale ?? 1;
+  }
 }

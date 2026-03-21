@@ -83,7 +83,7 @@ export async function execute(opts: { project: string; env?: string; headless?: 
     cleanup = detach;
   } else {
     const { renderTUI } = await import("../../tui/render.js");
-    const { unmount } = await renderTUI(statusTracker);
+    const { unmount } = await renderTUI(statusTracker, projectPath);
     cleanup = unmount;
   }
 

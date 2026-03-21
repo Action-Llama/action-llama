@@ -95,6 +95,21 @@ export function renderAgentDetailPage(data: AgentDetailData): string {
       ${renderStatCard("Total Cost", formatCost(summary?.totalCost ?? 0))}
     </div>
 
+    <!-- Agent Configuration -->
+    <div class="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4 mb-6">
+      <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-3">Configuration</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Agent Scale (concurrent runners)</label>
+          <div class="flex items-center gap-2">
+            <input id="agent-scale-input" type="number" min="1" max="20" value="${agent?.scale ?? 1}" class="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-slate-900 dark:text-white w-20">
+            <button id="update-agent-scale-btn" class="px-3 py-1.5 text-sm rounded-md font-bold bg-blue-600 hover:bg-blue-700 text-white transition-colors" onclick="updateAgentScale()">Update</button>
+          </div>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Number of concurrent instances this agent can run</p>
+        </div>
+      </div>
+    </div>
+
     <!-- Session instances -->
     <div id="running-section" class="${runningInstances.length > 0 ? "" : "hidden"} mb-6">
       <div class="flex items-center justify-between mb-3">
@@ -278,6 +293,34 @@ export function renderAgentDetailPage(data: AgentDetailData): string {
     function killInstance(id) {
       if (!confirm("Kill instance " + id + "?")) return;
       ctrlPost("/control/kill/" + encodeURIComponent(id));
+    }
+    function updateAgentScale() {
+      var input = document.getElementById("agent-scale-input");
+      var btn = document.getElementById("update-agent-scale-btn");
+      var scale = parseInt(input.value);
+      if (!scale || scale < 1 || scale > 20) {
+        alert("Scale must be between 1 and 20");
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = "Updating...";
+      fetch("/control/agents/" + encodeURIComponent(agentName) + "/scale", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scale: scale })
+      }).then(function(r) {
+        if (r.ok) {
+          alert("Agent scale updated to " + scale);
+        } else {
+          r.text().then(function(text) { alert("Error: " + text); });
+        }
+      }).catch(function(err) {
+        alert("Error: " + err);
+      }).finally(function() {
+        btn.disabled = false;
+        btn.textContent = "Update";
+      });
     }
 
     // Aggregate log viewer

@@ -12,6 +12,8 @@ export interface ControlRoutesDeps {
   enableAgent?: (name: string) => Promise<boolean>;
   disableAgent?: (name: string) => Promise<boolean>;
   stopScheduler?: () => Promise<void>;
+  updateProjectScale?: (scale: number) => Promise<boolean>;
+  updateAgentScale?: (name: string, scale: number) => Promise<boolean>;
   logger?: Logger;
   workQueue?: { size(agentName: string): number };
 }
@@ -240,5 +242,59 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps) {
       running: instances.length,
       queueSizes,
     });
+  });
+
+  // POST /control/project/scale - Update project scale
+  app.post("/control/project/scale", async (c) => {
+    logger?.info("control: project scale update requested");
+    if (!deps.updateProjectScale) {
+      return c.json({ error: "Project scale update not available" }, 503);
+    }
+    try {
+      const body = await c.req.json();
+      const scale = parseInt(body.scale);
+      if (!Number.isInteger(scale) || scale < 1) {
+        return c.json({ error: "Scale must be a positive integer" }, 400);
+      }
+      const success = await deps.updateProjectScale(scale);
+      if (success) {
+        logger?.info({ scale }, "control: project scale updated");
+        return c.json({ success: true, message: `Project scale updated to ${scale}` });
+      } else {
+        return c.json({ error: "Failed to update project scale" }, 500);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger?.error({ err: message }, "control: project scale update failed");
+      return c.json({ error: `Failed to update project scale: ${message}` }, 500);
+    }
+  });
+
+  // POST /control/agents/:name/scale - Update agent scale
+  app.post("/control/agents/:name/scale", async (c) => {
+    const name = c.req.param("name");
+    logger?.info({ agent: name }, "control: agent scale update requested");
+    if (!deps.updateAgentScale) {
+      return c.json({ error: "Agent scale update not available" }, 503);
+    }
+    try {
+      const body = await c.req.json();
+      const scale = parseInt(body.scale);
+      if (!Number.isInteger(scale) || scale < 1) {
+        return c.json({ error: "Scale must be a positive integer" }, 400);
+      }
+      const success = await deps.updateAgentScale(name, scale);
+      if (success) {
+        logger?.info({ agent: name, scale }, "control: agent scale updated");
+        return c.json({ success: true, message: `Agent ${name} scale updated to ${scale}` });
+      } else {
+        logger?.warn({ agent: name }, "control: agent not found");
+        return c.json({ error: `Agent ${name} not found` }, 404);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger?.error({ agent: name, err: message }, "control: agent scale update failed");
+      return c.json({ error: `Failed to update agent scale: ${message}` }, 500);
+    }
   });
 }
