@@ -82,7 +82,7 @@ export function renderAgentDetailPage(data: AgentDetailData): string {
       </div>
       <div class="flex items-center gap-2">
         <button class="px-3 py-1.5 text-sm rounded-md font-bold bg-green-600 hover:bg-green-700 text-white transition-colors" onclick="triggerAgent('${escapeHtml(agentName)}')">Run</button>
-        <button class="px-3 py-1.5 text-sm rounded-md font-bold bg-red-600 hover:bg-red-700 text-white transition-colors" onclick="killAgent()">Kill</button>
+        <button id="agent-kill-btn" class="px-3 py-1.5 text-sm rounded-md font-bold bg-red-600 hover:bg-red-700 text-white transition-colors ${runningInstances.length > 0 ? "" : "opacity-50 cursor-not-allowed"}" onclick="killAgent()" ${runningInstances.length > 0 ? "" : "disabled"}>Kill</button>
         <button id="toggle-btn" class="px-3 py-1.5 text-sm rounded-md font-bold border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors" onclick="toggleEnabled()">${agent?.enabled !== false ? "Disable" : "Enable"}</button>
       </div>
     </div>
@@ -145,6 +145,19 @@ export function renderAgentDetailPage(data: AgentDetailData): string {
 
     var stateColors = { running: "bg-green-500", building: "bg-yellow-500", error: "bg-red-500", idle: "bg-slate-400" };
     var stateTextColors = { running: "text-green-600 dark:text-green-400", building: "text-yellow-600 dark:text-yellow-400", error: "text-red-600 dark:text-red-400", idle: "text-slate-500 dark:text-slate-400" };
+
+    function updateKillButtonState(instances) {
+      var hasRunning = instances.some(function(i) { return i.status === "running"; });
+      var btn = document.getElementById("agent-kill-btn");
+      if (btn) {
+        btn.disabled = !hasRunning;
+        if (hasRunning) {
+          btn.classList.remove("opacity-50", "cursor-not-allowed");
+        } else {
+          btn.classList.add("opacity-50", "cursor-not-allowed");
+        }
+      }
+    }
 
     function resultColor(result) {
       if (result === "completed" || result === "rerun") return "text-green-600 dark:text-green-400";
@@ -242,6 +255,8 @@ export function renderAgentDetailPage(data: AgentDetailData): string {
           section.classList.add("hidden");
           container.innerHTML = "";
         }
+        // Update kill button state after updating instances
+        updateKillButtonState(mine);
       }
     };
 
@@ -253,6 +268,8 @@ export function renderAgentDetailPage(data: AgentDetailData): string {
       ctrlPost("/control/agents/" + encodeURIComponent(agentName) + "/" + action);
     }
     function killAgent() {
+      var btn = document.getElementById("agent-kill-btn");
+      if (!btn || btn.disabled) return;
       if (!confirm("Kill all instances of agent '" + agentName + "'?")) return;
       ctrlPost("/control/agents/" + encodeURIComponent(agentName) + "/kill");
     }
