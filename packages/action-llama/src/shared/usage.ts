@@ -12,14 +12,73 @@ export interface TokenUsage {
  * Convert pi-ai SDK SessionStats to our TokenUsage format
  */
 export function sessionStatsToUsage(stats: any): TokenUsage {
+  // Handle null/undefined stats
+  if (!stats) {
+    return zeroTokenUsage();
+  }
+
+  // Try multiple possible paths for input tokens
+  const inputTokens = 
+    stats.usage?.input ??           // Current working format (OpenAI)
+    stats.inputTokens ??           // Direct property
+    stats.metrics?.input_tokens ?? // Metrics object  
+    stats.usageMetrics?.inputTokens ?? // Usage metrics object
+    stats.anthropic?.usage?.input_tokens ?? // Provider-specific format
+    0;
+
+  // Try multiple possible paths for output tokens  
+  const outputTokens = 
+    stats.usage?.output ??           // Current working format (OpenAI)
+    stats.outputTokens ??           // Direct property
+    stats.metrics?.output_tokens ?? // Metrics object
+    stats.usageMetrics?.outputTokens ?? // Usage metrics object  
+    stats.anthropic?.usage?.output_tokens ?? // Provider-specific format
+    0;
+
+  // Try multiple possible paths for cache read tokens
+  const cacheReadTokens = 
+    stats.usage?.cacheRead ??           // Current working format (OpenAI)
+    stats.cacheReadTokens ??           // Direct property
+    stats.metrics?.cache_read_tokens ?? // Metrics object
+    stats.usageMetrics?.cacheReadTokens ?? // Usage metrics object
+    stats.anthropic?.usage?.cache_read_input_tokens ?? // Anthropic cache format
+    0;
+
+  // Try multiple possible paths for cache write tokens  
+  const cacheWriteTokens = 
+    stats.usage?.cacheWrite ??           // Current working format (OpenAI) 
+    stats.cacheWriteTokens ??           // Direct property
+    stats.metrics?.cache_write_tokens ?? // Metrics object
+    stats.usageMetrics?.cacheWriteTokens ?? // Usage metrics object
+    stats.anthropic?.usage?.cache_creation_input_tokens ?? // Anthropic cache format
+    0;
+
+  // Calculate total tokens if not provided
+  const totalTokens = 
+    stats.usage?.totalTokens ??        // Provided total
+    stats.totalTokens ??              // Direct property
+    stats.metrics?.total_tokens ??    // Metrics object
+    inputTokens + outputTokens;       // Fallback calculation
+
+  // Try multiple possible paths for cost
+  const cost = 
+    stats.usage?.cost?.total ??        // Current working format  
+    stats.cost ??                     // Direct property
+    stats.metrics?.cost ??            // Metrics object
+    stats.usageMetrics?.cost ??       // Usage metrics object
+    0;
+
+  // Turn count should be consistent across providers
+  const turnCount = stats.turnCount ?? 0;
+
   return {
-    inputTokens: stats.usage?.input ?? 0,
-    outputTokens: stats.usage?.output ?? 0,
-    cacheReadTokens: stats.usage?.cacheRead ?? 0,
-    cacheWriteTokens: stats.usage?.cacheWrite ?? 0,
-    totalTokens: stats.usage?.totalTokens ?? 0,
-    cost: stats.usage?.cost?.total ?? 0,
-    turnCount: stats.turnCount ?? 0,
+    inputTokens,
+    outputTokens, 
+    cacheReadTokens,
+    cacheWriteTokens,
+    totalTokens,
+    cost,
+    turnCount,
   };
 }
 
