@@ -115,7 +115,7 @@ export function registerDashboardRoutes(
     const agents = statusTracker.getAllAgents();
     const agent = agents.find((a) => a.name === name) || null;
     const summary = statsStore ? (statsStore.queryAgentSummary({ agent: name })[0] || null) : null;
-    const instances = statusTracker.getInstances().filter((i) => i.agentName === name);
+    const instances = statusTracker.getInstances().filter((i) => i.agentName === name && i.status === "running");
     const totalHistorical = statsStore ? statsStore.countRunsByAgent(name) : 0;
     const html = renderAgentDetailPage({ agentName: name, agent, summary, runningInstances: instances, totalHistorical });
     return c.html(html);
