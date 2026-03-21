@@ -136,6 +136,22 @@ export function registerDashboardRoutes(
     return c.redirect(`/dashboard/agents/${encodeURIComponent(name)}`);
   });
 
+  // Locks API endpoint
+  app.get("/dashboard/api/locks", async (c) => {
+    try {
+      const response = await fetch("http://127.0.0.1:" + (statusTracker.getSchedulerInfo()?.gatewayPort || 3000) + "/locks/status", {
+        headers: { "X-Internal-Request": "true" }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        return c.json(data);
+      }
+    } catch {
+      // ignore fetch errors
+    }
+    return c.json({ locks: [] });
+  });
+
   // SSE: status stream
   app.get("/dashboard/api/status-stream", (c) => {
     return streamSSE(c, async (stream) => {

@@ -62,6 +62,12 @@ export function renderInstanceDetailPage(data: InstanceDetailData): string {
         </div>
       </div>
       ${notFoundContent}
+      <div id="locks-section" class="mt-6">
+        <h3 class="text-base font-semibold text-slate-900 dark:text-white mb-3">Resource Locks</h3>
+        <div id="locks-container" class="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4">
+          <div class="text-sm text-slate-400 italic">Loading...</div>
+        </div>
+      </div>
       <h2 class="text-base font-semibold text-slate-900 dark:text-white mb-3 mt-8">Logs</h2>
       ${logViewerHtml(agentName, instanceId)}`;
 
@@ -110,6 +116,13 @@ export function renderInstanceDetailPage(data: InstanceDetailData): string {
         ${statRow("Cache Write", formatTokens(run.cache_write_tokens))}
         ${statRow("Total Tokens", formatTokens(run.total_tokens))}
         ${statRow("Cost", formatCost(run.cost_usd))}
+      </div>
+    </div>
+
+    <div id="locks-section" class="mt-6">
+      <h3 class="text-base font-semibold text-slate-900 dark:text-white mb-3">Resource Locks</h3>
+      <div id="locks-container" class="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4">
+        <div class="text-sm text-slate-400 italic">Loading...</div>
       </div>
     </div>
 
@@ -278,6 +291,44 @@ function logViewerScript(agentName: string, instanceId: string): string {
     }
     fetchLogs(true);
     setInterval(function() { fetchLogs(false); }, 1500);
+
+    // Fetch locks for this instance
+    async function fetchInstanceLocks() {
+      try {
+        var res = await fetch("/dashboard/api/locks");
+        if (res.ok) {
+          var data = await res.json();
+          var instanceLocks = [];
+          if (data.locks) {
+            for (var i = 0; i < data.locks.length; i++) {
+              var lock = data.locks[i];
+              // Check if holder matches this instance
+              if (lock.holder && lock.holder.includes(instanceId)) {
+                instanceLocks.push(lock);
+              }
+            }
+          }
+          // Update locks display
+          var container = document.getElementById("locks-container");
+          if (instanceLocks.length > 0) {
+            var html = "<div class='space-y-2'>";
+            for (var j = 0; j < instanceLocks.length; j++) {
+              var l = instanceLocks[j];
+              var since = new Date(l.heldSince).toLocaleString();
+              html += "<div class='flex justify-between py-2 border-b border-slate-100 dark:border-slate-800'>" +
+                      "<span class='text-sm font-mono text-slate-700 dark:text-slate-300'>" + esc(l.resourceKey) + "</span>" +
+                      "<span class='text-xs text-slate-500'>Since " + since + "</span></div>";
+            }
+            html += "</div>";
+            container.innerHTML = html;
+          } else {
+            container.innerHTML = "<div class='text-sm text-slate-400 italic'>No locks held</div>";
+          }
+        }
+      } catch(e) {}
+    }
+    setInterval(fetchInstanceLocks, 2000);
+    fetchInstanceLocks(); // Initial fetch
 
     // Scroll up to load older logs
     var loadingOlder = false;

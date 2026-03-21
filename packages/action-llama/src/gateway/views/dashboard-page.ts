@@ -57,6 +57,7 @@ function renderAgentRow(agent: AgentStatus, totalSessionTokens: number): string 
     <td class="px-3 py-2.5 text-sm text-slate-600 dark:text-slate-300">${agent.lastRunDuration != null ? formatDuration(agent.lastRunDuration) : "\u2014"}</td>
     <td class="px-3 py-2.5 text-sm text-slate-600 dark:text-slate-300">${formatTime(agent.nextRunAt)}</td>
     <td class="px-3 py-2.5" style="min-width:120px">${renderTokenBar(agent, totalSessionTokens)}</td>
+    <td class="px-3 py-2.5 text-sm text-slate-600 dark:text-slate-300">${agent.locks && agent.locks.length > 0 ? agent.locks.map(l => escapeHtml(l.resourceKey.replace(/^[^:]+:\/\//, ""))).join(", ") : "\u2014"}</td>
     <td class="px-3 py-2.5 whitespace-nowrap">
       <button class="px-2 py-1 text-xs rounded font-bold bg-green-600 hover:bg-green-700 text-white transition-colors mr-1" onclick="triggerAgent('${escapeHtml(agent.name)}')">Run</button>
       <button class="px-2 py-1 text-xs rounded font-bold bg-red-600 hover:bg-red-700 text-white transition-colors mr-1" onclick="killAgent('${escapeHtml(agent.name)}')">Kill</button>
@@ -126,11 +127,12 @@ export function renderDashboardPage(agents: AgentStatus[], schedulerInfo: Schedu
             <th class="text-left px-3 py-2 text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">Duration</th>
             <th class="text-left px-3 py-2 text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">Next Run</th>
             <th class="text-left px-3 py-2 text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">Tokens Used</th>
+            <th class="text-left px-3 py-2 text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">Locks</th>
             <th class="text-left px-3 py-2 text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">Actions</th>
           </tr>
         </thead>
         <tbody id="agent-table-body" class="divide-y divide-slate-100 dark:divide-slate-800">
-          ${agents.length > 0 ? agents.map((a) => renderAgentRow(a, sessionTokens)).join("\n") : '<tr><td colspan="7" class="px-3 py-8 text-center text-slate-400 italic">No agents registered</td></tr>'}
+          ${agents.length > 0 ? agents.map((a) => renderAgentRow(a, sessionTokens)).join("\n") : '<tr><td colspan="8" class="px-3 py-8 text-center text-slate-400 italic">No agents registered</td></tr>'}
         </tbody>
       </table>
     </div>
@@ -195,6 +197,7 @@ export function renderDashboardPage(agents: AgentStatus[], schedulerInfo: Schedu
         '<td class="px-3 py-2.5 text-sm text-slate-600 dark:text-slate-300">' + (a.lastRunDuration != null ? fmtDur(a.lastRunDuration) : "\\u2014") + '</td>' +
         '<td class="px-3 py-2.5 text-sm text-slate-600 dark:text-slate-300">' + fmtTime(a.nextRunAt) + '</td>' +
         '<td class="px-3 py-2.5" style="min-width:120px">' + tokenBar(a, totalTok) + '</td>' +
+        '<td class="px-3 py-2.5 text-sm text-slate-600 dark:text-slate-300">' + (a.locks && a.locks.length > 0 ? a.locks.map(function(l) { return esc(l.resourceKey.replace(/^[^:]+:\\/\\//, "")); }).join(", ") : "\\u2014") + '</td>' +
         '<td class="px-3 py-2.5 whitespace-nowrap">' +
         '<button class="px-2 py-1 text-xs rounded font-bold bg-green-600 hover:bg-green-700 text-white transition-colors mr-1" onclick="triggerAgent(\\'' + esc(a.name) + '\\')">Run</button>' +
         '<button class="px-2 py-1 text-xs rounded font-bold bg-red-600 hover:bg-red-700 text-white transition-colors mr-1" onclick="killAgent(\\'' + esc(a.name) + '\\')">Kill</button>' +
@@ -231,7 +234,7 @@ export function renderDashboardPage(agents: AgentStatus[], schedulerInfo: Schedu
         if (data.agents.length > 0) {
           tbody.innerHTML = data.agents.map(renderRow).join("");
         } else {
-          tbody.innerHTML = '<tr><td colspan="7" class="px-3 py-8 text-center text-slate-400 italic">No agents registered</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="8" class="px-3 py-8 text-center text-slate-400 italic">No agents registered</td></tr>';
         }
         var cards = document.getElementById("agent-cards");
         if (data.agents.length > 0) {
@@ -258,6 +261,36 @@ export function renderDashboardPage(agents: AgentStatus[], schedulerInfo: Schedu
         }
       }
     };
+
+    // Fetch locks periodically
+    async function fetchLocks() {
+      try {
+        var res = await fetch("/dashboard/api/locks");
+        if (res.ok) {
+          var data = await res.json();
+          if (data.locks && _cachedAgents) {
+            // Group locks by agent
+            var locksByAgent = {};
+            for (var i = 0; i < data.locks.length; i++) {
+              var lock = data.locks[i];
+              if (!locksByAgent[lock.agentName]) locksByAgent[lock.agentName] = [];
+              locksByAgent[lock.agentName].push(lock);
+            }
+            // Update agent locks
+            for (var j = 0; j < _cachedAgents.length; j++) {
+              _cachedAgents[j].locks = locksByAgent[_cachedAgents[j].name] || [];
+            }
+            // Re-render table
+            var tbody = document.getElementById("agent-table-body");
+            if (_cachedAgents.length > 0) {
+              tbody.innerHTML = _cachedAgents.map(renderRow).join("");
+            }
+          }
+        }
+      } catch(e) {}
+    }
+    setInterval(fetchLocks, 2000);
+    fetchLocks(); // Initial fetch
 
     var schedulerPaused = ${schedulerInfo?.paused ? "true" : "false"};
 
