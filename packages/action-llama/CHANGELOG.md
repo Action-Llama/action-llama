@@ -1,5 +1,43 @@
 # @action-llama/action-llama
 
+## 0.15.0
+
+### Minor Changes
+
+- [#215](https://github.com/Action-Llama/action-llama/pull/215) [`3f70293`](https://github.com/Action-Llama/action-llama/commit/3f70293af1985d745d4c71931f82326370b2db81) Thanks [@asselstine](https://github.com/asselstine)! - Add feedback agent configuration system that automatically triggers agents to fix errors found in other agents' logs, with the ability to update their SKILL.md files.
+
+  Features:
+
+  - **Global feedback configuration** in project config with enabled/disabled toggle, error patterns, context lines, and custom feedback agent selection
+  - **Per-agent feedback overrides** to enable/disable feedback for specific agents independently of global settings
+  - **Built-in default feedback agent** that conservatively fixes only syntax errors and formatting issues while preserving original agent intent
+  - **Automatic log monitoring** that detects error patterns in agent logs and triggers feedback agents with relevant context
+  - **SKILL.md validation and backup** when feedback agents make corrections
+  - **CLI configuration** via `al agent config` command with feedback override options
+  - **Web UI configuration** with project-wide feedback settings and per-agent toggles
+  - **Conservative approach** - feedback agents only fix clear technical issues, never alter agent behavior or functionality
+
+  The feedback system helps maintain agent health by automatically detecting and fixing common SKILL.md syntax errors, YAML formatting issues, and obvious typos that can cause agent failures.
+
+  Closes [#213](https://github.com/Action-Llama/action-llama/issues/213)
+
+### Patch Changes
+
+- [#210](https://github.com/Action-Llama/action-llama/pull/210) [`bbd1eeb`](https://github.com/Action-Llama/action-llama/commit/bbd1eeb788436147245e6ddda877486d8368b48e) Thanks [@asselstine](https://github.com/asselstine)! - Add resource lock display to dashboard agents table and instance detail pages. Agents table now shows a "Locks" column displaying currently held resource locks, and instance detail pages include a "Resource Locks" section. Lock data is fetched from the gateway API every 2 seconds for real-time updates. Closes [#204](https://github.com/Action-Llama/action-llama/issues/204).
+
+- [#212](https://github.com/Action-Llama/action-llama/pull/212) [`2275fa0`](https://github.com/Action-Llama/action-llama/commit/2275fa0969b8edaac235105de0868ae6099e4e9d) Thanks [@asselstine](https://github.com/asselstine)! - Added scale configuration controls to both TUI and web interface. Users can now:
+
+  - View and modify project-wide scale (max concurrent agent runs) in a new configuration page
+  - View and modify agent-specific scale (concurrent runners per agent) in agent configuration
+  - TUI: Press 'C' to open project config, 'A' to open agent config for the selected agent
+  - Web: Click "Config" button on dashboard to access project settings, agent scale controls on agent detail pages
+
+  Closes [#203](https://github.com/Action-Llama/action-llama/issues/203).
+
+- [#211](https://github.com/Action-Llama/action-llama/pull/211) [`1b76963`](https://github.com/Action-Llama/action-llama/commit/1b7696313640ff904a01127eae023826f7b4b74c) Thanks [@asselstine](https://github.com/asselstine)! - Filter Session Instances section on agent detail page to only show running instances. Changed section title from "Session Instances" to "Running Instances" to clarify the filtering. Completed instances remain visible in the Instance History table below.
+
+- [#208](https://github.com/Action-Llama/action-llama/pull/208) [`5eb4427`](https://github.com/Action-Llama/action-llama/commit/5eb44274e02255a3a006a87e0865ee20e5c5fbdc) Thanks [@asselstine](https://github.com/asselstine)! - Fix instance detail page to show proper status for running instances instead of misleading "Instance not found" message. The page now displays telemetry availability message and running instance information when an agent is currently executing. Closes [#205](https://github.com/Action-Llama/action-llama/issues/205)
+
 ## 0.14.1
 
 ### Patch Changes
