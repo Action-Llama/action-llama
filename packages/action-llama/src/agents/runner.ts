@@ -297,6 +297,7 @@ export class AgentRunner {
             await session.prompt(prompt);
             circuitBreaker.recordSuccess(modelConfig.provider, modelConfig.model);
             const sessionStats = session.getSessionStats();
+            this.logger.debug({ sessionStats, provider: modelConfig.provider }, "raw session stats");
             usage = sessionStatsToUsage(sessionStats);
             session.dispose();
             modelSucceeded = true;
