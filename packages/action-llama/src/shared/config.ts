@@ -69,12 +69,20 @@ export interface TelemetryConfig {
   samplingRate?: number;
 }
 
+export interface FeedbackConfig {
+  enabled: boolean;
+  agent?: string; // name of feedback agent, defaults to built-in
+  errorPatterns?: string[]; // regex patterns, defaults to ["error", "fail"]
+  contextLines?: number; // lines around error, default 2
+}
+
 export interface GlobalConfig {
   models?: Record<string, ModelConfig>;
   local?: LocalConfig;
   gateway?: GatewayConfig;
   webhooks?: Record<string, WebhookSourceConfig>;
   telemetry?: TelemetryConfig;
+  feedback?: FeedbackConfig;
   projectName?: string;
   maxReruns?: number;
   maxCallDepth?: number;
@@ -106,6 +114,7 @@ export interface AgentConfig {
   params?: Record<string, unknown>;
   scale?: number; // Number of concurrent runs allowed (default: 1)
   timeout?: number; // Max runtime in seconds (falls back to global local.timeout, then 900)
+  feedback?: { enabled?: boolean }; // per-agent feedback override
   license?: string;
   compatibility?: string;
 }
@@ -214,6 +223,7 @@ export function loadAgentConfig(projectPath: string, agentName: string): AgentCo
     params: meta.params,
     scale: meta.scale,
     timeout: meta.timeout,
+    feedback: meta.feedback,
   };
 
   // Resolve named model references from global config

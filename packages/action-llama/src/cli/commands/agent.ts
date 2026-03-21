@@ -97,6 +97,11 @@ export async function configAgent(name: string, opts: { project: string }): Prom
     const webhookCount = config.webhooks?.length ?? 0;
     const paramCount = config.params ? Object.keys(config.params).length : 0;
     const modelLabel = config.models[0]?.provider ?? "none";
+    const feedbackStatus = config.feedback?.enabled === undefined 
+      ? "inherit" 
+      : config.feedback.enabled 
+        ? "enabled" 
+        : "disabled";
 
     const section = await select({
       message: `Configure ${name}:`,
@@ -106,6 +111,7 @@ export async function configAgent(name: string, opts: { project: string }): Prom
         { name: `Schedule [${config.schedule ?? "none"}]`, value: "schedule" },
         { name: `Webhooks [${webhookCount} trigger${webhookCount !== 1 ? "s" : ""}]`, value: "webhooks" },
         { name: `Params [${paramCount} key${paramCount !== 1 ? "s" : ""}]`, value: "params" },
+        { name: `Feedback [${feedbackStatus}]`, value: "feedback" },
         { name: "Done — save and run doctor", value: "done" },
       ],
     });
@@ -125,6 +131,9 @@ export async function configAgent(name: string, opts: { project: string }): Prom
         break;
       case "params":
         await editParams(config);
+        break;
+      case "feedback":
+        await editFeedback(config);
         break;
       case "done":
         done = true;
@@ -488,4 +497,45 @@ async function editParams(config: AgentConfig): Promise<void> {
 
   // Clean up empty object
   if (Object.keys(config.params).length === 0) config.params = undefined;
+}
+
+async function editFeedback(config: AgentConfig): Promise<void> {
+  const current = config.feedback?.enabled;
+  const currentLabel = current === undefined 
+    ? "inherit from global settings" 
+    : current 
+      ? "enabled" 
+      : "disabled";
+
+  const choice = await select({
+    message: `Feedback configuration [currently: ${currentLabel}]:`,
+    choices: [
+      { name: "Inherit from global settings (default)", value: "inherit" },
+      { name: "Enable feedback for this agent", value: "enable" },
+      { name: "Disable feedback for this agent", value: "disable" },
+    ],
+    default: current === undefined ? "inherit" : current ? "enable" : "disable",
+  });
+
+  switch (choice) {
+    case "inherit":
+      config.feedback = undefined;
+      break;
+    case "enable":
+      if (!config.feedback) config.feedback = {};
+      config.feedback.enabled = true;
+      break;
+    case "disable":
+      if (!config.feedback) config.feedback = {};
+      config.feedback.enabled = false;
+      break;
+  }
+
+  console.log(`Feedback configuration updated: ${
+    config.feedback?.enabled === undefined 
+      ? "will inherit from global settings"
+      : config.feedback.enabled
+        ? "enabled for this agent"
+        : "disabled for this agent"
+  }`);
 }
