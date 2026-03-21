@@ -82,7 +82,6 @@ export function renderAgentDetailPage(data: AgentDetailData): string {
       </div>
       <div class="flex items-center gap-2">
         <button class="px-3 py-1.5 text-sm rounded-md font-bold bg-green-600 hover:bg-green-700 text-white transition-colors" onclick="triggerAgent('${escapeHtml(agentName)}')">Run</button>
-        <button id="agent-kill-btn" class="px-3 py-1.5 text-sm rounded-md font-bold bg-red-600 hover:bg-red-700 text-white transition-colors ${runningInstances.length > 0 ? "" : "opacity-50 cursor-not-allowed"}" onclick="killAgent()" ${runningInstances.length > 0 ? "" : "disabled"}>Kill</button>
         <button id="toggle-btn" class="px-3 py-1.5 text-sm rounded-md font-bold border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors" onclick="toggleEnabled()">${agent?.enabled !== false ? "Disable" : "Enable"}</button>
       </div>
     </div>
@@ -98,7 +97,10 @@ export function renderAgentDetailPage(data: AgentDetailData): string {
 
     <!-- Session instances -->
     <div id="running-section" class="${runningInstances.length > 0 ? "" : "hidden"} mb-6">
-      <h2 class="text-base font-semibold text-slate-900 dark:text-white mb-3">Session Instances</h2>
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-base font-semibold text-slate-900 dark:text-white">Session Instances</h2>
+        <button id="agent-kill-btn" class="px-3 py-1.5 text-sm rounded-md font-bold bg-red-600 hover:bg-red-700 text-white transition-colors ${runningInstances.length > 0 ? "" : "opacity-50 cursor-not-allowed"}" onclick="killAgent()" ${runningInstances.length > 0 ? "" : "disabled"}>Kill all</button>
+      </div>
       <div id="running-instances" class="space-y-2">
         ${runningInstances.map((inst) => renderInstanceCard(inst, agentName)).join("\n")}
       </div>
