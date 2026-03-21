@@ -20,6 +20,7 @@ export interface AgentStatus {
   runReason: string | null; // why the agent is running (e.g. "schedule", "webhook", "rerun 2/10")
   lastRunUsage: TokenUsage | null;
   cumulativeUsage: TokenUsage | null;  // accumulated across all runs in this session
+  locks?: Array<{ resourceKey: string; heldSince: number; }>; // resource locks held by this agent
 }
 
 export interface SchedulerInfo {
@@ -67,6 +68,7 @@ export class StatusTracker extends EventEmitter {
       runReason: null,
       lastRunUsage: null,
       cumulativeUsage: null,
+      locks: [],
     });
     this.emit("update");
   }
