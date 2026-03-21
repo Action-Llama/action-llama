@@ -126,7 +126,8 @@ export function registerDashboardRoutes(
     const name = c.req.param("name");
     const id = c.req.param("id");
     const run = statsStore ? statsStore.queryRunByInstanceId(id) : null;
-    const html = renderInstanceDetailPage({ agentName: name, instanceId: id, run });
+    const runningInstance = statusTracker.getInstances().find(i => i.id === id) || null;
+    const html = renderInstanceDetailPage({ agentName: name, instanceId: id, run, runningInstance });
     return c.html(html);
   });
 

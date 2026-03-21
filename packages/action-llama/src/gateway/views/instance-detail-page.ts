@@ -21,6 +21,7 @@ export interface InstanceDetailData {
     turn_count: number;
     error_message?: string;
   } | null;
+  runningInstance?: { id: string; status: string; startedAt: Date; trigger: string; } | null;
 }
 
 function resultBadge(result: string): string {
@@ -43,24 +44,55 @@ function statRow(label: string, value: string): string {
 }
 
 export function renderInstanceDetailPage(data: InstanceDetailData): string {
-  const { agentName, instanceId, run } = data;
+  const { agentName, instanceId, run, runningInstance } = data;
 
-  const notFoundContent = `
-    <div class="text-center py-12">
-      <div class="text-slate-400 text-lg mb-2">Instance not found</div>
-      <p class="text-sm text-slate-500">The instance <code class="font-mono">${escapeHtml(instanceId)}</code> was not found in the stats database. It may still be running or the data may have been pruned.</p>
-    </div>`;
+  let notFoundContent: string;
+  if (!run && runningInstance) {
+    notFoundContent = `
+      <div class="text-center py-12">
+        <div class="text-slate-400 text-lg mb-2">Telemetry data will be available once the run completes</div>
+        <p class="text-sm text-slate-500">Instance <code class="font-mono">${escapeHtml(instanceId)}</code> is currently running. Stats and telemetry data will be shown here after the run finishes.</p>
+      </div>`;
+  } else {
+    notFoundContent = `
+      <div class="text-center py-12">
+        <div class="text-slate-400 text-lg mb-2">Instance not found or data has been pruned</div>
+        <p class="text-sm text-slate-500">The instance <code class="font-mono">${escapeHtml(instanceId)}</code> was not found in the stats database. The data may have been pruned or the instance never existed.</p>
+      </div>`;
+  }
 
   if (!run) {
     // Even without stats data, show the log viewer — the instance may be running
-    const content = `
-      <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <h1 class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white font-mono">${escapeHtml(instanceId)}</h1>
-        <div class="flex items-center gap-2">
-          <button class="px-3 py-1.5 text-sm rounded-md font-bold bg-red-600 hover:bg-red-700 text-white transition-colors" onclick="killThisInstance()">Kill</button>
-          <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400">running / pending</span>
+    let headerContent: string;
+    if (runningInstance) {
+      const startedAt = runningInstance.startedAt.toLocaleString();
+      headerContent = `
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+          <h1 class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white font-mono">${escapeHtml(instanceId)}</h1>
+          <div class="flex items-center gap-2">
+            <button class="px-3 py-1.5 text-sm rounded-md font-bold bg-red-600 hover:bg-red-700 text-white transition-colors" onclick="killThisInstance()">Kill</button>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400">running</span>
+          </div>
         </div>
-      </div>
+        <div class="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4 mb-6">
+          <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-3 uppercase tracking-wide">Running Instance</h3>
+          ${statRow("Instance ID", instanceId)}
+          ${statRow("Status", runningInstance.status)}
+          ${statRow("Started", startedAt)}
+          ${statRow("Trigger", runningInstance.trigger)}
+        </div>`;
+    } else {
+      headerContent = `
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+          <h1 class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white font-mono">${escapeHtml(instanceId)}</h1>
+          <div class="flex items-center gap-2">
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-900/40 text-gray-700 dark:text-gray-400">unknown</span>
+          </div>
+        </div>`;
+    }
+
+    const content = `
+      ${headerContent}
       ${notFoundContent}
       <h2 class="text-base font-semibold text-slate-900 dark:text-white mb-3 mt-8">Logs</h2>
       ${logViewerHtml(agentName, instanceId)}`;
