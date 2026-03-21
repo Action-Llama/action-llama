@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import type { StatusTracker, AgentStatus, SchedulerInfo, LogLine } from "./status-tracker.js";
 
+type ViewMode = "main" | "project-config" | "agent-config";
+
 function formatRelativeTime(date: Date | null): string {
   if (!date) return "";
   const diffMs = Date.now() - date.getTime();
@@ -195,24 +197,154 @@ function RecentActivity({ logs }: { logs: LogLine[] }) {
   );
 }
 
-function Footer() {
+function Footer({ viewMode }: { viewMode: ViewMode }) {
+  if (viewMode === "project-config") {
+    return (
+      <Box flexDirection="column">
+        <Text dimColor>{"─".repeat(50)}</Text>
+        <Text dimColor>↑/↓: Adjust value • Enter: Save • Esc: Back • Ctrl+C: Stop</Text>
+      </Box>
+    );
+  }
+  
+  if (viewMode === "agent-config") {
+    return (
+      <Box flexDirection="column">
+        <Text dimColor>{"─".repeat(50)}</Text>
+        <Text dimColor>↑/↓: Adjust value • Enter: Save • Esc: Back • Ctrl+C: Stop</Text>
+      </Box>
+    );
+  }
+
   return (
     <Box flexDirection="column">
       <Text dimColor>{"─".repeat(50)}</Text>
-      <Text dimColor>↑/↓: Select agent • Space: Enable/Disable • Ctrl+C: Stop</Text>
+      <Text dimColor>↑/↓: Select agent • Space: Enable/Disable • C: Config • A: Agent config • Ctrl+C: Stop</Text>
     </Box>
   );
 }
 
-export default function App({ statusTracker }: { statusTracker: StatusTracker }) {
+interface ProjectConfigProps {
+  projectPath: string;
+  currentScale: number;
+  onScaleChange: (scale: number) => Promise<void>;
+  onBack: () => void;
+}
+
+function ProjectConfig({ projectPath, currentScale, onScaleChange, onBack }: ProjectConfigProps) {
+  const [scale, setScale] = useState(currentScale);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useInput((input, key) => {
+    if (key.escape) {
+      onBack();
+    } else if (key.upArrow) {
+      setScale(Math.min(scale + 1, 50)); // Max scale of 50
+    } else if (key.downArrow) {
+      setScale(Math.max(scale - 1, 1)); // Min scale of 1
+    } else if (key.return) {
+      handleSave();
+    }
+  });
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      await onScaleChange(scale);
+      onBack();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Box flexDirection="column" paddingTop={1}>
+      <Text bold>Project Configuration</Text>
+      <Text dimColor>{"─".repeat(50)}</Text>
+      <Box flexDirection="column" paddingTop={1} paddingBottom={1}>
+        <Box marginBottom={1}>
+          <Text>Project Scale (max concurrent agent runs): </Text>
+          <Text bold color={scale !== currentScale ? "yellow" : "white"}>{scale}</Text>
+          {scale !== currentScale && <Text color="yellow"> (modified)</Text>}
+        </Box>
+        {saving && <Text color="yellow">Saving...</Text>}
+        {error && <Text color="red">Error: {error}</Text>}
+      </Box>
+    </Box>
+  );
+}
+
+interface AgentConfigProps {
+  agentName: string;
+  currentScale: number;
+  onScaleChange: (agentName: string, scale: number) => Promise<void>;
+  onBack: () => void;
+}
+
+function AgentConfig({ agentName, currentScale, onScaleChange, onBack }: AgentConfigProps) {
+  const [scale, setScale] = useState(currentScale);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useInput((input, key) => {
+    if (key.escape) {
+      onBack();
+    } else if (key.upArrow) {
+      setScale(Math.min(scale + 1, 20)); // Max agent scale of 20
+    } else if (key.downArrow) {
+      setScale(Math.max(scale - 1, 1)); // Min scale of 1
+    } else if (key.return) {
+      handleSave();
+    }
+  });
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      await onScaleChange(agentName, scale);
+      onBack();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Box flexDirection="column" paddingTop={1}>
+      <Text bold>Agent Configuration: {agentName}</Text>
+      <Text dimColor>{"─".repeat(50)}</Text>
+      <Box flexDirection="column" paddingTop={1} paddingBottom={1}>
+        <Box marginBottom={1}>
+          <Text>Agent Scale (concurrent runners): </Text>
+          <Text bold color={scale !== currentScale ? "yellow" : "white"}>{scale}</Text>
+          {scale !== currentScale && <Text color="yellow"> (modified)</Text>}
+        </Box>
+        {saving && <Text color="yellow">Saving...</Text>}
+        {error && <Text color="red">Error: {error}</Text>}
+      </Box>
+    </Box>
+  );
+}
+
+export default function App({ statusTracker, projectPath }: { statusTracker: StatusTracker, projectPath?: string }) {
   const [agents, setAgents] = useState<AgentStatus[]>(() => statusTracker.getAllAgents());
   const [info, setInfo] = useState<SchedulerInfo | null>(() => statusTracker.getSchedulerInfo());
   const [logs, setLogs] = useState<LogLine[]>(() => statusTracker.getRecentLogs(5));
   const [baseImageStatus, setBaseImageStatus] = useState<string | null>(() => statusTracker.getBaseImageStatus());
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [tick, setTick] = useState(0);
+  const [viewMode, setViewMode] = useState<ViewMode>("main");
+  const [projectScale, setProjectScale] = useState(5); // Default value
 
   useInput((input, key) => {
+    if (viewMode !== "main") return; // Only handle input in main view mode
+    
     if (key.upArrow) {
       setSelectedIndex((prev) => Math.max(0, prev - 1));
     } else if (key.downArrow) {
@@ -226,6 +358,16 @@ export default function App({ statusTracker }: { statusTracker: StatusTracker })
         } else {
           statusTracker.enableAgent(selectedAgent.name);
         }
+      }
+    } else if (input === "c" || input === "C") {
+      // Open project config
+      if (projectPath) {
+        setViewMode("project-config");
+      }
+    } else if (input === "a" || input === "A") {
+      // Open agent config for selected agent
+      if (agents.length > 0 && projectPath) {
+        setViewMode("agent-config");
       }
     }
   });
@@ -257,8 +399,67 @@ export default function App({ statusTracker }: { statusTracker: StatusTracker })
     };
   }, [statusTracker, selectedIndex, info?.initializing]);
 
+  // Load initial project scale
+  useEffect(() => {
+    const loadProjectScale = async () => {
+      if (projectPath) {
+        try {
+          const { getProjectScale } = await import("../shared/config.js");
+          const scale = getProjectScale(projectPath);
+          setProjectScale(scale);
+        } catch (err) {
+          console.error("Failed to load project scale:", err);
+        }
+      }
+    };
+    loadProjectScale();
+  }, [projectPath]);
+
+  const handleProjectScaleUpdate = async (scale: number) => {
+    if (!projectPath) throw new Error("Project path not available");
+    const { updateProjectScale } = await import("../shared/config.js");
+    updateProjectScale(projectPath, scale);
+    setProjectScale(scale);
+  };
+
+  const handleAgentScaleUpdate = async (agentName: string, scale: number) => {
+    if (!projectPath) throw new Error("Project path not available");
+    const { updateAgentScale } = await import("../shared/config.js");
+    updateAgentScale(projectPath, agentName, scale);
+    statusTracker.updateAgentScale(agentName, scale);
+  };
+
   if (info?.initializing) {
     return <InitializingView info={info} agents={agents} baseImageStatus={baseImageStatus} tick={tick} />;
+  }
+
+  if (viewMode === "project-config" && projectPath) {
+    return (
+      <>
+        <ProjectConfig 
+          projectPath={projectPath}
+          currentScale={projectScale}
+          onScaleChange={handleProjectScaleUpdate}
+          onBack={() => setViewMode("main")}
+        />
+        <Footer viewMode={viewMode} />
+      </>
+    );
+  }
+
+  if (viewMode === "agent-config" && agents.length > 0 && projectPath) {
+    const selectedAgent = agents[selectedIndex];
+    return (
+      <>
+        <AgentConfig 
+          agentName={selectedAgent.name}
+          currentScale={selectedAgent.scale}
+          onScaleChange={handleAgentScaleUpdate}
+          onBack={() => setViewMode("main")}
+        />
+        <Footer viewMode={viewMode} />
+      </>
+    );
   }
 
   return (
@@ -270,7 +471,7 @@ export default function App({ statusTracker }: { statusTracker: StatusTracker })
         ))}
       </Box>
       <RecentActivity logs={logs} />
-      <Footer />
+      <Footer viewMode={viewMode} />
     </Box>
   );
 }

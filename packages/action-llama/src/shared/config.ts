@@ -1,6 +1,6 @@
-import { readFileSync, existsSync, readdirSync, statSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "fs";
 import { resolve } from "path";
-import { parse as parseTOML } from "smol-toml";
+import { parse as parseTOML, stringify as stringifyTOML } from "smol-toml";
 import type { WebhookTrigger } from "../webhooks/types.js";
 import { ConfigError } from "./errors.js";
 import {
@@ -10,6 +10,7 @@ import {
   deepMerge,
 } from "./environment.js";
 import { parseFrontmatter } from "./frontmatter.js";
+import { stringify as stringifyYAML } from "yaml";
 
 // --- Global config (lives at <project>/config.toml) ---
 
@@ -318,4 +319,62 @@ export function discoverAgents(projectPath: string): string[] {
   }
 
   return agents.sort();
+}
+
+// --- Configuration Update Functions ---
+
+/**
+ * Update the project-level scale in config.toml
+ */
+export function updateProjectScale(projectPath: string, scale: number): void {
+  const config = loadProjectConfig(projectPath);
+  config.scale = scale;
+  
+  const configPath = resolve(projectPath, "config.toml");
+  const tomlStr = stringifyTOML(config);
+  writeFileSync(configPath, tomlStr);
+}
+
+/**
+ * Update an agent's scale in its SKILL.md frontmatter
+ */
+export function updateAgentScale(projectPath: string, agentName: string, scale: number): void {
+  const agentDir = resolve(projectPath, "agents", agentName);
+  const skillPath = resolve(agentDir, "SKILL.md");
+  
+  if (!existsSync(skillPath)) {
+    throw new ConfigError(`Agent config not found at ${skillPath}.`);
+  }
+
+  // Read current SKILL.md
+  const raw = readFileSync(skillPath, "utf-8");
+  const { data, body } = parseFrontmatter(raw);
+  
+  // Update the scale in metadata
+  const metadata = ((data as Record<string, unknown>).metadata ?? {}) as Record<string, unknown>;
+  metadata.scale = scale;
+  
+  // Reconstruct the file with updated metadata
+  const updatedData = { ...data, metadata };
+  const yamlStr = Object.keys(updatedData).length > 0
+    ? stringifyYAML(updatedData).trimEnd()
+    : "";
+  
+  writeFileSync(skillPath, `---\n${yamlStr}\n---\n\n${body}`);
+}
+
+/**
+ * Get current project scale from config
+ */
+export function getProjectScale(projectPath: string): number {
+  const config = loadGlobalConfig(projectPath);
+  return config.scale ?? 5; // Default project scale
+}
+
+/**
+ * Get current agent scale from config  
+ */
+export function getAgentScale(projectPath: string, agentName: string): number {
+  const config = loadAgentConfig(projectPath, agentName);
+  return config.scale ?? 1; // Default agent scale
 }

@@ -4,6 +4,7 @@ import { renderDashboardPage } from "../views/dashboard-page.js";
 import { renderAgentDetailPage } from "../views/agent-detail-page.js";
 import { renderInstanceDetailPage } from "../views/instance-detail-page.js";
 import { renderLoginPage } from "../views/login-page.js";
+import { renderProjectConfigPage } from "../views/project-config-page.js";
 import { safeCompare } from "../auth.js";
 import type { StatusTracker } from "../../tui/status-tracker.js";
 import type { StatsStore } from "../../stats/store.js";
@@ -127,6 +128,29 @@ export function registerDashboardRoutes(
     const id = c.req.param("id");
     const run = statsStore ? statsStore.queryRunByInstanceId(id) : null;
     const html = renderInstanceDetailPage({ agentName: name, instanceId: id, run });
+    return c.html(html);
+  });
+
+  // Project configuration page
+  app.get("/dashboard/config", (c) => {
+    const info = statusTracker.getSchedulerInfo();
+    // Load project scale from config if available
+    let projectScale = 5; // default
+    try {
+      if (projectPath) {
+        const { getProjectScale } = require("../../shared/config.js");
+        projectScale = getProjectScale(projectPath);
+      }
+    } catch (err) {
+      console.warn("Failed to load project scale:", err);
+    }
+    
+    const html = renderProjectConfigPage({
+      projectName: info?.projectName,
+      projectScale,
+      gatewayPort: info?.gatewayPort || undefined,
+      webhooksActive: info?.webhooksActive || false,
+    });
     return c.html(html);
   });
 

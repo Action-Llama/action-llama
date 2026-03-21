@@ -106,6 +106,7 @@ export function renderDashboardPage(agents: AgentStatus[], schedulerInfo: Schedu
     <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
       <h1 class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">Dashboard</h1>
       <div class="flex items-center gap-2">
+        <a href="/dashboard/config" class="px-3 py-1.5 text-sm rounded-md font-bold border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors">Config</a>
         <button id="pause-btn" class="px-3 py-1.5 text-sm rounded-md font-bold border border-yellow-500 bg-yellow-500 hover:bg-yellow-600 text-white transition-colors" onclick="togglePause()">${schedulerInfo?.paused ? "Resume" : "Pause"}</button>
       </div>
     </div>
