@@ -4,6 +4,7 @@ import { generateKeyPairSync } from "crypto";
 import { promises as fs } from "fs";
 import path from "path";
 import { Client as SSHClient } from "ssh2";
+import { assertDockerAvailable, isDockerAvailable } from "./docker-utils.js";
 
 export interface ContainerInfo {
   id: string;
@@ -25,21 +26,9 @@ export class E2ETestContext {
     this.tempDir = `/tmp/e2e-${this.runId}`;
   }
 
-  async isDockerAvailable(): Promise<boolean> {
-    try {
-      await this.docker.ping();
-      return true;
-    } catch (error) {
-      return false;
-    }
-  }
-
   async setup() {
     // Check if Docker is available
-    const dockerAvailable = await this.isDockerAvailable();
-    if (!dockerAvailable) {
-      throw new Error("Docker is not available. E2E tests require Docker to run. Please ensure Docker is installed and running.");
-    }
+    await assertDockerAvailable();
 
     // Create temp directory for test artifacts
     await fs.mkdir(this.tempDir, { recursive: true });
