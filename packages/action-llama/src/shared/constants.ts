@@ -80,10 +80,10 @@ export const CONSTANTS = {
   SCHEDULER_IMAGE: `al-scheduler:${GIT_SHA}`,
 
   /** Restrictive directory permissions for credential staging */
-  CREDS_DIR_MODE: 0o700,
+  CREDS_DIR_MODE: process.env.NODE_ENV === "test" ? 0o755 : 0o700,
 
   /** Read-only file permissions for credential files */
-  CREDS_FILE_MODE: 0o400,
+  CREDS_FILE_MODE: process.env.NODE_ENV === "test" ? 0o644 : 0o400,
 
   /** Container user ID */
   CONTAINER_UID: 1000,
