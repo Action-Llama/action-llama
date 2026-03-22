@@ -257,10 +257,10 @@ export class E2ETestContext {
   }
 
   private async buildImage(imageName: string, contextPath: string) {
-    // Use the repository root as the build context so Docker can access
-    // all the files referenced in the Dockerfile
-    const repoRoot = path.resolve(process.cwd(), "../..");
-    const dockerfilePath = path.relative(repoRoot, path.resolve(contextPath, "Dockerfile"));
+    // Use __dirname to get the absolute path to the harness.ts file, then navigate to repo root
+    const repoRoot = path.resolve(__dirname, "../../../..");
+    const absoluteContextPath = path.resolve(repoRoot, "packages/e2e", contextPath);
+    const dockerfilePath = path.join("packages/e2e", contextPath, "Dockerfile");
     
     const stream = await this.docker.buildImage(
       { 
