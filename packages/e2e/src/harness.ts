@@ -81,7 +81,19 @@ export class E2ETestContext {
     };
   }
 
+  private async verifyNetworkExists(): Promise<void> {
+    // Add network verification before creating containers
+    const networks = await this.docker.listNetworks();
+    const e2eNetwork = networks.find(n => n.Name === 'action-llama-e2e');
+    if (!e2eNetwork) {
+      throw new Error('E2E test network not found. Ensure global setup has run.');
+    }
+  }
+
   async createLocalActionLlamaContainer(): Promise<ContainerInfo> {
+    // Verify network exists before proceeding
+    await this.verifyNetworkExists();
+    
     // Build the local Action Llama container
     await this.buildImage("action-llama-local", "docker/local");
     
@@ -95,6 +107,8 @@ export class E2ETestContext {
         "NODE_ENV=test",
         "AL_TEST_MODE=1",
         "AL_MOCK_CREDENTIALS=1",
+        `ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY || 'test-key'}`,
+        `OPENAI_API_KEY=${process.env.OPENAI_API_KEY || 'test-key'}`,
       ],
       WorkingDir: "/app",
       Cmd: ["tail", "-f", "/dev/null"], // Keep container running
@@ -103,7 +117,7 @@ export class E2ETestContext {
     await container.start();
     
     // Wait for container to be fully started and connected to network
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    await new Promise(resolve => setTimeout(resolve, 15000));
     
     // Get container IP address
     let containerInfo = await container.inspect();
@@ -127,6 +141,9 @@ export class E2ETestContext {
   }
 
   async createVPSContainer(): Promise<ContainerInfo> {
+    // Verify network exists before proceeding
+    await this.verifyNetworkExists();
+    
     // Build the VPS container with SSH and Docker
     await this.buildImage("action-llama-vps", "docker/vps");
     
@@ -159,7 +176,7 @@ export class E2ETestContext {
     await container.start();
     
     // Wait for container to be fully started and connected to network
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    await new Promise(resolve => setTimeout(resolve, 15000));
     
     // Get container IP address with exponential backoff
     let containerInfo = await container.inspect();
