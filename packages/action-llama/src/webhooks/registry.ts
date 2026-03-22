@@ -1,4 +1,5 @@
 import type { WebhookProvider, WebhookBinding, WebhookContext, DispatchResult, DryRunResult, DryRunBindingResult } from "./types.js";
+import type { WebhookSourceConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
 
 export class WebhookRegistry {
@@ -37,7 +38,7 @@ export class WebhookRegistry {
     source: string,
     headers: Record<string, string | undefined>,
     rawBody: string,
-    secrets?: Record<string, string>
+    webhookConfig: { secrets?: Record<string, string>; config?: WebhookSourceConfig }
   ): DispatchResult {
     const provider = this.providers.get(source);
     if (!provider) {
@@ -45,11 +46,14 @@ export class WebhookRegistry {
       return { ok: false, matched: 0, skipped: 0, errors: [`unknown source: ${source}`] };
     }
 
+    const { secrets } = webhookConfig;
+    const allowUnsigned = webhookConfig.config?.allowUnsigned ?? false;
+
     // Validate request signature — returns the matched instance name or null
-    const matchedSource = provider.validateRequest(headers, rawBody, secrets);
+    const matchedSource = provider.validateRequest(headers, rawBody, secrets, allowUnsigned);
     if (matchedSource === null) {
       this.logger.warn(
-        { source, secretCount: secrets ? Object.keys(secrets).length : 0 },
+        { source, secretCount: secrets ? Object.keys(secrets).length : 0, allowUnsigned },
         "webhook signature validation failed"
       );
       return { ok: false, matched: 0, skipped: 0, errors: ["signature validation failed"] };

@@ -79,7 +79,7 @@ export interface WebhookTrigger {
 
 export interface WebhookProvider {
   source: string;
-  validateRequest(headers: Record<string, string | undefined>, rawBody: string, secrets?: Record<string, string>): string | null;
+  validateRequest(headers: Record<string, string | undefined>, rawBody: string, secrets?: Record<string, string>, allowUnsigned?: boolean): string | null;
   parseEvent(headers: Record<string, string | undefined>, body: any): WebhookContext | null;
   matchesFilter(context: WebhookContext, filter: WebhookFilter): boolean;
 }

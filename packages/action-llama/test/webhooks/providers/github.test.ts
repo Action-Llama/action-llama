@@ -29,10 +29,17 @@ describe("GitHubWebhookProvider", () => {
       expect(provider.validateRequest({}, '{"action":"opened"}', { MyOrg: secret })).toBeNull();
     });
 
-    it("accepts any request when no secret is configured", () => {
-      expect(provider.validateRequest({}, '{"action":"opened"}')).toBe("_unsigned");
-      expect(provider.validateRequest({}, '{"action":"opened"}', undefined)).toBe("_unsigned");
-      expect(provider.validateRequest({}, '{"action":"opened"}', {})).toBe("_unsigned");
+    it("accepts any request when no secret is configured and allowUnsigned is true", () => {
+      expect(provider.validateRequest({}, '{"action":"opened"}', undefined, true)).toBe("_unsigned");
+      expect(provider.validateRequest({}, '{"action":"opened"}', {}, true)).toBe("_unsigned");
+    });
+
+    it("rejects requests when no secret is configured and allowUnsigned is false (default)", () => {
+      expect(provider.validateRequest({}, '{"action":"opened"}')).toBeNull();
+      expect(provider.validateRequest({}, '{"action":"opened"}', undefined)).toBeNull();
+      expect(provider.validateRequest({}, '{"action":"opened"}', {})).toBeNull();
+      expect(provider.validateRequest({}, '{"action":"opened"}', undefined, false)).toBeNull();
+      expect(provider.validateRequest({}, '{"action":"opened"}', {}, false)).toBeNull();
     });
 
     it("rejects wrong-length signature", () => {
