@@ -121,26 +121,4 @@ export function setupEnableDisableHandlers(opts: {
   });
 }
 
-export function fireInitialRuns(opts: {
-  agentConfigs: AgentConfig[];
-  runnerPools: Record<string, RunnerPool>;
-  schedulerCtx: SchedulerContext;
-  logger: Logger;
-}): void {
-  const { agentConfigs, runnerPools, schedulerCtx, logger } = opts;
 
-  for (const agentConfig of agentConfigs) {
-    if (!agentConfig.schedule) continue;
-
-    const pool = runnerPools[agentConfig.name];
-    const availableRunner = pool.getAvailableRunner();
-    if (availableRunner) {
-      logger.info(`Initial run for ${agentConfig.name}`);
-      runWithReruns(availableRunner, agentConfig, 0, schedulerCtx).catch((err) => {
-        logger.error({ err }, `Initial ${agentConfig.name} run failed`);
-      });
-    } else {
-      logger.warn(`${agentConfig.name}: all runners busy, skipping initial run`);
-    }
-  }
-}

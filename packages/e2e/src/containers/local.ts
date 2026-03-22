@@ -5,8 +5,18 @@ export async function setupLocalActionLlama(context: E2ETestContext): Promise<Co
   const containerInfo = await context.createLocalActionLlamaContainer();
   
   // Initialize a test project inside the container
+  // Note: Since al new is interactive, we need to create the project structure manually for e2e tests
   await context.executeInContainer(containerInfo, [
-    "al", "new", "test-project", "--no-interactive"
+    "mkdir", "-p", "/app/test-project"
+  ]);
+  
+  // Create a minimal project configuration
+  await context.executeInContainer(containerInfo, [
+    "bash", "-c", `cat > /app/test-project/project.toml << 'EOF'
+[global]
+modelProvider = "anthropic"
+model = "claude-3-5-sonnet-20241022"
+EOF`
   ]);
   
   // Set up mock credentials for testing
