@@ -22,6 +22,9 @@ describe.skipIf(!DOCKER)("integration: control API", { timeout: 180_000 }, () =>
     });
 
     await harness.start();
+    
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("ctrl-agent");
     await harness.waitForRunResult("ctrl-agent");
 
     // Pause
@@ -49,6 +52,9 @@ describe.skipIf(!DOCKER)("integration: control API", { timeout: 180_000 }, () =>
     });
 
     await harness.start();
+    
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("manual-agent");
     await harness.waitForRunResult("manual-agent");
 
     // Trigger again via control API
@@ -77,6 +83,9 @@ describe.skipIf(!DOCKER)("integration: control API", { timeout: 180_000 }, () =>
 
     await harness.start();
 
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("kill-agent");
+
     // Wait for the container to be running (run:start fires during
     // startScheduler before listeners are registered, so we poll the pool)
     await harness.waitForRunning("kill-agent");
@@ -102,6 +111,9 @@ describe.skipIf(!DOCKER)("integration: control API", { timeout: 180_000 }, () =>
     });
 
     await harness.start();
+    
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("existing-agent");
     await harness.waitForRunResult("existing-agent");
 
     const res = await harness.controlAPI("POST", "/trigger/nonexistent");

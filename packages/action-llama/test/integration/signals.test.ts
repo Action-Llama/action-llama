@@ -22,6 +22,10 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
     });
 
     await harness.start();
+    
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("exit-zero");
+    
     const run = await harness.waitForRunResult("exit-zero");
     expect(run.result).toBe("completed");
   });
@@ -38,6 +42,10 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
     });
 
     await harness.start();
+    
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("exit-error");
+    
     const run = await harness.waitForRunResult("exit-error");
     expect(run.result).toBe("error");
   });
@@ -67,6 +75,9 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
 
     await harness.start();
 
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("rerun-agent");
+
     // First run exits 42, triggers rerun
     const firstRun = await harness.waitForRunResult("rerun-agent");
     expect(firstRun.result).toBe("rerun");
@@ -90,6 +101,9 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
     });
 
     await harness.start();
+
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("forever-rerun");
 
     // 1 initial + 2 reruns = 3 total runs, then stops
     await harness.waitForRunResult("forever-rerun");
@@ -126,6 +140,10 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
     });
 
     await harness.start();
+    
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("return-agent");
+    
     const run = await harness.waitForRunResult("return-agent");
     expect(run.result).toBe("completed");
   });
@@ -162,6 +180,10 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
     });
 
     await harness.start();
+    
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("status-agent");
+    
     const run = await harness.waitForRunResult("status-agent");
     expect(run.result).toBe("completed");
   });
@@ -200,6 +222,9 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
 
     await harness.start();
 
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("al-rerun-agent");
+
     // First run calls al-rerun then exits 42
     const firstRun = await harness.waitForRunResult("al-rerun-agent");
     expect(firstRun.result).toBe("rerun");
@@ -229,6 +254,10 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
     });
 
     await harness.start();
+    
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("structured-log-agent");
+    
     const run = await harness.waitForRunResult("structured-log-agent");
     expect(run.result).toBe("completed");
   });

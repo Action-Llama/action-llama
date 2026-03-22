@@ -122,7 +122,10 @@ describe.skipIf(!DOCKER)("integration: webhooks", { timeout: 180_000 }, () => {
 
     await harness.start();
 
-    // Wait for responder's initial cron run
+    // Manually trigger the responder agent since there are no more automatic initial runs
+    await harness.triggerAgent("responder");
+    
+    // Wait for responder's manual run
     await harness.waitForRunResult("responder");
 
     // Fire webhook

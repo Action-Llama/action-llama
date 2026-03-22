@@ -35,6 +35,9 @@ describe.skipIf(!DOCKER)("integration: rerun", { timeout: 180_000 }, () => {
 
     await harness.start();
 
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("rerun-once");
+
     // First run exits 42, scheduler triggers rerun
     const firstRun = await harness.waitForRunResult("rerun-once");
     expect(firstRun.result).toBe("rerun");
@@ -58,6 +61,9 @@ describe.skipIf(!DOCKER)("integration: rerun", { timeout: 180_000 }, () => {
     });
 
     await harness.start();
+
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("infinite-rerun");
 
     // 1 initial + 2 reruns = 3 total runs, then scheduler stops
     await harness.waitForRunResult("infinite-rerun");
