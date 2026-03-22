@@ -8,28 +8,49 @@ import { promptCredential } from "../../credentials/prompter.js";
 import { writeCredentialFields, loadCredentialField } from "../../shared/credentials.js";
 import type { GlobalConfig } from "../../shared/config.js";
 
-export async function execute(name: string): Promise<void> {
+interface NewCommandOptions {
+  interactive?: boolean;
+  provider?: string;
+  model?: string;
+}
+
+export async function execute(name: string, opts: NewCommandOptions = {}): Promise<void> {
   if (!name) throw new Error("Project name is required");
   const projectPath = resolve(process.cwd(), name);
 
   console.log("\n=== Action Llama — New Project ===\n");
 
   // Step 1: Choose model provider
-  console.log("--- Model Provider ---\n");
-  const provider = await select({
-    message: "Select model provider:",
-    choices: [
-      { name: "Anthropic Claude (recommended)", value: "anthropic" },
-      { name: "OpenAI GPT/Codex", value: "openai" },
-    ],
-    default: "anthropic",
-  });
+  let provider: string;
+  if (opts.interactive === false) {
+    provider = opts.provider || "anthropic";
+    console.log(`--- Model Provider: ${provider} (non-interactive) ---\n`);
+  } else {
+    console.log("--- Model Provider ---\n");
+    provider = await select({
+      message: "Select model provider:",
+      choices: [
+        { name: "Anthropic Claude (recommended)", value: "anthropic" },
+        { name: "OpenAI GPT/Codex", value: "openai" },
+      ],
+      default: "anthropic",
+    });
+  }
 
   // Step 2: Choose model based on provider
   let model: string;
   let thinkingLevel: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined;
 
-  if (provider === "openai") {
+  if (opts.interactive === false) {
+    // Use provided model or defaults
+    if (provider === "openai") {
+      model = opts.model || "gpt-4o";
+    } else {
+      model = opts.model || "claude-sonnet-4-20250514";
+      thinkingLevel = "medium";
+    }
+    console.log(`--- Model: ${model} (non-interactive) ---\n`);
+  } else if (provider === "openai") {
     console.log("\n--- OpenAI Model ---\n");
     model = await select({
       message: "Select OpenAI model:",
@@ -62,23 +83,36 @@ export async function execute(name: string): Promise<void> {
   console.log(`\n--- ${provider === "anthropic" ? "Anthropic" : "OpenAI"} Auth ---\n`);
   
   const credentialType = provider === "anthropic" ? "anthropic_key" : "openai_key";
-  const credentialDef = resolveCredential(credentialType);
-  const result = await promptCredential(credentialDef);
-
-  if (result && Object.keys(result.values).length > 0) {
-    const existing = await loadCredentialField(credentialType, "default", "token");
-    const newValue = result.values.token;
-    if (newValue && newValue !== existing) {
-      await writeCredentialFields(credentialType, "default", result.values);
-      console.log(`  Wrote ${CREDENTIALS_DIR}/${credentialType}/default/`);
+  
+  let result: { values: Record<string, any> } | undefined = undefined;
+  
+  if (opts.interactive === false) {
+    // In non-interactive mode, skip credential prompting
+    console.log("  Skipping credential setup (non-interactive mode)");
+    if (provider === "anthropic") {
+      console.log("  Will use existing pi auth or you can configure later with 'al doctor'");
     } else {
-      console.log(`  ${provider === "anthropic" ? "Anthropic" : "OpenAI"} key unchanged`);
+      console.log("  You'll need to configure API key later with 'al doctor'");
     }
   } else {
-    if (provider === "anthropic") {
-      console.log("  Using existing pi auth (no key file needed)");
+    const credentialDef = resolveCredential(credentialType);
+    result = await promptCredential(credentialDef);
+
+    if (result && Object.keys(result.values).length > 0) {
+      const existing = await loadCredentialField(credentialType, "default", "token");
+      const newValue = result.values.token;
+      if (newValue && newValue !== existing) {
+        await writeCredentialFields(credentialType, "default", result.values);
+        console.log(`  Wrote ${CREDENTIALS_DIR}/${credentialType}/default/`);
+      } else {
+        console.log(`  ${provider === "anthropic" ? "Anthropic" : "OpenAI"} key unchanged`);
+      }
     } else {
-      console.log("  No API key provided - you'll need to configure it later with 'al doctor'");
+      if (provider === "anthropic") {
+        console.log("  Using existing pi auth (no key file needed)");
+      } else {
+        console.log("  No API key provided - you'll need to configure it later with 'al doctor'");
+      }
     }
   }
 
