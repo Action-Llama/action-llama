@@ -1,5 +1,6 @@
 import Docker from "dockerode";
 import { randomUUID } from "crypto";
+import tar from "tar-fs";
 import { generateKeyPairSync } from "crypto";
 import { promises as fs } from "fs";
 import path from "path";
@@ -277,8 +278,9 @@ export class E2ETestContext {
       throw new Error(`Dockerfile not found: ${absoluteDockerfilePath}`);
     }
     
+    const tarStream = tar.pack(repoRoot);
     const stream = await this.docker.buildImage(
-      repoRoot,
+      tarStream,
       { 
         t: `${imageName}:latest`,
         dockerfile: dockerfilePath  // Relative to repoRoot
