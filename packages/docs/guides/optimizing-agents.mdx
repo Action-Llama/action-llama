@@ -99,12 +99,72 @@ After hooks run, tell the agent what's available in the body of your `SKILL.md`:
 - Feature flags (if available) are at `/tmp/context/flags.json`
 ```
 
+## Direct Context Injection
+
+For simple, inline data that needs to be embedded directly in your SKILL.md instructions, use direct context injection with the `!\`command\`` syntax. Commands are executed after pre-hooks but before the LLM session starts, and their output replaces the expression inline.
+
+### Syntax
+
+```markdown
+The current time is !\`date\`.
+There are !\`ls /tmp/repo/src | wc -l\` source files in the repo.
+```
+
+Becomes:
+
+```
+The current time is Mon Mar 22 21:30:45 UTC 2026.
+There are 42 source files in the repo.
+```
+
+### When to use
+
+- **Hooks**: For setup tasks like cloning repos or downloading data files
+- **Direct injection**: For inline values the agent needs to reference in instructions
+
+### Examples
+
+**Basic usage**:
+```markdown
+You are analyzing code at !\`date +"%Y-%m-%d %H:%M"\`.
+```
+
+**With pre-staged data**:
+```yaml
+hooks:
+  pre:
+    - "gh issue list --repo acme/app --label bug --json number --limit 20 > /tmp/issues.json"
+```
+
+```markdown
+There are !\`cat /tmp/issues.json | jq length\` open bug issues to work on.
+```
+
+**Error handling**:
+If a command fails, it's replaced with `[Error: <message>]`:
+
+```markdown
+Config value: !\`cat /nonexistent/file\`
+```
+
+Becomes:
+```
+Config value: [Error: cat: can't open '/nonexistent/file': No such file or directory]
+```
+
+### Limitations
+
+- Commands have a 60-second timeout
+- Output is limited to prevent prompt explosion
+- Errors are inline — use hooks for critical setup that should fail the run
+
 ## Tips
 
 - **Hooks run sequentially** in the order defined in the `SKILL.md` frontmatter
 - **Each hook has a 5-minute timeout** — hooks are also bounded by the container-level timeout
 - **If a command fails** (non-zero exit), the run aborts with an error
 - **Environment variables** set inside hook commands do not propagate back to the agent's `process.env`
+- **Use hooks for setup, direct injection for values** — hooks for cloning repos or staging files, direct context injection for inline dynamic values the agent needs to reference
 
 ## Next steps
 
