@@ -18,7 +18,7 @@ import { validateAndDiscover } from "./validation.js";
 import { setupGateway } from "./gateway-setup.js";
 import { createRunnerPools } from "./runner-setup.js";
 import { wireCallDispatcher } from "./call-dispatcher.js";
-import { setupCronJobs, setupEnableDisableHandlers, fireInitialRuns } from "./cron-setup.js";
+import { setupCronJobs, setupEnableDisableHandlers } from "./cron-setup.js";
 import { registerShutdownHandlers } from "./shutdown.js";
 
 export type { SchedulerContext, WorkItem } from "./execution.js";
@@ -221,8 +221,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     logger.info("Feedback monitor started");
   }
 
-  // Fire initial runs + drain persisted queue items
-  fireInitialRuns({ agentConfigs, runnerPools, schedulerCtx, logger });
+  // Drain persisted queue items
   drainQueues(schedulerCtx).catch((err) => {
     logger.error({ err }, "initial queue drain failed");
   });

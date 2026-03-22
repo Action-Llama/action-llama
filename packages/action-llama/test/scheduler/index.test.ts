@@ -193,10 +193,7 @@ describe("startScheduler", () => {
     expect(cronJobs).toHaveLength(3);
   });
 
-  it("fires all agents on startup", async () => {
-    await startScheduler(tmpDir);
-    expect(mockRun).toHaveBeenCalledTimes(3);
-  });
+
 
   it("creates runner pools for each agent", async () => {
     const { runnerPools } = await startScheduler(tmpDir);
@@ -235,27 +232,33 @@ describe("startScheduler", () => {
     );
   });
 
-  it("handles initial run failure", async () => {
+  it("handles manual run failure", async () => {
     mockRun.mockRejectedValueOnce(new Error("fail"));
     await startScheduler(tmpDir);
+    vi.clearAllMocks();
+    
+    // Manually trigger a cron callback to simulate a scheduled run
+    await cronCallbacks[0]();
     // Should have logged the error (the run catches and logs)
-    // The key thing is startScheduler doesn't throw
+    // The key thing is the cron callback doesn't throw
   });
 
   it("re-runs agent immediately when it requests rerun", async () => {
     // First call returns "rerun", second returns "completed" (no more work)
     mockRun
       .mockResolvedValueOnce({ result: "rerun", triggers: [] })
-      .mockResolvedValueOnce({ result: "completed", triggers: [] })
-      .mockResolvedValueOnce({ result: "completed", triggers: [] })
       .mockResolvedValue({ result: "completed", triggers: [] });
     await startScheduler(tmpDir);
+    vi.clearAllMocks();
 
-    // Wait for the initial rerun loop to settle
+    // Manually trigger dev agent (first cron callback)
+    await cronCallbacks[0]();
+
+    // Wait for the rerun loop to settle
     await new Promise((r) => setTimeout(r, 200));
 
-    // dev: 1 initial + 1 rerun = 2, reviewer: 1, devops: 1 = 4 total
-    expect(mockRun).toHaveBeenCalledTimes(4);
+    // dev: 1 manual run + 1 rerun = 2 total
+    expect(mockRun).toHaveBeenCalledTimes(2);
   });
 
   it("stops re-running after max reruns", async () => {
@@ -270,10 +273,16 @@ describe("startScheduler", () => {
       },
     } as Record<string, unknown>));
     await startScheduler(tmpDir);
+    vi.clearAllMocks();
+
+    // Manually trigger all 3 agents (dev, reviewer, devops)
+    await cronCallbacks[0](); // dev
+    await cronCallbacks[1](); // reviewer  
+    await cronCallbacks[2](); // devops
 
     await new Promise((r) => setTimeout(r, 50));
 
-    // 3 agents × (1 initial + 2 reruns) = 9 calls total
+    // 3 agents × (1 manual + 2 reruns) = 9 calls total
     expect(mockRun).toHaveBeenCalledTimes(9);
     expect(mockLoggerWarn).toHaveBeenCalledWith(
       { maxReruns: 2 },
@@ -284,22 +293,30 @@ describe("startScheduler", () => {
   it("does not re-run on error", async () => {
     mockRun.mockResolvedValue({ result: "error" });
     await startScheduler(tmpDir);
+    vi.clearAllMocks();
+
+    // Manually trigger one agent
+    await cronCallbacks[0]();
 
     await new Promise((r) => setTimeout(r, 50));
 
-    // 3 agents, each runs once (error, no rerun)
-    expect(mockRun).toHaveBeenCalledTimes(3);
+    // 1 agent runs once (error, no rerun)
+    expect(mockRun).toHaveBeenCalledTimes(1);
   });
 
   it("returns returnValue in run outcome", async () => {
     mockRun.mockResolvedValueOnce({ result: "completed", returnValue: "some result" })
       .mockResolvedValue({ result: "completed" });
     await startScheduler(tmpDir);
+    vi.clearAllMocks();
+
+    // Manually trigger one agent
+    await cronCallbacks[0]();
 
     await new Promise((r) => setTimeout(r, 50));
 
-    // All 3 agents should run
-    expect(mockRun).toHaveBeenCalledTimes(3);
+    // 1 agent should run
+    expect(mockRun).toHaveBeenCalledTimes(1);
   });
 
   describe("scale", () => {

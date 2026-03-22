@@ -15,7 +15,7 @@ describe.skipIf(!DOCKER)("integration: scheduler", { timeout: 180_000 }, () => {
       agents: [
         {
           name: "cron-agent",
-          schedule: "0 0 31 2 *", // never fires via cron — only initial run
+          schedule: "*/5 * * * *", // runs every 5 minutes
           testScript: [
             "#!/bin/sh",
             "set -e",
@@ -41,7 +41,10 @@ describe.skipIf(!DOCKER)("integration: scheduler", { timeout: 180_000 }, () => {
     expect(healthRes.ok).toBe(true);
     expect((await healthRes.json()).status).toBe("ok");
 
-    // Wait for the initial scheduled run via event bus
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("cron-agent");
+
+    // Wait for the manual run to complete via event bus
     const run = await harness.waitForRunResult("cron-agent");
     expect(run.result).toBe("completed");
   });
@@ -51,18 +54,22 @@ describe.skipIf(!DOCKER)("integration: scheduler", { timeout: 180_000 }, () => {
       agents: [
         {
           name: "agent-a",
-          schedule: "0 0 31 2 *",
+          schedule: "*/5 * * * *",
           testScript: "#!/bin/sh\necho 'agent-a ran'\nexit 0\n",
         },
         {
           name: "agent-b",
-          schedule: "0 0 31 2 *",
+          schedule: "*/5 * * * *",
           testScript: "#!/bin/sh\necho 'agent-b ran'\nexit 0\n",
         },
       ],
     });
 
     await harness.start();
+
+    // Manually trigger both agents since there are no more automatic initial runs
+    await harness.triggerAgent("agent-a");
+    await harness.triggerAgent("agent-b");
 
     // Wait for both agents to complete via event bus
     const [runA, runB] = await Promise.all([
