@@ -1,4 +1,4 @@
-import type { WebhookProvider, WebhookBinding, WebhookContext, DispatchResult } from "./types.js";
+import type { WebhookProvider, WebhookBinding, WebhookContext, DispatchResult, DryRunResult, DryRunBindingResult } from "./types.js";
 import type { WebhookSourceConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
 
