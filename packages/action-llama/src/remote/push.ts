@@ -62,11 +62,16 @@ async function syncRequiredCredentials(
   globalConfig: GlobalConfig,
   remotePath: string,
   rsyncFlags: string[],
+  extraRefs?: string[],
 ): Promise<void> {
   const credentialRefs = collectCredentialRefs(projectPath, globalConfig);
   // Add implicit credentials (e.g. gateway_api_key) — these are auto-generated
   // and not in the credential registry, so they must not go through doctor/resolveCredential.
   for (const ref of IMPLICIT_CREDENTIAL_REFS) {
+    credentialRefs.add(ref);
+  }
+  // Add caller-supplied refs (e.g. infrastructure credentials like cloudflare_origin_cert)
+  for (const ref of extraRefs ?? []) {
     credentialRefs.add(ref);
   }
   const relativePaths = credentialRefsToRelativePaths(credentialRefs);
@@ -262,7 +267,12 @@ async function pushToServerInner(ssh: SshOptions, opts: InnerOpts): Promise<void
       phaseA.push(rsyncTo(ssh, projectPath, `${basePath}/project`, excludes, rsyncFlags));
     }
     if (!noCreds) {
-      phaseA.push(syncRequiredCredentials(ssh, projectPath, globalConfig, `${basePath}/credentials`, rsyncFlags));
+      // Include infrastructure credentials (e.g. Cloudflare origin cert for nginx TLS)
+      const extraRefs: string[] = [];
+      if (serverConfig.cloudflareHostname) {
+        extraRefs.push(`cloudflare_origin_cert:${serverConfig.cloudflareHostname}`);
+      }
+      phaseA.push(syncRequiredCredentials(ssh, projectPath, globalConfig, `${basePath}/credentials`, rsyncFlags, extraRefs));
     }
     await Promise.all(phaseA);
     console.log(dryRun ? "  (dry-run) No changes made." : "  Done.");
