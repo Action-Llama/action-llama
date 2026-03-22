@@ -12,11 +12,11 @@ describe("CLI Flows", { timeout: 300000 }, () => {
       "ls", "-la", "/home/testuser/test-project"
     ]);
     
-    expect(projectFiles).toContain("config.toml");
+    expect(projectFiles).toContain("project.toml");
     
     // Check that config file contains expected content
     const configContent = await context.executeInContainer(container, [
-      "cat", "/home/testuser/test-project/config.toml"
+      "cat", "/home/testuser/test-project/project.toml"
     ]);
     
     expect(configContent).toContain("[models.sonnet]");
