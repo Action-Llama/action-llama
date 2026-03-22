@@ -138,3 +138,14 @@ jobs:
         if: always()
         run: |
           echo "Test job completed with status: ${{ job.status }}"
+
+  trigger-deploy:
+    name: Trigger Agents Deploy
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Dispatch deploy to agents repo
+        run: gh api repos/Action-Llama/agents/dispatches -f event_type=deploy
+        env:
+          GH_TOKEN: ${{ secrets.AGENTS_DEPLOY_TOKEN }}
