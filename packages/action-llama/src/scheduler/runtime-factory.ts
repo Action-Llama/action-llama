@@ -23,8 +23,8 @@ export async function createContainerRuntime(
   activeAgentConfigs: AgentConfig[],
   logger: Logger,
 ): Promise<RuntimeResult> {
-  // Determine runtime type from configuration
-  const runtimeType = globalConfig.runtime?.type || "local";
+  // Determine runtime type from configuration (default to local for now)
+  const runtimeType = "local";
   
   // Get the runtime extension from registry
   const runtimeExtension = globalRegistry.getRuntimeExtension(runtimeType);

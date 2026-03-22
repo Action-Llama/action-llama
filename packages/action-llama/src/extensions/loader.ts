@@ -112,7 +112,7 @@ async function loadCredentialExtensions(registry: ExtensionRegistry): Promise<vo
     try {
       await registry.register(vaultCredentialExtension);
     } catch (error) {
-      console.warn("Vault credential provider not available:", error.message);
+      console.warn("Vault credential provider not available:", (error as Error).message);
     }
   } catch (error) {
     console.warn("Failed to load credential extensions:", error);

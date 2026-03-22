@@ -61,6 +61,7 @@ export interface RuntimeExtension extends Extension {
 }
 
 // Import the actual ModelProvider interface
+import type { ModelProvider } from "../models/types.js";
 export type { ModelProvider } from "../models/types.js";
 
 export interface ModelExtension extends Extension {

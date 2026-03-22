@@ -62,7 +62,12 @@ export const sshDockerExtension: RuntimeExtension = {
       }
     ]
   },
-  provider: new SshDockerRuntime(),
+  provider: new SshDockerRuntime({
+    host: process.env.SSH_HOST || "localhost",
+    user: process.env.SSH_USER || "root",
+    port: parseInt(process.env.SSH_PORT || "22"),
+    keyPath: process.env.SSH_KEY_PATH || "~/.ssh/id_rsa"
+  }),
   async init() { 
     // SSH runtime configuration will be handled by the runtime itself
   },
