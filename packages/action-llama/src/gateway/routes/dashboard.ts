@@ -3,6 +3,7 @@ import { streamSSE } from "hono/streaming";
 import { renderDashboardPage } from "../views/dashboard-page.js";
 import { renderAgentDetailPage } from "../views/agent-detail-page.js";
 import { renderInstanceDetailPage } from "../views/instance-detail-page.js";
+import { renderAgentSkillPage } from "../views/agent-skill-page.js";
 import { renderLoginPage } from "../views/login-page.js";
 import { renderProjectConfigPage } from "../views/project-config-page.js";
 import { safeCompare } from "../auth.js";
@@ -10,6 +11,9 @@ import type { StatusTracker } from "../../tui/status-tracker.js";
 import type { StatsStore } from "../../stats/store.js";
 import type { SessionStore } from "../session-store.js";
 import { loadGlobalConfig, loadAgentConfig } from "../../shared/config.js";
+import { parseFrontmatter } from "../../shared/frontmatter.js";
+import { existsSync, readFileSync } from "fs";
+import { resolve } from "path";
 
 /**
  * Register login/logout routes. Call this whenever auth is active so
@@ -120,7 +124,8 @@ export function registerDashboardRoutes(
     const instances = statusTracker.getInstances().filter((i) => i.agentName === name && i.status === "running");
     const totalHistorical = statsStore ? statsStore.countRunsByAgent(name) : 0;
     
-    // Load feedback configuration
+    // Load agent configuration and feedback settings
+    let agentConfig = null;
     let feedbackEnabled: boolean | undefined;
     let globalFeedbackEnabled = false;
     if (projectPath) {
@@ -128,7 +133,7 @@ export function registerDashboardRoutes(
         const globalConfig = loadGlobalConfig(projectPath);
         globalFeedbackEnabled = globalConfig.feedback?.enabled ?? false;
         
-        const agentConfig = loadAgentConfig(projectPath, name);
+        agentConfig = loadAgentConfig(projectPath, name);
         feedbackEnabled = agentConfig.feedback?.enabled;
       } catch (err) {
         // Ignore config loading errors for the UI
@@ -137,7 +142,8 @@ export function registerDashboardRoutes(
     
     const html = renderAgentDetailPage({ 
       agentName: name, 
-      agent, 
+      agent,
+      agentConfig,
       summary, 
       runningInstances: instances, 
       totalHistorical,
@@ -145,6 +151,32 @@ export function registerDashboardRoutes(
       globalFeedbackEnabled,
     });
     return c.html(html);
+  });
+
+  // Agent skill page
+  app.get("/dashboard/agents/:name/skill", (c) => {
+    const name = c.req.param("name");
+    
+    if (!projectPath) {
+      return c.html(renderAgentSkillPage(name, ""), 404);
+    }
+
+    try {
+      // Load the SKILL.md file and extract the body
+      const skillPath = resolve(projectPath, "agents", name, "SKILL.md");
+      if (!existsSync(skillPath)) {
+        return c.html(renderAgentSkillPage(name, "Agent not found or SKILL.md file is missing."), 404);
+      }
+      
+      const skillContent = readFileSync(skillPath, "utf-8");
+      const { body } = parseFrontmatter(skillContent);
+      
+      const html = renderAgentSkillPage(name, body);
+      return c.html(html);
+    } catch (err) {
+      console.error(`Error loading skill for agent ${name}:`, err);
+      return c.html(renderAgentSkillPage(name, "Error loading skill content."), 500);
+    }
   });
 
   // Instance detail page

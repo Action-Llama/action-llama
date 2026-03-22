@@ -1,6 +1,7 @@
 import type { AgentStatus } from "../../tui/status-tracker.js";
 import type { AgentSummary } from "../../stats/store.js";
 import type { AgentInstance } from "../../scheduler/types.js";
+import type { AgentConfig } from "../../shared/config.js";
 import { escapeHtml, formatDuration, formatCost, formatTokens, renderLayout } from "./layout.js";
 
 function stateColor(state: AgentStatus["state"]): { dot: string; text: string } {
@@ -61,6 +62,7 @@ function renderStatCard(label: string, value: string): string {
 export interface AgentDetailData {
   agentName: string;
   agent: AgentStatus | null;
+  agentConfig: AgentConfig | null;
   summary: AgentSummary | null;
   runningInstances: AgentInstance[];
   totalHistorical: number;
@@ -69,7 +71,7 @@ export interface AgentDetailData {
 }
 
 export function renderAgentDetailPage(data: AgentDetailData): string {
-  const { agentName, agent, summary, runningInstances, totalHistorical } = data;
+  const { agentName, agent, agentConfig, summary, runningInstances, totalHistorical } = data;
   const colors = agent ? stateColor(agent.state) : { dot: "bg-slate-400", text: "text-slate-400" };
 
   const stateHtml = agent
@@ -85,6 +87,7 @@ export function renderAgentDetailPage(data: AgentDetailData): string {
       <div class="flex items-center gap-2">
         <button class="px-3 py-1.5 text-sm rounded-md font-bold bg-green-600 hover:bg-green-700 text-white transition-colors" onclick="triggerAgent('${escapeHtml(agentName)}')">Run</button>
         <button id="toggle-btn" class="px-3 py-1.5 text-sm rounded-md font-bold border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors" onclick="toggleEnabled()">${agent?.enabled !== false ? "Disable" : "Enable"}</button>
+        <a href="/dashboard/agents/${escapeHtml(agentName)}/skill" class="px-3 py-1.5 text-sm rounded-md font-bold border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors">View Skill</a>
       </div>
     </div>
 
@@ -99,8 +102,18 @@ export function renderAgentDetailPage(data: AgentDetailData): string {
 
     <!-- Agent Configuration -->
     <div class="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4 mb-6">
-      <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-3">Configuration</h2>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Configuration</h2>
+      
+      ${agentConfig?.description ? `
+      <!-- Description -->
+      <div class="mb-6">
+        <h3 class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Description</h3>
+        <p class="text-sm text-slate-600 dark:text-slate-400">${escapeHtml(agentConfig.description)}</p>
+      </div>
+      ` : ''}
+
+      <!-- Runtime Settings -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
         <div>
           <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Agent Scale (concurrent runners)</label>
           <div class="flex items-center gap-2">
@@ -123,6 +136,122 @@ export function renderAgentDetailPage(data: AgentDetailData): string {
           <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Override global feedback setting for this agent</p>
         </div>
       </div>
+
+      ${agentConfig ? `
+      <!-- Models -->
+      <div class="mb-6">
+        <h3 class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Models</h3>
+        <div class="space-y-2">
+          ${agentConfig.models?.map(model => `
+            <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-sm">
+              <div class="font-medium text-slate-900 dark:text-white">${escapeHtml(model.model)}</div>
+              <div class="text-slate-600 dark:text-slate-400 text-xs">
+                Provider: ${escapeHtml(model.provider)} • Auth: ${escapeHtml(model.authType)}
+                ${model.thinkingLevel ? ` • Thinking: ${escapeHtml(model.thinkingLevel)}` : ''}
+              </div>
+            </div>
+          `).join('') || '<p class="text-slate-500 dark:text-slate-400 italic text-sm">No models configured</p>'}
+        </div>
+      </div>
+
+      <!-- Credentials -->
+      <div class="mb-6">
+        <h3 class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Credentials</h3>
+        <div class="space-y-1">
+          ${agentConfig.credentials?.map(cred => `
+            <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-2 text-sm">
+              <span class="text-slate-900 dark:text-white font-mono">${escapeHtml(cred)}</span>
+            </div>
+          `).join('') || '<p class="text-slate-500 dark:text-slate-400 italic text-sm">No credentials required</p>'}
+        </div>
+      </div>
+
+      ${agentConfig.schedule ? `
+      <!-- Schedule -->
+      <div class="mb-6">
+        <h3 class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Schedule</h3>
+        <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-3">
+          <code class="text-sm font-mono text-slate-900 dark:text-white">${escapeHtml(agentConfig.schedule)}</code>
+        </div>
+      </div>
+      ` : ''}
+
+      ${agentConfig.webhooks && agentConfig.webhooks.length > 0 ? `
+      <!-- Webhooks -->
+      <div class="mb-6">
+        <h3 class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Webhook Triggers</h3>
+        <div class="space-y-2">
+          ${agentConfig.webhooks.map(webhook => {
+            const filters = [];
+            if (webhook.events?.length) filters.push(`events: [${webhook.events.join(', ')}]`);
+            if (webhook.actions?.length) filters.push(`actions: [${webhook.actions.join(', ')}]`);
+            if (webhook.repos?.length) filters.push(`repos: [${webhook.repos.join(', ')}]`);
+            if (webhook.org) filters.push(`org: ${webhook.org}`);
+            if (webhook.orgs?.length) filters.push(`orgs: [${webhook.orgs.join(', ')}]`);
+            if (webhook.labels?.length) filters.push(`labels: [${webhook.labels.join(', ')}]`);
+            if (webhook.assignee) filters.push(`assignee: ${webhook.assignee}`);
+            if (webhook.author) filters.push(`author: ${webhook.author}`);
+            if (webhook.branches?.length) filters.push(`branches: [${webhook.branches.join(', ')}]`);
+            
+            return `
+            <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-sm">
+              <div class="font-medium text-slate-900 dark:text-white">${escapeHtml(webhook.source || 'unknown')}</div>
+              ${filters.length > 0 ? `<div class="text-slate-600 dark:text-slate-400 text-xs mt-1">${escapeHtml(filters.join(', '))}</div>` : ''}
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+      ` : ''}
+
+      ${agentConfig.hooks && (agentConfig.hooks.pre?.length || agentConfig.hooks.post?.length) ? `
+      <!-- Hooks -->
+      <div class="mb-6">
+        <h3 class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Hooks</h3>
+        <div class="space-y-3">
+          ${agentConfig.hooks.pre?.length ? `
+            <div>
+              <div class="text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Pre-execution hooks:</div>
+              ${agentConfig.hooks.pre.map(cmd => `
+                <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-2">
+                  <code class="text-xs font-mono text-slate-900 dark:text-white">${escapeHtml(cmd)}</code>
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
+          ${agentConfig.hooks.post?.length ? `
+            <div>
+              <div class="text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Post-execution hooks:</div>
+              ${agentConfig.hooks.post.map(cmd => `
+                <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-2">
+                  <code class="text-xs font-mono text-slate-900 dark:text-white">${escapeHtml(cmd)}</code>
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
+        </div>
+      </div>
+      ` : ''}
+
+      ${agentConfig.params && Object.keys(agentConfig.params).length > 0 ? `
+      <!-- Custom Parameters -->
+      <div class="mb-6">
+        <h3 class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Custom Parameters</h3>
+        <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-3">
+          <pre class="text-xs font-mono text-slate-900 dark:text-white overflow-x-auto">${escapeHtml(JSON.stringify(agentConfig.params, null, 2))}</pre>
+        </div>
+      </div>
+      ` : ''}
+
+      ${agentConfig.timeout ? `
+      <!-- Timeout -->
+      <div class="mb-6">
+        <h3 class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Timeout</h3>
+        <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-3">
+          <span class="text-sm text-slate-900 dark:text-white">${escapeHtml(agentConfig.timeout.toString())} seconds</span>
+        </div>
+      </div>
+      ` : ''}
+      ` : '<p class="text-slate-500 dark:text-slate-400 italic">Agent configuration could not be loaded.</p>'}
     </div>
 
     <!-- Session instances -->
