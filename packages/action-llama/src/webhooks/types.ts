@@ -103,3 +103,34 @@ export interface DispatchResult {
   errors?: string[];
   matchedSource?: string;
 }
+
+// --- Dry run types ---
+
+export interface DryRunBindingResult {
+  agentName: string;
+  matched: boolean;
+  reasons: string[];
+  filterDetails?: {
+    type: boolean;
+    source: boolean;
+    event?: boolean;
+    action?: boolean;
+    repo?: boolean;
+    org?: boolean;
+    label?: boolean;
+    assignee?: boolean;
+    author?: boolean;
+    branch?: boolean;
+    conclusion?: boolean;
+    resource?: boolean;
+  };
+}
+
+export interface DryRunResult {
+  ok: boolean;
+  context: WebhookContext | null;
+  validationResult: string | null;
+  parseError?: string;
+  bindings: DryRunBindingResult[];
+  matchedSource?: string;
+}

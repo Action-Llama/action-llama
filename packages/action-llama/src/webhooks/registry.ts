@@ -142,4 +142,186 @@ export class WebhookRegistry {
 
     return { ok: true, matched, skipped, matchedSource };
   }
+
+  dryRunDispatch(
+    source: string,
+    headers: Record<string, string | undefined>,
+    rawBody: string,
+    secrets?: Record<string, string>
+  ): DryRunResult {
+    const provider = this.providers.get(source);
+    if (!provider) {
+      return { 
+        ok: false, 
+        context: null,
+        validationResult: null,
+        parseError: `unknown source: ${source}`,
+        bindings: [] 
+      };
+    }
+
+    // Validate request signature — returns the matched instance name or null
+    const matchedSource = provider.validateRequest(headers, rawBody, secrets);
+    if (matchedSource === null) {
+      return { 
+        ok: false, 
+        context: null,
+        validationResult: "signature validation failed",
+        bindings: [] 
+      };
+    }
+
+    // Parse the event — handle both JSON and form-encoded payloads
+    let body: any;
+    const contentType = headers["content-type"] || "";
+    try {
+      if (contentType.includes("application/x-www-form-urlencoded")) {
+        const params = new URLSearchParams(rawBody);
+        const payload = params.get("payload");
+        if (!payload) {
+          return { 
+            ok: false, 
+            context: null,
+            validationResult: matchedSource,
+            parseError: "missing payload in form body",
+            bindings: [] 
+          };
+        }
+        body = JSON.parse(payload);
+      } else {
+        body = JSON.parse(rawBody);
+      }
+    } catch (err: any) {
+      return { 
+        ok: false, 
+        context: null,
+        validationResult: matchedSource,
+        parseError: `invalid JSON body: ${err.message}`,
+        bindings: [] 
+      };
+    }
+
+    const context = provider.parseEvent(headers, body);
+    if (!context) {
+      return { 
+        ok: true, 
+        context: null,
+        validationResult: matchedSource,
+        parseError: "webhook event could not be parsed (parseEvent returned null)",
+        bindings: [] 
+      };
+    }
+
+    // Check all bindings and collect detailed match information
+    const bindings: DryRunBindingResult[] = [];
+
+    for (const binding of this.bindings) {
+      const result: DryRunBindingResult = {
+        agentName: binding.agentName,
+        matched: false,
+        reasons: []
+      };
+
+      // Check if binding is for this provider type
+      if (binding.type !== source) {
+        result.reasons.push(`Type mismatch: binding expects '${binding.type}', webhook is '${source}'`);
+        bindings.push(result);
+        continue;
+      }
+
+      // Check if binding source matches the validated credential instance
+      if (binding.source && binding.source !== matchedSource) {
+        result.reasons.push(`Source mismatch: binding expects '${binding.source}', webhook matched '${matchedSource}'`);
+        bindings.push(result);
+        continue;
+      }
+
+      // Check filter match with detailed breakdown
+      if (binding.filter) {
+        const filterMatches = provider.matchesFilter(context, binding.filter);
+        
+        // Create detailed filter breakdown
+        result.filterDetails = this.getFilterDetails(context, binding.filter, provider);
+        
+        if (!filterMatches) {
+          result.reasons.push("Filter conditions not met");
+          bindings.push(result);
+          continue;
+        }
+      }
+
+      // If we get here, the binding matches
+      result.matched = true;
+      result.reasons.push("All conditions satisfied");
+      bindings.push(result);
+    }
+
+    return { 
+      ok: true, 
+      context,
+      validationResult: matchedSource,
+      bindings,
+      matchedSource 
+    };
+  }
+
+  private getFilterDetails(context: WebhookContext, filter: any, provider: WebhookProvider): any {
+    const details: any = {
+      type: true, // Provider type already matched at this point
+      source: true // Source already matched at this point
+    };
+
+    // Check specific filter conditions based on the filter properties
+    if ('events' in filter && filter.events) {
+      details.event = filter.events.includes(context.event);
+    }
+    
+    if ('actions' in filter && filter.actions) {
+      details.action = context.action ? filter.actions.includes(context.action) : false;
+    }
+    
+    if ('repos' in filter && filter.repos) {
+      details.repo = filter.repos.includes(context.repo);
+    }
+    
+    if ('org' in filter && filter.org) {
+      details.org = context.repo.startsWith(`${filter.org}/`);
+    }
+    
+    if ('orgs' in filter && filter.orgs) {
+      details.org = filter.orgs.some((org: string) => context.repo.startsWith(`${org}/`));
+    }
+    
+    if ('organizations' in filter && filter.organizations) {
+      details.org = filter.organizations.some((org: string) => context.repo.startsWith(`${org}/`));
+    }
+    
+    if ('labels' in filter && filter.labels && context.labels) {
+      details.label = filter.labels.some((label: string) => context.labels?.includes(label));
+    }
+    
+    if ('assignee' in filter && filter.assignee) {
+      details.assignee = context.assignee === filter.assignee;
+    }
+    
+    if ('author' in filter && filter.author) {
+      details.author = context.author === filter.author;
+    }
+    
+    if ('branches' in filter && filter.branches) {
+      details.branch = context.branch ? filter.branches.includes(context.branch) : false;
+    }
+    
+    if ('conclusions' in filter && filter.conclusions) {
+      details.conclusion = context.conclusion ? filter.conclusions.includes(context.conclusion) : false;
+    }
+    
+    if ('resources' in filter && filter.resources) {
+      details.resource = filter.resources.some((resource: string) => 
+        context.event?.includes(resource) || context.action?.includes(resource)
+      );
+    }
+
+    return details;
+  }
 }
