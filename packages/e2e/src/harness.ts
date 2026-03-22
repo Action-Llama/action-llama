@@ -284,16 +284,44 @@ export class E2ETestContext {
     });
   }
 
-  private async waitForSSH(containerInfo: ContainerInfo, maxAttempts = 30): Promise<void> {
+  private async waitForSSH(containerInfo: ContainerInfo, maxAttempts = 60): Promise<void> {
+    let lastError: Error | undefined;
+    
     for (let i = 0; i < maxAttempts; i++) {
       try {
         await this.executeSSHCommand(containerInfo, "echo 'SSH Ready'");
         return;
-      } catch {
+      } catch (error) {
+        lastError = error as Error;
+        
+        // Log progress and diagnostics every 10 attempts
+        if (i > 0 && i % 10 === 0) {
+          console.log(`Waiting for SSH on ${containerInfo.name} (attempt ${i + 1}/${maxAttempts}): ${lastError.message}`);
+          
+          // Check SSH service status in container for diagnostics
+          try {
+            const sshStatus = await this.executeInContainer(containerInfo, ["ps", "aux"]);
+            console.log(`Container processes:\n${sshStatus}`);
+          } catch (diagError) {
+            console.log(`Failed to get container diagnostics: ${(diagError as Error).message}`);
+          }
+        }
+        
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
-    throw new Error("SSH service failed to start within timeout");
+    
+    // Enhanced error message with final diagnostics
+    const errorMessage = `SSH service failed to start within ${maxAttempts} seconds on container ${containerInfo.name}`;
+    const diagnostics = lastError ? `. Last error: ${lastError.message}` : '';
+    
+    // Try to get final container state for debugging
+    try {
+      const finalState = await this.executeInContainer(containerInfo, ["ps", "aux"]);
+      throw new Error(errorMessage + diagnostics + `\n\nFinal container processes:\n${finalState}`);
+    } catch (finalDiagError) {
+      throw new Error(errorMessage + diagnostics + `\n\nFailed to get final diagnostics: ${(finalDiagError as Error).message}`);
+    }
   }
 
   getPrivateKeyPath(): string {
@@ -302,5 +330,46 @@ export class E2ETestContext {
 
   getPublicKey(): string {
     return this.sshKeyPair.publicKey;
+  }
+
+  /**
+   * Manually trigger an agent run via the gateway control API.
+   * 
+   * This method requires that the Action Llama scheduler is running with a gateway.
+   * It will attempt to trigger the agent via HTTP request to the control endpoint.
+   * 
+   * @param containerInfo - The container where Action Llama is running
+   * @param agentName - The name of the agent to trigger
+   * @param gatewayPort - The port where the gateway is running (default: 3000)
+   * @throws {Error} If the gateway is not available or the trigger request fails
+   */
+  async triggerAgent(containerInfo: ContainerInfo, agentName: string, gatewayPort = 3000): Promise<void> {
+    try {
+      // Try to trigger the agent via the control API
+      // Note: E2E tests often run without authentication for simplicity
+      const result = await this.executeInContainer(containerInfo, [
+        "curl", "-f", "-X", "POST", 
+        `http://localhost:${gatewayPort}/control/trigger/${agentName}`,
+        "-H", "Content-Type: application/json"
+      ]);
+      
+      // If curl succeeded, the agent was triggered
+      console.log(`Successfully triggered agent ${agentName}: ${result}`);
+    } catch (error) {
+      // If the control API fails, try to get more information
+      const errorMessage = (error as Error).message;
+      
+      // Check if gateway is running
+      try {
+        await this.executeInContainer(containerInfo, [
+          "curl", "-f", `http://localhost:${gatewayPort}/health`
+        ]);
+        // Gateway is running but trigger failed
+        throw new Error(`Failed to trigger agent ${agentName}: ${errorMessage}. Gateway is running but control API request failed.`);
+      } catch (healthError) {
+        // Gateway is not running or not accessible
+        throw new Error(`Failed to trigger agent ${agentName}: Gateway not available on port ${gatewayPort}. Make sure the Action Llama scheduler is started with --gateway-port ${gatewayPort}.`);
+      }
+    }
   }
 }
