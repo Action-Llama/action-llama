@@ -11,9 +11,9 @@ export async function setupLocalActionLlama(context: E2ETestContext): Promise<Co
   ]);
   
   // Create a minimal project configuration
-  // Note: Action Llama expects the file to be named config.toml, not project.toml
+  // Create project.toml for consistency with scheduler expectations
   await context.executeInContainer(containerInfo, [
-    "bash", "-c", `cat > /home/testuser/test-project/config.toml << 'EOF'
+    "bash", "-c", `cat > /home/testuser/test-project/project.toml << 'EOF'
 [models.sonnet]
 provider = "anthropic"
 model = "claude-3-5-sonnet-20241022"
