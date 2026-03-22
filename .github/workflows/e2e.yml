@@ -55,6 +55,8 @@ jobs:
         env:
           CI: true
           DOCKER_BUILDKIT: 1
+          ANTHROPIC_API_KEY: ${{ secrets.TEST_ANTHROPIC_API_KEY || 'test-key' }}
+          OPENAI_API_KEY: ${{ secrets.TEST_OPENAI_API_KEY || 'test-key' }}
         timeout-minutes: 45
 
       - name: Upload test artifacts

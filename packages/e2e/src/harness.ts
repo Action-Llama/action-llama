@@ -103,7 +103,7 @@ export class E2ETestContext {
     await container.start();
     
     // Wait for container to be fully started and connected to network
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise(resolve => setTimeout(resolve, 5000));
     
     // Get container IP address
     let containerInfo = await container.inspect();
@@ -159,7 +159,7 @@ export class E2ETestContext {
     await container.start();
     
     // Wait for container to be fully started and connected to network
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise(resolve => setTimeout(resolve, 5000));
     
     // Get container IP address with exponential backoff
     let containerInfo = await container.inspect();
