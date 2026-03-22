@@ -1,12 +1,11 @@
 import Docker from "dockerode";
 import { randomUUID } from "crypto";
-import { generateKeyPairSync } from "crypto";
 import tar from "tar-fs";
 import { promises as fs } from "fs";
 import path from "path";
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
-import { Client as SSHClient } from "ssh2";
+import { Client as SSHClient, utils as ssh2Utils } from "ssh2";
 import { assertDockerAvailable, isDockerAvailable } from "./docker-utils.js";
 
 export interface ContainerInfo {
@@ -71,23 +70,13 @@ export class E2ETestContext {
   }
 
   private generateSSHKeyPair() {
-    const { publicKey, privateKey } = generateKeyPairSync("rsa", {
-      modulusLength: 2048,
-      publicKeyEncoding: {
-        type: "spki",
-        format: "pem",
-      },
-      privateKeyEncoding: {
-        type: "pkcs8",
-        format: "pem",
-      },
+    const { public: publicKey, private: privateKey } = ssh2Utils.generateKeyPairSync("rsa", {
+      bits: 2048,
+      comment: "e2e-test@action-llama"
     });
 
-    // Convert to SSH format
-    const sshPublicKey = `ssh-rsa ${Buffer.from(publicKey).toString("base64")} e2e-test@action-llama`;
-    
     return {
-      publicKey: sshPublicKey,
+      publicKey,
       privateKey,
     };
   }
