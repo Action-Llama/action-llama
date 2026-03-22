@@ -102,8 +102,18 @@ export class E2ETestContext {
 
     await container.start();
     
+    // Wait for container to be fully started and connected to network
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
     // Get container IP address
-    const containerInfo = await container.inspect();
+    let containerInfo = await container.inspect();
+    
+    // Retry if IP not immediately available
+    if (!containerInfo.NetworkSettings.Networks["action-llama-e2e"]?.IPAddress) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      containerInfo = await container.inspect();
+    }
+    
     const ipAddress = containerInfo.NetworkSettings.Networks["action-llama-e2e"]?.IPAddress;
     
     const info: ContainerInfo = {
@@ -148,8 +158,18 @@ export class E2ETestContext {
 
     await container.start();
     
+    // Wait for container to be fully started and connected to network
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
     // Get container IP address
-    const containerInfo = await container.inspect();
+    let containerInfo = await container.inspect();
+    
+    // Retry if IP not immediately available
+    if (!containerInfo.NetworkSettings.Networks["action-llama-e2e"]?.IPAddress) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      containerInfo = await container.inspect();
+    }
+    
     const ipAddress = containerInfo.NetworkSettings.Networks["action-llama-e2e"]?.IPAddress;
     
     const info: ContainerInfo = {
