@@ -268,11 +268,11 @@ export class E2ETestContext {
     const dockerfilePath = path.join("packages/e2e", contextPath, "Dockerfile");
     
     const stream = await this.docker.buildImage(
+      repoRoot,
       { 
-        context: repoRoot, 
-        src: [dockerfilePath]
-      },
-      { t: `${imageName}:latest` }
+        t: `${imageName}:latest`,
+        dockerfile: dockerfilePath
+      }
     );
     
     return new Promise<void>((resolve, reject) => {
