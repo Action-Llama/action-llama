@@ -3,6 +3,8 @@ import { randomUUID } from "crypto";
 import { generateKeyPairSync } from "crypto";
 import { promises as fs } from "fs";
 import path from "path";
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 import { Client as SSHClient } from "ssh2";
 import { assertDockerAvailable, isDockerAvailable } from "./docker-utils.js";
 
@@ -257,7 +259,9 @@ export class E2ETestContext {
   }
 
   private async buildImage(imageName: string, contextPath: string) {
-    // Use __dirname to get the absolute path to the harness.ts file, then navigate to repo root
+    // Use ES module equivalent of __dirname to get the absolute path to the harness.ts file
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
     const repoRoot = path.resolve(__dirname, "../../../..");
     const absoluteContextPath = path.resolve(repoRoot, "packages/e2e", contextPath);
     const dockerfilePath = path.join("packages/e2e", contextPath, "Dockerfile");
