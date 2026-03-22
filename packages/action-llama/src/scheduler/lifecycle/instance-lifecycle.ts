@@ -174,7 +174,7 @@ export class InstanceLifecycle extends BaseStateMachine<InstanceState> {
     }
 
     // Only calculate duration if the instance was actually started
-    const durationMs = this.info.startedAt ? this.durationMs : undefined;
+    const durationMs = this.info.startedAt ? this.durationMs ?? undefined : undefined;
 
     this.transition<InstanceKillEvent>(
       "killed",
