@@ -1,5 +1,65 @@
 # @action-llama/action-llama
 
+## 0.16.0
+
+### Minor Changes
+
+- [#217](https://github.com/Action-Llama/action-llama/pull/217) [`5ad8a0e`](https://github.com/Action-Llama/action-llama/commit/5ad8a0e5fffc3c5ea546f51644315ce1743bbebf) Thanks [@asselstine](https://github.com/asselstine)! - Add comprehensive end-to-end testing package that validates complete user workflows. The new e2e package tests CLI interactions, web UI flows, and VPS deployment scenarios using containerized environments that closely mirror production setups. Tests run in GitHub Actions but are excluded from local npm test commands to avoid accidental execution.
+
+- [#229](https://github.com/Action-Llama/action-llama/pull/229) [`a7724f7`](https://github.com/Action-Llama/action-llama/commit/a7724f75bbbd6cd35434ab73800f90a6c2b5e73a) Thanks [@asselstine](https://github.com/asselstine)! - Unify persistence story with event sourcing and unified storage layer
+
+  Replaces the fragmented StateStore/StatsStore/WorkQueue pattern with a single unified persistence layer that combines key-value storage, event sourcing, and analytics capabilities. This architectural change enables features like replay, audit trails, and high availability without requiring parallel storage logic.
+
+  **Key features:**
+
+  - **Unified interface**: Single `PersistenceStore` combining KV operations, event sourcing, and queries
+  - **Event sourcing**: Append-only event streams with replay capabilities for audit and analytics
+  - **Multiple backends**: SQLite (default) and memory backends, designed for future cloud backends
+  - **Backward compatibility**: Adapters for existing StateStore/StatsStore interfaces
+  - **Migration utilities**: Automated migration from legacy stores with progress reporting
+  - **Transaction support**: Atomic operations across KV and event operations
+  - **Snapshots**: Performance optimization for large event streams
+
+  **Architecture benefits:**
+
+  - Natural audit trail for all system operations
+  - Replay capabilities for debugging and analytics
+  - Event-driven architecture foundation for real-time features
+  - Consistent storage patterns across all components
+  - Simplified deployment with single database file
+  - Future-ready for distributed deployments
+
+  **Migration path:**
+
+  - Existing code continues working via compatibility adapters
+  - Automatic migration utilities preserve all historical data
+  - Gradual rollout allows incremental adoption
+  - No breaking changes to public APIs
+
+  The unified persistence layer provides a solid foundation for advanced features like real-time dashboards, distributed deployments, and comprehensive audit logging while maintaining the simplicity of Action Llama's single-file SQLite approach for local development.
+
+### Patch Changes
+
+- [#233](https://github.com/Action-Llama/action-llama/pull/233) [`3b9b3d0`](https://github.com/Action-Llama/action-llama/commit/3b9b3d0aca4e6b008ae8027ee53fb2b9801e5380) Thanks [@asselstine](https://github.com/asselstine)! - Refactored agent lifecycle management to use explicit state machines for both agent types and individual instances. This improves code clarity and reduces edge-case bugs around reruns, scaling, backpressure, and call depth by formalizing state transitions and validation logic.
+
+  The changes introduce two new state machine classes: `InstanceLifecycle` for tracking individual agent runs and `AgentLifecycle` for managing agent type-level state. These are integrated with the existing StatusTracker and execution flow while maintaining backward compatibility with the existing API.
+
+- [#243](https://github.com/Action-Llama/action-llama/pull/243) [`f03f650`](https://github.com/Action-Llama/action-llama/commit/f03f6509dcc0a7be0d1046caad2851b72f3a45b7) Thanks [@asselstine](https://github.com/asselstine)! - Fixed E2E test Docker build context paths. Corrected relative paths in harness.ts
+  from `./packages/e2e/docker/local` and `./packages/e2e/docker/vps` to `./docker/local`
+  and `./docker/vps` to resolve correctly when vitest runs from the packages/e2e directory.
+  Fixes CI failures where E2E tests were timing out due to missing Dockerfiles.
+  Closes [#242](https://github.com/Action-Llama/action-llama/issues/242).
+
+- [#236](https://github.com/Action-Llama/action-llama/pull/236) [`2b785f0`](https://github.com/Action-Llama/action-llama/commit/2b785f0e4cdb0a6c2beaeed00ab6d9066e68ced5) Thanks [@asselstine](https://github.com/asselstine)! - Fix integration tests failing due to restrictive credential file permissions. Use more permissive permissions (0755 for directories, 0644 for files) in test mode while maintaining security with restrictive permissions (0700/0400) in production. Closes [#234](https://github.com/Action-Llama/action-llama/issues/234).
+
+- [#230](https://github.com/Action-Llama/action-llama/pull/230) [`7187099`](https://github.com/Action-Llama/action-llama/commit/718709908d224a9497e93f145f7670d29a21c0a6) Thanks [@asselstine](https://github.com/asselstine)! - Improved credential security in Docker runtime by reducing file permissions from overly permissive (0755/0644) to more restrictive (0700/0400). Added support for setting container UID/GID ownership and basic tmpfs credential mounting strategy for enhanced security on multi-user systems. Closes [#224](https://github.com/Action-Llama/action-llama/issues/224).
+
+- [`079ce6e`](https://github.com/Action-Llama/action-llama/commit/079ce6ebf56a71d0864084e6f9c60ebd372c57f3) Thanks [@asselstine](https://github.com/asselstine)! - Fix `al push` failing when `cloudflareHostname` is set: the Cloudflare origin certificate was not synced to the remote server during credential sync, causing nginx configuration to fail with "No such file or directory". The certificate is now included as an infrastructure credential during the sync phase.
+
+- [#228](https://github.com/Action-Llama/action-llama/pull/228) [`f7ddf29`](https://github.com/Action-Llama/action-llama/commit/f7ddf29f34c1665e475307ee6cd88aa17fe539ce) Thanks [@asselstine](https://github.com/asselstine)! - Improve webhook security by denying unsigned webhooks by default. Previously, webhook sources without credentials would automatically accept unsigned requests. Now they are denied by default unless `allowUnsigned: true` is explicitly set in the webhook configuration. When `allowUnsigned: true` is used, a security warning is displayed on startup. This prevents accidental insecure production deployments while maintaining backward compatibility through the explicit opt-in flag.
+
+  Closes [#225](https://github.com/Action-Llama/action-llama/issues/225).
+
 ## 0.15.0
 
 ### Minor Changes
