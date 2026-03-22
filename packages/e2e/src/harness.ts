@@ -265,23 +265,23 @@ export class E2ETestContext {
     // Navigate from packages/e2e/src to repo root (3 levels up)
     const repoRoot = path.resolve(__dirname, "../../..");
     
-    // Use the specific docker context directory as the build context
+    // Use repo root as build context, but specify dockerfile location
     const normalizedContextPath = contextPath.replace(/^\.\//, "");
-    const buildContext = path.join(repoRoot, "packages/e2e", normalizedContextPath);
+    const dockerfilePath = path.join("packages/e2e", normalizedContextPath, "Dockerfile");
     
     // Verify the dockerfile exists before building
-    const dockerfilePath = path.join(buildContext, "Dockerfile");
+    const absoluteDockerfilePath = path.join(repoRoot, dockerfilePath);
     try {
-      await fs.access(dockerfilePath);
+      await fs.access(absoluteDockerfilePath);
     } catch (error) {
-      throw new Error(`Dockerfile not found: ${dockerfilePath}`);
+      throw new Error(`Dockerfile not found: ${absoluteDockerfilePath}`);
     }
     
     const stream = await this.docker.buildImage(
-      buildContext,
+      repoRoot,
       { 
         t: `${imageName}:latest`,
-        dockerfile: "Dockerfile"  // Relative to buildContext
+        dockerfile: dockerfilePath  // Relative to repoRoot
       }
     );
     
