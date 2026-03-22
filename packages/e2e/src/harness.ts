@@ -93,7 +93,7 @@ export class E2ETestContext {
 
   async createLocalActionLlamaContainer(): Promise<ContainerInfo> {
     // Build the local Action Llama container
-    await this.buildImage("action-llama-local", "./docker/local");
+    await this.buildImage("action-llama-local", "docker/local");
     
     const containerName = `action-llama-e2e-local-${this.runId}`;
     
@@ -128,7 +128,7 @@ export class E2ETestContext {
 
   async createVPSContainer(): Promise<ContainerInfo> {
     // Build the VPS container with SSH and Docker
-    await this.buildImage("action-llama-vps", "./docker/vps");
+    await this.buildImage("action-llama-vps", "docker/vps");
     
     const containerName = `action-llama-e2e-vps-${this.runId}`;
     
