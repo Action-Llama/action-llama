@@ -27,6 +27,7 @@
             "group": "Guides",
             "pages": [
               "guides/deploying-to-vps",
+              "guides/continuous-deployment",
               "guides/optimizing-agents",
               "guides/scaling-agents",
               "guides/subagents"

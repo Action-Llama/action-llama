@@ -237,6 +237,23 @@ describe("doctor", () => {
     expect(output).toContain("1 credential(s)");
   });
 
+  it("skipCredentials skips credential checks entirely", async () => {
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["github_token"] });
+    mockResolveCredential.mockReturnValue({
+      id: "github_token",
+      label: "GitHub Token",
+      fields: [{ name: "token" }],
+    });
+    mockCredentialExists.mockReturnValue(false);
+
+    // Should not throw even though credentials are missing
+    const output = await captureLog(() => execute({ project: ".", checkOnly: true, skipCredentials: true }));
+    expect(output).toContain("Skipping credential checks");
+    expect(mockPromptCredential).not.toHaveBeenCalled();
+    expect(mockCredentialExists).not.toHaveBeenCalled();
+  });
+
   it("headless mode checks local creds without prompting and throws on missing", async () => {
     mockDiscoverAgents.mockReturnValue(["dev"]);
     mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["github_token"] });

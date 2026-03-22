@@ -7,12 +7,12 @@ export async function setupLocalActionLlama(context: E2ETestContext): Promise<Co
   // Initialize a test project inside the container
   // Note: Since al new is interactive, we need to create the project structure manually for e2e tests
   await context.executeInContainer(containerInfo, [
-    "mkdir", "-p", "/app/test-project"
+    "mkdir", "-p", "/home/testuser/test-project"
   ]);
   
   // Create a minimal project configuration
   await context.executeInContainer(containerInfo, [
-    "bash", "-c", `cat > /app/test-project/project.toml << 'EOF'
+    "bash", "-c", `cat > /home/testuser/test-project/project.toml << 'EOF'
 [global]
 modelProvider = "anthropic"
 model = "claude-3-5-sonnet-20241022"
@@ -47,7 +47,7 @@ export async function createTestAgent(
 ): Promise<void> {
   // Create agent directory
   await context.executeInContainer(containerInfo, [
-    "bash", "-c", `mkdir -p /app/test-project/${agentName}`
+    "bash", "-c", `mkdir -p /home/testuser/test-project/${agentName}`
   ]);
   
   // Write SKILL.md
@@ -62,7 +62,7 @@ schedule: "0 */6 * * *"
 ${skill}`;
   
   await context.executeInContainer(containerInfo, [
-    "bash", "-c", `cat > /app/test-project/${agentName}/SKILL.md << 'EOF'
+    "bash", "-c", `cat > /home/testuser/test-project/${agentName}/SKILL.md << 'EOF'
 ${skillContent}
 EOF`
   ]);
@@ -74,7 +74,7 @@ export async function startActionLlamaScheduler(
 ): Promise<void> {
   // Start the scheduler in the background
   await context.executeInContainer(containerInfo, [
-    "bash", "-c", "cd /app/test-project && nohup al start > /tmp/scheduler.log 2>&1 & echo $! > /tmp/scheduler.pid"
+    "bash", "-c", "cd /home/testuser/test-project && nohup al start > /tmp/scheduler.log 2>&1 & echo $! > /tmp/scheduler.pid"
   ]);
   
   // Wait a bit for scheduler to start
@@ -114,6 +114,6 @@ export async function runSingleAgent(
   agentName: string
 ): Promise<string> {
   return await context.executeInContainer(containerInfo, [
-    "bash", "-c", `cd /app/test-project && al run ${agentName}`
+    "bash", "-c", `cd /home/testuser/test-project && al run ${agentName}`
   ]);
 }

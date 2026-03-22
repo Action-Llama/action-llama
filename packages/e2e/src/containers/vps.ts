@@ -38,14 +38,14 @@ user = "root"
 keyPath = "${context.getPrivateKeyPath()}"`;
   
   await context.executeInContainer(localContainer, [
-    "bash", "-c", `cat > /app/test-project/.env.toml << 'EOF'
+    "bash", "-c", `cat > /home/testuser/test-project/.env.toml << 'EOF'
 ${envConfig}
 EOF`
   ]);
   
   // Deploy to VPS
   await context.executeInContainer(localContainer, [
-    "bash", "-c", `cd /app/test-project && al push --env ${envName}`
+    "bash", "-c", `cd /home/testuser/test-project && al push --env ${envName}`
   ]);
 }
 
@@ -123,14 +123,14 @@ schedule: "0 */6 * * *"
 ${newSkill}`;
   
   await context.executeInContainer(localContainer, [
-    "bash", "-c", `cat > /app/test-project/${agentName}/SKILL.md << 'EOF'
+    "bash", "-c", `cat > /home/testuser/test-project/${agentName}/SKILL.md << 'EOF'
 ${skillContent}
 EOF`
   ]);
   
   // Redeploy to VPS
   await context.executeInContainer(localContainer, [
-    "bash", "-c", `cd /app/test-project && al push --env ${envName}`
+    "bash", "-c", `cd /home/testuser/test-project && al push --env ${envName}`
   ]);
   
   // Wait for deployment to complete

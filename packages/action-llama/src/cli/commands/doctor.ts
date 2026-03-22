@@ -18,7 +18,7 @@ import {
   type ValidationResult
 } from "../../shared/validation.js";
 
-export async function execute(opts: { project: string; env?: string; checkOnly?: boolean; silent?: boolean; strict?: boolean }): Promise<void> {
+export async function execute(opts: { project: string; env?: string; checkOnly?: boolean; skipCredentials?: boolean; silent?: boolean; strict?: boolean }): Promise<void> {
   const projectPath = resolve(opts.project);
 
   // Guard: refuse to run if the project path looks like an agent directory
@@ -238,7 +238,9 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
     );
   }
 
-  if (credentialRefs.size === 0) {
+  if (opts.skipCredentials) {
+    if (!opts.silent) console.log("Skipping credential checks (--no-creds).");
+  } else if (credentialRefs.size === 0) {
     if (!opts.silent) console.log("No credentials required by any agent.");
   } else if (opts.checkOnly) {
     await checkCredentials(credentialRefs, opts.silent);
