@@ -1,0 +1,28 @@
+{
+  "headers": {
+    "x-github-event": "issues",
+    "x-github-delivery": "12345-67890-abcdef",
+    "content-type": "application/json"
+  },
+  "body": {
+    "action": "labeled",
+    "repository": {
+      "full_name": "Action-Llama/test-repo"
+    },
+    "issue": {
+      "number": 42,
+      "title": "Example Issue",
+      "body": "This is an example issue for webhook testing",
+      "html_url": "https://github.com/Action-Llama/test-repo/issues/42",
+      "user": {
+        "login": "developer123"
+      },
+      "labels": [
+        {"name": "ready-for-dev"}
+      ]
+    },
+    "sender": {
+      "login": "maintainer"
+    }
+  }
+}
