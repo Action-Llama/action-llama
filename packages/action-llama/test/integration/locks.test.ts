@@ -57,6 +57,9 @@ describe.skipIf(!DOCKER)("integration: resource locking", { timeout: 180_000 }, 
     // Collect lock events to verify the full lifecycle
     const lockCollector = harness.events.collect("lock");
 
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("lock-agent");
+
     const run = await harness.waitForRunResult("lock-agent");
     expect(run.result).toBe("completed");
 
@@ -134,6 +137,10 @@ describe.skipIf(!DOCKER)("integration: resource locking", { timeout: 180_000 }, 
     // Collect lock events to verify contention
     const lockCollector = harness.events.collect("lock");
 
+    // Manually trigger both agents since there are no more automatic initial runs
+    await harness.triggerAgent("lock-holder");
+    await harness.triggerAgent("lock-waiter");
+
     const [holderRun, waiterRun] = await Promise.all([
       harness.waitForRunResult("lock-holder"),
       harness.waitForRunResult("lock-waiter"),
@@ -173,6 +180,9 @@ describe.skipIf(!DOCKER)("integration: resource locking", { timeout: 180_000 }, 
     });
 
     await harness.start();
+
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("leaky-locker");
 
     // Wait for the run to complete via event bus
     const run = await harness.events.waitFor(

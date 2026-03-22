@@ -65,6 +65,9 @@ describe.skipIf(!DOCKER)("integration: local commands via gateway", { timeout: 1
     // Collect lock events to verify the full lifecycle
     const lockCollector = harness.events.collect("lock");
 
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("cmd-lock");
+
     const run = await harness.waitForRunResult("cmd-lock");
     expect(run.result).toBe("completed");
 
@@ -111,6 +114,9 @@ describe.skipIf(!DOCKER)("integration: local commands via gateway", { timeout: 1
 
     await harness.start();
 
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("cmd-rerun");
+
     // First run calls al-rerun then exits 42
     const firstRun = await harness.waitForRunResult("cmd-rerun");
     expect(firstRun.result).toBe("rerun");
@@ -144,6 +150,10 @@ describe.skipIf(!DOCKER)("integration: local commands via gateway", { timeout: 1
     });
 
     await harness.start();
+    
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("cmd-status");
+    
     const run = await harness.waitForRunResult("cmd-status");
     expect(run.result).toBe("completed");
   });
@@ -169,6 +179,10 @@ describe.skipIf(!DOCKER)("integration: local commands via gateway", { timeout: 1
     });
 
     await harness.start();
+    
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("cmd-shutdown");
+    
     const run = await harness.waitForRunResult("cmd-shutdown");
     expect(run.result).toBe("completed");
   });

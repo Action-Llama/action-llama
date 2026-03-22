@@ -39,6 +39,10 @@ describe.skipIf(!DOCKER)("debug: proxy timing", { timeout: 120_000 }, () => {
     });
 
     await harness.start();
+    
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("debug-timing");
+    
     const run = await harness.waitForRunResult("debug-timing");
     console.log("Run result:", run.result);
   });

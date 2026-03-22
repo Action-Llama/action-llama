@@ -46,6 +46,9 @@ describe.skipIf(!DOCKER)("integration: agent-to-agent triggers", { timeout: 180_
 
     await harness.start();
 
+    // Manually trigger the caller agent since there are no more automatic initial runs
+    await harness.triggerAgent("caller");
+
     const callerRun = await harness.waitForRunResult("caller");
     expect(callerRun.result).toBe("completed");
 
@@ -97,6 +100,9 @@ describe.skipIf(!DOCKER)("integration: agent-to-agent triggers", { timeout: 180_
 
     await harness.start();
 
+    // Manually trigger the caller agent since there are no more automatic initial runs
+    await harness.triggerAgent("check-caller");
+
     const callerRun = await harness.waitForRunResult("check-caller");
     expect(callerRun.result).toBe("completed");
   });
@@ -147,6 +153,9 @@ describe.skipIf(!DOCKER)("integration: agent-to-agent triggers", { timeout: 180_
 
     await harness.start();
 
+    // Manually trigger the caller agent since there are no more automatic initial runs
+    await harness.triggerAgent("wait-caller");
+
     const callerRun = await harness.waitForRunResult("wait-caller");
     expect(callerRun.result).toBe("completed");
   });
@@ -177,6 +186,9 @@ describe.skipIf(!DOCKER)("integration: agent-to-agent triggers", { timeout: 180_
 
     // Collect call events to verify self-call was attempted
     const callCollector = harness.events.collect("call");
+
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("self-caller");
 
     const run = await harness.waitForRunResult("self-caller");
     expect(run.result).toBe("completed");

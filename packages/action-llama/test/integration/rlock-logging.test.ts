@@ -67,6 +67,9 @@ describe.skipIf(!DOCKER)("integration: rlock end-to-end", { timeout: 180_000 }, 
       60_000,
     );
 
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("rlock-ok");
+
     // Wait for both the lock event and run completion
     const [lockEvent, runEvent] = await Promise.all([
       lockAcquire,
@@ -137,6 +140,10 @@ describe.skipIf(!DOCKER)("integration: rlock end-to-end", { timeout: 180_000 }, 
     // Collect all lock events so we can inspect them after both runs complete
     const lockCollector = harness.events.collect("lock");
 
+    // Manually trigger both agents since there are no more automatic initial runs
+    await harness.triggerAgent("holder");
+    await harness.triggerAgent("contender");
+
     const holderEvent = await harness.waitForRunResult("holder");
     const contenderEvent = await harness.waitForRunResult("contender");
 
@@ -194,6 +201,9 @@ describe.skipIf(!DOCKER)("integration: rlock end-to-end", { timeout: 180_000 }, 
     });
 
     await harness.start();
+
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("leaky");
 
     // Wait for run to complete (lock cleanup happens during unregisterContainer)
     const runEnd = await harness.events.waitFor(

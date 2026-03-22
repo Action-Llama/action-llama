@@ -34,6 +34,10 @@ describe.skipIf(!DOCKER)("integration: agent files accessible in container", { t
     });
 
     await harness.start();
+    
+    // Manually trigger the agent since there are no more automatic initial runs
+    await harness.triggerAgent("file-reader");
+    
     const run = await harness.waitForRunResult("file-reader");
     expect(run.result).toBe("completed");
   });
