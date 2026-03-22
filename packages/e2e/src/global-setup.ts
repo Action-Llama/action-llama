@@ -1,23 +1,9 @@
 import Docker from "dockerode";
-
-async function isDockerAvailable(): Promise<boolean> {
-  try {
-    const docker = new Docker();
-    await docker.ping();
-    return true;
-  } catch (error) {
-    return false;
-  }
-}
+import { assertDockerAvailable, isDockerAvailable } from "./docker-utils.js";
 
 export async function setup() {
   // Check if Docker is available before proceeding
-  const dockerAvailable = await isDockerAvailable();
-  if (!dockerAvailable) {
-    console.warn("Docker is not available. E2E tests require Docker to run.");
-    console.warn("Please ensure Docker is installed and running, or run tests in an environment with Docker support.");
-    process.exit(0); // Exit gracefully instead of failing
-  }
+  await assertDockerAvailable();
 
   const docker = new Docker();
   
