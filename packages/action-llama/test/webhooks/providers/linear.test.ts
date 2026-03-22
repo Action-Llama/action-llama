@@ -29,10 +29,17 @@ describe("LinearWebhookProvider", () => {
       expect(provider.validateRequest({}, '{"action":"create"}', { MyWorkspace: secret })).toBeNull();
     });
 
-    it("accepts any request when no secret is configured", () => {
-      expect(provider.validateRequest({}, '{"action":"create"}')).toBe("_unsigned");
-      expect(provider.validateRequest({}, '{"action":"create"}', undefined)).toBe("_unsigned");
-      expect(provider.validateRequest({}, '{"action":"create"}', {})).toBe("_unsigned");
+    it("accepts any request when no secret is configured and allowUnsigned is true", () => {
+      expect(provider.validateRequest({}, '{"action":"create"}', undefined, true)).toBe("_unsigned");
+      expect(provider.validateRequest({}, '{"action":"create"}', {}, true)).toBe("_unsigned");
+    });
+
+    it("rejects requests when no secret is configured and allowUnsigned is false (default)", () => {
+      expect(provider.validateRequest({}, '{"action":"create"}')).toBeNull();
+      expect(provider.validateRequest({}, '{"action":"create"}', undefined)).toBeNull();
+      expect(provider.validateRequest({}, '{"action":"create"}', {})).toBeNull();
+      expect(provider.validateRequest({}, '{"action":"create"}', undefined, false)).toBeNull();
+      expect(provider.validateRequest({}, '{"action":"create"}', {}, false)).toBeNull();
     });
 
     it("accepts when any of multiple secrets matches and returns correct instance", () => {

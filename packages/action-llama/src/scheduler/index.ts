@@ -99,7 +99,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   // Start gateway early (before Docker builds) so users can see build status
   const { gateway, gatewayPort, registerContainer, unregisterContainer } = await setupGateway({
     projectPath, globalConfig, state, agentConfigs,
-    webhookRegistry, webhookSecrets, stateStore, statsStore, events, telemetry,
+    webhookRegistry, webhookSecrets, webhookConfigs: webhookSources, stateStore, statsStore, events, telemetry,
     mkLogger, statusTracker, webUI, expose, logger,
   });
 

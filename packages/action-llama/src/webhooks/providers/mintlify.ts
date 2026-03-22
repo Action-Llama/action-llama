@@ -7,11 +7,12 @@ export class MintlifyWebhookProvider implements WebhookProvider {
   validateRequest(
     headers: Record<string, string | undefined>,
     rawBody: string,
-    secrets?: Record<string, string>
+    secrets?: Record<string, string>,
+    allowUnsigned?: boolean
   ): string | null {
     // Look for Mintlify signature header - common variations
     const signature = headers["x-mintlify-signature"] || headers["mintlify-signature"];
-    return validateHmacSignature(rawBody, signature, secrets);
+    return validateHmacSignature(rawBody, signature, secrets, "", allowUnsigned);
   }
 
   parseEvent(headers: Record<string, string | undefined>, body: any): WebhookContext | null {

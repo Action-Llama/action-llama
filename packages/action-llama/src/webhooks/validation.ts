@@ -14,21 +14,25 @@ export function truncateEventText(text: string | undefined | null, max = MAX_TEX
  * Validate an HMAC-SHA256 webhook signature against one or more secrets.
  *
  * Returns the instance name of the matching secret, "_unsigned" if no secrets
- * are configured (unsigned webhooks allowed), or null if validation fails.
+ * are configured and allowUnsigned is true, or null if validation fails.
  *
- * @param rawBody   - The raw request body string
- * @param signature - The signature header value (e.g. "sha256=abc123" or just "abc123")
- * @param secrets   - Map of instance name → secret value
- * @param prefix    - Optional prefix the provider prepends to the HMAC hex (e.g. "sha256=" for GitHub)
+ * @param rawBody      - The raw request body string
+ * @param signature    - The signature header value (e.g. "sha256=abc123" or just "abc123")
+ * @param secrets      - Map of instance name → secret value
+ * @param prefix       - Optional prefix the provider prepends to the HMAC hex (e.g. "sha256=" for GitHub)
+ * @param allowUnsigned - Allow unsigned webhooks when no secrets configured (default: false)
  */
 export function validateHmacSignature(
   rawBody: string,
   signature: string | undefined,
   secrets: Record<string, string> | undefined,
   prefix = "",
+  allowUnsigned = false,
 ): string | null {
-  // If no secrets configured, skip validation (allow unsigned webhooks)
-  if (!secrets || Object.keys(secrets).length === 0) return "_unsigned";
+  // If no secrets configured, check allowUnsigned policy
+  if (!secrets || Object.keys(secrets).length === 0) {
+    return allowUnsigned ? "_unsigned" : null;
+  }
 
   if (!signature) return null;
 
