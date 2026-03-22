@@ -11,11 +11,15 @@ export async function setupLocalActionLlama(context: E2ETestContext): Promise<Co
   ]);
   
   // Create a minimal project configuration
+  // Note: Action Llama expects the file to be named config.toml, not project.toml
   await context.executeInContainer(containerInfo, [
-    "bash", "-c", `cat > /home/testuser/test-project/project.toml << 'EOF'
-[global]
-modelProvider = "anthropic"
+    "bash", "-c", `cat > /home/testuser/test-project/config.toml << 'EOF'
+[models.sonnet]
+provider = "anthropic"
 model = "claude-3-5-sonnet-20241022"
+
+[global]
+# Default model configuration can be specified here if needed
 EOF`
   ]);
   
@@ -51,8 +55,9 @@ export async function createTestAgent(
   ]);
   
   // Write SKILL.md
+  // Reference the model name defined in config.toml
   const skillContent = `---
-model: claude-3-5-sonnet-20241022
+model: sonnet
 credentials:
   github: default
   anthropic: default

@@ -12,14 +12,14 @@ describe("CLI Flows", { timeout: 300000 }, () => {
       "ls", "-la", "/home/testuser/test-project"
     ]);
     
-    expect(projectFiles).toContain("project.toml");
+    expect(projectFiles).toContain("config.toml");
     
     // Check that config file contains expected content
     const configContent = await context.executeInContainer(container, [
-      "cat", "/home/testuser/test-project/project.toml"
+      "cat", "/home/testuser/test-project/config.toml"
     ]);
     
-    expect(configContent).toContain("[global]");
+    expect(configContent).toContain("[models.sonnet]");
   });
 
   it("configures credentials", async () => {
@@ -68,7 +68,7 @@ You are a test agent. When run, output "Hello from test agent!" and exit success
     const skillContent = await context.executeInContainer(container, [
       "cat", "/home/testuser/test-project/test-agent/SKILL.md"
     ]);
-    expect(skillContent).toContain("model: claude-3-5-sonnet-20241022");
+    expect(skillContent).toContain("model: sonnet");
     expect(skillContent).toContain("Test Agent");
     
     // Run the agent manually
@@ -130,7 +130,7 @@ Your configuration includes webhook triggers for GitHub issues.
     
     // Create agent with webhook configuration
     const skillWithWebhook = `---
-model: claude-3-5-sonnet-20241022
+model: sonnet
 credentials:
   github: default
   anthropic: default
