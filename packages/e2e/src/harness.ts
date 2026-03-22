@@ -265,7 +265,7 @@ export class E2ETestContext {
     // Navigate from packages/e2e/src to repo root (3 levels up)
     const repoRoot = path.resolve(__dirname, "../../..");
     const absoluteContextPath = path.resolve(repoRoot, "packages/e2e", contextPath);
-    const dockerfilePath = path.join("packages/e2e", contextPath, "Dockerfile");
+    const dockerfilePath = path.join("packages/e2e", contextPath.replace(/^\.\//, ""), "Dockerfile");
     
     const stream = await this.docker.buildImage(
       repoRoot,
