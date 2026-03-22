@@ -111,6 +111,21 @@ export class EventStreamWrapper {
     return this.stream.append(createEvent(type, data, metadata, version));
   }
   
+  /** Replay events from the stream */
+  replay(query?: import("./index.js").EventQuery): AsyncIterable<Event> {
+    return this.stream.replay(query);
+  }
+  
+  /** Get snapshot from the stream */
+  getSnapshot<T>(type: string): Promise<T | null> {
+    return this.stream.getSnapshot<T>(type);
+  }
+  
+  /** Save snapshot to the stream */
+  saveSnapshot<T>(type: string, data: T, eventId: string): Promise<void> {
+    return this.stream.saveSnapshot<T>(type, data, eventId);
+  }
+  
   /** Replay events of a specific type */
   async *replayType<T>(
     type: string,
