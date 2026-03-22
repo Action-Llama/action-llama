@@ -99,6 +99,7 @@ program
   .description("Check agents, credentials, webhooks, and config — prompt to fix")
   .option("-p, --project <dir>", "project directory", ".")
   .option("-E, --env <name>", "use named environment; validate configuration")
+  .option("--strict", "treat unknown config fields as errors instead of warnings")
   .action(withCommand(async (opts) => {
     const { execute } = await import("./commands/doctor.js");
     await execute(opts);
