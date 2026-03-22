@@ -1,5 +1,7 @@
 import { trace, context, propagation, Span, SpanStatusCode, SpanKind } from "@opentelemetry/api";
 import type { TelemetryConfig, TelemetryProvider, SpanAttributes, SpanStatus } from "./types.js";
+import { globalRegistry } from "../extensions/registry.js";
+import type { TelemetryExtension } from "../extensions/types.js";
 
 /**
  * Telemetry manager that handles provider initialization and span management
@@ -23,17 +25,14 @@ export class TelemetryManager {
     }
 
     try {
-      switch (this.config.provider) {
-        case "otel": {
-          const { OTelProvider } = await import("./providers/otel.js");
-          this.provider = new OTelProvider(this.config);
-          break;
-        }
-        default:
-          console.warn(`Unknown telemetry provider: ${this.config.provider}`);
-          return;
+      // Get the telemetry extension from the registry
+      const extension = globalRegistry.getTelemetryExtension(this.config.provider);
+      if (!extension) {
+        console.warn(`Unknown telemetry provider: ${this.config.provider}`);
+        return;
       }
 
+      this.provider = extension.provider;
       await this.provider.init();
       this.tracer = this.provider.getTracer();
       this.initialized = true;

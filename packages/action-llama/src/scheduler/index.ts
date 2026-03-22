@@ -18,8 +18,9 @@ import { validateAndDiscover } from "./validation.js";
 import { setupGateway } from "./gateway-setup.js";
 import { createRunnerPools } from "./runner-setup.js";
 import { wireCallDispatcher } from "./call-dispatcher.js";
-import { setupCronJobs, setupEnableDisableHandlers, fireInitialRuns } from "./cron-setup.js";
+import { setupCronJobs, setupEnableDisableHandlers } from "./cron-setup.js";
 import { registerShutdownHandlers } from "./shutdown.js";
+import { loadBuiltinExtensions } from "../extensions/loader.js";
 
 export type { SchedulerContext, WorkItem } from "./execution.js";
 export { SchedulerEventBus } from "./events.js";
@@ -28,6 +29,14 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   const mkLogger = statusTracker ? createFileOnlyLogger : createLogger;
   const logger = mkLogger(projectPath, "scheduler");
   logger.info("Starting scheduler...");
+
+  // Load built-in extensions before everything else
+  try {
+    await loadBuiltinExtensions();
+    logger.info("Extensions loaded successfully");
+  } catch (error: any) {
+    logger.warn({ error: error.message }, "Failed to load extensions");
+  }
 
   const globalConfig = globalConfigOverride || loadGlobalConfig(projectPath);
 
@@ -221,8 +230,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     logger.info("Feedback monitor started");
   }
 
-  // Fire initial runs + drain persisted queue items
-  fireInitialRuns({ agentConfigs, runnerPools, schedulerCtx, logger });
+  // Drain persisted queue items
   drainQueues(schedulerCtx).catch((err) => {
     logger.error({ err }, "initial queue drain failed");
   });

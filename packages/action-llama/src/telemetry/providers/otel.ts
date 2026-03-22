@@ -5,6 +5,7 @@ import { Resource } from "@opentelemetry/resources";
 import { SEMRESATTRS_SERVICE_NAME, SEMRESATTRS_SERVICE_VERSION, SEMRESATTRS_DEPLOYMENT_ENVIRONMENT } from "@opentelemetry/semantic-conventions";
 import { trace, Tracer } from "@opentelemetry/api";
 import type { TelemetryConfig, TelemetryProvider } from "../types.js";
+import type { TelemetryExtension } from "../../extensions/types.js";
 
 /**
  * OpenTelemetry provider implementation
@@ -85,3 +86,49 @@ export class OTelProvider implements TelemetryProvider {
     }
   }
 }
+
+/**
+ * OpenTelemetry extension wrapper
+ */
+export const otelExtension: TelemetryExtension = {
+  metadata: {
+    name: "otel",
+    version: "1.0.0",
+    description: "OpenTelemetry provider",
+    type: "telemetry",
+    requiredCredentials: [
+      { type: "otel_endpoint", description: "OTLP collector endpoint URL" },
+      { type: "otel_api_key", description: "API key for authentication", optional: true }
+    ],
+    providesCredentialTypes: [
+      {
+        type: "otel_endpoint",
+        fields: ["endpoint"],
+        description: "OpenTelemetry collector endpoint",
+        validation: async (values) => {
+          // Validate URL format
+          new URL(values.endpoint);
+        }
+      },
+      {
+        type: "otel_api_key", 
+        fields: ["api_key"],
+        description: "OpenTelemetry authentication key",
+        envMapping: { api_key: "OTEL_API_KEY" }
+      }
+    ]
+  },
+  provider: new OTelProvider({
+    enabled: true,
+    provider: "otel",
+    endpoint: process.env.OTEL_ENDPOINT,
+    serviceName: "action-llama",
+    headers: process.env.OTEL_API_KEY ? { "api-key": process.env.OTEL_API_KEY } : undefined
+  }),
+  async init(config) {
+    // Extension initialization - the provider will be initialized by the registry
+  },
+  async shutdown() {
+    await this.provider.shutdown();
+  }
+};

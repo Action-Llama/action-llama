@@ -245,10 +245,10 @@ describe("scheduler webhook support", () => {
     expect(webhookRegistry).toBeDefined();
   });
 
-  it("fires initial run for hybrid agent (has schedule)", async () => {
+  it("does not fire initial run for hybrid agent (schedule only fires via cron)", async () => {
     setupProjectWithHybrid(tmpDir);
     await startScheduler(tmpDir);
-    expect(mockRun).toHaveBeenCalledTimes(1);
+    expect(mockRun).toHaveBeenCalledTimes(0);
   });
 
   it("rejects agents with no schedule and no webhooks", async () => {
