@@ -1,0 +1,171 @@
+---
+title: "Continuous Deployment"
+description: "Automatically deploy agents to your server when code is pushed to main"
+---
+
+This guide sets up a CI pipeline that automatically deploys your Action Llama project whenever changes land on your main branch. This is useful when your agent code lives in a separate repository from Action Llama itself, and you want every merge to trigger a fresh deploy.
+
+## Overview
+
+The pipeline works like this:
+
+1. Code is pushed to `main` (or a dependency updates)
+2. GitHub Actions runs `npm install` and `al push --headless --no-creds`
+3. Your server receives the updated project files and restarts the scheduler
+
+Credentials are managed separately — the CI workflow only deploys code and agent configs, not secrets.
+
+### Prerequisites
+
+- A VPS already provisioned and working with `al push` (see [Deploying to a VPS](/guides/deploying-to-vps))
+- Credentials already on the server (pushed once via `al push` locally, or managed separately)
+- Your project in a GitHub repository
+
+## 1. Set up GitHub secrets
+
+You need two secrets in your GitHub repository (Settings > Secrets and variables > Actions):
+
+| Secret | Contents |
+|--------|----------|
+| `DEPLOY_SSH_KEY` | SSH private key for the server (the same key used by `al push`) |
+| `DEPLOY_ENV_TOML` | Your environment TOML file contents |
+
+### Getting the environment TOML
+
+Copy the contents of your environment file — this is the file at `~/.action-llama/environments/<name>.toml` on your local machine. It should look something like:
+
+```toml
+[server]
+host = "203.0.113.42"
+user = "root"
+keyPath = "~/.ssh/deploy_key"
+```
+
+<Info>
+  Set `keyPath` to `~/.ssh/deploy_key` — this is where the CI workflow will write the SSH key.
+</Info>
+
+### Getting the SSH key
+
+This is the private key that `al push` uses to connect to your server. If you provisioned with `al env prov`, it was generated automatically — check the `keyPath` in your environment TOML to find it.
+
+## 2. Create the deploy workflow
+
+Add this file to your project repository:
+
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+      - name: Set up environment config
+        run: |
+          mkdir -p ~/.action-llama/environments
+          echo '${{ secrets.DEPLOY_ENV_TOML }}' > ~/.action-llama/environments/prod.toml
+
+      - name: Deploy
+        run: npx al push --env prod --headless --no-creds
+```
+
+This installs your project (including Action Llama), writes the SSH key and environment config to the expected paths, and runs `al push` in headless mode with credential syncing disabled.
+
+## 3. Managing credentials separately
+
+Since the CI workflow skips credentials (`--no-creds`), you need to push credentials to the server separately. Do this from your local machine:
+
+```bash
+al push --creds-only --env prod
+```
+
+Run this whenever you add or rotate a credential. The server retains credentials across code deploys — `al push --no-creds` only syncs project files.
+
+## Cross-repo triggers
+
+If your agent project depends on a package in another repository (e.g., a shared Action Llama fork), you can trigger deploys automatically when that upstream repo changes.
+
+### Using repository dispatch
+
+In the **upstream** repository's CI workflow, add a step that fires a deploy event after tests pass:
+
+```yaml
+- name: Trigger deploy
+  if: github.ref == 'refs/heads/main'
+  run: |
+    gh api repos/<your-org>/<your-agents-repo>/dispatches \
+      -f event_type=deploy
+  env:
+    GH_TOKEN: ${{ secrets.AGENTS_DEPLOY_TOKEN }}
+```
+
+Then update your deploy workflow to also listen for this event:
+
+```yaml
+on:
+  push:
+    branches: [main]
+  repository_dispatch:
+    types: [deploy]
+  workflow_dispatch:
+```
+
+The `AGENTS_DEPLOY_TOKEN` secret needs to be a GitHub personal access token (or fine-grained token) with `contents: write` permission on the agents repository.
+
+### Installing from GitHub instead of npm
+
+If you want your agents project to always use the latest version from a GitHub repository rather than a published npm package, update your `package.json`:
+
+```json
+{
+  "dependencies": {
+    "@action-llama/action-llama": "github:<your-org>/action-llama#main"
+  }
+}
+```
+
+When `npm install` runs in CI, it clones the repo, runs the `prepare` script (which builds the TypeScript), and installs the result. Combined with a repository dispatch trigger, this gives you fully automated end-to-end deployment: merge to the upstream repo triggers a deploy of your agents project with the latest version.
+
+## Verifying deploys
+
+After a deploy, you can check the status from your local machine:
+
+```bash
+al stat --env prod        # Agent status on the server
+al logs --env prod -f     # Tail server logs
+```
+
+Or check the GitHub Actions run output — `al push` prints deployment progress and a health check result at the end.
+
+## Next steps
+
+- [Deploying to a VPS](/guides/deploying-to-vps) — initial server setup
+- [CLI Commands](/reference/cli-commands) — full `al push` flag reference
+- [Credentials](/reference/credentials) — how credentials are stored and synced

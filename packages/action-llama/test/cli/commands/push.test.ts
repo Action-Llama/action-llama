@@ -113,6 +113,32 @@ describe("push command", () => {
     });
   });
 
+  it("passes skipCredentials to doctor when --no-creds is set", async () => {
+    mockResolveEnvironmentName.mockReturnValue("srv");
+    mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
+
+    await captureLog(() => execute({ project: ".", env: "srv", headless: true, noCreds: true }));
+
+    expect(mockDoctorExecute).toHaveBeenCalledOnce();
+    expect(mockDoctorExecute.mock.calls[0][0]).toMatchObject({
+      env: "srv",
+      checkOnly: true,
+      skipCredentials: true,
+    });
+  });
+
+  it("does not skip credentials when --no-creds is not set", async () => {
+    mockResolveEnvironmentName.mockReturnValue("srv");
+    mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
+
+    await captureLog(() => execute({ project: ".", env: "srv", headless: true }));
+
+    expect(mockDoctorExecute.mock.calls[0][0]).toMatchObject({
+      checkOnly: true,
+      skipCredentials: false,
+    });
+  });
+
   it("throws when doctor fails (e.g. missing credentials)", async () => {
     mockResolveEnvironmentName.mockReturnValue("srv");
     mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });

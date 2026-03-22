@@ -74,11 +74,12 @@ export async function execute(opts: {
 
   // Full push — run doctor in checkOnly mode to validate full config before pushing
   const { execute: doctorExecute } = await import("./doctor.js");
-  await doctorExecute({ 
-    project: projectPath, 
-    env: envName, 
+  await doctorExecute({
+    project: projectPath,
+    env: envName,
     checkOnly: opts.headless ?? false,  // Run interactively by default
-    silent: true 
+    skipCredentials: opts.noCreds ?? false,
+    silent: true
   });
 
   console.log(`\n=== Push to ${serverConfig.host} (env: ${envName}) ===`);
