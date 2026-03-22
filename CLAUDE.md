@@ -114,6 +114,7 @@ We are pre-1.0 (`0.x.y`), so `minor` = what would be `major` post-1.0. Most chan
 - `"default"` is a reserved name — cannot be used as an agent name
 - Tests use vitest with `test/` mirroring `src/`
 - **Secret prompts**: When prompting for API keys, tokens, or any secret value, **always** use `password` from `@inquirer/prompts` with `mask: "*"` — never use plaintext `input`. See `packages/action-llama/src/credentials/prompter.ts` for the canonical pattern.
+- **Persistence**: Use the unified persistence layer (`src/shared/persistence/`) for all storage needs. It combines key-value operations, event sourcing, and query capabilities with support for multiple backends (SQLite, memory).
 
 ## Package Details
 
