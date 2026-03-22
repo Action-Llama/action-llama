@@ -262,7 +262,8 @@ export class E2ETestContext {
     // Use ES module equivalent of __dirname to get the absolute path to the harness.ts file
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = dirname(__filename);
-    const repoRoot = path.resolve(__dirname, "../../../..");
+    // Navigate from packages/e2e/src to repo root (3 levels up)
+    const repoRoot = path.resolve(__dirname, "../../..");
     const absoluteContextPath = path.resolve(repoRoot, "packages/e2e", contextPath);
     const dockerfilePath = path.join("packages/e2e", contextPath, "Dockerfile");
     
