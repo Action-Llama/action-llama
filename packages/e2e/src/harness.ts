@@ -271,7 +271,7 @@ export class E2ETestContext {
       repoRoot,
       { 
         t: `${imageName}:latest`,
-        dockerfile: dockerfilePath
+        dockerfile: path.resolve(repoRoot, dockerfilePath)
       }
     );
     
