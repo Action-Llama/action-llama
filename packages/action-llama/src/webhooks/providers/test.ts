@@ -17,7 +17,8 @@ export class TestWebhookProvider implements WebhookProvider {
   validateRequest(
     _headers: Record<string, string | undefined>,
     _rawBody: string,
-    _secrets?: Record<string, string>
+    _secrets?: Record<string, string>,
+    _allowUnsigned?: boolean
   ): string | null {
     // Always valid — no HMAC check for test webhooks
     return "test";

@@ -78,7 +78,19 @@ export const CONSTANTS = {
 
   /** Scheduler Docker image tag (primary — git SHA) */
   SCHEDULER_IMAGE: `al-scheduler:${GIT_SHA}`,
-} satisfies Record<string, string | ((...args: any[]) => string)>;
+
+  /** Restrictive directory permissions for credential staging */
+  CREDS_DIR_MODE: 0o700,
+
+  /** Read-only file permissions for credential files */
+  CREDS_FILE_MODE: 0o400,
+
+  /** Container user ID */
+  CONTAINER_UID: 1000,
+
+  /** Container group ID */
+  CONTAINER_GID: 1000,
+} satisfies Record<string, string | number | ((...args: any[]) => string)>;
 
 /**
  * Model/provider compatibility mapping for validation.

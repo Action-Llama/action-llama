@@ -13,7 +13,8 @@ export interface RuntimeLaunchOpts {
 
 /** Opaque credential payload — each runtime produces and consumes its own variant. */
 export type RuntimeCredentials =
-  | { strategy: "volume"; stagingDir: string; bundle: CredentialBundle };
+  | { strategy: "volume"; stagingDir: string; bundle: CredentialBundle }
+  | { strategy: "tmpfs"; stagingDir: string; bundle: CredentialBundle };
 
 export type CredentialBundle = Record<string, Record<string, Record<string, string>>>;
 

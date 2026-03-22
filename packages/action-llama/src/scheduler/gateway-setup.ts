@@ -7,7 +7,7 @@
  * runner pools and cron jobs are populated.
  */
 
-import type { GlobalConfig, AgentConfig } from "../shared/config.js";
+import type { GlobalConfig, AgentConfig, WebhookSourceConfig } from "../shared/config.js";
 import type { GatewayServer } from "../gateway/index.js";
 import type { WebhookRegistry } from "../webhooks/registry.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
@@ -34,6 +34,7 @@ export async function setupGateway(opts: {
   agentConfigs: AgentConfig[];
   webhookRegistry?: WebhookRegistry;
   webhookSecrets: Record<string, Record<string, string>>;
+  webhookConfigs?: Record<string, WebhookSourceConfig>;
   stateStore?: StateStore;
   statsStore?: StatsStore;
   events: SchedulerEventBus;
@@ -46,7 +47,7 @@ export async function setupGateway(opts: {
 }): Promise<GatewaySetupResult> {
   const {
     projectPath, globalConfig, state, agentConfigs,
-    webhookRegistry, webhookSecrets, stateStore, statsStore, events, telemetry,
+    webhookRegistry, webhookSecrets, webhookConfigs, stateStore, statsStore, events, telemetry,
     mkLogger, statusTracker, webUI, expose, logger,
   } = opts;
 
@@ -69,6 +70,7 @@ export async function setupGateway(opts: {
     killContainer: undefined,
     webhookRegistry,
     webhookSecrets,
+    webhookConfigs,
     statusTracker,
     projectPath,
     webUI,

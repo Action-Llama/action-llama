@@ -29,10 +29,17 @@ describe("SentryWebhookProvider", () => {
       expect(provider.validateRequest({}, '{"action":"created"}', { MySentryOrg: secret })).toBeNull();
     });
 
-    it("accepts any request when no secret is configured", () => {
-      expect(provider.validateRequest({}, '{"action":"created"}')).toBe("_unsigned");
-      expect(provider.validateRequest({}, '{"action":"created"}', undefined)).toBe("_unsigned");
-      expect(provider.validateRequest({}, '{"action":"created"}', {})).toBe("_unsigned");
+    it("accepts any request when no secret is configured and allowUnsigned is true", () => {
+      expect(provider.validateRequest({}, '{"action":"created"}', undefined, true)).toBe("_unsigned");
+      expect(provider.validateRequest({}, '{"action":"created"}', {}, true)).toBe("_unsigned");
+    });
+
+    it("rejects requests when no secret is configured and allowUnsigned is false (default)", () => {
+      expect(provider.validateRequest({}, '{"action":"created"}')).toBeNull();
+      expect(provider.validateRequest({}, '{"action":"created"}', undefined)).toBeNull();
+      expect(provider.validateRequest({}, '{"action":"created"}', {})).toBeNull();
+      expect(provider.validateRequest({}, '{"action":"created"}', undefined, false)).toBeNull();
+      expect(provider.validateRequest({}, '{"action":"created"}', {}, false)).toBeNull();
     });
 
     it("rejects wrong-length signature", () => {

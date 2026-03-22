@@ -7,9 +7,10 @@ export class SentryWebhookProvider implements WebhookProvider {
   validateRequest(
     headers: Record<string, string | undefined>,
     rawBody: string,
-    secrets?: Record<string, string>
+    secrets?: Record<string, string>,
+    allowUnsigned?: boolean
   ): string | null {
-    return validateHmacSignature(rawBody, headers["sentry-hook-signature"], secrets);
+    return validateHmacSignature(rawBody, headers["sentry-hook-signature"], secrets, "", allowUnsigned);
   }
 
   parseEvent(headers: Record<string, string | undefined>, body: any): WebhookContext | null {

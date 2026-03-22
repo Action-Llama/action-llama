@@ -79,7 +79,7 @@ export interface WebhookTrigger {
 
 export interface WebhookProvider {
   source: string;
-  validateRequest(headers: Record<string, string | undefined>, rawBody: string, secrets?: Record<string, string>): string | null;
+  validateRequest(headers: Record<string, string | undefined>, rawBody: string, secrets?: Record<string, string>, allowUnsigned?: boolean): string | null;
   parseEvent(headers: Record<string, string | undefined>, body: any): WebhookContext | null;
   matchesFilter(context: WebhookContext, filter: WebhookFilter): boolean;
 }
@@ -101,5 +101,36 @@ export interface DispatchResult {
   matched: number;
   skipped: number;
   errors?: string[];
+  matchedSource?: string;
+}
+
+// --- Dry run types ---
+
+export interface DryRunBindingResult {
+  agentName: string;
+  matched: boolean;
+  reasons: string[];
+  filterDetails?: {
+    type: boolean;
+    source: boolean;
+    event?: boolean;
+    action?: boolean;
+    repo?: boolean;
+    org?: boolean;
+    label?: boolean;
+    assignee?: boolean;
+    author?: boolean;
+    branch?: boolean;
+    conclusion?: boolean;
+    resource?: boolean;
+  };
+}
+
+export interface DryRunResult {
+  ok: boolean;
+  context: WebhookContext | null;
+  validationResult: string | null;
+  parseError?: string;
+  bindings: DryRunBindingResult[];
   matchedSource?: string;
 }

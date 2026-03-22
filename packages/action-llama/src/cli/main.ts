@@ -354,6 +354,25 @@ agentCmd
     await configAgent(name, opts);
   }));
 
+// --- Webhook testing ---
+
+const webhookCmd = program
+  .command("webhook")
+  .description("Webhook testing utilities");
+
+webhookCmd
+  .command("replay")
+  .alias("simulate")
+  .description("Load fixture payloads and test agent webhook matching")
+  .argument("<fixture>", "path to webhook fixture file (JSON)")
+  .option("-p, --project <dir>", "project directory", ".")
+  .option("-r, --run", "interactively run a matched agent")
+  .option("-s, --source <name>", "webhook source name from config.toml")
+  .action(withCommand(async (fixture: string, opts) => {
+    const { execute } = await import("./commands/webhook.js");
+    await execute("replay", fixture, opts);
+  }));
+
 // --- MCP integration ---
 
 const mcpCmd = program

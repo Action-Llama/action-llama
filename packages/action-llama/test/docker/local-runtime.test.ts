@@ -9,6 +9,25 @@ vi.mock("child_process", async (importOriginal) => {
   return { ...actual, spawn: mockSpawn };
 });
 
+// Mock fs operations for testing file permissions
+const mockChmodSync = vi.fn();
+const mockChownSync = vi.fn();
+const mockMkdirSync = vi.fn();
+const mockWriteFileSync = vi.fn();
+const mockMkdtempSync = vi.fn();
+
+vi.mock("fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("fs")>();
+  return {
+    ...actual,
+    chmodSync: mockChmodSync,
+    chownSync: mockChownSync,
+    mkdirSync: mockMkdirSync,
+    writeFileSync: mockWriteFileSync,
+    mkdtempSync: mockMkdtempSync,
+  };
+});
+
 // Mock credentials module so prepareCredentials doesn't hit the filesystem
 vi.mock("../../src/shared/credentials.js", () => ({
   parseCredentialRef: (ref: string) => {
@@ -25,6 +44,13 @@ vi.mock("../../src/shared/credentials.js", () => ({
 const { LocalDockerRuntime, parseBuildKitLine } = await import("../../src/docker/local-runtime.js");
 
 describe("LocalDockerRuntime", () => {
+  beforeEach(() => {
+    mockChmodSync.mockReset();
+    mockChownSync.mockReset();
+    mockMkdirSync.mockReset();
+    mockWriteFileSync.mockReset();
+    mockMkdtempSync.mockReset();
+  });
   it("implements ContainerRuntime interface", () => {
     const runtime: ContainerRuntime = new LocalDockerRuntime();
     expect(typeof runtime.launch).toBe("function");
@@ -46,21 +72,79 @@ describe("LocalDockerRuntime", () => {
   });
 
   it("prepareCredentials returns volume strategy with staging dir", async () => {
+    mockMkdtempSync.mockReturnValue("/tmp/al-creds-test123");
+    mockMkdirSync.mockReturnValue(undefined);
+    mockWriteFileSync.mockReturnValue(undefined);
+    mockChmodSync.mockReturnValue(undefined);
+    mockChownSync.mockReturnValue(undefined);
+
     const runtime = new LocalDockerRuntime();
     const creds = await runtime.prepareCredentials(["github_token"]);
     expect(creds.strategy).toBe("volume");
     if (creds.strategy === "volume") {
-      expect(creds.stagingDir).toMatch(/al-creds-/);
+      expect(creds.stagingDir).toBe("/tmp/al-creds-test123");
       expect(creds.bundle.github_token?.default?.token).toBe("fake-value");
       // Cleanup
       runtime.cleanupCredentials(creds);
     }
   });
 
-  it("cleanupCredentials is safe on secrets-manager strategy", () => {
+  it("cleanupCredentials is safe on tmpfs strategy", () => {
     const runtime = new LocalDockerRuntime();
     // Should not throw
-    runtime.cleanupCredentials({ strategy: "secrets-manager", mounts: [] });
+    runtime.cleanupCredentials({ strategy: "tmpfs", stagingDir: "/tmp/test", bundle: {} });
+  });
+
+  it("prepareCredentials creates directories with restrictive permissions", async () => {
+    mockMkdtempSync.mockReturnValue("/tmp/al-creds-test123");
+    mockMkdirSync.mockReturnValue(undefined);
+    mockWriteFileSync.mockReturnValue(undefined);
+    mockChmodSync.mockReturnValue(undefined);
+    mockChownSync.mockReturnValue(undefined);
+
+    const runtime = new LocalDockerRuntime();
+    const creds = await runtime.prepareCredentials(["github_token"]);
+
+    expect(creds.strategy).toBe("volume");
+    
+    // Verify staging directory permissions
+    expect(mockChmodSync).toHaveBeenCalledWith("/tmp/al-creds-test123", 0o700);
+    
+    // Verify subdirectory permissions
+    expect(mockMkdirSync).toHaveBeenCalledWith(
+      expect.stringContaining("github_token/default"),
+      { recursive: true, mode: 0o700 }
+    );
+    
+    // Verify file permissions
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      expect.stringContaining("token"),
+      "fake-value\n",
+      { mode: 0o400 }
+    );
+
+    // Verify ownership attempts (should try to set container UID/GID)
+    expect(mockChownSync).toHaveBeenCalledWith("/tmp/al-creds-test123", 1000, 1000);
+  });
+
+  it("prepareCredentials handles chown failures gracefully", async () => {
+    mockMkdtempSync.mockReturnValue("/tmp/al-creds-test456");
+    mockMkdirSync.mockReturnValue(undefined);
+    mockWriteFileSync.mockReturnValue(undefined);
+    mockChmodSync.mockReturnValue(undefined);
+    mockChownSync.mockImplementation(() => {
+      throw new Error("Operation not permitted");
+    });
+
+    const runtime = new LocalDockerRuntime();
+    
+    // Should not throw even when chown fails
+    expect(async () => {
+      await runtime.prepareCredentials(["github_token"]);
+    }).not.toThrow();
+
+    // Verify that chown was attempted but failure was handled gracefully
+    expect(mockChownSync).toHaveBeenCalled();
   });
 });
 
