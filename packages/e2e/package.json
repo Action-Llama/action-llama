@@ -1,0 +1,23 @@
+{
+  "name": "@action-llama/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "End-to-end tests for Action Llama",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:local": "docker-compose up --build --abort-on-container-exit"
+  },
+  "devDependencies": {
+    "@action-llama/action-llama": "*",
+    "@action-llama/shared": "*",
+    "dockerode": "^4.0.2",
+    "ssh2": "^1.15.0",
+    "vitest": "^4.0.18",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.3"
+  }
+}
