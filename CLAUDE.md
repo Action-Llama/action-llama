@@ -11,6 +11,7 @@ This is a monorepo with the following packages:
 | `@action-llama/action-llama` | `packages/action-llama` | npm | CLI tool, gateway, scheduler, agent runners |
 | `@action-llama/shared` | `packages/shared` | no (private) | Shared TypeScript types and pure utility functions |
 | `@action-llama/docs` | `packages/docs` | no (private) | Mintlify documentation site |
+| `@action-llama/e2e` | `packages/e2e` | no (private) | End-to-end tests for complete user workflows |
 
 ## Build & Test
 

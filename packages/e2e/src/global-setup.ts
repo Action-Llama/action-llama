@@ -1,0 +1,50 @@
+import Docker from "dockerode";
+
+export async function setup() {
+  const docker = new Docker();
+  
+  // Create dedicated network for e2e tests
+  try {
+    await docker.createNetwork({
+      Name: "action-llama-e2e",
+      Driver: "bridge",
+      IPAM: {
+        Config: [{
+          Subnet: "172.20.0.0/16",
+        }],
+      },
+    });
+  } catch (error: any) {
+    // Network might already exist
+    if (!error.message?.includes("already exists")) {
+      throw error;
+    }
+  }
+}
+
+export async function teardown() {
+  const docker = new Docker();
+  
+  try {
+    // Clean up any remaining containers
+    const containers = await docker.listContainers({ all: true });
+    for (const containerInfo of containers) {
+      if (containerInfo.Names.some(name => name.includes("action-llama-e2e"))) {
+        const container = docker.getContainer(containerInfo.Id);
+        try {
+          await container.stop();
+          await container.remove();
+        } catch {
+          // Container might already be stopped/removed
+        }
+      }
+    }
+    
+    // Remove network
+    const network = docker.getNetwork("action-llama-e2e");
+    await network.remove();
+  } catch (error: any) {
+    // Network might not exist or be in use
+    console.warn("Failed to clean up e2e network:", error.message);
+  }
+}

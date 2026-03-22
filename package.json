@@ -12,6 +12,7 @@
     "test:integration": "vitest run --project integration --config packages/action-llama/vitest.config.ts",
     "test:watch": "vitest --project unit --config packages/action-llama/vitest.config.ts",
     "test:coverage": "vitest run --coverage --config packages/action-llama/vitest.config.ts",
+    "test:e2e": "npm test -w packages/e2e",
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "npm run build && changeset publish -w packages/action-llama --tag next",
