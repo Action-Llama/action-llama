@@ -146,6 +146,7 @@ export function validateTriggerFields(
 export interface WebhookSetupResult {
   registry?: WebhookRegistry;
   secrets: Record<string, Record<string, string>>;
+  configs: Record<string, WebhookSourceConfig>;
 }
 
 export async function setupWebhookRegistry(
@@ -156,7 +157,7 @@ export async function setupWebhookRegistry(
   const providerTypes = new Set(Object.values(webhookSources).map(s => s.type));
 
   if (providerTypes.size === 0) {
-    return { secrets: {} };
+    return { secrets: {}, configs: {} };
   }
 
   // Check for insecure webhook configurations and show warnings
@@ -195,7 +196,14 @@ export async function setupWebhookRegistry(
     }
   }
 
-  return { registry, secrets };
+  // Check for and warn about unsigned webhook configurations
+  for (const [sourceName, sourceConfig] of Object.entries(webhookSources)) {
+    if (sourceConfig.allowUnsigned) {
+      logger.warn(`⚠️  WARNING: Webhook source '${sourceName}' allows unsigned requests. This is insecure for production!`);
+    }
+  }
+
+  return { registry, secrets, configs: webhookSources };
 }
 
 /**
