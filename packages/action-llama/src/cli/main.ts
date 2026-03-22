@@ -52,9 +52,12 @@ program
   .command("new")
   .description("Interactive setup, creates project dir + credentials")
   .argument("<name>", "project name")
-  .action(withCommand(async (name: string) => {
+  .option("--no-interactive", "Skip interactive prompts and use defaults")
+  .option("--provider <provider>", "Model provider (anthropic|openai)", "anthropic")
+  .option("--model <model>", "Model name")
+  .action(withCommand(async (name: string, opts) => {
     const { execute } = await import("./commands/new.js");
-    await execute(name);
+    await execute(name, opts);
   }));
 
 program
