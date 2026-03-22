@@ -285,42 +285,77 @@ export class E2ETestContext {
   }
 
   private async waitForSSH(containerInfo: ContainerInfo, maxAttempts = 60): Promise<void> {
-    let lastError: Error | undefined;
-    
+    if (!containerInfo.ipAddress) {
+      throw new Error("Container IP address not available for SSH connection");
+    }
+
     for (let i = 0; i < maxAttempts; i++) {
       try {
+        // First check if SSH port is open with a simple connection test
+        await this.testSSHConnection(containerInfo);
+        
+        // Then verify SSH actually works with a command
         await this.executeSSHCommand(containerInfo, "echo 'SSH Ready'");
         return;
-      } catch (error) {
-        lastError = error as Error;
-        
-        // Log progress and diagnostics every 10 attempts
-        if (i > 0 && i % 10 === 0) {
-          console.log(`Waiting for SSH on ${containerInfo.name} (attempt ${i + 1}/${maxAttempts}): ${lastError.message}`);
-          
-          // Check SSH service status in container for diagnostics
+      } catch (error: any) {
+        if (i < maxAttempts - 1) {
+          // Wait progressively longer for the first few attempts to allow service startup
+          const delay = i < 10 ? 2000 : 1000;
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else {
+          // On final attempt, include more diagnostic info
           try {
-            const sshStatus = await this.executeInContainer(containerInfo, ["ps", "aux"]);
-            console.log(`Container processes:\n${sshStatus}`);
-          } catch (diagError) {
-            console.log(`Failed to get container diagnostics: ${(diagError as Error).message}`);
+            const containerLogs = await this.getContainerLogs(containerInfo);
+            throw new Error(`SSH service failed to start within timeout. Container logs: ${containerLogs.slice(-1000)}`);
+          } catch {
+            throw new Error(`SSH service failed to start within timeout after ${maxAttempts} attempts. IP: ${containerInfo.ipAddress}`);
           }
         }
-        
-        await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
-    
-    // Enhanced error message with final diagnostics
-    const errorMessage = `SSH service failed to start within ${maxAttempts} seconds on container ${containerInfo.name}`;
-    const diagnostics = lastError ? `. Last error: ${lastError.message}` : '';
-    
-    // Try to get final container state for debugging
+  }
+
+  private async testSSHConnection(containerInfo: ContainerInfo): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const conn = new SSHClient();
+      
+      const timeout = setTimeout(() => {
+        conn.end();
+        reject(new Error("SSH connection timeout"));
+      }, 5000);
+      
+      conn.on("ready", () => {
+        clearTimeout(timeout);
+        conn.end();
+        resolve();
+      });
+      
+      conn.on("error", (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
+      
+      conn.connect({
+        host: containerInfo.ipAddress,
+        port: 22,
+        username: "root",
+        privateKey: this.sshKeyPair.privateKey,
+        readyTimeout: 5000,
+      });
+    });
+  }
+
+  private async getContainerLogs(containerInfo: ContainerInfo): Promise<string> {
     try {
-      const finalState = await this.executeInContainer(containerInfo, ["ps", "aux"]);
-      throw new Error(errorMessage + diagnostics + `\n\nFinal container processes:\n${finalState}`);
-    } catch (finalDiagError) {
-      throw new Error(errorMessage + diagnostics + `\n\nFailed to get final diagnostics: ${(finalDiagError as Error).message}`);
+      const container = this.docker.getContainer(containerInfo.id);
+      const stream = await container.logs({
+        stdout: true,
+        stderr: true,
+        tail: 50
+      });
+      return stream.toString();
+    } catch {
+      return "Could not retrieve container logs";
     }
   }
 
@@ -330,46 +365,5 @@ export class E2ETestContext {
 
   getPublicKey(): string {
     return this.sshKeyPair.publicKey;
-  }
-
-  /**
-   * Manually trigger an agent run via the gateway control API.
-   * 
-   * This method requires that the Action Llama scheduler is running with a gateway.
-   * It will attempt to trigger the agent via HTTP request to the control endpoint.
-   * 
-   * @param containerInfo - The container where Action Llama is running
-   * @param agentName - The name of the agent to trigger
-   * @param gatewayPort - The port where the gateway is running (default: 3000)
-   * @throws {Error} If the gateway is not available or the trigger request fails
-   */
-  async triggerAgent(containerInfo: ContainerInfo, agentName: string, gatewayPort = 3000): Promise<void> {
-    try {
-      // Try to trigger the agent via the control API
-      // Note: E2E tests often run without authentication for simplicity
-      const result = await this.executeInContainer(containerInfo, [
-        "curl", "-f", "-X", "POST", 
-        `http://localhost:${gatewayPort}/control/trigger/${agentName}`,
-        "-H", "Content-Type: application/json"
-      ]);
-      
-      // If curl succeeded, the agent was triggered
-      console.log(`Successfully triggered agent ${agentName}: ${result}`);
-    } catch (error) {
-      // If the control API fails, try to get more information
-      const errorMessage = (error as Error).message;
-      
-      // Check if gateway is running
-      try {
-        await this.executeInContainer(containerInfo, [
-          "curl", "-f", `http://localhost:${gatewayPort}/health`
-        ]);
-        // Gateway is running but trigger failed
-        throw new Error(`Failed to trigger agent ${agentName}: ${errorMessage}. Gateway is running but control API request failed.`);
-      } catch (healthError) {
-        // Gateway is not running or not accessible
-        throw new Error(`Failed to trigger agent ${agentName}: Gateway not available on port ${gatewayPort}. Make sure the Action Llama scheduler is started with --gateway-port ${gatewayPort}.`);
-      }
-    }
   }
 }
