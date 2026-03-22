@@ -9,7 +9,7 @@ describe("Web UI Flows", { timeout: 300000 }, () => {
     
     // Start scheduler with gateway
     await context.executeInContainer(container, [
-      "bash", "-c", "cd /app/test-project && nohup al start --gateway-port 3000 > /tmp/gateway-scheduler.log 2>&1 & echo $! > /tmp/gateway-scheduler.pid"
+      "bash", "-c", "cd /home/testuser/test-project && nohup al start --gateway-port 3000 > /tmp/gateway-scheduler.log 2>&1 & echo $! > /tmp/gateway-scheduler.pid"
     ]);
     
     // Wait for gateway to start
@@ -38,7 +38,7 @@ describe("Web UI Flows", { timeout: 300000 }, () => {
     
     // Start scheduler with gateway
     await context.executeInContainer(container, [
-      "bash", "-c", "cd /app/test-project && nohup al start --gateway-port 3000 > /tmp/shutdown-scheduler.log 2>&1 & echo $! > /tmp/shutdown-scheduler.pid"
+      "bash", "-c", "cd /home/testuser/test-project && nohup al start --gateway-port 3000 > /tmp/shutdown-scheduler.log 2>&1 & echo $! > /tmp/shutdown-scheduler.pid"
     ]);
     
     // Wait for gateway to start
