@@ -1,7 +1,7 @@
 /**
  * Container runtime factory.
  *
- * Creates a local Docker ContainerRuntime and builds agent images.
+ * Creates a ContainerRuntime using the extension system and builds agent images.
  */
 
 import type { GlobalConfig, AgentConfig } from "../shared/config.js";
@@ -11,6 +11,7 @@ import type { Logger } from "../shared/logger.js";
 import { AgentError } from "../shared/errors.js";
 import { buildAllImages } from "./image-builder.js";
 import type { PromptSkills } from "../agents/prompt.js";
+import { globalRegistry } from "../extensions/registry.js";
 
 export interface RuntimeResult {
   runtime: ContainerRuntime;
@@ -22,23 +23,35 @@ export async function createContainerRuntime(
   activeAgentConfigs: AgentConfig[],
   logger: Logger,
 ): Promise<RuntimeResult> {
-  // Local runtime needs Docker running
-  const { execFileSync } = await import("child_process");
-  try {
-    execFileSync("docker", ["info"], { stdio: "pipe", timeout: 10000 });
-  } catch {
+  // Determine runtime type from configuration
+  const runtimeType = globalConfig.runtime?.type || "local";
+  
+  // Get the runtime extension from registry
+  const runtimeExtension = globalRegistry.getRuntimeExtension(runtimeType);
+  if (!runtimeExtension) {
     throw new AgentError(
-      "Docker is not running. Start Docker Desktop (or the Docker daemon) and try again."
+      `Unknown runtime type: ${runtimeType}. Available runtimes: ${globalRegistry.getAllRuntimeExtensions().map(r => r.metadata.name).join(", ")}`
     );
   }
 
-  const { LocalDockerRuntime } = await import("../docker/local-runtime.js");
-  const runtime = new LocalDockerRuntime();
+  const runtime = runtimeExtension.provider;
 
-  // Ensure Docker network
-  logger.info("Ensuring Docker network...");
-  const { ensureNetwork } = await import("../docker/network.js");
-  ensureNetwork();
+  // For local Docker runtime, ensure Docker is running
+  if (runtimeType === "local") {
+    const { execFileSync } = await import("child_process");
+    try {
+      execFileSync("docker", ["info"], { stdio: "pipe", timeout: 10000 });
+    } catch {
+      throw new AgentError(
+        "Docker is not running. Start Docker Desktop (or the Docker daemon) and try again."
+      );
+    }
+
+    // Ensure Docker network
+    logger.info("Ensuring Docker network...");
+    const { ensureNetwork } = await import("../docker/network.js");
+    ensureNetwork();
+  }
 
   return { runtime, agentRuntimeOverrides: {} };
 }
