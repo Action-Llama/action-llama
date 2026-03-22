@@ -284,16 +284,79 @@ export class E2ETestContext {
     });
   }
 
-  private async waitForSSH(containerInfo: ContainerInfo, maxAttempts = 30): Promise<void> {
+  private async waitForSSH(containerInfo: ContainerInfo, maxAttempts = 60): Promise<void> {
+    if (!containerInfo.ipAddress) {
+      throw new Error("Container IP address not available for SSH connection");
+    }
+
     for (let i = 0; i < maxAttempts; i++) {
       try {
+        // First check if SSH port is open with a simple connection test
+        await this.testSSHConnection(containerInfo);
+        
+        // Then verify SSH actually works with a command
         await this.executeSSHCommand(containerInfo, "echo 'SSH Ready'");
         return;
-      } catch {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+      } catch (error: any) {
+        if (i < maxAttempts - 1) {
+          // Wait progressively longer for the first few attempts to allow service startup
+          const delay = i < 10 ? 2000 : 1000;
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else {
+          // On final attempt, include more diagnostic info
+          try {
+            const containerLogs = await this.getContainerLogs(containerInfo);
+            throw new Error(`SSH service failed to start within timeout. Container logs: ${containerLogs.slice(-1000)}`);
+          } catch {
+            throw new Error(`SSH service failed to start within timeout after ${maxAttempts} attempts. IP: ${containerInfo.ipAddress}`);
+          }
+        }
       }
     }
-    throw new Error("SSH service failed to start within timeout");
+  }
+
+  private async testSSHConnection(containerInfo: ContainerInfo): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const conn = new SSHClient();
+      
+      const timeout = setTimeout(() => {
+        conn.end();
+        reject(new Error("SSH connection timeout"));
+      }, 5000);
+      
+      conn.on("ready", () => {
+        clearTimeout(timeout);
+        conn.end();
+        resolve();
+      });
+      
+      conn.on("error", (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
+      
+      conn.connect({
+        host: containerInfo.ipAddress,
+        port: 22,
+        username: "root",
+        privateKey: this.sshKeyPair.privateKey,
+        readyTimeout: 5000,
+      });
+    });
+  }
+
+  private async getContainerLogs(containerInfo: ContainerInfo): Promise<string> {
+    try {
+      const container = this.docker.getContainer(containerInfo.id);
+      const stream = await container.logs({
+        stdout: true,
+        stderr: true,
+        tail: 50
+      });
+      return stream.toString();
+    } catch {
+      return "Could not retrieve container logs";
+    }
   }
 
   getPrivateKeyPath(): string {

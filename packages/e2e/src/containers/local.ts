@@ -66,19 +66,84 @@ ${skill}`;
 ${skillContent}
 EOF`
   ]);
+  
+  // Create agent-config.json if it doesn't exist (some AL versions expect this)
+  await context.executeInContainer(containerInfo, [
+    "bash", "-c", `cat > /home/testuser/test-project/${agentName}/agent-config.json << 'EOF'
+{
+  "name": "${agentName}",
+  "model": "claude-3-5-sonnet-20241022",
+  "schedule": "0 */6 * * *"
+}
+EOF`
+  ]);
+  
+  // Verify the agent was created properly
+  const agentFiles = await context.executeInContainer(containerInfo, [
+    "ls", "-la", `/home/testuser/test-project/${agentName}/`
+  ]);
+  
+  if (!agentFiles.includes("SKILL.md")) {
+    throw new Error(`Failed to create agent ${agentName}: SKILL.md not found`);
+  }
+  
+  // Ensure correct ownership and permissions
+  await context.executeInContainer(containerInfo, [
+    "bash", "-c", `chown -R testuser:testuser /home/testuser/test-project/${agentName}`
+  ]);
 }
 
 export async function startActionLlamaScheduler(
   context: E2ETestContext,
   containerInfo: ContainerInfo
 ): Promise<void> {
+  // Ensure we're in the correct directory and verify project structure
+  const projectCheck = await context.executeInContainer(containerInfo, [
+    "bash", "-c", "cd /home/testuser/test-project && ls -la"
+  ]);
+  
+  if (!projectCheck.includes("project.toml")) {
+    throw new Error("Project configuration not found before starting scheduler");
+  }
+  
   // Start the scheduler in the background
   await context.executeInContainer(containerInfo, [
     "bash", "-c", "cd /home/testuser/test-project && nohup al start > /tmp/scheduler.log 2>&1 & echo $! > /tmp/scheduler.pid"
   ]);
   
-  // Wait a bit for scheduler to start
-  await new Promise(resolve => setTimeout(resolve, 5000));
+  // Wait for scheduler to start and verify it's running
+  let attempts = 0;
+  const maxAttempts = 10;
+  
+  while (attempts < maxAttempts) {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    try {
+      // Check if the scheduler process is still running
+      const pidCheck = await context.executeInContainer(containerInfo, [
+        "bash", "-c", "if [ -f /tmp/scheduler.pid ]; then ps -p $(cat /tmp/scheduler.pid) > /dev/null && echo 'running' || echo 'not running'; else echo 'no pid file'; fi"
+      ]);
+      
+      if (pidCheck.includes("running")) {
+        // Additional verification that scheduler is responding
+        const statusCheck = await context.executeInContainer(containerInfo, [
+          "bash", "-c", "cd /home/testuser/test-project && al stat 2>&1 || echo 'stat failed'"
+        ]);
+        
+        if (!statusCheck.includes("stat failed")) {
+          return; // Scheduler is running properly
+        }
+      }
+    } catch {
+      // Continue trying
+    }
+    
+    attempts++;
+  }
+  
+  // If we get here, the scheduler didn't start properly
+  const logs = await getSchedulerLogs(context, containerInfo);
+  throw new Error(`Scheduler failed to start properly after ${maxAttempts} attempts. Logs: ${logs}`);
 }
 
 export async function stopActionLlamaScheduler(
@@ -113,7 +178,42 @@ export async function runSingleAgent(
   containerInfo: ContainerInfo,
   agentName: string
 ): Promise<string> {
-  return await context.executeInContainer(containerInfo, [
-    "bash", "-c", `cd /home/testuser/test-project && al run ${agentName}`
-  ]);
+  // First verify the agent exists and the project structure is correct
+  try {
+    const projectContents = await context.executeInContainer(containerInfo, [
+      "bash", "-c", "cd /home/testuser/test-project && find . -name 'SKILL.md' -o -name 'project.toml'"
+    ]);
+    
+    if (!projectContents.includes(`${agentName}/SKILL.md`)) {
+      throw new Error(`Agent ${agentName} not found in project. Found files: ${projectContents}`);
+    }
+    
+    // Check if AL can see the agent
+    const alStatus = await context.executeInContainer(containerInfo, [
+      "bash", "-c", `cd /home/testuser/test-project && al stat || echo "al stat failed"`
+    ]);
+    
+    // Run the agent with explicit error handling
+    return await context.executeInContainer(containerInfo, [
+      "bash", "-c", `cd /home/testuser/test-project && al run ${agentName} 2>&1`
+    ]);
+  } catch (error: any) {
+    // Provide better error context for debugging
+    let debugInfo = "";
+    try {
+      const workingDir = await context.executeInContainer(containerInfo, [
+        "bash", "-c", "pwd && ls -la /home/testuser/test-project"
+      ]);
+      debugInfo += `Working directory: ${workingDir}\n`;
+      
+      const alVersion = await context.executeInContainer(containerInfo, [
+        "bash", "-c", "al --version || echo 'al not found'"
+      ]);
+      debugInfo += `AL version: ${alVersion}\n`;
+    } catch {
+      debugInfo = "Could not gather debug info";
+    }
+    
+    throw new Error(`Failed to run agent ${agentName}: ${error.message}\nDebug info: ${debugInfo}`);
+  }
 }
