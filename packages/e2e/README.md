@@ -64,3 +64,5 @@ docker network rm action-llama-e2e
 ### CI/CD environments
 
 E2E tests are designed to run in environments with Docker support. They will skip gracefully if Docker is not available rather than failing the entire test suite.
+
+> **Note:** This package includes improvements for Vitest 4 compatibility and enhanced Docker availability checking.
