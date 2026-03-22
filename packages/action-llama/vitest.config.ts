@@ -3,7 +3,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     globals: true,
-    exclude: ["**/node_modules/**", "**/.claude/worktrees/**"],
+    exclude: ["**/node_modules/**", "**/.claude/worktrees/**", "**/packages/e2e/**"],
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],
@@ -18,7 +18,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: "unit",
-          exclude: ["**/node_modules/**", "**/.claude/worktrees/**", "test/integration/**"],
+          exclude: ["**/node_modules/**", "**/.claude/worktrees/**", "test/integration/**", "**/packages/e2e/**"],
         },
       },
       {
