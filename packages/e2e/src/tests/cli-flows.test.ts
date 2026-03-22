@@ -9,18 +9,17 @@ describe("CLI Flows", { timeout: 300000 }, () => {
     
     // Check that project was created
     const projectFiles = await context.executeInContainer(container, [
-      "ls", "-la", "/app/test-project"
+      "ls", "-la", "/home/testuser/test-project"
     ]);
     
-    expect(projectFiles).toContain("package.json");
-    expect(projectFiles).toContain("config.toml");
+    expect(projectFiles).toContain("project.toml");
     
     // Check that config file contains expected content
     const configContent = await context.executeInContainer(container, [
-      "cat", "/app/test-project/config.toml"
+      "cat", "/home/testuser/test-project/project.toml"
     ]);
     
-    expect(configContent).toContain("[local]");
+    expect(configContent).toContain("[global]");
   });
 
   it("configures credentials", async () => {
@@ -61,13 +60,13 @@ You are a test agent. When run, output "Hello from test agent!" and exit success
     
     // Check agent was created
     const agentFiles = await context.executeInContainer(container, [
-      "ls", "-la", "/app/test-project/test-agent/"
+      "ls", "-la", "/home/testuser/test-project/test-agent/"
     ]);
     expect(agentFiles).toContain("SKILL.md");
     
     // Check SKILL.md content
     const skillContent = await context.executeInContainer(container, [
-      "cat", "/app/test-project/test-agent/SKILL.md"
+      "cat", "/home/testuser/test-project/test-agent/SKILL.md"
     ]);
     expect(skillContent).toContain("model: claude-3-5-sonnet-20241022");
     expect(skillContent).toContain("Test Agent");
@@ -94,7 +93,7 @@ You are a test agent for lifecycle management. Output your status and wait.
     
     // Check scheduler status
     const statusOutput = await context.executeInContainer(container, [
-      "bash", "-c", "cd /app/test-project && al stat"
+      "bash", "-c", "cd /home/testuser/test-project && al stat"
     ]);
     expect(statusOutput).toContain("Running");
     
@@ -105,12 +104,12 @@ You are a test agent for lifecycle management. Output your status and wait.
     
     // Pause agent
     await context.executeInContainer(container, [
-      "bash", "-c", "cd /app/test-project && al pause lifecycle-agent"
+      "bash", "-c", "cd /home/testuser/test-project && al pause lifecycle-agent"
     ]);
     
     // Resume agent
     await context.executeInContainer(container, [
-      "bash", "-c", "cd /app/test-project && al resume lifecycle-agent"
+      "bash", "-c", "cd /home/testuser/test-project && al resume lifecycle-agent"
     ]);
     
     // Stop scheduler
@@ -145,18 +144,18 @@ webhooks:
 ${webhookSkill}`;
     
     await context.executeInContainer(container, [
-      "bash", "-c", `mkdir -p /app/test-project/webhook-agent`
+      "bash", "-c", `mkdir -p /home/testuser/test-project/webhook-agent`
     ]);
     
     await context.executeInContainer(container, [
-      "bash", "-c", `cat > /app/test-project/webhook-agent/SKILL.md << 'EOF'
+      "bash", "-c", `cat > /home/testuser/test-project/webhook-agent/SKILL.md << 'EOF'
 ${skillWithWebhook}
 EOF`
     ]);
     
     // Start scheduler with gateway
     await context.executeInContainer(container, [
-      "bash", "-c", "cd /app/test-project && nohup al start --gateway-port 3000 > /tmp/webhook-scheduler.log 2>&1 & echo $! > /tmp/webhook-scheduler.pid"
+      "bash", "-c", "cd /home/testuser/test-project && nohup al start --gateway-port 3000 > /tmp/webhook-scheduler.log 2>&1 & echo $! > /tmp/webhook-scheduler.pid"
     ]);
     
     // Wait for gateway to start
