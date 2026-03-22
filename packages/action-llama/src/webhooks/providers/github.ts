@@ -7,9 +7,10 @@ export class GitHubWebhookProvider implements WebhookProvider {
   validateRequest(
     headers: Record<string, string | undefined>,
     rawBody: string,
-    secrets?: Record<string, string>
+    secrets?: Record<string, string>,
+    allowUnsigned?: boolean
   ): string | null {
-    return validateHmacSignature(rawBody, headers["x-hub-signature-256"], secrets, "sha256=");
+    return validateHmacSignature(rawBody, headers["x-hub-signature-256"], secrets, "sha256=", allowUnsigned);
   }
 
   parseEvent(headers: Record<string, string | undefined>, body: any): WebhookContext | null {

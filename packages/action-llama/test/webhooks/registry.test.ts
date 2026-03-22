@@ -44,28 +44,28 @@ describe("WebhookRegistry", () => {
   });
 
   it("rejects dispatch for unknown source", () => {
-    const result = registry.dispatch("unknown", {}, "{}");
+    const result = registry.dispatch("unknown", {}, "{}", {});
     expect(result.ok).toBe(false);
     expect(result.errors).toContain("unknown source: unknown");
   });
 
   it("rejects dispatch when signature validation fails", () => {
     registry.registerProvider(makeProvider({ validateRequest: () => null }));
-    const result = registry.dispatch("github", {}, "{}", { MyOrg: "secret" });
+    const result = registry.dispatch("github", {}, "{}", { secrets: { MyOrg: "secret" } });
     expect(result.ok).toBe(false);
     expect(result.errors).toContain("signature validation failed");
   });
 
   it("rejects dispatch with invalid JSON body", () => {
     registry.registerProvider(makeProvider());
-    const result = registry.dispatch("github", {}, "not-json");
+    const result = registry.dispatch("github", {}, "not-json", { allowUnsigned: true });
     expect(result.ok).toBe(false);
     expect(result.errors).toContain("invalid JSON body");
   });
 
   it("returns 0 matched when event cannot be parsed", () => {
     registry.registerProvider(makeProvider({ parseEvent: () => null }));
-    const result = registry.dispatch("github", {}, "{}");
+    const result = registry.dispatch("github", {}, "{}", { allowUnsigned: true });
     expect(result.ok).toBe(true);
     expect(result.matched).toBe(0);
   });
@@ -81,7 +81,7 @@ describe("WebhookRegistry", () => {
       trigger,
     });
 
-    const result = registry.dispatch("github", {}, '{"action":"labeled"}');
+    const result = registry.dispatch("github", {}, '{"action":"labeled"}', { allowUnsigned: true });
     expect(result.ok).toBe(true);
     expect(result.matched).toBe(1);
     expect(result.matchedSource).toBe("MyOrg");
@@ -106,7 +106,7 @@ describe("WebhookRegistry", () => {
       trigger: trigger2,
     });
 
-    const result = registry.dispatch("github", {}, '{}');
+    const result = registry.dispatch("github", {}, '{}', { allowUnsigned: true });
     expect(result.matched).toBe(2);
     expect(trigger1).toHaveBeenCalledTimes(1);
     expect(trigger2).toHaveBeenCalledTimes(1);
@@ -122,7 +122,7 @@ describe("WebhookRegistry", () => {
       trigger,
     });
 
-    const result = registry.dispatch("github", {}, '{}');
+    const result = registry.dispatch("github", {}, '{}', { allowUnsigned: true });
     expect(result.matched).toBe(0);
     expect(trigger).not.toHaveBeenCalled();
   });
@@ -137,7 +137,7 @@ describe("WebhookRegistry", () => {
       trigger,
     });
 
-    const result = registry.dispatch("github", {}, '{}');
+    const result = registry.dispatch("github", {}, '{}', { allowUnsigned: true });
     expect(result.matched).toBe(1);
     expect(trigger).toHaveBeenCalledTimes(1);
   });
@@ -153,7 +153,7 @@ describe("WebhookRegistry", () => {
       trigger,
     });
 
-    const result = registry.dispatch("github", {}, '{}');
+    const result = registry.dispatch("github", {}, '{}', { allowUnsigned: true });
     expect(result.matched).toBe(0);
     expect(trigger).not.toHaveBeenCalled();
   });
@@ -168,7 +168,7 @@ describe("WebhookRegistry", () => {
       trigger,
     });
 
-    const result = registry.dispatch("github", {}, '{}');
+    const result = registry.dispatch("github", {}, '{}', { allowUnsigned: true });
     expect(result.matched).toBe(1);
     expect(trigger).toHaveBeenCalledTimes(1);
   });
@@ -182,7 +182,7 @@ describe("WebhookRegistry", () => {
       trigger,
     });
 
-    const result = registry.dispatch("github", {}, '{}');
+    const result = registry.dispatch("github", {}, '{}', { allowUnsigned: true });
     expect(result.matched).toBe(0);
     expect(trigger).not.toHaveBeenCalled();
   });
@@ -197,7 +197,7 @@ describe("WebhookRegistry", () => {
       trigger,
     });
 
-    const result = registry.dispatch("github", {}, '{}');
+    const result = registry.dispatch("github", {}, '{}', { allowUnsigned: true });
     expect(result.ok).toBe(true);
     expect(result.matched).toBe(0);
     expect(result.skipped).toBe(1);
@@ -213,7 +213,7 @@ describe("WebhookRegistry", () => {
       trigger: () => { throw new Error("boom"); },
     });
 
-    const result = registry.dispatch("github", {}, '{}');
+    const result = registry.dispatch("github", {}, '{}', { allowUnsigned: true });
     expect(result.ok).toBe(true);
     expect(result.matched).toBe(0);
     expect(result.skipped).toBe(1);

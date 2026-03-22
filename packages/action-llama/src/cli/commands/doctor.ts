@@ -95,6 +95,20 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
       configErrors.push(...validateTriggerFields(trigger, sourceConfig.type, name));
     }
   }
+
+  // Check webhook sources for credential and allowUnsigned configuration
+  for (const [sourceName, sourceConfig] of Object.entries(webhookSources)) {
+    if (!sourceConfig.credential && sourceConfig.type !== "test") {
+      if (!sourceConfig.allowUnsigned) {
+        // Show error when no credential and allowUnsigned is not explicitly true
+        configErrors.push(
+          `Webhook source "${sourceName}" (${sourceConfig.type}) has no credential and allowUnsigned is not enabled. ` +
+          `Either set credential in config.toml to enable HMAC validation, or set allowUnsigned = true (not recommended for production).`
+        );
+      }
+    }
+  }
+
   if (configErrors.length > 0) {
     throw new ConfigError(
       "Invalid webhook configuration:\n" +
@@ -102,13 +116,12 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
     );
   }
 
-  // Warn about webhook sources that accept unsigned webhooks (no credential)
+  // Show security warning for sources that explicitly allow unsigned webhooks
   for (const [sourceName, sourceConfig] of Object.entries(webhookSources)) {
-    if (!sourceConfig.credential && sourceConfig.type !== "test") {
+    if (sourceConfig.allowUnsigned && sourceConfig.type !== "test") {
       if (!opts.silent) {
         console.log(
-          `  [warn] Webhook source "${sourceName}" (${sourceConfig.type}) has no credential — ` +
-          `unsigned webhooks will be accepted. Set credential in config.toml to enable HMAC validation.`
+          `  [warn] ⚠️  Webhook source "${sourceName}" allows unsigned requests. This is insecure for production!`
         );
       }
     }

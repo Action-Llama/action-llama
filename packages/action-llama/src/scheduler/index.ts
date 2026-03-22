@@ -48,9 +48,9 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   const { agentConfigs, activeAgentConfigs, maxReruns, maxTriggerDepth, timezone, anyWebhooks, webhookSources } = validated;
 
   // Set up webhook registry if any agents use webhooks
-  const { registry: webhookRegistry, secrets: webhookSecrets } = anyWebhooks
+  const { registry: webhookRegistry, secrets: webhookSecrets, configs: webhookConfigs } = anyWebhooks
     ? await setupWebhookRegistry(globalConfig, logger)
-    : { registry: undefined, secrets: {} };
+    : { registry: undefined, secrets: {}, configs: {} };
 
   let baseImage = CONSTANTS.DEFAULT_IMAGE;
   const agentImages: Record<string, string> = {};
@@ -99,7 +99,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   // Start gateway early (before Docker builds) so users can see build status
   const { gateway, gatewayPort, registerContainer, unregisterContainer } = await setupGateway({
     projectPath, globalConfig, state, agentConfigs,
-    webhookRegistry, webhookSecrets, stateStore, statsStore, events, telemetry,
+    webhookRegistry, webhookSecrets, webhookConfigs, stateStore, statsStore, events, telemetry,
     mkLogger, statusTracker, webUI, expose, logger,
   });
 

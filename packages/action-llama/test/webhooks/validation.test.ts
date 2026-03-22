@@ -44,9 +44,19 @@ describe("validateHmacSignature", () => {
     return prefix + createHmac("sha256", secret).update(body).digest("hex");
   }
 
-  it("returns _unsigned when no secrets configured", () => {
-    expect(validateHmacSignature("body", "sig", undefined)).toBe("_unsigned");
-    expect(validateHmacSignature("body", "sig", {})).toBe("_unsigned");
+  it("returns _unsigned when no secrets configured and allowUnsigned is true", () => {
+    expect(validateHmacSignature("body", "sig", undefined, "", true)).toBe("_unsigned");
+    expect(validateHmacSignature("body", "sig", {}, "", true)).toBe("_unsigned");
+  });
+
+  it("returns null when no secrets and allowUnsigned is false (default)", () => {
+    expect(validateHmacSignature("body", "sig", undefined)).toBeNull();
+    expect(validateHmacSignature("body", "sig", {})).toBeNull();
+  });
+
+  it("returns null when no secrets and allowUnsigned is explicitly false", () => {
+    expect(validateHmacSignature("body", "sig", undefined, "", false)).toBeNull();
+    expect(validateHmacSignature("body", "sig", {}, "", false)).toBeNull();
   });
 
   it("returns null when no signature provided", () => {

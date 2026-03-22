@@ -217,7 +217,7 @@ describe("doctor", () => {
   it("skips webhook secret check when source has no credential", async () => {
     mockDiscoverAgents.mockReturnValue(["dev"]);
     mockLoadGlobalConfig.mockReturnValue({
-      webhooks: { "my-github": { type: "github" } },  // no credential — unsigned
+      webhooks: { "my-github": { type: "github", allowUnsigned: true } },  // no credential — unsigned but allowed
     });
     mockLoadAgentConfig.mockReturnValue({
       name: "dev",
@@ -357,7 +357,7 @@ describe("doctor", () => {
   it("warns when webhook source has no credential (unsigned)", async () => {
     mockDiscoverAgents.mockReturnValue(["dev"]);
     mockLoadGlobalConfig.mockReturnValue({
-      webhooks: { "my-github": { type: "github" } },
+      webhooks: { "my-github": { type: "github", allowUnsigned: true } },
     });
     mockLoadAgentConfig.mockReturnValue({
       name: "dev",
@@ -373,7 +373,7 @@ describe("doctor", () => {
 
     const output = await captureLog(() => execute({ project: "." }));
     expect(output).toContain("[warn]");
-    expect(output).toContain("no credential");
+    expect(output).toContain("allows unsigned requests");
     expect(output).toContain("my-github");
   });
 
@@ -396,7 +396,7 @@ describe("doctor", () => {
   it("does not warn about unsigned webhooks in silent mode", async () => {
     mockDiscoverAgents.mockReturnValue(["dev"]);
     mockLoadGlobalConfig.mockReturnValue({
-      webhooks: { "my-github": { type: "github" } },
+      webhooks: { "my-github": { type: "github", allowUnsigned: true } },
     });
     mockLoadAgentConfig.mockReturnValue({
       name: "dev",

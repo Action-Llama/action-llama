@@ -17,6 +17,7 @@ import type { WebhookRegistry } from "../webhooks/registry.js";
 import type { Logger } from "../shared/logger.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import type { ControlRoutesDeps } from "./routes/control.js";
+import type { WebhookSourceConfig } from "../shared/config.js";
 import { withSpan, getTelemetry } from "../telemetry/index.js";
 import { SpanKind } from "@opentelemetry/api";
 import { authMiddleware } from "./auth.js";
@@ -32,6 +33,7 @@ export interface GatewayOptions {
   killContainer?: (name: string) => Promise<void>;
   webhookRegistry?: WebhookRegistry;
   webhookSecrets?: Record<string, Record<string, string>>;
+  webhookConfigs?: Record<string, WebhookSourceConfig>;
   statusTracker?: StatusTracker;
   projectPath?: string;
   webUI?: boolean;
@@ -59,7 +61,7 @@ export interface GatewayServer {
 }
 
 export async function startGateway(opts: GatewayOptions): Promise<GatewayServer> {
-  const { port, logger, killContainer, webhookRegistry, webhookSecrets, statusTracker, projectPath, webUI, lockTimeout, signalContext, stateStore } = opts;
+  const { port, logger, killContainer, webhookRegistry, webhookSecrets, webhookConfigs, statusTracker, projectPath, webUI, lockTimeout, signalContext, stateStore } = opts;
   const app = new Hono();
 
   // Create stores backed by the persistent StateStore (if provided).
@@ -151,7 +153,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
 
   // Webhook routes
   if (webhookRegistry) {
-    registerWebhookRoutes(app, webhookRegistry, webhookSecrets || {}, logger, statusTracker);
+    registerWebhookRoutes(app, webhookRegistry, webhookConfigs || {}, webhookSecrets || {}, logger, statusTracker);
   }
 
   // Dashboard routes (login/logout are unprotected; dashboard pages are behind authMiddleware above)

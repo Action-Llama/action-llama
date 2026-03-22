@@ -3,9 +3,12 @@ import type { WebhookRegistry } from "../../webhooks/registry.js";
 import type { Logger } from "../../shared/logger.js";
 import type { StatusTracker } from "../../tui/status-tracker.js";
 
+import type { WebhookSourceConfig } from "../../shared/config.js";
+
 export function registerWebhookRoutes(
   app: Hono,
   registry: WebhookRegistry,
+  webhookConfigs: Record<string, WebhookSourceConfig>,
   webhookSecrets: Record<string, Record<string, string>>,
   logger: Logger,
   statusTracker?: StatusTracker
@@ -63,7 +66,11 @@ export function registerWebhookRoutes(
     );
 
     const secrets = webhookSecrets[source];
-    const result = registry.dispatch(source, headers, rawBody, secrets);
+    const webhookConfig = webhookConfigs[source];
+    const result = registry.dispatch(source, headers, rawBody, { 
+      secrets, 
+      allowUnsigned: webhookConfig?.allowUnsigned 
+    });
 
     if (!result.ok) {
       const status = result.errors?.includes("signature validation failed") ? 401 : 400;
