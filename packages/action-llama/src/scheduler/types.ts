@@ -13,6 +13,8 @@ export interface WebhookEvent {
   source: string;
 }
 
+import type { InstanceLifecycle } from "./lifecycle/instance-lifecycle.js";
+
 export interface AgentInstance {
   id: string;
   agentName: string;
@@ -20,4 +22,5 @@ export interface AgentInstance {
   startedAt: Date;
   trigger: string;
   runner?: any; // Reference to the actual runner instance
+  lifecycle?: InstanceLifecycle; // Lifecycle state machine for this instance
 }
