@@ -161,16 +161,25 @@ export class E2ETestContext {
     // Wait for container to be fully started and connected to network
     await new Promise(resolve => setTimeout(resolve, 2000));
     
-    // Get container IP address
+    // Get container IP address with exponential backoff
     let containerInfo = await container.inspect();
     
-    // Retry if IP not immediately available
-    if (!containerInfo.NetworkSettings.Networks["action-llama-e2e"]?.IPAddress) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+    // Retry with exponential backoff for IP assignment
+    let ipAddress: string | undefined;
+    for (let attempt = 0; attempt < 10; attempt++) {
       containerInfo = await container.inspect();
+      ipAddress = containerInfo.NetworkSettings.Networks["action-llama-e2e"]?.IPAddress;
+      if (ipAddress) break;
+      
+      const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
     
-    const ipAddress = containerInfo.NetworkSettings.Networks["action-llama-e2e"]?.IPAddress;
+    if (!ipAddress) {
+      // Log container state for debugging
+      console.error("Container network state:", JSON.stringify(containerInfo.NetworkSettings, null, 2));
+      throw new Error(`Failed to get IP address for container ${containerName} after 10 attempts`);
+    }
     
     const info: ContainerInfo = {
       id: container.id,
