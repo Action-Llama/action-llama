@@ -7,10 +7,10 @@ RUN apk add --no-cache git bash curl openssh-client
 WORKDIR /app
 
 # Copy the built action-llama package
-COPY ../../action-llama/dist ./action-llama/dist
-COPY ../../action-llama/package.json ./action-llama/
-COPY ../../shared/dist ./shared/dist
-COPY ../../shared/package.json ./shared/
+COPY packages/action-llama/dist ./action-llama/dist
+COPY packages/action-llama/package.json ./action-llama/
+COPY packages/shared/dist ./shared/dist
+COPY packages/shared/package.json ./shared/
 
 # Install action-llama globally
 RUN cd action-llama && npm pack && npm install -g *.tgz

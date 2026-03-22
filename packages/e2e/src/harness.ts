@@ -257,8 +257,16 @@ export class E2ETestContext {
   }
 
   private async buildImage(imageName: string, contextPath: string) {
+    // Use the repository root as the build context so Docker can access
+    // all the files referenced in the Dockerfile
+    const repoRoot = path.resolve(process.cwd(), "../..");
+    const dockerfilePath = path.relative(repoRoot, path.resolve(contextPath, "Dockerfile"));
+    
     const stream = await this.docker.buildImage(
-      { context: contextPath, src: ["Dockerfile"] },
+      { 
+        context: repoRoot, 
+        src: [dockerfilePath]
+      },
       { t: `${imageName}:latest` }
     );
     
