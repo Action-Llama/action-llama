@@ -34,7 +34,7 @@ describe("LinearWebhookProvider", () => {
       expect(provider.validateRequest({}, '{"action":"create"}', {}, true)).toBe("_unsigned");
     });
 
-    it("rejects any request when no secret is configured and allowUnsigned is false", () => {
+    it("rejects requests when no secret is configured and allowUnsigned is false (default)", () => {
       expect(provider.validateRequest({}, '{"action":"create"}')).toBeNull();
       expect(provider.validateRequest({}, '{"action":"create"}', undefined)).toBeNull();
       expect(provider.validateRequest({}, '{"action":"create"}', {})).toBeNull();

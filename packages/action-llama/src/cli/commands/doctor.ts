@@ -1,6 +1,6 @@
 import { resolve } from "path";
-import { existsSync } from "fs";
-import { discoverAgents, loadAgentConfig, loadGlobalConfig, validateAgentConfig } from "../../shared/config.js";
+import { existsSync, readFileSync } from "fs";
+import { discoverAgents, loadAgentConfig, loadGlobalConfig, validateAgentConfig, loadProjectConfig } from "../../shared/config.js";
 import { resolveCredential } from "../../credentials/registry.js";
 import { promptCredential } from "../../credentials/prompter.js";
 import { parseCredentialRef, credentialExists, writeCredentialFields } from "../../shared/credentials.js";
@@ -8,8 +8,17 @@ import { ConfigError, CredentialError } from "../../shared/errors.js";
 import { ensureGatewayApiKey } from "../../gateway/api-key.js";
 import { resolveWebhookSource, validateTriggerFields, KNOWN_PROVIDER_TYPES } from "../../scheduler/webhook-setup.js";
 import { collectCredentialRefs } from "../../shared/credential-refs.js";
+import { parseFrontmatter } from "../../shared/frontmatter.js";
+import { parse as parseTOML } from "smol-toml";
+import {
+  validateGlobalConfig,
+  validateAgentConfig as validateAgentConfigEnhanced,
+  detectGlobalConfigUnknownFields,
+  detectAgentConfigUnknownFields,
+  type ValidationResult
+} from "../../shared/validation.js";
 
-export async function execute(opts: { project: string; env?: string; checkOnly?: boolean; silent?: boolean }): Promise<void> {
+export async function execute(opts: { project: string; env?: string; checkOnly?: boolean; silent?: boolean; strict?: boolean }): Promise<void> {
   const projectPath = resolve(opts.project);
 
   // Guard: refuse to run if the project path looks like an agent directory
@@ -30,6 +39,72 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
   const globalConfig = loadGlobalConfig(projectPath, opts.env);
   const webhookSources = globalConfig.webhooks ?? {};
   const credentialRefs = collectCredentialRefs(projectPath, globalConfig);
+
+  // --- Enhanced validation: schema, unknown fields, cron, model compatibility ---
+  const validationErrors: string[] = [];
+  const validationWarnings: string[] = [];
+
+  // Validate global config schema and detect unknown fields
+  try {
+    const configPath = resolve(projectPath, "config.toml");
+    if (existsSync(configPath)) {
+      const rawConfig = readFileSync(configPath, "utf-8");
+      const parsedConfig = parseTOML(rawConfig);
+      
+      const globalValidation = validateGlobalConfig(globalConfig, parsedConfig);
+      validationErrors.push(...globalValidation.errors.map(e => `Global config: ${e.message}${e.field ? ` (${e.field})` : ""}`));
+      validationWarnings.push(...globalValidation.warnings.map(e => `Global config: ${e.message}${e.field ? ` (${e.field})` : ""}`));
+
+      // Check for unknown fields
+      const unknownFields = detectGlobalConfigUnknownFields(parsedConfig);
+      if (unknownFields.length > 0) {
+        const message = `Unknown fields in config.toml: ${unknownFields.join(", ")}`;
+        if (opts.strict) {
+          validationErrors.push(message);
+        } else {
+          validationWarnings.push(message);
+        }
+      }
+    }
+  } catch (err) {
+    validationErrors.push(`Error reading global config: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  // Validate each agent config with enhanced validation
+  for (const name of agents) {
+    try {
+      const agentDir = resolve(projectPath, "agents", name);
+      const skillPath = resolve(agentDir, "SKILL.md");
+      
+      if (existsSync(skillPath)) {
+        const rawSkill = readFileSync(skillPath, "utf-8");
+        const { data } = parseFrontmatter(rawSkill);
+        
+        const config = loadAgentConfig(projectPath, name);
+        const agentValidation = validateAgentConfigEnhanced(config, data);
+        
+        validationErrors.push(...agentValidation.errors.map(e => 
+          `Agent "${name}": ${e.message}${e.field ? ` (${e.field})` : ""}`
+        ));
+        validationWarnings.push(...agentValidation.warnings.map(e => 
+          `Agent "${name}": ${e.message}${e.field ? ` (${e.field})` : ""}`
+        ));
+
+        // Check for unknown fields in agent config
+        const unknownFields = detectAgentConfigUnknownFields(data);
+        if (unknownFields.length > 0) {
+          const message = `Unknown fields in agent "${name}": ${unknownFields.join(", ")}`;
+          if (opts.strict) {
+            validationErrors.push(message);
+          } else {
+            validationWarnings.push(message);
+          }
+        }
+      }
+    } catch (err) {
+      validationErrors.push(`Error validating agent "${name}": ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 
   // Validate each agent's config (schedule/webhooks required, name rules)
   for (const name of agents) {
@@ -95,20 +170,6 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
       configErrors.push(...validateTriggerFields(trigger, sourceConfig.type, name));
     }
   }
-
-  // Check webhook sources for credential and allowUnsigned configuration
-  for (const [sourceName, sourceConfig] of Object.entries(webhookSources)) {
-    if (!sourceConfig.credential && sourceConfig.type !== "test") {
-      if (!sourceConfig.allowUnsigned) {
-        // Show error when no credential and allowUnsigned is not explicitly true
-        configErrors.push(
-          `Webhook source "${sourceName}" (${sourceConfig.type}) has no credential and allowUnsigned is not enabled. ` +
-          `Either set credential in config.toml to enable HMAC validation, or set allowUnsigned = true (not recommended for production).`
-        );
-      }
-    }
-  }
-
   if (configErrors.length > 0) {
     throw new ConfigError(
       "Invalid webhook configuration:\n" +
@@ -116,15 +177,65 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
     );
   }
 
-  // Show security warning for sources that explicitly allow unsigned webhooks
+  // Check webhook security configurations
+  const securityErrors: string[] = [];
+  for (const [sourceName, sourceConfig] of Object.entries(webhookSources)) {
+    if (!sourceConfig.credential && sourceConfig.type !== "test") {
+      if (sourceConfig.allowUnsigned !== true) {
+        // Missing credential and allowUnsigned not explicitly set to true = error
+        securityErrors.push(
+          `Webhook source "${sourceName}" (${sourceConfig.type}) has no credential and allowUnsigned is not set to true. ` +
+          `Either set credential in config.toml or add allowUnsigned = true for insecure mode.`
+        );
+      }
+    }
+  }
+
+  if (securityErrors.length > 0) {
+    throw new ConfigError(
+      "Configuration errors:\n" +
+      securityErrors.map(e => `  - ${e}`).join("\n")
+    );
+  }
+
+  // Show security warnings for allowUnsigned webhook sources (after error checks pass)
   for (const [sourceName, sourceConfig] of Object.entries(webhookSources)) {
     if (sourceConfig.allowUnsigned && sourceConfig.type !== "test") {
       if (!opts.silent) {
         console.log(
-          `  [warn] ⚠️  Webhook source "${sourceName}" allows unsigned requests. This is insecure for production!`
+          `  [SECURITY] Webhook source "${sourceName}" allows unsigned requests. ` +
+          `This is insecure for production!`
         );
       }
     }
+  }
+
+  // Display validation results
+  if (validationErrors.length > 0 || validationWarnings.length > 0) {
+    if (!opts.silent) {
+      console.log("\n--- Configuration Validation ---");
+      
+      if (validationWarnings.length > 0) {
+        console.log("\nWarnings:");
+        for (const warning of validationWarnings) {
+          console.log(`  [warn] ${warning}`);
+        }
+      }
+      
+      if (validationErrors.length > 0) {
+        console.log("\nErrors:");
+        for (const error of validationErrors) {
+          console.log(`  [error] ${error}`);
+        }
+      }
+    }
+  }
+
+  // Throw error if there are validation errors
+  if (validationErrors.length > 0) {
+    throw new ConfigError(
+      `${validationErrors.length} validation error(s) found. See details above.`
+    );
   }
 
   if (credentialRefs.size === 0) {

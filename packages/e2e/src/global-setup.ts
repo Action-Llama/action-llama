@@ -1,6 +1,10 @@
 import Docker from "dockerode";
+import { assertDockerAvailable, isDockerAvailable } from "./docker-utils.js";
 
 export async function setup() {
+  // Check if Docker is available before proceeding
+  await assertDockerAvailable();
+
   const docker = new Docker();
   
   // Create dedicated network for e2e tests
@@ -23,6 +27,13 @@ export async function setup() {
 }
 
 export async function teardown() {
+  // Check if Docker is available before attempting cleanup
+  const dockerAvailable = await isDockerAvailable();
+  if (!dockerAvailable) {
+    // Skip cleanup if Docker isn't available
+    return;
+  }
+
   const docker = new Docker();
   
   try {

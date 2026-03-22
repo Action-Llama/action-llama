@@ -78,4 +78,63 @@ export const CONSTANTS = {
 
   /** Scheduler Docker image tag (primary — git SHA) */
   SCHEDULER_IMAGE: `al-scheduler:${GIT_SHA}`,
-} satisfies Record<string, string | ((...args: any[]) => string)>;
+
+  /** Restrictive directory permissions for credential staging */
+  CREDS_DIR_MODE: process.env.NODE_ENV === "test" ? 0o755 : 0o700,
+
+  /** Read-only file permissions for credential files */
+  CREDS_FILE_MODE: process.env.NODE_ENV === "test" ? 0o644 : 0o400,
+
+  /** Container user ID */
+  CONTAINER_UID: 1000,
+
+  /** Container group ID */
+  CONTAINER_GID: 1000,
+} satisfies Record<string, string | number | ((...args: any[]) => string)>;
+
+/**
+ * Model/provider compatibility mapping for validation.
+ * Maps provider names to their supported models and auth types.
+ */
+export const PROVIDER_MODELS: Record<string, { models: string[]; authTypes: string[] }> = {
+  anthropic: {
+    models: ["claude-3-5-sonnet*", "claude-3-5-haiku*", "claude-3-opus*", "claude-3-sonnet*", "claude-3-haiku*"],
+    authTypes: ["api_key"]
+  },
+  openai: {
+    models: ["gpt-4*", "gpt-3.5*", "o1*", "o3*", "text-*", "davinci*"],
+    authTypes: ["api_key"]
+  },
+  deepseek: {
+    models: ["deepseek-*"],
+    authTypes: ["api_key"]
+  },
+  google: {
+    models: ["gemini-*", "gemma-*"],
+    authTypes: ["api_key"]
+  },
+  xai: {
+    models: ["grok-*"],
+    authTypes: ["api_key"]
+  },
+  openrouter: {
+    models: ["*"], // OpenRouter supports many models via their API
+    authTypes: ["api_key"]
+  },
+  groq: {
+    models: ["llama-*", "mixtral-*", "gemma-*"],
+    authTypes: ["api_key"]
+  },
+  fireworks: {
+    models: ["llama-*", "mixtral-*", "qwen-*", "starcoder-*"],
+    authTypes: ["api_key"]
+  },
+  together: {
+    models: ["llama-*", "mixtral-*", "qwen-*", "stripedhyena-*"],
+    authTypes: ["api_key"]
+  },
+  cerebras: {
+    models: ["llama-*"],
+    authTypes: ["api_key"]
+  }
+};

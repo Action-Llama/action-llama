@@ -34,7 +34,7 @@ describe("SentryWebhookProvider", () => {
       expect(provider.validateRequest({}, '{"action":"created"}', {}, true)).toBe("_unsigned");
     });
 
-    it("rejects any request when no secret is configured and allowUnsigned is false", () => {
+    it("rejects requests when no secret is configured and allowUnsigned is false (default)", () => {
       expect(provider.validateRequest({}, '{"action":"created"}')).toBeNull();
       expect(provider.validateRequest({}, '{"action":"created"}', undefined)).toBeNull();
       expect(provider.validateRequest({}, '{"action":"created"}', {})).toBeNull();

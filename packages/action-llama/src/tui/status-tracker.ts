@@ -2,6 +2,8 @@ import { EventEmitter } from "events";
 import type { AgentInstance } from "../scheduler/types.js";
 import type { TokenUsage } from "../shared/usage.js";
 import { addTokenUsage, zeroTokenUsage } from "../shared/usage.js";
+import { AgentLifecycle } from "../scheduler/lifecycle/agent-lifecycle.js";
+import { InstanceLifecycle } from "../scheduler/lifecycle/instance-lifecycle.js";
 
 export interface AgentStatus {
   name: string;
@@ -45,6 +47,7 @@ export interface LogLine {
 
 export class StatusTracker extends EventEmitter {
   private agents = new Map<string, AgentStatus>();
+  private agentLifecycles = new Map<string, AgentLifecycle>();
   private schedulerInfo: SchedulerInfo | null = null;
   private recentLogs: LogLine[] = [];
   private maxLogs = 100;
@@ -52,9 +55,22 @@ export class StatusTracker extends EventEmitter {
   private instances: Map<string, AgentInstance> = new Map();
 
   registerAgent(name: string, scale = 1): void {
+    // Create AgentLifecycle and listen to its events
+    const lifecycle = new AgentLifecycle(name);
+    this.agentLifecycles.set(name, lifecycle);
+    
+    // Listen to lifecycle events to update UI
+    lifecycle.on("agent:instance-start", () => this.emit("update"));
+    lifecycle.on("agent:instance-end", () => this.emit("update"));
+    lifecycle.on("agent:build-start", () => this.emit("update"));
+    lifecycle.on("agent:build-complete", () => this.emit("update"));
+    lifecycle.on("agent:error", () => this.emit("update"));
+    lifecycle.on("agent:error-cleared", () => this.emit("update"));
+    lifecycle.on("transition", () => this.emit("update"));
+
     this.agents.set(name, {
       name,
-      state: "idle",
+      state: lifecycle.getState(),
       enabled: scale > 0,
       statusText: null,
       lastError: null,
@@ -74,6 +90,13 @@ export class StatusTracker extends EventEmitter {
   }
 
   unregisterAgent(name: string): void {
+    // Clean up lifecycle
+    const lifecycle = this.agentLifecycles.get(name);
+    if (lifecycle) {
+      lifecycle.removeAllListeners();
+      this.agentLifecycles.delete(name);
+    }
+    
     this.agents.delete(name);
     this.emit("update");
   }
@@ -81,6 +104,8 @@ export class StatusTracker extends EventEmitter {
   setAgentState(name: string, state: "idle" | "running" | "building" | "error"): void {
     const agent = this.agents.get(name);
     if (!agent) return;
+    
+    // Direct state management for backward compatibility
     agent.state = state;
     if (state === "running") {
       agent.statusText = null;
@@ -93,6 +118,7 @@ export class StatusTracker extends EventEmitter {
   startRun(name: string, reason?: string): void {
     const agent = this.agents.get(name);
     if (!agent) return;
+
     agent.runningCount = Math.min(agent.runningCount + 1, agent.scale);
     agent.state = "running";
     agent.statusText = null;
@@ -106,6 +132,7 @@ export class StatusTracker extends EventEmitter {
   endRun(name: string, durationMs: number, error?: string, usage?: TokenUsage): void {
     const agent = this.agents.get(name);
     if (!agent) return;
+    
     agent.runningCount = Math.max(agent.runningCount - 1, 0);
     agent.lastRunAt = new Date();
     agent.lastRunDuration = durationMs;
@@ -305,5 +332,88 @@ export class StatusTracker extends EventEmitter {
   getAgentScale(name: string): number {
     const agent = this.agents.get(name);
     return agent?.scale ?? 1;
+  }
+
+  /**
+   * Get an agent's lifecycle instance
+   */
+  getAgentLifecycle(name: string): AgentLifecycle | undefined {
+    return this.agentLifecycles.get(name);
+  }
+
+  /**
+   * Start build process for an agent
+   */
+  startBuild(name: string, reason?: string): void {
+    const agent = this.agents.get(name);
+    const lifecycle = this.agentLifecycles.get(name);
+    if (!agent || !lifecycle) return;
+
+    lifecycle.startBuild(reason);
+    agent.state = lifecycle.getState();
+    this.emit("update");
+  }
+
+  /**
+   * Complete build process for an agent
+   */
+  completeBuild(name: string): void {
+    const agent = this.agents.get(name);
+    const lifecycle = this.agentLifecycles.get(name);
+    if (!agent || !lifecycle) return;
+
+    lifecycle.completeBuild();
+    agent.state = lifecycle.getState();
+    this.emit("update");
+  }
+
+  /**
+   * Create a new instance with lifecycle tracking
+   */
+  createInstance(instanceId: string, agentName: string, trigger: string): InstanceLifecycle | null {
+    const lifecycle = this.agentLifecycles.get(agentName);
+    if (!lifecycle) return null;
+
+    const instanceLifecycle = new InstanceLifecycle(instanceId, agentName, trigger);
+    lifecycle.addInstance(instanceLifecycle);
+
+    // Listen to instance events to update the UI
+    instanceLifecycle.on("instance:start", () => {
+      const agent = this.agents.get(agentName);
+      if (agent) {
+        agent.state = lifecycle.getState();
+        agent.runningCount = lifecycle.runningInstanceCount;
+      }
+      this.emit("update");
+    });
+
+    instanceLifecycle.on("instance:complete", () => {
+      const agent = this.agents.get(agentName);
+      if (agent) {
+        agent.state = lifecycle.getState();
+        agent.runningCount = lifecycle.runningInstanceCount;
+      }
+      this.emit("update");
+    });
+
+    instanceLifecycle.on("instance:error", () => {
+      const agent = this.agents.get(agentName);
+      if (agent) {
+        agent.state = lifecycle.getState();
+        agent.runningCount = lifecycle.runningInstanceCount;
+      }
+      this.emit("update");
+    });
+
+    instanceLifecycle.on("instance:kill", () => {
+      const agent = this.agents.get(agentName);
+      if (agent) {
+        agent.state = lifecycle.getState();
+        agent.runningCount = lifecycle.runningInstanceCount;
+      }
+      this.emit("update");
+    });
+
+    return instanceLifecycle;
   }
 }

@@ -1,4 +1,5 @@
 import type { WebhookProvider, WebhookBinding, WebhookContext, DispatchResult, DryRunResult, DryRunBindingResult } from "./types.js";
+import type { WebhookSourceConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
 
 export class WebhookRegistry {
@@ -37,7 +38,7 @@ export class WebhookRegistry {
     source: string,
     headers: Record<string, string | undefined>,
     rawBody: string,
-    webhookConfig?: { secrets?: Record<string, string>; allowUnsigned?: boolean }
+    webhookConfig: { secrets?: Record<string, string>; config?: WebhookSourceConfig }
   ): DispatchResult {
     const provider = this.providers.get(source);
     if (!provider) {
@@ -45,9 +46,8 @@ export class WebhookRegistry {
       return { ok: false, matched: 0, skipped: 0, errors: [`unknown source: ${source}`] };
     }
 
-    // Extract secrets and allowUnsigned from config
-    const secrets = webhookConfig?.secrets;
-    const allowUnsigned = webhookConfig?.allowUnsigned;
+    const { secrets } = webhookConfig;
+    const allowUnsigned = webhookConfig.config?.allowUnsigned ?? false;
 
     // Validate request signature — returns the matched instance name or null
     const matchedSource = provider.validateRequest(headers, rawBody, secrets, allowUnsigned);
@@ -147,7 +147,7 @@ export class WebhookRegistry {
     source: string,
     headers: Record<string, string | undefined>,
     rawBody: string,
-    webhookConfig?: { secrets?: Record<string, string>; allowUnsigned?: boolean }
+    secrets?: Record<string, string>
   ): DryRunResult {
     const provider = this.providers.get(source);
     if (!provider) {
@@ -160,12 +160,8 @@ export class WebhookRegistry {
       };
     }
 
-    // Extract secrets and allowUnsigned from config
-    const secrets = webhookConfig?.secrets;
-    const allowUnsigned = webhookConfig?.allowUnsigned;
-
     // Validate request signature — returns the matched instance name or null
-    const matchedSource = provider.validateRequest(headers, rawBody, secrets, allowUnsigned);
+    const matchedSource = provider.validateRequest(headers, rawBody, secrets);
     if (matchedSource === null) {
       return { 
         ok: false, 

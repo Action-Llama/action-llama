@@ -34,7 +34,7 @@ export async function setupGateway(opts: {
   agentConfigs: AgentConfig[];
   webhookRegistry?: WebhookRegistry;
   webhookSecrets: Record<string, Record<string, string>>;
-  webhookConfigs: Record<string, WebhookSourceConfig>;
+  webhookConfigs?: Record<string, WebhookSourceConfig>;
   stateStore?: StateStore;
   statsStore?: StatsStore;
   events: SchedulerEventBus;

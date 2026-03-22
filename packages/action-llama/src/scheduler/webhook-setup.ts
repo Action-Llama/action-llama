@@ -160,6 +160,16 @@ export async function setupWebhookRegistry(
     return { secrets: {}, configs: {} };
   }
 
+  // Check for insecure webhook configurations and show warnings
+  for (const [sourceName, sourceConfig] of Object.entries(webhookSources)) {
+    if (sourceConfig.allowUnsigned) {
+      logger.warn(
+        { source: sourceName },
+        `⚠️  WARNING: Webhook source '${sourceName}' allows unsigned requests. This is insecure for production!`
+      );
+    }
+  }
+
   const registry = new WebhookRegistry(logger);
   registry.registerProvider(new GitHubWebhookProvider());
   registry.registerProvider(new SentryWebhookProvider());

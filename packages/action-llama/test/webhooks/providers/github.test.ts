@@ -34,7 +34,7 @@ describe("GitHubWebhookProvider", () => {
       expect(provider.validateRequest({}, '{"action":"opened"}', {}, true)).toBe("_unsigned");
     });
 
-    it("rejects any request when no secret is configured and allowUnsigned is false", () => {
+    it("rejects requests when no secret is configured and allowUnsigned is false (default)", () => {
       expect(provider.validateRequest({}, '{"action":"opened"}')).toBeNull();
       expect(provider.validateRequest({}, '{"action":"opened"}', undefined)).toBeNull();
       expect(provider.validateRequest({}, '{"action":"opened"}', {})).toBeNull();
