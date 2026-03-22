@@ -259,6 +259,21 @@ export class IntegrationHarness {
   }
 
   /**
+   * Manually trigger an agent run via the control API.
+   */
+  async triggerAgent(agentName: string): Promise<void> {
+    const response = await this.controlAPI('POST', `/trigger/${agentName}`);
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to trigger agent ${agentName}: ${error}`);
+    }
+    const result = await response.json();
+    if (!result.success) {
+      throw new Error(`Failed to trigger agent ${agentName}: ${result.error || 'Unknown error'}`);
+    }
+  }
+
+  /**
    * Wait for an agent to complete at least one run.
    * Polls the runner pool until the agent is no longer running.
    */
