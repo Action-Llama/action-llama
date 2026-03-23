@@ -126,6 +126,17 @@ export class E2ETestContext {
     });
 
     await container.start();
+
+    // Explicitly connect to network after starting
+    const network = this.docker.getNetwork('action-llama-e2e');
+    await network.connect({
+      Container: container.id,
+      EndpointConfig: {
+        IPAMConfig: {
+          IPv4Address: undefined, // Let Docker assign
+        }
+      }
+    });
     
     // Wait for container to be fully started and connected to network
     await new Promise(resolve => setTimeout(resolve, 15000));
@@ -185,7 +196,18 @@ export class E2ETestContext {
     });
 
     await container.start();
-    
+
+    // Explicitly connect to network after starting
+    const network = this.docker.getNetwork('action-llama-e2e');
+    await network.connect({
+      Container: container.id,
+      EndpointConfig: {
+        IPAMConfig: {
+          IPv4Address: undefined, // Let Docker assign
+        }
+      }
+    });
+
     // Wait for container to be fully started and connected to network
     await new Promise(resolve => setTimeout(resolve, 15000));
     
@@ -196,6 +218,7 @@ export class E2ETestContext {
     let ipAddress: string | undefined;
     for (let attempt = 0; attempt < 10; attempt++) {
       containerInfo = await container.inspect();
+      console.log(`Attempt ${attempt + 1}: Network settings:`, JSON.stringify(containerInfo.NetworkSettings, null, 2));
       ipAddress = containerInfo.NetworkSettings.Networks["action-llama-e2e"]?.IPAddress;
       if (ipAddress) break;
       
