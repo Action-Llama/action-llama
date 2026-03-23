@@ -1,5 +1,105 @@
 # @action-llama/action-llama
 
+## 0.17.0
+
+### Minor Changes
+
+- [#272](https://github.com/Action-Llama/action-llama/pull/272) [`22ae0e6`](https://github.com/Action-Llama/action-llama/commit/22ae0e6322fb877dbb523c4ff2aaabc2171ee86d) Thanks [@asselstine](https://github.com/asselstine)! - Added stable extension API for providers. This major refactoring promotes the existing provider patterns into a consistent extension system with central registry, credential requirements, and standardized lifecycle management.
+
+  **New Extension Types:**
+
+  - **Webhook Extensions**: Handle incoming webhook events (GitHub, Linear, Sentry, Mintlify, Test)
+  - **Telemetry Extensions**: Send observability data (OpenTelemetry)
+  - **Runtime Extensions**: Execute agents in different environments (Local Docker, SSH Docker)
+  - **Model Extensions**: Provide LLM integration (OpenAI, Anthropic, Custom endpoints)
+  - **Credential Extensions**: Store and retrieve secrets (File-based, HashiCorp Vault)
+
+  **Extension API Features:**
+
+  - Declarative credential requirements with validation
+  - Custom credential type definitions
+  - Centralized extension registry with type-safe access methods
+  - Automatic extension loading with graceful error handling
+  - Comprehensive documentation and examples
+
+  **Migration Impact:**
+
+  - Replaces hardcoded switch statements in telemetry and runtime factories
+  - Maintains full backward compatibility with existing configurations
+  - All built-in providers are automatically converted to extensions
+  - No user-facing configuration changes required
+
+  **Developer Benefits:**
+
+  - Eliminates provider-specific conditionals in core codebase
+  - Enables easy addition of new providers without modifying core
+  - Provides foundation for future dynamic extension loading
+  - Standardizes provider interfaces across all types
+
+  See `docs/extensions.md` for complete API documentation and examples.
+
+  Closes [#222](https://github.com/Action-Llama/action-llama/issues/222).
+
+- [#275](https://github.com/Action-Llama/action-llama/pull/275) [`f4ad10d`](https://github.com/Action-Llama/action-llama/commit/f4ad10da325d000e0b626673e4edc1876bc578b5) Thanks [@asselstine](https://github.com/asselstine)! - Breaking: Remove automatic initial run of scheduled agents on startup
+
+  Agents with schedules no longer run automatically when the service starts.
+  They will only run on their configured schedule or when manually triggered.
+  This prevents overwhelming the system on startup when many agents are configured.
+
+### Patch Changes
+
+- [#279](https://github.com/Action-Llama/action-llama/pull/279) [`4aa001b`](https://github.com/Action-Llama/action-llama/commit/4aa001bd46222e5e3fa4c0e9fcf7bb49338cb3c7) Thanks [@asselstine](https://github.com/asselstine)! - Added comprehensive agent configuration display and skill page to the dashboard. The agent detail page now shows complete configuration including models, credentials, schedule, webhooks, hooks, and custom parameters. A new "View Skill" page renders the agent's SKILL.md body content with markdown formatting. Closes [#267](https://github.com/Action-Llama/action-llama/issues/267).
+
+- [`0f722c0`](https://github.com/Action-Llama/action-llama/commit/0f722c0d6020e05377de80d295a3ad29df2727bf) Thanks [@asselstine](https://github.com/asselstine)! - Add durable trigger history with webhook receipts. Every incoming webhook is now recorded in a `webhook_receipts` table with headers and body (up to 256 KB) for forensics and replay. Dead-letter webhooks (failed validation, no matching agent, parse errors) are tracked separately.
+
+  **New features:**
+
+  - Webhook receipt recording with deduplification via provider delivery IDs (e.g. `X-GitHub-Delivery`)
+  - Unified trigger history view combining runs and dead-letter webhooks, available on the dashboard and via `GET /api/stats/triggers`
+  - Full trigger history page at `/dashboard/triggers` with pagination and dead-letter toggle
+  - Webhook replay endpoint: `POST /api/webhooks/:receiptId/replay` re-dispatches stored payloads
+  - Configurable retention via `historyRetentionDays` in `config.toml` (default: 14 days, previously hardcoded to 90)
+
+  **New config field:**
+
+  - `historyRetentionDays` (integer, optional) — controls how long runs, call edges, and webhook receipts are kept
+
+- [#308](https://github.com/Action-Llama/action-llama/pull/308) [`c15eb4e`](https://github.com/Action-Llama/action-llama/commit/c15eb4ea8b76bcfabc69c3389970cb15671f2911) Thanks [@asselstine](https://github.com/asselstine)! - Fix Docker image build failure detection in E2E tests. Added proper error logging and verification of required build artifacts before building Docker images. This prevents silent failures when build dependencies are missing and provides clear error messages when Docker builds fail. Closes [#307](https://github.com/Action-Llama/action-llama/issues/307).
+
+- [#321](https://github.com/Action-Llama/action-llama/pull/321) [`bda94e0`](https://github.com/Action-Llama/action-llama/commit/bda94e0b788376346282dcd55925a061316d7700) Thanks [@asselstine](https://github.com/asselstine)! - Fixed E2E test Docker network IP assignment failure by explicitly connecting containers to network after startup and improving network IPAM configuration. This resolves CI failures where VPS containers couldn't obtain IP addresses from the test network. Closes [#320](https://github.com/Action-Llama/action-llama/issues/320).
+
+- [#304](https://github.com/Action-Llama/action-llama/pull/304) [`a9ff0cd`](https://github.com/Action-Llama/action-llama/commit/a9ff0cd01c09c7450cb5e4be9705ff1f060deb58) Thanks [@asselstine](https://github.com/asselstine)! - Fix E2E test Docker network IP assignment and API key configuration issues. Increased container startup timeout from 2000ms to 5000ms to allow proper network setup and added test API keys to E2E workflow to prevent model provider initialization failures. Closes [#303](https://github.com/Action-Llama/action-llama/issues/303).
+
+- [#310](https://github.com/Action-Llama/action-llama/pull/310) [`02b90bd`](https://github.com/Action-Llama/action-llama/commit/02b90bd5999422b7c83135b569efb0494856af4a) Thanks [@asselstine](https://github.com/asselstine)! - Fix E2E tests Docker network connectivity by restoring explicit network connection calls. This resolves the regression introduced in commit 2987ecc where containers were not properly connecting to the custom network, causing SSH connection timeouts and scheduler startup failures. Closes [#313](https://github.com/Action-Llama/action-llama/issues/313).
+
+- [#319](https://github.com/Action-Llama/action-llama/pull/319) [`3aed20d`](https://github.com/Action-Llama/action-llama/commit/3aed20d62378839c8ea766d52dad7439f0f923bc) Thanks [@asselstine](https://github.com/asselstine)! - Fix E2E test SSH service startup timeout. Enhanced VPS container debugging with detailed startup logging, improved SSH connection timeout handling, and added health checks. Addresses SSH service failing to start within the 60-attempt timeout that was blocking all deployment-related E2E tests. Closes [#318](https://github.com/Action-Llama/action-llama/issues/318).
+
+- [`43bedd0`](https://github.com/Action-Llama/action-llama/commit/43bedd066a2f521cc1f511643dfc000ffcf5115a) Thanks [@asselstine](https://github.com/asselstine)! - Fix `al push --no-creds` to skip credential validation entirely, including the ANTHROPIC_API_KEY requirement. Previously, `collectCredentialRefs` was called unconditionally which triggered model/provider validation even when `--no-creds` was specified.
+
+- [`cf40204`](https://github.com/Action-Llama/action-llama/commit/cf402049750517d8db77c2951bbd2d8710b6646c) Thanks [@asselstine](https://github.com/asselstine)! - Remove the feedback feature that auto-modified agent SKILL.md files in response to errors. This removes the `[feedback]` config section, per-agent feedback overrides, the feedback monitor/runner, and all related dashboard and CLI UI.
+
+- [`3c3943a`](https://github.com/Action-Llama/action-llama/commit/3c3943a78f40cad56d35edf1a587a84eab968ebb) Thanks [@asselstine](https://github.com/asselstine)! - Remove hardcoded model name allowlist that blocked valid newer models (e.g. Claude 4.x).
+  Model names are now validated by the provider API at runtime instead of a stale local list.
+  Also fix agent config validation to match the actual SKILL.md frontmatter structure,
+  where `credentials` and `models` are nested under `metadata`.
+
+- [`2918779`](https://github.com/Action-Llama/action-llama/commit/29187796b0911fc2f6811c68ce00b022ef77c0af) Thanks [@asselstine](https://github.com/asselstine)! - Instance detail page now shows richer trigger information: agent-triggered runs link to
+  the parent instance, webhook-triggered runs display the source, event summary, and
+  delivery ID from the stored receipt, and schedule-triggered runs show "Scheduled".
+  Falls back to the previous flat-text display when underlying data has been pruned.
+
+- [`9ec315d`](https://github.com/Action-Llama/action-llama/commit/9ec315d40b9b8d4cd02def02cc55d33a03d17948) Thanks [@asselstine](https://github.com/asselstine)! - Separate agent runtime tuning from agent definitions. Per-agent `scale` and `timeout` can now be overridden via `[agents.<name>]` sections in `.env.toml` or environment files, without modifying SKILL.md. Dashboard and TUI scale changes now write to `.env.toml` instead of rewriting SKILL.md, preventing remote/local config divergence after `al push`.
+
+- [`d12b066`](https://github.com/Action-Llama/action-llama/commit/d12b0660c7f87f22be6ad447081750822253592a) Thanks [@asselstine](https://github.com/asselstine)! - Bake `shared/` directory into agent images. Files placed in `<project>/shared/` are now included in every agent's container at `/app/static/shared/`, allowing agents to reference common context (coding conventions, repo layout, policies) via direct context injection in SKILL.md (e.g., `!\`cat /app/static/shared/conventions.md\``).
+
+- [`002bf6f`](https://github.com/Action-Llama/action-llama/commit/002bf6f3479e6c18ab4e7206dfeeec4d7a3057b4) Thanks [@asselstine](https://github.com/asselstine)! - Fix `al push` silently swallowing validation errors. When `al push` ran `al doctor` internally with `silent: true`, validation error details were suppressed but the summary "N validation error(s) found. See details above." was still thrown — leaving users with no actionable information. Errors are now always printed regardless of silent mode.
+
+- [`2da001f`](https://github.com/Action-Llama/action-llama/commit/2da001f632d754e19f98b1fd3f5de58771392165) Thanks [@asselstine](https://github.com/asselstine)! - Allow `al push --headless --no-creds` to skip credential validation in doctor.
+  Previously, headless mode would fail if required credentials were missing locally,
+  even when `--no-creds` was passed to skip credential syncing. This enables CI/CD
+  deploy workflows that only push code and agent configs without needing credentials
+  on the runner.
+
 ## 0.16.0
 
 ### Minor Changes
