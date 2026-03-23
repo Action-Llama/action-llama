@@ -8,3 +8,4 @@ coverage
 .history
 .mintlify/
 .al
+test-results/
