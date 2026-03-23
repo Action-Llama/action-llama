@@ -250,6 +250,7 @@ describe("doctor", () => {
     // Should not throw even though credentials are missing
     const output = await captureLog(() => execute({ project: ".", checkOnly: true, skipCredentials: true }));
     expect(output).toContain("Skipping credential checks");
+    expect(mockCollectCredentialRefs).not.toHaveBeenCalled();
     expect(mockPromptCredential).not.toHaveBeenCalled();
     expect(mockCredentialExists).not.toHaveBeenCalled();
   });
