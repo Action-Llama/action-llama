@@ -98,17 +98,17 @@ describe("AgentRunner", () => {
     // Write SKILL.md (required on disk now)
     writeFileSync(resolve(tmpDir, "agents", "dev", "SKILL.md"), "# Dev Agent\nDefault instructions.");
     
-    // Configure session stats mock with realistic data
+    // Configure session stats mock matching pi-coding-agent SessionStats format
     mockGetSessionStats.mockReturnValue({
-      usage: {
+      tokens: {
         input: 100,
         output: 200,
         cacheRead: 50,
         cacheWrite: 25,
-        totalTokens: 375,
-        cost: { input: 0.001, output: 0.002, cacheRead: 0.0005, cacheWrite: 0.00025, total: 0.00375 }
+        total: 375,
       },
-      turnCount: 3
+      cost: 0.00375,
+      turnCount: 3,
     });
   });
 

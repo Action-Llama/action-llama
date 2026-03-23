@@ -11,7 +11,31 @@ describe("sessionStatsToUsage", () => {
     expect(sessionStatsToUsage({})).toEqual(zeroTokenUsage());
   });
 
-  it("converts OpenAI format (current working format)", () => {
+  it("converts pi-coding-agent SessionStats format (tokens + cost)", () => {
+    const stats = {
+      tokens: {
+        input: 100,
+        output: 50,
+        cacheRead: 25,
+        cacheWrite: 10,
+        total: 185,
+      },
+      cost: 0.002,
+      turnCount: 3,
+    };
+
+    expect(sessionStatsToUsage(stats)).toEqual({
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheReadTokens: 25,
+      cacheWriteTokens: 10,
+      totalTokens: 185,
+      cost: 0.002,
+      turnCount: 3,
+    });
+  });
+
+  it("converts legacy usage format", () => {
     const stats = {
       usage: {
         input: 100,
@@ -170,18 +194,19 @@ describe("sessionStatsToUsage", () => {
   it("prioritizes first available format (fallback order)", () => {
     const stats = {
       // Multiple formats present - should use the first available in order
-      usage: { input: 100, output: 50 }, // This should take precedence
-      inputTokens: 200, // This should be ignored
-      metrics: { input_tokens: 300, output_tokens: 150 }, // This should be ignored
+      tokens: { input: 50, output: 25 }, // Highest priority
+      usage: { input: 100, output: 50 }, // Second priority
+      inputTokens: 200, // Third priority
+      metrics: { input_tokens: 300, output_tokens: 150 }, // Fourth priority
       turnCount: 3
     };
 
     expect(sessionStatsToUsage(stats)).toEqual({
-      inputTokens: 100, // From usage.input (first priority)
-      outputTokens: 50, // From usage.output (first priority)
+      inputTokens: 50, // From tokens.input (first priority)
+      outputTokens: 25, // From tokens.output (first priority)
       cacheReadTokens: 0,
       cacheWriteTokens: 0,
-      totalTokens: 150, // calculated fallback
+      totalTokens: 75, // calculated fallback
       cost: 0,
       turnCount: 3
     });
