@@ -118,7 +118,8 @@ export function renderMarkdown(content: string): string {
  * Render inline markdown elements within a line (bold, italic, code, links)
  */
 function renderInline(text: string): string {
-  let result = text;
+  // Escape HTML first, before creating our own tags
+  let result = escapeHtml(text);
 
   // Inline code
   result = result.replace(/`([^`]+)`/g, '<code class="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded text-sm font-mono">$1</code>');
@@ -132,5 +133,5 @@ function renderInline(text: string): string {
   // Italic
   result = result.replace(/\*([^*]+)\*/g, '<em class="italic">$1</em>');
 
-  return escapeHtml(result);
+  return result;
 }
