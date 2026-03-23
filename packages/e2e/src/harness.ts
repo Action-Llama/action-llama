@@ -313,6 +313,27 @@ export class E2ETestContext {
       throw new Error(`Dockerfile not found: ${absoluteDockerfilePath}`);
     }
     
+    // Verify required build artifacts exist for local image
+    if (imageName === "action-llama-local") {
+      const requiredPaths = [
+        'packages/action-llama/dist',
+        'packages/action-llama/package.json',
+        'packages/shared/dist',
+        'packages/shared/package.json'
+      ];
+      
+      for (const requiredPath of requiredPaths) {
+        const absolutePath = path.join(repoRoot, requiredPath);
+        try {
+          await fs.access(absolutePath);
+        } catch (error) {
+          throw new Error(`Required build artifact not found: ${requiredPath}. Run 'npm run build' first.`);
+        }
+      }
+    }
+    
+    console.log(`Building Docker image ${imageName}:latest from ${dockerfilePath}...`);
+    
     const tarStream = tar.pack(repoRoot);
     const stream = await this.docker.buildImage(
       tarStream,
@@ -323,9 +344,24 @@ export class E2ETestContext {
     );
     
     return new Promise<void>((resolve, reject) => {
-      this.docker.modem.followProgress(stream, (err) => {
-        if (err) reject(err);
-        else resolve();
+      this.docker.modem.followProgress(stream, (err, output) => {
+        if (output) {
+          output.forEach((event: any) => {
+            if (event.stream) {
+              console.log(`[${imageName}] ${event.stream.trim()}`);
+            }
+            if (event.error) {
+              console.error(`[${imageName}] Docker build error:`, event.error);
+            }
+          });
+        }
+        if (err) {
+          console.error(`[${imageName}] Docker build failed:`, err);
+          reject(err);
+        } else {
+          console.log(`[${imageName}] Docker image built successfully`);
+          resolve();
+        }
       });
     });
   }
