@@ -471,6 +471,173 @@ describe("project scale configuration", () => {
   });
 });
 
+describe("agent runtime overrides", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("applies scale override from .env.toml", () => {
+    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
+    writeSkillMd(tmpDir, "dev", {
+      models: ["sonnet"],
+      credentials: ["github_token"],
+      schedule: "*/5 * * * *",
+    });
+    writeFileSync(resolve(tmpDir, ".env.toml"), stringifyTOML({
+      agents: { dev: { scale: 5 } },
+    }));
+
+    const loaded = loadAgentConfig(tmpDir, "dev");
+    expect(loaded.scale).toBe(5);
+  });
+
+  it("applies timeout override from .env.toml", () => {
+    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
+    writeSkillMd(tmpDir, "dev", {
+      models: ["sonnet"],
+      credentials: ["github_token"],
+      schedule: "*/5 * * * *",
+    });
+    writeFileSync(resolve(tmpDir, ".env.toml"), stringifyTOML({
+      agents: { dev: { timeout: 3600 } },
+    }));
+
+    const loaded = loadAgentConfig(tmpDir, "dev");
+    expect(loaded.timeout).toBe(3600);
+  });
+
+  it("applies feedback override from .env.toml", () => {
+    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
+    writeSkillMd(tmpDir, "dev", {
+      models: ["sonnet"],
+      credentials: ["github_token"],
+      schedule: "*/5 * * * *",
+    });
+    writeFileSync(resolve(tmpDir, ".env.toml"), stringifyTOML({
+      agents: { dev: { feedback: false } },
+    }));
+
+    const loaded = loadAgentConfig(tmpDir, "dev");
+    expect(loaded.feedback).toEqual({ enabled: false });
+  });
+
+  it("preserves SKILL.md defaults when no override present", () => {
+    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
+    const agentDir = resolve(tmpDir, "agents", "dev");
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(resolve(agentDir, "SKILL.md"), `---
+metadata:
+  credentials:
+    - github_token
+  models:
+    - sonnet
+  schedule: "*/5 * * * *"
+  scale: 3
+  timeout: 600
+---
+
+# Dev
+`);
+
+    const loaded = loadAgentConfig(tmpDir, "dev");
+    expect(loaded.scale).toBe(3);
+    expect(loaded.timeout).toBe(600);
+  });
+
+  it("overrides SKILL.md values with .env.toml values", () => {
+    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
+    const agentDir = resolve(tmpDir, "agents", "dev");
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(resolve(agentDir, "SKILL.md"), `---
+metadata:
+  credentials:
+    - github_token
+  models:
+    - sonnet
+  schedule: "*/5 * * * *"
+  scale: 1
+  timeout: 300
+---
+
+# Dev
+`);
+    writeFileSync(resolve(tmpDir, ".env.toml"), stringifyTOML({
+      agents: { dev: { scale: 8, timeout: 7200 } },
+    }));
+
+    const loaded = loadAgentConfig(tmpDir, "dev");
+    expect(loaded.scale).toBe(8);
+    expect(loaded.timeout).toBe(7200);
+  });
+
+  it("ignores unknown keys in [agents] entries (shared namespace with webhook triggers)", () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      models: { sonnet: SONNET_MODEL },
+      agents: { dev: { trigger: { webhook: { source: "github" } } } },
+    }));
+
+    // Should not throw — unknown keys are ignored
+    const loaded = loadGlobalConfig(tmpDir);
+    expect(loaded.agents).toBeDefined();
+  });
+
+  it("validates: rejects negative scale", () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      models: { sonnet: SONNET_MODEL },
+    }));
+    writeFileSync(resolve(tmpDir, ".env.toml"), stringifyTOML({
+      agents: { dev: { scale: -1 } },
+    }));
+
+    expect(() => loadGlobalConfig(tmpDir)).toThrow("non-negative integer");
+  });
+
+  it("validates: rejects non-positive timeout", () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      models: { sonnet: SONNET_MODEL },
+    }));
+    writeFileSync(resolve(tmpDir, ".env.toml"), stringifyTOML({
+      agents: { dev: { timeout: 0 } },
+    }));
+
+    expect(() => loadGlobalConfig(tmpDir)).toThrow("positive integer");
+  });
+
+  it("allows scale = 0 to disable an agent", () => {
+    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
+    writeSkillMd(tmpDir, "dev", {
+      models: ["sonnet"],
+      credentials: ["github_token"],
+      schedule: "*/5 * * * *",
+    });
+    writeFileSync(resolve(tmpDir, ".env.toml"), stringifyTOML({
+      agents: { dev: { scale: 0 } },
+    }));
+
+    const loaded = loadAgentConfig(tmpDir, "dev");
+    expect(loaded.scale).toBe(0);
+  });
+
+  it("agents overrides pass through three-layer merge", () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      models: { sonnet: SONNET_MODEL },
+    }));
+    writeFileSync(resolve(tmpDir, ".env.toml"), stringifyTOML({
+      agents: { dev: { scale: 5, timeout: 1800 } },
+    }));
+
+    const loaded = loadGlobalConfig(tmpDir);
+    expect(loaded.agents?.dev?.scale).toBe(5);
+    expect(loaded.agents?.dev?.timeout).toBe(1800);
+  });
+});
+
 describe("discoverAgents", () => {
   let tmpDir: string;
 

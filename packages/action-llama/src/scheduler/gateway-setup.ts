@@ -161,14 +161,14 @@ export async function setupGateway(opts: {
         return true;
       },
       updateAgentScale: async (name: string, scale: number) => {
-        const { updateAgentScale } = await import("../shared/config.js");
+        const { updateAgentRuntimeOverride } = await import("../shared/environment.js");
         const config = agentConfigs.find((a) => a.name === name);
         if (!config) return false;
-        updateAgentScale(projectPath, name, scale);
+        updateAgentRuntimeOverride(projectPath, name, { scale });
         if (statusTracker) {
           statusTracker.updateAgentScale(name, scale);
         }
-        logger.info({ agent: name, scale }, "agent scale updated");
+        logger.info({ agent: name, scale }, "agent scale updated via .env.toml");
         return true;
       },
       workQueue: {

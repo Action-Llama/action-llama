@@ -1,10 +1,11 @@
 import { resolve, basename, dirname } from "path";
 import { createHash } from "crypto";
 import { readFileSync, unlinkSync, existsSync } from "fs";
-import { stringify as stringifyTOML } from "smol-toml";
+import { parse as parseTOML, stringify as stringifyTOML } from "smol-toml";
 import type { ServerConfig } from "../shared/server.js";
 import type { GlobalConfig } from "../shared/config.js";
 import { loadGlobalConfig } from "../shared/config.js";
+import { loadEnvToml, deepMerge } from "../shared/environment.js";
 import { CREDENTIALS_DIR } from "../shared/paths.js";
 import { VPS_CONSTANTS } from "../cloud/vps/constants.js";
 import { sshOptionsFromConfig, sshExec, sshSpawn, rsyncTo, buildSshArgs, type SshOptions } from "./ssh.js";
@@ -296,7 +297,7 @@ async function pushToServerInner(ssh: SshOptions, opts: InnerOpts): Promise<void
   if (!noCreds && serverConfig.cloudflareHostname) {
     phaseB.push(setupNginx(ssh, basePath, serverConfig.cloudflareHostname, gatewayPort));
   }
-  phaseB.push(writeEnvAndSymlink(ssh, basePath, gatewayPort, globalConfig));
+  phaseB.push(writeEnvAndSymlink(ssh, basePath, gatewayPort, globalConfig, projectPath));
   const unitContent = buildSystemdUnit(projectName, basePath, binPaths, gatewayPort, serverConfig.expose);
   phaseB.push(installSystemdUnit(ssh, unitContent));
 
@@ -386,6 +387,7 @@ async function setupNginx(
 
 async function writeEnvAndSymlink(
   ssh: SshOptions, basePath: string, gatewayPort: number, globalConfig: GlobalConfig,
+  projectPath: string,
 ): Promise<string> {
   const remoteEnv: Record<string, unknown> = {
     gateway: { ...globalConfig.gateway, port: gatewayPort },
@@ -393,6 +395,28 @@ async function writeEnvAndSymlink(
   if (globalConfig.telemetry) {
     remoteEnv.telemetry = globalConfig.telemetry;
   }
+
+  // Merge [agents] overrides: read existing remote .env.toml, overlay local values
+  let remoteAgents: Record<string, unknown> = {};
+  try {
+    const remoteContent = (await sshExec(ssh, `cat ${basePath}/project/.env.toml 2>/dev/null || true`)).trim();
+    if (remoteContent) {
+      const remoteExisting = parseTOML(remoteContent) as Record<string, unknown>;
+      if (remoteExisting.agents && typeof remoteExisting.agents === "object") {
+        remoteAgents = remoteExisting.agents as Record<string, unknown>;
+      }
+    }
+  } catch {
+    // No existing .env.toml on remote or parse error — start fresh
+  }
+
+  const localEnvToml = loadEnvToml(projectPath);
+  const localAgents = (localEnvToml as Record<string, unknown> | undefined)?.agents as Record<string, unknown> | undefined;
+  const mergedAgents = deepMerge(remoteAgents, localAgents ?? {});
+  if (Object.keys(mergedAgents).length > 0) {
+    remoteEnv.agents = mergedAgents;
+  }
+
   const envToml = stringifyTOML(remoteEnv);
   const escaped = envToml.replace(/'/g, "'\\''");
 

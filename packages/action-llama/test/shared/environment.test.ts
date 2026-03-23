@@ -11,6 +11,7 @@ import {
   environmentExists,
   writeEnvironmentConfig,
   writeEnvToml,
+  updateAgentRuntimeOverride,
   environmentPath,
   deepMerge,
 } from "../../src/shared/environment.js";
@@ -236,5 +237,58 @@ describe("writeEnvToml", () => {
     writeEnvToml(tmpDir, { environment: "new" });
     const result = loadEnvToml(tmpDir);
     expect(result?.environment).toBe("new");
+  });
+});
+
+describe("updateAgentRuntimeOverride", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("creates .env.toml with agent section when file does not exist", () => {
+    updateAgentRuntimeOverride(tmpDir, "dev", { scale: 5 });
+    const result = loadEnvToml(tmpDir);
+    expect((result as any).agents.dev.scale).toBe(5);
+  });
+
+  it("updates existing agent section", () => {
+    writeFileSync(resolve(tmpDir, ".env.toml"), stringifyTOML({
+      agents: { dev: { scale: 1 } },
+    }) + "\n");
+    updateAgentRuntimeOverride(tmpDir, "dev", { scale: 3, timeout: 600 });
+    const result = loadEnvToml(tmpDir);
+    expect((result as any).agents.dev.scale).toBe(3);
+    expect((result as any).agents.dev.timeout).toBe(600);
+  });
+
+  it("preserves other agents when updating one", () => {
+    writeFileSync(resolve(tmpDir, ".env.toml"), stringifyTOML({
+      agents: { dev: { scale: 2 }, reviewer: { timeout: 900 } },
+    }) + "\n");
+    updateAgentRuntimeOverride(tmpDir, "dev", { scale: 5 });
+    const result = loadEnvToml(tmpDir);
+    expect((result as any).agents.dev.scale).toBe(5);
+    expect((result as any).agents.reviewer.timeout).toBe(900);
+  });
+
+  it("preserves non-agents fields in .env.toml", () => {
+    writeFileSync(resolve(tmpDir, ".env.toml"), 'environment = "prod"\n');
+    updateAgentRuntimeOverride(tmpDir, "dev", { feedback: false });
+    const result = loadEnvToml(tmpDir);
+    expect(result?.environment).toBe("prod");
+    expect((result as any).agents.dev.feedback).toBe(false);
+  });
+
+  it("round-trips agents section through writeEnvToml", () => {
+    writeEnvToml(tmpDir, { agents: { dev: { scale: 3 }, reviewer: { timeout: 600 } } } as any);
+    const result = loadEnvToml(tmpDir);
+    expect((result as any).agents.dev.scale).toBe(3);
+    expect((result as any).agents.reviewer.timeout).toBe(600);
   });
 });

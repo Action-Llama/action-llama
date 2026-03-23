@@ -10,7 +10,6 @@ import {
   deepMerge,
 } from "./environment.js";
 import { parseFrontmatter } from "./frontmatter.js";
-import { stringify as stringifyYAML } from "yaml";
 
 // --- Global config (lives at <project>/config.toml) ---
 
@@ -77,6 +76,12 @@ export interface FeedbackConfig {
   contextLines?: number; // lines around error, default 2
 }
 
+export interface AgentRuntimeOverrides {
+  scale?: number;
+  timeout?: number;
+  feedback?: boolean;
+}
+
 export interface GlobalConfig {
   models?: Record<string, ModelConfig>;
   local?: LocalConfig;
@@ -95,6 +100,8 @@ export interface GlobalConfig {
   resourceLockTimeout?: number;
   // Max simultaneous agent runs project-wide
   scale?: number;
+  // Per-agent runtime overrides (from .env.toml or environment files)
+  agents?: Record<string, AgentRuntimeOverrides>;
 }
 
 // --- Per-agent config (lives at <project>/agents/<name>/SKILL.md frontmatter) ---
@@ -185,6 +192,33 @@ export function loadGlobalConfig(projectPath: string, envName?: string): GlobalC
     config.projectName = projectName;
   }
 
+  // Validate per-agent runtime override values (scale, timeout, feedback).
+  // Note: config.agents is a shared namespace — the webhook command also stores
+  // trigger bindings here. We only validate the runtime-override keys we own;
+  // unknown keys are ignored so both uses coexist.
+  if (config.agents) {
+    for (const [name, overrides] of Object.entries(config.agents)) {
+      if (typeof overrides !== "object" || overrides === null || Array.isArray(overrides)) {
+        continue; // skip non-table entries
+      }
+      if (overrides.scale !== undefined) {
+        if (!Number.isInteger(overrides.scale) || overrides.scale < 0) {
+          throw new ConfigError(`[agents.${name}].scale must be a non-negative integer.`);
+        }
+      }
+      if (overrides.timeout !== undefined) {
+        if (!Number.isInteger(overrides.timeout) || overrides.timeout <= 0) {
+          throw new ConfigError(`[agents.${name}].timeout must be a positive integer.`);
+        }
+      }
+      if (overrides.feedback !== undefined) {
+        if (typeof overrides.feedback !== "boolean") {
+          throw new ConfigError(`[agents.${name}].feedback must be a boolean.`);
+        }
+      }
+    }
+  }
+
   return config;
 }
 
@@ -255,6 +289,15 @@ export function loadAgentConfig(projectPath: string, agentName: string): AgentCo
   }
 
   parsed.models = resolvedModels;
+
+  // Apply per-agent runtime overrides from .env.toml / environment config
+  const overrides = global.agents?.[agentName];
+  if (overrides) {
+    if (overrides.scale !== undefined) parsed.scale = overrides.scale;
+    if (overrides.timeout !== undefined) parsed.timeout = overrides.timeout;
+    if (overrides.feedback !== undefined) parsed.feedback = { enabled: overrides.feedback };
+  }
+
   return parsed as unknown as AgentConfig;
 }
 
@@ -344,34 +387,6 @@ export function updateProjectScale(projectPath: string, scale: number): void {
   const configPath = resolve(projectPath, "config.toml");
   const tomlStr = stringifyTOML(config);
   writeFileSync(configPath, tomlStr);
-}
-
-/**
- * Update an agent's scale in its SKILL.md frontmatter
- */
-export function updateAgentScale(projectPath: string, agentName: string, scale: number): void {
-  const agentDir = resolve(projectPath, "agents", agentName);
-  const skillPath = resolve(agentDir, "SKILL.md");
-  
-  if (!existsSync(skillPath)) {
-    throw new ConfigError(`Agent config not found at ${skillPath}.`);
-  }
-
-  // Read current SKILL.md
-  const raw = readFileSync(skillPath, "utf-8");
-  const { data, body } = parseFrontmatter(raw);
-  
-  // Update the scale in metadata
-  const metadata = ((data as Record<string, unknown>).metadata ?? {}) as Record<string, unknown>;
-  metadata.scale = scale;
-  
-  // Reconstruct the file with updated metadata
-  const updatedData = { ...data, metadata };
-  const yamlStr = Object.keys(updatedData).length > 0
-    ? stringifyYAML(updatedData).trimEnd()
-    : "";
-  
-  writeFileSync(skillPath, `---\n${yamlStr}\n---\n\n${body}`);
 }
 
 /**

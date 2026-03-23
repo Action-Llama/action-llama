@@ -197,8 +197,8 @@ describe("pushToServer", () => {
     // Mock credential functions to simulate having some credentials
     mockCollectCredentialRefs.mockReturnValue(new Set(["github_token", "gateway_api_key"]));
     mockCredentialRefsToRelativePaths.mockReturnValue(["github_token/default", "gateway_api_key/default"]);
-    // Mock existsSync to return true for credential files
-    mockExistsSync.mockReturnValue(true);
+    // Mock existsSync: true for credential files, false for .env.toml (loadEnvToml)
+    mockExistsSync.mockImplementation((path: string) => !path.endsWith(".env.toml"));
     // Mock loadGlobalConfig
     mockLoadGlobalConfig.mockReturnValue({});
   });
