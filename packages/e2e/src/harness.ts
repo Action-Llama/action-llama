@@ -12,6 +12,8 @@ export interface ContainerInfo {
   id: string;
   name: string;
   ipAddress?: string;
+  sshHost?: string;
+  sshPort?: number;
 }
 
 export class E2ETestContext {
@@ -127,30 +129,15 @@ export class E2ETestContext {
 
     await container.start();
 
-    // Explicitly connect to network after starting
-    const network = this.docker.getNetwork('action-llama-e2e');
-    await network.connect({
-      Container: container.id,
-      EndpointConfig: {
-        IPAMConfig: {
-          IPv4Address: undefined, // Let Docker assign
-        }
-      }
-    });
-    
-    // Wait for container to be fully started and connected to network
-    await new Promise(resolve => setTimeout(resolve, 15000));
-    
-    // Get container IP address
-    let containerInfo = await container.inspect();
-    
-    // Retry if IP not immediately available
-    if (!containerInfo.NetworkSettings.Networks["action-llama-e2e"]?.IPAddress) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      containerInfo = await container.inspect();
+    // Container is already on the network via NetworkMode - just wait for IP assignment
+    let ipAddress: string | undefined;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const containerInfo = await container.inspect();
+      ipAddress = containerInfo.NetworkSettings.Networks["action-llama-e2e"]?.IPAddress;
+      if (ipAddress) break;
+      const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
-    
-    const ipAddress = containerInfo.NetworkSettings.Networks["action-llama-e2e"]?.IPAddress;
     
     const info: ContainerInfo = {
       id: container.id,
@@ -185,9 +172,12 @@ export class E2ETestContext {
       ],
       HostConfig: {
         Binds: [
-          `${authorizedKeysPath}:/root/.ssh/authorized_keys:ro`,
+          `${authorizedKeysPath}:/root/.ssh/authorized_keys`,
         ],
         NetworkMode: "action-llama-e2e",
+        PortBindings: {
+          "22/tcp": [{ HostPort: "0" }], // Random host port
+        },
       },
       ExposedPorts: {
         "22/tcp": {},
@@ -197,52 +187,40 @@ export class E2ETestContext {
 
     await container.start();
 
-    // Wait for Docker to fully initialize the container
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    // Explicitly connect to network after starting
-    const network = this.docker.getNetwork('action-llama-e2e');
-    await network.connect({
-      Container: container.id,
-      EndpointConfig: {
-        IPAMConfig: {
-          IPv4Address: undefined, // Let Docker assign
-        }
-      }
-    });
-
-    // Wait for container to be fully started and connected to network
-    await new Promise(resolve => setTimeout(resolve, 15000));
-    
-    // Get container IP address with exponential backoff
-    let containerInfo = await container.inspect();
-    
-    // Retry with exponential backoff for IP assignment
+    // Container is already on the network via NetworkMode - wait for IP assignment
     let ipAddress: string | undefined;
     for (let attempt = 0; attempt < 10; attempt++) {
-      containerInfo = await container.inspect();
-      console.log(`Attempt ${attempt + 1}: Network settings:`, JSON.stringify(containerInfo.NetworkSettings, null, 2));
+      const containerInfo = await container.inspect();
       ipAddress = containerInfo.NetworkSettings.Networks["action-llama-e2e"]?.IPAddress;
       if (ipAddress) break;
-      
       const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
-    
+
     if (!ipAddress) {
-      // Log container state for debugging
+      const containerInfo = await container.inspect();
       console.error("Container network state:", JSON.stringify(containerInfo.NetworkSettings, null, 2));
       throw new Error(`Failed to get IP address for container ${containerName} after 10 attempts`);
     }
-    
+
+    // Get the mapped SSH port on the host
+    const inspectInfo = await container.inspect();
+    const portBindings = inspectInfo.NetworkSettings.Ports?.["22/tcp"];
+    const mappedPort = portBindings?.[0]?.HostPort;
+    if (!mappedPort) {
+      throw new Error(`Failed to get mapped SSH port for container ${containerName}`);
+    }
+
     const info: ContainerInfo = {
       id: container.id,
       name: containerName,
       ipAddress,
+      sshHost: "127.0.0.1",
+      sshPort: parseInt(mappedPort, 10),
     };
-    
+
     this.containers.push(info);
-    
+
     // Wait for SSH service to be ready
     await this.waitForSSH(info);
     
@@ -284,23 +262,25 @@ export class E2ETestContext {
   }
 
   async executeSSHCommand(containerInfo: ContainerInfo, command: string): Promise<string> {
-    if (!containerInfo.ipAddress) {
-      throw new Error("Container IP address not available");
+    const host = containerInfo.sshHost || containerInfo.ipAddress;
+    const port = containerInfo.sshPort || 22;
+    if (!host) {
+      throw new Error("Container SSH host not available");
     }
-    
+
     return new Promise((resolve, reject) => {
       const conn = new SSHClient();
-      
+
       conn.on("ready", () => {
         conn.exec(command, (err, stream) => {
           if (err) {
             reject(err);
             return;
           }
-          
+
           let output = "";
           let error = "";
-          
+
           stream.on("close", (code: number) => {
             conn.end();
             if (code !== 0) {
@@ -309,22 +289,22 @@ export class E2ETestContext {
               resolve(output.trim());
             }
           });
-          
+
           stream.on("data", (data: Buffer) => {
             output += data.toString();
           });
-          
+
           stream.stderr.on("data", (data: Buffer) => {
             error += data.toString();
           });
         });
       });
-      
+
       conn.on("error", reject);
-      
+
       conn.connect({
-        host: containerInfo.ipAddress,
-        port: 22,
+        host,
+        port,
         username: "root",
         privateKey: this.sshKeyPair.privateKey,
       });
@@ -404,8 +384,9 @@ export class E2ETestContext {
   }
 
   private async waitForSSH(containerInfo: ContainerInfo, maxAttempts = 60): Promise<void> {
-    if (!containerInfo.ipAddress) {
-      throw new Error("Container IP address not available for SSH connection");
+    const host = containerInfo.sshHost || containerInfo.ipAddress;
+    if (!host) {
+      throw new Error("Container SSH host not available for SSH connection");
     }
 
     let lastError: Error | null = null;
@@ -445,9 +426,9 @@ export class E2ETestContext {
               console.error("VPS startup logs:", startupLogs);
             }
             
-            throw new Error(`SSH service failed to start within timeout after ${maxAttempts} attempts. IP: ${containerInfo.ipAddress}. Last error: ${lastError.message}. Container logs: ${containerLogs.slice(-1000)}`);
+            throw new Error(`SSH service failed to start within timeout after ${maxAttempts} attempts. Host: ${host}:${containerInfo.sshPort || 22}. Last error: ${lastError.message}. Container logs: ${containerLogs.slice(-1000)}`);
           } catch (logError) {
-            throw new Error(`SSH service failed to start within timeout after ${maxAttempts} attempts. IP: ${containerInfo.ipAddress}. Last error: ${lastError.message}. Could not retrieve container logs: ${logError}`);
+            throw new Error(`SSH service failed to start within timeout after ${maxAttempts} attempts. Host: ${host}:${containerInfo.sshPort || 22}. Last error: ${lastError.message}. Could not retrieve container logs: ${logError}`);
           }
         }
       }
@@ -455,28 +436,31 @@ export class E2ETestContext {
   }
 
   private async testSSHConnection(containerInfo: ContainerInfo): Promise<void> {
+    const host = containerInfo.sshHost || containerInfo.ipAddress;
+    const port = containerInfo.sshPort || 22;
+
     return new Promise((resolve, reject) => {
       const conn = new SSHClient();
-      
+
       const timeout = setTimeout(() => {
         conn.end();
         reject(new Error("SSH connection timeout"));
       }, 5000);
-      
+
       conn.on("ready", () => {
         clearTimeout(timeout);
         conn.end();
         resolve();
       });
-      
+
       conn.on("error", (err) => {
         clearTimeout(timeout);
         reject(err);
       });
-      
+
       conn.connect({
-        host: containerInfo.ipAddress,
-        port: 22,
+        host,
+        port,
         username: "root",
         privateKey: this.sshKeyPair.privateKey,
         readyTimeout: 5000,
@@ -546,5 +530,9 @@ export class E2ETestContext {
 
   getPublicKey(): string {
     return this.sshKeyPair.publicKey;
+  }
+
+  getPrivateKeyContent(): string {
+    return this.sshKeyPair.privateKey;
   }
 }

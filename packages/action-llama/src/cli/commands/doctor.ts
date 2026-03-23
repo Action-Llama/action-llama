@@ -79,17 +79,23 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
         const { data } = parseFrontmatter(rawSkill);
         
         const config = loadAgentConfig(projectPath, name);
-        const agentValidation = validateAgentConfigEnhanced(config, data);
-        
-        validationErrors.push(...agentValidation.errors.map(e => 
+        // Unwrap metadata: AL-specific fields live under data.metadata in the
+        // frontmatter, but the schema validates the flat resolved config shape.
+        const rawMeta = (data as Record<string, unknown>).metadata as Record<string, unknown> | undefined;
+        const rawForValidation = rawMeta
+          ? { name, ...rawMeta }
+          : data;
+        const agentValidation = validateAgentConfigEnhanced(config, rawForValidation);
+
+        validationErrors.push(...agentValidation.errors.map(e =>
           `Agent "${name}": ${e.message}${e.field ? ` (${e.field})` : ""}`
         ));
-        validationWarnings.push(...agentValidation.warnings.map(e => 
+        validationWarnings.push(...agentValidation.warnings.map(e =>
           `Agent "${name}": ${e.message}${e.field ? ` (${e.field})` : ""}`
         ));
 
         // Check for unknown fields in agent config
-        const unknownFields = detectAgentConfigUnknownFields(data);
+        const unknownFields = detectAgentConfigUnknownFields(rawForValidation);
         if (unknownFields.length > 0) {
           const message = `Unknown fields in agent "${name}": ${unknownFields.join(", ")}`;
           if (opts.strict) {
@@ -237,7 +243,8 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
   // Throw error if there are validation errors
   if (validationErrors.length > 0) {
     throw new ConfigError(
-      `${validationErrors.length} validation error(s) found. See details above.`
+      `${validationErrors.length} validation error(s) found:\n` +
+      validationErrors.map(e => `  - ${e}`).join("\n")
     );
   }
 

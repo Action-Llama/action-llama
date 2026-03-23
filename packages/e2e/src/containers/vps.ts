@@ -2,21 +2,11 @@ import { E2ETestContext, ContainerInfo } from "../harness.js";
 
 export async function setupVPS(context: E2ETestContext): Promise<ContainerInfo> {
   const containerInfo = await context.createVPSContainer();
-  
-  // Install Action Llama on the VPS
-  await context.executeSSHCommand(containerInfo, "curl -fsSL https://get.docker.com -o get-docker.sh && sh get-docker.sh");
-  await context.executeSSHCommand(containerInfo, "dockerd &");
-  
-  // Wait for Docker daemon to start
-  await new Promise(resolve => setTimeout(resolve, 10000));
-  
-  // Install Node.js
-  await context.executeSSHCommand(containerInfo, "curl -fsSL https://deb.nodesource.com/setup_20.x | bash -");
-  await context.executeSSHCommand(containerInfo, "apt-get install -y nodejs");
-  
-  // Install Action Llama
-  await context.executeSSHCommand(containerInfo, "npm install -g @action-llama/action-llama@next");
-  
+
+  // Docker and Node.js are already installed via the Dockerfile.
+  // Install Action Llama on the VPS so it's available for deployment verification.
+  await context.executeSSHCommand(containerInfo, "npm install -g @action-llama/action-llama@next || true");
+
   return containerInfo;
 }
 
@@ -29,24 +19,56 @@ export async function deployToVPS(
   if (!vpsContainer.ipAddress) {
     throw new Error("VPS container IP not available");
   }
-  
-  // Create environment config in local container
-  const envConfig = `[${envName}]
-type = "vps"
+
+  // Write the SSH private key into the local container so `al push` can use it
+  const pubKey = context.getPublicKey();
+  await context.executeInContainer(localContainer, [
+    "bash", "-c", "mkdir -p /home/testuser/.ssh && chmod 700 /home/testuser/.ssh"
+  ]);
+
+  // Copy the private key into the container (we can't bind-mount mid-test)
+  // The harness exposes the raw key content via getPrivateKeyPath, but that's a host path.
+  // Instead, use executeInContainer to write it directly.
+  await context.executeInContainer(localContainer, [
+    "bash", "-c", `cat > /home/testuser/.ssh/e2e_deploy_key << 'KEYEOF'
+${await context.getPrivateKeyContent()}
+KEYEOF
+chmod 600 /home/testuser/.ssh/e2e_deploy_key`
+  ]);
+
+  // Create the environment file at ~/.action-llama/environments/<envName>.toml
+  const envConfig = `[server]
 host = "${vpsContainer.ipAddress}"
 user = "root"
-keyPath = "${context.getPrivateKeyPath()}"`;
-  
+port = 22
+keyPath = "/home/testuser/.ssh/e2e_deploy_key"
+basePath = "/opt/action-llama"`;
+
   await context.executeInContainer(localContainer, [
-    "bash", "-c", `cat > /home/testuser/test-project/.env.toml << 'EOF'
+    "bash", "-c", `mkdir -p /home/testuser/.action-llama/environments`
+  ]);
+
+  await context.executeInContainer(localContainer, [
+    "bash", "-c", `cat > /home/testuser/.action-llama/environments/${envName}.toml << 'EOF'
 ${envConfig}
 EOF`
   ]);
-  
-  // Deploy to VPS
+
+  // Create .env.toml binding the project to the environment
   await context.executeInContainer(localContainer, [
-    "bash", "-c", `cd /home/testuser/test-project && al push --env ${envName}`
+    "bash", "-c", `cat > /home/testuser/test-project/.env.toml << 'EOF'
+environment = "${envName}"
+EOF`
   ]);
+
+  // Deploy to VPS
+  const pushOutput = await context.executeInContainer(localContainer, [
+    "bash", "-c", `cd /home/testuser/test-project && al push --env ${envName} --headless --no-creds 2>&1 || echo "AL_PUSH_FAILED_EXIT_$?"`
+  ]);
+  console.log(`al push output: ${pushOutput}`);
+  if (pushOutput.includes("AL_PUSH_FAILED_EXIT_")) {
+    throw new Error(`al push failed: ${pushOutput}`);
+  }
 }
 
 export async function checkDeploymentOnVPS(
@@ -60,29 +82,29 @@ export async function checkDeploymentOnVPS(
       vpsContainer,
       "ls -la /opt/action-llama/ 2>/dev/null || echo 'not found'"
     );
-    
+
     if (deploymentPath.includes("not found")) {
       return false;
     }
-    
+
     // Check if expected agents are deployed
     for (const agent of expectedAgents) {
       const agentPath = await context.executeSSHCommand(
         vpsContainer,
-        `ls -la /opt/action-llama/agents/${agent}/ 2>/dev/null || echo 'not found'`
+        `ls -la /opt/action-llama/project/agents/${agent}/ 2>/dev/null || echo 'not found'`
       );
-      
+
       if (agentPath.includes("not found")) {
         return false;
       }
     }
-    
+
     // Check if systemd service is running
     const serviceStatus = await context.executeSSHCommand(
       vpsContainer,
       "systemctl is-active action-llama 2>/dev/null || echo 'inactive'"
     );
-    
+
     return serviceStatus.includes("active");
   } catch {
     return false;
@@ -113,26 +135,29 @@ export async function updateDeploymentOnVPS(
 ): Promise<void> {
   // Update agent locally
   const skillContent = `---
-model: claude-3-5-sonnet-20241022
-credentials:
-  github: default
-  anthropic: default
-schedule: "0 */6 * * *"
+metadata:
+  models: [sonnet]
+  credentials: [github_token, anthropic_key]
+  schedule: "0 */6 * * *"
 ---
 
 ${newSkill}`;
-  
+
   await context.executeInContainer(localContainer, [
-    "bash", "-c", `cat > /home/testuser/test-project/${agentName}/SKILL.md << 'EOF'
+    "bash", "-c", `cat > /home/testuser/test-project/agents/${agentName}/SKILL.md << 'EOF'
 ${skillContent}
 EOF`
   ]);
-  
+
   // Redeploy to VPS
-  await context.executeInContainer(localContainer, [
-    "bash", "-c", `cd /home/testuser/test-project && al push --env ${envName}`
+  const pushOutput = await context.executeInContainer(localContainer, [
+    "bash", "-c", `cd /home/testuser/test-project && al push --env ${envName} --headless --no-creds 2>&1 || echo "AL_PUSH_FAILED_EXIT_$?"`
   ]);
-  
+  console.log(`al push (update) output: ${pushOutput}`);
+  if (pushOutput.includes("AL_PUSH_FAILED_EXIT_")) {
+    throw new Error(`al push (update) failed: ${pushOutput}`);
+  }
+
   // Wait for deployment to complete
   await new Promise(resolve => setTimeout(resolve, 10000));
 }
