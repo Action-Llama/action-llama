@@ -85,19 +85,21 @@ describe("dashboard auth via startGateway", () => {
       await gateway.close();
     });
 
-    it("redirects unauthenticated browser requests to /login", async () => {
+    it("serves SPA for unauthenticated browser requests (SPA handles auth)", async () => {
       const addr = gateway.server.address() as any;
       const res = await fetch(`http://localhost:${addr.port}/dashboard`, {
         headers: { Accept: "text/html" },
         redirect: "manual",
       });
-      expect(res.status).toBe(302);
-      expect(res.headers.get("location")).toBe("/login");
+      // SPA mode: serves index.html, client-side JS handles auth redirect
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain('<div id="root">');
     });
 
     it("returns 401 for unauthenticated API requests", async () => {
       const addr = gateway.server.address() as any;
-      const res = await fetch(`http://localhost:${addr.port}/dashboard`, {
+      const res = await fetch(`http://localhost:${addr.port}/api/dashboard/status`, {
         headers: { Accept: "application/json" },
       });
       expect(res.status).toBe(401);

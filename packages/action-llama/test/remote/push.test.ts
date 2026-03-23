@@ -222,7 +222,7 @@ describe("pushToServer", () => {
     }
 
     expect(mockBootstrapServer).toHaveBeenCalled();
-    expect(mockRsyncTo).toHaveBeenCalledTimes(3); // project + individual credentials
+    expect(mockRsyncTo).toHaveBeenCalledTimes(4); // project + individual credentials + frontend
     expect(mockSshExec).toHaveBeenCalled();
     // Verify npm install runs on the remote
     const sshCommands = mockSshExec.mock.calls.map((c: any[]) => c[1]);
@@ -274,8 +274,8 @@ describe("pushToServer", () => {
       console.log = origLog;
     }
 
-    // Only 1 rsync call (project), not 2 (project + creds)
-    expect(mockRsyncTo).toHaveBeenCalledTimes(1);
+    // Only 2 rsync calls (project + frontend), not 3 (project + creds + frontend)
+    expect(mockRsyncTo).toHaveBeenCalledTimes(2);
   });
 
   it("always uses default gateway port 3000", async () => {

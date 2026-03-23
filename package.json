@@ -5,7 +5,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "npm run build -w packages/shared && npm run build -w packages/action-llama",
+    "build": "npm run build -w packages/shared && npm run build -w packages/frontend && npm run build -w packages/action-llama",
     "clean": "npm run clean -w packages/action-llama && rm -rf packages/shared/dist",
     "test": "vitest run --config packages/action-llama/vitest.config.ts",
     "test:unit": "vitest run --project unit --config packages/action-llama/vitest.config.ts",

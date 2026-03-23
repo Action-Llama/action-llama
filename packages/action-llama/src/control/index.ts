@@ -5,6 +5,6 @@ export { SessionStore } from "./session-store.js";
 export type { Session } from "./types.js";
 export { registerControlRoutes } from "./routes/control.js";
 export type { ControlRoutesDeps } from "./routes/control.js";
-export { registerDashboardRoutes, registerLoginRoutes } from "./routes/dashboard.js";
+export { registerDashboardDataRoutes } from "./routes/dashboard.js";
 export { registerLogRoutes } from "./routes/logs.js";
 export { registerStatsRoutes } from "./routes/stats.js";

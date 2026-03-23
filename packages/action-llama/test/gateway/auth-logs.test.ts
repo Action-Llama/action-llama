@@ -80,27 +80,18 @@ describe("Gateway log endpoints authentication", () => {
     expect(res2.status).toBe(200);
   });
 
-  it("should protect dashboard log endpoints with redirect for browser requests", async () => {
+  it("should serve SPA for dashboard sub-routes (SPA handles auth client-side)", async () => {
     const addr = gateway.server.address() as any;
     const baseUrl = `http://localhost:${addr.port}`;
 
-    // Browser request without auth - should redirect to login
+    // Browser request without auth - SPA mode serves index.html
     const res1 = await fetch(`${baseUrl}/dashboard/agents/test-agent/logs`, {
       headers: { Accept: "text/html" },
       redirect: "manual",
     });
-    expect(res1.status).toBe(302);
-    expect(res1.headers.get("location")).toBe("/login");
-
-    // With session cookie - logs route now redirects to agent detail page
-    const res2 = await fetch(`${baseUrl}/dashboard/agents/test-agent/logs`, {
-      headers: {
-        Accept: "text/html",
-        Cookie: `al_session=${TEST_API_KEY}`,
-      },
-      redirect: "manual",
-    });
-    expect(res2.status).toBe(302);
-    expect(res2.headers.get("location")).toBe("/dashboard/agents/test-agent");
+    // SPA mode: serves index.html, client handles auth redirect
+    expect(res1.status).toBe(200);
+    const html = await res1.text();
+    expect(html).toContain('<div id="root">');
   });
 });

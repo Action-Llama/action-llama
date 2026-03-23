@@ -7,8 +7,51 @@ import { sshExec, scpBuffer, type SshConfig } from "./ssh.js";
 
 /**
  * Generate an nginx site config for TLS termination with Cloudflare Origin CA.
+ *
+ * When `frontendPath` is provided, nginx serves the React SPA's static assets
+ * directly for efficiency. API routes are proxied to the gateway.
  */
-export function generateNginxConfig(hostname: string, gatewayPort: number): string {
+export function generateNginxConfig(hostname: string, gatewayPort: number, frontendPath?: string): string {
+  const proxyBlock = `        proxy_pass http://127.0.0.1:${gatewayPort};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;`;
+
+  // When the frontend is available, serve static assets directly and only proxy API routes.
+  // Otherwise, proxy everything to the gateway (legacy server-rendered mode).
+  const locationBlocks = frontendPath
+    ? `
+    # Frontend static assets (Vite-built, immutable hashes)
+    location /assets/ {
+        alias ${frontendPath}/assets/;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # SPA fallback: serve index.html for dashboard and login routes
+    location /login {
+        root ${frontendPath};
+        try_files /index.html =404;
+    }
+
+    location /dashboard {
+        root ${frontendPath};
+        try_files /index.html =404;
+    }
+
+    # API, control, and data routes — proxy to gateway
+    location / {
+${proxyBlock}
+    }`
+    : `
+    location / {
+${proxyBlock}
+    }`;
+
   return `# Action Llama — Cloudflare Origin CA TLS termination
 
 # Rate limiting: 5 req/sec per IP with burst of 10
@@ -34,17 +77,7 @@ server {
     # Apply rate limit to all requests
     limit_req zone=al_rate_limit burst=10 nodelay;
     limit_req_status 429;
-
-    location / {
-        proxy_pass http://127.0.0.1:${gatewayPort};
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
+${locationBlocks}
 }
 `;
 }

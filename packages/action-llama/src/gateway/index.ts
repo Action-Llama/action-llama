@@ -1,11 +1,15 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import type { Server } from "http";
+import { createRequire } from "module";
+import { dirname, resolve, extname } from "path";
+import { existsSync, readFileSync } from "fs";
 import { registerShutdownRoute } from "../execution/routes/shutdown.js";
 import { registerLockRoutes } from "../execution/routes/locks.js";
 import { registerCallRoutes, type CallDispatcher } from "../execution/routes/calls.js";
 import { registerWebhookRoutes } from "../events/routes/webhooks.js";
-import { registerDashboardRoutes, registerLoginRoutes } from "../control/routes/dashboard.js";
+import { registerDashboardDataRoutes } from "../control/routes/dashboard.js";
+import { registerAuthApiRoutes, registerDashboardApiRoutes } from "../control/routes/dashboard-api.js";
 import { registerSignalRoutes, type SignalContext } from "../execution/routes/signals.js";
 import { LockStore } from "../execution/lock-store.js";
 import { CallStore } from "../execution/call-store.js";
@@ -23,6 +27,38 @@ import { SpanKind } from "@opentelemetry/api";
 import { authMiddleware } from "../control/auth.js";
 import type { SchedulerEventBus } from "../scheduler/events.js";
 import type { StatsStore } from "../stats/store.js";
+
+const MIME_TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".ico": "image/x-icon",
+  ".woff2": "font/woff2",
+  ".woff": "font/woff",
+  ".ttf": "font/ttf",
+  ".map": "application/json",
+};
+
+/**
+ * Attempt to resolve the @action-llama/frontend dist directory.
+ * Works in both monorepo (npm workspaces) and installed contexts.
+ */
+export function resolveFrontendDist(): string | null {
+  try {
+    const require = createRequire(import.meta.url);
+    const pkgPath = require.resolve("@action-llama/frontend/package.json");
+    const distDir = resolve(dirname(pkgPath), "dist");
+    if (existsSync(resolve(distDir, "index.html"))) {
+      return distDir;
+    }
+  } catch {
+    // Package not available
+  }
+  return null;
+}
 
 export type { ContainerRegistration } from "../execution/types.js";
 
@@ -130,20 +166,22 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
   // Container management routes
   const killFn = killContainer || (async () => {});
   registerShutdownRoute(app, containerRegistry, killFn, logger);
+
   // Apply auth middleware to protected routes when an API key is configured
   if (opts.apiKey) {
     const sessionStore = stateStore ? new SessionStore(stateStore) : undefined;
     const auth = authMiddleware(opts.apiKey, sessionStore);
     app.use("/control/*", auth);
-    app.use("/dashboard/*", auth);
-    app.use("/dashboard", auth);
+    app.use("/dashboard/api/*", auth);
     app.use("/locks/status", auth);
     app.use("/api/logs/*", auth);
     app.use("/api/stats/*", auth);
+    app.use("/api/dashboard/*", auth);
+    app.use("/api/auth/check", auth);
     app.use("/api/webhooks/*", auth);
 
-    // Always register login/logout so the auth redirect has a target
-    registerLoginRoutes(app, opts.apiKey, sessionStore, opts.hostname);
+    // JSON auth endpoints for the SPA (login is unprotected, check is protected)
+    registerAuthApiRoutes(app, opts.apiKey, sessionStore, opts.hostname);
   }
 
   registerLockRoutes(app, containerRegistry, lockStore, logger, { skipStatusEndpoint: opts.skipStatusEndpoint, events: opts.events });
@@ -157,12 +195,46 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     registerWebhookRoutes(app, webhookRegistry, webhookSecrets || {}, opts.webhookConfigs || {}, logger, statusTracker, opts.statsStore);
   }
 
-  // Dashboard routes (login/logout are unprotected; dashboard pages are behind authMiddleware above)
+  // Dashboard routes
   if (webUI && statusTracker) {
     if (!opts.apiKey) {
       logger.error("Dashboard UI requested but no API key configured. Dashboard will not be enabled for security.");
     } else {
-      registerDashboardRoutes(app, statusTracker, projectPath, opts.apiKey, opts.statsStore);
+      // Data routes (SSE stream, locks)
+      registerDashboardDataRoutes(app, statusTracker);
+
+      // JSON API routes for the React SPA
+      registerDashboardApiRoutes(app, statusTracker, projectPath, opts.statsStore);
+
+      // Serve the React SPA frontend
+      const frontendDist = resolveFrontendDist();
+      if (frontendDist) {
+        logger.info({ path: frontendDist }, "Serving frontend from @action-llama/frontend");
+        const indexHtml = readFileSync(resolve(frontendDist, "index.html"), "utf-8");
+
+        // Serve Vite-built assets (JS, CSS, images) with long-term caching
+        app.get("/assets/*", (c) => {
+          const filePath = resolve(frontendDist, c.req.path.slice(1));
+          if (!filePath.startsWith(frontendDist + "/")) return c.notFound();
+          try {
+            const content = readFileSync(filePath);
+            const mime = MIME_TYPES[extname(filePath)] || "application/octet-stream";
+            return new Response(content, {
+              headers: { "Content-Type": mime, "Cache-Control": "public, max-age=31536000, immutable" },
+            });
+          } catch {
+            return c.notFound();
+          }
+        });
+
+        // SPA fallback: serve index.html for all frontend routes
+        app.get("/login", (c) => c.html(indexHtml));
+        app.get("/dashboard", (c) => c.html(indexHtml));
+        app.get("/dashboard/*", (c) => c.html(indexHtml));
+      } else {
+        logger.warn("@action-llama/frontend not found — dashboard UI will not be served. API routes are still available.");
+      }
+
       app.get("/", (c) => c.redirect("/dashboard"));
     }
   }

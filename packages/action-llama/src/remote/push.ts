@@ -1,6 +1,7 @@
 import { resolve, basename, dirname } from "path";
 import { createHash } from "crypto";
 import { readFileSync, unlinkSync, existsSync } from "fs";
+import { createRequire } from "module";
 import { parse as parseTOML, stringify as stringifyTOML } from "smol-toml";
 import type { ServerConfig } from "../shared/server.js";
 import type { GlobalConfig } from "../shared/config.js";
@@ -15,6 +16,23 @@ import { promisify } from "util";
 
 const execFile = promisify(execFileCb);
 import { bootstrapServer, type BootstrapResult } from "./bootstrap.js";
+
+/**
+ * Resolve the @action-llama/frontend dist directory if it exists.
+ */
+function resolveFrontendDist(): string | null {
+  try {
+    const require = createRequire(import.meta.url);
+    const pkgPath = require.resolve("@action-llama/frontend/package.json");
+    const distDir = resolve(dirname(pkgPath), "dist");
+    if (existsSync(resolve(distDir, "index.html"))) {
+      return distDir;
+    }
+  } catch {
+    // Not available
+  }
+  return null;
+}
 
 export interface PushOptions {
   projectPath: string;
@@ -254,13 +272,15 @@ async function pushToServerInner(ssh: SshOptions, opts: InnerOpts): Promise<void
     await sshExec(ssh, `mkdir -p ${basePath}/project ${basePath}/credentials`);
   }
 
-  // Phase A: Rsync files and credentials in parallel
+  // Phase A: Rsync files, credentials, and frontend in parallel
+  const frontendDist = resolveFrontendDist();
   const syncItems: string[] = [];
   if (!noFiles) syncItems.push("files");
   if (!noCreds) syncItems.push("credentials");
+  if (frontendDist) syncItems.push("frontend");
 
   if (syncItems.length > 0) {
-    console.log(`\nSyncing ${syncItems.join(" and ")}...`);
+    console.log(`\nSyncing ${syncItems.join(", ")}...`);
     const rsyncFlags = dryRun ? ["--dry-run", "-v"] : [];
     const phaseA: Promise<void>[] = [];
     if (!noFiles) {
@@ -274,6 +294,13 @@ async function pushToServerInner(ssh: SshOptions, opts: InnerOpts): Promise<void
         extraRefs.push(`cloudflare_origin_cert:${serverConfig.cloudflareHostname}`);
       }
       phaseA.push(syncRequiredCredentials(ssh, projectPath, globalConfig, `${basePath}/credentials`, rsyncFlags, extraRefs));
+    }
+    if (frontendDist) {
+      // Sync the built frontend SPA to the server
+      if (!dryRun) {
+        await sshExec(ssh, `mkdir -p ${basePath}/frontend`);
+      }
+      phaseA.push(rsyncTo(ssh, frontendDist, `${basePath}/frontend`, undefined, [...rsyncFlags, "--delete"]));
     }
     await Promise.all(phaseA);
     console.log(dryRun ? "  (dry-run) No changes made." : "  Done.");
@@ -295,7 +322,8 @@ async function pushToServerInner(ssh: SshOptions, opts: InnerOpts): Promise<void
     phaseB.push(conditionalNpmInstall(ssh, projectPath, basePath, forceInstall));
   }
   if (!noCreds && serverConfig.cloudflareHostname) {
-    phaseB.push(setupNginx(ssh, basePath, serverConfig.cloudflareHostname, gatewayPort));
+    const remoteFrontendPath = frontendDist ? `${basePath}/frontend` : undefined;
+    phaseB.push(setupNginx(ssh, basePath, serverConfig.cloudflareHostname, gatewayPort, remoteFrontendPath));
   }
   phaseB.push(writeEnvAndSymlink(ssh, basePath, gatewayPort, globalConfig, projectPath));
   const unitContent = buildSystemdUnit(projectName, basePath, binPaths, gatewayPort, serverConfig.expose);
@@ -360,13 +388,13 @@ async function conditionalNpmInstall(
 }
 
 async function setupNginx(
-  ssh: SshOptions, basePath: string, cfHost: string, gatewayPort: number,
+  ssh: SshOptions, basePath: string, cfHost: string, gatewayPort: number, frontendPath?: string,
 ): Promise<string> {
   const certSrc = `${basePath}/credentials/cloudflare_origin_cert/${cfHost}/certificate`;
   const keySrc = `${basePath}/credentials/cloudflare_origin_cert/${cfHost}/private_key`;
 
   const { generateNginxConfig } = await import("../cloud/vps/nginx.js");
-  const nginxConf = generateNginxConfig(cfHost, gatewayPort);
+  const nginxConf = generateNginxConfig(cfHost, gatewayPort, frontendPath);
   const nginxEscaped = nginxConf.replace(/'/g, "'\\''");
 
   // Heredoc delimiter must be on its own line — place post-heredoc commands on
