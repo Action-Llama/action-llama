@@ -21,6 +21,30 @@ export interface RunRecord {
   errorMessage?: string;
   preHookMs?: number;
   postHookMs?: number;
+  webhookReceiptId?: string;
+}
+
+export interface WebhookReceipt {
+  id: string;
+  deliveryId?: string;
+  source: string;
+  eventSummary?: string;
+  timestamp: number;
+  headers?: string;
+  body?: string;
+  matchedAgents: number;
+  status: "processed" | "dead-letter";
+  deadLetterReason?: "validation_failed" | "no_match" | "parse_error";
+}
+
+export interface TriggerHistoryRow {
+  ts: number;
+  instanceId: string | null;
+  agentName: string | null;
+  triggerType: string;
+  triggerSource: string | null;
+  result: string;
+  webhookReceiptId: string | null;
 }
 
 export interface CallEdgeRecord {
@@ -94,6 +118,30 @@ export class StatsStore {
     `);
 
     this.db.exec(`
+      CREATE TABLE IF NOT EXISTS webhook_receipts (
+        id                 TEXT PRIMARY KEY,
+        delivery_id        TEXT,
+        source             TEXT NOT NULL,
+        event_summary      TEXT,
+        timestamp          INTEGER NOT NULL,
+        headers            TEXT,
+        body               TEXT,
+        matched_agents     INTEGER NOT NULL DEFAULT 0,
+        status             TEXT NOT NULL,
+        dead_letter_reason TEXT
+      )
+    `);
+
+    this.db.exec("CREATE INDEX IF NOT EXISTS idx_wr_timestamp ON webhook_receipts(timestamp)");
+    this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_wr_delivery ON webhook_receipts(delivery_id) WHERE delivery_id IS NOT NULL");
+
+    // Migrate: add webhook_receipt_id column to runs if missing
+    const runsColumns = this.db.pragma("table_info(runs)") as { name: string }[];
+    if (!runsColumns.some(c => c.name === "webhook_receipt_id")) {
+      this.db.exec("ALTER TABLE runs ADD COLUMN webhook_receipt_id TEXT");
+    }
+
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS call_edges (
         id               INTEGER PRIMARY KEY AUTOINCREMENT,
         caller_agent     TEXT NOT NULL,
@@ -118,12 +166,12 @@ export class StatsStore {
           instance_id, agent_name, trigger_type, trigger_source, result, exit_code,
           started_at, duration_ms, input_tokens, output_tokens, cache_read_tokens,
           cache_write_tokens, total_tokens, cost_usd, turn_count, error_message,
-          pre_hook_ms, post_hook_ms
+          pre_hook_ms, post_hook_ms, webhook_receipt_id
         ) VALUES (
           @instanceId, @agentName, @triggerType, @triggerSource, @result, @exitCode,
           @startedAt, @durationMs, @inputTokens, @outputTokens, @cacheReadTokens,
           @cacheWriteTokens, @totalTokens, @costUsd, @turnCount, @errorMessage,
-          @preHookMs, @postHookMs
+          @preHookMs, @postHookMs, @webhookReceiptId
         )
       `),
       insertCallEdge: this.db.prepare(`
@@ -194,8 +242,52 @@ export class StatsStore {
       queryRunByInstanceId: this.db.prepare(`
         SELECT * FROM runs WHERE instance_id = @instanceId LIMIT 1
       `),
+      insertReceipt: this.db.prepare(`
+        INSERT INTO webhook_receipts (
+          id, delivery_id, source, event_summary, timestamp, headers, body,
+          matched_agents, status, dead_letter_reason
+        ) VALUES (
+          @id, @deliveryId, @source, @eventSummary, @timestamp, @headers, @body,
+          @matchedAgents, @status, @deadLetterReason
+        )
+      `),
+      findReceiptByDeliveryId: this.db.prepare(
+        "SELECT * FROM webhook_receipts WHERE delivery_id = @deliveryId LIMIT 1"
+      ),
+      getReceipt: this.db.prepare(
+        "SELECT * FROM webhook_receipts WHERE id = @id LIMIT 1"
+      ),
+      updateReceiptStatus: this.db.prepare(
+        "UPDATE webhook_receipts SET matched_agents = @matchedAgents, status = @status, dead_letter_reason = @deadLetterReason WHERE id = @id"
+      ),
+      queryTriggerHistory: this.db.prepare(`
+        SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
+               trigger_type AS triggerType, trigger_source AS triggerSource,
+               result, webhook_receipt_id AS webhookReceiptId
+        FROM runs WHERE started_at > @since
+        UNION ALL
+        SELECT timestamp AS ts, NULL AS instanceId, NULL AS agentName,
+               'webhook' AS triggerType, source AS triggerSource,
+               'dead-letter' AS result, id AS webhookReceiptId
+        FROM webhook_receipts WHERE status = 'dead-letter' AND timestamp > @since
+        ORDER BY ts DESC LIMIT @limit OFFSET @offset
+      `),
+      queryTriggerHistoryNoDeadLetters: this.db.prepare(`
+        SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
+               trigger_type AS triggerType, trigger_source AS triggerSource,
+               result, webhook_receipt_id AS webhookReceiptId
+        FROM runs WHERE started_at > @since
+        ORDER BY ts DESC LIMIT @limit OFFSET @offset
+      `),
+      countTriggerHistory: this.db.prepare(
+        "SELECT (SELECT COUNT(*) FROM runs WHERE started_at > @since) + (SELECT COUNT(*) FROM webhook_receipts WHERE status = 'dead-letter' AND timestamp > @since) AS count"
+      ),
+      countTriggerHistoryNoDeadLetters: this.db.prepare(
+        "SELECT COUNT(*) AS count FROM runs WHERE started_at > @since"
+      ),
       pruneRuns: this.db.prepare("DELETE FROM runs WHERE started_at < @threshold"),
       pruneCallEdges: this.db.prepare("DELETE FROM call_edges WHERE started_at < @threshold"),
+      pruneReceipts: this.db.prepare("DELETE FROM webhook_receipts WHERE timestamp < @threshold"),
       globalSummary: this.db.prepare(`
         SELECT
           COUNT(*) as totalRuns,
@@ -229,6 +321,7 @@ export class StatsStore {
       errorMessage: run.errorMessage ?? null,
       preHookMs: run.preHookMs ?? null,
       postHookMs: run.postHookMs ?? null,
+      webhookReceiptId: run.webhookReceiptId ?? null,
     });
   }
 
@@ -301,13 +394,75 @@ export class StatsStore {
     return this.stmts.callGraph.all({ since }) as CallEdgeSummary[];
   }
 
-  prune(olderThanDays: number): { runs: number; callEdges: number } {
+  recordWebhookReceipt(receipt: WebhookReceipt): void {
+    this.stmts.insertReceipt.run({
+      id: receipt.id,
+      deliveryId: receipt.deliveryId ?? null,
+      source: receipt.source,
+      eventSummary: receipt.eventSummary ?? null,
+      timestamp: receipt.timestamp,
+      headers: receipt.headers ?? null,
+      body: receipt.body ?? null,
+      matchedAgents: receipt.matchedAgents,
+      status: receipt.status,
+      deadLetterReason: receipt.deadLetterReason ?? null,
+    });
+  }
+
+  updateWebhookReceiptStatus(id: string, matchedAgents: number, status: "processed" | "dead-letter", deadLetterReason?: string): void {
+    this.stmts.updateReceiptStatus.run({
+      id,
+      matchedAgents,
+      status,
+      deadLetterReason: deadLetterReason ?? null,
+    });
+  }
+
+  findWebhookReceiptByDeliveryId(deliveryId: string): WebhookReceipt | undefined {
+    const row = this.stmts.findReceiptByDeliveryId.get({ deliveryId }) as any;
+    return row ? this.mapReceipt(row) : undefined;
+  }
+
+  getWebhookReceipt(id: string): WebhookReceipt | undefined {
+    const row = this.stmts.getReceipt.get({ id }) as any;
+    return row ? this.mapReceipt(row) : undefined;
+  }
+
+  queryTriggerHistory(opts: { since: number; limit: number; offset: number; includeDeadLetters: boolean }): TriggerHistoryRow[] {
+    const stmt = opts.includeDeadLetters ? this.stmts.queryTriggerHistory : this.stmts.queryTriggerHistoryNoDeadLetters;
+    return stmt.all({ since: opts.since, limit: opts.limit, offset: opts.offset }) as TriggerHistoryRow[];
+  }
+
+  countTriggerHistory(since: number, includeDeadLetters: boolean): number {
+    const stmt = includeDeadLetters ? this.stmts.countTriggerHistory : this.stmts.countTriggerHistoryNoDeadLetters;
+    const row = stmt.get({ since }) as any;
+    return row?.count ?? 0;
+  }
+
+  private mapReceipt(row: any): WebhookReceipt {
+    return {
+      id: row.id,
+      deliveryId: row.delivery_id ?? undefined,
+      source: row.source,
+      eventSummary: row.event_summary ?? undefined,
+      timestamp: row.timestamp,
+      headers: row.headers ?? undefined,
+      body: row.body ?? undefined,
+      matchedAgents: row.matched_agents,
+      status: row.status,
+      deadLetterReason: row.dead_letter_reason ?? undefined,
+    };
+  }
+
+  prune(olderThanDays: number): { runs: number; callEdges: number; receipts: number } {
     const threshold = Date.now() - olderThanDays * 24 * 60 * 60 * 1000;
     const runsResult = this.stmts.pruneRuns.run({ threshold });
     const callEdgesResult = this.stmts.pruneCallEdges.run({ threshold });
+    const receiptsResult = this.stmts.pruneReceipts.run({ threshold });
     return {
       runs: runsResult.changes,
       callEdges: callEdgesResult.changes,
+      receipts: receiptsResult.changes,
     };
   }
 

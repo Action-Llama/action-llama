@@ -1,8 +1,31 @@
+import { randomUUID } from "crypto";
 import type { Hono } from "hono";
 import type { WebhookRegistry } from "../../webhooks/registry.js";
 import type { WebhookSourceConfig } from "../../shared/config.js";
 import type { Logger } from "../../shared/logger.js";
 import type { StatusTracker } from "../../tui/status-tracker.js";
+import type { StatsStore } from "../../stats/store.js";
+
+// Headers that contain secrets — strip before storing
+const SIGNATURE_HEADERS = new Set([
+  "x-hub-signature-256",
+  "x-hub-signature",
+  "sentry-hook-signature",
+  "linear-signature",
+  "mintlify-signature",
+]);
+
+const MAX_STORED_BODY = 256 * 1024; // 256 KB
+
+function stripSignatureHeaders(headers: Record<string, string | undefined>): string {
+  const safe: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (value !== undefined && !SIGNATURE_HEADERS.has(key)) {
+      safe[key] = value;
+    }
+  }
+  return JSON.stringify(safe);
+}
 
 export function registerWebhookRoutes(
   app: Hono,
@@ -10,7 +33,8 @@ export function registerWebhookRoutes(
   webhookSecrets: Record<string, Record<string, string>>,
   webhookConfigs: Record<string, WebhookSourceConfig>,
   logger: Logger,
-  statusTracker?: StatusTracker
+  statusTracker?: StatusTracker,
+  statsStore?: StatsStore,
 ): void {
   app.post("/webhooks/:source", async (c) => {
     const source = c.req.param("source");
@@ -64,9 +88,72 @@ export function registerWebhookRoutes(
       "webhook headers"
     );
 
+    // Dedupe check: if provider supports delivery IDs, check for existing receipt
+    if (statsStore && provider.getDeliveryId) {
+      const deliveryId = provider.getDeliveryId(headers);
+      if (deliveryId) {
+        const existing = statsStore.findWebhookReceiptByDeliveryId(deliveryId);
+        if (existing) {
+          logger.info({ source, deliveryId }, "duplicate webhook delivery, skipping");
+          return c.json({ ok: true, matched: 0, skipped: 0, duplicate: true });
+        }
+      }
+    }
+
+    // Generate receipt ID and determine delivery ID
+    const receiptId = randomUUID();
+    const deliveryId = provider.getDeliveryId?.(headers) ?? null;
+
+    // Parse event summary from headers for the receipt
+    const eventSummary = headers["x-github-event"]
+      ? `${headers["x-github-event"]}${headers["x-github-event"] && headers["x-github-event"] !== "ping" ? "" : ""}`
+      : source;
+
+    // Record initial receipt (pending dispatch)
+    if (statsStore) {
+      try {
+        const storedBody = rawBody.length > MAX_STORED_BODY
+          ? rawBody.slice(0, MAX_STORED_BODY)
+          : rawBody;
+        statsStore.recordWebhookReceipt({
+          id: receiptId,
+          deliveryId: deliveryId ?? undefined,
+          source,
+          eventSummary,
+          timestamp: Date.now(),
+          headers: stripSignatureHeaders(headers),
+          body: storedBody,
+          matchedAgents: 0,
+          status: "processed", // will update after dispatch
+        });
+      } catch (err) {
+        logger.warn({ err, source }, "failed to record webhook receipt");
+      }
+    }
+
     const secrets = webhookSecrets[source];
     const config = webhookConfigs[source];
-    const result = registry.dispatch(source, headers, rawBody, { secrets, config });
+    const result = registry.dispatch(source, headers, rawBody, { secrets, config }, receiptId);
+
+    // Update receipt status based on dispatch result
+    if (statsStore) {
+      try {
+        if (!result.ok) {
+          const reason = result.errors?.includes("signature validation failed")
+            ? "validation_failed" as const
+            : result.errors?.includes("invalid JSON body")
+              ? "parse_error" as const
+              : "validation_failed" as const;
+          statsStore.updateWebhookReceiptStatus(receiptId, 0, "dead-letter", reason);
+        } else if (result.matched === 0) {
+          statsStore.updateWebhookReceiptStatus(receiptId, 0, "dead-letter", "no_match");
+        } else {
+          statsStore.updateWebhookReceiptStatus(receiptId, result.matched, "processed");
+        }
+      } catch (err) {
+        logger.warn({ err, source }, "failed to update webhook receipt status");
+      }
+    }
 
     if (!result.ok) {
       const status = result.errors?.includes("signature validation failed") ? 401 : 400;
@@ -92,4 +179,62 @@ export function registerWebhookRoutes(
       skipped: result.skipped,
     });
   });
+
+  // Replay endpoint: re-dispatch a stored webhook receipt
+  if (statsStore) {
+    app.post("/api/webhooks/:receiptId/replay", async (c) => {
+      const receiptId = c.req.param("receiptId");
+      const receipt = statsStore.getWebhookReceipt(receiptId);
+      if (!receipt) {
+        return c.json({ error: "receipt not found" }, 404);
+      }
+      if (!receipt.headers || !receipt.body) {
+        return c.json({ error: "receipt has no stored payload" }, 400);
+      }
+
+      const storedHeaders: Record<string, string | undefined> = JSON.parse(receipt.headers);
+      const secrets = webhookSecrets[receipt.source];
+      const config = webhookConfigs[receipt.source];
+
+      // Generate a new receipt for the replay
+      const replayReceiptId = randomUUID();
+      try {
+        statsStore.recordWebhookReceipt({
+          id: replayReceiptId,
+          source: receipt.source,
+          eventSummary: `replay:${receipt.eventSummary ?? receipt.source}`,
+          timestamp: Date.now(),
+          headers: receipt.headers,
+          body: receipt.body,
+          matchedAgents: 0,
+          status: "processed",
+        });
+      } catch (err) {
+        logger.warn({ err }, "failed to record replay receipt");
+      }
+
+      // Re-dispatch — skip signature validation for replays by passing allowUnsigned config
+      const replayConfig = config ? { ...config, allowUnsigned: true } : { type: receipt.source, allowUnsigned: true };
+      const result = registry.dispatch(receipt.source, storedHeaders, receipt.body, { secrets, config: replayConfig }, replayReceiptId);
+
+      if (statsStore) {
+        try {
+          if (result.matched > 0) {
+            statsStore.updateWebhookReceiptStatus(replayReceiptId, result.matched, "processed");
+          } else {
+            statsStore.updateWebhookReceiptStatus(replayReceiptId, 0, "dead-letter", "no_match");
+          }
+        } catch (err) {
+          logger.warn({ err }, "failed to update replay receipt status");
+        }
+      }
+
+      return c.json({
+        ok: result.ok,
+        matched: result.matched,
+        skipped: result.skipped,
+        replayReceiptId,
+      });
+    });
+  }
 }

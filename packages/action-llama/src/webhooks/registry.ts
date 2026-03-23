@@ -38,7 +38,8 @@ export class WebhookRegistry {
     source: string,
     headers: Record<string, string | undefined>,
     rawBody: string,
-    webhookConfig: { secrets?: Record<string, string>; config?: WebhookSourceConfig }
+    webhookConfig: { secrets?: Record<string, string>; config?: WebhookSourceConfig },
+    receiptId?: string,
   ): DispatchResult {
     const provider = this.providers.get(source);
     if (!provider) {
@@ -86,6 +87,11 @@ export class WebhookRegistry {
         "webhook event could not be parsed (parseEvent returned null)"
       );
       return { ok: true, matched: 0, skipped: 0, matchedSource };
+    }
+
+    // Attach receiptId to context so downstream consumers can link runs to receipts
+    if (receiptId) {
+      context.receiptId = receiptId;
     }
 
     this.logger.debug(

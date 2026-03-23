@@ -49,6 +49,22 @@ Cloud mode is auto-detected from the merged config (presence of `[cloud]` sectio
 
 Environment types (for `al env init <name> --type <type>`): `server`.
 
+## Stats & Trigger History
+
+The stats store (`src/stats/store.ts`) uses SQLite to record run history, call edges, and webhook receipts.
+
+Key tables:
+- **`runs`** — every agent execution, with `webhook_receipt_id` linking webhook-triggered runs back to their receipt
+- **`webhook_receipts`** — every incoming webhook (processed and dead-letter), with headers/body for replay
+- **`call_edges`** — agent-to-agent call graph
+
+Trigger history is a UNION view across `runs` and dead-letter `webhook_receipts`, exposed via:
+- Dashboard: `/dashboard` (compact table) and `/dashboard/triggers` (full paginated page with dead-letter toggle)
+- API: `GET /api/stats/triggers` (JSON, paginated)
+- Replay: `POST /api/webhooks/:receiptId/replay` (re-dispatches stored payload)
+
+Webhook deduplication uses provider-specific delivery IDs (e.g. `X-GitHub-Delivery`). Retention is configurable via `historyRetentionDays` in `config.toml` (default: 14 days).
+
 ## Shared Types
 
 Domain types (`AgentStatus`, `SchedulerInfo`, `LogLine`, `TokenUsage`) are defined in both `@action-llama/shared` (for the web SPA) and locally in this package (`src/tui/status-tracker.ts`, `src/shared/usage.ts`). The local copies are the runtime source of truth for the CLI. The shared package provides the same types for `@action-llama/web` without creating a circular dependency.

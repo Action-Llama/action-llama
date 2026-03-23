@@ -1,4 +1,5 @@
 import type { AgentStatus, SchedulerInfo, LogLine } from "../../tui/status-tracker.js";
+import type { TriggerHistoryRow } from "../../stats/store.js";
 import { escapeHtml, formatDuration, formatTime, formatCost, formatTokens, renderLayout } from "./layout.js";
 
 interface SessionSummary {
@@ -94,12 +95,53 @@ function renderAgentCard(agent: AgentStatus): string {
   </div>`;
 }
 
+function triggerTypeBadge(type: string): string {
+  const colors: Record<string, string> = {
+    schedule: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+    webhook: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
+    agent: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  };
+  const cls = colors[type] ?? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300";
+  return `<span class="px-1.5 py-0.5 text-xs font-medium rounded ${cls}">${escapeHtml(type)}</span>`;
+}
+
+function resultBadge(result: string): string {
+  if (result === "completed" || result === "rerun") {
+    return `<span class="text-green-600 dark:text-green-400 text-xs font-medium">${escapeHtml(result)}</span>`;
+  }
+  if (result === "dead-letter") {
+    return `<span class="px-1.5 py-0.5 text-xs font-medium rounded bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">Dead Letter</span>`;
+  }
+  if (result === "error") {
+    return `<span class="text-red-600 dark:text-red-400 text-xs font-medium">error</span>`;
+  }
+  return `<span class="text-slate-500 text-xs">${escapeHtml(result)}</span>`;
+}
+
+function renderTriggerRow(row: TriggerHistoryRow): string {
+  const time = new Date(row.ts).toLocaleTimeString();
+  const agentLink = row.agentName
+    ? `<a href="/dashboard/agents/${escapeHtml(row.agentName)}" class="text-blue-600 dark:text-blue-400 hover:underline text-xs">${escapeHtml(row.agentName)}</a>`
+    : `<span class="text-slate-400 text-xs">\u2014</span>`;
+  const instanceLink = row.instanceId && row.agentName
+    ? `<a href="/dashboard/agents/${escapeHtml(row.agentName)}/instances/${escapeHtml(row.instanceId)}" class="text-xs text-slate-500 dark:text-slate-400 hover:underline font-mono">${escapeHtml(row.instanceId.slice(0, 8))}</a>`
+    : `<span class="text-slate-400 text-xs">\u2014</span>`;
+  return `<tr class="hover:bg-slate-50 dark:hover:bg-slate-900/50">
+    <td class="px-2 py-1.5 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">${escapeHtml(time)}</td>
+    <td class="px-2 py-1.5">${triggerTypeBadge(row.triggerType)}</td>
+    <td class="px-2 py-1.5 text-xs text-slate-600 dark:text-slate-300">${escapeHtml(row.triggerSource ?? "\u2014")}</td>
+    <td class="px-2 py-1.5">${agentLink}</td>
+    <td class="px-2 py-1.5">${instanceLink}</td>
+    <td class="px-2 py-1.5">${resultBadge(row.result)}</td>
+  </tr>`;
+}
+
 function formatLogLine(log: LogLine): string {
   const time = log.timestamp.toLocaleTimeString();
   return `<span class="text-slate-400">${escapeHtml(time)}</span> <span class="text-indigo-400">[${escapeHtml(log.agent)}]</span> ${escapeHtml(log.message)}`;
 }
 
-export function renderDashboardPage(agents: AgentStatus[], schedulerInfo: SchedulerInfo | null, recentLogs: LogLine[]): string {
+export function renderDashboardPage(agents: AgentStatus[], schedulerInfo: SchedulerInfo | null, recentLogs: LogLine[], triggerHistory?: TriggerHistoryRow[]): string {
   const sessionTokens = agents.reduce((sum, a) => sum + (a.cumulativeUsage?.totalTokens ?? 0), 0);
   const sessionCost = agents.reduce((sum, a) => sum + (a.cumulativeUsage?.cost ?? 0), 0);
 
@@ -142,6 +184,32 @@ export function renderDashboardPage(agents: AgentStatus[], schedulerInfo: Schedu
     <div class="sm:hidden mb-6" id="agent-cards">
       ${agents.length > 0 ? agents.map(renderAgentCard).join("\n") : '<div class="text-slate-400 italic text-center py-6">No agents registered</div>'}
     </div>
+
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-base font-semibold text-slate-900 dark:text-white">Recent Triggers</h2>
+      <a href="/dashboard/triggers" class="text-xs text-blue-600 dark:text-blue-400 hover:underline">View all</a>
+    </div>
+    ${triggerHistory && triggerHistory.length > 0 ? `
+    <div class="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden mb-6">
+      <table class="w-full">
+        <thead>
+          <tr class="border-b border-slate-200 dark:border-slate-700">
+            <th class="text-left px-2 py-1.5 text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">Time</th>
+            <th class="text-left px-2 py-1.5 text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">Type</th>
+            <th class="text-left px-2 py-1.5 text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">Source</th>
+            <th class="text-left px-2 py-1.5 text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">Agent</th>
+            <th class="text-left px-2 py-1.5 text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">Instance</th>
+            <th class="text-left px-2 py-1.5 text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">Status</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+          ${triggerHistory.map(renderTriggerRow).join("\n")}
+        </tbody>
+      </table>
+    </div>` : `
+    <div class="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-3 sm:p-4 mb-6">
+      <div class="text-slate-400 italic text-sm">No trigger history yet</div>
+    </div>`}
 
     <h2 class="text-base font-semibold text-slate-900 dark:text-white mb-3">Recent Activity</h2>
     <div class="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-3 sm:p-4 font-mono text-xs sm:text-sm leading-relaxed max-h-72 overflow-y-auto scrollbar-thin" id="recent-logs">

@@ -140,6 +140,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     app.use("/locks/status", auth);
     app.use("/api/logs/*", auth);
     app.use("/api/stats/*", auth);
+    app.use("/api/webhooks/*", auth);
 
     // Always register login/logout so the auth redirect has a target
     registerLoginRoutes(app, opts.apiKey, sessionStore, opts.hostname);
@@ -153,7 +154,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
 
   // Webhook routes
   if (webhookRegistry) {
-    registerWebhookRoutes(app, webhookRegistry, webhookSecrets || {}, opts.webhookConfigs || {}, logger, statusTracker);
+    registerWebhookRoutes(app, webhookRegistry, webhookSecrets || {}, opts.webhookConfigs || {}, logger, statusTracker, opts.statsStore);
   }
 
   // Dashboard routes (login/logout are unprotected; dashboard pages are behind authMiddleware above)

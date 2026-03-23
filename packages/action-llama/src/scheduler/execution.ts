@@ -69,7 +69,7 @@ export function makeTriggeredPrompt(agentConfig: AgentConfig, sourceAgent: strin
 /** Run a single agent and dispatch any resulting triggers. */
 export async function executeRun(
   runner: PoolRunner, prompt: string,
-  triggerInfo: { type: 'schedule' | 'webhook' | 'agent'; source?: string },
+  triggerInfo: { type: 'schedule' | 'webhook' | 'agent'; source?: string; receiptId?: string },
   agentName: string, depth: number, ctx: SchedulerContext,
   instanceLifecycle?: InstanceLifecycle
 ): Promise<{ result: string; triggers: Array<{ agent: string; context: string }>; returnValue?: string }> {
@@ -137,6 +137,7 @@ export async function executeRun(
         errorMessage: outcome.exitReason,
         preHookMs: outcome.preHookMs,
         postHookMs: outcome.postHookMs,
+        webhookReceiptId: triggerInfo.receiptId,
       });
     } catch (err) {
       ctx.logger.warn({ err, agent: agentName }, "failed to record run stats");
@@ -268,7 +269,7 @@ function fireQueuedItem(
       undefined;
     
     const prompt = makeWebhookPrompt(agentConfig, work.context, ctx);
-    executeRun(runner, prompt, { type: 'webhook', source: work.context.event }, agentConfig.name, 0, ctx, instanceLifecycle)
+    executeRun(runner, prompt, { type: 'webhook', source: work.context.event, receiptId: work.context.receiptId }, agentConfig.name, 0, ctx, instanceLifecycle)
       .then(() => drainQueues(ctx))
       .catch((err) => ctx.logger.error({ err, agent: agentConfig.name }, "queued webhook failed"));
 

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { StatsStore } from "../../src/stats/store.js";
-import type { RunRecord, CallEdgeRecord } from "../../src/stats/store.js";
+import type { RunRecord, CallEdgeRecord, WebhookReceipt } from "../../src/stats/store.js";
 
 describe("StatsStore", () => {
   const dirs: string[] = [];
@@ -302,6 +302,183 @@ describe("StatsStore", () => {
     const summaries = store.queryAgentSummary({ since: 0 });
     expect(summaries[0].okRuns).toBe(1);
     expect(summaries[0].errorRuns).toBe(0);
+    store.close();
+  });
+
+  // --- Webhook receipt tests ---
+
+  function makeReceipt(overrides: Partial<WebhookReceipt> = {}): WebhookReceipt {
+    return {
+      id: `receipt-${Math.random().toString(36).slice(2, 10)}`,
+      source: "github",
+      eventSummary: "issues.labeled",
+      timestamp: Date.now(),
+      headers: JSON.stringify({ "x-github-event": "issues" }),
+      body: JSON.stringify({ action: "labeled" }),
+      matchedAgents: 0,
+      status: "processed",
+      ...overrides,
+    };
+  }
+
+  it("records and retrieves a webhook receipt by id", () => {
+    const store = createStore();
+    const receipt = makeReceipt({ id: "r-1" });
+    store.recordWebhookReceipt(receipt);
+
+    const found = store.getWebhookReceipt("r-1");
+    expect(found).toBeDefined();
+    expect(found!.id).toBe("r-1");
+    expect(found!.source).toBe("github");
+    expect(found!.eventSummary).toBe("issues.labeled");
+    expect(found!.status).toBe("processed");
+    store.close();
+  });
+
+  it("finds a webhook receipt by delivery ID", () => {
+    const store = createStore();
+    store.recordWebhookReceipt(makeReceipt({ id: "r-2", deliveryId: "gh-delivery-abc" }));
+    store.recordWebhookReceipt(makeReceipt({ id: "r-3", deliveryId: "gh-delivery-def" }));
+
+    const found = store.findWebhookReceiptByDeliveryId("gh-delivery-abc");
+    expect(found).toBeDefined();
+    expect(found!.id).toBe("r-2");
+
+    const notFound = store.findWebhookReceiptByDeliveryId("nonexistent");
+    expect(notFound).toBeUndefined();
+    store.close();
+  });
+
+  it("updates webhook receipt status", () => {
+    const store = createStore();
+    store.recordWebhookReceipt(makeReceipt({ id: "r-4", status: "processed", matchedAgents: 0 }));
+
+    store.updateWebhookReceiptStatus("r-4", 2, "processed");
+    const updated = store.getWebhookReceipt("r-4");
+    expect(updated!.matchedAgents).toBe(2);
+    expect(updated!.status).toBe("processed");
+
+    store.updateWebhookReceiptStatus("r-4", 0, "dead-letter", "no_match");
+    const deadLetter = store.getWebhookReceipt("r-4");
+    expect(deadLetter!.status).toBe("dead-letter");
+    expect(deadLetter!.deadLetterReason).toBe("no_match");
+    store.close();
+  });
+
+  it("runs table has webhook_receipt_id column", () => {
+    const store = createStore();
+    store.recordRun(makeRun({ webhookReceiptId: "r-5" }));
+
+    const rows = store.queryRuns({ since: 0 });
+    expect(rows[0].webhook_receipt_id).toBe("r-5");
+    store.close();
+  });
+
+  it("queryTriggerHistory returns union of runs and dead-letter receipts", () => {
+    const store = createStore();
+    const now = Date.now();
+
+    // Insert 2 runs
+    store.recordRun(makeRun({ startedAt: now - 2000, agentName: "a" }));
+    store.recordRun(makeRun({ startedAt: now - 1000, agentName: "b" }));
+
+    // Insert 1 dead-letter receipt
+    store.recordWebhookReceipt(makeReceipt({
+      id: "dl-1",
+      timestamp: now - 500,
+      status: "dead-letter",
+      deadLetterReason: "no_match",
+    }));
+
+    // Insert 1 processed receipt (should NOT appear in trigger history)
+    store.recordWebhookReceipt(makeReceipt({
+      id: "ok-1",
+      timestamp: now - 300,
+      status: "processed",
+      matchedAgents: 1,
+    }));
+
+    const rows = store.queryTriggerHistory({ since: 0, limit: 10, offset: 0, includeDeadLetters: true });
+    expect(rows).toHaveLength(3); // 2 runs + 1 dead-letter
+    // Ordered by ts DESC
+    expect(rows[0].result).toBe("dead-letter");
+    expect(rows[1].agentName).toBe("b");
+    expect(rows[2].agentName).toBe("a");
+    store.close();
+  });
+
+  it("queryTriggerHistory excludes dead letters when not requested", () => {
+    const store = createStore();
+    const now = Date.now();
+
+    store.recordRun(makeRun({ startedAt: now }));
+    store.recordWebhookReceipt(makeReceipt({
+      id: "dl-2",
+      timestamp: now - 100,
+      status: "dead-letter",
+      deadLetterReason: "validation_failed",
+    }));
+
+    const withDL = store.queryTriggerHistory({ since: 0, limit: 10, offset: 0, includeDeadLetters: true });
+    expect(withDL).toHaveLength(2);
+
+    const withoutDL = store.queryTriggerHistory({ since: 0, limit: 10, offset: 0, includeDeadLetters: false });
+    expect(withoutDL).toHaveLength(1);
+    store.close();
+  });
+
+  it("countTriggerHistory counts correctly", () => {
+    const store = createStore();
+    const now = Date.now();
+
+    store.recordRun(makeRun({ startedAt: now }));
+    store.recordRun(makeRun({ startedAt: now }));
+    store.recordWebhookReceipt(makeReceipt({
+      id: "dl-3",
+      timestamp: now,
+      status: "dead-letter",
+      deadLetterReason: "no_match",
+    }));
+
+    expect(store.countTriggerHistory(0, true)).toBe(3);
+    expect(store.countTriggerHistory(0, false)).toBe(2);
+    store.close();
+  });
+
+  it("prune removes old webhook receipts", () => {
+    const store = createStore();
+    const now = Date.now();
+    const oldTime = now - 100 * 86400_000; // 100 days ago
+
+    store.recordWebhookReceipt(makeReceipt({ id: "old-r", timestamp: oldTime }));
+    store.recordWebhookReceipt(makeReceipt({ id: "new-r", timestamp: now }));
+
+    const pruned = store.prune(90);
+    expect(pruned.receipts).toBe(1);
+
+    expect(store.getWebhookReceipt("old-r")).toBeUndefined();
+    expect(store.getWebhookReceipt("new-r")).toBeDefined();
+    store.close();
+  });
+
+  it("dedupe: findWebhookReceiptByDeliveryId returns existing receipt", () => {
+    const store = createStore();
+    store.recordWebhookReceipt(makeReceipt({
+      id: "dedup-1",
+      deliveryId: "unique-delivery-123",
+      matchedAgents: 2,
+      status: "processed",
+    }));
+
+    // Simulating what the route handler does: check before inserting
+    const existing = store.findWebhookReceiptByDeliveryId("unique-delivery-123");
+    expect(existing).toBeDefined();
+    expect(existing!.id).toBe("dedup-1");
+    expect(existing!.matchedAgents).toBe(2);
+
+    // No duplicate should exist
+    const noMatch = store.findWebhookReceiptByDeliveryId("different-delivery");
+    expect(noMatch).toBeUndefined();
     store.close();
   });
 });

@@ -19,6 +19,7 @@ export interface WebhookContext {
   comment?: string;
   sender: string;
   timestamp: string;
+  receiptId?: string;
 }
 
 // --- Filters ---
@@ -82,6 +83,7 @@ export interface WebhookProvider {
   validateRequest(headers: Record<string, string | undefined>, rawBody: string, secrets?: Record<string, string>, allowUnsigned?: boolean): string | null;
   parseEvent(headers: Record<string, string | undefined>, body: any): WebhookContext | null;
   matchesFilter(context: WebhookContext, filter: WebhookFilter): boolean;
+  getDeliveryId?(headers: Record<string, string | undefined>): string | null;
 }
 
 // --- Registry binding ---

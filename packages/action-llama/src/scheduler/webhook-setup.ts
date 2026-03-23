@@ -256,7 +256,7 @@ export function registerWebhookBindings(opts: {
 
         logger.info({ agent: agentConfig.name, event: context.event, action: context.action }, "webhook triggering agent");
         const prompt = makeWebhookPrompt(agentConfig, context, schedulerCtx);
-        executeRun(runner, prompt, { type: 'webhook', source: context.event }, agentConfig.name, 0, schedulerCtx)
+        executeRun(runner, prompt, { type: 'webhook', source: context.event, receiptId: context.receiptId }, agentConfig.name, 0, schedulerCtx)
           .then(() => drainQueues(schedulerCtx))
           .catch((err) => logger.error({ err, agent: agentConfig.name }, "webhook run failed"));
         return true;

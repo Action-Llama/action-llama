@@ -6,6 +6,7 @@ import { renderInstanceDetailPage } from "../views/instance-detail-page.js";
 import { renderAgentSkillPage } from "../views/agent-skill-page.js";
 import { renderLoginPage } from "../views/login-page.js";
 import { renderProjectConfigPage } from "../views/project-config-page.js";
+import { renderTriggerHistoryPage } from "../views/trigger-history-page.js";
 import { safeCompare } from "../auth.js";
 import type { StatusTracker } from "../../tui/status-tracker.js";
 import type { StatsStore } from "../../stats/store.js";
@@ -111,7 +112,28 @@ export function registerDashboardRoutes(
     const agents = statusTracker.getAllAgents();
     const info = statusTracker.getSchedulerInfo();
     const logs = statusTracker.getRecentLogs(20);
-    const html = renderDashboardPage(agents, info, logs);
+    const triggerHistory = statsStore
+      ? statsStore.queryTriggerHistory({ since: 0, limit: 20, offset: 0, includeDeadLetters: true })
+      : undefined;
+    const html = renderDashboardPage(agents, info, logs, triggerHistory);
+    return c.html(html);
+  });
+
+  // Trigger history page
+  app.get("/dashboard/triggers", (c) => {
+    const page = Math.max(1, parseInt(c.req.query("page") || "1", 10) || 1);
+    const limit = 50;
+    const includeDeadLetters = c.req.query("all") === "1";
+    const offset = (page - 1) * limit;
+
+    if (!statsStore) {
+      const html = renderTriggerHistoryPage({ rows: [], total: 0, page: 1, limit, includeDeadLetters });
+      return c.html(html);
+    }
+
+    const rows = statsStore.queryTriggerHistory({ since: 0, limit, offset, includeDeadLetters });
+    const total = statsStore.countTriggerHistory(0, includeDeadLetters);
+    const html = renderTriggerHistoryPage({ rows, total, page, limit, includeDeadLetters });
     return c.html(html);
   });
 

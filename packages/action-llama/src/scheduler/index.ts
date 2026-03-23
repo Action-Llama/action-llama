@@ -88,9 +88,10 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     const { statsDbPath } = await import("../shared/paths.js");
     statsStore = new StatsStoreClass(statsDbPath(projectPath));
     // Auto-prune old data on startup
-    const pruned = statsStore.prune(90);
-    if (pruned.runs > 0 || pruned.callEdges > 0) {
-      logger.info({ prunedRuns: pruned.runs, prunedCallEdges: pruned.callEdges }, "Pruned old stats data (>90 days)");
+    const retentionDays = globalConfig.historyRetentionDays ?? 14;
+    const pruned = statsStore.prune(retentionDays);
+    if (pruned.runs > 0 || pruned.callEdges > 0 || pruned.receipts > 0) {
+      logger.info({ prunedRuns: pruned.runs, prunedCallEdges: pruned.callEdges, prunedReceipts: pruned.receipts, retentionDays }, "Pruned old stats data");
     }
     logger.info("Stats store: SQLite (.al/stats.db)");
   }

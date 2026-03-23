@@ -18,6 +18,22 @@ export function registerStatsRoutes(app: Hono, statsStore?: StatsStore): void {
     return c.json({ runs, total, page, limit });
   });
 
+  // Paginated trigger history
+  app.get("/api/stats/triggers", (c) => {
+    const limit = Math.min(100, Math.max(1, parseInt(c.req.query("limit") || "50", 10) || 50));
+    const offset = Math.max(0, parseInt(c.req.query("offset") || "0", 10) || 0);
+    const includeDeadLetters = c.req.query("all") === "1";
+    const since = parseInt(c.req.query("since") || "0", 10) || 0;
+
+    if (!statsStore) {
+      return c.json({ triggers: [], total: 0, limit, offset });
+    }
+
+    const triggers = statsStore.queryTriggerHistory({ since, limit, offset, includeDeadLetters });
+    const total = statsStore.countTriggerHistory(since, includeDeadLetters);
+    return c.json({ triggers, total, limit, offset });
+  });
+
   // Single run by instance ID
   app.get("/api/stats/agents/:name/runs/:instanceId", (c) => {
     const instanceId = c.req.param("instanceId");

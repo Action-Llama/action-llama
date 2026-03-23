@@ -4,6 +4,10 @@ import { truncateEventText as truncate, validateHmacSignature } from "../validat
 export class GitHubWebhookProvider implements WebhookProvider {
   source = "github";
 
+  getDeliveryId(headers: Record<string, string | undefined>): string | null {
+    return headers["x-github-delivery"] ?? null;
+  }
+
   validateRequest(
     headers: Record<string, string | undefined>,
     rawBody: string,

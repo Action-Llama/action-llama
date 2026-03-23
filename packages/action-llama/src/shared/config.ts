@@ -102,6 +102,8 @@ export interface GlobalConfig {
   scale?: number;
   // Per-agent runtime overrides (from .env.toml or environment files)
   agents?: Record<string, AgentRuntimeOverrides>;
+  // How many days to keep trigger history and webhook receipts (default: 14)
+  historyRetentionDays?: number;
 }
 
 // --- Per-agent config (lives at <project>/agents/<name>/SKILL.md frontmatter) ---
