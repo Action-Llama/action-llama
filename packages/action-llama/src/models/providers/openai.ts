@@ -17,14 +17,8 @@ export class OpenAIProvider implements ModelProvider {
   }
 
   async init(): Promise<void> {
-    if (!this.apiKey) {
-      // Skip initialization in test environments to avoid failing tests
-      if (process.env.NODE_ENV === "test") {
-        console.warn("OpenAI API key not available in test environment, skipping initialization");
-        return;
-      }
-      throw new Error("OpenAI API key is required");
-    }
+    // API key may be resolved later from the credential store (authType: "api_key")
+    // so don't require it at init time
   }
 
   async validateConfig(config: ModelConfig): Promise<void> {

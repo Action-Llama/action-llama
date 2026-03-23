@@ -17,9 +17,8 @@ export class AnthropicProvider implements ModelProvider {
   }
 
   async init(): Promise<void> {
-    if (!this.apiKey) {
-      throw new Error("Anthropic API key is required");
-    }
+    // API key may be resolved later from the credential store (authType: "api_key")
+    // so don't require it at init time
   }
 
   async validateConfig(config: ModelConfig): Promise<void> {
