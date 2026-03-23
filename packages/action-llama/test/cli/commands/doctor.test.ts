@@ -69,6 +69,28 @@ vi.mock("../../../src/shared/credential-refs.js", () => ({
   collectCredentialRefs: (...args: any[]) => mockCollectCredentialRefs(...args),
 }));
 
+const mockValidateGlobalConfig = vi.fn();
+const mockValidateAgentConfigEnhanced = vi.fn();
+const mockDetectGlobalConfigUnknownFields = vi.fn();
+const mockDetectAgentConfigUnknownFields = vi.fn();
+vi.mock("../../../src/shared/validation.js", () => ({
+  validateGlobalConfig: (...args: any[]) => mockValidateGlobalConfig(...args),
+  validateAgentConfig: (...args: any[]) => mockValidateAgentConfigEnhanced(...args),
+  detectGlobalConfigUnknownFields: (...args: any[]) => mockDetectGlobalConfigUnknownFields(...args),
+  detectAgentConfigUnknownFields: (...args: any[]) => mockDetectAgentConfigUnknownFields(...args),
+}));
+
+const mockExistsSync = vi.fn();
+const mockReadFileSync = vi.fn();
+vi.mock("fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("fs")>();
+  return {
+    ...actual,
+    existsSync: (...args: any[]) => mockExistsSync(...args),
+    readFileSync: (...args: any[]) => mockReadFileSync(...args),
+  };
+});
+
 const mockEnsureGatewayApiKey = vi.fn();
 vi.mock("../../../src/gateway/api-key.js", () => ({
   ensureGatewayApiKey: (...args: any[]) => mockEnsureGatewayApiKey(...args),
@@ -111,6 +133,12 @@ describe("doctor", () => {
     mockListCredentialInstances.mockReturnValue([]);
     mockConfirm.mockResolvedValue(false);
     mockValidateTriggerFields.mockReturnValue([]);
+    mockValidateGlobalConfig.mockReturnValue({ errors: [], warnings: [] });
+    mockValidateAgentConfigEnhanced.mockReturnValue({ errors: [], warnings: [] });
+    mockDetectGlobalConfigUnknownFields.mockReturnValue([]);
+    mockDetectAgentConfigUnknownFields.mockReturnValue([]);
+    mockExistsSync.mockReturnValue(false);
+    mockReadFileSync.mockReturnValue("");
   });
 
   it("prints message when no agents found", async () => {
@@ -461,6 +489,40 @@ describe("doctor", () => {
 
     const output = await captureLog(() => execute({ project: "." }));
     expect(output).toContain("[ok] Linear Webhook Secret (linear_webhook_secret:LinearMain)");
+  });
+
+  it("prints validation errors even in silent mode", async () => {
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: [] });
+    mockExistsSync.mockImplementation((p: string) => p.endsWith("config.toml"));
+    mockReadFileSync.mockReturnValue("[local]\n");
+    mockValidateGlobalConfig.mockReturnValue({
+      errors: [{ type: "error", message: "invalid cron expression", field: "schedule" }],
+      warnings: [],
+    });
+    mockCredentialExists.mockReturnValue(true);
+
+    const output = await captureLog(() =>
+      expect(execute({ project: ".", silent: true })).rejects.toThrow("validation error(s) found")
+    );
+    expect(output).toContain("[error]");
+    expect(output).toContain("invalid cron expression");
+  });
+
+  it("suppresses validation warnings in silent mode", async () => {
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: [] });
+    mockExistsSync.mockImplementation((p: string) => p.endsWith("config.toml"));
+    mockReadFileSync.mockReturnValue("[local]\n");
+    mockValidateGlobalConfig.mockReturnValue({
+      errors: [],
+      warnings: [{ type: "warning", message: "deprecated field", field: "old_field" }],
+    });
+    mockCredentialExists.mockReturnValue(true);
+
+    const output = await captureLog(() => execute({ project: ".", silent: true }));
+    expect(output).not.toContain("[warn]");
+    expect(output).not.toContain("deprecated field");
   });
 
   describe("project-wide scale validation", () => {

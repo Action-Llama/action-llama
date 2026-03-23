@@ -212,17 +212,22 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
 
   // Display validation results
   if (validationErrors.length > 0 || validationWarnings.length > 0) {
-    if (!opts.silent) {
+    // Always show errors (even in silent mode) since we throw on them.
+    // Only suppress warnings in silent mode.
+    const showWarnings = !opts.silent && validationWarnings.length > 0;
+    const showErrors = validationErrors.length > 0;
+
+    if (showWarnings || showErrors) {
       console.log("\n--- Configuration Validation ---");
-      
-      if (validationWarnings.length > 0) {
+
+      if (showWarnings) {
         console.log("\nWarnings:");
         for (const warning of validationWarnings) {
           console.log(`  [warn] ${warning}`);
         }
       }
-      
-      if (validationErrors.length > 0) {
+
+      if (showErrors) {
         console.log("\nErrors:");
         for (const error of validationErrors) {
           console.log(`  [error] ${error}`);
