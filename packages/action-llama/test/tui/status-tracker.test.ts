@@ -261,4 +261,83 @@ describe("StatusTracker", () => {
     expect(agent.state).toBe("error");
     expect(agent.lastError).toBe("Session failed");
   });
+
+  it("createInstance + startRun does not double-count runningCount (scale > 1)", () => {
+    // Regression: lifecycle event listeners in createInstance() used to set
+    // agent.runningCount = lifecycle.runningInstanceCount, but the runner
+    // also calls startRun() which increments runningCount. For scale=2 agents
+    // this caused the dashboard to show "running 2/2" when only 1 instance
+    // was actually started.
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev", 2);
+
+    // Simulate the real execution flow:
+    // 1. runWithReruns creates an instance lifecycle
+    const instanceLifecycle = tracker.createInstance("dev-abc123", "dev", "schedule");
+    expect(instanceLifecycle).not.toBeNull();
+
+    // 2. executeRun calls instanceLifecycle.start()
+    instanceLifecycle!.start();
+
+    // 3. runner.run() internally calls statusTracker.startRun()
+    tracker.startRun("dev");
+
+    // Should be 1, not 2
+    const agent = tracker.getAllAgents()[0];
+    expect(agent.runningCount).toBe(1);
+    expect(agent.state).toBe("running");
+  });
+
+  it("createInstance + endRun correctly reaches zero for scale > 1", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev", 2);
+
+    // Start a run through both paths
+    const instanceLifecycle = tracker.createInstance("dev-abc123", "dev", "schedule");
+    instanceLifecycle!.start();
+    tracker.startRun("dev");
+
+    // End the run through both paths (runner endRun first, then lifecycle complete)
+    tracker.endRun("dev", 5000);
+    instanceLifecycle!.complete();
+
+    const agent = tracker.getAllAgents()[0];
+    expect(agent.runningCount).toBe(0);
+    expect(agent.state).toBe("idle");
+  });
+
+  it("two concurrent instances with scale=2 shows correct count", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev", 2);
+
+    // Start first instance
+    const instance1 = tracker.createInstance("dev-001", "dev", "schedule");
+    instance1!.start();
+    tracker.startRun("dev");
+
+    // Start second instance
+    const instance2 = tracker.createInstance("dev-002", "dev", "webhook:push");
+    instance2!.start();
+    tracker.startRun("dev");
+
+    let agent = tracker.getAllAgents()[0];
+    expect(agent.runningCount).toBe(2);
+    expect(agent.state).toBe("running");
+
+    // First finishes
+    tracker.endRun("dev", 3000);
+    instance1!.complete();
+
+    agent = tracker.getAllAgents()[0];
+    expect(agent.runningCount).toBe(1);
+    expect(agent.state).toBe("running");
+
+    // Second finishes
+    tracker.endRun("dev", 4000);
+    instance2!.complete();
+
+    agent = tracker.getAllAgents()[0];
+    expect(agent.runningCount).toBe(0);
+    expect(agent.state).toBe("idle");
+  });
 });

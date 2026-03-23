@@ -377,40 +377,25 @@ export class StatusTracker extends EventEmitter {
     const instanceLifecycle = new InstanceLifecycle(instanceId, agentName, trigger);
     lifecycle.addInstance(instanceLifecycle);
 
-    // Listen to instance events to update the UI
+    // Listen to instance events to update the UI.
+    // Note: We do NOT update agent.runningCount or agent.state here because
+    // the runners' startRun()/endRun() calls are the authoritative source for
+    // those fields. Updating both would double-count (the lifecycle increments
+    // on instance:start, and startRun() also increments — for scale>1 agents
+    // this caused "running 2/2" when only 1 instance was actually started).
     instanceLifecycle.on("instance:start", () => {
-      const agent = this.agents.get(agentName);
-      if (agent) {
-        agent.state = lifecycle.getState();
-        agent.runningCount = lifecycle.runningInstanceCount;
-      }
       this.emit("update");
     });
 
     instanceLifecycle.on("instance:complete", () => {
-      const agent = this.agents.get(agentName);
-      if (agent) {
-        agent.state = lifecycle.getState();
-        agent.runningCount = lifecycle.runningInstanceCount;
-      }
       this.emit("update");
     });
 
     instanceLifecycle.on("instance:error", () => {
-      const agent = this.agents.get(agentName);
-      if (agent) {
-        agent.state = lifecycle.getState();
-        agent.runningCount = lifecycle.runningInstanceCount;
-      }
       this.emit("update");
     });
 
     instanceLifecycle.on("instance:kill", () => {
-      const agent = this.agents.get(agentName);
-      if (agent) {
-        agent.state = lifecycle.getState();
-        agent.runningCount = lifecycle.runningInstanceCount;
-      }
       this.emit("update");
     });
 

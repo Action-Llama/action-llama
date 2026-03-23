@@ -48,7 +48,9 @@ function renderAgentRow(agent: AgentStatus, totalSessionTokens: number): string 
   const descHtml = agent.description
     ? `<div class="text-xs text-slate-400 mt-0.5">${escapeHtml(agent.description)}</div>`
     : "";
-  return `<tr data-agent="${escapeHtml(agent.name)}" class="hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors">
+  const runDisabled = !agent.enabled;
+  const killDisabled = agent.runningCount === 0;
+  return `<tr data-agent="${escapeHtml(agent.name)}" class="hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors${!agent.enabled ? " opacity-50" : ""}">
     <td class="px-3 py-2.5">
       <a href="/dashboard/agents/${escapeHtml(agent.name)}" class="text-blue-600 dark:text-blue-400 hover:underline font-medium">${escapeHtml(agent.name)}</a>
       ${descHtml}
@@ -60,8 +62,8 @@ function renderAgentRow(agent: AgentStatus, totalSessionTokens: number): string 
     <td class="px-3 py-2.5" style="min-width:120px">${renderTokenBar(agent, totalSessionTokens)}</td>
     <td class="px-3 py-2.5 text-sm text-slate-600 dark:text-slate-300">${agent.locks && agent.locks.length > 0 ? agent.locks.map(l => escapeHtml(l.resourceKey.replace(/^[^:]+:\/\//, ""))).join(", ") : "\u2014"}</td>
     <td class="px-3 py-2.5 whitespace-nowrap">
-      <button class="px-2 py-1 text-xs rounded font-bold bg-green-600 hover:bg-green-700 text-white transition-colors mr-1" onclick="triggerAgent('${escapeHtml(agent.name)}')">Run</button>
-      <button class="px-2 py-1 text-xs rounded font-bold bg-red-600 hover:bg-red-700 text-white transition-colors mr-1" onclick="killAgent('${escapeHtml(agent.name)}')">Kill</button>
+      <button class="px-2 py-1 text-xs rounded font-bold bg-green-600 ${runDisabled ? "opacity-40 cursor-not-allowed" : "hover:bg-green-700"} text-white transition-colors mr-1" ${runDisabled ? "disabled" : `onclick="triggerAgent('${escapeHtml(agent.name)}')"`}>Run</button>
+      <button class="px-2 py-1 text-xs rounded font-bold bg-red-600 ${killDisabled ? "opacity-40 cursor-not-allowed" : "hover:bg-red-700"} text-white transition-colors mr-1" ${killDisabled ? "disabled" : `onclick="killAgent('${escapeHtml(agent.name)}')"`}>Kill</button>
       <button class="px-2 py-1 text-xs rounded font-bold border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors" onclick="toggleAgent('${escapeHtml(agent.name)}','${toggleAction}')">${toggleLabel}</button>
     </td>
   </tr>`;
@@ -71,10 +73,12 @@ function renderAgentCard(agent: AgentStatus): string {
   const colors = stateColor(agent.state);
   const toggleLabel = agent.enabled ? "Disable" : "Enable";
   const toggleAction = agent.enabled ? "disable" : "enable";
+  const runDisabled = !agent.enabled;
+  const killDisabled = agent.runningCount === 0;
   const descHtml = agent.description
     ? `<div class="text-xs text-slate-400 mb-1">${escapeHtml(agent.description)}</div>`
     : "";
-  return `<div class="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-3 mb-2">
+  return `<div class="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-3 mb-2${!agent.enabled ? " opacity-50" : ""}">
     <a href="/dashboard/agents/${escapeHtml(agent.name)}" class="block">
       <div class="flex justify-between items-center mb-1">
         <span class="text-blue-600 dark:text-blue-400 font-semibold text-sm">${escapeHtml(agent.name)}</span>
@@ -88,8 +92,8 @@ function renderAgentCard(agent: AgentStatus): string {
       </div>
     </a>
     <div class="flex gap-2 mt-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-      <button class="px-2.5 py-1 text-xs rounded font-bold bg-green-600 hover:bg-green-700 text-white transition-colors" onclick="triggerAgent('${escapeHtml(agent.name)}')">Run</button>
-      <button class="px-2.5 py-1 text-xs rounded font-bold bg-red-600 hover:bg-red-700 text-white transition-colors" onclick="killAgent('${escapeHtml(agent.name)}')">Kill</button>
+      <button class="px-2.5 py-1 text-xs rounded font-bold bg-green-600 ${runDisabled ? "opacity-40 cursor-not-allowed" : "hover:bg-green-700"} text-white transition-colors" ${runDisabled ? "disabled" : `onclick="triggerAgent('${escapeHtml(agent.name)}')"`}>Run</button>
+      <button class="px-2.5 py-1 text-xs rounded font-bold bg-red-600 ${killDisabled ? "opacity-40 cursor-not-allowed" : "hover:bg-red-700"} text-white transition-colors" ${killDisabled ? "disabled" : `onclick="killAgent('${escapeHtml(agent.name)}')"`}>Kill</button>
       <button class="px-2.5 py-1 text-xs rounded font-bold border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors" onclick="toggleAgent('${escapeHtml(agent.name)}','${toggleAction}')">${toggleLabel}</button>
     </div>
   </div>`;
@@ -259,7 +263,9 @@ export function renderDashboardPage(agents: AgentStatus[], schedulerInfo: Schedu
       var toggleLabel = a.enabled ? "Disable" : "Enable";
       var toggleAction = a.enabled ? "disable" : "enable";
       var totalTok = _cachedAgents ? sessionTotalTokens(_cachedAgents) : 0;
-      return '<tr data-agent="' + esc(a.name) + '" class="hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors">' +
+      var runDis = !a.enabled;
+      var killDis = !a.runningCount;
+      return '<tr data-agent="' + esc(a.name) + '" class="hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors' + (a.enabled ? '' : ' opacity-50') + '">' +
         '<td class="px-3 py-2.5"><a href="/dashboard/agents/' + esc(a.name) + '" class="text-blue-600 dark:text-blue-400 hover:underline font-medium">' + esc(a.name) + '</a></td>' +
         '<td class="px-3 py-2.5"><span class="state-dot ' + dotClass + ' mr-1.5 inline-block"></span><span class="' + textClass + ' text-sm">' + esc(fmtScale(a)) + '</span></td>' +
         '<td class="px-3 py-2.5 text-sm text-slate-600 dark:text-slate-300">' + fmtTime(a.lastRunAt) + '</td>' +
@@ -268,8 +274,8 @@ export function renderDashboardPage(agents: AgentStatus[], schedulerInfo: Schedu
         '<td class="px-3 py-2.5" style="min-width:120px">' + tokenBar(a, totalTok) + '</td>' +
         '<td class="px-3 py-2.5 text-sm text-slate-600 dark:text-slate-300">' + (a.locks && a.locks.length > 0 ? a.locks.map(function(l) { return esc(l.resourceKey.replace(/^[^:]+:\\/\\//, "")); }).join(", ") : "\\u2014") + '</td>' +
         '<td class="px-3 py-2.5 whitespace-nowrap">' +
-        '<button class="px-2 py-1 text-xs rounded font-bold bg-green-600 hover:bg-green-700 text-white transition-colors mr-1" onclick="triggerAgent(\\'' + esc(a.name) + '\\')">Run</button>' +
-        '<button class="px-2 py-1 text-xs rounded font-bold bg-red-600 hover:bg-red-700 text-white transition-colors mr-1" onclick="killAgent(\\'' + esc(a.name) + '\\')">Kill</button>' +
+        '<button class="px-2 py-1 text-xs rounded font-bold bg-green-600 ' + (runDis ? 'opacity-40 cursor-not-allowed' : 'hover:bg-green-700') + ' text-white transition-colors mr-1" ' + (runDis ? 'disabled' : 'onclick="triggerAgent(\\'' + esc(a.name) + '\\')"') + '>Run</button>' +
+        '<button class="px-2 py-1 text-xs rounded font-bold bg-red-600 ' + (killDis ? 'opacity-40 cursor-not-allowed' : 'hover:bg-red-700') + ' text-white transition-colors mr-1" ' + (killDis ? 'disabled' : 'onclick="killAgent(\\'' + esc(a.name) + '\\')"') + '>Kill</button>' +
         '<button class="px-2 py-1 text-xs rounded font-bold border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors" onclick="toggleAgent(\\'' + esc(a.name) + '\\',\\'' + toggleAction + '\\')">' + toggleLabel + '</button></td></tr>';
     }
 
@@ -278,14 +284,16 @@ export function renderDashboardPage(agents: AgentStatus[], schedulerInfo: Schedu
       var textClass = stateTextColors[a.state] || "text-slate-400";
       var toggleLabel = a.enabled ? "Disable" : "Enable";
       var toggleAction = a.enabled ? "disable" : "enable";
-      return '<div class="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-3 mb-2">' +
+      var runDis = !a.enabled;
+      var killDis = !a.runningCount;
+      return '<div class="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-3 mb-2' + (a.enabled ? '' : ' opacity-50') + '">' +
         '<a href="/dashboard/agents/' + esc(a.name) + '" class="block">' +
         '<div class="flex justify-between items-center mb-1"><span class="text-blue-600 dark:text-blue-400 font-semibold text-sm">' + esc(a.name) + '</span>' +
         '<span class="text-xs ' + textClass + '"><span class="state-dot ' + dotClass + ' mr-1 inline-block"></span>' + esc(fmtScale(a)) + '</span></div>' +
         '<div class="flex gap-3 text-xs text-slate-400"><span>Last: ' + fmtTime(a.lastRunAt) + '</span><span>' + (a.lastRunDuration != null ? fmtDur(a.lastRunDuration) : "") + '</span><span>Next: ' + fmtTime(a.nextRunAt) + '</span></div></a>' +
         '<div class="flex gap-2 mt-2 pt-2 border-t border-slate-100 dark:border-slate-800">' +
-        '<button class="px-2.5 py-1 text-xs rounded font-bold bg-green-600 hover:bg-green-700 text-white transition-colors" onclick="triggerAgent(\\'' + esc(a.name) + '\\')">Run</button>' +
-        '<button class="px-2.5 py-1 text-xs rounded font-bold bg-red-600 hover:bg-red-700 text-white transition-colors" onclick="killAgent(\\'' + esc(a.name) + '\\')">Kill</button>' +
+        '<button class="px-2.5 py-1 text-xs rounded font-bold bg-green-600 ' + (runDis ? 'opacity-40 cursor-not-allowed' : 'hover:bg-green-700') + ' text-white transition-colors" ' + (runDis ? 'disabled' : 'onclick="triggerAgent(\\'' + esc(a.name) + '\\')"') + '>Run</button>' +
+        '<button class="px-2.5 py-1 text-xs rounded font-bold bg-red-600 ' + (killDis ? 'opacity-40 cursor-not-allowed' : 'hover:bg-red-700') + ' text-white transition-colors" ' + (killDis ? 'disabled' : 'onclick="killAgent(\\'' + esc(a.name) + '\\')"') + '>Kill</button>' +
         '<button class="px-2.5 py-1 text-xs rounded font-bold border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors" onclick="toggleAgent(\\'' + esc(a.name) + '\\',\\'' + toggleAction + '\\')">' + toggleLabel + '</button></div></div>';
     }
 
