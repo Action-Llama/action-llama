@@ -158,10 +158,6 @@ export class E2ETestContext {
     
     const containerName = `action-llama-e2e-vps-${this.runId}`;
     
-    // Create authorized_keys file
-    const authorizedKeysPath = path.join(this.tempDir, "authorized_keys");
-    await fs.writeFile(authorizedKeysPath, this.sshKeyPair.publicKey);
-    
     const container = await this.docker.createContainer({
       Image: "action-llama-vps:latest",
       name: containerName,
@@ -171,9 +167,6 @@ export class E2ETestContext {
         "SSH_ENABLE_PASSWORD_AUTH=false",
       ],
       HostConfig: {
-        Binds: [
-          `${authorizedKeysPath}:/root/.ssh/authorized_keys`,
-        ],
         NetworkMode: "action-llama-e2e",
         PortBindings: {
           "22/tcp": [{ HostPort: "0" }], // Random host port
@@ -186,6 +179,21 @@ export class E2ETestContext {
     });
 
     await container.start();
+
+    // Write authorized_keys directly inside the container with correct ownership
+    // and permissions. Bind-mounting from the host can cause UID mismatches that
+    // make sshd reject the file ("bad ownership or modes").
+    const pubKeyEscaped = this.sshKeyPair.publicKey.replace(/'/g, "'\\''");
+    const setupSSH = await container.exec({
+      Cmd: [
+        "bash", "-c",
+        `mkdir -p /root/.ssh && chmod 700 /root/.ssh && printf '%s' '${pubKeyEscaped}' > /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys && chown -R root:root /root/.ssh`,
+      ],
+      AttachStdout: true,
+      AttachStderr: true,
+    });
+    const sshSetupStream = await setupSSH.start({ hijack: true, stdin: false });
+    await new Promise<void>((resolve) => sshSetupStream.on("end", resolve));
 
     // Container is already on the network via NetworkMode - wait for IP assignment
     let ipAddress: string | undefined;
