@@ -83,62 +83,56 @@ export class ContainerAgentRunner {
   private forwardLogLine(line: string): void {
     if (!line.trim()) return;
 
+    let parsed: any;
     try {
-      const parsed = JSON.parse(line);
-      if (parsed._log) {
-        const { level, msg, _log, ts, ...data } = parsed;
-        const logFn = level === "error"
-          ? this.logger.error.bind(this.logger)
-          : level === "warn"
-            ? this.logger.warn.bind(this.logger)
-            : level === "debug"
-              ? this.logger.debug.bind(this.logger)
-              : this.logger.info.bind(this.logger);
-        if (Object.keys(data).length > 0) {
-          logFn(data, msg);
-        } else {
-          logFn(msg);
-        }
-        // Surface tool errors to status tracker for TUI display
-        if (level === "error" && msg === "tool error" && data.result) {
-          let errorMsg = String(data.result);
-          try {
-            const parsed = JSON.parse(data.result);
-            if (parsed?.content?.[0]?.text) {
-              errorMsg = parsed.content[0].text;
-            }
-          } catch { /* use raw string */ }
-          const cmdPrefix = data.cmd ? `$ ${String(data.cmd).slice(0, 80)} — ` : "";
-          this.statusTracker?.setAgentError(this.agentConfig.name, `${cmdPrefix}${errorMsg.slice(0, 200)}`);
-        }
-        return;
-      }
-    } catch {
-      // Not JSON — treat as plain output
-    }
-
-    // Detect structured signal-result logs for return values
-    try {
-      const parsed = JSON.parse(line);
-      if (parsed._log && parsed.msg === "signal-result") {
-        if (parsed.type === "return" && parsed.value) {
-          this._returnValue = parsed.value;
-        }
-      }
-      // Detect token usage logs
-      if (parsed._log && parsed.msg === "token-usage") {
-        this._tokenUsage = {
-          inputTokens: parsed.inputTokens || 0,
-          outputTokens: parsed.outputTokens || 0,
-          cacheReadTokens: parsed.cacheReadTokens || 0,
-          cacheWriteTokens: parsed.cacheWriteTokens || 0,
-          totalTokens: parsed.totalTokens || 0,
-          cost: parsed.cost || 0,
-          turnCount: parsed.turnCount || 0,
-        };
-      }
+      parsed = JSON.parse(line);
     } catch {
       // Not JSON — plain output, nothing to detect
+      return;
+    }
+
+    if (parsed._log) {
+      const { level, msg, _log, ts, ...data } = parsed;
+      const logFn = level === "error"
+        ? this.logger.error.bind(this.logger)
+        : level === "warn"
+          ? this.logger.warn.bind(this.logger)
+          : level === "debug"
+            ? this.logger.debug.bind(this.logger)
+            : this.logger.info.bind(this.logger);
+      if (Object.keys(data).length > 0) {
+        logFn(data, msg);
+      } else {
+        logFn(msg);
+      }
+      // Surface tool errors to status tracker for TUI display
+      if (level === "error" && msg === "tool error" && data.result) {
+        let errorMsg = String(data.result);
+        try {
+          const inner = JSON.parse(data.result);
+          if (inner?.content?.[0]?.text) {
+            errorMsg = inner.content[0].text;
+          }
+        } catch { /* use raw string */ }
+        const cmdPrefix = data.cmd ? `$ ${String(data.cmd).slice(0, 80)} — ` : "";
+        this.statusTracker?.setAgentError(this.agentConfig.name, `${cmdPrefix}${errorMsg.slice(0, 200)}`);
+      }
+      // Detect return value from signal-result logs
+      if (msg === "signal-result" && data.type === "return" && data.value) {
+        this._returnValue = data.value;
+      }
+      // Detect token usage logs
+      if (msg === "token-usage") {
+        this._tokenUsage = {
+          inputTokens: data.inputTokens || 0,
+          outputTokens: data.outputTokens || 0,
+          cacheReadTokens: data.cacheReadTokens || 0,
+          cacheWriteTokens: data.cacheWriteTokens || 0,
+          totalTokens: data.totalTokens || 0,
+          cost: data.cost || 0,
+          turnCount: data.turnCount || 0,
+        };
+      }
     }
   }
 
