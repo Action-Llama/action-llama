@@ -382,6 +382,8 @@ export class E2ETestContext {
       throw new Error("Container IP address not available for SSH connection");
     }
 
+    let lastError: Error | null = null;
+
     for (let i = 0; i < maxAttempts; i++) {
       try {
         // First check if SSH port is open with a simple connection test
@@ -389,19 +391,37 @@ export class E2ETestContext {
         
         // Then verify SSH actually works with a command
         await this.executeSSHCommand(containerInfo, "echo 'SSH Ready'");
+        console.log(`SSH connection established after ${i + 1} attempts`);
         return;
       } catch (error: any) {
+        lastError = error;
+        
         if (i < maxAttempts - 1) {
+          // Log progress for debugging
+          if (i % 10 === 9) {
+            console.log(`SSH connection attempt ${i + 1}/${maxAttempts} failed: ${error.message}`);
+          }
+          
           // Wait progressively longer for the first few attempts to allow service startup
           const delay = i < 10 ? 2000 : 1000;
           await new Promise(resolve => setTimeout(resolve, delay));
         } else {
-          // On final attempt, include more diagnostic info
+          // On final attempt, always capture and include container logs
+          console.error(`SSH connection failed after ${maxAttempts} attempts. Last error:`, lastError.message);
+          
           try {
             const containerLogs = await this.getContainerLogs(containerInfo);
-            throw new Error(`SSH service failed to start within timeout. Container logs: ${containerLogs.slice(-1000)}`);
-          } catch {
-            throw new Error(`SSH service failed to start within timeout after ${maxAttempts} attempts. IP: ${containerInfo.ipAddress}`);
+            console.error("VPS container logs:", containerLogs);
+            
+            // Try to get startup logs specifically
+            const startupLogs = await this.getStartupLogs(containerInfo);
+            if (startupLogs) {
+              console.error("VPS startup logs:", startupLogs);
+            }
+            
+            throw new Error(`SSH service failed to start within timeout after ${maxAttempts} attempts. IP: ${containerInfo.ipAddress}. Last error: ${lastError.message}. Container logs: ${containerLogs.slice(-1000)}`);
+          } catch (logError) {
+            throw new Error(`SSH service failed to start within timeout after ${maxAttempts} attempts. IP: ${containerInfo.ipAddress}. Last error: ${lastError.message}. Could not retrieve container logs: ${logError}`);
           }
         }
       }
@@ -444,11 +464,53 @@ export class E2ETestContext {
       const stream = await container.logs({
         stdout: true,
         stderr: true,
-        tail: 50
+        tail: 100
       });
       return stream.toString();
     } catch {
       return "Could not retrieve container logs";
+    }
+  }
+
+  private async getStartupLogs(containerInfo: ContainerInfo): Promise<string | null> {
+    try {
+      // Try to get the startup log file we created in the Dockerfile
+      const startupLogs = await this.executeSSHCommand(containerInfo, "cat /tmp/startup.log 2>/dev/null || echo 'No startup log found'");
+      return startupLogs;
+    } catch {
+      // If SSH fails, try to get it directly from the container
+      try {
+        const container = this.docker.getContainer(containerInfo.id);
+        const exec = await container.exec({
+          Cmd: ["cat", "/tmp/startup.log"],
+          AttachStdout: true,
+          AttachStderr: true,
+        });
+        
+        const stream = await exec.start({ hijack: true, stdin: false });
+        
+        return new Promise((resolve) => {
+          let output = "";
+          
+          stream.on("data", (data: Buffer) => {
+            const str = data.toString();
+            if (data[0] === 1) {
+              output += str.slice(8); // Remove Docker stream header
+            }
+          });
+          
+          stream.on("end", () => {
+            resolve(output.trim() || null);
+          });
+          
+          // Set a timeout for this operation
+          setTimeout(() => {
+            resolve(null);
+          }, 5000);
+        });
+      } catch {
+        return null;
+      }
     }
   }
 
