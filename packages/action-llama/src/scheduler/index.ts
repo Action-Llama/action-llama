@@ -30,15 +30,19 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   const logger = mkLogger(projectPath, "scheduler");
   logger.info("Starting scheduler...");
 
-  // Load built-in extensions before everything else
+  const globalConfig = globalConfigOverride || loadGlobalConfig(projectPath);
+
+  // Only load model extensions for providers actually referenced in config
+  const usedProviders = globalConfig.models
+    ? new Set(Object.values(globalConfig.models).map(m => m.provider))
+    : undefined;
+
   try {
-    await loadBuiltinExtensions();
+    await loadBuiltinExtensions(undefined, usedProviders);
     logger.info("Extensions loaded successfully");
   } catch (error: any) {
     logger.warn({ error: error.message }, "Failed to load extensions");
   }
-
-  const globalConfig = globalConfigOverride || loadGlobalConfig(projectPath);
 
   // Initialize telemetry if enabled
   let telemetry: any;

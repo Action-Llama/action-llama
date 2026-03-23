@@ -5,7 +5,8 @@ import { ExtensionRegistry, globalRegistry } from "./registry.js";
  * Load all built-in extensions into the global registry
  */
 export async function loadBuiltinExtensions(
-  credentialChecker?: (type: string, instance?: string) => Promise<boolean>
+  credentialChecker?: (type: string, instance?: string) => Promise<boolean>,
+  modelProviders?: Set<string>,
 ): Promise<void> {
   // Create a new registry with credential checking
   const registry = new ExtensionRegistry(credentialChecker);
@@ -21,13 +22,11 @@ export async function loadBuiltinExtensions(
     await loadRuntimeExtensions(registry);
     
     // Load model provider extensions
-    await loadModelExtensions(registry);
-    
+    await loadModelExtensions(registry, modelProviders);
+
     // Load credential provider extensions
     await loadCredentialExtensions(registry);
-    
-    console.log("Built-in extensions loaded successfully");
-    
+
     // Replace the global registry's internals with the new one
     // This is a temporary approach until we refactor the singleton pattern
     Object.assign(globalRegistry, registry);
@@ -82,17 +81,19 @@ async function loadRuntimeExtensions(registry: ExtensionRegistry): Promise<void>
   }
 }
 
-async function loadModelExtensions(registry: ExtensionRegistry): Promise<void> {
+async function loadModelExtensions(registry: ExtensionRegistry, modelProviders?: Set<string>): Promise<void> {
   try {
     const {
       openAIModelExtension,
       anthropicModelExtension,
       customModelExtension
     } = await import("../models/providers/index.js");
-    
-    await registry.register(openAIModelExtension);
-    await registry.register(anthropicModelExtension);
-    await registry.register(customModelExtension);
+
+    const extensions = [openAIModelExtension, anthropicModelExtension, customModelExtension];
+    for (const ext of extensions) {
+      if (modelProviders && !modelProviders.has(ext.metadata.name)) continue;
+      await registry.register(ext);
+    }
   } catch (error) {
     console.warn("Failed to load model extensions:", error);
     // Don't fail the entire loading process for model extensions

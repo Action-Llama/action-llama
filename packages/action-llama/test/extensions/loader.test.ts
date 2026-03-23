@@ -98,11 +98,9 @@ vi.mock("../../src/credentials/providers/index.js", () => ({
 
 describe("Extension Loader", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     // Clear the global registry before each test
     Object.assign(globalRegistry, new (globalRegistry.constructor as any)());
-    
-    // Mock console.log for tests that expect it
-    vi.spyOn(console, "log").mockImplementation(() => {});
   });
 
   describe("isExtension", () => {
@@ -136,17 +134,12 @@ describe("Extension Loader", () => {
   describe("loadBuiltinExtensions", () => {
     it("should load built-in extensions without credential checker", async () => {
       await loadBuiltinExtensions();
-
-      // Verify that extensions were loaded (this is a basic test since we're mocking the imports)
-      expect(console.log).toHaveBeenCalledWith("Built-in extensions loaded successfully");
     });
 
     it("should load extensions with credential checker", async () => {
       const credentialChecker = vi.fn().mockResolvedValue(true);
-      
-      await loadBuiltinExtensions(credentialChecker);
 
-      expect(console.log).toHaveBeenCalledWith("Built-in extensions loaded successfully");
+      await loadBuiltinExtensions(credentialChecker);
     });
 
     it("should handle loading errors gracefully", async () => {
@@ -161,11 +154,32 @@ describe("Extension Loader", () => {
 
       try {
         await loadBuiltinExtensions();
-        // Should still succeed but log warnings
-        expect(console.log).toHaveBeenCalledWith("Built-in extensions loaded successfully");
       } finally {
         console.warn = originalWarn;
       }
+    });
+
+    it("should only load model extensions for specified providers", async () => {
+      const { openAIModelExtension, anthropicModelExtension, customModelExtension } =
+        await import("../../src/models/providers/index.js");
+
+      // Only request "anthropic" provider
+      await loadBuiltinExtensions(undefined, new Set(["anthropic"]));
+
+      expect(anthropicModelExtension.init).toHaveBeenCalled();
+      expect(openAIModelExtension.init).not.toHaveBeenCalled();
+      expect(customModelExtension.init).not.toHaveBeenCalled();
+    });
+
+    it("should load all model extensions when no providers specified", async () => {
+      const { openAIModelExtension, anthropicModelExtension, customModelExtension } =
+        await import("../../src/models/providers/index.js");
+
+      await loadBuiltinExtensions();
+
+      expect(openAIModelExtension.init).toHaveBeenCalled();
+      expect(anthropicModelExtension.init).toHaveBeenCalled();
+      expect(customModelExtension.init).toHaveBeenCalled();
     });
   });
 });
