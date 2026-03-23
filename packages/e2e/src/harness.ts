@@ -197,6 +197,9 @@ export class E2ETestContext {
 
     await container.start();
 
+    // Wait for Docker to fully initialize the container
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
     // Explicitly connect to network after starting
     const network = this.docker.getNetwork('action-llama-e2e');
     await network.connect({
