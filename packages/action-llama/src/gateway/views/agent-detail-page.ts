@@ -66,8 +66,6 @@ export interface AgentDetailData {
   summary: AgentSummary | null;
   runningInstances: AgentInstance[];
   totalHistorical: number;
-  feedbackEnabled?: boolean; // per-agent feedback override
-  globalFeedbackEnabled: boolean; // global feedback setting
 }
 
 export function renderAgentDetailPage(data: AgentDetailData): string {
@@ -123,18 +121,6 @@ export function renderAgentDetailPage(data: AgentDetailData): string {
           <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Number of concurrent instances this agent can run</p>
         </div>
         
-        <div>
-          <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Feedback Override</label>
-          <div class="flex items-center gap-2">
-            <select id="feedback-override" class="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
-              <option value="inherit" ${data.feedbackEnabled === undefined ? 'selected' : ''}>Inherit (${data.globalFeedbackEnabled ? 'enabled' : 'disabled'})</option>
-              <option value="enable" ${data.feedbackEnabled === true ? 'selected' : ''}>Enable</option>
-              <option value="disable" ${data.feedbackEnabled === false ? 'selected' : ''}>Disable</option>
-            </select>
-            <button id="update-feedback-btn" class="px-3 py-1.5 text-sm rounded-md font-bold bg-blue-600 hover:bg-blue-700 text-white transition-colors" onclick="updateFeedback()">Update</button>
-          </div>
-          <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Override global feedback setting for this agent</p>
-        </div>
       </div>
 
       ${agentConfig ? `
@@ -456,44 +442,6 @@ export function renderAgentDetailPage(data: AgentDetailData): string {
       }).then(function(r) {
         if (r.ok) {
           alert("Agent scale updated to " + scale);
-        } else {
-          r.text().then(function(text) { alert("Error: " + text); });
-        }
-      }).catch(function(err) {
-        alert("Error: " + err);
-      }).finally(function() {
-        btn.disabled = false;
-        btn.textContent = "Update";
-      });
-    }
-
-    function updateFeedback() {
-      var select = document.getElementById("feedback-override");
-      var btn = document.getElementById("update-feedback-btn");
-      var value = select.value;
-      
-      btn.disabled = true;
-      btn.textContent = "Updating...";
-      
-      var requestBody = {};
-      if (value === "inherit") {
-        requestBody.enabled = undefined;
-      } else if (value === "enable") {
-        requestBody.enabled = true;
-      } else if (value === "disable") {
-        requestBody.enabled = false;
-      }
-      
-      fetch("/control/agents/" + encodeURIComponent(agentName) + "/feedback", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody)
-      }).then(function(r) {
-        if (r.ok) {
-          alert("Agent feedback setting updated");
-          // Refresh page to show updated status
-          window.location.reload();
         } else {
           r.text().then(function(text) { alert("Error: " + text); });
         }

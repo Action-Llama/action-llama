@@ -70,15 +70,6 @@ export class AgentRunner {
     this.abortController.abort();
   }
 
-  /**
-   * Trigger feedback monitoring if enabled (to be overridden by scheduler)
-   */
-  private triggerFeedbackIfEnabled(err: Error): void {
-    // This is a placeholder - the actual feedback triggering will be handled
-    // by the scheduler when it integrates the feedback monitor
-    this.logger.debug({ error: err.message }, "Error logged for potential feedback processing");
-  }
-
   async run(prompt: string, triggerInfo?: { type: 'schedule' | 'webhook' | 'agent'; source?: string }): Promise<RunOutcome> {
     if (this.running) {
       this.logger.warn(`${this.agentConfig.name} is already running, skipping`);
@@ -411,10 +402,7 @@ export class AgentRunner {
     } catch (err: any) {
       this.logger.error({ err }, `${this.agentConfig.name} run failed`);
       runError = String(err?.message || err).slice(0, 200);
-      
-      // Trigger feedback monitoring if enabled
-      this.triggerFeedbackIfEnabled(err);
-      
+
       return { result: "error", triggers: [], usage: undefined };
     } finally {
       // Restore the git env vars we may have overwritten so other

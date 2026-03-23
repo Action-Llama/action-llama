@@ -32,7 +32,7 @@ export interface ConfigSchema {
 const GLOBAL_CONFIG_SCHEMA: ConfigSchema = {
   required: new Set(),
   optional: new Set([
-    "models", "local", "gateway", "webhooks", "telemetry", "feedback",
+    "models", "local", "gateway", "webhooks", "telemetry",
     "projectName", "maxReruns", "maxCallDepth", "maxTriggerDepth",
     "webhookQueueSize", "workQueueSize", "resourceLockTimeout", "scale"
   ]),
@@ -57,11 +57,6 @@ const GLOBAL_CONFIG_SCHEMA: ConfigSchema = {
       optional: new Set(["enabled", "provider", "endpoint", "serviceName", "headers", "samplingRate"]),
       nested: {}
     },
-    feedback: {
-      required: new Set(),
-      optional: new Set(["enabled", "agent", "errorPatterns", "contextLines"]),
-      nested: {}
-    }
   }
 };
 
@@ -69,7 +64,7 @@ const AGENT_CONFIG_SCHEMA: ConfigSchema = {
   required: new Set(["name", "credentials", "models"]),
   optional: new Set([
     "description", "schedule", "webhooks", "hooks", "params", "scale",
-    "timeout", "feedback", "license", "compatibility"
+    "timeout", "license", "compatibility"
   ]),
   nested: {
     hooks: {
@@ -77,11 +72,6 @@ const AGENT_CONFIG_SCHEMA: ConfigSchema = {
       optional: new Set(["pre", "post"]),
       nested: {}
     },
-    feedback: {
-      required: new Set(),
-      optional: new Set(["enabled"]),
-      nested: {}
-    }
   }
 };
 

@@ -5,10 +5,6 @@ export interface ProjectConfigData {
   projectScale: number;
   gatewayPort?: number;
   webhooksActive: boolean;
-  feedbackEnabled: boolean;
-  feedbackAgent?: string;
-  feedbackErrorPatterns: string[];
-  feedbackContextLines: number;
 }
 
 export function renderProjectConfigPage(data: ProjectConfigData): string {
@@ -45,48 +41,6 @@ export function renderProjectConfigPage(data: ProjectConfigData): string {
             ${projectName ? `<div class="text-sm text-slate-600 dark:text-slate-300">Project: ${escapeHtml(projectName)}</div>` : ""}
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- Feedback Configuration -->
-    <div class="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-6 mb-6">
-      <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Feedback Configuration</h2>
-      <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Automatically trigger feedback agents when other agents encounter errors</p>
-      
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <!-- Enable/Disable Feedback -->
-        <div>
-          <label class="flex items-center gap-3">
-            <input id="feedback-enabled" type="checkbox" ${data.feedbackEnabled ? 'checked' : ''} class="w-4 h-4 text-blue-600 bg-slate-100 border-slate-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-slate-800 dark:bg-slate-700 dark:border-slate-600">
-            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable Feedback Monitoring</span>
-          </label>
-          <p class="text-sm text-slate-500 dark:text-slate-400 mt-2 ml-7">Monitor agent logs for errors and trigger feedback agents to fix SKILL.md files</p>
-        </div>
-
-        <!-- Feedback Agent -->
-        <div>
-          <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Feedback Agent</label>
-          <input id="feedback-agent" type="text" value="${escapeHtml(data.feedbackAgent || '')}" placeholder="default (built-in)" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
-          <p class="text-sm text-slate-500 dark:text-slate-400 mt-2">Agent to use for feedback (leave empty for built-in agent)</p>
-        </div>
-
-        <!-- Error Patterns -->
-        <div>
-          <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Error Patterns</label>
-          <input id="error-patterns" type="text" value="${escapeHtml(data.feedbackErrorPatterns.join(', '))}" placeholder="error, fail" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
-          <p class="text-sm text-slate-500 dark:text-slate-400 mt-2">Comma-separated patterns to detect errors in logs (regex supported)</p>
-        </div>
-
-        <!-- Context Lines -->
-        <div>
-          <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Context Lines</label>
-          <input id="context-lines" type="number" min="0" max="10" value="${data.feedbackContextLines}" class="w-24 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
-          <p class="text-sm text-slate-500 dark:text-slate-400 mt-2">Number of lines around the error to include in feedback context</p>
-        </div>
-      </div>
-
-      <div class="mt-6">
-        <button id="update-feedback-btn" class="px-4 py-2 text-sm rounded-md font-semibold bg-blue-600 hover:bg-blue-700 text-white transition-colors" onclick="updateFeedbackConfig()">Update Feedback Configuration</button>
       </div>
     </div>
 
@@ -159,46 +113,6 @@ export function renderProjectConfigPage(data: ProjectConfigData): string {
       ctrlPost("/control/resume");
     }
 
-    function updateFeedbackConfig() {
-      var btn = document.getElementById("update-feedback-btn");
-      var enabled = document.getElementById("feedback-enabled").checked;
-      var agent = document.getElementById("feedback-agent").value.trim();
-      var patterns = document.getElementById("error-patterns").value.trim();
-      var contextLines = parseInt(document.getElementById("context-lines").value);
-
-      if (isNaN(contextLines) || contextLines < 0 || contextLines > 10) {
-        alert("Context lines must be between 0 and 10");
-        return;
-      }
-
-      btn.disabled = true;
-      btn.textContent = "Updating...";
-
-      var config = {
-        enabled: enabled,
-        agent: agent || undefined,
-        errorPatterns: patterns ? patterns.split(',').map(function(p) { return p.trim(); }).filter(function(p) { return p; }) : ["error", "fail"],
-        contextLines: contextLines
-      };
-
-      fetch("/control/feedback/config", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config)
-      }).then(function(r) {
-        if (r.ok) {
-          alert("Feedback configuration updated");
-        } else {
-          r.text().then(function(text) { alert("Error: " + text); });
-        }
-      }).catch(function(err) {
-        alert("Error: " + err);
-      }).finally(function() {
-        btn.disabled = false;
-        btn.textContent = "Update Feedback Configuration";
-      });
-    }
   </script>`;
 
   return renderLayout({

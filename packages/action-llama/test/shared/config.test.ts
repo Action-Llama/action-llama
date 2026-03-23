@@ -512,21 +512,6 @@ describe("agent runtime overrides", () => {
     expect(loaded.timeout).toBe(3600);
   });
 
-  it("applies feedback override from .env.toml", () => {
-    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
-    writeSkillMd(tmpDir, "dev", {
-      models: ["sonnet"],
-      credentials: ["github_token"],
-      schedule: "*/5 * * * *",
-    });
-    writeFileSync(resolve(tmpDir, ".env.toml"), stringifyTOML({
-      agents: { dev: { feedback: false } },
-    }));
-
-    const loaded = loadAgentConfig(tmpDir, "dev");
-    expect(loaded.feedback).toEqual({ enabled: false });
-  });
-
   it("preserves SKILL.md defaults when no override present", () => {
     writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
     const agentDir = resolve(tmpDir, "agents", "dev");

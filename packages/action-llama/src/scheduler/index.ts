@@ -118,13 +118,6 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     globalConfig, activeAgentConfigs, logger,
   );
 
-  // Initialize feedback monitor if enabled
-  let feedbackMonitor: any;
-  if (globalConfig.feedback?.enabled) {
-    const { FeedbackMonitor } = await import("../agents/feedback-monitor.js");
-    feedbackMonitor = new FeedbackMonitor(globalConfig, logger, statusTracker);
-    logger.info("Feedback monitoring enabled");
-  }
   logger.info({ runtime: "local" }, "Container mode enabled — initializing infrastructure");
 
   // Check for orphan containers from a previous scheduler run
@@ -218,19 +211,6 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     setupEnableDisableHandlers({ statusTracker, agentCronJobs, logger });
   }
 
-  // Set up feedback event handling
-  if (feedbackMonitor) {
-    await setupFeedbackHandling(feedbackMonitor, globalConfig, schedulerCtx, projectPath, logger);
-    
-    // Start monitoring all active agents
-    for (const agentConfig of activeAgentConfigs) {
-      feedbackMonitor.watchAgent(agentConfig.name);
-    }
-    
-    feedbackMonitor.start(projectPath);
-    logger.info("Feedback monitor started");
-  }
-
   // Drain persisted queue items
   drainQueues(schedulerCtx).catch((err) => {
     logger.error({ err }, "initial queue drain failed");
@@ -254,78 +234,3 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   return { cronJobs, runnerPools, gateway, webhookRegistry, webhookUrls, statusTracker, schedulerCtx, events };
 }
 
-/**
- * Set up feedback event handling
- */
-async function setupFeedbackHandling(
-  feedbackMonitor: any,
-  globalConfig: GlobalConfig,
-  schedulerCtx: SchedulerContext,
-  projectPath: string,
-  logger: any,
-): Promise<void> {
-  // Listen for feedback trigger events
-  feedbackMonitor.on("feedback-trigger", async (event: any) => {
-    try {
-      // Get or create feedback agent
-      const feedbackAgent = await getOrCreateFeedbackAgent(globalConfig, projectPath, logger);
-      
-      // Create feedback runner
-      const { FeedbackRunner } = await import("../agents/feedback-runner.js");
-      const feedbackRunner = new FeedbackRunner(
-        feedbackAgent,
-        logger.child({ agent: "feedback" }),
-        projectPath,
-        schedulerCtx.statusTracker,
-      );
-
-      // Run feedback agent directly (not through work queue)
-      setImmediate(async () => {
-        try {
-          logger.info({ triggerAgent: event.agentName }, "Starting feedback agent run");
-          const outcome = await feedbackRunner.runWithFeedback(event, projectPath);
-          logger.info({ 
-            triggerAgent: event.agentName,
-            result: outcome.result,
-          }, "Feedback agent run completed");
-        } catch (err) {
-          logger.error({ err, triggerAgent: event.agentName }, "Feedback agent run failed");
-        }
-      });
-      
-    } catch (err) {
-      logger.error({ err, event }, "Error setting up feedback agent run");
-    }
-  });
-}
-
-/**
- * Get or create the feedback agent configuration
- */
-async function getOrCreateFeedbackAgent(
-  globalConfig: GlobalConfig,
-  projectPath: string,
-  logger: any,
-): Promise<any> {
-  const feedbackConfig = globalConfig.feedback;
-  if (!feedbackConfig) {
-    throw new Error("Feedback configuration missing");
-  }
-
-  // If a custom feedback agent is specified, try to load it
-  if (feedbackConfig.agent) {
-    try {
-      const { loadAgentConfig } = await import("../shared/config.js");
-      return loadAgentConfig(projectPath, feedbackConfig.agent);
-    } catch (err) {
-      logger.warn({ 
-        configuredAgent: feedbackConfig.agent,
-        err: err,
-      }, "Failed to load configured feedback agent, falling back to default");
-    }
-  }
-
-  // Use default feedback agent
-  const { getDefaultFeedbackAgent } = await import("../shared/default-feedback-agent.js");
-  return getDefaultFeedbackAgent(globalConfig);
-}

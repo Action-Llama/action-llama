@@ -11,7 +11,7 @@ import { safeCompare } from "../auth.js";
 import type { StatusTracker } from "../../tui/status-tracker.js";
 import type { StatsStore } from "../../stats/store.js";
 import type { SessionStore } from "../session-store.js";
-import { loadGlobalConfig, loadAgentConfig } from "../../shared/config.js";
+import { loadAgentConfig } from "../../shared/config.js";
 import { parseFrontmatter } from "../../shared/frontmatter.js";
 import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
@@ -146,31 +146,23 @@ export function registerDashboardRoutes(
     const instances = statusTracker.getInstances().filter((i) => i.agentName === name && i.status === "running");
     const totalHistorical = statsStore ? statsStore.countRunsByAgent(name) : 0;
     
-    // Load agent configuration and feedback settings
+    // Load agent configuration
     let agentConfig = null;
-    let feedbackEnabled: boolean | undefined;
-    let globalFeedbackEnabled = false;
     if (projectPath) {
       try {
-        const globalConfig = loadGlobalConfig(projectPath);
-        globalFeedbackEnabled = globalConfig.feedback?.enabled ?? false;
-        
         agentConfig = loadAgentConfig(projectPath, name);
-        feedbackEnabled = agentConfig.feedback?.enabled;
       } catch (err) {
         // Ignore config loading errors for the UI
       }
     }
-    
-    const html = renderAgentDetailPage({ 
-      agentName: name, 
+
+    const html = renderAgentDetailPage({
+      agentName: name,
       agent,
       agentConfig,
-      summary, 
-      runningInstances: instances, 
+      summary,
+      runningInstances: instances,
       totalHistorical,
-      feedbackEnabled,
-      globalFeedbackEnabled,
     });
     return c.html(html);
   });
@@ -243,35 +235,11 @@ export function registerDashboardRoutes(
       console.warn("Failed to load project scale:", err);
     }
     
-    // Load feedback configuration
-    let feedbackEnabled = false;
-    let feedbackAgent: string | undefined;
-    let feedbackErrorPatterns: string[] = ["error", "fail"];
-    let feedbackContextLines = 2;
-    
-    if (projectPath) {
-      try {
-        const globalConfig = loadGlobalConfig(projectPath);
-        if (globalConfig.feedback) {
-          feedbackEnabled = globalConfig.feedback.enabled ?? false;
-          feedbackAgent = globalConfig.feedback.agent;
-          feedbackErrorPatterns = globalConfig.feedback.errorPatterns ?? ["error", "fail"];
-          feedbackContextLines = globalConfig.feedback.contextLines ?? 2;
-        }
-      } catch (err) {
-        // Ignore config loading errors for the UI
-      }
-    }
-    
     const html = renderProjectConfigPage({
       projectName: info?.projectName,
       projectScale,
       gatewayPort: info?.gatewayPort || undefined,
       webhooksActive: info?.webhooksActive || false,
-      feedbackEnabled,
-      feedbackAgent,
-      feedbackErrorPatterns,
-      feedbackContextLines,
     });
     return c.html(html);
   });

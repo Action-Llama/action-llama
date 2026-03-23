@@ -279,10 +279,10 @@ describe("updateAgentRuntimeOverride", () => {
 
   it("preserves non-agents fields in .env.toml", () => {
     writeFileSync(resolve(tmpDir, ".env.toml"), 'environment = "prod"\n');
-    updateAgentRuntimeOverride(tmpDir, "dev", { feedback: false });
+    updateAgentRuntimeOverride(tmpDir, "dev", { scale: 2 });
     const result = loadEnvToml(tmpDir);
     expect(result?.environment).toBe("prod");
-    expect((result as any).agents.dev.feedback).toBe(false);
+    expect((result as any).agents.dev.scale).toBe(2);
   });
 
   it("round-trips agents section through writeEnvToml", () => {
