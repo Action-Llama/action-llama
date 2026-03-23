@@ -7,3 +7,4 @@ dist/
 coverage
 .history
 .mintlify/
+.al

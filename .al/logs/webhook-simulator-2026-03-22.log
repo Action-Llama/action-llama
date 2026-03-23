@@ -1,5 +1,0 @@
-{"level":30,"time":1774141582199,"pid":3205,"hostname":"659a33b11475","name":"webhook-simulator","source":"github","msg":"webhook provider registered"}
-{"level":30,"time":1774141582200,"pid":3205,"hostname":"659a33b11475","name":"webhook-simulator","source":"sentry","msg":"webhook provider registered"}
-{"level":30,"time":1774141582200,"pid":3205,"hostname":"659a33b11475","name":"webhook-simulator","source":"linear","msg":"webhook provider registered"}
-{"level":30,"time":1774141582200,"pid":3205,"hostname":"659a33b11475","name":"webhook-simulator","source":"mintlify","msg":"webhook provider registered"}
-{"level":30,"time":1774141582200,"pid":3205,"hostname":"659a33b11475","name":"webhook-simulator","source":"test","msg":"webhook provider registered"}
