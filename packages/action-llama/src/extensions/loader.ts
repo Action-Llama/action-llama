@@ -108,12 +108,14 @@ async function loadCredentialExtensions(registry: ExtensionRegistry): Promise<vo
     } = await import("../credentials/providers/index.js");
     
     await registry.register(fileCredentialExtension);
-    
-    // Only register Vault extension if credentials are available
-    try {
-      await registry.register(vaultCredentialExtension);
-    } catch (error) {
-      console.warn("Vault credential provider not available:", (error as Error).message);
+
+    // Only register Vault extension if Vault is configured
+    if (process.env.VAULT_ADDR) {
+      try {
+        await registry.register(vaultCredentialExtension);
+      } catch (error) {
+        console.warn("Vault credential provider not available:", (error as Error).message);
+      }
     }
   } catch (error) {
     console.warn("Failed to load credential extensions:", error);
