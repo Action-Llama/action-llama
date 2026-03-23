@@ -85,7 +85,7 @@ function printLocalInstances(instances: AgentInstance[]): void {
       instanceIdShort.padEnd(cols.instance) +
       instance.status.padEnd(cols.status) +
       (instance.trigger || "-").padEnd(cols.trigger) +
-      instance.startedAt.toISOString().slice(0, 19).replace('T', ' ')
+      new Date(instance.startedAt).toISOString().slice(0, 19).replace('T', ' ')
     );
   }
 }
