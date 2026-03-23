@@ -11,7 +11,7 @@ vi.mock("child_process", () => ({
 }));
 
 // Mock Docker/container related modules
-vi.mock("../../src/scheduler/image-builder.js", () => ({
+vi.mock("../../src/execution/image-builder.js", () => ({
   buildAllImages: vi.fn().mockResolvedValue({
     baseImage: "test-base-image",
     agentImages: {
@@ -104,7 +104,7 @@ vi.mock("../../src/gateway/index.js", () => ({
 }));
 
 // Mock gateway API key
-vi.mock("../../src/gateway/api-key.js", () => ({
+vi.mock("../../src/control/api-key.js", () => ({
   ensureGatewayApiKey: vi.fn().mockResolvedValue({ key: "test-api-key", generated: false }),
 }));
 

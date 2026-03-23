@@ -6,7 +6,7 @@ import type { Cron } from "croner";
 import type { GatewayServer } from "../gateway/index.js";
 import type { StateStore } from "../shared/state-store.js";
 import type { Logger } from "../shared/logger.js";
-import type { SchedulerContext } from "./execution.js";
+import type { SchedulerContext } from "../execution/execution.js";
 import type { StatsStore } from "../stats/index.js";
 
 export function registerShutdownHandlers(deps: {

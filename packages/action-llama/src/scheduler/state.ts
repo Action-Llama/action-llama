@@ -8,8 +8,8 @@
  */
 
 import type { Cron } from "croner";
-import type { RunnerPool } from "./runner-pool.js";
-import type { SchedulerContext } from "./execution.js";
+import type { RunnerPool } from "../execution/runner-pool.js";
+import type { SchedulerContext } from "../execution/execution.js";
 
 export interface SchedulerState {
   runnerPools: Record<string, RunnerPool>;

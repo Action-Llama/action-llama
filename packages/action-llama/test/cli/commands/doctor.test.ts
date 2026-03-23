@@ -58,7 +58,7 @@ vi.mock("@inquirer/prompts", () => ({
 
 const mockValidateTriggerFields = vi.fn();
 const mockResolveWebhookSource = vi.fn();
-vi.mock("../../../src/scheduler/webhook-setup.js", () => ({
+vi.mock("../../../src/events/webhook-setup.js", () => ({
   validateTriggerFields: (...args: any[]) => mockValidateTriggerFields(...args),
   resolveWebhookSource: (...args: any[]) => mockResolveWebhookSource(...args),
   KNOWN_PROVIDER_TYPES: new Set(["github", "sentry", "linear", "mintlify", "test"]),
@@ -92,7 +92,7 @@ vi.mock("fs", async (importOriginal) => {
 });
 
 const mockEnsureGatewayApiKey = vi.fn();
-vi.mock("../../../src/gateway/api-key.js", () => ({
+vi.mock("../../../src/control/api-key.js", () => ({
   ensureGatewayApiKey: (...args: any[]) => mockEnsureGatewayApiKey(...args),
 }));
 

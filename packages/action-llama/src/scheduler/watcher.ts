@@ -16,11 +16,34 @@ import type { Logger } from "../shared/logger.js";
 import type { PromptSkills } from "../agents/prompt.js";
 import type { WebhookRegistry } from "../webhooks/registry.js";
 import type { WebhookSourceConfig } from "../shared/config.js";
-import { RunnerPool, type PoolRunner } from "./runner-pool.js";
-import { buildSingleAgentImage } from "./image-builder.js";
-import { registerWebhookBindings } from "./webhook-setup.js";
-import type { SchedulerContext } from "./execution.js";
-import { runWithReruns } from "./execution.js";
+import { RunnerPool, type PoolRunner } from "../execution/runner-pool.js";
+import { buildSingleAgentImage } from "../execution/image-builder.js";
+import { registerWebhookBindings } from "../events/webhook-setup.js";
+import type { SchedulerContext } from "../execution/execution.js";
+import { runWithReruns, makeWebhookPrompt, executeRun, drainQueues } from "../execution/execution.js";
+
+function buildWebhookTrigger(pool: RunnerPool, ctx: HotReloadContext) {
+  return (config: AgentConfig, context: import("../webhooks/types.js").WebhookContext) => {
+    if (ctx.statusTracker && !ctx.statusTracker.isAgentEnabled(config.name)) return false;
+    if (ctx.statusTracker?.isPaused()) {
+      ctx.logger.info({ agent: config.name, event: context.event }, "scheduler paused, webhook rejected");
+      return false;
+    }
+    const runner = pool.getAvailableRunner();
+    if (!runner) {
+      const { dropped } = ctx.schedulerCtx.workQueue.enqueue(config.name, { type: 'webhook', context });
+      ctx.logger.info({ agent: config.name, event: context.event, queueSize: ctx.schedulerCtx.workQueue.size(config.name) }, "webhook queued");
+      if (dropped) ctx.logger.warn({ agent: config.name }, "queue full, oldest event dropped");
+      return true;
+    }
+    ctx.logger.info({ agent: config.name, event: context.event, action: context.action }, "webhook triggering agent");
+    const prompt = makeWebhookPrompt(config, context, ctx.schedulerCtx);
+    executeRun(runner, prompt, { type: 'webhook', source: context.event, receiptId: context.receiptId }, config.name, 0, ctx.schedulerCtx)
+      .then(() => drainQueues(ctx.schedulerCtx))
+      .catch((err) => ctx.logger.error({ err, agent: config.name }, "webhook run failed"));
+    return true;
+  };
+}
 
 /** Debounce delay in ms. Overridable for testing. */
 export const DEBOUNCE_MS = 500;
@@ -205,9 +228,10 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
     // Set up webhooks
     if (ctx.webhookRegistry) {
       registerWebhookBindings({
-        agentConfig, pool, webhookRegistry: ctx.webhookRegistry,
-        webhookSources: ctx.webhookSources, schedulerCtx: ctx.schedulerCtx,
-        statusTracker: ctx.statusTracker, logger: ctx.logger,
+        agentConfig, webhookRegistry: ctx.webhookRegistry,
+        webhookSources: ctx.webhookSources,
+        onTrigger: buildWebhookTrigger(pool, ctx),
+        logger: ctx.logger,
       });
     }
 
@@ -355,9 +379,10 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
       ctx.webhookRegistry?.removeBindingsForAgent(agentName);
       if (pool && ctx.webhookRegistry) {
         registerWebhookBindings({
-          agentConfig: newConfig, pool, webhookRegistry: ctx.webhookRegistry,
-          webhookSources: ctx.webhookSources, schedulerCtx: ctx.schedulerCtx,
-          statusTracker: ctx.statusTracker, logger: ctx.logger,
+          agentConfig: newConfig, webhookRegistry: ctx.webhookRegistry,
+          webhookSources: ctx.webhookSources,
+          onTrigger: buildWebhookTrigger(pool, ctx),
+          logger: ctx.logger,
         });
       }
     }

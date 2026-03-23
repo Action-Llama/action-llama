@@ -2,7 +2,7 @@ import { randomUUID, randomBytes } from "crypto";
 import type { GlobalConfig, AgentConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
 import type { ContainerRuntime, RuntimeCredentials } from "../docker/runtime.js";
-import type { ContainerRegistration } from "../gateway/types.js";
+import type { ContainerRegistration } from "../execution/types.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import type { RunResult, RunOutcome } from "./runner.js";
 import { withSpan, getTelemetry } from "../telemetry/index.js";

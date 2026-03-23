@@ -22,9 +22,12 @@ npm run test:unit      # unit tests only
 src/
   cli/              # Command definitions (--env flag, env subcommand)
   setup/            # Project scaffolding
-  scheduler/        # Scheduler: agent discovery, cron + webhooks
+  control/          # Control plane: auth, sessions, API keys, dashboard, log/stats API
+  events/           # Events plane: webhook routes, event queues, cron + webhook setup
+  execution/        # Execution plane: stores, runner pools, execution engine, lifecycle
+  scheduler/        # Orchestration root: agent discovery, hot reload, shutdown
   agents/           # Agent runners (host + Docker), prompt builder
-  gateway/          # HTTP server: router, health, shutdown, webhook routes
+  gateway/          # HTTP server: thin composition layer for control/events/execution
   docker/           # Container lifecycle, image + network
   cloud/            # Cloud providers: vps/ (Vultr, Hetzner, SSH), cloudflare/
   remote/           # SSH push deploy: ssh/rsync helpers, bootstrap, push orchestration
@@ -32,6 +35,25 @@ src/
   tui/              # Ink-based terminal UI
   shared/           # Config, credentials, environment, logger, paths, git helpers
 ```
+
+### Three-Plane Architecture
+
+The gateway is split into three internal planes with strict ownership boundaries:
+
+- **`control/`** — Auth, sessions, API keys, dashboard UI, log API, stats API, control routes
+- **`events/`** — Webhook routes, event queues (memory + SQLite), cron + webhook setup
+- **`execution/`** — Lock/call stores, container registry, runner pools, execution engine, lifecycle state machines
+
+**Dependency rules:**
+```
+control/    → shared/, stats/, tui/
+events/     → shared/, webhooks/
+execution/  → shared/, docker/, agents/
+scheduler/  → control/, events/, execution/ (composition root)
+gateway/    → control/, events/, execution/ (HTTP composition)
+```
+
+No plane imports another plane directly. The `scheduler/` is the orchestration root that composes all three, and `gateway/` is the HTTP composition layer.
 
 ## Configuration
 

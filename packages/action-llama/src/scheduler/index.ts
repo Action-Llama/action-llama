@@ -4,25 +4,25 @@ import { createLogger, createFileOnlyLogger } from "../shared/logger.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import type { PromptSkills } from "../agents/prompt.js";
 import { CONSTANTS } from "../shared/constants.js";
-import { createWorkQueue } from "./event-queue.js";
-import { createContainerRuntime, buildAgentImages } from "./runtime-factory.js";
-import { setupWebhookRegistry, registerWebhookBindings } from "./webhook-setup.js";
+import { createWorkQueue } from "../events/event-queue.js";
+import { createContainerRuntime, buildAgentImages } from "../execution/runtime-factory.js";
+import { setupWebhookRegistry, registerWebhookBindings } from "../events/webhook-setup.js";
 import { initTelemetry } from "../telemetry/index.js";
 import type { StateStore } from "../shared/state-store.js";
 import type { StatsStore } from "../stats/index.js";
-import type { WorkItem, SchedulerContext } from "./execution.js";
-import { drainQueues } from "./execution.js";
+import type { WorkItem, SchedulerContext } from "../execution/execution.js";
+import { drainQueues, makeWebhookPrompt, executeRun, runWithReruns } from "../execution/execution.js";
 import { SchedulerEventBus } from "./events.js";
 import type { SchedulerState } from "./state.js";
 import { validateAndDiscover } from "./validation.js";
 import { setupGateway } from "./gateway-setup.js";
-import { createRunnerPools } from "./runner-setup.js";
-import { wireCallDispatcher } from "./call-dispatcher.js";
-import { setupCronJobs, setupEnableDisableHandlers } from "./cron-setup.js";
+import { createRunnerPools } from "../execution/runner-setup.js";
+import { wireCallDispatcher } from "../execution/call-dispatcher.js";
+import { setupCronJobs, setupEnableDisableHandlers } from "../events/cron-setup.js";
 import { registerShutdownHandlers } from "./shutdown.js";
 import { loadBuiltinExtensions } from "../extensions/loader.js";
 
-export type { SchedulerContext, WorkItem } from "./execution.js";
+export type { SchedulerContext, WorkItem } from "../execution/execution.js";
 export { SchedulerEventBus } from "./events.js";
 
 export async function startScheduler(projectPath: string, globalConfigOverride?: GlobalConfig, statusTracker?: StatusTracker, webUI?: boolean, expose?: boolean) {
@@ -182,11 +182,29 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       if (!agentConfig.webhooks?.length) continue;
       registerWebhookBindings({
         agentConfig,
-        pool: runnerPools[agentConfig.name],
         webhookRegistry,
         webhookSources,
-        schedulerCtx,
-        statusTracker,
+        onTrigger: (config, context) => {
+          if (statusTracker && !statusTracker.isAgentEnabled(config.name)) return false;
+          if (statusTracker?.isPaused()) {
+            logger.info({ agent: config.name, event: context.event }, "scheduler paused, webhook rejected");
+            return false;
+          }
+          const pool = runnerPools[config.name];
+          const runner = pool.getAvailableRunner();
+          if (!runner) {
+            const { dropped } = schedulerCtx.workQueue.enqueue(config.name, { type: 'webhook', context });
+            logger.info({ agent: config.name, event: context.event, queueSize: schedulerCtx.workQueue.size(config.name) }, "webhook queued");
+            if (dropped) logger.warn({ agent: config.name }, "queue full, oldest event dropped");
+            return true;
+          }
+          logger.info({ agent: config.name, event: context.event, action: context.action }, "webhook triggering agent");
+          const prompt = makeWebhookPrompt(config, context, schedulerCtx);
+          executeRun(runner, prompt, { type: 'webhook', source: context.event, receiptId: context.receiptId }, config.name, 0, schedulerCtx)
+            .then(() => drainQueues(schedulerCtx))
+            .catch((err) => logger.error({ err, agent: config.name }, "webhook run failed"));
+          return true;
+        },
         logger,
       });
     }
@@ -194,8 +212,22 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // Set up cron jobs
   const { cronJobs, agentCronJobs, webhookUrls } = setupCronJobs({
-    activeAgentConfigs, runnerPools, schedulerCtx, webhookSources,
-    globalConfig, agentConfigs, gateway, statusTracker, logger, timezone, anyWebhooks,
+    activeAgentConfigs, webhookSources,
+    globalConfig, agentConfigs,
+    onScheduledRun: async (agentConfig) => {
+      const pool = runnerPools[agentConfig.name];
+      const availableRunner = pool.getAvailableRunner();
+      if (!availableRunner) {
+        const { dropped } = schedulerCtx.workQueue.enqueue(agentConfig.name, { type: 'schedule' });
+        logger.info({ agent: agentConfig.name, running: pool.runningJobCount, scale: pool.size }, "all runners busy, scheduled run queued");
+        if (dropped) logger.warn({ agent: agentConfig.name }, "queue full, oldest event dropped");
+        return;
+      }
+      logger.info({ agent: agentConfig.name, running: pool.runningJobCount, scale: pool.size }, "triggering scheduled run");
+      await runWithReruns(availableRunner, agentConfig, 0, schedulerCtx);
+    },
+    statusTracker, logger, timezone, anyWebhooks,
+    gatewayPort: gateway ? gatewayPort : undefined,
   });
 
   // Populate late-binding state

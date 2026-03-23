@@ -1,30 +1,30 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import type { Server } from "http";
-import { registerShutdownRoute } from "./routes/shutdown.js";
-import { registerLockRoutes } from "./routes/locks.js";
-import { registerCallRoutes, type CallDispatcher } from "./routes/calls.js";
-import { registerWebhookRoutes } from "./routes/webhooks.js";
-import { registerDashboardRoutes, registerLoginRoutes } from "./routes/dashboard.js";
-import { registerSignalRoutes, type SignalContext } from "./routes/signals.js";
-import { LockStore } from "./lock-store.js";
-import { CallStore } from "./call-store.js";
-import { ContainerRegistry } from "./container-registry.js";
-import { SessionStore } from "./session-store.js";
-import type { ContainerRegistration } from "./types.js";
+import { registerShutdownRoute } from "../execution/routes/shutdown.js";
+import { registerLockRoutes } from "../execution/routes/locks.js";
+import { registerCallRoutes, type CallDispatcher } from "../execution/routes/calls.js";
+import { registerWebhookRoutes } from "../events/routes/webhooks.js";
+import { registerDashboardRoutes, registerLoginRoutes } from "../control/routes/dashboard.js";
+import { registerSignalRoutes, type SignalContext } from "../execution/routes/signals.js";
+import { LockStore } from "../execution/lock-store.js";
+import { CallStore } from "../execution/call-store.js";
+import { ContainerRegistry } from "../execution/container-registry.js";
+import { SessionStore } from "../control/session-store.js";
+import type { ContainerRegistration } from "../execution/types.js";
 import type { StateStore } from "../shared/state-store.js";
 import type { WebhookRegistry } from "../webhooks/registry.js";
 import type { Logger } from "../shared/logger.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import type { WebhookSourceConfig } from "../shared/config.js";
-import type { ControlRoutesDeps } from "./routes/control.js";
+import type { ControlRoutesDeps } from "../control/routes/control.js";
 import { withSpan, getTelemetry } from "../telemetry/index.js";
 import { SpanKind } from "@opentelemetry/api";
-import { authMiddleware } from "./auth.js";
+import { authMiddleware } from "../control/auth.js";
 import type { SchedulerEventBus } from "../scheduler/events.js";
 import type { StatsStore } from "../stats/store.js";
 
-export type { ContainerRegistration } from "./types.js";
+export type { ContainerRegistration } from "../execution/types.js";
 
 export interface GatewayOptions {
   port: number;
@@ -169,7 +169,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
 
   // Log API routes — only register if auth is configured for security
   if (projectPath && opts.apiKey) {
-    const { registerLogRoutes } = await import("./routes/logs.js");
+    const { registerLogRoutes } = await import("../control/routes/logs.js");
     registerLogRoutes(app, projectPath);
   } else if (projectPath && !opts.apiKey) {
     logger.warn("Log API routes disabled — gateway API key required for security.");
@@ -177,13 +177,13 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
 
   // Stats API routes — only register if auth is configured for security
   if (opts.apiKey) {
-    const { registerStatsRoutes } = await import("./routes/stats.js");
+    const { registerStatsRoutes } = await import("../control/routes/stats.js");
     registerStatsRoutes(app, opts.statsStore);
   }
 
   // Control routes (for kill, pause, resume commands)
   if (opts.controlDeps) {
-    const { registerControlRoutes } = await import("./routes/control.js");
+    const { registerControlRoutes } = await import("../control/routes/control.js");
     registerControlRoutes(app, opts.controlDeps);
   }
 

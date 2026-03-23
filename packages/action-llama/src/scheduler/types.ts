@@ -13,7 +13,7 @@ export interface WebhookEvent {
   source: string;
 }
 
-import type { InstanceLifecycle } from "./lifecycle/instance-lifecycle.js";
+import type { InstanceLifecycle } from "../execution/lifecycle/instance-lifecycle.js";
 
 export interface AgentInstance {
   id: string;

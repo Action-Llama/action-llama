@@ -16,11 +16,11 @@ vi.mock("../../src/shared/config.js", () => ({
   validateAgentConfig: vi.fn(),
 }));
 
-vi.mock("../../src/scheduler/image-builder.js", () => ({
+vi.mock("../../src/execution/image-builder.js", () => ({
   buildSingleAgentImage: vi.fn(async () => "test-image:latest"),
 }));
 
-vi.mock("../../src/scheduler/webhook-setup.js", () => ({
+vi.mock("../../src/events/webhook-setup.js", () => ({
   resolveWebhookSource: vi.fn(() => ({ type: "github", credential: "default" })),
   buildFilterFromTrigger: vi.fn(() => undefined),
   registerWebhookBindings: vi.fn(),
@@ -36,7 +36,7 @@ vi.mock("croner", () => {
   return { Cron: MockCron };
 });
 
-vi.mock("../../src/scheduler/execution.js", () => ({
+vi.mock("../../src/execution/execution.js", () => ({
   runWithReruns: vi.fn(async () => {}),
   makeWebhookPrompt: vi.fn(() => "test prompt"),
   executeRun: vi.fn(async () => ({ result: "completed", triggers: [] })),
@@ -45,9 +45,9 @@ vi.mock("../../src/scheduler/execution.js", () => ({
 
 import { watch } from "fs";
 import { discoverAgents, loadAgentConfig, validateAgentConfig } from "../../src/shared/config.js";
-import { buildSingleAgentImage } from "../../src/scheduler/image-builder.js";
+import { buildSingleAgentImage } from "../../src/execution/image-builder.js";
 import { watchAgents, type HotReloadContext } from "../../src/scheduler/watcher.js";
-import { RunnerPool } from "../../src/scheduler/runner-pool.js";
+import { RunnerPool } from "../../src/execution/runner-pool.js";
 
 const mockedWatch = vi.mocked(watch);
 const mockedDiscoverAgents = vi.mocked(discoverAgents);

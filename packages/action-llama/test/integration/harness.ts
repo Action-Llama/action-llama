@@ -16,7 +16,7 @@ import type { GlobalConfig, AgentConfig } from "../../src/shared/config.js";
 import type { WebhookContext } from "../../src/webhooks/types.js";
 import { setDefaultBackend, resetDefaultBackend } from "../../src/shared/credentials.js";
 import { FilesystemBackend } from "../../src/shared/filesystem-backend.js";
-import type { RunCompleteEvent } from "../../src/scheduler/execution.js";
+import type { RunCompleteEvent } from "../../src/execution/execution.js";
 import type { SchedulerEventBus, SchedulerEventMap } from "../../src/scheduler/events.js";
 import { makeAgentConfig, makeModel } from "../helpers.js";
 

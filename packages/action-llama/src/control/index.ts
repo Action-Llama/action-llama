@@ -1,0 +1,10 @@
+export { authMiddleware, safeCompare } from "./auth.js";
+export { ensureGatewayApiKey } from "./api-key.js";
+export type { ApiKeyResult } from "./api-key.js";
+export { SessionStore } from "./session-store.js";
+export type { Session } from "./types.js";
+export { registerControlRoutes } from "./routes/control.js";
+export type { ControlRoutesDeps } from "./routes/control.js";
+export { registerDashboardRoutes, registerLoginRoutes } from "./routes/dashboard.js";
+export { registerLogRoutes } from "./routes/logs.js";
+export { registerStatsRoutes } from "./routes/stats.js";

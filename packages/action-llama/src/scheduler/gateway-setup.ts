@@ -15,10 +15,10 @@ import type { StateStore } from "../shared/state-store.js";
 import type { StatsStore } from "../stats/store.js";
 import type { Logger } from "../shared/logger.js";
 import { createLogger, createFileOnlyLogger } from "../shared/logger.js";
-import { ensureGatewayApiKey } from "../gateway/api-key.js";
+import { ensureGatewayApiKey } from "../control/api-key.js";
 import type { SchedulerEventBus } from "./events.js";
 import type { SchedulerState } from "./state.js";
-import { runWithReruns } from "./execution.js";
+import { runWithReruns } from "../execution/execution.js";
 
 export interface GatewaySetupResult {
   gateway: GatewayServer;

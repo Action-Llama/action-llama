@@ -9,8 +9,8 @@ import type { GlobalConfig, AgentConfig, WebhookSourceConfig } from "../shared/c
 import { requireCredentialRef } from "../shared/credentials.js";
 import { ConfigError } from "../shared/errors.js";
 import type { Logger } from "../shared/logger.js";
-import { DEFAULT_MAX_RERUNS, DEFAULT_MAX_TRIGGER_DEPTH } from "./execution.js";
-import { resolveWebhookSource } from "./webhook-setup.js";
+import { DEFAULT_MAX_RERUNS, DEFAULT_MAX_TRIGGER_DEPTH } from "../execution/execution.js";
+import { resolveWebhookSource } from "../events/webhook-setup.js";
 
 export interface ValidatedConfig {
   agentConfigs: AgentConfig[];

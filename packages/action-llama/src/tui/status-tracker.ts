@@ -2,8 +2,8 @@ import { EventEmitter } from "events";
 import type { AgentInstance } from "../scheduler/types.js";
 import type { TokenUsage } from "../shared/usage.js";
 import { addTokenUsage, zeroTokenUsage } from "../shared/usage.js";
-import { AgentLifecycle } from "../scheduler/lifecycle/agent-lifecycle.js";
-import { InstanceLifecycle } from "../scheduler/lifecycle/instance-lifecycle.js";
+import { AgentLifecycle } from "../execution/lifecycle/agent-lifecycle.js";
+import { InstanceLifecycle } from "../execution/lifecycle/instance-lifecycle.js";
 
 export interface AgentStatus {
   name: string;
