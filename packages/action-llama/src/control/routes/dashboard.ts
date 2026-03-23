@@ -11,7 +11,7 @@ import { safeCompare } from "../auth.js";
 import type { StatusTracker } from "../../tui/status-tracker.js";
 import type { StatsStore } from "../../stats/store.js";
 import type { SessionStore } from "../session-store.js";
-import { loadAgentConfig } from "../../shared/config.js";
+import { loadAgentConfig, getProjectScale } from "../../shared/config.js";
 import { parseFrontmatter } from "../../shared/frontmatter.js";
 import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
@@ -226,13 +226,12 @@ export function registerDashboardRoutes(
     const info = statusTracker.getSchedulerInfo();
     // Load project scale from config if available
     let projectScale = 5; // default
-    try {
-      if (projectPath) {
-        const { getProjectScale } = require("../../shared/config.js");
+    if (projectPath) {
+      try {
         projectScale = getProjectScale(projectPath);
+      } catch {
+        // Ignore config loading errors for the UI
       }
-    } catch (err) {
-      console.warn("Failed to load project scale:", err);
     }
     
     const html = renderProjectConfigPage({
