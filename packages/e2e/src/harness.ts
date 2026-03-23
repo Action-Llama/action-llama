@@ -127,12 +127,6 @@ export class E2ETestContext {
 
     await container.start();
     
-    // Connect to the custom network explicitly
-    const network = this.docker.getNetwork("action-llama-e2e");
-    await network.connect({
-      Container: container.id,
-    });
-    
     // Wait for container to be fully started and connected to network
     await new Promise(resolve => setTimeout(resolve, 15000));
     
@@ -191,12 +185,6 @@ export class E2ETestContext {
     });
 
     await container.start();
-    
-    // Connect to the custom network explicitly
-    const vpsNetwork = this.docker.getNetwork("action-llama-e2e");
-    await vpsNetwork.connect({
-      Container: container.id,
-    });
     
     // Wait for container to be fully started and connected to network
     await new Promise(resolve => setTimeout(resolve, 15000));
