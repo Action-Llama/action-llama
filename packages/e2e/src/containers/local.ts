@@ -11,33 +11,45 @@ export async function setupLocalActionLlama(context: E2ETestContext): Promise<Co
   ]);
   
   // Create a minimal project configuration
-  // Create project.toml for consistency with scheduler expectations
   await context.executeInContainer(containerInfo, [
-    "bash", "-c", `cat > /home/testuser/test-project/project.toml << 'EOF'
+    "bash", "-c", `cat > /home/testuser/test-project/config.toml << 'EOF'
 [models.sonnet]
 provider = "anthropic"
 model = "claude-3-5-sonnet-20241022"
+authType = "api_key"
+EOF`
+  ]);
 
-[global]
-# Default model configuration can be specified here if needed
+  // Create package.json (required by al push for npm install on VPS)
+  // Use "next" dist-tag so the VPS installs the same version we're testing
+  await context.executeInContainer(containerInfo, [
+    "bash", "-c", `cat > /home/testuser/test-project/package.json << 'EOF'
+{
+  "name": "test-project",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@action-llama/action-llama": "next"
+  }
+}
 EOF`
   ]);
   
   // Set up mock credentials for testing
   await context.executeInContainer(containerInfo, [
-    "bash", "-c", "mkdir -p ~/.action-llama/credentials/github/default"
+    "bash", "-c", "mkdir -p ~/.action-llama/credentials/github_token/default"
   ]);
-  
+
   await context.executeInContainer(containerInfo, [
-    "bash", "-c", "echo 'mock-token' > ~/.action-llama/credentials/github/default/token"
+    "bash", "-c", "echo 'mock-token' > ~/.action-llama/credentials/github_token/default/token"
   ]);
-  
+
   await context.executeInContainer(containerInfo, [
-    "bash", "-c", "mkdir -p ~/.action-llama/credentials/anthropic/default"
+    "bash", "-c", "mkdir -p ~/.action-llama/credentials/anthropic_key/default"
   ]);
-  
+
   await context.executeInContainer(containerInfo, [
-    "bash", "-c", "echo 'mock-key' > ~/.action-llama/credentials/anthropic/default/apiKey"
+    "bash", "-c", "echo 'mock-key' > ~/.action-llama/credentials/anthropic_key/default/token"
   ]);
   
   return containerInfo;
@@ -49,52 +61,41 @@ export async function createTestAgent(
   agentName: string,
   skill: string
 ): Promise<void> {
-  // Create agent directory
+  // Agents live under <project>/agents/<name>/
+  const agentDir = `/home/testuser/test-project/agents/${agentName}`;
+
   await context.executeInContainer(containerInfo, [
-    "bash", "-c", `mkdir -p /home/testuser/test-project/${agentName}`
+    "bash", "-c", `mkdir -p ${agentDir}`
   ]);
-  
-  // Write SKILL.md
-  // Reference the model name defined in config.toml
+
+  // Write SKILL.md with metadata wrapper for AL-specific fields
   const skillContent = `---
-model: sonnet
-credentials:
-  github: default
-  anthropic: default
-schedule: "0 */6 * * *"
+metadata:
+  models: [sonnet]
+  credentials: [github_token, anthropic_key]
+  schedule: "0 */6 * * *"
 ---
 
 ${skill}`;
-  
+
   await context.executeInContainer(containerInfo, [
-    "bash", "-c", `cat > /home/testuser/test-project/${agentName}/SKILL.md << 'EOF'
+    "bash", "-c", `cat > ${agentDir}/SKILL.md << 'EOF'
 ${skillContent}
 EOF`
   ]);
-  
-  // Create agent-config.json if it doesn't exist (some AL versions expect this)
-  await context.executeInContainer(containerInfo, [
-    "bash", "-c", `cat > /home/testuser/test-project/${agentName}/agent-config.json << 'EOF'
-{
-  "name": "${agentName}",
-  "model": "claude-3-5-sonnet-20241022",
-  "schedule": "0 */6 * * *"
-}
-EOF`
-  ]);
-  
+
   // Verify the agent was created properly
   const agentFiles = await context.executeInContainer(containerInfo, [
-    "ls", "-la", `/home/testuser/test-project/${agentName}/`
+    "ls", "-la", agentDir
   ]);
-  
+
   if (!agentFiles.includes("SKILL.md")) {
     throw new Error(`Failed to create agent ${agentName}: SKILL.md not found`);
   }
-  
+
   // Ensure correct ownership and permissions
   await context.executeInContainer(containerInfo, [
-    "bash", "-c", `chown -R testuser:testuser /home/testuser/test-project/${agentName}`
+    "bash", "-c", `chown -R testuser:testuser ${agentDir}`
   ]);
 }
 
@@ -107,28 +108,26 @@ export async function startActionLlamaScheduler(
     "bash", "-c", "cd /home/testuser/test-project && ls -la"
   ]);
   
-  if (!projectCheck.includes("project.toml")) {
+  if (!projectCheck.includes("config.toml")) {
     throw new Error("Project configuration not found before starting scheduler");
   }
 
-  // Create default test agent if none exist
+  // Create default test agent if none exist (agents live under agents/ subdir)
   const projectPath = "/home/testuser/test-project";
   const agentExists = await context.executeInContainer(containerInfo, [
-    "bash", "-c", `test -d ${projectPath}/test-agent && echo "exists" || echo "missing"`
+    "bash", "-c", `test -d ${projectPath}/agents && ls ${projectPath}/agents/ 2>/dev/null | head -1 | grep -q . && echo "exists" || echo "missing"`
   ]);
-  
+
   if (agentExists.includes("missing")) {
     await context.executeInContainer(containerInfo, [
-      "bash", "-c", `cd ${projectPath} && mkdir -p test-agent`
+      "bash", "-c", `mkdir -p ${projectPath}/agents/test-agent`
     ]);
-    
-    // Create a basic test agent with SKILL.md
+
     const defaultSkill = `---
-model: sonnet
-credentials:
-  github: default
-  anthropic: default
-schedule: "0 */6 * * *"
+metadata:
+  models: [sonnet]
+  credentials: [github_token, anthropic_key]
+  schedule: "0 */6 * * *"
 ---
 
 # Default Test Agent
@@ -136,25 +135,19 @@ schedule: "0 */6 * * *"
 You are a default test agent created for E2E testing. You help verify that the Action Llama scheduler can find and manage agents properly.`;
 
     await context.executeInContainer(containerInfo, [
-      "bash", "-c", `cat > ${projectPath}/test-agent/SKILL.md << 'EOF'
+      "bash", "-c", `cat > ${projectPath}/agents/test-agent/SKILL.md << 'EOF'
 ${defaultSkill}
 EOF`
     ]);
 
-    // Set proper ownership
     await context.executeInContainer(containerInfo, [
-      "bash", "-c", `chown -R testuser:testuser ${projectPath}/test-agent`
+      "bash", "-c", `chown -R testuser:testuser ${projectPath}/agents`
     ]);
   }
 
-  // Disable raw mode for test environment
+  // Start the scheduler in the background with --headless to avoid TUI/raw mode
   await context.executeInContainer(containerInfo, [
-    "bash", "-c", "export CI=true"
-  ]);
-  
-  // Start the scheduler in the background with CI environment variable
-  await context.executeInContainer(containerInfo, [
-    "bash", "-c", "cd /home/testuser/test-project && CI=true nohup al start > /tmp/scheduler.log 2>&1 & echo $! > /tmp/scheduler.pid"
+    "bash", "-c", "cd /home/testuser/test-project && nohup al start --headless > /tmp/scheduler.log 2>&1 & echo $! > /tmp/scheduler.pid"
   ]);
   
   // Wait for scheduler to start and verify it's running
@@ -167,15 +160,15 @@ EOF`
     try {
       // Check if the scheduler process is still running
       const pidCheck = await context.executeInContainer(containerInfo, [
-        "bash", "-c", "if [ -f /tmp/scheduler.pid ]; then ps -p $(cat /tmp/scheduler.pid) > /dev/null && echo 'running' || echo 'not running'; else echo 'no pid file'; fi"
+        "bash", "-c", "if [ -f /tmp/scheduler.pid ]; then ps -p $(cat /tmp/scheduler.pid) > /dev/null 2>&1 && echo 'running' || echo 'not running'; else echo 'no pid file'; fi"
       ]);
-      
+
       if (pidCheck.includes("running")) {
         // Additional verification that scheduler is responding
         const statusCheck = await context.executeInContainer(containerInfo, [
           "bash", "-c", "cd /home/testuser/test-project && al stat 2>&1 || echo 'stat failed'"
         ]);
-        
+
         if (!statusCheck.includes("stat failed")) {
           return; // Scheduler is running properly
         }
@@ -227,10 +220,10 @@ export async function runSingleAgent(
   // First verify the agent exists and the project structure is correct
   try {
     const projectContents = await context.executeInContainer(containerInfo, [
-      "bash", "-c", "cd /home/testuser/test-project && find . -name 'SKILL.md' -o -name 'project.toml'"
+      "bash", "-c", "cd /home/testuser/test-project && find . -name 'SKILL.md' -o -name 'config.toml'"
     ]);
     
-    if (!projectContents.includes(`${agentName}/SKILL.md`)) {
+    if (!projectContents.includes(`agents/${agentName}/SKILL.md`)) {
       throw new Error(`Agent ${agentName} not found in project. Found files: ${projectContents}`);
     }
     
