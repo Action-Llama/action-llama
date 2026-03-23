@@ -11,11 +11,11 @@ With `scale = 1`, a single agent instance handles all work sequentially. If 5 Gi
 
 ## Increase Scale
 
-In your agent's `SKILL.md` frontmatter:
+In your project's `.env.toml`:
 
-```yaml
-metadata:
-  scale: 3    # Run up to 3 instances concurrently
+```toml
+[agents.dev]
+scale = 3    # Run up to 3 instances concurrently
 ```
 
 Now when 5 issues arrive, up to 3 are processed simultaneously. The remaining 2 wait in the work queue.
@@ -90,7 +90,7 @@ scale = 10    # max 10 runners total across all agents
 
 ## Example Configuration
 
-In your agent's `SKILL.md` frontmatter:
+Agent definition in `SKILL.md` frontmatter:
 
 ```yaml
 metadata:
@@ -98,7 +98,6 @@ metadata:
     - github_token
     - git_ssh
   schedule: "*/5 * * * *"
-  scale: 3
 
   models:
     - sonnet
@@ -114,6 +113,13 @@ metadata:
       - acme/app
       - acme/api
     triggerLabel: agent
+```
+
+Scale override in `.env.toml`:
+
+```toml
+[agents.dev]
+scale = 3
 ```
 
 ## Next steps

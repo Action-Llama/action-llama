@@ -47,7 +47,11 @@ keyPath = "~/.ssh/deploy_key"
 
 ### Getting the SSH key
 
-This is the private key that `al push` uses to connect to your server. If you provisioned with `al env prov`, it was generated automatically — check the `keyPath` in your environment TOML to find it.
+This is the private key that `al push` uses to connect to your server. If you provisioned with `al env prov`, it was generated automatically and stored in the credential system. Copy it from:
+
+```bash
+cat ~/.action-llama/credentials/vps_ssh/default/private_key
+```
 
 ## 2. Create the deploy workflow
 
