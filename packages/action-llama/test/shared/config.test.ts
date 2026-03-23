@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "fs";
 import { resolve, join } from "path";
 import { tmpdir } from "os";
 import { stringify as stringifyTOML } from "smol-toml";
-import { loadGlobalConfig, loadProjectConfig, loadAgentConfig, loadAgentBody, discoverAgents, validateAgentName } from "../../src/shared/config.js";
+import { loadGlobalConfig, loadProjectConfig, loadAgentConfig, loadAgentBody, discoverAgents, validateAgentName, loadSharedFiles } from "../../src/shared/config.js";
 import type { GlobalConfig } from "../../src/shared/config.js";
 import { ENVIRONMENTS_DIR } from "../../src/shared/paths.js";
 
@@ -678,5 +678,67 @@ describe("discoverAgents", () => {
     mkdirSync(resolve(tmpDir, "empty-dir"), { recursive: true });
     const agents = discoverAgents(tmpDir);
     expect(agents).toEqual([]);
+  });
+});
+
+describe("loadSharedFiles", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns empty object when shared/ does not exist", () => {
+    expect(loadSharedFiles(tmpDir)).toEqual({});
+  });
+
+  it("returns empty object when shared/ is a file, not a directory", () => {
+    writeFileSync(resolve(tmpDir, "shared"), "not a directory");
+    expect(loadSharedFiles(tmpDir)).toEqual({});
+  });
+
+  it("loads files from shared/ with prefixed keys", () => {
+    const sharedDir = resolve(tmpDir, "shared");
+    mkdirSync(sharedDir, { recursive: true });
+    writeFileSync(resolve(sharedDir, "conventions.md"), "# Conventions\nUse TypeScript.");
+    writeFileSync(resolve(sharedDir, "repo-layout.md"), "# Layout\nsrc/ and test/");
+
+    const files = loadSharedFiles(tmpDir);
+    expect(Object.keys(files).sort()).toEqual([
+      "shared/conventions.md",
+      "shared/repo-layout.md",
+    ]);
+    expect(files["shared/conventions.md"]).toBe("# Conventions\nUse TypeScript.");
+    expect(files["shared/repo-layout.md"]).toBe("# Layout\nsrc/ and test/");
+  });
+
+  it("recurses into subdirectories", () => {
+    const sharedDir = resolve(tmpDir, "shared");
+    mkdirSync(resolve(sharedDir, "team"), { recursive: true });
+    writeFileSync(resolve(sharedDir, "top.md"), "top");
+    writeFileSync(resolve(sharedDir, "team", "policy.md"), "policy");
+
+    const files = loadSharedFiles(tmpDir);
+    expect(files["shared/top.md"]).toBe("top");
+    expect(files["shared/team/policy.md"]).toBe("policy");
+  });
+
+  it("skips dotfiles", () => {
+    const sharedDir = resolve(tmpDir, "shared");
+    mkdirSync(sharedDir, { recursive: true });
+    writeFileSync(resolve(sharedDir, ".hidden"), "secret");
+    writeFileSync(resolve(sharedDir, "visible.md"), "visible");
+
+    const files = loadSharedFiles(tmpDir);
+    expect(Object.keys(files)).toEqual(["shared/visible.md"]);
+  });
+
+  it("returns empty object for empty shared/ directory", () => {
+    mkdirSync(resolve(tmpDir, "shared"), { recursive: true });
+    expect(loadSharedFiles(tmpDir)).toEqual({});
   });
 });

@@ -7,7 +7,7 @@
 import { existsSync, readFileSync } from "fs";
 import { resolve as resolvePath, dirname } from "path";
 import { fileURLToPath } from "url";
-import type { AgentConfig, GlobalConfig } from "../shared/config.js";
+import { loadSharedFiles, type AgentConfig, type GlobalConfig } from "../shared/config.js";
 import type { ContainerRuntime } from "../docker/runtime.js";
 import { CONSTANTS, imageTags } from "../shared/constants.js";
 import { buildPromptSkeleton, type PromptSkills } from "../agents/prompt.js";
@@ -175,6 +175,7 @@ export async function buildSingleAgentImage(opts: SingleAgentBuildOpts): Promise
     "SKILL.md": skillMd,
     "prompt-static.txt": buildPromptSkeleton(agentConfig, skills),
     "timeout": timeout,
+    ...loadSharedFiles(projectPath),
   };
   const testScriptPath = resolvePath(agentPath, "test-script.sh");
   if (existsSync(testScriptPath)) {

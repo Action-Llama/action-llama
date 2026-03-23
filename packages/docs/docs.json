@@ -30,6 +30,7 @@
               "guides/continuous-deployment",
               "guides/optimizing-agents",
               "guides/scaling-agents",
+              "guides/shared-context",
               "guides/subagents"
             ]
           },
