@@ -29,7 +29,7 @@ export class AnthropicProvider implements ModelProvider {
   }
 
   getDefaultModel(): string {
-    return this.config.model || "claude-3-5-sonnet-20241022";
+    return this.config.model || "claude-sonnet-4-20250514";
   }
 
   async chat(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResponse> {
@@ -80,17 +80,6 @@ export class AnthropicProvider implements ModelProvider {
       model: data.model,
       finish_reason: data.stop_reason
     };
-  }
-
-  async listModels(): Promise<string[]> {
-    // Anthropic doesn't have a public models endpoint, return known models
-    return [
-      "claude-3-5-sonnet-20241022",
-      "claude-3-5-haiku-20241022",
-      "claude-3-opus-20240229",
-      "claude-3-sonnet-20240229",
-      "claude-3-haiku-20240307"
-    ];
   }
 
   async shutdown(): Promise<void> {

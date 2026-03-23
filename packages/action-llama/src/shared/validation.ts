@@ -6,7 +6,6 @@
 
 import { Cron } from "croner";
 import type { AgentConfig, GlobalConfig, ModelConfig } from "./config.js";
-import { PROVIDER_MODELS } from "./constants.js";
 
 export interface ValidationError {
   type: "error" | "warning";
@@ -76,6 +75,29 @@ const AGENT_CONFIG_SCHEMA: ConfigSchema = {
 };
 
 /**
+ * Schema for raw SKILL.md YAML frontmatter (before resolution).
+ * `name` is derived from the directory name, and AL-specific fields
+ * like `credentials` and `models` live under `metadata`.
+ */
+const AGENT_FRONTMATTER_SCHEMA: ConfigSchema = {
+  required: new Set(),
+  optional: new Set(["description", "license", "compatibility", "metadata"]),
+  nested: {
+    metadata: {
+      required: new Set(["credentials", "models"]),
+      optional: new Set(["schedule", "webhooks", "hooks", "params", "scale", "timeout"]),
+      nested: {
+        hooks: {
+          required: new Set(),
+          optional: new Set(["pre", "post"]),
+          nested: {}
+        },
+      }
+    },
+  }
+};
+
+/**
  * Validate a cron expression using the croner library.
  */
 export function validateCronExpression(schedule: string): { valid: boolean; error?: string } {
@@ -92,50 +114,6 @@ export function validateCronExpression(schedule: string): { valid: boolean; erro
   }
 }
 
-/**
- * Validate model/provider/authType compatibility.
- */
-export function validateModelProviderCompat(
-  provider: string,
-  model: string,
-  authType: string
-): { valid: boolean; error?: string } {
-  const providerConfig = PROVIDER_MODELS[provider];
-  if (!providerConfig) {
-    const knownProviders = Object.keys(PROVIDER_MODELS).join(", ");
-    return {
-      valid: false,
-      error: `Unknown provider "${provider}". Known providers: ${knownProviders}`
-    };
-  }
-
-  // Check if model matches any of the provider's model patterns
-  const modelMatches = providerConfig.models.some(pattern => {
-    if (pattern.endsWith("*")) {
-      return model.startsWith(pattern.slice(0, -1));
-    }
-    return model === pattern;
-  });
-
-  if (!modelMatches) {
-    const supportedModels = providerConfig.models.join(", ");
-    return {
-      valid: false,
-      error: `Model "${model}" is not supported by provider "${provider}". Supported models: ${supportedModels}`
-    };
-  }
-
-  // Check if authType is supported
-  if (!providerConfig.authTypes.includes(authType)) {
-    const supportedAuth = providerConfig.authTypes.join(", ");
-    return {
-      valid: false,
-      error: `Auth type "${authType}" is not supported by provider "${provider}". Supported auth types: ${supportedAuth}`
-    };
-  }
-
-  return { valid: true };
-}
 
 /**
  * Validate config against a schema and return validation errors.
@@ -236,25 +214,6 @@ export function validateGlobalConfig(config: GlobalConfig, raw?: unknown): Valid
     warnings.push(...schemaResult.warnings);
   }
 
-  // Model validation
-  if (config.models) {
-    for (const [name, modelConfig] of Object.entries(config.models)) {
-      const compatResult = validateModelProviderCompat(
-        modelConfig.provider,
-        modelConfig.model,
-        modelConfig.authType
-      );
-      if (!compatResult.valid) {
-        errors.push({
-          type: "error",
-          message: `Model "${name}": ${compatResult.error}`,
-          field: `models.${name}`,
-          context: "model compatibility"
-        });
-      }
-    }
-  }
-
   // Unsafe config warnings
   if (config.gateway?.url?.includes("0.0.0.0")) {
     warnings.push({
@@ -275,9 +234,9 @@ export function validateAgentConfig(config: AgentConfig, raw?: unknown): Validat
   const errors: ValidationError[] = [];
   const warnings: ValidationError[] = [];
 
-  // Schema validation
+  // Schema validation — raw is SKILL.md frontmatter (metadata-nested), not the resolved config
   if (raw) {
-    const schemaResult = validateConfigSchema(raw, AGENT_CONFIG_SCHEMA);
+    const schemaResult = validateConfigSchema(raw, AGENT_FRONTMATTER_SCHEMA);
     errors.push(...schemaResult.errors);
     warnings.push(...schemaResult.warnings);
   }
@@ -295,24 +254,9 @@ export function validateAgentConfig(config: AgentConfig, raw?: unknown): Validat
     }
   }
 
-  // Model validation (models should already be resolved to ModelConfig objects)
+  // pi_auth warning (already blocked at startup, but surface it in doctor too)
   if (config.models) {
     for (const [index, modelConfig] of config.models.entries()) {
-      const compatResult = validateModelProviderCompat(
-        modelConfig.provider,
-        modelConfig.model,
-        modelConfig.authType
-      );
-      if (!compatResult.valid) {
-        errors.push({
-          type: "error",
-          message: `Model ${index}: ${compatResult.error}`,
-          field: `models[${index}]`,
-          context: "model compatibility"
-        });
-      }
-
-      // pi_auth warning (already checked elsewhere, but included for completeness)
       if (modelConfig.authType === "pi_auth") {
         warnings.push({
           type: "warning",
@@ -338,5 +282,5 @@ export function detectGlobalConfigUnknownFields(raw: unknown): string[] {
  * Check for unknown fields in agent config.
  */
 export function detectAgentConfigUnknownFields(raw: unknown): string[] {
-  return detectUnknownFields(raw, AGENT_CONFIG_SCHEMA);
+  return detectUnknownFields(raw, AGENT_FRONTMATTER_SCHEMA);
 }

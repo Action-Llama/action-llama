@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   validateCronExpression,
-  validateModelProviderCompat,
   validateConfigSchema,
   detectUnknownFields,
   validateGlobalConfig,
@@ -43,43 +42,6 @@ describe("validation", () => {
         expect(result.valid).toBe(false);
         expect(result.error).toBeDefined();
       }
-    });
-  });
-
-  describe("validateModelProviderCompat", () => {
-    it("accepts valid model/provider combinations", () => {
-      const validCombos = [
-        { provider: "anthropic", model: "claude-3-5-sonnet-20241022", authType: "api_key" },
-        { provider: "openai", model: "gpt-4o", authType: "api_key" },
-        { provider: "deepseek", model: "deepseek-chat", authType: "api_key" },
-        { provider: "google", model: "gemini-pro", authType: "api_key" },
-        { provider: "openrouter", model: "anthropic/claude-3-sonnet", authType: "api_key" },
-      ];
-
-      for (const combo of validCombos) {
-        const result = validateModelProviderCompat(combo.provider, combo.model, combo.authType);
-        expect(result.valid).toBe(true);
-        expect(result.error).toBeUndefined();
-      }
-    });
-
-    it("rejects unknown providers", () => {
-      const result = validateModelProviderCompat("unknown-provider", "some-model", "api_key");
-      expect(result.valid).toBe(false);
-      expect(result.error).toContain("Unknown provider");
-    });
-
-    it("rejects incompatible model/provider combinations", () => {
-      const result = validateModelProviderCompat("anthropic", "gpt-4", "api_key");
-      expect(result.valid).toBe(false);
-      expect(result.error).toContain("not supported by provider");
-    });
-
-    it("rejects unsupported auth types", () => {
-      // Assuming anthropic only supports api_key
-      const result = validateModelProviderCompat("anthropic", "claude-3-sonnet", "oauth_token");
-      expect(result.valid).toBe(false);
-      expect(result.error).toContain("not supported by provider");
     });
   });
 
@@ -165,21 +127,20 @@ describe("validation", () => {
       expect(result.warnings[0].context).toBe("unsafe configuration");
     });
 
-    it("fails for invalid model configurations", () => {
+    it("passes config with any model/provider (validated by the provider API at runtime)", () => {
       const config: GlobalConfig = {
         models: {
-          "invalid": {
-            provider: "nonexistent",
-            model: "some-model",
+          "custom": {
+            provider: "anthropic",
+            model: "claude-sonnet-4-20250514",
             authType: "api_key",
           },
         },
       };
 
       const result = validateGlobalConfig(config);
-      expect(result.valid).toBe(false);
-      expect(result.errors).toHaveLength(1);
-      expect(result.errors[0].message).toContain("Unknown provider");
+      expect(result.valid).toBe(true);
+      expect(result.errors).toEqual([]);
     });
   });
 
@@ -242,23 +203,22 @@ describe("validation", () => {
       expect(result.warnings[0].context).toBe("unsafe configuration");
     });
 
-    it("fails for invalid model configurations", () => {
+    it("passes any model name (validated by the provider API at runtime)", () => {
       const config: AgentConfig = {
         name: "test-agent",
         credentials: [],
         models: [
           {
             provider: "openai",
-            model: "claude-3-sonnet", // Wrong model for OpenAI
+            model: "gpt-4o-2025-03-01",
             authType: "api_key",
           },
         ],
       };
 
       const result = validateAgentConfig(config);
-      expect(result.valid).toBe(false);
-      expect(result.errors).toHaveLength(1);
-      expect(result.errors[0].message).toContain("not supported by provider");
+      expect(result.valid).toBe(true);
+      expect(result.errors).toEqual([]);
     });
   });
 
