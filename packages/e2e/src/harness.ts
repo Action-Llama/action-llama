@@ -88,6 +88,15 @@ export class E2ETestContext {
     if (!e2eNetwork) {
       throw new Error('E2E test network not found. Ensure global setup has run.');
     }
+    
+    // Verify network is properly configured
+    const network = await this.docker.getNetwork(e2eNetwork.Id).inspect();
+    console.log('E2E Network details:', {
+      id: network.Id,
+      name: network.Name,
+      driver: network.Driver,
+      ipam: network.IPAM
+    });
   }
 
   async createLocalActionLlamaContainer(): Promise<ContainerInfo> {
@@ -102,7 +111,6 @@ export class E2ETestContext {
     const container = await this.docker.createContainer({
       Image: "action-llama-local:latest",
       name: containerName,
-      NetworkMode: "action-llama-e2e",
       Env: [
         "NODE_ENV=test",
         "AL_TEST_MODE=1",
@@ -112,9 +120,18 @@ export class E2ETestContext {
       ],
       WorkingDir: "/app",
       Cmd: ["tail", "-f", "/dev/null"], // Keep container running
+      HostConfig: {
+        NetworkMode: "action-llama-e2e",
+      },
     });
 
     await container.start();
+    
+    // Connect to the custom network explicitly
+    const network = this.docker.getNetwork("action-llama-e2e");
+    await network.connect({
+      Container: container.id,
+    });
     
     // Wait for container to be fully started and connected to network
     await new Promise(resolve => setTimeout(resolve, 15000));
@@ -156,7 +173,6 @@ export class E2ETestContext {
     const container = await this.docker.createContainer({
       Image: "action-llama-vps:latest",
       name: containerName,
-      NetworkMode: "action-llama-e2e",
       Privileged: true, // Needed for Docker-in-Docker
       Env: [
         "SSH_ENABLE_ROOT=true",
@@ -166,6 +182,7 @@ export class E2ETestContext {
         Binds: [
           `${authorizedKeysPath}:/root/.ssh/authorized_keys:ro`,
         ],
+        NetworkMode: "action-llama-e2e",
       },
       ExposedPorts: {
         "22/tcp": {},
@@ -174,6 +191,12 @@ export class E2ETestContext {
     });
 
     await container.start();
+    
+    // Connect to the custom network explicitly
+    const network = this.docker.getNetwork("action-llama-e2e");
+    await network.connect({
+      Container: container.id,
+    });
     
     // Wait for container to be fully started and connected to network
     await new Promise(resolve => setTimeout(resolve, 15000));
