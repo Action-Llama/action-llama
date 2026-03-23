@@ -15,6 +15,8 @@ export async function setup() {
       IPAM: {
         Config: [{
           Subnet: "172.20.0.0/16",
+          Gateway: "172.20.0.1",
+          IPRange: "172.20.1.0/24",
         }],
       },
     });
