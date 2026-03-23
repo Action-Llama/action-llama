@@ -461,6 +461,35 @@ describe("StatsStore", () => {
     store.close();
   });
 
+  it("queries call edge by target instance", () => {
+    const store = createStore();
+    const now = Date.now();
+    const edgeId = store.recordCallEdge({
+      callerAgent: "orchestrator",
+      callerInstance: "orch-abc",
+      targetAgent: "reviewer",
+      depth: 1,
+      startedAt: now,
+      status: "pending",
+    });
+    store.updateCallEdge(edgeId, { targetInstance: "rev-xyz", status: "completed", durationMs: 5000 });
+
+    const edge = store.queryCallEdgeByTargetInstance("rev-xyz");
+    expect(edge).toBeDefined();
+    expect(edge!.caller_agent).toBe("orchestrator");
+    expect(edge!.caller_instance).toBe("orch-abc");
+    expect(edge!.target_agent).toBe("reviewer");
+    expect(edge!.target_instance).toBe("rev-xyz");
+    store.close();
+  });
+
+  it("queryCallEdgeByTargetInstance returns undefined for missing target", () => {
+    const store = createStore();
+    const result = store.queryCallEdgeByTargetInstance("nonexistent");
+    expect(result).toBeUndefined();
+    store.close();
+  });
+
   it("dedupe: findWebhookReceiptByDeliveryId returns existing receipt", () => {
     const store = createStore();
     store.recordWebhookReceipt(makeReceipt({

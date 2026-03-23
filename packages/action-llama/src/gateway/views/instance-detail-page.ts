@@ -22,6 +22,8 @@ export interface InstanceDetailData {
     error_message?: string;
   } | null;
   runningInstance?: { id: string; status: string; startedAt: Date; trigger: string; } | null;
+  parentEdge?: { caller_agent: string; caller_instance: string };
+  webhookReceipt?: { source: string; eventSummary?: string; deliveryId?: string };
 }
 
 function resultBadge(result: string): string {
@@ -41,6 +43,35 @@ function statRow(label: string, value: string): string {
     <span class="text-sm text-slate-500 dark:text-slate-400">${escapeHtml(label)}</span>
     <span class="text-sm font-medium text-slate-900 dark:text-white">${value}</span>
   </div>`;
+}
+
+function renderTriggerDetail(data: InstanceDetailData): string {
+  const run = data.run;
+  if (!run) return "";
+
+  if (run.trigger_type === "agent") {
+    if (data.parentEdge) {
+      const parentUrl = `/dashboard/agents/${encodeURIComponent(data.parentEdge.caller_agent)}/instances/${encodeURIComponent(data.parentEdge.caller_instance)}`;
+      return `Agent — triggered by <a href="${parentUrl}" class="text-blue-500 hover:underline">${escapeHtml(data.parentEdge.caller_agent)}/${escapeHtml(data.parentEdge.caller_instance)}</a>`;
+    }
+    return "Agent" + (run.trigger_source ? ` (${escapeHtml(run.trigger_source)})` : "");
+  }
+
+  if (run.trigger_type === "webhook") {
+    if (data.webhookReceipt) {
+      const parts = [`Webhook from ${escapeHtml(data.webhookReceipt.source)}`];
+      if (data.webhookReceipt.eventSummary) parts.push(escapeHtml(data.webhookReceipt.eventSummary));
+      if (data.webhookReceipt.deliveryId) parts.push(`<span class="text-slate-400 text-xs font-mono">${escapeHtml(data.webhookReceipt.deliveryId)}</span>`);
+      return parts.join(" · ");
+    }
+    return "Webhook" + (run.trigger_source ? ` (${escapeHtml(run.trigger_source)})` : "");
+  }
+
+  if (run.trigger_type === "schedule") {
+    return "Scheduled";
+  }
+
+  return escapeHtml(run.trigger_type) + (run.trigger_source ? ` (${escapeHtml(run.trigger_source)})` : "");
 }
 
 export function renderInstanceDetailPage(data: InstanceDetailData): string {
@@ -130,7 +161,7 @@ export function renderInstanceDetailPage(data: InstanceDetailData): string {
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
       <div class="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4">
         <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-3 uppercase tracking-wide">Run Info</h3>
-        ${statRow("Trigger", run.trigger_type + (run.trigger_source ? ` (${run.trigger_source})` : ""))}
+        ${statRow("Trigger", renderTriggerDetail(data))}
         ${statRow("Status", run.result)}
         ${run.exit_code != null ? statRow("Exit Code", `${run.exit_code}`) : ""}
         ${statRow("Started", startedAt.toLocaleString())}

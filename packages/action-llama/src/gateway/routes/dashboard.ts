@@ -207,7 +207,25 @@ export function registerDashboardRoutes(
     const id = c.req.param("id");
     const run = statsStore ? statsStore.queryRunByInstanceId(id) : null;
     const runningInstance = statusTracker.getInstances().find(i => i.id === id) || null;
-    const html = renderInstanceDetailPage({ agentName: name, instanceId: id, run, runningInstance });
+
+    let parentEdge: { caller_agent: string; caller_instance: string } | undefined;
+    let webhookReceipt: { source: string; eventSummary?: string; deliveryId?: string } | undefined;
+
+    if (statsStore && run) {
+      if (run.trigger_type === "agent") {
+        const edge = statsStore.queryCallEdgeByTargetInstance(id);
+        if (edge) {
+          parentEdge = { caller_agent: edge.caller_agent, caller_instance: edge.caller_instance };
+        }
+      } else if (run.trigger_type === "webhook" && run.webhook_receipt_id) {
+        const receipt = statsStore.getWebhookReceipt(run.webhook_receipt_id);
+        if (receipt) {
+          webhookReceipt = { source: receipt.source, eventSummary: receipt.eventSummary, deliveryId: receipt.deliveryId };
+        }
+      }
+    }
+
+    const html = renderInstanceDetailPage({ agentName: name, instanceId: id, run, runningInstance, parentEdge, webhookReceipt });
     return c.html(html);
   });
 

@@ -159,6 +159,7 @@ export class StatsStore {
     this.db.exec("CREATE INDEX IF NOT EXISTS idx_runs_started ON runs(started_at)");
     this.db.exec("CREATE INDEX IF NOT EXISTS idx_calls_caller ON call_edges(caller_agent, started_at)");
     this.db.exec("CREATE INDEX IF NOT EXISTS idx_calls_target ON call_edges(target_agent, started_at)");
+    this.db.exec("CREATE INDEX IF NOT EXISTS idx_calls_target_instance ON call_edges(target_instance)");
 
     this.stmts = {
       insertRun: this.db.prepare(`
@@ -287,6 +288,9 @@ export class StatsStore {
       ),
       pruneRuns: this.db.prepare("DELETE FROM runs WHERE started_at < @threshold"),
       pruneCallEdges: this.db.prepare("DELETE FROM call_edges WHERE started_at < @threshold"),
+      queryCallEdgeByTarget: this.db.prepare(
+        "SELECT * FROM call_edges WHERE target_instance = @targetInstance LIMIT 1"
+      ),
       pruneReceipts: this.db.prepare("DELETE FROM webhook_receipts WHERE timestamp < @threshold"),
       globalSummary: this.db.prepare(`
         SELECT
@@ -359,6 +363,10 @@ export class StatsStore {
 
   queryRunByInstanceId(instanceId: string): any | undefined {
     return this.stmts.queryRunByInstanceId.get({ instanceId });
+  }
+
+  queryCallEdgeByTargetInstance(targetInstance: string): { caller_agent: string; caller_instance: string; target_agent: string; target_instance: string; depth: number; started_at: number; duration_ms: number | null; status: string } | undefined {
+    return this.stmts.queryCallEdgeByTarget.get({ targetInstance }) as any;
   }
 
   queryRuns(query: RunQuery = {}): any[] {
