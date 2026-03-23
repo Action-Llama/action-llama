@@ -110,10 +110,51 @@ export async function startActionLlamaScheduler(
   if (!projectCheck.includes("project.toml")) {
     throw new Error("Project configuration not found before starting scheduler");
   }
+
+  // Create default test agent if none exist
+  const projectPath = "/home/testuser/test-project";
+  const agentExists = await context.executeInContainer(containerInfo, [
+    "bash", "-c", `test -d ${projectPath}/test-agent && echo "exists" || echo "missing"`
+  ]);
   
-  // Start the scheduler in the background
+  if (agentExists.includes("missing")) {
+    await context.executeInContainer(containerInfo, [
+      "bash", "-c", `cd ${projectPath} && mkdir -p test-agent`
+    ]);
+    
+    // Create a basic test agent with SKILL.md
+    const defaultSkill = `---
+model: sonnet
+credentials:
+  github: default
+  anthropic: default
+schedule: "0 */6 * * *"
+---
+
+# Default Test Agent
+
+You are a default test agent created for E2E testing. You help verify that the Action Llama scheduler can find and manage agents properly.`;
+
+    await context.executeInContainer(containerInfo, [
+      "bash", "-c", `cat > ${projectPath}/test-agent/SKILL.md << 'EOF'
+${defaultSkill}
+EOF`
+    ]);
+
+    // Set proper ownership
+    await context.executeInContainer(containerInfo, [
+      "bash", "-c", `chown -R testuser:testuser ${projectPath}/test-agent`
+    ]);
+  }
+
+  // Disable raw mode for test environment
   await context.executeInContainer(containerInfo, [
-    "bash", "-c", "cd /home/testuser/test-project && nohup al start > /tmp/scheduler.log 2>&1 & echo $! > /tmp/scheduler.pid"
+    "bash", "-c", "export CI=true"
+  ]);
+  
+  // Start the scheduler in the background with CI environment variable
+  await context.executeInContainer(containerInfo, [
+    "bash", "-c", "cd /home/testuser/test-project && CI=true nohup al start > /tmp/scheduler.log 2>&1 & echo $! > /tmp/scheduler.pid"
   ]);
   
   // Wait for scheduler to start and verify it's running
