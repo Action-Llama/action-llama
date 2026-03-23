@@ -35,10 +35,8 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
     return;
   }
 
-  // Collect all credential refs from agents (including webhook secrets)
   const globalConfig = loadGlobalConfig(projectPath, opts.env);
   const webhookSources = globalConfig.webhooks ?? {};
-  const credentialRefs = collectCredentialRefs(projectPath, globalConfig);
 
   // --- Enhanced validation: schema, unknown fields, cron, model compatibility ---
   const validationErrors: string[] = [];
@@ -245,12 +243,16 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
 
   if (opts.skipCredentials) {
     if (!opts.silent) console.log("Skipping credential checks (--no-creds).");
-  } else if (credentialRefs.size === 0) {
-    if (!opts.silent) console.log("No credentials required by any agent.");
-  } else if (opts.checkOnly) {
-    await checkCredentials(credentialRefs, opts.silent);
   } else {
-    await promptCredentials(credentialRefs, opts.silent);
+    // Collect all credential refs from agents (including webhook secrets)
+    const credentialRefs = collectCredentialRefs(projectPath, globalConfig);
+    if (credentialRefs.size === 0) {
+      if (!opts.silent) console.log("No credentials required by any agent.");
+    } else if (opts.checkOnly) {
+      await checkCredentials(credentialRefs, opts.silent);
+    } else {
+      await promptCredentials(credentialRefs, opts.silent);
+    }
   }
 
   // --- Gateway API key (interactive only — CI doesn't need one) ---
