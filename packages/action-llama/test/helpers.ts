@@ -99,20 +99,34 @@ export function makeTmpProject(opts?: TmpProjectOptions): string {
   for (const agent of agents) {
     const agentPath = resolve(dir, "agents", agent.name!);
     mkdirSync(agentPath, { recursive: true });
-    // Write SKILL.md with model name references (not inline model configs).
-    // Strip name and models (resolved at load time from config.toml).
-    // Split into platform-allowed top-level fields and AL-specific metadata.
-    const { name: _, models: _m, description, license, compatibility, ...alFields } = agent;
+
+    // Write portable SKILL.md (only name, description, license, compatibility)
+    const { name: _, models: _m, description, license, compatibility, scale, timeout, ...alFields } = agent;
     const frontmatter: Record<string, unknown> = {};
+    if (agent.name) frontmatter.name = agent.name;
     if (description) frontmatter.description = description;
     if (license) frontmatter.license = license;
     if (compatibility) frontmatter.compatibility = compatibility;
-    frontmatter.metadata = { ...alFields, models: modelNames };
-    const yamlStr = stringifyYAML(frontmatter).trimEnd();
+    const yamlStr = Object.keys(frontmatter).length > 0
+      ? stringifyYAML(frontmatter).trimEnd()
+      : "";
     writeFileSync(
       resolve(agentPath, "SKILL.md"),
       `---\n${yamlStr}\n---\n\n# ${agent.name} Agent\n\nCustom agent.\n`
     );
+
+    // Write per-agent config.toml with runtime fields
+    const runtimeConfig: Record<string, unknown> = {
+      models: modelNames,
+    };
+    if (alFields.credentials?.length) runtimeConfig.credentials = alFields.credentials;
+    if (alFields.schedule) runtimeConfig.schedule = alFields.schedule;
+    if (alFields.webhooks?.length) runtimeConfig.webhooks = alFields.webhooks;
+    if (alFields.hooks) runtimeConfig.hooks = alFields.hooks;
+    if (alFields.params && Object.keys(alFields.params).length > 0) runtimeConfig.params = alFields.params;
+    if (scale !== undefined) runtimeConfig.scale = scale;
+    if (timeout !== undefined) runtimeConfig.timeout = timeout;
+    writeFileSync(resolve(agentPath, "config.toml"), stringifyTOML(runtimeConfig));
   }
 
   return dir;

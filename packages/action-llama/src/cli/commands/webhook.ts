@@ -154,28 +154,25 @@ function createWebhookProviders(config: any): WebhookProvider[] {
 }
 
 async function loadAgentBindings(registry: WebhookRegistry, config: any, projectPath: string): Promise<void> {
-  // Load agents from config and create webhook bindings
-  if (!config.agents) {
-    console.warn("⚠️ No agents configured in project");
+  const { discoverAgents, loadAgentConfig } = await import("../../shared/config.js");
+  const agents = discoverAgents(projectPath);
+
+  if (agents.length === 0) {
+    console.warn("No agents configured in project");
     return;
   }
-  
-  for (const [agentName, agentConfig] of Object.entries(config.agents as Record<string, any>)) {
-    if (agentConfig.trigger?.webhook) {
-      const trigger = agentConfig.trigger.webhook;
-      
-      // Create a mock trigger function for dry run
+
+  for (const agentName of agents) {
+    const agentConfig = loadAgentConfig(projectPath, agentName);
+    for (const trigger of agentConfig.webhooks ?? []) {
       const triggerFn = () => true;
-      
-      // Create binding
       const binding = {
         agentName,
-        type: trigger.source || "github", // Default to github if not specified
+        type: trigger.source || "github",
         source: trigger.source,
         filter: createFilterFromTrigger(trigger),
-        trigger: triggerFn
+        trigger: triggerFn,
       };
-      
       registry.addBinding(binding);
     }
   }

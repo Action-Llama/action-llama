@@ -146,20 +146,32 @@ const globalConfigWithWebhooks = stringifyTOML({
   },
 } as Record<string, unknown>);
 
+function writeAgentConfig(dir: string, config: Record<string, unknown>) {
+  const { name, description, ...runtimeFields } = config;
+  // Write portable SKILL.md
+  const frontmatter: Record<string, unknown> = {};
+  if (name) frontmatter.name = name;
+  if (description) frontmatter.description = description;
+  const yamlStr = stringifyYAML(frontmatter).trimEnd();
+  writeFileSync(resolve(dir, "SKILL.md"), `---\n${yamlStr}\n---\n\n# Agent\n`);
+  // Write runtime config.toml
+  if (Object.keys(runtimeFields).length > 0) {
+    writeFileSync(resolve(dir, "config.toml"), stringifyTOML(runtimeFields as Record<string, unknown>));
+  }
+}
+
 function setupProjectWithWebhooks(tmpDir: string) {
   writeFileSync(resolve(tmpDir, "config.toml"), globalConfigWithWebhooks);
 
   // Webhook-only agent
-  const webhookAgent = {
-    metadata: {
-      credentials: ["github_token"],
-      models: ["sonnet"],
-      webhooks: [{ source: "my-github", events: ["issues"], actions: ["labeled"], labels: ["agent"] }],
-    },
-  };
   const agentDir = resolve(tmpDir, "agents", "webhook-dev");
   mkdirSync(agentDir, { recursive: true });
-  writeFileSync(resolve(agentDir, "SKILL.md"), `---\n${stringifyYAML(webhookAgent).trimEnd()}\n---\n\n# Webhook Dev\n`);
+  writeAgentConfig(agentDir, {
+    name: "webhook-dev",
+    credentials: ["github_token"],
+    models: ["sonnet"],
+    webhooks: [{ source: "my-github", events: ["issues"], actions: ["labeled"], labels: ["agent"] }],
+  });
   mkdirSync(resolve(tmpDir, ".al", "state", "webhook-dev"), { recursive: true });
 }
 
@@ -167,17 +179,15 @@ function setupProjectWithHybrid(tmpDir: string) {
   writeFileSync(resolve(tmpDir, "config.toml"), globalConfigWithWebhooks);
 
   // Hybrid agent (schedule + webhooks)
-  const hybridAgent = {
-    metadata: {
-      credentials: ["github_token"],
-      models: ["sonnet"],
-      schedule: "*/15 * * * *",
-      webhooks: [{ source: "my-github", events: ["pull_request"], actions: ["opened"] }],
-    },
-  };
   const agentDir = resolve(tmpDir, "agents", "hybrid");
   mkdirSync(agentDir, { recursive: true });
-  writeFileSync(resolve(agentDir, "SKILL.md"), `---\n${stringifyYAML(hybridAgent).trimEnd()}\n---\n\n# Hybrid\n`);
+  writeAgentConfig(agentDir, {
+    name: "hybrid",
+    credentials: ["github_token"],
+    models: ["sonnet"],
+    schedule: "*/15 * * * *",
+    webhooks: [{ source: "my-github", events: ["pull_request"], actions: ["opened"] }],
+  });
   mkdirSync(resolve(tmpDir, ".al", "state", "hybrid"), { recursive: true });
 }
 
@@ -187,15 +197,13 @@ function setupProjectWithNoTrigger(tmpDir: string) {
   } as Record<string, unknown>));
 
   // Agent with neither schedule nor webhooks
-  const badAgent = {
-    metadata: {
-      credentials: ["github_token"],
-      models: ["sonnet"],
-    },
-  };
   const agentDir = resolve(tmpDir, "agents", "bad-agent");
   mkdirSync(agentDir, { recursive: true });
-  writeFileSync(resolve(agentDir, "SKILL.md"), `---\n${stringifyYAML(badAgent).trimEnd()}\n---\n\n# Bad\n`);
+  writeAgentConfig(agentDir, {
+    name: "bad-agent",
+    credentials: ["github_token"],
+    models: ["sonnet"],
+  });
   mkdirSync(resolve(tmpDir, ".al", "state", "bad-agent"), { recursive: true });
 }
 

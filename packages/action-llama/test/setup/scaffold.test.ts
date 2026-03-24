@@ -81,7 +81,7 @@ describe("scaffoldProject", () => {
     expect((config.docker as any).enabled).toBe(true);
   });
 
-  it("creates per-agent SKILL.md with frontmatter (no name field)", () => {
+  it("creates per-agent SKILL.md with portable frontmatter only (no runtime metadata)", () => {
     tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
     const projDir = resolve(tmpDir, "my-project");
     scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
@@ -91,9 +91,31 @@ describe("scaffoldProject", () => {
       expect(existsSync(skillPath)).toBe(true);
       const content = readFileSync(skillPath, "utf-8");
       const { data } = parseFrontmatter(content);
-      // name should NOT be in the frontmatter (injected at load time from directory)
-      expect(data.name).toBeUndefined();
+      // name is included in the portable frontmatter
+      expect(data.name).toBe(name);
+      // Runtime fields should NOT be in SKILL.md (they live in config.toml)
+      expect(data.metadata).toBeUndefined();
+      expect((data as any).credentials).toBeUndefined();
+      expect((data as any).models).toBeUndefined();
+      expect((data as any).schedule).toBeUndefined();
+      expect((data as any).params).toBeUndefined();
       expect(content.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("creates per-agent config.toml with runtime fields", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
+    const projDir = resolve(tmpDir, "my-project");
+    scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
+
+    for (const name of ["dev", "reviewer", "devops"]) {
+      const configPath = resolve(projDir, "agents", name, "config.toml");
+      expect(existsSync(configPath)).toBe(true);
+      const content = readFileSync(configPath, "utf-8");
+      const config = parseTOML(content);
+      // Runtime fields should be in config.toml
+      expect(config.credentials).toBeDefined();
+      expect(config.schedule).toBeDefined();
     }
   });
 

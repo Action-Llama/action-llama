@@ -4,13 +4,10 @@ import { parse as parseTOML, stringify as stringifyTOML } from "smol-toml";
 import { ENVIRONMENTS_DIR } from "./paths.js";
 import { ConfigError } from "./errors.js";
 import type { ServerConfig } from "./server.js";
-import type { AgentRuntimeOverrides } from "./config.js";
-
 export interface EnvironmentConfig {
   server?: ServerConfig;
   gateway?: { url?: string; port?: number };
   telemetry?: { enabled?: boolean; provider?: string; endpoint?: string; serviceName?: string; headers?: Record<string, string>; samplingRate?: number };
-  agents?: Record<string, AgentRuntimeOverrides>;
 }
 
 export interface EnvToml {
@@ -140,43 +137,6 @@ export function writeEnvironmentConfig(name: string, config: EnvironmentConfig):
  */
 export function environmentPath(name: string): string {
   return resolve(ENVIRONMENTS_DIR, `${name}.toml`);
-}
-
-/**
- * Update per-agent runtime overrides in .env.toml.
- * Creates or updates the [agents.<agentName>] section, preserving other fields.
- */
-export function updateAgentRuntimeOverride(
-  projectPath: string,
-  agentName: string,
-  overrides: Partial<AgentRuntimeOverrides>,
-): void {
-  const envPath = resolve(projectPath, ".env.toml");
-  let existing: Record<string, unknown> = {};
-  if (existsSync(envPath)) {
-    try {
-      existing = parseTOML(readFileSync(envPath, "utf-8")) as Record<string, unknown>;
-    } catch (err) {
-      throw new ConfigError(
-        `Error parsing ${envPath}: ${err instanceof Error ? err.message : String(err)}`,
-        { cause: err },
-      );
-    }
-  }
-
-  const agents = (existing.agents ?? {}) as Record<string, Record<string, unknown>>;
-  const current = agents[agentName] ?? {};
-  for (const [key, value] of Object.entries(overrides)) {
-    if (value === undefined) {
-      delete current[key];
-    } else {
-      current[key] = value;
-    }
-  }
-  agents[agentName] = current;
-  existing.agents = agents;
-
-  writeFileSync(envPath, stringifyTOML(existing) + "\n");
 }
 
 /**

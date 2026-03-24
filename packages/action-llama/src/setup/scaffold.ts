@@ -189,26 +189,28 @@ export function scaffoldAgent(projectPath: string, agent: ScaffoldAgent): void {
   const agentPath = resolve(projectPath, "agents", agent.name);
   mkdirSync(agentPath, { recursive: true });
 
-  // Write a SKILL.md with YAML frontmatter if none exists
+  // Write portable SKILL.md if none exists
   const skillPath = resolve(agentPath, "SKILL.md");
   if (!existsSync(skillPath)) {
-    // Strip `name` before serializing — it's derived from the directory name.
-    // Also strip undefined values and models (resolved at load time from global config).
-    // Split into platform-allowed top-level fields and AL-specific metadata.
-    const { name: _, models: _m, description, license, compatibility, ...alFields } = agent.config;
-    const frontmatter: Record<string, unknown> = {};
-    if (description) frontmatter.description = description;
-    if (license) frontmatter.license = license;
-    if (compatibility) frontmatter.compatibility = compatibility;
-    const metadata: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(alFields)) {
-      if (v !== undefined) metadata[k] = v;
-    }
-    if (Object.keys(metadata).length > 0) frontmatter.metadata = metadata;
-    const yamlStr = Object.keys(frontmatter).length > 0
-      ? stringifyYAML(frontmatter).trimEnd()
-      : "";
+    const frontmatter: Record<string, unknown> = { name: agent.name };
+    if (agent.config.description) frontmatter.description = agent.config.description;
+    if (agent.config.license) frontmatter.license = agent.config.license;
+    if (agent.config.compatibility) frontmatter.compatibility = agent.config.compatibility;
+    const yamlStr = stringifyYAML(frontmatter).trimEnd();
     writeFileSync(skillPath, `---\n${yamlStr}\n---\n\n# ${agent.name} Agent\n\nCustom agent.\n`);
+  }
+
+  // Write per-agent config.toml if none exists
+  const configPath = resolve(agentPath, "config.toml");
+  if (!existsSync(configPath)) {
+    const { name: _, models: _m, description: _d, license: _l, compatibility: _c, ...runtimeFields } = agent.config;
+    const runtimeConfig: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(runtimeFields)) {
+      if (v !== undefined) runtimeConfig[k] = v;
+    }
+    writeFileSync(configPath, Object.keys(runtimeConfig).length > 0
+      ? stringifyTOML(runtimeConfig) + "\n"
+      : "");
   }
 }
 

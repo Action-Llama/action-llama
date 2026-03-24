@@ -145,7 +145,7 @@ export class IntegrationHarness {
       const agentPath = resolve(projectPath, "agents", agent.name);
       mkdirSync(agentPath, { recursive: true });
 
-      // Write SKILL.md with YAML frontmatter (model name references, not inline configs)
+      // Build agent config for extracting fields
       const agentConfig = makeAgentConfig({
         name: agent.name,
         schedule: agent.schedule,
@@ -153,26 +153,28 @@ export class IntegrationHarness {
         credentials: ["anthropic_key"],
         ...agent.config,
       });
-      const { name: _, models: _m, description, license, compatibility, scale, timeout, ...alFields } = agentConfig;
-      const frontmatter: Record<string, unknown> = {};
-      if (description) frontmatter.description = description;
-      if (license) frontmatter.license = license;
-      if (compatibility) frontmatter.compatibility = compatibility;
-      frontmatter.metadata = { ...alFields, models: ["sonnet"] };
-      // scale and timeout are runtime config — put them in globalConfig.agents
-      if (scale !== undefined || timeout !== undefined) {
-        globalConfig.agents = globalConfig.agents ?? {};
-        globalConfig.agents[agent.name] = {
-          ...(globalConfig.agents[agent.name] ?? {}),
-          ...(scale !== undefined ? { scale } : {}),
-          ...(timeout !== undefined ? { timeout } : {}),
-        };
-      }
+
+      // Write portable SKILL.md
+      const frontmatter: Record<string, unknown> = { name: agent.name };
+      if (agentConfig.description) frontmatter.description = agentConfig.description;
       const yamlStr = stringifyYAML(frontmatter).trimEnd();
       writeFileSync(
         resolve(agentPath, "SKILL.md"),
         `---\n${yamlStr}\n---\n\n# ${agent.name}\nTest agent.\n`
       );
+
+      // Write per-agent config.toml
+      const runtimeConfig: Record<string, unknown> = {
+        models: ["sonnet"],
+        credentials: agentConfig.credentials,
+      };
+      if (agentConfig.schedule) runtimeConfig.schedule = agentConfig.schedule;
+      if (agentConfig.webhooks?.length) runtimeConfig.webhooks = agentConfig.webhooks;
+      if (agentConfig.hooks) runtimeConfig.hooks = agentConfig.hooks;
+      if (agentConfig.params && Object.keys(agentConfig.params).length > 0) runtimeConfig.params = agentConfig.params;
+      if (agentConfig.scale !== undefined) runtimeConfig.scale = agentConfig.scale;
+      if (agentConfig.timeout !== undefined) runtimeConfig.timeout = agentConfig.timeout;
+      writeFileSync(resolve(agentPath, "config.toml"), stringifyTOML(runtimeConfig));
 
       // Write test-script.sh — container-entry.js detects this file at
       // /app/static/test-script.sh and runs it instead of the LLM agent.

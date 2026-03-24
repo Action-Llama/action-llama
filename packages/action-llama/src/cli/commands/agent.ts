@@ -2,14 +2,13 @@ import { existsSync, mkdirSync, copyFileSync, readFileSync, writeFileSync } from
 import { resolve } from "path";
 import { select, input, checkbox, confirm } from "@inquirer/prompts";
 import { parse as parseTOML, stringify as stringifyTOML } from "smol-toml";
-import { stringify as stringifyYAML } from "yaml";
 import {
   validateAgentName,
   loadAgentConfig,
+  loadAgentRuntimeConfig,
   loadGlobalConfig,
   discoverAgents,
 } from "../../shared/config.js";
-import { parseFrontmatter } from "../../shared/frontmatter.js";
 import type { AgentConfig, ModelConfig } from "../../shared/config.js";
 import type { WebhookTrigger } from "../../webhooks/types.js";
 import { scaffoldAgent } from "../../setup/scaffold.js";
@@ -53,7 +52,7 @@ export async function newAgent(opts: { project: string }): Promise<void> {
   const agentDir = resolve(projectPath, "agents", name);
 
   if (EXAMPLE_TYPES.includes(agentType as any)) {
-    // Copy example template verbatim
+    // Copy example template
     const exampleDir = resolve(resolvePackageRoot(), "docs", "examples", agentType);
     mkdirSync(agentDir, { recursive: true });
 
@@ -63,6 +62,13 @@ export async function newAgent(opts: { project: string }): Promise<void> {
     } else {
       throw new Error(`Example template "${agentType}" is missing SKILL.md at ${exampleDir}`);
     }
+
+    // Copy config.toml if it exists in the example, otherwise create empty
+    const configSrc = resolve(exampleDir, "config.toml");
+    if (existsSync(configSrc)) {
+      copyFileSync(configSrc, resolve(agentDir, "config.toml"));
+    }
+
     console.log(`Created agent "${name}" from ${agentType} template.`);
   } else {
     // Custom: use scaffoldAgent with minimal config
@@ -91,6 +97,11 @@ export async function configAgent(name: string, opts: { project: string }): Prom
 
   const config = loadAgentConfig(projectPath, name);
 
+  // Track model names separately (config.models is resolved ModelConfig[],
+  // but config.toml needs string references like ["sonnet"])
+  const runtimeRaw = loadAgentRuntimeConfig(projectPath, name);
+  let modelNames: string[] = runtimeRaw.models ?? [];
+
   let done = false;
   while (!done) {
     const credCount = config.credentials?.length ?? 0;
@@ -114,7 +125,7 @@ export async function configAgent(name: string, opts: { project: string }): Prom
         await editCredentials(config);
         break;
       case "model":
-        await editModel(config);
+        modelNames = await editModel(config, projectPath);
         break;
       case "schedule":
         await editSchedule(config);
@@ -131,27 +142,27 @@ export async function configAgent(name: string, opts: { project: string }): Prom
     }
   }
 
-  // Write config back to SKILL.md — preserve the body, update frontmatter
-  // Split into platform-allowed top-level fields and AL-specific metadata.
-  const { name: _, description, license, compatibility, ...alFields } = config;
-  const toWrite: Record<string, unknown> = {};
-  if (description) toWrite.description = description;
-  if (license) toWrite.license = license;
-  if (compatibility) toWrite.compatibility = compatibility;
-  const metadata: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(alFields)) {
-    if (v !== undefined) metadata[k] = v;
+  // Write runtime config to per-agent config.toml
+  const agentConfigPath = resolve(agentDir, "config.toml");
+  const runtimeConfig: Record<string, unknown> = {};
+
+  // Preserve source field from existing config.toml
+  if (existsSync(agentConfigPath)) {
+    const existing = parseTOML(readFileSync(agentConfigPath, "utf-8")) as Record<string, unknown>;
+    if (existing.source) runtimeConfig.source = existing.source;
   }
-  if (Object.keys(metadata).length > 0) toWrite.metadata = metadata;
-  const skillPath = resolve(agentDir, "SKILL.md");
-  const existingBody = existsSync(skillPath)
-    ? parseFrontmatter(readFileSync(skillPath, "utf-8")).body
-    : `# ${name} Agent\n\nCustom agent.\n`;
-  const yamlStr = Object.keys(toWrite).length > 0
-    ? stringifyYAML(toWrite).trimEnd()
-    : "";
-  writeFileSync(skillPath, `---\n${yamlStr}\n---\n\n${existingBody}`);
-  console.log(`Saved ${skillPath}`);
+
+  runtimeConfig.models = modelNames;
+  if (config.credentials?.length) runtimeConfig.credentials = config.credentials;
+  if (config.schedule) runtimeConfig.schedule = config.schedule;
+  if (config.webhooks?.length) runtimeConfig.webhooks = config.webhooks;
+  if (config.hooks) runtimeConfig.hooks = config.hooks;
+  if (config.params && Object.keys(config.params).length > 0) runtimeConfig.params = config.params;
+  if (config.scale !== undefined) runtimeConfig.scale = config.scale;
+  if (config.timeout !== undefined) runtimeConfig.timeout = config.timeout;
+
+  writeFileSync(agentConfigPath, stringifyTOML(runtimeConfig) + "\n");
+  console.log(`Saved ${agentConfigPath}`);
 
   // Run doctor
   const { execute } = await import("./doctor.js");
@@ -179,7 +190,45 @@ async function editCredentials(config: AgentConfig): Promise<void> {
   config.credentials = selected;
 }
 
-async function editModel(config: AgentConfig): Promise<void> {
+/**
+ * Edit model configuration. Returns the updated model name references for config.toml.
+ * Lets user pick from existing named models in config.toml or create a new one.
+ */
+async function editModel(config: AgentConfig, projectPath: string): Promise<string[]> {
+  let globalConfig;
+  try {
+    globalConfig = loadGlobalConfig(projectPath);
+  } catch {
+    globalConfig = {};
+  }
+
+  const existingModels = globalConfig.models ?? {};
+  const modelNames = Object.keys(existingModels);
+
+  type ModelChoice = { name: string; value: string };
+  const choices: ModelChoice[] = modelNames.map((n) => ({
+    name: `${n} (${existingModels[n].provider}/${existingModels[n].model})`,
+    value: n,
+  }));
+  choices.push({ name: "+ Create new model", value: "__create__" });
+
+  const selected = await select({
+    message: "Select model:",
+    choices,
+    default: modelNames.find((n) => existingModels[n].provider === config.models[0]?.provider),
+  });
+
+  if (selected !== "__create__") {
+    config.models = [existingModels[selected]];
+    return [selected];
+  }
+
+  // Create a new named model in config.toml
+  const modelRefName = await input({
+    message: "Model reference name (e.g. sonnet, gpt4o):",
+    validate: (v) => v.trim() ? true : "Name is required",
+  });
+
   const provider = await select({
     message: "Select LLM provider:",
     choices: [
@@ -195,9 +244,9 @@ async function editModel(config: AgentConfig): Promise<void> {
     default: config.models[0]?.provider ?? "anthropic",
   });
 
-  let modelName: string;
+  let modelId: string;
   if (provider === "anthropic") {
-    modelName = await select({
+    modelId = await select({
       message: "Select model:",
       choices: [
         { name: "claude-sonnet-4-20250514", value: "claude-sonnet-4-20250514" },
@@ -207,7 +256,7 @@ async function editModel(config: AgentConfig): Promise<void> {
       default: config.models[0]?.model ?? "claude-sonnet-4-20250514",
     });
   } else if (provider === "openai") {
-    modelName = await select({
+    modelId = await select({
       message: "Select model:",
       choices: [
         { name: "gpt-4o", value: "gpt-4o" },
@@ -219,7 +268,7 @@ async function editModel(config: AgentConfig): Promise<void> {
       default: "gpt-4o",
     });
   } else {
-    modelName = await input({
+    modelId = await input({
       message: `Enter ${provider} model name:`,
       default: provider === "groq" ? "llama-3.3-70b-versatile" :
                 provider === "google" ? "gemini-2.0-flash-exp" :
@@ -245,12 +294,27 @@ async function editModel(config: AgentConfig): Promise<void> {
     });
   }
 
-  config.models = [{
+  const newModelConfig: ModelConfig = {
     provider,
-    model: modelName,
+    model: modelId,
     authType: "api_key",
     ...(thinkingLevel ? { thinkingLevel } : {}),
-  }];
+  };
+
+  // Write to config.toml
+  const configPath = resolve(projectPath, "config.toml");
+  let existing: Record<string, unknown> = {};
+  if (existsSync(configPath)) {
+    existing = parseTOML(readFileSync(configPath, "utf-8")) as Record<string, unknown>;
+  }
+  const models = (existing.models ?? {}) as Record<string, unknown>;
+  models[modelRefName.trim()] = newModelConfig;
+  existing.models = models;
+  writeFileSync(configPath, stringifyTOML(existing) + "\n");
+  console.log(`Added model "${modelRefName.trim()}" to config.toml.`);
+
+  config.models = [newModelConfig];
+  return [modelRefName.trim()];
 }
 
 async function editSchedule(config: AgentConfig): Promise<void> {

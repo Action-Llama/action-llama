@@ -5,7 +5,7 @@
  */
 
 import { Cron } from "croner";
-import type { AgentConfig, GlobalConfig, ModelConfig } from "./config.js";
+import type { AgentConfig, AgentRuntimeConfig, GlobalConfig, ModelConfig } from "./config.js";
 
 export interface ValidationError {
   type: "error" | "warning";
@@ -41,7 +41,7 @@ const GLOBAL_CONFIG_SCHEMA: ConfigSchema = {
     "models", "local", "gateway", "webhooks", "telemetry",
     "projectName", "maxReruns", "maxCallDepth", "maxTriggerDepth",
     "webhookQueueSize", "workQueueSize", "resourceLockTimeout", "scale",
-    "defaultAgentScale", "agents", "historyRetentionDays"
+    "defaultAgentScale", "historyRetentionDays"
   ]),
   nested: {
     local: {
@@ -78,24 +78,29 @@ const AGENT_CONFIG_SCHEMA: ConfigSchema = {
 };
 
 /**
- * Schema for raw SKILL.md YAML frontmatter (before resolution).
- * `name` is derived from the directory name, and AL-specific fields
- * like `credentials` and `models` live under `metadata`.
+ * Schema for portable SKILL.md YAML frontmatter.
+ * Runtime config (credentials, models, schedule, etc.) lives in per-agent config.toml.
  */
 const AGENT_FRONTMATTER_SCHEMA: ConfigSchema = {
   required: new Set(),
-  optional: new Set(["description", "license", "compatibility", "metadata"]),
+  optional: new Set(["name", "description", "license", "compatibility"]),
+  nested: {}
+};
+
+/**
+ * Schema for per-agent runtime config (`agents/<name>/config.toml`).
+ */
+const AGENT_RUNTIME_CONFIG_SCHEMA: ConfigSchema = {
+  required: new Set(),
+  optional: new Set([
+    "source", "credentials", "models", "schedule", "webhooks",
+    "hooks", "params", "scale", "timeout"
+  ]),
   nested: {
-    metadata: {
-      required: new Set(["credentials", "models"]),
-      optional: new Set(["schedule", "webhooks", "hooks", "params"]),
-      nested: {
-        hooks: {
-          required: new Set(),
-          optional: new Set(["pre", "post"]),
-          nested: {}
-        },
-      }
+    hooks: {
+      required: new Set(),
+      optional: new Set(["pre", "post"]),
+      nested: {}
     },
   }
 };
@@ -232,14 +237,28 @@ export function validateGlobalConfig(config: GlobalConfig, raw?: unknown): Valid
 
 /**
  * Validate agent config with comprehensive checks.
+ * @param config - The resolved AgentConfig
+ * @param rawFrontmatter - Raw SKILL.md frontmatter for schema validation
+ * @param rawRuntimeConfig - Raw per-agent config.toml for schema validation
  */
-export function validateAgentConfig(config: AgentConfig, raw?: unknown): ValidationResult {
+export function validateAgentConfig(
+  config: AgentConfig,
+  rawFrontmatter?: unknown,
+  rawRuntimeConfig?: unknown,
+): ValidationResult {
   const errors: ValidationError[] = [];
   const warnings: ValidationError[] = [];
 
-  // Schema validation — raw is SKILL.md frontmatter (metadata-nested), not the resolved config
-  if (raw) {
-    const schemaResult = validateConfigSchema(raw, AGENT_FRONTMATTER_SCHEMA);
+  // Schema validation for SKILL.md frontmatter
+  if (rawFrontmatter) {
+    const schemaResult = validateConfigSchema(rawFrontmatter, AGENT_FRONTMATTER_SCHEMA);
+    errors.push(...schemaResult.errors);
+    warnings.push(...schemaResult.warnings);
+  }
+
+  // Schema validation for per-agent config.toml
+  if (rawRuntimeConfig) {
+    const schemaResult = validateConfigSchema(rawRuntimeConfig, AGENT_RUNTIME_CONFIG_SCHEMA, "config.toml");
     errors.push(...schemaResult.errors);
     warnings.push(...schemaResult.warnings);
   }
@@ -299,8 +318,15 @@ export function detectGlobalConfigUnknownFields(raw: unknown): string[] {
 
 /**
  * Check for unknown fields in agent SKILL.md frontmatter.
- * Validates the raw frontmatter structure (top-level + metadata).
+ * Validates the portable frontmatter structure (name, description, license, compatibility).
  */
 export function detectAgentFrontmatterUnknownFields(raw: unknown): string[] {
   return detectUnknownFields(raw, AGENT_FRONTMATTER_SCHEMA);
+}
+
+/**
+ * Check for unknown fields in per-agent config.toml.
+ */
+export function detectAgentRuntimeConfigUnknownFields(raw: unknown): string[] {
+  return detectUnknownFields(raw, AGENT_RUNTIME_CONFIG_SCHEMA);
 }

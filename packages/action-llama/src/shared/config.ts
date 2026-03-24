@@ -70,11 +70,6 @@ export interface TelemetryConfig {
   samplingRate?: number;
 }
 
-export interface AgentRuntimeOverrides {
-  scale?: number;
-  timeout?: number;
-}
-
 export interface GlobalConfig {
   models?: Record<string, ModelConfig>;
   local?: LocalConfig;
@@ -92,21 +87,39 @@ export interface GlobalConfig {
   resourceLockTimeout?: number;
   // Max simultaneous agent runs project-wide
   scale?: number;
-  // Default scale for agents without an explicit [agents.<name>].scale override (default: 1)
+  // Default scale for agents without an explicit per-agent config.toml scale (default: 1)
   defaultAgentScale?: number;
-  // Per-agent runtime overrides (from .env.toml or environment files)
-  agents?: Record<string, AgentRuntimeOverrides>;
   // How many days to keep trigger history and webhook receipts (default: 14)
   historyRetentionDays?: number;
 }
 
-// --- Per-agent config (lives at <project>/agents/<name>/SKILL.md frontmatter) ---
+// --- Per-agent runtime config (lives at <project>/agents/<name>/config.toml) ---
 
 export interface AgentHooks {
   pre?: string[];
   post?: string[];
 }
 
+/**
+ * Raw per-agent runtime config from `agents/<name>/config.toml`.
+ * Fields here are project-specific bindings — not portable.
+ */
+export interface AgentRuntimeConfig {
+  source?: string;          // Install origin for `al update` (e.g. "author/repo")
+  credentials?: string[];
+  models?: string[];        // Named model references (resolved against [models.*])
+  schedule?: string;
+  webhooks?: WebhookTrigger[];
+  hooks?: AgentHooks;
+  params?: Record<string, unknown>;
+  scale?: number;
+  timeout?: number;
+}
+
+/**
+ * Resolved agent config — the runtime representation after merging
+ * portable SKILL.md fields with per-agent config.toml and global defaults.
+ */
 export interface AgentConfig {
   name: string;
   description?: string;
@@ -194,31 +207,30 @@ export function loadGlobalConfig(projectPath: string, envName?: string): GlobalC
     }
   }
 
-  // Validate per-agent runtime override values (scale, timeout).
-  // Note: config.agents is a shared namespace — the webhook command also stores
-  // trigger bindings here. We only validate the runtime-override keys we own;
-  // unknown keys are ignored so both uses coexist.
-  if (config.agents) {
-    for (const [name, overrides] of Object.entries(config.agents)) {
-      if (typeof overrides !== "object" || overrides === null || Array.isArray(overrides)) {
-        continue; // skip non-table entries
-      }
-      if (overrides.scale !== undefined) {
-        if (!Number.isInteger(overrides.scale) || overrides.scale < 0) {
-          throw new ConfigError(`[agents.${name}].scale must be a non-negative integer.`);
-        }
-      }
-      if (overrides.timeout !== undefined) {
-        if (!Number.isInteger(overrides.timeout) || overrides.timeout <= 0) {
-          throw new ConfigError(`[agents.${name}].timeout must be a positive integer.`);
-        }
-      }
-    }
-  }
-
   return config;
 }
 
+
+/**
+ * Load the raw per-agent runtime config from `agents/<name>/config.toml`.
+ */
+export function loadAgentRuntimeConfig(projectPath: string, agentName: string): AgentRuntimeConfig {
+  const configPath = resolve(projectPath, "agents", agentName, "config.toml");
+
+  if (!existsSync(configPath)) {
+    return {};
+  }
+
+  const raw = readFileSync(configPath, "utf-8");
+  try {
+    return parseTOML(raw) as unknown as AgentRuntimeConfig;
+  } catch (err) {
+    throw new ConfigError(
+      `Error parsing ${configPath}: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
+  }
+}
 
 export function loadAgentConfig(projectPath: string, agentName: string): AgentConfig {
   const agentDir = resolve(projectPath, "agents", agentName);
@@ -228,6 +240,7 @@ export function loadAgentConfig(projectPath: string, agentName: string): AgentCo
     throw new ConfigError(`Agent config not found at ${skillPath}.`);
   }
 
+  // Read portable fields from SKILL.md frontmatter
   const raw = readFileSync(skillPath, "utf-8");
   let data: Record<string, unknown>;
   try {
@@ -238,25 +251,28 @@ export function loadAgentConfig(projectPath: string, agentName: string): AgentCo
       { cause: err },
     );
   }
-  const meta = ((data as Record<string, unknown>).metadata ?? {}) as Record<string, unknown>;
+
+  // Read runtime config from per-agent config.toml
+  const runtime = loadAgentRuntimeConfig(projectPath, agentName);
 
   const parsed: Record<string, unknown> = {
     name: agentName,
-    // Top-level (platform-allowed)
-    description: (data as Record<string, unknown>).description,
-    license: (data as Record<string, unknown>).license,
-    compatibility: (data as Record<string, unknown>).compatibility,
-    // From metadata (AL-specific)
-    credentials: meta.credentials,
-    models: meta.models,
-    schedule: meta.schedule,
-    webhooks: meta.webhooks,
-    hooks: meta.hooks,
-    params: meta.params,
+    // Portable fields from SKILL.md frontmatter
+    description: data.description,
+    license: data.license,
+    compatibility: data.compatibility,
+    // Runtime fields from config.toml
+    credentials: runtime.credentials,
+    schedule: runtime.schedule,
+    webhooks: runtime.webhooks,
+    hooks: runtime.hooks,
+    params: runtime.params,
+    scale: runtime.scale,
+    timeout: runtime.timeout,
   };
 
   // Resolve named model references from global config
-  const rawModels = parsed.models as string[] | undefined;
+  const rawModels = runtime.models;
   if (!rawModels || !Array.isArray(rawModels) || rawModels.length === 0) {
     throw new ConfigError(
       `Agent "${agentName}" must have a "models" field listing at least one named model.`
@@ -283,13 +299,6 @@ export function loadAgentConfig(projectPath: string, agentName: string): AgentCo
   }
 
   parsed.models = resolvedModels;
-
-  // Apply per-agent runtime overrides from .env.toml / environment config
-  const overrides = global.agents?.[agentName];
-  if (overrides) {
-    if (overrides.scale !== undefined) parsed.scale = overrides.scale;
-    if (overrides.timeout !== undefined) parsed.timeout = overrides.timeout;
-  }
 
   // Apply defaultAgentScale as fallback when no explicit per-agent scale is set
   if (parsed.scale === undefined && global.defaultAgentScale !== undefined) {
@@ -427,10 +436,28 @@ export function getProjectScale(projectPath: string): number {
 }
 
 /**
- * Get current agent scale from config  
+ * Get current agent scale from config
  */
 export function getAgentScale(projectPath: string, agentName: string): number {
   const config = loadAgentConfig(projectPath, agentName);
   // defaultAgentScale is already applied in loadAgentConfig, so just fall back to 1
   return config.scale ?? 1;
+}
+
+/**
+ * Update a field in the per-agent config.toml.
+ */
+export function updateAgentRuntimeField(
+  projectPath: string,
+  agentName: string,
+  field: string,
+  value: unknown,
+): void {
+  const configPath = resolve(projectPath, "agents", agentName, "config.toml");
+  let existing: Record<string, unknown> = {};
+  if (existsSync(configPath)) {
+    existing = parseTOML(readFileSync(configPath, "utf-8")) as Record<string, unknown>;
+  }
+  existing[field] = value;
+  writeFileSync(configPath, stringifyTOML(existing));
 }

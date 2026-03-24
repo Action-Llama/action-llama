@@ -140,15 +140,20 @@ vi.mock("../../src/shared/logger.js", () => ({
 
 import { startScheduler } from "../../src/scheduler/index.js";
 
-function writeSkillMd(dir: string, config: Record<string, unknown>) {
-  const { name: _, description, license, compatibility, scale: _s, timeout: _t, ...alFields } = config;
+function writeAgentConfig(dir: string, config: Record<string, unknown>) {
+  const { name, description, license, compatibility, ...runtimeFields } = config;
+  // Write portable SKILL.md
   const frontmatter: Record<string, unknown> = {};
+  if (name) frontmatter.name = name;
   if (description) frontmatter.description = description;
   if (license) frontmatter.license = license;
   if (compatibility) frontmatter.compatibility = compatibility;
-  if (Object.keys(alFields).length > 0) frontmatter.metadata = alFields;
   const yamlStr = stringifyYAML(frontmatter).trimEnd();
   writeFileSync(resolve(dir, "SKILL.md"), `---\n${yamlStr}\n---\n\n# Agent\n`);
+  // Write runtime config.toml
+  if (Object.keys(runtimeFields).length > 0) {
+    writeFileSync(resolve(dir, "config.toml"), stringifyTOML(runtimeFields as Record<string, unknown>));
+  }
 }
 
 function setupProject(tmpDir: string) {
@@ -168,7 +173,7 @@ function setupProject(tmpDir: string) {
   for (const agent of agents) {
     const agentDir = resolve(tmpDir, "agents", agent.name);
     mkdirSync(agentDir, { recursive: true });
-    writeSkillMd(agentDir, agent);
+    writeAgentConfig(agentDir, agent);
     mkdirSync(resolve(tmpDir, ".al", "state", agent.name), { recursive: true });
   }
 }
@@ -325,21 +330,18 @@ describe("startScheduler", () => {
         models: {
           sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
         },
-        agents: {
-          "scaled-agent": { scale: 3 },
-        },
       };
       writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
 
       const agents = [
-        { name: "scaled-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *" },
+        { name: "scaled-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *", scale: 3 },
         { name: "single-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *" },
       ];
 
       for (const agent of agents) {
         const agentDir = resolve(tmpDir, "agents", agent.name);
         mkdirSync(agentDir, { recursive: true });
-        writeSkillMd(agentDir, agent);
+        writeAgentConfig(agentDir, agent);
         mkdirSync(resolve(tmpDir, ".al", "state", agent.name), { recursive: true });
       }
     }
@@ -390,21 +392,18 @@ describe("startScheduler", () => {
         models: {
           sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
         },
-        agents: {
-          "disabled-agent": { scale: 0 },
-        },
       };
       writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
 
       const agents = [
         { name: "active-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *" },
-        { name: "disabled-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *" },
+        { name: "disabled-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *", scale: 0 },
       ];
 
       for (const agent of agents) {
         const agentDir = resolve(tmpDir, "agents", agent.name);
         mkdirSync(agentDir, { recursive: true });
-        writeSkillMd(agentDir, agent);
+        writeAgentConfig(agentDir, agent);
         mkdirSync(resolve(tmpDir, ".al", "state", agent.name), { recursive: true });
       }
     }
@@ -432,10 +431,9 @@ describe("startScheduler", () => {
     });
 
     it("allows scale = 0 agent without schedule or webhooks", async () => {
-      // Overwrite disabled-agent config to have no schedule
+      // Overwrite disabled-agent config to have no schedule but keep scale=0
       const agentDir = resolve(tmpDir, "agents", "disabled-agent");
-      writeSkillMd(agentDir, { name: "disabled-agent", credentials: ["github_token"], models: ["sonnet"] });
-      // scale = 0 already set in config.toml via setupDisabledProject
+      writeAgentConfig(agentDir, { name: "disabled-agent", credentials: ["github_token"], models: ["sonnet"], scale: 0 });
 
       // Should not throw — scale=0 skips schedule/webhook validation
       const { runnerPools } = await startScheduler(tmpDir);
@@ -500,23 +498,19 @@ describe("startScheduler", () => {
         models: {
           sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
         },
-        agents: {
-          "fast-agent": { timeout: 300 },
-          "slow-agent": { timeout: 1800 },
-        },
       };
       writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
 
       const agents = [
-        { name: "fast-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *" },
-        { name: "slow-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *" },
+        { name: "fast-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *", timeout: 300 },
+        { name: "slow-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *", timeout: 1800 },
         { name: "default-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *" },
       ];
 
       for (const agent of agents) {
         const agentDir = resolve(tmpDir, "agents", agent.name);
         mkdirSync(agentDir, { recursive: true });
-        writeSkillMd(agentDir, agent);
+        writeAgentConfig(agentDir, agent);
         mkdirSync(resolve(tmpDir, ".al", "state", agent.name), { recursive: true });
       }
     }

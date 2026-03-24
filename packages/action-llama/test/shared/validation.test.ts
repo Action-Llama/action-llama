@@ -5,6 +5,7 @@ import {
   detectUnknownFields,
   detectGlobalConfigUnknownFields,
   detectAgentFrontmatterUnknownFields,
+  detectAgentRuntimeConfigUnknownFields,
   validateGlobalConfig,
   validateAgentConfig,
   type ConfigSchema,
@@ -123,28 +124,24 @@ describe("validation", () => {
       expect(unknownFields).toEqual(["models.sonnet.bogus"]);
     });
 
-    it("accepts agents and historyRetentionDays", () => {
+    it("flags agents as unknown in global config", () => {
       const raw = {
         agents: { dev: { scale: 2 } },
         historyRetentionDays: 30,
       };
 
       const unknownFields = detectGlobalConfigUnknownFields(raw);
-      expect(unknownFields).toEqual([]);
+      expect(unknownFields).toContain("agents");
     });
   });
 
   describe("detectAgentFrontmatterUnknownFields", () => {
     it("accepts valid frontmatter structure", () => {
       const raw = {
+        name: "test-agent",
         description: "A test agent",
-        metadata: {
-          credentials: ["anthropic_key"],
-          models: ["sonnet"],
-          schedule: "0 * * * *",
-          webhooks: [],
-          params: { foo: "bar" },
-        },
+        license: "MIT",
+        compatibility: ">=0.5.0",
       };
 
       const unknownFields = detectAgentFrontmatterUnknownFields(raw);
@@ -155,39 +152,87 @@ describe("validation", () => {
       const raw = {
         description: "test",
         bogusField: true,
-        metadata: { credentials: [], models: ["sonnet"] },
       };
 
       const unknownFields = detectAgentFrontmatterUnknownFields(raw);
       expect(unknownFields).toEqual(["bogusField"]);
     });
 
-    it("flags unknown metadata fields", () => {
+    it("flags runtime config fields as unknown in frontmatter", () => {
       const raw = {
-        metadata: {
-          credentials: [],
-          models: ["sonnet"],
-          bogus: true,
-        },
+        description: "test",
+        credentials: ["anthropic_key"],
+        models: ["sonnet"],
+        schedule: "0 * * * *",
       };
 
       const unknownFields = detectAgentFrontmatterUnknownFields(raw);
-      expect(unknownFields).toEqual(["metadata.bogus"]);
+      expect(unknownFields).toContain("credentials");
+      expect(unknownFields).toContain("models");
+      expect(unknownFields).toContain("schedule");
     });
 
-    it("flags scale and timeout in metadata as unknown", () => {
+    it("flags metadata as unknown in frontmatter", () => {
       const raw = {
+        description: "test",
         metadata: {
           credentials: [],
           models: ["sonnet"],
-          scale: 2,
-          timeout: 300,
         },
       };
 
       const unknownFields = detectAgentFrontmatterUnknownFields(raw);
-      expect(unknownFields).toContain("metadata.scale");
-      expect(unknownFields).toContain("metadata.timeout");
+      expect(unknownFields).toContain("metadata");
+    });
+  });
+
+  describe("detectAgentRuntimeConfigUnknownFields", () => {
+    it("accepts valid runtime config fields", () => {
+      const raw = {
+        source: "github",
+        credentials: ["anthropic_key"],
+        models: ["sonnet"],
+        schedule: "0 * * * *",
+        webhooks: [],
+        hooks: { pre: ["echo hello"], post: ["echo done"] },
+        params: { foo: "bar" },
+        scale: 2,
+        timeout: 300,
+      };
+
+      const unknownFields = detectAgentRuntimeConfigUnknownFields(raw);
+      expect(unknownFields).toEqual([]);
+    });
+
+    it("accepts a subset of runtime config fields", () => {
+      const raw = {
+        credentials: ["anthropic_key"],
+        models: ["sonnet"],
+        schedule: "0 * * * *",
+      };
+
+      const unknownFields = detectAgentRuntimeConfigUnknownFields(raw);
+      expect(unknownFields).toEqual([]);
+    });
+
+    it("flags unknown fields in runtime config", () => {
+      const raw = {
+        credentials: ["anthropic_key"],
+        models: ["sonnet"],
+        bogusField: true,
+        anotherBogus: "value",
+      };
+
+      const unknownFields = detectAgentRuntimeConfigUnknownFields(raw);
+      expect(unknownFields).toContain("bogusField");
+      expect(unknownFields).toContain("anotherBogus");
+    });
+
+    it("returns empty array for empty config", () => {
+      const raw = {};
+
+      const unknownFields = detectAgentRuntimeConfigUnknownFields(raw);
+      expect(unknownFields).toEqual([]);
     });
   });
 
@@ -254,7 +299,7 @@ describe("validation", () => {
         schedule: "0 * * * *",
       };
 
-      const result = validateAgentConfig(config);
+      const result = validateAgentConfig(config, undefined, undefined);
       expect(result.valid).toBe(true);
       expect(result.errors).toEqual([]);
     });
@@ -273,7 +318,7 @@ describe("validation", () => {
         schedule: "invalid-cron",
       };
 
-      const result = validateAgentConfig(config);
+      const result = validateAgentConfig(config, undefined, undefined);
       expect(result.valid).toBe(false);
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0].message).toContain("Invalid cron expression");
@@ -292,7 +337,7 @@ describe("validation", () => {
         ],
       };
 
-      const result = validateAgentConfig(config);
+      const result = validateAgentConfig(config, undefined, undefined);
       expect(result.warnings).toHaveLength(1);
       expect(result.warnings[0].message).toContain("pi_auth");
       expect(result.warnings[0].context).toBe("unsafe configuration");
@@ -311,7 +356,37 @@ describe("validation", () => {
         ],
       };
 
-      const result = validateAgentConfig(config);
+      const result = validateAgentConfig(config, undefined, undefined);
+      expect(result.valid).toBe(true);
+      expect(result.errors).toEqual([]);
+    });
+
+    it("validates with raw frontmatter and runtime config", () => {
+      const config: AgentConfig = {
+        name: "test-agent",
+        credentials: [],
+        models: [
+          {
+            provider: "anthropic",
+            model: "claude-3-sonnet",
+            authType: "api_key",
+          },
+        ],
+        schedule: "0 * * * *",
+      };
+
+      const rawFrontmatter = {
+        name: "test-agent",
+        description: "A test agent",
+      };
+
+      const rawRuntimeConfig = {
+        credentials: ["anthropic_key"],
+        models: ["sonnet"],
+        schedule: "0 * * * *",
+      };
+
+      const result = validateAgentConfig(config, rawFrontmatter, rawRuntimeConfig);
       expect(result.valid).toBe(true);
       expect(result.errors).toEqual([]);
     });

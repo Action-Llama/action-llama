@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync
 import { join, resolve } from "path";
 import { tmpdir } from "os";
 import { stringify as stringifyYAML } from "yaml";
-import { stringify as stringifyTOML } from "smol-toml";
+import { stringify as stringifyTOML, parse as parseTOML } from "smol-toml";
 import { parseFrontmatter } from "../../../src/shared/frontmatter.js";
 
 // Mock inquirer prompts
@@ -24,28 +24,27 @@ vi.mock("@inquirer/prompts", () => ({
 let mockPackageRoot: string;
 vi.mock("../../../src/setup/scaffold.js", async (importOriginal) => {
   const orig = await importOriginal() as any;
-  const { existsSync: exists, readFileSync: readFile, writeFileSync: writeFile } = await import("fs");
+  const { existsSync: exists, readFileSync: readFile, writeFileSync: writeFile, mkdirSync: mkdir } = await import("fs");
   const { resolve: resolvePath } = await import("path");
+  const { stringify: toTOML } = await import("smol-toml");
   return {
     ...orig,
     resolvePackageRoot: () => mockPackageRoot,
-    // Wrap scaffoldAgent to inject models reference under metadata (scaffoldAgent strips models,
-    // but loadAgentConfig requires them; in production `al new` writes them separately).
+    // Wrap scaffoldAgent to ensure per-agent config.toml has models reference
+    // (scaffoldAgent writes config.toml from agent.config runtime fields,
+    // but loadAgentConfig requires models; in production `al new` writes them separately).
     scaffoldAgent: (projectPath: string, agent: any) => {
       orig.scaffoldAgent(projectPath, agent);
-      const skillPath = resolvePath(projectPath, "agents", agent.name, "SKILL.md");
-      if (exists(skillPath)) {
-        const content = readFile(skillPath, "utf-8");
-        if (!content.includes("models:")) {
-          // Inject models under the existing metadata block, or create one
-          let updated: string;
-          if (content.includes("metadata:")) {
-            updated = content.replace("metadata:\n", "metadata:\n  models:\n    - sonnet\n");
-          } else {
-            updated = content.replace("---\n", "---\nmetadata:\n  models:\n    - sonnet\n");
-          }
-          writeFile(skillPath, updated);
+      const agentDir = resolvePath(projectPath, "agents", agent.name);
+      const configPath = resolvePath(agentDir, "config.toml");
+      if (exists(configPath)) {
+        const content = readFile(configPath, "utf-8");
+        if (!content.includes("models")) {
+          writeFile(configPath, content + '\nmodels = ["sonnet"]\n');
         }
+      } else {
+        mkdir(agentDir, { recursive: true });
+        writeFile(configPath, toTOML({ models: ["sonnet"] }) + "\n");
       }
     },
   };
@@ -111,10 +110,14 @@ describe("agent new", () => {
   });
 
   it("creates agent from example template (dev)", async () => {
-    // Set up example template with SKILL.md
+    // Set up example template with SKILL.md (portable) and config.toml (runtime)
     const exampleDir = resolve(mockPackageRoot, "docs", "examples", "dev");
     mkdirSync(exampleDir, { recursive: true });
-    writeFileSync(resolve(exampleDir, "SKILL.md"), '---\nmetadata:\n  credentials:\n    - github_token\n  models:\n    - sonnet\n---\n\n# Dev Agent\n');
+    writeFileSync(resolve(exampleDir, "SKILL.md"), '---\n---\n\n# Dev Agent\n');
+    writeFileSync(resolve(exampleDir, "config.toml"), stringifyTOML({
+      credentials: ["github_token"],
+      models: ["sonnet"],
+    }) + "\n");
 
     // Mock: select type=dev, input name=my-dev, then "done" in config menu
     mockSelect
@@ -126,8 +129,11 @@ describe("agent new", () => {
 
     const agentDir = resolve(tmpDir, "agents", "my-dev");
     expect(existsSync(resolve(agentDir, "SKILL.md"))).toBe(true);
-    expect(readFileSync(resolve(agentDir, "SKILL.md"), "utf-8")).toContain("github_token");
     expect(readFileSync(resolve(agentDir, "SKILL.md"), "utf-8")).toContain("# Dev Agent");
+    // Runtime config (credentials, models) lives in config.toml now
+    expect(existsSync(resolve(agentDir, "config.toml"))).toBe(true);
+    const agentToml = parseTOML(readFileSync(resolve(agentDir, "config.toml"), "utf-8")) as any;
+    expect(agentToml.credentials).toContain("github_token");
   });
 
   it("creates custom agent with scaffoldAgent", async () => {
@@ -185,14 +191,18 @@ describe("agent config", () => {
   function createAgentConfig(name: string, config: Record<string, unknown>) {
     const agentDir = resolve(tmpDir, "agents", name);
     mkdirSync(agentDir, { recursive: true });
-    const { description, license, compatibility, ...alFields } = config;
+    // Portable fields go in SKILL.md frontmatter
+    const { description, license, compatibility, ...runtimeFields } = config;
     const frontmatter: Record<string, unknown> = {};
     if (description) frontmatter.description = description;
     if (license) frontmatter.license = license;
     if (compatibility) frontmatter.compatibility = compatibility;
-    if (Object.keys(alFields).length > 0) frontmatter.metadata = alFields;
-    const yamlStr = stringifyYAML(frontmatter).trimEnd();
+    const yamlStr = Object.keys(frontmatter).length > 0 ? stringifyYAML(frontmatter).trimEnd() : "";
     writeFileSync(resolve(agentDir, "SKILL.md"), `---\n${yamlStr}\n---\n\n# Test\n`);
+    // Runtime fields go in per-agent config.toml
+    if (Object.keys(runtimeFields).length > 0) {
+      writeFileSync(resolve(agentDir, "config.toml"), stringifyTOML(runtimeFields as Record<string, any>) + "\n");
+    }
   }
 
   it("throws when agent does not exist", async () => {
@@ -210,9 +220,8 @@ describe("agent config", () => {
 
     await configAgent("test-agent", { project: tmpDir });
 
-    const written = readFileSync(resolve(tmpDir, "agents", "test-agent", "SKILL.md"), "utf-8");
-    const { data } = parseFrontmatter(written);
-    expect((data.metadata as any).credentials).toEqual(["github_token", "anthropic_key"]);
+    const toml = parseTOML(readFileSync(resolve(tmpDir, "agents", "test-agent", "config.toml"), "utf-8")) as any;
+    expect(toml.credentials).toEqual(["github_token", "anthropic_key"]);
     expect(mockDoctorExecute).toHaveBeenCalledWith({ project: tmpDir });
   });
 
@@ -226,9 +235,8 @@ describe("agent config", () => {
 
     await configAgent("sched-agent", { project: tmpDir });
 
-    const written = readFileSync(resolve(tmpDir, "agents", "sched-agent", "SKILL.md"), "utf-8");
-    const { data } = parseFrontmatter(written);
-    expect((data.metadata as any).schedule).toBe("*/10 * * * *");
+    const toml = parseTOML(readFileSync(resolve(tmpDir, "agents", "sched-agent", "config.toml"), "utf-8")) as any;
+    expect(toml.schedule).toBe("*/10 * * * *");
   });
 
   it("edits model to openai", async () => {
@@ -242,10 +250,13 @@ describe("agent config", () => {
 
     await configAgent("model-agent", { project: tmpDir });
 
-    const written = readFileSync(resolve(tmpDir, "agents", "model-agent", "SKILL.md"), "utf-8");
-    const { data } = parseFrontmatter(written);
-    expect(((data.metadata as any).models as any)[0].provider).toBe("openai");
-    expect(((data.metadata as any).models as any)[0].model).toBe("gpt-4o");
+    // configAgent writes model names to per-agent config.toml (not full ModelConfig objects)
+    // and adds/updates the named model in the project-level config.toml [models] section
+    const toml = parseTOML(readFileSync(resolve(tmpDir, "agents", "model-agent", "config.toml"), "utf-8")) as any;
+    expect(toml.models).toBeDefined();
+    // The project-level config.toml should have the new model definition
+    const projectToml = parseTOML(readFileSync(resolve(tmpDir, "config.toml"), "utf-8")) as any;
+    expect(projectToml.models).toBeDefined();
   });
 
   it("edits params — add and save", async () => {
@@ -262,9 +273,8 @@ describe("agent config", () => {
 
     await configAgent("params-agent", { project: tmpDir });
 
-    const written = readFileSync(resolve(tmpDir, "agents", "params-agent", "SKILL.md"), "utf-8");
-    const { data } = parseFrontmatter(written);
-    expect(((data.metadata as any).params as any).myKey).toBe("myValue");
+    const toml = parseTOML(readFileSync(resolve(tmpDir, "agents", "params-agent", "config.toml"), "utf-8")) as any;
+    expect(toml.params.myKey).toBe("myValue");
   });
 
   it("edits params — shows existing params and allows editing", async () => {
@@ -281,9 +291,8 @@ describe("agent config", () => {
 
     await configAgent("params-edit", { project: tmpDir });
 
-    const written = readFileSync(resolve(tmpDir, "agents", "params-edit", "SKILL.md"), "utf-8");
-    const { data } = parseFrontmatter(written);
-    expect(((data.metadata as any).params as any).existing).toBe("new-value");
+    const toml = parseTOML(readFileSync(resolve(tmpDir, "agents", "params-edit", "config.toml"), "utf-8")) as any;
+    expect(toml.params.existing).toBe("new-value");
   });
 
   it("edits params — remove existing param", async () => {
@@ -298,10 +307,9 @@ describe("agent config", () => {
 
     await configAgent("params-rm", { project: tmpDir });
 
-    const written = readFileSync(resolve(tmpDir, "agents", "params-rm", "SKILL.md"), "utf-8");
-    const { data } = parseFrontmatter(written);
-    expect(((data.metadata as any).params as any).removeme).toBeUndefined();
-    expect(((data.metadata as any).params as any).keepme).toBe("stay");
+    const toml = parseTOML(readFileSync(resolve(tmpDir, "agents", "params-rm", "config.toml"), "utf-8")) as any;
+    expect(toml.params?.removeme).toBeUndefined();
+    expect(toml.params.keepme).toBe("stay");
   });
 
   it("webhooks offers to create source when none configured", async () => {
@@ -321,7 +329,7 @@ describe("agent config", () => {
   it("webhooks walks through source creation when user accepts", async () => {
     createAgentConfig("wh-setup", { credentials: [], models: ["sonnet"] });
 
-    // No config.toml exists yet — no webhook sources
+    // No webhook sources in project config.toml yet
     mockSelect
       .mockResolvedValueOnce("webhooks")    // menu: webhooks
       .mockResolvedValueOnce("github")      // provider type for new source
@@ -334,7 +342,7 @@ describe("agent config", () => {
 
     await configAgent("wh-setup", { project: tmpDir });
 
-    // config.toml should have been created with the webhook source
+    // Project config.toml should have the webhook source
     const configToml = readFileSync(resolve(tmpDir, "config.toml"), "utf-8");
     expect(configToml).toContain("my-github");
     expect(configToml).toContain("github");

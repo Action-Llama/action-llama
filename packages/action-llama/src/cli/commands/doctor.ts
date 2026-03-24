@@ -1,6 +1,6 @@
 import { resolve } from "path";
 import { existsSync, readFileSync } from "fs";
-import { discoverAgents, loadAgentConfig, loadGlobalConfig, validateAgentConfig, loadProjectConfig } from "../../shared/config.js";
+import { discoverAgents, loadAgentConfig, loadAgentRuntimeConfig, loadGlobalConfig, validateAgentConfig, loadProjectConfig } from "../../shared/config.js";
 import { resolveCredential } from "../../credentials/registry.js";
 import { promptCredential } from "../../credentials/prompter.js";
 import { parseCredentialRef, credentialExists, writeCredentialFields } from "../../shared/credentials.js";
@@ -15,6 +15,7 @@ import {
   validateAgentConfig as validateAgentConfigEnhanced,
   detectGlobalConfigUnknownFields,
   detectAgentFrontmatterUnknownFields,
+  detectAgentRuntimeConfigUnknownFields,
   type ValidationResult
 } from "../../shared/validation.js";
 
@@ -68,19 +69,21 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
     try {
       const agentDir = resolve(projectPath, "agents", name);
       const skillPath = resolve(agentDir, "SKILL.md");
-      
+
       if (existsSync(skillPath)) {
         const rawSkill = readFileSync(skillPath, "utf-8");
         const { data } = parseFrontmatter(rawSkill);
-        
+
         const config = loadAgentConfig(projectPath, name);
-        // Unwrap metadata: AL-specific fields live under data.metadata in the
-        // frontmatter, but the schema validates the flat resolved config shape.
-        const rawMeta = (data as Record<string, unknown>).metadata as Record<string, unknown> | undefined;
-        const rawForValidation = rawMeta
-          ? { name, ...rawMeta }
-          : data;
-        const agentValidation = validateAgentConfigEnhanced(config, rawForValidation);
+
+        // Load raw runtime config for schema validation
+        const configTomlPath = resolve(agentDir, "config.toml");
+        let rawRuntimeConfig: unknown;
+        if (existsSync(configTomlPath)) {
+          rawRuntimeConfig = parseTOML(readFileSync(configTomlPath, "utf-8"));
+        }
+
+        const agentValidation = validateAgentConfigEnhanced(config, data, rawRuntimeConfig);
 
         validationErrors.push(...agentValidation.errors.map(e =>
           `Agent "${name}": ${e.message}${e.field ? ` (${e.field})` : ""}`
@@ -89,10 +92,18 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
           `Agent "${name}": ${e.message}${e.field ? ` (${e.field})` : ""}`
         ));
 
-        // Check for unknown fields in agent frontmatter (always an error)
-        const unknownFields = detectAgentFrontmatterUnknownFields(data);
-        if (unknownFields.length > 0) {
-          validationErrors.push(`Unknown fields in agent "${name}": ${unknownFields.join(", ")}`);
+        // Check for unknown fields in agent SKILL.md frontmatter
+        const unknownFrontmatter = detectAgentFrontmatterUnknownFields(data);
+        if (unknownFrontmatter.length > 0) {
+          validationErrors.push(`Unknown fields in agent "${name}" SKILL.md: ${unknownFrontmatter.join(", ")}`);
+        }
+
+        // Check for unknown fields in agent config.toml
+        if (rawRuntimeConfig) {
+          const unknownRuntime = detectAgentRuntimeConfigUnknownFields(rawRuntimeConfig);
+          if (unknownRuntime.length > 0) {
+            validationErrors.push(`Unknown fields in agent "${name}" config.toml: ${unknownRuntime.join(", ")}`);
+          }
         }
       }
     } catch (err) {

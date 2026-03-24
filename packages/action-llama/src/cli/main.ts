@@ -334,6 +334,39 @@ credsCmd
     await types();
   }));
 
+// --- Skill management (top-level shortcuts) ---
+
+program
+  .command("add")
+  .description("Install a skill from a git repository")
+  .argument("<repo>", "git URL or GitHub shorthand (author/repo)")
+  .option("-p, --project <dir>", "project directory", ".")
+  .option("-s, --skill <name>", "skill name (if repo contains multiple)")
+  .action(withCommand(async (repo: string, opts) => {
+    const { execute } = await import("./commands/add.js");
+    await execute(repo, opts);
+  }));
+
+program
+  .command("config")
+  .description("Interactively configure an agent")
+  .argument("<name>", "agent name")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(withCommand(async (name: string, opts) => {
+    const { configAgent } = await import("./commands/agent.js");
+    await configAgent(name, opts);
+  }));
+
+program
+  .command("update")
+  .description("Update installed skills from their source repos")
+  .argument("[agent]", "agent name (omit to check all)")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(withCommand(async (agent: string | undefined, opts) => {
+    const { execute } = await import("./commands/update.js");
+    await execute(agent, opts);
+  }));
+
 // --- Agent management ---
 
 const agentCmd = program

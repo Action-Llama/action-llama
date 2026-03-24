@@ -12,43 +12,27 @@ function writeModelsConfig(dir: string, models: Record<string, unknown>, extra?:
   writeFileSync(resolve(dir, "config.toml"), stringifyTOML({ models, ...extra }));
 }
 
-/** Helper to write a SKILL.md referencing named models. */
-function writeSkillMd(dir: string, agentName: string, opts: { models: string[]; credentials?: string[]; schedule?: string; hooks?: unknown; description?: string; params?: unknown }) {
+/** Helper to write SKILL.md (portable fields only) and per-agent config.toml (runtime fields). */
+function writeSkillMd(dir: string, agentName: string, opts: { models: string[]; credentials?: string[]; schedule?: string; hooks?: unknown; description?: string; params?: unknown; scale?: number; timeout?: number }) {
   const agentDir = resolve(dir, "agents", agentName);
   mkdirSync(agentDir, { recursive: true });
-  const lines = ["---"];
-  if (opts.description) lines.push(`description: ${opts.description}`);
-  lines.push(`metadata:`);
-  lines.push(`  credentials:`);
-  for (const c of opts.credentials ?? []) lines.push(`    - ${c}`);
-  lines.push(`  models:`);
-  for (const m of opts.models) lines.push(`    - ${m}`);
-  if (opts.schedule) lines.push(`  schedule: "${opts.schedule}"`);
-  if (opts.hooks) {
-    lines.push(`  hooks:`);
-    const h = opts.hooks as any;
-    if (h.pre) {
-      lines.push(`    pre:`);
-      for (const cmd of h.pre) lines.push(`      - "${cmd}"`);
-    }
-    if (h.post) {
-      lines.push(`    post:`);
-      for (const cmd of h.post) lines.push(`      - "${cmd}"`);
-    }
-  }
-  if (opts.params) {
-    lines.push(`  params:`);
-    for (const [k, v] of Object.entries(opts.params as Record<string, unknown>)) {
-      if (Array.isArray(v)) {
-        lines.push(`    ${k}:`);
-        for (const item of v) lines.push(`      - ${item}`);
-      } else {
-        lines.push(`    ${k}: ${v}`);
-      }
-    }
-  }
-  lines.push("---", "", `# ${agentName} Agent`, "", "Custom agent.", "");
-  writeFileSync(resolve(agentDir, "SKILL.md"), lines.join("\n"));
+
+  // Write portable SKILL.md
+  const fmLines = ["---"];
+  fmLines.push(`name: ${agentName}`);
+  if (opts.description) fmLines.push(`description: ${opts.description}`);
+  fmLines.push("---", "", `# ${agentName} Agent`, "", "Custom agent.", "");
+  writeFileSync(resolve(agentDir, "SKILL.md"), fmLines.join("\n"));
+
+  // Write per-agent config.toml
+  const runtime: Record<string, unknown> = { models: opts.models };
+  if (opts.credentials?.length) runtime.credentials = opts.credentials;
+  if (opts.schedule) runtime.schedule = opts.schedule;
+  if (opts.hooks) runtime.hooks = opts.hooks;
+  if (opts.params) runtime.params = opts.params;
+  if (opts.scale !== undefined) runtime.scale = opts.scale;
+  if (opts.timeout !== undefined) runtime.timeout = opts.timeout;
+  writeFileSync(resolve(agentDir, "config.toml"), stringifyTOML(runtime));
 }
 
 const SONNET_MODEL = {
@@ -189,14 +173,16 @@ describe("loadAgentConfig", () => {
     const agentDir = resolve(tmpDir, "agents", "dev");
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(resolve(agentDir, "SKILL.md"), `---
-metadata:
-  credentials:
-    - github_token
-  schedule: "*/5 * * * *"
+name: dev
 ---
 
 # Dev
 `);
+    // Write config.toml without models field
+    writeFileSync(resolve(agentDir, "config.toml"), stringifyTOML({
+      credentials: ["github_token"],
+      schedule: "*/5 * * * *",
+    }));
     expect(() => loadAgentConfig(tmpDir, "dev")).toThrow("must have a \"models\" field");
   });
 
@@ -235,13 +221,14 @@ metadata:
     const agentDir = resolve(tmpDir, "agents", "bad-yaml");
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(resolve(agentDir, "SKILL.md"), `---
-metadata:
-  models: [
-    - broken
+name: [
+  - broken
 ---
 
 # Bad
 `);
+    // Also write a valid per-agent config.toml so only SKILL.md parsing fails
+    writeFileSync(resolve(agentDir, "config.toml"), stringifyTOML({ models: ["sonnet"] }));
     expect(() => loadAgentConfig(tmpDir, "bad-yaml")).toThrow(/SKILL\.md/);
   });
 
@@ -279,8 +266,7 @@ describe("loadAgentBody", () => {
     const agentDir = resolve(tmpDir, "agents", "dev");
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(resolve(agentDir, "SKILL.md"), `---
-metadata:
-  credentials: []
+name: dev
 ---
 
 # Dev Agent
@@ -291,7 +277,7 @@ Do the work.
     const body = loadAgentBody(tmpDir, "dev");
     expect(body).toContain("# Dev Agent");
     expect(body).toContain("Do the work.");
-    expect(body).not.toContain("credentials");
+    expect(body).not.toContain("name: dev");
   });
 
   it("returns empty string for missing SKILL.md", () => {
@@ -482,112 +468,67 @@ describe("agent runtime overrides", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("applies scale override from .env.toml", () => {
+  it("applies scale from per-agent config.toml", () => {
     writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
     writeSkillMd(tmpDir, "dev", {
       models: ["sonnet"],
       credentials: ["github_token"],
       schedule: "*/5 * * * *",
+      scale: 5,
     });
-    writeFileSync(resolve(tmpDir, ".env.toml"), stringifyTOML({
-      agents: { dev: { scale: 5 } },
-    }));
 
     const loaded = loadAgentConfig(tmpDir, "dev");
     expect(loaded.scale).toBe(5);
   });
 
-  it("applies timeout override from .env.toml", () => {
+  it("applies timeout from per-agent config.toml", () => {
     writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
     writeSkillMd(tmpDir, "dev", {
       models: ["sonnet"],
       credentials: ["github_token"],
       schedule: "*/5 * * * *",
+      timeout: 3600,
     });
-    writeFileSync(resolve(tmpDir, ".env.toml"), stringifyTOML({
-      agents: { dev: { timeout: 3600 } },
-    }));
 
     const loaded = loadAgentConfig(tmpDir, "dev");
     expect(loaded.timeout).toBe(3600);
   });
 
-  it("does not read scale/timeout from SKILL.md (they belong in config.toml)", () => {
+  it("does not read scale/timeout from SKILL.md (they belong in per-agent config.toml)", () => {
     writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
     const agentDir = resolve(tmpDir, "agents", "dev");
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(resolve(agentDir, "SKILL.md"), `---
-metadata:
-  credentials:
-    - github_token
-  models:
-    - sonnet
-  schedule: "*/5 * * * *"
+name: dev
 ---
 
 # Dev
 `);
+    // Write per-agent config.toml without scale/timeout
+    writeFileSync(resolve(agentDir, "config.toml"), stringifyTOML({
+      credentials: ["github_token"],
+      models: ["sonnet"],
+      schedule: "*/5 * * * *",
+    }));
 
     const loaded = loadAgentConfig(tmpDir, "dev");
     expect(loaded.scale).toBeUndefined();
     expect(loaded.timeout).toBeUndefined();
   });
 
-  it("applies scale/timeout from config.toml [agents] overrides", () => {
-    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
-      models: { sonnet: SONNET_MODEL },
-      agents: { dev: { scale: 8, timeout: 7200 } },
-    }));
-    const agentDir = resolve(tmpDir, "agents", "dev");
-    mkdirSync(agentDir, { recursive: true });
-    writeFileSync(resolve(agentDir, "SKILL.md"), `---
-metadata:
-  credentials:
-    - github_token
-  models:
-    - sonnet
-  schedule: "*/5 * * * *"
----
-
-# Dev
-`);
+  it("applies scale/timeout from per-agent config.toml", () => {
+    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
+    writeSkillMd(tmpDir, "dev", {
+      models: ["sonnet"],
+      credentials: ["github_token"],
+      schedule: "*/5 * * * *",
+      scale: 8,
+      timeout: 7200,
+    });
 
     const loaded = loadAgentConfig(tmpDir, "dev");
     expect(loaded.scale).toBe(8);
     expect(loaded.timeout).toBe(7200);
-  });
-
-  it("ignores unknown keys in [agents] entries (shared namespace with webhook triggers)", () => {
-    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
-      models: { sonnet: SONNET_MODEL },
-      agents: { dev: { trigger: { webhook: { source: "github" } } } },
-    }));
-
-    // Should not throw — unknown keys are ignored
-    const loaded = loadGlobalConfig(tmpDir);
-    expect(loaded.agents).toBeDefined();
-  });
-
-  it("validates: rejects negative scale", () => {
-    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
-      models: { sonnet: SONNET_MODEL },
-    }));
-    writeFileSync(resolve(tmpDir, ".env.toml"), stringifyTOML({
-      agents: { dev: { scale: -1 } },
-    }));
-
-    expect(() => loadGlobalConfig(tmpDir)).toThrow("non-negative integer");
-  });
-
-  it("validates: rejects non-positive timeout", () => {
-    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
-      models: { sonnet: SONNET_MODEL },
-    }));
-    writeFileSync(resolve(tmpDir, ".env.toml"), stringifyTOML({
-      agents: { dev: { timeout: 0 } },
-    }));
-
-    expect(() => loadGlobalConfig(tmpDir)).toThrow("positive integer");
   });
 
   it("allows scale = 0 to disable an agent", () => {
@@ -596,26 +537,11 @@ metadata:
       models: ["sonnet"],
       credentials: ["github_token"],
       schedule: "*/5 * * * *",
+      scale: 0,
     });
-    writeFileSync(resolve(tmpDir, ".env.toml"), stringifyTOML({
-      agents: { dev: { scale: 0 } },
-    }));
 
     const loaded = loadAgentConfig(tmpDir, "dev");
     expect(loaded.scale).toBe(0);
-  });
-
-  it("agents overrides pass through three-layer merge", () => {
-    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
-      models: { sonnet: SONNET_MODEL },
-    }));
-    writeFileSync(resolve(tmpDir, ".env.toml"), stringifyTOML({
-      agents: { dev: { scale: 5, timeout: 1800 } },
-    }));
-
-    const loaded = loadGlobalConfig(tmpDir);
-    expect(loaded.agents?.dev?.scale).toBe(5);
-    expect(loaded.agents?.dev?.timeout).toBe(1800);
   });
 });
 
@@ -655,12 +581,12 @@ describe("defaultAgentScale", () => {
     writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
       models: { sonnet: SONNET_MODEL },
       defaultAgentScale: 4,
-      agents: { dev: { scale: 2 } },
     }));
     writeSkillMd(tmpDir, "dev", {
       models: ["sonnet"],
       credentials: ["github_token"],
       schedule: "*/5 * * * *",
+      scale: 2,
     });
 
     const loaded = loadAgentConfig(tmpDir, "dev");

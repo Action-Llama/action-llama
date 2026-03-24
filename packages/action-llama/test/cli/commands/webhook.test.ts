@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
-import { join } from "path";
+import { join, resolve } from "path";
 import { tmpdir } from "os";
 import { stringify as stringifyTOML } from "smol-toml";
 import { execute } from "../../../src/cli/commands/webhook.js";
@@ -36,6 +36,14 @@ describe("webhook command", () => {
     }
   });
 
+  /** Create a per-agent SKILL.md + config.toml instead of [agents.<name>] in root config. */
+  function createAgent(name: string, runtimeConfig: Record<string, unknown>) {
+    const agentDir = resolve(projectPath, "agents", name);
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(join(agentDir, "SKILL.md"), `---\n---\n\n# ${name}\n`);
+    writeFileSync(join(agentDir, "config.toml"), stringifyTOML(runtimeConfig as any) + "\n");
+  }
+
   describe("execute", () => {
     it("should throw error for unknown commands", async () => {
       await expect(execute("unknown", "fixture.json", { project: projectPath }))
@@ -56,19 +64,14 @@ describe("webhook command", () => {
     });
 
     it("should process GitHub webhook fixture successfully", async () => {
-      // Create config.toml
+      // Create per-agent config
+      createAgent("test-agent", {
+        models: ["sonnet"],
+        webhooks: [{ source: "github", events: ["issues"], actions: ["labeled"] }],
+      });
+      // Create project config.toml with webhook source
       const config = {
-        agents: {
-          "test-agent": {
-            trigger: {
-              webhook: {
-                source: "github",
-                events: ["issues"],
-                actions: ["labeled"]
-              }
-            }
-          }
-        },
+        models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
         webhooks: {
           github: {
             type: "github",
@@ -118,21 +121,15 @@ describe("webhook command", () => {
     });
 
     it("should work with explicit source parameter", async () => {
-      // Create config.toml
-      const config = {
-        agents: {
-          "test-agent": {
-            trigger: {
-              webhook: {
-                source: "github",
-                events: ["issues"],
-                actions: ["labeled"]
-              }
-            }
-          }
-        }
-      };
-      writeFileSync(join(projectPath, "config.toml"), stringifyTOML(config));
+      // Create per-agent config
+      createAgent("test-agent", {
+        models: ["sonnet"],
+        webhooks: [{ source: "github", events: ["issues"], actions: ["labeled"] }],
+      });
+      // Create project config.toml with models
+      writeFileSync(join(projectPath, "config.toml"), stringifyTOML({
+        models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+      }));
 
       // Create fixture
       const fixture = {
@@ -177,9 +174,8 @@ describe("webhook command", () => {
     });
 
     it("should handle simulate alias command", async () => {
-      // Create minimal config
-      const config = { agents: {} };
-      writeFileSync(join(projectPath, "config.toml"), stringifyTOML(config));
+      // Create minimal config (no agents needed for this test)
+      mkdirSync(resolve(projectPath, "agents"), { recursive: true });
 
       // Create fixture
       const fixture = {
@@ -200,20 +196,15 @@ describe("webhook command", () => {
     });
 
     it("should show interactive run suggestion when --run is specified", async () => {
-      // Create config with matching agent
-      const config = {
-        agents: {
-          "matching-agent": {
-            trigger: {
-              webhook: {
-                source: "test",
-                events: ["test"]
-              }
-            }
-          }
-        }
-      };
-      writeFileSync(join(projectPath, "config.toml"), stringifyTOML(config));
+      // Create per-agent config with webhook trigger
+      createAgent("matching-agent", {
+        models: ["sonnet"],
+        webhooks: [{ source: "test", events: ["test"] }],
+      });
+      // Create project config.toml with models
+      writeFileSync(join(projectPath, "config.toml"), stringifyTOML({
+        models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+      }));
 
       // Create fixture that will match
       const fixture = {
