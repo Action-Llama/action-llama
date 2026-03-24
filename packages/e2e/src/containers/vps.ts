@@ -181,9 +181,8 @@ EOF`
   const certBasePath = `/opt/action-llama/credentials/cloudflare_origin_cert/${cloudflareHostname}`;
   await context.executeSSHCommand(vpsContainer, [
     `mkdir -p ${certBasePath}`,
-    `openssl req -x509 -newkey rsa:2048 -keyout ${certBasePath}/private_key`,
-    `-out ${certBasePath}/certificate -days 1 -nodes -subj '/CN=${cloudflareHostname}'`,
-  ].join(" "));
+    `openssl req -x509 -newkey rsa:2048 -keyout ${certBasePath}/private_key -out ${certBasePath}/certificate -days 1 -nodes -subj '/CN=${cloudflareHostname}'`,
+  ].join(" && "));
 
   // Deploy — use --no-creds since certs are already on the VPS
   const pushOutput = await context.executeInContainer(localContainer, [
