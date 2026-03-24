@@ -35,6 +35,7 @@ al doctor -E production
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
 | `-E, --env <name>` | Environment name — pushes credentials to server and reconciles IAM |
+| `--strict` | Treat unknown config fields as errors instead of warnings |
 
 ## `al run <agent>`
 
@@ -102,11 +103,12 @@ al stat -E production
 | `-p, --project <dir>` | Project directory (default: `.`) |
 | `-E, --env <name>` | Environment name |
 
-## `al logs <agent>`
+## `al logs [agent]`
 
-View log files for a specific agent.
+View log files for a specific agent, or scheduler logs if no agent is specified.
 
 ```bash
+al logs                       # Scheduler logs
 al logs dev
 al logs dev -n 100            # Show last 100 entries
 al logs dev -f                # Follow/tail mode
@@ -129,11 +131,33 @@ al logs dev -E production     # Remote agent logs
 ### Troubleshooting logs
 
 ```bash
-al logs <agent>               # Local logs
+al logs                       # Scheduler logs
+al logs <agent>               # Agent logs
 al logs <agent> -f            # Follow mode
 al logs <agent> -d 2025-01-15 # Specific date
 al env logs production -f     # Server system logs via SSH
 ```
+
+## `al stats [agent]`
+
+Show historical run statistics from the local SQLite stats database. Without an agent name, shows a global summary across all agents. With an agent name, shows detailed per-run history.
+
+```bash
+al stats                      # Global summary (last 7 days)
+al stats dev                  # Per-run detail for dev agent
+al stats --since 24h          # Last 24 hours only
+al stats dev -n 50            # Last 50 runs for dev agent
+al stats --calls              # Agent-to-agent call graph summary
+al stats --json               # JSON output
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-s, --since <duration>` | Time window: e.g. `24h`, `7d`, `30d` (default: `7d`) |
+| `-n <N>` | Number of recent runs to show (default: 20) |
+| `--json` | Output as JSON |
+| `--calls` | Show agent-to-agent call graph summary instead of run history |
 
 ## `al pause [name]`
 
@@ -379,6 +403,24 @@ al agent config dev
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
+
+## Webhook Commands
+
+### `al webhook replay <fixture>`
+
+Load a webhook fixture file (JSON) and test which agents would match. Useful for debugging webhook configurations without sending real webhooks. The fixture file must have `headers` and `body` properties.
+
+```bash
+al webhook replay test/fixtures/github-issue.json
+al webhook replay payload.json --source my-github
+al webhook replay payload.json --run              # Interactively run a matched agent
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-r, --run` | Interactively run a matched agent after simulation |
+| `-s, --source <name>` | Webhook source name from `config.toml` (auto-detected from headers if omitted) |
 
 ## MCP Commands
 

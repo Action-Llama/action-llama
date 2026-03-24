@@ -109,14 +109,14 @@ export const sentryWebhookExtension: WebhookExtension = {
     description: "Sentry webhook provider",
     type: "webhook",
     requiredCredentials: [
-      { type: "sentry_webhook_secret", description: "Sentry webhook secret for HMAC validation", optional: true }
+      { type: "sentry_client_secret", description: "Sentry client secret for HMAC validation", optional: true }
     ],
     providesCredentialTypes: [
       {
-        type: "sentry_webhook_secret",
+        type: "sentry_client_secret",
         fields: ["secret"],
-        description: "Sentry webhook secret",
-        envMapping: { secret: "SENTRY_WEBHOOK_SECRET" }
+        description: "Sentry client secret",
+        envMapping: { secret: "SENTRY_CLIENT_SECRET" }
       }
     ]
   },

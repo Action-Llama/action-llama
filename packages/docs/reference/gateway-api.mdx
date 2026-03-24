@@ -70,6 +70,13 @@ Live updates use **Server-Sent Events (SSE)**:
 | `GET /dashboard/api/status-stream` | Pushes agent status and scheduler info whenever state changes |
 | `GET /dashboard/api/logs/<agent>/stream` | Streams log lines for a specific agent (500ms poll interval) |
 
+### Trigger history
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/stats/triggers` | Paginated trigger history (cron, webhook, agent-call). Supports query params: `page`, `limit`, `deadLetter` (boolean). |
+| `POST /api/webhooks/:receiptId/replay` | Re-dispatch a stored webhook payload by receipt ID. Returns the dispatch result. |
+
 ### Health check
 
 | Endpoint | Description |

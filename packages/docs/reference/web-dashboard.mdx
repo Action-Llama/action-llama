@@ -54,6 +54,17 @@ Below the table, a **Recent Activity** section shows the last 20 log lines acros
 
 All data updates in real time via Server-Sent Events (SSE) — no manual refresh needed.
 
+### Trigger History — `/dashboard/triggers`
+
+Displays a paginated table of all trigger events — cron, webhook, and agent-call triggers — with the outcome of each. Includes a toggle to show dead-letter webhook receipts (payloads that arrived but did not match any agent or failed validation).
+
+Features:
+- **Pagination** — browse through historical triggers
+- **Dead-letter toggle** — show webhook payloads that were received but not dispatched
+- **Replay** — re-dispatch a stored webhook payload to matching agents
+
+The same data is available via the [Trigger History API](/reference/gateway-api#trigger-history).
+
 ### Agent Logs — `/dashboard/agents/<name>/logs`
 
 Displays a live-streaming log view for a single agent. Logs follow automatically by default (new entries scroll into view as they arrive).
