@@ -175,11 +175,12 @@ EOF`,
 
       // THIS is the critical smoke test: the SSE stream must connect.
       // If the frontend can't reach /dashboard/api/status-stream, this fails.
-      // The connected indicator is a <span class="text-green-500">Connected</span>.
-      // "Disconnected" uses text-red-500. Match on the green class to avoid ambiguity.
-      await page.waitForSelector("span.text-green-500", { timeout: 15000 });
-      const text = await page.locator("span.text-green-500").first().textContent();
-      expect(text).toBe("Connected");
+      // The connected indicator is now a <span class="bg-green-500"> (green circle) for connected.
+      // "Disconnected" uses bg-red-500. Match on the green background class to verify connection.
+      await page.waitForSelector("span.bg-green-500", { timeout: 15000 });
+      // Verify the element has a title attribute indicating connection status
+      const title = await page.locator("span.bg-green-500").first().getAttribute("title");
+      expect(title).toBe("Connected");
     } finally {
       await page.close();
     }
