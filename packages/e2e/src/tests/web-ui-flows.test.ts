@@ -36,7 +36,7 @@ EOF`,
   await context.executeInContainer(container, [
     "bash",
     "-c",
-    `cd /home/testuser/test-project && nohup al start --headless > /tmp/scheduler.log 2>&1 & echo $! > /tmp/scheduler.pid`,
+    `cd /home/testuser/test-project && nohup al start --headless --web-ui > /tmp/scheduler.log 2>&1 & echo $! > /tmp/scheduler.pid`,
   ]);
 
   // Poll health endpoint until the gateway is ready (max 30s)

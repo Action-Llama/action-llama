@@ -14,6 +14,8 @@ export interface ContainerInfo {
   ipAddress?: string;
   sshHost?: string;
   sshPort?: number;
+  /** Mapped host ports, keyed by container port (e.g. "8080/tcp" → 49152). */
+  mappedPorts?: Record<string, number>;
 }
 
 export class E2ETestContext {
@@ -101,15 +103,26 @@ export class E2ETestContext {
     });
   }
 
-  async createLocalActionLlamaContainer(): Promise<ContainerInfo> {
+  async createLocalActionLlamaContainer(opts?: {
+    /** Container ports to expose to the host (e.g. ["8080/tcp"]). */
+    exposePorts?: string[];
+  }): Promise<ContainerInfo> {
     // Verify network exists before proceeding
     await this.verifyNetworkExists();
-    
+
     // Build the local Action Llama container
     await this.buildImage("action-llama-local", "docker/local");
-    
+
     const containerName = `action-llama-e2e-local-${this.runId}`;
-    
+
+    // Build port bindings if requested
+    const portBindings: Record<string, Array<{ HostPort: string }>> = {};
+    const exposedPorts: Record<string, Record<string, never>> = {};
+    for (const port of opts?.exposePorts ?? []) {
+      portBindings[port] = [{ HostPort: "0" }]; // random host port
+      exposedPorts[port] = {};
+    }
+
     const container = await this.docker.createContainer({
       Image: "action-llama-local:latest",
       name: containerName,
@@ -122,8 +135,10 @@ export class E2ETestContext {
       ],
       WorkingDir: "/app",
       Cmd: ["tail", "-f", "/dev/null"], // Keep container running
+      ExposedPorts: Object.keys(exposedPorts).length > 0 ? exposedPorts : undefined,
       HostConfig: {
         NetworkMode: "action-llama-e2e",
+        PortBindings: Object.keys(portBindings).length > 0 ? portBindings : undefined,
       },
     });
 
@@ -138,13 +153,26 @@ export class E2ETestContext {
       const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
-    
+
+    // Resolve mapped host ports
+    const mappedPorts: Record<string, number> = {};
+    if (opts?.exposePorts?.length) {
+      const inspectInfo = await container.inspect();
+      for (const port of opts.exposePorts) {
+        const bindings = inspectInfo.NetworkSettings.Ports?.[port];
+        if (bindings?.[0]?.HostPort) {
+          mappedPorts[port] = parseInt(bindings[0].HostPort, 10);
+        }
+      }
+    }
+
     const info: ContainerInfo = {
       id: container.id,
       name: containerName,
       ipAddress,
+      mappedPorts: Object.keys(mappedPorts).length > 0 ? mappedPorts : undefined,
     };
-    
+
     this.containers.push(info);
     return info;
   }
