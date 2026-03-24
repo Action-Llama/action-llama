@@ -149,8 +149,16 @@ function formatConversationEntry(entry: LogEntry): string | null {
 
   // ── Errors and warnings ──
   if (entry.level >= 50) {
-    const errDetail = entry.err ? ` ${DIM}${JSON.stringify(entry.err).slice(0, 300)}${RESET}` : "";
-    return `${time}  ${RED}${BOLD}ERROR: ${msg}${RESET}${errDetail}`;
+    // Show error details from any common key: pino's `err`, container's `error`/`stack`, or generic extras
+    const errMsg = entry.error ?? entry.err;
+    const stack = entry.stack;
+    const { level: _l, time: _t, msg: _m, name: _n, instance: _in, pid: _p, hostname: _h, err: _e, error: _er, stack: _s, ...extras } = entry;
+    const parts: string[] = [];
+    if (errMsg) parts.push(String(errMsg));
+    if (stack) parts.push(`${DIM}${String(stack)}${RESET}`);
+    if (Object.keys(extras).length > 0) parts.push(`${DIM}${JSON.stringify(extras).slice(0, 300)}${RESET}`);
+    const detail = parts.length > 0 ? `\n          ${parts.join("\n          ")}` : "";
+    return `${time}  ${RED}${BOLD}ERROR: ${msg}${RESET}${detail}`;
   }
 
   if (entry.level >= 40) {
