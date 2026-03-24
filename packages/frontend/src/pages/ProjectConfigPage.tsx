@@ -8,6 +8,7 @@ import {
 } from "../lib/api";
 import type { ProjectConfigData } from "../lib/api";
 import { useStatusStream } from "../hooks/StatusStreamContext";
+import { useInvalidation } from "../hooks/useInvalidation";
 
 export function ProjectConfigPage() {
   const { schedulerInfo } = useStatusStream();
@@ -16,7 +17,7 @@ export function ProjectConfigPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
-  useEffect(() => {
+  const refetchConfig = useCallback(() => {
     getProjectConfig()
       .then((d) => {
         setConfig(d);
@@ -24,6 +25,12 @@ export function ProjectConfigPage() {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    refetchConfig();
+  }, [refetchConfig]);
+
+  useInvalidation("config", undefined, refetchConfig);
 
   const handleAction = useCallback(
     async (fn: () => Promise<unknown>, successMsg?: string) => {

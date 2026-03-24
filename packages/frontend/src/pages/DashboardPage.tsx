@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import { useStatusStream } from "../hooks/StatusStreamContext";
+import { useInvalidation } from "../hooks/useInvalidation";
 import { StateBadge, TriggerTypeBadge, ResultBadge } from "../components/Badge";
 import {
   getTriggerHistory,
@@ -104,11 +105,17 @@ export function DashboardPage() {
   }, [searchQuery]);
 
   // Fetch recent triggers
-  useEffect(() => {
+  const refetchTriggers = useCallback(() => {
     getTriggerHistory(5, 0, false)
       .then((data) => setTriggers(data.triggers))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    refetchTriggers();
+  }, [refetchTriggers]);
+
+  useInvalidation("triggers", undefined, refetchTriggers);
 
   const totalTokens = agents.reduce(
     (sum, a) => sum + (a.cumulativeUsage?.totalTokens ?? 0),

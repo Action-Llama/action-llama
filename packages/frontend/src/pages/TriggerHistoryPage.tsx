@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
+import { useInvalidation } from "../hooks/useInvalidation";
 import { TriggerTypeBadge, ResultBadge } from "../components/Badge";
 import { getTriggerHistory } from "../lib/api";
 import type { TriggerHistoryRow } from "../lib/api";
@@ -32,6 +33,12 @@ export function TriggerHistoryPage() {
   useEffect(() => {
     load(0, showDeadLetters);
   }, [showDeadLetters, load]);
+
+  const refetchPage = useCallback(() => {
+    load(offset, showDeadLetters);
+  }, [load, offset, showDeadLetters]);
+
+  useInvalidation("triggers", undefined, refetchPage);
 
   const page = Math.floor(offset / PAGE_SIZE) + 1;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));

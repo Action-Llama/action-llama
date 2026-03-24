@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useStatusStream } from "../hooks/StatusStreamContext";
+import { useInvalidation } from "../hooks/useInvalidation";
 import { StatCard } from "../components/StatCard";
 import { StateBadge, TriggerTypeBadge, ResultBadge } from "../components/Badge";
 import {
@@ -78,7 +79,7 @@ export function AgentDetailPage() {
       : detail?.runningInstances ?? [];
 
   // Load detail
-  useEffect(() => {
+  const refetchDetail = useCallback(() => {
     if (!name) return;
     getAgentDetail(name)
       .then((d) => {
@@ -88,8 +89,12 @@ export function AgentDetailPage() {
       .catch(() => {});
   }, [name]);
 
-  // Load runs
   useEffect(() => {
+    refetchDetail();
+  }, [refetchDetail]);
+
+  // Load runs
+  const refetchRuns = useCallback(() => {
     if (!name) return;
     getAgentRuns(name, runsPage, runsLimit)
       .then((d) => {
@@ -98,6 +103,13 @@ export function AgentDetailPage() {
       })
       .catch(() => {});
   }, [name, runsPage]);
+
+  useEffect(() => {
+    refetchRuns();
+  }, [refetchRuns]);
+
+  useInvalidation("stats", name, refetchDetail);
+  useInvalidation("runs", name, refetchRuns);
 
   // Poll logs
   useEffect(() => {

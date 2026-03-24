@@ -79,6 +79,12 @@ export interface LogLine {
   message: string;
 }
 
+export interface InvalidationSignal {
+  type: "runs" | "triggers" | "stats" | "instance" | "config";
+  agent?: string;
+  instanceId?: string;
+}
+
 export interface DashboardStatus {
   agents: AgentStatus[];
   schedulerInfo: SchedulerInfo | null;

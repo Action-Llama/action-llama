@@ -29,13 +29,24 @@ export function registerDashboardDataRoutes(
   // SSE: status stream
   app.get("/dashboard/api/status-stream", (c) => {
     return streamSSE(c, async (stream) => {
+      // Set headers for Cloudflare/nginx proxy compatibility.
+      // Must be set after streamSSE creates the response to avoid being overwritten.
+      c.header("Cache-Control", "no-cache, no-transform");
+      c.header("X-Accel-Buffering", "no");
+      c.header("Connection", "keep-alive");
+
       const send = () => {
         const agents = statusTracker.getAllAgents();
         const info = statusTracker.getSchedulerInfo();
         const recentLogs = statusTracker.getRecentLogs(20);
         const instances = statusTracker.getInstances();
+        const invalidated = statusTracker.flushInvalidations();
+        const payload: Record<string, unknown> = { agents, schedulerInfo: info, recentLogs, instances };
+        if (invalidated.length > 0) {
+          payload.invalidated = invalidated;
+        }
         stream.writeSSE({
-          data: JSON.stringify({ agents, schedulerInfo: info, recentLogs, instances }),
+          data: JSON.stringify(payload),
         });
       };
 

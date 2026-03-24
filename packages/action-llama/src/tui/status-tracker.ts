@@ -45,6 +45,12 @@ export interface LogLine {
   message: string;
 }
 
+export interface InvalidationSignal {
+  type: "runs" | "triggers" | "stats" | "instance" | "config";
+  agent?: string;
+  instanceId?: string;
+}
+
 export class StatusTracker extends EventEmitter {
   private agents = new Map<string, AgentStatus>();
   private agentLifecycles = new Map<string, AgentLifecycle>();
@@ -53,6 +59,25 @@ export class StatusTracker extends EventEmitter {
   private maxLogs = 100;
   private _baseImageStatus: string | null = null;
   private instances: Map<string, AgentInstance> = new Map();
+  private pendingInvalidations: InvalidationSignal[] = [];
+
+  private invalidate(signal: InvalidationSignal): void {
+    const isDup = this.pendingInvalidations.some(
+      (s) =>
+        s.type === signal.type &&
+        s.agent === signal.agent &&
+        s.instanceId === signal.instanceId,
+    );
+    if (!isDup) {
+      this.pendingInvalidations.push(signal);
+    }
+  }
+
+  flushInvalidations(): InvalidationSignal[] {
+    const signals = this.pendingInvalidations;
+    this.pendingInvalidations = [];
+    return signals;
+  }
 
   registerAgent(name: string, scale = 1): void {
     // Create AgentLifecycle and listen to its events
@@ -125,6 +150,9 @@ export class StatusTracker extends EventEmitter {
     agent.lastError = null;
     agent.taskUrl = null;
     agent.runReason = reason ?? null;
+    this.invalidate({ type: "runs", agent: name });
+    this.invalidate({ type: "triggers" });
+    this.invalidate({ type: "stats", agent: name });
     this.emit("update");
   }
 
@@ -155,6 +183,8 @@ export class StatusTracker extends EventEmitter {
       agent.runReason = null;
     }
     // If still running instances, keep state as "running"
+    this.invalidate({ type: "runs", agent: name });
+    this.invalidate({ type: "stats", agent: name });
     this.emit("update");
   }
 
@@ -190,6 +220,8 @@ export class StatusTracker extends EventEmitter {
     if (error) {
       agent.lastError = error;
     }
+    this.invalidate({ type: "runs", agent: name });
+    this.invalidate({ type: "stats", agent: name });
     this.emit("update");
   }
 
@@ -197,6 +229,7 @@ export class StatusTracker extends EventEmitter {
     const agent = this.agents.get(name);
     if (!agent) return;
     agent.queuedWebhooks = count;
+    this.invalidate({ type: "triggers" });
     this.emit("update");
   }
 
@@ -211,6 +244,7 @@ export class StatusTracker extends EventEmitter {
     const agent = this.agents.get(name);
     if (!agent) return;
     agent.enabled = true;
+    this.invalidate({ type: "config" });
     this.emit("update");
     this.emit("agent-enabled", name);
   }
@@ -220,6 +254,7 @@ export class StatusTracker extends EventEmitter {
     if (!agent) return;
     agent.enabled = false;
     agent.nextRunAt = null; // Clear next run time when disabled
+    this.invalidate({ type: "config" });
     this.emit("update");
     this.emit("agent-disabled", name);
   }
@@ -286,6 +321,8 @@ export class StatusTracker extends EventEmitter {
     const inst = this.instances.get(id);
     if (!inst) return;
     inst.status = status;
+    this.invalidate({ type: "instance", agent: inst.agentName, instanceId: id });
+    this.invalidate({ type: "runs", agent: inst.agentName });
     this.emit("update");
   }
 
@@ -322,6 +359,7 @@ export class StatusTracker extends EventEmitter {
     agent.scale = scale;
     // If the scale is reduced below current running count, we don't kill instances
     // The pool will naturally adjust on next run
+    this.invalidate({ type: "config" });
     this.emit("update");
     this.emit("agent-scale-changed", name, scale);
   }
