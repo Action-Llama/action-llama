@@ -1,5 +1,35 @@
 # @action-llama/action-llama
 
+## 0.18.0
+
+### Minor Changes
+
+- [`11e070f`](https://github.com/Action-Llama/action-llama/commit/11e070fb5149f16d0b1805b04984a4e3baf9ddb5) Thanks [@asselstine](https://github.com/asselstine)! - Add bidirectional real-time chat with agents via WebSocket. Users can now chat with agents through the web dashboard (`/chat/:agent`) or remotely via `al chat <agent> --env <name>`. The implementation includes a ChatTransport abstraction (local and remote), a gateway WebSocket bridge that relays messages between browsers and agent containers, a new chat container entrypoint (`AL_CHAT_MODE=1`), session management with configurable limits (`gateway.maxChatSessions`), idle timeout cleanup (15min), and rate limiting. Adds 107 tests across 8 test files covering the full chat stack.
+
+### Patch Changes
+
+- [`cdaf2c8`](https://github.com/Action-Llama/action-llama/commit/cdaf2c810973ad1c8b33534d8071545b59198621) Thanks [@asselstine](https://github.com/asselstine)! - Redesign dashboard layout: recent triggers now display full-width above the agents table (showing last 5 with a new Source column), agents table gains a Description column, searchable filtering, and CSS-based name truncation instead of hard character limits.
+
+- [`b959c2a`](https://github.com/Action-Llama/action-llama/commit/b959c2a0b8aa04e9e8ee2ad81b752affd466c2e3) Thanks [@asselstine](https://github.com/asselstine)! - Streamline the web dashboard: move Config to the navbar as "Settings" with a gear icon, replace the "Connected" label with a subtle status dot in the navbar, remove the pause button and "Dashboard" header so token usage is the first thing on the page. All dashboard pages now share a single EventSource connection via React context.
+
+- [`f710d05`](https://github.com/Action-Llama/action-llama/commit/f710d05fe7d0cbcbdd701a0aa4e25a852bf133a3) Thanks [@asselstine](https://github.com/asselstine)! - Fix sentry webhook extension metadata to reference `sentry_client_secret` instead of
+  the non-existent `sentry_webhook_secret` credential type. The runtime already used the
+  correct type; only the extension metadata was inconsistent.
+
+  Also fix documentation inconsistencies: add missing `al stats` and `al webhook replay`
+  command references, document all `[telemetry]` fields, document `[agents.<name>]`
+  per-agent overrides, document `historyRetentionDays`, document the `/dashboard/triggers`
+  page and trigger history API, fix `al logs` signature to show agent as optional, add
+  `--strict` flag to `al doctor`, and remove stale `--no-docker` reference.
+
+- [`34d6b48`](https://github.com/Action-Llama/action-llama/commit/34d6b48d83156d82794a680e23d808392b990458) Thanks [@asselstine](https://github.com/asselstine)! - Add a "Runtime Context" page to the docs concepts section explaining the full prompt structure agents receive at runtime, including agent config, credential context, environment, trigger context, and skills.
+
+- [`2ae2fba`](https://github.com/Action-Llama/action-llama/commit/2ae2fba56ebf4f583d14a1012d5272905774bae3) Thanks [@asselstine](https://github.com/asselstine)! - Add `setenv NAME value` shell function for persisting environment variables across bash commands. Agents can now use `setenv REPO "owner/repo"` instead of manually writing to `/tmp/env.sh`. The function handles special characters safely via `printf %q` and is available in all execution modes (container, chat, local).
+
+- [`e36936b`](https://github.com/Action-Llama/action-llama/commit/e36936ba5b54dae2abef559a3da0ea62e529e762) Thanks [@asselstine](https://github.com/asselstine)! - Add optional prompt to `al run` for directed one-shot agent runs. Users can now pass a specific task when triggering an agent manually via `al run <agent> "review PR [#42](https://github.com/Action-Llama/action-llama/issues/42)"`, through the control API (`POST /control/trigger/:name` with `{ prompt }` body), or via the web dashboard's new Run modal. When no prompt is given, behavior is unchanged. Also fixes manual triggers to use the correct manual prompt suffix instead of the scheduled prompt.
+
+- [`899a102`](https://github.com/Action-Llama/action-llama/commit/899a1021a1b95c44b882292700c5bad6e2fc8ca5) Thanks [@asselstine](https://github.com/asselstine)! - Add `defaultAgentScale` config field to set the default number of concurrent runners for all agents. Agents without an explicit `[agents.<name>].scale` override will use this value instead of defaulting to 1. A warning is emitted at scheduler startup and by `al doctor` when the total requested scale exceeds the project-wide `scale` cap.
+
 ## 0.17.7
 
 ### Patch Changes
