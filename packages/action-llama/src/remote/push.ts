@@ -1,4 +1,5 @@
 import { resolve, basename, dirname } from "path";
+import { fileURLToPath } from "url";
 import { createHash } from "crypto";
 import { readFileSync, unlinkSync, existsSync } from "fs";
 import { createRequire } from "module";
@@ -19,8 +20,15 @@ import { bootstrapServer, type BootstrapResult } from "./bootstrap.js";
 
 /**
  * Resolve the @action-llama/frontend dist directory if it exists.
+ * Checks bundled frontend first (dist/frontend/), then workspace-linked package.
  */
 function resolveFrontendDist(): string | null {
+  // Check bundled frontend (copied during build:assets)
+  const bundled = resolve(dirname(fileURLToPath(import.meta.url)), "..", "frontend");
+  if (existsSync(resolve(bundled, "index.html"))) {
+    return bundled;
+  }
+  // Fall back to workspace-linked package
   try {
     const require = createRequire(import.meta.url);
     const pkgPath = require.resolve("@action-llama/frontend/package.json");
@@ -321,7 +329,7 @@ async function pushToServerInner(ssh: SshOptions, opts: InnerOpts): Promise<void
   if (!noFiles) {
     phaseB.push(conditionalNpmInstall(ssh, projectPath, basePath, forceInstall));
   }
-  if (!noCreds && serverConfig.cloudflareHostname) {
+  if (serverConfig.cloudflareHostname) {
     const remoteFrontendPath = frontendDist ? `${basePath}/frontend` : undefined;
     phaseB.push(setupNginx(ssh, basePath, serverConfig.cloudflareHostname, gatewayPort, remoteFrontendPath));
   }

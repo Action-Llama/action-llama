@@ -39,7 +39,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && chmod +x dist/cli/main.js && npm run build:info && npm run build:assets",
     "build:info": "printf '{\"gitSha\":\"%s\"}' \"$(git rev-parse --short=8 HEAD 2>/dev/null || echo dev)\" > dist/build-info.json",
-    "build:assets": "echo 'No assets to copy'",
+    "build:assets": "node -e \"const fs=require('fs'),s='../frontend/dist',d='dist/frontend';fs.existsSync(s+'/index.html')?(fs.cpSync(s,d,{recursive:true}),console.log('Copied frontend dist → dist/frontend')):console.log('Frontend dist not found, skipping')\"",
     "clean": "rm -rf dist",
     "prebuild": "npm run clean",
     "test:playwright": "npx playwright test --config playwright.config.ts"

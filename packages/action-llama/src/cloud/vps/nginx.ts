@@ -32,6 +32,11 @@ export function generateNginxConfig(hostname: string, gatewayPort: number, front
         add_header Cache-Control "public, immutable";
     }
 
+    # Dashboard API routes — must be proxied before the SPA catch-all
+    location /dashboard/api/ {
+${proxyBlock}
+    }
+
     # SPA fallback: serve index.html for dashboard and login routes
     location /login {
         root ${frontendPath};

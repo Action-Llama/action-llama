@@ -125,6 +125,74 @@ export async function getVPSLogs(
   }
 }
 
+/**
+ * Deploy to VPS with a Cloudflare hostname configured, which triggers nginx SPA setup.
+ * Pre-creates mock TLS certificates on the VPS so `setupNginx` can copy them.
+ */
+export async function deployToVPSWithDashboard(
+  context: E2ETestContext,
+  localContainer: ContainerInfo,
+  vpsContainer: ContainerInfo,
+  envName: string,
+  cloudflareHostname: string,
+): Promise<void> {
+  if (!vpsContainer.ipAddress) {
+    throw new Error("VPS container IP not available");
+  }
+
+  // Write SSH key to local container
+  await context.executeInContainer(localContainer, [
+    "bash", "-c", "mkdir -p /home/testuser/.ssh && chmod 700 /home/testuser/.ssh"
+  ]);
+  await context.executeInContainer(localContainer, [
+    "bash", "-c", `cat > /home/testuser/.ssh/e2e_deploy_key << 'KEYEOF'
+${await context.getPrivateKeyContent()}
+KEYEOF
+chmod 600 /home/testuser/.ssh/e2e_deploy_key`
+  ]);
+
+  // Create environment config with cloudflareHostname
+  const envConfig = `[server]
+host = "${vpsContainer.ipAddress}"
+user = "root"
+port = 22
+keyPath = "/home/testuser/.ssh/e2e_deploy_key"
+basePath = "/opt/action-llama"
+cloudflareHostname = "${cloudflareHostname}"`;
+
+  await context.executeInContainer(localContainer, [
+    "bash", "-c", `mkdir -p /home/testuser/.action-llama/environments`
+  ]);
+  await context.executeInContainer(localContainer, [
+    "bash", "-c", `cat > /home/testuser/.action-llama/environments/${envName}.toml << 'EOF'
+${envConfig}
+EOF`
+  ]);
+
+  // Bind project to environment
+  await context.executeInContainer(localContainer, [
+    "bash", "-c", `cat > /home/testuser/test-project/.env.toml << 'EOF'
+environment = "${envName}"
+EOF`
+  ]);
+
+  // Pre-create mock Cloudflare origin cert on VPS (normally synced by --no-creds skip,
+  // but setupNginx reads them from the credentials path on the remote)
+  const certBasePath = `/opt/action-llama/credentials/cloudflare_origin_cert/${cloudflareHostname}`;
+  await context.executeSSHCommand(vpsContainer, `mkdir -p ${certBasePath}`);
+  await context.executeSSHCommand(vpsContainer, `echo 'MOCK_CERT' > ${certBasePath}/certificate`);
+  await context.executeSSHCommand(vpsContainer, `echo 'MOCK_KEY' > ${certBasePath}/private_key`);
+
+  // Deploy — use --no-creds since certs are already on the VPS
+  const pushOutput = await context.executeInContainer(localContainer, [
+    "bash", "-c", `cd /home/testuser/test-project && al push --env ${envName} --headless --no-creds 2>&1 || echo "AL_PUSH_FAILED_EXIT_$?"`
+  ]);
+  console.log(`al push (dashboard) output: ${pushOutput}`);
+  if (pushOutput.includes("AL_PUSH_FAILED_EXIT_")) {
+    throw new Error(`al push (dashboard) failed: ${pushOutput}`);
+  }
+}
+
 export async function updateDeploymentOnVPS(
   context: E2ETestContext,
   localContainer: ContainerInfo,

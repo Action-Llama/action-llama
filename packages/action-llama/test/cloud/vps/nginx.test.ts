@@ -52,4 +52,43 @@ describe("generateNginxConfig", () => {
     expect(config).toContain("limit_req zone=al_rate_limit burst=10 nodelay");
     expect(config).toContain("limit_req_status 429");
   });
+
+  describe("with frontendPath", () => {
+    it("serves static assets with alias", () => {
+      const config = generateNginxConfig("agents.example.com", 3000, "/opt/al/frontend");
+
+      expect(config).toContain("location /assets/");
+      expect(config).toContain("alias /opt/al/frontend/assets/");
+      expect(config).toContain("Cache-Control");
+    });
+
+    it("serves SPA routes with try_files fallback", () => {
+      const config = generateNginxConfig("agents.example.com", 3000, "/opt/al/frontend");
+
+      expect(config).toContain("location /login");
+      expect(config).toContain("location /dashboard");
+      expect(config).toContain("root /opt/al/frontend");
+      expect(config).toContain("try_files /index.html =404");
+    });
+
+    it("proxies /dashboard/api/ to the gateway before the SPA catch-all", () => {
+      const config = generateNginxConfig("agents.example.com", 3000, "/opt/al/frontend");
+
+      expect(config).toContain("location /dashboard/api/");
+      expect(config).toContain("proxy_pass http://127.0.0.1:3000");
+
+      // /dashboard/api/ must appear before /dashboard to take priority
+      const dashApiIndex = config.indexOf("location /dashboard/api/");
+      const dashIndex = config.indexOf("location /dashboard {");
+      expect(dashApiIndex).toBeLessThan(dashIndex);
+    });
+
+    it("still proxies API routes to the gateway", () => {
+      const config = generateNginxConfig("agents.example.com", 3000, "/opt/al/frontend");
+
+      // The catch-all location / block should still proxy
+      expect(config).toContain("location / {");
+      expect(config).toContain("proxy_pass http://127.0.0.1:3000");
+    });
+  });
 });

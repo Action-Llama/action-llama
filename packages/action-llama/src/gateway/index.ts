@@ -3,6 +3,7 @@ import { serve } from "@hono/node-server";
 import type { Server } from "http";
 import { createRequire } from "module";
 import { dirname, resolve, extname } from "path";
+import { fileURLToPath } from "url";
 import { existsSync, readFileSync } from "fs";
 import { registerShutdownRoute } from "../execution/routes/shutdown.js";
 import { registerLockRoutes } from "../execution/routes/locks.js";
@@ -44,9 +45,17 @@ const MIME_TYPES: Record<string, string> = {
 
 /**
  * Attempt to resolve the @action-llama/frontend dist directory.
- * Works in both monorepo (npm workspaces) and installed contexts.
+ * Checks (in order):
+ *  1. Bundled frontend at dist/frontend/ (works after npm install)
+ *  2. Workspace-linked @action-llama/frontend package (works in monorepo)
  */
 export function resolveFrontendDist(): string | null {
+  // Check bundled frontend (copied during build:assets)
+  const bundled = resolve(dirname(fileURLToPath(import.meta.url)), "..", "frontend");
+  if (existsSync(resolve(bundled, "index.html"))) {
+    return bundled;
+  }
+  // Fall back to workspace-linked package
   try {
     const require = createRequire(import.meta.url);
     const pkgPath = require.resolve("@action-llama/frontend/package.json");

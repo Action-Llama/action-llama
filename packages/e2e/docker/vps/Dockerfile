@@ -42,6 +42,10 @@ RUN printf '#!/bin/bash\ncase "$1" in\n  is-active) echo "active"; exit 0;;\n  s
 RUN mv /usr/bin/curl /usr/bin/curl.real && \
     printf '#!/bin/bash\nfor arg in "$@"; do\n  if [[ "$arg" == *"/health"* ]]; then\n    echo "ok"\n    exit 0\n  fi\ndone\nexec /usr/bin/curl.real "$@"\n' > /usr/bin/curl && chmod +x /usr/bin/curl
 
+# Mock nginx — al push writes config and runs nginx -t / systemctl reload nginx
+RUN mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled && \
+    printf '#!/bin/bash\nif [[ "$1" == "-t" ]]; then\n  echo "nginx: configuration file /etc/nginx/nginx.conf test is successful"\n  exit 0\nfi\nexit 0\n' > /usr/local/bin/nginx && chmod +x /usr/local/bin/nginx
+
 # Mock journalctl — used by al push for live log tailing during health check
 RUN printf '#!/bin/bash\nexit 0\n' > /usr/local/bin/journalctl && chmod +x /usr/local/bin/journalctl
 

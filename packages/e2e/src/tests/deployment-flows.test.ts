@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { getTestContext } from "../setup.js";
 import { setupLocalActionLlama, createTestAgent } from "../containers/local.js";
-import { setupVPS, deployToVPS, checkDeploymentOnVPS, updateDeploymentOnVPS, getVPSLogs } from "../containers/vps.js";
+import { setupVPS, deployToVPS, deployToVPSWithDashboard, checkDeploymentOnVPS, updateDeploymentOnVPS, getVPSLogs } from "../containers/vps.js";
 
 describe("Deployment Flows", { timeout: 600000 }, () => {
   it("deploys to VPS", async () => {
@@ -150,6 +150,89 @@ This is the second agent in a multi-agent deployment test.
       "cat /opt/action-llama/project/agents/multi-agent-2/SKILL.md"
     );
     expect(agent2Content).toContain("Multi Agent 2");
+  });
+
+  it("configures nginx with dashboard SPA routes on push", async () => {
+    const context = getTestContext();
+    const localContainer = await setupLocalActionLlama(context);
+    const vpsContainer = await setupVPS(context);
+
+    const agentSkill = `
+# Dashboard Test Agent
+
+A simple agent for testing dashboard deployment.
+    `;
+
+    // Create a test agent so the project is valid
+    await createTestAgent(context, localContainer, "dash-agent", agentSkill);
+
+    // Deploy with cloudflareHostname set — this triggers nginx SPA config
+    await deployToVPSWithDashboard(context, localContainer, vpsContainer, "test-dash", "agents.test.example.com");
+
+    // Verify deployment succeeded
+    const isDeployed = await checkDeploymentOnVPS(context, vpsContainer, ["dash-agent"]);
+    expect(isDeployed).toBe(true);
+
+    // Read the nginx config that was written to the VPS
+    const nginxConfig = await context.executeSSHCommand(
+      vpsContainer,
+      "cat /etc/nginx/sites-available/action-llama"
+    );
+
+    // Verify SPA location blocks are present
+    expect(nginxConfig).toContain("location /dashboard");
+    expect(nginxConfig).toContain("location /login");
+    expect(nginxConfig).toContain("location /assets/");
+    expect(nginxConfig).toContain("try_files /index.html =404");
+
+    // Verify /dashboard/api/ is proxied to gateway (not caught by SPA catch-all)
+    expect(nginxConfig).toContain("location /dashboard/api/");
+
+    // Verify /dashboard/api/ proxy appears before /dashboard SPA catch-all
+    const dashApiIndex = nginxConfig.indexOf("location /dashboard/api/");
+    const dashSpaIndex = nginxConfig.indexOf("location /dashboard {");
+    expect(dashApiIndex).toBeGreaterThan(-1);
+    expect(dashSpaIndex).toBeGreaterThan(-1);
+    expect(dashApiIndex).toBeLessThan(dashSpaIndex);
+
+    // Verify hostname and TLS
+    expect(nginxConfig).toContain("server_name agents.test.example.com");
+    expect(nginxConfig).toContain("listen 443 ssl");
+  });
+
+  it("configures nginx even with --no-creds", async () => {
+    const context = getTestContext();
+    const localContainer = await setupLocalActionLlama(context);
+    const vpsContainer = await setupVPS(context);
+
+    const agentSkill = `
+# No-Creds Test Agent
+
+Agent for testing that nginx is configured even when --no-creds is used.
+    `;
+
+    await createTestAgent(context, localContainer, "nocreds-agent", agentSkill);
+
+    // First deploy to set up the environment
+    await deployToVPSWithDashboard(context, localContainer, vpsContainer, "test-nocreds", "agents.nocreds.example.com");
+
+    // Modify the nginx config on the VPS to simulate stale config (no SPA blocks)
+    await context.executeSSHCommand(vpsContainer, "echo 'stale config' > /etc/nginx/sites-available/action-llama");
+
+    // Re-deploy with --no-creds — nginx should still be reconfigured
+    await context.executeInContainer(localContainer, [
+      "bash", "-c", `cd /home/testuser/test-project && al push --env test-nocreds --headless --no-creds 2>&1 || echo "AL_PUSH_FAILED_EXIT_$?"`
+    ]);
+
+    // Verify nginx config was updated (not still "stale config")
+    const nginxConfig = await context.executeSSHCommand(
+      vpsContainer,
+      "cat /etc/nginx/sites-available/action-llama"
+    );
+
+    expect(nginxConfig).not.toContain("stale config");
+    expect(nginxConfig).toContain("location /dashboard");
+    expect(nginxConfig).toContain("server_name agents.nocreds.example.com");
   });
 
   it("handles deployment rollback scenarios", async () => {
