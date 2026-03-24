@@ -97,11 +97,14 @@ export class LocalDockerRuntime implements ContainerRuntime {
 
       if (!fields) continue;
 
-      const dstDir = join(stagingDir, type, instance);
+      const typeDir = join(stagingDir, type);
+      const dstDir = join(typeDir, instance);
       mkdirSync(dstDir, { recursive: true, mode: CONSTANTS.CREDS_DIR_MODE });
-      
-      // Try to set ownership on subdirectory
+
+      // Chown both the type dir and instance dir — mkdirSync recursive
+      // creates both, but we must chown each explicitly.
       try {
+        chownSync(typeDir, CONSTANTS.CONTAINER_UID, CONSTANTS.CONTAINER_GID);
         chownSync(dstDir, CONSTANTS.CONTAINER_UID, CONSTANTS.CONTAINER_GID);
       } catch {
         // Non-root execution - ownership change failed, continue gracefully
