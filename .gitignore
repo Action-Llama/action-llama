@@ -9,3 +9,4 @@ coverage
 .mintlify/
 .al
 test-results/
+.env.toml
