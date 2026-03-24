@@ -227,7 +227,7 @@ export function DashboardPage() {
           </Link>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm table-fixed">
+          <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 dark:border-slate-800">
                 <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide w-[1%] whitespace-nowrap">
