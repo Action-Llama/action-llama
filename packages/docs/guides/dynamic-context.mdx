@@ -1,5 +1,5 @@
 ---
-title: "Optimizing Agents"
+title: "Dynamic Context"
 description: "Use hooks to stage context before the LLM session starts"
 ---
 
@@ -101,13 +101,13 @@ After hooks run, tell the agent what's available in the body of your `SKILL.md`:
 
 ## Direct Context Injection
 
-For simple, inline data that needs to be embedded directly in your SKILL.md instructions, use direct context injection with the `!\`command\`` syntax. Commands are executed after pre-hooks but before the LLM session starts, and their output replaces the expression inline.
+For simple, inline data that needs to be embedded directly in your SKILL.md instructions, use direct context injection with the `` !`command` `` syntax. Commands are executed after pre-hooks but before the LLM session starts, and their output replaces the expression inline.
 
 ### Syntax
 
 ```markdown
-The current time is !\`date\`.
-There are !\`ls /tmp/repo/src | wc -l\` source files in the repo.
+The current time is !`date`.
+There are !`ls /tmp/repo/src | wc -l` source files in the repo.
 ```
 
 Becomes:
@@ -126,7 +126,7 @@ There are 42 source files in the repo.
 
 **Basic usage**:
 ```markdown
-You are analyzing code at !\`date +"%Y-%m-%d %H:%M"\`.
+You are analyzing code at !`date +"%Y-%m-%d %H:%M"`.
 ```
 
 **With pre-staged data**:
@@ -137,14 +137,14 @@ hooks:
 ```
 
 ```markdown
-There are !\`cat /tmp/issues.json | jq length\` open bug issues to work on.
+There are !`cat /tmp/issues.json | jq length` open bug issues to work on.
 ```
 
 **Error handling**:
 If a command fails, it's replaced with `[Error: <message>]`:
 
 ```markdown
-Config value: !\`cat /nonexistent/file\`
+Config value: !`cat /nonexistent/file`
 ```
 
 Becomes:

@@ -3,7 +3,7 @@ title: "Scaling Agents"
 description: "Scale agents to handle concurrent work and use locks to prevent contention"
 ---
 
-By default, each agent runs one instance at a time. This guide shows how to scale up and use resource locks to prevent duplicate work.
+By default, each agent runs one instance at a time. This guide shows how to scale up and use [resource locks](/concepts/resource-locks) to prevent duplicate work.
 
 ## The Problem
 
@@ -22,31 +22,31 @@ Now when 5 issues arrive, up to 3 are processed simultaneously. The remaining 2 
 
 ## Add Locking
 
-With multiple instances, two agents might try to work on the same issue. Add lock/skip/work/unlock to your `SKILL.md`:
+With multiple instances, two agents might try to work on the same issue. Add a [lock/skip/work/unlock](/concepts/resource-locks) pattern to your `SKILL.md`:
 
 ```markdown
 ## Workflow
 
 1. List open issues labeled "agent" in repos from `<agent-config>`
 2. For each issue:
-   - LOCK("github issue owner/repo#123")
+   - rlock "github://owner/repo/issues/123"
    - If the lock fails, skip this issue — another instance is handling it
    - Clone the repo, create a branch, implement the fix
    - Open a PR and link it to the issue
-   - UNLOCK("github issue owner/repo#123")
+   - runlock "github://owner/repo/issues/123"
 3. If you completed work and there may be more issues, run `al-rerun`
 ```
 
 ### How lock commands work
 
-When the agent runs `LOCK("resource key")`:
+When the agent runs `rlock "github://owner/repo/issues/123"`:
 
 - **Lock acquired:** `{"ok": true}` — proceed with work
 - **Already held:** `{"ok": false, "holder": "dev-abc123", ...}` — skip this resource
 
-When done: `UNLOCK("resource key")` releases the lock.
+When done: `runlock "github://owner/repo/issues/123"` releases the lock.
 
-If the agent crashes or times out, locks are auto-released.
+If the agent crashes or times out, locks are [auto-released](/concepts/resource-locks#auto-release-on-exit).
 
 ## Monitor with `al stat`
 

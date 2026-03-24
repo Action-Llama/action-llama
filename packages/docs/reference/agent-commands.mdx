@@ -5,8 +5,6 @@ description: "Shell commands available inside agent containers — signals, call
 
 Agents running in Docker containers have access to shell commands for signaling the scheduler, calling other agents, and coordinating with resource locks. These commands are installed at `/tmp/bin/` and taught to agents via a preamble injected before `SKILL.md`.
 
-Agent authors write shorthand in `SKILL.md` (e.g. `LOCK("github issue acme/app#42")`). The preamble teaches the agent the underlying shell commands.
-
 ## Signal Commands
 
 Signal commands write signal files that the scheduler reads after the session ends.
@@ -137,14 +135,14 @@ echo "$RESULTS" | jq ".\"$TEST_ID\".returnValue"
 
 ## Lock Commands
 
-Resource locks prevent multiple agent instances from working on the same resource. The agent preamble teaches these as `LOCK(...)`, `UNLOCK(...)`, and `HEARTBEAT(...)` shorthand. The underlying shell commands are `rlock`, `runlock`, and `rlock-heartbeat`.
+Resource locks prevent multiple agent instances from working on the same resource. Lock keys use URI format (e.g. `github://acme/app/issues/42`).
 
 ### `rlock`
 
 Acquire an exclusive lock on a resource.
 
 ```bash
-rlock "github issue acme/app#42"
+rlock "github://acme/app/issues/42"
 ```
 
 **Success:**
@@ -162,7 +160,7 @@ rlock "github issue acme/app#42"
 **Deadlock detected:**
 
 ```json
-{"ok": false, "reason": "possible deadlock detected", "cycle": ["dev-abc", "github pr acme/app#10", "dev-def", "deploy api-prod"]}
+{"ok": false, "reason": "possible deadlock detected", "cycle": ["dev-abc", "github://acme/app/pr/10", "dev-def", "deploy://api-prod"]}
 ```
 
 ### `runlock`
@@ -170,7 +168,7 @@ rlock "github issue acme/app#42"
 Release a lock. Only the holder can release.
 
 ```bash
-runlock "github issue acme/app#42"
+runlock "github://acme/app/issues/42"
 ```
 
 **Success:**
@@ -190,7 +188,7 @@ runlock "github issue acme/app#42"
 Reset the TTL on a held lock. Use during long-running work to prevent the lock from expiring.
 
 ```bash
-rlock-heartbeat "github issue acme/app#42"
+rlock-heartbeat "github://acme/app/issues/42"
 ```
 
 **Success:**
@@ -199,24 +197,24 @@ rlock-heartbeat "github issue acme/app#42"
 {"ok": true, "expiresAt": "2025-01-15T11:00:00Z"}
 ```
 
-### Lock shorthand in SKILL.md
+### Example in SKILL.md
 
-In your `SKILL.md`, write the lock operations naturally:
+Reference lock commands directly in your `SKILL.md` workflow:
 
 ```markdown
 ## Workflow
 
 1. List open issues labeled "agent" in repos from `<skill-config>`
 2. For each issue:
-   - LOCK("github issue owner/repo#123")
+   - rlock "github://owner/repo/issues/123"
    - If the lock fails, skip this issue — another instance is handling it
    - Clone the repo, create a branch, implement the fix
    - Open a PR and link it to the issue
-   - UNLOCK("github issue owner/repo#123")
+   - runlock "github://owner/repo/issues/123"
 3. If you completed work and there may be more issues, run `al-rerun`
 ```
 
-The preamble teaches the agent that `LOCK(...)` maps to `rlock`, `UNLOCK(...)` to `runlock`, and `HEARTBEAT(...)` to `rlock-heartbeat`.
+The preamble teaches the agent the lock commands, their responses, and the URI key format.
 
 ### Lock authentication
 
