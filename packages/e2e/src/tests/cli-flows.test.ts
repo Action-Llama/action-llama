@@ -68,8 +68,13 @@ You are a test agent. When run, output "Hello from test agent!" and exit success
     const skillContent = await context.executeInContainer(container, [
       "cat", "/home/testuser/test-project/agents/test-agent/SKILL.md"
     ]);
-    expect(skillContent).toContain("models:");
     expect(skillContent).toContain("Test Agent");
+
+    // Check per-agent config.toml exists with runtime fields
+    const agentConfig = await context.executeInContainer(container, [
+      "cat", "/home/testuser/test-project/agents/test-agent/config.toml"
+    ]);
+    expect(agentConfig).toContain('models = ["sonnet"]');
 
     // Run the agent manually
     const output = await runSingleAgent(context, container, "test-agent");
@@ -130,14 +135,7 @@ Your configuration includes webhook triggers for GitHub issues.
 
     // Create agent with webhook configuration (under agents/ subdir)
     const skillWithWebhook = `---
-metadata:
-  models: [sonnet]
-  credentials: [github_token, anthropic_key]
-  webhooks:
-    - provider: github
-      events: [issues]
-      filter:
-        action: opened
+description: "Webhook test agent"
 ---
 
 ${webhookSkill}`;
@@ -149,6 +147,21 @@ ${webhookSkill}`;
     await context.executeInContainer(container, [
       "bash", "-c", `cat > /home/testuser/test-project/agents/webhook-agent/SKILL.md << 'EOF'
 ${skillWithWebhook}
+EOF`
+    ]);
+
+    // Write per-agent config.toml with runtime fields including webhook config
+    await context.executeInContainer(container, [
+      "bash", "-c", `cat > /home/testuser/test-project/agents/webhook-agent/config.toml << 'EOF'
+models = ["sonnet"]
+credentials = ["github_token", "anthropic_key"]
+
+[[webhooks]]
+provider = "github"
+events = ["issues"]
+
+[webhooks.filter]
+action = "opened"
 EOF`
     ]);
 

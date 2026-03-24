@@ -68,12 +68,9 @@ export async function createTestAgent(
     "bash", "-c", `mkdir -p ${agentDir}`
   ]);
 
-  // Write SKILL.md with metadata wrapper for AL-specific fields
+  // Write SKILL.md with portable fields only (runtime fields are in config.toml)
   const skillContent = `---
-metadata:
-  models: [sonnet]
-  credentials: [github_token, anthropic_key]
-  schedule: "0 */6 * * *"
+description: "E2E test agent"
 ---
 
 ${skill}`;
@@ -81,6 +78,15 @@ ${skill}`;
   await context.executeInContainer(containerInfo, [
     "bash", "-c", `cat > ${agentDir}/SKILL.md << 'EOF'
 ${skillContent}
+EOF`
+  ]);
+
+  // Write per-agent config.toml with runtime fields (models, credentials, schedule)
+  await context.executeInContainer(containerInfo, [
+    "bash", "-c", `cat > ${agentDir}/config.toml << 'EOF'
+models = ["sonnet"]
+credentials = ["github_token", "anthropic_key"]
+schedule = "0 */6 * * *"
 EOF`
   ]);
 
@@ -124,10 +130,7 @@ export async function startActionLlamaScheduler(
     ]);
 
     const defaultSkill = `---
-metadata:
-  models: [sonnet]
-  credentials: [github_token, anthropic_key]
-  schedule: "0 */6 * * *"
+description: "Default test agent for E2E testing"
 ---
 
 # Default Test Agent
@@ -137,6 +140,15 @@ You are a default test agent created for E2E testing. You help verify that the A
     await context.executeInContainer(containerInfo, [
       "bash", "-c", `cat > ${projectPath}/agents/test-agent/SKILL.md << 'EOF'
 ${defaultSkill}
+EOF`
+    ]);
+
+    // Write per-agent config.toml with runtime fields
+    await context.executeInContainer(containerInfo, [
+      "bash", "-c", `cat > ${projectPath}/agents/test-agent/config.toml << 'EOF'
+models = ["sonnet"]
+credentials = ["github_token", "anthropic_key"]
+schedule = "0 */6 * * *"
 EOF`
     ]);
 

@@ -203,12 +203,9 @@ export async function updateDeploymentOnVPS(
   agentName: string,
   newSkill: string
 ): Promise<void> {
-  // Update agent locally
+  // Update agent locally (portable SKILL.md; runtime fields stay in config.toml)
   const skillContent = `---
-metadata:
-  models: [sonnet]
-  credentials: [github_token, anthropic_key]
-  schedule: "0 */6 * * *"
+description: "E2E test agent"
 ---
 
 ${newSkill}`;
