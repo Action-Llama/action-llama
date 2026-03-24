@@ -1,5 +1,4 @@
-import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSync, rmSync } from "fs";
-import { resolve } from "path";
+import { readFileSync, existsSync, rmSync } from "fs";
 import { spawnSync } from "child_process";
 import { getModel } from "@mariozechner/pi-ai";
 import {
@@ -12,74 +11,21 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { ModelCircuitBreaker, selectAvailableModels, isRateLimitError } from "./model-fallback.js";
 import type { AgentConfig } from "../shared/config.js";
-import { parseCredentialRef, unsanitizeEnvPart } from "../shared/credentials.js";
 import { getExitCodeMessage } from "../shared/exit-codes.js";
 import { ensureSignalDir, readSignals } from "./signals.js";
-import { builtinCredentials } from "../credentials/builtins/index.js";
 import { runHooks } from "../hooks/runner.js";
 import { processContextInjection } from "./context-injection.js";
 import { parseFrontmatter } from "../shared/frontmatter.js";
 import { initTelemetry } from "../telemetry/index.js";
 import type { TelemetryConfig } from "../telemetry/types.js";
 import { sessionStatsToUsage } from "../shared/usage.js";
+import { loadContainerCredentials } from "./credential-setup.js";
 
 // Structured log line — written to stdout, parsed by ContainerAgentRunner on the host
 function emitLog(level: string, msg: string, data?: Record<string, any>) {
   console.log(JSON.stringify({ _log: true, level, msg, ...data, ts: Date.now() }));
 }
 
-// Credential bundle loaded from mounted volume or environment variables
-let credBundle: Record<string, Record<string, Record<string, string>>> = {};
-
-function hasLocalCredentials(): boolean {
-  try {
-    const entries = readdirSync("/credentials");
-    return entries.length > 0;
-  } catch {
-    return false;
-  }
-}
-
-function loadCredentialsFromVolume(): void {
-  for (const type of readdirSync("/credentials")) {
-    const typePath = `/credentials/${type}`;
-    try { if (!statSync(typePath).isDirectory()) continue; } catch { continue; }
-    credBundle[type] = {};
-    for (const instance of readdirSync(typePath)) {
-      const instPath = `${typePath}/${instance}`;
-      try { if (!statSync(instPath).isDirectory()) continue; } catch { continue; }
-      credBundle[type][instance] = {};
-      for (const field of readdirSync(instPath)) {
-        credBundle[type][instance][field] = readFileSync(`${instPath}/${field}`, "utf-8").trim();
-      }
-    }
-  }
-}
-
-/** ECS/Lambda inject secrets as env vars named AL_SECRET_{type}__{instance}__{field}. */
-function hasEnvCredentials(): boolean {
-  return Object.keys(process.env).some((k) => k.startsWith("AL_SECRET_"));
-}
-
-function loadCredentialsFromEnv(): void {
-  for (const [key, value] of Object.entries(process.env)) {
-    if (!key.startsWith("AL_SECRET_") || !value) continue;
-    const parts = key.slice("AL_SECRET_".length).split("__");
-    if (parts.length !== 3) continue;
-    const [type, instance, field] = parts.map(unsanitizeEnvPart);
-    credBundle[type] ??= {};
-    credBundle[type][instance] ??= {};
-    credBundle[type][instance][field] = value;
-  }
-}
-
-function readCredentialField(type: string, instance: string, field: string): string | undefined {
-  return credBundle[type]?.[instance]?.[field];
-}
-
-function readCredentialFields(type: string, instance: string): Record<string, string> {
-  return credBundle[type]?.[instance] || {};
-}
 
 /**
  * Components initialized once and reused across invocations (Lambda) or
@@ -233,88 +179,8 @@ export async function handleInvocation(init: AgentInit): Promise<number> {
   }
 
   // Load credentials from mounted volume or env vars (ECS/Lambda/Cloud Run).
-  if (hasLocalCredentials()) {
-    loadCredentialsFromVolume();
-    emitLog("info", "credentials loaded from volume");
-  } else if (hasEnvCredentials()) {
-    loadCredentialsFromEnv();
-    emitLog("info", "credentials loaded from env vars");
-  } else {
-    throw new Error("no credentials available — no volume mount or env vars found");
-  }
-
-  // Load provider API keys for all models in the chain
-  const providerKeys = new Map<string, string>();
-  for (const mc of agentConfig.models) {
-    if (mc.authType === "pi_auth") continue;
-    const credType = `${mc.provider}_key`;
-    if (providerKeys.has(mc.provider)) continue;
-    const key = readCredentialField(credType, "default", "token");
-    if (key) {
-      providerKeys.set(mc.provider, key);
-    }
-  }
-  if (providerKeys.size === 0 && agentConfig.models.every((m) => m.authType !== "pi_auth")) {
-    throw new Error(`missing provider API key credentials. Run 'al doctor' to configure them.`);
-  }
-
-  // Generic credential → env var injection from credential definitions
-  for (const credRef of agentConfig.credentials) {
-    const { type, instance } = parseCredentialRef(credRef);
-    const def = builtinCredentials[type];
-    if (!def?.envVars) continue;
-
-    const fields = readCredentialFields(type, instance);
-    for (const [fieldName, envVar] of Object.entries(def.envVars)) {
-      if (fields[fieldName]) {
-        process.env[envVar] = fields[fieldName];
-      }
-    }
-    // Special case: github_token also sets GH_TOKEN alias
-    if (type === "github_token" && fields.token) {
-      process.env.GH_TOKEN = fields.token;
-    }
-  }
-
-  // Configure git credential helper so HTTPS clones can use GITHUB_TOKEN
-  // Use GIT_CONFIG_COUNT env vars instead of `git config --global` to avoid
-  // writing to ~/.gitconfig, which may be read-only (e.g. Lambda containers).
-  if (process.env.GITHUB_TOKEN) {
-    process.env.GIT_TERMINAL_PROMPT = "0";
-    const idx = parseInt(process.env.GIT_CONFIG_COUNT || "0", 10);
-    process.env.GIT_CONFIG_COUNT = String(idx + 1);
-    process.env[`GIT_CONFIG_KEY_${idx}`] = "credential.helper";
-    process.env[`GIT_CONFIG_VALUE_${idx}`] = `!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f`;
-    emitLog("info", "git HTTPS credential helper configured");
-  }
-
-  // Set up SSH key for git push/clone if git_ssh credential is available
-  // Find the git_ssh instance from credentials
-  const gitSshRef = agentConfig.credentials.find((ref) => parseCredentialRef(ref).type === "git_ssh");
-  if (gitSshRef) {
-    const { instance } = parseCredentialRef(gitSshRef);
-    const sshKey = readCredentialField("git_ssh", instance, "id_rsa");
-    if (sshKey) {
-      const sshDir = "/tmp/.ssh";
-      mkdirSync(sshDir, { recursive: true, mode: 0o700 });
-      const keyPath = `${sshDir}/id_rsa`;
-      writeFileSync(keyPath, sshKey + "\n", { mode: 0o600 });
-      process.env.GIT_SSH_COMMAND = `ssh -i "${keyPath}" -o StrictHostKeyChecking=accept-new -o IdentitiesOnly=yes`;
-      emitLog("info", "SSH key configured for git");
-    }
-
-    // Set git author identity
-    const gitName = readCredentialField("git_ssh", instance, "username");
-    if (gitName) {
-      process.env.GIT_AUTHOR_NAME = gitName;
-      process.env.GIT_COMMITTER_NAME = gitName;
-    }
-    const gitEmail = readCredentialField("git_ssh", instance, "email");
-    if (gitEmail) {
-      process.env.GIT_AUTHOR_EMAIL = gitEmail;
-      process.env.GIT_COMMITTER_EMAIL = gitEmail;
-    }
-  }
+  // Extracted to credential-setup.ts for reuse in chat mode.
+  const { providerKeys } = loadContainerCredentials(agentConfig);
 
   // Run pre hooks (data staging before LLM session)
   if (agentConfig.hooks?.pre && agentConfig.hooks.pre.length > 0) {
@@ -589,9 +455,6 @@ export async function handleInvocation(init: AgentInit): Promise<number> {
     }
   } catch { /* best-effort cleanup */ }
 
-  // Reset credential bundle for next invocation
-  credBundle = {};
-
   return 0;
 }
 
@@ -601,6 +464,13 @@ export async function handleInvocation(init: AgentInit): Promise<number> {
  */
 export async function runAgent(): Promise<number> {
   const init = await initAgent();
+
+  // Chat mode: branch to interactive chat entrypoint
+  if (process.env.AL_CHAT_MODE === "1") {
+    const { runChatMode } = await import("./chat-entry.js");
+    return runChatMode(init);
+  }
+
   return handleInvocation(init);
 }
 

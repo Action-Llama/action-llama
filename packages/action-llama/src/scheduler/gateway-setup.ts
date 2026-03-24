@@ -19,6 +19,8 @@ import { ensureGatewayApiKey } from "../control/api-key.js";
 import type { SchedulerEventBus } from "./events.js";
 import type { SchedulerState } from "./state.js";
 import { runWithReruns } from "../execution/execution.js";
+import type { ContainerRuntime } from "../docker/runtime.js";
+import { ChatContainerLauncher } from "../chat/container-launcher.js";
 
 export interface GatewaySetupResult {
   gateway: GatewayServer;
@@ -44,6 +46,10 @@ export async function setupGateway(opts: {
   webUI?: boolean;
   expose?: boolean;
   logger: Logger;
+  /** Container runtime for launching chat containers. */
+  runtime?: ContainerRuntime;
+  /** Map of agent name → built image tag (populated after image builds). */
+  agentImages?: Map<string, string>;
 }): Promise<GatewaySetupResult> {
   const {
     projectPath, globalConfig, state, agentConfigs,
@@ -62,6 +68,20 @@ export async function setupGateway(opts: {
 
   const { startGateway } = await import("../gateway/index.js");
   const gatewayPort = globalConfig.gateway?.port || 8080;
+  const gatewayUrl = globalConfig.gateway?.url || `http://localhost:${gatewayPort}`;
+
+  // Chat launcher — created lazily after gateway starts (needs chatSessionManager)
+  let chatLauncher: ChatContainerLauncher | undefined;
+
+  const launchChatContainer = async (agentName: string, sessionId: string) => {
+    if (!chatLauncher) throw new Error("Chat container launcher not ready");
+    await chatLauncher.launchChatContainer(agentName, sessionId);
+  };
+
+  const stopChatContainer = async (sessionId: string) => {
+    if (!chatLauncher) return;
+    await chatLauncher.stopChatContainer(sessionId);
+  };
 
   const gateway = await startGateway({
     port: gatewayPort,
@@ -80,6 +100,9 @@ export async function setupGateway(opts: {
     statsStore,
     events,
     skipStatusEndpoint: expose,
+    maxChatSessions: globalConfig.gateway?.maxChatSessions,
+    launchChatContainer: opts.runtime ? launchChatContainer : undefined,
+    stopChatContainer: opts.runtime ? stopChatContainer : undefined,
     controlDeps: {
       statusTracker,
       logger,
@@ -176,6 +199,24 @@ export async function setupGateway(opts: {
       },
     },
   });
+
+  // Wire up chat container launcher if runtime is available
+  if (opts.runtime && gateway.chatSessionManager) {
+    chatLauncher = new ChatContainerLauncher({
+      runtime: opts.runtime,
+      globalConfig,
+      agentConfigs,
+      gatewayUrl,
+      logger,
+      sessionManager: gateway.chatSessionManager,
+      images: opts.agentImages || new Map(),
+    });
+
+    // Wire the stopContainer callback on the WS state for idle cleanup
+    if (gateway.chatWebSocketState) {
+      gateway.chatWebSocketState.stopContainer = stopChatContainer;
+    }
+  }
 
   logger.info({ port: gatewayPort }, "Gateway started early to show build progress");
 

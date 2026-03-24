@@ -209,6 +209,12 @@ export function AgentDetailPage() {
           >
             Run
           </button>
+          <Link
+            to={`/chat/${encodeURIComponent(name)}`}
+            className="px-3 py-1.5 text-xs font-medium rounded-md bg-purple-600 hover:bg-purple-700 text-white transition-colors"
+          >
+            Chat
+          </Link>
           <button
             onClick={() => handleAction(() => killAgentInstances(name))}
             disabled={!agent || agent.runningCount === 0}

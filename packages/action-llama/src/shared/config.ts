@@ -52,6 +52,7 @@ export type CloudConfig = VpsConfig;
 export interface GatewayConfig {
   port?: number;
   url?: string;
+  maxChatSessions?: number;
 }
 
 export interface WebhookSourceConfig {

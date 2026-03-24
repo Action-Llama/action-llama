@@ -86,6 +86,15 @@ export interface ChatOpts {
 
 export async function execute(opts: ChatOpts): Promise<void> {
   if (opts.agent) {
+    // Remote mode: when --env is set and gateway URL exists, use RemoteTransport
+    if (opts.env) {
+      const globalConfig = loadGlobalConfig(resolve(opts.project), opts.env);
+      const gatewayUrl = globalConfig.gateway?.url;
+      if (gatewayUrl) {
+        await executeRemoteChat(opts as ChatOpts & { agent: string }, gatewayUrl);
+        return;
+      }
+    }
     await executeAgentChat(opts as ChatOpts & { agent: string });
   } else {
     await executeProjectChat(opts);
@@ -404,6 +413,37 @@ async function executeProjectChat(opts: ChatOpts): Promise<void> {
 
   const mode = new InteractiveMode(session, { initialMessage });
   await mode.run();
+}
+
+// ---------------------------------------------------------------------------
+// Remote chat: connect to gateway via WebSocket
+// ---------------------------------------------------------------------------
+
+async function executeRemoteChat(opts: ChatOpts & { agent: string }, gatewayUrl: string): Promise<void> {
+  const { ensureGatewayApiKey } = await import("../../control/api-key.js");
+  const { key: apiKey } = await ensureGatewayApiKey();
+  if (!apiKey) {
+    throw new Error("Gateway API key not found. Run 'al doctor' to configure it.");
+  }
+
+  console.log(`Connecting to ${gatewayUrl} for agent "${opts.agent}"...`);
+
+  const { RemoteTransport } = await import("../../chat/remote-transport.js");
+  const { runChatTUI } = await import("../../chat/ink-adapter.js");
+
+  const transport = new RemoteTransport({
+    gatewayUrl,
+    agentName: opts.agent,
+    apiKey,
+  });
+
+  try {
+    await transport.connect();
+    console.log("Connected. Waiting for agent container to start...\n");
+    await runChatTUI(transport, opts.agent);
+  } finally {
+    await transport.close();
+  }
 }
 
 // ---------------------------------------------------------------------------

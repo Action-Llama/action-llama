@@ -28,6 +28,9 @@ import { SpanKind } from "@opentelemetry/api";
 import { authMiddleware } from "../control/auth.js";
 import type { SchedulerEventBus } from "../scheduler/events.js";
 import type { StatsStore } from "../stats/store.js";
+import { ChatSessionManager } from "../chat/session-manager.js";
+import { attachChatWebSocket, type ChatWebSocketState } from "../chat/ws-handler.js";
+import { registerChatApiRoutes, type LaunchChatCallback, type StopChatCallback } from "../chat/routes.js";
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -92,6 +95,12 @@ export interface GatewayOptions {
   events?: SchedulerEventBus;
   /** Optional stats store for dashboard aggregate stats. */
   statsStore?: StatsStore;
+  /** Max concurrent chat sessions (default: 5). */
+  maxChatSessions?: number;
+  /** Callback to launch a chat container for a session. */
+  launchChatContainer?: LaunchChatCallback;
+  /** Callback to stop a chat container for a session. */
+  stopChatContainer?: StopChatCallback;
 }
 
 export interface GatewayServer {
@@ -103,6 +112,8 @@ export interface GatewayServer {
   callStore: CallStore;
   setCallDispatcher: (dispatcher: CallDispatcher) => void;
   close: () => Promise<void>;
+  chatSessionManager?: ChatSessionManager;
+  chatWebSocketState?: ChatWebSocketState;
 }
 
 export async function startGateway(opts: GatewayOptions): Promise<GatewayServer> {
@@ -248,6 +259,37 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     }
   }
 
+  // Chat WebSocket and API routes
+  let chatSessionManager: ChatSessionManager | undefined;
+  let chatWsState: ChatWebSocketState | undefined;
+  if (webUI && opts.apiKey) {
+    chatSessionManager = new ChatSessionManager(opts.maxChatSessions);
+
+    const noopLaunch: LaunchChatCallback = async () => {};
+    const noopStop: StopChatCallback = async () => {};
+
+    // Apply auth middleware to chat API routes
+    const sessionStore = stateStore ? new SessionStore(stateStore) : undefined;
+    const chatAuth = authMiddleware(opts.apiKey, sessionStore);
+    app.use("/api/chat/*", chatAuth);
+
+    registerChatApiRoutes(
+      app,
+      chatSessionManager,
+      opts.launchChatContainer || noopLaunch,
+      opts.stopChatContainer || noopStop,
+      logger,
+    );
+
+    // SPA fallback for /chat/* routes
+    const frontendDist2 = resolveFrontendDist();
+    if (frontendDist2) {
+      const indexHtml2 = readFileSync(resolve(frontendDist2, "index.html"), "utf-8");
+      app.get("/chat", (c) => c.html(indexHtml2));
+      app.get("/chat/*", (c) => c.html(indexHtml2));
+    }
+  }
+
   // Log API routes — only register if auth is configured for security
   if (projectPath && opts.apiKey) {
     const { registerLogRoutes } = await import("../control/routes/logs.js");
@@ -278,6 +320,12 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     server.on("listening", resolve);
   });
 
+  // Attach chat WebSocket handler to the raw HTTP server
+  if (chatSessionManager && opts.apiKey) {
+    const sessionStoreForWs = stateStore ? new SessionStore(stateStore) : undefined;
+    chatWsState = attachChatWebSocket(server, chatSessionManager, opts.apiKey, sessionStoreForWs, logger);
+  }
+
   logger.info({ port }, "Gateway server listening");
 
   const registerContainer = async (secret: string, reg: ContainerRegistration) => {
@@ -305,10 +353,13 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
 
   const close = () =>
     new Promise<void>((resolve) => {
+      if (chatWsState) {
+        clearInterval(chatWsState.cleanupInterval);
+      }
       lockStore.dispose();
       callStore.dispose();
       server.close(() => resolve());
     });
 
-  return { server, containerRegistry, registerContainer, unregisterContainer, lockStore, callStore, setCallDispatcher, close };
+  return { server, containerRegistry, registerContainer, unregisterContainer, lockStore, callStore, setCallDispatcher, close, chatSessionManager, chatWebSocketState: chatWsState };
 }

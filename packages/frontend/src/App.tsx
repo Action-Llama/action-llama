@@ -7,11 +7,14 @@ import { InstanceDetailPage } from "./pages/InstanceDetailPage";
 import { TriggerHistoryPage } from "./pages/TriggerHistoryPage";
 import { ProjectConfigPage } from "./pages/ProjectConfigPage";
 import { AgentSkillPage } from "./pages/AgentSkillPage";
+import { ChatPage } from "./pages/ChatPage";
 
 export function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      {/* Chat page is full-screen, outside Layout */}
+      <Route path="/chat/:agent" element={<ChatPage />} />
       <Route element={<Layout />}>
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/dashboard/agents/:name" element={<AgentDetailPage />} />
