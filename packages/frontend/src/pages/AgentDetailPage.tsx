@@ -22,6 +22,7 @@ import type {
 } from "../lib/api";
 import { RunModal } from "../components/RunModal";
 import { fmtDur, fmtCost, fmtTokens, fmtDateTime, shortId } from "../lib/format";
+import { agentHueStyle } from "../lib/color";
 
 function formatLogEntry(entry: LogEntry): {
   text: string;
@@ -175,6 +176,10 @@ export function AgentDetailPage() {
               />
             </svg>
           </Link>
+          <span
+            className="w-3 h-3 rounded-full shrink-0 agent-color-dot"
+            style={agentHueStyle(name ?? "")}
+          />
           <h1 className="text-xl font-bold text-slate-900 dark:text-white">
             {name}
           </h1>
