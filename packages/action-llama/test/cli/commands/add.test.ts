@@ -35,6 +35,8 @@ describe("al add", () => {
       writeFileSync(filePath, content);
     }
     execFileSync("git", ["init"], { cwd: path, stdio: "pipe" });
+    execFileSync("git", ["config", "user.email", "test@test.com"], { cwd: path, stdio: "pipe" });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: path, stdio: "pipe" });
     execFileSync("git", ["add", "."], { cwd: path, stdio: "pipe" });
     execFileSync("git", ["commit", "-m", "init"], { cwd: path, stdio: "pipe" });
   }
