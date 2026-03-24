@@ -139,10 +139,6 @@ export class IntegrationHarness {
       webhooks: Object.keys(webhookSources).length > 0 ? webhookSources : undefined,
       ...opts.globalConfig,
     };
-    writeFileSync(
-      resolve(projectPath, "config.toml"),
-      stringifyTOML(globalConfig as Record<string, unknown>)
-    );
 
     // Set up each agent
     for (const agent of opts.agents) {
@@ -157,12 +153,21 @@ export class IntegrationHarness {
         credentials: ["anthropic_key"],
         ...agent.config,
       });
-      const { name: _, models: _m, description, license, compatibility, ...alFields } = agentConfig;
+      const { name: _, models: _m, description, license, compatibility, scale, timeout, ...alFields } = agentConfig;
       const frontmatter: Record<string, unknown> = {};
       if (description) frontmatter.description = description;
       if (license) frontmatter.license = license;
       if (compatibility) frontmatter.compatibility = compatibility;
       frontmatter.metadata = { ...alFields, models: ["sonnet"] };
+      // scale and timeout are runtime config — put them in globalConfig.agents
+      if (scale !== undefined || timeout !== undefined) {
+        globalConfig.agents = globalConfig.agents ?? {};
+        globalConfig.agents[agent.name] = {
+          ...(globalConfig.agents[agent.name] ?? {}),
+          ...(scale !== undefined ? { scale } : {}),
+          ...(timeout !== undefined ? { timeout } : {}),
+        };
+      }
       const yamlStr = stringifyYAML(frontmatter).trimEnd();
       writeFileSync(
         resolve(agentPath, "SKILL.md"),
@@ -178,6 +183,12 @@ export class IntegrationHarness {
         writeFileSync(resolve(agentPath, "Dockerfile"), agent.dockerfile);
       }
     }
+
+    // Write config.toml after agent loop (agents may add runtime overrides)
+    writeFileSync(
+      resolve(projectPath, "config.toml"),
+      stringifyTOML(globalConfig as Record<string, unknown>)
+    );
 
     const harness = new IntegrationHarness(projectPath, gatewayPort, credentialDir, apiKey);
     return harness;

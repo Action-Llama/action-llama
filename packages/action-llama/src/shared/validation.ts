@@ -28,19 +28,22 @@ export interface ConfigSchema {
 
 // --- Schema definitions ---
 
+// Schema for individual model config (used inside named model sub-keys)
+const MODEL_CONFIG_SCHEMA: ConfigSchema = {
+  required: new Set(),
+  optional: new Set(["provider", "model", "thinkingLevel", "authType"]),
+  nested: {}
+};
+
 const GLOBAL_CONFIG_SCHEMA: ConfigSchema = {
   required: new Set(),
   optional: new Set([
     "models", "local", "gateway", "webhooks", "telemetry",
     "projectName", "maxReruns", "maxCallDepth", "maxTriggerDepth",
-    "webhookQueueSize", "workQueueSize", "resourceLockTimeout", "scale"
+    "webhookQueueSize", "workQueueSize", "resourceLockTimeout", "scale",
+    "agents", "historyRetentionDays"
   ]),
   nested: {
-    models: {
-      required: new Set(),
-      optional: new Set(["provider", "model", "thinkingLevel", "authType"]),
-      nested: {}
-    },
     local: {
       required: new Set(),
       optional: new Set(["enabled", "image", "memory", "cpus", "timeout"]),
@@ -62,8 +65,8 @@ const GLOBAL_CONFIG_SCHEMA: ConfigSchema = {
 const AGENT_CONFIG_SCHEMA: ConfigSchema = {
   required: new Set(["name", "credentials", "models"]),
   optional: new Set([
-    "description", "schedule", "webhooks", "hooks", "params", "scale",
-    "timeout", "license", "compatibility"
+    "description", "schedule", "webhooks", "hooks", "params",
+    "license", "compatibility"
   ]),
   nested: {
     hooks: {
@@ -85,7 +88,7 @@ const AGENT_FRONTMATTER_SCHEMA: ConfigSchema = {
   nested: {
     metadata: {
       required: new Set(["credentials", "models"]),
-      optional: new Set(["schedule", "webhooks", "hooks", "params", "scale", "timeout"]),
+      optional: new Set(["schedule", "webhooks", "hooks", "params"]),
       nested: {
         hooks: {
           required: new Set(),
@@ -273,14 +276,31 @@ export function validateAgentConfig(config: AgentConfig, raw?: unknown): Validat
 
 /**
  * Check for unknown fields in global config.
+ * `models` uses named sub-keys (e.g. `models.sonnet`), so we validate
+ * each sub-object against the model config schema individually.
  */
 export function detectGlobalConfigUnknownFields(raw: unknown): string[] {
-  return detectUnknownFields(raw, GLOBAL_CONFIG_SCHEMA);
+  const fields = detectUnknownFields(raw, GLOBAL_CONFIG_SCHEMA);
+
+  // Validate named model sub-keys
+  if (typeof raw === "object" && raw !== null) {
+    const models = (raw as Record<string, unknown>).models;
+    if (typeof models === "object" && models !== null) {
+      for (const [name, value] of Object.entries(models as Record<string, unknown>)) {
+        if (typeof value === "object" && value !== null) {
+          fields.push(...detectUnknownFields(value, MODEL_CONFIG_SCHEMA, `models.${name}`));
+        }
+      }
+    }
+  }
+
+  return fields;
 }
 
 /**
- * Check for unknown fields in agent config.
+ * Check for unknown fields in agent SKILL.md frontmatter.
+ * Validates the raw frontmatter structure (top-level + metadata).
  */
-export function detectAgentConfigUnknownFields(raw: unknown): string[] {
+export function detectAgentFrontmatterUnknownFields(raw: unknown): string[] {
   return detectUnknownFields(raw, AGENT_FRONTMATTER_SCHEMA);
 }

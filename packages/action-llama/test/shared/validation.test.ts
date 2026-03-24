@@ -3,6 +3,8 @@ import {
   validateCronExpression,
   validateConfigSchema,
   detectUnknownFields,
+  detectGlobalConfigUnknownFields,
+  detectAgentFrontmatterUnknownFields,
   validateGlobalConfig,
   validateAgentConfig,
   type ConfigSchema,
@@ -93,6 +95,99 @@ describe("validation", () => {
 
       const unknownFields = detectUnknownFields(config, testSchema);
       expect(unknownFields).toEqual([]);
+    });
+  });
+
+  describe("detectGlobalConfigUnknownFields", () => {
+    it("accepts named model sub-keys", () => {
+      const raw = {
+        models: {
+          sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514" },
+          opus: { provider: "anthropic", model: "claude-opus-4-20250514" },
+        },
+        scale: 3,
+      };
+
+      const unknownFields = detectGlobalConfigUnknownFields(raw);
+      expect(unknownFields).toEqual([]);
+    });
+
+    it("flags unknown fields inside named model configs", () => {
+      const raw = {
+        models: {
+          sonnet: { provider: "anthropic", bogus: true },
+        },
+      };
+
+      const unknownFields = detectGlobalConfigUnknownFields(raw);
+      expect(unknownFields).toEqual(["models.sonnet.bogus"]);
+    });
+
+    it("accepts agents and historyRetentionDays", () => {
+      const raw = {
+        agents: { dev: { scale: 2 } },
+        historyRetentionDays: 30,
+      };
+
+      const unknownFields = detectGlobalConfigUnknownFields(raw);
+      expect(unknownFields).toEqual([]);
+    });
+  });
+
+  describe("detectAgentFrontmatterUnknownFields", () => {
+    it("accepts valid frontmatter structure", () => {
+      const raw = {
+        description: "A test agent",
+        metadata: {
+          credentials: ["anthropic_key"],
+          models: ["sonnet"],
+          schedule: "0 * * * *",
+          webhooks: [],
+          params: { foo: "bar" },
+        },
+      };
+
+      const unknownFields = detectAgentFrontmatterUnknownFields(raw);
+      expect(unknownFields).toEqual([]);
+    });
+
+    it("flags unknown top-level frontmatter fields", () => {
+      const raw = {
+        description: "test",
+        bogusField: true,
+        metadata: { credentials: [], models: ["sonnet"] },
+      };
+
+      const unknownFields = detectAgentFrontmatterUnknownFields(raw);
+      expect(unknownFields).toEqual(["bogusField"]);
+    });
+
+    it("flags unknown metadata fields", () => {
+      const raw = {
+        metadata: {
+          credentials: [],
+          models: ["sonnet"],
+          bogus: true,
+        },
+      };
+
+      const unknownFields = detectAgentFrontmatterUnknownFields(raw);
+      expect(unknownFields).toEqual(["metadata.bogus"]);
+    });
+
+    it("flags scale and timeout in metadata as unknown", () => {
+      const raw = {
+        metadata: {
+          credentials: [],
+          models: ["sonnet"],
+          scale: 2,
+          timeout: 300,
+        },
+      };
+
+      const unknownFields = detectAgentFrontmatterUnknownFields(raw);
+      expect(unknownFields).toContain("metadata.scale");
+      expect(unknownFields).toContain("metadata.timeout");
     });
   });
 

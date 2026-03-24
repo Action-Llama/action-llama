@@ -62,6 +62,12 @@ vi.mock("../../../src/events/webhook-setup.js", () => ({
   validateTriggerFields: (...args: any[]) => mockValidateTriggerFields(...args),
   resolveWebhookSource: (...args: any[]) => mockResolveWebhookSource(...args),
   KNOWN_PROVIDER_TYPES: new Set(["github", "sentry", "linear", "mintlify", "test"]),
+  PROVIDER_TO_CREDENTIAL: {
+    github: "github_webhook_secret",
+    sentry: "sentry_client_secret",
+    linear: "linear_webhook_secret",
+    mintlify: "mintlify_webhook_secret",
+  },
 }));
 
 const mockCollectCredentialRefs = vi.fn();
@@ -72,12 +78,12 @@ vi.mock("../../../src/shared/credential-refs.js", () => ({
 const mockValidateGlobalConfig = vi.fn();
 const mockValidateAgentConfigEnhanced = vi.fn();
 const mockDetectGlobalConfigUnknownFields = vi.fn();
-const mockDetectAgentConfigUnknownFields = vi.fn();
+const mockDetectAgentFrontmatterUnknownFields = vi.fn();
 vi.mock("../../../src/shared/validation.js", () => ({
   validateGlobalConfig: (...args: any[]) => mockValidateGlobalConfig(...args),
   validateAgentConfig: (...args: any[]) => mockValidateAgentConfigEnhanced(...args),
   detectGlobalConfigUnknownFields: (...args: any[]) => mockDetectGlobalConfigUnknownFields(...args),
-  detectAgentConfigUnknownFields: (...args: any[]) => mockDetectAgentConfigUnknownFields(...args),
+  detectAgentFrontmatterUnknownFields: (...args: any[]) => mockDetectAgentFrontmatterUnknownFields(...args),
 }));
 
 const mockExistsSync = vi.fn();
@@ -136,7 +142,7 @@ describe("doctor", () => {
     mockValidateGlobalConfig.mockReturnValue({ errors: [], warnings: [] });
     mockValidateAgentConfigEnhanced.mockReturnValue({ errors: [], warnings: [] });
     mockDetectGlobalConfigUnknownFields.mockReturnValue([]);
-    mockDetectAgentConfigUnknownFields.mockReturnValue([]);
+    mockDetectAgentFrontmatterUnknownFields.mockReturnValue([]);
     mockExistsSync.mockReturnValue(false);
     mockReadFileSync.mockReturnValue("");
   });
@@ -400,7 +406,7 @@ describe("doctor", () => {
     ).rejects.toThrow('unknown type "githib"');
   });
 
-  it("throws error when webhook source has no credential and allowUnsigned not set", async () => {
+  it("throws error when webhook secret credential is missing and allowUnsigned not set", async () => {
     mockDiscoverAgents.mockReturnValue(["dev"]);
     mockLoadGlobalConfig.mockReturnValue({
       webhooks: { "my-github": { type: "github" } },
@@ -410,8 +416,9 @@ describe("doctor", () => {
       credentials: ["github_token"],
       webhooks: [{ source: "my-github", events: ["issues"] }],
     });
+    mockCredentialExists.mockReturnValue(false);
 
-    await expect(() => execute({ project: "." })).rejects.toThrow(/has no credential and allowUnsigned is not set to true/);
+    await expect(() => execute({ project: "." })).rejects.toThrow(/has no webhook secret stored/);
   });
 
   it("shows security warning when allowUnsigned is explicitly set to true", async () => {

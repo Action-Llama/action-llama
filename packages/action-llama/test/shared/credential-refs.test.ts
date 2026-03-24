@@ -39,7 +39,7 @@ describe("collectCredentialRefs", () => {
     expect(refs).toContain("github_token");
   });
 
-  it("skips webhook secrets when source has no credential", () => {
+  it("defaults webhook credential to 'default' when not specified", () => {
     mockDiscoverAgents.mockReturnValue(["dev"]);
     mockLoadAgentConfig.mockReturnValue({
       name: "dev",
@@ -50,7 +50,8 @@ describe("collectCredentialRefs", () => {
     const refs = collectCredentialRefs("/tmp/project", {
       webhooks: { "my-github": { type: "github" } },
     });
-    expect(refs.size).toBe(0);
+    expect(refs.size).toBe(1);
+    expect(refs.has("github_webhook_secret:default")).toBe(true);
   });
 
   it("returns empty set when no agents", () => {

@@ -6,7 +6,7 @@ import { promptCredential } from "../../credentials/prompter.js";
 import { parseCredentialRef, credentialExists, writeCredentialFields } from "../../shared/credentials.js";
 import { ConfigError, CredentialError } from "../../shared/errors.js";
 import { ensureGatewayApiKey } from "../../control/api-key.js";
-import { resolveWebhookSource, validateTriggerFields, KNOWN_PROVIDER_TYPES } from "../../events/webhook-setup.js";
+import { resolveWebhookSource, validateTriggerFields, KNOWN_PROVIDER_TYPES, PROVIDER_TO_CREDENTIAL } from "../../events/webhook-setup.js";
 import { collectCredentialRefs } from "../../shared/credential-refs.js";
 import { parseFrontmatter } from "../../shared/frontmatter.js";
 import { parse as parseTOML } from "smol-toml";
@@ -14,7 +14,7 @@ import {
   validateGlobalConfig,
   validateAgentConfig as validateAgentConfigEnhanced,
   detectGlobalConfigUnknownFields,
-  detectAgentConfigUnknownFields,
+  detectAgentFrontmatterUnknownFields,
   type ValidationResult
 } from "../../shared/validation.js";
 
@@ -53,15 +53,10 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
       validationErrors.push(...globalValidation.errors.map(e => `Global config: ${e.message}${e.field ? ` (${e.field})` : ""}`));
       validationWarnings.push(...globalValidation.warnings.map(e => `Global config: ${e.message}${e.field ? ` (${e.field})` : ""}`));
 
-      // Check for unknown fields
+      // Check for unknown fields (always an error)
       const unknownFields = detectGlobalConfigUnknownFields(parsedConfig);
       if (unknownFields.length > 0) {
-        const message = `Unknown fields in config.toml: ${unknownFields.join(", ")}`;
-        if (opts.strict) {
-          validationErrors.push(message);
-        } else {
-          validationWarnings.push(message);
-        }
+        validationErrors.push(`Unknown fields in config.toml: ${unknownFields.join(", ")}`);
       }
     }
   } catch (err) {
@@ -94,15 +89,10 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
           `Agent "${name}": ${e.message}${e.field ? ` (${e.field})` : ""}`
         ));
 
-        // Check for unknown fields in agent config
-        const unknownFields = detectAgentConfigUnknownFields(rawForValidation);
+        // Check for unknown fields in agent frontmatter (always an error)
+        const unknownFields = detectAgentFrontmatterUnknownFields(data);
         if (unknownFields.length > 0) {
-          const message = `Unknown fields in agent "${name}": ${unknownFields.join(", ")}`;
-          if (opts.strict) {
-            validationErrors.push(message);
-          } else {
-            validationWarnings.push(message);
-          }
+          validationErrors.push(`Unknown fields in agent "${name}": ${unknownFields.join(", ")}`);
         }
       }
     } catch (err) {
@@ -184,12 +174,16 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
   // Check webhook security configurations
   const securityErrors: string[] = [];
   for (const [sourceName, sourceConfig] of Object.entries(webhookSources)) {
-    if (!sourceConfig.credential && sourceConfig.type !== "test") {
-      if (sourceConfig.allowUnsigned !== true) {
-        // Missing credential and allowUnsigned not explicitly set to true = error
+    // credential defaults to "default" — only error if allowUnsigned is explicitly false-y
+    // and no credential is stored for the default instance
+    const credInstance = sourceConfig.credential ?? "default";
+    if (sourceConfig.type !== "test" && sourceConfig.allowUnsigned !== true) {
+      const credType = PROVIDER_TO_CREDENTIAL[sourceConfig.type];
+      if (credType && !credentialExists(credType, credInstance)) {
         securityErrors.push(
-          `Webhook source "${sourceName}" (${sourceConfig.type}) has no credential and allowUnsigned is not set to true. ` +
-          `Either set credential in config.toml or add allowUnsigned = true for insecure mode.`
+          `Webhook source "${sourceName}" (${sourceConfig.type}) has no webhook secret stored ` +
+          `(credential instance "${credInstance}"). ` +
+          `Run "al doctor" to configure it, or add allowUnsigned = true for insecure mode.`
         );
       }
     }

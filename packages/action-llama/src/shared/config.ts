@@ -243,8 +243,6 @@ export function loadAgentConfig(projectPath: string, agentName: string): AgentCo
     webhooks: meta.webhooks,
     hooks: meta.hooks,
     params: meta.params,
-    scale: meta.scale,
-    timeout: meta.timeout,
   };
 
   // Resolve named model references from global config

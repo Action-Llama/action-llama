@@ -141,7 +141,7 @@ vi.mock("../../src/shared/logger.js", () => ({
 import { startScheduler } from "../../src/scheduler/index.js";
 
 function writeSkillMd(dir: string, config: Record<string, unknown>) {
-  const { name: _, description, license, compatibility, ...alFields } = config;
+  const { name: _, description, license, compatibility, scale: _s, timeout: _t, ...alFields } = config;
   const frontmatter: Record<string, unknown> = {};
   if (description) frontmatter.description = description;
   if (license) frontmatter.license = license;
@@ -325,12 +325,15 @@ describe("startScheduler", () => {
         models: {
           sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
         },
+        agents: {
+          "scaled-agent": { scale: 3 },
+        },
       };
       writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
 
       const agents = [
-        { name: "scaled-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *", scale: 3 },
-        { name: "single-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *" }, // defaults to 1
+        { name: "scaled-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *" },
+        { name: "single-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *" },
       ];
 
       for (const agent of agents) {
@@ -387,12 +390,15 @@ describe("startScheduler", () => {
         models: {
           sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
         },
+        agents: {
+          "disabled-agent": { scale: 0 },
+        },
       };
       writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
 
       const agents = [
         { name: "active-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *" },
-        { name: "disabled-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *", scale: 0 },
+        { name: "disabled-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *" },
       ];
 
       for (const agent of agents) {
@@ -428,7 +434,8 @@ describe("startScheduler", () => {
     it("allows scale = 0 agent without schedule or webhooks", async () => {
       // Overwrite disabled-agent config to have no schedule
       const agentDir = resolve(tmpDir, "agents", "disabled-agent");
-      writeSkillMd(agentDir, { name: "disabled-agent", credentials: ["github_token"], models: ["sonnet"], scale: 0 });
+      writeSkillMd(agentDir, { name: "disabled-agent", credentials: ["github_token"], models: ["sonnet"] });
+      // scale = 0 already set in config.toml via setupDisabledProject
 
       // Should not throw — scale=0 skips schedule/webhook validation
       const { runnerPools } = await startScheduler(tmpDir);
@@ -493,12 +500,16 @@ describe("startScheduler", () => {
         models: {
           sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
         },
+        agents: {
+          "fast-agent": { timeout: 300 },
+          "slow-agent": { timeout: 1800 },
+        },
       };
       writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
 
       const agents = [
-        { name: "fast-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *", timeout: 300 },
-        { name: "slow-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *", timeout: 1800 },
+        { name: "fast-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *" },
+        { name: "slow-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *" },
         { name: "default-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *" },
       ];
 

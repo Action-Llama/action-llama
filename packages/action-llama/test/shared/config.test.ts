@@ -512,7 +512,7 @@ describe("agent runtime overrides", () => {
     expect(loaded.timeout).toBe(3600);
   });
 
-  it("preserves SKILL.md defaults when no override present", () => {
+  it("does not read scale/timeout from SKILL.md (they belong in config.toml)", () => {
     writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
     const agentDir = resolve(tmpDir, "agents", "dev");
     mkdirSync(agentDir, { recursive: true });
@@ -523,20 +523,21 @@ metadata:
   models:
     - sonnet
   schedule: "*/5 * * * *"
-  scale: 3
-  timeout: 600
 ---
 
 # Dev
 `);
 
     const loaded = loadAgentConfig(tmpDir, "dev");
-    expect(loaded.scale).toBe(3);
-    expect(loaded.timeout).toBe(600);
+    expect(loaded.scale).toBeUndefined();
+    expect(loaded.timeout).toBeUndefined();
   });
 
-  it("overrides SKILL.md values with .env.toml values", () => {
-    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
+  it("applies scale/timeout from config.toml [agents] overrides", () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      models: { sonnet: SONNET_MODEL },
+      agents: { dev: { scale: 8, timeout: 7200 } },
+    }));
     const agentDir = resolve(tmpDir, "agents", "dev");
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(resolve(agentDir, "SKILL.md"), `---
@@ -546,15 +547,10 @@ metadata:
   models:
     - sonnet
   schedule: "*/5 * * * *"
-  scale: 1
-  timeout: 300
 ---
 
 # Dev
 `);
-    writeFileSync(resolve(tmpDir, ".env.toml"), stringifyTOML({
-      agents: { dev: { scale: 8, timeout: 7200 } },
-    }));
 
     const loaded = loadAgentConfig(tmpDir, "dev");
     expect(loaded.scale).toBe(8);

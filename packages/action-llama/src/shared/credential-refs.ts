@@ -50,8 +50,8 @@ export function collectCredentialRefs(projectPath: string, globalConfig: GlobalC
       const sourceConfig = webhookSources[trigger.source];
       if (!sourceConfig) continue;
       const credType = WEBHOOK_SECRET_TYPES[sourceConfig.type];
-      if (credType && sourceConfig.credential) {
-        credentialRefs.add(`${credType}:${sourceConfig.credential}`);
+      if (credType) {
+        credentialRefs.add(`${credType}:${sourceConfig.credential ?? "default"}`);
       }
     }
   }

@@ -203,13 +203,6 @@ export async function setupWebhookRegistry(
     }
   }
 
-  // Check for and warn about unsigned webhook configurations
-  for (const [sourceName, sourceConfig] of Object.entries(webhookSources)) {
-    if (sourceConfig.allowUnsigned) {
-      logger.warn(`⚠️  WARNING: Webhook source '${sourceName}' allows unsigned requests. This is insecure for production!`);
-    }
-  }
-
   return { registry, secrets, configs: webhookSources };
 }
 
