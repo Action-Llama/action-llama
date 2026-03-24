@@ -171,6 +171,8 @@ Use standard tools directly: `gh` CLI, `git`, `curl`.
 Use `/tmp` for cloning repos, writing scratch files, and any other disk I/O.
 Your working directory is `/app/static` which contains your agent files (SKILL.md, agent-config.json).
 All write operations (git clone, file creation, etc.) must target `/tmp`.
+
+**Environment variables:** Use `setenv NAME value` to persist variables across bash commands.
 </environment>
 ```
 
@@ -922,15 +924,13 @@ Read-only root, non-root user, resource limits.
 
 ### Environment variable persistence
 
-Write to `/tmp/env.sh` to persist environment variables across bash commands:
+Use `setenv` to persist environment variables across bash commands:
 
 ```bash
-echo 'export REPO="owner/repo"' > /tmp/env.sh
-echo 'export ISSUE_NUMBER=42' >> /tmp/env.sh
+setenv REPO "owner/repo"
+setenv ISSUE_NUMBER 42
 gh issue view $ISSUE_NUMBER --repo $REPO
 ```
-
-File is automatically sourced before each bash command.
 
 See `[local]` in config.toml for Docker configuration options.
 

@@ -16,6 +16,7 @@ import {
   createCodingTools,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentInit } from "./container-entry.js";
+import { BASH_COMMAND_PREFIX } from "./bash-prefix.js";
 import { loadContainerCredentials } from "./credential-setup.js";
 import { mapAgentEvent } from "../chat/event-mapper.js";
 import type { ChatInbound, ChatOutbound } from "../chat/types.js";
@@ -55,7 +56,7 @@ export async function runChatMode(init: AgentInit): Promise<number> {
     authStorage,
     resourceLoader,
     tools: createCodingTools(cwd, {
-      bash: { commandPrefix: '[ -f /tmp/env.sh ] && source /tmp/env.sh' },
+      bash: { commandPrefix: BASH_COMMAND_PREFIX },
     }),
     sessionManager: SessionManager.inMemory(),
     settingsManager,

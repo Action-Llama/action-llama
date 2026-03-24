@@ -13,6 +13,7 @@ import { ModelCircuitBreaker, selectAvailableModels, isRateLimitError } from "./
 import type { AgentConfig } from "../shared/config.js";
 import { getExitCodeMessage } from "../shared/exit-codes.js";
 import { ensureSignalDir, readSignals } from "./signals.js";
+import { BASH_COMMAND_PREFIX } from "./bash-prefix.js";
 import { runHooks } from "../hooks/runner.js";
 import { processContextInjection } from "./context-injection.js";
 import { parseFrontmatter } from "../shared/frontmatter.js";
@@ -293,7 +294,7 @@ export async function handleInvocation(init: AgentInit): Promise<number> {
         authStorage,
         resourceLoader,
         tools: createCodingTools(cwd, {
-          bash: { commandPrefix: '[ -f /tmp/env.sh ] && source /tmp/env.sh' },
+          bash: { commandPrefix: BASH_COMMAND_PREFIX },
         }),
         sessionManager: SessionManager.inMemory(),
         settingsManager,

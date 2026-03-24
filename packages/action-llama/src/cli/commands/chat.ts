@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import { loadCredentialField, loadCredentialFields, parseCredentialRef } from "../../shared/credentials.js";
 import { discoverAgents, loadAgentConfig, loadGlobalConfig } from "../../shared/config.js";
 import { builtinCredentials } from "../../credentials/builtins/index.js";
+import { BASH_COMMAND_PREFIX } from "../../agents/bash-prefix.js";
 
 function resolvePackageRoot(): string {
   const thisFile = fileURLToPath(import.meta.url);
@@ -276,7 +277,7 @@ async function executeAgentChat(opts: ChatOpts & { agent: string }): Promise<voi
     authStorage,
     resourceLoader,
     tools: createCodingTools(agentDir, {
-      bash: { commandPrefix: '[ -f /tmp/env.sh ] && source /tmp/env.sh' },
+      bash: { commandPrefix: BASH_COMMAND_PREFIX },
     }),
     sessionManager: SessionManager.inMemory(),
     settingsManager,
@@ -405,7 +406,7 @@ async function executeProjectChat(opts: ChatOpts): Promise<void> {
     authStorage,
     resourceLoader,
     tools: createCodingTools(projectPath, {
-      bash: { commandPrefix: '[ -f /tmp/env.sh ] && source /tmp/env.sh' },
+      bash: { commandPrefix: BASH_COMMAND_PREFIX },
     }),
     sessionManager: SessionManager.inMemory(),
     settingsManager,

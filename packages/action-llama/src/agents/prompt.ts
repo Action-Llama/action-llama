@@ -170,6 +170,8 @@ function buildEnvironmentContext(): string {
     "Use `/tmp` for cloning repos, writing scratch files, and any other disk I/O.",
     "Your working directory is `/app/static` which contains your agent files (SKILL.md, agent-config.json).",
     "All write operations (git clone, file creation, etc.) must target `/tmp`.",
+    "",
+    "**Environment variables:** Use `setenv NAME value` to persist variables across bash commands.",
     "</environment>",
   ].join("\n");
 }

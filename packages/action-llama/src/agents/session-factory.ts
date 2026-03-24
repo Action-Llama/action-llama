@@ -6,6 +6,7 @@ import {
   SessionManager,
 } from "@mariozechner/pi-coding-agent";
 import type { ModelConfig } from "../shared/config.js";
+import { BASH_COMMAND_PREFIX } from "./bash-prefix.js";
 
 export interface SessionFactoryOpts {
   cwd: string;
@@ -36,7 +37,7 @@ export async function createSessionForModel(
     authStorage,
     resourceLoader: opts.resourceLoader,
     tools: createCodingTools(opts.cwd, {
-      bash: { commandPrefix: '[ -f /tmp/env.sh ] && source /tmp/env.sh' },
+      bash: { commandPrefix: BASH_COMMAND_PREFIX },
     }),
     sessionManager: SessionManager.inMemory(),
     settingsManager: opts.settingsManager,
