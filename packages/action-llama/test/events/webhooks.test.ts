@@ -47,20 +47,20 @@ vi.mock("../../src/agents/container-runner.js", () => ({
 
 // Mock credentials
 vi.mock("../../src/shared/credentials.js", () => ({
-  loadCredentialField: () => "fake-token",
-  requireCredentialRef: () => {},
+  loadCredentialField: async () => "fake-token",
+  requireCredentialRef: async () => {},
   parseCredentialRef: (ref: string) => {
     const sep = ref.indexOf(":");
     if (sep === -1) return { type: ref, instance: "default" };
     return { type: ref.slice(0, sep).trim(), instance: ref.slice(sep + 1).trim() };
   },
-  listCredentialInstances: (type: string) => {
+  listCredentialInstances: async (type: string) => {
     if (type === "github_webhook_secret") return ["MyOrg"];
     return [];
   },
-  writeCredentialField: () => {},
-  writeCredentialFields: () => {},
-  credentialExists: () => true,
+  writeCredentialField: async () => {},
+  writeCredentialFields: async () => {},
+  credentialExists: async () => true,
   backendLoadField: () => Promise.resolve("fake-token"),
   backendLoadFields: () => Promise.resolve({}),
   backendCredentialExists: () => Promise.resolve(true),
