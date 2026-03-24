@@ -211,6 +211,10 @@ export function buildManualSuffix(): string {
   return "You have been triggered manually. Check for new work and act on anything you find.";
 }
 
+export function buildUserPromptSuffix(prompt: string): string {
+  return `<user-prompt>\n${prompt}\n</user-prompt>\n\nYou have been given a specific task. Complete the task described above.`;
+}
+
 export function buildCalledSuffix(callerAgent: string, context: string): string {
   const callBlock = JSON.stringify({ caller: callerAgent, context });
   return `<agent-call>\n${callBlock}\n</agent-call>\n\nYou were called by the "${callerAgent}" agent. Review the call context above, do the requested work, and use \`al-return\` to send back your result.`;
@@ -225,8 +229,9 @@ export function buildScheduledPrompt(agentConfig: AgentConfig, skills?: PromptSk
   return `${buildPromptSkeleton(agentConfig, skills)}\n\n${buildScheduledSuffix()}`;
 }
 
-export function buildManualPrompt(agentConfig: AgentConfig, skills?: PromptSkills): string {
-  return `${buildPromptSkeleton(agentConfig, skills)}\n\n${buildManualSuffix()}`;
+export function buildManualPrompt(agentConfig: AgentConfig, skills?: PromptSkills, prompt?: string): string {
+  const suffix = prompt ? buildUserPromptSuffix(prompt) : buildManualSuffix();
+  return `${buildPromptSkeleton(agentConfig, skills)}\n\n${suffix}`;
 }
 
 export function buildCalledPrompt(agentConfig: AgentConfig, callerAgent: string, context: string, skills?: PromptSkills): string {

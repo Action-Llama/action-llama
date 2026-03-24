@@ -7,6 +7,7 @@ import {
   dispatchTriggers,
   drainQueues,
   runWithReruns,
+  makeManualPrompt,
   DEFAULT_MAX_RERUNS,
   DEFAULT_MAX_TRIGGER_DEPTH,
   type SchedulerContext,
@@ -396,5 +397,55 @@ describe("runWithReruns", () => {
       expect.objectContaining({ maxReruns: 3 }),
       expect.stringContaining("hit max reruns limit")
     );
+  });
+
+  it("uses manual prompt when prompt is provided", async () => {
+    const runner = makeRunner({
+      run: vi.fn().mockResolvedValue({ result: "completed", triggers: [] }),
+    });
+    const config = makeAgentConfig("a");
+    const ctx = makeCtx({
+      agentConfigs: [config],
+      runnerPools: { a: new RunnerPool([runner]) },
+    });
+
+    await runWithReruns(runner, config, 0, ctx, "review PR #42");
+
+    expect(runner.run).toHaveBeenCalledTimes(1);
+    const prompt = (runner.run as any).mock.calls[0][0];
+    expect(prompt).toContain("review PR #42");
+    expect(prompt).toContain("<user-prompt>");
+    const triggerInfo = (runner.run as any).mock.calls[0][1];
+    expect(triggerInfo.type).toBe("manual");
+    expect(triggerInfo.source).toBe("user-prompt");
+  });
+});
+
+describe("makeManualPrompt", () => {
+  it("returns user prompt suffix when baked and prompt given", () => {
+    const config = makeAgentConfig("a");
+    const ctx = makeCtx({ useBakedImages: true });
+    const result = makeManualPrompt(config, ctx, "test task");
+    expect(result).toContain("<user-prompt>");
+    expect(result).toContain("test task");
+    // Should NOT contain full skeleton when baked
+    expect(result).not.toContain("<agent-config>");
+  });
+
+  it("returns manual suffix when baked and no prompt", () => {
+    const config = makeAgentConfig("a");
+    const ctx = makeCtx({ useBakedImages: true });
+    const result = makeManualPrompt(config, ctx);
+    expect(result).toContain("triggered manually");
+    expect(result).not.toContain("<user-prompt>");
+  });
+
+  it("returns full prompt when not baked", () => {
+    const config = makeAgentConfig("a");
+    const ctx = makeCtx({ useBakedImages: false });
+    const result = makeManualPrompt(config, ctx, "deploy");
+    expect(result).toContain("<agent-config>");
+    expect(result).toContain("<user-prompt>");
+    expect(result).toContain("deploy");
   });
 });

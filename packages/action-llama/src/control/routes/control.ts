@@ -8,7 +8,7 @@ export interface ControlRoutesDeps {
   killAgent: (name: string) => Promise<{ killed: number } | null>;
   pauseScheduler: () => Promise<void>;
   resumeScheduler: () => Promise<void>;
-  triggerAgent?: (name: string) => Promise<true | string>;
+  triggerAgent?: (name: string, prompt?: string) => Promise<true | string>;
   enableAgent?: (name: string) => Promise<boolean>;
   disableAgent?: (name: string) => Promise<boolean>;
   stopScheduler?: () => Promise<void>;
@@ -92,12 +92,21 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps) {
   // POST /control/trigger/:name - Trigger an agent run
   app.post("/control/trigger/:name", async (c) => {
     const name = c.req.param("name");
-    logger?.info({ agent: name }, "control: trigger requested");
+    let prompt: string | undefined;
+    try {
+      const body = await c.req.json();
+      if (body && typeof body.prompt === "string" && body.prompt.trim()) {
+        prompt = body.prompt.trim();
+      }
+    } catch {
+      // No body or invalid JSON — that's fine, prompt stays undefined
+    }
+    logger?.info({ agent: name, hasPrompt: !!prompt }, "control: trigger requested");
     if (!deps.triggerAgent) {
       return c.json({ error: "Trigger not available" }, 503);
     }
     try {
-      const result = await deps.triggerAgent(name);
+      const result = await deps.triggerAgent(name, prompt);
       if (result === true) {
         return c.json({ success: true, message: `Agent ${name} triggered` });
       } else {

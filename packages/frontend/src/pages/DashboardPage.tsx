@@ -12,6 +12,7 @@ import {
   resumeScheduler,
 } from "../lib/api";
 import type { AgentStatus, TriggerHistoryRow } from "../lib/api";
+import { RunModal } from "../components/RunModal";
 import { fmtTokens, fmtSessionTime, fmtRelativeTime, shortId, shortName } from "../lib/format";
 
 function formatScale(agent: AgentStatus): string {
@@ -28,10 +29,12 @@ function ActionMenu({
   agent,
   isPaused,
   onAction,
+  onRunClick,
 }: {
   agent: AgentStatus;
   isPaused: boolean;
   onAction: (fn: () => Promise<unknown>) => void;
+  onRunClick: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -59,7 +62,7 @@ function ActionMenu({
       {open && (
         <div className="absolute right-0 mt-1 z-10 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md shadow-lg py-1 min-w-[100px]">
           <button
-            onClick={() => { onAction(() => triggerAgent(agent.name)); setOpen(false); }}
+            onClick={() => { onRunClick(); setOpen(false); }}
             disabled={!agent.enabled || isPaused}
             className="w-full text-left px-3 py-1.5 text-xs text-green-700 dark:text-green-400 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
           >
@@ -88,6 +91,7 @@ export function DashboardPage() {
   const { agents, schedulerInfo, connected } = useStatusStream();
   const [triggers, setTriggers] = useState<TriggerHistoryRow[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [runModalAgent, setRunModalAgent] = useState<string | null>(null);
 
   // Fetch recent triggers
   useEffect(() => {
@@ -282,9 +286,7 @@ export function DashboardPage() {
                         {/* Desktop: inline buttons */}
                         <div className="hidden sm:flex items-center justify-end gap-1.5">
                           <button
-                            onClick={() =>
-                              handleAction(() => triggerAgent(agent.name))
-                            }
+                            onClick={() => setRunModalAgent(agent.name)}
                             disabled={!agent.enabled || isPaused}
                             className="px-2 py-1 text-xs rounded bg-green-600 hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
                             title="Trigger run"
@@ -320,7 +322,7 @@ export function DashboardPage() {
                         </div>
                         {/* Mobile: dropdown */}
                         <div className="sm:hidden">
-                          <ActionMenu agent={agent} isPaused={isPaused} onAction={handleAction} />
+                          <ActionMenu agent={agent} isPaused={isPaused} onAction={handleAction} onRunClick={() => setRunModalAgent(agent.name)} />
                         </div>
                       </td>
                     </tr>
@@ -434,6 +436,16 @@ export function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {runModalAgent && (
+        <RunModal
+          agentName={runModalAgent}
+          onClose={() => setRunModalAgent(null)}
+          onRun={(prompt) =>
+            handleAction(() => triggerAgent(runModalAgent, prompt))
+          }
+        />
+      )}
     </div>
   );
 }

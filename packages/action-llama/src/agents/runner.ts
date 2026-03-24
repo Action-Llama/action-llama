@@ -70,7 +70,7 @@ export class AgentRunner {
     this.abortController.abort();
   }
 
-  async run(prompt: string, triggerInfo?: { type: 'schedule' | 'webhook' | 'agent'; source?: string }): Promise<RunOutcome> {
+  async run(prompt: string, triggerInfo?: { type: 'schedule' | 'manual' | 'webhook' | 'agent'; source?: string }): Promise<RunOutcome> {
     if (this.running) {
       this.logger.warn(`${this.agentConfig.name} is already running, skipping`);
       return { result: "error", triggers: [] };
@@ -117,7 +117,7 @@ export class AgentRunner {
     );
   }
 
-  private async _runInternal(prompt: string, triggerInfo?: { type: 'schedule' | 'webhook' | 'agent'; source?: string }, parentSpan?: any): Promise<RunOutcome> {
+  private async _runInternal(prompt: string, triggerInfo?: { type: 'schedule' | 'manual' | 'webhook' | 'agent'; source?: string }, parentSpan?: any): Promise<RunOutcome> {
 
     if (triggerInfo) {
       const triggerDetails = triggerInfo.type === 'agent' && triggerInfo.source 

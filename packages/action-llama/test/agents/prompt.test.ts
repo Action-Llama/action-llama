@@ -3,6 +3,7 @@ import {
   buildScheduledPrompt, buildWebhookPrompt, buildManualPrompt, buildCalledPrompt,
   buildCredentialContext, buildLockSkill, buildSubagentSkill, buildPromptSkeleton,
   buildScheduledSuffix, buildManualSuffix, buildCalledSuffix, buildWebhookSuffix,
+  buildUserPromptSuffix,
 } from "../../src/agents/prompt.js";
 import type { AgentConfig } from "../../src/shared/config.js";
 import type { WebhookContext } from "../../src/webhooks/types.js";
@@ -327,6 +328,16 @@ describe("prompt suffix functions", () => {
     expect(buildManualSuffix()).toContain("triggered manually");
   });
 
+  it("buildUserPromptSuffix wraps prompt in user-prompt tags", () => {
+    const result = buildUserPromptSuffix("review PR #42");
+    expect(result).toContain("<user-prompt>");
+    expect(result).toContain("review PR #42");
+    expect(result).toContain("</user-prompt>");
+    expect(result).toContain("specific task");
+    expect(result).toContain("Complete the task");
+    expect(result).not.toContain("triggered manually");
+  });
+
   it("buildCalledSuffix includes agent-call block", () => {
     const result = buildCalledSuffix("dev", "Please review PR #42");
     expect(result).toContain("<agent-call>");
@@ -345,5 +356,27 @@ describe("prompt suffix functions", () => {
     const result = buildWebhookSuffix(context);
     expect(result).toContain("<webhook-trigger>");
     expect(result).toContain('"event":"issues"');
+  });
+});
+
+describe("buildManualPrompt with user prompt", () => {
+  it("uses manual suffix when no prompt given", () => {
+    const result = buildManualPrompt(agentConfig);
+    expect(result).toContain("triggered manually");
+    expect(result).not.toContain("<user-prompt>");
+  });
+
+  it("uses user prompt suffix when prompt is given", () => {
+    const result = buildManualPrompt(agentConfig, undefined, "review PR #42");
+    expect(result).toContain("<user-prompt>");
+    expect(result).toContain("review PR #42");
+    expect(result).not.toContain("triggered manually");
+  });
+
+  it("includes agent-config and credentials with user prompt", () => {
+    const result = buildManualPrompt(agentConfig, undefined, "deploy to staging");
+    expect(result).toContain("<agent-config>");
+    expect(result).toContain("<credential-context>");
+    expect(result).toContain("deploy to staging");
   });
 });

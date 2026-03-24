@@ -279,8 +279,11 @@ export function getInstanceLogs(
 
 // --- Control operations ---
 
-export function triggerAgent(name: string) {
-  return ctrlPost(`/control/trigger/${encodeURIComponent(name)}`);
+export function triggerAgent(name: string, prompt?: string) {
+  return ctrlPost(
+    `/control/trigger/${encodeURIComponent(name)}`,
+    prompt ? { prompt } : undefined,
+  );
 }
 
 export function killAgentInstances(name: string) {

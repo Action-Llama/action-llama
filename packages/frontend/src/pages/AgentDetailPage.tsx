@@ -20,6 +20,7 @@ import type {
   LogEntry,
   AgentInstance,
 } from "../lib/api";
+import { RunModal } from "../components/RunModal";
 import { fmtDur, fmtCost, fmtTokens, fmtDateTime, shortId } from "../lib/format";
 
 function formatLogEntry(entry: LogEntry): {
@@ -64,6 +65,7 @@ export function AgentDetailPage() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [scaleInput, setScaleInput] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
+  const [showRunModal, setShowRunModal] = useState(false);
   const cursorRef = useRef<string | null>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
   const runsLimit = 20;
@@ -201,7 +203,7 @@ export function AgentDetailPage() {
             </div>
           )}
           <button
-            onClick={() => handleAction(() => triggerAgent(name))}
+            onClick={() => setShowRunModal(true)}
             disabled={agent ? !agent.enabled : false}
             className="px-3 py-1.5 text-xs font-medium rounded-md bg-green-600 hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
           >
@@ -446,6 +448,16 @@ export function AgentDetailPage() {
           )}
         </div>
       </div>
+
+      {showRunModal && name && (
+        <RunModal
+          agentName={name}
+          onClose={() => setShowRunModal(false)}
+          onRun={(prompt) =>
+            handleAction(() => triggerAgent(name, prompt))
+          }
+        />
+      )}
     </div>
   );
 }

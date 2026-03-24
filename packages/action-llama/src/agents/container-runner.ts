@@ -136,7 +136,7 @@ export class ContainerAgentRunner {
     }
   }
 
-  async run(prompt: string, triggerInfo?: { type: 'schedule' | 'webhook' | 'agent'; source?: string }): Promise<RunOutcome> {
+  async run(prompt: string, triggerInfo?: { type: 'schedule' | 'manual' | 'webhook' | 'agent'; source?: string }): Promise<RunOutcome> {
     if (this._running) {
       this.logger.warn(`${this.agentConfig.name} is already running, skipping`);
       return { result: "error", triggers: [] };
@@ -172,7 +172,7 @@ export class ContainerAgentRunner {
     );
   }
 
-  private async _runInternalContainer(prompt: string, triggerInfo?: { type: 'schedule' | 'webhook' | 'agent'; source?: string }, parentSpan?: any): Promise<RunOutcome> {
+  private async _runInternalContainer(prompt: string, triggerInfo?: { type: 'schedule' | 'manual' | 'webhook' | 'agent'; source?: string }, parentSpan?: any): Promise<RunOutcome> {
     this._returnValue = undefined;
     this._tokenUsage = undefined;
     const runReason = triggerInfo

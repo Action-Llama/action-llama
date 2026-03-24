@@ -3,7 +3,7 @@ import { existsSync } from "fs";
 import { discoverAgents } from "../../shared/config.js";
 import { gatewayFetch, gatewayJson } from "../gateway-client.js";
 
-export async function execute(agent: string, opts: { project: string; env?: string; headless?: boolean }): Promise<void> {
+export async function execute(agent: string, prompt: string | undefined, opts: { project: string; env?: string; headless?: boolean }): Promise<void> {
   const projectPath = resolve(opts.project);
 
   // Guard: refuse to run if the project path looks like an agent directory
@@ -27,6 +27,7 @@ export async function execute(agent: string, opts: { project: string; env?: stri
       project: projectPath,
       path: `/control/trigger/${encodeURIComponent(agent)}`,
       method: "POST",
+      body: prompt ? { prompt } : undefined,
       env: opts.env,
     });
   } catch (error) {

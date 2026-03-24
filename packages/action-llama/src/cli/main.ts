@@ -64,12 +64,13 @@ program
   .command("run")
   .description("Manually run a single agent")
   .argument("<agent>", "agent name")
+  .argument("[prompt]", "optional task prompt for the agent")
   .option("-p, --project <dir>", "project directory", ".")
   .option("-E, --env <name>", "use named deployment environment")
   .option("-H, --headless", "non-interactive mode (no credential prompts, for CI/deploy environments)")
-  .action(withCommand(async (agent: string, opts) => {
+  .action(withCommand(async (agent: string, prompt: string | undefined, opts) => {
     const { execute } = await import("./commands/run.js");
-    await execute(agent, opts);
+    await execute(agent, prompt, opts);
   }));
 
 program

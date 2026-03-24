@@ -1,6 +1,6 @@
 import {
-  buildScheduledPrompt, buildWebhookPrompt, buildCalledPrompt,
-  buildScheduledSuffix, buildWebhookSuffix, buildCalledSuffix,
+  buildScheduledPrompt, buildWebhookPrompt, buildCalledPrompt, buildManualPrompt,
+  buildScheduledSuffix, buildWebhookSuffix, buildCalledSuffix, buildManualSuffix, buildUserPromptSuffix,
   type PromptSkills,
 } from "../agents/prompt.js";
 import type { WorkQueue, QueuedWorkItem } from "../shared/work-queue.js";
@@ -62,6 +62,13 @@ export function makeWebhookPrompt(agentConfig: AgentConfig, context: WebhookCont
   return ctx.useBakedImages ? buildWebhookSuffix(context) : buildWebhookPrompt(agentConfig, context, ctx.skills);
 }
 
+export function makeManualPrompt(agentConfig: AgentConfig, ctx: SchedulerContext, prompt?: string): string {
+  if (ctx.useBakedImages) {
+    return prompt ? buildUserPromptSuffix(prompt) : buildManualSuffix();
+  }
+  return buildManualPrompt(agentConfig, ctx.skills, prompt);
+}
+
 export function makeTriggeredPrompt(agentConfig: AgentConfig, sourceAgent: string, context: string, ctx: SchedulerContext): string {
   return ctx.useBakedImages ? buildCalledSuffix(sourceAgent, context) : buildCalledPrompt(agentConfig, sourceAgent, context, ctx.skills);
 }
@@ -69,7 +76,7 @@ export function makeTriggeredPrompt(agentConfig: AgentConfig, sourceAgent: strin
 /** Run a single agent and dispatch any resulting triggers. */
 export async function executeRun(
   runner: PoolRunner, prompt: string,
-  triggerInfo: { type: 'schedule' | 'webhook' | 'agent'; source?: string; receiptId?: string },
+  triggerInfo: { type: 'schedule' | 'manual' | 'webhook' | 'agent'; source?: string; receiptId?: string },
   agentName: string, depth: number, ctx: SchedulerContext,
   instanceLifecycle?: InstanceLifecycle
 ): Promise<{ result: string; triggers: Array<{ agent: string; context: string }>; returnValue?: string }> {
@@ -306,15 +313,23 @@ function fireQueuedItem(
 }
 
 export async function runWithReruns(
-  runner: PoolRunner, agentConfig: AgentConfig, depth: number, ctx: SchedulerContext
+  runner: PoolRunner, agentConfig: AgentConfig, depth: number, ctx: SchedulerContext, prompt?: string
 ): Promise<void> {
-  // Create instance lifecycle for scheduled run (if supported)
-  const instanceLifecycle = ctx.statusTracker?.createInstance ? 
-    ctx.statusTracker.createInstance(runner.instanceId, agentConfig.name, "schedule") || undefined :
+  const isManual = prompt !== undefined;
+  const triggerType = isManual ? 'manual' as const : 'schedule' as const;
+  const triggerLabel = isManual ? "manual" : "schedule";
+
+  // Create instance lifecycle for this run (if supported)
+  const instanceLifecycle = ctx.statusTracker?.createInstance ?
+    ctx.statusTracker.createInstance(runner.instanceId, agentConfig.name, triggerLabel) || undefined :
     undefined;
-  
+
+  const initialPrompt = isManual
+    ? makeManualPrompt(agentConfig, ctx, prompt)
+    : makeScheduledPrompt(agentConfig, ctx);
+
   let { result } = await executeRun(
-    runner, makeScheduledPrompt(agentConfig, ctx), { type: 'schedule' }, agentConfig.name, depth, ctx, instanceLifecycle
+    runner, initialPrompt, { type: triggerType, source: prompt ? 'user-prompt' : undefined }, agentConfig.name, depth, ctx, instanceLifecycle
   );
 
   let reruns = 0;
@@ -327,13 +342,17 @@ export async function runWithReruns(
     ctx.logger.info({ rerun: reruns, maxReruns: ctx.maxReruns }, `${agentConfig.name} requested rerun`);
     
     // Create new instance lifecycle for rerun (if supported)
-    const rerunInstanceLifecycle = ctx.statusTracker?.createInstance ? 
-      ctx.statusTracker.createInstance(runner.instanceId, agentConfig.name, `schedule:rerun-${reruns}`) || undefined :
+    const rerunInstanceLifecycle = ctx.statusTracker?.createInstance ?
+      ctx.statusTracker.createInstance(runner.instanceId, agentConfig.name, `${triggerLabel}:rerun-${reruns}`) || undefined :
       undefined;
-    
+
+    const rerunPrompt = isManual
+      ? makeManualPrompt(agentConfig, ctx)
+      : makeScheduledPrompt(agentConfig, ctx);
+
     ({ result } = await executeRun(
-      runner, makeScheduledPrompt(agentConfig, ctx),
-      { type: 'schedule', source: `rerun ${reruns}/${ctx.maxReruns}` }, agentConfig.name, depth, ctx, rerunInstanceLifecycle
+      runner, rerunPrompt,
+      { type: triggerType, source: `rerun ${reruns}/${ctx.maxReruns}` }, agentConfig.name, depth, ctx, rerunInstanceLifecycle
     ));
   }
 

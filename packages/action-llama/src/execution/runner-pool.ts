@@ -7,7 +7,7 @@ export interface PoolRunner {
   isRunning: boolean;
   instanceId: string;
   abort?(): void;
-  run(prompt: string, triggerInfo?: { type: 'schedule' | 'webhook' | 'agent'; source?: string }): Promise<any>;
+  run(prompt: string, triggerInfo?: { type: 'schedule' | 'manual' | 'webhook' | 'agent'; source?: string }): Promise<any>;
 }
 
 export class RunnerPool {

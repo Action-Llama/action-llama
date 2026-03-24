@@ -163,6 +163,40 @@ describe("POST /control/stop", () => {
   });
 });
 
+describe("POST /control/trigger/:name", () => {
+  it("triggers agent without prompt when no body", async () => {
+    const triggerAgent = vi.fn(async () => true as const);
+    const { app } = setup({ triggerAgent });
+    const res = await app.request("/control/trigger/agent-a", { method: "POST" });
+    expect(res.status).toBe(200);
+    expect(triggerAgent).toHaveBeenCalledWith("agent-a", undefined);
+  });
+
+  it("passes prompt from JSON body to triggerAgent", async () => {
+    const triggerAgent = vi.fn(async () => true as const);
+    const { app } = setup({ triggerAgent });
+    const res = await app.request("/control/trigger/agent-a", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "review PR #42" }),
+    });
+    expect(res.status).toBe(200);
+    expect(triggerAgent).toHaveBeenCalledWith("agent-a", "review PR #42");
+  });
+
+  it("ignores empty/whitespace prompt", async () => {
+    const triggerAgent = vi.fn(async () => true as const);
+    const { app } = setup({ triggerAgent });
+    const res = await app.request("/control/trigger/agent-a", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "   " }),
+    });
+    expect(res.status).toBe(200);
+    expect(triggerAgent).toHaveBeenCalledWith("agent-a", undefined);
+  });
+});
+
 describe("POST /control/pause (scheduler)", () => {
   it("pauses the scheduler", async () => {
     const pauseScheduler = vi.fn(async () => {});

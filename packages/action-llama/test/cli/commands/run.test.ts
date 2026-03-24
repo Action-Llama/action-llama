@@ -40,16 +40,34 @@ describe("run", () => {
     });
 
     const output = await captureLog(async () => {
-      await execute("dev", { project: dir });
+      await execute("dev", undefined, { project: dir });
     });
 
     expect(mockGatewayFetch).toHaveBeenCalledWith({
       project: resolve(dir),
       path: "/control/trigger/dev",
       method: "POST",
+      body: undefined,
       env: undefined,
     });
     expect(output).toContain("Agent dev triggered");
+  });
+
+  it("passes prompt as JSON body when provided", async () => {
+    const dir = makeTmpProject({
+      agents: [{ name: "dev", schedule: "*/5 * * * *" }],
+    });
+
+    mockGatewayFetch.mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify({ success: true, message: "Agent dev triggered" }),
+    });
+
+    await execute("dev", "review PR #42", { project: dir });
+
+    expect(mockGatewayFetch).toHaveBeenCalledWith(
+      expect.objectContaining({ body: { prompt: "review PR #42" } }),
+    );
   });
 
   it("passes env option to gateway fetch", async () => {
@@ -62,7 +80,7 @@ describe("run", () => {
       text: async () => JSON.stringify({ success: true, message: "Agent dev triggered" }),
     });
 
-    await execute("dev", { project: dir, env: "staging" });
+    await execute("dev", undefined, { project: dir, env: "staging" });
 
     expect(mockGatewayFetch).toHaveBeenCalledWith(
       expect.objectContaining({ env: "staging" }),
@@ -76,7 +94,7 @@ describe("run", () => {
 
     mockGatewayFetch.mockRejectedValue(new Error("fetch failed: ECONNREFUSED"));
 
-    await expect(execute("dev", { project: dir })).rejects.toThrow(
+    await expect(execute("dev", undefined, { project: dir })).rejects.toThrow(
       "Scheduler not running. Start it with 'al start'."
     );
   });
@@ -91,7 +109,7 @@ describe("run", () => {
       text: async () => JSON.stringify({ error: "Agent dev not found or all runners busy" }),
     });
 
-    await expect(execute("dev", { project: dir })).rejects.toThrow(
+    await expect(execute("dev", undefined, { project: dir })).rejects.toThrow(
       "Agent dev not found or all runners busy"
     );
   });
@@ -101,7 +119,7 @@ describe("run", () => {
       agents: [{ name: "dev", schedule: "*/5 * * * *" }],
     });
 
-    await expect(execute("nonexistent", { project: dir })).rejects.toThrow(
+    await expect(execute("nonexistent", undefined, { project: dir })).rejects.toThrow(
       'Agent "nonexistent" not found'
     );
   });
@@ -114,7 +132,7 @@ describe("run", () => {
       ],
     });
 
-    await expect(execute("nope", { project: dir })).rejects.toThrow("Available agents: dev, reviewer");
+    await expect(execute("nope", undefined, { project: dir })).rejects.toThrow("Available agents: dev, reviewer");
   });
 
   it("throws if run from an agent directory", async () => {
@@ -123,7 +141,7 @@ describe("run", () => {
     });
 
     // Point at the agent subdir instead of the project root
-    await expect(execute("dev", { project: resolve(dir, "agents", "dev") })).rejects.toThrow(
+    await expect(execute("dev", undefined, { project: resolve(dir, "agents", "dev") })).rejects.toThrow(
       "looks like an agent directory"
     );
   });
