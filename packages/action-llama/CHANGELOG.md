@@ -1,5 +1,15 @@
 # @action-llama/action-llama
 
+## 0.17.2
+
+### Patch Changes
+
+- [`7ac9f27`](https://github.com/Action-Llama/action-llama/commit/7ac9f276687e189d990fb355698c5c00380f4d61) Thanks [@asselstine](https://github.com/asselstine)! - Fix dashboard returning 404 after `al push`. The frontend SPA is now bundled
+  into the published package so `resolveFrontendDist()` works outside the monorepo.
+  Nginx config is updated on every push (not just when syncing credentials), and
+  `/dashboard/api/` routes are proxied correctly instead of being caught by the
+  SPA catch-all.
+
 ## 0.17.1
 
 ### Patch Changes
