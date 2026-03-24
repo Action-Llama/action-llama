@@ -337,7 +337,7 @@ describe("scheduler pause blocks webhooks", () => {
       "x-hub-signature-256": signature,
       "x-github-event": "issues",
       "content-type": "application/json",
-    }, payload, { MyOrg: "fake-token" });
+    }, payload, { secrets: { MyOrg: "fake-token" } });
 
     expect(result.ok).toBe(true);
     expect(result.matched).toBe(0);
@@ -374,7 +374,7 @@ describe("scheduler pause blocks webhooks", () => {
       "x-hub-signature-256": signature,
       "x-github-event": "issues",
       "content-type": "application/json",
-    }, payload, { MyOrg: "fake-token" });
+    }, payload, { secrets: { MyOrg: "fake-token" } });
 
     expect(result.ok).toBe(true);
     expect(result.matched).toBe(1);
@@ -413,7 +413,7 @@ describe("scheduler pause blocks webhooks", () => {
       "x-hub-signature-256": signature,
       "x-github-event": "issues",
       "content-type": "application/json",
-    }, payload, { MyOrg: "fake-token" });
+    }, payload, { secrets: { MyOrg: "fake-token" } });
 
     // Work queue should be empty — paused scheduler rejects, not queues
     expect(schedulerCtx.workQueue.size("webhook-dev")).toBe(0);
