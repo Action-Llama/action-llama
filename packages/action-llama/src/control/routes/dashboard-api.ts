@@ -158,7 +158,15 @@ export function registerDashboardApiRoutes(
       }
       const skillContent = readFileSync(skillPath, "utf-8");
       const { body } = parseFrontmatter(skillContent);
-      return c.json({ body });
+
+      let agentConfig = null;
+      try {
+        agentConfig = loadAgentConfig(projectPath, name);
+      } catch {
+        // Ignore config loading errors
+      }
+
+      return c.json({ body, agentConfig });
     } catch {
       return c.json({ body: "" }, 500);
     }

@@ -38,7 +38,7 @@ function formatTime(date: Date): string {
   return date.toLocaleTimeString("en-US", { hour12: false });
 }
 
-function Header({ info, agentCount, agents }: { info: SchedulerInfo | null; agentCount: number; agents: AgentStatus[] }) {
+function Header({ info, agentCount, agents, projectScale }: { info: SchedulerInfo | null; agentCount: number; agents: AgentStatus[]; projectScale: number }) {
   if (!info) return null;
   const modeLabel = info.mode === "host" ? "Host mode" : "Docker mode";
 
@@ -49,7 +49,7 @@ function Header({ info, agentCount, agents }: { info: SchedulerInfo | null; agen
     <Box flexDirection="column">
       <Text bold>
         Action Llama{info.projectName ? ` — ${info.projectName}` : ""} ({modeLabel}) — {agentCount} agent{agentCount !== 1 ? "s" : ""}
-        ({enabledCount} enabled{disabledCount > 0 ? `, ${disabledCount} disabled` : ""}), {info.cronJobCount} cron job{info.cronJobCount !== 1 ? "s" : ""}
+        ({enabledCount} enabled{disabledCount > 0 ? `, ${disabledCount} disabled` : ""}), {info.cronJobCount} cron job{info.cronJobCount !== 1 ? "s" : ""}, scale {projectScale}
       </Text>
       {info.paused ? (
         <Text bold color="yellow">▐▐ Scheduler paused</Text>
@@ -464,7 +464,7 @@ export default function App({ statusTracker, projectPath }: { statusTracker: Sta
 
   return (
     <Box flexDirection="column" paddingTop={1}>
-      <Header info={info} agentCount={agents.length} agents={agents} />
+      <Header info={info} agentCount={agents.length} agents={agents} projectScale={projectScale} />
       <Box flexDirection="column" paddingTop={1} paddingBottom={1}>
         {agents.map((agent, index) => (
           <AgentRow key={agent.name} agent={agent} isSelected={index === selectedIndex} />

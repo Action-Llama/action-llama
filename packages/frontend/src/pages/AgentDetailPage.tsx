@@ -20,7 +20,7 @@ import type {
   LogEntry,
   AgentInstance,
 } from "../lib/api";
-import { fmtDur, fmtCost, fmtTokens, fmtDateTime } from "../lib/format";
+import { fmtDur, fmtCost, fmtTokens, fmtDateTime, shortId } from "../lib/format";
 
 function formatLogEntry(entry: LogEntry): {
   text: string;
@@ -69,7 +69,7 @@ export function AgentDetailPage() {
   const runsLimit = 20;
 
   const agent = agents.find((a) => a.name === name) ?? detail?.agent ?? null;
-  const liveInstances = instances.filter((inst) => inst.agentName === name);
+  const liveInstances = instances.filter((inst) => inst.agentName === name && inst.status === "running");
   const allRunning =
     liveInstances.length > 0
       ? liveInstances
@@ -148,7 +148,6 @@ export function AgentDetailPage() {
   if (!name) return null;
 
   const summary = detail?.summary;
-  const config = detail?.agentConfig;
   const totalPages = Math.ceil(runsTotal / runsLimit);
 
   return (
@@ -183,12 +182,37 @@ export function AgentDetailPage() {
           )}
         </div>
         <div className="flex items-center gap-2">
+          {agent && (
+            <div className="flex items-center gap-1 mr-1">
+              <span className="text-xs text-slate-500 dark:text-slate-400">Scale:</span>
+              <input
+                type="number"
+                min={1}
+                value={scaleInput}
+                onChange={(e) => setScaleInput(e.target.value)}
+                className="w-14 px-2 py-1 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded text-xs text-slate-900 dark:text-slate-200"
+              />
+              <button
+                onClick={handleScaleUpdate}
+                className="px-2 py-1.5 text-xs font-medium rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+              >
+                Set
+              </button>
+            </div>
+          )}
           <button
             onClick={() => handleAction(() => triggerAgent(name))}
             disabled={agent ? !agent.enabled : false}
             className="px-3 py-1.5 text-xs font-medium rounded-md bg-green-600 hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
           >
             Run
+          </button>
+          <button
+            onClick={() => handleAction(() => killAgentInstances(name))}
+            disabled={!agent || agent.runningCount === 0}
+            className="px-3 py-1.5 text-xs font-medium rounded-md bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+          >
+            Kill
           </button>
           {agent && (
             <button
@@ -241,155 +265,6 @@ export function AgentDetailPage() {
         </div>
       )}
 
-      {/* Configuration */}
-      {config && (
-        <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4">
-          <h2 className="text-sm font-medium text-slate-900 dark:text-white mb-3">
-            Configuration
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-            {config.description && (
-              <div className="sm:col-span-2">
-                <span className="text-slate-500 dark:text-slate-400">
-                  Description:
-                </span>{" "}
-                <span className="text-slate-700 dark:text-slate-300">
-                  {config.description}
-                </span>
-              </div>
-            )}
-            <div>
-              <span className="text-slate-500 dark:text-slate-400">
-                Scale:
-              </span>{" "}
-              <input
-                type="number"
-                min={1}
-                value={scaleInput}
-                onChange={(e) => setScaleInput(e.target.value)}
-                className="w-16 px-2 py-1 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded text-sm text-slate-900 dark:text-slate-200 mx-1"
-              />
-              <button
-                onClick={handleScaleUpdate}
-                className="px-2 py-1 text-xs rounded bg-blue-600 hover:bg-blue-700 text-white transition-colors"
-              >
-                Update
-              </button>
-            </div>
-            {config.schedule && (
-              <div>
-                <span className="text-slate-500 dark:text-slate-400">
-                  Schedule:
-                </span>{" "}
-                <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1.5 py-0.5 rounded font-mono">
-                  {config.schedule}
-                </code>
-              </div>
-            )}
-            {config.timeout && (
-              <div>
-                <span className="text-slate-500 dark:text-slate-400">
-                  Timeout:
-                </span>{" "}
-                <span className="text-slate-700 dark:text-slate-300">
-                  {fmtDur(config.timeout * 1000)}
-                </span>
-              </div>
-            )}
-            {config.models && config.models.length > 0 && (
-              <div className="sm:col-span-2">
-                <span className="text-slate-500 dark:text-slate-400">
-                  Models:
-                </span>
-                <div className="mt-1 space-y-1">
-                  {config.models.map((m, i) => (
-                    <div
-                      key={i}
-                      className="text-xs text-slate-600 dark:text-slate-400"
-                    >
-                      {m.provider}/{m.model}
-                      {m.thinkingLevel ? ` (${m.thinkingLevel})` : ""}
-                      <span className="text-slate-400 dark:text-slate-500 ml-1">
-                        [{m.authType}]
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {config.credentials && config.credentials.length > 0 && (
-              <div>
-                <span className="text-slate-500 dark:text-slate-400">
-                  Credentials:
-                </span>
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {config.credentials.map((c) => (
-                    <span
-                      key={c}
-                      className="px-1.5 py-0.5 text-xs bg-slate-200 dark:bg-slate-800 rounded font-mono"
-                    >
-                      {c}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-            {config.webhooks && config.webhooks.length > 0 && (
-              <div className="sm:col-span-2">
-                <span className="text-slate-500 dark:text-slate-400">
-                  Webhooks:
-                </span>
-                <div className="mt-1 space-y-1">
-                  {config.webhooks.map((w, i) => (
-                    <div
-                      key={i}
-                      className="text-xs text-slate-600 dark:text-slate-400"
-                    >
-                      {w.source ?? "unknown"}{" "}
-                      {w.events?.join(", ")}
-                      {w.repos && w.repos.length > 0 && (
-                        <span className="ml-1">
-                          repos: {w.repos.join(", ")}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {config.hooks && (config.hooks.pre?.length || config.hooks.post?.length) && (
-              <div className="sm:col-span-2">
-                <span className="text-slate-500 dark:text-slate-400">
-                  Hooks:
-                </span>
-                <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                  {config.hooks.pre && config.hooks.pre.length > 0 && (
-                    <div>
-                      Pre: {config.hooks.pre.join(", ")}
-                    </div>
-                  )}
-                  {config.hooks.post && config.hooks.post.length > 0 && (
-                    <div>
-                      Post: {config.hooks.post.join(", ")}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-            {config.params && Object.keys(config.params).length > 0 && (
-              <div className="sm:col-span-2">
-                <span className="text-slate-500 dark:text-slate-400">
-                  Params:
-                </span>
-                <pre className="mt-1 text-xs bg-slate-200 dark:bg-slate-800 p-2 rounded overflow-x-auto">
-                  {JSON.stringify(config.params, null, 2)}
-                </pre>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Running Instances */}
       {allRunning.length > 0 && (
         <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
@@ -409,7 +284,7 @@ export function AgentDetailPage() {
                     to={`/dashboard/agents/${encodeURIComponent(name)}/instances/${encodeURIComponent(inst.id)}`}
                     className="text-sm font-mono text-blue-600 dark:text-blue-400 hover:underline"
                   >
-                    {inst.id.slice(0, 8)}
+                    {shortId(inst.id)}
                   </Link>
                   <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                     {inst.trigger} &middot; started{" "}
@@ -480,7 +355,7 @@ export function AgentDetailPage() {
                       to={`/dashboard/agents/${encodeURIComponent(name)}/instances/${encodeURIComponent(run.instance_id)}`}
                       className="font-mono text-xs text-blue-600 dark:text-blue-400 hover:underline"
                     >
-                      {run.instance_id.slice(0, 8)}
+                      {shortId(run.instance_id)}
                     </Link>
                   </td>
                   <td className="px-4 py-2">

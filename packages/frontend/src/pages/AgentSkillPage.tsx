@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { getAgentSkill } from "../lib/api";
+import type { AgentConfig } from "../lib/api";
 
 function escapeHtml(text: string): string {
   return text
@@ -165,12 +166,16 @@ function renderMarkdown(content: string): string {
 export function AgentSkillPage() {
   const { name } = useParams<{ name: string }>();
   const [body, setBody] = useState<string | null>(null);
+  const [agentConfig, setAgentConfig] = useState<AgentConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!name) return;
     getAgentSkill(name)
-      .then((d) => setBody(d.body))
+      .then((d) => {
+        setBody(d.body);
+        setAgentConfig(d.agentConfig);
+      })
       .catch((err) =>
         setError(err instanceof Error ? err.message : "Failed to load skill"),
       );
@@ -218,7 +223,132 @@ export function AgentSkillPage() {
         </Link>
       </div>
 
-      {/* Content */}
+      {/* Config */}
+      {agentConfig && (
+        <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-slate-200 dark:border-slate-800">
+            <h2 className="text-sm font-medium text-slate-900 dark:text-white">
+              Configuration
+            </h2>
+          </div>
+          <div className="p-4 space-y-4 text-sm">
+            {agentConfig.description && (
+              <p className="text-slate-700 dark:text-slate-300">{agentConfig.description}</p>
+            )}
+            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+              {agentConfig.schedule && (
+                <div>
+                  <dt className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide">Schedule</dt>
+                  <dd className="mt-0.5">
+                    <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1.5 py-0.5 rounded font-mono">{agentConfig.schedule}</code>
+                  </dd>
+                </div>
+              )}
+              {agentConfig.models && agentConfig.models.length > 0 && (
+                <div>
+                  <dt className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide">Models</dt>
+                  <dd className="mt-0.5 space-y-0.5">
+                    {agentConfig.models.map((m, i) => (
+                      <div key={i} className="text-xs text-slate-700 dark:text-slate-300">
+                        {m.provider}/{m.model}{m.thinkingLevel ? ` (${m.thinkingLevel})` : ""}
+                        <span className="text-slate-400 dark:text-slate-500 ml-1">[{m.authType}]</span>
+                      </div>
+                    ))}
+                  </dd>
+                </div>
+              )}
+              {agentConfig.credentials && agentConfig.credentials.length > 0 && (
+                <div>
+                  <dt className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide">Credentials</dt>
+                  <dd className="mt-0.5 flex flex-wrap gap-1">
+                    {agentConfig.credentials.map((c) => (
+                      <span key={c} className="px-1.5 py-0.5 text-xs bg-slate-200 dark:bg-slate-800 rounded font-mono">{c}</span>
+                    ))}
+                  </dd>
+                </div>
+              )}
+              {agentConfig.hooks && (agentConfig.hooks.pre?.length || agentConfig.hooks.post?.length) && (
+                <div>
+                  <dt className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide">Hooks</dt>
+                  <dd className="mt-0.5 text-xs text-slate-700 dark:text-slate-300">
+                    {agentConfig.hooks.pre && agentConfig.hooks.pre.length > 0 && <div>Pre: {agentConfig.hooks.pre.join(", ")}</div>}
+                    {agentConfig.hooks.post && agentConfig.hooks.post.length > 0 && <div>Post: {agentConfig.hooks.post.join(", ")}</div>}
+                  </dd>
+                </div>
+              )}
+              {agentConfig.params && Object.keys(agentConfig.params).length > 0 && (
+                <div className="sm:col-span-2">
+                  <dt className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide">Params</dt>
+                  <dd className="mt-0.5">
+                    <pre className="text-xs bg-slate-200 dark:bg-slate-800 p-2 rounded overflow-x-auto">
+                      {JSON.stringify(agentConfig.params, null, 2)}
+                    </pre>
+                  </dd>
+                </div>
+              )}
+            </dl>
+            {agentConfig.webhooks && agentConfig.webhooks.length > 0 && (
+              <div>
+                <h3 className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">Webhook Filters</h3>
+                <div className="space-y-3">
+                  {agentConfig.webhooks.map((w, i) => (
+                    <div key={i} className="bg-slate-100 dark:bg-slate-800 rounded p-3 text-xs space-y-1">
+                      <div className="font-medium text-slate-700 dark:text-slate-300">
+                        {w.source ?? "unknown"}
+                      </div>
+                      {w.events && w.events.length > 0 && (
+                        <div className="text-slate-600 dark:text-slate-400">
+                          <span className="text-slate-500">events:</span>{" "}
+                          {w.events.map((e) => (
+                            <span key={e} className="inline-block mr-1 px-1.5 py-0.5 bg-slate-200 dark:bg-slate-700 rounded font-mono">{e}</span>
+                          ))}
+                        </div>
+                      )}
+                      {w.actions && w.actions.length > 0 && (
+                        <div className="text-slate-600 dark:text-slate-400">
+                          <span className="text-slate-500">actions:</span> {w.actions.join(", ")}
+                        </div>
+                      )}
+                      {w.repos && w.repos.length > 0 && (
+                        <div className="text-slate-600 dark:text-slate-400">
+                          <span className="text-slate-500">repos:</span> {w.repos.join(", ")}
+                        </div>
+                      )}
+                      {(w.org || (w.orgs && w.orgs.length > 0)) && (
+                        <div className="text-slate-600 dark:text-slate-400">
+                          <span className="text-slate-500">orgs:</span> {w.org ?? w.orgs?.join(", ")}
+                        </div>
+                      )}
+                      {w.branches && w.branches.length > 0 && (
+                        <div className="text-slate-600 dark:text-slate-400">
+                          <span className="text-slate-500">branches:</span> {w.branches.join(", ")}
+                        </div>
+                      )}
+                      {w.labels && w.labels.length > 0 && (
+                        <div className="text-slate-600 dark:text-slate-400">
+                          <span className="text-slate-500">labels:</span> {w.labels.join(", ")}
+                        </div>
+                      )}
+                      {w.assignee && (
+                        <div className="text-slate-600 dark:text-slate-400">
+                          <span className="text-slate-500">assignee:</span> {w.assignee}
+                        </div>
+                      )}
+                      {w.author && (
+                        <div className="text-slate-600 dark:text-slate-400">
+                          <span className="text-slate-500">author:</span> {w.author}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Skill body */}
       {error ? (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-sm text-red-700 dark:text-red-400">
           {error}
@@ -228,11 +358,18 @@ export function AgentSkillPage() {
           Loading...
         </div>
       ) : (
-        <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-6">
-          <div
-            className="prose prose-slate dark:prose-invert max-w-none text-sm text-slate-700 dark:text-slate-300"
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(body) }}
-          />
+        <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-slate-200 dark:border-slate-800">
+            <h2 className="text-sm font-medium text-slate-900 dark:text-white">
+              Skill
+            </h2>
+          </div>
+          <div className="p-6">
+            <div
+              className="prose prose-slate dark:prose-invert max-w-none text-sm text-slate-700 dark:text-slate-300"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(body) }}
+            />
+          </div>
         </div>
       )}
     </div>

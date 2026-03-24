@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ResultBadge } from "../components/Badge";
+import { ResultBadge, TriggerTypeBadge } from "../components/Badge";
 import {
   getInstanceDetail,
   getInstanceLogs,
@@ -8,7 +8,7 @@ import {
   killInstance,
 } from "../lib/api";
 import type { InstanceDetailData, LogEntry } from "../lib/api";
-import { fmtDur, fmtCost, fmtTokens, fmtDateTime } from "../lib/format";
+import { fmtDur, fmtCost, fmtTokens, fmtDateTime, shortId } from "../lib/format";
 
 function formatLogEntry(entry: LogEntry): {
   text: string;
@@ -94,7 +94,7 @@ export function InstanceDetailPage() {
         .then((d) => {
           setLocks(
             d.locks.filter(
-              (l) => l.holder === id || l.agentName === name,
+              (l) => l.holder === id || (!l.holder && l.agentName === name),
             ),
           );
         })
@@ -145,7 +145,7 @@ export function InstanceDetailPage() {
           to={`/dashboard/agents/${encodeURIComponent(parentEdge.caller_agent)}/instances/${encodeURIComponent(parentEdge.caller_instance)}`}
           className="text-blue-600 dark:text-blue-400 hover:underline"
         >
-          {parentEdge.caller_agent}/{parentEdge.caller_instance.slice(0, 8)}
+          {parentEdge.caller_agent}/{shortId(parentEdge.caller_instance)}
         </Link>
       </span>
     );
@@ -197,7 +197,7 @@ export function InstanceDetailPage() {
           </Link>
           <div>
             <h1 className="text-xl font-bold text-slate-900 dark:text-white font-mono">
-              {id.slice(0, 12)}
+              {shortId(id)}
             </h1>
             <div className="text-xs text-slate-500 dark:text-slate-400">
               {name}
@@ -239,7 +239,8 @@ export function InstanceDetailPage() {
                 <dt className="text-slate-500 dark:text-slate-400">
                   Trigger
                 </dt>
-                <dd className="text-slate-700 dark:text-slate-300">
+                <dd className="text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                  <TriggerTypeBadge type={run.trigger_type} />
                   {triggerDetail}
                 </dd>
               </div>

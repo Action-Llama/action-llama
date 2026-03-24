@@ -1,7 +1,6 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import { useStatusStream } from "../hooks/useStatusStream";
-import { StatCard } from "../components/StatCard";
 import { StateBadge, TriggerTypeBadge, ResultBadge } from "../components/Badge";
 import {
   getTriggerHistory,
@@ -11,27 +10,83 @@ import {
   disableAgent,
   pauseScheduler,
   resumeScheduler,
-  getLocks,
 } from "../lib/api";
 import type { AgentStatus, TriggerHistoryRow } from "../lib/api";
-import { fmtDur, fmtTime, fmtCost, fmtTokens, fmtDateTime } from "../lib/format";
+import { fmtTokens, fmtSessionTime, fmtRelativeTime, shortId, shortName } from "../lib/format";
 
 function formatScale(agent: AgentStatus): string {
   if (agent.state === "running" && agent.scale > 1) {
-    return `running ${agent.runningCount}/${agent.scale}`;
+    return `${agent.runningCount}/${agent.scale}`;
   }
-  if (agent.scale > 1 && agent.state !== "running") {
-    return `${agent.state} (\u00d7${agent.scale})`;
+  if (agent.scale > 1) {
+    return `\u00d7${agent.scale}`;
   }
-  return agent.state;
+  return "";
+}
+
+function ActionMenu({
+  agent,
+  isPaused,
+  onAction,
+}: {
+  agent: AgentStatus;
+  isPaused: boolean;
+  onAction: (fn: () => Promise<unknown>) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="px-2 py-1 text-xs rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
+      >
+        Actions
+        <svg className="w-3 h-3 ml-1 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-1 z-10 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md shadow-lg py-1 min-w-[100px]">
+          <button
+            onClick={() => { onAction(() => triggerAgent(agent.name)); setOpen(false); }}
+            disabled={!agent.enabled || isPaused}
+            className="w-full text-left px-3 py-1.5 text-xs text-green-700 dark:text-green-400 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Run
+          </button>
+          <button
+            onClick={() => { onAction(() => killAgentInstances(agent.name)); setOpen(false); }}
+            disabled={agent.runningCount === 0}
+            className="w-full text-left px-3 py-1.5 text-xs text-red-700 dark:text-red-400 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Kill
+          </button>
+          <button
+            onClick={() => { onAction(() => agent.enabled ? disableAgent(agent.name) : enableAgent(agent.name)); setOpen(false); }}
+            className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+          >
+            {agent.enabled ? "Disable" : "Enable"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function DashboardPage() {
-  const { agents, schedulerInfo, recentLogs, connected } = useStatusStream();
+  const { agents, schedulerInfo, connected } = useStatusStream();
   const [triggers, setTriggers] = useState<TriggerHistoryRow[]>([]);
-  const [locks, setLocks] = useState<
-    { resourceKey: string; holder?: string; heldSince?: string; agentName?: string }[]
-  >([]);
   const [actionError, setActionError] = useState<string | null>(null);
 
   // Fetch recent triggers
@@ -41,28 +96,10 @@ export function DashboardPage() {
       .catch(() => {});
   }, []);
 
-  // Poll locks
-  useEffect(() => {
-    const poll = () => {
-      getLocks()
-        .then((data) => setLocks(data.locks))
-        .catch(() => {});
-    };
-    poll();
-    const id = setInterval(poll, 2000);
-    return () => clearInterval(id);
-  }, []);
-
   const totalTokens = agents.reduce(
     (sum, a) => sum + (a.cumulativeUsage?.totalTokens ?? 0),
     0,
   );
-  const totalCost = agents.reduce(
-    (sum, a) => sum + (a.cumulativeUsage?.cost ?? 0),
-    0,
-  );
-  const runningCount = agents.filter((a) => a.state === "running").length;
-  const errorCount = agents.filter((a) => a.state === "error").length;
 
   const handleAction = useCallback(
     async (fn: () => Promise<unknown>) => {
@@ -76,8 +113,7 @@ export function DashboardPage() {
     [],
   );
 
-  const agentLocks = (name: string) =>
-    locks.filter((l) => l.agentName === name || l.holder?.startsWith(name));
+  const isPaused = schedulerInfo?.paused ?? false;
 
   return (
     <div className="space-y-6">
@@ -123,30 +159,18 @@ export function DashboardPage() {
         </div>
       )}
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatCard label="Agents" value={`${agents.length}`} />
-        <StatCard
-          label="Running"
-          value={`${runningCount}${errorCount > 0 ? ` / ${errorCount} err` : ""}`}
-        />
-        <StatCard
-          label="Session Tokens"
-          value={fmtTokens(totalTokens)}
-          id="total-tokens"
-        />
-        <StatCard
-          label="Session Cost"
-          value={fmtCost(totalCost)}
-          id="total-cost"
-        />
-      </div>
+      {/* Paused banner */}
+      {isPaused && (
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 text-sm text-yellow-700 dark:text-yellow-400 font-medium">
+          Scheduler is paused
+        </div>
+      )}
 
       {/* Token usage bar */}
       {totalTokens > 0 && (
         <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-3">
           <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-            Token Usage by Agent
+            Token Usage by Agent{schedulerInfo?.startedAt ? ` (${fmtSessionTime(schedulerInfo.startedAt)})` : ""}
           </div>
           <div className="flex h-3 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-800">
             {agents
@@ -201,339 +225,213 @@ export function DashboardPage() {
         </div>
       )}
 
-      {/* Agent table (desktop) */}
-      <div className="hidden sm:block">
-        <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 dark:border-slate-800">
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                  Agent
-                </th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                  State
-                </th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                  Last Run
-                </th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                  Duration
-                </th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                  Next Run
-                </th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                  Tokens
-                </th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                  Locks
-                </th>
-                <th className="text-right px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {agents.map((agent) => (
-                <tr
-                  key={agent.name}
-                  className="border-b border-slate-100 dark:border-slate-800/50 last:border-0 hover:bg-slate-100/50 dark:hover:bg-slate-800/30"
-                >
-                  <td className="px-4 py-2.5">
-                    <Link
-                      to={`/dashboard/agents/${encodeURIComponent(agent.name)}`}
-                      className="font-medium text-blue-600 dark:text-blue-400 hover:underline"
+      {/* Agent table + Recent Triggers side by side */}
+      <div className="flex flex-col lg:flex-row gap-6">
+        {/* Agent table */}
+        <div className="lg:w-1/2">
+          <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-800">
+                    <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                      Agent
+                    </th>
+                    <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                      State
+                    </th>
+                    <th className="text-right px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {agents.map((agent) => (
+                    <tr
+                      key={agent.name}
+                      className="border-b border-slate-100 dark:border-slate-800/50 last:border-0 hover:bg-slate-100/50 dark:hover:bg-slate-800/30"
                     >
-                      {agent.name}
-                    </Link>
-                    {agent.description && (
-                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate max-w-[200px]">
-                        {agent.description}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <StateBadge state={agent.state} />
-                    {agent.scale > 1 && (
-                      <span className="ml-1 text-xs text-slate-500">
-                        {formatScale(agent)}
-                      </span>
-                    )}
-                    {!agent.enabled && (
-                      <span className="ml-1 text-xs text-slate-500 italic">
-                        (disabled)
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5 text-slate-600 dark:text-slate-400">
-                    {fmtTime(agent.lastRunAt)}
-                  </td>
-                  <td className="px-4 py-2.5 text-slate-600 dark:text-slate-400">
-                    {agent.lastRunDuration != null
-                      ? fmtDur(agent.lastRunDuration)
-                      : "\u2014"}
-                  </td>
-                  <td className="px-4 py-2.5 text-slate-600 dark:text-slate-400">
-                    {fmtTime(agent.nextRunAt)}
-                  </td>
-                  <td className="px-4 py-2.5 text-slate-600 dark:text-slate-400">
-                    {fmtTokens(agent.cumulativeUsage?.totalTokens ?? 0)}
-                  </td>
-                  <td className="px-4 py-2.5">
-                    {agentLocks(agent.name).length > 0 ? (
-                      <span className="text-xs text-amber-600 dark:text-amber-400">
-                        {agentLocks(agent.name).length} lock
-                        {agentLocks(agent.name).length !== 1 ? "s" : ""}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-slate-400">\u2014</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5 text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <button
-                        onClick={() =>
-                          handleAction(() => triggerAgent(agent.name))
-                        }
-                        disabled={!agent.enabled}
-                        className="px-2 py-1 text-xs rounded bg-green-600 hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
-                        title="Trigger run"
+                      <td className="px-4 py-2.5">
+                        <Link
+                          to={`/dashboard/agents/${encodeURIComponent(agent.name)}`}
+                          className="font-medium text-blue-600 dark:text-blue-400 hover:underline"
+                          title={agent.name}
+                        >
+                          {shortName(agent.name)}
+                        </Link>
+                        {agent.description && (
+                          <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate max-w-[200px]">
+                            {agent.description}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 whitespace-nowrap">
+                        <StateBadge state={agent.state} />
+                        {agent.scale > 1 && (
+                          <span className="ml-1 text-xs text-slate-500">
+                            {formatScale(agent)}
+                          </span>
+                        )}
+                        {!agent.enabled && (
+                          <span className="ml-1 text-xs text-slate-500 italic">
+                            (disabled)
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        {/* Desktop: inline buttons */}
+                        <div className="hidden sm:flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() =>
+                              handleAction(() => triggerAgent(agent.name))
+                            }
+                            disabled={!agent.enabled || isPaused}
+                            className="px-2 py-1 text-xs rounded bg-green-600 hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+                            title="Trigger run"
+                          >
+                            Run
+                          </button>
+                          <button
+                            onClick={() =>
+                              handleAction(() => killAgentInstances(agent.name))
+                            }
+                            disabled={agent.runningCount === 0}
+                            className="px-2 py-1 text-xs rounded bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+                            title="Kill all instances"
+                          >
+                            Kill
+                          </button>
+                          <button
+                            onClick={() =>
+                              handleAction(() =>
+                                agent.enabled
+                                  ? disableAgent(agent.name)
+                                  : enableAgent(agent.name),
+                              )
+                            }
+                            className={`px-2 py-1 text-xs rounded transition-colors ${
+                              agent.enabled
+                                ? "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600"
+                                : "bg-blue-600 hover:bg-blue-700 text-white"
+                            }`}
+                          >
+                            {agent.enabled ? "Disable" : "Enable"}
+                          </button>
+                        </div>
+                        {/* Mobile: dropdown */}
+                        <div className="sm:hidden">
+                          <ActionMenu agent={agent} isPaused={isPaused} onAction={handleAction} />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {agents.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={3}
+                        className="px-4 py-8 text-center text-slate-500 dark:text-slate-400"
                       >
-                        Run
-                      </button>
-                      <button
-                        onClick={() =>
-                          handleAction(() => killAgentInstances(agent.name))
-                        }
-                        disabled={agent.runningCount === 0}
-                        className="px-2 py-1 text-xs rounded bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
-                        title="Kill all instances"
-                      >
-                        Kill
-                      </button>
-                      <button
-                        onClick={() =>
-                          handleAction(() =>
-                            agent.enabled
-                              ? disableAgent(agent.name)
-                              : enableAgent(agent.name),
-                          )
-                        }
-                        className={`px-2 py-1 text-xs rounded transition-colors ${
-                          agent.enabled
-                            ? "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600"
-                            : "bg-blue-600 hover:bg-blue-700 text-white"
-                        }`}
-                      >
-                        {agent.enabled ? "Disable" : "Enable"}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {agents.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={8}
-                    className="px-4 py-8 text-center text-slate-500 dark:text-slate-400"
-                  >
-                    No agents found
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Agent cards (mobile) */}
-      <div className="sm:hidden space-y-3">
-        {agents.map((agent) => (
-          <div
-            key={agent.name}
-            className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <Link
-                to={`/dashboard/agents/${encodeURIComponent(agent.name)}`}
-                className="font-medium text-blue-600 dark:text-blue-400 hover:underline"
-              >
-                {agent.name}
-              </Link>
-              <StateBadge state={agent.state} />
-            </div>
-            {agent.description && (
-              <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-                {agent.description}
-              </p>
-            )}
-            <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 dark:text-slate-400 mb-3">
-              <div>
-                Last: {fmtTime(agent.lastRunAt)}
-              </div>
-              <div>
-                Duration:{" "}
-                {agent.lastRunDuration != null
-                  ? fmtDur(agent.lastRunDuration)
-                  : "\u2014"}
-              </div>
-              <div>
-                Next: {fmtTime(agent.nextRunAt)}
-              </div>
-              <div>
-                Tokens:{" "}
-                {fmtTokens(agent.cumulativeUsage?.totalTokens ?? 0)}
-              </div>
-            </div>
-            {!agent.enabled && (
-              <div className="text-xs text-slate-500 italic mb-2">
-                Disabled
-              </div>
-            )}
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() =>
-                  handleAction(() => triggerAgent(agent.name))
-                }
-                disabled={!agent.enabled}
-                className="px-2 py-1 text-xs rounded bg-green-600 hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
-              >
-                Run
-              </button>
-              <button
-                onClick={() =>
-                  handleAction(() => killAgentInstances(agent.name))
-                }
-                disabled={agent.runningCount === 0}
-                className="px-2 py-1 text-xs rounded bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
-              >
-                Kill
-              </button>
-              <button
-                onClick={() =>
-                  handleAction(() =>
-                    agent.enabled
-                      ? disableAgent(agent.name)
-                      : enableAgent(agent.name),
-                  )
-                }
-                className={`px-2 py-1 text-xs rounded transition-colors ${
-                  agent.enabled
-                    ? "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600"
-                    : "bg-blue-600 hover:bg-blue-700 text-white"
-                }`}
-              >
-                {agent.enabled ? "Disable" : "Enable"}
-              </button>
+                        No agents found
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
-        ))}
-      </div>
-
-      {/* Recent Triggers */}
-      <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-200 dark:border-slate-800">
-          <h2 className="text-sm font-medium text-slate-900 dark:text-white">
-            Recent Triggers
-          </h2>
-          <Link
-            to="/dashboard/triggers"
-            className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
-          >
-            View all
-          </Link>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 dark:border-slate-800">
-                <th className="text-left px-4 py-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-                  Time
-                </th>
-                <th className="text-left px-4 py-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-                  Type
-                </th>
-                <th className="text-left px-4 py-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-                  Agent
-                </th>
-                <th className="text-left px-4 py-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-                  Status
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {triggers.map((t, i) => (
-                <tr
-                  key={`${t.ts}-${i}`}
-                  className="border-b border-slate-100 dark:border-slate-800/50 last:border-0"
-                >
-                  <td className="px-4 py-2 text-slate-600 dark:text-slate-400 text-xs whitespace-nowrap">
-                    {fmtDateTime(t.ts)}
-                  </td>
-                  <td className="px-4 py-2">
-                    <TriggerTypeBadge type={t.triggerType} />
-                  </td>
-                  <td className="px-4 py-2 text-slate-600 dark:text-slate-400">
-                    {t.agentName ? (
-                      <Link
-                        to={`/dashboard/agents/${encodeURIComponent(t.agentName)}`}
-                        className="text-blue-600 dark:text-blue-400 hover:underline"
+
+        {/* Recent Triggers */}
+        <div className="lg:w-1/2">
+          <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-200 dark:border-slate-800">
+              <h2 className="text-sm font-medium text-slate-900 dark:text-white">
+                Recent Triggers
+              </h2>
+              <Link
+                to="/dashboard/triggers"
+                className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                View all
+              </Link>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-800">
+                    <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                      Time
+                    </th>
+                    <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                      Type
+                    </th>
+                    <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                      Instance
+                    </th>
+                    <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                      Agent
+                    </th>
+                    <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                      Status
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {triggers.map((t, i) => (
+                    <tr
+                      key={`${t.ts}-${i}`}
+                      className="border-b border-slate-100 dark:border-slate-800/50 last:border-0"
+                    >
+                      <td className="px-4 py-2 text-slate-600 dark:text-slate-400 text-xs whitespace-nowrap">
+                        {fmtRelativeTime(t.ts)}
+                      </td>
+                      <td className="px-4 py-2">
+                        <TriggerTypeBadge type={t.triggerType} />
+                      </td>
+                      <td className="px-4 py-2">
+                        {t.instanceId ? (
+                          <Link
+                            to={`/dashboard/agents/${encodeURIComponent(t.agentName ?? "")}/instances/${encodeURIComponent(t.instanceId)}`}
+                            className="font-mono text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                            title={t.instanceId}
+                          >
+                            {shortId(t.instanceId)}
+                          </Link>
+                        ) : (
+                          <span className="text-xs text-slate-400">{"\u2014"}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2 text-slate-600 dark:text-slate-400">
+                        {t.agentName ? (
+                          <Link
+                            to={`/dashboard/agents/${encodeURIComponent(t.agentName)}`}
+                            className="text-blue-600 dark:text-blue-400 hover:underline"
+                          >
+                            {t.agentName}
+                          </Link>
+                        ) : (
+                          "\u2014"
+                        )}
+                      </td>
+                      <td className="px-4 py-2">
+                        <ResultBadge result={t.result} />
+                      </td>
+                    </tr>
+                  ))}
+                  {triggers.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={5}
+                        className="px-4 py-6 text-center text-slate-500 dark:text-slate-400 text-xs"
                       >
-                        {t.agentName}
-                      </Link>
-                    ) : (
-                      "\u2014"
-                    )}
-                  </td>
-                  <td className="px-4 py-2">
-                    <ResultBadge result={t.result} />
-                  </td>
-                </tr>
-              ))}
-              {triggers.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={4}
-                    className="px-4 py-6 text-center text-slate-500 dark:text-slate-400 text-xs"
-                  >
-                    No recent triggers
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Recent Activity */}
-      <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-slate-200 dark:border-slate-800">
-          <h2 className="text-sm font-medium text-slate-900 dark:text-white">
-            Recent Activity
-          </h2>
-        </div>
-        <div className="max-h-64 overflow-y-auto scrollbar-thin">
-          {recentLogs.length > 0 ? (
-            <div className="divide-y divide-slate-100 dark:divide-slate-800/50">
-              {recentLogs.map((log, i) => (
-                <div key={i} className="px-4 py-2 text-xs font-mono">
-                  <span className="text-slate-500 dark:text-slate-500">
-                    {new Date(log.timestamp).toLocaleTimeString()}
-                  </span>{" "}
-                  <span className="text-blue-600 dark:text-blue-400 font-medium">
-                    [{log.agent}]
-                  </span>{" "}
-                  <span className="text-slate-700 dark:text-slate-300">
-                    {log.message}
-                  </span>
-                </div>
-              ))}
+                        No recent triggers
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
-          ) : (
-            <div className="px-4 py-6 text-center text-slate-500 dark:text-slate-400 text-xs">
-              No recent activity
-            </div>
-          )}
+          </div>
         </div>
       </div>
     </div>

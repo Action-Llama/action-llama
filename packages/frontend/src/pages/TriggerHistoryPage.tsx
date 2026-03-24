@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { TriggerTypeBadge, ResultBadge } from "../components/Badge";
 import { getTriggerHistory } from "../lib/api";
 import type { TriggerHistoryRow } from "../lib/api";
-import { fmtDateTime } from "../lib/format";
+import { fmtDateTime, shortId } from "../lib/format";
 
 const PAGE_SIZE = 50;
 
@@ -133,7 +133,7 @@ export function TriggerHistoryPage() {
                         to={`/dashboard/agents/${encodeURIComponent(t.agentName)}/instances/${encodeURIComponent(t.instanceId)}`}
                         className="font-mono text-xs text-blue-600 dark:text-blue-400 hover:underline"
                       >
-                        {t.instanceId.slice(0, 8)}
+                        {shortId(t.instanceId)}
                       </Link>
                     ) : (
                       <span className="text-slate-400 text-xs">\u2014</span>

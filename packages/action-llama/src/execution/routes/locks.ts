@@ -209,6 +209,7 @@ export function registerLockRoutes(
         return {
           resourceKey: lock.resourceKey,
           agentName,
+          holder: lock.holder,
           heldSince: lock.heldSince,
         };
       });

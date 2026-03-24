@@ -26,6 +26,42 @@ export function fmtTokens(n: number): string {
   return `${(n / 1_000_000).toFixed(2)}M`;
 }
 
+export function shortId(id: string): string {
+  if (id.length <= 9) return id;
+  return `${id.slice(0, 4)}\u2026${id.slice(-4)}`;
+}
+
+export function shortName(name: string, max = 11): string {
+  if (name.length <= max) return name;
+  const half = Math.floor((max - 1) / 2);
+  return `${name.slice(0, half)}\u2026${name.slice(-half)}`;
+}
+
 export function fmtDateTime(ts: number | string): string {
+  return new Date(ts).toLocaleString();
+}
+
+export function fmtSessionTime(startedAt: string): string {
+  const ms = Date.now() - new Date(startedAt).getTime();
+  if (ms < 0) return "";
+  const hours = Math.floor(ms / 3_600_000);
+  if (hours < 1) {
+    const mins = Math.floor(ms / 60_000);
+    return `last ${mins}m`;
+  }
+  if (hours < 24) return `last ${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `last ${days}d`;
+}
+
+export function fmtRelativeTime(ts: number | string): string {
+  const ms = Date.now() - new Date(ts).getTime();
+  if (ms < 0) return new Date(ts).toLocaleString();
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hours = Math.floor(min / 60);
+  if (hours < 24) return `${hours}h ago`;
   return new Date(ts).toLocaleString();
 }

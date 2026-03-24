@@ -191,7 +191,7 @@ export function getAgentDetail(name: string): Promise<AgentDetailData> {
   return fetchJSON(`/api/dashboard/agents/${encodeURIComponent(name)}`);
 }
 
-export function getAgentSkill(name: string): Promise<{ body: string }> {
+export function getAgentSkill(name: string): Promise<{ body: string; agentConfig: AgentConfig | null }> {
   return fetchJSON(
     `/api/dashboard/agents/${encodeURIComponent(name)}/skill`,
   );
