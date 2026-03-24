@@ -157,6 +157,41 @@ describe("SshDockerRuntime", () => {
     });
   });
 
+  describe("prepareCredentials", () => {
+    it("chowns staging dir to container UID after writing files", async () => {
+      // scpBuffer uses spawn (not execFile), so mock both
+      mockSshSuccess(); // for execFile (mkdir, chown)
+      mockSpawn.mockImplementation(() => {
+        const proc = new EventEmitter();
+        (proc as any).stdin = { end: vi.fn() };
+        (proc as any).stdout = new EventEmitter();
+        (proc as any).stderr = new EventEmitter();
+        process.nextTick(() => proc.emit("close", 0));
+        return proc;
+      });
+
+      const result = await runtime.prepareCredentials(["anthropic_key"]);
+      expect(result.strategy).toBe("volume");
+      expect(result.stagingDir).toMatch(/^\/tmp\/al-creds-/);
+
+      // Collect all SSH commands (execFile calls only — spawn is used for scpBuffer)
+      const sshCmds = mockExecFile.mock.calls.map((c: any[]) => {
+        const args = c[1] as string[];
+        return args[args.length - 1];
+      });
+
+      // Must chown to container UID:GID after staging files
+      const chownCmd = sshCmds.find((cmd: string) => cmd.includes("chown"));
+      expect(chownCmd).toBeDefined();
+      expect(chownCmd).toContain("1000:1000");
+      expect(chownCmd).toContain(result.stagingDir);
+
+      // chown must be the last execFile call (after mkdir + scpBuffer writes)
+      const chownIndex = sshCmds.indexOf(chownCmd!);
+      expect(chownIndex).toBe(sshCmds.length - 1);
+    });
+  });
+
   describe("cleanupCredentials", () => {
     it("handles volume strategy by cleaning up remote dir", () => {
       mockSshSuccess();
