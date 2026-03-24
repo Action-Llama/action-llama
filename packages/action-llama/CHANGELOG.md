@@ -1,5 +1,17 @@
 # @action-llama/action-llama
 
+## 0.17.6
+
+### Patch Changes
+
+- [`18920d0`](https://github.com/Action-Llama/action-llama/commit/18920d055fc474a5f389a80cd83ddac6c965f159) Thanks [@asselstine](https://github.com/asselstine)! - Return specific error messages from the trigger agent endpoint instead of a generic 404. The response now distinguishes between "agent not found", "no available runners", "scheduler paused", and "scheduler not ready", making it possible to diagnose trigger failures from the dashboard.
+
+- [`8e83d39`](https://github.com/Action-Llama/action-llama/commit/8e83d390c847f6f69250cf7cf47493f32439e2ed) Thanks [@asselstine](https://github.com/asselstine)! - Add `-a`/`--all` flag to `al logs` to show all log levels without filtering. By default, conversation mode hides debug entries and internal messages; `--all` disables this filtering while keeping the readable conversation-style formatting.
+
+- [`885c9cf`](https://github.com/Action-Llama/action-llama/commit/885c9cfeb4e56a3dd7f7390c1ef9376c834462e8) Thanks [@asselstine](https://github.com/asselstine)! - Fix EACCES permission error when containers read mounted credentials on VPS deployments. The SSH runtime now sets ownership of the credential staging directory to the container UID/GID after writing files, matching the behavior of the local runtime.
+
+- [`e15bac4`](https://github.com/Action-Llama/action-llama/commit/e15bac44f663f99f2e45de27345ae9ae896cb0a0) Thanks [@asselstine](https://github.com/asselstine)! - Show full error details in `al logs` for container entry failures. Previously only the message "container entry error" was displayed with no detail; now the error message, stack trace, and any extra fields are shown.
+
 ## 0.17.5
 
 ### Patch Changes
