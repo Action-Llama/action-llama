@@ -36,6 +36,7 @@ Use `/tmp` for cloning repos, writing scratch files, and any other disk I/O.
 Your working directory is `/app/static` which contains your agent files.
 
 Environment variables: Use `setenv NAME value` to persist variables across bash commands.
+See the agent commands reference for details.
 </environment>
 
 <webhook-trigger>
@@ -99,7 +100,7 @@ Environment variables: Use `setenv NAME value` to persist variables across bash 
 
 Describes the container filesystem constraints. The agent learns that `/tmp` is writable, the working directory is `/app/static`, and `setenv` persists environment variables.
 
-See [Container Filesystem](/concepts/agents#container-filesystem) for the full mount table.
+See [Environment Commands](/reference/agent-commands#environment-commands) for `setenv` details, and [Container Filesystem](/concepts/agents#container-filesystem) for the full mount table.
 
 ## Trigger Context
 
