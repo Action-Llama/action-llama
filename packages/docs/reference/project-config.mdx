@@ -100,13 +100,11 @@ model = "gpt-4o"
 authType = "api_key"
 ```
 
-Agents reference these by name in their `SKILL.md` frontmatter:
+Agents reference these by name in their `config.toml`:
 
-```yaml
-metadata:
-  models:
-    - sonnet    # primary
-    - haiku     # fallback
+```toml
+# agents/<name>/config.toml
+models = ["sonnet", "haiku"]
 ```
 
 See [Models](/reference/models) for all supported providers, model IDs, auth types, and thinking levels.
@@ -120,7 +118,7 @@ Controls local Docker container isolation.
 | `image` | string | `"al-agent:latest"` | Base Docker image name |
 | `memory` | string | `"4g"` | Memory limit per container (e.g. `"4g"`, `"8g"`) |
 | `cpus` | number | `2` | CPU limit per container |
-| `timeout` | number | `900` | Default max container runtime in seconds. Individual agents can override this with `timeout` in their `SKILL.md` frontmatter. See [agent timeout](/reference/agent-config#timeout). |
+| `timeout` | number | `900` | Default max container runtime in seconds. Individual agents can override this with `timeout` in their `config.toml`. See [agent timeout](/reference/agent-config#timeout). |
 
 ### `[gateway]` — HTTP Server
 
@@ -160,32 +158,16 @@ credential = "MintlifyMain"       # uses mintlify_webhook_secret:MintlifyMain
 type = "github"                   # no credential — accepts unsigned webhooks
 ```
 
-Agents reference these sources by name in their `SKILL.md` frontmatter:
+Agents reference these sources by name in their `config.toml`:
 
-```yaml
-metadata:
-  webhooks:
-    - source: my-github
-      events:
-        - issues
+```toml
+# agents/<name>/config.toml
+[[webhooks]]
+source = "my-github"
+events = ["issues"]
 ```
 
 See [Webhooks](/reference/webhooks) for setup instructions and filter fields per provider.
-
-### `[agents.<name>]` — Per-Agent Overrides
-
-Override `scale` or `timeout` for a specific agent without editing its `SKILL.md`. These values take precedence over SKILL.md frontmatter.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `scale` | number | Concurrent runner limit for this agent (overrides SKILL.md `scale`) |
-| `timeout` | number | Max runtime in seconds for this agent (overrides SKILL.md `timeout`) |
-
-```toml
-[agents.dev]
-scale = 3       # Allow 3 concurrent dev agent runs
-timeout = 1800  # 30 minute timeout for dev agent
-```
 
 ### `[telemetry]` — Observability
 

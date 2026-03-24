@@ -7,17 +7,17 @@ Action Llama uses three markdown files with distinct purposes. Only `SKILL.md` i
 
 ## SKILL.md
 
-The single file that defines an agent. YAML frontmatter at the top contains the agent's configuration (credentials, schedule, models, webhooks, hooks, params), and the markdown body is the system prompt that drives the agent's behavior. This is the most important file in an agent directory.
+The portable part of an agent. YAML frontmatter at the top contains portable metadata (name, description, license, compatibility), and the markdown body is the system prompt that drives the agent's behavior. Runtime configuration (credentials, schedule, models, webhooks, hooks, params) lives in the separate `config.toml` file.
 
 ### What it is
 
-`SKILL.md` lives inside each agent's directory (e.g. `agents/dev/SKILL.md`). The frontmatter is parsed for configuration, and the markdown body is injected as the LLM's system prompt at runtime. Everything the agent does is driven by these instructions.
+`SKILL.md` lives inside each agent's directory (e.g. `agents/dev/SKILL.md`). The frontmatter is parsed for portable metadata, and the markdown body is injected as the LLM's system prompt at runtime. Everything the agent does is driven by these instructions.
 
 ### How it's used
 
-The scheduler reads `SKILL.md`, extracts the frontmatter for configuration, and sends the markdown body as the system prompt. A preamble is prepended that teaches the agent its [language skills](/reference/agent-commands) (signals, calls, locks, credentials). The LLM then receives a user-message prompt with:
+The scheduler reads `SKILL.md` and sends the markdown body as the system prompt. Runtime configuration is loaded from `config.toml`. A preamble is prepended that teaches the agent its [language skills](/reference/agent-commands) (signals, calls, locks, credentials). The LLM then receives a user-message prompt with:
 
-1. **`<skill-config>`** — JSON of the `params` table from the `SKILL.md` frontmatter
+1. **`<skill-config>`** — JSON of the `params` table from the agent's `config.toml`
 2. **`<credential-context>`** — describes available environment variables and tools
 3. **`<environment>`** — filesystem constraints (read-only root, `/tmp` for work)
 4. **Trigger context** — schedule, webhook payload, manual, or subagent call context

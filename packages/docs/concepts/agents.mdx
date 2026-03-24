@@ -5,17 +5,26 @@ description: "What agents are, how they work, and the full runtime lifecycle"
 
 An agent is a directory inside your project that contains instructions and configuration for an autonomous LLM session. Each run is self-contained: the agent wakes up (on a schedule or webhook), executes its task, and shuts down.
 
+## Skills vs Agents
+
+A **skill** is a portable artifact — a `SKILL.md` file (and optionally a `Dockerfile`) that defines what an agent does. Skills can be shared, published, and installed from git repos.
+
+An **agent** is a skill instantiated in your project with local runtime configuration. When you run `al add` to install a skill, it becomes an agent with its own `config.toml` for project-specific settings like credentials, schedule, and model.
+
 ## Agent Structure
 
-An agent is a directory with at least one file:
+An agent is a directory with at least two files:
 
 ```
-my-agent/
-  SKILL.md             # Required — YAML frontmatter (config) + markdown body (instructions)
-  Dockerfile           # Optional — custom Docker image for this agent
+agents/<name>/
+├── SKILL.md        # Portable metadata + instructions (the skill)
+├── config.toml     # Project-local runtime config
+└── Dockerfile      # Optional — custom container image
 ```
 
-The `SKILL.md` file combines configuration (credentials, models, schedule, webhooks, params) in its YAML frontmatter with the agent's instructions in its markdown body.
+- **`SKILL.md`** contains portable metadata (name, description, license, compatibility) in its YAML frontmatter, and the agent's instructions in its markdown body.
+- **`config.toml`** contains project-specific runtime configuration: credentials, models, schedule, webhooks, hooks, params, scale, and timeout.
+- **`Dockerfile`** is optional. Defines custom container dependencies. May be provided by the skill author or customized per-project.
 
 The directory name becomes the agent name. No registration is needed — the scheduler discovers agents by scanning for directories that contain a `SKILL.md`.
 
@@ -31,7 +40,7 @@ The markdown body of `SKILL.md`, prepended with a **preamble** that teaches the 
 
 Assembled from several blocks:
 
-1. **`<agent-config>`** — JSON of the `params` field from `SKILL.md` frontmatter
+1. **`<agent-config>`** — JSON of the `params` field from `config.toml`
 2. **`<credential-context>`** — describes which environment variables and tools are available (e.g. `GITHUB_TOKEN`, `git`, `gh`, SSH config)
 3. **`<environment>`** — filesystem constraints and working directory info
 4. **Trigger context** (one of):
@@ -65,7 +74,7 @@ Each agent run is an isolated, short-lived container. Here's the full sequence f
 2. **Work is queued** — if all runners for the target agent are busy, the trigger is placed in a SQLite-backed work queue until a runner becomes available.
 3. **Container launches** — a fresh container starts with credentials and config passed via environment variables and volume mounts.
 4. **Credentials are loaded** — the entry point reads credential files from `/credentials/<type>/<instance>/<field>`. Key credentials are injected as env vars the LLM can use directly: `GITHUB_TOKEN`, `GH_TOKEN`, `SENTRY_AUTH_TOKEN`, `GIT_SSH_COMMAND`, git author identity, etc.
-5. **Hooks run** — if `hooks.pre` steps are defined, they execute sequentially (clone repos, fetch data, run shell commands) to stage context before the LLM starts. See [Dynamic Context](/guides/dynamic-context).
+5. **Hooks run** — if `hooks.pre` steps are defined in `config.toml`, they execute sequentially (clone repos, fetch data, run shell commands) to stage context before the LLM starts. See [Dynamic Context](/guides/dynamic-context).
 6. **LLM session starts** — the model receives the `SKILL.md` instructions as system prompt and the assembled user prompt.
 7. **Agent runs autonomously** — the LLM executes tools (bash, file I/O, API calls) until it finishes or hits an error. Rate-limited API calls are retried automatically (up to 5 attempts with exponential backoff).
 8. **Error detection** — the container watches for repeated auth/permission failures (e.g. "bad credentials", "permission denied"). After 3 such errors, it aborts early.
@@ -74,9 +83,9 @@ Each agent run is an isolated, short-lived container. Here's the full sequence f
 
 ## Timeout
 
-Each container has a self-termination timer controlled by `timeout` in `SKILL.md` frontmatter (falls back to `local.timeout` in `config.toml`, then 900 seconds). If the timer fires, the process exits with code 124. This is a hard kill — there is no graceful shutdown.
+Each container has a self-termination timer controlled by `timeout` in the agent's `config.toml` (falls back to `local.timeout` in project `config.toml`, then 900 seconds). If the timer fires, the process exits with code 124. This is a hard kill — there is no graceful shutdown.
 
-See [SKILL.md timeout](/reference/agent-config#timeout) for configuration.
+See [Agent Config — Timeout](/reference/agent-config#timeout) for configuration.
 
 ## Reruns
 
@@ -112,7 +121,7 @@ The root filesystem is read-only. All agent work should happen in `/tmp`.
 
 - [Getting Started](/first-steps/getting-started) — create your first agent
 - [Agent Commands](/reference/agent-commands) — signals, calls, and lock commands
-- [SKILL.md Reference](/reference/agent-config) — all config fields
+- [Agent Config Reference](/reference/agent-config) — SKILL.md and config.toml fields
 - [Agent Docs](/reference/agent-docs) — SKILL.md, AGENTS.md, CLAUDE.md
 - [Credentials](/reference/credentials) — credential types and storage
 - [Web Dashboard](/reference/web-dashboard) — monitoring agents in your browser

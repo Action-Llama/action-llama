@@ -37,7 +37,8 @@ Choose a template (dev, reviewer, devops, or custom), give it a name, and config
 
 ```
 agents/dev/
-  SKILL.md             # YAML frontmatter (config) + markdown body (instructions)
+  SKILL.md             # Portable metadata + instructions
+  config.toml          # Runtime config (credentials, models, schedule, etc.)
 ```
 
 <Info>You can also use your agent, such as Claude Code, to create new agents! The CLAUDE.md in the project root has everything it needs to know.</Info>
@@ -69,7 +70,8 @@ npx al start -w
 | File | Purpose |
 |------|---------|
 | `config.toml` | Project settings: named models, Docker limits, webhook sources |
-| `agents/<name>/SKILL.md` | Agent config (YAML frontmatter) + instructions (markdown body) |
+| `agents/<name>/SKILL.md` | Portable metadata + agent instructions |
+| `agents/<name>/config.toml` | Agent runtime config: credentials, models, schedule, webhooks, params |
 
 ## Manual test run
 

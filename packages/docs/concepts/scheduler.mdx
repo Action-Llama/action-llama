@@ -133,7 +133,7 @@ maxReruns = 5
 
 ### Agent timing out
 
-Default timeout is 900 seconds (15 minutes). Increase it in `config.toml` or per-agent in `SKILL.md` frontmatter:
+Default timeout is 900 seconds (15 minutes). Increase it in the project's `config.toml` or per-agent in the agent's `config.toml`:
 
 ```toml
 # config.toml — project-wide default
@@ -141,8 +141,7 @@ Default timeout is 900 seconds (15 minutes). Increase it in `config.toml` or per
 timeout = 3600    # 1 hour
 ```
 
-```yaml
-# SKILL.md frontmatter — per-agent override
-metadata:
-  timeout: 7200    # 2 hours
+```toml
+# agents/<name>/config.toml — per-agent override
+timeout = 7200    # 2 hours
 ```

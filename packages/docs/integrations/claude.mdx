@@ -9,7 +9,7 @@ Claude Code can work with Action Llama in two ways: editing your project files u
 
 Every `al new` project includes a `CLAUDE.md` at the project root. This is a symlink to a reference document shipped with the `@action-llama/action-llama` package that contains everything Claude Code needs to work on an Action Llama project:
 
-- How `SKILL.md` files work (YAML frontmatter for config, markdown body for instructions)
+- How agent configuration works (SKILL.md for portable metadata + instructions, config.toml for runtime config)
 - How agent prompts are assembled at runtime (system prompt, user prompt blocks, trigger context)
 - Available agent commands (signals, subagent calls, resource locks)
 - Credential context and environment variables
@@ -19,9 +19,9 @@ When you open your project in Claude Code, it reads `CLAUDE.md` automatically. T
 
 ### What you can do
 
-- **"Create a new agent that monitors Sentry for new errors and opens GitHub issues"** — Claude writes a `SKILL.md` with the right frontmatter (credentials, schedule, webhooks) and instructions.
-- **"Add webhook support to the dev agent for issue comments"** — Claude edits the frontmatter to add a webhook trigger and updates the instructions to handle both scheduled and webhook triggers.
-- **"Change the reviewer agent to use GPT-4o"** — Claude updates the `model` field in the frontmatter.
+- **"Create a new agent that monitors Sentry for new errors and opens GitHub issues"** — Claude writes a `SKILL.md` with instructions and a `config.toml` with the right runtime config (credentials, schedule, webhooks).
+- **"Add webhook support to the dev agent for issue comments"** — Claude edits the `config.toml` to add a webhook trigger and updates the SKILL.md instructions to handle both scheduled and webhook triggers.
+- **"Change the reviewer agent to use GPT-4o"** — Claude updates the `models` field in the agent's `config.toml`.
 - **"The dev agent keeps force-pushing, fix the instructions"** — Claude reads the SKILL.md body and adds explicit rules.
 
 <Info>Claude Code reads `CLAUDE.md` from the project root automatically. You don't need to paste documentation or explain how Action Llama works — it already knows.</Info>

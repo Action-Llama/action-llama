@@ -3,7 +3,7 @@ title: "Models"
 description: "Supported LLM providers, model IDs, and configuration"
 ---
 
-Action Llama supports 8 LLM providers. Define named models in `config.toml` under `[models.<name>]`, then reference them by name in each agent's `SKILL.md` frontmatter. Agents list models in priority order — the first is the primary, the rest are fallbacks tried automatically on rate limits.
+Action Llama supports 8 LLM providers. Define named models in `config.toml` under `[models.<name>]`, then reference them by name in each agent's `config.toml`. Agents list models in priority order — the first is the primary, the rest are fallbacks tried automatically on rate limits.
 
 ## `[models.<name>]` Fields
 
@@ -174,25 +174,22 @@ authType = "api_key"
 
 ## Mixing Models
 
-Each agent can use a different model. Define all models in `config.toml`, then reference them by name in each agent's `SKILL.md`:
+Each agent can use a different model. Define all models in the project's `config.toml`, then reference them by name in each agent's `config.toml`:
 
 ```
-config.toml        → [models.sonnet], [models.gpt4o], [models.groq-llama]
-dev/SKILL.md       → models: [sonnet]
-reviewer/SKILL.md  → models: [gpt4o]
-devops/SKILL.md    → models: [groq-llama]
+config.toml              → [models.sonnet], [models.gpt4o], [models.groq-llama]
+agents/dev/config.toml   → models = ["sonnet"]
+agents/reviewer/config.toml → models = ["gpt4o"]
+agents/devops/config.toml   → models = ["groq-llama"]
 ```
 
 ## Model Fallback
 
 Agents can list multiple models to create a fallback chain. When the primary model is rate-limited or unavailable, Action Llama automatically tries the next model in the list:
 
-```yaml
-metadata:
-  models:
-    - sonnet    # primary
-    - haiku     # fallback on rate limit
-    - gpt4o     # second fallback
+```toml
+# agents/<name>/config.toml
+models = ["sonnet", "haiku", "gpt4o"]
 ```
 
 Fallback switching is instant — there is no delay when moving to the next model. Exponential backoff only kicks in after all models in the chain have been exhausted.
@@ -203,6 +200,6 @@ A circuit breaker tracks model availability in memory. When a model returns a ra
 
 Each provider requires a corresponding credential in `~/.action-llama/credentials/`. Run `al doctor` to configure them interactively.
 
-LLM credentials are loaded automatically based on the models referenced in the agent's `models` list — they do not need to be listed in the agent's `credentials` array. The `credentials` array is for runtime credentials the agent uses during execution (GitHub tokens, SSH keys, etc.).
+LLM credentials are loaded automatically based on the models referenced in the agent's `models` list in `config.toml` — they do not need to be listed in the agent's `credentials` array. The `credentials` array is for runtime credentials the agent uses during execution (GitHub tokens, SSH keys, etc.).
 
 See [Credentials](/reference/credentials) for the full credential reference.

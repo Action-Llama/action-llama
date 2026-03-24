@@ -18,15 +18,15 @@ Steps 2-3 are mechanical — the agent always needs to do them, and they don't b
 
 ## The Solution: Hooks
 
-Pre-hooks run **after credentials are loaded** but **before the LLM session starts**. They execute inside the container with full access to credentials and environment variables. Define them in the YAML frontmatter of your `SKILL.md`:
+Pre-hooks run **after credentials are loaded** but **before the LLM session starts**. They execute inside the container with full access to credentials and environment variables. Define them in the agent's `config.toml`:
 
-```yaml
-# SKILL.md frontmatter
-metadata:
-  hooks:
-    pre:
-      - "gh repo clone acme/app /tmp/repo --depth 1"
-      - "gh issue list --repo acme/app --label bug --json number,title,body --limit 20 > /tmp/context/issues.json"
+```toml
+# agents/<name>/config.toml
+[hooks]
+pre = [
+  "gh repo clone acme/app /tmp/repo --depth 1",
+  "gh issue list --repo acme/app --label bug --json number,title,body --limit 20 > /tmp/context/issues.json",
+]
 ```
 
 Then reference the staged files in the body of your `SKILL.md`:
@@ -42,33 +42,27 @@ Then reference the staged files in the body of your `SKILL.md`:
 
 The most common hook — clone the repo the agent will work on:
 
-```yaml
-metadata:
-  hooks:
-    pre:
-      - "gh repo clone acme/app /tmp/repo --depth 1"
+```toml
+[hooks]
+pre = ["gh repo clone acme/app /tmp/repo --depth 1"]
 ```
 
 ## Example: Shell command
 
 Run any shell command. `GITHUB_TOKEN`, `GH_TOKEN`, and other credential env vars are already set:
 
-```yaml
-metadata:
-  hooks:
-    pre:
-      - "gh issue list --repo acme/app --label P1 --json number,title,body --limit 20 > /tmp/context/issues.json"
+```toml
+[hooks]
+pre = ["gh issue list --repo acme/app --label P1 --json number,title,body --limit 20 > /tmp/context/issues.json"]
 ```
 
 ## Example: HTTP fetch
 
 Fetch data from an API endpoint:
 
-```yaml
-metadata:
-  hooks:
-    pre:
-      - "curl -sf -H 'Authorization: Bearer ${INTERNAL_TOKEN}' https://api.internal/v1/feature-flags -o /tmp/context/flags.json"
+```toml
+[hooks]
+pre = ["curl -sf -H 'Authorization: Bearer ${INTERNAL_TOKEN}' https://api.internal/v1/feature-flags -o /tmp/context/flags.json"]
 ```
 
 Environment variable interpolation (`${VAR_NAME}`) is supported since commands run via `/bin/sh`.
@@ -77,14 +71,13 @@ Environment variable interpolation (`${VAR_NAME}`) is supported since commands r
 
 Post-hooks run after the LLM session completes. Use them for cleanup, artifact upload, or reporting:
 
-```yaml
-metadata:
-  hooks:
-    pre:
-      - "gh repo clone acme/app /tmp/repo --depth 1"
-    post:
-      - "upload-artifacts.sh"
-      - "curl -X POST https://hooks.slack.com/... -d '{\"text\": \"Agent run complete\"}'"
+```toml
+[hooks]
+pre = ["gh repo clone acme/app /tmp/repo --depth 1"]
+post = [
+  "upload-artifacts.sh",
+  "curl -X POST https://hooks.slack.com/... -d '{\"text\": \"Agent run complete\"}'",
+]
 ```
 
 ## Referencing Staged Files in SKILL.md
@@ -130,10 +123,9 @@ You are analyzing code at !`date +"%Y-%m-%d %H:%M"`.
 ```
 
 **With pre-staged data**:
-```yaml
-hooks:
-  pre:
-    - "gh issue list --repo acme/app --label bug --json number --limit 20 > /tmp/issues.json"
+```toml
+[hooks]
+pre = ["gh issue list --repo acme/app --label bug --json number --limit 20 > /tmp/issues.json"]
 ```
 
 ```markdown
@@ -160,7 +152,7 @@ Config value: [Error: cat: can't open '/nonexistent/file': No such file or direc
 
 ## Tips
 
-- **Hooks run sequentially** in the order defined in the `SKILL.md` frontmatter
+- **Hooks run sequentially** in the order defined in `config.toml`
 - **Each hook has a 5-minute timeout** — hooks are also bounded by the container-level timeout
 - **If a command fails** (non-zero exit), the run aborts with an error
 - **Environment variables** set inside hook commands do not propagate back to the agent's `process.env`
