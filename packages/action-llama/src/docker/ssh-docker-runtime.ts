@@ -100,6 +100,10 @@ export class SshDockerRuntime implements ContainerRuntime {
       }
     }
 
+    // Set ownership to container UID/GID so the non-root container user can read
+    const { CONSTANTS } = await import("../shared/constants.js");
+    await sshExec(this.sshConfig, `chown -R ${CONSTANTS.CONTAINER_UID}:${CONSTANTS.CONTAINER_GID} '${remoteDir}'`);
+
     return { strategy: "volume", stagingDir: remoteDir, bundle };
   }
 
