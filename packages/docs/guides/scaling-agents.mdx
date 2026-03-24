@@ -79,6 +79,17 @@ workQueueSize = 200    # default: 100 per agent
 
 When the queue is full, the oldest items are dropped.
 
+### Default agent scale
+
+Set the default scale for all agents that don't have an explicit `[agents.<name>].scale` override:
+
+```toml
+# config.toml
+defaultAgentScale = 3    # each agent gets 3 runners unless overridden
+```
+
+Without this setting, agents default to 1 runner each.
+
 ### Project-wide scale cap
 
 Limit total concurrent runners across all agents:
@@ -87,6 +98,8 @@ Limit total concurrent runners across all agents:
 # config.toml
 scale = 10    # max 10 runners total across all agents
 ```
+
+If `defaultAgentScale * agentCount` exceeds `scale`, agents are throttled at startup and a warning is shown.
 
 ## Example Configuration
 

@@ -118,10 +118,13 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
 
   // Validate project-wide scale limits
   if (globalConfig.scale !== undefined) {
+    const defaultScale = globalConfig.defaultAgentScale ?? 1;
     const scaleViolations: string[] = [];
+    let totalRequested = 0;
     for (const name of agents) {
       const config = loadAgentConfig(projectPath, name);
-      const agentScale = config.scale ?? 1;
+      const agentScale = config.scale ?? defaultScale;
+      totalRequested += agentScale;
       if (agentScale > globalConfig.scale) {
         scaleViolations.push(
           `Agent "${name}" scale (${agentScale}) exceeds project scale limit (${globalConfig.scale})`
@@ -132,6 +135,11 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
       throw new ConfigError(
         "Agent scale violations:\n" +
         scaleViolations.map(e => `  - ${e}`).join("\n")
+      );
+    }
+    if (totalRequested > globalConfig.scale) {
+      validationWarnings.push(
+        `Total agent scale (${totalRequested}) exceeds project scale cap (${globalConfig.scale}) — agents will be throttled at startup`
       );
     }
   }

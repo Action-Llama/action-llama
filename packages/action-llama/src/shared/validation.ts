@@ -41,7 +41,7 @@ const GLOBAL_CONFIG_SCHEMA: ConfigSchema = {
     "models", "local", "gateway", "webhooks", "telemetry",
     "projectName", "maxReruns", "maxCallDepth", "maxTriggerDepth",
     "webhookQueueSize", "workQueueSize", "resourceLockTimeout", "scale",
-    "agents", "historyRetentionDays"
+    "defaultAgentScale", "agents", "historyRetentionDays"
   ]),
   nested: {
     local: {

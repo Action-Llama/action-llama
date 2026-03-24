@@ -91,6 +91,8 @@ export interface GlobalConfig {
   resourceLockTimeout?: number;
   // Max simultaneous agent runs project-wide
   scale?: number;
+  // Default scale for agents without an explicit [agents.<name>].scale override (default: 1)
+  defaultAgentScale?: number;
   // Per-agent runtime overrides (from .env.toml or environment files)
   agents?: Record<string, AgentRuntimeOverrides>;
   // How many days to keep trigger history and webhook receipts (default: 14)
@@ -182,6 +184,13 @@ export function loadGlobalConfig(projectPath: string, envName?: string): GlobalC
   // projectName is .env.toml-only — not deep-merged from config.toml or environment files
   if (projectName) {
     config.projectName = projectName;
+  }
+
+  // Validate defaultAgentScale
+  if (config.defaultAgentScale !== undefined) {
+    if (!Number.isInteger(config.defaultAgentScale) || config.defaultAgentScale < 0) {
+      throw new ConfigError("defaultAgentScale must be a non-negative integer.");
+    }
   }
 
   // Validate per-agent runtime override values (scale, timeout).
@@ -279,6 +288,11 @@ export function loadAgentConfig(projectPath: string, agentName: string): AgentCo
   if (overrides) {
     if (overrides.scale !== undefined) parsed.scale = overrides.scale;
     if (overrides.timeout !== undefined) parsed.timeout = overrides.timeout;
+  }
+
+  // Apply defaultAgentScale as fallback when no explicit per-agent scale is set
+  if (parsed.scale === undefined && global.defaultAgentScale !== undefined) {
+    parsed.scale = global.defaultAgentScale;
   }
 
   return parsed as unknown as AgentConfig;
@@ -416,5 +430,6 @@ export function getProjectScale(projectPath: string): number {
  */
 export function getAgentScale(projectPath: string, agentName: string): number {
   const config = loadAgentConfig(projectPath, agentName);
-  return config.scale ?? 1; // Default agent scale
+  // defaultAgentScale is already applied in loadAgentConfig, so just fall back to 1
+  return config.scale ?? 1;
 }

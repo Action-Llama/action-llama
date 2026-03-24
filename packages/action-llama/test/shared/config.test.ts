@@ -619,6 +619,99 @@ metadata:
   });
 });
 
+describe("defaultAgentScale", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("loads defaultAgentScale from config.toml", () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({ defaultAgentScale: 3 }));
+    const loaded = loadGlobalConfig(tmpDir);
+    expect(loaded.defaultAgentScale).toBe(3);
+  });
+
+  it("applies defaultAgentScale to agent when no per-agent override", () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      models: { sonnet: SONNET_MODEL },
+      defaultAgentScale: 4,
+    }));
+    writeSkillMd(tmpDir, "dev", {
+      models: ["sonnet"],
+      credentials: ["github_token"],
+      schedule: "*/5 * * * *",
+    });
+
+    const loaded = loadAgentConfig(tmpDir, "dev");
+    expect(loaded.scale).toBe(4);
+  });
+
+  it("per-agent override takes precedence over defaultAgentScale", () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      models: { sonnet: SONNET_MODEL },
+      defaultAgentScale: 4,
+      agents: { dev: { scale: 2 } },
+    }));
+    writeSkillMd(tmpDir, "dev", {
+      models: ["sonnet"],
+      credentials: ["github_token"],
+      schedule: "*/5 * * * *",
+    });
+
+    const loaded = loadAgentConfig(tmpDir, "dev");
+    expect(loaded.scale).toBe(2);
+  });
+
+  it("agent scale is undefined when neither defaultAgentScale nor override is set", () => {
+    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
+    writeSkillMd(tmpDir, "dev", {
+      models: ["sonnet"],
+      credentials: ["github_token"],
+      schedule: "*/5 * * * *",
+    });
+
+    const loaded = loadAgentConfig(tmpDir, "dev");
+    expect(loaded.scale).toBeUndefined();
+  });
+
+  it("validates: rejects negative defaultAgentScale", () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({ defaultAgentScale: -1 }));
+    expect(() => loadGlobalConfig(tmpDir)).toThrow("non-negative integer");
+  });
+
+  it("validates: rejects non-integer defaultAgentScale", () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({ defaultAgentScale: 2.5 }));
+    expect(() => loadGlobalConfig(tmpDir)).toThrow("non-negative integer");
+  });
+
+  it("allows defaultAgentScale = 0 to disable all agents by default", () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      models: { sonnet: SONNET_MODEL },
+      defaultAgentScale: 0,
+    }));
+    writeSkillMd(tmpDir, "dev", {
+      models: ["sonnet"],
+      credentials: ["github_token"],
+      schedule: "*/5 * * * *",
+    });
+
+    const loaded = loadAgentConfig(tmpDir, "dev");
+    expect(loaded.scale).toBe(0);
+  });
+
+  it("merges defaultAgentScale through config layers", () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({ defaultAgentScale: 2 }));
+    writeFileSync(resolve(tmpDir, ".env.toml"), stringifyTOML({ defaultAgentScale: 5 }));
+    const loaded = loadGlobalConfig(tmpDir);
+    expect(loaded.defaultAgentScale).toBe(5);
+  });
+});
+
 describe("discoverAgents", () => {
   let tmpDir: string;
 

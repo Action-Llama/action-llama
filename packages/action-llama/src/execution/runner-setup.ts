@@ -61,13 +61,30 @@ export async function createRunnerPools(opts: RunnerSetupOpts): Promise<RunnerSe
   };
 
   // Enforce project-wide scale limit
+  const defaultScale = globalConfig.defaultAgentScale ?? 1;
   let totalScale = 0;
   const adjustedConfigs = agentConfigs.map(config => ({ ...config }));
+
+  // Warn if defaultAgentScale * agentCount exceeds project scale cap
+  if (globalConfig.scale !== undefined && globalConfig.defaultAgentScale !== undefined) {
+    const totalRequested = agentConfigs.reduce(
+      (sum, c) => sum + (c.scale ?? defaultScale), 0
+    );
+    if (totalRequested > globalConfig.scale) {
+      logger.warn({
+        defaultAgentScale: globalConfig.defaultAgentScale,
+        agentCount: agentConfigs.length,
+        totalRequested,
+        projectScale: globalConfig.scale,
+      }, "Total requested agent scale (%d) exceeds project scale cap (%d) — agents will be throttled",
+        totalRequested, globalConfig.scale);
+    }
+  }
 
   if (globalConfig.scale !== undefined) {
     for (let i = 0; i < adjustedConfigs.length; i++) {
       const config = adjustedConfigs[i];
-      const requestedScale = config.scale ?? 1;
+      const requestedScale = config.scale ?? defaultScale;
       const remainingCapacity = globalConfig.scale - totalScale;
 
       if (remainingCapacity <= 0) {
@@ -99,7 +116,7 @@ export async function createRunnerPools(opts: RunnerSetupOpts): Promise<RunnerSe
   const runnerPools: Record<string, RunnerPool> = {};
 
   for (const agentConfig of adjustedConfigs) {
-    const scale = agentConfig.scale ?? 1;
+    const scale = agentConfig.scale ?? defaultScale;
     const runners: PoolRunner[] = [];
 
     for (let i = 0; i < scale; i++) {
