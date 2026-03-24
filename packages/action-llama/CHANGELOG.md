@@ -1,5 +1,41 @@
 # @action-llama/action-llama
 
+## 0.17.1
+
+### Patch Changes
+
+- [`5ef8a56`](https://github.com/Action-Llama/action-llama/commit/5ef8a56b21ac7e8bba2064388f0545a7c17b011f) Thanks [@asselstine](https://github.com/asselstine)! - Improve dashboard and TUI layout, fix several bugs:
+
+  - Dashboard: remove stat cards, add side-by-side agent table + triggers layout, session time in token panel title, paused banner disables Run buttons, dropdown action menu on mobile, remove Recent Activity section
+  - Dashboard: fix duplicate state text ("idleidle") in scaled agents, add trigger type column back to triggers table, use consistent uppercase table headers
+  - Agent detail: move config section to skill page, add scale control and Kill button to header, fix running instances not clearing after completion
+  - Skill page: show full agent configuration (schedule, models, credentials, webhook filters with all fields) above skill markdown with proper section headers
+  - Instance page: fix locks not displaying (backend now returns `holder` field), add trigger type badge
+  - TUI: show project scale in header
+  - Frontend-wide: standardize instance ID display with ellipsis format (first 4 + … + last 4), ellipsis for long agent names on mobile
+
+- [`4d28914`](https://github.com/Action-Llama/action-llama/commit/4d28914bd4dbf0d52305d6adea748c1c80666c3b) Thanks [@asselstine](https://github.com/asselstine)! - Fix dashboard button states: Kill button is now disabled when no instances are running, Run button is disabled when the agent is disabled, and disabled agent rows are visually dimmed. Also fix the double-count bug where clicking Run on a scale>1 agent showed "running 2/2" instead of "running 1/2". Add comprehensive Playwright e2e tests for the dashboard UI.
+
+- [`ff6f4d8`](https://github.com/Action-Llama/action-llama/commit/ff6f4d8a210bc767796055e4d3869e3d085d89ad) Thanks [@asselstine](https://github.com/asselstine)! - Fix dashboard config page crashing with `require is not defined` by replacing the CommonJS `require()` call with a static ESM import for `getProjectScale`.
+
+- [`fcf7e4d`](https://github.com/Action-Llama/action-llama/commit/fcf7e4d920ae084a232ca972f211109b9df4393c) Thanks [@asselstine](https://github.com/asselstine)! - Fix agent skill page markdown rendering where inline formatting (bold, italic, code, links) displayed as raw HTML tags instead of formatted text. The `renderInline()` function was escaping HTML after creating tags, nullifying its own output.
+
+- [`667b574`](https://github.com/Action-Llama/action-llama/commit/667b574c44209d0a4fe06cf52e2adacf67910294) Thanks [@asselstine](https://github.com/asselstine)! - Fix session token counts always showing 0 on the dashboard. The pi-coding-agent SDK returns token data under `stats.tokens` (e.g., `stats.tokens.input`) but `sessionStatsToUsage()` was only checking `stats.usage`. Cost displayed correctly because `stats.cost` matched an existing fallback path.
+
+- [`4b784b7`](https://github.com/Action-Llama/action-llama/commit/4b784b7f9244985977d1decc412044f51feb3585) Thanks [@asselstine](https://github.com/asselstine)! - Fix `al stat` crash when displaying running instances (`startedAt` from JSON is a string, not a Date) and exclude Playwright `.spec.ts` files from vitest so they don't fail the test suite.
+
+- [`3d1f741`](https://github.com/Action-Llama/action-llama/commit/3d1f7414f5e9a1dbc06d6a8aae1feb0e9efb4afe) Thanks [@asselstine](https://github.com/asselstine)! - Fix token usage and return value tracking in container runs. The `forwardLogLine` method returned early for all `_log` JSON lines before reaching the `token-usage` and `signal-result` detection code, so these values were never captured. Moved detection into the `_log` handling block so metrics are correctly recorded.
+
+- [`ac8909e`](https://github.com/Action-Llama/action-llama/commit/ac8909e7db324d49bf533596e7b3f0773ea71ab4) Thanks [@asselstine](https://github.com/asselstine)! - Merged the standalone E2E workflow into the CI workflow. E2E tests now run
+  in parallel with unit/integration tests, and both must pass before triggering
+  a deploy. The CI workflow also gains concurrency grouping and workflow_dispatch.
+
+- [`b52ae5f`](https://github.com/Action-Llama/action-llama/commit/b52ae5f2c5a6a154ccbdc53f6dd8dd2ab6962935) Thanks [@asselstine](https://github.com/asselstine)! - Only load model extensions for providers referenced in `config.toml` `[models]`,
+  instead of initializing all providers on startup. This eliminates noisy errors
+  like "OpenAI API key is required" when a project only uses Anthropic.
+
+- [`1d2c826`](https://github.com/Action-Llama/action-llama/commit/1d2c826c9fe0ff14556094d23810102addf03bc9) Thanks [@asselstine](https://github.com/asselstine)! - Replace the server-rendered HTML dashboard with a React SPA in a new `@action-llama/frontend` package (Vite, React 19, Tailwind CSS v4). The gateway serves the SPA with client-side routing and auth. All legacy HTML views (`src/control/views/`) are removed. On `al push`, the built frontend is deployed to the server and nginx serves static assets directly for efficiency.
+
 ## 0.17.0
 
 ### Minor Changes

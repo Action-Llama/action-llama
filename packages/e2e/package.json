@@ -1,6 +1,6 @@
 {
   "name": "@action-llama/e2e",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "End-to-end tests for Action Llama",
   "type": "module",
@@ -16,7 +16,6 @@
     "@action-llama/shared": "*",
     "dockerode": "^4.0.2",
     "ssh2": "^1.15.0",
-
     "tar-fs": "^3.0.6",
     "vitest": "^4.0.18",
     "@types/node": "^22.0.0",
