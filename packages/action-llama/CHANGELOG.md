@@ -1,5 +1,42 @@
 # @action-llama/action-llama
 
+## 0.18.1
+
+### Patch Changes
+
+- [`db855bf`](https://github.com/Action-Llama/action-llama/commit/db855bff4091aff745b2511c51a71be8cc7a0a06) Thanks [@asselstine](https://github.com/asselstine)! - Generate unique pastel colors for each agent based on a hash of the agent
+  name. Colors are consistent across the usage bar, legend, agent table, and
+  agent detail page header, making it easy to visually identify agents.
+  Supports both light and dark mode.
+
+- [`f889aec`](https://github.com/Action-Llama/action-llama/commit/f889aec8b3df558caa2647465a208af2e7945677) Thanks [@asselstine](https://github.com/asselstine)! - Update all documentation to reflect the per-agent config.toml system. SKILL.md now contains only portable metadata (name, description, license, compatibility) and instructions, while runtime configuration (credentials, models, schedule, webhooks, hooks, params, scale, timeout) lives in `agents/<name>/config.toml`. Also documents the new `al add`, `al config`, and `al update` commands, and removes the obsolete `[agents.<name>]` override pattern from project config docs.
+
+- [`d20ac23`](https://github.com/Action-Llama/action-llama/commit/d20ac239644c80af234fe64782845a2a8191ffee) Thanks [@asselstine](https://github.com/asselstine)! - Fix chat not connecting to agent container. The gateway starts before
+  Docker images are built, so the chat container launcher was never wired
+  up — clicking Chat or running `al chat <agent> --env` silently did
+  nothing. The launcher is now connected after image builds complete via
+  a late-binding `setChatRuntime` callback.
+
+- [`4b1721a`](https://github.com/Action-Llama/action-llama/commit/4b1721abe1c1b1abe2f9a1829ed0bac4f6cd5751) Thanks [@asselstine](https://github.com/asselstine)! - Fix dark mode toggle in web dashboard. Tailwind CSS v4 defaults to
+  `prefers-color-scheme` media queries, so the class-based `.dark` toggle
+  had no effect. Added `@custom-variant dark` directive to enable
+  class-based dark mode.
+
+- [`cd738a6`](https://github.com/Action-Llama/action-llama/commit/cd738a65ca4954bf4b0ffd6d23134560f06412be) Thanks [@asselstine](https://github.com/asselstine)! - Fixed scheduler pause not blocking webhook triggers. When the scheduler was paused
+  via `al pause`, webhooks could still trigger agent runs and queue work. Now all
+  trigger paths (webhooks, agent-to-agent calls, manual triggers, and queue draining)
+  respect the paused state and reject new work. Closes [#162](https://github.com/Action-Llama/action-llama/issues/162).
+
+- [`20f75fb`](https://github.com/Action-Llama/action-llama/commit/20f75fbe9f5a3b0ea394dfd0a6170f0c685a7dbb) Thanks [@asselstine](https://github.com/asselstine)! - Fix overlapping columns in the dashboard Recent Triggers table. The `table-fixed` layout caused columns with `w-[1%]` to collapse to near-zero width, making headers and data visually overlap.
+
+- [`6409a87`](https://github.com/Action-Llama/action-llama/commit/6409a875d785e9143b9e4ca626c290a36f3e5c57) Thanks [@asselstine](https://github.com/asselstine)! - Move agent runtime config (credentials, models, schedule, webhooks, hooks, params, scale, timeout) from SKILL.md YAML frontmatter to per-agent `config.toml` files. SKILL.md now contains only portable metadata (name, description, license, compatibility), making skills shareable across projects. Add `al add <repo>` to install skills from git repositories and `al update [agent]` to pull upstream SKILL.md changes. Add top-level `al config <name>` as a shortcut for interactive agent configuration.
+
+- [`d9d2349`](https://github.com/Action-Llama/action-llama/commit/d9d2349c89970f4dff2358952b166292ec8a16a2) Thanks [@asselstine](https://github.com/asselstine)! - Fix SSE streaming through Cloudflare proxies by adding `Cache-Control: no-cache, no-transform` and `X-Accel-Buffering: no` headers to the status stream endpoint. Add per-agent invalidation signals so dashboard pages automatically re-fetch data (triggers, runs, stats, config) when mutations occur, instead of only updating on initial page load.
+
+- [`60a00cf`](https://github.com/Action-Llama/action-llama/commit/60a00cfb64f105030ad5e8e5c9922f04837f4914) Thanks [@asselstine](https://github.com/asselstine)! - Reorganize Dockerfile docs: merge "Project Dockerfile" and "Agent Dockerfile" reference pages into a single "Dockerfiles" reference, and extract guide content into a new "Custom Dockerfiles" guide.
+
+- [`1db35f5`](https://github.com/Action-Llama/action-llama/commit/1db35f5a84559ac026176c7b8887eb81c26f839b) Thanks [@asselstine](https://github.com/asselstine)! - Add `setenv` documentation to the agent commands reference page as a new "Environment Commands" section, with usage examples showing cross-invocation variable persistence. Update runtime context docs to cross-reference the new section.
+
 ## 0.18.0
 
 ### Minor Changes
