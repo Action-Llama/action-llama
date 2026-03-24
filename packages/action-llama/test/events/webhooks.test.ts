@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { createHmac } from "crypto";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
@@ -136,6 +137,7 @@ vi.mock("../../src/shared/logger.js", () => ({
 }));
 
 import { startScheduler } from "../../src/scheduler/index.js";
+import { StatusTracker } from "../../src/tui/status-tracker.js";
 
 const modelDef = { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" };
 
@@ -277,5 +279,168 @@ describe("scheduler webhook support", () => {
     // so we verify the queue behavior through the WorkQueue unit tests
     // and the scheduler integration via the rerun+drain test below
     expect(mockRun).not.toHaveBeenCalled();
+  });
+});
+
+function signPayload(body: string, secret: string): string {
+  return "sha256=" + createHmac("sha256", secret).update(body).digest("hex");
+}
+
+describe("scheduler pause blocks webhooks", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    cronCallbacks.length = 0;
+    mockIsRunning = false;
+    tmpDir = mkdtempSync(join(tmpdir(), "al-sched-pause-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("rejects webhook triggers when scheduler is paused", async () => {
+    setupProjectWithWebhooks(tmpDir);
+    const statusTracker = new StatusTracker();
+    statusTracker.setSchedulerInfo({
+      mode: "docker",
+      runtime: "local",
+      gatewayPort: 8080,
+      cronJobCount: 0,
+      webhooksActive: true,
+      webhookUrls: [],
+      startedAt: new Date(),
+      paused: false,
+    });
+
+    const { webhookRegistry, schedulerCtx } = await startScheduler(tmpDir, undefined, statusTracker);
+
+    // Verify initially not paused
+    expect(schedulerCtx.isPaused?.()).toBe(false);
+
+    // Pause the scheduler
+    statusTracker.setPaused(true);
+    expect(schedulerCtx.isPaused?.()).toBe(true);
+
+    // Dispatch a webhook — should be rejected (skipped) because scheduler is paused
+    const payload = JSON.stringify({
+      action: "labeled",
+      issue: { number: 1, title: "Test", body: "test body", labels: [{ name: "agent" }], html_url: "https://github.com/test/test/issues/1" },
+      repository: { full_name: "test/repo" },
+      sender: { login: "user1" },
+      label: { name: "agent" },
+    });
+    const signature = signPayload(payload, "fake-token");
+
+    const result = webhookRegistry!.dispatch("github", {
+      "x-hub-signature-256": signature,
+      "x-github-event": "issues",
+      "content-type": "application/json",
+    }, payload, { MyOrg: "fake-token" });
+
+    expect(result.ok).toBe(true);
+    expect(result.matched).toBe(0);
+    expect(result.skipped).toBe(1); // trigger returned false
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it("accepts webhook triggers when scheduler is not paused", async () => {
+    setupProjectWithWebhooks(tmpDir);
+    const statusTracker = new StatusTracker();
+    statusTracker.setSchedulerInfo({
+      mode: "docker",
+      runtime: "local",
+      gatewayPort: 8080,
+      cronJobCount: 0,
+      webhooksActive: true,
+      webhookUrls: [],
+      startedAt: new Date(),
+      paused: false,
+    });
+
+    const { webhookRegistry } = await startScheduler(tmpDir, undefined, statusTracker);
+
+    const payload = JSON.stringify({
+      action: "labeled",
+      issue: { number: 1, title: "Test", body: "test body", labels: [{ name: "agent" }], html_url: "https://github.com/test/test/issues/1" },
+      repository: { full_name: "test/repo" },
+      sender: { login: "user1" },
+      label: { name: "agent" },
+    });
+    const signature = signPayload(payload, "fake-token");
+
+    const result = webhookRegistry!.dispatch("github", {
+      "x-hub-signature-256": signature,
+      "x-github-event": "issues",
+      "content-type": "application/json",
+    }, payload, { MyOrg: "fake-token" });
+
+    expect(result.ok).toBe(true);
+    expect(result.matched).toBe(1);
+    expect(result.skipped).toBe(0);
+  });
+
+  it("does not queue webhook events when paused", async () => {
+    setupProjectWithWebhooks(tmpDir);
+    const statusTracker = new StatusTracker();
+    statusTracker.setSchedulerInfo({
+      mode: "docker",
+      runtime: "local",
+      gatewayPort: 8080,
+      cronJobCount: 0,
+      webhooksActive: true,
+      webhookUrls: [],
+      startedAt: new Date(),
+      paused: false,
+    });
+
+    const { webhookRegistry, schedulerCtx } = await startScheduler(tmpDir, undefined, statusTracker);
+
+    // Pause the scheduler
+    statusTracker.setPaused(true);
+
+    const payload = JSON.stringify({
+      action: "labeled",
+      issue: { number: 1, title: "Test", body: "test body", labels: [{ name: "agent" }], html_url: "https://github.com/test/test/issues/1" },
+      repository: { full_name: "test/repo" },
+      sender: { login: "user1" },
+      label: { name: "agent" },
+    });
+    const signature = signPayload(payload, "fake-token");
+
+    webhookRegistry!.dispatch("github", {
+      "x-hub-signature-256": signature,
+      "x-github-event": "issues",
+      "content-type": "application/json",
+    }, payload, { MyOrg: "fake-token" });
+
+    // Work queue should be empty — paused scheduler rejects, not queues
+    expect(schedulerCtx.workQueue.size("webhook-dev")).toBe(0);
+  });
+
+  it("wires isPaused into schedulerCtx from statusTracker", async () => {
+    setupProjectWithWebhooks(tmpDir);
+    const statusTracker = new StatusTracker();
+    statusTracker.setSchedulerInfo({
+      mode: "docker",
+      runtime: "local",
+      gatewayPort: 8080,
+      cronJobCount: 0,
+      webhooksActive: true,
+      webhookUrls: [],
+      startedAt: new Date(),
+      paused: false,
+    });
+
+    const { schedulerCtx } = await startScheduler(tmpDir, undefined, statusTracker);
+
+    expect(schedulerCtx.isPaused?.()).toBe(false);
+
+    statusTracker.setPaused(true);
+    expect(schedulerCtx.isPaused?.()).toBe(true);
+
+    statusTracker.setPaused(false);
+    expect(schedulerCtx.isPaused?.()).toBe(false);
   });
 });

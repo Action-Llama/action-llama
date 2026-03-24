@@ -266,6 +266,8 @@ describe("drainQueues", () => {
     await drainQueues(ctx);
 
     expect(runner.run).not.toHaveBeenCalled();
+    // Items remain in the queue (not lost)
+    expect(ctx.workQueue.size("a")).toBe(1);
   });
 
   it("stops when shuttingDown is true", async () => {
