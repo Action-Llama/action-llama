@@ -179,10 +179,11 @@ EOF`
   // Pre-create a self-signed TLS cert on the VPS so `nginx -t` can validate the
   // full config (mock strings like "MOCK_CERT" fail PEM parsing).
   const certBasePath = `/opt/action-llama/credentials/cloudflare_origin_cert/${cloudflareHostname}`;
-  await context.executeSSHCommand(vpsContainer, [
+  const certCommands = [
     `mkdir -p ${certBasePath}`,
     `openssl req -x509 -newkey rsa:2048 -keyout ${certBasePath}/private_key -out ${certBasePath}/certificate -days 1 -nodes -subj '/CN=${cloudflareHostname}'`,
-  ].join(" && "));
+  ].join(" && ");
+  await context.executeSSHCommand(vpsContainer, certCommands);
 
   // Deploy — use --no-creds since certs are already on the VPS
   const pushOutput = await context.executeInContainer(localContainer, [
