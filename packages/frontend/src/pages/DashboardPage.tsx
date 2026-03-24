@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
-import { useStatusStream } from "../hooks/useStatusStream";
+import { useStatusStream } from "../hooks/StatusStreamContext";
 import { StateBadge, TriggerTypeBadge, ResultBadge } from "../components/Badge";
 import {
   getTriggerHistory,
@@ -8,8 +8,6 @@ import {
   killAgentInstances,
   enableAgent,
   disableAgent,
-  pauseScheduler,
-  resumeScheduler,
 } from "../lib/api";
 import type { AgentStatus, TriggerHistoryRow } from "../lib/api";
 import { RunModal } from "../components/RunModal";
@@ -88,7 +86,7 @@ function ActionMenu({
 }
 
 export function DashboardPage() {
-  const { agents, schedulerInfo, connected } = useStatusStream();
+  const { agents, schedulerInfo } = useStatusStream();
   const [triggers, setTriggers] = useState<TriggerHistoryRow[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [runModalAgent, setRunModalAgent] = useState<string | null>(null);
@@ -143,42 +141,6 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* Connection status */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-slate-900 dark:text-white">
-          Dashboard
-        </h1>
-        <div className="flex items-center gap-3">
-          <span
-            className={`text-xs ${connected ? "text-green-500" : "text-red-500"}`}
-          >
-            {connected ? "Connected" : "Disconnected"}
-          </span>
-          {schedulerInfo && (
-            <button
-              onClick={() =>
-                handleAction(
-                  schedulerInfo.paused ? resumeScheduler : pauseScheduler,
-                )
-              }
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                schedulerInfo.paused
-                  ? "bg-green-600 hover:bg-green-700 text-white"
-                  : "bg-yellow-600 hover:bg-yellow-700 text-white"
-              }`}
-            >
-              {schedulerInfo.paused ? "Resume" : "Pause"}
-            </button>
-          )}
-          <Link
-            to="/dashboard/config"
-            className="px-3 py-1.5 text-xs font-medium rounded-md bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
-          >
-            Config
-          </Link>
-        </div>
-      </div>
-
       {actionError && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 text-sm text-red-700 dark:text-red-400">
           {actionError}

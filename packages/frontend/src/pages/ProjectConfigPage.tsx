@@ -7,7 +7,7 @@ import {
   resumeScheduler,
 } from "../lib/api";
 import type { ProjectConfigData } from "../lib/api";
-import { useStatusStream } from "../hooks/useStatusStream";
+import { useStatusStream } from "../hooks/StatusStreamContext";
 
 export function ProjectConfigPage() {
   const { schedulerInfo } = useStatusStream();

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
-import { useStatusStream } from "../hooks/useStatusStream";
+import { useStatusStream } from "../hooks/StatusStreamContext";
 import { StatCard } from "../components/StatCard";
 import { StateBadge, TriggerTypeBadge, ResultBadge } from "../components/Badge";
 import {
