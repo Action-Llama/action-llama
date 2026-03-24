@@ -387,10 +387,9 @@ async function conditionalNpmInstall(
   await sshExec(ssh, `cd ${basePath}/project && npm install`);
   // When pushing the source package itself (not a consumer project), npm install
   // won't create a bin symlink for the package's own "bin" entry. Ensure it exists.
-  await sshExec(ssh, [
-    `cd ${basePath}/project`,
-    `test -x node_modules/.bin/al || (mkdir -p node_modules/.bin && ln -sf ../../dist/cli/main.js node_modules/.bin/al)`,
-  ].join(" && "));
+  await sshExec(ssh, 
+    `cd ${basePath}/project && test -x node_modules/.bin/al || { mkdir -p node_modules/.bin && ln -sf ../../dist/cli/main.js node_modules/.bin/al; }`
+  );
   await sshExec(ssh, `cat > ${basePath}/.pkg-hash << 'HASHEOF'\n${localHash}\nHASHEOF`);
   return "Dependencies installed.";
 }
