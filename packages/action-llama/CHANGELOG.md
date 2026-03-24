@@ -1,5 +1,14 @@
 # @action-llama/action-llama
 
+## 0.17.4
+
+### Patch Changes
+
+- [`bf3ccc0`](https://github.com/Action-Llama/action-llama/commit/bf3ccc00ad47e7d4b06f28e0ebeb9be2dc2387d2) Thanks [@asselstine](https://github.com/asselstine)! - Fix dashboard "Disconnected" on deployed servers by disabling nginx proxy buffering for the SSE status-stream endpoint.
+
+  - `al push` now generates a dedicated nginx `location /dashboard/api/status-stream` block with `proxy_buffering off`, `proxy_cache off`, and a 24-hour read timeout for long-lived SSE connections
+  - Without this fix, nginx buffers SSE events and the browser's EventSource never receives data, causing the dashboard to show "Disconnected"
+
 ## 0.17.3
 
 ### Patch Changes
