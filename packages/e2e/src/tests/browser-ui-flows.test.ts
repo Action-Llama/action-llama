@@ -121,7 +121,7 @@ EOF`,
     baseURL = `http://127.0.0.1:${hostPort}`;
 
     browser = await chromium.launch({ headless: true });
-  });
+  }, 300000);
 
   afterAll(async () => {
     if (browser) await browser.close();

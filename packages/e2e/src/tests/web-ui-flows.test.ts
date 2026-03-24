@@ -122,7 +122,7 @@ describe("Web UI Flows", { timeout: 300000 }, () => {
 
     await startGateway(context, container);
     await login(context, container);
-  });
+  }, 300000);
 
   afterAll(async () => {
     if (context && container) {
