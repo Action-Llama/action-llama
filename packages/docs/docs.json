@@ -38,6 +38,7 @@
             "group": "Concepts",
             "pages": [
               "concepts/agents",
+              "concepts/runtime-context",
               "concepts/resource-locks",
               "concepts/vps-deployment",
               "concepts/scheduler"
