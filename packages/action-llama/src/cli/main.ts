@@ -117,6 +117,7 @@ program
   .option("-f, --follow", "tail mode — watch for new log entries")
   .option("-d, --date <YYYY-MM-DD>", "specific date's log file")
   .option("-r, --raw", "show raw JSON log entries instead of conversation view")
+  .option("-a, --all", "show all log levels (no filtering)")
   .option("-E, --env <name>", "use named environment")
   .option("-i, --instance <N>", "instance number (for agents with scale > 1)")
   .action(withCommand(async (agent: string, opts) => {

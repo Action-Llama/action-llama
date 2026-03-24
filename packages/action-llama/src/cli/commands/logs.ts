@@ -65,23 +65,25 @@ function formatTime(ts: number): string {
   return d.toLocaleTimeString("en-US", { hour12: false });
 }
 
-function formatConversationEntry(entry: LogEntry): string | null {
+function formatConversationEntry(entry: LogEntry, showAll = false): string | null {
   const time = `${DIM}${formatTime(entry.time)}${RESET}`;
   const instanceTag = entry.instance ? `${MAGENTA}[${entry.instance}]${RESET} ` : "";
   const { msg } = entry;
 
-  // Skip debug-level noise (except tool errors which are level 50)
-  if (entry.level <= 20 && !SKIP_MESSAGES.has(msg)) {
-    // Show debug tool starts for non-bash tools
-    if (msg === "tool start") {
-      const tool = String(entry.tool || "unknown");
-      return `${time}  ${BLUE}▸ ${tool}${RESET}`;
+  if (!showAll) {
+    // Skip debug-level noise (except tool errors which are level 50)
+    if (entry.level <= 20 && !SKIP_MESSAGES.has(msg)) {
+      // Show debug tool starts for non-bash tools
+      if (msg === "tool start") {
+        const tool = String(entry.tool || "unknown");
+        return `${time}  ${BLUE}▸ ${tool}${RESET}`;
+      }
+      // Skip all other debug entries
+      return null;
     }
-    // Skip all other debug entries
-    return null;
-  }
 
-  if (SKIP_MESSAGES.has(msg)) return null;
+    if (SKIP_MESSAGES.has(msg)) return null;
+  }
 
   // ── Assistant text output ──
   if (msg === "assistant") {
@@ -414,10 +416,14 @@ async function followFile(filePath: string, lastN: number, fmt: Formatter): Prom
 
 export async function execute(
   agent: string,
-  opts: { project: string; lines: string; follow?: boolean; date?: string; raw?: boolean; env?: string; instance?: string }
+  opts: { project: string; lines: string; follow?: boolean; date?: string; raw?: boolean; all?: boolean; env?: string; instance?: string }
 ): Promise<void> {
   const projectPath = resolve(opts.project);
-  const fmt: Formatter = opts.raw ? formatRawEntry : formatConversationEntry;
+  const fmt: Formatter = opts.raw
+    ? formatRawEntry
+    : opts.all
+      ? (entry) => formatConversationEntry(entry, true)
+      : formatConversationEntry;
   // --instance accepts a full instance ID (e.g. "dev-a1b2c3d4") or just the suffix ("a1b2c3d4")
   const instanceSuffix = opts.instance
     ? (opts.instance.startsWith(`${agent}-`) ? opts.instance.slice(agent.length + 1) : opts.instance)
