@@ -1,5 +1,11 @@
 # @action-llama/action-llama
 
+## 0.17.5
+
+### Patch Changes
+
+- [`42fa395`](https://github.com/Action-Llama/action-llama/commit/42fa395278b2cdf78b048a63f407723a93e8f53d) Thanks [@asselstine](https://github.com/asselstine)! - Fix nginx config corruption during `al push` when config contains single quotes (e.g. `proxy_set_header Connection ''`). The heredoc uses a quoted delimiter so no shell escaping is needed — the prior escaping mangled the content and caused `nginx -t` to reject it. Also replaced the mock nginx binary in the e2e VPS container with real nginx so `nginx -t` actually validates config syntax.
+
 ## 0.17.4
 
 ### Patch Changes
