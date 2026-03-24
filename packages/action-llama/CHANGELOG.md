@@ -1,5 +1,11 @@
 # @action-llama/action-llama
 
+## 0.17.7
+
+### Patch Changes
+
+- [`e7ad42e`](https://github.com/Action-Llama/action-llama/commit/e7ad42e5868175f45b09b9a71140470992b9f677) Thanks [@asselstine](https://github.com/asselstine)! - Fix permission denied error when loading credentials in local Docker containers. The intermediate type directory (e.g. `/credentials/anthropic_key/`) was not chowned to the container user, causing EACCES on scandir.
+
 ## 0.17.6
 
 ### Patch Changes
