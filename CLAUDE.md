@@ -108,7 +108,7 @@ We are pre-1.0 (`0.x.y`), so `minor` = what would be `major` post-1.0. Most chan
 
 ## Key Conventions
 
-- Config format: TOML for project config (`config.toml`, `.env.toml`, environment files); YAML frontmatter in `SKILL.md` for agent config
+- Config format: TOML for project config (`config.toml`, `.env.toml`, environment files) and per-agent runtime config (`agents/<name>/config.toml`); YAML frontmatter in `SKILL.md` for portable agent metadata (name, description, license, compatibility) with markdown instructions
 - Credentials: `~/.action-llama/credentials/<type>/<instance>/<field>` — instance is agent name (agent-specific) or `"default"` (shared)
 - Cloud is opt-in via `--env <name>` flag or `.env.toml` environment binding; server deploy via `al push --env <name>`
 - `"default"` is a reserved name — cannot be used as an agent name

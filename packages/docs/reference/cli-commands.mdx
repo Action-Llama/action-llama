@@ -394,10 +394,54 @@ al agent new
 
 ### `al agent config <name>`
 
-Interactively configure an existing agent. Opens a menu to edit each section of the `SKILL.md` frontmatter: credentials, model, schedule, webhooks, and params. Runs `al doctor` on completion to validate the configuration.
+Interactively configure an existing agent. Opens a menu to edit each section of the agent's `config.toml`: credentials, model, schedule, webhooks, and params. Saves changes to `agents/<name>/config.toml` and runs `al doctor` on completion to validate the configuration.
 
 ```bash
 al agent config dev
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
+## Skill Management
+
+### `al add <repo>`
+
+Install a skill from a git repository. Clones the repo, discovers `SKILL.md` files (at the root or under `skills/*/`), copies the skill into `agents/<name>/`, creates a `config.toml` with a `source` field pointing back to the repo, and runs `al config` for interactive setup.
+
+Accepts GitHub shorthand (`author/repo`) or a full git URL.
+
+```bash
+al add acme/dev-skills
+al add acme/dev-skills --skill reviewer
+al add https://github.com/acme/dev-skills.git
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-s, --skill <name>` | Skill name (if the repo contains multiple skills) |
+
+### `al config <name>`
+
+Shortcut for `al agent config <name>`. Interactively configure an agent's runtime settings in `config.toml`.
+
+```bash
+al config dev
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
+### `al update [agent]`
+
+Update installed skills from their source repos. For each agent with a `source` field in its `config.toml`, clones the source repo, compares the upstream `SKILL.md` with the local copy, and prompts to accept changes. Only updates `SKILL.md` — `config.toml` is never touched.
+
+```bash
+al update              # Check all agents
+al update dev          # Check only the dev agent
 ```
 
 | Option | Description |

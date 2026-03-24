@@ -59,7 +59,7 @@ Let's walk through each section.
 </agent-config>
 ```
 
-This is the JSON serialization of the `params` field from your `SKILL.md` frontmatter. Use it to pass configuration values that your agent's instructions can reference — repo names, label filters, thresholds, or any structured data your agent needs.
+This is the JSON serialization of the `params` field from your agent's `config.toml`. Use it to pass configuration values that your agent's instructions can reference — repo names, label filters, thresholds, or any structured data your agent needs.
 
 Your `SKILL.md` instructions can reference this directly, e.g.: *"Read the repo and labels from `<agent-config>` to determine which issues to process."*
 

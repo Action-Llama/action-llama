@@ -11,10 +11,10 @@ With `scale = 1`, a single agent instance handles all work sequentially. If 5 Gi
 
 ## Increase Scale
 
-In your project's `.env.toml`:
+In the agent's `config.toml`:
 
 ```toml
-[agents.dev]
+# agents/dev/config.toml
 scale = 3    # Run up to 3 instances concurrently
 ```
 
@@ -81,7 +81,7 @@ When the queue is full, the oldest items are dropped.
 
 ### Default agent scale
 
-Set the default scale for all agents that don't have an explicit `[agents.<name>].scale` override:
+Set the default scale for all agents that don't have an explicit `scale` in their `config.toml`:
 
 ```toml
 # config.toml
@@ -103,36 +103,23 @@ If `defaultAgentScale * agentCount` exceeds `scale`, agents are throttled at sta
 
 ## Example Configuration
 
-Agent definition in `SKILL.md` frontmatter:
-
-```yaml
-metadata:
-  credentials:
-    - github_token
-    - git_ssh
-  schedule: "*/5 * * * *"
-
-  models:
-    - sonnet
-
-  webhooks:
-    - source: my-github
-      events: [issues]
-      actions: [labeled]
-      labels: [agent]
-
-  params:
-    repos:
-      - acme/app
-      - acme/api
-    triggerLabel: agent
-```
-
-Scale override in `.env.toml`:
+Agent runtime config in `agents/dev/config.toml`:
 
 ```toml
-[agents.dev]
+credentials = ["github_token", "git_ssh"]
+schedule = "*/5 * * * *"
+models = ["sonnet"]
 scale = 3
+
+[[webhooks]]
+source = "my-github"
+events = ["issues"]
+actions = ["labeled"]
+labels = ["agent"]
+
+[params]
+repos = ["acme/app", "acme/api"]
+triggerLabel = "agent"
 ```
 
 ## Next steps
