@@ -403,7 +403,9 @@ async function setupNginx(
 
   const { generateNginxConfig } = await import("../cloud/vps/nginx.js");
   const nginxConf = generateNginxConfig(cfHost, gatewayPort, frontendPath);
-  const nginxEscaped = nginxConf.replace(/'/g, "'\\''");
+  // Heredoc delimiter is single-quoted ('NGINXEOF') so no shell expansion
+  // occurs — content is passed literally and single quotes need no escaping.
+  const nginxEscaped = nginxConf;
 
   // Heredoc delimiter must be on its own line — place post-heredoc commands on
   // the opening line so the closing NGINXEOF isn't polluted by " && next_cmd".

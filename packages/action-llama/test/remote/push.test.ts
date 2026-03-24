@@ -20,8 +20,15 @@ vi.mock("../../src/remote/bootstrap.js", () => ({
 }));
 
 // Mock nginx config generator (dynamically imported by setupNginx)
+// Must include single quotes (e.g. Connection '') to exercise heredoc escaping
 vi.mock("../../src/cloud/vps/nginx.js", () => ({
-  generateNginxConfig: () => "server { listen 443; }",
+  generateNginxConfig: () => `server {
+    listen 443 ssl;
+    location /dashboard/api/status-stream {
+        proxy_set_header Connection '';
+        proxy_buffering off;
+    }
+}`,
 }));
 
 // Mock fs for computePkgHash / unlinkSync
@@ -430,6 +437,31 @@ describe("pushToServer", () => {
         }
       }
     }
+  });
+
+  it("preserves single quotes in nginx config through heredoc", async () => {
+    mockSshExec.mockResolvedValue("ok");
+
+    const origLog = console.log;
+    console.log = () => {};
+    try {
+      await pushToServer({
+        projectPath: "/tmp/project",
+        serverConfig: { host: "h", cloudflareHostname: "test.example.com" },
+        globalConfig: {},
+        envName: "my-server",
+      });
+    } finally {
+      console.log = origLog;
+    }
+
+    const sshCommands = mockSshExec.mock.calls.map((c: any[]) => c[1]);
+    const nginxCmd = sshCommands.find((cmd: string) => cmd.includes("NGINXEOF"));
+    expect(nginxCmd).toBeDefined();
+    // The Connection '' directive must appear verbatim — no shell escaping
+    expect(nginxCmd).toContain("proxy_set_header Connection '';");
+    // Must NOT contain escaped single quotes (the old bug)
+    expect(nginxCmd).not.toContain("'\\''");
   });
 
   it("cleans up ControlMaster socket in finally block", async () => {

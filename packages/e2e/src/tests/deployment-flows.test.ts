@@ -207,6 +207,10 @@ A simple agent for testing dashboard deployment.
     // Verify hostname and TLS
     expect(nginxConfig).toContain("server_name agents.test.example.com");
     expect(nginxConfig).toContain("listen 443 ssl");
+
+    // Verify nginx can actually parse the config (catches quoting/escaping bugs)
+    const nginxTest = await context.executeSSHCommand(vpsContainer, "nginx -t 2>&1");
+    expect(nginxTest).toContain("syntax is ok");
   });
 
   it("configures nginx even with --no-creds", async () => {
