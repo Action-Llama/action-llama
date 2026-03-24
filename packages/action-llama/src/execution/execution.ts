@@ -50,6 +50,8 @@ export interface SchedulerContext {
   isAgentEnabled?: (name: string) => boolean;
   /** Optional stats store for recording run history and call edges. */
   statsStore?: StatsStore;
+  /** Returns true if the scheduler is paused. */
+  isPaused?: () => boolean;
 }
 
 // Prompt helpers: when images have baked-in static files, only pass the dynamic suffix.

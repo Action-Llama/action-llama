@@ -175,6 +175,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     runnerPools, agentConfigs, maxReruns, maxTriggerDepth, logger, workQueue,
     shuttingDown: false, skills, useBakedImages: true, events, callStore, statusTracker, statsStore,
     isAgentEnabled: statusTracker ? (name: string) => statusTracker.isAgentEnabled(name) : undefined,
+    isPaused: statusTracker ? () => statusTracker.isPaused() : undefined,
   };
 
   // Populate late-binding state
