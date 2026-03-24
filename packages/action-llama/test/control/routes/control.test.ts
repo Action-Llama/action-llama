@@ -24,7 +24,7 @@ function setup(overrides?: Partial<ControlRoutesDeps>) {
     killAgent: vi.fn(async () => null),
     pauseScheduler: vi.fn(async () => {}),
     resumeScheduler: vi.fn(async () => {}),
-    triggerAgent: vi.fn(async () => false),
+    triggerAgent: vi.fn(async () => "Agent not found"),
     enableAgent: vi.fn(async () => false),
     disableAgent: vi.fn(async () => false),
     ...overrides,

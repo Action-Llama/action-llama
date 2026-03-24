@@ -46,7 +46,7 @@ await startGateway({
 
     triggerAgent: async (name) => {
       const agent = statusTracker.getAllAgents().find((a) => a.name === name);
-      if (!agent) return false;
+      if (!agent) return `Agent "${name}" not found`;
 
       triggerCount++;
       const instanceId = `${name}-pw-${triggerCount}`;

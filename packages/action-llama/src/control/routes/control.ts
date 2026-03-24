@@ -8,7 +8,7 @@ export interface ControlRoutesDeps {
   killAgent: (name: string) => Promise<{ killed: number } | null>;
   pauseScheduler: () => Promise<void>;
   resumeScheduler: () => Promise<void>;
-  triggerAgent?: (name: string) => Promise<boolean>;
+  triggerAgent?: (name: string) => Promise<true | string>;
   enableAgent?: (name: string) => Promise<boolean>;
   disableAgent?: (name: string) => Promise<boolean>;
   stopScheduler?: () => Promise<void>;
@@ -97,12 +97,13 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps) {
       return c.json({ error: "Trigger not available" }, 503);
     }
     try {
-      const success = await deps.triggerAgent(name);
-      if (success) {
+      const result = await deps.triggerAgent(name);
+      if (result === true) {
         return c.json({ success: true, message: `Agent ${name} triggered` });
       } else {
-        logger?.warn({ agent: name }, "control: agent not found or runners busy");
-        return c.json({ error: `Agent ${name} not found or all runners busy` }, 404);
+        logger?.warn({ agent: name, reason: result }, "control: trigger rejected");
+        const status = result.includes("not found") ? 404 : 409;
+        return c.json({ error: result }, status);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

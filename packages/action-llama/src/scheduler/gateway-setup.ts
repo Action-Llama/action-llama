@@ -110,15 +110,15 @@ export async function setupGateway(opts: {
         statusTracker?.setPaused(false);
         logger.info("Scheduler resumed via control API");
       },
-      triggerAgent: async (name: string) => {
-        if (statusTracker?.isPaused()) return false;
+      triggerAgent: async (name: string): Promise<true | string> => {
+        if (statusTracker?.isPaused()) return "Scheduler is paused";
         const pool = state.runnerPools[name];
-        if (!pool) return false;
+        if (!pool) return `Agent "${name}" not found`;
         const runner = pool.getAvailableRunner();
-        if (!runner) return false;
+        if (!runner) return `Agent "${name}" has no available runners (all busy)`;
         const config = agentConfigs.find((a) => a.name === name);
-        if (!config) return false;
-        if (!state.schedulerCtx) return false;
+        if (!config) return `Agent "${name}" config not found`;
+        if (!state.schedulerCtx) return "Scheduler is not ready";
         logger.info({ agent: name }, "manual trigger via control API");
         runWithReruns(runner, config, 0, state.schedulerCtx).catch((err) => {
           logger.error({ err, agent: name }, "manual trigger run failed");
