@@ -306,6 +306,97 @@ describe("StatusTracker", () => {
     expect(agent.state).toBe("idle");
   });
 
+  // --- Invalidation signal tests ---
+
+  it("startRun accumulates runs, triggers, and stats signals", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+
+    tracker.startRun("dev");
+    const signals = tracker.flushInvalidations();
+
+    expect(signals).toContainEqual({ type: "runs", agent: "dev" });
+    expect(signals).toContainEqual({ type: "triggers" });
+    expect(signals).toContainEqual({ type: "stats", agent: "dev" });
+  });
+
+  it("endRun accumulates runs and stats signals", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.startRun("dev");
+    tracker.flushInvalidations(); // clear
+
+    tracker.endRun("dev", 5000);
+    const signals = tracker.flushInvalidations();
+
+    expect(signals).toContainEqual({ type: "runs", agent: "dev" });
+    expect(signals).toContainEqual({ type: "stats", agent: "dev" });
+    expect(signals).not.toContainEqual(expect.objectContaining({ type: "triggers" }));
+  });
+
+  it("flushInvalidations returns and clears the list", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.startRun("dev");
+
+    const first = tracker.flushInvalidations();
+    expect(first.length).toBeGreaterThan(0);
+
+    const second = tracker.flushInvalidations();
+    expect(second).toHaveLength(0);
+  });
+
+  it("deduplicates identical invalidation signals", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+
+    // startRun produces runs:dev, triggers, stats:dev
+    // endRun also produces runs:dev, stats:dev
+    tracker.startRun("dev");
+    tracker.endRun("dev", 1000);
+
+    const signals = tracker.flushInvalidations();
+    const runSignals = signals.filter((s) => s.type === "runs" && s.agent === "dev");
+    expect(runSignals).toHaveLength(1);
+  });
+
+  it("enableAgent/disableAgent emit config signals", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.flushInvalidations(); // clear
+
+    tracker.enableAgent("dev");
+    tracker.disableAgent("dev");
+
+    const signals = tracker.flushInvalidations();
+    // config should be deduped to one
+    const configSignals = signals.filter((s) => s.type === "config");
+    expect(configSignals).toHaveLength(1);
+  });
+
+  it("completeInstance emits instance and runs signals", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.registerInstance({ id: "inst-1", agentName: "dev", status: "running", startedAt: new Date().toISOString(), trigger: "schedule" } as any);
+    tracker.flushInvalidations(); // clear
+
+    tracker.completeInstance("inst-1", "completed");
+
+    const signals = tracker.flushInvalidations();
+    expect(signals).toContainEqual({ type: "instance", agent: "dev", instanceId: "inst-1" });
+    expect(signals).toContainEqual({ type: "runs", agent: "dev" });
+  });
+
+  it("getAllAgents is unaffected by invalidation tracking", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.startRun("dev");
+
+    const agents = tracker.getAllAgents();
+    expect(agents).toHaveLength(1);
+    expect(agents[0].state).toBe("running");
+  });
+
   it("two concurrent instances with scale=2 shows correct count", () => {
     const tracker = new StatusTracker();
     tracker.registerAgent("dev", 2);

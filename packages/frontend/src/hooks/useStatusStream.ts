@@ -4,6 +4,7 @@ import type {
   SchedulerInfo,
   LogLine,
   AgentInstance,
+  InvalidationSignal,
 } from "../lib/api";
 
 interface StatusStreamData {
@@ -11,6 +12,7 @@ interface StatusStreamData {
   schedulerInfo: SchedulerInfo | null;
   recentLogs: LogLine[];
   instances: AgentInstance[];
+  invalidated: InvalidationSignal[];
 }
 
 export function useStatusStream() {
@@ -19,6 +21,7 @@ export function useStatusStream() {
     schedulerInfo: null,
     recentLogs: [],
     instances: [],
+    invalidated: [],
   });
   const [connected, setConnected] = useState(false);
   const esRef = useRef<EventSource | null>(null);
@@ -38,6 +41,7 @@ export function useStatusStream() {
           schedulerInfo: parsed.schedulerInfo ?? prev.schedulerInfo,
           recentLogs: parsed.recentLogs ?? prev.recentLogs,
           instances: parsed.instances ?? prev.instances,
+          invalidated: parsed.invalidated ?? [],
         }));
       } catch {
         // Ignore parse errors

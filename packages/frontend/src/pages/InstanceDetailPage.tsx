@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
+import { useInvalidation } from "../hooks/useInvalidation";
 import { ResultBadge, TriggerTypeBadge } from "../components/Badge";
 import {
   getInstanceDetail,
@@ -58,12 +59,18 @@ export function InstanceDetailPage() {
   const isRunning = detail?.runningInstance != null;
 
   // Load detail
-  useEffect(() => {
+  const refetchDetail = useCallback(() => {
     if (!name || !id) return;
     getInstanceDetail(name, id)
       .then(setDetail)
       .catch(() => {});
   }, [name, id]);
+
+  useEffect(() => {
+    refetchDetail();
+  }, [refetchDetail]);
+
+  useInvalidation("instance", name, refetchDetail);
 
   // Poll logs
   useEffect(() => {

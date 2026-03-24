@@ -21,6 +21,7 @@ function mockStatusTracker() {
     }),
     getRecentLogs: () => [],
     getInstances: () => [],
+    flushInvalidations: () => [],
     on: vi.fn(),
     removeListener: vi.fn(),
   } as any;
@@ -32,6 +33,14 @@ describe("dashboard data routes", () => {
     registerDashboardDataRoutes(app, mockStatusTracker());
     return app;
   }
+
+  it("SSE status-stream includes proxy-compatibility headers", async () => {
+    const app = createApp();
+    const res = await app.request("/dashboard/api/status-stream");
+    expect(res.headers.get("Cache-Control")).toBe("no-cache, no-transform");
+    expect(res.headers.get("X-Accel-Buffering")).toBe("no");
+    expect(res.headers.get("Connection")).toBe("keep-alive");
+  });
 
   it("serves /dashboard/api/locks", async () => {
     const app = createApp();
