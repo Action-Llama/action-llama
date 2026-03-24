@@ -133,6 +133,11 @@ jobs:
             npm run build
           fi
 
+      - name: Configure Git for tests
+        run: |
+          git config --global user.email "test@action-llama.com"
+          git config --global user.name "Test User"
+
       - name: Run tests with verbose output
         run: |
           echo "Starting test suite..."
@@ -197,6 +202,11 @@ jobs:
 
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
+
+      - name: Configure Git for tests
+        run: |
+          git config --global user.email "test@action-llama.com"
+          git config --global user.name "Test User"
 
       - name: Cache Docker layers
         uses: actions/cache@v4
