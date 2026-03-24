@@ -32,6 +32,22 @@ export function generateNginxConfig(hostname: string, gatewayPort: number, front
         add_header Cache-Control "public, immutable";
     }
 
+    # SSE status stream — buffering must be disabled for real-time events
+    location /dashboard/api/status-stream {
+        proxy_pass http://127.0.0.1:${gatewayPort};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection '';
+        proxy_buffering off;
+        proxy_cache off;
+        chunked_transfer_encoding off;
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+    }
+
     # Dashboard API routes — must be proxied before the SPA catch-all
     location /dashboard/api/ {
 ${proxyBlock}

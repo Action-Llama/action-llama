@@ -186,13 +186,22 @@ A simple agent for testing dashboard deployment.
     expect(nginxConfig).toContain("try_files /index.html =404");
 
     // Verify /dashboard/api/ is proxied to gateway (not caught by SPA catch-all)
-    expect(nginxConfig).toContain("location /dashboard/api/");
+    expect(nginxConfig).toContain("location /dashboard/api/ {");
 
-    // Verify /dashboard/api/ proxy appears before /dashboard SPA catch-all
-    const dashApiIndex = nginxConfig.indexOf("location /dashboard/api/");
+    // Verify SSE status-stream has buffering disabled (critical for real-time dashboard)
+    expect(nginxConfig).toContain("location /dashboard/api/status-stream");
+    expect(nginxConfig).toContain("proxy_buffering off");
+    expect(nginxConfig).toContain("proxy_cache off");
+    expect(nginxConfig).toContain("proxy_read_timeout 86400s");
+
+    // Verify ordering: SSE > /dashboard/api/ > /dashboard SPA catch-all
+    const sseIndex = nginxConfig.indexOf("location /dashboard/api/status-stream");
+    const dashApiIndex = nginxConfig.indexOf("location /dashboard/api/ {");
     const dashSpaIndex = nginxConfig.indexOf("location /dashboard {");
+    expect(sseIndex).toBeGreaterThan(-1);
     expect(dashApiIndex).toBeGreaterThan(-1);
     expect(dashSpaIndex).toBeGreaterThan(-1);
+    expect(sseIndex).toBeLessThan(dashApiIndex);
     expect(dashApiIndex).toBeLessThan(dashSpaIndex);
 
     // Verify hostname and TLS

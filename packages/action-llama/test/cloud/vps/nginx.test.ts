@@ -83,6 +83,20 @@ describe("generateNginxConfig", () => {
       expect(dashApiIndex).toBeLessThan(dashIndex);
     });
 
+    it("SSE status-stream has buffering disabled for real-time events", () => {
+      const config = generateNginxConfig("agents.example.com", 3000, "/opt/al/frontend");
+
+      expect(config).toContain("location /dashboard/api/status-stream");
+      expect(config).toContain("proxy_buffering off");
+      expect(config).toContain("proxy_cache off");
+      expect(config).toContain("proxy_read_timeout 86400s");
+
+      // SSE location must appear before the general /dashboard/api/ block
+      const sseIndex = config.indexOf("location /dashboard/api/status-stream");
+      const dashApiIndex = config.indexOf("location /dashboard/api/ {");
+      expect(sseIndex).toBeLessThan(dashApiIndex);
+    });
+
     it("still proxies API routes to the gateway", () => {
       const config = generateNginxConfig("agents.example.com", 3000, "/opt/al/frontend");
 
