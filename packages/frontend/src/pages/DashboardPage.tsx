@@ -13,6 +13,7 @@ import {
 import type { AgentStatus, TriggerHistoryRow } from "../lib/api";
 import { RunModal } from "../components/RunModal";
 import { fmtTokens, fmtSessionTime, fmtRelativeTime } from "../lib/format";
+import { agentHueStyle } from "../lib/color";
 
 function formatScale(agent: AgentStatus): string {
   if (agent.state === "running" && agent.scale > 1) {
@@ -170,22 +171,14 @@ export function DashboardPage() {
           <div className="flex h-3 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-800">
             {agents
               .filter((a) => (a.cumulativeUsage?.totalTokens ?? 0) > 0)
-              .map((a, i) => {
+              .map((a) => {
                 const pct =
                   ((a.cumulativeUsage?.totalTokens ?? 0) / totalTokens) * 100;
-                const colors = [
-                  "bg-blue-500",
-                  "bg-green-500",
-                  "bg-purple-500",
-                  "bg-amber-500",
-                  "bg-pink-500",
-                  "bg-cyan-500",
-                ];
                 return (
                   <div
                     key={a.name}
-                    className={`${colors[i % colors.length]} transition-all`}
-                    style={{ width: `${pct}%` }}
+                    className="agent-color-bg transition-all"
+                    style={{ width: `${pct}%`, ...agentHueStyle(a.name) }}
                     title={`${a.name}: ${fmtTokens(a.cumulativeUsage?.totalTokens ?? 0)}`}
                   />
                 );
@@ -194,28 +187,22 @@ export function DashboardPage() {
           <div className="flex flex-wrap gap-3 mt-2">
             {agents
               .filter((a) => (a.cumulativeUsage?.totalTokens ?? 0) > 0)
-              .map((a, i) => {
-                const colors = [
-                  "bg-blue-500",
-                  "bg-green-500",
-                  "bg-purple-500",
-                  "bg-amber-500",
-                  "bg-pink-500",
-                  "bg-cyan-500",
-                ];
-                return (
+              .map((a) => (
                   <span
                     key={a.name}
                     className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400"
                   >
                     <span
-                      className={`w-2 h-2 rounded-full ${colors[i % colors.length]}`}
+                      className="w-2 h-2 rounded-full agent-color-dot"
+                      style={agentHueStyle(a.name)}
                     />
-                    {a.name}:{" "}
+                    <span className="agent-color-text" style={agentHueStyle(a.name)}>
+                      {a.name}
+                    </span>
+                    :{" "}
                     {fmtTokens(a.cumulativeUsage?.totalTokens ?? 0)}
                   </span>
-                );
-              })}
+                ))}
           </div>
         </div>
       )}
@@ -386,10 +373,16 @@ export function DashboardPage() {
                   <td className="px-4 py-2.5 min-w-0 max-w-[240px]">
                     <Link
                       to={`/dashboard/agents/${encodeURIComponent(agent.name)}`}
-                      className="font-medium text-blue-600 dark:text-blue-400 hover:underline truncate block"
+                      className="font-medium hover:underline truncate flex items-center gap-1.5"
                       title={agent.name}
                     >
-                      {agent.name}
+                      <span
+                        className="w-2 h-2 rounded-full shrink-0 agent-color-dot"
+                        style={agentHueStyle(agent.name)}
+                      />
+                      <span className="agent-color-text truncate" style={agentHueStyle(agent.name)}>
+                        {agent.name}
+                      </span>
                     </Link>
                     {/* Description under name on small screens */}
                     {agent.description && (

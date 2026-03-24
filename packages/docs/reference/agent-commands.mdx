@@ -1,9 +1,36 @@
 ---
 title: "Agent Commands"
-description: "Shell commands available inside agent containers — signals, calls, and locks"
+description: "Shell commands available inside agent containers — environment, signals, calls, and locks"
 ---
 
-Agents running in Docker containers have access to shell commands for signaling the scheduler, calling other agents, and coordinating with resource locks. These commands are installed at `/tmp/bin/` and taught to agents via a preamble injected before `SKILL.md`.
+Agents running in Docker containers have access to shell commands for persisting environment variables, signaling the scheduler, calling other agents, and coordinating with resource locks. These commands are installed at `/tmp/bin/` and taught to agents via a preamble injected before `SKILL.md`.
+
+## Environment Commands
+
+### `setenv`
+
+Persist an environment variable across bash commands. Each bash command the agent runs starts in a fresh shell, so variables set with `export` are lost between commands. `setenv` makes them stick.
+
+```bash
+setenv <NAME> <value>
+```
+
+**First bash command — set variables:**
+
+```bash
+setenv REPO "acme/app"
+setenv ISSUE_NUMBER 42
+```
+
+**Later bash command — variables are still available:**
+
+```bash
+gh issue view $ISSUE_NUMBER --repo $REPO
+```
+
+### How it works
+
+`setenv` writes each variable to `/tmp/env.sh`, which is automatically sourced at the start of every bash command. The variable is also exported immediately in the current shell, so it's available right away in the same command.
 
 ## Signal Commands
 

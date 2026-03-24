@@ -1,5 +1,28 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+.agent-color-bg {
+  background: hsl(var(--agent-hue) 70% 80%);
+}
+.agent-color-bg:where(.dark, .dark *) {
+  background: hsl(var(--agent-hue) 50% 35%);
+}
+
+.agent-color-dot {
+  background: hsl(var(--agent-hue) 60% 45%);
+}
+.agent-color-dot:where(.dark, .dark *) {
+  background: hsl(var(--agent-hue) 60% 65%);
+}
+
+.agent-color-text {
+  color: hsl(var(--agent-hue) 60% 40%);
+}
+.agent-color-text:where(.dark, .dark *) {
+  color: hsl(var(--agent-hue) 60% 70%);
+}
+
 .state-dot {
   display: inline-block;
   width: 8px;

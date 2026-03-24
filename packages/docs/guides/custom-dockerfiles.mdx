@@ -1,11 +1,31 @@
 ---
-title: "Agent Dockerfile"
-description: "Custom Docker images for individual agents"
+title: "Custom Dockerfiles"
+description: "Add tools and packages to your agent Docker images"
 ---
 
-Agents that need extra tools beyond the project base image can add a `Dockerfile` to their own directory.
+Action Llama agents run in Docker containers built from a layered image system. By default, agents use a minimal Alpine-based image with Node.js, git, and curl. You can customize images at two levels: project-wide (shared by all agents) or per-agent.
 
-## Location
+## Project-wide customizations
+
+The root `Dockerfile` in your project defines the shared base image for all agents. To add packages that every agent needs, add `RUN`, `ENV`, or other instructions:
+
+```dockerfile
+FROM al-agent:latest
+
+# Install tools shared by all agents
+RUN apk add --no-cache python3 py3-pip github-cli
+
+# Set shared environment variables
+ENV MY_ORG=acme
+```
+
+When the project Dockerfile has customizations beyond the bare `FROM`, the build pipeline creates an intermediate image (`al-project-base:latest`) that all per-agent images layer on top of.
+
+If multiple agents need the same tool, put it here instead of duplicating it across agent Dockerfiles.
+
+## Per-agent customizations
+
+Agents that need extra tools beyond the project base can add a `Dockerfile` to their own directory:
 
 ```
 my-project/
@@ -17,10 +37,6 @@ my-project/
     SKILL.md
                           <-- no Dockerfile, uses project base
 ```
-
-Agents without a Dockerfile use the project base image (or `al-agent:latest` if the project Dockerfile is unmodified).
-
-## Extending the Base Image
 
 Use `FROM al-agent:latest` and add what you need. The build pipeline automatically rewrites the `FROM` line to point at the correct base (`al-project-base:latest` if the project Dockerfile has customizations). Switch to `root` to install packages, then back to `node`:
 
@@ -34,7 +50,7 @@ USER node
 
 This is a thin layer on top of the base — fast to build and shares most of the image.
 
-## Common Additions
+## Common additions
 
 ```dockerfile
 # GitHub CLI (for gh issue list, gh pr create, etc.)
@@ -47,7 +63,7 @@ RUN apk add --no-cache python3 py3-pip
 # RUN apk add --no-cache jq
 ```
 
-## Writing a Standalone Dockerfile
+## Writing a standalone Dockerfile
 
 If you need full control, you can write a Dockerfile from scratch. It must:
 
@@ -74,30 +90,7 @@ ENTRYPOINT ["node", "/app/dist/agents/container-entry.js"]
 
 The key requirement is that `/app/dist/agents/container-entry.js` exists and can run. The entry point reads `AGENT_CONFIG`, `PROMPT`, `GATEWAY_URL`, and `SHUTDOWN_SECRET` from environment variables, and credentials from `/credentials/`.
 
-## Build Behavior
+## Next steps
 
-- Agent images are named `al-<agent-name>:latest` (e.g. `al-dev:latest`) and are rebuilt on every `al start` to pick up Dockerfile changes
-- The build context is the Action Llama package root (not the project directory), so `COPY` paths in per-agent Dockerfiles reference the package's `dist/`, `package.json`, etc.
-- The `FROM` line is automatically rewritten to point at the correct base image
-
-## Image Build Order
-
-```
-al-agent:latest            <-- Action Llama package (automatic)
-    |
-    v
-al-project-base:latest     <-- project Dockerfile (if customized)
-    |
-    v
-al-<agent>:latest          <-- per-agent Dockerfile (if present)
-```
-
-See [Project Dockerfile](/reference/project-dockerfile) for the project-level Dockerfile reference.
-
-## Troubleshooting
-
-**Agent image build fails** — Check that your agent's `Dockerfile` starts with `FROM al-agent:latest` (the build pipeline rewrites this to the correct base) and that any package install commands are correct.
-
-**Image build fails** — Check that your `Dockerfile` uses `apk add` (Alpine) or `apt-get` (Debian) depending on the base. The default base is Alpine.
-
-**Container exits immediately** — Check `al logs <agent>` for the error. Common causes: missing credentials, missing `SKILL.md`, invalid model config.
+- [Dockerfiles reference](/reference/dockerfiles) — build behavior, image contents, filesystem layout, and configuration
+- [Scaling Agents](/guides/scaling-agents) — run multiple instances of an agent

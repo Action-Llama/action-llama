@@ -1,11 +1,13 @@
 ---
-title: "Project Dockerfile"
-description: "Customize the shared base Docker image for all agents in a project"
+title: "Dockerfiles"
+description: "Docker image structure, build behavior, and container configuration"
 ---
 
-Every project has a `Dockerfile` at the root (created by `al new`) that defines the shared base image for all agents. This is the project Dockerfile.
+Agents run in Docker containers built from a layered image system. See [Custom Dockerfiles](/guides/custom-dockerfiles) for a guide on writing and customizing Dockerfiles.
 
-## Location
+## Project Dockerfile
+
+Every project has a `Dockerfile` at the root (created by `al new`) that defines the shared base image for all agents.
 
 ```
 my-project/
@@ -17,27 +19,24 @@ my-project/
     SKILL.md
 ```
 
-## Default Behavior
-
 By default, the project Dockerfile is a bare `FROM al-agent:latest` with no customizations. In this state, it is skipped entirely — agents build directly on `al-agent:latest` with no overhead.
 
-## Customizing
+## Agent Dockerfile
 
-To add packages shared by all agents, add `RUN`, `ENV`, or other instructions:
+Agents that need extra tools beyond the project base image can add a `Dockerfile` to their own directory.
 
-```dockerfile
-FROM al-agent:latest
-
-# Install tools shared by all agents
-RUN apk add --no-cache python3 py3-pip github-cli
-
-# Set shared environment variables
-ENV MY_ORG=acme
+```
+my-project/
+  Dockerfile              <-- project base (shared tools)
+  dev/
+    SKILL.md
+    Dockerfile            <-- custom image for this agent only
+  reviewer/
+    SKILL.md
+                          <-- no Dockerfile, uses project base
 ```
 
-When the project Dockerfile has customizations beyond the bare `FROM`, the build pipeline creates an intermediate image (`al-project-base:latest`) that all per-agent images layer on top of.
-
-**Tip:** If multiple agents need the same tool, put it here instead of duplicating it across agent Dockerfiles.
+Agents without a Dockerfile use the project base image (or `al-agent:latest` if the project Dockerfile is unmodified).
 
 ## Image Build Order
 
@@ -71,20 +70,9 @@ The base image also copies the compiled Action Llama application (`dist/`) and i
 
 - The base image (`al-agent:latest`) is only built if it doesn't exist yet
 - The project base image (`al-project-base:latest`) is rebuilt on every `al start` if the project Dockerfile has customizations
+- Agent images are named `al-<agent-name>:latest` (e.g. `al-dev:latest`) and are rebuilt on every `al start` to pick up Dockerfile changes
 - The build context is the Action Llama package root (not the project directory), so `COPY` paths reference the package's `dist/`, `package.json`, etc.
-
-## Common Additions
-
-```dockerfile
-# GitHub CLI (for gh issue list, gh pr create, etc.)
-RUN apk add --no-cache github-cli
-
-# Python (for agents that run Python scripts)
-RUN apk add --no-cache python3 py3-pip
-
-# jq (for JSON processing in bash) — already in the base image
-# RUN apk add --no-cache jq
-```
+- The `FROM` line in agent Dockerfiles is automatically rewritten to point at the correct base image
 
 ## Container Filesystem Layout
 
@@ -120,6 +108,10 @@ sudo systemctl start docker
 **Base image build fails** — Run `docker build -t al-agent:latest -f docker/Dockerfile .` from the Action Llama package directory to see the full build output.
 
 **Project base image build fails** — Check that the project `Dockerfile` starts with `FROM al-agent:latest` and that any `apk add` packages are spelled correctly. The base image uses Alpine Linux.
+
+**Agent image build fails** — Check that your agent's `Dockerfile` starts with `FROM al-agent:latest` (the build pipeline rewrites this to the correct base) and that any package install commands are correct.
+
+**Image build fails** — Check that your `Dockerfile` uses `apk add` (Alpine) or `apt-get` (Debian) depending on the base. The default base is Alpine.
 
 **Container out of memory** — Increase the memory limit in `config.toml`:
 

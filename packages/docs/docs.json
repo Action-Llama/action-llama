@@ -31,7 +31,8 @@
               "guides/dynamic-context",
               "guides/shared-context",
               "guides/scaling-agents",
-              "guides/subagents"
+              "guides/subagents",
+              "guides/custom-dockerfiles"
             ]
           },
           {
@@ -56,8 +57,7 @@
               "reference/cli-commands",
               "reference/project-config",
               "reference/agent-config",
-              "reference/project-dockerfile",
-              "reference/agent-dockerfile",
+              "reference/dockerfiles",
               "reference/agent-commands",
               "reference/credentials",
               "reference/models",
