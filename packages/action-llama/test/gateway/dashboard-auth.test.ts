@@ -1,5 +1,16 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
+import { mkdtempSync, writeFileSync, mkdirSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { startGateway } from "../../src/gateway/index.js";
+
+/** Create a minimal frontend dist fixture for tests that need SPA serving. */
+function createMockFrontendDist(): string {
+  const dir = mkdtempSync(join(tmpdir(), "mock-frontend-"));
+  writeFileSync(join(dir, "index.html"), '<!DOCTYPE html><html><body><div id="root"></div></body></html>');
+  mkdirSync(join(dir, "assets"), { recursive: true });
+  return dir;
+}
 
 function mockStatusTracker() {
   return {
@@ -72,12 +83,14 @@ describe("dashboard auth via startGateway", () => {
     };
 
     beforeAll(async () => {
+      const mockFrontendDist = createMockFrontendDist();
       gateway = await startGateway({
         port: 0,
         logger,
         apiKey: TEST_API_KEY,
         webUI: true,
         statusTracker: mockStatusTracker(),
+        frontendDistPath: mockFrontendDist,
       });
     });
 

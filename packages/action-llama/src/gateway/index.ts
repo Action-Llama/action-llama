@@ -91,6 +91,8 @@ export interface GatewayOptions {
   apiKey?: string;
   stateStore?: StateStore;
   skipStatusEndpoint?: boolean;
+  /** Optional path to the pre-built frontend dist directory (overrides resolveFrontendDist; useful for testing). */
+  frontendDistPath?: string;
   /** Optional event bus for lifecycle instrumentation. */
   events?: SchedulerEventBus;
   /** Optional stats store for dashboard aggregate stats. */
@@ -229,7 +231,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
       registerDashboardApiRoutes(app, statusTracker, projectPath, opts.statsStore);
 
       // Serve the React SPA frontend
-      const frontendDist = resolveFrontendDist();
+      const frontendDist = opts.frontendDistPath ?? resolveFrontendDist();
       if (frontendDist) {
         logger.info({ path: frontendDist }, "Serving frontend from @action-llama/frontend");
         const indexHtml = readFileSync(resolve(frontendDist, "index.html"), "utf-8");
@@ -284,7 +286,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     );
 
     // SPA fallback for /chat/* routes
-    const frontendDist2 = resolveFrontendDist();
+    const frontendDist2 = opts.frontendDistPath ?? resolveFrontendDist();
     if (frontendDist2) {
       const indexHtml2 = readFileSync(resolve(frontendDist2, "index.html"), "utf-8");
       app.get("/chat", (c) => c.html(indexHtml2));
