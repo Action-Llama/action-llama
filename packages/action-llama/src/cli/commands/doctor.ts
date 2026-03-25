@@ -190,7 +190,7 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
     );
   }
 
-  // Check webhook security configurations (skip when --no-creds / skipCredentials)
+  // Check webhook security configurations (skip when --skip-creds / skipCredentials)
   if (!opts.skipCredentials) {
     const securityErrors: string[] = [];
     for (const [sourceName, sourceConfig] of Object.entries(webhookSources)) {
@@ -264,7 +264,7 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
   }
 
   if (opts.skipCredentials) {
-    if (!opts.silent) console.log("Skipping credential checks (--no-creds).");
+    if (!opts.silent) console.log("Skipping credential checks (--skip-creds).");
   } else {
     // Collect all credential refs from agents (including webhook secrets)
     const credentialRefs = collectCredentialRefs(projectPath, globalConfig);

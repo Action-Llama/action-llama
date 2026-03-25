@@ -213,7 +213,7 @@ A simple agent for testing dashboard deployment.
     expect(nginxTest).toContain("syntax is ok");
   });
 
-  it("configures nginx even with --no-creds", async () => {
+  it("configures nginx even with --skip-creds", async () => {
     const context = getTestContext();
     const localContainer = await setupLocalActionLlama(context);
     const vpsContainer = await setupVPS(context);
@@ -221,7 +221,7 @@ A simple agent for testing dashboard deployment.
     const agentSkill = `
 # No-Creds Test Agent
 
-Agent for testing that nginx is configured even when --no-creds is used.
+Agent for testing that nginx is configured even when --skip-creds is used.
     `;
 
     await createTestAgent(context, localContainer, "nocreds-agent", agentSkill);
@@ -232,9 +232,9 @@ Agent for testing that nginx is configured even when --no-creds is used.
     // Modify the nginx config on the VPS to simulate stale config (no SPA blocks)
     await context.executeSSHCommand(vpsContainer, "echo 'stale config' > /etc/nginx/sites-available/action-llama");
 
-    // Re-deploy with --no-creds — nginx should still be reconfigured
+    // Re-deploy with --skip-creds — nginx should still be reconfigured
     await context.executeInContainer(localContainer, [
-      "bash", "-c", `cd /home/testuser/test-project && al push --env test-nocreds --headless --no-creds 2>&1 || echo "AL_PUSH_FAILED_EXIT_$?"`
+      "bash", "-c", `cd /home/testuser/test-project && al push --env test-nocreds --headless --skip-creds 2>&1 || echo "AL_PUSH_FAILED_EXIT_$?"`
     ]);
 
     // Verify nginx config was updated (not still "stale config")
