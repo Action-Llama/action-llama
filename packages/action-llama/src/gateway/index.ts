@@ -301,7 +301,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
   // Stats API routes — only register if auth is configured for security
   if (opts.apiKey) {
     const { registerStatsRoutes } = await import("../control/routes/stats.js");
-    registerStatsRoutes(app, opts.statsStore);
+    registerStatsRoutes(app, opts.statsStore, opts.statusTracker);
   }
 
   // Control routes (for kill, pause, resume commands)
