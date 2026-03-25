@@ -221,10 +221,11 @@ export function getTriggerHistory(
   limit: number,
   offset: number,
   includeDeadLetters: boolean,
+  agent?: string,
 ): Promise<{ triggers: TriggerHistoryRow[]; total: number }> {
-  return fetchJSON(
-    `/api/stats/triggers?limit=${limit}&offset=${offset}&all=${includeDeadLetters ? "1" : "0"}`,
-  );
+  let url = `/api/stats/triggers?limit=${limit}&offset=${offset}&all=${includeDeadLetters ? "1" : "0"}`;
+  if (agent) url += `&agent=${encodeURIComponent(agent)}`;
+  return fetchJSON(url);
 }
 
 export function getInstanceDetail(

@@ -1,26 +1,29 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useInvalidation } from "../hooks/useInvalidation";
 import { useStatusStream } from "../hooks/StatusStreamContext";
 import { TriggerTypeBadge, ResultBadge } from "../components/Badge";
 import { getTriggerHistory } from "../lib/api";
 import type { TriggerHistoryRow } from "../lib/api";
 import { fmtDateTime, shortId } from "../lib/format";
+import { agentHueStyle } from "../lib/color";
 
 const PAGE_SIZE = 50;
 
 export function TriggerHistoryPage() {
+  const { name: agentFilter } = useParams<{ name?: string }>();
   const [triggers, setTriggers] = useState<TriggerHistoryRow[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [showDeadLetters, setShowDeadLetters] = useState(false);
   const [loading, setLoading] = useState(true);
-  const { instances } = useStatusStream();
+  const { agents, instances } = useStatusStream();
+  const agentNames = agents.map((a) => a.name);
 
   const load = useCallback(
     (newOffset: number, deadLetters: boolean) => {
       setLoading(true);
-      getTriggerHistory(PAGE_SIZE, newOffset, deadLetters)
+      getTriggerHistory(PAGE_SIZE, newOffset, deadLetters, agentFilter)
         .then((data) => {
           setTriggers(data.triggers);
           setTotal(data.total);
@@ -29,7 +32,7 @@ export function TriggerHistoryPage() {
         .catch(() => {})
         .finally(() => setLoading(false));
     },
-    [],
+    [agentFilter],
   );
 
   useEffect(() => {
@@ -46,7 +49,7 @@ export function TriggerHistoryPage() {
     // Only include running instances on the first page
     if (offset > 0) return triggers;
     const running: TriggerHistoryRow[] = instances
-      .filter((inst) => inst.status === "running")
+      .filter((inst) => inst.status === "running" && (!agentFilter || inst.agentName === agentFilter))
       .map((inst) => {
         const sep = inst.trigger.indexOf(":");
         return {
@@ -61,9 +64,9 @@ export function TriggerHistoryPage() {
     const apiIds = new Set(triggers.map((t) => t.instanceId));
     const unique = running.filter((r) => !apiIds.has(r.instanceId));
     return [...unique, ...triggers].sort((a, b) => b.ts - a.ts);
-  }, [instances, triggers, offset]);
+  }, [instances, triggers, offset, agentFilter]);
 
-  const runningCount = instances.filter((i) => i.status === "running").length;
+  const runningCount = instances.filter((i) => i.status === "running" && (!agentFilter || i.agentName === agentFilter)).length;
   const adjustedTotal = total + runningCount;
 
   const page = Math.floor(offset / PAGE_SIZE) + 1;
@@ -75,7 +78,7 @@ export function TriggerHistoryPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <Link
-            to="/dashboard"
+            to={agentFilter ? `/dashboard/agents/${encodeURIComponent(agentFilter)}` : "/dashboard"}
             className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
           >
             <svg
@@ -92,19 +95,36 @@ export function TriggerHistoryPage() {
               />
             </svg>
           </Link>
-          <h1 className="text-xl font-bold text-slate-900 dark:text-white">
-            Trigger History
-          </h1>
+          {agentFilter ? (
+            <div className="flex items-center gap-2">
+              <span
+                className="w-3 h-3 rounded-full shrink-0 agent-color-dot"
+                style={agentHueStyle(agentFilter, agentNames)}
+              />
+              <h1 className="text-xl font-bold text-slate-900 dark:text-white">
+                {agentFilter}
+              </h1>
+              <span className="text-xl text-slate-400 dark:text-slate-500 font-light">
+                Trigger History
+              </span>
+            </div>
+          ) : (
+            <h1 className="text-xl font-bold text-slate-900 dark:text-white">
+              Trigger History
+            </h1>
+          )}
         </div>
-        <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={showDeadLetters}
-            onChange={(e) => setShowDeadLetters(e.target.checked)}
-            className="rounded border-slate-300 dark:border-slate-700"
-          />
-          Show dead letters
-        </label>
+        {!agentFilter && (
+          <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showDeadLetters}
+              onChange={(e) => setShowDeadLetters(e.target.checked)}
+              className="rounded border-slate-300 dark:border-slate-700"
+            />
+            Show dead letters
+          </label>
+        )}
       </div>
 
       {/* Table */}
@@ -152,9 +172,15 @@ export function TriggerHistoryPage() {
                     {t.agentName ? (
                       <Link
                         to={`/dashboard/agents/${encodeURIComponent(t.agentName)}`}
-                        className="text-blue-600 dark:text-blue-400 hover:underline text-xs"
+                        className="hover:underline text-xs flex items-center gap-1.5"
                       >
-                        {t.agentName}
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0 agent-color-dot"
+                          style={agentHueStyle(t.agentName, agentNames)}
+                        />
+                        <span className="agent-color-text" style={agentHueStyle(t.agentName, agentNames)}>
+                          {t.agentName}
+                        </span>
                       </Link>
                     ) : (
                       <span className="text-slate-400 text-xs">{"\u2014"}</span>

@@ -23,6 +23,10 @@ export function App() {
           element={<InstanceDetailPage />}
         />
         <Route
+          path="/dashboard/agents/:name/triggers"
+          element={<TriggerHistoryPage />}
+        />
+        <Route
           path="/dashboard/agents/:name/skill"
           element={<AgentSkillPage />}
         />

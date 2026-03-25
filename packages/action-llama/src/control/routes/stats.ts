@@ -19,26 +19,27 @@ export function registerStatsRoutes(app: Hono, statsStore?: StatsStore, statusTr
     return c.json({ runs, total, page, limit });
   });
 
-  // Paginated trigger history
+  // Paginated trigger history (optional ?agent=<name> filter)
   app.get("/api/stats/triggers", (c) => {
     const limit = Math.min(100, Math.max(1, parseInt(c.req.query("limit") || "50", 10) || 50));
     const offset = Math.max(0, parseInt(c.req.query("offset") || "0", 10) || 0);
     const includeDeadLetters = c.req.query("all") === "1";
     const since = parseInt(c.req.query("since") || "0", 10) || 0;
+    const agentFilter = c.req.query("agent") || undefined;
 
     if (!statsStore) {
       return c.json({ triggers: [], total: 0, limit, offset });
     }
 
-    const triggers = statsStore.queryTriggerHistory({ since, limit, offset, includeDeadLetters });
-    const total = statsStore.countTriggerHistory(since, includeDeadLetters);
+    const triggers = statsStore.queryTriggerHistory({ since, limit, offset, includeDeadLetters, agentName: agentFilter });
+    const total = statsStore.countTriggerHistory(since, includeDeadLetters, agentFilter);
 
     // Merge running instances into trigger list (only on first page)
     let mergedTriggers = triggers;
     let mergedTotal = total;
     if (statusTracker && offset === 0) {
       const running = statusTracker.getInstances()
-        .filter((inst) => inst.status === "running")
+        .filter((inst) => inst.status === "running" && (!agentFilter || inst.agentName === agentFilter))
         .map((inst) => {
           const sep = inst.trigger.indexOf(":");
           return {

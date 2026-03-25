@@ -286,6 +286,16 @@ export class StatsStore {
       countTriggerHistoryNoDeadLetters: this.db.prepare(
         "SELECT COUNT(*) AS count FROM runs WHERE started_at > @since"
       ),
+      queryTriggerHistoryByAgent: this.db.prepare(`
+        SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
+               trigger_type AS triggerType, trigger_source AS triggerSource,
+               result, webhook_receipt_id AS webhookReceiptId
+        FROM runs WHERE started_at > @since AND agent_name = @agentName
+        ORDER BY ts DESC LIMIT @limit OFFSET @offset
+      `),
+      countTriggerHistoryByAgent: this.db.prepare(
+        "SELECT COUNT(*) AS count FROM runs WHERE started_at > @since AND agent_name = @agentName"
+      ),
       pruneRuns: this.db.prepare("DELETE FROM runs WHERE started_at < @threshold"),
       pruneCallEdges: this.db.prepare("DELETE FROM call_edges WHERE started_at < @threshold"),
       queryCallEdgeByTarget: this.db.prepare(
@@ -436,12 +446,19 @@ export class StatsStore {
     return row ? this.mapReceipt(row) : undefined;
   }
 
-  queryTriggerHistory(opts: { since: number; limit: number; offset: number; includeDeadLetters: boolean }): TriggerHistoryRow[] {
+  queryTriggerHistory(opts: { since: number; limit: number; offset: number; includeDeadLetters: boolean; agentName?: string }): TriggerHistoryRow[] {
+    if (opts.agentName) {
+      return this.stmts.queryTriggerHistoryByAgent.all({ since: opts.since, limit: opts.limit, offset: opts.offset, agentName: opts.agentName }) as TriggerHistoryRow[];
+    }
     const stmt = opts.includeDeadLetters ? this.stmts.queryTriggerHistory : this.stmts.queryTriggerHistoryNoDeadLetters;
     return stmt.all({ since: opts.since, limit: opts.limit, offset: opts.offset }) as TriggerHistoryRow[];
   }
 
-  countTriggerHistory(since: number, includeDeadLetters: boolean): number {
+  countTriggerHistory(since: number, includeDeadLetters: boolean, agentName?: string): number {
+    if (agentName) {
+      const row = this.stmts.countTriggerHistoryByAgent.get({ since, agentName }) as any;
+      return row?.count ?? 0;
+    }
     const stmt = includeDeadLetters ? this.stmts.countTriggerHistory : this.stmts.countTriggerHistoryNoDeadLetters;
     const row = stmt.get({ since }) as any;
     return row?.count ?? 0;

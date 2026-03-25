@@ -313,10 +313,16 @@ export function DashboardPage() {
                     {t.agentName ? (
                       <Link
                         to={`/dashboard/agents/${encodeURIComponent(t.agentName)}`}
-                        className="text-blue-600 dark:text-blue-400 hover:underline truncate block"
+                        className="hover:underline truncate flex items-center gap-1.5"
                         title={t.agentName}
                       >
-                        {t.agentName}
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0 agent-color-dot"
+                          style={agentHueStyle(t.agentName, agentNames)}
+                        />
+                        <span className="agent-color-text truncate" style={agentHueStyle(t.agentName, agentNames)}>
+                          {t.agentName}
+                        </span>
                       </Link>
                     ) : (
                       "\u2014"

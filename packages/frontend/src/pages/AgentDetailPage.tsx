@@ -6,8 +6,8 @@ import { StatCard } from "../components/StatCard";
 import { StateBadge, TriggerTypeBadge, ResultBadge } from "../components/Badge";
 import {
   getAgentDetail,
-  getAgentRuns,
   getAgentLogs,
+  getTriggerHistory,
   triggerAgent,
   killAgentInstances,
   killInstance,
@@ -17,12 +17,12 @@ import {
 } from "../lib/api";
 import type {
   AgentDetailData,
-  RunRecord,
+  TriggerHistoryRow,
   LogEntry,
   AgentInstance,
 } from "../lib/api";
 import { RunModal } from "../components/RunModal";
-import { fmtDur, fmtCost, fmtTokens, fmtDateTime, shortId } from "../lib/format";
+import { fmtDur, fmtCost, fmtTokens, fmtRelativeTime, shortId } from "../lib/format";
 import { agentHueStyle } from "../lib/color";
 
 function formatLogEntry(entry: LogEntry): {
@@ -63,16 +63,16 @@ export function AgentDetailPage() {
   const { agents, instances } = useStatusStream();
   const agentNames = agents.map((a) => a.name);
   const [detail, setDetail] = useState<AgentDetailData | null>(null);
-  const [runs, setRuns] = useState<RunRecord[]>([]);
-  const [runsTotal, setRunsTotal] = useState(0);
-  const [runsPage, setRunsPage] = useState(1);
+  const [triggers, setTriggers] = useState<TriggerHistoryRow[]>([]);
+  const [triggersTotal, setTriggersTotal] = useState(0);
+  const [triggersOffset, setTriggersOffset] = useState(0);
+  const triggersLimit = 5;
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [scaleInput, setScaleInput] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [showRunModal, setShowRunModal] = useState(false);
   const cursorRef = useRef<string | null>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
-  const runsLimit = 20;
 
   const agent = agents.find((a) => a.name === name) ?? detail?.agent ?? null;
   const liveInstances = instances.filter((inst) => inst.agentName === name && inst.status === "running");
@@ -96,23 +96,23 @@ export function AgentDetailPage() {
     refetchDetail();
   }, [refetchDetail]);
 
-  // Load runs
-  const refetchRuns = useCallback(() => {
+  // Load triggers
+  const refetchTriggers = useCallback(() => {
     if (!name) return;
-    getAgentRuns(name, runsPage, runsLimit)
+    getTriggerHistory(triggersLimit, triggersOffset, false, name)
       .then((d) => {
-        setRuns(d.runs);
-        setRunsTotal(d.total);
+        setTriggers(d.triggers);
+        setTriggersTotal(d.total);
       })
       .catch(() => {});
-  }, [name, runsPage]);
+  }, [name, triggersOffset]);
 
   useEffect(() => {
-    refetchRuns();
-  }, [refetchRuns]);
+    refetchTriggers();
+  }, [refetchTriggers]);
 
   useInvalidation("stats", name, refetchDetail);
-  useInvalidation("runs", name, refetchRuns);
+  useInvalidation("triggers", name, refetchTriggers);
 
   // Poll logs
   useEffect(() => {
@@ -165,7 +165,8 @@ export function AgentDetailPage() {
   if (!name) return null;
 
   const summary = detail?.summary;
-  const totalPages = Math.ceil(runsTotal / runsLimit);
+  const triggersPage = Math.floor(triggersOffset / triggersLimit) + 1;
+  const triggersTotalPages = Math.max(1, Math.ceil(triggersTotal / triggersLimit));
 
   return (
     <div className="space-y-6">
@@ -337,104 +338,114 @@ export function AgentDetailPage() {
         </div>
       )}
 
-      {/* Instance History */}
+      {/* Recent Triggers */}
       <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-slate-200 dark:border-slate-800">
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-200 dark:border-slate-800">
           <h2 className="text-sm font-medium text-slate-900 dark:text-white">
-            Instance History ({runsTotal})
+            Recent Triggers
           </h2>
+          <Link
+            to={`/dashboard/agents/${encodeURIComponent(name)}/triggers`}
+            className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+          >
+            View all
+          </Link>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 dark:border-slate-800">
-                <th className="text-left px-4 py-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide w-[1%] whitespace-nowrap">
+                  Time
+                </th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide w-[1%] whitespace-nowrap">
+                  Type
+                </th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide w-[1%] whitespace-nowrap">
+                  Source
+                </th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
                   Instance
                 </th>
-                <th className="text-left px-4 py-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-                  Trigger
-                </th>
-                <th className="text-left px-4 py-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-                  Started
-                </th>
-                <th className="text-left px-4 py-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-                  Duration
-                </th>
-                <th className="text-left px-4 py-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-                  Tokens
-                </th>
-                <th className="text-left px-4 py-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-                  Cost
-                </th>
-                <th className="text-left px-4 py-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-                  Result
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide w-[1%] whitespace-nowrap">
+                  Status
                 </th>
               </tr>
             </thead>
             <tbody>
-              {runs.map((run) => (
+              {triggers.map((t, i) => (
                 <tr
-                  key={run.instance_id}
-                  className="border-b border-slate-100 dark:border-slate-800/50 last:border-0 hover:bg-slate-100/50 dark:hover:bg-slate-800/30"
+                  key={`${t.ts}-${i}`}
+                  className="border-b border-slate-100 dark:border-slate-800/50 last:border-0"
                 >
-                  <td className="px-4 py-2">
-                    <Link
-                      to={`/dashboard/agents/${encodeURIComponent(name)}/instances/${encodeURIComponent(run.instance_id)}`}
-                      className="font-mono text-xs text-blue-600 dark:text-blue-400 hover:underline"
-                    >
-                      {shortId(run.instance_id)}
-                    </Link>
+                  <td className="px-4 py-2 text-slate-600 dark:text-slate-400 text-xs whitespace-nowrap">
+                    {fmtRelativeTime(t.ts)}
                   </td>
-                  <td className="px-4 py-2">
-                    <TriggerTypeBadge type={run.trigger_type} />
+                  <td className="px-4 py-2 whitespace-nowrap">
+                    <TriggerTypeBadge type={t.triggerType} />
                   </td>
                   <td className="px-4 py-2 text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                    {fmtDateTime(run.started_at)}
+                    {t.triggerSource ? (
+                      t.triggerType === "agent" ? (
+                        <Link
+                          to={`/dashboard/agents/${encodeURIComponent(t.triggerSource)}`}
+                          className="text-blue-600 dark:text-blue-400 hover:underline"
+                        >
+                          {t.triggerSource}
+                        </Link>
+                      ) : (
+                        t.triggerSource
+                      )
+                    ) : (
+                      "\u2014"
+                    )}
                   </td>
-                  <td className="px-4 py-2 text-xs text-slate-600 dark:text-slate-400">
-                    {fmtDur(run.duration_ms)}
+                  <td className="px-4 py-2 min-w-0">
+                    {t.instanceId ? (
+                      <Link
+                        to={`/dashboard/agents/${encodeURIComponent(name)}/instances/${encodeURIComponent(t.instanceId)}`}
+                        className="font-mono text-xs text-blue-600 dark:text-blue-400 hover:underline truncate block"
+                        title={t.instanceId}
+                      >
+                        {t.instanceId}
+                      </Link>
+                    ) : (
+                      <span className="text-xs text-slate-400">{"\u2014"}</span>
+                    )}
                   </td>
-                  <td className="px-4 py-2 text-xs text-slate-600 dark:text-slate-400">
-                    {fmtTokens(run.total_tokens)}
-                  </td>
-                  <td className="px-4 py-2 text-xs text-slate-600 dark:text-slate-400">
-                    {fmtCost(run.cost_usd)}
-                  </td>
-                  <td className="px-4 py-2">
-                    <ResultBadge result={run.result} />
+                  <td className="px-4 py-2 whitespace-nowrap">
+                    <ResultBadge result={t.result} />
                   </td>
                 </tr>
               ))}
-              {runs.length === 0 && (
+              {triggers.length === 0 && (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={5}
                     className="px-4 py-6 text-center text-slate-500 dark:text-slate-400 text-xs"
                   >
-                    No runs recorded
+                    No recent triggers
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
-        {totalPages > 1 && (
+        {triggersTotalPages > 1 && (
           <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-200 dark:border-slate-800">
             <button
-              onClick={() => setRunsPage((p) => Math.max(1, p - 1))}
-              disabled={runsPage <= 1}
+              onClick={() => setTriggersOffset((o) => Math.max(0, o - triggersLimit))}
+              disabled={triggersOffset === 0}
               className="px-3 py-1 text-xs rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
             >
               Previous
             </button>
             <span className="text-xs text-slate-500 dark:text-slate-400">
-              Page {runsPage} of {totalPages}
+              Page {triggersPage} of {triggersTotalPages}
             </span>
             <button
-              onClick={() =>
-                setRunsPage((p) => Math.min(totalPages, p + 1))
-              }
-              disabled={runsPage >= totalPages}
+              onClick={() => setTriggersOffset((o) => o + triggersLimit)}
+              disabled={triggersOffset + triggersLimit >= triggersTotal}
               className="px-3 py-1 text-xs rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
             >
               Next
