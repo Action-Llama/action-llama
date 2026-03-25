@@ -424,6 +424,11 @@ async function editSchedule(config: AgentConfig): Promise<void> {
 const WEBHOOK_PROVIDER_TYPES = ["github", "sentry", "linear", "test"] as const;
 
 async function addWebhookSource(projectPath: string): Promise<Record<string, { type: string; credential?: string }>> {
+  const result = await addWebhookSourceWithName(projectPath);
+  return result.sources;
+}
+
+async function addWebhookSourceWithName(projectPath: string): Promise<{ sources: Record<string, { type: string; credential?: string }>; sourceName: string }> {
   const configPath = resolve(projectPath, "config.toml");
   let existing: Record<string, unknown> = {};
   if (existsSync(configPath)) {
@@ -458,7 +463,8 @@ async function addWebhookSource(projectPath: string): Promise<Record<string, { t
   writeFileSync(configPath, stringifyTOML(existing) + "\n");
   console.log(`Added webhook source "${sourceName}" (${providerType}) to config.toml.`);
 
-  return { ...webhooks, [sourceName]: sourceConfig } as Record<string, { type: string; credential?: string }>;
+  const allSources = { ...webhooks, [sourceName]: sourceConfig } as Record<string, { type: string; credential?: string }>;
+  return { sources: allSources, sourceName: sourceName.trim() };
 }
 
 /**
@@ -488,21 +494,56 @@ async function pickOrAddCredentialInstance(credType: string): Promise<string | u
   if (choice === "__skip__") return undefined;
 
   if (choice === "__add__") {
-    const instance = await input({
-      message: "Instance name (e.g. default, prod, staging):",
-      default: instances.length === 0 ? "default" : "",
-      validate: (v) => v.trim() ? true : "Instance name is required",
-    });
-
-    const result = await promptCredential(def, instance.trim());
-    if (result && Object.keys(result.values).length > 0) {
-      await writeCredentialFields(credType, instance.trim(), result.values);
-      console.log(`Credential "${credType}:${instance.trim()}" saved.`);
+    let instance: string;
+    if (instances.length === 0) {
+      // No existing credentials — silently use "default"
+      instance = "default";
+    } else {
+      instance = await input({
+        message: `Webhook Credential Name ("default" already exists):`,
+        validate: (v) => v.trim() ? true : "Name is required",
+      });
+      instance = instance.trim();
     }
-    return instance.trim();
+
+    const result = await promptCredential(def, instance);
+    if (result && Object.keys(result.values).length > 0) {
+      await writeCredentialFields(credType, instance, result.values);
+      console.log(`Credential "${credType}:${instance}" saved.`);
+    }
+    return instance;
   }
 
   return choice;
+}
+
+function findMissingSources(
+  webhooks: any[] | undefined,
+  sources: Record<string, any> | undefined,
+): string[] {
+  if (!webhooks || webhooks.length === 0) return [];
+  const defined = new Set(Object.keys(sources ?? {}));
+  const missing = new Set<string>();
+  for (const trigger of webhooks) {
+    if (trigger.source && !defined.has(trigger.source)) {
+      missing.add(trigger.source);
+    }
+  }
+  return [...missing];
+}
+
+function rewriteTriggerSources(
+  webhooks: any[] | undefined,
+  oldSources: string[],
+  newSource: string,
+): void {
+  if (!webhooks) return;
+  const oldSet = new Set(oldSources);
+  for (const trigger of webhooks) {
+    if (oldSet.has(trigger.source)) {
+      trigger.source = newSource;
+    }
+  }
 }
 
 async function editWebhooks(config: AgentConfig, projectPath: string): Promise<void> {
@@ -514,6 +555,10 @@ async function editWebhooks(config: AgentConfig, projectPath: string): Promise<v
   }
 
   let sources = globalConfig.webhooks;
+
+  // Check if agent has triggers referencing undefined sources
+  const missingSources = findMissingSources(config.webhooks, sources);
+
   if (!sources || Object.keys(sources).length === 0) {
     console.log("No webhook sources configured in config.toml.");
     const shouldAdd = await confirm({
@@ -522,7 +567,25 @@ async function editWebhooks(config: AgentConfig, projectPath: string): Promise<v
     });
     if (!shouldAdd) return;
 
-    sources = await addWebhookSource(projectPath);
+    const { sources: newSources, sourceName } = await addWebhookSourceWithName(projectPath);
+    sources = newSources;
+    rewriteTriggerSources(config.webhooks, missingSources, sourceName);
+    // Source created to fix missing reference — return to main menu
+    return;
+  }
+
+  // If there are missing sources, prompt to create them before showing the sub-menu
+  if (missingSources.length > 0) {
+    const shouldAdd = await confirm({
+      message: `Source ${missingSources.map(s => `"${s}"`).join(", ")} not found. Create a webhook source now?`,
+      default: true,
+    });
+    if (shouldAdd) {
+      const { sources: newSources, sourceName } = await addWebhookSourceWithName(projectPath);
+      sources = newSources;
+      rewriteTriggerSources(config.webhooks, missingSources, sourceName);
+      return;
+    }
   }
 
   const sourceNames = Object.keys(sources);
