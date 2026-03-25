@@ -141,6 +141,27 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     logger.debug({ err }, "orphan detection skipped (runtime does not support listing)");
   }
 
+  // Clean up stale container registry entries and their locks.
+  // At this point all containers from the previous run are dead (either exited
+  // normally or just killed above). No new containers have been launched yet,
+  // so every registry entry is stale.
+  try {
+    const staleEntries = gateway.containerRegistry.listAll();
+    if (staleEntries.length > 0) {
+      let releasedLocks = 0;
+      for (const entry of staleEntries) {
+        releasedLocks += gateway.lockStore.releaseAll(entry.instanceId);
+      }
+      await gateway.containerRegistry.clear();
+      logger.info(
+        { releasedLocks, staleRegistrations: staleEntries.length },
+        "cleaned up orphan locks and stale container registrations",
+      );
+    }
+  } catch (err) {
+    logger.warn({ err }, "failed to clean up stale container registrations");
+  }
+
   // Build base + per-agent images
   const buildSkills: PromptSkills = { locking: true };
   const buildResult = await buildAgentImages({

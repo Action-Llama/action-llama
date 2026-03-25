@@ -572,3 +572,89 @@ describe("LockStore — URI validation", () => {
     });
   });
 });
+
+describe("LockStore — orphan lock cleanup", () => {
+  it("evicts orphan lock on acquire when holder is dead", () => {
+    const aliveHolders = new Set(["agent-a", "agent-b"]);
+    const store = new LockStore(300, 9999, undefined, {
+      isHolderAlive: (h) => aliveHolders.has(h),
+    });
+    // agent-b acquires a lock
+    store.acquire("github://acme/app/issues/42", "agent-b");
+    // agent-b dies (remove from alive set)
+    aliveHolders.delete("agent-b");
+    // agent-a tries to acquire — should succeed because agent-b is dead
+    const result = store.acquire("github://acme/app/issues/42", "agent-a");
+    expect(result).toEqual({ ok: true });
+    // Verify agent-a now holds the lock
+    const locks = store.list("agent-a");
+    expect(locks).toHaveLength(1);
+    expect(locks[0].resourceKey).toBe("github://acme/app/issues/42");
+    store.dispose();
+  });
+
+  it("does not evict lock when holder is alive", () => {
+    const aliveHolders = new Set(["agent-a", "agent-b"]);
+    const store = new LockStore(300, 9999, undefined, {
+      isHolderAlive: (h) => aliveHolders.has(h),
+    });
+    store.acquire("github://acme/app/issues/42", "agent-a");
+    const result = store.acquire("github://acme/app/issues/42", "agent-b");
+    expect(result.ok).toBe(false);
+    expect(result.holder).toBe("agent-a");
+    store.dispose();
+  });
+
+  it("evicts orphan lock on acquire and cleans up holder index", () => {
+    const aliveHolders = new Set(["agent-a", "agent-b"]);
+    const store = new LockStore(300, 9999, undefined, {
+      isHolderAlive: (h) => aliveHolders.has(h),
+    });
+    store.acquire("github://acme/app/issues/1", "agent-b");
+    store.acquire("github://acme/app/issues/2", "agent-b");
+    // agent-b dies
+    aliveHolders.delete("agent-b");
+    // agent-a acquires issue/1 — evicts orphan lock held by dead agent-b
+    const r1 = store.acquire("github://acme/app/issues/1", "agent-a");
+    expect(r1).toEqual({ ok: true });
+    // agent-a acquires issue/2 as well
+    const r2 = store.acquire("github://acme/app/issues/2", "agent-a");
+    expect(r2).toEqual({ ok: true });
+    store.dispose();
+  });
+
+  it("works without isHolderAlive callback (backwards compatible)", () => {
+    const store = new LockStore(300, 9999);
+    store.acquire("github://acme/app/issues/42", "agent-a");
+    const result = store.acquire("github://acme/app/issues/42", "agent-b");
+    expect(result.ok).toBe(false);
+    expect(result.holder).toBe("agent-a");
+    store.dispose();
+  });
+
+  it("sweep evicts locks held by dead containers", () => {
+    vi.useFakeTimers();
+    try {
+      const aliveHolders = new Set(["agent-a", "agent-b"]);
+      // Use a short sweep interval (100ms) so we can trigger it with fake timers
+      const store = new LockStore(300, 0.1, undefined, {
+        isHolderAlive: (h) => aliveHolders.has(h),
+      });
+      store.acquire("github://acme/app/issues/1", "agent-a");
+      store.acquire("github://acme/app/issues/2", "agent-b");
+      // agent-b dies
+      aliveHolders.delete("agent-b");
+      // Advance time to trigger the sweep
+      vi.advanceTimersByTime(200);
+      // agent-b's lock should have been swept; agent-c can now acquire it
+      const result = store.acquire("github://acme/app/issues/2", "agent-c");
+      expect(result).toEqual({ ok: true });
+      // agent-a's lock should still be present
+      const aLocks = store.list("agent-a");
+      expect(aLocks).toHaveLength(1);
+      store.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

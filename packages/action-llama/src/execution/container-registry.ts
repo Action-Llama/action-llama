@@ -44,6 +44,30 @@ export class ContainerRegistry {
     await this.store?.delete(NS, secret);
   }
 
+  /**
+   * Check if a container with the given instanceId is currently registered.
+   * Used by the lock store to detect orphan locks held by dead containers.
+   */
+  hasInstance(instanceId: string): boolean {
+    for (const reg of this.cache.values()) {
+      if (reg.instanceId === instanceId) return true;
+    }
+    return false;
+  }
+
+  /** Return all current registrations as an array (used during startup cleanup). */
+  listAll(): ContainerRegistration[] {
+    return Array.from(this.cache.values());
+  }
+
+  /** Remove all registrations from both the cache and the persistent store. */
+  async clear(): Promise<void> {
+    for (const key of this.cache.keys()) {
+      await this.store?.delete(NS, key);
+    }
+    this.cache.clear();
+  }
+
   /** Number of registered containers. */
   get size(): number {
     return this.cache.size;

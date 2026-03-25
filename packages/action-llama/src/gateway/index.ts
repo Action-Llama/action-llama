@@ -122,7 +122,9 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
 
   // Create stores backed by the persistent StateStore (if provided).
   const containerRegistry = new ContainerRegistry(stateStore);
-  const lockStore = new LockStore(lockTimeout, undefined, stateStore);
+  const lockStore = new LockStore(lockTimeout, undefined, stateStore, {
+    isHolderAlive: (holder) => containerRegistry.hasInstance(holder),
+  });
   const callStore = new CallStore(undefined, stateStore);
   let callDispatcher: CallDispatcher | undefined;
 
