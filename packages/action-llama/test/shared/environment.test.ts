@@ -13,8 +13,49 @@ import {
   writeEnvToml,
   environmentPath,
   deepMerge,
+  validateEnvironmentName,
 } from "../../src/shared/environment.js";
 import { ENVIRONMENTS_DIR } from "../../src/shared/paths.js";
+
+describe("validateEnvironmentName", () => {
+  it("accepts valid lowercase names", () => {
+    expect(validateEnvironmentName("prod")).toBe(true);
+    expect(validateEnvironmentName("staging-1")).toBe(true);
+    expect(validateEnvironmentName("het2")).toBe(true);
+    expect(validateEnvironmentName("my-env-123")).toBe(true);
+  });
+
+  it("accepts single character names", () => {
+    expect(validateEnvironmentName("a")).toBe(true);
+    expect(validateEnvironmentName("1")).toBe(true);
+  });
+
+  it("rejects empty names", () => {
+    expect(validateEnvironmentName("")).not.toBe(true);
+  });
+
+  it("rejects names with uppercase", () => {
+    expect(validateEnvironmentName("Prod")).not.toBe(true);
+    expect(validateEnvironmentName("myEnv")).not.toBe(true);
+  });
+
+  it("rejects names with leading or trailing hyphens", () => {
+    expect(validateEnvironmentName("-staging")).not.toBe(true);
+    expect(validateEnvironmentName("staging-")).not.toBe(true);
+    expect(validateEnvironmentName("-")).not.toBe(true);
+  });
+
+  it("rejects names with special characters", () => {
+    expect(validateEnvironmentName("my_env")).not.toBe(true);
+    expect(validateEnvironmentName("my.env")).not.toBe(true);
+    expect(validateEnvironmentName("my env")).not.toBe(true);
+  });
+
+  it("rejects names longer than 50 characters", () => {
+    expect(validateEnvironmentName("a".repeat(50))).toBe(true);
+    expect(validateEnvironmentName("a".repeat(51))).not.toBe(true);
+  });
+});
 
 describe("deepMerge", () => {
   it("merges flat objects", () => {

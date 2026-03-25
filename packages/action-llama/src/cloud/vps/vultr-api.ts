@@ -189,3 +189,12 @@ export async function listFirewallRules(apiKey: string, groupId: string): Promis
   const data = await vultrFetch(apiKey, `/firewalls/${groupId}/rules`);
   return data.firewall_rules;
 }
+
+export async function getFirewallGroup(apiKey: string, groupId: string): Promise<VultrFirewallGroup> {
+  const data = await vultrFetch(apiKey, `/firewalls/${groupId}`);
+  return data.firewall_group;
+}
+
+export async function deleteFirewallGroup(apiKey: string, groupId: string): Promise<void> {
+  await vultrFetch(apiKey, `/firewalls/${groupId}`, { method: "DELETE" });
+}

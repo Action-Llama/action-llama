@@ -9,6 +9,7 @@ import {
   loadEnvToml,
   writeEnvToml,
   resolveEnvironmentName,
+  validateEnvironmentName,
   type EnvironmentConfig,
 } from "../../shared/environment.js";
 import { ConfigError } from "../../shared/errors.js";
@@ -39,6 +40,11 @@ export async function init(name: string, type: string): Promise<void> {
     throw new ConfigError(
       `Unknown environment type "${type}". Must be one of: ${VALID_TYPES.join(", ")}`
     );
+  }
+
+  const nameError = validateEnvironmentName(name);
+  if (nameError !== true) {
+    throw new ConfigError(`Invalid environment name "${name}": ${nameError}`);
   }
 
   if (environmentExists(name)) {
@@ -132,9 +138,14 @@ export async function prov(name: string | undefined): Promise<void> {
   if (!name) {
     name = await input({
       message: "Environment name:",
-      validate: (v) => v.trim() ? true : "Name is required",
+      validate: (v) => validateEnvironmentName(v.trim()),
     });
     name = name.trim();
+  } else {
+    const nameError = validateEnvironmentName(name);
+    if (nameError !== true) {
+      throw new ConfigError(`Invalid environment name "${name}": ${nameError}`);
+    }
   }
 
   // If env already exists with a real host, verify readiness instead of re-provisioning
@@ -172,7 +183,7 @@ export async function prov(name: string | undefined): Promise<void> {
     writeEnvironmentConfig(name!, config);
   };
 
-  const result = await setupVpsCloud(persistResult);
+  const result = await setupVpsCloud(persistResult, name);
   if (!result) return;
 
   // Final write with the confirmed host

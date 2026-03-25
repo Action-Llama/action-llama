@@ -58,7 +58,7 @@ export interface CloudflareConfig {
 
 export type OnInstanceCreated = (partial: Record<string, unknown>) => void;
 
-export async function setupVpsCloud(onInstanceCreated?: OnInstanceCreated): Promise<Record<string, unknown> | null> {
+export async function setupVpsCloud(onInstanceCreated?: OnInstanceCreated, envName?: string): Promise<Record<string, unknown> | null> {
   const mode = await select({
     message: "VPS setup mode:",
     choices: [
@@ -75,11 +75,13 @@ export async function setupVpsCloud(onInstanceCreated?: OnInstanceCreated): Prom
   // Offer Cloudflare HTTPS before VPS provisioning
   const cfConfig = await promptCloudflareHttps();
 
+  const serverName = envName ? `action-llama-${envName}` : "action-llama";
+
   if (mode === "vultr") {
-    return provisionVultr(onInstanceCreated, cfConfig);
+    return provisionVultr(onInstanceCreated, cfConfig, serverName);
   }
 
-  return provisionHetzner(onInstanceCreated, cfConfig);
+  return provisionHetzner(onInstanceCreated, cfConfig, serverName);
 }
 
 /**
@@ -218,7 +220,7 @@ async function setupExistingServer(): Promise<Record<string, unknown> | null> {
   return config;
 }
 
-async function provisionVultr(onInstanceCreated?: OnInstanceCreated, cfConfig?: CloudflareConfig | null): Promise<Record<string, unknown> | null> {
+async function provisionVultr(onInstanceCreated?: OnInstanceCreated, cfConfig?: CloudflareConfig | null, serverName = "action-llama"): Promise<Record<string, unknown> | null> {
   // 1. Read Vultr API key — prompt inline if missing
   const backend = new FilesystemBackend();
   let apiKeyValue = await backend.read("vultr_api_key", "default", "api_key");
@@ -445,7 +447,7 @@ async function provisionVultr(onInstanceCreated?: OnInstanceCreated, cfConfig?: 
     plan: planChoice,
     os_id: osChoice,
     sshkey_id: [sshKeyId],
-    label: "action-llama",
+    label: serverName,
     user_data: userData,
     firewall_group_id: firewallGroupId,
   });
@@ -642,7 +644,7 @@ async function provisionVultr(onInstanceCreated?: OnInstanceCreated, cfConfig?: 
   return result;
 }
 
-async function provisionHetzner(onInstanceCreated?: OnInstanceCreated, cfConfig?: CloudflareConfig | null): Promise<Record<string, unknown> | null> {
+async function provisionHetzner(onInstanceCreated?: OnInstanceCreated, cfConfig?: CloudflareConfig | null, serverName = "action-llama"): Promise<Record<string, unknown> | null> {
   // 1. Read Hetzner API key — prompt inline if missing
   const backend = new FilesystemBackend();
   let apiKeyValue = await backend.read("hetzner_api_key", "default", "api_key");
@@ -895,7 +897,7 @@ async function provisionHetzner(onInstanceCreated?: OnInstanceCreated, cfConfig?
   // Create server
   console.log("Provisioning Hetzner server...");
   const server = await createServer(apiKeyValue, {
-    name: "action-llama",
+    name: serverName,
     server_type: serverTypeChoice,
     location: locationChoice,
     image: imageChoice,

@@ -255,6 +255,15 @@ export async function createFirewall(
   return data.firewall;
 }
 
+export async function getFirewall(apiKey: string, firewallId: number): Promise<HetznerFirewall> {
+  const data = await hetznerFetch(apiKey, `/firewalls/${firewallId}`);
+  return data.firewall;
+}
+
+export async function deleteFirewall(apiKey: string, firewallId: number): Promise<void> {
+  await hetznerFetch(apiKey, `/firewalls/${firewallId}`, { method: "DELETE" });
+}
+
 export async function applyFirewallToServer(
   apiKey: string,
   firewallId: number,

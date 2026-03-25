@@ -65,7 +65,7 @@ export async function teardownVps(_projectPath: string, config: VpsConfig): Prom
     }
   }
 
-  // 4. If this is a provisioned instance, delete it
+  // 4. If this is a provisioned instance, delete it and clean up firewall if orphaned
   if (config.vultrInstanceId) {
     const apiKey = await backend.read("vultr_api_key", "default", "api_key");
     if (!apiKey) {
@@ -73,9 +73,25 @@ export async function teardownVps(_projectPath: string, config: VpsConfig): Prom
       return;
     }
 
-    const { deleteInstance } = await import("./vultr-api.js");
+    const { deleteInstance, listFirewallGroups, getFirewallGroup, deleteFirewallGroup } = await import("./vultr-api.js");
     await deleteInstance(apiKey, config.vultrInstanceId);
     console.log("Vultr instance deleted.");
+
+    // Clean up shared firewall group if no instances remain
+    try {
+      const groups = await listFirewallGroups(apiKey);
+      const alGroup = groups.find((g) => g.description === "action-llama");
+      if (alGroup) {
+        // Re-fetch to get current instance_count after deletion
+        const updated = await getFirewallGroup(apiKey, alGroup.id);
+        if (updated.instance_count === 0) {
+          await deleteFirewallGroup(apiKey, alGroup.id);
+          console.log("Vultr firewall group deleted (no remaining instances).");
+        }
+      }
+    } catch {
+      // Best effort — firewall cleanup is non-critical
+    }
   } else if (config.hetznerServerId) {
     const apiKey = await backend.read("hetzner_api_key", "default", "api_key");
     if (!apiKey) {
@@ -83,8 +99,24 @@ export async function teardownVps(_projectPath: string, config: VpsConfig): Prom
       return;
     }
 
-    const { deleteServer } = await import("./hetzner-api.js");
+    const { deleteServer, listFirewalls, getFirewall, deleteFirewall } = await import("./hetzner-api.js");
     await deleteServer(apiKey, config.hetznerServerId);
     console.log("Hetzner server deleted.");
+
+    // Clean up shared firewall if no servers remain
+    try {
+      const firewalls = await listFirewalls(apiKey);
+      const alFw = firewalls.find((fw) => fw.name === "action-llama");
+      if (alFw) {
+        // Re-fetch to get current applied_to after deletion
+        const updated = await getFirewall(apiKey, alFw.id);
+        if (updated.applied_to.length === 0) {
+          await deleteFirewall(apiKey, alFw.id);
+          console.log("Hetzner firewall deleted (no remaining servers).");
+        }
+      }
+    } catch {
+      // Best effort — firewall cleanup is non-critical
+    }
   }
 }
