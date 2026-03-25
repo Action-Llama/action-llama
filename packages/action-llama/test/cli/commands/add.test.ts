@@ -103,6 +103,23 @@ describe("al add", () => {
       expect(existsSync(resolve(projectPath, "agents", "beta", "SKILL.md"))).toBe(false);
     });
 
+    it("discovers skills in agents/ directory", async () => {
+      createGitRepo(repoPath, {
+        "agents/gamma/SKILL.md": "---\nname: gamma\ndescription: Gamma skill\n---\n\n# Gamma\n",
+        "agents/gamma/config.toml": stringifyTOML({ schedule: "0 12 * * *" }) + "\n",
+        "agents/delta/SKILL.md": "---\nname: delta\n---\n\n# Delta\n",
+      });
+
+      const agentModule = await import("../../../src/cli/commands/agent.js");
+      vi.spyOn(agentModule, "configAgent").mockResolvedValue();
+
+      const { execute } = await import("../../../src/cli/commands/add.js");
+      await execute(repoPath, { skill: "gamma", project: projectPath });
+
+      expect(existsSync(resolve(projectPath, "agents", "gamma", "SKILL.md"))).toBe(true);
+      expect(existsSync(resolve(projectPath, "agents", "delta", "SKILL.md"))).toBe(false);
+    });
+
     it("throws when --skill name not found in repo", async () => {
       createGitRepo(repoPath, {
         "skills/alpha/SKILL.md": "---\nname: alpha\n---\n\n# Alpha\n",

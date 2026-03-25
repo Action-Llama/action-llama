@@ -191,6 +191,30 @@ describe("al update", () => {
     expect(updated).toBe(newContent);
   });
 
+  it("handles collection repos with agents/ directory", async () => {
+    const newContent = "---\nname: gamma\n---\n\n# Gamma v2\n";
+
+    createGitRepo(repoPath, {
+      "agents/gamma/SKILL.md": newContent,
+      "agents/delta/SKILL.md": "---\nname: delta\n---\n\n# Delta\n",
+    });
+
+    createProject({
+      "gamma": {
+        skillMd: "---\nname: gamma\n---\n\n# Gamma v1\n",
+        configToml: { source: repoPath },
+      },
+    });
+
+    vi.mocked(confirm).mockResolvedValue(true);
+
+    const { execute } = await import("../../../src/cli/commands/update.js");
+    await execute("gamma", { project: projectPath });
+
+    const updated = readFileSync(resolve(projectPath, "agents", "gamma", "SKILL.md"), "utf-8");
+    expect(updated).toBe(newContent);
+  });
+
   it("throws for non-existent agent name", async () => {
     createProject({});
 

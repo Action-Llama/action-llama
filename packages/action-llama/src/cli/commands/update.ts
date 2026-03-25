@@ -171,27 +171,34 @@ async function updateAgent(
 
 /**
  * Find the SKILL.md in a cloned repo that corresponds to the given agent.
- * Checks: root SKILL.md, skills/agentName/SKILL.md, any single skill in skills dir.
+ * Checks: skills/<name>/ and agents/<name>/ first, then root SKILL.md,
+ * then falls back to a single skill in any collection dir.
  */
 function findUpstreamSkillMd(repoPath: string, agentName: string): string | null {
-  // Check skills/<agentName>/SKILL.md first (collection repos)
-  const namedSkill = resolve(repoPath, "skills", agentName, "SKILL.md");
-  if (existsSync(namedSkill)) return namedSkill;
+  // Check <dir>/<agentName>/SKILL.md first (collection repos)
+  for (const dirName of ["skills", "agents"]) {
+    const namedSkill = resolve(repoPath, dirName, agentName, "SKILL.md");
+    if (existsSync(namedSkill)) return namedSkill;
+  }
 
   // Check root SKILL.md (single-skill repos)
   const rootSkill = resolve(repoPath, "SKILL.md");
   if (existsSync(rootSkill)) return rootSkill;
 
-  // Fall back to any skills/*/SKILL.md if there's exactly one
-  const skillsDir = resolve(repoPath, "skills");
-  if (existsSync(skillsDir) && statSync(skillsDir).isDirectory()) {
-    const entries = readdirSync(skillsDir).filter((entry) => {
-      const entryPath = resolve(skillsDir, entry);
-      return statSync(entryPath).isDirectory() && existsSync(resolve(entryPath, "SKILL.md"));
-    });
-    if (entries.length === 1) {
-      return resolve(skillsDir, entries[0], "SKILL.md");
+  // Fall back: if there's exactly one SKILL.md across all collection dirs, use it
+  const allEntries: string[] = [];
+  for (const dirName of ["skills", "agents"]) {
+    const collectionDir = resolve(repoPath, dirName);
+    if (!existsSync(collectionDir) || !statSync(collectionDir).isDirectory()) continue;
+    for (const entry of readdirSync(collectionDir)) {
+      const entryPath = resolve(collectionDir, entry);
+      if (statSync(entryPath).isDirectory() && existsSync(resolve(entryPath, "SKILL.md"))) {
+        allEntries.push(resolve(entryPath, "SKILL.md"));
+      }
     }
+  }
+  if (allEntries.length === 1) {
+    return allEntries[0];
   }
 
   return null;

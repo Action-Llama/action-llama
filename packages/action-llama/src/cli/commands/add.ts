@@ -26,7 +26,7 @@ interface DiscoveredSkill {
 }
 
 // Discover SKILL.md files in a cloned repo.
-// Checks: root SKILL.md (single-skill repo), skills/name/SKILL.md (collection).
+// Checks: root SKILL.md (single-skill repo), then skills/*/ and agents/*/ (collection).
 function discoverSkills(repoPath: string): DiscoveredSkill[] {
   const skills: DiscoveredSkill[] = [];
 
@@ -44,18 +44,24 @@ function discoverSkills(repoPath: string): DiscoveredSkill[] {
     });
   }
 
-  // Check skills/*/ (collection repo)
-  const skillsDir = resolve(repoPath, "skills");
-  if (existsSync(skillsDir) && statSync(skillsDir).isDirectory()) {
-    for (const entry of readdirSync(skillsDir)) {
-      const entryPath = resolve(skillsDir, entry);
+  // Check skills/*/ and agents/*/ (collection repos)
+  for (const dirName of ["skills", "agents"]) {
+    const collectionDir = resolve(repoPath, dirName);
+    if (!existsSync(collectionDir) || !statSync(collectionDir).isDirectory()) continue;
+
+    for (const entry of readdirSync(collectionDir)) {
+      const entryPath = resolve(collectionDir, entry);
       if (!statSync(entryPath).isDirectory()) continue;
       const skillMd = resolve(entryPath, "SKILL.md");
       if (!existsSync(skillMd)) continue;
 
+      // Skip duplicates (if root SKILL.md already matched this name)
       const { name, description } = readSkillMeta(skillMd);
+      const skillName = name || entry;
+      if (skills.some((s) => s.name === skillName)) continue;
+
       skills.push({
-        name: name || entry,
+        name: skillName,
         description,
         skillMdPath: skillMd,
         configTomlPath: existsSync(resolve(entryPath, "config.toml"))
