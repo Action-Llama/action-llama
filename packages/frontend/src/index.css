@@ -40,3 +40,10 @@
   background: #334155;
   border-radius: 3px;
 }
+
+/* Prevent Safari iOS auto-zoom on input focus (requires >= 16px) */
+input,
+textarea,
+select {
+  font-size: 1rem; /* 16px */
+}
