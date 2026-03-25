@@ -55,6 +55,20 @@ export class ChatSessionManager {
     }
   }
 
+  setShutdownSecret(sessionId: string, secret: string): void {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      session.shutdownSecret = secret;
+    }
+  }
+
+  getSessionByAgent(agentName: string): ChatSession | undefined {
+    for (const session of this.sessions.values()) {
+      if (session.agentName === agentName) return session;
+    }
+    return undefined;
+  }
+
   /** Returns sessions that have been idle longer than the given timeout. */
   getIdleSessions(timeoutMs: number): ChatSession[] {
     const cutoff = Date.now() - timeoutMs;

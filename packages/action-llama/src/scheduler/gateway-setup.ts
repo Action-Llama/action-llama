@@ -226,6 +226,8 @@ export async function setupGateway(opts: {
       logger,
       sessionManager: gateway.chatSessionManager,
       images: liveImages,
+      registerContainer,
+      unregisterContainer,
     });
   };
 
