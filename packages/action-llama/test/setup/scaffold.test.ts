@@ -7,6 +7,7 @@ import { parseFrontmatter } from "../../src/shared/frontmatter.js";
 import { scaffoldProject, scaffoldClaudeCommands, CLAUDE_COMMANDS } from "../../src/setup/scaffold.js";
 import type { ScaffoldAgent } from "../../src/setup/scaffold.js";
 import type { GlobalConfig } from "../../src/shared/config.js";
+import { VERSION } from "../../src/shared/constants.js";
 
 describe("scaffoldProject", () => {
   let tmpDir: string;
@@ -127,6 +128,30 @@ describe("scaffoldProject", () => {
     for (const agent of ["dev", "reviewer", "devops"]) {
       expect(existsSync(resolve(projDir, "agents", agent))).toBe(true);
     }
+  });
+
+  it("creates package.json with correct version and structure", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
+    const projDir = resolve(tmpDir, "my-project");
+    scaffoldProject(projDir, makeGlobalConfig(), makeAgents(), "my-project");
+
+    const pkgPath = resolve(projDir, "package.json");
+    expect(existsSync(pkgPath)).toBe(true);
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+    expect(pkg.name).toBe("my-project");
+    expect(pkg.private).toBe(true);
+    expect(pkg.type).toBe("module");
+    expect(pkg.version).toBeDefined();
+    expect(pkg.dependencies["@action-llama/action-llama"]).toBe(VERSION);
+  });
+
+  it("does not use latest as dependency version", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
+    const projDir = resolve(tmpDir, "my-project");
+    scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
+
+    const pkg = JSON.parse(readFileSync(resolve(projDir, "package.json"), "utf-8"));
+    expect(pkg.dependencies["@action-llama/action-llama"]).not.toBe("latest");
   });
 
   it("creates AGENTS.md as a symlink to agent-docs/AGENTS.md", () => {

@@ -1,4 +1,5 @@
-import { mkdirSync, writeFileSync, existsSync, copyFileSync, symlinkSync, lstatSync, realpathSync } from "fs";
+import { mkdirSync, writeFileSync, existsSync, readFileSync, copyFileSync, symlinkSync, lstatSync, realpathSync } from "fs";
+import { execSync } from "child_process";
 import { resolve, relative } from "path";
 
 // ---------------------------------------------------------------------------
@@ -157,7 +158,7 @@ import { stringify as stringifyTOML } from "smol-toml";
 import { stringify as stringifyYAML } from "yaml";
 import type { GlobalConfig, AgentConfig } from "../shared/config.js";
 import { writeCredentialField, writeCredentialFields } from "../shared/credentials.js";
-import { CONSTANTS } from "../shared/constants.js";
+import { CONSTANTS, VERSION } from "../shared/constants.js";
 
 export { writeCredentialField, writeCredentialFields };
 
@@ -225,12 +226,20 @@ export function scaffoldProject(
   // Create package.json with @action-llama/action-llama dependency
   const pkgPath = resolve(projectPath, "package.json");
   if (!existsSync(pkgPath)) {
+    let basePkg: Record<string, unknown> = {};
+    try {
+      execSync("npm init -y", { cwd: projectPath, stdio: "pipe" });
+      basePkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+    } catch {
+      // npm init not available — use defaults
+    }
     const pkg = {
-      name: projectName || "al-project",
+      name: (basePkg.name as string) || projectName || "al-project",
+      version: (basePkg.version as string) || "1.0.0",
       private: true,
       type: "module",
       dependencies: {
-        "@action-llama/action-llama": "latest",
+        "@action-llama/action-llama": VERSION,
       },
     };
     writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
