@@ -5,7 +5,7 @@
     "default": "dark"
   },
   "name": "Action Llama",
-  "favicon": "/favicon.svg",
+  "favicon": "/favicon.png",
   "colors": {
     "primary": "#c49000",
     "light": "#9a6c2e",
