@@ -41,6 +41,8 @@ function run(
         });
       },
     );
+    // Ignore EPIPE errors — the child may exit before consuming stdin
+    child.stdin?.on("error", () => {});
     if (stdin != null) {
       child.stdin?.write(stdin);
       child.stdin?.end();
