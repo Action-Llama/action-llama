@@ -3,7 +3,7 @@
  *
  * 1. Fetch repo (shallow clone to temp dir)
  * 2. Discover SKILL.md files (root or skills/star/)
- * 3. If multiple and no --skill, prompt user to pick
+ * 3. If multiple and no --agent, prompt user to pick
  * 4. Copy SKILL.md + config.toml into agents dir
  * 5. Run al config for interactive gap-filling
  */
@@ -23,6 +23,7 @@ interface DiscoveredSkill {
   description?: string;
   skillMdPath: string;
   configTomlPath?: string;
+  dockerfilePath?: string;
 }
 
 // Discover SKILL.md files in a cloned repo.
@@ -40,6 +41,9 @@ function discoverSkills(repoPath: string): DiscoveredSkill[] {
       skillMdPath: rootSkill,
       configTomlPath: existsSync(resolve(repoPath, "config.toml"))
         ? resolve(repoPath, "config.toml")
+        : undefined,
+      dockerfilePath: existsSync(resolve(repoPath, "Dockerfile"))
+        ? resolve(repoPath, "Dockerfile")
         : undefined,
     });
   }
@@ -66,6 +70,9 @@ function discoverSkills(repoPath: string): DiscoveredSkill[] {
         skillMdPath: skillMd,
         configTomlPath: existsSync(resolve(entryPath, "config.toml"))
           ? resolve(entryPath, "config.toml")
+          : undefined,
+        dockerfilePath: existsSync(resolve(entryPath, "Dockerfile"))
+          ? resolve(entryPath, "Dockerfile")
           : undefined,
       });
     }
@@ -97,7 +104,7 @@ function normalizeRepo(repo: string): string {
 
 export async function execute(
   repo: string,
-  opts: { skill?: string; project: string },
+  opts: { agent?: string; project: string },
 ): Promise<void> {
   const projectPath = resolve(opts.project);
   const agentsDir = resolve(projectPath, "agents");
@@ -119,12 +126,12 @@ export async function execute(
 
     // 3. Select skill
     let skill: DiscoveredSkill;
-    if (opts.skill) {
-      const match = skills.find((s) => s.name === opts.skill);
+    if (opts.agent) {
+      const match = skills.find((s) => s.name === opts.agent);
       if (!match) {
         const available = skills.map((s) => s.name).join(", ");
         throw new Error(
-          `Skill "${opts.skill}" not found. Available: ${available}`,
+          `Agent "${opts.agent}" not found. Available: ${available}`,
         );
       }
       skill = match;
@@ -201,6 +208,10 @@ export async function execute(
       // Create minimal config.toml with just source
       const { writeFileSync } = await import("fs");
       writeFileSync(resolve(destDir, "config.toml"), stringifyTOML({ source: repo }) + "\n");
+    }
+
+    if (skill.dockerfilePath) {
+      copyFileSync(skill.dockerfilePath, resolve(destDir, "Dockerfile"));
     }
 
     console.log(`Installed skill "${skill.name}" as agent "${agentName}".`);

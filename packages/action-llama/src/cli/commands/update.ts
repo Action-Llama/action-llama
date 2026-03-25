@@ -144,16 +144,43 @@ async function updateAgent(
     const localContent = readFileSync(candidate.localSkillMd, "utf-8");
     const upstreamContent = readFileSync(upstreamSkillMd, "utf-8");
 
-    if (localContent === upstreamContent) {
+    const skillMdChanged = localContent !== upstreamContent;
+
+    // Check Dockerfile
+    const upstreamDockerfile = findUpstreamDockerfile(tmpDir, agentName, upstreamSkillMd);
+    const localDockerfilePath = resolve(candidate.localSkillMd, "..", "Dockerfile");
+    const localDockerfile = existsSync(localDockerfilePath)
+      ? readFileSync(localDockerfilePath, "utf-8")
+      : null;
+    const upstreamDockerfileContent = upstreamDockerfile
+      ? readFileSync(upstreamDockerfile, "utf-8")
+      : null;
+
+    const dockerfileChanged =
+      upstreamDockerfileContent !== null &&
+      localDockerfile !== upstreamDockerfileContent;
+
+    if (!skillMdChanged && !dockerfileChanged) {
       return "up-to-date";
     }
 
     // Show diff summary
-    console.log(`${agentName}: SKILL.md has changed upstream.`);
-    showDiffSummary(localContent, upstreamContent);
+    const changedFiles: string[] = [];
+    if (skillMdChanged) changedFiles.push("SKILL.md");
+    if (dockerfileChanged) changedFiles.push("Dockerfile");
+
+    console.log(`${agentName}: ${changedFiles.join(" and ")} changed upstream.`);
+    if (skillMdChanged) {
+      console.log("  SKILL.md:");
+      showDiffSummary(localContent, upstreamContent);
+    }
+    if (dockerfileChanged) {
+      console.log("  Dockerfile:");
+      showDiffSummary(localDockerfile || "", upstreamDockerfileContent!);
+    }
 
     const shouldUpdate = await confirm({
-      message: `Update ${agentName}'s SKILL.md?`,
+      message: `Update ${agentName}'s ${changedFiles.join(" and ")}?`,
       default: true,
     });
 
@@ -161,8 +188,13 @@ async function updateAgent(
       return "skipped";
     }
 
-    copyFileSync(upstreamSkillMd, candidate.localSkillMd);
-    console.log(`${agentName}: SKILL.md updated.`);
+    if (skillMdChanged) {
+      copyFileSync(upstreamSkillMd, candidate.localSkillMd);
+    }
+    if (dockerfileChanged) {
+      copyFileSync(upstreamDockerfile!, localDockerfilePath);
+    }
+    console.log(`${agentName}: ${changedFiles.join(" and ")} updated.`);
     return "updated";
   } finally {
     rmSync(tmpDir, { recursive: true, force: true });
@@ -202,6 +234,19 @@ function findUpstreamSkillMd(repoPath: string, agentName: string): string | null
   }
 
   return null;
+}
+
+/**
+ * Find the Dockerfile co-located with the upstream SKILL.md.
+ */
+function findUpstreamDockerfile(
+  _repoPath: string,
+  _agentName: string,
+  upstreamSkillMd: string,
+): string | null {
+  const dir = resolve(upstreamSkillMd, "..");
+  const dockerfile = resolve(dir, "Dockerfile");
+  return existsSync(dockerfile) ? dockerfile : null;
 }
 
 function showDiffSummary(local: string, upstream: string): void {

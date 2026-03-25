@@ -341,7 +341,7 @@ program
   .description("Install a skill from a git repository")
   .argument("<repo>", "git URL or GitHub shorthand (author/repo)")
   .option("-p, --project <dir>", "project directory", ".")
-  .option("-s, --skill <name>", "skill name (if repo contains multiple)")
+  .option("-a, --agent <name>", "agent name (if repo contains multiple)")
   .action(withCommand(async (repo: string, opts) => {
     const { execute } = await import("./commands/add.js");
     await execute(repo, opts);

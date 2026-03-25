@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
 import { execFileSync } from "child_process";
@@ -213,6 +213,97 @@ describe("al update", () => {
 
     const updated = readFileSync(resolve(projectPath, "agents", "gamma", "SKILL.md"), "utf-8");
     expect(updated).toBe(newContent);
+  });
+
+  it("updates Dockerfile when upstream has changed", async () => {
+    const skillContent = "---\nname: my-skill\n---\n\n# My Skill\n";
+    const oldDockerfile = "FROM node:18\nCOPY . .\n";
+    const newDockerfile = "FROM node:20-alpine\nCOPY . .\nRUN npm install\n";
+
+    createGitRepo(repoPath, {
+      "SKILL.md": skillContent,
+      "Dockerfile": newDockerfile,
+    });
+
+    createProject({
+      "my-skill": {
+        skillMd: skillContent,
+        configToml: { source: repoPath },
+      },
+    });
+    // Write the old Dockerfile separately
+    writeFileSync(resolve(projectPath, "agents", "my-skill", "Dockerfile"), oldDockerfile);
+
+    vi.mocked(confirm).mockResolvedValue(true);
+
+    const { execute } = await import("../../../src/cli/commands/update.js");
+    await execute("my-skill", { project: projectPath });
+
+    const updated = readFileSync(resolve(projectPath, "agents", "my-skill", "Dockerfile"), "utf-8");
+    expect(updated).toBe(newDockerfile);
+  });
+
+  it("updates both SKILL.md and Dockerfile in a single prompt", async () => {
+    const oldContent = "---\nname: my-skill\n---\n\n# Old\n";
+    const newContent = "---\nname: my-skill\n---\n\n# New\n";
+    const oldDockerfile = "FROM node:18\n";
+    const newDockerfile = "FROM node:20\n";
+
+    createGitRepo(repoPath, {
+      "SKILL.md": newContent,
+      "Dockerfile": newDockerfile,
+    });
+
+    createProject({
+      "my-skill": {
+        skillMd: oldContent,
+        configToml: { source: repoPath },
+      },
+    });
+    writeFileSync(resolve(projectPath, "agents", "my-skill", "Dockerfile"), oldDockerfile);
+
+    vi.mocked(confirm).mockResolvedValue(true);
+
+    const { execute } = await import("../../../src/cli/commands/update.js");
+    await execute("my-skill", { project: projectPath });
+
+    const updatedSkill = readFileSync(resolve(projectPath, "agents", "my-skill", "SKILL.md"), "utf-8");
+    const updatedDocker = readFileSync(resolve(projectPath, "agents", "my-skill", "Dockerfile"), "utf-8");
+    expect(updatedSkill).toBe(newContent);
+    expect(updatedDocker).toBe(newDockerfile);
+
+    // Should have been called exactly once (single prompt for both)
+    expect(confirm).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports up-to-date when neither SKILL.md nor Dockerfile changed", async () => {
+    const skillContent = "---\nname: my-skill\n---\n\n# My Skill\n";
+    const dockerfile = "FROM node:20\n";
+
+    createGitRepo(repoPath, {
+      "SKILL.md": skillContent,
+      "Dockerfile": dockerfile,
+    });
+
+    createProject({
+      "my-skill": {
+        skillMd: skillContent,
+        configToml: { source: repoPath },
+      },
+    });
+    writeFileSync(resolve(projectPath, "agents", "my-skill", "Dockerfile"), dockerfile);
+
+    const { execute } = await import("../../../src/cli/commands/update.js");
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: any[]) => logs.push(args.map(String).join(" "));
+    try {
+      await execute("my-skill", { project: projectPath });
+    } finally {
+      console.log = origLog;
+    }
+
+    expect(logs.some(l => l.includes("up to date"))).toBe(true);
   });
 
   it("throws for non-existent agent name", async () => {

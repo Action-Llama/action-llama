@@ -86,7 +86,7 @@ describe("al add", () => {
   });
 
   describe("collection repo", () => {
-    it("installs a specific skill with --skill flag", async () => {
+    it("installs a specific agent with --agent flag", async () => {
       createGitRepo(repoPath, {
         "skills/alpha/SKILL.md": "---\nname: alpha\ndescription: Alpha skill\n---\n\n# Alpha\n",
         "skills/alpha/config.toml": stringifyTOML({ schedule: "0 0 * * *" }) + "\n",
@@ -97,7 +97,7 @@ describe("al add", () => {
       vi.spyOn(agentModule, "configAgent").mockResolvedValue();
 
       const { execute } = await import("../../../src/cli/commands/add.js");
-      await execute(repoPath, { skill: "alpha", project: projectPath });
+      await execute(repoPath, { agent: "alpha", project: projectPath });
 
       expect(existsSync(resolve(projectPath, "agents", "alpha", "SKILL.md"))).toBe(true);
       expect(existsSync(resolve(projectPath, "agents", "beta", "SKILL.md"))).toBe(false);
@@ -114,13 +114,13 @@ describe("al add", () => {
       vi.spyOn(agentModule, "configAgent").mockResolvedValue();
 
       const { execute } = await import("../../../src/cli/commands/add.js");
-      await execute(repoPath, { skill: "gamma", project: projectPath });
+      await execute(repoPath, { agent: "gamma", project: projectPath });
 
       expect(existsSync(resolve(projectPath, "agents", "gamma", "SKILL.md"))).toBe(true);
       expect(existsSync(resolve(projectPath, "agents", "delta", "SKILL.md"))).toBe(false);
     });
 
-    it("throws when --skill name not found in repo", async () => {
+    it("throws when --agent name not found in repo", async () => {
       createGitRepo(repoPath, {
         "skills/alpha/SKILL.md": "---\nname: alpha\n---\n\n# Alpha\n",
       });
@@ -129,8 +129,58 @@ describe("al add", () => {
       vi.spyOn(agentModule, "configAgent").mockResolvedValue();
 
       const { execute } = await import("../../../src/cli/commands/add.js");
-      await expect(execute(repoPath, { skill: "nope", project: projectPath }))
-        .rejects.toThrow('Skill "nope" not found');
+      await expect(execute(repoPath, { agent: "nope", project: projectPath }))
+        .rejects.toThrow('Agent "nope" not found');
+    });
+  });
+
+  describe("Dockerfile", () => {
+    it("copies Dockerfile when present alongside SKILL.md", async () => {
+      createGitRepo(repoPath, {
+        "SKILL.md": "---\nname: my-skill\n---\n\n# My Skill\n",
+        "config.toml": stringifyTOML({ schedule: "0 * * * *" }) + "\n",
+        "Dockerfile": "FROM node:20-alpine\nCOPY . .\n",
+      });
+
+      const agentModule = await import("../../../src/cli/commands/agent.js");
+      vi.spyOn(agentModule, "configAgent").mockResolvedValue();
+
+      const { execute } = await import("../../../src/cli/commands/add.js");
+      await execute(repoPath, { project: projectPath });
+
+      const dockerfile = readFileSync(resolve(projectPath, "agents", "my-skill", "Dockerfile"), "utf-8");
+      expect(dockerfile).toBe("FROM node:20-alpine\nCOPY . .\n");
+    });
+
+    it("does not create Dockerfile when not present in source", async () => {
+      createGitRepo(repoPath, {
+        "SKILL.md": "---\nname: my-skill\n---\n\n# My Skill\n",
+      });
+
+      const agentModule = await import("../../../src/cli/commands/agent.js");
+      vi.spyOn(agentModule, "configAgent").mockResolvedValue();
+
+      const { execute } = await import("../../../src/cli/commands/add.js");
+      await execute(repoPath, { project: projectPath });
+
+      expect(existsSync(resolve(projectPath, "agents", "my-skill", "Dockerfile"))).toBe(false);
+    });
+
+    it("copies Dockerfile from collection repo skill directory", async () => {
+      createGitRepo(repoPath, {
+        "skills/alpha/SKILL.md": "---\nname: alpha\n---\n\n# Alpha\n",
+        "skills/alpha/Dockerfile": "FROM python:3.12\nRUN pip install stuff\n",
+        "skills/alpha/config.toml": stringifyTOML({ schedule: "0 0 * * *" }) + "\n",
+      });
+
+      const agentModule = await import("../../../src/cli/commands/agent.js");
+      vi.spyOn(agentModule, "configAgent").mockResolvedValue();
+
+      const { execute } = await import("../../../src/cli/commands/add.js");
+      await execute(repoPath, { agent: "alpha", project: projectPath });
+
+      const dockerfile = readFileSync(resolve(projectPath, "agents", "alpha", "Dockerfile"), "utf-8");
+      expect(dockerfile).toBe("FROM python:3.12\nRUN pip install stuff\n");
     });
   });
 
