@@ -3,42 +3,26 @@ title: "Custom Dockerfiles"
 description: "Add tools and packages to your agent Docker images"
 ---
 
-Action Llama agents run in Docker containers built from a layered image system. By default, agents use a minimal Alpine-based image with Node.js, git, and curl. You can customize images at two levels: project-wide (shared by all agents) or per-agent.
+Action Llama agents run in Docker containers built from a minimal Alpine-based image with Node.js, git, and curl. Agents that need extra tools can add a `Dockerfile` to their directory.
 
-## Project-wide customizations
+<Note>Project-level Dockerfiles are also supported but not recommended — they make agents harder to reuse across projects. See the [Dockerfiles reference](/reference/dockerfiles#project-dockerfile) for details.</Note>
 
-The root `Dockerfile` in your project defines the shared base image for all agents. To add packages that every agent needs, add `RUN`, `ENV`, or other instructions:
+## Agent Dockerfiles
 
-```dockerfile
-FROM al-agent:latest
-
-# Install tools shared by all agents
-RUN apk add --no-cache python3 py3-pip github-cli
-
-# Set shared environment variables
-ENV MY_ORG=acme
-```
-
-When the project Dockerfile has customizations beyond the bare `FROM`, the build pipeline creates an intermediate image (`al-project-base:latest`) that all per-agent images layer on top of.
-
-If multiple agents need the same tool, put it here instead of duplicating it across agent Dockerfiles.
-
-## Per-agent customizations
-
-Agents that need extra tools beyond the project base can add a `Dockerfile` to their own directory:
+Agents that need extra tools can add a `Dockerfile` to their directory:
 
 ```
 my-project/
-  Dockerfile              <-- project base (shared tools)
-  dev/
-    SKILL.md
-    Dockerfile            <-- custom image for this agent only
-  reviewer/
-    SKILL.md
-                          <-- no Dockerfile, uses project base
+  agents/
+    dev/
+      SKILL.md
+      Dockerfile            <-- custom image for this agent
+    reviewer/
+      SKILL.md
+                            <-- no Dockerfile, uses base image
 ```
 
-Use `FROM al-agent:latest` and add what you need. The build pipeline automatically rewrites the `FROM` line to point at the correct base (`al-project-base:latest` if the project Dockerfile has customizations). Switch to `root` to install packages, then back to `node`:
+Use `FROM al-agent:latest` and add what you need. The build pipeline automatically rewrites the `FROM` line at build time. Switch to `root` to install packages, then back to `node`:
 
 ```dockerfile
 FROM al-agent:latest

@@ -5,38 +5,28 @@ description: "Docker image structure, build behavior, and container configuratio
 
 Agents run in Docker containers built from a layered image system. See [Custom Dockerfiles](/guides/custom-dockerfiles) for a guide on writing and customizing Dockerfiles.
 
-## Project Dockerfile
-
-Every project has a `Dockerfile` at the root (created by `al new`) that defines the shared base image for all agents.
-
-```
-my-project/
-  Dockerfile              <-- project base image (shared by all agents)
-  config.toml
-  dev/
-    SKILL.md
-  reviewer/
-    SKILL.md
-```
-
-By default, the project Dockerfile is a bare `FROM al-agent:latest` with no customizations. In this state, it is skipped entirely — agents build directly on `al-agent:latest` with no overhead.
-
 ## Agent Dockerfile
 
-Agents that need extra tools beyond the project base image can add a `Dockerfile` to their own directory.
+Agents that need extra tools can add a `Dockerfile` to their directory:
 
 ```
 my-project/
-  Dockerfile              <-- project base (shared tools)
-  dev/
-    SKILL.md
-    Dockerfile            <-- custom image for this agent only
-  reviewer/
-    SKILL.md
-                          <-- no Dockerfile, uses project base
+  agents/
+    dev/
+      SKILL.md
+      Dockerfile            <-- custom image for this agent
+    reviewer/
+      SKILL.md
+                            <-- no Dockerfile, uses base image
 ```
 
-Agents without a Dockerfile use the project base image (or `al-agent:latest` if the project Dockerfile is unmodified).
+Agents without a Dockerfile use `al-agent:latest` directly.
+
+## Project Dockerfile
+
+<Warning>Project Dockerfiles make agents harder to reuse. When an agent depends on tools installed in the project base image, it won't work when shared to another project. Prefer agent-level Dockerfiles so each agent is self-contained and portable.</Warning>
+
+Projects can optionally have a `Dockerfile` at the root that defines a shared base image for all agents. When present and customized beyond a bare `FROM al-agent:latest`, the build pipeline creates an intermediate image (`al-project-base:latest`) that all agent images layer on top of. If unmodified or absent, agents build directly on `al-agent:latest`.
 
 ## Image Build Order
 

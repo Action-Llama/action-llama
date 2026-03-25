@@ -25,7 +25,6 @@ cd my-agents
 The wizard prompts for your LLM API key (Anthropic recommended) and basic configuration. This creates:
 
 - `config.toml`: project-level settings
-- `Dockerfile`: shared base Docker image
 - `.env.toml`: local environment binding (gitignored)
 - `package.json`: with `@action-llama/action-llama` as a dependency
 - `CLAUDE.md`: a symlink to an AGENTS.md file in the npm package that has everything your agent needs to know
@@ -39,7 +38,9 @@ Add a "dev" agent that will implement Github issues when they are tagged with "r
 npx al add Action-Llama/agents -a dev
 ```
 
-Choose a template (dev, reviewer, devops, or custom), give it a name, and configure its schedule, credentials, and model. This creates a directory like:
+You'll need to configure the credentials and webhooks since this is the first time you've run it.  You'll also want to configure the params to match your Github org.
+
+You'll now see:
 
 ```
 agents/dev/
