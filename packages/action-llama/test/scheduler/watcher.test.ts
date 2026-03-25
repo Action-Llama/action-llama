@@ -110,12 +110,14 @@ function makeContext(overrides: Partial<HotReloadContext> = {}): HotReloadContex
     statusTracker: {
       registerAgent: vi.fn(),
       unregisterAgent: vi.fn(),
+      updateAgentScale: vi.fn(),
       setAgentState: vi.fn(),
       setAgentStatusText: vi.fn(),
       setAgentError: vi.fn(),
       setNextRunAt: vi.fn(),
       addLogLine: vi.fn(),
       isAgentEnabled: vi.fn(() => true),
+      getAllAgents: vi.fn(() => []),
     } as any,
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
     skills: { locking: true },
@@ -370,5 +372,80 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     // New cron job should have been created (schedule changed from "0 * * * *" to "*/10 * * * *")
     expect(ctx.cronJobs.length).toBeGreaterThan(0);
     expect(ctx.statusTracker!.setNextRunAt).toHaveBeenCalled();
+  });
+
+  it("hot reload scale change uses updateAgentScale (not registerAgent) to preserve running state", async () => {
+    const runner = makeMockRunner("agent-a");
+    const pool = new RunnerPool([runner]);
+    const ctx = makeContext({ runnerPools: { "agent-a": pool } });
+
+    // Scale increases from 1 to 2
+    const scaledConfig = makeAgentConfig("agent-a", { scale: 2 });
+    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
+    mockedLoadAgentConfig.mockReturnValue(scaledConfig);
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    // updateAgentScale should be called — NOT registerAgent — to preserve runningCount
+    expect(ctx.statusTracker!.updateAgentScale).toHaveBeenCalledWith("agent-a", 2);
+    expect(ctx.statusTracker!.registerAgent).not.toHaveBeenCalled();
+  });
+
+  it("hot reload scale decrease uses updateAgentScale (not registerAgent)", async () => {
+    const runner1 = makeMockRunner("agent-a-00000001");
+    const runner2 = makeMockRunner("agent-a-00000002");
+    const runner3 = makeMockRunner("agent-a-00000003");
+    const pool = new RunnerPool([runner1, runner2, runner3]);
+    const ctx = makeContext({
+      agentConfigs: [makeAgentConfig("agent-a", { scale: 3 })],
+      runnerPools: { "agent-a": pool },
+    });
+
+    const shrunkConfig = makeAgentConfig("agent-a", { scale: 1 });
+    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
+    mockedLoadAgentConfig.mockReturnValue(shrunkConfig);
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    expect(ctx.statusTracker!.updateAgentScale).toHaveBeenCalledWith("agent-a", 1);
+    expect(ctx.statusTracker!.registerAgent).not.toHaveBeenCalled();
+  });
+
+  it("hot reload preserves running state when runners are active after rebuild", async () => {
+    const runner = makeMockRunner("agent-a");
+    const pool = new RunnerPool([runner]);
+
+    // Simulate a running agent: getAllAgents reports runningCount = 1
+    const statusTracker = {
+      registerAgent: vi.fn(),
+      unregisterAgent: vi.fn(),
+      updateAgentScale: vi.fn(),
+      setAgentState: vi.fn(),
+      setAgentStatusText: vi.fn(),
+      setAgentError: vi.fn(),
+      setNextRunAt: vi.fn(),
+      addLogLine: vi.fn(),
+      isAgentEnabled: vi.fn(() => true),
+      getAllAgents: vi.fn(() => [{ name: "agent-a", runningCount: 1, state: "running" }]),
+    };
+
+    const ctx = makeContext({ runnerPools: { "agent-a": pool }, statusTracker: statusTracker as any });
+
+    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
+    mockedLoadAgentConfig.mockReturnValue(makeAgentConfig("agent-a"));
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    // setAgentState("idle") should NOT have been called — a runner is still active
+    const idleCalls = statusTracker.setAgentState.mock.calls.filter(
+      ([_name, state]: [string, string]) => state === "idle"
+    );
+    expect(idleCalls).toHaveLength(0);
+
+    // But building state should have been set
+    expect(statusTracker.setAgentState).toHaveBeenCalledWith("agent-a", "building");
   });
 });
