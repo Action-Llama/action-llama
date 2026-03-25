@@ -34,6 +34,8 @@ jobs:
 
       - name: Promote to latest
         run: npm dist-tag add @action-llama/action-llama@${{ steps.version.outputs.version }} latest
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Summary
         run: echo "Promoted @action-llama/action-llama@${{ steps.version.outputs.version }} to latest"
