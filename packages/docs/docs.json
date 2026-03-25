@@ -11,6 +11,12 @@
     "light": "#9a6c2e",
     "dark": "#d4a574"
   },
+  "integrations": {
+    "posthog": {
+      "apiKey": "phc_M4Kc34OxPYZI59VqLZrTKbqHAtrTTJ78hgWMhKR5nGA",
+      "sessionRecording": true
+    }
+  },
   "navigation": {
     "tabs": [
       {
