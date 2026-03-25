@@ -43,7 +43,7 @@ export function RunModal({
           onChange={(e) => setPrompt(e.target.value)}
           placeholder="Optional: describe a specific task..."
           rows={3}
-          className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-md text-slate-900 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none flex-1 sm:flex-none"
+          className="w-full px-3 py-2 text-base bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-md text-slate-900 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none flex-1 sm:flex-none"
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSubmit();
           }}

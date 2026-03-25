@@ -211,7 +211,7 @@ export function AgentDetailPage() {
                 min={1}
                 value={scaleInput}
                 onChange={(e) => setScaleInput(e.target.value)}
-                className="w-14 px-2 py-1 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded text-xs text-slate-900 dark:text-slate-200"
+                className="w-16 px-2 py-1 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded text-base text-slate-900 dark:text-slate-200"
               />
               <button
                 onClick={handleScaleUpdate}

@@ -41,11 +41,9 @@
   border-radius: 3px;
 }
 
-/* Prevent iOS Safari auto-zoom on input focus (requires font-size >= 16px) */
-@media screen and (max-width: 767px) {
-  input,
-  textarea,
-  select {
-    font-size: 16px;
-  }
+/* Prevent Safari iOS auto-zoom on input focus (requires >= 16px) */
+input,
+textarea,
+select {
+  font-size: 1rem; /* 16px */
 }

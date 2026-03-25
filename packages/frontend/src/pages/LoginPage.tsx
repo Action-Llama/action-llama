@@ -58,7 +58,7 @@ export function LoginPage() {
             placeholder="Paste your gateway API key"
             autoFocus
             required
-            className="w-full px-3 py-2.5 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-200 text-sm outline-none focus:border-blue-500 dark:focus:border-blue-400 transition-colors"
+            className="w-full px-3 py-2.5 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-200 text-base outline-none focus:border-blue-500 dark:focus:border-blue-400 transition-colors"
           />
           <button
             type="submit"
