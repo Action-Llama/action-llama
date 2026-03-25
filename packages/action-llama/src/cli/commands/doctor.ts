@@ -1,6 +1,6 @@
 import { resolve } from "path";
 import { existsSync, readFileSync } from "fs";
-import { discoverAgents, loadAgentConfig, loadAgentRuntimeConfig, loadGlobalConfig, validateAgentConfig, loadProjectConfig } from "../../shared/config.js";
+import { discoverAgents, loadAgentRuntimeConfig, loadGlobalConfig, validateAgentConfig, loadProjectConfig } from "../../shared/config.js";
 import { resolveCredential } from "../../credentials/registry.js";
 import { promptCredential } from "../../credentials/prompter.js";
 import { parseCredentialRef, credentialExists, writeCredentialFields } from "../../shared/credentials.js";
@@ -65,6 +65,7 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
   }
 
   // Validate each agent config with enhanced validation
+  // Uses raw runtime config to avoid throwing on unresolved model references
   for (const name of agents) {
     try {
       const agentDir = resolve(projectPath, "agents", name);
@@ -74,7 +75,19 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
         const rawSkill = readFileSync(skillPath, "utf-8");
         const { data } = parseFrontmatter(rawSkill);
 
-        const config = loadAgentConfig(projectPath, name);
+        const runtime = loadAgentRuntimeConfig(projectPath, name);
+
+        // Build a partial AgentConfig for the enhanced validator without resolving models
+        // (model reference validation is handled separately below)
+        const partialConfig = {
+          name,
+          credentials: runtime.credentials ?? [],
+          models: [] as any[],
+          schedule: runtime.schedule,
+          webhooks: runtime.webhooks,
+          scale: runtime.scale,
+          timeout: runtime.timeout,
+        };
 
         // Load raw runtime config for schema validation
         const configTomlPath = resolve(agentDir, "config.toml");
@@ -83,7 +96,7 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
           rawRuntimeConfig = parseTOML(readFileSync(configTomlPath, "utf-8"));
         }
 
-        const agentValidation = validateAgentConfigEnhanced(config, data, rawRuntimeConfig);
+        const agentValidation = validateAgentConfigEnhanced(partialConfig, data, rawRuntimeConfig);
 
         validationErrors.push(...agentValidation.errors.map(e =>
           `Agent "${name}": ${e.message}${e.field ? ` (${e.field})` : ""}`
@@ -112,41 +125,57 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
   }
 
   // Validate each agent's config (schedule/webhooks required, name rules)
+  // Uses raw runtime config to avoid throwing on unresolved model references
   for (const name of agents) {
-    const config = loadAgentConfig(projectPath, name);
-    validateAgentConfig(config);
+    try {
+      const runtime = loadAgentRuntimeConfig(projectPath, name);
 
-    // Validate pi_auth is not used (incompatible with container mode)
-    for (const mc of config.models ?? []) {
-      if (mc.authType === "pi_auth") {
-        throw new ConfigError(
-          `Agent "${name}" uses pi_auth (model "${mc.model}") which is not supported in container mode. ` +
-          `Switch to api_key/oauth_token (run 'al doctor').`
-        );
+      // Validate agent name
+      try {
+        validateAgentConfig({ name, credentials: [], models: [], schedule: runtime.schedule, webhooks: runtime.webhooks, scale: runtime.scale });
+      } catch (err) {
+        validationErrors.push(err instanceof Error ? err.message : String(err));
       }
+
+      // Validate model references resolve
+      const availableModels = globalConfig.models ?? {};
+      for (const modelRef of runtime.models ?? []) {
+        if (!availableModels[modelRef]) {
+          const available = Object.keys(availableModels).join(", ") || "(none)";
+          validationErrors.push(
+            `Agent "${name}" references model "${modelRef}" which is not defined in config.toml. Available: ${available}`
+          );
+        }
+      }
+
+      // Validate pi_auth is not used (incompatible with container mode)
+      for (const modelRef of runtime.models ?? []) {
+        const mc = availableModels[modelRef];
+        if (mc?.authType === "pi_auth") {
+          validationErrors.push(
+            `Agent "${name}" uses pi_auth (model "${mc.model}") which is not supported in container mode. ` +
+            `Switch to api_key/oauth_token.`
+          );
+        }
+      }
+    } catch (err) {
+      validationErrors.push(`Error validating agent "${name}": ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
   // Validate project-wide scale limits
   if (globalConfig.scale !== undefined) {
     const defaultScale = globalConfig.defaultAgentScale ?? 1;
-    const scaleViolations: string[] = [];
     let totalRequested = 0;
     for (const name of agents) {
-      const config = loadAgentConfig(projectPath, name);
-      const agentScale = config.scale ?? defaultScale;
+      const runtime = loadAgentRuntimeConfig(projectPath, name);
+      const agentScale = runtime.scale ?? defaultScale;
       totalRequested += agentScale;
       if (agentScale > globalConfig.scale) {
-        scaleViolations.push(
+        validationErrors.push(
           `Agent "${name}" scale (${agentScale}) exceeds project scale limit (${globalConfig.scale})`
         );
       }
-    }
-    if (scaleViolations.length > 0) {
-      throw new ConfigError(
-        "Agent scale violations:\n" +
-        scaleViolations.map(e => `  - ${e}`).join("\n")
-      );
     }
     if (totalRequested > globalConfig.scale) {
       validationWarnings.push(
@@ -156,11 +185,10 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
   }
 
   // Validate webhook source definitions have known provider types
-  const configErrors: string[] = [];
   for (const [sourceName, sourceConfig] of Object.entries(webhookSources)) {
     if (!KNOWN_PROVIDER_TYPES.has(sourceConfig.type)) {
       const known = [...KNOWN_PROVIDER_TYPES].join(", ");
-      configErrors.push(
+      validationErrors.push(
         `Webhook source "${sourceName}" has unknown type "${sourceConfig.type}". Known types: ${known}`
       );
     }
@@ -168,39 +196,29 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
 
   // Validate agent webhook triggers reference valid sources with correct fields
   for (const name of agents) {
-    const config = loadAgentConfig(projectPath, name);
-    for (const trigger of config.webhooks || []) {
-      // Validate the source exists in [webhooks]
+    const runtime = loadAgentRuntimeConfig(projectPath, name);
+    for (const trigger of runtime.webhooks || []) {
       const sourceConfig = webhookSources[trigger.source];
       if (!sourceConfig) {
         const available = Object.keys(webhookSources).join(", ") || "(none)";
-        configErrors.push(
+        validationErrors.push(
           `Agent "${name}" references webhook source "${trigger.source}" ` +
           `which is not defined in config.toml [webhooks]. Available: ${available}`
         );
         continue;
       }
-      configErrors.push(...validateTriggerFields(trigger, sourceConfig.type, name));
+      validationErrors.push(...validateTriggerFields(trigger, sourceConfig.type, name));
     }
-  }
-  if (configErrors.length > 0) {
-    throw new ConfigError(
-      "Invalid webhook configuration:\n" +
-      configErrors.map(e => `  - ${e}`).join("\n")
-    );
   }
 
   // Check webhook security configurations (skip when --skip-creds / skipCredentials)
   if (!opts.skipCredentials) {
-    const securityErrors: string[] = [];
     for (const [sourceName, sourceConfig] of Object.entries(webhookSources)) {
-      // credential defaults to "default" — only error if allowUnsigned is explicitly false-y
-      // and no credential is stored for the default instance
       const credInstance = sourceConfig.credential ?? "default";
       if (sourceConfig.type !== "test" && sourceConfig.allowUnsigned !== true) {
         const credType = PROVIDER_TO_CREDENTIAL[sourceConfig.type];
         if (credType && !credentialExists(credType, credInstance)) {
-          securityErrors.push(
+          validationErrors.push(
             `Webhook source "${sourceName}" (${sourceConfig.type}) has no webhook secret stored ` +
             `(credential instance "${credInstance}"). ` +
             `Run "al doctor" to configure it, or add allowUnsigned = true for insecure mode.`
@@ -209,14 +227,7 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
       }
     }
 
-    if (securityErrors.length > 0) {
-      throw new ConfigError(
-        "Configuration errors:\n" +
-        securityErrors.map(e => `  - ${e}`).join("\n")
-      );
-    }
-
-    // Show security warnings for allowUnsigned webhook sources (after error checks pass)
+    // Show security warnings for allowUnsigned webhook sources
     for (const [sourceName, sourceConfig] of Object.entries(webhookSources)) {
       if (sourceConfig.allowUnsigned && sourceConfig.type !== "test") {
         if (!opts.silent) {
@@ -229,10 +240,8 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
     }
   }
 
-  // Display validation results
+  // Display all validation results
   if (validationErrors.length > 0 || validationWarnings.length > 0) {
-    // Always show errors (even in silent mode) since we throw on them.
-    // Only suppress warnings in silent mode.
     const showWarnings = !opts.silent && validationWarnings.length > 0;
     const showErrors = validationErrors.length > 0;
 
@@ -255,7 +264,7 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
     }
   }
 
-  // Throw error if there are validation errors
+  // Throw after displaying all errors
   if (validationErrors.length > 0) {
     throw new ConfigError(
       `${validationErrors.length} validation error(s) found:\n` +

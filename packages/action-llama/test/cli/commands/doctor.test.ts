@@ -5,13 +5,16 @@ import { captureLog } from "../../helpers.js";
 
 const mockDiscoverAgents = vi.fn();
 const mockLoadAgentConfig = vi.fn();
+const mockLoadAgentRuntimeConfig = vi.fn();
 const mockLoadGlobalConfig = vi.fn();
 const mockValidateAgentConfig = vi.fn();
 vi.mock("../../../src/shared/config.js", () => ({
   discoverAgents: (...args: any[]) => mockDiscoverAgents(...args),
   loadAgentConfig: (...args: any[]) => mockLoadAgentConfig(...args),
+  loadAgentRuntimeConfig: (...args: any[]) => mockLoadAgentRuntimeConfig(...args),
   loadGlobalConfig: (...args: any[]) => mockLoadGlobalConfig(...args),
   validateAgentConfig: (...args: any[]) => mockValidateAgentConfig(...args),
+  loadProjectConfig: vi.fn(),
 }));
 
 const mockResolveCredential = vi.fn();
@@ -79,11 +82,13 @@ const mockValidateGlobalConfig = vi.fn();
 const mockValidateAgentConfigEnhanced = vi.fn();
 const mockDetectGlobalConfigUnknownFields = vi.fn();
 const mockDetectAgentFrontmatterUnknownFields = vi.fn();
+const mockDetectAgentRuntimeConfigUnknownFields = vi.fn();
 vi.mock("../../../src/shared/validation.js", () => ({
   validateGlobalConfig: (...args: any[]) => mockValidateGlobalConfig(...args),
   validateAgentConfig: (...args: any[]) => mockValidateAgentConfigEnhanced(...args),
   detectGlobalConfigUnknownFields: (...args: any[]) => mockDetectGlobalConfigUnknownFields(...args),
   detectAgentFrontmatterUnknownFields: (...args: any[]) => mockDetectAgentFrontmatterUnknownFields(...args),
+  detectAgentRuntimeConfigUnknownFields: (...args: any[]) => mockDetectAgentRuntimeConfigUnknownFields(...args),
 }));
 
 const mockExistsSync = vi.fn();
@@ -143,6 +148,8 @@ describe("doctor", () => {
     mockValidateAgentConfigEnhanced.mockReturnValue({ errors: [], warnings: [] });
     mockDetectGlobalConfigUnknownFields.mockReturnValue([]);
     mockDetectAgentFrontmatterUnknownFields.mockReturnValue([]);
+    mockDetectAgentRuntimeConfigUnknownFields.mockReturnValue([]);
+    mockLoadAgentRuntimeConfig.mockReturnValue({});
     mockExistsSync.mockReturnValue(false);
     mockReadFileSync.mockReturnValue("");
   });
@@ -235,6 +242,9 @@ describe("doctor", () => {
       credentials: ["github_token"],
       webhooks: [{ source: "my-github", events: ["issues"] }],
     });
+    mockLoadAgentRuntimeConfig.mockReturnValue({
+      webhooks: [{ source: "my-github", events: ["issues"] }],
+    });
     mockResolveCredential.mockImplementation((id: string) => ({
       id,
       label: id === "github_token" ? "GitHub Token" : "GitHub Webhook Secret",
@@ -256,6 +266,9 @@ describe("doctor", () => {
     mockLoadAgentConfig.mockReturnValue({
       name: "dev",
       credentials: ["github_token"],
+      webhooks: [{ source: "my-github", events: ["issues"] }],
+    });
+    mockLoadAgentRuntimeConfig.mockReturnValue({
       webhooks: [{ source: "my-github", events: ["issues"] }],
     });
     mockResolveCredential.mockImplementation((id: string) => ({
@@ -297,6 +310,9 @@ describe("doctor", () => {
     mockLoadAgentConfig.mockReturnValue({
       name: "dev",
       credentials: ["github_token"],
+      webhooks: [{ source: "my-github", events: ["issues"] }],
+    });
+    mockLoadAgentRuntimeConfig.mockReturnValue({
       webhooks: [{ source: "my-github", events: ["issues"] }],
     });
     mockCredentialExists.mockReturnValue(false);
@@ -360,6 +376,9 @@ describe("doctor", () => {
       credentials: [],
       webhooks: [{ source: "my-github", events: ["issues"] }],
     });
+    mockLoadAgentRuntimeConfig.mockReturnValue({
+      webhooks: [{ source: "my-github", events: ["issues"] }],
+    });
 
     await expect(
       captureLog(() => execute({ project: "." }))
@@ -376,13 +395,16 @@ describe("doctor", () => {
       credentials: [],
       webhooks: [{ source: "my-github", repository: "foo" }],
     });
+    mockLoadAgentRuntimeConfig.mockReturnValue({
+      webhooks: [{ source: "my-github", repository: "foo" }],
+    });
     mockValidateTriggerFields.mockReturnValue([
       'Agent "dev" webhook trigger: unrecognized field "repository" for github provider. Did you mean "repos"?',
     ]);
 
     await expect(
       captureLog(() => execute({ project: "." }))
-    ).rejects.toThrow("Invalid webhook configuration");
+    ).rejects.toThrow("validation error(s) found");
   });
 
   it("passes with valid webhook trigger fields", async () => {
@@ -393,6 +415,9 @@ describe("doctor", () => {
     mockLoadAgentConfig.mockReturnValue({
       name: "dev",
       credentials: ["github_token"],
+      webhooks: [{ source: "my-github", events: ["issues"], org: "acme" }],
+    });
+    mockLoadAgentRuntimeConfig.mockReturnValue({
       webhooks: [{ source: "my-github", events: ["issues"], org: "acme" }],
     });
     mockResolveCredential.mockReturnValue({
@@ -417,6 +442,9 @@ describe("doctor", () => {
       credentials: [],
       webhooks: [{ source: "my-hook", events: ["issues"] }],
     });
+    mockLoadAgentRuntimeConfig.mockReturnValue({
+      webhooks: [{ source: "my-hook", events: ["issues"] }],
+    });
 
     await expect(
       captureLog(() => execute({ project: "." }))
@@ -433,6 +461,9 @@ describe("doctor", () => {
       credentials: ["github_token"],
       webhooks: [{ source: "my-github", events: ["issues"] }],
     });
+    mockLoadAgentRuntimeConfig.mockReturnValue({
+      webhooks: [{ source: "my-github", events: ["issues"] }],
+    });
     mockCredentialExists.mockReturnValue(false);
 
     await expect(() => execute({ project: "." })).rejects.toThrow(/has no webhook secret stored/);
@@ -446,6 +477,9 @@ describe("doctor", () => {
     mockLoadAgentConfig.mockReturnValue({
       name: "dev",
       credentials: ["github_token"],
+      webhooks: [{ source: "my-github", events: ["issues"] }],
+    });
+    mockLoadAgentRuntimeConfig.mockReturnValue({
       webhooks: [{ source: "my-github", events: ["issues"] }],
     });
     mockResolveCredential.mockReturnValue({
@@ -471,6 +505,9 @@ describe("doctor", () => {
       credentials: [],
       webhooks: [{ source: "my-test", events: ["test"] }],
     });
+    mockLoadAgentRuntimeConfig.mockReturnValue({
+      webhooks: [{ source: "my-test", events: ["test"] }],
+    });
     mockCredentialExists.mockReturnValue(true);
 
     const output = await captureLog(() => execute({ project: "." }));
@@ -485,6 +522,9 @@ describe("doctor", () => {
     mockLoadAgentConfig.mockReturnValue({
       name: "dev",
       credentials: [],
+      webhooks: [{ source: "my-github", events: ["issues"] }],
+    });
+    mockLoadAgentRuntimeConfig.mockReturnValue({
       webhooks: [{ source: "my-github", events: ["issues"] }],
     });
     mockCredentialExists.mockReturnValue(true);
@@ -503,6 +543,9 @@ describe("doctor", () => {
     mockLoadAgentConfig.mockReturnValue({
       name: "dev",
       credentials: [],
+      webhooks: [{ source: "my-linear", events: ["issues"] }],
+    });
+    mockLoadAgentRuntimeConfig.mockReturnValue({
       webhooks: [{ source: "my-linear", events: ["issues"] }],
     });
     mockResolveCredential.mockReturnValue({
@@ -559,6 +602,7 @@ describe("doctor", () => {
         credentials: [],
         scale: 5,
       });
+      mockLoadAgentRuntimeConfig.mockReturnValue({ scale: 5 });
 
       await expect(
         execute({ project: "." })
@@ -573,6 +617,7 @@ describe("doctor", () => {
         credentials: [],
         scale: 3,
       });
+      mockLoadAgentRuntimeConfig.mockReturnValue({ scale: 3 });
       mockCredentialExists.mockReturnValue(true);
 
       // Should not throw
@@ -589,10 +634,13 @@ describe("doctor", () => {
           scale: 2,
         })
         .mockReturnValueOnce({
-          name: "reviewer", 
+          name: "reviewer",
           credentials: [],
           scale: 1,
         });
+      mockLoadAgentRuntimeConfig
+        .mockReturnValueOnce({ scale: 2 })
+        .mockReturnValueOnce({ scale: 1 });
       mockCredentialExists.mockReturnValue(true);
 
       // Should not throw (2 + 1 <= 4)
@@ -607,6 +655,7 @@ describe("doctor", () => {
         credentials: [],
         scale: 10, // Would exceed if limit existed
       });
+      mockLoadAgentRuntimeConfig.mockReturnValue({ scale: 10 });
       mockCredentialExists.mockReturnValue(true);
 
       // Should not throw when no project scale is set
