@@ -349,6 +349,52 @@ describe("agent config", () => {
     expect(modelChoice.name).toContain("not in config.toml");
   });
 
+  it("shows error indicator for undefined webhook source in menu", async () => {
+    createAgentConfig("wh-bad", {
+      credentials: [],
+      models: ["sonnet"],
+      webhooks: [{ source: "github", events: ["pull_request"] }],
+    });
+
+    let menuChoices: any[] = [];
+    mockSelect.mockImplementationOnce(async (opts: any) => {
+      menuChoices = opts.choices;
+      return "done";
+    });
+
+    await configAgent("wh-bad", { project: tmpDir });
+
+    const webhookChoice = menuChoices.find((c: any) => c.value === "webhooks");
+    expect(webhookChoice.name).toContain("✗");
+    expect(webhookChoice.name).toContain('"github"');
+    expect(webhookChoice.name).toContain("not in config.toml");
+  });
+
+  it("shows valid indicator when webhook source exists", async () => {
+    // Add a webhook source to the project config
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+      webhooks: { github: { type: "github" } },
+    }));
+    createAgentConfig("wh-good", {
+      credentials: [],
+      models: ["sonnet"],
+      webhooks: [{ source: "github", events: ["pull_request"] }],
+    });
+
+    let menuChoices: any[] = [];
+    mockSelect.mockImplementationOnce(async (opts: any) => {
+      menuChoices = opts.choices;
+      return "done";
+    });
+
+    await configAgent("wh-good", { project: tmpDir });
+
+    const webhookChoice = menuChoices.find((c: any) => c.value === "webhooks");
+    expect(webhookChoice.name).toContain("✓");
+    expect(webhookChoice.name).toContain("1 trigger");
+  });
+
   it("webhooks offers to create source when none configured", async () => {
     createAgentConfig("wh-agent", { credentials: [], models: ["sonnet"] });
 

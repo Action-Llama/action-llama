@@ -118,7 +118,7 @@ export async function configAgent(name: string, opts: { project: string }): Prom
     const modelStatus = validateModels(modelNames, globalConfig);
     const scheduleStatus = validateSchedule(config.schedule, config.webhooks);
     const credCount = config.credentials?.length ?? 0;
-    const webhookCount = config.webhooks?.length ?? 0;
+    const webhookStatus = validateWebhooks(config.webhooks, globalConfig);
     const paramCount = config.params ? Object.keys(config.params).length : 0;
 
     const section = await select({
@@ -127,7 +127,7 @@ export async function configAgent(name: string, opts: { project: string }): Prom
         { name: `${modelStatus.icon} models         ${modelStatus.label}`, value: "model" },
         { name: `${credCount > 0 ? "✓" : "-"} credentials    ${credCount > 0 ? config.credentials!.join(", ") : "(none)"}`, value: "credentials" },
         { name: `${scheduleStatus.icon} schedule       ${scheduleStatus.label}`, value: "schedule" },
-        { name: `${webhookCount > 0 ? "✓" : "-"} webhooks       ${webhookCount > 0 ? `${webhookCount} trigger${webhookCount !== 1 ? "s" : ""}` : "(none)"}`, value: "webhooks" },
+        { name: `${webhookStatus.icon} webhooks       ${webhookStatus.label}`, value: "webhooks" },
         { name: `${paramCount > 0 ? "✓" : "-"} params         ${paramCount > 0 ? `${paramCount} key${paramCount !== 1 ? "s" : ""}` : "(none)"}`, value: "params" },
         { name: "  Done — save and run doctor", value: "done" },
       ],
@@ -210,6 +210,30 @@ function validateModels(
   }
   const first = availableModels[modelNames[0]];
   return { icon: "✓", label: `${modelNames[0]} (${first.provider}/${first.model})` };
+}
+
+function validateWebhooks(
+  webhooks: any[] | undefined,
+  globalConfig: Record<string, any>,
+): { icon: string; label: string } {
+  if (!webhooks || webhooks.length === 0) {
+    return { icon: "-", label: "(none)" };
+  }
+  const sources = globalConfig.webhooks ?? {};
+  const missing = webhooks
+    .map((t: any) => t.source)
+    .filter((s: string) => !sources[s]);
+  if (missing.length > 0) {
+    const unique = [...new Set(missing)];
+    return {
+      icon: "✗",
+      label: `${webhooks.length} trigger${webhooks.length !== 1 ? "s" : ""} (source ${unique.map((s: string) => `"${s}"`).join(", ")} not in config.toml)`,
+    };
+  }
+  return {
+    icon: "✓",
+    label: `${webhooks.length} trigger${webhooks.length !== 1 ? "s" : ""}`,
+  };
 }
 
 function validateSchedule(
