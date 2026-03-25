@@ -10,10 +10,12 @@ on:
 jobs:
   promote:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
     steps:
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           registry-url: "https://registry.npmjs.org"
 
       - name: Resolve version
@@ -32,8 +34,6 @@ jobs:
 
       - name: Promote to latest
         run: npm dist-tag add @action-llama/action-llama@${{ steps.version.outputs.version }} latest
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Summary
         run: echo "Promoted @action-llama/action-llama@${{ steps.version.outputs.version }} to latest"
