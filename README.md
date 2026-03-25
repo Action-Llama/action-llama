@@ -21,13 +21,13 @@ cd my-project
 
 This scaffolds the project and sets up your model credentials and defaults.
 
-### 2. Create and manage agents
+### 2. Install an agent
 
 ```bash
-npx al chat
+npx al add Action-Llama/agents -a dev
 ```
 
-The chat console helps you create and manage agents. If no agents exist yet, it will offer to create one for you.
+This installs the `dev` agent from the official collection and walks you through configuration (credentials, model, schedule).
 
 You can also create agents manually — see the [creating agents guide](docs/creating-agents.md).
 

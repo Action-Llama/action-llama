@@ -157,7 +157,7 @@ Setup complete!
 
 Next steps:
   cd ${name}
-  npx al chat    # Start an interactive chat to create agents
-  npx al start # Start the gateway
+  npx al add Action-Llama/agents -a dev   # Install your first agent
+  npx al start                             # Start the gateway
 `);
 }
