@@ -79,7 +79,7 @@ export class StatusTracker extends EventEmitter {
     return signals;
   }
 
-  registerAgent(name: string, scale = 1): void {
+  registerAgent(name: string, scale = 1, description?: string): void {
     // Create AgentLifecycle and listen to its events
     const lifecycle = new AgentLifecycle(name);
     this.agentLifecycles.set(name, lifecycle);
@@ -95,6 +95,7 @@ export class StatusTracker extends EventEmitter {
 
     this.agents.set(name, {
       name,
+      description,
       state: lifecycle.getState(),
       enabled: scale > 0,
       statusText: null,
@@ -192,6 +193,13 @@ export class StatusTracker extends EventEmitter {
     const agent = this.agents.get(name);
     if (!agent) return;
     agent.taskUrl = url;
+    this.emit("update");
+  }
+
+  setAgentDescription(name: string, description: string | undefined): void {
+    const agent = this.agents.get(name);
+    if (!agent) return;
+    agent.description = description;
     this.emit("update");
   }
 

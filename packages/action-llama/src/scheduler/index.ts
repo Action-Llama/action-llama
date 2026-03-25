@@ -70,7 +70,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // Register agents early so the TUI shows them during image builds
   for (const agentConfig of agentConfigs) {
-    statusTracker?.registerAgent(agentConfig.name, agentConfig.scale ?? 1);
+    statusTracker?.registerAgent(agentConfig.name, agentConfig.scale ?? 1, agentConfig.description);
   }
 
   // Create persistent state store (SQLite)

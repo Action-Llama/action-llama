@@ -172,7 +172,7 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
     }
 
     const scale = agentConfig.scale ?? 1;
-    ctx.statusTracker?.registerAgent(agentName, scale);
+    ctx.statusTracker?.registerAgent(agentName, scale, agentConfig.description);
 
     if (scale === 0) {
       ctx.agentConfigs.push(agentConfig);
@@ -307,6 +307,9 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
       ctx.agentConfigs[configIdx] = newConfig;
     }
     ctx.schedulerCtx.agentConfigs = ctx.agentConfigs;
+
+    // Update description in status tracker (may have changed in SKILL.md frontmatter)
+    ctx.statusTracker?.setAgentDescription(agentName, newConfig.description);
 
     // Rebuild image
     ctx.statusTracker?.setAgentState(agentName, "building");
