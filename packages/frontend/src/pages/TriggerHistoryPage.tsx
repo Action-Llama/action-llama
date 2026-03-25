@@ -131,7 +131,7 @@ export function TriggerHistoryPage() {
                         {t.agentName}
                       </Link>
                     ) : (
-                      <span className="text-slate-400 text-xs">\u2014</span>
+                      <span className="text-slate-400 text-xs">{"\u2014"}</span>
                     )}
                   </td>
                   <td className="px-4 py-2.5">
@@ -143,7 +143,7 @@ export function TriggerHistoryPage() {
                         {shortId(t.instanceId)}
                       </Link>
                     ) : (
-                      <span className="text-slate-400 text-xs">\u2014</span>
+                      <span className="text-slate-400 text-xs">{"\u2014"}</span>
                     )}
                   </td>
                   <td className="px-4 py-2.5">
