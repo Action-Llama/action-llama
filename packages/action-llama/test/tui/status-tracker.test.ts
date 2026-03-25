@@ -397,6 +397,53 @@ describe("StatusTracker", () => {
     expect(agents[0].state).toBe("running");
   });
 
+  it("startRun allows runningCount to exceed scale (no clamping)", () => {
+    // During scale transitions or race conditions, runningCount should reflect
+    // the actual number of running instances — not be capped at scale.
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev", 2);
+
+    tracker.startRun("dev");
+    tracker.startRun("dev");
+    tracker.startRun("dev"); // third run on a scale=2 agent
+
+    const agent = tracker.getAllAgents()[0];
+    expect(agent.runningCount).toBe(3);
+  });
+
+  it("updateAgentScale preserves runningCount", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev", 2);
+
+    tracker.startRun("dev");
+    tracker.startRun("dev");
+
+    tracker.updateAgentScale("dev", 3);
+
+    const agent = tracker.getAllAgents()[0];
+    expect(agent.runningCount).toBe(2); // unchanged
+    expect(agent.scale).toBe(3);
+    expect(agent.state).toBe("running");
+  });
+
+  it("registerAgent resets runningCount (documents behavior)", () => {
+    // registerAgent() completely replaces the agent status object, resetting
+    // runningCount to 0. This is why watcher.ts uses updateAgentScale for
+    // scale changes instead of re-registering, to avoid losing running state.
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev", 2);
+
+    tracker.startRun("dev");
+    tracker.startRun("dev");
+
+    // Re-registering resets everything
+    tracker.registerAgent("dev", 3);
+
+    const agent = tracker.getAllAgents()[0];
+    expect(agent.runningCount).toBe(0);
+    expect(agent.scale).toBe(3);
+  });
+
   it("two concurrent instances with scale=2 shows correct count", () => {
     const tracker = new StatusTracker();
     tracker.registerAgent("dev", 2);

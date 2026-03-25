@@ -452,6 +452,8 @@ describe("startScheduler", () => {
         on: vi.fn(),
         enableAgent: vi.fn(),
         disableAgent: vi.fn(),
+        getAgentScale: vi.fn().mockReturnValue(1),
+        updateAgentScale: vi.fn(),
       } as any;
     }
 

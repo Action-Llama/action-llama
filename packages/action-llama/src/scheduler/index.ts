@@ -154,11 +154,23 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   setChatRuntime(runtime, agentImages);
 
   // Create runner pools
-  const { runnerPools, createRunner } = await createRunnerPools({
+  const { runnerPools, createRunner, actualScales } = await createRunnerPools({
     globalConfig, agentConfigs, runtime, agentRuntimeOverrides,
     agentImages, baseImage, gatewayPort, registerContainer, unregisterContainer,
     statusTracker, mkLogger, projectPath, logger,
   });
+
+  // Sync status tracker with actual pool sizes (may differ from configured scale
+  // when a project-wide scale cap throttles individual agents)
+  if (statusTracker) {
+    for (const [agentName, actualScale] of Object.entries(actualScales)) {
+      const registeredScale = statusTracker.getAgentScale(agentName);
+      if (registeredScale !== actualScale) {
+        statusTracker.updateAgentScale(agentName, actualScale);
+        logger.info({ agent: agentName, registeredScale, actualScale }, "synced status tracker scale with actual pool size");
+      }
+    }
+  }
 
   // Populate late-binding state
   Object.assign(state.runnerPools, runnerPools);

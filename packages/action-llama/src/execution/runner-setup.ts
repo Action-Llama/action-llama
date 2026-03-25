@@ -16,6 +16,8 @@ import { RunnerPool, type PoolRunner } from "./runner-pool.js";
 export interface RunnerSetupResult {
   runnerPools: Record<string, RunnerPool>;
   createRunner: (agentConfig: AgentConfig, image: string) => PoolRunner;
+  /** Actual pool sizes after project-wide scale cap is applied. */
+  actualScales: Record<string, number>;
 }
 
 export interface RunnerSetupOpts {
@@ -114,6 +116,7 @@ export async function createRunnerPools(opts: RunnerSetupOpts): Promise<RunnerSe
   }
 
   const runnerPools: Record<string, RunnerPool> = {};
+  const actualScales: Record<string, number> = {};
 
   for (const agentConfig of adjustedConfigs) {
     const scale = agentConfig.scale ?? defaultScale;
@@ -124,8 +127,9 @@ export async function createRunnerPools(opts: RunnerSetupOpts): Promise<RunnerSe
     }
 
     runnerPools[agentConfig.name] = new RunnerPool(runners);
+    actualScales[agentConfig.name] = scale;
     logger.info({ agent: agentConfig.name, scale }, "Created runner pool");
   }
 
-  return { runnerPools, createRunner };
+  return { runnerPools, createRunner, actualScales };
 }
