@@ -89,6 +89,7 @@ function ActionMenu({
 
 export function DashboardPage() {
   const { agents, schedulerInfo } = useStatusStream();
+  const agentNames = agents.map((a) => a.name);
   const [triggers, setTriggers] = useState<TriggerHistoryRow[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [runModalAgent, setRunModalAgent] = useState<string | null>(null);
@@ -178,7 +179,7 @@ export function DashboardPage() {
                   <div
                     key={a.name}
                     className="agent-color-bg transition-all"
-                    style={{ width: `${pct}%`, ...agentHueStyle(a.name) }}
+                    style={{ width: `${pct}%`, ...agentHueStyle(a.name, agentNames) }}
                     title={`${a.name}: ${fmtTokens(a.cumulativeUsage?.totalTokens ?? 0)}`}
                   />
                 );
@@ -194,9 +195,9 @@ export function DashboardPage() {
                   >
                     <span
                       className="w-2 h-2 rounded-full agent-color-dot"
-                      style={agentHueStyle(a.name)}
+                      style={agentHueStyle(a.name, agentNames)}
                     />
-                    <span className="agent-color-text" style={agentHueStyle(a.name)}>
+                    <span className="agent-color-text" style={agentHueStyle(a.name, agentNames)}>
                       {a.name}
                     </span>
                     :{" "}
@@ -378,9 +379,9 @@ export function DashboardPage() {
                     >
                       <span
                         className="w-2 h-2 rounded-full shrink-0 agent-color-dot"
-                        style={agentHueStyle(agent.name)}
+                        style={agentHueStyle(agent.name, agentNames)}
                       />
-                      <span className="agent-color-text truncate" style={agentHueStyle(agent.name)}>
+                      <span className="agent-color-text truncate" style={agentHueStyle(agent.name, agentNames)}>
                         {agent.name}
                       </span>
                     </Link>

@@ -60,6 +60,7 @@ function formatLogEntry(entry: LogEntry): {
 export function AgentDetailPage() {
   const { name } = useParams<{ name: string }>();
   const { agents, instances } = useStatusStream();
+  const agentNames = agents.map((a) => a.name);
   const [detail, setDetail] = useState<AgentDetailData | null>(null);
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [runsTotal, setRunsTotal] = useState(0);
@@ -190,7 +191,7 @@ export function AgentDetailPage() {
           </Link>
           <span
             className="w-3 h-3 rounded-full shrink-0 agent-color-dot"
-            style={agentHueStyle(name ?? "")}
+            style={agentHueStyle(name ?? "", agentNames)}
           />
           <h1 className="text-xl font-bold text-slate-900 dark:text-white">
             {name}
