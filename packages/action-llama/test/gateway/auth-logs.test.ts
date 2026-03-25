@@ -1,5 +1,16 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { mkdtempSync, writeFileSync, mkdirSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { startGateway } from "../../src/gateway/index.js";
+
+/** Create a minimal frontend dist fixture for tests that need SPA serving. */
+function createMockFrontendDist(): string {
+  const dir = mkdtempSync(join(tmpdir(), "mock-frontend-"));
+  writeFileSync(join(dir, "index.html"), '<!DOCTYPE html><html><body><div id="root"></div></body></html>');
+  mkdirSync(join(dir, "assets"), { recursive: true });
+  return dir;
+}
 
 describe("Gateway log endpoints authentication", () => {
   let gateway: any;
@@ -12,12 +23,14 @@ describe("Gateway log endpoints authentication", () => {
   };
 
   beforeAll(async () => {
+    const mockFrontendDist = createMockFrontendDist();
     gateway = await startGateway({
       port: 0, // Random port
       logger,
       apiKey: TEST_API_KEY,
       projectPath: "/tmp", // Required for log routes to be registered
       webUI: true, // Enable dashboard routes
+      frontendDistPath: mockFrontendDist,
       statusTracker: {
         getAllAgents: () => [],
         getSchedulerInfo: () => ({}),

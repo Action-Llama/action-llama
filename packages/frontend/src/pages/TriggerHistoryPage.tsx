@@ -1,6 +1,7 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useInvalidation } from "../hooks/useInvalidation";
+import { useStatusStream } from "../hooks/StatusStreamContext";
 import { TriggerTypeBadge, ResultBadge } from "../components/Badge";
 import { getTriggerHistory } from "../lib/api";
 import type { TriggerHistoryRow } from "../lib/api";
@@ -14,6 +15,7 @@ export function TriggerHistoryPage() {
   const [offset, setOffset] = useState(0);
   const [showDeadLetters, setShowDeadLetters] = useState(false);
   const [loading, setLoading] = useState(true);
+  const { instances } = useStatusStream();
 
   const load = useCallback(
     (newOffset: number, deadLetters: boolean) => {
@@ -40,8 +42,32 @@ export function TriggerHistoryPage() {
 
   useInvalidation("triggers", undefined, refetchPage);
 
+  const mergedTriggers = useMemo(() => {
+    // Only include running instances on the first page
+    if (offset > 0) return triggers;
+    const running: TriggerHistoryRow[] = instances
+      .filter((inst) => inst.status === "running")
+      .map((inst) => {
+        const sep = inst.trigger.indexOf(":");
+        return {
+          ts: new Date(inst.startedAt).getTime(),
+          triggerType: sep > -1 ? inst.trigger.slice(0, sep) : inst.trigger,
+          triggerSource: sep > -1 ? inst.trigger.slice(sep + 1).trim() : undefined,
+          agentName: inst.agentName,
+          instanceId: inst.id,
+          result: "running",
+        };
+      });
+    const apiIds = new Set(triggers.map((t) => t.instanceId));
+    const unique = running.filter((r) => !apiIds.has(r.instanceId));
+    return [...unique, ...triggers].sort((a, b) => b.ts - a.ts);
+  }, [instances, triggers, offset]);
+
+  const runningCount = instances.filter((i) => i.status === "running").length;
+  const adjustedTotal = total + runningCount;
+
   const page = Math.floor(offset / PAGE_SIZE) + 1;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(adjustedTotal / PAGE_SIZE));
 
   return (
     <div className="space-y-6">
@@ -108,7 +134,7 @@ export function TriggerHistoryPage() {
               </tr>
             </thead>
             <tbody>
-              {triggers.map((t, i) => (
+              {mergedTriggers.map((t, i) => (
                 <tr
                   key={`${t.ts}-${i}`}
                   className="border-b border-slate-100 dark:border-slate-800/50 last:border-0 hover:bg-slate-100/50 dark:hover:bg-slate-800/30"
@@ -151,7 +177,7 @@ export function TriggerHistoryPage() {
                   </td>
                 </tr>
               ))}
-              {triggers.length === 0 && !loading && (
+              {mergedTriggers.length === 0 && !loading && (
                 <tr>
                   <td
                     colSpan={6}
@@ -186,11 +212,11 @@ export function TriggerHistoryPage() {
               Previous
             </button>
             <span className="text-xs text-slate-500 dark:text-slate-400">
-              Page {page} of {totalPages} ({total} total)
+              Page {page} of {totalPages} ({adjustedTotal} total)
             </span>
             <button
               onClick={() => load(offset + PAGE_SIZE, showDeadLetters)}
-              disabled={offset + PAGE_SIZE >= total}
+              disabled={offset + PAGE_SIZE >= adjustedTotal}
               className="px-3 py-1 text-xs rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
             >
               Next

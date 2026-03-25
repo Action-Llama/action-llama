@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useStatusStream } from "../hooks/StatusStreamContext";
 import { useInvalidation } from "../hooks/useInvalidation";
@@ -89,7 +89,7 @@ function ActionMenu({
 
 export function DashboardPage() {
   const navigate = useNavigate();
-  const { agents, schedulerInfo } = useStatusStream();
+  const { agents, schedulerInfo, instances } = useStatusStream();
   const agentNames = agents.map((a) => a.name);
   const [triggers, setTriggers] = useState<TriggerHistoryRow[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -119,6 +119,28 @@ export function DashboardPage() {
   }, [refetchTriggers]);
 
   useInvalidation("triggers", undefined, refetchTriggers);
+
+  const mergedTriggers = useMemo(() => {
+    const running: TriggerHistoryRow[] = instances
+      .filter((inst) => inst.status === "running")
+      .map((inst) => {
+        const sep = inst.trigger.indexOf(":");
+        return {
+          ts: new Date(inst.startedAt).getTime(),
+          triggerType: sep > -1 ? inst.trigger.slice(0, sep) : inst.trigger,
+          triggerSource: sep > -1 ? inst.trigger.slice(sep + 1).trim() : undefined,
+          agentName: inst.agentName,
+          instanceId: inst.id,
+          result: "running",
+        };
+      });
+    // Deduplicate: if a running instance already appears in the API response, skip it
+    const apiIds = new Set(triggers.map((t) => t.instanceId));
+    const unique = running.filter((r) => !apiIds.has(r.instanceId));
+    return [...unique, ...triggers]
+      .sort((a, b) => b.ts - a.ts)
+      .slice(0, 5);
+  }, [instances, triggers]);
 
   const totalTokens = agents.reduce(
     (sum, a) => sum + (a.cumulativeUsage?.totalTokens ?? 0),
@@ -247,7 +269,7 @@ export function DashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {triggers.map((t, i) => (
+              {mergedTriggers.map((t, i) => (
                 <tr
                   key={`${t.ts}-${i}`}
                   className="border-b border-slate-100 dark:border-slate-800/50 last:border-0"
@@ -305,7 +327,7 @@ export function DashboardPage() {
                   </td>
                 </tr>
               ))}
-              {triggers.length === 0 && (
+              {mergedTriggers.length === 0 && (
                 <tr>
                   <td
                     colSpan={6}

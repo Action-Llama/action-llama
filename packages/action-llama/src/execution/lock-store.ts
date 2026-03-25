@@ -37,10 +37,17 @@ export class LockStore {
   private sweepTimer: ReturnType<typeof setInterval> | undefined;
   private defaultTTL: number;
   private store?: StateStore;
+  private isHolderAlive?: (holder: string) => boolean;
 
-  constructor(defaultTTLSeconds = 1800, sweepIntervalSeconds = 30, store?: StateStore) {
+  constructor(
+    defaultTTLSeconds = 1800,
+    sweepIntervalSeconds = 30,
+    store?: StateStore,
+    opts?: { isHolderAlive?: (holder: string) => boolean },
+  ) {
     this.defaultTTL = defaultTTLSeconds * 1000;
     this.store = store;
+    this.isHolderAlive = opts?.isHolderAlive;
     this.sweepTimer = setInterval(() => this.sweep(), sweepIntervalSeconds * 1000);
     if (this.sweepTimer.unref) this.sweepTimer.unref();
   }
@@ -74,19 +81,27 @@ export class LockStore {
         this.locks.delete(resourceKey);
         this.persistDelete(resourceKey, existing.holder);
       } else if (existing.holder !== holder) {
-        // Resource held by another — check for deadlock cycle
-        const cycle = this.detectCycle(holder, resourceKey);
-        if (cycle) {
+        // Check if the holder is still alive — evict orphan locks immediately
+        if (this.isHolderAlive && !this.isHolderAlive(existing.holder)) {
+          this.removeHolderLock(existing.holder, resourceKey);
+          this.locks.delete(resourceKey);
+          this.persistDelete(resourceKey, existing.holder);
+          // Fall through to acquire below
+        } else {
+          // Resource held by another — check for deadlock cycle
+          const cycle = this.detectCycle(holder, resourceKey);
+          if (cycle) {
+            this.waitingFor.set(holder, resourceKey);
+            return {
+              ok: false,
+              reason: `possible deadlock: ${[...cycle, cycle[0]].join(" \u2192 ")}`,
+              deadlock: true,
+              cycle,
+            };
+          }
           this.waitingFor.set(holder, resourceKey);
-          return {
-            ok: false,
-            reason: `possible deadlock: ${[...cycle, cycle[0]].join(" \u2192 ")}`,
-            deadlock: true,
-            cycle,
-          };
+          return { ok: false, holder: existing.holder, heldSince: existing.heldSince };
         }
-        this.waitingFor.set(holder, resourceKey);
-        return { ok: false, holder: existing.holder, heldSince: existing.heldSince };
       }
       // Same holder re-acquiring — refresh below
     }
@@ -258,6 +273,11 @@ export class LockStore {
     const now = Date.now();
     for (const [rk, entry] of this.locks) {
       if (now >= entry.expiresAt) {
+        this.removeHolderLock(entry.holder, rk);
+        this.locks.delete(rk);
+        this.persistDelete(rk, entry.holder);
+      } else if (this.isHolderAlive && !this.isHolderAlive(entry.holder)) {
+        // Proactively evict locks held by dead containers
         this.removeHolderLock(entry.holder, rk);
         this.locks.delete(rk);
         this.persistDelete(rk, entry.holder);

@@ -48,9 +48,6 @@ export function attachChatWebSocket(
   // Container-facing WS server
   const containerWss = new WebSocketServer({ noServer: true });
 
-  // Disconnection grace periods: track when browser disconnected
-  const browserDisconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
   server.on("upgrade", async (req: IncomingMessage, socket, head) => {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
     const pathname = url.pathname;
@@ -103,13 +100,6 @@ export function attachChatWebSocket(
   function handleBrowserConnection(ws: WebSocket, sessionId: string) {
     logger?.debug({ sessionId }, "browser WebSocket connected");
 
-    // Clear any grace-period timer from a prior disconnect
-    const timer = browserDisconnectTimers.get(sessionId);
-    if (timer) {
-      clearTimeout(timer);
-      browserDisconnectTimers.delete(sessionId);
-    }
-
     const conn: BrowserConnection = { ws, rateLimiter: new RateLimiter() };
     browserConnections.set(sessionId, conn);
 
@@ -140,14 +130,7 @@ export function attachChatWebSocket(
     ws.on("close", () => {
       logger?.debug({ sessionId }, "browser WebSocket disconnected");
       browserConnections.delete(sessionId);
-
-      // Grace period: wait 60s before shutting down the container
-      const gracePeriod = setTimeout(() => {
-        browserDisconnectTimers.delete(sessionId);
-        logger?.info({ sessionId }, "browser grace period expired, shutting down container");
-        shutdownSession(sessionId);
-      }, 60_000);
-      browserDisconnectTimers.set(sessionId, gracePeriod);
+      // No auto-shutdown — session persists until explicit user action (Clear/Shutdown) or idle timeout
     });
 
     ws.on("error", (err) => {

@@ -146,5 +146,10 @@ export function useChatSocket(sessionId: string | null) {
     wsRef.current.send(JSON.stringify({ type: "cancel" }));
   }, []);
 
-  return { messages, connected, containerReady, sendMessage, cancel };
+  const resetMessages = useCallback(() => {
+    setMessages([]);
+    streamingRef.current = false;
+  }, []);
+
+  return { messages, connected, containerReady, sendMessage, cancel, resetMessages };
 }

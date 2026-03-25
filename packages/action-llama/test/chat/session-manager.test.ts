@@ -172,4 +172,42 @@ describe("ChatSessionManager", () => {
       expect(() => defaultManager.createSession("overflow")).toThrow("session limit reached");
     });
   });
+
+  describe("getSessionByAgent", () => {
+    it("returns session matching agent name", () => {
+      const session = manager.createSession("target-agent");
+      const found = manager.getSessionByAgent("target-agent");
+      expect(found).toBe(session);
+    });
+
+    it("returns undefined when no session exists for agent", () => {
+      expect(manager.getSessionByAgent("nonexistent-agent")).toBeUndefined();
+    });
+
+    it("returns undefined when sessions exist but for different agents", () => {
+      manager.createSession("agent-a");
+      manager.createSession("agent-b");
+      expect(manager.getSessionByAgent("agent-c")).toBeUndefined();
+    });
+
+    it("returns the correct session when multiple sessions exist", () => {
+      manager.createSession("agent-a");
+      const target = manager.createSession("agent-b");
+      const found = manager.getSessionByAgent("agent-b");
+      expect(found).toBe(target);
+    });
+  });
+
+  describe("setShutdownSecret", () => {
+    it("stores the secret on the session", () => {
+      const session = manager.createSession("agent-x");
+      manager.setShutdownSecret(session.sessionId, "my-secret-123");
+      expect(session.shutdownSecret).toBe("my-secret-123");
+    });
+
+    it("does nothing for unknown session", () => {
+      // Should not throw
+      manager.setShutdownSecret("nonexistent", "my-secret");
+    });
+  });
 });

@@ -1,21 +1,22 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { useParams, Link } from "react-router-dom";
-import { createChatSession, deleteChatSession } from "../lib/chat-api";
+import { useParams, Link, useNavigate } from "react-router-dom";
+import { createChatSession, deleteChatSession, clearChatSession } from "../lib/chat-api";
 import { useChatSocket, type ChatMessage as ChatMessageType } from "../hooks/useChatSocket";
 import { ChatMessage } from "../components/ChatMessage";
 import { ToolBlock } from "../components/ToolBlock";
 
 export function ChatPage() {
   const { agent } = useParams<{ agent: string }>();
+  const navigate = useNavigate();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const { messages, connected, containerReady, sendMessage, cancel } = useChatSocket(sessionId);
+  const { messages, connected, containerReady, sendMessage, cancel, resetMessages } = useChatSocket(sessionId);
 
-  // Create session on mount
+  // Create or reconnect to existing session on mount (idempotent per agent)
   useEffect(() => {
     if (!agent) return;
     let cancelled = false;
@@ -32,15 +33,6 @@ export function ChatPage() {
       cancelled = true;
     };
   }, [agent]);
-
-  // Cleanup session on unmount
-  useEffect(() => {
-    return () => {
-      if (sessionId) {
-        deleteChatSession(sessionId).catch(() => {});
-      }
-    };
-  }, [sessionId]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -71,6 +63,27 @@ export function ChatPage() {
     },
     [handleSend],
   );
+
+  const handleClear = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const { sessionId: newId } = await clearChatSession(sessionId);
+      resetMessages();
+      setSessionId(newId);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  }, [sessionId, resetMessages]);
+
+  const handleShutdown = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      await deleteChatSession(sessionId);
+      navigate(`/dashboard/agents/${encodeURIComponent(agent || "")}`);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  }, [sessionId, agent, navigate]);
 
   const isStreaming = messages.some((m) => m.role === "assistant" && !m.done);
 
@@ -113,6 +126,20 @@ export function ChatPage() {
                 : "Waiting for agent..."
               : "Disconnected"}
           </span>
+          <button
+            onClick={handleClear}
+            disabled={!sessionId}
+            className="px-3 py-1.5 text-xs font-medium rounded-md bg-yellow-600 hover:bg-yellow-700 disabled:opacity-40 text-white transition-colors"
+          >
+            Clear Context
+          </button>
+          <button
+            onClick={handleShutdown}
+            disabled={!sessionId}
+            className="px-3 py-1.5 text-xs font-medium rounded-md bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white transition-colors"
+          >
+            Shutdown
+          </button>
         </div>
       </div>
 

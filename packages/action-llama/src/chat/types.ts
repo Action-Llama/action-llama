@@ -66,6 +66,7 @@ export interface ChatSession {
   sessionId: string;
   agentName: string;
   containerName?: string;
+  shutdownSecret?: string;
   createdAt: Date;
   lastActivityAt: Date;
 }
