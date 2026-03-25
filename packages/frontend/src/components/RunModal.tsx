@@ -7,7 +7,7 @@ export function RunModal({
 }: {
   agentName: string;
   onClose: () => void;
-  onRun: (prompt?: string) => void;
+  onRun: (prompt?: string) => void | Promise<unknown>;
 }) {
   const [prompt, setPrompt] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);

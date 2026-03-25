@@ -80,7 +80,8 @@ export async function executeRun(
   runner: PoolRunner, prompt: string,
   triggerInfo: { type: 'schedule' | 'manual' | 'webhook' | 'agent'; source?: string; receiptId?: string },
   agentName: string, depth: number, ctx: SchedulerContext,
-  instanceLifecycle?: InstanceLifecycle
+  instanceLifecycle?: InstanceLifecycle,
+  instanceId?: string
 ): Promise<{ result: string; triggers: Array<{ agent: string; context: string }>; returnValue?: string }> {
   const startedAt = Date.now();
 
@@ -96,7 +97,7 @@ export async function executeRun(
   let outcome: any;
   let error: string | undefined;
   try {
-    outcome = await runner.run(prompt, triggerInfo);
+    outcome = await runner.run(prompt, triggerInfo, instanceId);
     error = outcome.exitReason;
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
@@ -315,7 +316,7 @@ function fireQueuedItem(
 }
 
 export async function runWithReruns(
-  runner: PoolRunner, agentConfig: AgentConfig, depth: number, ctx: SchedulerContext, prompt?: string
+  runner: PoolRunner, agentConfig: AgentConfig, depth: number, ctx: SchedulerContext, prompt?: string, instanceId?: string
 ): Promise<void> {
   const isManual = prompt !== undefined;
   const triggerType = isManual ? 'manual' as const : 'schedule' as const;
@@ -331,7 +332,7 @@ export async function runWithReruns(
     : makeScheduledPrompt(agentConfig, ctx);
 
   let { result } = await executeRun(
-    runner, initialPrompt, { type: triggerType, source: prompt ? 'user-prompt' : undefined }, agentConfig.name, depth, ctx, instanceLifecycle
+    runner, initialPrompt, { type: triggerType, source: prompt ? 'user-prompt' : undefined }, agentConfig.name, depth, ctx, instanceLifecycle, instanceId
   );
 
   let reruns = 0;

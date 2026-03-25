@@ -8,7 +8,7 @@ export interface ControlRoutesDeps {
   killAgent: (name: string) => Promise<{ killed: number } | null>;
   pauseScheduler: () => Promise<void>;
   resumeScheduler: () => Promise<void>;
-  triggerAgent?: (name: string, prompt?: string) => Promise<true | string>;
+  triggerAgent?: (name: string, prompt?: string) => Promise<{ instanceId: string } | string>;
   enableAgent?: (name: string) => Promise<boolean>;
   disableAgent?: (name: string) => Promise<boolean>;
   stopScheduler?: () => Promise<void>;
@@ -107,12 +107,14 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps) {
     }
     try {
       const result = await deps.triggerAgent(name, prompt);
-      if (result === true) {
-        return c.json({ success: true, message: `Agent ${name} triggered` });
-      } else {
+      if (typeof result === "object" && result.instanceId) {
+        return c.json({ success: true, message: `Agent ${name} triggered`, instanceId: result.instanceId });
+      } else if (typeof result === "string") {
         logger?.warn({ agent: name, reason: result }, "control: trigger rejected");
         const status = result.includes("not found") ? 404 : 409;
         return c.json({ error: result }, status);
+      } else {
+        return c.json({ success: true, message: `Agent ${name} triggered` });
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

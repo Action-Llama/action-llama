@@ -285,8 +285,8 @@ export function getInstanceLogs(
 
 // --- Control operations ---
 
-export function triggerAgent(name: string, prompt?: string) {
-  return ctrlPost(
+export function triggerAgent(name: string, prompt?: string): Promise<{ success: boolean; message?: string; instanceId?: string }> {
+  return ctrlPost<{ success: boolean; message?: string; instanceId?: string }>(
     `/control/trigger/${encodeURIComponent(name)}`,
     prompt ? { prompt } : undefined,
   );

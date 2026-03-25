@@ -70,7 +70,7 @@ export class AgentRunner {
     this.abortController.abort();
   }
 
-  async run(prompt: string, triggerInfo?: { type: 'schedule' | 'manual' | 'webhook' | 'agent'; source?: string }): Promise<RunOutcome> {
+  async run(prompt: string, triggerInfo?: { type: 'schedule' | 'manual' | 'webhook' | 'agent'; source?: string }, instanceId?: string): Promise<RunOutcome> {
     if (this.running) {
       this.logger.warn(`${this.agentConfig.name} is already running, skipping`);
       return { result: "error", triggers: [] };
@@ -78,9 +78,8 @@ export class AgentRunner {
 
     this.running = true;
 
-    // Generate a unique instance ID for this run
-    const runId = randomBytes(4).toString("hex");
-    this.instanceId = `${this.agentConfig.name}-${runId}`;
+    // Generate a unique instance ID for this run (or use the pre-generated one)
+    this.instanceId = instanceId ?? `${this.agentConfig.name}-${randomBytes(4).toString("hex")}`;
     this.logger = this.baseLogger.child({ instance: this.instanceId });
 
     const runReason = triggerInfo

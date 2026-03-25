@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useStatusStream } from "../hooks/StatusStreamContext";
 import { useInvalidation } from "../hooks/useInvalidation";
 import { StatCard } from "../components/StatCard";
@@ -59,6 +59,7 @@ function formatLogEntry(entry: LogEntry): {
 
 export function AgentDetailPage() {
   const { name } = useParams<{ name: string }>();
+  const navigate = useNavigate();
   const { agents, instances } = useStatusStream();
   const [detail, setDetail] = useState<AgentDetailData | null>(null);
   const [runs, setRuns] = useState<RunRecord[]>([]);
@@ -476,9 +477,16 @@ export function AgentDetailPage() {
         <RunModal
           agentName={name}
           onClose={() => setShowRunModal(false)}
-          onRun={(prompt) =>
-            handleAction(() => triggerAgent(name, prompt))
-          }
+          onRun={async (prompt) => {
+            try {
+              const result = await triggerAgent(name, prompt);
+              if (result?.instanceId) {
+                navigate(`/dashboard/agents/${encodeURIComponent(name)}/instances/${encodeURIComponent(result.instanceId)}`);
+              }
+            } catch (err) {
+              setActionError(err instanceof Error ? err.message : "Action failed");
+            }
+          }}
         />
       )}
     </div>
