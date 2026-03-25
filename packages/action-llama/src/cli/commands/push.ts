@@ -53,7 +53,7 @@ export async function execute(opts: {
   }
 
   // Determine what to sync
-  const syncCreds = opts.credsOnly || opts.all || (!opts.filesOnly);
+  const syncCreds = !opts.noCreds && (opts.credsOnly || opts.all || (!opts.filesOnly));
   const syncFiles = opts.filesOnly || opts.all || (!opts.credsOnly);
 
   // Single-agent push — lightweight path (no restart, hot-reloaded)

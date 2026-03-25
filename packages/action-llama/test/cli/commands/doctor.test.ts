@@ -289,6 +289,23 @@ describe("doctor", () => {
     expect(mockCredentialExists).not.toHaveBeenCalled();
   });
 
+  it("skipCredentials also skips webhook security checks", async () => {
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadGlobalConfig.mockReturnValue({
+      webhooks: { "my-github": { type: "github" } },
+    });
+    mockLoadAgentConfig.mockReturnValue({
+      name: "dev",
+      credentials: ["github_token"],
+      webhooks: [{ source: "my-github", events: ["issues"] }],
+    });
+    mockCredentialExists.mockReturnValue(false);
+
+    // Without skipCredentials this would throw "has no webhook secret stored"
+    const output = await captureLog(() => execute({ project: ".", checkOnly: true, skipCredentials: true }));
+    expect(output).toContain("Skipping credential checks");
+  });
+
   it("headless mode checks local creds without prompting and throws on missing", async () => {
     mockDiscoverAgents.mockReturnValue(["dev"]);
     mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["github_token"] });

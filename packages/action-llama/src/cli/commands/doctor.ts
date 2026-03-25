@@ -190,39 +190,41 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
     );
   }
 
-  // Check webhook security configurations
-  const securityErrors: string[] = [];
-  for (const [sourceName, sourceConfig] of Object.entries(webhookSources)) {
-    // credential defaults to "default" — only error if allowUnsigned is explicitly false-y
-    // and no credential is stored for the default instance
-    const credInstance = sourceConfig.credential ?? "default";
-    if (sourceConfig.type !== "test" && sourceConfig.allowUnsigned !== true) {
-      const credType = PROVIDER_TO_CREDENTIAL[sourceConfig.type];
-      if (credType && !credentialExists(credType, credInstance)) {
-        securityErrors.push(
-          `Webhook source "${sourceName}" (${sourceConfig.type}) has no webhook secret stored ` +
-          `(credential instance "${credInstance}"). ` +
-          `Run "al doctor" to configure it, or add allowUnsigned = true for insecure mode.`
-        );
+  // Check webhook security configurations (skip when --no-creds / skipCredentials)
+  if (!opts.skipCredentials) {
+    const securityErrors: string[] = [];
+    for (const [sourceName, sourceConfig] of Object.entries(webhookSources)) {
+      // credential defaults to "default" — only error if allowUnsigned is explicitly false-y
+      // and no credential is stored for the default instance
+      const credInstance = sourceConfig.credential ?? "default";
+      if (sourceConfig.type !== "test" && sourceConfig.allowUnsigned !== true) {
+        const credType = PROVIDER_TO_CREDENTIAL[sourceConfig.type];
+        if (credType && !credentialExists(credType, credInstance)) {
+          securityErrors.push(
+            `Webhook source "${sourceName}" (${sourceConfig.type}) has no webhook secret stored ` +
+            `(credential instance "${credInstance}"). ` +
+            `Run "al doctor" to configure it, or add allowUnsigned = true for insecure mode.`
+          );
+        }
       }
     }
-  }
 
-  if (securityErrors.length > 0) {
-    throw new ConfigError(
-      "Configuration errors:\n" +
-      securityErrors.map(e => `  - ${e}`).join("\n")
-    );
-  }
+    if (securityErrors.length > 0) {
+      throw new ConfigError(
+        "Configuration errors:\n" +
+        securityErrors.map(e => `  - ${e}`).join("\n")
+      );
+    }
 
-  // Show security warnings for allowUnsigned webhook sources (after error checks pass)
-  for (const [sourceName, sourceConfig] of Object.entries(webhookSources)) {
-    if (sourceConfig.allowUnsigned && sourceConfig.type !== "test") {
-      if (!opts.silent) {
-        console.log(
-          `  [SECURITY] Webhook source "${sourceName}" allows unsigned requests. ` +
-          `This is insecure for production!`
-        );
+    // Show security warnings for allowUnsigned webhook sources (after error checks pass)
+    for (const [sourceName, sourceConfig] of Object.entries(webhookSources)) {
+      if (sourceConfig.allowUnsigned && sourceConfig.type !== "test") {
+        if (!opts.silent) {
+          console.log(
+            `  [SECURITY] Webhook source "${sourceName}" allows unsigned requests. ` +
+            `This is insecure for production!`
+          );
+        }
       }
     }
   }

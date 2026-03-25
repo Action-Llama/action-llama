@@ -203,14 +203,14 @@ program
   .option("-E, --env <name>", "use named environment with [server] config")
   .option("-H, --headless", "non-interactive mode (no credential prompts, for CI/deploy environments)")
   .option("--dry-run", "show what would be synced without making changes")
-  .option("--no-creds", "skip credential sync")
+  .option("--skip-creds", "skip credential sync")
   .option("--creds-only", "sync only credentials (skip project files)")
   .option("--files-only", "sync only project files (skip credentials)")
   .option("-a, --all", "sync project files, credentials, and restart service")
   .option("--force-install", "force npm install even if dependencies appear unchanged")
   .action(withCommand(async (agent: string | undefined, opts) => {
     const { execute } = await import("./commands/push.js");
-    await execute({ ...opts, agent });
+    await execute({ ...opts, agent, noCreds: opts.skipCreds ?? false });
   }));
 
 // --- Environment management ---

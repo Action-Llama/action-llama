@@ -113,7 +113,7 @@ describe("push command", () => {
     });
   });
 
-  it("passes skipCredentials to doctor when --no-creds is set", async () => {
+  it("passes skipCredentials to doctor and noCreds to pushToServer when --no-creds is set", async () => {
     mockResolveEnvironmentName.mockReturnValue("srv");
     mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
 
@@ -125,6 +125,7 @@ describe("push command", () => {
       checkOnly: true,
       skipCredentials: true,
     });
+    expect(mockPushToServer.mock.calls[0][0].noCreds).toBe(true);
   });
 
   it("does not skip credentials when --no-creds is not set", async () => {
@@ -137,6 +138,7 @@ describe("push command", () => {
       checkOnly: true,
       skipCredentials: false,
     });
+    expect(mockPushToServer.mock.calls[0][0].noCreds).toBe(false);
   });
 
   it("throws when doctor fails (e.g. missing credentials)", async () => {
