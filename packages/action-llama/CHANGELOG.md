@@ -1,5 +1,21 @@
 # @action-llama/action-llama
 
+## 0.18.4
+
+### Patch Changes
+
+- [`5a8e3c6`](https://github.com/Action-Llama/action-llama/commit/5a8e3c63266188cbeac9d94638633e3b71613e97) Thanks [@asselstine](https://github.com/asselstine)! - Rename `al add --skill` flag to `--agent`/`-a` to match the agents/ directory convention, and copy Dockerfiles alongside SKILL.md during `al add` and `al update`. When a source repo includes a Dockerfile co-located with the SKILL.md, it is now copied into the agent directory and kept in sync on updates.
+
+- [`6e3dd88`](https://github.com/Action-Llama/action-llama/commit/6e3dd8892a8ac01e162ca5dbd6b328115139c80a) Thanks [@asselstine](https://github.com/asselstine)! - Rewrite `al config` to use raw config instead of resolved config, preventing crashes when an agent references an undefined model. The config TUI now shows a checklist with status indicators (✓/✗/-) for each field, letting users see and fix validation issues interactively instead of hitting a fatal error.
+
+- [`330ec89`](https://github.com/Action-Llama/action-llama/commit/330ec892b196c573bc6f6e2d4dec15e79bbff9b9) Thanks [@asselstine](https://github.com/asselstine)! - `al doctor` now collects all validation errors and displays them together instead of failing on the first problem. Uses raw runtime config to avoid crashing on undefined model references, letting it report all issues at once.
+
+- [`6f57ba9`](https://github.com/Action-Llama/action-llama/commit/6f57ba9e44a3fd92b0436faed084e0512611fde0) Thanks [@asselstine](https://github.com/asselstine)! - Stop scaffolding a project-level Dockerfile in `al new`. Agent-level Dockerfiles
+  are now the recommended approach since they keep agents self-contained and portable
+  across projects. Project Dockerfiles are still supported but discouraged in docs.
+
+- [`411e519`](https://github.com/Action-Llama/action-llama/commit/411e519f7aafcfe97515929ad238f459a850ef64) Thanks [@asselstine](https://github.com/asselstine)! - Namespace VPS server names by environment to prevent naming collisions when provisioning multiple environments on the same provider account. Servers are now named `action-llama-<envName>` instead of the hardcoded `action-llama`. Environment names are validated at creation time (lowercase alphanumeric + hyphens, max 50 chars). On teardown, shared provider firewalls are automatically deleted when no other action-llama servers reference them.
+
 ## 0.18.3
 
 ### Patch Changes
