@@ -202,7 +202,7 @@ export function AgentDetailPage() {
             <span className="text-xs text-slate-500 italic">(disabled)</span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {agent && (
             <div className="flex items-center gap-1 mr-1">
               <span className="text-xs text-slate-500 dark:text-slate-400">Scale:</span>
