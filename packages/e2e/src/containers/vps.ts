@@ -63,7 +63,7 @@ EOF`
 
   // Deploy to VPS
   const pushOutput = await context.executeInContainer(localContainer, [
-    "bash", "-c", `cd /home/testuser/test-project && al push --env ${envName} --headless --no-creds 2>&1 || echo "AL_PUSH_FAILED_EXIT_$?"`
+    "bash", "-c", `cd /home/testuser/test-project && al push --env ${envName} --headless --skip-creds 2>&1 || echo "AL_PUSH_FAILED_EXIT_$?"`
   ]);
   console.log(`al push output: ${pushOutput}`);
   if (pushOutput.includes("AL_PUSH_FAILED_EXIT_")) {
@@ -185,9 +185,9 @@ EOF`
   ].join(" && ");
   await context.executeSSHCommand(vpsContainer, certCommands);
 
-  // Deploy — use --no-creds since certs are already on the VPS
+  // Deploy — use --skip-creds since certs are already on the VPS
   const pushOutput = await context.executeInContainer(localContainer, [
-    "bash", "-c", `cd /home/testuser/test-project && al push --env ${envName} --headless --no-creds 2>&1 || echo "AL_PUSH_FAILED_EXIT_$?"`
+    "bash", "-c", `cd /home/testuser/test-project && al push --env ${envName} --headless --skip-creds 2>&1 || echo "AL_PUSH_FAILED_EXIT_$?"`
   ]);
   console.log(`al push (dashboard) output: ${pushOutput}`);
   if (pushOutput.includes("AL_PUSH_FAILED_EXIT_")) {
@@ -218,7 +218,7 @@ EOF`
 
   // Redeploy to VPS
   const pushOutput = await context.executeInContainer(localContainer, [
-    "bash", "-c", `cd /home/testuser/test-project && al push --env ${envName} --headless --no-creds 2>&1 || echo "AL_PUSH_FAILED_EXIT_$?"`
+    "bash", "-c", `cd /home/testuser/test-project && al push --env ${envName} --headless --skip-creds 2>&1 || echo "AL_PUSH_FAILED_EXIT_$?"`
   ]);
   console.log(`al push (update) output: ${pushOutput}`);
   if (pushOutput.includes("AL_PUSH_FAILED_EXIT_")) {
