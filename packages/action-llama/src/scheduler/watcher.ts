@@ -341,10 +341,10 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
         for (let i = oldScale; i < newScale; i++) {
           pool.addRunner(ctx.createRunner(newConfig, image));
         }
-        ctx.statusTracker?.registerAgent(agentName, newScale);
+        ctx.statusTracker?.updateAgentScale(agentName, newScale);
       } else if (newScale < oldScale) {
         pool.shrinkTo(newScale);
-        ctx.statusTracker?.registerAgent(agentName, newScale);
+        ctx.statusTracker?.updateAgentScale(agentName, newScale);
       }
     }
 
@@ -387,7 +387,13 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
       }
     }
 
-    ctx.statusTracker?.setAgentState(agentName, "idle");
+    // Only transition to idle if no runners are currently active. This avoids
+    // overriding the "running" state when instances are still in-flight after
+    // a hot reload.
+    const currentAgent = ctx.statusTracker?.getAllAgents?.().find(a => a.name === agentName);
+    if (!currentAgent || currentAgent.runningCount === 0) {
+      ctx.statusTracker?.setAgentState(agentName, "idle");
+    }
     ctx.statusTracker?.addLogLine(agentName, "hot-reloaded");
     ctx.logger.info({ agent: agentName }, "hot reload: agent updated");
   }

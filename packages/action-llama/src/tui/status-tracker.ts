@@ -144,7 +144,7 @@ export class StatusTracker extends EventEmitter {
     const agent = this.agents.get(name);
     if (!agent) return;
 
-    agent.runningCount = Math.min(agent.runningCount + 1, agent.scale);
+    agent.runningCount += 1;
     agent.state = "running";
     agent.statusText = null;
     agent.lastError = null;
