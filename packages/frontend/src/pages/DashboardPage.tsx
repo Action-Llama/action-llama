@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useStatusStream } from "../hooks/StatusStreamContext";
 import { useInvalidation } from "../hooks/useInvalidation";
 import { StateBadge, TriggerTypeBadge, ResultBadge } from "../components/Badge";
@@ -88,6 +88,7 @@ function ActionMenu({
 }
 
 export function DashboardPage() {
+  const navigate = useNavigate();
   const { agents, schedulerInfo } = useStatusStream();
   const [triggers, setTriggers] = useState<TriggerHistoryRow[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -481,9 +482,17 @@ export function DashboardPage() {
         <RunModal
           agentName={runModalAgent}
           onClose={() => setRunModalAgent(null)}
-          onRun={(prompt) =>
-            handleAction(() => triggerAgent(runModalAgent, prompt))
-          }
+          onRun={async (prompt) => {
+            const agentName = runModalAgent;
+            try {
+              const result = await triggerAgent(agentName, prompt);
+              if (result?.instanceId) {
+                navigate(`/dashboard/agents/${encodeURIComponent(agentName)}/instances/${encodeURIComponent(result.instanceId)}`);
+              }
+            } catch (err) {
+              setActionError(err instanceof Error ? err.message : "Action failed");
+            }
+          }}
         />
       )}
     </div>

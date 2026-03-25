@@ -19,6 +19,7 @@ import { ensureGatewayApiKey } from "../control/api-key.js";
 import type { SchedulerEventBus } from "./events.js";
 import type { SchedulerState } from "./state.js";
 import { runWithReruns } from "../execution/execution.js";
+import { randomBytes } from "node:crypto";
 import type { ContainerRuntime } from "../docker/runtime.js";
 import { ChatContainerLauncher } from "../chat/container-launcher.js";
 
@@ -131,7 +132,7 @@ export async function setupGateway(opts: {
         statusTracker?.setPaused(false);
         logger.info("Scheduler resumed via control API");
       },
-      triggerAgent: async (name: string, prompt?: string): Promise<true | string> => {
+      triggerAgent: async (name: string, prompt?: string): Promise<{ instanceId: string } | string> => {
         if (statusTracker?.isPaused()) return "Scheduler is paused";
         const pool = state.runnerPools[name];
         if (!pool) return `Agent "${name}" not found`;
@@ -140,11 +141,12 @@ export async function setupGateway(opts: {
         const config = agentConfigs.find((a) => a.name === name);
         if (!config) return `Agent "${name}" config not found`;
         if (!state.schedulerCtx) return "Scheduler is not ready";
-        logger.info({ agent: name, hasPrompt: !!prompt }, "manual trigger via control API");
-        runWithReruns(runner, config, 0, state.schedulerCtx, prompt).catch((err) => {
+        const instanceId = `${name}-${randomBytes(4).toString("hex")}`;
+        logger.info({ agent: name, hasPrompt: !!prompt, instanceId }, "manual trigger via control API");
+        runWithReruns(runner, config, 0, state.schedulerCtx, prompt, instanceId).catch((err) => {
           logger.error({ err, agent: name }, "manual trigger run failed");
         });
-        return true;
+        return { instanceId };
       },
       enableAgent: async (name: string) => {
         if (!statusTracker) return false;

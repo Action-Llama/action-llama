@@ -71,7 +71,7 @@ describe("executeRun", () => {
 
     expect(result).toBe("completed");
     expect(triggers).toEqual([{ agent: "b", context: "hi" }]);
-    expect(runner.run).toHaveBeenCalledWith("prompt", { type: "schedule" });
+    expect(runner.run).toHaveBeenCalledWith("prompt", { type: "schedule" }, undefined);
   });
 
   it("handles runs with no triggers", async () => {
