@@ -15,7 +15,11 @@ npm i -g @action-llama/action-llama@latest
 ```
 
 ```bash
-al new <projectName>
+al new my-agents
+```
+
+```bash
+cd my-agents
 ```
 
 The wizard prompts for your LLM API key (Anthropic recommended) and basic configuration. This creates:
@@ -29,8 +33,10 @@ The wizard prompts for your LLM API key (Anthropic recommended) and basic config
 
 ## 2. Create an agent
 
+Add a "dev" agent that will implement Github issues when they are tagged with "ready-for-dev":
+
 ```bash
-npx al agent new
+npx al add Action-Llama/agents -a dev
 ```
 
 Choose a template (dev, reviewer, devops, or custom), give it a name, and configure its schedule, credentials, and model. This creates a directory like:
