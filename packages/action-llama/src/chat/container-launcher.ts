@@ -8,7 +8,7 @@
  */
 
 import { randomUUID } from "crypto";
-import type { ContainerRuntime } from "../docker/runtime.js";
+import type { ContainerRuntime, RuntimeCredentials } from "../docker/runtime.js";
 import type { AgentConfig, GlobalConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
 import type { ChatSessionManager } from "./session-manager.js";
@@ -21,6 +21,9 @@ export class ChatContainerLauncher {
   private logger: Logger;
   private sessionManager: ChatSessionManager;
   private images: Map<string, string>;
+  private registerContainer: (secret: string, reg: any) => Promise<void>;
+  private unregisterContainer: (secret: string) => Promise<void>;
+  private sessionCredentials = new Map<string, RuntimeCredentials>();
 
   constructor(opts: {
     runtime: ContainerRuntime;
@@ -30,6 +33,8 @@ export class ChatContainerLauncher {
     logger: Logger;
     sessionManager: ChatSessionManager;
     images: Map<string, string>;
+    registerContainer?: (secret: string, reg: any) => Promise<void>;
+    unregisterContainer?: (secret: string) => Promise<void>;
   }) {
     this.runtime = opts.runtime;
     this.globalConfig = opts.globalConfig;
@@ -38,6 +43,8 @@ export class ChatContainerLauncher {
     this.logger = opts.logger;
     this.sessionManager = opts.sessionManager;
     this.images = opts.images;
+    this.registerContainer = opts.registerContainer ?? (() => Promise.resolve());
+    this.unregisterContainer = opts.unregisterContainer ?? (() => Promise.resolve());
   }
 
   async launchChatContainer(agentName: string, sessionId: string): Promise<string> {
@@ -63,15 +70,20 @@ export class ChatContainerLauncher {
 
     const credentials = await this.runtime.prepareCredentials(credRefs);
 
+    // Generate shutdown secret for gateway registration (enables lock release on stop)
+    const shutdownSecret = randomUUID();
+    const instanceId = `${agentName}-chat-${sessionId.slice(0, 8)}`;
+
     const env: Record<string, string> = {
       AL_CHAT_MODE: "1",
       AL_CHAT_SESSION_ID: sessionId,
       GATEWAY_URL: this.gatewayUrl,
+      SHUTDOWN_SECRET: shutdownSecret,
     };
 
     const containerName = await this.runtime.launch({
       image,
-      agentName: `${agentName}-chat-${sessionId.slice(0, 8)}`,
+      agentName: instanceId,
       env,
       credentials,
       memory: this.globalConfig.local?.memory,
@@ -79,6 +91,20 @@ export class ChatContainerLauncher {
     });
 
     this.sessionManager.setContainerName(sessionId, containerName);
+
+    // Register with gateway so locks are released when container stops
+    try {
+      await this.registerContainer(shutdownSecret, {
+        containerName,
+        agentName,
+        instanceId,
+      });
+      this.sessionManager.setShutdownSecret(sessionId, shutdownSecret);
+      this.sessionCredentials.set(sessionId, credentials);
+    } catch (err: any) {
+      this.logger.warn({ sessionId, err: err.message }, "failed to register chat container with gateway");
+    }
+
     this.logger.info({ agentName, sessionId, containerName }, "chat container launched");
 
     return containerName;
@@ -87,6 +113,22 @@ export class ChatContainerLauncher {
   async stopChatContainer(sessionId: string): Promise<void> {
     const session = this.sessionManager.getSession(sessionId);
     if (!session?.containerName) return;
+
+    // Release locks via gateway unregister (calls lockStore.releaseAll)
+    if (session.shutdownSecret) {
+      try {
+        await this.unregisterContainer(session.shutdownSecret);
+      } catch (err: any) {
+        this.logger.warn({ sessionId, err: err.message }, "failed to unregister chat container");
+      }
+    }
+
+    // Clean up credentials
+    const creds = this.sessionCredentials.get(sessionId);
+    if (creds) {
+      this.runtime.cleanupCredentials(creds);
+      this.sessionCredentials.delete(sessionId);
+    }
 
     try {
       await this.runtime.kill(session.containerName);

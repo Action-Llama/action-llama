@@ -37,6 +37,55 @@ describe("Chat API routes", () => {
       expect(typeof body.sessionId).toBe("string");
     });
 
+    it("returns created: true for a new session", async () => {
+      const res = await app.request("/api/chat/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentName: "new-agent" }),
+      });
+      const body = await res.json();
+      expect(body.created).toBe(true);
+    });
+
+    it("returns existing session with created: false when one already exists for agent", async () => {
+      // Create initial session
+      const firstRes = await app.request("/api/chat/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentName: "existing-agent" }),
+      });
+      const { sessionId: firstId } = await firstRes.json();
+
+      // Request again for same agent
+      const secondRes = await app.request("/api/chat/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentName: "existing-agent" }),
+      });
+      expect(secondRes.status).toBe(200);
+      const body = await secondRes.json();
+      expect(body.sessionId).toBe(firstId);
+      expect(body.created).toBe(false);
+    });
+
+    it("does not call launchCallback for existing session", async () => {
+      await app.request("/api/chat/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentName: "existing-agent" }),
+      });
+      await new Promise((r) => setTimeout(r, 10));
+      const firstCallCount = launchCallback.mock.calls.length;
+
+      await app.request("/api/chat/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentName: "existing-agent" }),
+      });
+      await new Promise((r) => setTimeout(r, 10));
+      expect(launchCallback.mock.calls.length).toBe(firstCallCount);
+    });
+
     it("calls launchCallback with agentName and sessionId", async () => {
       const res = await app.request("/api/chat/sessions", {
         method: "POST",
@@ -86,6 +135,81 @@ describe("Chat API routes", () => {
         body: "not json",
       });
       expect(res.status).toBe(400);
+    });
+  });
+
+  describe("POST /api/chat/sessions/:sessionId/clear", () => {
+    it("stops the old container and returns a new sessionId", async () => {
+      const createRes = await app.request("/api/chat/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentName: "test-agent" }),
+      });
+      const { sessionId } = await createRes.json();
+
+      const clearRes = await app.request(`/api/chat/sessions/${sessionId}/clear`, {
+        method: "POST",
+      });
+      expect(clearRes.status).toBe(200);
+      const body = await clearRes.json();
+      expect(body.sessionId).toBeTruthy();
+      expect(body.sessionId).not.toBe(sessionId);
+    });
+
+    it("calls stopCallback with old sessionId", async () => {
+      const createRes = await app.request("/api/chat/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentName: "test-agent" }),
+      });
+      const { sessionId } = await createRes.json();
+
+      await app.request(`/api/chat/sessions/${sessionId}/clear`, {
+        method: "POST",
+      });
+
+      expect(stopCallback).toHaveBeenCalledWith(sessionId);
+    });
+
+    it("calls launchCallback for the new session", async () => {
+      const createRes = await app.request("/api/chat/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentName: "test-agent" }),
+      });
+      const { sessionId: oldId } = await createRes.json();
+
+      const clearRes = await app.request(`/api/chat/sessions/${oldId}/clear`, {
+        method: "POST",
+      });
+      const { sessionId: newId } = await clearRes.json();
+
+      await new Promise((r) => setTimeout(r, 10));
+      expect(launchCallback).toHaveBeenCalledWith("test-agent", newId);
+    });
+
+    it("returns 404 for unknown session", async () => {
+      const res = await app.request("/api/chat/sessions/nonexistent/clear", {
+        method: "POST",
+      });
+      expect(res.status).toBe(404);
+    });
+
+    it("removes old session and creates a new one", async () => {
+      const createRes = await app.request("/api/chat/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentName: "test-agent" }),
+      });
+      const { sessionId: oldId } = await createRes.json();
+
+      const clearRes = await app.request(`/api/chat/sessions/${oldId}/clear`, {
+        method: "POST",
+      });
+      const { sessionId: newId } = await clearRes.json();
+
+      expect(sessionManager.getSession(oldId)).toBeUndefined();
+      expect(sessionManager.getSession(newId)).toBeDefined();
     });
   });
 

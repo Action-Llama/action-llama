@@ -16,12 +16,19 @@ export function registerChatApiRoutes(
   stopCallback: StopChatCallback,
   logger?: Logger,
 ): void {
-  // Create a new chat session and launch a container
+  // Create a new chat session and launch a container (idempotent per agent)
   app.post("/api/chat/sessions", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const agentName = body.agentName;
     if (!agentName || typeof agentName !== "string") {
       return c.json({ error: "agentName is required" }, 400);
+    }
+
+    // Return existing session for this agent if one exists (idempotent)
+    const existing = sessionManager.getSessionByAgent(agentName);
+    if (existing) {
+      logger?.info({ sessionId: existing.sessionId, agentName }, "returning existing chat session");
+      return c.json({ sessionId: existing.sessionId, created: false });
     }
 
     if (!sessionManager.canCreateSession()) {
@@ -38,7 +45,41 @@ export function registerChatApiRoutes(
         sessionManager.removeSession(session.sessionId);
       });
 
-      return c.json({ sessionId: session.sessionId });
+      return c.json({ sessionId: session.sessionId, created: true });
+    } catch (err: any) {
+      return c.json({ error: err.message }, 500);
+    }
+  });
+
+  // Clear chat context: stop old container (releases locks), create new session and container
+  app.post("/api/chat/sessions/:sessionId/clear", async (c) => {
+    const sessionId = c.req.param("sessionId");
+    const session = sessionManager.getSession(sessionId);
+    if (!session) {
+      return c.json({ error: "Session not found" }, 404);
+    }
+
+    const agentName = session.agentName;
+
+    // Stop old container (this releases locks via unregisterContainer)
+    try {
+      await stopCallback(sessionId);
+    } catch (err: any) {
+      logger?.warn({ sessionId, err: err.message }, "error stopping chat container during clear");
+    }
+    sessionManager.removeSession(sessionId);
+
+    // Create new session for the same agent
+    try {
+      const newSession = sessionManager.createSession(agentName);
+      logger?.info({ oldSessionId: sessionId, newSessionId: newSession.sessionId, agentName }, "chat context cleared");
+
+      launchCallback(agentName, newSession.sessionId).catch((err) => {
+        logger?.error({ sessionId: newSession.sessionId, err: err.message }, "failed to launch chat container after clear");
+        sessionManager.removeSession(newSession.sessionId);
+      });
+
+      return c.json({ sessionId: newSession.sessionId });
     } catch (err: any) {
       return c.json({ error: err.message }, 500);
     }

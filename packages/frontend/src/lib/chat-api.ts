@@ -24,11 +24,17 @@ export interface ChatSessionInfo {
   lastActivityAt: string;
 }
 
-export function createChatSession(agentName: string): Promise<{ sessionId: string }> {
+export function createChatSession(agentName: string): Promise<{ sessionId: string; created: boolean }> {
   return fetchJSON("/api/chat/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ agentName }),
+  });
+}
+
+export function clearChatSession(sessionId: string): Promise<{ sessionId: string }> {
+  return fetchJSON(`/api/chat/sessions/${encodeURIComponent(sessionId)}/clear`, {
+    method: "POST",
   });
 }
 

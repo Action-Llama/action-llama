@@ -48,12 +48,16 @@ describe("ChatContainerLauncher", () => {
   let runtime: ContainerRuntime;
   let sessionManager: ChatSessionManager;
   let launcher: ChatContainerLauncher;
+  let registerContainer: ReturnType<typeof vi.fn>;
+  let unregisterContainer: ReturnType<typeof vi.fn>;
   const logger = makeMockLogger();
 
   beforeEach(() => {
     vi.clearAllMocks();
     runtime = createMockRuntime();
     sessionManager = new ChatSessionManager(5);
+    registerContainer = vi.fn().mockResolvedValue(undefined);
+    unregisterContainer = vi.fn().mockResolvedValue(undefined);
     launcher = new ChatContainerLauncher({
       runtime,
       globalConfig: {} as GlobalConfig,
@@ -62,6 +66,8 @@ describe("ChatContainerLauncher", () => {
       logger,
       sessionManager,
       images: new Map([["test-agent", "test-image:latest"]]),
+      registerContainer: registerContainer as any,
+      unregisterContainer: unregisterContainer as any,
     });
   });
 
@@ -95,6 +101,37 @@ describe("ChatContainerLauncher", () => {
 
       expect(runtime.prepareCredentials).toHaveBeenCalledWith(
         expect.arrayContaining(["github_token", "anthropic_key"]),
+      );
+    });
+
+    it("calls registerContainer with a shutdown secret", async () => {
+      const session = sessionManager.createSession("test-agent");
+      await launcher.launchChatContainer("test-agent", session.sessionId);
+
+      expect(registerContainer).toHaveBeenCalledTimes(1);
+      const [secret, reg] = registerContainer.mock.calls[0];
+      expect(typeof secret).toBe("string");
+      expect(secret.length).toBeGreaterThan(0);
+      expect(reg).toMatchObject({ agentName: "test-agent" });
+    });
+
+    it("stores shutdown secret on the session", async () => {
+      const session = sessionManager.createSession("test-agent");
+      await launcher.launchChatContainer("test-agent", session.sessionId);
+
+      expect(session.shutdownSecret).toBeTruthy();
+    });
+
+    it("passes SHUTDOWN_SECRET in container env vars", async () => {
+      const session = sessionManager.createSession("test-agent");
+      await launcher.launchChatContainer("test-agent", session.sessionId);
+
+      expect(runtime.launch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          env: expect.objectContaining({
+            SHUTDOWN_SECRET: expect.any(String),
+          }),
+        }),
       );
     });
 
@@ -155,6 +192,35 @@ describe("ChatContainerLauncher", () => {
       // Should not throw
       await launcher.stopChatContainer(session.sessionId);
       expect(logger.warn).toHaveBeenCalled();
+    });
+
+    it("calls unregisterContainer with the stored shutdown secret", async () => {
+      const session = sessionManager.createSession("test-agent");
+      await launcher.launchChatContainer("test-agent", session.sessionId);
+
+      const shutdownSecret = session.shutdownSecret;
+      await launcher.stopChatContainer(session.sessionId);
+
+      expect(unregisterContainer).toHaveBeenCalledWith(shutdownSecret);
+    });
+
+    it("calls runtime.cleanupCredentials on stop", async () => {
+      const session = sessionManager.createSession("test-agent");
+      await launcher.launchChatContainer("test-agent", session.sessionId);
+      await launcher.stopChatContainer(session.sessionId);
+
+      expect(runtime.cleanupCredentials).toHaveBeenCalled();
+    });
+
+    it("does not call unregisterContainer when session has no shutdown secret", async () => {
+      const session = sessionManager.createSession("test-agent");
+      // Launch without registering (simulated by not setting shutdownSecret)
+      registerContainer.mockRejectedValueOnce(new Error("registration failed"));
+      await launcher.launchChatContainer("test-agent", session.sessionId);
+      unregisterContainer.mockClear();
+
+      await launcher.stopChatContainer(session.sessionId);
+      expect(unregisterContainer).not.toHaveBeenCalled();
     });
   });
 });
