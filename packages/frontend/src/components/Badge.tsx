@@ -40,6 +40,14 @@ export function ResultBadge({ result }: { result: string }) {
       </span>
     );
   }
+  if (result === "running") {
+    return (
+      <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400 text-xs font-medium">
+        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+        running
+      </span>
+    );
+  }
   return <span className="text-slate-500 text-xs">{result}</span>;
 }
 
