@@ -113,6 +113,7 @@ function makeContext(overrides: Partial<HotReloadContext> = {}): HotReloadContex
       updateAgentScale: vi.fn(),
       setAgentState: vi.fn(),
       setAgentStatusText: vi.fn(),
+      setAgentDescription: vi.fn(),
       setAgentError: vi.fn(),
       setNextRunAt: vi.fn(),
       addLogLine: vi.fn(),
@@ -268,7 +269,7 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     expect(ctx.createRunner).toHaveBeenCalledWith(newConfig, "agent-b:v1");
     expect(ctx.runnerPools["agent-b"]).toBeInstanceOf(RunnerPool);
     expect(ctx.agentConfigs).toContain(newConfig);
-    expect(ctx.statusTracker!.registerAgent).toHaveBeenCalledWith("agent-b", 1);
+    expect(ctx.statusTracker!.registerAgent).toHaveBeenCalledWith("agent-b", 1, undefined);
     expect(ctx.statusTracker!.addLogLine).toHaveBeenCalledWith("agent-b", "hot-reloaded (new)");
   });
 
@@ -424,6 +425,7 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
       updateAgentScale: vi.fn(),
       setAgentState: vi.fn(),
       setAgentStatusText: vi.fn(),
+      setAgentDescription: vi.fn(),
       setAgentError: vi.fn(),
       setNextRunAt: vi.fn(),
       addLogLine: vi.fn(),
