@@ -1,5 +1,19 @@
 # @action-llama/action-llama
 
+## 0.18.2
+
+### Patch Changes
+
+- [#341](https://github.com/Action-Llama/action-llama/pull/341) [`575b51a`](https://github.com/Action-Llama/action-llama/commit/575b51a76ca2eafe6304f0620c53db665d46602e) Thanks [@asselstine](https://github.com/asselstine)! - Fix agent runners showing wrong running count in the Web UI dashboard.
+
+  When a project-wide `scale` cap throttled individual agent pools, the status tracker still showed the original uncapped scale — causing displays like "3/4" when all runners were active. The tracker is now synced with actual pool sizes after runner pool creation.
+
+  Additionally, hot-reload scale changes now use `updateAgentScale` instead of re-registering the agent (which reset the running count to zero), and the "idle" state is no longer set unconditionally at the end of a hot reload when runners are still active. The `startRun` running-count clamp at `scale` has also been removed so the count reflects reality during scale transitions. Closes [#331](https://github.com/Action-Llama/action-llama/issues/331).
+
+- [#354](https://github.com/Action-Llama/action-llama/pull/354) [`5db4648`](https://github.com/Action-Llama/action-llama/commit/5db4648c2c675571ead8f27bfbabd0e8568eeb04) Thanks [@asselstine](https://github.com/asselstine)! - Fix iOS Safari auto-zoom when RunModal opens on mobile and make modal full-screen on small screens.
+
+  iOS Safari zooms the viewport when a focused `<input>` or `<textarea>` has `font-size < 16px`. The RunModal auto-focuses its textarea on mount, immediately triggering the zoom. A global CSS rule now enforces `font-size: 16px` for all form controls on screens under 768px, preventing this across the entire app (RunModal, LoginPage, ChatPage, DashboardPage). The RunModal card is also made full-screen on mobile for a cleaner experience, while preserving the centered card layout on larger screens. Closes [#350](https://github.com/Action-Llama/action-llama/issues/350).
+
 ## 0.18.1
 
 ### Patch Changes
