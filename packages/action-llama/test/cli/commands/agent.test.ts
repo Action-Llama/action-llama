@@ -312,6 +312,43 @@ describe("agent config", () => {
     expect(toml.params.keepme).toBe("stay");
   });
 
+  it("does not throw when agent references undefined model", async () => {
+    // This is the key bug fix: config.toml references "sonnet" but project only has "opus"
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      models: { opus: { provider: "anthropic", model: "claude-opus-4-20250514", authType: "api_key" } },
+    }));
+    createAgentConfig("bad-model", { credentials: [], models: ["sonnet"] });
+
+    mockSelect.mockResolvedValueOnce("done");
+
+    // Should NOT throw — previously this would fail with "references model which is not defined"
+    await configAgent("bad-model", { project: tmpDir });
+
+    const toml = parseTOML(readFileSync(resolve(tmpDir, "agents", "bad-model", "config.toml"), "utf-8")) as any;
+    expect(toml.models).toEqual(["sonnet"]);
+  });
+
+  it("shows error indicator for undefined model in menu", async () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      models: { opus: { provider: "anthropic", model: "claude-opus-4-20250514", authType: "api_key" } },
+    }));
+    createAgentConfig("bad-model2", { credentials: [], models: ["sonnet"] });
+
+    // Capture the choices passed to select
+    let menuChoices: any[] = [];
+    mockSelect.mockImplementationOnce(async (opts: any) => {
+      menuChoices = opts.choices;
+      return "done";
+    });
+
+    await configAgent("bad-model2", { project: tmpDir });
+
+    const modelChoice = menuChoices.find((c: any) => c.value === "model");
+    expect(modelChoice.name).toContain("✗");
+    expect(modelChoice.name).toContain("sonnet");
+    expect(modelChoice.name).toContain("not in config.toml");
+  });
+
   it("webhooks offers to create source when none configured", async () => {
     createAgentConfig("wh-agent", { credentials: [], models: ["sonnet"] });
 

@@ -4,12 +4,10 @@ import { select, input, checkbox, confirm } from "@inquirer/prompts";
 import { parse as parseTOML, stringify as stringifyTOML } from "smol-toml";
 import {
   validateAgentName,
-  loadAgentConfig,
   loadAgentRuntimeConfig,
   loadGlobalConfig,
-  discoverAgents,
 } from "../../shared/config.js";
-import type { AgentConfig, ModelConfig } from "../../shared/config.js";
+import type { AgentConfig, AgentRuntimeConfig, ModelConfig } from "../../shared/config.js";
 import type { WebhookTrigger } from "../../webhooks/types.js";
 import { scaffoldAgent } from "../../setup/scaffold.js";
 import { resolvePackageRoot } from "../../setup/scaffold.js";
@@ -95,28 +93,43 @@ export async function configAgent(name: string, opts: { project: string }): Prom
     throw new Error(`Agent "${name}" not found. Run 'al agent new' first.`);
   }
 
-  const config = loadAgentConfig(projectPath, name);
+  // Load raw config — never throws on unresolved model references
+  const runtime = loadAgentRuntimeConfig(projectPath, name);
 
-  // Track model names separately (config.models is resolved ModelConfig[],
-  // but config.toml needs string references like ["sonnet"])
-  const runtimeRaw = loadAgentRuntimeConfig(projectPath, name);
-  let modelNames: string[] = runtimeRaw.models ?? [];
+  // Build a mutable config object for the edit functions
+  const config: AgentConfig = {
+    name,
+    credentials: runtime.credentials ?? [],
+    models: [],
+    schedule: runtime.schedule,
+    webhooks: runtime.webhooks,
+    hooks: runtime.hooks,
+    params: runtime.params as Record<string, string> | undefined,
+    scale: runtime.scale,
+    timeout: runtime.timeout,
+  };
+
+  let modelNames: string[] = runtime.models ?? [];
 
   let done = false;
   while (!done) {
+    // Validate each field for status display
+    const globalConfig = safeLoadGlobalConfig(projectPath);
+    const modelStatus = validateModels(modelNames, globalConfig);
+    const scheduleStatus = validateSchedule(config.schedule, config.webhooks);
     const credCount = config.credentials?.length ?? 0;
     const webhookCount = config.webhooks?.length ?? 0;
     const paramCount = config.params ? Object.keys(config.params).length : 0;
-    const modelLabel = config.models[0]?.provider ?? "none";
+
     const section = await select({
       message: `Configure ${name}:`,
       choices: [
-        { name: `Credentials [${credCount} configured]`, value: "credentials" },
-        { name: `Model [${modelLabel}]`, value: "model" },
-        { name: `Schedule [${config.schedule ?? "none"}]`, value: "schedule" },
-        { name: `Webhooks [${webhookCount} trigger${webhookCount !== 1 ? "s" : ""}]`, value: "webhooks" },
-        { name: `Params [${paramCount} key${paramCount !== 1 ? "s" : ""}]`, value: "params" },
-        { name: "Done — save and run doctor", value: "done" },
+        { name: `${modelStatus.icon} models         ${modelStatus.label}`, value: "model" },
+        { name: `${credCount > 0 ? "✓" : "-"} credentials    ${credCount > 0 ? config.credentials!.join(", ") : "(none)"}`, value: "credentials" },
+        { name: `${scheduleStatus.icon} schedule       ${scheduleStatus.label}`, value: "schedule" },
+        { name: `${webhookCount > 0 ? "✓" : "-"} webhooks       ${webhookCount > 0 ? `${webhookCount} trigger${webhookCount !== 1 ? "s" : ""}` : "(none)"}`, value: "webhooks" },
+        { name: `${paramCount > 0 ? "✓" : "-"} params         ${paramCount > 0 ? `${paramCount} key${paramCount !== 1 ? "s" : ""}` : "(none)"}`, value: "params" },
+        { name: "  Done — save and run doctor", value: "done" },
       ],
     });
 
@@ -169,6 +182,53 @@ export async function configAgent(name: string, opts: { project: string }): Prom
   await execute({ project: projectPath });
 }
 
+// --- Field validation helpers ---
+
+function safeLoadGlobalConfig(projectPath: string): Record<string, any> {
+  try {
+    return loadGlobalConfig(projectPath);
+  } catch {
+    return {};
+  }
+}
+
+function validateModels(
+  modelNames: string[],
+  globalConfig: Record<string, any>,
+): { icon: string; label: string } {
+  if (modelNames.length === 0) {
+    return { icon: "✗", label: "(none configured)" };
+  }
+  const availableModels = globalConfig.models ?? {};
+  const missing = modelNames.filter((n) => !availableModels[n]);
+  if (missing.length > 0) {
+    const available = Object.keys(availableModels).join(", ");
+    return {
+      icon: "✗",
+      label: `${missing.join(", ")} (not in config.toml${available ? `. Available: ${available}` : ""})`,
+    };
+  }
+  const first = availableModels[modelNames[0]];
+  return { icon: "✓", label: `${modelNames[0]} (${first.provider}/${first.model})` };
+}
+
+function validateSchedule(
+  schedule: string | undefined,
+  webhooks: any[] | undefined,
+): { icon: string; label: string } {
+  if (!schedule && (!webhooks || webhooks.length === 0)) {
+    return { icon: "✗", label: "(none — needs schedule or webhooks)" };
+  }
+  if (!schedule) {
+    return { icon: "-", label: "(none — using webhooks)" };
+  }
+  const parts = schedule.trim().split(/\s+/);
+  if (parts.length !== 5) {
+    return { icon: "✗", label: `${schedule} (invalid cron — need 5 fields)` };
+  }
+  return { icon: "✓", label: schedule };
+}
+
 // --- Section editors ---
 
 async function editCredentials(config: AgentConfig): Promise<void> {
@@ -195,12 +255,7 @@ async function editCredentials(config: AgentConfig): Promise<void> {
  * Lets user pick from existing named models in config.toml or create a new one.
  */
 async function editModel(config: AgentConfig, projectPath: string): Promise<string[]> {
-  let globalConfig;
-  try {
-    globalConfig = loadGlobalConfig(projectPath);
-  } catch {
-    globalConfig = {};
-  }
+  const globalConfig = safeLoadGlobalConfig(projectPath);
 
   const existingModels = globalConfig.models ?? {};
   const modelNames = Object.keys(existingModels);
@@ -212,10 +267,16 @@ async function editModel(config: AgentConfig, projectPath: string): Promise<stri
   }));
   choices.push({ name: "+ Create new model", value: "__create__" });
 
+  // Find a reasonable default from existing models
+  const currentProvider = config.models[0]?.provider;
+  const defaultModel = currentProvider
+    ? modelNames.find((n) => existingModels[n].provider === currentProvider)
+    : modelNames[0];
+
   const selected = await select({
     message: "Select model:",
     choices,
-    default: modelNames.find((n) => existingModels[n].provider === config.models[0]?.provider),
+    default: defaultModel,
   });
 
   if (selected !== "__create__") {
