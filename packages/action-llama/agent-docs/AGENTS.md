@@ -13,16 +13,19 @@ my-project/
   Dockerfile               # Project base Docker image — shared tools for all agents (committed)
   AGENTS.md                # Shared instructions loaded by `al chat` (interactive only)
   CLAUDE.md                # Instructions for AI dev tools — not read by Action Llama at runtime
-  <agent>/
-    SKILL.md               # Agent config (YAML frontmatter) + instructions (markdown body)
-    Dockerfile             # Custom Docker image for this agent (optional)
+  agents/
+    <agent>/
+      SKILL.md             # Portable metadata (YAML frontmatter) + instructions (markdown body)
+      config.toml          # Per-agent runtime config — credentials, models, schedule, webhooks, hooks, params (committed)
+      Dockerfile           # Custom Docker image for this agent (optional)
 ```
 
 Agent names derive from directory name. `"default"` is reserved.
 
 ### SKILL.md — Writing Tips
 
-- Direct LLM instructions; numbered steps; reference `<agent-config>` for params
+- Direct LLM instructions; numbered steps; reference `<agent-config>` for params (params come from `config.toml [params]`)
+- Runtime config (credentials, schedule, models, webhooks, etc.) lives in `agents/<name>/config.toml`, not SKILL.md frontmatter
 - `al-status` at milestones, `al-rerun` when backlog remains; keep concise
 
 ## Prompt Assembly
@@ -42,21 +45,23 @@ The SKILL.md body is the system prompt. With gateway, **skill blocks** appended:
 Use locks to coordinate with other agent instances and avoid duplicate work.
 You may hold **at most one lock at a time**. Release your current lock before acquiring another.
 
+**Important:** Resource keys must be valid URIs with proper schemes (e.g., github://, file://, https://).
+
 ### Commands
 
 **`rlock <resourceKey>`** — Acquire an exclusive lock before working on a shared resource.
 ```
-rlock "github issue acme/app#42"
+rlock "github://acme/app/issues/42"
 ```
 
 **`runlock <resourceKey>`** — Release a lock when done with the resource.
 ```
-runlock "github issue acme/app#42"
+runlock "github://acme/app/issues/42"
 ```
 
 **`rlock-heartbeat <resourceKey>`** — Extend the TTL on a lock you hold. Use during long-running work.
 ```
-rlock-heartbeat "github issue acme/app#42"
+rlock-heartbeat "github://acme/app/issues/42"
 ```
 
 ### Responses
@@ -77,7 +82,7 @@ rlock-heartbeat "github issue acme/app#42"
 - If `rlock` returns `{"ok":false,...}` for ANY reason, skip that resource — do not wait, retry, or proceed without the lock
 - Use `rlock-heartbeat` during long operations to keep the lock alive
 - Locks expire automatically after 30 minutes if not refreshed
-- Use descriptive keys: `"github issue acme/app#42"`, `"deploy api-prod"`
+- Resource keys must be valid URIs: `"github://acme/app/issues/42"`, `"file:///deployments/api-prod"`
 </skill-lock>
 ```
 
@@ -286,6 +291,8 @@ endpoint = "https://telemetry.example.com/v1"   # OpenTelemetry endpoint
 | `maxCallDepth` | number | `3` | Maximum depth for agent-to-agent call chains (A calls B calls C = depth 2) |
 | `workQueueSize` | number | `100` | Maximum queued work items (webhook events + agent calls) per agent when all runners are busy |
 | `scale` | number | _(unlimited)_ | Project-wide cap on total concurrent runners across all agents |
+| `defaultAgentScale` | number | `1` | Default scale for agents without an explicit per-agent config.toml scale |
+| `historyRetentionDays` | number | `14` | How many days to keep trigger history and webhook receipts |
 | `resourceLockTimeout` | number | `1800` | Default lock TTL in seconds. Locks expire automatically after this duration unless refreshed via heartbeat. |
 
 ### `[models.<name>]` — Named Models
@@ -308,7 +315,7 @@ Local Docker container settings.
 | `image` | string | `"al-agent:latest"` | Base Docker image name |
 | `memory` | string | `"4g"` | Memory limit per container (e.g. `"4g"`, `"8g"`) |
 | `cpus` | number | `2` | CPU limit per container |
-| `timeout` | number | `900` | Default max container runtime in seconds. Individual agents can override this with `timeout` in their SKILL.md frontmatter. |
+| `timeout` | number | `900` | Default max container runtime in seconds. Individual agents can override this with `timeout` in their `agents/<name>/config.toml`. |
 
 ### `[gateway]` — HTTP Server
 
@@ -343,55 +350,16 @@ events = ["issues"]
 
 ## SKILL.md
 
-Single-file agent configuration. YAML frontmatter contains config, markdown body contains instructions.
+Portable agent definition. YAML frontmatter contains portable metadata (name, description, license, compatibility), markdown body contains LLM instructions. Runtime configuration lives in a separate `config.toml` per agent.
 
 ### Full Annotated Example
 
 ```yaml
 ---
+name: dev-agent
 description: Solves GitHub issues by writing and testing code
-metadata:
-  credentials:
-    - github_token
-    - git_ssh
-    - sentry_token
-  schedule: "*/5 * * * *"
-  scale: 2
-  timeout: 600
-  models:
-    - sonnet
-    - haiku
-  webhooks:
-    - source: my-github
-      repos: [acme/app]
-      events: [issues]
-      actions: [labeled]
-      labels: [agent]
-    - source: my-sentry
-      resources: [error, event_alert]
-    - source: my-linear
-      events: [issues]
-      actions: [create, update]
-      labels: [bug]
-    - source: my-mintlify
-      events: [build]
-      actions: [failed]
-  hooks:
-    pre:
-      - "gh repo clone acme/app /tmp/repo --depth 1"
-      - "curl -o /tmp/flags.json https://api.internal/v1/flags"
-    post:
-      - "upload-artifacts.sh"
-  params:
-    repos:
-      - acme/app
-      - acme/api
-    triggerLabel: agent
-    assignee: bot-user
-    sentryOrg: acme
-    sentryProjects:
-      - web-app
-      - api
+license: MIT
+compatibility: ">=0.5.0"
 ---
 
 # Dev Agent
@@ -399,22 +367,99 @@ metadata:
 You are a development agent. Pick the highest priority issue and fix it.
 ```
 
-### Field Reference
+### SKILL.md Frontmatter Fields
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `description` | string | No | Short description of what the agent does (top-level) |
-| `metadata.credentials` | string[] | Yes | Credential refs: `"type"` for default instance, `"type:instance"` for named instance. |
-| `metadata.schedule` | string | No* | Cron expression for polling |
-| `metadata.scale` | number | No | Number of concurrent runs allowed (default: 1). Set to `0` to disable the agent. |
-| `metadata.timeout` | number | No | Max runtime in seconds. Falls back to `[local].timeout` in project config, then `900`. |
-| `metadata.models` | string[] | Yes | Named model references from `config.toml [models.*]`. First is primary; rest are fallbacks. |
-| `metadata.webhooks` | array | No* | Array of webhook trigger objects. |
-| `metadata.hooks.pre` | string[] | No | Shell commands to run before LLM session |
-| `metadata.hooks.post` | string[] | No | Shell commands to run after LLM session |
-| `metadata.params` | object | No | Custom key-value params injected into the prompt as `<agent-config>` |
+| `name` | string | No | Human-readable name (defaults to directory name) |
+| `description` | string | No | Short description of what the agent does |
+| `license` | string | No | License identifier (e.g. `"MIT"`) |
+| `compatibility` | string | No | Semver range for Action Llama compatibility |
 
-*Need `schedule` or `webhooks` (unless `scale=0`).
+## config.toml (per-agent)
+
+Runtime configuration for the agent. Lives at `agents/<name>/config.toml`. This file is project-local (not portable with the skill).
+
+### Full Annotated Example
+
+```toml
+# Install origin — used by `al update` to pull upstream SKILL.md changes
+source = "acme/dev-skills"
+
+# Required: named model references from project config.toml [models.*]
+# First in list is primary; rest are fallbacks tried on rate limits
+models = ["sonnet", "haiku"]
+
+# Required: credential types the agent needs at runtime
+# Use "type" for default instance, "type:instance" for named instance
+credentials = ["github_token", "git_ssh", "sentry_token"]
+
+# Optional: cron schedule (standard cron syntax)
+# Agent must have at least one of: schedule, webhooks
+schedule = "*/5 * * * *"
+
+# Optional: number of concurrent runs allowed (default: 1)
+# When scale > 1, use lock skills in your actions to coordinate
+scale = 2
+
+# Optional: max runtime in seconds (default: falls back to [local].timeout, then 900)
+timeout = 600
+
+# Optional: webhook triggers (instead of or in addition to schedule)
+[[webhooks]]
+source = "my-github"
+repos = ["acme/app"]
+events = ["issues"]
+actions = ["labeled"]
+labels = ["agent"]
+
+[[webhooks]]
+source = "my-sentry"
+resources = ["error", "event_alert"]
+
+[[webhooks]]
+source = "my-linear"
+events = ["issues"]
+actions = ["create", "update"]
+labels = ["bug"]
+
+[[webhooks]]
+source = "my-mintlify"
+events = ["build"]
+actions = ["failed"]
+
+# Optional: hooks — shell commands that run before or after the LLM session
+[hooks]
+pre = [
+  "gh repo clone acme/app /tmp/repo --depth 1",
+  "curl -o /tmp/flags.json https://api.internal/v1/flags",
+]
+post = ["upload-artifacts.sh"]
+
+# Optional: custom parameters injected into the agent prompt as <agent-config>
+[params]
+repos = ["acme/app", "acme/api"]
+triggerLabel = "agent"
+assignee = "bot-user"
+sentryOrg = "acme"
+sentryProjects = ["web-app", "api"]
+```
+
+### config.toml Field Reference
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `source` | string | No | Git URL or GitHub shorthand for `al update`. Set automatically by `al add`. |
+| `models` | string[] | Yes | Named model references from `config.toml [models.*]`. First is primary; rest are fallbacks. |
+| `credentials` | string[] | Yes | Credential refs: `"type"` for default instance, `"type:instance"` for named instance. |
+| `schedule` | string | No* | Cron expression for polling |
+| `scale` | number | No | Number of concurrent runs allowed (default: 1). Set to `0` to disable the agent. |
+| `timeout` | number | No | Max runtime in seconds. Falls back to `[local].timeout` in project config, then `900`. |
+| `webhooks` | array | No* | Array of webhook trigger objects. |
+| `hooks` | table | No | Pre/post hooks that run around the LLM session. |
+| `params` | table | No | Custom key-value params injected into the prompt as `<agent-config>` |
+
+*At least one of `schedule` or `webhooks` is required (unless `scale = 0`).
 
 ### Scale
 
@@ -436,13 +481,13 @@ Shell commands that run before and after the LLM session, inside the container.
 
 Sequential execution. If a command fails (non-zero exit), the run aborts with error. Commands run via `/bin/sh -c "..."`.
 
-```yaml
-hooks:
-  pre:
-    - "gh repo clone acme/app /tmp/repo --depth 1"
-    - "curl -o /tmp/flags.json https://api.internal/v1/flags"
-  post:
-    - "upload-artifacts.sh"
+```toml
+[hooks]
+pre = [
+  "gh repo clone acme/app /tmp/repo --depth 1",
+  "curl -o /tmp/flags.json https://api.internal/v1/flags",
+]
+post = ["upload-artifacts.sh"]
 ```
 
 ### Webhook Trigger Fields
@@ -506,7 +551,7 @@ Path: `~/.action-llama/credentials/<type>/<instance>/<field>`.
 
 ### How credentials work
 
-List in SKILL.md frontmatter. Mounted at `/credentials/...`, key values as env vars. `git_ssh` sets `GIT_AUTHOR_*`/`GIT_COMMITTER_*`. LLM creds auto-loaded from `[models.*]`.
+List in `agents/<name>/config.toml` credentials field. Mounted at `/credentials/...`, key values as env vars. `git_ssh` sets `GIT_AUTHOR_*`/`GIT_COMMITTER_*`. LLM creds auto-loaded from `[models.*]`.
 
 ### Agent runtime credentials
 
@@ -728,7 +773,7 @@ Prevent duplicate work across instances.
 Acquire exclusive lock.
 
 ```bash
-rlock "github issue acme/app#42"
+rlock "github://acme/app/issues/42"
 ```
 
 Responses:
@@ -737,7 +782,7 @@ Responses:
 {"ok": true}
 {"ok": false, "holder": "dev-abc123", "heldSince": "2025-01-15T10:30:00Z"}
 {"ok": false, "reason": "already holding lock on ..."}
-{"ok": false, "reason": "possible deadlock detected", "cycle": ["dev-abc", "github pr acme/app#10", "dev-def", "deploy api-prod"]}
+{"ok": false, "reason": "possible deadlock detected", "cycle": ["dev-abc", "github://acme/app/issues/10", "dev-def", "file:///deployments/api-prod"]}
 ```
 
 #### `runlock`
@@ -745,7 +790,7 @@ Responses:
 Release a lock (holder only).
 
 ```bash
-runlock "github issue acme/app#42"
+runlock "github://acme/app/issues/42"
 ```
 
 ```json
@@ -758,7 +803,7 @@ runlock "github issue acme/app#42"
 Reset TTL on held lock during long work.
 
 ```bash
-rlock-heartbeat "github issue acme/app#42"
+rlock-heartbeat "github://acme/app/issues/42"
 ```
 
 ```json
