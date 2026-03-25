@@ -1,5 +1,23 @@
 # @action-llama/action-llama
 
+## 0.18.3
+
+### Patch Changes
+
+- [`ceea8d7`](https://github.com/Action-Llama/action-llama/commit/ceea8d77be0775a550ca6dd2b2095a77a6a8e596) Thanks [@asselstine](https://github.com/asselstine)! - Fix `al add` and `al update` to discover SKILL.md files in `agents/` subdirectories, not just `skills/`. Repos that organize skills under `agents/*/SKILL.md` (e.g., `Action-Llama/agents`) now work correctly.
+
+- [`c4deb29`](https://github.com/Action-Llama/action-llama/commit/c4deb29b7fa55f99788f878068cb022a90f7d71f) Thanks [@asselstine](https://github.com/asselstine)! - Fix `--no-creds` flag on `al push` which was silently ignored due to three bugs:
+  Commander's `--no-` prefix handling mapped the flag to `opts.creds = false` instead of
+  `opts.noCreds = true`, the credential sync logic didn't consult the flag at all, and
+  the doctor webhook security check ran before the `skipCredentials` guard. Renamed the
+  CLI flag to `--skip-creds` to avoid Commander's negation semantics, gated `syncCreds`
+  on `!opts.noCreds`, and moved the webhook secret check inside the `skipCredentials`
+  block.
+
+- [`0d68ac3`](https://github.com/Action-Llama/action-llama/commit/0d68ac309dfc856289381191db6e2c57d207bce5) Thanks [@asselstine](https://github.com/asselstine)! - Darken docs light mode accent color from bright yellow (#ffe970) to readable gold (#c49000) for better contrast on white backgrounds.
+
+- [`da33730`](https://github.com/Action-Llama/action-llama/commit/da33730c13ba65c51277187123f409809bd71f17) Thanks [@asselstine](https://github.com/asselstine)! - Unify trigger history across the dashboard and agent detail page. The agent page's "Instance History" is replaced with "Recent Triggers" (5 most recent, paginated, with "View all" linking to a full agent-filtered trigger history page). Agent names now show their assigned color in all trigger tables. The `/api/stats/triggers` endpoint accepts an optional `?agent=<name>` filter.
+
 ## 0.18.2
 
 ### Patch Changes
