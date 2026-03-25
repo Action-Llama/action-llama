@@ -108,7 +108,7 @@ export function ProjectConfigPage() {
             min={1}
             value={scaleInput}
             onChange={(e) => setScaleInput(e.target.value)}
-            className="w-20 px-2 py-1.5 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded text-sm text-slate-900 dark:text-slate-200"
+            className="w-20 px-2 py-1.5 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded text-base text-slate-900 dark:text-slate-200"
           />
           <button
             onClick={handleScaleUpdate}

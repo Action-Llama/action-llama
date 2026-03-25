@@ -173,7 +173,7 @@ export function ChatPage() {
             placeholder={isStreaming ? "Agent is responding..." : "Type a message..."}
             disabled={!connected}
             rows={1}
-            className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-400 resize-none focus:outline-none focus:border-blue-500 disabled:opacity-50"
+            className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-base text-white placeholder-slate-400 resize-none focus:outline-none focus:border-blue-500 disabled:opacity-50"
           />
           {isStreaming ? (
             <button
