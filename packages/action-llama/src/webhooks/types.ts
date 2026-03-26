@@ -63,7 +63,12 @@ export interface SlackWebhookFilter {
   team_ids?: string[];   // Slack workspace/team IDs
 }
 
-export type WebhookFilter = GitHubWebhookFilter | SentryWebhookFilter | LinearWebhookFilter | MintlifyWebhookFilter | SlackWebhookFilter;
+export interface TwitterWebhookFilter {
+  events?: string[];   // e.g. tweet_create_events, favorite_events, follow_events
+  users?: string[];    // for_user_id values (subscribed account IDs)
+}
+
+export type WebhookFilter = GitHubWebhookFilter | SentryWebhookFilter | LinearWebhookFilter | MintlifyWebhookFilter | SlackWebhookFilter | TwitterWebhookFilter;
 
 // --- Webhook trigger (used in agent config) ---
 
@@ -91,6 +96,7 @@ export interface WebhookProvider {
   matchesFilter(context: WebhookContext, filter: WebhookFilter): boolean;
   getDeliveryId?(headers: Record<string, string | undefined>): string | null;
   handleChallenge?(headers: Record<string, string | undefined>, rawBody: string, secrets?: Record<string, string>, allowUnsigned?: boolean): object | null;
+  handleCrcChallenge?(queryParams: Record<string, string>, secrets?: Record<string, string>): { status: number; body: any } | null;
 }
 
 // --- Registry binding ---
