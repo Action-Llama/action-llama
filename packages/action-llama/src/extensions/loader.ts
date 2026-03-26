@@ -44,6 +44,7 @@ async function loadWebhookExtensions(registry: ExtensionRegistry): Promise<void>
       linearWebhookExtension,
       mintlifyWebhookExtension,
       sentryWebhookExtension,
+      slackWebhookExtension,
       testWebhookExtension
     } = await import("../webhooks/providers/index.js");
     
@@ -51,6 +52,7 @@ async function loadWebhookExtensions(registry: ExtensionRegistry): Promise<void>
     await registry.register(linearWebhookExtension);
     await registry.register(mintlifyWebhookExtension);
     await registry.register(sentryWebhookExtension);
+    await registry.register(slackWebhookExtension);
     await registry.register(testWebhookExtension);
   } catch (error) {
     console.warn("Failed to load webhook extensions:", error);

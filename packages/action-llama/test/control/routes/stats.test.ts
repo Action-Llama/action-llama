@@ -7,6 +7,7 @@ function mockStatsStore() {
     queryRunsByAgentPaginated: vi.fn().mockReturnValue([]),
     countRunsByAgent: vi.fn().mockReturnValue(0),
     queryRunByInstanceId: vi.fn().mockReturnValue(undefined),
+    getWebhookReceipt: vi.fn().mockReturnValue(undefined),
   } as any;
 }
 
@@ -92,5 +93,45 @@ describe("stats routes", () => {
     expect(res2.status).toBe(200);
     const data2 = await res2.json();
     expect(data2.run).toBeNull();
+  });
+
+  it("returns webhook receipt by ID", async () => {
+    const stats = mockStatsStore();
+    const mockReceipt = {
+      id: "test-receipt-id",
+      source: "github",
+      eventSummary: "push to main",
+      timestamp: 1000000,
+      matchedAgents: 2,
+      status: "processed",
+    };
+    stats.getWebhookReceipt.mockReturnValue(mockReceipt);
+    const app = createApp(stats);
+
+    const res = await app.request("/api/stats/webhooks/test-receipt-id");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.receipt).toMatchObject(mockReceipt);
+    expect(stats.getWebhookReceipt).toHaveBeenCalledWith("test-receipt-id");
+  });
+
+  it("returns 404 for missing receipt", async () => {
+    const stats = mockStatsStore();
+    stats.getWebhookReceipt.mockReturnValue(undefined);
+    const app = createApp(stats);
+
+    const res = await app.request("/api/stats/webhooks/missing-id");
+    expect(res.status).toBe(404);
+    const data = await res.json();
+    expect(data.receipt).toBeNull();
+  });
+
+  it("returns null receipt when no stats store", async () => {
+    const app = createApp();
+
+    const res = await app.request("/api/stats/webhooks/any-id");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.receipt).toBeNull();
   });
 });

@@ -8,6 +8,7 @@ import { LinearWebhookProvider } from "./linear.js";
 import { MintlifyWebhookProvider } from "./mintlify.js";
 import { SentryWebhookProvider } from "./sentry.js";
 import { DiscordWebhookProvider } from "./discord.js";
+import { SlackWebhookProvider } from "./slack.js";
 import { TestWebhookProvider } from "./test.js";
 
 /**
@@ -122,6 +123,36 @@ export const sentryWebhookExtension: WebhookExtension = {
     ]
   },
   provider: new SentryWebhookProvider(),
+  async init() {
+    // No special initialization required
+  },
+  async shutdown() {
+    // No cleanup required
+  }
+};
+
+/**
+ * Slack webhook provider extension
+ */
+export const slackWebhookExtension: WebhookExtension = {
+  metadata: {
+    name: "slack",
+    version: "1.0.0",
+    description: "Slack Events API webhook provider",
+    type: "webhook",
+    requiredCredentials: [
+      { type: "slack_signing_secret", description: "Slack signing secret for request verification", optional: true }
+    ],
+    providesCredentialTypes: [
+      {
+        type: "slack_signing_secret",
+        fields: ["secret"],
+        description: "Slack signing secret",
+        envMapping: { secret: "SLACK_SIGNING_SECRET" }
+      }
+    ]
+  },
+  provider: new SlackWebhookProvider(),
   async init() {
     // No special initialization required
   },

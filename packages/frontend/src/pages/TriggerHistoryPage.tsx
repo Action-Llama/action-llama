@@ -166,7 +166,16 @@ export function TriggerHistoryPage() {
                     <TriggerTypeBadge type={t.triggerType} />
                   </td>
                   <td className="px-4 py-2.5 text-slate-600 dark:text-slate-400 text-xs">
-                    {t.triggerSource ?? "\u2014"}
+                    {t.triggerSource && t.webhookReceiptId ? (
+                      <Link
+                        to={`/dashboard/webhooks/${t.webhookReceiptId}`}
+                        className="text-blue-600 dark:text-blue-400 hover:underline"
+                      >
+                        {t.triggerSource}
+                      </Link>
+                    ) : (
+                      t.triggerSource ?? "\u2014"
+                    )}
                   </td>
                   <td className="px-4 py-2.5">
                     {t.agentName ? (
@@ -199,7 +208,7 @@ export function TriggerHistoryPage() {
                     )}
                   </td>
                   <td className="px-4 py-2.5">
-                    <ResultBadge result={t.result} />
+                    <ResultBadge result={t.result} deadLetterReason={t.deadLetterReason} />
                   </td>
                 </tr>
               ))}

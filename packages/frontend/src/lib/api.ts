@@ -106,6 +106,21 @@ export interface TriggerHistoryRow {
   agentName?: string;
   instanceId?: string;
   result: string;
+  webhookReceiptId?: string;
+  deadLetterReason?: string | null;
+}
+
+export interface WebhookReceiptDetail {
+  id: string;
+  deliveryId?: string;
+  source: string;
+  eventSummary?: string;
+  timestamp: number;
+  headers?: string;
+  body?: string;
+  matchedAgents: number;
+  status: "processed" | "dead-letter";
+  deadLetterReason?: string;
 }
 
 export interface AgentSummary {
@@ -215,6 +230,14 @@ export function getAgentRuns(
   return fetchJSON(
     `/api/stats/agents/${encodeURIComponent(name)}/runs?page=${page}&limit=${limit}`,
   );
+}
+
+export function getWebhookReceipt(receiptId: string): Promise<{ receipt: WebhookReceiptDetail | null }> {
+  return fetchJSON(`/api/stats/webhooks/${encodeURIComponent(receiptId)}`);
+}
+
+export function replayWebhook(receiptId: string): Promise<{ ok: boolean; matched: number; skipped: number; replayReceiptId?: string }> {
+  return ctrlPost(`/api/webhooks/${encodeURIComponent(receiptId)}/replay`);
 }
 
 export function getTriggerHistory(

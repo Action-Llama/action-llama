@@ -15,6 +15,8 @@ const SIGNATURE_HEADERS = new Set([
   "mintlify-signature",
   "x-signature-ed25519",
   "x-signature-timestamp",
+  "x-slack-signature",
+  "x-slack-request-timestamp",
 ]);
 
 const MAX_STORED_BODY = 256 * 1024; // 256 KB
@@ -160,6 +162,16 @@ export function registerWebhookRoutes(
 
     const secrets = webhookSecrets[source];
     const config = webhookConfigs[source];
+
+    // Handle provider setup challenges (e.g., Slack URL verification)
+    if (provider.handleChallenge) {
+      const challengeResponse = provider.handleChallenge(headers, rawBody, secrets, config?.allowUnsigned);
+      if (challengeResponse) {
+        logger.info({ source }, "webhook setup challenge handled");
+        return c.json(challengeResponse);
+      }
+    }
+
     const result = registry.dispatch(source, headers, rawBody, { secrets, config }, receiptId);
 
     // Update receipt status based on dispatch result

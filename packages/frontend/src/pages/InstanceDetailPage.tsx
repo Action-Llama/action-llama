@@ -157,7 +157,10 @@ export function InstanceDetailPage() {
       </span>
     );
   } else if (webhookReceipt) {
-    triggerDetail = (
+    const receiptLink = run?.webhook_receipt_id
+      ? `/dashboard/webhooks/${run.webhook_receipt_id}`
+      : null;
+    const content = (
       <span>
         Webhook: {webhookReceipt.source}
         {webhookReceipt.eventSummary && ` - ${webhookReceipt.eventSummary}`}
@@ -168,6 +171,11 @@ export function InstanceDetailPage() {
         )}
       </span>
     );
+    triggerDetail = receiptLink ? (
+      <Link to={receiptLink} className="text-blue-600 dark:text-blue-400 hover:underline">
+        {content}
+      </Link>
+    ) : content;
   } else if (run?.trigger_type === "schedule") {
     triggerDetail = <span>Scheduled</span>;
   } else if (run) {

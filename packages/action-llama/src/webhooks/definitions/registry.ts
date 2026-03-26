@@ -2,8 +2,9 @@ import type { WebhookDefinition } from "./schema.js";
 import { github } from "./github.js";
 import { sentry } from "./sentry.js";
 import { discord } from "./discord.js";
+import { slack } from "./slack.js";
 
-const definitions: WebhookDefinition[] = [github, sentry, discord];
+const definitions: WebhookDefinition[] = [github, sentry, discord, slack];
 
 export function resolveWebhookDefinition(id: string): WebhookDefinition {
   const def = definitions.find((d) => d.id === id);
