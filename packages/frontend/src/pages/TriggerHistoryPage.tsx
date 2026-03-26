@@ -208,7 +208,7 @@ export function TriggerHistoryPage() {
                     )}
                   </td>
                   <td className="px-4 py-2.5">
-                    <ResultBadge result={t.result} />
+                    <ResultBadge result={t.result} deadLetterReason={t.deadLetterReason} />
                   </td>
                 </tr>
               ))}

@@ -107,6 +107,7 @@ export interface TriggerHistoryRow {
   instanceId?: string;
   result: string;
   webhookReceiptId?: string;
+  deadLetterReason?: string | null;
 }
 
 export interface WebhookReceiptDetail {
