@@ -9,6 +9,7 @@ import { MintlifyWebhookProvider } from "./mintlify.js";
 import { SentryWebhookProvider } from "./sentry.js";
 import { SlackWebhookProvider } from "./slack.js";
 import { TestWebhookProvider } from "./test.js";
+import { TwitterWebhookProvider } from "./twitter.js";
 
 /**
  * GitHub webhook provider extension
@@ -172,6 +173,36 @@ export const testWebhookExtension: WebhookExtension = {
     requiredCredentials: [] // Test provider doesn't require credentials
   },
   provider: new TestWebhookProvider(),
+  async init() {
+    // No special initialization required
+  },
+  async shutdown() {
+    // No cleanup required
+  }
+};
+
+/**
+ * Twitter webhook provider extension
+ */
+export const twitterWebhookExtension: WebhookExtension = {
+  metadata: {
+    name: "twitter",
+    version: "1.0.0",
+    description: "X (Twitter) webhook provider with CRC support",
+    type: "webhook",
+    requiredCredentials: [
+      { type: "x_twitter_webhook_secret", description: "Consumer secret for CRC handshake and HMAC validation", optional: true }
+    ],
+    providesCredentialTypes: [
+      {
+        type: "x_twitter_webhook_secret",
+        fields: ["secret"],
+        description: "X (Twitter) consumer secret",
+        envMapping: { secret: "X_TWITTER_WEBHOOK_SECRET" }
+      }
+    ]
+  },
+  provider: new TwitterWebhookProvider(),
   async init() {
     // No special initialization required
   },

@@ -15,7 +15,8 @@ import { SentryWebhookProvider } from "../webhooks/providers/sentry.js";
 import { LinearWebhookProvider } from "../webhooks/providers/linear.js";
 import { MintlifyWebhookProvider } from "../webhooks/providers/mintlify.js";
 import { TestWebhookProvider } from "../webhooks/providers/test.js";
-import type { WebhookFilter, WebhookTrigger, GitHubWebhookFilter, SentryWebhookFilter, LinearWebhookFilter, MintlifyWebhookFilter } from "../webhooks/types.js";
+import { TwitterWebhookProvider } from "../webhooks/providers/twitter.js";
+import type { WebhookFilter, WebhookTrigger, GitHubWebhookFilter, SentryWebhookFilter, LinearWebhookFilter, MintlifyWebhookFilter, TwitterWebhookFilter } from "../webhooks/types.js";
 import type { TestWebhookFilter } from "../webhooks/providers/test.js";
 
 /**
@@ -34,6 +35,7 @@ export const PROVIDER_TO_CREDENTIAL: Record<string, string> = {
   sentry: "sentry_client_secret",
   linear: "linear_webhook_secret",
   mintlify: "mintlify_webhook_secret",
+  twitter: "x_twitter_webhook_secret",
 };
 
 export function resolveWebhookSource(
@@ -96,11 +98,17 @@ export function buildFilterFromTrigger(trigger: WebhookTrigger, providerType: st
     if (trigger.branches) f.branches = trigger.branches;
     return Object.keys(f).length > 0 ? f : undefined;
   }
+  if (providerType === "twitter") {
+    const f: TwitterWebhookFilter = {};
+    if (trigger.events) f.events = trigger.events;
+    if (trigger.repos) f.users = trigger.repos; // Map repos to users for Twitter
+    return Object.keys(f).length > 0 ? f : undefined;
+  }
   return undefined;
 }
 
 /** Known webhook provider types (used by doctor for validation) */
-export const KNOWN_PROVIDER_TYPES = new Set(["github", "sentry", "linear", "mintlify", "test"]);
+export const KNOWN_PROVIDER_TYPES = new Set(["github", "sentry", "linear", "mintlify", "test", "twitter"]);
 
 // Valid trigger fields per provider type (filter fields + source)
 const VALID_TRIGGER_FIELDS: Record<string, Set<string>> = {
@@ -109,6 +117,7 @@ const VALID_TRIGGER_FIELDS: Record<string, Set<string>> = {
   linear: new Set(["source", "events", "actions", "organizations", "labels", "assignee", "author"]),
   test: new Set(["source", "events", "actions", "repos"]),
   mintlify: new Set(["source", "events", "actions", "repos", "branches"]),
+  twitter: new Set(["source", "events", "repos"]),
 };
 
 // Suggest similar valid fields for common typos
@@ -183,6 +192,7 @@ export async function setupWebhookRegistry(
   registry.registerProvider(new LinearWebhookProvider());
   registry.registerProvider(new MintlifyWebhookProvider());
   registry.registerProvider(new TestWebhookProvider());
+  registry.registerProvider(new TwitterWebhookProvider());
 
   // Load secrets for each provider type referenced by webhook sources
   const secrets: Record<string, Record<string, string>> = {};
