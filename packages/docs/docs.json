@@ -69,6 +69,10 @@
               "reference/models",
               "reference/agent-docs",
               "reference/webhooks",
+              "reference/webhooks/github",
+              "reference/webhooks/sentry",
+              "reference/webhooks/linear",
+              "reference/webhooks/mintlify",
               "reference/gateway-api",
               "reference/web-dashboard"
             ]

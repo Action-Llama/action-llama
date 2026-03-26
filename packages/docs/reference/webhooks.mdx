@@ -5,6 +5,17 @@ description: "Webhook setup, providers, filter fields, and troubleshooting"
 
 Action Llama agents can be triggered by webhooks in addition to (or instead of) cron schedules. Four providers are supported: GitHub, Sentry, Linear, and Mintlify.
 
+## Supported Providers
+
+| Provider | Type | Description |
+|----------|------|-------------|
+| [GitHub](/reference/webhooks/github) | `"github"` | Repository events: issues, pull requests, pushes, workflow runs, and more |
+| [Sentry](/reference/webhooks/sentry) | `"sentry"` | Error monitoring events: alerts, issues, errors, comments |
+| [Linear](/reference/webhooks/linear) | `"linear"` | Project management events: issues, comments, labels |
+| [Mintlify](/reference/webhooks/mintlify) | `"mintlify"` | Documentation events: build successes and failures |
+
+See each provider's page for filter fields, setup instructions, and example configurations.
+
 ## Defining Webhook Sources
 
 Webhook sources are defined once in the project's `config.toml`. Each source has a name, a provider type, and an optional credential for signature validation:
@@ -49,131 +60,6 @@ labels = ["agent"]
 Each `[[webhooks]]` entry is a trigger. The `source` field (referencing a name from the project's `config.toml`) is required. All filter fields are optional — omit all of them to trigger on everything from that source.
 
 An agent must have at least one of `schedule` or `webhooks` (or both).
-
-## GitHub Webhooks
-
-### Filter Fields (all optional)
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `repos` | string[] | Only trigger for these repos |
-| `orgs` | string[] | Only trigger for these organizations |
-| `org` | string | Only trigger for this organization (singular form) |
-| `events` | string[] | GitHub event types (issues, pull_request, push, etc.) |
-| `actions` | string[] | Event actions (opened, labeled, closed, etc.) |
-| `labels` | string[] | Only when issue/PR has these labels |
-| `assignee` | string | Only when assigned to this user |
-| `author` | string | Only for this author |
-| `branches` | string[] | Only for these branches |
-| `conclusions` | string[] | Only for workflow_run events with these conclusions (success, failure, cancelled, skipped, timed_out, action_required) |
-
-### Setup
-
-1. In your GitHub repo, go to **Settings > Webhooks > Add webhook**
-2. Set the payload URL to your Action Llama gateway (e.g. `https://your-server:8080/webhooks/github`)
-3. Set content type to `application/json`
-4. Set the secret to match the `github_webhook_secret` credential instance referenced by the webhook source in `config.toml`
-5. Select the events you want to receive
-
-### Using ngrok for Local Development
-
-```bash
-ngrok http 8080
-```
-
-Use the ngrok URL as your webhook payload URL in GitHub. See [Using Webhooks](/first-steps/using-webhooks) for a full tutorial.
-
-## Sentry Webhooks
-
-### Filter Fields (all optional)
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `resources` | string[] | Resource types: event_alert, metric_alert, issue, error, comment |
-
-### Setup
-
-1. In Sentry, go to **Settings > Developer Settings > New Internal Integration**
-2. Set the webhook URL to your gateway (e.g. `https://your-server:8080/webhooks/sentry`)
-3. Copy the client secret to `~/.action-llama/credentials/sentry_client_secret/<instance>/secret`
-4. Select the resource types you want to receive
-
-## Linear Webhooks
-
-### Filter Fields (all optional)
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `organizations` | string[] | Only trigger for these Linear organizations |
-| `events` | string[] | Linear event types (issues, issue_comment, etc.) |
-| `actions` | string[] | Event actions (create, update, delete, etc.) |
-| `labels` | string[] | Only when issue has these labels |
-| `assignee` | string | Only when assigned to this user (email) |
-| `author` | string | Only for this author (email) |
-
-### Setup
-
-1. In Linear, go to **Settings > Workspace > Webhooks**
-2. Click **Create webhook**
-3. Set the URL to your Action Llama gateway (e.g. `https://your-server:8080/webhooks/linear`)
-4. Set the secret to match the `linear_webhook_secret` credential instance referenced by the webhook source in `config.toml`
-5. Select the resource types you want to receive (Issues, Comments, etc.)
-
-### Example Configuration
-
-```toml
-# In project config.toml
-[webhooks.linear-main]
-type = "linear"
-credential = "main-workspace"
-```
-
-```toml
-# In agents/<name>/config.toml
-[[webhooks]]
-source = "linear-main"
-events = ["issues", "issue_comment"]
-actions = ["create", "update"]
-organizations = ["your-org-id"]
-labels = ["bug", "ready-for-dev"]
-```
-
-## Mintlify Webhooks
-
-### Filter Fields (all optional)
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `projects` | string[] | Only trigger for these Mintlify projects |
-| `events` | string[] | Mintlify event types (build, etc.) |
-| `actions` | string[] | Event actions (failed, succeeded, etc.) |
-| `branches` | string[] | Only for these branches |
-
-### Setup
-
-1. In Mintlify, go to your project settings
-2. Navigate to **Webhooks** or **Integrations**
-3. Add a webhook with URL: `https://your-server:8080/webhooks/mintlify`
-4. Set the secret to match the `mintlify_webhook_secret` credential instance referenced by the webhook source in `config.toml`
-5. Select build events you want to receive (build failures, successes, etc.)
-
-### Example Configuration
-
-```toml
-# In project config.toml
-[webhooks.mintlify-docs]
-type = "mintlify"
-credential = "docs-project"
-```
-
-```toml
-# In agents/<name>/config.toml
-[[webhooks]]
-source = "mintlify-docs"
-events = ["build"]
-actions = ["failed"]
-projects = ["my-docs"]
-```
 
 ## How Webhooks Work at Runtime
 
