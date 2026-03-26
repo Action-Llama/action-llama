@@ -414,7 +414,7 @@ export function AgentDetailPage() {
                     )}
                   </td>
                   <td className="px-4 py-2 whitespace-nowrap">
-                    <ResultBadge result={t.result} />
+                    <ResultBadge result={t.result} deadLetterReason={t.deadLetterReason} />
                   </td>
                 </tr>
               ))}

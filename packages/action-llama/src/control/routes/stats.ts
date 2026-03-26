@@ -50,6 +50,7 @@ export function registerStatsRoutes(app: Hono, statsStore?: StatsStore, statusTr
             instanceId: inst.id,
             result: "running",
             webhookReceiptId: null,
+            deadLetterReason: null,
           };
         });
       mergedTriggers = [...running, ...triggers].sort((a, b) => b.ts - a.ts);
