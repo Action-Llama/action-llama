@@ -57,7 +57,13 @@ export interface MintlifyWebhookFilter {
   branches?: string[];
 }
 
-export type WebhookFilter = GitHubWebhookFilter | SentryWebhookFilter | LinearWebhookFilter | MintlifyWebhookFilter;
+export interface SlackWebhookFilter {
+  events?: string[];     // e.g. "message", "app_mention", "reaction_added"
+  channels?: string[];   // Slack channel IDs
+  team_ids?: string[];   // Slack workspace/team IDs
+}
+
+export type WebhookFilter = GitHubWebhookFilter | SentryWebhookFilter | LinearWebhookFilter | MintlifyWebhookFilter | SlackWebhookFilter;
 
 // --- Webhook trigger (used in agent config) ---
 
@@ -84,6 +90,7 @@ export interface WebhookProvider {
   parseEvent(headers: Record<string, string | undefined>, body: any): WebhookContext | null;
   matchesFilter(context: WebhookContext, filter: WebhookFilter): boolean;
   getDeliveryId?(headers: Record<string, string | undefined>): string | null;
+  handleChallenge?(headers: Record<string, string | undefined>, rawBody: string, secrets?: Record<string, string>, allowUnsigned?: boolean): object | null;
 }
 
 // --- Registry binding ---
