@@ -1,0 +1,43 @@
+---
+title: "Twitter Webhooks"
+description: "Filter fields, setup, and examples for X (Twitter) webhook triggers"
+---
+
+X (Twitter) webhooks let agents respond to account activity events like tweets, likes, follows, and direct messages via the Account Activity API.
+
+## Filter Fields (all optional)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `events` | string[] | Twitter event types: `tweet_create_events`, `tweet_delete_events`, `favorite_events`, `follow_events`, `unfollow_events`, `block_events`, `unblock_events`, `mute_events`, `unmute_events`, `direct_message_events`, `direct_message_indicate_typing_events`, `direct_message_mark_read_events` |
+| `users` | string[] | Only trigger for these subscribed user IDs (`for_user_id` values) |
+
+## Setup
+
+1. In the X Developer Portal, create or open your app
+2. Navigate to the Account Activity API settings
+3. Register your webhook URL: `https://your-server:8080/webhooks/twitter`
+4. The gateway handles the CRC challenge-response handshake automatically using the consumer secret
+5. Set the consumer secret credential to match `x_twitter_webhook_secret` — the API Secret (Consumer Secret) from your X app
+6. Subscribe the user accounts whose activity you want to receive
+
+## CRC Challenge
+
+The Twitter provider automatically handles CRC (Challenge-Response Check) validation. When Twitter sends a GET request with a `crc_token` query parameter, the gateway responds with the correct HMAC-SHA256 response token. No manual setup is needed.
+
+## Example Configuration
+
+```toml
+# In project config.toml
+[webhooks.my-twitter]
+type = "twitter"
+credential = "MyXApp"
+```
+
+```toml
+# In agents/<name>/config.toml
+[[webhooks]]
+source = "my-twitter"
+events = ["tweet_create_events", "favorite_events", "direct_message_events"]
+users = ["123456789"]
+```

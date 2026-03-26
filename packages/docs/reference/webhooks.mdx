@@ -3,7 +3,7 @@ title: "Webhooks"
 description: "Webhook setup, providers, filter fields, and troubleshooting"
 ---
 
-Action Llama agents can be triggered by webhooks in addition to (or instead of) cron schedules. Four providers are supported: GitHub, Sentry, Linear, and Mintlify.
+Action Llama agents can be triggered by webhooks in addition to (or instead of) cron schedules. Six providers are supported: GitHub, Sentry, Linear, Mintlify, Slack, and X (Twitter).
 
 ## Supported Providers
 
@@ -13,6 +13,8 @@ Action Llama agents can be triggered by webhooks in addition to (or instead of) 
 | [Sentry](/reference/webhooks/sentry) | `"sentry"` | Error monitoring events: alerts, issues, errors, comments |
 | [Linear](/reference/webhooks/linear) | `"linear"` | Project management events: issues, comments, labels |
 | [Mintlify](/reference/webhooks/mintlify) | `"mintlify"` | Documentation events: build successes and failures |
+| [Slack](/reference/webhooks/slack) | `"slack"` | Workspace events: messages, app mentions, reactions |
+| [X (Twitter)](/reference/webhooks/twitter) | `"twitter"` | Account activity events: tweets, likes, follows, direct messages |
 
 See each provider's page for filter fields, setup instructions, and example configurations.
 
@@ -36,11 +38,19 @@ credential = "LinearMain"     # credential instance name (linear_webhook_secret:
 [webhooks.my-mintlify]
 type = "mintlify"
 credential = "MintlifyMain"   # credential instance name (mintlify_webhook_secret:MintlifyMain)
+
+[webhooks.my-slack]
+type = "slack"
+credential = "MainWorkspace"  # credential instance name (slack_signing_secret:MainWorkspace)
+
+[webhooks.my-twitter]
+type = "twitter"
+credential = "MyXApp"         # credential instance name (x_twitter_webhook_secret:MyXApp)
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `type` | string | Yes | Provider type: `"github"`, `"sentry"`, `"linear"`, or `"mintlify"` |
+| `type` | string | Yes | Provider type: `"github"`, `"sentry"`, `"linear"`, `"mintlify"`, `"slack"`, or `"twitter"` |
 | `credential` | string | No | Credential instance name for HMAC signature validation. Omit for unsigned webhooks. |
 
 ## Agent Webhook Triggers
