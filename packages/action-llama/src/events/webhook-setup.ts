@@ -14,9 +14,10 @@ import { GitHubWebhookProvider } from "../webhooks/providers/github.js";
 import { SentryWebhookProvider } from "../webhooks/providers/sentry.js";
 import { LinearWebhookProvider } from "../webhooks/providers/linear.js";
 import { MintlifyWebhookProvider } from "../webhooks/providers/mintlify.js";
-import { TestWebhookProvider } from "../webhooks/providers/test.js";
+import { DiscordWebhookProvider } from "../webhooks/providers/discord.js";
 import { TwitterWebhookProvider } from "../webhooks/providers/twitter.js";
-import type { WebhookFilter, WebhookTrigger, GitHubWebhookFilter, SentryWebhookFilter, LinearWebhookFilter, MintlifyWebhookFilter, TwitterWebhookFilter } from "../webhooks/types.js";
+import { TestWebhookProvider } from "../webhooks/providers/test.js";
+import type { WebhookFilter, WebhookTrigger, GitHubWebhookFilter, SentryWebhookFilter, LinearWebhookFilter, MintlifyWebhookFilter, DiscordWebhookFilter, TwitterWebhookFilter } from "../webhooks/types.js";
 import type { TestWebhookFilter } from "../webhooks/providers/test.js";
 
 /**
@@ -35,7 +36,17 @@ export const PROVIDER_TO_CREDENTIAL: Record<string, string> = {
   sentry: "sentry_client_secret",
   linear: "linear_webhook_secret",
   mintlify: "mintlify_webhook_secret",
+  discord: "discord_bot",
   twitter: "x_twitter_webhook_secret",
+};
+
+// Provider type → field name within the credential that holds the secret/key for validation
+export const PROVIDER_TO_SECRET_FIELD: Record<string, string> = {
+  github: "secret",
+  sentry: "secret",
+  linear: "secret",
+  mintlify: "secret",
+  discord: "public_key",
 };
 
 export function resolveWebhookSource(
@@ -98,6 +109,14 @@ export function buildFilterFromTrigger(trigger: WebhookTrigger, providerType: st
     if (trigger.branches) f.branches = trigger.branches;
     return Object.keys(f).length > 0 ? f : undefined;
   }
+  if (providerType === "discord") {
+    const f: DiscordWebhookFilter = {};
+    if (trigger.guilds) f.guilds = trigger.guilds;
+    if (trigger.channels) f.channels = trigger.channels;
+    if (trigger.commands) f.commands = trigger.commands;
+    if (trigger.events) f.events = trigger.events;
+    return Object.keys(f).length > 0 ? f : undefined;
+  }
   if (providerType === "twitter") {
     const f: TwitterWebhookFilter = {};
     if (trigger.events) f.events = trigger.events;
@@ -108,7 +127,7 @@ export function buildFilterFromTrigger(trigger: WebhookTrigger, providerType: st
 }
 
 /** Known webhook provider types (used by doctor for validation) */
-export const KNOWN_PROVIDER_TYPES = new Set(["github", "sentry", "linear", "mintlify", "test", "twitter"]);
+export const KNOWN_PROVIDER_TYPES = new Set(["github", "sentry", "linear", "mintlify", "discord", "twitter", "test"]);
 
 // Valid trigger fields per provider type (filter fields + source)
 const VALID_TRIGGER_FIELDS: Record<string, Set<string>> = {
@@ -117,6 +136,7 @@ const VALID_TRIGGER_FIELDS: Record<string, Set<string>> = {
   linear: new Set(["source", "events", "actions", "organizations", "labels", "assignee", "author"]),
   test: new Set(["source", "events", "actions", "repos"]),
   mintlify: new Set(["source", "events", "actions", "repos", "branches"]),
+  discord: new Set(["source", "events", "guilds", "channels", "commands"]),
   twitter: new Set(["source", "events", "repos"]),
 };
 
@@ -129,6 +149,9 @@ const FIELD_SUGGESTIONS: Record<string, string> = {
   label: "labels",
   branch: "branches",
   organization: "organizations",
+  guild: "guilds",
+  channel: "channels",
+  command: "commands",
 };
 
 export function validateTriggerFields(
@@ -191,6 +214,7 @@ export async function setupWebhookRegistry(
   registry.registerProvider(new SentryWebhookProvider());
   registry.registerProvider(new LinearWebhookProvider());
   registry.registerProvider(new MintlifyWebhookProvider());
+  registry.registerProvider(new DiscordWebhookProvider());
   registry.registerProvider(new TestWebhookProvider());
   registry.registerProvider(new TwitterWebhookProvider());
 
@@ -203,8 +227,9 @@ export async function setupWebhookRegistry(
 
     const instances = await listCredentialInstances(credType);
     const providerSecrets: Record<string, string> = {};
+    const secretField = PROVIDER_TO_SECRET_FIELD[providerType] ?? "secret";
     for (const inst of instances) {
-      const secret = await loadCredentialField(credType, inst, "secret");
+      const secret = await loadCredentialField(credType, inst, secretField);
       if (secret) providerSecrets[inst] = secret;
     }
     if (Object.keys(providerSecrets).length > 0) {

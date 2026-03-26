@@ -7,6 +7,7 @@ import { GitHubWebhookProvider } from "./github.js";
 import { LinearWebhookProvider } from "./linear.js";
 import { MintlifyWebhookProvider } from "./mintlify.js";
 import { SentryWebhookProvider } from "./sentry.js";
+import { DiscordWebhookProvider } from "./discord.js";
 import { SlackWebhookProvider } from "./slack.js";
 import { TestWebhookProvider } from "./test.js";
 import { TwitterWebhookProvider } from "./twitter.js";
@@ -173,6 +174,39 @@ export const testWebhookExtension: WebhookExtension = {
     requiredCredentials: [] // Test provider doesn't require credentials
   },
   provider: new TestWebhookProvider(),
+  async init() {
+    // No special initialization required
+  },
+  async shutdown() {
+    // No cleanup required
+  }
+};
+/**
+ * Discord webhook provider extension
+ */
+export const discordWebhookExtension: WebhookExtension = {
+  metadata: {
+    name: "discord",
+    version: "1.0.0",
+    description: "Discord webhook provider (Interactions Endpoint)",
+    type: "webhook",
+    requiredCredentials: [
+      { type: "discord_bot", description: "Discord bot credentials for Ed25519 signature validation", optional: true }
+    ],
+    providesCredentialTypes: [
+      {
+        type: "discord_bot",
+        fields: ["application_id", "public_key", "bot_token"],
+        description: "Discord bot credentials",
+        envMapping: {
+          application_id: "DISCORD_APPLICATION_ID",
+          public_key: "DISCORD_PUBLIC_KEY",
+          bot_token: "DISCORD_BOT_TOKEN",
+        }
+      }
+    ]
+  },
+  provider: new DiscordWebhookProvider(),
   async init() {
     // No special initialization required
   },

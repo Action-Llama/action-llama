@@ -13,6 +13,8 @@ const SIGNATURE_HEADERS = new Set([
   "sentry-hook-signature",
   "linear-signature",
   "mintlify-signature",
+  "x-signature-ed25519",
+  "x-signature-timestamp",
   "x-slack-signature",
   "x-slack-request-timestamp",
   "x-twitter-webhooks-signature",
@@ -115,6 +117,31 @@ export function registerWebhookRoutes(
       },
       "webhook headers"
     );
+
+    // Discord Interactions Endpoint: respond to PING verification (type: 1)
+    if (source === "discord") {
+      try {
+        const parsedBody = JSON.parse(rawBody);
+        if (parsedBody.type === 1) {
+          // Validate signature before responding
+          const discordSecrets = webhookSecrets[source];
+          const discordConfig = webhookConfigs[source];
+          const discordProvider = registry.getProvider("discord");
+          if (discordProvider) {
+            const sigResult = discordProvider.validateRequest(
+              headers, rawBody, discordSecrets, discordConfig?.allowUnsigned
+            );
+            if (sigResult === null) {
+              return c.json({ error: "signature validation failed" }, 401);
+            }
+          }
+          logger.info({ source }, "Discord PING verified, responding with PONG");
+          return c.json({ type: 1 });
+        }
+      } catch {
+        // If JSON parsing fails, fall through to normal dispatch
+      }
+    }
 
     // Dedupe check: if provider supports delivery IDs, check for existing receipt
     if (statsStore && provider.getDeliveryId) {

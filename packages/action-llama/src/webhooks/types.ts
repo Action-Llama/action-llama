@@ -57,6 +57,13 @@ export interface MintlifyWebhookFilter {
   branches?: string[];
 }
 
+export interface DiscordWebhookFilter {
+  guilds?: string[];     // Discord server/guild IDs
+  channels?: string[];   // Channel IDs
+  commands?: string[];   // Slash command names
+  events?: string[];     // Interaction types: application_command, message_component, etc.
+}
+
 export interface SlackWebhookFilter {
   events?: string[];     // e.g. "message", "app_mention", "reaction_added"
   channels?: string[];   // Slack channel IDs
@@ -68,7 +75,7 @@ export interface TwitterWebhookFilter {
   users?: string[];    // for_user_id values (subscribed account IDs)
 }
 
-export type WebhookFilter = GitHubWebhookFilter | SentryWebhookFilter | LinearWebhookFilter | MintlifyWebhookFilter | SlackWebhookFilter | TwitterWebhookFilter;
+export type WebhookFilter = GitHubWebhookFilter | SentryWebhookFilter | LinearWebhookFilter | MintlifyWebhookFilter | DiscordWebhookFilter | SlackWebhookFilter | TwitterWebhookFilter;
 
 // --- Webhook trigger (used in agent config) ---
 
@@ -85,6 +92,9 @@ export interface WebhookTrigger {
   author?: string;
   branches?: string[];
   resources?: string[];
+  guilds?: string[];     // Discord guild IDs
+  channels?: string[];   // Discord channel IDs
+  commands?: string[];   // Discord slash command names
 }
 
 // --- Provider interface ---
