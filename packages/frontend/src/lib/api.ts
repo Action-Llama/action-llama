@@ -106,6 +106,7 @@ export interface TriggerHistoryRow {
   agentName?: string;
   instanceId?: string;
   result: string;
+  deadLetterReason?: string | null;
 }
 
 export interface AgentSummary {

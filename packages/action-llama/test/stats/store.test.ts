@@ -404,6 +404,10 @@ describe("StatsStore", () => {
     expect(rows[0].result).toBe("dead-letter");
     expect(rows[1].agentName).toBe("b");
     expect(rows[2].agentName).toBe("a");
+    // deadLetterReason should be populated for dead-letter rows, null for runs
+    expect(rows[0].deadLetterReason).toBe("no_match");
+    expect(rows[1].deadLetterReason).toBeNull();
+    expect(rows[2].deadLetterReason).toBeNull();
     store.close();
   });
 

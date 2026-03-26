@@ -18,7 +18,7 @@ export function TriggerTypeBadge({ type }: { type: string }) {
   );
 }
 
-export function ResultBadge({ result }: { result: string }) {
+export function ResultBadge({ result, deadLetterReason }: { result: string; deadLetterReason?: string | null }) {
   if (result === "completed" || result === "rerun") {
     return (
       <span className="text-green-600 dark:text-green-400 text-xs font-medium">
@@ -27,9 +27,15 @@ export function ResultBadge({ result }: { result: string }) {
     );
   }
   if (result === "dead-letter") {
+    const reasonLabels: Record<string, string> = {
+      no_match: "No Match",
+      validation_failed: "Validation Failed",
+      parse_error: "Parse Error",
+    };
+    const label = deadLetterReason ? (reasonLabels[deadLetterReason] ?? deadLetterReason) : "Dead Letter";
     return (
       <span className="px-1.5 py-0.5 text-xs font-medium rounded bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
-        Dead Letter
+        {label}
       </span>
     );
   }

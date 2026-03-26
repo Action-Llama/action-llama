@@ -45,6 +45,7 @@ export interface TriggerHistoryRow {
   triggerSource: string | null;
   result: string;
   webhookReceiptId: string | null;
+  deadLetterReason: string | null;
 }
 
 export interface CallEdgeRecord {
@@ -264,19 +265,22 @@ export class StatsStore {
       queryTriggerHistory: this.db.prepare(`
         SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
                trigger_type AS triggerType, trigger_source AS triggerSource,
-               result, webhook_receipt_id AS webhookReceiptId
+               result, webhook_receipt_id AS webhookReceiptId,
+               NULL AS deadLetterReason
         FROM runs WHERE started_at > @since
         UNION ALL
         SELECT timestamp AS ts, NULL AS instanceId, NULL AS agentName,
                'webhook' AS triggerType, source AS triggerSource,
-               'dead-letter' AS result, id AS webhookReceiptId
+               'dead-letter' AS result, id AS webhookReceiptId,
+               dead_letter_reason AS deadLetterReason
         FROM webhook_receipts WHERE status = 'dead-letter' AND timestamp > @since
         ORDER BY ts DESC LIMIT @limit OFFSET @offset
       `),
       queryTriggerHistoryNoDeadLetters: this.db.prepare(`
         SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
                trigger_type AS triggerType, trigger_source AS triggerSource,
-               result, webhook_receipt_id AS webhookReceiptId
+               result, webhook_receipt_id AS webhookReceiptId,
+               NULL AS deadLetterReason
         FROM runs WHERE started_at > @since
         ORDER BY ts DESC LIMIT @limit OFFSET @offset
       `),
@@ -289,7 +293,8 @@ export class StatsStore {
       queryTriggerHistoryByAgent: this.db.prepare(`
         SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
                trigger_type AS triggerType, trigger_source AS triggerSource,
-               result, webhook_receipt_id AS webhookReceiptId
+               result, webhook_receipt_id AS webhookReceiptId,
+               NULL AS deadLetterReason
         FROM runs WHERE started_at > @since AND agent_name = @agentName
         ORDER BY ts DESC LIMIT @limit OFFSET @offset
       `),
