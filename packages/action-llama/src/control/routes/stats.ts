@@ -59,6 +59,21 @@ export function registerStatsRoutes(app: Hono, statsStore?: StatsStore, statusTr
     return c.json({ triggers: mergedTriggers, total: mergedTotal, limit, offset });
   });
 
+  // Single webhook receipt by ID
+  app.get("/api/stats/webhooks/:receiptId", (c) => {
+    const receiptId = c.req.param("receiptId");
+
+    if (!statsStore) {
+      return c.json({ receipt: null });
+    }
+
+    const receipt = statsStore.getWebhookReceipt(receiptId);
+    if (!receipt) {
+      return c.json({ receipt: null }, 404);
+    }
+    return c.json({ receipt });
+  });
+
   // Single run by instance ID
   app.get("/api/stats/agents/:name/runs/:instanceId", (c) => {
     const instanceId = c.req.param("instanceId");
