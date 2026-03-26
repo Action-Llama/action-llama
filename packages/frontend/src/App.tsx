@@ -8,6 +8,7 @@ import { TriggerHistoryPage } from "./pages/TriggerHistoryPage";
 import { ProjectConfigPage } from "./pages/ProjectConfigPage";
 import { AgentSkillPage } from "./pages/AgentSkillPage";
 import { ChatPage } from "./pages/ChatPage";
+import { WebhookReceiptPage } from "./pages/WebhookReceiptPage";
 
 export function App() {
   return (
@@ -31,6 +32,7 @@ export function App() {
           element={<AgentSkillPage />}
         />
         <Route path="/dashboard/triggers" element={<TriggerHistoryPage />} />
+        <Route path="/dashboard/webhooks/:receiptId" element={<WebhookReceiptPage />} />
         <Route path="/dashboard/config" element={<ProjectConfigPage />} />
       </Route>
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
