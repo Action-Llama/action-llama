@@ -17,6 +17,7 @@ const SIGNATURE_HEADERS = new Set([
   "x-signature-timestamp",
   "x-slack-signature",
   "x-slack-request-timestamp",
+  "x-twitter-webhooks-signature",
 ]);
 
 const MAX_STORED_BODY = 256 * 1024; // 256 KB
@@ -40,6 +41,31 @@ export function registerWebhookRoutes(
   statusTracker?: StatusTracker,
   statsStore?: StatsStore,
 ): void {
+  // GET route for CRC challenge-response (e.g. Twitter Account Activity API)
+  app.get("/webhooks/:source", async (c) => {
+    const source = c.req.param("source");
+    const provider = registry.getProvider(source);
+    if (!provider || !provider.handleCrcChallenge) {
+      return c.json({ error: "CRC not supported for this source" }, 404);
+    }
+
+    const url = new URL(c.req.url);
+    const queryParams: Record<string, string> = {};
+    for (const [key, value] of url.searchParams.entries()) {
+      queryParams[key] = value;
+    }
+
+    const secrets = webhookSecrets[source];
+    const result = provider.handleCrcChallenge(queryParams, secrets);
+    if (!result) {
+      logger.warn({ source }, "CRC challenge failed — missing crc_token or no secrets");
+      return c.json({ error: "CRC challenge failed" }, 400);
+    }
+
+    logger.info({ source }, "CRC challenge-response completed");
+    return c.json(result.body, result.status as any);
+  });
+
   app.post("/webhooks/:source", async (c) => {
     const source = c.req.param("source");
     logger.debug({ source }, "webhook request received");

@@ -28,6 +28,7 @@ import mintlifyWebhookSecret from "./mintlify-webhook-secret.js";
 import discordBot from "./discord-bot.js";
 import slackBotToken from "./slack-bot-token.js";
 import slackSigningSecret from "./slack-signing-secret.js";
+import xTwitterWebhookSecret from "./x-twitter-webhook-secret.js";
 
 export const builtinCredentials: Record<string, CredentialDefinition> = {
   "github_token": githubToken,
@@ -59,4 +60,5 @@ export const builtinCredentials: Record<string, CredentialDefinition> = {
   "discord_bot": discordBot,
   "slack_bot_token": slackBotToken,
   "slack_signing_secret": slackSigningSecret,
+  "x_twitter_webhook_secret": xTwitterWebhookSecret,
 };

@@ -15,8 +15,9 @@ import { SentryWebhookProvider } from "../webhooks/providers/sentry.js";
 import { LinearWebhookProvider } from "../webhooks/providers/linear.js";
 import { MintlifyWebhookProvider } from "../webhooks/providers/mintlify.js";
 import { DiscordWebhookProvider } from "../webhooks/providers/discord.js";
+import { TwitterWebhookProvider } from "../webhooks/providers/twitter.js";
 import { TestWebhookProvider } from "../webhooks/providers/test.js";
-import type { WebhookFilter, WebhookTrigger, GitHubWebhookFilter, SentryWebhookFilter, LinearWebhookFilter, MintlifyWebhookFilter, DiscordWebhookFilter } from "../webhooks/types.js";
+import type { WebhookFilter, WebhookTrigger, GitHubWebhookFilter, SentryWebhookFilter, LinearWebhookFilter, MintlifyWebhookFilter, DiscordWebhookFilter, TwitterWebhookFilter } from "../webhooks/types.js";
 import type { TestWebhookFilter } from "../webhooks/providers/test.js";
 
 /**
@@ -36,6 +37,7 @@ export const PROVIDER_TO_CREDENTIAL: Record<string, string> = {
   linear: "linear_webhook_secret",
   mintlify: "mintlify_webhook_secret",
   discord: "discord_bot",
+  twitter: "x_twitter_webhook_secret",
 };
 
 // Provider type → field name within the credential that holds the secret/key for validation
@@ -115,11 +117,17 @@ export function buildFilterFromTrigger(trigger: WebhookTrigger, providerType: st
     if (trigger.events) f.events = trigger.events;
     return Object.keys(f).length > 0 ? f : undefined;
   }
+  if (providerType === "twitter") {
+    const f: TwitterWebhookFilter = {};
+    if (trigger.events) f.events = trigger.events;
+    if (trigger.repos) f.users = trigger.repos; // Map repos to users for Twitter
+    return Object.keys(f).length > 0 ? f : undefined;
+  }
   return undefined;
 }
 
 /** Known webhook provider types (used by doctor for validation) */
-export const KNOWN_PROVIDER_TYPES = new Set(["github", "sentry", "linear", "mintlify", "discord", "test"]);
+export const KNOWN_PROVIDER_TYPES = new Set(["github", "sentry", "linear", "mintlify", "discord", "twitter", "test"]);
 
 // Valid trigger fields per provider type (filter fields + source)
 const VALID_TRIGGER_FIELDS: Record<string, Set<string>> = {
@@ -129,6 +137,7 @@ const VALID_TRIGGER_FIELDS: Record<string, Set<string>> = {
   test: new Set(["source", "events", "actions", "repos"]),
   mintlify: new Set(["source", "events", "actions", "repos", "branches"]),
   discord: new Set(["source", "events", "guilds", "channels", "commands"]),
+  twitter: new Set(["source", "events", "repos"]),
 };
 
 // Suggest similar valid fields for common typos
@@ -207,6 +216,7 @@ export async function setupWebhookRegistry(
   registry.registerProvider(new MintlifyWebhookProvider());
   registry.registerProvider(new DiscordWebhookProvider());
   registry.registerProvider(new TestWebhookProvider());
+  registry.registerProvider(new TwitterWebhookProvider());
 
   // Load secrets for each provider type referenced by webhook sources
   const secrets: Record<string, Record<string, string>> = {};
