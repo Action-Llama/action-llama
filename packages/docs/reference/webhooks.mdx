@@ -3,7 +3,7 @@ title: "Webhooks"
 description: "Webhook setup, providers, filter fields, and troubleshooting"
 ---
 
-Action Llama agents can be triggered by webhooks in addition to (or instead of) cron schedules. Four providers are supported: GitHub, Sentry, Linear, and Mintlify.
+Action Llama agents can be triggered by webhooks in addition to (or instead of) cron schedules. Five providers are supported: GitHub, Sentry, Linear, Mintlify, and Discord.
 
 ## Defining Webhook Sources
 
@@ -29,7 +29,7 @@ credential = "MintlifyMain"   # credential instance name (mintlify_webhook_secre
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `type` | string | Yes | Provider type: `"github"`, `"sentry"`, `"linear"`, or `"mintlify"` |
+| `type` | string | Yes | Provider type: `"github"`, `"sentry"`, `"linear"`, `"mintlify"`, or `"discord"` |
 | `credential` | string | No | Credential instance name for HMAC signature validation. Omit for unsigned webhooks. |
 
 ## Agent Webhook Triggers
@@ -207,4 +207,42 @@ To handle more concurrent events, increase `scale` in the agent's `config.toml`:
 
 ```toml
 scale = 3    # Run up to 3 instances concurrently
+```
+
+## Discord Webhooks
+
+Discord support uses the **Interactions Endpoint** (HTTP-based), which covers slash commands, message components, modals, and autocomplete. This requires a `discord_bot` credential with your application's public key for Ed25519 signature verification.
+
+| Filter Field | Type | Description |
+|---|---|---|
+| `events` | string[] | Interaction types: `application_command`, `message_component`, `modal_submit`, `autocomplete` |
+| `guilds` | string[] | Discord guild (server) IDs to filter on |
+| `channels` | string[] | Channel IDs to filter on |
+| `commands` | string[] | Slash command names (e.g. `ask`, `deploy`) — only applies to `application_command` and `autocomplete` events |
+
+### Setup
+
+1. In the [Discord Developer Portal](https://discord.com/developers/applications), create or select your application
+2. Under **General Information**, copy your **Application ID** and **Public Key**
+3. Under **Bot**, copy or reset your **Bot Token**
+4. Add these to your credentials: `al creds add discord_bot`
+5. Set your Interactions Endpoint URL to `https://your-server:8080/webhooks/discord`
+6. Discord will send a PING verification request — Action Llama responds automatically after validating the signature
+
+### Example Configuration
+
+```toml
+# In project config.toml
+[webhooks.my-discord]
+type = "discord"
+credential = "MyBot"     # discord_bot credential instance name
+```
+
+```toml
+# In agents/<name>/config.toml
+[[webhooks]]
+source = "my-discord"
+events = ["application_command"]
+commands = ["ask", "status"]
+guilds = ["1234567890"]
 ```

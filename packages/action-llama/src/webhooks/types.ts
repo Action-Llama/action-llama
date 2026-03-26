@@ -57,7 +57,14 @@ export interface MintlifyWebhookFilter {
   branches?: string[];
 }
 
-export type WebhookFilter = GitHubWebhookFilter | SentryWebhookFilter | LinearWebhookFilter | MintlifyWebhookFilter;
+export interface DiscordWebhookFilter {
+  guilds?: string[];     // Discord server/guild IDs
+  channels?: string[];   // Channel IDs
+  commands?: string[];   // Slash command names
+  events?: string[];     // Interaction types: application_command, message_component, etc.
+}
+
+export type WebhookFilter = GitHubWebhookFilter | SentryWebhookFilter | LinearWebhookFilter | MintlifyWebhookFilter | DiscordWebhookFilter;
 
 // --- Webhook trigger (used in agent config) ---
 
@@ -74,6 +81,9 @@ export interface WebhookTrigger {
   author?: string;
   branches?: string[];
   resources?: string[];
+  guilds?: string[];     // Discord guild IDs
+  channels?: string[];   // Discord channel IDs
+  commands?: string[];   // Discord slash command names
 }
 
 // --- Provider interface ---
