@@ -5,7 +5,7 @@
  * allowing CLI commands and the scheduler to be provider-agnostic.
  */
 
-import type { ContainerRuntime } from "../docker/runtime.js";
+import type { Runtime } from "../docker/runtime.js";
 import type { CredentialBackend } from "../shared/credential-backend.js";
 import type { AgentConfig, GlobalConfig } from "../shared/config.js";
 
@@ -23,8 +23,8 @@ export interface SchedulerServiceInfo {
 }
 
 export interface RuntimeResult {
-  runtime: ContainerRuntime;
-  agentRuntimeOverrides: Record<string, ContainerRuntime>;
+  runtime: Runtime;
+  agentRuntimeOverrides: Record<string, Runtime>;
 }
 
 export interface CloudProvider {
@@ -46,10 +46,10 @@ export interface CloudProvider {
   validateRoles(projectPath: string): Promise<void>;
 
   /** Create the primary container runtime for this provider. */
-  createRuntime(): ContainerRuntime;
+  createRuntime(): Runtime;
 
   /** Create a runtime for a specific agent. */
-  createAgentRuntime(agentConfig: AgentConfig, globalConfig: GlobalConfig): ContainerRuntime;
+  createAgentRuntime(agentConfig: AgentConfig, globalConfig: GlobalConfig): Runtime;
 
   /** Create primary runtime + per-agent overrides for the scheduler. */
   createRuntimes(activeAgentConfigs: AgentConfig[], globalConfig: GlobalConfig): RuntimeResult;

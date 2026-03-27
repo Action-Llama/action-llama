@@ -1,7 +1,7 @@
 import { randomUUID, randomBytes } from "crypto";
 import type { GlobalConfig, AgentConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
-import type { ContainerRuntime, RuntimeCredentials } from "../docker/runtime.js";
+import type { Runtime, RuntimeCredentials } from "../docker/runtime.js";
 import type { ContainerRegistration } from "../execution/types.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import type { RunResult, RunOutcome } from "./runner.js";
@@ -15,7 +15,7 @@ export class ContainerAgentRunner {
   private _returnValue: string | undefined = undefined;
   private _tokenUsage: TokenUsage | undefined = undefined;
   private _containerName: string | undefined = undefined;
-  private runtime: ContainerRuntime;
+  private runtime: Runtime;
   private globalConfig: GlobalConfig;
   private agentConfig: AgentConfig;
   private baseLogger: Logger;
@@ -29,7 +29,7 @@ export class ContainerAgentRunner {
   private statusTracker?: StatusTracker;
 
   constructor(
-    runtime: ContainerRuntime,
+    runtime: Runtime,
     globalConfig: GlobalConfig,
     agentConfig: AgentConfig,
     logger: Logger,

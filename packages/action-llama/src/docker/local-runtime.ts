@@ -4,7 +4,7 @@ import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync,
 import { join, resolve, isAbsolute, dirname } from "path";
 import { tmpdir } from "os";
 import { NETWORK_NAME } from "./network.js";
-import type { ContainerRuntime, RuntimeLaunchOpts, RuntimeCredentials, CredentialBundle, BuildImageOpts, RunningAgent } from "./runtime.js";
+import type { Runtime, ContainerRuntime, RuntimeLaunchOpts, RuntimeCredentials, CredentialBundle, BuildImageOpts, RunningAgent } from "./runtime.js";
 import { parseCredentialRef, getDefaultBackend } from "../shared/credentials.js";
 import { CONSTANTS, VERSION, GIT_SHA } from "../shared/constants.js";
 
@@ -40,7 +40,7 @@ export function parseBuildKitLine(raw: string): string | undefined {
   return line;
 }
 
-export class LocalDockerRuntime implements ContainerRuntime {
+export class LocalDockerRuntime implements Runtime, ContainerRuntime {
   readonly needsGateway = true;
 
   async isAgentRunning(agentName: string): Promise<boolean> {

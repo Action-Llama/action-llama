@@ -8,7 +8,7 @@ import { existsSync, readFileSync } from "fs";
 import { resolve as resolvePath, dirname } from "path";
 import { fileURLToPath } from "url";
 import { loadSharedFiles, type AgentConfig, type GlobalConfig } from "../shared/config.js";
-import type { ContainerRuntime } from "../docker/runtime.js";
+import type { Runtime, ContainerRuntime } from "../docker/runtime.js";
 import { CONSTANTS, imageTags } from "../shared/constants.js";
 import { buildPromptSkeleton, type PromptSkills } from "../agents/prompt.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
@@ -21,7 +21,7 @@ export interface ImageBuildOpts {
   projectPath: string;
   globalConfig: GlobalConfig;
   activeAgentConfigs: AgentConfig[];
-  runtime: ContainerRuntime;
+  runtime: Runtime & ContainerRuntime;
   statusTracker?: StatusTracker;
   logger: Logger;
   skills?: PromptSkills;
@@ -150,7 +150,7 @@ export interface SingleAgentBuildOpts {
   agentConfig: AgentConfig;
   projectPath: string;
   globalConfig: GlobalConfig;
-  runtime: ContainerRuntime;
+  runtime: Runtime & ContainerRuntime;
   baseImage: string;
   statusTracker?: StatusTracker;
   logger: Logger;

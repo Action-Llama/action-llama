@@ -9,6 +9,7 @@ import { join, isAbsolute, resolve, dirname } from "path";
 import { tmpdir } from "os";
 import { spawn } from "child_process";
 import type {
+  Runtime,
   ContainerRuntime,
   RuntimeLaunchOpts,
   RuntimeCredentials,
@@ -31,7 +32,7 @@ async function remoteDocker(config: SshConfig, ...args: string[]): Promise<strin
   return result.stdout;
 }
 
-export class SshDockerRuntime implements ContainerRuntime {
+export class SshDockerRuntime implements Runtime, ContainerRuntime {
   readonly needsGateway = false; // scheduler runs on the same VPS
 
   private sshConfig: SshConfig;

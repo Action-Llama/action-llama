@@ -20,7 +20,7 @@ import type { SchedulerEventBus } from "./events.js";
 import type { SchedulerState } from "./state.js";
 import { runWithReruns } from "../execution/execution.js";
 import { randomBytes } from "node:crypto";
-import type { ContainerRuntime } from "../docker/runtime.js";
+import type { Runtime } from "../docker/runtime.js";
 import { ChatContainerLauncher } from "../chat/container-launcher.js";
 
 export interface GatewaySetupResult {
@@ -29,7 +29,7 @@ export interface GatewaySetupResult {
   registerContainer: (secret: string, reg: any) => Promise<void>;
   unregisterContainer: (secret: string) => Promise<void>;
   /** Wire up the chat container launcher after runtime + images are available. */
-  setChatRuntime: (runtime: ContainerRuntime, agentImages: Record<string, string>) => void;
+  setChatRuntime: (runtime: Runtime, agentImages: Record<string, string>) => void;
 }
 
 export async function setupGateway(opts: {
@@ -210,7 +210,7 @@ export async function setupGateway(opts: {
   const registerContainer = gateway.registerContainer;
   const unregisterContainer = gateway.unregisterContainer;
 
-  const setChatRuntime = (runtime: ContainerRuntime, agentImages: Record<string, string>) => {
+  const setChatRuntime = (runtime: Runtime, agentImages: Record<string, string>) => {
     if (!gateway.chatSessionManager) return;
     // Wrap the Record in a Map that delegates to the live reference so
     // hot-reloaded images are always visible to the chat launcher.

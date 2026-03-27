@@ -10,7 +10,8 @@ import { resolve } from "path";
 import { Cron } from "croner";
 import { loadAgentConfig, discoverAgents, validateAgentConfig } from "../shared/config.js";
 import type { GlobalConfig, AgentConfig } from "../shared/config.js";
-import type { ContainerRuntime } from "../docker/runtime.js";
+import type { Runtime } from "../docker/runtime.js";
+import { isContainerRuntime } from "../docker/runtime.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import type { Logger } from "../shared/logger.js";
 import type { PromptSkills } from "../agents/prompt.js";
@@ -51,8 +52,8 @@ export const DEBOUNCE_MS = 500;
 export interface HotReloadContext {
   projectPath: string;
   globalConfig: GlobalConfig;
-  runtime: ContainerRuntime;
-  agentRuntimeOverrides: Record<string, ContainerRuntime>;
+  runtime: Runtime;
+  agentRuntimeOverrides: Record<string, Runtime>;
   runnerPools: Record<string, RunnerPool>;
   agentConfigs: AgentConfig[];
   agentImages: Record<string, string>;
@@ -180,20 +181,24 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
       return;
     }
 
-    // Build image
-    ctx.statusTracker?.setAgentState(agentName, "building");
-    ctx.statusTracker?.setAgentStatusText(agentName, "Building (new agent)");
+    // Build image (only for container-based runtimes)
+    const agentRuntime = ctx.agentRuntimeOverrides[agentName] || ctx.runtime;
+    let image = ctx.baseImage;
+    if (isContainerRuntime(agentRuntime)) {
+      ctx.statusTracker?.setAgentState(agentName, "building");
+      ctx.statusTracker?.setAgentStatusText(agentName, "Building (new agent)");
 
-    const image = await buildSingleAgentImage({
-      agentConfig,
-      projectPath: ctx.projectPath,
-      globalConfig: ctx.globalConfig,
-      runtime: ctx.runtime,
-      baseImage: ctx.baseImage,
-      statusTracker: ctx.statusTracker,
-      logger: ctx.logger,
-      skills: ctx.skills,
-    });
+      image = await buildSingleAgentImage({
+        agentConfig,
+        projectPath: ctx.projectPath,
+        globalConfig: ctx.globalConfig,
+        runtime: agentRuntime,
+        baseImage: ctx.baseImage,
+        statusTracker: ctx.statusTracker,
+        logger: ctx.logger,
+        skills: ctx.skills,
+      });
+    }
 
     ctx.agentImages[agentName] = image;
 
@@ -311,20 +316,24 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
     // Update description in status tracker (may have changed in SKILL.md frontmatter)
     ctx.statusTracker?.setAgentDescription(agentName, newConfig.description);
 
-    // Rebuild image
-    ctx.statusTracker?.setAgentState(agentName, "building");
-    ctx.statusTracker?.setAgentStatusText(agentName, "Rebuilding (config changed)");
+    // Rebuild image (only for container-based runtimes)
+    const agentRuntime = ctx.agentRuntimeOverrides[agentName] || ctx.runtime;
+    let image = ctx.agentImages[agentName] || ctx.baseImage;
+    if (isContainerRuntime(agentRuntime)) {
+      ctx.statusTracker?.setAgentState(agentName, "building");
+      ctx.statusTracker?.setAgentStatusText(agentName, "Rebuilding (config changed)");
 
-    const image = await buildSingleAgentImage({
-      agentConfig: newConfig,
-      projectPath: ctx.projectPath,
-      globalConfig: ctx.globalConfig,
-      runtime: ctx.runtime,
-      baseImage: ctx.baseImage,
-      statusTracker: ctx.statusTracker,
-      logger: ctx.logger,
-      skills: ctx.skills,
-    });
+      image = await buildSingleAgentImage({
+        agentConfig: newConfig,
+        projectPath: ctx.projectPath,
+        globalConfig: ctx.globalConfig,
+        runtime: agentRuntime,
+        baseImage: ctx.baseImage,
+        statusTracker: ctx.statusTracker,
+        logger: ctx.logger,
+        skills: ctx.skills,
+      });
+    }
     ctx.agentImages[agentName] = image;
 
     // Update existing runners with new image and config

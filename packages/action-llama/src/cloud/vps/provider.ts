@@ -6,7 +6,7 @@
  */
 
 import type { CloudProvider, SchedulerServiceInfo, RuntimeResult } from "../provider.js";
-import type { ContainerRuntime } from "../../docker/runtime.js";
+import type { Runtime } from "../../docker/runtime.js";
 import type { CredentialBackend } from "../../shared/credential-backend.js";
 import type { AgentConfig, GlobalConfig, VpsConfig } from "../../shared/config.js";
 import { SshDockerRuntime } from "../../docker/ssh-docker-runtime.js";
@@ -66,11 +66,11 @@ export class VpsProvider implements CloudProvider {
     }
   }
 
-  createRuntime(): ContainerRuntime {
+  createRuntime(): Runtime {
     return new SshDockerRuntime(this.sshConfig);
   }
 
-  createAgentRuntime(_agentConfig: AgentConfig, _globalConfig: GlobalConfig): ContainerRuntime {
+  createAgentRuntime(_agentConfig: AgentConfig, _globalConfig: GlobalConfig): Runtime {
     // VPS has no routing — always use the same SSH Docker runtime
     return this.createRuntime();
   }

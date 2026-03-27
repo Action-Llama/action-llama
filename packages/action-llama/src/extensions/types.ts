@@ -1,6 +1,6 @@
 import type { WebhookProvider } from "../webhooks/types.js";
 import type { TelemetryProvider } from "../telemetry/types.js";
-import type { ContainerRuntime } from "../docker/runtime.js";
+import type { Runtime } from "../docker/runtime.js";
 
 // Extension types
 export type ExtensionType = "webhook" | "telemetry" | "runtime" | "model" | "credential";
@@ -57,7 +57,7 @@ export interface TelemetryExtension extends Extension {
 
 export interface RuntimeExtension extends Extension {
   metadata: ExtensionMetadata & { type: "runtime" };
-  provider: ContainerRuntime;
+  provider: Runtime;
 }
 
 // Import the actual ModelProvider interface

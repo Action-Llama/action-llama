@@ -68,22 +68,22 @@ See [Agent Commands](/reference/agent-commands) for the complete command referen
 
 ## Runtime Lifecycle
 
-Each agent run is an isolated, short-lived container. Here's the full sequence from trigger to exit:
+Each agent run is an isolated, short-lived process. By default agents run in Docker containers, but agents can also be configured to run on the host machine under a separate OS user (see [Runtime](/reference/agent-config#runtime)). Here's the full sequence from trigger to exit:
 
 1. **Trigger fires** — a cron tick, webhook event, manual `al run`, or `al-subagent` from another agent.
 2. **Work is queued** — if all runners for the target agent are busy, the trigger is placed in a SQLite-backed work queue until a runner becomes available.
-3. **Container launches** — a fresh container starts with credentials and config passed via environment variables and volume mounts.
-4. **Credentials are loaded** — the entry point reads credential files from `/credentials/<type>/<instance>/<field>`. Key credentials are injected as env vars the LLM can use directly: `GITHUB_TOKEN`, `GH_TOKEN`, `SENTRY_AUTH_TOKEN`, `GIT_SSH_COMMAND`, git author identity, etc.
+3. **Process launches** — a fresh container (or host-user process) starts with credentials and config passed via environment variables and volume mounts (or temp directories).
+4. **Credentials are loaded** — the entry point reads credential files from the credentials path (`/credentials/` in containers, or the `AL_CREDENTIALS_PATH` temp directory in host-user mode). Key credentials are injected as env vars the LLM can use directly: `GITHUB_TOKEN`, `GH_TOKEN`, `SENTRY_AUTH_TOKEN`, `GIT_SSH_COMMAND`, git author identity, etc.
 5. **Hooks run** — if `hooks.pre` steps are defined in `config.toml`, they execute sequentially (clone repos, fetch data, run shell commands) to stage context before the LLM starts. See [Dynamic Context](/guides/dynamic-context).
 6. **LLM session starts** — the model receives the `SKILL.md` instructions as system prompt and the assembled user prompt.
 7. **Agent runs autonomously** — the LLM executes tools (bash, file I/O, API calls) until it finishes or hits an error. Rate-limited API calls are retried automatically (up to 5 attempts with exponential backoff).
-8. **Error detection** — the container watches for repeated auth/permission failures (e.g. "bad credentials", "permission denied"). After 3 such errors, it aborts early.
+8. **Error detection** — the runtime watches for repeated auth/permission failures (e.g. "bad credentials", "permission denied"). After 3 such errors, it aborts early.
 9. **Signals are processed** — the agent uses `al-rerun`, `al-status`, `al-return`, and `al-exit` commands to write signal files. The scheduler reads them after the session ends.
-10. **Container exits** — exit code 0 (success), 1 (error), or 124 (timeout). Any held locks are released automatically. The scheduler logs the result and the container is removed.
+10. **Process exits** — exit code 0 (success), 1 (error), or 124 (timeout). Any held locks are released automatically. The scheduler logs the result and the container is removed (or the working directory is cleaned up in host-user mode).
 
 ## Timeout
 
-Each container has a self-termination timer controlled by `timeout` in the agent's `config.toml` (falls back to `local.timeout` in project `config.toml`, then 900 seconds). If the timer fires, the process exits with code 124. This is a hard kill — there is no graceful shutdown.
+Each agent process has a self-termination timer controlled by `timeout` in the agent's `config.toml` (falls back to `local.timeout` in project `config.toml`, then 900 seconds). If the timer fires, the process exits with code 124. This is a hard kill — there is no graceful shutdown.
 
 See [Agent Config — Timeout](/reference/agent-config#timeout) for configuration.
 
@@ -107,6 +107,8 @@ You can see queue depth per agent in `al stat` output (the `queue` column).
 
 ## Container Filesystem
 
+When running in the default container runtime:
+
 | Path | Mode | Contents |
 |------|------|----------|
 | `/app` | read-only | Action Llama application + node_modules |
@@ -116,6 +118,17 @@ You can see queue depth per agent in `al stat` output (the `queue` column).
 | `/home/node` | read-write (64MB) | Home directory |
 
 The root filesystem is read-only. All agent work should happen in `/tmp`.
+
+### Host-User Filesystem
+
+When running in [host-user mode](/reference/agent-config#runtime), the agent runs directly on the host:
+
+| Path | Contents |
+|------|----------|
+| `/tmp/al-runs/<instance-id>/` | Working directory (chowned to agent user) |
+| `AL_CREDENTIALS_PATH` (temp dir) | Staged credential files (`/<type>/<instance>/<field>`) |
+
+The agent has access to the host filesystem but runs as a separate OS user, so it cannot access other users' files or credentials.
 
 ## See Also
 

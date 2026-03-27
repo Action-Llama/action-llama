@@ -98,7 +98,7 @@ Environment variables: Use `setenv NAME value` to persist variables across bash 
 </environment>
 ```
 
-Describes the container filesystem constraints. The agent learns that `/tmp` is writable, the working directory is `/app/static`, and `setenv` persists environment variables.
+Describes the filesystem constraints. In Docker mode, the agent learns that `/tmp` is writable and the root filesystem is read-only. In [host-user mode](/reference/agent-config#runtime), the agent's working directory is `/tmp/al-runs/<instance-id>/`. The `setenv` command persists environment variables in both modes.
 
 See [Environment Commands](/reference/agent-commands#environment-commands) for `setenv` details, and [Container Filesystem](/concepts/agents#container-filesystem) for the full mount table.
 

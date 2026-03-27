@@ -451,6 +451,18 @@ claudeCmd
     await init(opts);
   }));
 
+// --- Internal commands (hidden, used by runtimes) ---
+
+program
+  .command("_run-agent", { hidden: true })
+  .description("Internal: run an agent as the current OS user")
+  .argument("<agent>", "agent name")
+  .option("-p, --project <dir>", "project directory", ".")
+  .action(withCommand(async (agent: string, opts) => {
+    const { execute } = await import("./commands/run-agent.js");
+    await execute(agent, opts);
+  }));
+
 program.parseAsync().catch((err) => {
   // Fallback for errors that escape command handlers (e.g. Commander parse errors)
   console.error(`\nError: ${err.message}`);

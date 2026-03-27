@@ -24,9 +24,21 @@ vi.mock("../../src/execution/image-builder.js", () => ({
 
 vi.mock("../../src/docker/local-runtime.js", () => ({
   LocalDockerRuntime: class MockLocalDockerRuntime {
-    constructor() {
-      // Mock runtime methods if needed
-    }
+    needsGateway = true;
+    async isAgentRunning() { return false; }
+    async listRunningAgents() { return []; }
+    async launch() { return "mock-container"; }
+    streamLogs() { return { stop: () => {} }; }
+    async waitForExit() { return 0; }
+    async kill() {}
+    async remove() {}
+    async prepareCredentials() { return { strategy: "volume" as const, stagingDir: "/tmp/mock", bundle: {} }; }
+    cleanupCredentials() {}
+    async fetchLogs() { return []; }
+    followLogs() { return { stop: () => {} }; }
+    getTaskUrl() { return null; }
+    async buildImage() { return "mock-image"; }
+    async pushImage(img: string) { return img; }
   }
 }));
 

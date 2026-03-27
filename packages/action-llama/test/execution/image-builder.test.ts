@@ -3,13 +3,13 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
 import type { AgentConfig, GlobalConfig } from "../../src/shared/config.js";
-import type { ContainerRuntime, BuildImageOpts } from "../../src/docker/runtime.js";
+import type { Runtime, ContainerRuntime, BuildImageOpts } from "../../src/docker/runtime.js";
 import { buildSingleAgentImage } from "../../src/execution/image-builder.js";
 
 /** Minimal mock runtime that captures buildImage calls. */
 function createMockRuntime() {
   const calls: BuildImageOpts[] = [];
-  const runtime: ContainerRuntime = {
+  const runtime: Runtime & ContainerRuntime = {
     buildImage: vi.fn(async (opts: BuildImageOpts) => {
       calls.push(opts);
       return opts.tag;
@@ -18,7 +18,7 @@ function createMockRuntime() {
     kill: vi.fn(),
     listRunning: vi.fn().mockResolvedValue([]),
     cleanup: vi.fn(),
-  } as unknown as ContainerRuntime;
+  } as unknown as Runtime & ContainerRuntime;
   return { runtime, calls };
 }
 

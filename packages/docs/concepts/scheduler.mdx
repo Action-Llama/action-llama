@@ -17,7 +17,7 @@ The scheduler is the heart of Action Llama. It discovers agents, fires cron trig
 │  HTTP server: webhooks, resource locks,      │
 │  dashboard, agent signals, control API       │
 ├───────────┬───────────┬─────────────────────┤
-│ Container │ Container │      Container       │
+│ Container │ Container │   Host-User Process  │
 │  Agent A  │  Agent A  │       Agent B        │
 │ (run 1)   │ (run 2)   │      (run 1)         │
 └───────────┴───────────┴─────────────────────┘
@@ -25,7 +25,7 @@ The scheduler is the heart of Action Llama. It discovers agents, fires cron trig
 
 - **Scheduler** — discovers agents by scanning for directories with `SKILL.md`. Registers cron jobs and webhook triggers. Manages a pool of runners per agent (configurable via `scale`) and a durable work queue for buffering events when runners are busy.
 - **Gateway** — HTTP server that receives webhooks from external services (GitHub, Sentry, Linear, Mintlify), serves the web dashboard, handles resource locking, and processes agent signals.
-- **Containers** — each agent run is an isolated Docker container with its own filesystem, credentials, and environment variables. Containers are ephemeral — they start, do their work, and are removed.
+- **Agent Processes** — each agent run is an isolated process — either a Docker container or a host-user process (via `sudo -u`) — with its own credentials and environment variables. Processes are ephemeral — they start, do their work, and are cleaned up.
 
 ## Agent Discovery
 

@@ -83,7 +83,7 @@ function makeContext(overrides: Partial<HotReloadContext> = {}): HotReloadContex
   return {
     projectPath: "/test/project",
     globalConfig: { local: {} } as any,
-    runtime: { buildImage: vi.fn(async () => "img:latest") } as any,
+    runtime: { buildImage: vi.fn(async () => "img:latest"), pushImage: vi.fn(async (img: string) => img) } as any,
     agentRuntimeOverrides: {},
     runnerPools: overrides.runnerPools ?? {
       "agent-a": new RunnerPool([makeMockRunner("agent-a")]),

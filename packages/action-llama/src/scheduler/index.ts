@@ -162,14 +162,19 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     logger.warn({ err }, "failed to clean up stale container registrations");
   }
 
-  // Build base + per-agent images
+  // Build base + per-agent images (only for agents using container runtime)
+  const containerAgentConfigs = activeAgentConfigs.filter(
+    (a) => !agentRuntimeOverrides[a.name] // agents without overrides use the default container runtime
+  );
   const buildSkills: PromptSkills = { locking: true };
-  const buildResult = await buildAgentImages({
-    projectPath, globalConfig, activeAgentConfigs,
-    runtime, statusTracker, logger, skills: buildSkills,
-  });
-  baseImage = buildResult.baseImage;
-  Object.assign(agentImages, buildResult.agentImages);
+  if (containerAgentConfigs.length > 0) {
+    const buildResult = await buildAgentImages({
+      projectPath, globalConfig, activeAgentConfigs: containerAgentConfigs,
+      runtime, statusTracker, logger, skills: buildSkills,
+    });
+    baseImage = buildResult.baseImage;
+    Object.assign(agentImages, buildResult.agentImages);
+  }
 
   // Wire up chat container launcher now that runtime + images are available
   setChatRuntime(runtime, agentImages);

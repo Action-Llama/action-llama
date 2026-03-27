@@ -240,6 +240,113 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
     }
   }
 
+  // Validate host-user runtime requirements
+  const hostUserAgents = new Map<string, string>(); // agentName -> run_as
+  for (const name of agents) {
+    try {
+      const runtimeConfig = loadAgentRuntimeConfig(projectPath, name);
+      if (runtimeConfig.runtime?.type === "host-user") {
+        const runAs = runtimeConfig.runtime.run_as ?? "al-agent";
+        hostUserAgents.set(name, runAs);
+      }
+    } catch { /* already caught above */ }
+  }
+
+  if (hostUserAgents.size > 0) {
+    const { execFileSync } = await import("child_process");
+    const uniqueUsers = new Set(hostUserAgents.values());
+    const isLinux = process.platform === "linux";
+    const isMac = process.platform === "darwin";
+    const currentUser = process.env.USER || process.env.LOGNAME || "unknown";
+
+    if (!opts.silent) {
+      console.log(`\n--- Host-User Runtime (${hostUserAgents.size} agent(s)) ---\n`);
+    }
+
+    for (const runAs of uniqueUsers) {
+      // Check if user exists
+      let userExists = false;
+      try {
+        execFileSync("id", [runAs], { stdio: "pipe", timeout: 5000 });
+        userExists = true;
+        if (!opts.silent) console.log(`  [ok] User "${runAs}" exists`);
+      } catch {
+        if (isLinux && !opts.checkOnly) {
+          // Auto-create on Linux
+          try {
+            execFileSync("sudo", ["useradd", "-r", "-m", "-s", "/usr/sbin/nologin", runAs], {
+              stdio: "pipe", timeout: 10000,
+            });
+            userExists = true;
+            if (!opts.silent) console.log(`  [created] User "${runAs}" created`);
+          } catch (err: any) {
+            validationErrors.push(
+              `Failed to create user "${runAs}": ${err?.message || err}. ` +
+              `Run: sudo useradd -r -m -s /usr/sbin/nologin ${runAs}`
+            );
+          }
+        } else if (isMac) {
+          validationWarnings.push(
+            `User "${runAs}" does not exist. Create it manually:\n` +
+            `    sudo sysadminctl -addUser ${runAs} -shell /usr/bin/false -home /var/empty`
+          );
+        } else {
+          validationErrors.push(
+            `User "${runAs}" does not exist. ` +
+            `Run: sudo useradd -r -m -s /usr/sbin/nologin ${runAs}`
+          );
+        }
+      }
+
+      // Check sudoers configuration
+      if (userExists) {
+        let sudoOk = false;
+        try {
+          execFileSync("sudo", ["-n", "-u", runAs, "true"], { stdio: "pipe", timeout: 5000 });
+          sudoOk = true;
+          if (!opts.silent) console.log(`  [ok] Sudoers configured for "${currentUser}" -> "${runAs}"`);
+        } catch {
+          // sudo check failed
+        }
+
+        if (!sudoOk) {
+          const sudoersLine = `${currentUser} ALL=(${runAs}) NOPASSWD: ALL`;
+          const sudoersFile = `/etc/sudoers.d/al-${runAs}`;
+
+          if (isLinux && !opts.checkOnly) {
+            try {
+              execFileSync("sudo", ["tee", sudoersFile], {
+                input: sudoersLine + "\n",
+                stdio: ["pipe", "pipe", "pipe"],
+                timeout: 10000,
+              });
+              execFileSync("sudo", ["chmod", "0440", sudoersFile], {
+                stdio: "pipe", timeout: 5000,
+              });
+              if (!opts.silent) console.log(`  [created] Sudoers rule written to ${sudoersFile}`);
+            } catch (err: any) {
+              validationErrors.push(
+                `Failed to configure sudoers for "${runAs}": ${err?.message || err}. ` +
+                `Run: echo '${sudoersLine}' | sudo tee ${sudoersFile} && sudo chmod 0440 ${sudoersFile}`
+              );
+            }
+          } else if (isMac) {
+            validationWarnings.push(
+              `Sudoers not configured for "${runAs}". Run:\n` +
+              `    echo '${sudoersLine}' | sudo tee ${sudoersFile}\n` +
+              `    sudo chmod 0440 ${sudoersFile}`
+            );
+          } else {
+            validationErrors.push(
+              `Sudoers not configured for "${runAs}". ` +
+              `Run: echo '${sudoersLine}' | sudo tee ${sudoersFile} && sudo chmod 0440 ${sudoersFile}`
+            );
+          }
+        }
+      }
+    }
+  }
+
   // Display all validation results
   if (validationErrors.length > 0 || validationWarnings.length > 0) {
     const showWarnings = !opts.silent && validationWarnings.length > 0;

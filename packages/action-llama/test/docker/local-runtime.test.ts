@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { EventEmitter } from "events";
-import type { ContainerRuntime } from "../../src/docker/runtime.js";
+import type { Runtime, ContainerRuntime } from "../../src/docker/runtime.js";
 
 // Mock child_process so spawn is controllable
 const mockSpawn = vi.fn();
@@ -51,8 +51,8 @@ describe("LocalDockerRuntime", () => {
     mockWriteFileSync.mockReset();
     mockMkdtempSync.mockReset();
   });
-  it("implements ContainerRuntime interface", () => {
-    const runtime: ContainerRuntime = new LocalDockerRuntime();
+  it("implements Runtime & ContainerRuntime interface", () => {
+    const runtime: Runtime & ContainerRuntime = new LocalDockerRuntime();
     expect(typeof runtime.launch).toBe("function");
     expect(typeof runtime.streamLogs).toBe("function");
     expect(typeof runtime.waitForExit).toBe("function");

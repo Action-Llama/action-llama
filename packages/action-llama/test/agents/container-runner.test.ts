@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ContainerAgentRunner } from "../../src/agents/container-runner.js";
-import type { ContainerRuntime, RuntimeCredentials } from "../../src/docker/runtime.js";
+import type { Runtime, RuntimeCredentials } from "../../src/docker/runtime.js";
 import type { GlobalConfig, AgentConfig } from "../../src/shared/config.js";
 
 // Minimal mock runtime — only methods called during run() are mocked
-function createMockRuntime(overrides: Partial<ContainerRuntime> = {}): ContainerRuntime {
+function createMockRuntime(overrides: Partial<Runtime> = {}): Runtime {
   return {
     needsGateway: false,
     isAgentRunning: vi.fn().mockResolvedValue(false),
@@ -22,7 +22,7 @@ function createMockRuntime(overrides: Partial<ContainerRuntime> = {}): Container
     followLogs: vi.fn().mockReturnValue({ stop: vi.fn() }),
     getTaskUrl: vi.fn().mockReturnValue(null),
     ...overrides,
-  } as ContainerRuntime;
+  } as Runtime;
 }
 
 const makeMockLogger = (): any => ({
@@ -43,14 +43,14 @@ const agentConfig: AgentConfig = {
 };
 
 describe("ContainerAgentRunner", () => {
-  let runtime: ContainerRuntime;
+  let runtime: Runtime;
 
   beforeEach(() => {
     vi.clearAllMocks();
     runtime = createMockRuntime();
   });
 
-  function createRunner(opts?: { runtime?: ContainerRuntime }) {
+  function createRunner(opts?: { runtime?: Runtime }) {
     return new ContainerAgentRunner(
       opts?.runtime ?? runtime,
       globalConfig,

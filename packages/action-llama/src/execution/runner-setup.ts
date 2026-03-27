@@ -6,7 +6,7 @@
  */
 
 import type { GlobalConfig, AgentConfig } from "../shared/config.js";
-import type { ContainerRuntime } from "../docker/runtime.js";
+import type { Runtime } from "../docker/runtime.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import type { ContainerRegistration } from "./types.js";
 import type { Logger } from "../shared/logger.js";
@@ -23,8 +23,8 @@ export interface RunnerSetupResult {
 export interface RunnerSetupOpts {
   globalConfig: GlobalConfig;
   agentConfigs: AgentConfig[];
-  runtime: ContainerRuntime;
-  agentRuntimeOverrides: Record<string, ContainerRuntime>;
+  runtime: Runtime;
+  agentRuntimeOverrides: Record<string, Runtime>;
   agentImages: Record<string, string>;
   baseImage: string;
   gatewayPort: number;

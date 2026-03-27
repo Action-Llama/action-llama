@@ -103,6 +103,15 @@ export interface AgentHooks {
 }
 
 /**
+ * Per-agent `[runtime]` table from `agents/<name>/config.toml`.
+ * Controls how the agent process is launched.
+ */
+export interface AgentRuntimeType {
+  type?: "container" | "host-user";  // default: "container"
+  run_as?: string;                   // OS user for host-user mode (default: "al-agent")
+}
+
+/**
  * Raw per-agent runtime config from `agents/<name>/config.toml`.
  * Fields here are project-specific bindings — not portable.
  */
@@ -116,6 +125,7 @@ export interface AgentRuntimeConfig {
   params?: Record<string, unknown>;
   scale?: number;
   timeout?: number;
+  runtime?: AgentRuntimeType;
 }
 
 /**
@@ -135,6 +145,7 @@ export interface AgentConfig {
   timeout?: number; // Max runtime in seconds (falls back to global local.timeout, then 900)
   license?: string;
   compatibility?: string;
+  runtime?: AgentRuntimeType;
 }
 
 // --- Loaders ---
@@ -271,6 +282,7 @@ export function loadAgentConfig(projectPath: string, agentName: string): AgentCo
     params: runtime.params,
     scale: runtime.scale,
     timeout: runtime.timeout,
+    runtime: runtime.runtime,
   };
 
   // Resolve named model references from global config

@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ChatContainerLauncher } from "../../src/chat/container-launcher.js";
 import { ChatSessionManager } from "../../src/chat/session-manager.js";
-import type { ContainerRuntime, RuntimeCredentials } from "../../src/docker/runtime.js";
+import type { Runtime, RuntimeCredentials } from "../../src/docker/runtime.js";
 import type { AgentConfig, GlobalConfig } from "../../src/shared/config.js";
 
-function createMockRuntime(overrides: Partial<ContainerRuntime> = {}): ContainerRuntime {
+function createMockRuntime(overrides: Partial<Runtime> = {}): Runtime {
   return {
     needsGateway: false,
     isAgentRunning: vi.fn().mockResolvedValue(false),
@@ -26,7 +26,7 @@ function createMockRuntime(overrides: Partial<ContainerRuntime> = {}): Container
     followLogs: vi.fn().mockReturnValue({ stop: vi.fn() }),
     getTaskUrl: vi.fn().mockReturnValue(null),
     ...overrides,
-  } as ContainerRuntime;
+  } as Runtime;
 }
 
 const makeMockLogger = (): any => ({
@@ -45,7 +45,7 @@ const agentConfig: AgentConfig = {
 };
 
 describe("ChatContainerLauncher", () => {
-  let runtime: ContainerRuntime;
+  let runtime: Runtime;
   let sessionManager: ChatSessionManager;
   let launcher: ChatContainerLauncher;
   let registerContainer: ReturnType<typeof vi.fn>;

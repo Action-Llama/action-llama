@@ -5,6 +5,8 @@ description: "Docker image structure, build behavior, and container configuratio
 
 Agents run in Docker containers built from a layered image system. See [Custom Dockerfiles](/guides/custom-dockerfiles) for a guide on writing and customizing Dockerfiles.
 
+<Note>Agents can also run without Docker using the [host-user runtime](/reference/agent-config#runtime). Dockerfiles and container configuration do not apply to host-user agents.</Note>
+
 ## Agent Dockerfile
 
 Agents that need extra tools can add a `Dockerfile` to their directory:

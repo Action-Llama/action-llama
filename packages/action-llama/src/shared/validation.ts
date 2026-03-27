@@ -94,12 +94,17 @@ const AGENT_RUNTIME_CONFIG_SCHEMA: ConfigSchema = {
   required: new Set(),
   optional: new Set([
     "source", "credentials", "models", "schedule", "webhooks",
-    "hooks", "params", "scale", "timeout"
+    "hooks", "params", "scale", "timeout", "runtime"
   ]),
   nested: {
     hooks: {
       required: new Set(),
       optional: new Set(["pre", "post"]),
+      nested: {}
+    },
+    runtime: {
+      required: new Set(),
+      optional: new Set(["type", "run_as"]),
       nested: {}
     },
   }

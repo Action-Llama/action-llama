@@ -5,6 +5,8 @@ description: "Add tools and packages to your agent Docker images"
 
 Action Llama agents run in Docker containers built from a minimal Alpine-based image with Node.js, git, and curl. Agents that need extra tools can add a `Dockerfile` to their directory.
 
+<Note>Custom Dockerfiles only apply to agents using the default container runtime. Agents configured with the [host-user runtime](/reference/agent-config#runtime) do not use Docker and will ignore any Dockerfile.</Note>
+
 <Note>Project-level Dockerfiles are also supported but not recommended — they make agents harder to reuse across projects. See the [Dockerfiles reference](/reference/dockerfiles#project-dockerfile) for details.</Note>
 
 ## Agent Dockerfiles

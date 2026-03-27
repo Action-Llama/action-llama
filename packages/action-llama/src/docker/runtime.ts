@@ -14,7 +14,8 @@ export interface RuntimeLaunchOpts {
 /** Opaque credential payload — each runtime produces and consumes its own variant. */
 export type RuntimeCredentials =
   | { strategy: "volume"; stagingDir: string; bundle: CredentialBundle }
-  | { strategy: "tmpfs"; stagingDir: string; bundle: CredentialBundle };
+  | { strategy: "tmpfs"; stagingDir: string; bundle: CredentialBundle }
+  | { strategy: "host-user"; stagingDir: string; bundle: CredentialBundle };
 
 export type CredentialBundle = Record<string, Record<string, Record<string, string>>>;
 
@@ -61,52 +62,44 @@ export interface RunningAgent {
   trigger?: string;
 }
 
-export interface ContainerRuntime {
-  /** Whether containers launched by this runtime need a gateway URL */
+/**
+ * Core runtime interface — the lifecycle contract all runtimes must satisfy.
+ * Covers launching, killing, credential management, and log access.
+ */
+export interface Runtime {
+  /** Whether agents launched by this runtime need a gateway URL */
   readonly needsGateway: boolean;
 
   /** Check if a specific agent is already running. */
   isAgentRunning(agentName: string): Promise<boolean>;
 
-  /** List all running agent containers managed by this runtime. */
+  /** List all running agents managed by this runtime. */
   listRunningAgents(): Promise<RunningAgent[]>;
 
-  /** Launch a container and return its name/ID */
+  /** Launch an agent and return its run ID */
   launch(opts: RuntimeLaunchOpts): Promise<string>;
 
-  /** Stream container stdout line-by-line. Returns a handle to stop streaming. */
+  /** Stream agent stdout line-by-line. Returns a handle to stop streaming. */
   streamLogs(
-    containerName: string,
+    runId: string,
     onLine: (line: string) => void,
     onStderr?: (text: string) => void
   ): { stop: () => void };
 
-  /** Wait for a container to exit. Returns the exit code. Throws on timeout. */
-  waitForExit(containerName: string, timeoutSeconds: number): Promise<number>;
+  /** Wait for an agent to exit. Returns the exit code. Throws on timeout. */
+  waitForExit(runId: string, timeoutSeconds: number): Promise<number>;
 
-  /** Kill a running container */
-  kill(containerName: string): Promise<void>;
+  /** Kill a running agent */
+  kill(runId: string): Promise<void>;
 
-  /** Remove a container */
-  remove(containerName: string): Promise<void>;
+  /** Remove an agent run's resources */
+  remove(runId: string): Promise<void>;
 
   /**
    * Resolve credential refs into runtime-native credential specs.
-   * Stages files to a temp dir, returns volume mount path.
+   * Stages files to a temp dir, returns credential payload.
    */
   prepareCredentials(credRefs: string[]): Promise<RuntimeCredentials>;
-
-  /**
-   * Build a Docker image locally.
-   * Returns the image tag.
-   */
-  buildImage(opts: BuildImageOpts): Promise<string>;
-
-  /**
-   * Push a local Docker image to a registry.
-   * Returns the remote image URI (or the input unchanged for local).
-   */
-  pushImage(localImage: string): Promise<string>;
 
   /**
    * Clean up credentials prepared by prepareCredentials().
@@ -131,5 +124,22 @@ export interface ContainerRuntime {
   ): { stop: () => void };
 
   /** Return a URL for this task/execution, or null. */
-  getTaskUrl(containerName: string): string | null;
+  getTaskUrl(runId: string): string | null;
+}
+
+/**
+ * Container-specific operations — separate from the core Runtime interface.
+ * Runtimes that manage Docker images implement both Runtime and ContainerRuntime.
+ */
+export interface ContainerRuntime {
+  /** Build a Docker image. Returns the image tag. */
+  buildImage(opts: BuildImageOpts): Promise<string>;
+
+  /** Push a local Docker image to a registry. Returns the remote image URI. */
+  pushImage(localImage: string): Promise<string>;
+}
+
+/** Type guard to check if a runtime also supports container operations. */
+export function isContainerRuntime(runtime: Runtime): runtime is Runtime & ContainerRuntime {
+  return "buildImage" in runtime && "pushImage" in runtime;
 }

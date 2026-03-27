@@ -28,7 +28,7 @@ src/
   scheduler/        # Orchestration root: agent discovery, hot reload, shutdown
   agents/           # Agent runners (host + Docker), prompt builder
   gateway/          # HTTP server: thin composition layer for control/events/execution
-  docker/           # Container lifecycle, image + network
+  docker/           # Runtime implementations: LocalDockerRuntime, HostUserRuntime, image + network
   cloud/            # Cloud providers: vps/ (Vultr, Hetzner, SSH), cloudflare/
   remote/           # SSH push deploy: ssh/rsync helpers, bootstrap, push orchestration
   webhooks/         # Webhook registry, provider interface

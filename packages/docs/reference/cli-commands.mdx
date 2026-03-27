@@ -21,10 +21,9 @@ Creates:
 
 Checks all agent credentials and interactively prompts for any that are missing. Discovers agents in the project, collects their credential requirements (plus any webhook secret credentials), and ensures each one exists on disk. Also generates a gateway API key if one doesn't exist yet (used for dashboard and CLI authentication).
 
-Additionally validates webhook trigger field configurations to catch common errors like:
-- Using `repository` instead of `repos`
-- Misspelled field names
-- Invalid field types
+Additionally validates:
+- Webhook trigger field configurations (misspelled fields, wrong types)
+- Host-user runtime setup (OS user existence, sudoers configuration). On Linux, auto-creates users and sudoers rules. On macOS, prints manual setup instructions.
 
 ```bash
 al doctor

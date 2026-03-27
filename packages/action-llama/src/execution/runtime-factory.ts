@@ -1,11 +1,13 @@
 /**
- * Container runtime factory.
+ * Runtime factory.
  *
- * Creates a ContainerRuntime using the extension system and builds agent images.
+ * Creates a Runtime using the extension system and builds agent images.
+ * Supports per-agent runtime overrides (e.g. host-user mode).
  */
 
 import type { GlobalConfig, AgentConfig } from "../shared/config.js";
-import type { ContainerRuntime } from "../docker/runtime.js";
+import type { Runtime } from "../docker/runtime.js";
+import { isContainerRuntime } from "../docker/runtime.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import type { Logger } from "../shared/logger.js";
 import { AgentError } from "../shared/errors.js";
@@ -14,8 +16,8 @@ import type { PromptSkills } from "../agents/prompt.js";
 import { globalRegistry } from "../extensions/registry.js";
 
 export interface RuntimeResult {
-  runtime: ContainerRuntime;
-  agentRuntimeOverrides: Record<string, ContainerRuntime>;
+  runtime: Runtime;
+  agentRuntimeOverrides: Record<string, Runtime>;
 }
 
 export async function createContainerRuntime(
@@ -25,7 +27,7 @@ export async function createContainerRuntime(
 ): Promise<RuntimeResult> {
   // Determine runtime type from configuration (default to local for now)
   const runtimeType = "local";
-  
+
   // Get the runtime extension from registry
   const runtimeExtension = globalRegistry.getRuntimeExtension(runtimeType);
   if (!runtimeExtension) {
@@ -53,18 +55,33 @@ export async function createContainerRuntime(
     ensureNetwork();
   }
 
-  return { runtime, agentRuntimeOverrides: {} };
+  // Build per-agent runtime overrides for agents with [runtime] config
+  const agentRuntimeOverrides: Record<string, Runtime> = {};
+  for (const agentConfig of activeAgentConfigs) {
+    if (agentConfig.runtime?.type === "host-user") {
+      const runAs = agentConfig.runtime.run_as ?? "al-agent";
+      const { HostUserRuntime } = await import("../docker/host-user-runtime.js");
+      agentRuntimeOverrides[agentConfig.name] = new HostUserRuntime(runAs);
+      logger.info({ agent: agentConfig.name, runAs }, "using host-user runtime");
+    }
+  }
+
+  return { runtime, agentRuntimeOverrides };
 }
 
 export async function buildAgentImages(opts: {
   projectPath: string;
   globalConfig: GlobalConfig;
   activeAgentConfigs: AgentConfig[];
-  runtime: ContainerRuntime;
+  runtime: Runtime;
   statusTracker?: StatusTracker;
   logger: Logger;
   skills: PromptSkills;
 }): Promise<{ baseImage: string; agentImages: Record<string, string> }> {
+  if (!isContainerRuntime(opts.runtime)) {
+    throw new AgentError("Cannot build images: runtime does not support container operations");
+  }
+
   const buildResult = await buildAllImages({
     projectPath: opts.projectPath,
     globalConfig: opts.globalConfig,

@@ -16,9 +16,14 @@ function emitLog(level: string, msg: string, data?: Record<string, any>) {
   console.log(JSON.stringify({ _log: true, level, msg, ...data, ts: Date.now() }));
 }
 
+/** Resolve the credentials path — AL_CREDENTIALS_PATH env var or /credentials default. */
+function credentialsPath(): string {
+  return process.env.AL_CREDENTIALS_PATH || "/credentials";
+}
+
 export function hasLocalCredentials(): boolean {
   try {
-    const entries = readdirSync("/credentials");
+    const entries = readdirSync(credentialsPath());
     return entries.length > 0;
   } catch {
     return false;
@@ -26,9 +31,10 @@ export function hasLocalCredentials(): boolean {
 }
 
 export function loadCredentialsFromVolume(): CredentialBundle {
+  const credPath = credentialsPath();
   const bundle: CredentialBundle = {};
-  for (const type of readdirSync("/credentials")) {
-    const typePath = `/credentials/${type}`;
+  for (const type of readdirSync(credPath)) {
+    const typePath = `${credPath}/${type}`;
     try { if (!statSync(typePath).isDirectory()) continue; } catch { continue; }
     bundle[type] = {};
     for (const instance of readdirSync(typePath)) {

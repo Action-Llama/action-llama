@@ -25,6 +25,7 @@ vi.mock("../../src/shared/credentials.js", () => ({
 }));
 
 const { SshDockerRuntime } = await import("../../src/docker/ssh-docker-runtime.js");
+type Runtime = import("../../src/docker/runtime.js").Runtime;
 type ContainerRuntime = import("../../src/docker/runtime.js").ContainerRuntime;
 type SshConfig = import("../../src/cloud/vps/ssh.js").SshConfig;
 
@@ -58,8 +59,8 @@ describe("SshDockerRuntime", () => {
     runtime = new SshDockerRuntime(testSshConfig);
   });
 
-  it("implements ContainerRuntime interface", () => {
-    const rt: ContainerRuntime = runtime;
+  it("implements Runtime & ContainerRuntime interface", () => {
+    const rt: Runtime & ContainerRuntime = runtime;
     expect(typeof rt.launch).toBe("function");
     expect(typeof rt.streamLogs).toBe("function");
     expect(typeof rt.waitForExit).toBe("function");

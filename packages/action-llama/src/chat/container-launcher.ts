@@ -8,13 +8,13 @@
  */
 
 import { randomUUID } from "crypto";
-import type { ContainerRuntime, RuntimeCredentials } from "../docker/runtime.js";
+import type { Runtime, RuntimeCredentials } from "../docker/runtime.js";
 import type { AgentConfig, GlobalConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
 import type { ChatSessionManager } from "./session-manager.js";
 
 export class ChatContainerLauncher {
-  private runtime: ContainerRuntime;
+  private runtime: Runtime;
   private globalConfig: GlobalConfig;
   private agentConfigs: AgentConfig[];
   private gatewayUrl: string;
@@ -26,7 +26,7 @@ export class ChatContainerLauncher {
   private sessionCredentials = new Map<string, RuntimeCredentials>();
 
   constructor(opts: {
-    runtime: ContainerRuntime;
+    runtime: Runtime;
     globalConfig: GlobalConfig;
     agentConfigs: AgentConfig[];
     gatewayUrl: string;
