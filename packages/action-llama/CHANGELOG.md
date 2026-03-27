@@ -1,5 +1,15 @@
 # @action-llama/action-llama
 
+## 0.18.5
+
+### Patch Changes
+
+- [#362](https://github.com/Action-Llama/action-llama/pull/362) [`7d59124`](https://github.com/Action-Llama/action-llama/commit/7d59124b2c298f9413761a68e522dce61cd3e058) Thanks [@asselstine](https://github.com/asselstine)! - Add Slack webhook provider and credential support. Agents can now listen for Slack Events API webhooks and interact with Slack via the `SLACK_BOT_TOKEN` environment variable. Includes `slack_bot_token` and `slack_signing_secret` credential types, full signature verification with replay protection, and URL verification challenge handling.
+
+- [#363](https://github.com/Action-Llama/action-llama/pull/363) [`8c1d8b2`](https://github.com/Action-Llama/action-llama/commit/8c1d8b20dc811825c6792fdd8b0641ccf95be0c6) Thanks [@asselstine](https://github.com/asselstine)! - Show specific dead letter reason (e.g. "No Match", "Validation Failed", "Parse Error") in the trigger history UI instead of the generic "Dead Letter" label. Closes [#360](https://github.com/Action-Llama/action-llama/issues/360).
+
+- [#367](https://github.com/Action-Llama/action-llama/pull/367) [`9e2a6e7`](https://github.com/Action-Llama/action-llama/commit/9e2a6e75cf7fc9bf1d1e7b765c670992414c1cb2) Thanks [@asselstine](https://github.com/asselstine)! - Add Discord as a webhook provider. Supports the Discord Interactions Endpoint (slash commands, message components, modals, autocomplete) with Ed25519 signature verification. Includes a new `discord_bot` credential type (`application_id`, `public_key`, `bot_token`) and filter fields for `guilds`, `channels`, `commands`, and `events`. Closes [#359](https://github.com/Action-Llama/action-llama/issues/359).
+
 ## 0.18.4
 
 ### Patch Changes
