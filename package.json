@@ -15,8 +15,7 @@
     "test:e2e": "npm test -w packages/e2e",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "npm run build && changeset publish -w packages/action-llama --tag next",
-    "promote": "npm dist-tag add @action-llama/action-llama@$(npm view @action-llama/action-llama dist-tags.next) latest"
+    "release": "npm run build && changeset publish -w packages/action-llama --tag next"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.6.0",
