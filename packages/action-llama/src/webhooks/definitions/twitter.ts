@@ -4,7 +4,7 @@ export const twitter: WebhookDefinition = {
   id: "twitter",
   label: "X (Twitter)",
   description: "X (Twitter) Account Activity API webhook events",
-  secretCredential: "x_twitter_webhook_secret",
+  secretCredential: "x_twitter_api",
   filterSpec: [
     {
       field: "events",

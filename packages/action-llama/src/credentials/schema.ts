@@ -7,6 +7,7 @@ export interface CredentialField {
   label: string;          // human-readable, e.g. "Client ID"
   description: string;    // help text shown during prompting
   secret: boolean;        // mask input during prompting
+  optional?: boolean;     // if true, field may be left empty during prompting
 }
 
 export interface CredentialPromptResult {

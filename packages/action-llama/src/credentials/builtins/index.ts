@@ -17,6 +17,8 @@ import sentryClientSecret from "./sentry-client-secret.js";
 import linearWebhookSecret from "./linear-webhook-secret.js";
 import netlifyToken from "./netlify-token.js";
 import xTwitterApi from "./x-twitter-api.js";
+import xTwitterUserOauth1 from "./x-twitter-user-oauth1.js";
+import xTwitterUserOauth2 from "./x-twitter-user-oauth2.js";
 import bugsnagToken from "./bugsnag-token.js";
 import vultrApiKey from "./vultr-api-key.js";
 import hetznerApiKey from "./hetzner-api-key.js";
@@ -28,8 +30,6 @@ import mintlifyWebhookSecret from "./mintlify-webhook-secret.js";
 import discordBot from "./discord-bot.js";
 import slackBotToken from "./slack-bot-token.js";
 import slackSigningSecret from "./slack-signing-secret.js";
-import xTwitterWebhookSecret from "./x-twitter-webhook-secret.js";
-
 export const builtinCredentials: Record<string, CredentialDefinition> = {
   "github_token": githubToken,
   "anthropic_key": anthropicKey,
@@ -49,6 +49,8 @@ export const builtinCredentials: Record<string, CredentialDefinition> = {
   "linear_webhook_secret": linearWebhookSecret,
   "netlify_token": netlifyToken,
   "x_twitter_api": xTwitterApi,
+  "x_twitter_user_oauth1": xTwitterUserOauth1,
+  "x_twitter_user_oauth2": xTwitterUserOauth2,
   "bugsnag_token": bugsnagToken,
   "vultr_api_key": vultrApiKey,
   "hetzner_api_key": hetznerApiKey,
@@ -60,5 +62,4 @@ export const builtinCredentials: Record<string, CredentialDefinition> = {
   "discord_bot": discordBot,
   "slack_bot_token": slackBotToken,
   "slack_signing_secret": slackSigningSecret,
-  "x_twitter_webhook_secret": xTwitterWebhookSecret,
 };

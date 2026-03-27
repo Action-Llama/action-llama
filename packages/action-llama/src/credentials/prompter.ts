@@ -33,11 +33,36 @@ export async function promptCredential(
 
   // Default field-by-field prompting
   if (existing) {
-    const reuse = await confirm({
-      message: `Found existing ${def.label}. Use it?`,
-      default: true,
-    });
-    if (reuse) return { values: existing };
+    // Check for missing optional fields that were added after initial setup
+    const missingOptional = def.fields.filter((f) => f.optional && !(f.name in existing));
+
+    if (missingOptional.length === 0) {
+      const reuse = await confirm({
+        message: `Found existing ${def.label}. Use it?`,
+        default: true,
+      });
+      if (reuse) return { values: existing };
+    } else {
+      const reuse = await confirm({
+        message: `Found existing ${def.label} (${missingOptional.length} new optional field${missingOptional.length > 1 ? "s" : ""} available). Keep existing and add new fields?`,
+        default: true,
+      });
+      if (reuse) {
+        const values = { ...existing };
+        console.log();
+        for (const field of missingOptional) {
+          const prompt = field.secret ? password : input;
+          const value = await prompt({
+            message: `${def.label} — ${field.label} (optional):`,
+            mask: field.secret ? "*" : undefined,
+          } as any);
+          if (value.trim()) {
+            values[field.name] = value.trim();
+          }
+        }
+        return { values };
+      }
+    }
   }
 
   // Show context
@@ -52,11 +77,15 @@ export async function promptCredential(
   for (const field of def.fields) {
     const prompt = field.secret ? password : input;
     const value = await prompt({
-      message: `${def.label} — ${field.label}:`,
+      message: `${def.label} — ${field.label}${field.optional ? " (optional)" : ""}:`,
       mask: field.secret ? "*" : undefined,
-      validate: (v: string) => (v.trim().length > 0 ? true : `${field.label} is required`),
+      validate: field.optional
+        ? undefined
+        : (v: string) => (v.trim().length > 0 ? true : `${field.label} is required`),
     } as any);
-    values[field.name] = value.trim();
+    if (value.trim()) {
+      values[field.name] = value.trim();
+    }
   }
 
   // Validate if validator is defined

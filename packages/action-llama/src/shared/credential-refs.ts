@@ -1,12 +1,11 @@
 import { discoverAgents, loadAgentConfig, type GlobalConfig } from "./config.js";
+import { PROVIDER_CREDENTIALS, resolveCredentialInstance } from "../events/webhook-setup.js";
 
 /** Webhook secret credential types — these support multiple named instances */
-export const WEBHOOK_SECRET_TYPES: Record<string, string> = {
-  github: "github_webhook_secret",
-  sentry: "sentry_client_secret",
-  linear: "linear_webhook_secret",
-  mintlify: "mintlify_webhook_secret",
-};
+export const WEBHOOK_SECRET_TYPES: Record<string, string> = {};
+for (const [provider, creds] of Object.entries(PROVIDER_CREDENTIALS)) {
+  WEBHOOK_SECRET_TYPES[provider] = creds[0].type;
+}
 
 /** Credentials that are always required but may not be explicitly referenced */
 export const IMPLICIT_CREDENTIAL_REFS = new Set([
@@ -49,9 +48,17 @@ export function collectCredentialRefs(projectPath: string, globalConfig: GlobalC
     for (const trigger of config.webhooks || []) {
       const sourceConfig = webhookSources[trigger.source];
       if (!sourceConfig) continue;
-      const credType = WEBHOOK_SECRET_TYPES[sourceConfig.type];
-      if (credType) {
-        credentialRefs.add(`${credType}:${sourceConfig.credential ?? "default"}`);
+
+      const providerCreds = PROVIDER_CREDENTIALS[sourceConfig.type];
+      if (!providerCreds) continue;
+
+      for (const cred of providerCreds) {
+        const instance = resolveCredentialInstance(sourceConfig, cred.type);
+        const ref = `${cred.type}:${instance}`;
+        // Skip if the agent already references this credential type directly
+        if (!credentialRefs.has(cred.type)) {
+          credentialRefs.add(ref);
+        }
       }
     }
   }

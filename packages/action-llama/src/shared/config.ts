@@ -57,8 +57,10 @@ export interface GatewayConfig {
 
 export interface WebhookSourceConfig {
   type: string;           // provider type: "github", "sentry"
-  credential?: string;    // credential instance name for HMAC validation (optional — omit for unsigned)
+  credential?: string;    // DEPRECATED: generic credential instance name. Use provider-specific fields instead.
   allowUnsigned?: boolean; // allow unsigned webhooks (default: false, shows warning if true)
+  // Provider-specific credential instance names (any key matching a credential type is accepted)
+  [credentialType: string]: string | boolean | undefined;
 }
 
 export interface TelemetryConfig {

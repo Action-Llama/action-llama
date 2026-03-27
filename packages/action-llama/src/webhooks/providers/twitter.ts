@@ -1,7 +1,7 @@
-import { createHmac } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 import type { WebhookProvider, WebhookContext, WebhookFilter } from "../types.js";
 import type { TwitterWebhookFilter } from "../types.js";
-import { truncateEventText as truncate, validateHmacSignature } from "../validation.js";
+import { truncateEventText as truncate } from "../validation.js";
 
 export class TwitterWebhookProvider implements WebhookProvider {
   source = "twitter";
@@ -12,7 +12,23 @@ export class TwitterWebhookProvider implements WebhookProvider {
     secrets?: Record<string, string>,
     allowUnsigned?: boolean
   ): string | null {
-    return validateHmacSignature(rawBody, headers["x-twitter-webhooks-signature"], secrets, "sha256=", allowUnsigned);
+    // Twitter uses base64-encoded HMAC-SHA256 (not hex like GitHub),
+    // so we can't use the shared validateHmacSignature helper.
+    if (!secrets || Object.keys(secrets).length === 0) {
+      return allowUnsigned ? "_unsigned" : null;
+    }
+
+    const signature = headers["x-twitter-webhooks-signature"];
+    if (!signature) return null;
+
+    for (const [instanceName, secret] of Object.entries(secrets)) {
+      const expected = "sha256=" + createHmac("sha256", secret).update(rawBody).digest("base64");
+      if (signature.length === expected.length && timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+        return instanceName;
+      }
+    }
+
+    return null;
   }
 
   handleCrcChallenge(

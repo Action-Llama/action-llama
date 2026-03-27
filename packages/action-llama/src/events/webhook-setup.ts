@@ -19,6 +19,7 @@ import { TwitterWebhookProvider } from "../webhooks/providers/twitter.js";
 import { TestWebhookProvider } from "../webhooks/providers/test.js";
 import type { WebhookFilter, WebhookTrigger, GitHubWebhookFilter, SentryWebhookFilter, LinearWebhookFilter, MintlifyWebhookFilter, DiscordWebhookFilter, TwitterWebhookFilter } from "../webhooks/types.js";
 import type { TestWebhookFilter } from "../webhooks/providers/test.js";
+import { twitterAutoSubscribe } from "../webhooks/providers/twitter-subscribe.js";
 
 /**
  * Callback invoked when a webhook matches an agent binding.
@@ -30,24 +31,40 @@ export type WebhookTriggerCallback = (
   context: WebhookContext,
 ) => boolean;
 
-// Provider type → credential type for loading secrets
-export const PROVIDER_TO_CREDENTIAL: Record<string, string> = {
-  github: "github_webhook_secret",
-  sentry: "sentry_client_secret",
-  linear: "linear_webhook_secret",
-  mintlify: "mintlify_webhook_secret",
-  discord: "discord_bot",
-  twitter: "x_twitter_webhook_secret",
+/** Credential types used by each webhook provider, in order of priority */
+export const PROVIDER_CREDENTIALS: Record<string, { type: string; secretField: string }[]> = {
+  github: [{ type: "github_webhook_secret", secretField: "secret" }],
+  sentry: [{ type: "sentry_client_secret", secretField: "secret" }],
+  linear: [{ type: "linear_webhook_secret", secretField: "secret" }],
+  mintlify: [{ type: "mintlify_webhook_secret", secretField: "secret" }],
+  discord: [{ type: "discord_bot", secretField: "public_key" }],
+  twitter: [
+    { type: "x_twitter_api", secretField: "consumer_secret" },
+    { type: "x_twitter_user_oauth1", secretField: "access_token" },
+    { type: "x_twitter_user_oauth2", secretField: "access_token" },
+  ],
 };
 
-// Provider type → field name within the credential that holds the secret/key for validation
-export const PROVIDER_TO_SECRET_FIELD: Record<string, string> = {
-  github: "secret",
-  sentry: "secret",
-  linear: "secret",
-  mintlify: "secret",
-  discord: "public_key",
-};
+// Legacy maps — derived from PROVIDER_CREDENTIALS for backwards compatibility
+export const PROVIDER_TO_CREDENTIAL: Record<string, string> = {};
+export const PROVIDER_TO_SECRET_FIELD: Record<string, string> = {};
+for (const [provider, creds] of Object.entries(PROVIDER_CREDENTIALS)) {
+  PROVIDER_TO_CREDENTIAL[provider] = creds[0].type;
+  PROVIDER_TO_SECRET_FIELD[provider] = creds[0].secretField;
+}
+
+/**
+ * Resolve credential instance name for a given credential type from a webhook source config.
+ * Checks for the credential type as a direct field first, then falls back to `credential`.
+ */
+export function resolveCredentialInstance(sourceConfig: WebhookSourceConfig, credType: string): string {
+  // Check for provider-specific field (e.g., x_twitter_api = "MyBot")
+  const specific = sourceConfig[credType];
+  if (typeof specific === "string") return specific;
+
+  // Fall back to generic `credential` field
+  return sourceConfig.credential ?? "default";
+}
 
 export function resolveWebhookSource(
   sourceName: string,
@@ -238,6 +255,32 @@ export async function setupWebhookRegistry(
     }
   }
 
+  // Auto-subscribe Twitter bot user if credentials are available
+  if (providerTypes.has("twitter")) {
+    // Find the Twitter webhook source config to resolve credential instances
+    const twitterSource = Object.values(webhookSources).find((s) => s.type === "twitter");
+    const apiInst = twitterSource ? resolveCredentialInstance(twitterSource, "x_twitter_api") : "default";
+    const oauth2Inst = twitterSource ? resolveCredentialInstance(twitterSource, "x_twitter_user_oauth2") : "default";
+
+    const bearerToken = await loadCredentialField("x_twitter_api", apiInst, "bearer_token");
+    const oauth2AccessToken = await loadCredentialField("x_twitter_user_oauth2", oauth2Inst, "access_token");
+    const oauth2RefreshToken = await loadCredentialField("x_twitter_user_oauth2", oauth2Inst, "refresh_token");
+    const oauth2ClientId = await loadCredentialField("x_twitter_user_oauth2", oauth2Inst, "client_id");
+    const oauth2ClientSecret = await loadCredentialField("x_twitter_user_oauth2", oauth2Inst, "client_secret");
+
+    if (bearerToken && oauth2AccessToken && oauth2ClientId && oauth2ClientSecret) {
+      twitterAutoSubscribe({
+        bearerToken,
+        oauth2AccessToken,
+        oauth2RefreshToken: oauth2RefreshToken ?? "",
+        oauth2ClientId,
+        oauth2ClientSecret,
+        credentialInstance: oauth2Inst,
+        logger,
+      }).catch((err) => logger.warn({ err }, "Twitter auto-subscribe failed"));
+    }
+  }
+
   return { registry, secrets, configs: webhookSources };
 }
 
@@ -266,10 +309,12 @@ export function registerWebhookBindings(opts: {
       continue;
     }
     const providerType = sourceConfig.type;
+    const primaryCredType = PROVIDER_TO_CREDENTIAL[providerType];
+    const credInstance = primaryCredType ? resolveCredentialInstance(sourceConfig, primaryCredType) : sourceConfig.credential;
     const filter = buildFilterFromTrigger(trigger, providerType);
     webhookRegistry.addBinding({
       agentName: agentConfig.name,
-      source: sourceConfig.credential,
+      source: credInstance,
       type: providerType,
       filter,
       trigger: (context) => onTrigger(agentConfig, context),

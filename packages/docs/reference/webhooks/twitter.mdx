@@ -15,11 +15,26 @@ X (Twitter) webhooks let agents respond to account activity events like tweets, 
 ## Setup
 
 1. In the X Developer Portal, create or open your app
-2. Navigate to the Account Activity API settings
-3. Register your webhook URL: `https://your-server:8080/webhooks/twitter`
-4. The gateway handles the CRC challenge-response handshake automatically using the consumer secret
-5. Set the consumer secret credential to match `x_twitter_webhook_secret` — the API Secret (Consumer Secret) from your X app
-6. Subscribe the user accounts whose activity you want to receive
+2. Under **Keys and tokens**, note your **Consumer Key** and **Consumer Secret**
+3. Generate an **Access Token** and **Access Token Secret** for your bot user account
+4. Run `al doctor` — it will prompt for all four values plus your **Bearer Token**
+5. Register your webhook URL with the Account Activity API: `https://your-server:8080/webhooks/twitter`
+6. The gateway handles the CRC challenge-response handshake automatically using the Consumer Secret
+7. On startup, the gateway automatically subscribes your bot user if Access Token credentials are configured
+
+## Credentials
+
+The `x_twitter_api` credential has five fields:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `consumer_key` | Yes | OAuth 1.0a Consumer Key |
+| `consumer_secret` | Yes | OAuth 1.0a Consumer Secret (used for CRC and HMAC validation) |
+| `bearer_token` | Yes | App-Only Bearer Token (used for API v2 validation) |
+| `access_token` | No | OAuth 1.0a Access Token for the bot user (enables auto-subscribe) |
+| `access_token_secret` | No | OAuth 1.0a Access Token Secret for the bot user (enables auto-subscribe) |
+
+When `access_token` and `access_token_secret` are provided, the gateway will automatically check the webhook registration status and subscribe the bot user to the Account Activity API on startup.
 
 ## CRC Challenge
 

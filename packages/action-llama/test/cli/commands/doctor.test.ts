@@ -64,6 +64,11 @@ const mockResolveWebhookSource = vi.fn();
 vi.mock("../../../src/events/webhook-setup.js", () => ({
   validateTriggerFields: (...args: any[]) => mockValidateTriggerFields(...args),
   resolveWebhookSource: (...args: any[]) => mockResolveWebhookSource(...args),
+  resolveCredentialInstance: (sourceConfig: any, credType: string) => {
+    const specific = sourceConfig[credType];
+    if (typeof specific === "string") return specific;
+    return sourceConfig.credential ?? "default";
+  },
   KNOWN_PROVIDER_TYPES: new Set(["github", "sentry", "linear", "mintlify", "test"]),
   PROVIDER_TO_CREDENTIAL: {
     github: "github_webhook_secret",

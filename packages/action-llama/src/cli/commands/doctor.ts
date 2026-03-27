@@ -3,10 +3,10 @@ import { existsSync, readFileSync } from "fs";
 import { discoverAgents, loadAgentRuntimeConfig, loadGlobalConfig, validateAgentConfig, loadProjectConfig } from "../../shared/config.js";
 import { resolveCredential } from "../../credentials/registry.js";
 import { promptCredential } from "../../credentials/prompter.js";
-import { parseCredentialRef, credentialExists, writeCredentialFields } from "../../shared/credentials.js";
+import { parseCredentialRef, credentialExists, writeCredentialFields, loadCredentialFields } from "../../shared/credentials.js";
 import { ConfigError, CredentialError } from "../../shared/errors.js";
 import { ensureGatewayApiKey } from "../../control/api-key.js";
-import { resolveWebhookSource, validateTriggerFields, KNOWN_PROVIDER_TYPES, PROVIDER_TO_CREDENTIAL } from "../../events/webhook-setup.js";
+import { resolveWebhookSource, validateTriggerFields, KNOWN_PROVIDER_TYPES, PROVIDER_TO_CREDENTIAL, resolveCredentialInstance } from "../../events/webhook-setup.js";
 import { collectCredentialRefs } from "../../shared/credential-refs.js";
 import { parseFrontmatter } from "../../shared/frontmatter.js";
 import { parse as parseTOML } from "smol-toml";
@@ -214,9 +214,9 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
   // Check webhook security configurations (skip when --skip-creds / skipCredentials)
   if (!opts.skipCredentials) {
     for (const [sourceName, sourceConfig] of Object.entries(webhookSources)) {
-      const credInstance = sourceConfig.credential ?? "default";
       if (sourceConfig.type !== "test" && sourceConfig.allowUnsigned !== true) {
         const credType = PROVIDER_TO_CREDENTIAL[sourceConfig.type];
+        const credInstance = credType ? resolveCredentialInstance(sourceConfig, credType) : (sourceConfig.credential ?? "default");
         if (credType && !credentialExists(credType, credInstance)) {
           validationErrors.push(
             `Webhook source "${sourceName}" (${sourceConfig.type}) has no webhook secret stored ` +
@@ -357,9 +357,19 @@ async function promptCredentials(credentialRefs: Set<string>, silent?: boolean):
     const def = resolveCredential(type);
 
     if (await credentialExists(type, instance)) {
-      if (!silent) console.log(`  [ok] ${def.label} (${ref})`);
-      okCount++;
-      continue;
+      // Check if new optional fields have been added to the definition
+      const existing = await loadCredentialFields(type, instance);
+      const missingOptional = existing
+        ? def.fields.filter((f) => f.optional && !(f.name in existing))
+        : [];
+
+      if (missingOptional.length === 0) {
+        if (!silent) console.log(`  [ok] ${def.label} (${ref})`);
+        okCount++;
+        continue;
+      }
+
+      // Has missing optional fields — fall through to prompter
     }
 
     const result = await promptCredential(def, instance);

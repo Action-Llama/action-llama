@@ -225,14 +225,38 @@ export const twitterWebhookExtension: WebhookExtension = {
     description: "X (Twitter) webhook provider with CRC support",
     type: "webhook",
     requiredCredentials: [
-      { type: "x_twitter_webhook_secret", description: "Consumer secret for CRC handshake and HMAC validation", optional: true }
+      { type: "x_twitter_api", description: "X API credentials (consumer secret used for CRC handshake and HMAC validation)", optional: true }
     ],
     providesCredentialTypes: [
       {
-        type: "x_twitter_webhook_secret",
-        fields: ["secret"],
-        description: "X (Twitter) consumer secret",
-        envMapping: { secret: "X_TWITTER_WEBHOOK_SECRET" }
+        type: "x_twitter_api",
+        fields: ["consumer_key", "consumer_secret", "bearer_token"],
+        description: "X (Twitter) app-level API credentials",
+        envMapping: {
+          consumer_key: "X_CONSUMER_KEY",
+          consumer_secret: "X_CONSUMER_SECRET",
+          bearer_token: "X_BEARER_TOKEN",
+        }
+      },
+      {
+        type: "x_twitter_user_oauth1",
+        fields: ["access_token", "access_token_secret"],
+        description: "X (Twitter) OAuth 1.0a user-context access tokens",
+        envMapping: {
+          access_token: "X_ACCESS_TOKEN",
+          access_token_secret: "X_ACCESS_TOKEN_SECRET",
+        }
+      },
+      {
+        type: "x_twitter_user_oauth2",
+        fields: ["client_id", "client_secret", "access_token", "refresh_token"],
+        description: "X (Twitter) OAuth 2.0 user-context credentials (PKCE flow, used for Account Activity subscriptions)",
+        envMapping: {
+          client_id: "X_OAUTH2_CLIENT_ID",
+          client_secret: "X_OAUTH2_CLIENT_SECRET",
+          access_token: "X_OAUTH2_ACCESS_TOKEN",
+          refresh_token: "X_OAUTH2_REFRESH_TOKEN",
+        }
       }
     ]
   },

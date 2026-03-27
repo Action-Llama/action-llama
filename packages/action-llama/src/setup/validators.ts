@@ -86,8 +86,10 @@ export async function validateNetlifyToken(token: string) {
 }
 
 export async function validateXTwitterToken(bearerToken: string) {
-  const res = await fetch("https://api.x.com/2/users/me", {
-    headers: { 
+  // /2/users/me requires OAuth 2.0 User Context — not App-Only bearer tokens.
+  // Use a search endpoint that supports App-Only auth to validate the bearer token.
+  const res = await fetch("https://api.x.com/2/tweets/search/recent?query=test&max_results=10", {
+    headers: {
       Authorization: `Bearer ${bearerToken}`,
       "Content-Type": "application/json"
     },
@@ -96,12 +98,7 @@ export async function validateXTwitterToken(bearerToken: string) {
     const body = await res.text();
     throw new Error(`X (Twitter) API token validation failed (${res.status}): ${body}`);
   }
-  const user = (await res.json()) as { data: { id: string; username: string; name: string } };
-  return {
-    user: user.data.username,
-    name: user.data.name,
-    id: user.data.id,
-  };
+  return true;
 }
 
 export async function validateBugsnagToken(token: string) {

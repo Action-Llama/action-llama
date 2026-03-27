@@ -6,7 +6,7 @@ import type { TwitterWebhookFilter } from "../../../src/webhooks/types.js";
 const provider = new TwitterWebhookProvider();
 
 function sign(body: string, secret: string): string {
-  return "sha256=" + createHmac("sha256", secret).update(body).digest("hex");
+  return "sha256=" + createHmac("sha256", secret).update(body).digest("base64");
 }
 
 function crcBase64(token: string, secret: string): string {
