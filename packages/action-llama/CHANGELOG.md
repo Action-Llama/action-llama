@@ -1,5 +1,15 @@
 # @action-llama/action-llama
 
+## 0.18.6
+
+### Patch Changes
+
+- [`ccfc317`](https://github.com/Action-Llama/action-llama/commit/ccfc317ff27d49422f8f309ea1c1093adde4dd04) Thanks [@asselstine](https://github.com/asselstine)! - Add host-user runtime mode for agents that need to run on the host machine instead of inside Docker containers. Configure per-agent with `[runtime] type = "host-user"` in agent config.toml. Agents run under a separate OS user via `sudo -u` for lightweight credential isolation. Includes `al doctor` validation for user/sudoers setup, credential staging to temp directories, and working directory isolation per run.
+
+- [`852cc3a`](https://github.com/Action-Llama/action-llama/commit/852cc3ab7f3dbe486f7cd4038ccc4608b606e4fe) Thanks [@asselstine](https://github.com/asselstine)! - Split `x_twitter_user` credential into `x_twitter_user_oauth1` (OAuth 1.0a access tokens) and `x_twitter_user_oauth2` (OAuth 2.0 PKCE credentials with client ID, client secret, access token, and refresh token). The `al doctor` OAuth 2.0 flow runs an interactive PKCE authorization via a local callback server on port 3829.
+
+  Twitter Account Activity API subscription management now uses OAuth 2.0 user tokens per the API reference, with automatic token refresh on 401. Webhook listing continues to use app-only Bearer token.
+
 ## 0.18.5
 
 ### Patch Changes
