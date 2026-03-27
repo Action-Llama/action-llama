@@ -91,8 +91,9 @@ describe("LocalDockerRuntime", () => {
 
   it("cleanupCredentials is safe on tmpfs strategy", () => {
     const runtime = new LocalDockerRuntime();
-    // Should not throw
-    runtime.cleanupCredentials({ strategy: "tmpfs", stagingDir: "/tmp/test", bundle: {} });
+    expect(() => {
+      runtime.cleanupCredentials({ strategy: "tmpfs", stagingDir: "/tmp/test", bundle: {} });
+    }).not.toThrow();
   });
 
   it("prepareCredentials creates directories with restrictive permissions", async () => {

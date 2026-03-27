@@ -133,19 +133,19 @@ describe("Extension Loader", () => {
 
   describe("loadBuiltinExtensions", () => {
     it("should load built-in extensions without credential checker", async () => {
-      await loadBuiltinExtensions();
+      await expect(loadBuiltinExtensions()).resolves.not.toThrow();
     });
 
     it("should load extensions with credential checker", async () => {
       const credentialChecker = vi.fn().mockResolvedValue(true);
 
-      await loadBuiltinExtensions(credentialChecker);
+      await expect(loadBuiltinExtensions(credentialChecker)).resolves.not.toThrow();
     });
 
     it("should handle loading errors gracefully", async () => {
-      // Mock console.warn to capture warning messages
       const originalWarn = console.warn;
-      console.warn = vi.fn();
+      const mockWarn = vi.fn();
+      console.warn = mockWarn;
 
       // Mock a failed import by throwing during module resolution
       vi.doMock("../../src/webhooks/providers/index.js", () => {
@@ -153,7 +153,7 @@ describe("Extension Loader", () => {
       });
 
       try {
-        await loadBuiltinExtensions();
+        await expect(loadBuiltinExtensions()).resolves.not.toThrow();
       } finally {
         console.warn = originalWarn;
       }

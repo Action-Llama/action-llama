@@ -76,11 +76,11 @@ describe("VpsProvider", () => {
   });
 
   it("reconcileAgents is a no-op", async () => {
-    await provider.reconcileAgents("/some/path");
+    await expect(provider.reconcileAgents("/some/path")).resolves.toBeUndefined();
   });
 
   it("reconcileInfraPolicy is a no-op", async () => {
-    await provider.reconcileInfraPolicy();
+    await expect(provider.reconcileInfraPolicy()).resolves.toBeUndefined();
   });
 
   it("validateRoles checks SSH and Docker connectivity", async () => {
@@ -95,7 +95,8 @@ describe("VpsProvider", () => {
       }
     });
 
-    await provider.validateRoles("/some/path");
+    await expect(provider.validateRoles("/some/path")).resolves.toBeUndefined();
+    expect(mockExecFile).toHaveBeenCalled();
   });
 
   it("validateRoles throws when SSH fails", async () => {
@@ -144,5 +145,7 @@ describe("VpsProvider", () => {
     });
 
     await provider.teardownScheduler();
+    const sshCmds = mockExecFile.mock.calls.map((c: any[]) => (c[1] as string[]).join(" "));
+    expect(sshCmds.some((cmd: string) => cmd.includes("docker rm -f"))).toBe(true);
   });
 });

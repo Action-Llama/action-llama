@@ -94,8 +94,8 @@ describe("ChatSessionManager", () => {
     });
 
     it("does nothing for unknown ID", () => {
-      // Should not throw
       manager.touchSession("nonexistent");
+      expect(manager.size).toBe(0);
     });
   });
 
@@ -107,8 +107,9 @@ describe("ChatSessionManager", () => {
     });
 
     it("does nothing for unknown session", () => {
+      const session = manager.createSession("agent-x");
       manager.setContainerName("nonexistent", "container-abc");
-      // Should not throw
+      expect(session.containerName).toBeUndefined();
     });
   });
 
@@ -206,8 +207,9 @@ describe("ChatSessionManager", () => {
     });
 
     it("does nothing for unknown session", () => {
-      // Should not throw
+      const session = manager.createSession("agent-x");
       manager.setShutdownSecret("nonexistent", "my-secret");
+      expect(session.shutdownSecret).toBeUndefined();
     });
   });
 });

@@ -620,8 +620,7 @@ describe("doctor", () => {
       mockLoadAgentRuntimeConfig.mockReturnValue({ scale: 3 });
       mockCredentialExists.mockReturnValue(true);
 
-      // Should not throw
-      await execute({ project: "." });
+      await expect(execute({ project: "." })).resolves.not.toThrow();
     });
 
     it("allows multiple agents within project scale", async () => {
@@ -643,8 +642,7 @@ describe("doctor", () => {
         .mockReturnValueOnce({ scale: 1 });
       mockCredentialExists.mockReturnValue(true);
 
-      // Should not throw (2 + 1 <= 4)
-      await execute({ project: "." });
+      await expect(execute({ project: "." })).resolves.not.toThrow();
     });
 
     it("handles missing project scale", async () => {
@@ -658,8 +656,7 @@ describe("doctor", () => {
       mockLoadAgentRuntimeConfig.mockReturnValue({ scale: 10 });
       mockCredentialExists.mockReturnValue(true);
 
-      // Should not throw when no project scale is set
-      await execute({ project: "." });
+      await expect(execute({ project: "." })).resolves.not.toThrow();
     });
   });
 });

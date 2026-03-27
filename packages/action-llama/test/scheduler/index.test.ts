@@ -241,11 +241,9 @@ describe("startScheduler", () => {
     mockRun.mockRejectedValueOnce(new Error("fail"));
     await startScheduler(tmpDir);
     vi.clearAllMocks();
-    
-    // Manually trigger a cron callback to simulate a scheduled run
-    await cronCallbacks[0]();
-    // Should have logged the error (the run catches and logs)
-    // The key thing is the cron callback doesn't throw
+
+    // The cron callback should catch the error internally, not propagate
+    await expect(cronCallbacks[0]()).resolves.not.toThrow();
   });
 
   it("re-runs agent immediately when it requests rerun", async () => {

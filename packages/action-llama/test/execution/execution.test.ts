@@ -288,13 +288,14 @@ describe("drainQueues", () => {
   });
 
   it("stops when queue is empty", async () => {
+    const runner = makeRunner({ instanceId: "a" });
     const ctx = makeCtx({
       agentConfigs: [makeAgentConfig("a")],
-      runnerPools: { a: new RunnerPool([makeRunner()]) },
+      runnerPools: { a: new RunnerPool([runner]) },
     });
 
-    // Should complete immediately with no work
     await drainQueues(ctx);
+    expect(runner.run).not.toHaveBeenCalled();
   });
 
   it("skips queued work for disabled agents", async () => {

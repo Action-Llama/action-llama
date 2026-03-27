@@ -121,16 +121,24 @@ describe("SshDockerRuntime", () => {
     it("kill sends docker kill via SSH", async () => {
       mockSshSuccess();
       await runtime.kill("al-test-abc");
+      const args = mockExecFile.mock.calls[0][1] as string[];
+      const cmd = args[args.length - 1];
+      expect(cmd).toContain("kill");
+      expect(cmd).toContain("al-test-abc");
     });
 
     it("kill swallows error for already-dead container", async () => {
       mockSshFailure("No such container");
-      await runtime.kill("al-test-abc");
+      await expect(runtime.kill("al-test-abc")).resolves.toBeUndefined();
     });
 
     it("remove sends docker rm -f via SSH", async () => {
       mockSshSuccess();
       await runtime.remove("al-test-abc");
+      const args = mockExecFile.mock.calls[0][1] as string[];
+      const cmd = args[args.length - 1];
+      expect(cmd).toContain("rm");
+      expect(cmd).toContain("al-test-abc");
     });
   });
 
@@ -200,10 +208,16 @@ describe("SshDockerRuntime", () => {
         stagingDir: "/tmp/al-creds-abc",
         bundle: {},
       });
+      const args = mockExecFile.mock.calls[0][1] as string[];
+      expect(args[args.length - 1]).toContain("rm -rf");
+      expect(args[args.length - 1]).toContain("/tmp/al-creds-abc");
     });
 
     it("is safe on secrets-manager strategy", () => {
-      runtime.cleanupCredentials({ strategy: "secrets-manager", mounts: [] });
+      expect(() => {
+        runtime.cleanupCredentials({ strategy: "secrets-manager", mounts: [] });
+      }).not.toThrow();
+      expect(mockExecFile).not.toHaveBeenCalled();
     });
   });
 
