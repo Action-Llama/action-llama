@@ -1,10 +1,6 @@
 name: Release
 
 on:
-  # Daily at 08:00 UTC
-  schedule:
-    - cron: "0 8 * * *"
-  # Also allow manual trigger
   workflow_dispatch:
 
 concurrency:
