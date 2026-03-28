@@ -413,4 +413,458 @@ describe("logs command", () => {
     expect(errorOutput).toContain("nonexistent");
   });
 
+  // ── --all mode ───────────────────────────────────────────────────────────
+
+  describe("--all mode", () => {
+    it("shows debug-level entries like tool done and event", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      const content = [
+        makePinoLine({ msg: "bash", cmd: "echo hi" }),
+        makePinoLine({ level: 20, msg: "tool done", tool: "bash", resultLength: 10 }),
+        makePinoLine({ level: 20, msg: "event", type: "turn_end" }),
+        makePinoLine({ msg: "run completed" }),
+      ].join("\n") + "\n";
+      writeFileSync(logFile, content);
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", all: true });
+      console.log = origLog;
+
+      // All 4 entries should appear in --all mode (tool done and event are shown too)
+      expect(output.length).toBeGreaterThanOrEqual(4);
+      expect(output.some((l) => l.includes("echo hi"))).toBe(true);
+      expect(output.some((l) => l.includes("tool done"))).toBe(true);
+      expect(output.some((l) => l.includes("event"))).toBe(true);
+      expect(output.some((l) => l.includes("Run completed"))).toBe(true);
+    });
+
+    it("shows debug tool start entries in --all mode", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({ level: 20, msg: "tool start", tool: "bash" }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", all: true });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("▸ bash");
+    });
+  });
+
+  // ── Additional conversation message types ────────────────────────────────
+
+  describe("additional conversation message types", () => {
+    it("shows empty assistant message (no text) as nothing", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({ msg: "assistant", text: "" }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50" });
+      console.log = origLog;
+
+      // Empty text → formatConversationEntry returns null → no output
+      expect(output).toHaveLength(0);
+    });
+
+    it("shows 'container launched' in dim text with container name", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({ msg: "container launched", container: "al-dev-a1b2c3d4" }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("Container launched");
+      expect(output[0]).toContain("al-dev-a1b2c3d4");
+    });
+
+    it("shows 'container launched' without container name", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({ msg: "container launched" }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("Container launched");
+    });
+
+    it("shows 'container finished' with elapsed time", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({ msg: "container finished", elapsed: "42s" }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("Container finished");
+      expect(output[0]).toContain("42s");
+    });
+
+    it("shows 'container finished (rerun requested)' variant", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({ msg: "container finished (rerun requested)" }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("Container finished");
+    });
+
+    it("shows 'container starting' with agent name and model", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({ msg: "container starting", agentName: "dev", modelId: "claude-sonnet-4" }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("Container starting: dev");
+      expect(output[0]).toContain("claude-sonnet-4");
+    });
+
+    it("shows 'container starting' without model", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({ msg: "container starting", agentName: "dev" }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("Container starting: dev");
+    });
+
+    it("shows 'creating agent session' in dim text", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({ msg: "creating agent session" }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("creating agent session");
+    });
+
+    it("shows 'session created, sending prompt' in dim text", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({ msg: "session created, sending prompt" }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("session created, sending prompt");
+    });
+
+    it("shows 'run completed, rerun requested' with yellow suffix", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({ msg: "run completed, rerun requested" }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("Run completed");
+      // Yellow color for rerun suffix
+      expect(output[0]).toContain("\x1b[33m");
+      expect(output[0]).toContain("rerun requested");
+    });
+
+    it("shows error entries with error field and stack trace", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({
+        level: 50,
+        msg: "unhandled error",
+        error: "TypeError: Cannot read property",
+        stack: "at foo (index.ts:10)",
+      }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("ERROR: unhandled error");
+      expect(output[0]).toContain("TypeError: Cannot read property");
+      expect(output[0]).toContain("at foo (index.ts:10)");
+    });
+
+    it("shows WARN level messages in yellow", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({ level: 40, msg: "low disk space" }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("\x1b[33m");
+      expect(output[0]).toContain("WARN: low disk space");
+    });
+
+    it("shows catch-all info messages in dim", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({ msg: "gateway started on port 8080" }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("gateway started on port 8080");
+    });
+
+    it("shows instance tag in entry output", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({ msg: "bash", cmd: "ls", instance: "dev-a1b2c3d4" }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("[dev-a1b2c3d4]");
+    });
+
+    it("shows tool error without cmd or result", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({ msg: "tool error", tool: "read_file", level: 50 }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("✗ read_file failed");
+    });
+  });
+
+  // ── Container log format (parseLine) ────────────────────────────────────
+
+  describe("container log format parsing", () => {
+    it("parses container-format entries (_log: true, level as string)", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      const containerLine = JSON.stringify({
+        _log: true,
+        level: "info",
+        msg: "bash",
+        cmd: "docker ps",
+        ts: Date.now(),
+      });
+      writeFileSync(logFile, containerLine + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("$ docker ps");
+    });
+
+    it("filters out Lambda/CloudWatch platform lines", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      const content = [
+        "START RequestId: abc123",
+        makePinoLine({ msg: "bash", cmd: "echo real" }),
+        "END RequestId: abc123",
+        "REPORT RequestId: abc123 Duration: 100ms",
+        "INIT_START Runtime: nodejs18.x",
+        "EXTENSION something",
+      ].join("\n") + "\n";
+      writeFileSync(logFile, content);
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50" });
+      console.log = origLog;
+
+      // Only the real log line should appear
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("$ echo real");
+    });
+
+    it("uses default level 30 for unknown container log levels", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      const containerLine = JSON.stringify({
+        _log: true,
+        level: "verbose", // not in LEVEL_NAME_TO_NUM
+        msg: "some verbose message",
+        ts: Date.now(),
+      });
+      writeFileSync(logFile, containerLine + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("some verbose message");
+    });
+  });
+
+  // ── Instance filtering ────────────────────────────────────────────────────
+
+  describe("instance filtering (--instance)", () => {
+    it("filters to only entries matching the instance suffix", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      const content = [
+        makePinoLine({ msg: "bash", cmd: "echo from instance 1", instance: "dev-aabbccdd" }),
+        makePinoLine({ msg: "bash", cmd: "echo from instance 2", instance: "dev-11223344" }),
+        makePinoLine({ msg: "bash", cmd: "echo no instance" }),
+      ].join("\n") + "\n";
+      writeFileSync(logFile, content);
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", instance: "aabbccdd" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("echo from instance 1");
+    });
+
+    it("accepts full instance ID (with agent prefix)", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      const content = [
+        makePinoLine({ msg: "bash", cmd: "echo target", instance: "dev-aabbccdd" }),
+        makePinoLine({ msg: "bash", cmd: "echo other", instance: "dev-11223344" }),
+      ].join("\n") + "\n";
+      writeFileSync(logFile, content);
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      // Pass the full instance ID "dev-aabbccdd" (with agent prefix)
+      await execute("dev", { project: tmpDir, lines: "50", instance: "dev-aabbccdd" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("echo target");
+    });
+  });
+
+  // ── Raw formatter edge cases ──────────────────────────────────────────────
+
+  describe("raw formatter edge cases", () => {
+    it("shows instance tag in raw mode", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({ msg: "my message", instance: "dev-a1b2c3d4" }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", raw: true });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("[dev-a1b2c3d4]");
+    });
+
+    it("handles unknown log levels in raw mode", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({ level: 99, msg: "custom level message" }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", raw: true });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("L99");
+      expect(output[0]).toContain("custom level message");
+    });
+  });
+
+  // ── Yesterday fallback ────────────────────────────────────────────────────
+
+  it("falls back to yesterday log file when today's is missing", async () => {
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const logFile = resolve(tmpDir, ".al", "logs", `dev-${yesterday}.log`);
+    writeFileSync(logFile, makePinoLine({ msg: "bash", cmd: "echo yesterday" }) + "\n");
+
+    const output: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: any[]) => output.push(args.join(" "));
+    await execute("dev", { project: tmpDir, lines: "50" });
+    console.log = origLog;
+
+    expect(output).toHaveLength(1);
+    expect(output[0]).toContain("echo yesterday");
+  });
+
 });
