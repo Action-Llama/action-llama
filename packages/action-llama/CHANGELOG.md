@@ -1,5 +1,11 @@
 # @action-llama/action-llama
 
+## 0.18.7
+
+### Patch Changes
+
+- [`6ac0a92`](https://github.com/Action-Llama/action-llama/commit/6ac0a92f21e4edeafaa6a5140832a8e6114b3cf0) Thanks [@asselstine](https://github.com/asselstine)! - Trigger release publish.
+
 ## 0.18.6
 
 ### Patch Changes
