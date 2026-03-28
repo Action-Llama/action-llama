@@ -59,9 +59,3 @@ jobs:
       - name: Publish to npm
         if: steps.has-changesets.outputs.has_changesets == 'true'
         run: npm publish -w packages/action-llama --access public --tag next
-
-      - name: Trigger agents deploy
-        if: steps.has-changesets.outputs.has_changesets == 'true'
-        run: gh api repos/Action-Llama/agents/dispatches -f event_type=deploy
-        env:
-          GH_TOKEN: ${{ secrets.AGENTS_DEPLOY_TOKEN }}
