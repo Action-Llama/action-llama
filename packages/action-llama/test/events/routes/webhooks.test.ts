@@ -4,6 +4,58 @@ import { registerWebhookRoutes } from "../../../src/events/routes/webhooks.js";
 import { WebhookRegistry } from "../../../src/webhooks/registry.js";
 import type { WebhookProvider, WebhookContext, WebhookFilter, DispatchResult } from "../../../src/webhooks/types.js";
 
+/** Provider with CRC challenge support */
+class CrcProvider implements WebhookProvider {
+  source = "crc-source";
+  validateRequest() { return "default"; }
+  parseEvent(_h: any, body: any): WebhookContext { return { source: "crc-source", event: "test", repo: "o/r", sender: "bot", timestamp: new Date().toISOString() }; }
+  matchesFilter() { return true; }
+  handleCrcChallenge(queryParams: Record<string, string>): { body: any; status: number } | null {
+    if (!queryParams["crc_token"]) return null;
+    return { body: { response_token: "hmac-sha256-hash" }, status: 200 };
+  }
+}
+
+/** Provider with Slack-style URL verification challenge */
+class ChallengeProvider implements WebhookProvider {
+  source = "challenge-source";
+  validateRequest() { return "default"; }
+  parseEvent(_h: any, body: any): WebhookContext { return { source: "challenge-source", event: "test", repo: "o/r", sender: "bot", timestamp: new Date().toISOString() }; }
+  matchesFilter() { return true; }
+  handleChallenge(_h: any, body: string): Record<string, string> | null {
+    try {
+      const parsed = JSON.parse(body);
+      if (parsed.type === "url_verification") return { challenge: parsed.challenge };
+    } catch { /* */ }
+    return null;
+  }
+}
+
+/** Provider that always fails signature validation */
+class FailingValidationProvider implements WebhookProvider {
+  source = "fail-source";
+  validateRequest() { return null; } // always reject
+  parseEvent(): WebhookContext { return { source: "fail-source", event: "test", repo: "o/r", sender: "bot", timestamp: new Date().toISOString() }; }
+  matchesFilter() { return true; }
+}
+
+/** Provider that parses events with null (no matching event) */
+class NullParseProvider implements WebhookProvider {
+  source = "null-source";
+  validateRequest() { return "default"; }
+  parseEvent() { return null; }
+  matchesFilter() { return false; }
+}
+
+/** Discord-like provider for PING testing */
+class DiscordLikeProvider implements WebhookProvider {
+  source = "discord";
+  validateSig: string | null = "default";
+  validateRequest() { return this.validateSig; }
+  parseEvent(_h: any, body: any): WebhookContext { return { source: "discord", event: "interaction", repo: "", sender: "bot", timestamp: new Date().toISOString() }; }
+  matchesFilter() { return true; }
+}
+
 // A minimal test provider that validates everything and returns a simple context
 class TestProvider implements WebhookProvider {
   source = "test";
@@ -209,5 +261,255 @@ describe("webhook routes", () => {
     });
 
     expect(res.status).toBe(404);
+  });
+});
+
+describe("webhook routes – additional paths", () => {
+  function buildApp(providers: WebhookProvider[], opts: { statsStore?: any; bindings?: Array<{ agentName: string; source: string; trigger: () => boolean }> } = {}) {
+    const app = new Hono();
+    const logger = mockLogger();
+    const registry = new WebhookRegistry(logger);
+    for (const p of providers) registry.registerProvider(p);
+    for (const b of opts.bindings ?? []) {
+      registry.addBinding({ agentName: b.agentName, type: b.source, trigger: b.trigger });
+    }
+    registerWebhookRoutes(app, registry, {}, {}, logger, undefined, opts.statsStore);
+    return { app, registry };
+  }
+
+  describe("GET /webhooks/:source – CRC challenge", () => {
+    it("returns 404 when provider does not support CRC challenges", async () => {
+      const { app } = buildApp([new TestProvider()]);
+      const res = await app.request("/webhooks/test?crc_token=abc", { method: "GET" });
+      expect(res.status).toBe(404);
+      const body = await res.json();
+      expect(body.error).toContain("CRC not supported");
+    });
+
+    it("returns 404 for an unknown source", async () => {
+      const { app } = buildApp([new TestProvider()]);
+      const res = await app.request("/webhooks/unknown?crc_token=abc", { method: "GET" });
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 400 when CRC challenge fails (no crc_token)", async () => {
+      const { app } = buildApp([new CrcProvider()]);
+      const res = await app.request("/webhooks/crc-source", { method: "GET" });
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error).toContain("CRC challenge failed");
+    });
+
+    it("returns 200 and the challenge response token when CRC passes", async () => {
+      const { app } = buildApp([new CrcProvider()]);
+      const res = await app.request("/webhooks/crc-source?crc_token=my-token", { method: "GET" });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.response_token).toBe("hmac-sha256-hash");
+    });
+  });
+
+  describe("POST /webhooks/:source – oversized payload", () => {
+    it("returns 413 when content-length exceeds 10 MB", async () => {
+      const { app } = buildApp([new TestProvider()]);
+      const res = await app.request("/webhooks/test", {
+        method: "POST",
+        body: JSON.stringify({}),
+        headers: { "content-type": "application/json", "content-length": String(11 * 1024 * 1024) },
+      });
+      expect(res.status).toBe(413);
+      const body = await res.json();
+      expect(body.error).toContain("payload too large");
+    });
+  });
+
+  describe("POST /webhooks/:source – unknown source", () => {
+    it("returns 404 for an unregistered webhook source", async () => {
+      const { app } = buildApp([new TestProvider()]);
+      const res = await app.request("/webhooks/nonexistent", {
+        method: "POST",
+        body: "{}",
+        headers: { "content-type": "application/json" },
+      });
+      expect(res.status).toBe(404);
+      const body = await res.json();
+      expect(body.error).toContain("unknown webhook source");
+    });
+  });
+
+  describe("POST /webhooks/:source – validation failure", () => {
+    it("returns 401 when signature validation fails", async () => {
+      const { app } = buildApp([new FailingValidationProvider()], {
+        bindings: [{ agentName: "agent", source: "fail-source", trigger: () => true }],
+      });
+      const res = await app.request("/webhooks/fail-source", {
+        method: "POST",
+        body: JSON.stringify({ event: "push" }),
+        headers: { "content-type": "application/json" },
+      });
+      expect(res.status).toBe(401);
+      const body = await res.json();
+      expect(body.error).toContain("signature validation failed");
+    });
+
+    it("updates receipt to dead-letter with validation_failed reason when statsStore is present", async () => {
+      const stats = mockStatsStore();
+      const { app } = buildApp([new FailingValidationProvider()], {
+        statsStore: stats,
+        bindings: [{ agentName: "agent", source: "fail-source", trigger: () => true }],
+      });
+      const res = await app.request("/webhooks/fail-source", {
+        method: "POST",
+        body: JSON.stringify({ event: "push" }),
+        headers: { "content-type": "application/json" },
+      });
+      expect(res.status).toBe(401);
+      const updateCall = stats.updateWebhookReceiptStatus.mock.calls[0];
+      expect(updateCall[2]).toBe("dead-letter");
+      expect(updateCall[3]).toBe("validation_failed");
+    });
+  });
+
+  describe("POST /webhooks/:source – handle challenge (Slack-style URL verification)", () => {
+    it("returns the challenge response without dispatching", async () => {
+      const triggerFn = vi.fn().mockReturnValue(true);
+      const { app } = buildApp([new ChallengeProvider()], {
+        bindings: [{ agentName: "agent", source: "challenge-source", trigger: triggerFn }],
+      });
+      const res = await app.request("/webhooks/challenge-source", {
+        method: "POST",
+        body: JSON.stringify({ type: "url_verification", challenge: "my-challenge-token" }),
+        headers: { "content-type": "application/json" },
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.challenge).toBe("my-challenge-token");
+      // Trigger should NOT have been called
+      expect(triggerFn).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("POST /webhooks/discord – PING interaction", () => {
+    it("responds with PONG (type: 1) for Discord PING", async () => {
+      const discord = new DiscordLikeProvider();
+      const { app } = buildApp([discord]);
+      const res = await app.request("/webhooks/discord", {
+        method: "POST",
+        body: JSON.stringify({ type: 1 }),
+        headers: { "content-type": "application/json" },
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.type).toBe(1);
+    });
+
+    it("returns 401 when Discord PING signature validation fails", async () => {
+      const discord = new DiscordLikeProvider();
+      discord.validateSig = null; // signature fails
+      const { app } = buildApp([discord]);
+      const res = await app.request("/webhooks/discord", {
+        method: "POST",
+        body: JSON.stringify({ type: 1 }),
+        headers: { "content-type": "application/json" },
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it("dispatches normally for Discord events with type !== 1", async () => {
+      const discord = new DiscordLikeProvider();
+      const triggerFn = vi.fn().mockReturnValue(true);
+      const { app } = buildApp([discord], {
+        bindings: [{ agentName: "agent", source: "discord", trigger: triggerFn }],
+      });
+      const res = await app.request("/webhooks/discord", {
+        method: "POST",
+        body: JSON.stringify({ type: 2, data: {} }),
+        headers: { "content-type": "application/json" },
+      });
+      expect(res.status).toBe(200);
+      expect(triggerFn).toHaveBeenCalled();
+    });
+  });
+
+  describe("statsStore error handling", () => {
+    it("continues processing if recordWebhookReceipt throws", async () => {
+      const stats = mockStatsStore();
+      stats.recordWebhookReceipt.mockImplementation(() => { throw new Error("DB error"); });
+      const { app } = buildApp([new TestProvider()], {
+        statsStore: stats,
+        bindings: [{ agentName: "agent", source: "test", trigger: () => true }],
+      });
+      const res = await app.request("/webhooks/test", {
+        method: "POST",
+        body: JSON.stringify({ event: "push" }),
+        headers: { "content-type": "application/json" },
+      });
+      // Should still return 200 despite receipt recording failure
+      expect(res.status).toBe(200);
+    });
+
+    it("continues processing if updateWebhookReceiptStatus throws", async () => {
+      const stats = mockStatsStore();
+      stats.updateWebhookReceiptStatus.mockImplementation(() => { throw new Error("DB error"); });
+      const { app } = buildApp([new TestProvider()], {
+        statsStore: stats,
+        bindings: [{ agentName: "agent", source: "test", trigger: () => true }],
+      });
+      const res = await app.request("/webhooks/test", {
+        method: "POST",
+        body: JSON.stringify({ event: "push" }),
+        headers: { "content-type": "application/json" },
+      });
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe("replay endpoint – edge cases", () => {
+    it("returns 400 when receipt has no stored payload (body is missing)", async () => {
+      const stats = mockStatsStore();
+      stats.getWebhookReceipt.mockReturnValue({
+        id: "r1",
+        source: "test",
+        eventSummary: "test",
+        timestamp: Date.now(),
+        // No headers/body
+        matchedAgents: 0,
+        status: "dead-letter",
+      });
+      const { app } = buildApp([new TestProvider()], { statsStore: stats });
+      const res = await app.request("/api/webhooks/r1/replay", { method: "POST" });
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error).toContain("no stored payload");
+    });
+
+    it("updates receipt to dead-letter when replay matches no agents", async () => {
+      const stats = mockStatsStore();
+      stats.getWebhookReceipt.mockReturnValue({
+        id: "r2",
+        source: "test",
+        eventSummary: "test.event",
+        timestamp: Date.now(),
+        headers: JSON.stringify({ "content-type": "application/json" }),
+        body: JSON.stringify({ event: "push" }),
+        matchedAgents: 0,
+        status: "dead-letter",
+      });
+      // No bindings → matched = 0
+      const { app } = buildApp([new TestProvider()], { statsStore: stats });
+      const res = await app.request("/api/webhooks/r2/replay", { method: "POST" });
+      expect(res.status).toBe(200);
+      const updateCalls = stats.updateWebhookReceiptStatus.mock.calls;
+      const replayUpdate = updateCalls[updateCalls.length - 1];
+      expect(replayUpdate[2]).toBe("dead-letter");
+      expect(replayUpdate[3]).toBe("no_match");
+    });
+
+    it("replay endpoint is not registered when statsStore is absent", async () => {
+      const { app } = buildApp([new TestProvider()]); // no statsStore
+      const res = await app.request("/api/webhooks/r1/replay", { method: "POST" });
+      // Without statsStore the replay route is not registered → 404
+      expect(res.status).toBe(404);
+    });
   });
 });
