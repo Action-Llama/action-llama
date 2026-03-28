@@ -239,5 +239,221 @@ describe("SshDockerRuntime", () => {
       handle.stop();
       expect((fakeProc as any).kill).toHaveBeenCalled();
     });
+
+    it("flushes incomplete buffer on stop", () => {
+      const fakeProc = new EventEmitter();
+      (fakeProc as any).stdout = new EventEmitter();
+      (fakeProc as any).stderr = new EventEmitter();
+      (fakeProc as any).kill = vi.fn();
+      mockSpawn.mockReturnValue(fakeProc);
+
+      const lines: string[] = [];
+      const handle = runtime.streamLogs("container", (line) => lines.push(line));
+
+      // Partial line without newline
+      (fakeProc as any).stdout.emit("data", Buffer.from("incomplete line"));
+
+      handle.stop();
+
+      expect(lines).toContain("incomplete line");
+    });
+
+    it("streams stderr via onStderr callback", () => {
+      const fakeProc = new EventEmitter();
+      (fakeProc as any).stdout = new EventEmitter();
+      (fakeProc as any).stderr = new EventEmitter();
+      (fakeProc as any).kill = vi.fn();
+      mockSpawn.mockReturnValue(fakeProc);
+
+      const stderrLines: string[] = [];
+      runtime.streamLogs("container", () => {}, (text) => stderrLines.push(text));
+
+      (fakeProc as any).stderr.emit("data", Buffer.from("error output"));
+
+      expect(stderrLines).toContain("error output");
+    });
+  });
+
+  describe("launch", () => {
+    it("starts container with docker run -d and returns container name", async () => {
+      mockSshSuccess();
+
+      const containerName = await runtime.launch({
+        agentName: "test-agent",
+        image: "al-agent:sha",
+        env: { MY_VAR: "value" },
+        credentials: { strategy: "volume", stagingDir: "/tmp/al-creds-abc", bundle: {} },
+      });
+
+      expect(containerName).toMatch(/^al-test-agent-/);
+      const args = mockExecFile.mock.calls[0][1] as string[];
+      const cmd = args[args.length - 1];
+      expect(cmd).toContain("docker");
+      expect(cmd).toContain("run");
+      expect(cmd).toContain("-d");
+      expect(cmd).toContain("--name");
+      expect(cmd).toContain("al-agent:sha");
+    });
+
+    it("mounts credentials volume when strategy is volume", async () => {
+      mockSshSuccess();
+
+      await runtime.launch({
+        agentName: "test-agent",
+        image: "al-agent:sha",
+        env: {},
+        credentials: { strategy: "volume", stagingDir: "/tmp/al-creds-xyz", bundle: {} },
+      });
+
+      const args = mockExecFile.mock.calls[0][1] as string[];
+      const cmd = args[args.length - 1];
+      expect(cmd).toContain("/tmp/al-creds-xyz:/credentials:ro");
+    });
+
+    it("passes env variables to docker run", async () => {
+      mockSshSuccess();
+
+      await runtime.launch({
+        agentName: "test-agent",
+        image: "al-agent:sha",
+        env: { FOO: "bar", HELLO: "world" },
+        credentials: { strategy: "volume", stagingDir: "/tmp/al-creds-abc", bundle: {} },
+      });
+
+      const args = mockExecFile.mock.calls[0][1] as string[];
+      const cmd = args[args.length - 1];
+      expect(cmd).toContain("FOO=bar");
+      expect(cmd).toContain("HELLO=world");
+    });
+
+    it("passes cpu and memory limits when provided", async () => {
+      mockSshSuccess();
+
+      await runtime.launch({
+        agentName: "test-agent",
+        image: "al-agent:sha",
+        env: {},
+        credentials: { strategy: "volume", stagingDir: "/tmp/al-creds-abc", bundle: {} },
+        cpus: 2,
+        memory: "8g",
+      });
+
+      const args = mockExecFile.mock.calls[0][1] as string[];
+      const cmd = args[args.length - 1];
+      expect(cmd).toContain("--cpus");
+      expect(cmd).toContain("--memory");
+      expect(cmd).toContain("8g");
+    });
+
+    it("throws when docker run fails", async () => {
+      mockSshFailure("port conflict");
+
+      await expect(
+        runtime.launch({
+          agentName: "test-agent",
+          image: "al-agent:sha",
+          env: {},
+          credentials: { strategy: "volume", stagingDir: "/tmp/al-creds-abc", bundle: {} },
+        })
+      ).rejects.toThrow("Remote docker run failed");
+    });
+  });
+
+  describe("waitForExit", () => {
+    function makeWaitProc(exitCode = 0) {
+      const proc = new EventEmitter();
+      (proc as any).stdout = new EventEmitter();
+      (proc as any).stderr = new EventEmitter();
+      (proc as any).kill = vi.fn();
+      // Send exit code as stdout data and then close
+      process.nextTick(() => {
+        (proc as any).stdout.emit("data", Buffer.from(`${exitCode}\n`));
+        proc.emit("close", 0);
+      });
+      return proc;
+    }
+
+    it("resolves with the container exit code", async () => {
+      mockSpawn.mockReturnValue(makeWaitProc(0));
+
+      const code = await runtime.waitForExit("al-test-abc", 30);
+      expect(code).toBe(0);
+    });
+
+    it("resolves with non-zero exit code", async () => {
+      mockSpawn.mockReturnValue(makeWaitProc(1));
+
+      const code = await runtime.waitForExit("al-test-abc", 30);
+      expect(code).toBe(1);
+    });
+
+    it("rejects when process emits error", async () => {
+      const proc = new EventEmitter();
+      (proc as any).stdout = new EventEmitter();
+      (proc as any).stderr = new EventEmitter();
+      (proc as any).kill = vi.fn();
+      process.nextTick(() => proc.emit("error", new Error("spawn failed")));
+      mockSpawn.mockReturnValue(proc);
+
+      await expect(runtime.waitForExit("al-test-abc", 30)).rejects.toThrow("spawn failed");
+    });
+  });
+
+  describe("followLogs", () => {
+    it("follows logs of running container", async () => {
+      // First call: ps to find container name
+      mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+        cb(null, "al-test-agent-abc12345\n", "");
+      });
+
+      const fakeProc = new EventEmitter();
+      (fakeProc as any).stdout = new EventEmitter();
+      (fakeProc as any).stderr = new EventEmitter();
+      (fakeProc as any).kill = vi.fn();
+      mockSpawn.mockReturnValue(fakeProc);
+
+      const lines: string[] = [];
+      const handle = runtime.followLogs("test-agent", (line) => lines.push(line));
+
+      // Wait for async startFollowing
+      await new Promise((r) => setTimeout(r, 20));
+
+      (fakeProc as any).stdout.emit("data", Buffer.from("log line 1\n"));
+      expect(lines).toContain("log line 1");
+
+      handle.stop();
+      expect((fakeProc as any).kill).toHaveBeenCalled();
+    });
+
+    it("does nothing if stopped before container is found", async () => {
+      mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+        cb(null, "al-test-agent-abc12345\n", "");
+      });
+
+      const fakeProc = new EventEmitter();
+      (fakeProc as any).stdout = new EventEmitter();
+      (fakeProc as any).stderr = new EventEmitter();
+      (fakeProc as any).kill = vi.fn();
+      mockSpawn.mockReturnValue(fakeProc);
+
+      const handle = runtime.followLogs("test-agent", () => {});
+      // Stop before async startFollowing completes
+      handle.stop();
+
+      // Should not have started following
+      await new Promise((r) => setTimeout(r, 20));
+      // Process kill may or may not be called depending on timing, but no error
+    });
+
+    it("handles ssh error when finding containers gracefully", async () => {
+      mockSshFailure("No containers");
+
+      const lines: string[] = [];
+      runtime.followLogs("test-agent", (line) => lines.push(line));
+
+      await new Promise((r) => setTimeout(r, 20));
+      // No error, no lines
+      expect(lines).toHaveLength(0);
+    });
   });
 });
