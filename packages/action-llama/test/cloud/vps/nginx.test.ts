@@ -1,5 +1,92 @@
-import { describe, it, expect } from "vitest";
-import { generateNginxConfig } from "../../../src/cloud/vps/nginx.js";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { generateNginxConfig, installNginx, configureNginx } from "../../../src/cloud/vps/nginx.js";
+
+vi.mock("../../../src/cloud/vps/ssh.js", () => ({
+  sshExec: vi.fn(),
+  scpBuffer: vi.fn(),
+}));
+
+import * as sshModule from "../../../src/cloud/vps/ssh.js";
+const mockedSshExec = vi.mocked(sshModule.sshExec);
+const mockedScpBuffer = vi.mocked(sshModule.scpBuffer);
+
+const mockSshConfig = { host: "1.2.3.4", username: "root", privateKey: "key" };
+
+describe("installNginx", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("runs apt-get install nginx command", async () => {
+    mockedSshExec.mockResolvedValue({ exitCode: 0, stdout: "nginx installed", stderr: "" });
+
+    await installNginx(mockSshConfig);
+
+    expect(mockedSshExec).toHaveBeenCalledOnce();
+    const [, cmd] = mockedSshExec.mock.calls[0];
+    expect(cmd).toContain("apt-get install -y nginx");
+  });
+
+  it("throws when nginx installation fails", async () => {
+    mockedSshExec.mockResolvedValue({ exitCode: 1, stdout: "", stderr: "E: Unable to fetch packages" });
+
+    await expect(installNginx(mockSshConfig)).rejects.toThrow(
+      "Failed to install nginx: E: Unable to fetch packages"
+    );
+  });
+});
+
+describe("configureNginx", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("creates cert directory on the server", async () => {
+    mockedSshExec.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    mockedScpBuffer.mockResolvedValue(undefined);
+
+    await configureNginx(mockSshConfig, "example.com", "cert-content", "key-content", 3000);
+
+    const mkdirCall = mockedSshExec.mock.calls[0];
+    expect(mkdirCall[1]).toContain("mkdir -p");
+  });
+
+  it("uploads certificate and key via scp", async () => {
+    mockedSshExec.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    mockedScpBuffer.mockResolvedValue(undefined);
+
+    await configureNginx(mockSshConfig, "example.com", "my-cert", "my-key", 3000);
+
+    const scpCalls = mockedScpBuffer.mock.calls;
+    const uploadedContents = scpCalls.map(([, content]) => content);
+    expect(uploadedContents).toContain("my-cert");
+    expect(uploadedContents).toContain("my-key");
+  });
+
+  it("uploads an nginx config with the correct hostname", async () => {
+    mockedSshExec.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    mockedScpBuffer.mockResolvedValue(undefined);
+
+    await configureNginx(mockSshConfig, "myhost.com", "cert", "key", 4000);
+
+    const scpCalls = mockedScpBuffer.mock.calls;
+    const nginxConfig = scpCalls.find(([, content]) => (content as string).includes("server_name"));
+    expect(nginxConfig).toBeDefined();
+    expect(nginxConfig![1]).toContain("server_name myhost.com");
+    expect(nginxConfig![1]).toContain("proxy_pass http://127.0.0.1:4000");
+  });
+
+  it("runs nginx enable and restart commands", async () => {
+    mockedSshExec.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    mockedScpBuffer.mockResolvedValue(undefined);
+
+    await configureNginx(mockSshConfig, "example.com", "cert", "key", 3000);
+
+    const setupCall = mockedSshExec.mock.calls[mockedSshExec.mock.calls.length - 1];
+    expect(setupCall[1]).toContain("nginx -t");
+    expect(setupCall[1]).toContain("systemctl restart nginx");
+  });
+});
 
 describe("generateNginxConfig", () => {
   it("generates config with correct hostname and port", () => {
