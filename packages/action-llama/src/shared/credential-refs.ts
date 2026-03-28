@@ -52,6 +52,9 @@ export function collectCredentialRefs(projectPath: string, globalConfig: GlobalC
       const providerCreds = PROVIDER_CREDENTIALS[sourceConfig.type];
       if (!providerCreds) continue;
 
+      // Skip webhook secret credentials when the source allows unsigned requests
+      if (sourceConfig.allowUnsigned) continue;
+
       for (const cred of providerCreds) {
         const instance = resolveCredentialInstance(sourceConfig, cred.type);
         const ref = `${cred.type}:${instance}`;
