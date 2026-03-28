@@ -306,4 +306,88 @@ model: invalid-model
     const logs = await getVPSLogs(context, vpsContainer);
     expect(logs).toBeDefined();
   });
+
+  it("fails gracefully when SSH connection is refused during al push", async () => {
+    const context = getTestContext();
+    const localContainer = await setupLocalActionLlama(context);
+
+    const agentSkill = `
+# SSH Failure Test Agent
+
+This agent is used to verify that al push fails gracefully when SSH is unavailable.
+    `;
+
+    await createTestAgent(context, localContainer, "ssh-fail-agent", agentSkill);
+
+    // Generate a fresh throwaway SSH key pair inside the container.
+    // This key won't be authorized on any host, so SSH auth will be refused
+    // even if a connection is somehow established.
+    await context.executeInContainer(localContainer, [
+      "bash",
+      "-c",
+      "mkdir -p /home/testuser/.ssh && chmod 700 /home/testuser/.ssh && ssh-keygen -t ed25519 -f /home/testuser/.ssh/bad_deploy_key -N '' -q",
+    ]);
+
+    // Configure an environment that points to a closed port on loopback (127.0.0.1:65533).
+    // Port 65533 is never bound inside the container, so SSH will get "Connection refused"
+    // immediately without any timeout delay.
+    await context.executeInContainer(localContainer, [
+      "bash",
+      "-c",
+      "mkdir -p /home/testuser/.action-llama/environments",
+    ]);
+
+    await context.executeInContainer(localContainer, [
+      "bash",
+      "-c",
+      `cat > /home/testuser/.action-llama/environments/unreachable-vps.toml << 'EOF'
+[server]
+host = "127.0.0.1"
+user = "root"
+port = 65533
+keyPath = "/home/testuser/.ssh/bad_deploy_key"
+basePath = "/opt/action-llama"
+EOF`,
+    ]);
+
+    // Bind the test project to the unreachable environment
+    await context.executeInContainer(localContainer, [
+      "bash",
+      "-c",
+      `cat > /home/testuser/test-project/.env.toml << 'EOF'
+environment = "unreachable-vps"
+EOF`,
+    ]);
+
+    // Run al push — it should fail quickly (connection refused) with a non-zero exit code.
+    // Capture both stdout and stderr; the helper appends "AL_PUSH_FAILED_EXIT_N" on failure.
+    const pushOutput = await context.executeInContainer(localContainer, [
+      "bash",
+      "-c",
+      "cd /home/testuser/test-project && al push --env unreachable-vps --headless --skip-creds 2>&1; echo \"PUSH_EXIT_$?\"",
+    ]);
+
+    // al push must have exited with a non-zero code
+    expect(pushOutput).toMatch(/PUSH_EXIT_[1-9]/);
+
+    // The error output should reference an SSH/connection problem
+    // (ssh exits with code 255 on connection errors and prints a message to stderr)
+    expect(pushOutput).toMatch(/ssh|connect|refused|Connection|ECONNREFUSED/i);
+
+    // The local project must still be intact — SKILL.md and config.toml untouched
+    const agentFiles = await context.executeInContainer(localContainer, [
+      "bash",
+      "-c",
+      "ls /home/testuser/test-project/agents/ssh-fail-agent/",
+    ]);
+    expect(agentFiles).toContain("SKILL.md");
+    expect(agentFiles).toContain("config.toml");
+
+    // The local config.toml should not have been modified by a failed push
+    const configContent = await context.executeInContainer(localContainer, [
+      "cat",
+      "/home/testuser/test-project/config.toml",
+    ]);
+    expect(configContent).toContain("[models.sonnet]");
+  });
 });

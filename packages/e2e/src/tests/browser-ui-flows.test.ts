@@ -14,11 +14,14 @@ import { chromium, type Browser, type Page } from "playwright";
 import { E2ETestContext, type ContainerInfo } from "../harness.js";
 import { createTestAgent, getSchedulerLogs } from "../containers/local.js";
 import { existsSync } from "fs";
+import { execSync } from "child_process";
 
 /**
- * Check whether the Playwright Chromium browser executable is available.
+ * Check whether the Playwright Chromium browser executable is available
+ * AND its required system libraries are present.
  * Returns false when running in environments where `npx playwright install` has
- * not been run (e.g. CI machines without the browser pre-cached).
+ * not been run (e.g. CI machines without the browser pre-cached), or when the
+ * required system shared libraries (e.g. libnspr4.so) are not installed.
  */
 function isPlaywrightAvailable(): boolean {
   try {
@@ -29,7 +32,16 @@ function isPlaywrightAvailable(): boolean {
     const browsers = registry.executables().filter((e: any) => e.name === "chromium");
     if (browsers.length === 0) return false;
     const execPath = browsers[0].executablePath("linux");
-    return !!execPath && existsSync(execPath);
+    if (!execPath || !existsSync(execPath)) return false;
+    // Also verify that the required shared libraries are loadable by running
+    // `ldd` on the binary and checking for "not found" entries.
+    try {
+      const lddOutput = execSync(`ldd "${execPath}" 2>&1`, { encoding: "utf8" });
+      if (lddOutput.includes("not found")) return false;
+    } catch {
+      // ldd not available or failed — fall through and assume libraries are OK
+    }
+    return true;
   } catch {
     return false;
   }
