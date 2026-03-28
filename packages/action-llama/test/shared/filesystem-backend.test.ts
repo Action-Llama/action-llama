@@ -109,4 +109,52 @@ describe("FilesystemBackend", () => {
       expect(instances.sort()).toEqual(["default", "work"]);
     });
   });
+
+  describe("static methods", () => {
+    it("readSync returns undefined for non-existent field", () => {
+      setup();
+      const value = FilesystemBackend.readSync("nope", "nope", "nope", tmpDir);
+      expect(value).toBeUndefined();
+    });
+
+    it("readSync writes and reads a single field", () => {
+      setup();
+      FilesystemBackend.writeSync("github_token", "default", "token", "ghp_static123", tmpDir);
+      const value = FilesystemBackend.readSync("github_token", "default", "token", tmpDir);
+      expect(value).toBe("ghp_static123");
+    });
+
+    it("writeSync trims trailing newline on read", () => {
+      setup();
+      FilesystemBackend.writeSync("test", "inst", "field", "my-value", tmpDir);
+      const value = FilesystemBackend.readSync("test", "inst", "field", tmpDir);
+      expect(value).toBe("my-value");
+    });
+
+    it("readAllSync returns undefined for non-existent instance", () => {
+      setup();
+      const result = FilesystemBackend.readAllSync("nope", "nope", tmpDir);
+      expect(result).toBeUndefined();
+    });
+
+    it("readAllSync returns all fields for existing instance", () => {
+      setup();
+      FilesystemBackend.writeSync("git_ssh", "default", "id_rsa", "private-key", tmpDir);
+      FilesystemBackend.writeSync("git_ssh", "default", "username", "Bot", tmpDir);
+
+      const result = FilesystemBackend.readAllSync("git_ssh", "default", tmpDir);
+      expect(result).toEqual({ id_rsa: "private-key", username: "Bot" });
+    });
+
+    it("existsSync returns false for non-existent credential", () => {
+      setup();
+      expect(FilesystemBackend.existsSync("nope", "nope", tmpDir)).toBe(false);
+    });
+
+    it("existsSync returns true after writing a field", () => {
+      setup();
+      FilesystemBackend.writeSync("github_token", "default", "token", "val", tmpDir);
+      expect(FilesystemBackend.existsSync("github_token", "default", tmpDir)).toBe(true);
+    });
+  });
 });
