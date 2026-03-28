@@ -107,6 +107,15 @@ vi.mock("fs", async (importOriginal) => {
   };
 });
 
+const mockExecFileSync = vi.fn();
+vi.mock("child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("child_process")>();
+  return {
+    ...actual,
+    execFileSync: (...args: any[]) => mockExecFileSync(...args),
+  };
+});
+
 const mockEnsureGatewayApiKey = vi.fn();
 vi.mock("../../../src/control/api-key.js", () => ({
   ensureGatewayApiKey: (...args: any[]) => mockEnsureGatewayApiKey(...args),
@@ -662,6 +671,81 @@ describe("doctor", () => {
       mockCredentialExists.mockReturnValue(true);
 
       await expect(execute({ project: "." })).resolves.not.toThrow();
+    });
+  });
+
+  describe("host-user docker group check", () => {
+    beforeEach(() => {
+      // Default: user exists, sudo works, docker group exists, user NOT in docker group
+      mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+        if (cmd === "id" && args[0] === "al-agent") return Buffer.from("1001");
+        if (cmd === "id" && args[0] === "-Gn") return Buffer.from("al-agent");
+        if (cmd === "getent" && args[0] === "group" && args[1] === "docker") return Buffer.from("docker:x:999:");
+        if (cmd === "sudo" && args[0] === "-n") return Buffer.from("");
+        throw new Error(`unexpected execFileSync: ${cmd} ${args.join(" ")}`);
+      });
+    });
+
+    it("warns when host-user agent's user is not in docker group", async () => {
+      mockDiscoverAgents.mockReturnValue(["e2e"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "e2e", credentials: [] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({
+        runtime: { type: "host-user" },
+      });
+      mockCredentialExists.mockReturnValue(true);
+
+      const output = await captureLog(() => execute({ project: ".", checkOnly: true }));
+      expect(output).toContain("not in the docker group");
+      expect(output).toContain("sudo usermod -aG docker al-agent");
+    });
+
+    it("prints ok when host-user agent's user is in docker group", async () => {
+      mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+        if (cmd === "id" && args[0] === "al-agent") return Buffer.from("1001");
+        if (cmd === "id" && args[0] === "-Gn") return Buffer.from("al-agent docker");
+        if (cmd === "getent" && args[0] === "group" && args[1] === "docker") return Buffer.from("docker:x:999:");
+        if (cmd === "sudo" && args[0] === "-n") return Buffer.from("");
+        throw new Error(`unexpected execFileSync: ${cmd} ${args.join(" ")}`);
+      });
+
+      mockDiscoverAgents.mockReturnValue(["e2e"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "e2e", credentials: [] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({
+        runtime: { type: "host-user" },
+      });
+      mockCredentialExists.mockReturnValue(true);
+
+      const output = await captureLog(() => execute({ project: ".", checkOnly: true }));
+      expect(output).toContain('[ok] User "al-agent" is in the docker group');
+    });
+
+    it("skips docker check when docker group does not exist", async () => {
+      mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+        if (cmd === "id" && args[0] === "al-agent") return Buffer.from("1001");
+        if (cmd === "getent" && args[0] === "group" && args[1] === "docker") throw new Error("not found");
+        if (cmd === "sudo" && args[0] === "-n") return Buffer.from("");
+        throw new Error(`unexpected execFileSync: ${cmd} ${args.join(" ")}`);
+      });
+
+      mockDiscoverAgents.mockReturnValue(["e2e"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "e2e", credentials: [] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({
+        runtime: { type: "host-user" },
+      });
+      mockCredentialExists.mockReturnValue(true);
+
+      const output = await captureLog(() => execute({ project: ".", checkOnly: true }));
+      expect(output).not.toContain("docker group");
+    });
+
+    it("does not check docker group for container runtime agents", async () => {
+      mockDiscoverAgents.mockReturnValue(["dev"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: [] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({}); // default container runtime
+      mockCredentialExists.mockReturnValue(true);
+
+      const output = await captureLog(() => execute({ project: ".", checkOnly: true }));
+      expect(output).not.toContain("docker group");
     });
   });
 });

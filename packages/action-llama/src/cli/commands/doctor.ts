@@ -343,6 +343,49 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
             );
           }
         }
+
+        // Check Docker group membership
+        if (userExists) {
+          let dockerGroupExists = false;
+          try {
+            execFileSync("getent", ["group", "docker"], { stdio: "pipe", timeout: 5000 });
+            dockerGroupExists = true;
+          } catch {
+            // docker group doesn't exist — Docker may not be installed, skip check
+          }
+
+          if (dockerGroupExists) {
+            let inDockerGroup = false;
+            try {
+              const groups = execFileSync("id", ["-Gn", runAs], { stdio: "pipe", timeout: 5000 }).toString();
+              inDockerGroup = groups.split(/\s+/).includes("docker");
+            } catch {
+              // Failed to check groups
+            }
+
+            if (inDockerGroup) {
+              if (!opts.silent) console.log(`  [ok] User "${runAs}" is in the docker group`);
+            } else if (isLinux && !opts.checkOnly) {
+              try {
+                execFileSync("sudo", ["usermod", "-aG", "docker", runAs], {
+                  stdio: "pipe", timeout: 10000,
+                });
+                if (!opts.silent) console.log(`  [created] Added "${runAs}" to docker group`);
+              } catch (err: any) {
+                validationWarnings.push(
+                  `User "${runAs}" is not in the docker group. ` +
+                  `Run: sudo usermod -aG docker ${runAs}`
+                );
+              }
+            } else {
+              validationWarnings.push(
+                `User "${runAs}" is not in the docker group. ` +
+                `Agents that need Docker will fail. Run:\n` +
+                `    sudo usermod -aG docker ${runAs}`
+              );
+            }
+          }
+        }
       }
     }
   }
