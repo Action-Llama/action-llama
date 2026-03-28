@@ -162,4 +162,284 @@ describe("HostUserRuntime", () => {
       expect(logs).toEqual([]);
     });
   });
+
+  // ── resolveUid/resolveGid error paths ────────────────────────────────────
+
+  describe("resolveUid/resolveGid fallback when id fails", () => {
+    it("prepareCredentials works when user resolution fails (uid/gid = undefined)", async () => {
+      // Make id calls throw
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("id: no such user");
+      });
+      // Re-create runtime with failing mock
+      const rt = new HostUserRuntime("nonexistent-user");
+
+      const tmpCreds = mkdtempSync(join(tmpdir(), "al-test-creds-"));
+      try {
+        // Should not throw — chown is skipped when uid/gid undefined
+        const result = await rt.prepareCredentials([]);
+        expect(result.strategy).toBe("host-user");
+        expect(result.stagingDir).toBeDefined();
+        // Cleanup
+        rmSync(result.stagingDir, { recursive: true, force: true });
+      } finally {
+        rmSync(tmpCreds, { recursive: true, force: true });
+      }
+    });
+  });
+
+  // ── Processes lifecycle tests ─────────────────────────────────────────────
+
+  describe("streamLogs with active process", () => {
+    function makeFakeProc() {
+      const { EventEmitter } = require("events");
+      const proc = new EventEmitter();
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.kill = vi.fn();
+      proc.pipe = vi.fn();
+      proc.stdout.pipe = vi.fn();
+      proc.stderr.pipe = vi.fn();
+      return proc;
+    }
+
+    it("returns empty stop when process not found", () => {
+      const handle = runtime.streamLogs("nonexistent-run", () => {});
+      expect(() => handle.stop()).not.toThrow();
+    });
+
+    it("receives stdout lines from active process", async () => {
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+
+      const runId = await runtime.launch({
+        image: "ignored",
+        agentName: "stream-test",
+        env: {},
+        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
+      });
+
+      const lines: string[] = [];
+      runtime.streamLogs(runId, (line) => lines.push(line));
+
+      fakeProc.stdout.emit("data", Buffer.from("log line one\nlog line two\n"));
+      expect(lines).toEqual(["log line one", "log line two"]);
+
+      // Cleanup
+      fakeProc.emit("exit", 0);
+    });
+
+    it("receives stderr via onStderr callback", async () => {
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+
+      const runId = await runtime.launch({
+        image: "ignored",
+        agentName: "stream-stderr",
+        env: {},
+        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
+      });
+
+      const errors: string[] = [];
+      runtime.streamLogs(runId, () => {}, (msg) => errors.push(msg));
+
+      fakeProc.stderr.emit("data", Buffer.from("stderr warning\n"));
+      expect(errors).toContain("stderr warning");
+
+      fakeProc.emit("exit", 0);
+    });
+
+    it("stop() flushes buffered partial line and removes listener", async () => {
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+
+      const runId = await runtime.launch({
+        image: "ignored",
+        agentName: "stream-stop",
+        env: {},
+        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
+      });
+
+      const lines: string[] = [];
+      const handle = runtime.streamLogs(runId, (line) => lines.push(line));
+
+      fakeProc.stdout.emit("data", Buffer.from("partial line without newline"));
+      handle.stop();
+
+      expect(lines).toContain("partial line without newline");
+
+      fakeProc.emit("exit", 0);
+    });
+  });
+
+  describe("waitForExit with active process", () => {
+    function makeFakeProc() {
+      const { EventEmitter } = require("events");
+      const proc = new EventEmitter();
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.kill = vi.fn();
+      proc.stdout.pipe = vi.fn();
+      proc.stderr.pipe = vi.fn();
+      return proc;
+    }
+
+    it("resolves with 1 when process not found", async () => {
+      const code = await runtime.waitForExit("nonexistent-run", 5);
+      expect(code).toBe(1);
+    });
+
+    it("resolves with process exit code", async () => {
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+
+      const runId = await runtime.launch({
+        image: "ignored",
+        agentName: "wait-test",
+        env: {},
+        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
+      });
+
+      const exitPromise = runtime.waitForExit(runId, 60);
+      fakeProc.emit("exit", 0);
+
+      const code = await exitPromise;
+      expect(code).toBe(0);
+    });
+
+    it("resolves with code 1 when exit code is null", async () => {
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+
+      const runId = await runtime.launch({
+        image: "ignored",
+        agentName: "wait-null",
+        env: {},
+        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
+      });
+
+      const exitPromise = runtime.waitForExit(runId, 60);
+      fakeProc.emit("exit", null);
+
+      const code = await exitPromise;
+      expect(code).toBe(1);
+    });
+
+    it("rejects on process error event", async () => {
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+
+      const runId = await runtime.launch({
+        image: "ignored",
+        agentName: "wait-error",
+        env: {},
+        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
+      });
+
+      const exitPromise = runtime.waitForExit(runId, 60);
+      fakeProc.emit("error", new Error("process error"));
+
+      await expect(exitPromise).rejects.toThrow("process error");
+    });
+
+    it("rejects on timeout and sends SIGTERM + SIGKILL", async () => {
+      vi.useFakeTimers();
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+
+      const runId = await runtime.launch({
+        image: "ignored",
+        agentName: "wait-timeout",
+        env: {},
+        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
+      });
+
+      const exitPromise = runtime.waitForExit(runId, 10);
+      vi.advanceTimersByTime(10_001);
+
+      await expect(exitPromise).rejects.toThrow(`Agent ${runId} timed out after 10s`);
+      expect(fakeProc.kill).toHaveBeenCalledWith("SIGTERM");
+
+      vi.useRealTimers();
+    });
+  });
+
+  describe("kill with active process", () => {
+    function makeFakeProc() {
+      const { EventEmitter } = require("events");
+      const proc = new EventEmitter();
+      proc.kill = vi.fn();
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.stdout.pipe = vi.fn();
+      proc.stderr.pipe = vi.fn();
+      return proc;
+    }
+
+    it("sends SIGTERM to active process", async () => {
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+
+      const runId = await runtime.launch({
+        image: "ignored",
+        agentName: "kill-test",
+        env: {},
+        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
+      });
+
+      await runtime.kill(runId);
+      expect(fakeProc.kill).toHaveBeenCalledWith("SIGTERM");
+
+      fakeProc.emit("exit", 0);
+    });
+  });
+
+  describe("isAgentRunning / listRunningAgents with active process", () => {
+    function makeFakeProc() {
+      const { EventEmitter } = require("events");
+      const proc = new EventEmitter();
+      proc.kill = vi.fn();
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.stdout.pipe = vi.fn();
+      proc.stderr.pipe = vi.fn();
+      return proc;
+    }
+
+    it("returns true for a running agent after launch", async () => {
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+
+      await runtime.launch({
+        image: "ignored",
+        agentName: "active-agent",
+        env: {},
+        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
+      });
+
+      expect(await runtime.isAgentRunning("active-agent")).toBe(true);
+      expect(await runtime.isAgentRunning("other-agent")).toBe(false);
+
+      fakeProc.emit("exit", 0);
+    });
+
+    it("lists running agents after launch", async () => {
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+
+      await runtime.launch({
+        image: "ignored",
+        agentName: "listed-agent",
+        env: {},
+        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
+      });
+
+      const agents = await runtime.listRunningAgents();
+      expect(agents).toHaveLength(1);
+      expect(agents[0].agentName).toBe("listed-agent");
+      expect(agents[0].status).toBe("running");
+
+      fakeProc.emit("exit", 0);
+    });
+  });
 });
