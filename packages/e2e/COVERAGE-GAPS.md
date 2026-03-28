@@ -11,7 +11,7 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Error: Docker unavailable — start scheduler when Docker CLI fails, verify error reporting
 - [x] Error: SSH connection failure during VPS deploy — simulate SSH timeout, verify rollback behavior
 - [x] Multi-agent scheduling — configure 3+ agents with different schedules, verify independent execution
-- [ ] Agent timeout enforcement — configure short timeout, verify agent is killed after expiry
+- [x] Agent timeout enforcement — configure short timeout, verify agent is killed after expiry
 
 ## Medium Priority
 

@@ -448,4 +448,86 @@ EOF`,
 
     await stopActionLlamaScheduler(context, container);
   });
+
+  it("kills agent container after timeout expires", async () => {
+    const context = getTestContext();
+    const container = await setupLocalActionLlama(context);
+
+    // Create an agent whose pre-hook sleeps for 60 seconds but whose timeout
+    // is set to just 5 seconds. The host-side waitForExit timer should kill
+    // the container before the sleep completes, and the scheduler logs should
+    // record a timeout/error state for the agent.
+    const agentDir = "/home/testuser/test-project/agents/timeout-agent";
+    await context.executeInContainer(container, [
+      "bash", "-c", `mkdir -p ${agentDir}`,
+    ]);
+
+    await context.executeInContainer(container, [
+      "bash", "-c", `cat > ${agentDir}/SKILL.md << 'EOF'
+---
+description: "Timeout enforcement test agent"
+---
+
+# Timeout Agent
+
+You are a test agent for timeout enforcement. This agent's pre-hook sleeps longer than the configured timeout.
+EOF`,
+    ]);
+
+    // timeout = 5 seconds; pre-hook sleeps 60 seconds; schedule fires every second.
+    // The Docker container will be killed by the host after 5 seconds.
+    await context.executeInContainer(container, [
+      "bash", "-c", `cat > ${agentDir}/config.toml << 'EOF'
+models = ["sonnet"]
+credentials = ["github_token", "anthropic_key"]
+schedule = "* * * * * *"
+timeout = 5
+
+[hooks]
+pre = ["sleep 60"]
+EOF`,
+    ]);
+
+    await context.executeInContainer(container, [
+      "bash", "-c", `chown -R testuser:testuser ${agentDir}`,
+    ]);
+
+    // Start the scheduler with coverage instrumentation.
+    await startActionLlamaScheduler(context, container, { coverage: true });
+
+    // Wait up to 90 seconds for:
+    //   1. The cron to fire timeout-agent ("running")
+    //   2. The pre-hook sleep to be interrupted by the timeout after 5 seconds
+    //   3. The scheduler to log the resulting error state
+    let agentStarted = false;
+    let agentTimedOut = false;
+
+    for (let i = 0; i < 90; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const logs = await getSchedulerLogs(context, container);
+
+      if (!agentStarted && logs.includes("timeout-agent: running")) {
+        agentStarted = true;
+      }
+
+      // After a timeout, the plain logger emits "timeout-agent: error: <message>"
+      // where the message includes "timed out" from the Docker waitForExit rejection.
+      if (agentStarted && (logs.includes("timeout-agent: error") || logs.match(/timeout-agent.*timed out/i))) {
+        agentTimedOut = true;
+        break;
+      }
+    }
+
+    // The agent must have started (cron fired)
+    expect(agentStarted).toBe(true);
+    // The agent must have been killed (timeout enforced)
+    expect(agentTimedOut).toBe(true);
+
+    // Confirm the final log shows the error state, not a clean completion.
+    const finalLogs = await getSchedulerLogs(context, container);
+    // The scheduler should NOT log "timeout-agent: completed" — only an error.
+    expect(finalLogs).not.toMatch(/timeout-agent: completed/);
+
+    await stopActionLlamaScheduler(context, container);
+  });
 });
