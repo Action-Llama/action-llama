@@ -218,4 +218,176 @@ describe("WebhookRegistry", () => {
     expect(result.matched).toBe(0);
     expect(result.skipped).toBe(1);
   });
+
+  it("attaches receiptId to context when provided", () => {
+    registry.registerProvider(makeProvider());
+    let capturedContext: WebhookContext | undefined;
+    registry.addBinding({
+      agentName: "dev",
+      type: "github",
+      source: "MyOrg",
+      trigger: (ctx) => { capturedContext = ctx; return true; },
+    });
+
+    registry.dispatch("github", {}, '{}', {}, "receipt-abc-123");
+    expect(capturedContext?.receiptId).toBe("receipt-abc-123");
+  });
+
+  it("parses form-encoded body when content-type is application/x-www-form-urlencoded", () => {
+    registry.registerProvider(makeProvider());
+    const trigger = vi.fn().mockReturnValue(true);
+    registry.addBinding({ agentName: "dev", type: "github", source: "MyOrg", trigger });
+
+    const payloadJson = JSON.stringify({ action: "labeled" });
+    const rawBody = `payload=${encodeURIComponent(payloadJson)}`;
+    const headers = { "content-type": "application/x-www-form-urlencoded" };
+
+    const result = registry.dispatch("github", headers, rawBody, {});
+    expect(result.ok).toBe(true);
+    expect(trigger).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects form-encoded body missing payload field", () => {
+    registry.registerProvider(makeProvider());
+    const headers = { "content-type": "application/x-www-form-urlencoded" };
+    const rawBody = "other=value";
+
+    const result = registry.dispatch("github", headers, rawBody, {});
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("missing payload in form body");
+  });
+
+  describe("removeBindingsForAgent", () => {
+    it("removes all bindings for a given agent", () => {
+      registry.registerProvider(makeProvider());
+      registry.addBinding({ agentName: "dev", type: "github", source: "MyOrg", trigger: vi.fn().mockReturnValue(true) });
+      registry.addBinding({ agentName: "dev", type: "github", source: "MyOrg", trigger: vi.fn().mockReturnValue(true) });
+      registry.addBinding({ agentName: "other", type: "github", source: "MyOrg", trigger: vi.fn().mockReturnValue(true) });
+
+      const removed = registry.removeBindingsForAgent("dev");
+      expect(removed).toBe(2);
+
+      // Only "other" binding remains
+      const result = registry.dispatch("github", {}, '{}', {});
+      expect(result.matched).toBe(1);
+    });
+
+    it("returns 0 when agent has no bindings", () => {
+      const removed = registry.removeBindingsForAgent("nonexistent");
+      expect(removed).toBe(0);
+    });
+  });
+
+  describe("dryRunDispatch", () => {
+    it("returns ok:false for unknown source", () => {
+      const result = registry.dryRunDispatch("unknown", {}, '{}');
+      expect(result.ok).toBe(false);
+      expect(result.parseError).toContain("unknown source: unknown");
+      expect(result.bindings).toEqual([]);
+    });
+
+    it("returns ok:false when signature validation fails", () => {
+      registry.registerProvider(makeProvider({ validateRequest: () => null }));
+      const result = registry.dryRunDispatch("github", {}, '{}');
+      expect(result.ok).toBe(false);
+      expect(result.validationResult).toBe("signature validation failed");
+      expect(result.bindings).toEqual([]);
+    });
+
+    it("returns ok:false when JSON body is invalid", () => {
+      registry.registerProvider(makeProvider());
+      const result = registry.dryRunDispatch("github", {}, "not-json");
+      expect(result.ok).toBe(false);
+      expect(result.parseError).toMatch(/invalid JSON body/);
+    });
+
+    it("returns ok:true with parseError when event cannot be parsed", () => {
+      registry.registerProvider(makeProvider({ parseEvent: () => null }));
+      const result = registry.dryRunDispatch("github", {}, '{}');
+      expect(result.ok).toBe(true);
+      expect(result.context).toBeNull();
+      expect(result.parseError).toMatch(/could not be parsed/);
+    });
+
+    it("returns full context and matched bindings on success", () => {
+      registry.registerProvider(makeProvider());
+      registry.addBinding({
+        agentName: "dev",
+        type: "github",
+        source: "MyOrg",
+        trigger: vi.fn().mockReturnValue(true),
+      });
+
+      const result = registry.dryRunDispatch("github", {}, '{}');
+      expect(result.ok).toBe(true);
+      expect(result.context).not.toBeNull();
+      expect(result.context?.event).toBe("issues");
+      expect(result.bindings).toHaveLength(1);
+      expect(result.bindings[0].agentName).toBe("dev");
+      expect(result.bindings[0].matched).toBe(true);
+    });
+
+    it("marks binding as unmatched when type differs", () => {
+      registry.registerProvider(makeProvider());
+      registry.addBinding({
+        agentName: "other-agent",
+        type: "sentry",
+        trigger: vi.fn(),
+      });
+
+      const result = registry.dryRunDispatch("github", {}, '{}');
+      expect(result.bindings).toHaveLength(1);
+      expect(result.bindings[0].matched).toBe(false);
+      expect(result.bindings[0].reasons[0]).toMatch(/Type mismatch/);
+    });
+
+    it("marks binding as unmatched when source differs", () => {
+      registry.registerProvider(makeProvider());
+      registry.addBinding({
+        agentName: "dev",
+        type: "github",
+        source: "OtherOrg",
+        trigger: vi.fn(),
+      });
+
+      const result = registry.dryRunDispatch("github", {}, '{}');
+      expect(result.bindings[0].matched).toBe(false);
+      expect(result.bindings[0].reasons[0]).toMatch(/Source mismatch/);
+    });
+
+    it("marks binding as unmatched when filter does not match", () => {
+      registry.registerProvider(makeProvider({ matchesFilter: () => false }));
+      registry.addBinding({
+        agentName: "dev",
+        type: "github",
+        source: "MyOrg",
+        filter: { events: ["pull_request"] } as GitHubWebhookFilter,
+        trigger: vi.fn(),
+      });
+
+      const result = registry.dryRunDispatch("github", {}, '{}');
+      expect(result.bindings[0].matched).toBe(false);
+      expect(result.bindings[0].reasons[0]).toMatch(/Filter conditions not met/);
+      expect(result.bindings[0].filterDetails).toBeDefined();
+    });
+
+    it("parses form-encoded body in dry run mode", () => {
+      registry.registerProvider(makeProvider());
+      const payloadJson = JSON.stringify({ action: "created" });
+      const rawBody = `payload=${encodeURIComponent(payloadJson)}`;
+      const headers = { "content-type": "application/x-www-form-urlencoded" };
+
+      const result = registry.dryRunDispatch("github", headers, rawBody);
+      expect(result.ok).toBe(true);
+      expect(result.context).not.toBeNull();
+    });
+
+    it("returns ok:false when form-encoded body is missing payload field", () => {
+      registry.registerProvider(makeProvider());
+      const headers = { "content-type": "application/x-www-form-urlencoded" };
+      const result = registry.dryRunDispatch("github", headers, "other=val");
+      expect(result.ok).toBe(false);
+      expect(result.parseError).toMatch(/missing payload/);
+    });
+  });
 });
