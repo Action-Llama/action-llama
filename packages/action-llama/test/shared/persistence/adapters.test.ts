@@ -2,11 +2,40 @@
  * Tests for persistence layer adapters (StateStoreAdapter and StatsStoreAdapter).
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { StateStoreAdapter } from "../../../src/shared/persistence/adapters/state-store.js";
 import { StatsStoreAdapter } from "../../../src/shared/persistence/adapters/stats-store.js";
 import { createPersistenceStore, type PersistenceStore } from "../../../src/shared/persistence/index.js";
 import type { RunRecord, CallEdgeRecord } from "../../../src/stats/store.js";
+
+/** Build a minimal mock PersistenceStore whose query.sql is a controllable vi.fn() */
+function createMockPersistence() {
+  const sqlMock = vi.fn().mockResolvedValue([]);
+  const mockStore = {
+    events: {
+      stream: (_name: string) => ({
+        append: vi.fn().mockResolvedValue(undefined),
+        replay: vi.fn().mockReturnValue(
+          (async function* () {})()
+        ),
+        getSnapshot: vi.fn().mockResolvedValue(null),
+        saveSnapshot: vi.fn().mockResolvedValue(undefined),
+      }),
+      listStreams: vi.fn().mockResolvedValue([]),
+    },
+    kv: {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue(undefined),
+      delete: vi.fn().mockResolvedValue(undefined),
+      deleteAll: vi.fn().mockResolvedValue(undefined),
+      list: vi.fn().mockResolvedValue([]),
+    },
+    query: { sql: sqlMock },
+    transaction: vi.fn(async (fn: any) => fn(mockStore)),
+    close: vi.fn().mockResolvedValue(undefined),
+  } as unknown as PersistenceStore & { query: { sql: ReturnType<typeof vi.fn> } };
+  return { mockStore, sqlMock };
+}
 
 function makeRun(overrides: Partial<RunRecord> = {}): RunRecord {
   return {
@@ -185,6 +214,195 @@ describe("StatsStoreAdapter", () => {
   describe("close", () => {
     it("does not throw", () => {
       expect(() => adapter.close()).not.toThrow();
+    });
+  });
+});
+
+describe("StatsStoreAdapter – query methods", () => {
+  let sqlMock: ReturnType<typeof vi.fn>;
+  let mockAdapter: StatsStoreAdapter;
+
+  beforeEach(() => {
+    const { mockStore, sqlMock: s } = createMockPersistence();
+    sqlMock = s;
+    mockAdapter = new StatsStoreAdapter(mockStore);
+  });
+
+  describe("queryRunsByAgentPaginated", () => {
+    it("returns rows from sql query for a given agent", async () => {
+      const rows = [{ instanceId: "run-1", agentName: "dev" }];
+      sqlMock.mockResolvedValueOnce(rows);
+
+      const result = await mockAdapter.queryRunsByAgentPaginated("dev", 10, 0);
+      expect(result).toEqual(rows);
+      expect(sqlMock).toHaveBeenCalledWith(
+        expect.stringContaining("agent_name = ?"),
+        ["dev", 10, 0]
+      );
+    });
+
+    it("returns empty array when no rows found", async () => {
+      sqlMock.mockResolvedValueOnce([]);
+      const result = await mockAdapter.queryRunsByAgentPaginated("missing", 5, 0);
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe("countRunsByAgent", () => {
+    it("returns the count from the sql result", async () => {
+      sqlMock.mockResolvedValueOnce([{ count: 42 }]);
+      const count = await mockAdapter.countRunsByAgent("dev");
+      expect(count).toBe(42);
+    });
+
+    it("returns 0 when result is empty", async () => {
+      sqlMock.mockResolvedValueOnce([]);
+      const count = await mockAdapter.countRunsByAgent("empty-agent");
+      expect(count).toBe(0);
+    });
+
+    it("returns 0 when count field is missing", async () => {
+      sqlMock.mockResolvedValueOnce([{}]);
+      const count = await mockAdapter.countRunsByAgent("agent");
+      expect(count).toBe(0);
+    });
+  });
+
+  describe("queryRunByInstanceId", () => {
+    it("returns the first result row", async () => {
+      const row = { instanceId: "inst-123", agentName: "dev" };
+      sqlMock.mockResolvedValueOnce([row]);
+      const result = await mockAdapter.queryRunByInstanceId("inst-123");
+      expect(result).toEqual(row);
+    });
+
+    it("returns undefined when no rows found", async () => {
+      sqlMock.mockResolvedValueOnce([]);
+      const result = await mockAdapter.queryRunByInstanceId("nonexistent");
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe("queryRuns", () => {
+    it("queries without agent filter when no agent provided", async () => {
+      const rows = [{ instanceId: "r1" }, { instanceId: "r2" }];
+      sqlMock.mockResolvedValueOnce(rows);
+      const result = await mockAdapter.queryRuns({});
+      expect(result).toEqual(rows);
+      expect(sqlMock).toHaveBeenCalledWith(
+        expect.stringContaining("started_at >= ?"),
+        expect.arrayContaining([0, 100])
+      );
+    });
+
+    it("queries with agent filter when agent is provided", async () => {
+      const rows = [{ instanceId: "r1", agentName: "dev" }];
+      sqlMock.mockResolvedValueOnce(rows);
+      const result = await mockAdapter.queryRuns({ agent: "dev", limit: 50 });
+      expect(result).toEqual(rows);
+      expect(sqlMock).toHaveBeenCalledWith(
+        expect.stringContaining("agent_name = ?"),
+        expect.arrayContaining(["dev"])
+      );
+    });
+
+    it("uses default limit of 100 and since of 0", async () => {
+      sqlMock.mockResolvedValueOnce([]);
+      await mockAdapter.queryRuns();
+      expect(sqlMock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.arrayContaining([0, 100])
+      );
+    });
+
+    it("passes since parameter when provided", async () => {
+      sqlMock.mockResolvedValueOnce([]);
+      const since = Date.now() - 1000 * 60 * 60;
+      await mockAdapter.queryRuns({ since });
+      expect(sqlMock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.arrayContaining([since])
+      );
+    });
+  });
+
+  describe("queryAgentSummary", () => {
+    it("returns summary rows for all agents when no agent specified", async () => {
+      const rows = [{ agentName: "dev", totalRuns: 5 }];
+      sqlMock.mockResolvedValueOnce(rows);
+      const result = await mockAdapter.queryAgentSummary({});
+      expect(result).toEqual(rows);
+      expect(sqlMock).toHaveBeenCalledWith(
+        expect.stringContaining("GROUP BY agent_name"),
+        expect.arrayContaining([0])
+      );
+    });
+
+    it("returns summary rows for a specific agent", async () => {
+      const rows = [{ agentName: "dev", totalRuns: 3, errorRuns: 1 }];
+      sqlMock.mockResolvedValueOnce(rows);
+      const result = await mockAdapter.queryAgentSummary({ agent: "dev", since: 1000 });
+      expect(result).toEqual(rows);
+      expect(sqlMock).toHaveBeenCalledWith(
+        expect.stringContaining("agent_name = ?"),
+        expect.arrayContaining(["dev", 1000])
+      );
+    });
+
+    it("uses defaults when called with no arguments", async () => {
+      sqlMock.mockResolvedValueOnce([]);
+      await mockAdapter.queryAgentSummary();
+      expect(sqlMock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.arrayContaining([0])
+      );
+    });
+  });
+
+  describe("queryGlobalSummary", () => {
+    it("returns the first row when rows exist", async () => {
+      const summary = { totalRuns: 10, okRuns: 8, errorRuns: 2, totalTokens: 500, totalCost: 0.01 };
+      sqlMock.mockResolvedValueOnce([summary]);
+      const result = await mockAdapter.queryGlobalSummary(0);
+      expect(result).toEqual(summary);
+    });
+
+    it("returns default zeros when no rows returned", async () => {
+      sqlMock.mockResolvedValueOnce([]);
+      const result = await mockAdapter.queryGlobalSummary();
+      expect(result).toEqual({ totalRuns: 0, okRuns: 0, errorRuns: 0, totalTokens: 0, totalCost: 0 });
+    });
+
+    it("passes since parameter to the sql query", async () => {
+      sqlMock.mockResolvedValueOnce([]);
+      const since = 9999;
+      await mockAdapter.queryGlobalSummary(since);
+      expect(sqlMock).toHaveBeenCalledWith(expect.any(String), [since]);
+    });
+  });
+
+  describe("queryCallGraph", () => {
+    it("returns call graph rows", async () => {
+      const rows = [{ callerAgent: "orch", targetAgent: "worker", count: 3 }];
+      sqlMock.mockResolvedValueOnce(rows);
+      const result = await mockAdapter.queryCallGraph({ since: 0 });
+      expect(result).toEqual(rows);
+      expect(sqlMock).toHaveBeenCalledWith(
+        expect.stringContaining("caller_agent"),
+        expect.arrayContaining([0])
+      );
+    });
+
+    it("returns empty array when no edges found", async () => {
+      sqlMock.mockResolvedValueOnce([]);
+      const result = await mockAdapter.queryCallGraph({});
+      expect(result).toEqual([]);
+    });
+
+    it("uses since=0 by default", async () => {
+      sqlMock.mockResolvedValueOnce([]);
+      await mockAdapter.queryCallGraph();
+      expect(sqlMock).toHaveBeenCalledWith(expect.any(String), [0]);
     });
   });
 });
