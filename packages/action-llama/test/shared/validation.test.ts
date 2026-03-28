@@ -429,5 +429,89 @@ describe("validation", () => {
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0].message).toContain("Configuration must be an object");
     });
+
+    it("uses path prefix in nested field paths when path is provided", () => {
+      const nestedSchema: ConfigSchema = {
+        required: new Set(["host"]),
+        optional: new Set(["port"]),
+        nested: {
+          sub: {
+            required: new Set(["key"]),
+            optional: new Set(),
+            nested: {}
+          }
+        }
+      };
+
+      const config = { sub: { badField: "oops" } };
+      const result = validateConfigSchema(config, nestedSchema, "parent");
+
+      // The nested path should be "parent.sub.key" for the missing required field
+      const keyError = result.errors.find((e) => e.field?.includes("sub.key"));
+      expect(keyError).toBeDefined();
+      expect(keyError!.field).toBe("parent.sub.key");
+    });
+
+    it("validates nested objects recursively and propagates errors", () => {
+      const nestedSchema: ConfigSchema = {
+        required: new Set(),
+        optional: new Set(["name"]),
+        nested: {
+          database: {
+            required: new Set(["host"]),
+            optional: new Set(["port"]),
+            nested: {}
+          }
+        }
+      };
+
+      const config = { database: { port: 5432 } }; // missing required "host"
+      const result = validateConfigSchema(config, nestedSchema);
+
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e) => e.message.includes('"host" is missing'))).toBe(true);
+    });
+  });
+
+  describe("detectUnknownFields — edge cases", () => {
+    const simpleSchema: ConfigSchema = {
+      required: new Set(["name"]),
+      optional: new Set(["description"]),
+      nested: {}
+    };
+
+    it("returns empty array for null input", () => {
+      const result = detectUnknownFields(null, simpleSchema);
+      expect(result).toEqual([]);
+    });
+
+    it("returns empty array for non-object input", () => {
+      const result = detectUnknownFields("string input", simpleSchema);
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe("validateGlobalConfig — with raw config", () => {
+    it("validates raw global config schema and propagates errors", () => {
+      const config: GlobalConfig = {};
+      const raw = { unknownField: "value" };
+
+      // Unknown fields don't produce schema errors (only detectUnknownFields does that)
+      // Schema errors come from required fields being missing
+      const result = validateGlobalConfig(config, raw);
+      // Global config has no required fields, so it should be valid
+      expect(result.valid).toBe(true);
+    });
+
+    it("propagates schema validation results when raw is provided", () => {
+      const config: GlobalConfig = {
+        gateway: { url: "http://0.0.0.0:8080" },
+      };
+      const raw = { gateway: { url: "http://0.0.0.0:8080" } };
+
+      const result = validateGlobalConfig(config, raw);
+      // Should produce the 0.0.0.0 warning
+      expect(result.warnings.some((w) => w.message.includes("0.0.0.0"))).toBe(true);
+    });
   });
 });
