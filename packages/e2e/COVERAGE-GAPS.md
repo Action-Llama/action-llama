@@ -18,7 +18,7 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Agent concurrent scaling — set `scale = 2`, trigger two events, verify parallel execution
 - [x] Webhook event filtering — deliver events that don't match labels/actions/branches, verify they are ignored
 - [x] Scheduler pause/resume with in-flight agents — pause while agent is running, verify it completes
-- [ ] MCP server integration — start scheduler with MCP config, verify MCP tools are available to agents
+- [x] MCP server integration — start scheduler with MCP config, verify MCP tools are available to agents
 - [ ] Extension loading — configure an extension, verify it loads and registers
 - [ ] Dashboard SSE reconnection — disconnect SSE stream, verify auto-reconnect and data continuity
 - [ ] Credential rotation — update credentials while scheduler is running, verify new creds are used

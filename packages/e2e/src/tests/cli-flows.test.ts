@@ -530,4 +530,178 @@ EOF`,
 
     await stopActionLlamaScheduler(context, container);
   });
+
+  it("al mcp init creates .mcp.json with action-llama server entry", async () => {
+    const context = getTestContext();
+    const container = await setupLocalActionLlama(context);
+
+    // Run al mcp init in the test project directory
+    const initOutput = await context.executeInContainer(container, [
+      "bash",
+      "-c",
+      "cd /home/testuser/test-project && al mcp init",
+    ]);
+
+    // Verify the command reported success
+    expect(initOutput).toContain(".mcp.json");
+
+    // Verify the .mcp.json file was created
+    const mcpJsonExists = await context.executeInContainer(container, [
+      "bash",
+      "-c",
+      "test -f /home/testuser/test-project/.mcp.json && echo 'exists' || echo 'missing'",
+    ]);
+    expect(mcpJsonExists.trim()).toBe("exists");
+
+    // Parse and verify the content of .mcp.json
+    const mcpJsonContent = await context.executeInContainer(container, [
+      "cat",
+      "/home/testuser/test-project/.mcp.json",
+    ]);
+    const mcpJson = JSON.parse(mcpJsonContent);
+
+    // Must have mcpServers key with action-llama entry
+    expect(mcpJson).toHaveProperty("mcpServers");
+    expect(mcpJson.mcpServers).toHaveProperty("action-llama");
+
+    const entry = mcpJson.mcpServers["action-llama"];
+    expect(entry.command).toBe("al");
+    expect(Array.isArray(entry.args)).toBe(true);
+    expect(entry.args).toContain("mcp");
+    expect(entry.args).toContain("serve");
+  });
+
+  it("al mcp init is idempotent — running it twice overwrites existing entry", async () => {
+    const context = getTestContext();
+    const container = await setupLocalActionLlama(context);
+
+    // Run al mcp init twice
+    await context.executeInContainer(container, [
+      "bash",
+      "-c",
+      "cd /home/testuser/test-project && al mcp init",
+    ]);
+    const secondOutput = await context.executeInContainer(container, [
+      "bash",
+      "-c",
+      "cd /home/testuser/test-project && al mcp init",
+    ]);
+
+    // Second run should note it is overwriting
+    expect(secondOutput).toMatch(/already has|Overwrit/i);
+
+    // File must still be valid JSON with the action-llama entry
+    const mcpJsonContent = await context.executeInContainer(container, [
+      "cat",
+      "/home/testuser/test-project/.mcp.json",
+    ]);
+    const mcpJson = JSON.parse(mcpJsonContent);
+    expect(mcpJson.mcpServers["action-llama"]).toBeDefined();
+    expect(mcpJson.mcpServers["action-llama"].command).toBe("al");
+  });
+
+  it("al mcp serve responds to MCP initialize request with expected tools", async () => {
+    const context = getTestContext();
+    const container = await setupLocalActionLlama(context);
+
+    // Send the MCP initialize request to al mcp serve over stdin/stdout.
+    // The MCP protocol uses newline-delimited JSON-RPC 2.0 messages.
+    // We pipe a single initialize message and read the response.
+    const initRequest = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2024-11-05",
+        capabilities: {},
+        clientInfo: { name: "e2e-test", version: "1.0" },
+      },
+    });
+
+    // Run al mcp serve, send the initialize message, then close stdin and read stdout.
+    // We use a 10-second timeout to avoid hanging.
+    const output = await context.executeInContainer(container, [
+      "bash",
+      "-c",
+      `cd /home/testuser/test-project && echo '${initRequest}' | timeout 10 al mcp serve 2>/dev/null || true`,
+    ]);
+
+    // The response must be valid JSON-RPC with a result
+    // al mcp serve writes newline-delimited JSON to stdout
+    const lines = output
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.startsWith("{"));
+
+    expect(lines.length).toBeGreaterThan(0);
+
+    const response = JSON.parse(lines[0]);
+    expect(response.jsonrpc).toBe("2.0");
+    expect(response.id).toBe(1);
+    expect(response).toHaveProperty("result");
+    expect(response.result).toHaveProperty("capabilities");
+    expect(response.result).toHaveProperty("serverInfo");
+    expect(response.result.serverInfo.name).toBe("action-llama");
+  });
+
+  it("al mcp serve lists expected tools via tools/list request", async () => {
+    const context = getTestContext();
+    const container = await setupLocalActionLlama(context);
+
+    // Send initialize followed by tools/list — both newline-delimited
+    const initRequest = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2024-11-05",
+        capabilities: {},
+        clientInfo: { name: "e2e-test", version: "1.0" },
+      },
+    });
+    const toolsListRequest = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/list",
+      params: {},
+    });
+
+    const messages = `${initRequest}\n${toolsListRequest}`;
+
+    const output = await context.executeInContainer(container, [
+      "bash",
+      "-c",
+      `cd /home/testuser/test-project && printf '%s\\n' '${initRequest}' '${toolsListRequest}' | timeout 10 al mcp serve 2>/dev/null || true`,
+    ]);
+
+    // Parse all JSON lines from the output
+    const lines = output
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.startsWith("{"));
+
+    expect(lines.length).toBeGreaterThanOrEqual(2);
+
+    // Find the tools/list response (id: 2)
+    const toolsResponse = lines
+      .map((l) => {
+        try { return JSON.parse(l); } catch { return null; }
+      })
+      .filter((r) => r !== null && r.id === 2)[0];
+
+    expect(toolsResponse).toBeDefined();
+    expect(toolsResponse.result).toHaveProperty("tools");
+    expect(Array.isArray(toolsResponse.result.tools)).toBe(true);
+
+    // Verify core action-llama tools are registered
+    const toolNames = toolsResponse.result.tools.map(
+      (t: { name: string }) => t.name,
+    );
+    expect(toolNames).toContain("al_start");
+    expect(toolNames).toContain("al_stop");
+    expect(toolNames).toContain("al_status");
+    expect(toolNames).toContain("al_agents");
+    expect(toolNames).toContain("al_run");
+    expect(toolNames).toContain("al_logs");
+  });
 });
