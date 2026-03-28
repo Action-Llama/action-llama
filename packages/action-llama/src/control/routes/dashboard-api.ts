@@ -9,7 +9,7 @@ import type { Hono } from "hono";
 import type { StatusTracker } from "../../tui/status-tracker.js";
 import type { StatsStore } from "../../stats/store.js";
 import type { SessionStore } from "../session-store.js";
-import { safeCompare } from "../auth.js";
+import { safeCompare, type ApiKeySource } from "../auth.js";
 import { loadAgentConfig, getProjectScale } from "../../shared/config.js";
 import { parseFrontmatter } from "../../shared/frontmatter.js";
 import { existsSync, readFileSync } from "fs";
@@ -21,7 +21,7 @@ import { resolve } from "path";
  */
 export function registerAuthApiRoutes(
   app: Hono,
-  apiKey?: string,
+  apiKey?: ApiKeySource,
   sessionStore?: SessionStore,
   hostname?: string,
 ): void {
@@ -29,14 +29,18 @@ export function registerAuthApiRoutes(
     if (!apiKey) {
       return c.json({ success: true });
     }
+    const currentKey = typeof apiKey === "function" ? await apiKey() : apiKey;
+    if (!currentKey) {
+      return c.json({ success: true });
+    }
     const body = await c.req.json<{ key?: string }>();
     const key = body.key ?? "";
-    if (safeCompare(key, apiKey)) {
+    if (safeCompare(key, currentKey)) {
       let sessionValue: string;
       if (sessionStore) {
         sessionValue = await sessionStore.createSession();
       } else {
-        sessionValue = apiKey;
+        sessionValue = currentKey;
       }
       const isLocalhost = !hostname || hostname === "127.0.0.1" || hostname === "localhost";
       const securePart = isLocalhost ? "" : "; Secure";

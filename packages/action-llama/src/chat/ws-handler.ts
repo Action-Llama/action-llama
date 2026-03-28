@@ -9,7 +9,7 @@
 import type { Server } from "http";
 import type { IncomingMessage } from "http";
 import { WebSocketServer, WebSocket, type RawData } from "ws";
-import { safeCompare } from "../control/auth.js";
+import { safeCompare, type ApiKeySource } from "../control/auth.js";
 import type { ChatSessionManager } from "./session-manager.js";
 import { validateInbound, validateOutbound, RateLimiter } from "./validation.js";
 import type { SessionStore } from "../control/session-store.js";
@@ -36,7 +36,7 @@ export interface ChatWebSocketState {
 export function attachChatWebSocket(
   server: Server,
   sessionManager: ChatSessionManager,
-  apiKey: string,
+  apiKey: ApiKeySource,
   sessionStore?: SessionStore,
   logger?: Logger,
 ): ChatWebSocketState {
@@ -263,14 +263,16 @@ export function attachChatWebSocket(
 
 async function authenticateBrowser(
   req: IncomingMessage,
-  apiKey: string,
+  apiKey: ApiKeySource,
   sessionStore?: SessionStore,
 ): Promise<boolean> {
+  const currentKey = typeof apiKey === "function" ? await apiKey() : apiKey;
+
   // Check Authorization header
   const authHeader = req.headers.authorization;
-  if (authHeader?.startsWith("Bearer ")) {
+  if (authHeader?.startsWith("Bearer ") && currentKey !== undefined) {
     const token = authHeader.slice(7);
-    if (safeCompare(token, apiKey)) return true;
+    if (safeCompare(token, currentKey)) return true;
   }
 
   // Check al_session cookie
@@ -280,8 +282,8 @@ async function authenticateBrowser(
     if (sessionStore) {
       const session = await sessionStore.getSession(sessionToken);
       if (session) return true;
-    } else {
-      if (safeCompare(sessionToken, apiKey)) return true;
+    } else if (currentKey !== undefined) {
+      if (safeCompare(sessionToken, currentKey)) return true;
     }
   }
 
