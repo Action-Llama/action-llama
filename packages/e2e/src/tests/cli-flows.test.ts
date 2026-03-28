@@ -103,7 +103,9 @@ You are a test agent for lifecycle management. Output your status and wait.
       "bash", "-c", "cd /home/testuser/test-project && al stat"
     ]);
     expect(statusOutput).toContain("lifecycle-agent");
-    // The TRIGGER column shows "cron" for schedule-driven agents
+    // The STATUS column shows "Idle" when no agent instance is actively running
+    // (agents are waiting for their next cron trigger). Check for "cron" in the
+    // TRIGGER column instead — it always appears for agents with a cron schedule.
     expect(statusOutput).toContain("cron");
 
     // Check scheduler logs
