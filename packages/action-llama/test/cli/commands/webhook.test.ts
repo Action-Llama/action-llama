@@ -231,5 +231,131 @@ describe("webhook command", () => {
         expect.stringContaining("al run matching-agent")
       );
     });
+
+    it("should throw when no source is detected and none provided", async () => {
+      // Create a project with an agent but no recognizable webhook headers
+      mkdirSync(resolve(projectPath, "agents", "myagent"), { recursive: true });
+      writeFileSync(join(projectPath, "agents", "myagent", "SKILL.md"), "---\n---\n# agent\n");
+      writeFileSync(join(projectPath, "agents", "myagent", "config.toml"), stringifyTOML({
+        models: ["sonnet"], webhooks: []
+      }));
+      writeFileSync(join(projectPath, "config.toml"), stringifyTOML({
+        models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+      }));
+
+      const fixture = {
+        headers: { "content-type": "application/json" }, // no recognizable source header
+        body: { action: "opened" }
+      };
+      const fixturePath = join(tmpDir, "no-source.json");
+      writeFileSync(fixturePath, JSON.stringify(fixture));
+
+      // Should throw in test mode
+      await expect(execute("replay", fixturePath, { project: projectPath }))
+        .rejects.toThrow("Could not determine webhook source");
+    });
+
+    it("should warn about unknown webhook types in config", async () => {
+      mkdirSync(resolve(projectPath, "agents"), { recursive: true });
+      // Config with unknown webhook type
+      writeFileSync(join(projectPath, "config.toml"), stringifyTOML({
+        models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+        webhooks: {
+          custom: { type: "custom-provider", secret: "abc" }
+        }
+      }));
+
+      const fixture = {
+        headers: { "x-test-event": "test" },
+        body: { event: "test", sender: { login: "tester" } }
+      };
+      const fixturePath = join(tmpDir, "test-fixture.json");
+      writeFileSync(fixturePath, JSON.stringify(fixture));
+
+      await execute("replay", fixturePath, { project: projectPath, source: "test" });
+
+      expect(mockConsoleWarn).toHaveBeenCalledWith(
+        expect.stringContaining("Unknown webhook type: custom-provider")
+      );
+    });
+
+    it("should handle createFilterFromTrigger with all filter fields", async () => {
+      createAgent("filter-agent", {
+        models: ["sonnet"],
+        webhooks: [{
+          source: "github",
+          events: ["issues"],
+          actions: ["opened"],
+          repos: ["myrepo"],
+          org: "myorg",
+          orgs: ["org1"],
+          organizations: ["orgA"],
+          labels: ["bug"],
+          assignee: "user1",
+          author: "user2",
+          branches: ["main"],
+          resources: ["issue"],
+        }],
+      });
+      writeFileSync(join(projectPath, "config.toml"), stringifyTOML({
+        models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+        webhooks: { github: { type: "github", secret: "abc" } }
+      }));
+
+      const fixture = {
+        headers: { "x-github-event": "issues" },
+        body: {
+          action: "opened",
+          repository: { full_name: "myorg/myrepo" },
+          issue: {
+            number: 1,
+            title: "Test",
+            html_url: "https://github.com/myorg/myrepo/issues/1",
+            user: { login: "user2" },
+            labels: [{ name: "bug" }]
+          },
+          sender: { login: "user1" }
+        }
+      };
+      const fixturePath = join(tmpDir, "filter-fixture.json");
+      writeFileSync(fixturePath, JSON.stringify(fixture));
+
+      await execute("replay", fixturePath, { project: projectPath, source: "github" });
+      // Should display results without throwing
+      expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining("🔍 Webhook Simulation Results"));
+    });
+
+    it("should show interactive run no-matched message when --run but no matches", async () => {
+      // Create agent with webhook that won't match
+      createAgent("nonmatching-agent", {
+        models: ["sonnet"],
+        webhooks: [{ source: "github", events: ["push"] }], // only push events
+      });
+      writeFileSync(join(projectPath, "config.toml"), stringifyTOML({
+        models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+        webhooks: { github: { type: "github" } }
+      }));
+
+      const fixture = {
+        headers: { "x-github-event": "issues" }, // issues event, not push
+        body: {
+          action: "opened",
+          repository: { full_name: "owner/repo" },
+          issue: {
+            number: 5, title: "Bug",
+            html_url: "https://github.com/owner/repo/issues/5",
+            user: { login: "author" }, labels: []
+          },
+          sender: { login: "sender" }
+        }
+      };
+      const fixturePath = join(tmpDir, "no-match-fixture.json");
+      writeFileSync(fixturePath, JSON.stringify(fixture));
+
+      await execute("replay", fixturePath, { project: projectPath, source: "github", run: true });
+
+      // When --run is specified but no matched agents, shows a warning
+      expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining("Webhook Simulation Results"));
+    });
   });
 });
