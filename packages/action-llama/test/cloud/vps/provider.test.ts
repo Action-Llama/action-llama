@@ -148,4 +148,142 @@ describe("VpsProvider", () => {
     const sshCmds = mockExecFile.mock.calls.map((c: any[]) => (c[1] as string[]).join(" "));
     expect(sshCmds.some((cmd: string) => cmd.includes("docker rm -f"))).toBe(true);
   });
+
+  it("validateRoles throws when Docker is not available on VPS", async () => {
+    mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: any, cb: Function) => {
+      const command = args[args.length - 1];
+      if (command === "echo ok") {
+        cb(null, "ok\n", "");
+      } else if (command.includes("docker info")) {
+        // Docker check fails
+        const err: any = new Error("docker info failed");
+        err.code = 1;
+        cb(err, "", "Cannot connect to the Docker daemon");
+      } else {
+        cb(null, "", "");
+      }
+    });
+
+    await expect(provider.validateRoles("/some/path")).rejects.toThrow(
+      `Docker not available on 1.2.3.4`
+    );
+  });
+
+  it("deployScheduler throws when docker run fails", async () => {
+    mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: any, cb: Function) => {
+      const command = args[args.length - 1];
+      if (command.includes("docker rm -f")) {
+        cb(null, "", "");
+      } else if (command.includes("docker run")) {
+        // Simulate failure: exec callback with an error so exitCode != 0
+        const err: any = new Error("port already in use");
+        err.code = 125;
+        cb(err, "", "port already in use");
+      } else {
+        cb(null, "", "");
+      }
+    });
+
+    await expect(provider.deployScheduler("al-scheduler:sha123")).rejects.toThrow(
+      "Failed to start scheduler"
+    );
+  });
+
+  it("getSchedulerLogs returns log lines", async () => {
+    mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+      cb(null, "line 1\nline 2\nline 3\n", "");
+    });
+
+    const logs = await provider.getSchedulerLogs(10);
+    expect(logs).toEqual(["line 1", "line 2", "line 3"]);
+  });
+
+  it("getSchedulerLogs returns empty array when container not found", async () => {
+    mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+      const err: any = new Error("No such container");
+      err.code = 1;
+      cb(err, "", "No such container");
+    });
+
+    const logs = await provider.getSchedulerLogs(10);
+    expect(logs).toEqual([]);
+  });
+
+  it("followSchedulerLogs streams stdout lines", () => {
+    const { EventEmitter } = require("events");
+    const mockProc = {
+      stdout: new EventEmitter(),
+      stderr: new EventEmitter(),
+      kill: vi.fn(),
+    };
+    mockSpawn.mockReturnValue(mockProc);
+
+    const receivedLines: string[] = [];
+    provider.followSchedulerLogs((line) => receivedLines.push(line));
+
+    // Simulate data arriving on stdout
+    mockProc.stdout.emit("data", Buffer.from("hello world\n"));
+    mockProc.stdout.emit("data", Buffer.from("second line\n"));
+
+    expect(receivedLines).toContain("hello world");
+    expect(receivedLines).toContain("second line");
+  });
+
+  it("followSchedulerLogs emits stderr lines via onStderr callback", () => {
+    const { EventEmitter } = require("events");
+    const mockProc = {
+      stdout: new EventEmitter(),
+      stderr: new EventEmitter(),
+      kill: vi.fn(),
+    };
+    mockSpawn.mockReturnValue(mockProc);
+
+    const stderrLines: string[] = [];
+    provider.followSchedulerLogs(() => {}, (text) => stderrLines.push(text));
+
+    mockProc.stderr.emit("data", Buffer.from("error occurred"));
+
+    expect(stderrLines).toContain("error occurred");
+  });
+
+  it("followSchedulerLogs stop flushes remaining buffer and kills process", () => {
+    const { EventEmitter } = require("events");
+    const mockProc = {
+      stdout: new EventEmitter(),
+      stderr: new EventEmitter(),
+      kill: vi.fn(),
+    };
+    mockSpawn.mockReturnValue(mockProc);
+
+    const receivedLines: string[] = [];
+    const handle = provider.followSchedulerLogs((line) => receivedLines.push(line));
+
+    // Partial line (no trailing newline)
+    mockProc.stdout.emit("data", Buffer.from("partial line without newline"));
+
+    handle.stop();
+
+    expect(receivedLines).toContain("partial line without newline");
+    expect(mockProc.kill).toHaveBeenCalled();
+  });
+
+  it("followSchedulerLogs stop does not flush empty buffer", () => {
+    const { EventEmitter } = require("events");
+    const mockProc = {
+      stdout: new EventEmitter(),
+      stderr: new EventEmitter(),
+      kill: vi.fn(),
+    };
+    mockSpawn.mockReturnValue(mockProc);
+
+    const receivedLines: string[] = [];
+    const handle = provider.followSchedulerLogs((line) => receivedLines.push(line));
+
+    // No data emitted
+    handle.stop();
+
+    // Nothing in the buffer, so onLine should not be called
+    expect(receivedLines).toHaveLength(0);
+    expect(mockProc.kill).toHaveBeenCalled();
+  });
 });
