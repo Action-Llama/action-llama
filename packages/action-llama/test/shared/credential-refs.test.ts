@@ -54,6 +54,21 @@ describe("collectCredentialRefs", () => {
     expect(refs.has("github_webhook_secret:default")).toBe(true);
   });
 
+  it("skips webhook secret when allowUnsigned is true", () => {
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadAgentConfig.mockReturnValue({
+      name: "dev",
+      credentials: [],
+      webhooks: [{ source: "my-github", events: ["issues"] }],
+    });
+
+    const refs = collectCredentialRefs("/tmp/project", {
+      webhooks: { "my-github": { type: "github", allowUnsigned: true } },
+    });
+    expect(refs.has("github_webhook_secret:default")).toBe(false);
+    expect(refs.size).toBe(0);
+  });
+
   it("returns empty set when no agents", () => {
     mockDiscoverAgents.mockReturnValue([]);
     const refs = collectCredentialRefs("/tmp/project", {});
