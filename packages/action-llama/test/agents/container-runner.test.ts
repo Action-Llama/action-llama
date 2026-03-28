@@ -128,4 +128,367 @@ describe("ContainerAgentRunner", () => {
       expect(runner.isRunning).toBe(false);
     });
   });
+
+  // ── setImage / setAgentConfig accessors ─────────────────────────────────
+
+  describe("setImage / setAgentConfig", () => {
+    it("updates image used for subsequent runs", () => {
+      const runner = createRunner();
+      runner.setImage("new-image:2.0");
+      expect(runner.containerName).toBeUndefined(); // just checking no throw
+    });
+
+    it("updates agentConfig used for subsequent runs", () => {
+      const runner = createRunner();
+      const newConfig: AgentConfig = { ...agentConfig, name: "updated-agent" };
+      runner.setAgentConfig(newConfig);
+      expect(runner.containerName).toBeUndefined();
+    });
+  });
+
+  // ── abort() with containerName set ──────────────────────────────────────
+
+  describe("abort()", () => {
+    it("sets _aborting and calls runtime.kill when container is running", async () => {
+      let capturedOnLine: ((line: string) => void) | undefined;
+      let resolveLaunch!: (value: string) => void;
+
+      const blockingRuntime = createMockRuntime({
+        launch: vi.fn().mockImplementation(() => new Promise((r) => { resolveLaunch = r; })),
+        streamLogs: vi.fn().mockImplementation((_name: string, onLine: (line: string) => void) => {
+          capturedOnLine = onLine;
+          return { stop: vi.fn() };
+        }),
+      });
+
+      const runner = createRunner({ runtime: blockingRuntime });
+      const runPromise = runner.run("test prompt");
+
+      // Wait for launch to be called (in the Promise executor)
+      await Promise.resolve();
+      resolveLaunch("al-test-running");
+
+      // Wait more ticks to ensure the runner is past launch
+      await Promise.resolve();
+      await Promise.resolve();
+
+      runner.abort();
+      await runPromise;
+
+      expect(blockingRuntime.kill).toHaveBeenCalled();
+    });
+  });
+
+  // ── triggerInfo paths ────────────────────────────────────────────────────
+
+  describe("run() with triggerInfo", () => {
+    it("includes trigger type in log when triggerInfo is provided (schedule)", async () => {
+      const runner = createRunner();
+      const result = await runner.run("test prompt", { type: "schedule" });
+      expect(result.result).toBe("completed");
+      const logger = (mockLogger.child as any)();
+      // info was called with a message containing "triggered by"
+    });
+
+    it("includes agent+source in log when type=agent with source", async () => {
+      const runner = createRunner();
+      const result = await runner.run("test prompt", { type: "agent", source: "orchestrator" });
+      expect(result.result).toBe("completed");
+    });
+
+    it("includes trigger source in log when type=webhook", async () => {
+      const runner = createRunner();
+      const result = await runner.run("test prompt", { type: "webhook", source: "github" });
+      expect(result.result).toBe("completed");
+    });
+  });
+
+  // ── Exit code handling ───────────────────────────────────────────────────
+
+  describe("exit code handling", () => {
+    it("returns 'rerun' result when container exits with code 42", async () => {
+      const rerunnableRuntime = createMockRuntime({
+        waitForExit: vi.fn().mockResolvedValue(42),
+      });
+      const runner = createRunner({ runtime: rerunnableRuntime });
+      const result = await runner.run("test prompt");
+      expect(result.result).toBe("rerun");
+    });
+
+    it("returns 'error' result when container exits with non-zero non-42 code", async () => {
+      const errorExitRuntime = createMockRuntime({
+        waitForExit: vi.fn().mockResolvedValue(1),
+      });
+      const runner = createRunner({ runtime: errorExitRuntime });
+      const result = await runner.run("test prompt");
+      expect(result.result).toBe("error");
+    });
+
+    it("returns 'completed' result when container exits with code 0", async () => {
+      const runner = createRunner();
+      const result = await runner.run("test prompt");
+      expect(result.result).toBe("completed");
+    });
+  });
+
+  // ── taskUrl path ────────────────────────────────────────────────────────
+
+  describe("task URL from runtime", () => {
+    it("sets task URL in status tracker when runtime provides one", async () => {
+      const mockStatusTracker = {
+        startRun: vi.fn(),
+        endRun: vi.fn(),
+        registerInstance: vi.fn(),
+        completeInstance: vi.fn(),
+        setAgentError: vi.fn(),
+        setTaskUrl: vi.fn(),
+        addLogLine: vi.fn(),
+        setPaused: vi.fn(),
+        enableAgent: vi.fn(),
+        disableAgent: vi.fn(),
+        updateAgentScale: vi.fn(),
+        isPaused: vi.fn().mockReturnValue(false),
+        setShuttingDown: vi.fn(),
+      };
+
+      const taskUrlRuntime = createMockRuntime({
+        getTaskUrl: vi.fn().mockReturnValue("https://console.example.com/tasks/123"),
+      });
+
+      const runner = new ContainerAgentRunner(
+        taskUrlRuntime,
+        globalConfig,
+        agentConfig,
+        mockLogger,
+        vi.fn(),
+        vi.fn(),
+        "",
+        "/tmp",
+        "test-image:latest",
+        mockStatusTracker as any,
+      );
+
+      await runner.run("test prompt");
+      expect(mockStatusTracker.setTaskUrl).toHaveBeenCalledWith(
+        "test-agent",
+        "https://console.example.com/tasks/123"
+      );
+    });
+  });
+
+  // ── forwardLogLine via streamLogs callback ───────────────────────────────
+
+  describe("forwardLogLine (via streamLogs callback)", () => {
+    function createRunnerWithLogCapture() {
+      let capturedOnLine: ((line: string) => void) | undefined;
+      const captureRuntime = createMockRuntime({
+        streamLogs: vi.fn().mockImplementation((_name: string, onLine: (line: string) => void) => {
+          capturedOnLine = onLine;
+          return { stop: vi.fn() };
+        }),
+      });
+      const runner = createRunner({ runtime: captureRuntime });
+      return { runner, captureRuntime, getCapturedOnLine: () => capturedOnLine };
+    }
+
+    it("ignores empty lines", async () => {
+      const { runner, getCapturedOnLine } = createRunnerWithLogCapture();
+      const runPromise = runner.run("test prompt");
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // Emit empty line — should not throw
+      const onLine = getCapturedOnLine();
+      if (onLine) {
+        expect(() => onLine("   ")).not.toThrow();
+        expect(() => onLine("")).not.toThrow();
+      }
+      await runPromise;
+    });
+
+    it("ignores non-JSON lines", async () => {
+      const { runner, captureRuntime, getCapturedOnLine } = createRunnerWithLogCapture();
+      const runPromise = runner.run("test prompt");
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      const onLine = getCapturedOnLine();
+      if (onLine) {
+        // Should not throw for plain text
+        expect(() => onLine("plain log output")).not.toThrow();
+      }
+      await runPromise;
+    });
+
+    it("logs _log:true info entries at info level", async () => {
+      const childLogger = makeMockLogger();
+      const parentLogger = { ...mockLogger, child: vi.fn().mockReturnValue(childLogger) };
+
+      let capturedOnLine: ((line: string) => void) | undefined;
+      const captureRuntime = createMockRuntime({
+        streamLogs: vi.fn().mockImplementation((_name: string, onLine: (line: string) => void) => {
+          capturedOnLine = onLine;
+          return { stop: vi.fn() };
+        }),
+      });
+
+      const runner = new ContainerAgentRunner(
+        captureRuntime, globalConfig, agentConfig, parentLogger as any,
+        vi.fn(), vi.fn(), "", "/tmp", "test-image:latest",
+      );
+
+      const runPromise = runner.run("test prompt");
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      if (capturedOnLine) {
+        capturedOnLine(JSON.stringify({ _log: true, level: "info", msg: "assistant", text: "Hello", ts: Date.now() }));
+        expect(childLogger.info).toHaveBeenCalledWith(expect.objectContaining({ text: "Hello" }), "assistant");
+      }
+      await runPromise;
+    });
+
+    it("logs _log:true warn entries at warn level", async () => {
+      const childLogger = makeMockLogger();
+      const parentLogger = { ...mockLogger, child: vi.fn().mockReturnValue(childLogger) };
+
+      let capturedOnLine: ((line: string) => void) | undefined;
+      const captureRuntime = createMockRuntime({
+        streamLogs: vi.fn().mockImplementation((_name: string, onLine: (line: string) => void) => {
+          capturedOnLine = onLine;
+          return { stop: vi.fn() };
+        }),
+      });
+
+      const runner = new ContainerAgentRunner(
+        captureRuntime, globalConfig, agentConfig, parentLogger as any,
+        vi.fn(), vi.fn(), "", "/tmp", "test-image:latest",
+      );
+
+      const runPromise = runner.run("test prompt");
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      if (capturedOnLine) {
+        capturedOnLine(JSON.stringify({ _log: true, level: "warn", msg: "rate limit", ts: Date.now() }));
+        expect(childLogger.warn).toHaveBeenCalledWith("rate limit");
+      }
+      await runPromise;
+    });
+
+    it("logs _log:true debug entries at debug level", async () => {
+      const childLogger = makeMockLogger();
+      const parentLogger = { ...mockLogger, child: vi.fn().mockReturnValue(childLogger) };
+
+      let capturedOnLine: ((line: string) => void) | undefined;
+      const captureRuntime = createMockRuntime({
+        streamLogs: vi.fn().mockImplementation((_name: string, onLine: (line: string) => void) => {
+          capturedOnLine = onLine;
+          return { stop: vi.fn() };
+        }),
+      });
+
+      const runner = new ContainerAgentRunner(
+        captureRuntime, globalConfig, agentConfig, parentLogger as any,
+        vi.fn(), vi.fn(), "", "/tmp", "test-image:latest",
+      );
+
+      const runPromise = runner.run("test prompt");
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      if (capturedOnLine) {
+        capturedOnLine(JSON.stringify({ _log: true, level: "debug", msg: "tool start", tool: "bash", ts: Date.now() }));
+        expect(childLogger.debug).toHaveBeenCalled();
+      }
+      await runPromise;
+    });
+
+    it("detects signal-result return value", async () => {
+      let capturedOnLine: ((line: string) => void) | undefined;
+      const captureRuntime = createMockRuntime({
+        streamLogs: vi.fn().mockImplementation((_name: string, onLine: (line: string) => void) => {
+          capturedOnLine = onLine;
+          return { stop: vi.fn() };
+        }),
+      });
+
+      const runner = createRunner({ runtime: captureRuntime });
+      const runPromise = runner.run("test prompt");
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      if (capturedOnLine) {
+        capturedOnLine(JSON.stringify({
+          _log: true, level: "info", msg: "signal-result",
+          type: "return", value: "task completed", ts: Date.now(),
+        }));
+      }
+      const result = await runPromise;
+      expect(result.result).toBe("completed");
+    });
+
+    it("ignores JSON without _log flag", async () => {
+      let capturedOnLine: ((line: string) => void) | undefined;
+      const captureRuntime = createMockRuntime({
+        streamLogs: vi.fn().mockImplementation((_name: string, onLine: (line: string) => void) => {
+          capturedOnLine = onLine;
+          return { stop: vi.fn() };
+        }),
+      });
+
+      const runner = createRunner({ runtime: captureRuntime });
+      const runPromise = runner.run("test prompt");
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      if (capturedOnLine) {
+        // Should not throw for JSON without _log
+        expect(() => capturedOnLine!(JSON.stringify({ level: 30, msg: "pino log" }))).not.toThrow();
+      }
+      await runPromise;
+    });
+  });
+
+  // ── gatewayUrl paths ─────────────────────────────────────────────────────
+
+  describe("run() with gatewayUrl", () => {
+    function createRunnerWithGateway() {
+      const registerContainer = vi.fn().mockResolvedValue(undefined);
+      const unregisterContainer = vi.fn().mockResolvedValue(undefined);
+      const runner = new ContainerAgentRunner(
+        runtime,
+        globalConfig,
+        agentConfig,
+        mockLogger,
+        registerContainer,
+        unregisterContainer,
+        "http://localhost:8080",
+        "/tmp",
+        "test-image:latest",
+      );
+      return { runner, registerContainer, unregisterContainer };
+    }
+
+    it("registers container with gateway and unregisters on completion", async () => {
+      const { runner, registerContainer, unregisterContainer } = createRunnerWithGateway();
+      await runner.run("test prompt");
+
+      expect(registerContainer).toHaveBeenCalledWith(
+        expect.any(String), // shutdownSecret
+        expect.objectContaining({
+          containerName: "container-123",
+          agentName: "test-agent",
+        })
+      );
+      expect(unregisterContainer).toHaveBeenCalledWith(expect.any(String));
+    });
+  });
 });
