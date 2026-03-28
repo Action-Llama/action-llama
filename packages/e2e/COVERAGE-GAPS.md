@@ -6,7 +6,7 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 ## High Priority
 
 - [x] Webhook trigger handling — deliver a mock webhook payload and verify agent execution (cli-flows.test.ts has a `todo` placeholder)
-- [ ] Scheduler cron triggering — verify agents fire on schedule and not before
+- [x] Scheduler cron triggering — verify agents fire on schedule and not before
 - [ ] Error: invalid credentials — start scheduler with bad/missing credentials, verify graceful error
 - [ ] Error: Docker unavailable — start scheduler when Docker CLI fails, verify error reporting
 - [ ] Error: SSH connection failure during VPS deploy — simulate SSH timeout, verify rollback behavior
