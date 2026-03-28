@@ -1,0 +1,34 @@
+# E2E Coverage Gaps
+
+Priority list of untested or under-tested e2e flows. The `e2e-coverage-improver`
+agent reads this file and works top-down. Mark items `[x]` when a test exists.
+
+## High Priority
+
+- [ ] Webhook trigger handling — deliver a mock webhook payload and verify agent execution (cli-flows.test.ts has a `todo` placeholder)
+- [ ] Scheduler cron triggering — verify agents fire on schedule and not before
+- [ ] Error: invalid credentials — start scheduler with bad/missing credentials, verify graceful error
+- [ ] Error: Docker unavailable — start scheduler when Docker CLI fails, verify error reporting
+- [ ] Error: SSH connection failure during VPS deploy — simulate SSH timeout, verify rollback behavior
+- [ ] Multi-agent scheduling — configure 3+ agents with different schedules, verify independent execution
+- [ ] Agent timeout enforcement — configure short timeout, verify agent is killed after expiry
+
+## Medium Priority
+
+- [ ] Agent concurrent scaling — set `scale = 2`, trigger two events, verify parallel execution
+- [ ] Webhook event filtering — deliver events that don't match labels/actions/branches, verify they are ignored
+- [ ] Scheduler pause/resume with in-flight agents — pause while agent is running, verify it completes
+- [ ] MCP server integration — start scheduler with MCP config, verify MCP tools are available to agents
+- [ ] Extension loading — configure an extension, verify it loads and registers
+- [ ] Dashboard SSE reconnection — disconnect SSE stream, verify auto-reconnect and data continuity
+- [ ] Credential rotation — update credentials while scheduler is running, verify new creds are used
+
+## Lower Priority
+
+- [ ] Agent-to-agent communication — one agent triggers another via `al-rerun`
+- [ ] Log streaming — verify `al logs` streams live output from running agents
+- [ ] Deployment with custom Dockerfile — push agent with custom Dockerfile, verify image build
+- [ ] Deployment upgrade path — deploy v1, upgrade to v2, verify agents restart with new code
+- [ ] Resource lock contention — two agents competing for the same lock, verify mutual exclusion
+- [ ] Webhook retry/deduplication — deliver duplicate webhook, verify single execution
+- [ ] Stats and usage tracking — run agents, verify stats API returns correct execution counts

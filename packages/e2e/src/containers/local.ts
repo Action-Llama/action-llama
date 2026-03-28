@@ -107,7 +107,8 @@ EOF`
 
 export async function startActionLlamaScheduler(
   context: E2ETestContext,
-  containerInfo: ContainerInfo
+  containerInfo: ContainerInfo,
+  opts?: { coverage?: boolean }
 ): Promise<void> {
   // Ensure we're in the correct directory and verify project structure
   const projectCheck = await context.executeInContainer(containerInfo, [
@@ -158,8 +159,14 @@ EOF`
   }
 
   // Start the scheduler in the background with --headless to avoid TUI/raw mode
+  // When coverage is enabled (AL_COVERAGE=1 or opts.coverage), wrap with c8
+  const enableCoverage = opts?.coverage || process.env.AL_COVERAGE === "1";
+  const alCmd = enableCoverage
+    ? "c8 --reporter=json --reporter=text --report-dir=/tmp/coverage al start --headless"
+    : "al start --headless";
+
   await context.executeInContainer(containerInfo, [
-    "bash", "-c", "cd /home/testuser/test-project && nohup al start --headless > /tmp/scheduler.log 2>&1 & echo $! > /tmp/scheduler.pid"
+    "bash", "-c", `cd /home/testuser/test-project && nohup ${alCmd} > /tmp/scheduler.log 2>&1 & echo $! > /tmp/scheduler.pid`
   ]);
   
   // Wait for scheduler to start and verify it's running
@@ -202,12 +209,59 @@ export async function stopActionLlamaScheduler(
   containerInfo: ContainerInfo
 ): Promise<void> {
   try {
-    // Kill the scheduler process
+    // Send SIGTERM for graceful shutdown (allows c8 to write coverage reports)
     await context.executeInContainer(containerInfo, [
-      "bash", "-c", "if [ -f /tmp/scheduler.pid ]; then kill $(cat /tmp/scheduler.pid); rm /tmp/scheduler.pid; fi"
+      "bash", "-c", "if [ -f /tmp/scheduler.pid ]; then kill $(cat /tmp/scheduler.pid); fi"
+    ]);
+
+    // Wait for the process to exit (up to 15 seconds)
+    for (let i = 0; i < 15; i++) {
+      try {
+        const check = await context.executeInContainer(containerInfo, [
+          "bash", "-c", "if [ -f /tmp/scheduler.pid ]; then ps -p $(cat /tmp/scheduler.pid) > /dev/null 2>&1 && echo 'running' || echo 'stopped'; else echo 'stopped'; fi"
+        ]);
+        if (check.includes("stopped")) break;
+      } catch {
+        break;
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
+    // Clean up pid file
+    await context.executeInContainer(containerInfo, [
+      "bash", "-c", "rm -f /tmp/scheduler.pid"
     ]);
   } catch {
     // Process might already be dead
+  }
+}
+
+/**
+ * Extract coverage data from the container to a host directory.
+ * Call after stopActionLlamaScheduler when coverage is enabled.
+ * Returns the path to the extracted coverage directory, or null if no coverage data.
+ */
+export async function extractCoverageFromContainer(
+  context: E2ETestContext,
+  containerInfo: ContainerInfo,
+  hostDir: string
+): Promise<string | null> {
+  try {
+    // Check if coverage data exists
+    const check = await context.executeInContainer(containerInfo, [
+      "bash", "-c", "test -d /tmp/coverage && ls /tmp/coverage/ | head -1 | grep -q . && echo 'exists' || echo 'missing'"
+    ]);
+
+    if (check.includes("missing")) {
+      return null;
+    }
+
+    // Extract coverage via tar through the container
+    await context.extractFromContainer(containerInfo, "/tmp/coverage", hostDir);
+    return hostDir;
+  } catch (error: any) {
+    console.warn(`Failed to extract coverage from container: ${error.message}`);
+    return null;
   }
 }
 

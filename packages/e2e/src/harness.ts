@@ -560,6 +560,37 @@ export class E2ETestContext {
     }
   }
 
+  /**
+   * Extract a directory from a container to the host filesystem.
+   * Uses Docker's getArchive API to stream a tar of the container path.
+   */
+  async extractFromContainer(
+    containerInfo: ContainerInfo,
+    containerPath: string,
+    hostPath: string
+  ): Promise<void> {
+    const container = this.docker.getContainer(containerInfo.id);
+    await fs.mkdir(hostPath, { recursive: true });
+
+    const stream = await container.getArchive({ path: containerPath });
+
+    await new Promise<void>((resolve, reject) => {
+      const extract = tar.extract(hostPath, {
+        // Strip the top-level directory from the archive so contents
+        // land directly in hostPath (e.g. /tmp/coverage/foo → hostPath/foo)
+        strip: 1,
+      });
+      stream.pipe(extract);
+      extract.on("finish", resolve);
+      extract.on("error", reject);
+    });
+  }
+
+  /** Return all containers managed by this context (for coverage extraction). */
+  getContainers(): ContainerInfo[] {
+    return [...this.containers];
+  }
+
   getPrivateKeyPath(): string {
     return path.join(this.tempDir, "id_rsa");
   }

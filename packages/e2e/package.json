@@ -9,6 +9,7 @@
   },
   "scripts": {
     "test": "vitest run",
+    "test:coverage": "AL_COVERAGE=1 vitest run",
     "test:local": "docker-compose up --build --abort-on-container-exit"
   },
   "devDependencies": {
