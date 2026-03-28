@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { Hono } from "hono";
+import { mkdtempSync, mkdirSync, writeFileSync } from "fs";
+import { resolve } from "path";
+import { tmpdir } from "os";
 import { registerDashboardDataRoutes } from "../../../src/control/routes/dashboard.js";
 import { registerAuthApiRoutes, registerDashboardApiRoutes } from "../../../src/control/routes/dashboard-api.js";
 import { authMiddleware } from "../../../src/control/auth.js";
@@ -159,5 +162,256 @@ describe("dashboard JSON API routes", () => {
     expect(res.status).toBe(200);
     const cookie = res.headers.get("Set-Cookie") || "";
     expect(cookie).toContain("Max-Age=0");
+  });
+});
+
+describe("registerAuthApiRoutes — with session store", () => {
+  const API_KEY = "session-key";
+
+  function makeSessionStore() {
+    return {
+      createSession: vi.fn().mockResolvedValue("session-token-123"),
+      deleteSession: vi.fn().mockResolvedValue(undefined),
+    } as any;
+  }
+
+  it("POST /api/auth/login creates session and sets cookie from session store", async () => {
+    const sessionStore = makeSessionStore();
+    const app = new Hono();
+    registerAuthApiRoutes(app, API_KEY, sessionStore);
+
+    const res = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: API_KEY }),
+    });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+    expect(sessionStore.createSession).toHaveBeenCalledOnce();
+    const cookie = res.headers.get("Set-Cookie") || "";
+    expect(cookie).toContain("session-token-123");
+  });
+
+  it("POST /api/auth/login uses Secure flag for non-localhost", async () => {
+    const sessionStore = makeSessionStore();
+    const app = new Hono();
+    registerAuthApiRoutes(app, API_KEY, sessionStore, "example.com");
+
+    const res = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: API_KEY }),
+    });
+    expect(res.status).toBe(200);
+    const cookie = res.headers.get("Set-Cookie") || "";
+    expect(cookie).toContain("Secure");
+  });
+
+  it("POST /api/auth/logout deletes session from session store", async () => {
+    const sessionStore = makeSessionStore();
+    const app = new Hono();
+    registerAuthApiRoutes(app, API_KEY, sessionStore);
+
+    const res = await app.request("/api/auth/logout", {
+      method: "POST",
+      headers: { Cookie: "al_session=session-token-123" },
+    });
+    expect(res.status).toBe(200);
+    expect(sessionStore.deleteSession).toHaveBeenCalledWith("session-token-123");
+    const cookie = res.headers.get("Set-Cookie") || "";
+    expect(cookie).toContain("Max-Age=0");
+  });
+
+  it("POST /api/auth/login succeeds without apiKey (open mode)", async () => {
+    const app = new Hono();
+    registerAuthApiRoutes(app); // no apiKey
+
+    const res = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: "" }),
+    });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+  });
+});
+
+describe("registerDashboardApiRoutes — extended coverage", () => {
+  const API_KEY = "test-key";
+
+  function makeStatsStore() {
+    return {
+      queryAgentSummary: vi.fn().mockReturnValue([]),
+      countRunsByAgent: vi.fn().mockReturnValue(0),
+      queryRunByInstanceId: vi.fn().mockReturnValue(null),
+      queryCallEdgeByTargetInstance: vi.fn().mockReturnValue(null),
+      getWebhookReceipt: vi.fn().mockReturnValue(null),
+    } as any;
+  }
+
+  function makeStatusTracker(instances: any[] = []) {
+    return {
+      getAllAgents: vi.fn().mockReturnValue([
+        { name: "test-agent", state: "idle", enabled: true, statusText: null },
+      ]),
+      getSchedulerInfo: vi.fn().mockReturnValue({ projectName: "my-project", gatewayPort: 3000, webhooksActive: false }),
+      getRecentLogs: vi.fn().mockReturnValue([]),
+      getInstances: vi.fn().mockReturnValue(instances),
+    } as any;
+  }
+
+  function createApp(statsStore?: any, projectPath?: string, instances: any[] = []) {
+    const app = new Hono();
+    registerDashboardApiRoutes(app, makeStatusTracker(instances), projectPath, statsStore);
+    return app;
+  }
+
+  it("GET /api/dashboard/agents/:name includes summary from stats store", async () => {
+    const stats = makeStatsStore();
+    stats.queryAgentSummary.mockReturnValue([{ agentName: "test-agent", totalRuns: 5 }]);
+    stats.countRunsByAgent.mockReturnValue(5);
+    const app = createApp(stats);
+
+    const res = await app.request("/api/dashboard/agents/test-agent");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.summary).toMatchObject({ agentName: "test-agent", totalRuns: 5 });
+    expect(data.totalHistorical).toBe(5);
+  });
+
+  it("GET /api/dashboard/agents/:name returns null summary when no stats store", async () => {
+    const app = createApp();
+
+    const res = await app.request("/api/dashboard/agents/test-agent");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.summary).toBeNull();
+    expect(data.totalHistorical).toBe(0);
+  });
+
+  it("GET /api/dashboard/agents/:name includes running instances", async () => {
+    const instances = [
+      { id: "inst-1", agentName: "test-agent", status: "running" },
+      { id: "inst-2", agentName: "other-agent", status: "running" },
+    ];
+    const app = createApp(undefined, undefined, instances);
+
+    const res = await app.request("/api/dashboard/agents/test-agent");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.runningInstances).toHaveLength(1);
+    expect(data.runningInstances[0].id).toBe("inst-1");
+  });
+
+  it("GET /api/dashboard/agents/:name/instances/:id returns null run and no running instance", async () => {
+    const stats = makeStatsStore();
+    const app = createApp(stats);
+
+    const res = await app.request("/api/dashboard/agents/test-agent/instances/nonexistent");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.run).toBeNull();
+    expect(data.runningInstance).toBeNull();
+    expect(data.parentEdge).toBeUndefined();
+    expect(data.webhookReceipt).toBeUndefined();
+  });
+
+  it("GET /api/dashboard/agents/:name/instances/:id returns running instance", async () => {
+    const instances = [{ id: "inst-1", agentName: "test-agent", status: "running" }];
+    const app = createApp(undefined, undefined, instances);
+
+    const res = await app.request("/api/dashboard/agents/test-agent/instances/inst-1");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.runningInstance.id).toBe("inst-1");
+  });
+
+  it("GET /api/dashboard/agents/:name/instances/:id includes parent edge for agent-triggered runs", async () => {
+    const stats = makeStatsStore();
+    stats.queryRunByInstanceId.mockReturnValue({
+      instance_id: "child-inst",
+      trigger_type: "agent",
+    });
+    stats.queryCallEdgeByTargetInstance.mockReturnValue({
+      caller_agent: "orchestrator",
+      caller_instance: "parent-inst",
+    });
+    const app = createApp(stats);
+
+    const res = await app.request("/api/dashboard/agents/test-agent/instances/child-inst");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.parentEdge).toMatchObject({
+      caller_agent: "orchestrator",
+      caller_instance: "parent-inst",
+    });
+  });
+
+  it("GET /api/dashboard/agents/:name/instances/:id includes webhook receipt for webhook-triggered runs", async () => {
+    const stats = makeStatsStore();
+    stats.queryRunByInstanceId.mockReturnValue({
+      instance_id: "webhook-inst",
+      trigger_type: "webhook",
+      webhook_receipt_id: "receipt-123",
+    });
+    stats.getWebhookReceipt.mockReturnValue({
+      source: "github",
+      eventSummary: "push to main",
+      deliveryId: "del-abc",
+    });
+    const app = createApp(stats);
+
+    const res = await app.request("/api/dashboard/agents/test-agent/instances/webhook-inst");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.webhookReceipt).toMatchObject({
+      source: "github",
+      eventSummary: "push to main",
+      deliveryId: "del-abc",
+    });
+  });
+
+  it("GET /api/dashboard/agents/:name/skill returns 404 when no projectPath", async () => {
+    const app = createApp();
+
+    const res = await app.request("/api/dashboard/agents/test-agent/skill");
+    expect(res.status).toBe(404);
+    const data = await res.json();
+    expect(data.body).toBe("");
+  });
+
+  it("GET /api/dashboard/agents/:name/skill returns 404 when SKILL.md not found", async () => {
+    const tmpDir = mkdtempSync(resolve(tmpdir(), "dashboard-test-"));
+    const app = createApp(undefined, tmpDir);
+
+    const res = await app.request("/api/dashboard/agents/test-agent/skill");
+    expect(res.status).toBe(404);
+    const data = await res.json();
+    expect(data.body).toBe("");
+  });
+
+  it("GET /api/dashboard/agents/:name/skill returns body when SKILL.md exists", async () => {
+    const tmpDir = mkdtempSync(resolve(tmpdir(), "dashboard-test-"));
+    mkdirSync(resolve(tmpDir, "agents", "test-agent"), { recursive: true });
+    writeFileSync(resolve(tmpDir, "agents", "test-agent", "SKILL.md"), "---\ntitle: Test\n---\n# Hello Skill\n");
+    const app = createApp(undefined, tmpDir);
+
+    const res = await app.request("/api/dashboard/agents/test-agent/skill");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.body).toContain("Hello Skill");
+  });
+
+  it("GET /api/dashboard/config returns project name and scale", async () => {
+    const app = createApp();
+
+    const res = await app.request("/api/dashboard/config");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.projectName).toBe("my-project");
+    expect(typeof data.projectScale).toBe("number");
+    expect(data.gatewayPort).toBe(3000);
   });
 });
