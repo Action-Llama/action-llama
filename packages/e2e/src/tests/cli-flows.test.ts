@@ -183,6 +183,64 @@ EOF`,
     expect(logs).toMatch(/not found|Credential/i);
   });
 
+  it("exits gracefully with AgentError when Docker daemon is unavailable", async () => {
+    const context = getTestContext();
+    const container = await setupLocalActionLlama(context);
+
+    // Create a minimal agent so the scheduler doesn't fail on "no agents found"
+    const agentDir = "/home/testuser/test-project/agents/docker-test-agent";
+    await context.executeInContainer(container, [
+      "bash", "-c", `mkdir -p ${agentDir}`,
+    ]);
+    await context.executeInContainer(container, [
+      "bash", "-c", `cat > ${agentDir}/SKILL.md << 'EOF'
+---
+description: "Agent used to test Docker unavailability"
+---
+
+# Docker Test Agent
+
+This agent is used to verify the scheduler exits gracefully when Docker is unavailable.
+EOF`,
+    ]);
+    await context.executeInContainer(container, [
+      "bash", "-c", `cat > ${agentDir}/config.toml << 'EOF'
+models = ["sonnet"]
+credentials = ["github_token", "anthropic_key"]
+schedule = "0 */6 * * *"
+EOF`,
+    ]);
+    await context.executeInContainer(container, [
+      "bash", "-c", `chown -R testuser:testuser ${agentDir}`,
+    ]);
+
+    // Shadow the `docker` binary with a wrapper that always fails.
+    // The scheduler calls `docker info` via execFileSync to verify Docker is running.
+    // By replacing docker with a failing stub we simulate Docker being unavailable.
+    await context.executeInContainer(container, [
+      "bash", "-c",
+      "mkdir -p /tmp/fake-bin && printf '#!/bin/sh\\necho \"Cannot connect to the Docker daemon\" >&2\\nexit 1\\n' > /tmp/fake-bin/docker && chmod +x /tmp/fake-bin/docker",
+    ]);
+
+    // Run the scheduler with the fake docker first in PATH so it picks up the stub.
+    // The scheduler should detect the failure in createContainerRuntime() and exit.
+    await context.executeInContainer(container, [
+      "bash", "-c",
+      "cd /home/testuser/test-project && PATH=/tmp/fake-bin:$PATH al start --headless > /tmp/scheduler.log 2>&1; echo \"exit:$?\" >> /tmp/scheduler.log",
+    ]);
+
+    // Give the process a brief moment to flush its final log lines
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    const logs = await getSchedulerLogs(context, container);
+
+    // The process must have exited with a non-zero code
+    expect(logs).toMatch(/exit:[1-9]/);
+
+    // The error message from createContainerRuntime must appear in the logs
+    expect(logs).toMatch(/Docker is not running|Docker/i);
+  });
+
   it("triggers agent on cron schedule", async () => {
     const context = getTestContext();
     const container = await setupLocalActionLlama(context);
