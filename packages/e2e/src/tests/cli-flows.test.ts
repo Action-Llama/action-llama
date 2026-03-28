@@ -531,6 +531,42 @@ EOF`,
     await stopActionLlamaScheduler(context, container);
   });
 
+  it("loads built-in extensions on scheduler startup", async () => {
+    const context = getTestContext();
+    const container = await setupLocalActionLlama(context);
+
+    // Create a minimal agent so the scheduler has something to manage
+    await createTestAgent(context, container, "ext-test-agent", `
+# Extension Loading Test Agent
+
+You are a test agent for verifying extension loading.
+`);
+
+    // Start the scheduler with coverage enabled
+    await startActionLlamaScheduler(context, container, { coverage: true });
+
+    // After startActionLlamaScheduler returns, the scheduler is running.
+    // The plain-logger writes a "scheduler started" line to stdout once the
+    // scheduler is fully initialised (extensions loaded, cron jobs registered).
+    // Verify that stdout contains this startup confirmation.
+    const stdoutLogs = await getSchedulerLogs(context, container);
+
+    // "scheduler started" only appears after extension loading and cron setup
+    expect(stdoutLogs).toMatch(/scheduler started/);
+
+    // Additionally verify the pino log file was created under .al/logs/
+    const today = new Date().toISOString().slice(0, 10);
+    const logFile = `/home/testuser/test-project/.al/logs/scheduler-${today}.log`;
+    const logFileExists = await context.executeInContainer(container, [
+      "bash",
+      "-c",
+      `test -f ${logFile} && echo "exists" || echo "missing"`,
+    ]);
+    expect(logFileExists.trim()).toBe("exists");
+
+    await stopActionLlamaScheduler(context, container);
+  });
+
   it("al mcp init creates .mcp.json with action-llama server entry", async () => {
     const context = getTestContext();
     const container = await setupLocalActionLlama(context);
