@@ -47,7 +47,7 @@ vi.mock("../../../src/shared/filesystem-backend.js", () => ({
   },
 }));
 
-import { set, prov, deprov } from "../../../src/cli/commands/env.js";
+import { init, list, show, set, check, prov, deprov } from "../../../src/cli/commands/env.js";
 
 describe("env set", () => {
   let tmpDir: string;
@@ -343,5 +343,158 @@ describe("env deprov", () => {
     await deprov(testEnvName, { project: tmpDir });
 
     expect(environmentExists(testEnvName)).toBe(false);
+  });
+});
+
+describe("env init", () => {
+  const testEnvName = `test-init-${Date.now()}`;
+
+  afterEach(() => {
+    try { rmSync(environmentPath(testEnvName)); } catch {}
+  });
+
+  it("creates a server environment config file", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await init(testEnvName, "server");
+
+    expect(environmentExists(testEnvName)).toBe(true);
+    const config = loadEnvironmentConfig(testEnvName);
+    expect(config.server).toBeDefined();
+    expect(config.server?.host).toBe("REPLACE_ME");
+    expect(config.server?.user).toBe("root");
+    logSpy.mockRestore();
+  });
+
+  it("throws ConfigError for unknown type", async () => {
+    await expect(init(testEnvName, "unknown-type")).rejects.toThrow(
+      'Unknown environment type "unknown-type"'
+    );
+  });
+
+  it("throws ConfigError when environment already exists", async () => {
+    writeEnvironmentConfig(testEnvName, { server: { host: "1.2.3.4" } });
+
+    await expect(init(testEnvName, "server")).rejects.toThrow("already exists");
+  });
+
+  it("throws ConfigError for invalid environment name", async () => {
+    await expect(init("invalid name!", "server")).rejects.toThrow(
+      /Invalid environment name/
+    );
+  });
+});
+
+describe("env list", () => {
+  it("logs message when no environments configured", async () => {
+    // We can't easily control the list without changing home dir.
+    // Instead, test that list() runs without throwing.
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await expect(list()).resolves.not.toThrow();
+    logSpy.mockRestore();
+  });
+
+  it("lists environments with their types", async () => {
+    const envName = `test-list-${Date.now()}`;
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    writeEnvironmentConfig(envName, { server: { host: "1.2.3.4" } });
+
+    try {
+      await list();
+      const calls = logSpy.mock.calls.map((c) => c.join(" "));
+      const hasEnv = calls.some((c) => c.includes(envName));
+      expect(hasEnv).toBe(true);
+    } finally {
+      try { rmSync(environmentPath(envName)); } catch {}
+      logSpy.mockRestore();
+    }
+  });
+});
+
+describe("env show", () => {
+  const testEnvName = `test-show-${Date.now()}`;
+
+  afterEach(() => {
+    try { rmSync(environmentPath(testEnvName)); } catch {}
+  });
+
+  it("throws ConfigError when environment does not exist", async () => {
+    await expect(show("nonexistent-env-show-xyz")).rejects.toThrow("not found");
+  });
+
+  it("logs environment name, file path, and content", async () => {
+    writeEnvironmentConfig(testEnvName, { server: { host: "9.8.7.6" } });
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await show(testEnvName);
+
+    const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(output).toContain(testEnvName);
+    expect(output).toContain("9.8.7.6");
+    logSpy.mockRestore();
+  });
+});
+
+describe("env check", () => {
+  const testEnvName = `test-check-${Date.now()}`;
+
+  afterEach(() => {
+    try { rmSync(environmentPath(testEnvName)); } catch {}
+    mockTestConnection.mockReset();
+    mockSshExec.mockReset();
+  });
+
+  it("throws ConfigError when environment does not exist", async () => {
+    await expect(check("nonexistent-env-check-xyz")).rejects.toThrow("not found");
+  });
+
+  it("throws ConfigError when environment has no server config", async () => {
+    writeEnvironmentConfig(testEnvName, { gateway: { url: "http://localhost:3000" } });
+
+    await expect(check(testEnvName)).rejects.toThrow("no [server] config");
+  });
+
+  it("throws ConfigError when server host is REPLACE_ME placeholder", async () => {
+    writeEnvironmentConfig(testEnvName, { server: { host: "REPLACE_ME", user: "root" } });
+
+    await expect(check(testEnvName)).rejects.toThrow("placeholder host");
+  });
+
+  it("reports all checks passed when SSH and Node.js are available", async () => {
+    writeEnvironmentConfig(testEnvName, { server: { host: "10.0.0.1", user: "root" } });
+
+    mockTestConnection.mockResolvedValue(true);
+    mockSshExec.mockImplementation((_cfg: any, cmd: string) => {
+      if (cmd.includes("node")) return Promise.resolve({ exitCode: 0, stdout: "v22.0.0", stderr: "" });
+      return Promise.resolve({ exitCode: 0, stdout: "24.0.0", stderr: "" });
+    });
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await check(testEnvName);
+
+    const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(output).toContain("All checks passed");
+    expect(mockTestConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ host: "10.0.0.1" })
+    );
+    logSpy.mockRestore();
+  });
+
+  it("reports failed checks when SSH connection fails", async () => {
+    writeEnvironmentConfig(testEnvName, { server: { host: "10.0.0.2", user: "root" } });
+
+    mockTestConnection.mockResolvedValue(false);
+    mockSshExec.mockResolvedValue({ exitCode: 1, stdout: "", stderr: "failed" });
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await check(testEnvName);
+
+    const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(output).toContain("issue(s) found");
+    logSpy.mockRestore();
   });
 });
