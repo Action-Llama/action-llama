@@ -24,3 +24,15 @@ export async function ensureGatewayApiKey(): Promise<ApiKeyResult> {
   await writeCredentialField(CRED_TYPE, CRED_INSTANCE, CRED_FIELD, key);
   return { key, generated: true };
 }
+
+/**
+ * Load the current gateway API key from the credential store.
+ * Returns the key on disk without generating a new one.
+ * Returns undefined if no key exists.
+ *
+ * Use this in hot-path auth checks so the key is always read fresh from disk,
+ * enabling credential rotation without restarting the scheduler.
+ */
+export async function loadGatewayApiKey(): Promise<string | undefined> {
+  return loadCredentialField(CRED_TYPE, CRED_INSTANCE, CRED_FIELD);
+}

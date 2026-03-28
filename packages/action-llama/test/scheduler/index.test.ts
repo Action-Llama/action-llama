@@ -118,6 +118,7 @@ vi.mock("../../src/gateway/index.js", () => ({
 // Mock gateway API key
 vi.mock("../../src/control/api-key.js", () => ({
   ensureGatewayApiKey: vi.fn().mockResolvedValue({ key: "test-api-key", generated: false }),
+  loadGatewayApiKey: vi.fn().mockResolvedValue("test-api-key"),
 }));
 
 // Mock state store

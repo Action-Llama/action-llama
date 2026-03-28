@@ -25,7 +25,7 @@ import type { WebhookSourceConfig } from "../shared/config.js";
 import type { ControlRoutesDeps } from "../control/routes/control.js";
 import { withSpan, getTelemetry } from "../telemetry/index.js";
 import { SpanKind } from "@opentelemetry/api";
-import { authMiddleware } from "../control/auth.js";
+import { authMiddleware, type ApiKeySource } from "../control/auth.js";
 import type { SchedulerEventBus } from "../scheduler/events.js";
 import type { StatsStore } from "../stats/store.js";
 import { ChatSessionManager } from "../chat/session-manager.js";
@@ -88,7 +88,8 @@ export interface GatewayOptions {
   lockTimeout?: number;
   signalContext?: SignalContext;
   controlDeps?: ControlRoutesDeps;
-  apiKey?: string;
+  /** Static API key string or an async provider that re-reads the key from disk on every auth check, enabling hot-reload of rotated credentials. */
+  apiKey?: ApiKeySource;
   stateStore?: StateStore;
   skipStatusEndpoint?: boolean;
   /** Optional path to the pre-built frontend dist directory (overrides resolveFrontendDist; useful for testing). */

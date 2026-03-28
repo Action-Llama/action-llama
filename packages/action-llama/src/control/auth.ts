@@ -12,6 +12,21 @@ export function safeCompare(a: string, b: string): boolean {
   return timingSafeEqual(bufA, bufB);
 }
 
+/** A static API key string or an async provider that reads the key fresh from disk. */
+export type ApiKeySource = string | (() => Promise<string | undefined>);
+
+/**
+ * Resolve the current API key from a static string or a dynamic provider.
+ * Dynamic providers read from disk on each call, enabling hot-reload of
+ * rotated credentials without restarting the scheduler.
+ */
+async function resolveApiKey(source: ApiKeySource): Promise<string | undefined> {
+  if (typeof source === "function") {
+    return source();
+  }
+  return source;
+}
+
 /**
  * Hono middleware that authenticates requests via:
  * 1. `Authorization: Bearer <key>` header (CLI / programmatic)
@@ -22,14 +37,20 @@ export function safeCompare(a: string, b: string): boolean {
  * is compared directly to the API key (backward compatibility).
  *
  * Browser HTML requests to protected paths are redirected to /login on 401.
+ *
+ * `apiKey` may be a static string or an async provider function. Passing a
+ * provider allows the key to be re-read from disk on every request, enabling
+ * credential rotation without restarting the scheduler.
  */
-export function authMiddleware(apiKey: string, sessionStore?: SessionStore) {
+export function authMiddleware(apiKey: ApiKeySource, sessionStore?: SessionStore) {
   return async (c: Context, next: Next) => {
+    const currentKey = await resolveApiKey(apiKey);
+
     // 1. Check Bearer token
     const authHeader = c.req.header("Authorization");
-    if (authHeader && authHeader.startsWith("Bearer ")) {
+    if (authHeader && authHeader.startsWith("Bearer ") && currentKey !== undefined) {
       const token = authHeader.slice(7);
-      if (safeCompare(token, apiKey)) {
+      if (safeCompare(token, currentKey)) {
         await next();
         return;
       }
@@ -46,9 +67,9 @@ export function authMiddleware(apiKey: string, sessionStore?: SessionStore) {
           await next();
           return;
         }
-      } else {
+      } else if (currentKey !== undefined) {
         // Backward compatibility: compare cookie value directly to API key
-        if (safeCompare(sessionToken, apiKey)) {
+        if (safeCompare(sessionToken, currentKey)) {
           await next();
           return;
         }
