@@ -11,6 +11,8 @@ import {
   validateAnthropicApiKey,
   validateOAuthTokenFormat,
   validateNetlifyToken,
+  validateXTwitterToken,
+  validateBugsnagToken,
 } from "../../src/setup/validators.js";
 
 describe("validateGitHubToken", () => {
@@ -36,6 +38,17 @@ describe("validateGitHubToken", () => {
   it("throws on auth failure", async () => {
     mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
     await expect(validateGitHubToken("bad")).rejects.toThrow("GitHub auth failed: 401");
+  });
+
+  it("throws when repos fetch fails", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ login: "octocat" }),
+      })
+      .mockResolvedValueOnce({ ok: false, status: 403 });
+
+    await expect(validateGitHubToken("ghp_test")).rejects.toThrow("GitHub repos fetch failed: 403");
   });
 });
 
@@ -135,5 +148,53 @@ describe("validateNetlifyToken", () => {
     });
     
     await expect(validateNetlifyToken("bad_token")).rejects.toThrow("Netlify auth failed (401): Unauthorized");
+  });
+});
+
+describe("validateXTwitterToken", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns true on valid bearer token", async () => {
+    mockFetch.mockResolvedValue({ ok: true });
+    const result = await validateXTwitterToken("valid-bearer-token");
+    expect(result).toBe(true);
+  });
+
+  it("throws on auth failure", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 401,
+      text: () => Promise.resolve("Unauthorized"),
+    });
+    await expect(validateXTwitterToken("bad-token")).rejects.toThrow(
+      "X (Twitter) API token validation failed (401): Unauthorized"
+    );
+  });
+});
+
+describe("validateBugsnagToken", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns user info on success", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ id: "user-1", name: "Alice", email: "alice@example.com" }),
+    });
+
+    const result = await validateBugsnagToken("valid-token");
+    expect(result.user).toBe("alice@example.com");
+    expect(result.name).toBe("Alice");
+    expect(result.id).toBe("user-1");
+  });
+
+  it("throws on auth failure", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 401,
+      text: () => Promise.resolve("Unauthorized"),
+    });
+    await expect(validateBugsnagToken("bad-token")).rejects.toThrow(
+      "Bugsnag auth failed (401): Unauthorized"
+    );
   });
 });
