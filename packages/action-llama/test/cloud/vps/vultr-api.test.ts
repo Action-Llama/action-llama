@@ -13,6 +13,12 @@ import {
   createInstance,
   getInstance,
   deleteInstance,
+  listFirewallGroups,
+  createFirewallGroup,
+  createFirewallRule,
+  listFirewallRules,
+  getFirewallGroup,
+  deleteFirewallGroup,
 } from "../../../src/cloud/vps/vultr-api.js";
 
 const API_KEY = "test-vultr-key";
@@ -137,5 +143,112 @@ describe("Vultr API client", () => {
     });
 
     await expect(listRegions(API_KEY)).rejects.toThrow("Vultr API /regions failed (HTTP 403)");
+  });
+
+  describe("Firewall Groups", () => {
+    it("listFirewallGroups returns firewall groups", async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse({
+        firewall_groups: [
+          {
+            id: "fg-abc", description: "action-llama",
+            date_created: "2025-01-01", date_modified: "2025-01-01",
+            instance_count: 2, rule_count: 3, max_rule_count: 50,
+          },
+        ],
+      }));
+
+      const groups = await listFirewallGroups(API_KEY);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].id).toBe("fg-abc");
+      expect(groups[0].description).toBe("action-llama");
+      expect(groups[0].instance_count).toBe(2);
+
+      const [url] = mockFetch.mock.calls[0];
+      expect(url).toBe("https://api.vultr.com/v2/firewalls");
+    });
+
+    it("createFirewallGroup posts description and returns created group", async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse({
+        firewall_group: {
+          id: "fg-new", description: "action-llama",
+          date_created: "2025-01-01", date_modified: "2025-01-01",
+          instance_count: 0, rule_count: 0, max_rule_count: 50,
+        },
+      }));
+
+      const group = await createFirewallGroup(API_KEY, "action-llama");
+      expect(group.id).toBe("fg-new");
+      expect(group.description).toBe("action-llama");
+      expect(group.instance_count).toBe(0);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url).toBe("https://api.vultr.com/v2/firewalls");
+      expect(opts.method).toBe("POST");
+      expect(JSON.parse(opts.body)).toEqual({ description: "action-llama" });
+    });
+
+    it("createFirewallRule posts rule to the group endpoint", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 201, json: () => Promise.resolve({}), text: () => Promise.resolve("") });
+
+      await createFirewallRule(API_KEY, "fg-abc", {
+        ip_type: "v4",
+        protocol: "tcp",
+        subnet: "0.0.0.0",
+        subnet_size: 0,
+        port: "22",
+        notes: "SSH access",
+      });
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url).toBe("https://api.vultr.com/v2/firewalls/fg-abc/rules");
+      expect(opts.method).toBe("POST");
+      const body = JSON.parse(opts.body);
+      expect(body.protocol).toBe("tcp");
+      expect(body.port).toBe("22");
+      expect(body.ip_type).toBe("v4");
+    });
+
+    it("listFirewallRules returns rules for a group", async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse({
+        firewall_rules: [
+          { id: 1, ip_type: "v4", protocol: "tcp", port: "22", subnet: "0.0.0.0", subnet_size: 0, notes: "SSH" },
+        ],
+      }));
+
+      const rules = await listFirewallRules(API_KEY, "fg-abc");
+      expect(rules).toHaveLength(1);
+      expect(rules[0].protocol).toBe("tcp");
+      expect(rules[0].port).toBe("22");
+
+      const [url] = mockFetch.mock.calls[0];
+      expect(url).toBe("https://api.vultr.com/v2/firewalls/fg-abc/rules");
+    });
+
+    it("getFirewallGroup returns group details", async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse({
+        firewall_group: {
+          id: "fg-abc", description: "action-llama",
+          date_created: "2025-01-01", date_modified: "2025-01-01",
+          instance_count: 1, rule_count: 3, max_rule_count: 50,
+        },
+      }));
+
+      const group = await getFirewallGroup(API_KEY, "fg-abc");
+      expect(group.id).toBe("fg-abc");
+      expect(group.instance_count).toBe(1);
+
+      const [url] = mockFetch.mock.calls[0];
+      expect(url).toBe("https://api.vultr.com/v2/firewalls/fg-abc");
+    });
+
+    it("deleteFirewallGroup sends DELETE request", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 204, json: () => Promise.resolve(undefined), text: () => Promise.resolve("") });
+
+      await deleteFirewallGroup(API_KEY, "fg-abc");
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url).toBe("https://api.vultr.com/v2/firewalls/fg-abc");
+      expect(opts.method).toBe("DELETE");
+    });
   });
 });
