@@ -336,3 +336,241 @@ EOF`,
     expect(after.total).toBeGreaterThan(countBefore);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Webhook Event Filtering: event-type and repo-based filter tests
+// ---------------------------------------------------------------------------
+
+const FILTER_PORT = 8183;
+const FILTER_API_KEY = "webhook-filter-e2e-key-33333";
+const FILTER_COOKIE = "/tmp/cookies-webhook-filter.txt";
+
+describe("Webhook Event Filtering", { timeout: 300000 }, () => {
+  let filterCtx: E2ETestContext;
+  let filterContainer: ContainerInfo;
+
+  beforeAll(async () => {
+    filterCtx = new E2ETestContext();
+    await filterCtx.setup();
+
+    filterContainer = await setupLocalActionLlama(filterCtx);
+
+    // Set API key and gateway config
+    await filterCtx.executeInContainer(filterContainer, [
+      "bash",
+      "-c",
+      `mkdir -p ~/.action-llama/credentials/gateway_api_key/default && echo -n '${FILTER_API_KEY}' > ~/.action-llama/credentials/gateway_api_key/default/key`,
+    ]);
+
+    await filterCtx.executeInContainer(filterContainer, [
+      "bash",
+      "-c",
+      `cd /home/testuser/test-project && cat >> config.toml << 'EOF'
+
+[gateway]
+port = ${FILTER_PORT}
+
+[webhooks.filtertest]
+type = "test"
+EOF`,
+    ]);
+
+    // Agent: listens for "issues" events from a specific repo only.
+    // This lets us test that:
+    //   - wrong event type ("push") does NOT match
+    //   - correct event from the wrong repo does NOT match
+    //   - correct event from the allowed repo DOES match
+    const agentDir = "/home/testuser/test-project/agents/repo-filter-agent";
+    await filterCtx.executeInContainer(filterContainer, [
+      "bash",
+      "-c",
+      `mkdir -p ${agentDir}`,
+    ]);
+
+    await filterCtx.executeInContainer(filterContainer, [
+      "bash",
+      "-c",
+      `cat > ${agentDir}/SKILL.md << 'EOF'
+---
+description: "Repo-filtered webhook test agent"
+---
+
+# Repo Filter Agent
+
+Fires only for issues events from the allowed repo.
+EOF`,
+    ]);
+
+    await filterCtx.executeInContainer(filterContainer, [
+      "bash",
+      "-c",
+      `cat > ${agentDir}/config.toml << 'EOF'
+models = ["sonnet"]
+credentials = ["github_token", "anthropic_key"]
+
+[[webhooks]]
+source = "filtertest"
+events = ["issues"]
+repos = ["test-org/allowed-repo"]
+EOF`,
+    ]);
+
+    await filterCtx.executeInContainer(filterContainer, [
+      "bash",
+      "-c",
+      `chown -R testuser:testuser ${agentDir}`,
+    ]);
+
+    // Start gateway
+    await filterCtx.executeInContainer(filterContainer, [
+      "bash",
+      "-c",
+      `cd /home/testuser/test-project && nohup al start --headless --web-ui > /tmp/filter-scheduler.log 2>&1 & echo $! > /tmp/filter-scheduler.pid`,
+    ]);
+
+    // Poll until healthy
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      try {
+        const health = await filterCtx.executeInContainer(filterContainer, [
+          "curl",
+          "-sf",
+          `http://localhost:${FILTER_PORT}/health`,
+        ]);
+        if (health.includes("ok")) break;
+      } catch {
+        // not ready yet
+      }
+      if (i === 29) {
+        const logs = await getSchedulerLogs(filterCtx, filterContainer);
+        throw new Error(`Filter gateway did not become healthy within 30s.\nLogs: ${logs}`);
+      }
+    }
+
+    // Login
+    await filterCtx.executeInContainer(filterContainer, [
+      "bash",
+      "-c",
+      `curl -sf -c ${FILTER_COOKIE} -X POST -H 'Content-Type: application/json' -d '{"key":"${FILTER_API_KEY}"}' http://localhost:${FILTER_PORT}/api/auth/login`,
+    ]);
+  }, 300000);
+
+  afterAll(async () => {
+    if (filterCtx && filterContainer) {
+      try {
+        await filterCtx.executeInContainer(filterContainer, [
+          "bash",
+          "-c",
+          "if [ -f /tmp/filter-scheduler.pid ]; then kill $(cat /tmp/filter-scheduler.pid) 2>/dev/null; rm -f /tmp/filter-scheduler.pid; fi",
+        ]);
+      } catch {
+        // process might already be dead
+      }
+    }
+    if (filterCtx) await filterCtx.cleanup();
+  });
+
+  function filterCurl(args: string): Promise<string> {
+    return filterCtx.executeInContainer(filterContainer, [
+      "bash",
+      "-c",
+      `curl -sf -b ${FILTER_COOKIE} -c ${FILTER_COOKIE} ${args}`,
+    ]);
+  }
+
+  it("matches agent when event type and repo both satisfy filters", async () => {
+    const payload = JSON.stringify({
+      event: "issues",
+      action: "opened",
+      repo: "test-org/allowed-repo",
+      number: 1,
+      title: "Allowed repo issue",
+      sender: "user-a",
+    });
+
+    const response = await filterCtx.executeInContainer(filterContainer, [
+      "bash",
+      "-c",
+      `curl -s -X POST -H 'Content-Type: application/json' -d '${payload.replace(/'/g, "'\\''")}' http://localhost:${FILTER_PORT}/webhooks/test 2>/dev/null`,
+    ]);
+
+    const body = JSON.parse(response);
+    expect(body.ok).toBe(true);
+    // repo-filter-agent should match: correct event type + correct repo
+    expect(body.matched).toBeGreaterThanOrEqual(1);
+  });
+
+  it("returns matched=0 when event type does not satisfy the filter", async () => {
+    // "push" is not in the agent's events=["issues"] filter
+    const payload = JSON.stringify({
+      event: "push",
+      repo: "test-org/allowed-repo",
+      sender: "user-b",
+    });
+
+    const response = await filterCtx.executeInContainer(filterContainer, [
+      "bash",
+      "-c",
+      `curl -s -X POST -H 'Content-Type: application/json' -d '${payload.replace(/'/g, "'\\''")}' http://localhost:${FILTER_PORT}/webhooks/test 2>/dev/null`,
+    ]);
+
+    const body = JSON.parse(response);
+    expect(body.ok).toBe(true);
+    // Event type "push" does not match the "issues" filter → no agent matched
+    expect(body.matched).toBe(0);
+  });
+
+  it("returns matched=0 when repo does not satisfy the repos filter", async () => {
+    // event type matches ("issues") but repo does not match allowed-repo
+    const payload = JSON.stringify({
+      event: "issues",
+      action: "opened",
+      repo: "other-org/different-repo",
+      number: 2,
+      title: "Issue from the wrong repo",
+      sender: "user-c",
+    });
+
+    const response = await filterCtx.executeInContainer(filterContainer, [
+      "bash",
+      "-c",
+      `curl -s -X POST -H 'Content-Type: application/json' -d '${payload.replace(/'/g, "'\\''")}' http://localhost:${FILTER_PORT}/webhooks/test 2>/dev/null`,
+    ]);
+
+    const body = JSON.parse(response);
+    expect(body.ok).toBe(true);
+    // Repo "other-org/different-repo" is not in repos=["test-org/allowed-repo"] → no match
+    expect(body.matched).toBe(0);
+  });
+
+  it("unmatched event-type webhook is stored as dead-letter receipt", async () => {
+    // Send a non-matching event type ("pull_request")
+    const payload = JSON.stringify({
+      event: "pull_request",
+      action: "opened",
+      repo: "test-org/allowed-repo",
+      number: 10,
+      sender: "user-d",
+    });
+
+    await filterCtx.executeInContainer(filterContainer, [
+      "bash",
+      "-c",
+      `curl -s -X POST -H 'Content-Type: application/json' -d '${payload.replace(/'/g, "'\\''")}' http://localhost:${FILTER_PORT}/webhooks/test 2>/dev/null`,
+    ]);
+
+    // Brief pause for stats store commit
+    await new Promise((r) => setTimeout(r, 500));
+
+    // Verify it appears in trigger history as a dead-letter
+    const statsRes = await filterCurl(
+      `'http://localhost:${FILTER_PORT}/api/stats/triggers?limit=50&offset=0&all=1'`,
+    );
+    const stats = JSON.parse(statsRes);
+
+    expect(Array.isArray(stats.triggers)).toBe(true);
+    expect(stats.total).toBeGreaterThan(0);
+    const deadLetters = stats.triggers.filter((t: any) => t.result === "dead-letter");
+    expect(deadLetters.length).toBeGreaterThan(0);
+  });
+});

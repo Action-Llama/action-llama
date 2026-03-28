@@ -16,7 +16,7 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 ## Medium Priority
 
 - [x] Agent concurrent scaling — set `scale = 2`, trigger two events, verify parallel execution
-- [ ] Webhook event filtering — deliver events that don't match labels/actions/branches, verify they are ignored
+- [x] Webhook event filtering — deliver events that don't match labels/actions/branches, verify they are ignored
 - [ ] Scheduler pause/resume with in-flight agents — pause while agent is running, verify it completes
 - [ ] MCP server integration — start scheduler with MCP config, verify MCP tools are available to agents
 - [ ] Extension loading — configure an extension, verify it loads and registers
