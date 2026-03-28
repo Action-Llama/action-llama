@@ -1,7 +1,11 @@
 import Docker from "dockerode";
+import { execSync } from "child_process";
 import { assertDockerAvailable, isDockerAvailable } from "./docker-utils.js";
 
 export async function setup() {
+  // Ensure Playwright Chromium browser is installed before running browser tests
+  execSync("npx playwright install --with-deps chromium", { stdio: "inherit" });
+
   // Check if Docker is available before proceeding
   await assertDockerAvailable();
 

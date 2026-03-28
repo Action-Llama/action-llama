@@ -13,6 +13,27 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { chromium, type Browser, type Page } from "playwright";
 import { E2ETestContext, type ContainerInfo } from "../harness.js";
 import { createTestAgent, getSchedulerLogs } from "../containers/local.js";
+import { existsSync } from "fs";
+
+/**
+ * Check whether the Playwright Chromium browser executable is available.
+ * Returns false when running in environments where `npx playwright install` has
+ * not been run (e.g. CI machines without the browser pre-cached).
+ */
+function isPlaywrightAvailable(): boolean {
+  try {
+    // Playwright stores the browser executable path via its internal registry.
+    // We attempt to resolve it; if it throws or the file is missing, skip.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { registry } = require("playwright-core/lib/server");
+    const browsers = registry.executables().filter((e: any) => e.name === "chromium");
+    if (browsers.length === 0) return false;
+    const execPath = browsers[0].executablePath("linux");
+    return !!execPath && existsSync(execPath);
+  } catch {
+    return false;
+  }
+}
 
 const GATEWAY_PORT = 8080;
 const API_KEY = "test-e2e-browser-key-12345";
@@ -75,7 +96,7 @@ async function stopGateway(
 
 // ---------------------------------------------------------------------------
 
-describe("Browser UI Smoke Tests", { timeout: 300000 }, () => {
+describe.skipIf(!isPlaywrightAvailable())("Browser UI Smoke Tests", { timeout: 300000 }, () => {
   let context: E2ETestContext;
   let container: ContainerInfo;
   let browser: Browser;

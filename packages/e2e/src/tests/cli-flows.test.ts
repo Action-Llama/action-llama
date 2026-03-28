@@ -96,10 +96,13 @@ You are a test agent for lifecycle management. Output your status and wait.
     // Start scheduler
     await startActionLlamaScheduler(context, container);
 
-    // Check scheduler status
+    // Check scheduler status — al stat prints a table with agents and their trigger type.
+    // The agent is Idle (no active run) but the scheduler itself is running; we verify
+    // that the agent appears in the status output and has a cron trigger registered.
     const statusOutput = await context.executeInContainer(container, [
       "bash", "-c", "cd /home/testuser/test-project && al stat"
     ]);
+    expect(statusOutput).toContain("lifecycle-agent");
     // The STATUS column shows "Idle" when no agent instance is actively running
     // (agents are waiting for their next cron trigger). Check for "cron" in the
     // TRIGGER column instead — it always appears for agents with a cron schedule.
@@ -125,6 +128,62 @@ You are a test agent for lifecycle management. Output your status and wait.
   });
 
   it.todo("handles webhook triggers");
+
+  it("exits gracefully with CredentialError when a required credential is missing", async () => {
+    const context = getTestContext();
+    const container = await setupLocalActionLlama(context);
+
+    // Create an agent that references a credential that does NOT exist
+    const agentDir = "/home/testuser/test-project/agents/missing-cred-agent";
+    await context.executeInContainer(container, [
+      "bash", "-c", `mkdir -p ${agentDir}`,
+    ]);
+
+    await context.executeInContainer(container, [
+      "bash", "-c", `cat > ${agentDir}/SKILL.md << 'EOF'
+---
+description: "Agent that references a missing credential"
+---
+
+# Missing Credential Agent
+
+This agent references a credential that does not exist on this host.
+EOF`,
+    ]);
+
+    // Reference a credential ("nonexistent_secret") that was never written to disk
+    await context.executeInContainer(container, [
+      "bash", "-c", `cat > ${agentDir}/config.toml << 'EOF'
+models = ["sonnet"]
+credentials = ["nonexistent_secret"]
+schedule = "0 */6 * * *"
+EOF`,
+    ]);
+
+    await context.executeInContainer(container, [
+      "bash", "-c", `chown -R testuser:testuser ${agentDir}`,
+    ]);
+
+    // Start the scheduler — it should detect the missing credential during
+    // validateAndDiscover() and exit promptly with a non-zero status code.
+    await context.executeInContainer(container, [
+      "bash", "-c",
+      "cd /home/testuser/test-project && al start --headless > /tmp/scheduler.log 2>&1; echo \"exit:$?\" >> /tmp/scheduler.log",
+    ]);
+
+    // Give the process a moment to write its final log lines
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    const logs = await getSchedulerLogs(context, container);
+
+    // The scheduler must have exited (the exit code line was appended above)
+    expect(logs).toMatch(/exit:[1-9]/);
+
+    // The log output must mention the missing credential so the user knows
+    // what went wrong — matches the CredentialError message from credentials.ts
+    expect(logs).toMatch(/nonexistent_secret/);
+    expect(logs).toMatch(/not found|Credential/i);
+  });
 
   it("triggers agent on cron schedule", async () => {
     const context = getTestContext();
