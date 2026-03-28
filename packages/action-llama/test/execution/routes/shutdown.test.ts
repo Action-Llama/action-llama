@@ -61,4 +61,19 @@ describe("POST /shutdown", () => {
     });
     expect(res.status).toBe(400);
   });
+
+  it("returns 400 for invalid JSON body", async () => {
+    const killFn = vi.fn();
+    const registry = new ContainerRegistry();
+
+    const app = createTestApp(registry, killFn);
+    const res = await app.request("/shutdown", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "not-valid-json",
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("invalid JSON body");
+  });
 });
