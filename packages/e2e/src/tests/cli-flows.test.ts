@@ -371,4 +371,81 @@ EOF`,
 
     await stopActionLlamaScheduler(context, container);
   });
+
+  it("schedules multiple agents independently with different cron expressions", async () => {
+    const context = getTestContext();
+    const container = await setupLocalActionLlama(context);
+
+    // Create three agents:
+    //   alpha-agent  — fires every second ("* * * * * *") — should fire quickly
+    //   beta-agent   — fires every second ("* * * * * *") — should fire independently
+    //   gamma-agent  — fires only on Jan 1 2099 — should never fire during the test
+
+    for (const { name, schedule } of [
+      { name: "alpha-agent", schedule: "* * * * * *" },
+      { name: "beta-agent", schedule: "* * * * * *" },
+      { name: "gamma-agent", schedule: "0 0 1 1 *" },
+    ]) {
+      const agentDir = `/home/testuser/test-project/agents/${name}`;
+      await context.executeInContainer(container, [
+        "bash", "-c", `mkdir -p ${agentDir}`,
+      ]);
+      await context.executeInContainer(container, [
+        "bash", "-c", `cat > ${agentDir}/SKILL.md << 'EOF'
+---
+description: "Multi-agent scheduling test agent"
+---
+
+# ${name}
+
+You are ${name}, a test agent for multi-agent scheduling verification.
+EOF`,
+      ]);
+      await context.executeInContainer(container, [
+        "bash", "-c", `cat > ${agentDir}/config.toml << 'EOF'
+models = ["sonnet"]
+credentials = ["github_token", "anthropic_key"]
+schedule = "${schedule}"
+EOF`,
+      ]);
+      await context.executeInContainer(container, [
+        "bash", "-c", `chown -R testuser:testuser ${agentDir}`,
+      ]);
+    }
+
+    // Start the scheduler with coverage instrumentation
+    await startActionLlamaScheduler(context, container, { coverage: true });
+
+    // Verify all three agents appear in "al stat" output — each with a cron trigger
+    const statOutput = await context.executeInContainer(container, [
+      "bash", "-c", "cd /home/testuser/test-project && al stat",
+    ]);
+    expect(statOutput).toContain("alpha-agent");
+    expect(statOutput).toContain("beta-agent");
+    expect(statOutput).toContain("gamma-agent");
+    // All schedule-driven agents should show a "cron" trigger type
+    expect(statOutput).toMatch(/cron/);
+
+    // Wait up to 60 seconds for both fast-schedule agents to fire independently.
+    // Each successful cron dispatch is logged as "<name>: running (schedule)".
+    let alphaFired = false;
+    let betaFired = false;
+    for (let i = 0; i < 60; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const logs = await getSchedulerLogs(context, container);
+      if (logs.includes("alpha-agent: running")) alphaFired = true;
+      if (logs.includes("beta-agent: running")) betaFired = true;
+      if (alphaFired && betaFired) break;
+    }
+
+    // Both every-second agents must have fired during the observation window
+    expect(alphaFired).toBe(true);
+    expect(betaFired).toBe(true);
+
+    // The future-scheduled agent must NOT have fired
+    const finalLogs = await getSchedulerLogs(context, container);
+    expect(finalLogs).not.toContain("gamma-agent: running");
+
+    await stopActionLlamaScheduler(context, container);
+  });
 });
