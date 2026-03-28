@@ -478,4 +478,196 @@ describe("StatusTracker", () => {
     expect(agent.runningCount).toBe(0);
     expect(agent.state).toBe("idle");
   });
+
+  // ── unregisterAgent ───────────────────────────────────────────────────────
+
+  it("unregisterAgent removes agent and emits update", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.registerAgent("reviewer");
+
+    const listener = vi.fn();
+    tracker.on("update", listener);
+
+    tracker.unregisterAgent("dev");
+
+    expect(tracker.getAllAgents()).toHaveLength(1);
+    expect(tracker.getAllAgents()[0].name).toBe("reviewer");
+    expect(listener).toHaveBeenCalled();
+  });
+
+  it("unregisterAgent is safe for unknown agent", () => {
+    const tracker = new StatusTracker();
+    expect(() => tracker.unregisterAgent("nonexistent")).not.toThrow();
+  });
+
+  // ── endRun with token usage ───────────────────────────────────────────────
+
+  it("endRun accumulates token usage", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.startRun("dev");
+
+    const usage = {
+      inputTokens: 100, outputTokens: 50,
+      cacheReadTokens: 10, cacheWriteTokens: 5,
+      totalTokens: 165, cost: 0.01, turnCount: 3,
+    };
+    tracker.endRun("dev", 5000, undefined, usage);
+
+    const agent = tracker.getAllAgents()[0];
+    expect(agent.lastRunUsage?.inputTokens).toBe(100);
+    expect(agent.cumulativeUsage?.inputTokens).toBe(100);
+
+    // Second run accumulates
+    tracker.startRun("dev");
+    tracker.endRun("dev", 3000, undefined, usage);
+    const agent2 = tracker.getAllAgents()[0];
+    expect(agent2.cumulativeUsage?.inputTokens).toBe(200);
+    expect(agent2.cumulativeUsage?.totalTokens).toBe(330);
+  });
+
+  // ── completeRun ───────────────────────────────────────────────────────────
+
+  it("completeRun sets state to idle on success", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.completeRun("dev", 5000);
+    const agent = tracker.getAllAgents()[0];
+    expect(agent.state).toBe("idle");
+    expect(agent.lastRunDuration).toBe(5000);
+    expect(agent.lastRunAt).not.toBeNull();
+  });
+
+  it("completeRun sets state to error on failure", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.completeRun("dev", 2000, "Container exited with code 1");
+    const agent = tracker.getAllAgents()[0];
+    expect(agent.state).toBe("error");
+    expect(agent.lastError).toBe("Container exited with code 1");
+  });
+
+  // ── setQueuedWebhooks ─────────────────────────────────────────────────────
+
+  it("setQueuedWebhooks updates queue count", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.setQueuedWebhooks("dev", 5);
+    const agent = tracker.getAllAgents()[0];
+    expect(agent.queuedWebhooks).toBe(5);
+  });
+
+  // ── baseImageStatus ───────────────────────────────────────────────────────
+
+  it("setBaseImageStatus / getBaseImageStatus round-trips", () => {
+    const tracker = new StatusTracker();
+    expect(tracker.getBaseImageStatus()).toBeNull();
+    tracker.setBaseImageStatus("Building base image...");
+    expect(tracker.getBaseImageStatus()).toBe("Building base image...");
+    tracker.setBaseImageStatus(null);
+    expect(tracker.getBaseImageStatus()).toBeNull();
+  });
+
+  // ── instance lifecycle ────────────────────────────────────────────────────
+
+  it("registerInstance and unregisterInstance track instances", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+
+    tracker.registerInstance({
+      id: "dev-abc123",
+      agentName: "dev",
+      status: "running",
+      startedAt: new Date(),
+      trigger: "schedule",
+    });
+
+    expect(tracker.getInstances()).toHaveLength(1);
+    expect(tracker.getInstances()[0].id).toBe("dev-abc123");
+
+    tracker.unregisterInstance("dev-abc123");
+    expect(tracker.getInstances()).toHaveLength(0);
+  });
+
+  // ── setPaused / isPaused ──────────────────────────────────────────────────
+
+  it("setPaused and isPaused work when schedulerInfo is set", () => {
+    const tracker = new StatusTracker();
+    tracker.setSchedulerInfo({ uptime: 0, paused: false, shuttingDown: false });
+
+    expect(tracker.isPaused()).toBe(false);
+    tracker.setPaused(true);
+    expect(tracker.isPaused()).toBe(true);
+    tracker.setPaused(false);
+    expect(tracker.isPaused()).toBe(false);
+  });
+
+  it("isPaused returns false when schedulerInfo is not set", () => {
+    const tracker = new StatusTracker();
+    expect(tracker.isPaused()).toBe(false);
+  });
+
+  it("setPaused is safe when schedulerInfo is not set", () => {
+    const tracker = new StatusTracker();
+    expect(() => tracker.setPaused(true)).not.toThrow();
+  });
+
+  // ── setAgentDescription ───────────────────────────────────────────────────
+
+  it("setAgentDescription updates description", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.setAgentDescription("dev", "My custom description");
+    const agent = tracker.getAllAgents()[0];
+    expect(agent.description).toBe("My custom description");
+  });
+
+  // ── setTaskUrl ────────────────────────────────────────────────────────────
+
+  it("setTaskUrl stores and clears task URL", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.setTaskUrl("dev", "https://console.example.com/tasks/123");
+    expect(tracker.getAllAgents()[0].taskUrl).toBe("https://console.example.com/tasks/123");
+    tracker.setTaskUrl("dev", null);
+    expect(tracker.getAllAgents()[0].taskUrl).toBeNull();
+  });
+
+  // ── getAgentLifecycle ─────────────────────────────────────────────────────
+
+  it("getAgentLifecycle returns lifecycle for registered agent", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    const lifecycle = tracker.getAgentLifecycle("dev");
+    expect(lifecycle).toBeDefined();
+  });
+
+  it("getAgentLifecycle returns undefined for unknown agent", () => {
+    const tracker = new StatusTracker();
+    expect(tracker.getAgentLifecycle("nonexistent")).toBeUndefined();
+  });
+
+  // ── getAgentScale ─────────────────────────────────────────────────────────
+
+  it("getAgentScale returns current scale", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev", 3);
+    expect(tracker.getAgentScale("dev")).toBe(3);
+  });
+
+  it("getAgentScale returns 1 for unknown agent", () => {
+    const tracker = new StatusTracker();
+    expect(tracker.getAgentScale("unknown")).toBe(1);
+  });
+
+  // ── startBuild / completeBuild ────────────────────────────────────────────
+
+  it("startBuild sets agent state to building", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.startBuild("dev", "image update");
+    const agent = tracker.getAllAgents()[0];
+    expect(agent.state).toBe("building");
+  });
 });
