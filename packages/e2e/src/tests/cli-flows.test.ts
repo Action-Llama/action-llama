@@ -100,7 +100,10 @@ You are a test agent for lifecycle management. Output your status and wait.
     const statusOutput = await context.executeInContainer(container, [
       "bash", "-c", "cd /home/testuser/test-project && al stat"
     ]);
-    expect(statusOutput).toContain("Running");
+    // The STATUS column shows "Idle" when no agent instance is actively running
+    // (agents are waiting for their next cron trigger). Check for "cron" in the
+    // TRIGGER column instead — it always appears for agents with a cron schedule.
+    expect(statusOutput).toContain("cron");
 
     // Check scheduler logs
     await new Promise(resolve => setTimeout(resolve, 2000));
