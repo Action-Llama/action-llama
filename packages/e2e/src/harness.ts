@@ -398,6 +398,7 @@ export class E2ETestContext {
     
     return new Promise<void>((resolve, reject) => {
       this.docker.modem.followProgress(stream, (err, output) => {
+        let buildError: string | undefined;
         if (output) {
           output.forEach((event: any) => {
             if (event.stream) {
@@ -405,12 +406,15 @@ export class E2ETestContext {
             }
             if (event.error) {
               console.error(`[${imageName}] Docker build error:`, event.error);
+              buildError = event.error;
             }
           });
         }
         if (err) {
           console.error(`[${imageName}] Docker build failed:`, err);
           reject(err);
+        } else if (buildError) {
+          reject(new Error(`Docker build failed for ${imageName}: ${buildError}`));
         } else {
           console.log(`[${imageName}] Docker image built successfully`);
           resolve();

@@ -6,14 +6,14 @@ export default defineConfig({
     testTimeout: 600000, // 10 minutes per test
     hookTimeout: 300000, // 5 minutes for setup/teardown
     pool: "forks", // Isolate container tests
+    poolOptions: {
+      forks: {
+        singleFork: true, // Run all test files in a single fork process
+      },
+    },
+    fileParallelism: false, // Prevent parallel test file execution — Docker builds conflict
     setupFiles: ["./src/setup.ts"],
     globalSetup: ["./src/global-setup.ts"],
     include: ["src/tests/**/*.test.ts"],
-  },
-  pool: "forks", // Moved from test.pool (Vitest 4 compatibility)
-  poolOptions: {
-    forks: {
-      singleFork: true, // Prevent parallel container conflicts
-    },
   },
 });
