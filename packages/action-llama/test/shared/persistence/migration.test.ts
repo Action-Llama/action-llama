@@ -372,3 +372,318 @@ describe("migrateFromLegacy", () => {
     }
   });
 });
+
+// ─── Additional coverage tests ─────────────────────────────────────────────
+
+describe("LegacyMigrator.migrateStateStore — catch branch", () => {
+  it("skips namespaces that throw during list and still migrates valid ones", async () => {
+    const store = await createPersistenceStore({ type: "memory" });
+    const migrator = new LegacyMigrator(store);
+
+    // Make list throw for "locks" but return data for "sessions"
+    const legacyStore: StateStore = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue(undefined),
+      delete: vi.fn().mockResolvedValue(undefined),
+      deleteAll: vi.fn().mockResolvedValue(undefined),
+      list: vi.fn().mockImplementation(async (ns: string) => {
+        if (ns === "locks") throw new Error("namespace not found");
+        if (ns === "sessions") return [{ key: "sess-1", value: { token: "abc" } }];
+        return [];
+      }),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await migrator.migrateStateStore(legacyStore);
+
+    // sessions should still be migrated
+    const val = await store.kv.get("sessions", "sess-1");
+    expect(val).toEqual({ token: "abc" });
+
+    await store.close();
+  });
+});
+
+describe("LegacyMigrator.migrateStatsStore — with actual run and call data", () => {
+  it("creates run started and completed events for each run record", async () => {
+    const store = await createPersistenceStore({ type: "memory" });
+    const migrator = new LegacyMigrator(store);
+
+    const mockRun = {
+      instance_id: "inst-1",
+      agent_name: "test-agent",
+      trigger_type: "schedule",
+      trigger_source: null,
+      result: "completed",
+      exit_code: 0,
+      duration_ms: 1200,
+      input_tokens: 100,
+      output_tokens: 50,
+      cache_read_tokens: 10,
+      cache_write_tokens: 5,
+      total_tokens: 165,
+      cost_usd: 0.001,
+      turn_count: 3,
+      error_message: null,
+      pre_hook_ms: null,
+      post_hook_ms: null,
+    };
+
+    // Mock query.sql to return the run
+    vi.spyOn(store, "query", "get").mockReturnValue({
+      sql: vi.fn().mockImplementation(async (q: string) => {
+        if (q.includes("runs")) return [mockRun];
+        return [];
+      }),
+    });
+
+    await migrator.migrateStatsStore({} as any);
+
+    const statsEvents: any[] = [];
+    for await (const event of store.events.stream("stats").replay()) {
+      statsEvents.push(event);
+    }
+
+    const runStarted = statsEvents.find((e) => e.type === "run.started");
+    expect(runStarted).toBeDefined();
+    expect(runStarted.data.instanceId).toBe("inst-1");
+    expect(runStarted.data.agentName).toBe("test-agent");
+
+    const runCompleted = statsEvents.find((e) => e.type === "run.completed");
+    expect(runCompleted).toBeDefined();
+    expect(runCompleted.data.result).toBe("completed");
+
+    await store.close();
+  });
+
+  it("creates run.failed event when run result is error", async () => {
+    const store = await createPersistenceStore({ type: "memory" });
+    const migrator = new LegacyMigrator(store);
+
+    const mockRun = {
+      instance_id: "inst-fail",
+      agent_name: "failing-agent",
+      trigger_type: "manual",
+      trigger_source: null,
+      result: "error",
+      exit_code: 1,
+      duration_ms: 500,
+      input_tokens: 20,
+      output_tokens: 5,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+      total_tokens: 25,
+      cost_usd: 0.0001,
+      turn_count: 1,
+      error_message: "Something went wrong",
+      pre_hook_ms: null,
+      post_hook_ms: null,
+    };
+
+    vi.spyOn(store, "query", "get").mockReturnValue({
+      sql: vi.fn().mockImplementation(async (q: string) => {
+        if (q.includes("runs")) return [mockRun];
+        return [];
+      }),
+    });
+
+    await migrator.migrateStatsStore({} as any);
+
+    const statsEvents: any[] = [];
+    for await (const event of store.events.stream("stats").replay()) {
+      statsEvents.push(event);
+    }
+
+    const runFailed = statsEvents.find((e) => e.type === "run.failed");
+    expect(runFailed).toBeDefined();
+    expect(runFailed.data.result).toBe("error");
+    expect(runFailed.data.errorMessage).toBe("Something went wrong");
+
+    await store.close();
+  });
+
+  it("creates call initiated and completed events for each call edge record", async () => {
+    const store = await createPersistenceStore({ type: "memory" });
+    const migrator = new LegacyMigrator(store);
+
+    const mockCall = {
+      caller_agent: "agent-a",
+      caller_instance: "inst-a-1",
+      target_agent: "agent-b",
+      target_instance: "inst-b-1",
+      depth: 1,
+      duration_ms: 800,
+      status: "completed",
+    };
+
+    vi.spyOn(store, "query", "get").mockReturnValue({
+      sql: vi.fn().mockImplementation(async (q: string) => {
+        if (q.includes("call_edges")) return [mockCall];
+        return [];
+      }),
+    });
+
+    await migrator.migrateStatsStore({} as any);
+
+    const statsEvents: any[] = [];
+    for await (const event of store.events.stream("stats").replay()) {
+      statsEvents.push(event);
+    }
+
+    const callInitiated = statsEvents.find((e) => e.type === "call.initiated");
+    expect(callInitiated).toBeDefined();
+    expect(callInitiated.data.callerAgent).toBe("agent-a");
+    expect(callInitiated.data.targetAgent).toBe("agent-b");
+
+    const callCompleted = statsEvents.find((e) => e.type === "call.completed");
+    expect(callCompleted).toBeDefined();
+    expect(callCompleted.data.durationMs).toBe(800);
+
+    await store.close();
+  });
+
+  it("creates call.failed event when call status is error", async () => {
+    const store = await createPersistenceStore({ type: "memory" });
+    const migrator = new LegacyMigrator(store);
+
+    const mockCall = {
+      caller_agent: "agent-a",
+      caller_instance: "inst-a-1",
+      target_agent: "agent-b",
+      target_instance: "inst-b-1",
+      depth: 1,
+      duration_ms: 300,
+      status: "error",
+    };
+
+    vi.spyOn(store, "query", "get").mockReturnValue({
+      sql: vi.fn().mockImplementation(async (q: string) => {
+        if (q.includes("call_edges")) return [mockCall];
+        return [];
+      }),
+    });
+
+    await migrator.migrateStatsStore({} as any);
+
+    const statsEvents: any[] = [];
+    for await (const event of store.events.stream("stats").replay()) {
+      statsEvents.push(event);
+    }
+
+    const callFailed = statsEvents.find((e) => e.type === "call.failed");
+    expect(callFailed).toBeDefined();
+    expect(callFailed.data.status).toBe("error");
+
+    await store.close();
+  });
+
+  it("does not create call completed/failed event when duration_ms is null", async () => {
+    const store = await createPersistenceStore({ type: "memory" });
+    const migrator = new LegacyMigrator(store);
+
+    const mockCall = {
+      caller_agent: "agent-a",
+      caller_instance: "inst-a-1",
+      target_agent: "agent-b",
+      target_instance: "inst-b-1",
+      depth: 1,
+      duration_ms: null,
+      status: null,
+    };
+
+    vi.spyOn(store, "query", "get").mockReturnValue({
+      sql: vi.fn().mockImplementation(async (q: string) => {
+        if (q.includes("call_edges")) return [mockCall];
+        return [];
+      }),
+    });
+
+    await migrator.migrateStatsStore({} as any);
+
+    const statsEvents: any[] = [];
+    for await (const event of store.events.stream("stats").replay()) {
+      statsEvents.push(event);
+    }
+
+    const callInitiated = statsEvents.find((e) => e.type === "call.initiated");
+    expect(callInitiated).toBeDefined();
+    // No completion event when duration_ms is null
+    const callCompleted = statsEvents.find((e) => e.type === "call.completed");
+    expect(callCompleted).toBeUndefined();
+    const callFailed = statsEvents.find((e) => e.type === "call.failed");
+    expect(callFailed).toBeUndefined();
+
+    await store.close();
+  });
+
+  it("appends stats.migrated event with run and call counts", async () => {
+    const store = await createPersistenceStore({ type: "memory" });
+    const migrator = new LegacyMigrator(store);
+
+    vi.spyOn(store, "query", "get").mockReturnValue({
+      sql: vi.fn().mockImplementation(async (q: string) => {
+        if (q.includes("runs")) return [{ instance_id: "r1", agent_name: "a", trigger_type: "schedule", trigger_source: null, result: "completed", exit_code: 0, duration_ms: 100, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, total_tokens: 0, cost_usd: 0, turn_count: 1, error_message: null, pre_hook_ms: null, post_hook_ms: null }];
+        if (q.includes("call_edges")) return [];
+        return [];
+      }),
+    });
+
+    const progress: MigrationProgress[] = [];
+    await migrator.migrateStatsStore({} as any, { onProgress: (p) => progress.push(p) });
+
+    const migrationEvents: any[] = [];
+    for await (const event of store.events.stream("migration").replay()) {
+      migrationEvents.push(event);
+    }
+
+    const statsMigrated = migrationEvents.find((e) => e.type === "stats.migrated");
+    expect(statsMigrated).toBeDefined();
+    expect(statsMigrated.data.runsCount).toBe(1);
+    expect(statsMigrated.data.callEdgesCount).toBe(0);
+
+    // Final progress should be 100%
+    const lastProgress = progress[progress.length - 1];
+    expect(lastProgress.percentage).toBe(100);
+    expect(lastProgress.step).toContain("Migration completed");
+
+    await store.close();
+  });
+});
+
+describe("LegacyMigrator.migrateAll — with legacyStatsStore", () => {
+  it("reports migrating stats store step when stats store is provided", async () => {
+    const store = await createPersistenceStore({ type: "memory" });
+    const migrator = new LegacyMigrator(store);
+    const progress: MigrationProgress[] = [];
+
+    // migrateStatsStore uses newStore.query.sql, not legacyStatsStore
+    await migrator.migrateAll(undefined, {} as any, {
+      onProgress: (p) => progress.push(p),
+    });
+
+    const statsStep = progress.find((p) => p.step.includes("Migrating stats store"));
+    expect(statsStep).toBeDefined();
+    expect(statsStep?.percentage).toBe(50);
+
+    await store.close();
+  });
+
+  it("completes successfully when both state and stats stores are provided", async () => {
+    const store = await createPersistenceStore({ type: "memory" });
+    const migrator = new LegacyMigrator(store);
+    const legacyStore = makeMockStateStore({
+      locks: [{ key: "lock-1", value: { holder: "a" } }],
+    });
+
+    await expect(migrator.migrateAll(legacyStore, {} as any)).resolves.not.toThrow();
+
+    const events: any[] = [];
+    for await (const event of store.events.stream("migration").replay()) {
+      events.push(event);
+    }
+    const completedEvent = events.find((e) => e.type === "migration.completed");
+    expect(completedEvent).toBeDefined();
+
+    await store.close();
+  });
+});
