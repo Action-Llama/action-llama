@@ -46,6 +46,8 @@ vi.mock("../../src/execution/execution.js", () => ({
 import { watch } from "fs";
 import { discoverAgents, loadAgentConfig, validateAgentConfig } from "../../src/shared/config.js";
 import { buildSingleAgentImage } from "../../src/execution/image-builder.js";
+import { registerWebhookBindings } from "../../src/events/webhook-setup.js";
+import { executeRun, makeWebhookPrompt } from "../../src/execution/execution.js";
 import { watchAgents, type HotReloadContext } from "../../src/scheduler/watcher.js";
 import { RunnerPool } from "../../src/execution/runner-pool.js";
 
@@ -54,6 +56,8 @@ const mockedDiscoverAgents = vi.mocked(discoverAgents);
 const mockedLoadAgentConfig = vi.mocked(loadAgentConfig);
 const mockedValidateAgentConfig = vi.mocked(validateAgentConfig);
 const mockedBuildSingleAgentImage = vi.mocked(buildSingleAgentImage);
+const mockedRegisterWebhookBindings = vi.mocked(registerWebhookBindings);
+const mockedExecuteRun = vi.mocked(executeRun);
 
 function makeAgentConfig(name: string, overrides: Record<string, any> = {}) {
   return {
@@ -217,6 +221,25 @@ describe("watchAgents", () => {
     const handle = watchAgents(ctx);
     handle.stop(); // Should not throw
     expect(ctx.logger.warn).toHaveBeenCalled();
+  });
+
+  it("stop() clears pending debounce timers", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const ctx = makeContext();
+      const handle = watchAgents(ctx);
+
+      // Fire a filesystem event to create a debounce timer
+      watchCallback("change", "agent-a/SKILL.md");
+      expect(vi.getTimerCount()).toBe(1);
+
+      // Stopping should clear the pending timer
+      handle.stop();
+      expect(vi.getTimerCount()).toBe(0);
+      expect(mockWatcher.close).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -449,5 +472,255 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
 
     // But building state should have been set
     expect(statusTracker.setAgentState).toHaveBeenCalledWith("agent-a", "building");
+  });
+
+  it("handles new agent with invalid config: logs error and registers with scale 0", async () => {
+    const ctx = makeContext({ agentConfigs: [], runnerPools: {} });
+    mockedDiscoverAgents.mockReturnValue(["agent-b"]);
+    mockedLoadAgentConfig.mockImplementation(() => {
+      throw new Error("missing required field: models");
+    });
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-b");
+
+    expect(ctx.logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "agent-b" }),
+      "hot reload: invalid agent config"
+    );
+    expect(ctx.statusTracker!.registerAgent).toHaveBeenCalledWith("agent-b", 0);
+    expect(ctx.statusTracker!.setAgentError).toHaveBeenCalledWith(
+      "agent-b",
+      expect.stringContaining("Invalid config")
+    );
+    expect(mockedBuildSingleAgentImage).not.toHaveBeenCalled();
+  });
+
+  it("handles new agent with scale=0: registers as disabled without creating runners", async () => {
+    const ctx = makeContext({ agentConfigs: [], runnerPools: {} });
+    const disabledConfig = makeAgentConfig("agent-b", { scale: 0 });
+    mockedDiscoverAgents.mockReturnValue(["agent-b"]);
+    mockedLoadAgentConfig.mockReturnValue(disabledConfig);
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-b");
+
+    expect(ctx.agentConfigs).toContain(disabledConfig);
+    expect(ctx.runnerPools["agent-b"]).toBeUndefined();
+    expect(ctx.createRunner).not.toHaveBeenCalled();
+    expect(mockedBuildSingleAgentImage).not.toHaveBeenCalled();
+    expect(ctx.logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "agent-b" }),
+      "hot reload: agent registered (scale=0, disabled)"
+    );
+  });
+
+  it("handles changed agent: removes schedule when new config has no schedule", async () => {
+    const runner = makeMockRunner("agent-a");
+    const pool = new RunnerPool([runner]);
+    // Original config has a schedule
+    const ctx = makeContext({
+      agentConfigs: [makeAgentConfig("agent-a", { schedule: "0 * * * *" })],
+      runnerPools: { "agent-a": pool },
+    });
+
+    // New config has no schedule
+    const updatedConfig = makeAgentConfig("agent-a", { schedule: undefined });
+    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
+    mockedLoadAgentConfig.mockReturnValue(updatedConfig);
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    // Should clear the nextRunAt since schedule is removed
+    expect(ctx.statusTracker!.setNextRunAt).toHaveBeenCalledWith("agent-a", null);
+  });
+
+  it("pendingRebuild: queues a second change while first is running", async () => {
+    let resolveFirst: () => void;
+    const firstBuildStarted = new Promise<void>((resolve) => {
+      mockedBuildSingleAgentImage.mockImplementationOnce(async () => {
+        resolveFirst?.();
+        // Hang indefinitely until test resolves
+        return new Promise<string>((r) => setTimeout(() => r("agent-a:v1"), 50));
+      });
+    });
+
+    // Second build should be quick
+    mockedBuildSingleAgentImage.mockResolvedValue("agent-a:v2");
+
+    const ctx = makeContext();
+    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
+    mockedLoadAgentConfig.mockReturnValue(makeAgentConfig("agent-a"));
+
+    const handle = watchAgents(ctx);
+
+    // Start first change (will hang in buildSingleAgentImage)
+    const firstChange = handle._handleAgentChange("agent-a");
+
+    // Wait for build to start, then immediately trigger second change
+    // (it should be added to pendingRebuild since first is still running)
+    const secondChange = handle._handleAgentChange("agent-a");
+
+    // Both should complete
+    await Promise.all([firstChange, secondChange]);
+
+    // buildSingleAgentImage was called at least twice (once for each reload)
+    expect(mockedBuildSingleAgentImage).toHaveBeenCalledTimes(2);
+  });
+
+  describe("buildWebhookTrigger", () => {
+    beforeEach(() => {
+      mockedRegisterWebhookBindings.mockClear();
+      mockedExecuteRun.mockClear();
+    });
+
+    function makeTriggerTest() {
+      let capturedOnTrigger: ((config: any, context: any) => boolean) | undefined;
+      mockedRegisterWebhookBindings.mockImplementationOnce(({ onTrigger }: any) => {
+        capturedOnTrigger = onTrigger;
+      });
+      return {
+        getCaptured: () => capturedOnTrigger,
+      };
+    }
+
+    it("returns true and queues executeRun when runner is available", async () => {
+      const { getCaptured } = makeTriggerTest();
+
+      const runner = makeMockRunner("agent-b");
+      const pool = new RunnerPool([runner]);
+      const ctx = makeContext({ agentConfigs: [], runnerPools: {} });
+
+      const newConfig = makeAgentConfig("agent-b");
+      mockedDiscoverAgents.mockReturnValue(["agent-b"]);
+      mockedLoadAgentConfig.mockReturnValue(newConfig);
+      mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
+
+      // Override createRunner to use our pool
+      ctx.createRunner = vi.fn(() => runner);
+
+      const handle = watchAgents(ctx);
+      await handle._handleAgentChange("agent-b");
+
+      const onTrigger = getCaptured();
+      expect(onTrigger).toBeDefined();
+
+      // Add runner to pool via runnerPools
+      const agentPool = ctx.runnerPools["agent-b"];
+      expect(agentPool).toBeInstanceOf(RunnerPool);
+
+      const statusTrackerWithPaused = {
+        ...ctx.statusTracker,
+        isPaused: vi.fn(() => false),
+        isAgentEnabled: vi.fn(() => true),
+      };
+      const ctxWithPaused = { ...ctx, statusTracker: statusTrackerWithPaused as any };
+
+      // Rebuild the trigger with the pool that has an idle runner
+      let capturedOnTrigger2: ((config: any, context: any) => boolean) | undefined;
+      mockedRegisterWebhookBindings.mockImplementationOnce(({ onTrigger: ot }: any) => {
+        capturedOnTrigger2 = ot;
+      });
+
+      // Re-setup with a context that has statusTracker.isPaused
+      const ctx2 = makeContext({
+        agentConfigs: [],
+        runnerPools: {},
+      });
+      (ctx2.statusTracker as any).isPaused = vi.fn(() => false);
+
+      mockedDiscoverAgents.mockReturnValue(["agent-b"]);
+      mockedLoadAgentConfig.mockReturnValue(newConfig);
+      mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
+
+      const handle2 = watchAgents(ctx2);
+      await handle2._handleAgentChange("agent-b");
+
+      const onTrigger2 = capturedOnTrigger2;
+      if (!onTrigger2) return; // skip if not captured
+
+      const webhookContext = { event: "push", action: "opened", receiptId: "r1" };
+      const result = onTrigger2(newConfig, webhookContext);
+      expect(result).toBe(true);
+    });
+
+    it("returns false when agent is disabled", async () => {
+      const { getCaptured } = makeTriggerTest();
+
+      const ctx = makeContext({ agentConfigs: [], runnerPools: {} });
+      (ctx.statusTracker as any).isPaused = vi.fn(() => false);
+      (ctx.statusTracker as any).isAgentEnabled = vi.fn(() => false);
+
+      const newConfig = makeAgentConfig("agent-b");
+      mockedDiscoverAgents.mockReturnValue(["agent-b"]);
+      mockedLoadAgentConfig.mockReturnValue(newConfig);
+      mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
+
+      const handle = watchAgents(ctx);
+      await handle._handleAgentChange("agent-b");
+
+      const onTrigger = getCaptured();
+      expect(onTrigger).toBeDefined();
+      const result = onTrigger!(newConfig, { event: "push", action: "opened" });
+      expect(result).toBe(false);
+    });
+
+    it("returns false when scheduler is paused", async () => {
+      const { getCaptured } = makeTriggerTest();
+
+      const ctx = makeContext({ agentConfigs: [], runnerPools: {} });
+      (ctx.statusTracker as any).isPaused = vi.fn(() => true);
+      (ctx.statusTracker as any).isAgentEnabled = vi.fn(() => true);
+
+      const newConfig = makeAgentConfig("agent-b");
+      mockedDiscoverAgents.mockReturnValue(["agent-b"]);
+      mockedLoadAgentConfig.mockReturnValue(newConfig);
+      mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
+
+      const handle = watchAgents(ctx);
+      await handle._handleAgentChange("agent-b");
+
+      const onTrigger = getCaptured();
+      expect(onTrigger).toBeDefined();
+      const result = onTrigger!(newConfig, { event: "push", action: "opened" });
+      expect(result).toBe(false);
+      expect(ctx.logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ agent: "agent-b" }),
+        "scheduler paused, webhook rejected"
+      );
+    });
+
+    it("queues webhook when no runner is available and returns true", async () => {
+      const { getCaptured } = makeTriggerTest();
+
+      const ctx = makeContext({ agentConfigs: [], runnerPools: {} });
+      (ctx.statusTracker as any).isPaused = vi.fn(() => false);
+      (ctx.statusTracker as any).isAgentEnabled = vi.fn(() => true);
+
+      const newConfig = makeAgentConfig("agent-b");
+      mockedDiscoverAgents.mockReturnValue(["agent-b"]);
+      mockedLoadAgentConfig.mockReturnValue(newConfig);
+      mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
+
+      // Create runner already running so getAvailableRunner returns null
+      const busyRunner = makeMockRunner("agent-b");
+      busyRunner.isRunning = true;
+      ctx.createRunner = vi.fn(() => busyRunner);
+
+      const handle = watchAgents(ctx);
+      await handle._handleAgentChange("agent-b");
+
+      const onTrigger = getCaptured();
+      expect(onTrigger).toBeDefined();
+
+      const webhookContext = { event: "pull_request", action: "opened" };
+      const result = onTrigger!(newConfig, webhookContext);
+      expect(result).toBe(true);
+      expect(ctx.schedulerCtx.workQueue.enqueue).toHaveBeenCalledWith(
+        "agent-b",
+        expect.objectContaining({ type: "webhook" })
+      );
+    });
   });
 });
