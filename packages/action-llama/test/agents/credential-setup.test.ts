@@ -347,4 +347,108 @@ describe("loadContainerCredentials", () => {
     expect(result.providerKeys.get("openai")).toBe("sk-openai-def");
     clearCredPath();
   });
+
+  it("deduplicates when the same provider appears multiple times in models", () => {
+    setCredPath(tempDir);
+    makeCredVolume(tempDir, {
+      anthropic_key: { default: { token: "sk-ant-single" } },
+    });
+
+    const agentConfig = makeAgentConfig({
+      models: [
+        { provider: "anthropic", model: "claude-3-haiku", thinkingLevel: "none" as any, authType: "api_key" },
+        { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
+      ],
+      credentials: [],
+    });
+
+    const result = loadContainerCredentials(agentConfig);
+    // Only one entry for anthropic even though it appeared twice
+    expect(result.providerKeys.size).toBe(1);
+    expect(result.providerKeys.get("anthropic")).toBe("sk-ant-single");
+    clearCredPath();
+  });
+
+  it("skips credential type with no envVars definition", () => {
+    setCredPath(tempDir);
+    makeCredVolume(tempDir, {
+      anthropic_key: { default: { token: "sk-ant-123" } },
+      // "unknown_cred" has no built-in definition, so no envVars
+      unknown_cred: { default: { some_field: "some_value" } },
+    });
+
+    const agentConfig = makeAgentConfig({
+      models: [{ provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" }],
+      credentials: ["unknown_cred"],
+    });
+
+    // Should not throw — unknown credential types are skipped
+    const result = loadContainerCredentials(agentConfig);
+    expect(result.providerKeys.get("anthropic")).toBe("sk-ant-123");
+    clearCredPath();
+  });
+
+  it("sets up SSH key from git_ssh credential", () => {
+    setCredPath(tempDir);
+    makeCredVolume(tempDir, {
+      anthropic_key: { default: { token: "sk-ant-ssh-test" } },
+      git_ssh: { default: { id_rsa: "-----BEGIN OPENSSH PRIVATE KEY-----\nfake-key\n-----END OPENSSH PRIVATE KEY-----" } },
+    });
+
+    const agentConfig = makeAgentConfig({
+      models: [{ provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" }],
+      credentials: ["git_ssh"],
+    });
+
+    loadContainerCredentials(agentConfig);
+    expect(process.env.GIT_SSH_COMMAND).toContain("ssh -i");
+    expect(process.env.GIT_SSH_COMMAND).toContain("StrictHostKeyChecking=accept-new");
+    clearCredPath();
+  });
+
+  it("sets git identity from git_ssh credential username and email", () => {
+    setCredPath(tempDir);
+    makeCredVolume(tempDir, {
+      anthropic_key: { default: { token: "sk-ant-id-test" } },
+      git_ssh: {
+        default: {
+          id_rsa: "-----BEGIN OPENSSH PRIVATE KEY-----\nfake\n-----END OPENSSH PRIVATE KEY-----",
+          username: "Test Bot",
+          email: "bot@example.com",
+        },
+      },
+    });
+
+    const agentConfig = makeAgentConfig({
+      models: [{ provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" }],
+      credentials: ["git_ssh"],
+    });
+
+    loadContainerCredentials(agentConfig);
+    expect(process.env.GIT_AUTHOR_NAME).toBe("Test Bot");
+    expect(process.env.GIT_COMMITTER_NAME).toBe("Test Bot");
+    expect(process.env.GIT_AUTHOR_EMAIL).toBe("bot@example.com");
+    expect(process.env.GIT_COMMITTER_EMAIL).toBe("bot@example.com");
+    clearCredPath();
+  });
+
+  it("configures git credential helper when GITHUB_TOKEN is set", () => {
+    setCredPath(tempDir);
+    makeCredVolume(tempDir, {
+      anthropic_key: { default: { token: "sk-ant-git-https" } },
+      github_token: { default: { token: "ghp_https_token" } },
+    });
+    process.env.GITHUB_TOKEN = "ghp_https_token";
+
+    const agentConfig = makeAgentConfig({
+      models: [{ provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" }],
+      credentials: ["github_token"],
+    });
+
+    loadContainerCredentials(agentConfig);
+    expect(process.env.GIT_TERMINAL_PROMPT).toBe("0");
+    const count = parseInt(process.env.GIT_CONFIG_COUNT || "0", 10);
+    expect(count).toBeGreaterThan(0);
+    clearCredPath();
+  });
 });
