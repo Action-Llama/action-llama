@@ -204,4 +204,67 @@ describe("git_ssh credential", () => {
       expect(result.values.email).toBe("updated@test.com");
     });
   });
+
+  describe("prompt — validate callback functions", () => {
+    it("username validate returns error when empty and true when non-empty", async () => {
+      mockedInput.mockImplementationOnce(async (opts: any) => {
+        expect(opts.validate("")).toBe("Name is required");
+        expect(opts.validate("  ")).toBe("Name is required");
+        expect(opts.validate("Alice")).toBe(true);
+        return "Alice";
+      });
+      mockedInput.mockResolvedValueOnce("alice@test.com" as any);
+      mockedSelect.mockResolvedValue("skip" as any);
+
+      await gitSsh.prompt!({});
+    });
+
+    it("email validate returns error when empty and true when non-empty", async () => {
+      mockedInput.mockResolvedValueOnce("Bob" as any);
+      mockedInput.mockImplementationOnce(async (opts: any) => {
+        expect(opts.validate("")).toBe("Email is required");
+        expect(opts.validate("  ")).toBe("Email is required");
+        expect(opts.validate("bob@test.com")).toBe(true);
+        return "bob@test.com";
+      });
+      mockedSelect.mockResolvedValue("skip" as any);
+
+      await gitSsh.prompt!({});
+    });
+
+    it("key path validate returns error when empty and true when non-empty", async () => {
+      mockedInput.mockResolvedValueOnce("Carol" as any);
+      mockedInput.mockResolvedValueOnce("carol@test.com" as any);
+      mockedSelect.mockResolvedValue("file" as any);
+      mockedInput.mockImplementationOnce(async (opts: any) => {
+        expect(opts.validate("")).toBe("Path is required");
+        expect(opts.validate("  ")).toBe("Path is required");
+        expect(opts.validate("/some/path")).toBe(true);
+        return "/fake/path/id_rsa";
+      });
+      mockedExistsSync.mockReturnValue(true as any);
+      mockedReadFileSync.mockReturnValue("-----BEGIN RSA PRIVATE KEY-----\nKEY\n-----END RSA PRIVATE KEY-----" as any);
+
+      await gitSsh.prompt!({});
+    });
+
+    it("pasted key validate returns errors for empty and non-key content", async () => {
+      mockedInput.mockResolvedValueOnce("Dan" as any);
+      mockedInput.mockResolvedValueOnce("dan@test.com" as any);
+      mockedSelect.mockResolvedValue("paste" as any);
+      mockedPassword.mockImplementationOnce(async (opts: any) => {
+        // Empty key
+        expect(opts.validate("")).toBe("Key is required");
+        expect(opts.validate("  ")).toBe("Key is required");
+        // Non-private-key content
+        expect(opts.validate("not a key")).toBe("Does not look like a private key — expected a PEM-formatted key");
+        // Valid key
+        expect(opts.validate("-----BEGIN RSA PRIVATE KEY-----\nKEY\n-----END RSA PRIVATE KEY-----")).toBe(true);
+        return "-----BEGIN RSA PRIVATE KEY-----\nPASTED\n-----END RSA PRIVATE KEY-----";
+      });
+
+      const result = await gitSsh.prompt!({});
+      expect(result.values.id_rsa).toBe("-----BEGIN RSA PRIVATE KEY-----\nPASTED\n-----END RSA PRIVATE KEY-----");
+    });
+  });
 });
