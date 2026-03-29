@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import {
@@ -390,6 +390,11 @@ describe("loadContainerCredentials", () => {
 
   it("sets up SSH key from git_ssh credential", () => {
     setCredPath(tempDir);
+    // Preserve any real SSH key that may be at /tmp/.ssh/id_rsa
+    const realKeyPath = "/tmp/.ssh/id_rsa";
+    let originalKey: string | undefined;
+    try { originalKey = readFileSync(realKeyPath, "utf-8"); } catch { /* no existing key */ }
+
     makeCredVolume(tempDir, {
       anthropic_key: { default: { token: "sk-ant-ssh-test" } },
       git_ssh: { default: { id_rsa: "-----BEGIN OPENSSH PRIVATE KEY-----\nfake-key\n-----END OPENSSH PRIVATE KEY-----" } },
@@ -400,14 +405,25 @@ describe("loadContainerCredentials", () => {
       credentials: ["git_ssh"],
     });
 
-    loadContainerCredentials(agentConfig);
-    expect(process.env.GIT_SSH_COMMAND).toContain("ssh -i");
-    expect(process.env.GIT_SSH_COMMAND).toContain("StrictHostKeyChecking=accept-new");
+    try {
+      loadContainerCredentials(agentConfig);
+      expect(process.env.GIT_SSH_COMMAND).toContain("ssh -i");
+      expect(process.env.GIT_SSH_COMMAND).toContain("StrictHostKeyChecking=accept-new");
+    } finally {
+      // Restore the original SSH key if it existed
+      if (originalKey !== undefined) {
+        writeFileSync(realKeyPath, originalKey, { mode: 0o600 });
+      }
+    }
     clearCredPath();
   });
 
   it("sets git identity from git_ssh credential username and email", () => {
     setCredPath(tempDir);
+    const realKeyPath = "/tmp/.ssh/id_rsa";
+    let originalKey: string | undefined;
+    try { originalKey = readFileSync(realKeyPath, "utf-8"); } catch { /* no existing key */ }
+
     makeCredVolume(tempDir, {
       anthropic_key: { default: { token: "sk-ant-id-test" } },
       git_ssh: {
@@ -424,11 +440,17 @@ describe("loadContainerCredentials", () => {
       credentials: ["git_ssh"],
     });
 
-    loadContainerCredentials(agentConfig);
-    expect(process.env.GIT_AUTHOR_NAME).toBe("Test Bot");
-    expect(process.env.GIT_COMMITTER_NAME).toBe("Test Bot");
-    expect(process.env.GIT_AUTHOR_EMAIL).toBe("bot@example.com");
-    expect(process.env.GIT_COMMITTER_EMAIL).toBe("bot@example.com");
+    try {
+      loadContainerCredentials(agentConfig);
+      expect(process.env.GIT_AUTHOR_NAME).toBe("Test Bot");
+      expect(process.env.GIT_COMMITTER_NAME).toBe("Test Bot");
+      expect(process.env.GIT_AUTHOR_EMAIL).toBe("bot@example.com");
+      expect(process.env.GIT_COMMITTER_EMAIL).toBe("bot@example.com");
+    } finally {
+      if (originalKey !== undefined) {
+        writeFileSync(realKeyPath, originalKey, { mode: 0o600 });
+      }
+    }
     clearCredPath();
   });
 
