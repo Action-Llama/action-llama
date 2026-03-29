@@ -47,7 +47,15 @@ vi.mock("../../../src/shared/filesystem-backend.js", () => ({
   },
 }));
 
-import { init, list, show, set, check, prov, deprov } from "../../../src/cli/commands/env.js";
+// Mock remote/ssh.js for the logs function
+const mockSshSpawn = vi.fn();
+const mockSshOptionsFromConfig = vi.fn().mockReturnValue({});
+vi.mock("../../../src/remote/ssh.js", () => ({
+  sshSpawn: (...args: any[]) => mockSshSpawn(...args),
+  sshOptionsFromConfig: (...args: any[]) => mockSshOptionsFromConfig(...args),
+}));
+
+import { init, list, show, set, check, prov, deprov, logs } from "../../../src/cli/commands/env.js";
 
 describe("env set", () => {
   let tmpDir: string;
@@ -496,5 +504,137 @@ describe("env check", () => {
     const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
     expect(output).toContain("issue(s) found");
     logSpy.mockRestore();
+  });
+});
+
+describe("env list — invalid config", () => {
+  it("shows (invalid config) when environment file cannot be parsed", async () => {
+    const envName = `test-invalid-cfg-${Date.now()}`;
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    // Write invalid TOML that will cause loadEnvironmentConfig to throw
+    writeFileSync(environmentPath(envName), "this is not valid toml = [");
+
+    try {
+      await list();
+      const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+      expect(output).toContain(envName);
+      expect(output).toContain("invalid config");
+    } finally {
+      try { rmSync(environmentPath(envName)); } catch {}
+      logSpy.mockRestore();
+    }
+  });
+});
+
+describe("env logs", () => {
+  const testEnvName = `test-logs-${Date.now()}`;
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-env-logs-"));
+    mockSshSpawn.mockReset();
+  });
+
+  afterEach(() => {
+    try { rmSync(environmentPath(testEnvName)); } catch {}
+    try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  });
+
+  it("throws ConfigError when no environment specified and no binding", async () => {
+    await expect(logs(undefined, { project: tmpDir })).rejects.toThrow(
+      "No environment specified"
+    );
+  });
+
+  it("throws ConfigError when named environment does not exist", async () => {
+    await expect(logs("nonexistent-logs-xyz", { project: tmpDir })).rejects.toThrow(
+      "not found"
+    );
+  });
+
+  it("throws ConfigError when environment has no server config", async () => {
+    writeEnvironmentConfig(testEnvName, { gateway: { url: "http://localhost:3000" } });
+
+    await expect(logs(testEnvName, { project: tmpDir })).rejects.toThrow(
+      "has no [server] config"
+    );
+  });
+
+  it("streams logs from remote server via SSH", async () => {
+    writeEnvironmentConfig(testEnvName, { server: { host: "1.2.3.4", user: "root" } });
+
+    const { EventEmitter } = await import("events");
+    const mockChild = new EventEmitter() as any;
+    mockChild.stdout = { pipe: vi.fn() };
+    mockChild.stderr = { pipe: vi.fn() };
+
+    mockSshSpawn.mockReturnValue(mockChild);
+
+    // Trigger resolve immediately after setting up the promise
+    const logsPromise = logs(testEnvName, { project: tmpDir });
+    // Emit close with code 0 to resolve
+    setImmediate(() => mockChild.emit("close", 0));
+
+    await logsPromise;
+
+    expect(mockSshSpawn).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.stringContaining("journalctl")
+    );
+    expect(mockChild.stdout.pipe).toHaveBeenCalledWith(process.stdout);
+    expect(mockChild.stderr.pipe).toHaveBeenCalledWith(process.stderr);
+  });
+
+  it("streams logs with --follow flag", async () => {
+    writeEnvironmentConfig(testEnvName, { server: { host: "1.2.3.4", user: "root" } });
+
+    const { EventEmitter } = await import("events");
+    const mockChild = new EventEmitter() as any;
+    mockChild.stdout = { pipe: vi.fn() };
+    mockChild.stderr = { pipe: vi.fn() };
+
+    mockSshSpawn.mockReturnValue(mockChild);
+
+    const logsPromise = logs(testEnvName, { project: tmpDir, follow: true, lines: "100" });
+    setImmediate(() => mockChild.emit("close", 0));
+
+    await logsPromise;
+
+    const spawnArgs = mockSshSpawn.mock.calls[0];
+    expect(spawnArgs[1]).toContain("-f");
+    expect(spawnArgs[1]).toContain("100");
+  });
+
+  it("rejects when SSH process exits with non-zero code", async () => {
+    writeEnvironmentConfig(testEnvName, { server: { host: "1.2.3.4", user: "root" } });
+
+    const { EventEmitter } = await import("events");
+    const mockChild = new EventEmitter() as any;
+    mockChild.stdout = { pipe: vi.fn() };
+    mockChild.stderr = { pipe: vi.fn() };
+
+    mockSshSpawn.mockReturnValue(mockChild);
+
+    const logsPromise = logs(testEnvName, { project: tmpDir });
+    setImmediate(() => mockChild.emit("close", 1));
+
+    await expect(logsPromise).rejects.toThrow("journalctl exited with code 1");
+  });
+
+  it("rejects when SSH process emits error", async () => {
+    writeEnvironmentConfig(testEnvName, { server: { host: "1.2.3.4", user: "root" } });
+
+    const { EventEmitter } = await import("events");
+    const mockChild = new EventEmitter() as any;
+    mockChild.stdout = { pipe: vi.fn() };
+    mockChild.stderr = { pipe: vi.fn() };
+
+    mockSshSpawn.mockReturnValue(mockChild);
+
+    const logsPromise = logs(testEnvName, { project: tmpDir });
+    setImmediate(() => mockChild.emit("error", new Error("Connection refused")));
+
+    await expect(logsPromise).rejects.toThrow("Connection refused");
   });
 });
