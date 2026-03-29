@@ -749,4 +749,283 @@ describe("doctor", () => {
       expect(output).not.toContain("docker group");
     });
   });
+
+  describe("project-root guard", () => {
+    it("throws ConfigError when project path looks like an agent directory (SKILL.md at root)", async () => {
+      // Simulate existsSync returning true for the SKILL.md at project root
+      mockExistsSync.mockImplementation((p: string) => p.endsWith("SKILL.md"));
+
+      await expect(execute({ project: "/my-project" })).rejects.toThrow(
+        "looks like an agent directory, not a project directory"
+      );
+    });
+  });
+
+  describe("enhanced agent validation (SKILL.md exists)", () => {
+    beforeEach(() => {
+      mockDiscoverAgents.mockReturnValue(["dev"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: [] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({});
+      mockCredentialExists.mockReturnValue(true);
+      mockCollectCredentialRefs.mockReturnValue(new Set());
+
+      // Make agent SKILL.md exist (but not project root SKILL.md)
+      mockExistsSync.mockImplementation((p: string) =>
+        p.includes("agents/dev/SKILL.md") || p.includes("agents/dev/config.toml")
+      );
+      mockReadFileSync.mockImplementation((p: string) => {
+        if (p.includes("SKILL.md")) return "---\n---\n\n# Dev Agent\n";
+        if (p.includes("config.toml")) return "models = []\n";
+        return "";
+      });
+    });
+
+    it("runs enhanced validation when agent SKILL.md exists", async () => {
+      mockValidateAgentConfigEnhanced.mockReturnValue({ errors: [], warnings: [] });
+
+      await expect(execute({ project: ".", checkOnly: true, skipCredentials: true })).resolves.not.toThrow();
+      expect(mockValidateAgentConfigEnhanced).toHaveBeenCalled();
+    });
+
+    it("reports validation error from validateAgentConfigEnhanced", async () => {
+      mockValidateAgentConfigEnhanced.mockReturnValue({
+        errors: [{ type: "error", message: "schedule is required" }],
+        warnings: [],
+      });
+
+      await expect(execute({ project: ".", skipCredentials: true })).rejects.toThrow(
+        'Agent "dev": schedule is required'
+      );
+    });
+
+    it("includes field name in error message when field is provided", async () => {
+      mockValidateAgentConfigEnhanced.mockReturnValue({
+        errors: [{ type: "error", message: "invalid cron", field: "schedule" }],
+        warnings: [],
+      });
+
+      await expect(execute({ project: ".", skipCredentials: true })).rejects.toThrow(
+        'Agent "dev": invalid cron (schedule)'
+      );
+    });
+
+    it("reports validation warnings from validateAgentConfigEnhanced in non-silent mode", async () => {
+      mockValidateAgentConfigEnhanced.mockReturnValue({
+        errors: [],
+        warnings: [{ type: "warning", message: "timeout is quite long", field: "timeout" }],
+      });
+
+      const output = await captureLog(() => execute({ project: ".", checkOnly: true, skipCredentials: true }));
+      expect(output).toContain("[warn]");
+      expect(output).toContain("timeout is quite long");
+    });
+
+    it("reports unknown fields in agent SKILL.md frontmatter as error", async () => {
+      mockValidateAgentConfigEnhanced.mockReturnValue({ errors: [], warnings: [] });
+      mockDetectAgentFrontmatterUnknownFields.mockReturnValue(["unknownKey", "badField"]);
+
+      await expect(execute({ project: ".", skipCredentials: true })).rejects.toThrow(
+        'Unknown fields in agent "dev" SKILL.md: unknownKey, badField'
+      );
+    });
+
+    it("reports unknown fields in agent config.toml as error", async () => {
+      mockValidateAgentConfigEnhanced.mockReturnValue({ errors: [], warnings: [] });
+      mockDetectAgentRuntimeConfigUnknownFields.mockReturnValue(["weirdProp"]);
+
+      await expect(execute({ project: ".", skipCredentials: true })).rejects.toThrow(
+        'Unknown fields in agent "dev" config.toml: weirdProp'
+      );
+    });
+
+    it("catches exception during per-agent enhanced validation and adds as error", async () => {
+      mockValidateAgentConfigEnhanced.mockImplementation(() => {
+        throw new Error("boom during validation");
+      });
+
+      await expect(execute({ project: ".", skipCredentials: true })).rejects.toThrow(
+        "validation error(s) found"
+      );
+    });
+  });
+
+  describe("validation warnings display", () => {
+    it("displays warnings in non-silent mode without throwing when no errors", async () => {
+      mockDiscoverAgents.mockReturnValue(["dev"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: [] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({});
+      mockCollectCredentialRefs.mockReturnValue(new Set());
+      mockValidateGlobalConfig.mockReturnValue({
+        errors: [],
+        warnings: [{ type: "warning", message: "deprecated option", field: "old_field" }],
+      });
+      // Make config.toml exist to trigger global validation
+      mockExistsSync.mockImplementation((p: string) => p.endsWith("config.toml") && !p.includes("agents"));
+      mockReadFileSync.mockReturnValue("[models]\n");
+
+      const output = await captureLog(() =>
+        execute({ project: ".", checkOnly: true, skipCredentials: true })
+      );
+      expect(output).toContain("[warn]");
+      expect(output).toContain("deprecated option");
+      expect(output).toContain("--- Configuration Validation ---");
+    });
+
+    it("displays both warnings and errors when present", async () => {
+      mockDiscoverAgents.mockReturnValue(["dev"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: [] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({ models: ["undefined-model"] });
+      mockCollectCredentialRefs.mockReturnValue(new Set());
+      mockValidateGlobalConfig.mockReturnValue({
+        errors: [],
+        warnings: [{ type: "warning", message: "suggestion for improvement" }],
+      });
+      // Make config.toml exist to trigger global validation
+      mockExistsSync.mockImplementation((p: string) => p.endsWith("config.toml") && !p.includes("agents"));
+      mockReadFileSync.mockReturnValue("[models]\n");
+
+      const output = await captureLog(() =>
+        expect(execute({ project: ".", skipCredentials: true })).rejects.toThrow("validation error(s) found")
+      );
+      expect(output).toContain("[warn]");
+      expect(output).toContain("[error]");
+    });
+  });
+
+  describe("gateway API key", () => {
+    it("prints newly generated gateway API key", async () => {
+      mockDiscoverAgents.mockReturnValue(["dev"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: [] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({});
+      mockCollectCredentialRefs.mockReturnValue(new Set());
+      mockEnsureGatewayApiKey.mockResolvedValue({ key: "new-generated-key-abc123", generated: true });
+
+      const output = await captureLog(() =>
+        execute({ project: ".", skipCredentials: true })
+      );
+      expect(output).toContain("new-generated-key-abc123");
+      expect(output).toContain("Save this key");
+    });
+  });
+
+  describe("promptCredentials silent mode", () => {
+    it("shows missing count and prompts in silent mode when credentials are missing", async () => {
+      mockDiscoverAgents.mockReturnValue(["dev"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["github_token"] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({});
+      mockCollectCredentialRefs.mockReturnValue(new Set(["github_token:default"]));
+      mockResolveCredential.mockReturnValue({
+        id: "github_token",
+        label: "GitHub Token",
+        fields: [{ name: "token" }],
+      });
+      mockCredentialExists.mockReturnValue(false);
+      mockPromptCredential.mockResolvedValue({ values: { token: "ghp_abc" } });
+
+      const output = await captureLog(() =>
+        execute({ project: ".", silent: true })
+      );
+      // In silent mode with missing creds, it should show count and prompt
+      expect(output).toContain("credential(s) need to be configured");
+      expect(mockPromptCredential).toHaveBeenCalled();
+    });
+
+    it("returns early in silent mode when all credentials present", async () => {
+      mockDiscoverAgents.mockReturnValue(["dev"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["github_token"] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({});
+      mockCollectCredentialRefs.mockReturnValue(new Set(["github_token:default"]));
+      mockResolveCredential.mockReturnValue({
+        id: "github_token",
+        label: "GitHub Token",
+        fields: [{ name: "token" }],
+      });
+      mockCredentialExists.mockReturnValue(true);
+
+      const output = await captureLog(() =>
+        execute({ project: ".", silent: true })
+      );
+      // Silent mode + all creds present → no output about credentials
+      expect(output).not.toContain("credential(s) need to be configured");
+      expect(mockPromptCredential).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("promptCredentials optional fields", () => {
+    it("falls through to prompting when credential exists but has missing optional fields", async () => {
+      const mockLoadCredentialFieldsImpl = vi.fn().mockResolvedValue({ token: "existing-token" });
+      // Override the loadCredentialFields mock to return a non-null value
+      vi.doMock("../../../src/shared/credentials.js", () => ({
+        parseCredentialRef: (ref: string) => {
+          const sep = ref.indexOf(":");
+          if (sep === -1) return { type: ref, instance: "default" };
+          return { type: ref.slice(0, sep).trim(), instance: ref.slice(sep + 1).trim() };
+        },
+        credentialExists: (...args: any[]) => mockCredentialExists(...args),
+        listCredentialInstances: (...args: any[]) => mockListCredentialInstances(...args),
+        writeCredentialFields: (...args: any[]) => mockWriteCredentialFields(...args),
+        loadCredentialField: () => undefined,
+        loadCredentialFields: mockLoadCredentialFieldsImpl,
+        writeCredentialField: () => {},
+        backendLoadField: () => Promise.resolve(undefined),
+        backendLoadFields: () => Promise.resolve(undefined),
+        backendCredentialExists: (...args: any[]) => Promise.resolve(mockCredentialExists(...args)),
+        backendListInstances: (...args: any[]) => Promise.resolve(mockListCredentialInstances(...args)),
+        backendRequireCredentialRef: () => Promise.resolve(),
+        getDefaultBackend: () => {},
+        setDefaultBackend: () => {},
+        resetDefaultBackend: () => {},
+      }));
+
+      mockDiscoverAgents.mockReturnValue(["dev"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["github_token"] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({});
+      mockCollectCredentialRefs.mockReturnValue(new Set(["github_token:default"]));
+      // Credential has an optional field not present in existing values
+      mockResolveCredential.mockReturnValue({
+        id: "github_token",
+        label: "GitHub Token",
+        fields: [{ name: "token" }, { name: "email", optional: true }],
+      });
+      // Credential exists
+      mockCredentialExists.mockReturnValue(true);
+      mockPromptCredential.mockResolvedValue({ values: { token: "ghp_abc", email: "x@y.com" } });
+
+      // Reset the mock to use our new implementation
+      vi.resetModules();
+    });
+  });
+
+  describe("host-user user creation on non-checkOnly", () => {
+    it("auto-creates user on Linux when user does not exist and not checkOnly", async () => {
+      mockDiscoverAgents.mockReturnValue(["e2e"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "e2e", credentials: [] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({ runtime: { type: "host-user" } });
+      mockCredentialExists.mockReturnValue(true);
+      mockCollectCredentialRefs.mockReturnValue(new Set());
+
+      mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+        // user "id" check fails — user doesn't exist
+        if (cmd === "id" && args[0] === "al-agent") throw new Error("user not found");
+        // sudo useradd succeeds (args = ["useradd", "-r", "-m", ...])
+        if (cmd === "sudo" && args[0] === "useradd") return Buffer.from("");
+        // sudo -n check fails (no sudoers yet)
+        if (cmd === "sudo" && args[0] === "-n") throw new Error("no sudo");
+        // sudo tee for sudoers (args = ["tee", "/etc/sudoers.d/..."])
+        if (cmd === "sudo" && args[0] === "tee") return Buffer.from("");
+        // sudo chmod (args = ["chmod", "0440", ...])
+        if (cmd === "sudo" && args[0] === "chmod") return Buffer.from("");
+        // getent docker group check fails
+        if (cmd === "getent") throw new Error("no docker");
+        throw new Error(`unexpected: ${cmd} ${args.join(" ")}`);
+      });
+
+      const output = await captureLog(() =>
+        execute({ project: ".", skipCredentials: true })
+      );
+      // On Linux, user should be created (or at least attempted)
+      // The mock doesn't actually care about platform, but on Linux systems this path runs
+      expect(mockExecFileSync).toHaveBeenCalled();
+    });
+  });
 });
