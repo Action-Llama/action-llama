@@ -36,7 +36,15 @@ vi.mock("../../../src/credentials/registry.js", () => ({
       github_token: { id: "github_token", label: "GitHub Token", description: "PAT for repo access", fields: [{ name: "token", label: "Token", description: "PAT", secret: true }] },
       anthropic_key: { id: "anthropic_key", label: "Anthropic API Key", description: "API key for Anthropic", fields: [{ name: "token", label: "API Key", description: "Key", secret: true }] },
       github_webhook_secret: { id: "github_webhook_secret", label: "GitHub Webhook Secret", description: "HMAC secret", fields: [{ name: "secret", label: "Secret", description: "HMAC", secret: true }] },
-      git_ssh: { id: "git_ssh", label: "Git SSH Key", description: "SSH key for git", fields: [{ name: "id_rsa", label: "Private Key", description: "SSH key", secret: true }] },
+      git_ssh: {
+        id: "git_ssh",
+        label: "Git SSH Key",
+        description: "SSH key for git",
+        helpUrl: "https://docs.github.com/authentication",
+        fields: [{ name: "id_rsa", label: "Private Key", description: "SSH key", secret: true }],
+        envVars: { id_rsa: "GIT_SSH_KEY" },
+        agentContext: "GIT_SSH_KEY env var",
+      },
     };
     return defs[id];
   },
@@ -303,5 +311,58 @@ describe("creds types", () => {
     expect(output).toContain("saved");
 
     rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("shows helpUrl, envVars and agentContext when present on the credential", async () => {
+    mockSearch.mockResolvedValueOnce("git_ssh");
+    mockConfirm.mockResolvedValueOnce(false);
+
+    await types();
+
+    const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("Git SSH Key");
+    expect(output).toContain("Help: https://docs.github.com/authentication");
+    expect(output).toContain("Env vars:");
+    expect(output).toContain("GIT_SSH_KEY");
+    expect(output).toContain("Agent context:");
+  });
+});
+
+describe("creds ls — additional edge cases", () => {
+  let consoleSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-creds-edge-"));
+    (globalThis as any).__AL_TEST_TMPDIR = tmpDir;
+    setDefaultBackend(new FilesystemBackend(tmpDir));
+    consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    consoleSpy.mockRestore();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("shows 'no credentials' when CREDENTIALS_DIR exists but has no subdirectories", async () => {
+    // Put only files (not dirs) in CREDENTIALS_DIR so entries.length === 0 after filter
+    writeFileSync(resolve(tmpDir, "some-file.txt"), "not a dir");
+
+    await list();
+
+    const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("No credentials found");
+  });
+
+  it("skips type entries with no instance subdirectories", async () => {
+    // Create a type dir with only a file inside (no instance subdirs) — instances.length === 0
+    const typeDir = resolve(tmpDir, "github_token");
+    mkdirSync(typeDir, { recursive: true });
+    writeFileSync(resolve(typeDir, "not-a-subdir.txt"), "file");
+
+    await list();
+
+    // No credential header should appear because instances is empty
+    const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).not.toContain("GitHub Token (github_token)");
   });
 });
