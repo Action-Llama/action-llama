@@ -101,6 +101,68 @@ describe("createRunnerPools", () => {
     expect(runnerPools["agent-b"].size).toBe(1);
   });
 
+  it("warns when total requested scale exceeds project cap (defaultAgentScale set)", async () => {
+    const logger = makeLogger();
+    const agentConfigs = [
+      makeAgentConfig("agent-a", 3),
+      makeAgentConfig("agent-b", 4),
+    ];
+
+    await createRunnerPools({
+      globalConfig: makeGlobalConfig({ scale: 5, defaultAgentScale: 2 }),
+      agentConfigs,
+      runtime: makeRuntime(),
+      agentRuntimeOverrides: {},
+      agentImages: {},
+      baseImage: "base:latest",
+      gatewayPort: 8080,
+      registerContainer: vi.fn(),
+      unregisterContainer: vi.fn(),
+      mkLogger: () => makeLogger() as any,
+      projectPath: "/tmp",
+      logger,
+    });
+
+    // Should have warned about total (7) exceeding cap (5)
+    expect(logger.warn).toHaveBeenCalled();
+    const warnCall = logger.warn.mock.calls[0];
+    expect(warnCall[0]).toMatchObject({ totalRequested: 7, projectScale: 5 });
+  });
+
+  it("caps scale to 1 when remaining capacity is already exhausted", async () => {
+    // agent-a uses all 5 slots, leaving 0 for agent-b
+    const agentConfigs = [
+      makeAgentConfig("agent-a", 5),
+      makeAgentConfig("agent-b", 3), // requested 3 but 0 remain → capped to 1
+    ];
+    const logger = makeLogger();
+
+    const { actualScales } = await createRunnerPools({
+      globalConfig: makeGlobalConfig({ scale: 5 }),
+      agentConfigs,
+      runtime: makeRuntime(),
+      agentRuntimeOverrides: {},
+      agentImages: {},
+      baseImage: "base:latest",
+      gatewayPort: 8080,
+      registerContainer: vi.fn(),
+      unregisterContainer: vi.fn(),
+      mkLogger: () => makeLogger() as any,
+      projectPath: "/tmp",
+      logger,
+    });
+
+    expect(actualScales["agent-a"]).toBe(5);
+    expect(actualScales["agent-b"]).toBe(1); // forced minimum
+    // Should warn about agent-b being reduced
+    expect(logger.warn).toHaveBeenCalled();
+    const warnCall = logger.warn.mock.calls.find(
+      (c: any) => c[0]?.agent === "agent-b"
+    );
+    expect(warnCall).toBeDefined();
+    expect(warnCall[0]).toMatchObject({ agent: "agent-b", reduced: 1 });
+  });
+
   it("status tracker scale is updated when it differs from pool size", async () => {
     const tracker = new StatusTracker();
     // Register agent-a with scale=4 (as if configured before pool creation)
