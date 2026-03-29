@@ -148,6 +148,45 @@ describe("agent new", () => {
     expect(existsSync(resolve(agentDir, "SKILL.md"))).toBe(true);
   });
 
+  it("throws when example template is missing SKILL.md", async () => {
+    // Create example dir WITHOUT SKILL.md
+    const exampleDir = resolve(mockPackageRoot, "docs", "examples", "reviewer");
+    mkdirSync(exampleDir, { recursive: true });
+    // No SKILL.md in the directory
+
+    mockSelect
+      .mockResolvedValueOnce("reviewer")   // agent type
+      .mockResolvedValueOnce("done");      // (won't be reached)
+    mockInput.mockResolvedValueOnce("my-reviewer");
+
+    await expect(newAgent({ project: tmpDir })).rejects.toThrow(
+      'Example template "reviewer" is missing SKILL.md'
+    );
+  });
+
+  it("creates agent from example template without config.toml (no copy)", async () => {
+    // Template has SKILL.md but no config.toml
+    const exampleDir = resolve(mockPackageRoot, "docs", "examples", "devops");
+    mkdirSync(exampleDir, { recursive: true });
+    writeFileSync(resolve(exampleDir, "SKILL.md"), "---\n---\n\n# DevOps Agent\n");
+    // Deliberately NO config.toml in example dir
+
+    mockSelect
+      .mockResolvedValueOnce("devops")     // agent type
+      .mockResolvedValueOnce("done");      // config menu: done
+    mockInput.mockResolvedValueOnce("my-devops");
+
+    await newAgent({ project: tmpDir });
+
+    const agentDir = resolve(tmpDir, "agents", "my-devops");
+    expect(existsSync(resolve(agentDir, "SKILL.md"))).toBe(true);
+    // config.toml should still be created by configAgent (done saves it)
+    // But no template config.toml was copied
+    const agentToml = parseTOML(readFileSync(resolve(agentDir, "config.toml"), "utf-8")) as any;
+    // models array should be empty or undefined (no template config was copied)
+    expect(agentToml.models).toBeDefined();
+  });
+
   it("rejects invalid agent names via validate callback", async () => {
     mockSelect.mockResolvedValueOnce("custom");
     // Simulate: first call invokes validate, let's test the validate function
@@ -429,5 +468,362 @@ describe("agent config", () => {
     const configToml = readFileSync(resolve(tmpDir, "config.toml"), "utf-8");
     expect(configToml).toContain("my-github");
     expect(configToml).toContain("github");
+  });
+
+  it("webhooks — add trigger with events, actions, repos, labels", async () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+      webhooks: { "my-github": { type: "github" } },
+    }));
+    createAgentConfig("wh-add-trig", { credentials: [], models: ["sonnet"] });
+
+    mockSelect
+      .mockResolvedValueOnce("webhooks")    // menu: webhooks
+      .mockResolvedValueOnce("add")         // webhooks: add trigger
+      .mockResolvedValueOnce("my-github")   // source selection
+      .mockResolvedValueOnce("back")        // webhooks: back
+      .mockResolvedValueOnce("done");       // menu: done
+    mockInput
+      .mockResolvedValueOnce("pull_request,push")  // events
+      .mockResolvedValueOnce("opened,closed")      // actions
+      .mockResolvedValueOnce("owner/repo")         // repos
+      .mockResolvedValueOnce("bug");               // labels
+
+    await configAgent("wh-add-trig", { project: tmpDir });
+
+    const toml = parseTOML(readFileSync(resolve(tmpDir, "agents", "wh-add-trig", "config.toml"), "utf-8")) as any;
+    expect(toml.webhooks).toHaveLength(1);
+    expect(toml.webhooks[0].source).toBe("my-github");
+    expect(toml.webhooks[0].events).toEqual(["pull_request", "push"]);
+    expect(toml.webhooks[0].actions).toEqual(["opened", "closed"]);
+    expect(toml.webhooks[0].repos).toEqual(["owner/repo"]);
+    expect(toml.webhooks[0].labels).toEqual(["bug"]);
+  });
+
+  it("webhooks — add trigger with no optional fields (all empty)", async () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+      webhooks: { "my-sentry": { type: "sentry" } },
+    }));
+    createAgentConfig("wh-no-fields", { credentials: [], models: ["sonnet"] });
+
+    mockSelect
+      .mockResolvedValueOnce("webhooks")    // menu: webhooks
+      .mockResolvedValueOnce("add")         // webhooks: add trigger
+      .mockResolvedValueOnce("my-sentry")   // source selection
+      .mockResolvedValueOnce("back")        // webhooks: back
+      .mockResolvedValueOnce("done");       // menu: done
+    mockInput
+      .mockResolvedValueOnce("")   // events (empty = all)
+      .mockResolvedValueOnce("")   // actions (empty = all)
+      .mockResolvedValueOnce("")   // repos (empty = all)
+      .mockResolvedValueOnce("");  // labels (empty = all)
+
+    await configAgent("wh-no-fields", { project: tmpDir });
+
+    const toml = parseTOML(readFileSync(resolve(tmpDir, "agents", "wh-no-fields", "config.toml"), "utf-8")) as any;
+    expect(toml.webhooks).toHaveLength(1);
+    expect(toml.webhooks[0].source).toBe("my-sentry");
+    expect(toml.webhooks[0].events).toBeUndefined();
+    expect(toml.webhooks[0].actions).toBeUndefined();
+    expect(toml.webhooks[0].repos).toBeUndefined();
+    expect(toml.webhooks[0].labels).toBeUndefined();
+  });
+
+  it("webhooks — remove action with no triggers shows message", async () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+      webhooks: { "my-github": { type: "github" } },
+    }));
+    createAgentConfig("wh-no-remove", { credentials: [], models: ["sonnet"] });
+
+    mockSelect
+      .mockResolvedValueOnce("webhooks")  // menu: webhooks
+      .mockResolvedValueOnce("remove")    // webhooks: remove trigger (no triggers configured)
+      .mockResolvedValueOnce("back")      // webhooks: back
+      .mockResolvedValueOnce("done");     // menu: done
+
+    await configAgent("wh-no-remove", { project: tmpDir });
+
+    const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("No triggers to remove");
+  });
+
+  it("webhooks — remove existing trigger", async () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+      webhooks: { "my-github": { type: "github" } },
+    }));
+    createAgentConfig("wh-remove-trig", {
+      credentials: [],
+      models: ["sonnet"],
+      webhooks: [{ source: "my-github", events: ["push"] }],
+    });
+
+    mockSelect
+      .mockResolvedValueOnce("webhooks")  // menu: webhooks
+      .mockResolvedValueOnce("remove")    // webhooks: remove trigger
+      .mockResolvedValueOnce("back")      // webhooks: back
+      .mockResolvedValueOnce("done");     // menu: done
+    mockCheckbox.mockResolvedValueOnce([0]); // select index 0 to remove
+
+    await configAgent("wh-remove-trig", { project: tmpDir });
+
+    const toml = parseTOML(readFileSync(resolve(tmpDir, "agents", "wh-remove-trig", "config.toml"), "utf-8")) as any;
+    // webhooks should be removed (empty array cleaned up → undefined)
+    expect(toml.webhooks).toBeUndefined();
+  });
+
+  it("webhooks — add-source inside sub-menu", async () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+      webhooks: { "existing-src": { type: "github" } },
+    }));
+    createAgentConfig("wh-add-src", { credentials: [], models: ["sonnet"] });
+
+    // Use "test" as provider type — it has no required credentials (WEBHOOK_SECRET_TYPES["test"] === undefined)
+    mockSelect
+      .mockResolvedValueOnce("webhooks")      // menu: webhooks
+      .mockResolvedValueOnce("add-source")    // webhooks: add webhook source
+      .mockResolvedValueOnce("test")          // provider type: test (no credential needed)
+      .mockResolvedValueOnce("back")          // webhooks: back
+      .mockResolvedValueOnce("done");         // menu: done
+    mockInput
+      .mockResolvedValueOnce("my-test-src");  // source name
+
+    await configAgent("wh-add-src", { project: tmpDir });
+
+    const configToml = readFileSync(resolve(tmpDir, "config.toml"), "utf-8");
+    expect(configToml).toContain("my-test-src");
+    expect(configToml).toContain("test");
+  });
+
+  it("webhooks — missing source, user declines to create", async () => {
+    // Agent has webhook trigger referencing a non-existent source
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+      webhooks: { "other-src": { type: "github" } },
+    }));
+    createAgentConfig("wh-missing-src", {
+      credentials: [],
+      models: ["sonnet"],
+      webhooks: [{ source: "nonexistent-source" }],
+    });
+
+    mockSelect
+      .mockResolvedValueOnce("webhooks")  // menu: webhooks
+      .mockResolvedValueOnce("back")      // webhooks: back (after declining)
+      .mockResolvedValueOnce("done");     // menu: done
+    mockConfirm.mockResolvedValueOnce(false); // decline to create missing source
+
+    await configAgent("wh-missing-src", { project: tmpDir });
+
+    // Should not have added any new sources
+    const configToml = parseTOML(readFileSync(resolve(tmpDir, "config.toml"), "utf-8")) as any;
+    expect(configToml.webhooks["nonexistent-source"]).toBeUndefined();
+  });
+
+  it("edits model — creates new anthropic model with thinkingLevel", async () => {
+    createAgentConfig("anthropic-model-agent", { credentials: [], models: ["sonnet"] });
+
+    mockSelect
+      .mockResolvedValueOnce("model")                       // menu: model
+      .mockResolvedValueOnce("__create__")                  // create new model
+      .mockResolvedValueOnce("anthropic")                   // provider: anthropic
+      .mockResolvedValueOnce("claude-opus-4-20250514")      // model selection
+      .mockResolvedValueOnce("high")                        // thinking level
+      .mockResolvedValueOnce("done");                       // menu: done
+    mockInput
+      .mockResolvedValueOnce("opus");                       // model reference name
+
+    await configAgent("anthropic-model-agent", { project: tmpDir });
+
+    const agentToml = parseTOML(readFileSync(resolve(tmpDir, "agents", "anthropic-model-agent", "config.toml"), "utf-8")) as any;
+    expect(agentToml.models).toEqual(["opus"]);
+    const projectToml = parseTOML(readFileSync(resolve(tmpDir, "config.toml"), "utf-8")) as any;
+    expect(projectToml.models.opus).toBeDefined();
+    expect(projectToml.models.opus.provider).toBe("anthropic");
+    expect(projectToml.models.opus.model).toBe("claude-opus-4-20250514");
+    expect(projectToml.models.opus.thinkingLevel).toBe("high");
+  });
+
+  it("edits model — creates new groq model with custom model input", async () => {
+    createAgentConfig("groq-model-agent", { credentials: [], models: ["sonnet"] });
+
+    mockSelect
+      .mockResolvedValueOnce("model")         // menu: model
+      .mockResolvedValueOnce("__create__")    // create new model
+      .mockResolvedValueOnce("groq")          // provider: groq
+      .mockResolvedValueOnce("done");         // menu: done
+    mockInput
+      .mockResolvedValueOnce("my-groq")                     // model reference name
+      .mockResolvedValueOnce("llama-3.3-70b-versatile");    // groq model input
+
+    await configAgent("groq-model-agent", { project: tmpDir });
+
+    const projectToml = parseTOML(readFileSync(resolve(tmpDir, "config.toml"), "utf-8")) as any;
+    expect(projectToml.models["my-groq"]).toBeDefined();
+    expect(projectToml.models["my-groq"].provider).toBe("groq");
+    expect(projectToml.models["my-groq"].model).toBe("llama-3.3-70b-versatile");
+  });
+
+  it("edits model — selects existing model from list", async () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      models: {
+        sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" },
+        gpt4: { provider: "openai", model: "gpt-4o", authType: "api_key" },
+      },
+    }));
+    createAgentConfig("select-existing-model", { credentials: [], models: ["sonnet"] });
+
+    mockSelect
+      .mockResolvedValueOnce("model")    // menu: model
+      .mockResolvedValueOnce("gpt4")     // select existing model
+      .mockResolvedValueOnce("done");    // menu: done
+
+    await configAgent("select-existing-model", { project: tmpDir });
+
+    const agentToml = parseTOML(readFileSync(resolve(tmpDir, "agents", "select-existing-model", "config.toml"), "utf-8")) as any;
+    expect(agentToml.models).toEqual(["gpt4"]);
+  });
+
+  it("clears schedule when empty input is given", async () => {
+    createAgentConfig("clear-sched", {
+      credentials: [],
+      models: ["sonnet"],
+      schedule: "*/5 * * * *",
+    });
+
+    mockSelect
+      .mockResolvedValueOnce("schedule")  // menu: schedule
+      .mockResolvedValueOnce("done");     // menu: done
+    mockInput.mockResolvedValueOnce("");  // empty to clear schedule
+
+    await configAgent("clear-sched", { project: tmpDir });
+
+    const toml = parseTOML(readFileSync(resolve(tmpDir, "agents", "clear-sched", "config.toml"), "utf-8")) as any;
+    expect(toml.schedule).toBeUndefined();
+  });
+
+  it("editSchedule validates cron expression fields", async () => {
+    createAgentConfig("validate-sched", { credentials: [], models: ["sonnet"] });
+
+    mockSelect
+      .mockResolvedValueOnce("schedule")  // menu: schedule
+      .mockResolvedValueOnce("done");     // menu: done
+    mockInput.mockImplementationOnce(async (opts: any) => {
+      // 4 fields — invalid
+      const result4 = opts.validate("* * * *");
+      expect(result4).toBe("Cron expression must have 5 space-separated fields");
+      // empty — valid
+      expect(opts.validate("")).toBe(true);
+      // 5 fields — valid
+      expect(opts.validate("0 12 * * 1")).toBe(true);
+      return "0 12 * * 1";
+    });
+
+    await configAgent("validate-sched", { project: tmpDir });
+
+    const toml = parseTOML(readFileSync(resolve(tmpDir, "agents", "validate-sched", "config.toml"), "utf-8")) as any;
+    expect(toml.schedule).toBe("0 12 * * 1");
+  });
+
+  it("shows no-model indicator in menu when no models configured", async () => {
+    // Directly create agent config with empty models
+    const agentDir = resolve(tmpDir, "agents", "no-models-agent");
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(resolve(agentDir, "SKILL.md"), "---\n---\n\n# Test\n");
+    writeFileSync(resolve(agentDir, "config.toml"), stringifyTOML({ models: [] }) + "\n");
+
+    let menuChoices: any[] = [];
+    mockSelect.mockImplementationOnce(async (opts: any) => {
+      menuChoices = opts.choices;
+      return "done";
+    });
+
+    await configAgent("no-models-agent", { project: tmpDir });
+
+    const modelChoice = menuChoices.find((c: any) => c.value === "model");
+    expect(modelChoice.name).toContain("✗");
+    expect(modelChoice.name).toContain("(none configured)");
+  });
+
+  it("shows available models in error when model is undefined but others exist", async () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      models: {
+        opus: { provider: "anthropic", model: "claude-opus-4-20250514", authType: "api_key" },
+        haiku: { provider: "anthropic", model: "claude-haiku-3-5-20241022", authType: "api_key" },
+      },
+    }));
+    createAgentConfig("available-models-check", { credentials: [], models: ["sonnet"] });
+
+    let menuChoices: any[] = [];
+    mockSelect.mockImplementationOnce(async (opts: any) => {
+      menuChoices = opts.choices;
+      return "done";
+    });
+
+    await configAgent("available-models-check", { project: tmpDir });
+
+    const modelChoice = menuChoices.find((c: any) => c.value === "model");
+    expect(modelChoice.name).toContain("✗");
+    // Should include available models
+    expect(modelChoice.name).toMatch(/opus|haiku/);
+  });
+
+  it("shows schedule-only indicator when no schedule and no webhooks", async () => {
+    createAgentConfig("no-sched-wh", { credentials: [], models: ["sonnet"] });
+
+    let menuChoices: any[] = [];
+    mockSelect.mockImplementationOnce(async (opts: any) => {
+      menuChoices = opts.choices;
+      return "done";
+    });
+
+    await configAgent("no-sched-wh", { project: tmpDir });
+
+    const scheduleChoice = menuChoices.find((c: any) => c.value === "schedule");
+    expect(scheduleChoice.name).toContain("✗");
+    expect(scheduleChoice.name).toContain("needs schedule or webhooks");
+  });
+
+  it("shows schedule 'using webhooks' indicator when agent has webhooks but no schedule", async () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+      webhooks: { "gh": { type: "github" } },
+    }));
+    createAgentConfig("webhook-only-sched", {
+      credentials: [],
+      models: ["sonnet"],
+      webhooks: [{ source: "gh" }],
+    });
+
+    let menuChoices: any[] = [];
+    mockSelect.mockImplementationOnce(async (opts: any) => {
+      menuChoices = opts.choices;
+      return "done";
+    });
+
+    await configAgent("webhook-only-sched", { project: tmpDir });
+
+    const scheduleChoice = menuChoices.find((c: any) => c.value === "schedule");
+    expect(scheduleChoice.name).toContain("using webhooks");
+  });
+
+  it("preserves source field when updating agent config", async () => {
+    const agentDir = resolve(tmpDir, "agents", "source-agent");
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(resolve(agentDir, "SKILL.md"), "---\n---\n\n# Test\n");
+    writeFileSync(resolve(agentDir, "config.toml"), stringifyTOML({
+      models: ["sonnet"],
+      source: "https://github.com/example/agent.git",
+    }) + "\n");
+
+    mockSelect.mockResolvedValueOnce("done"); // menu: done
+
+    await configAgent("source-agent", { project: tmpDir });
+
+    const toml = parseTOML(readFileSync(resolve(agentDir, "config.toml"), "utf-8")) as any;
+    expect(toml.source).toBe("https://github.com/example/agent.git");
   });
 });
