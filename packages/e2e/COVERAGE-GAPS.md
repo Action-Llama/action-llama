@@ -20,15 +20,15 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Scheduler pause/resume with in-flight agents — pause while agent is running, verify it completes
 - [x] MCP server integration — start scheduler with MCP config, verify MCP tools are available to agents
 - [x] Extension loading — configure an extension, verify it loads and registers
-- [ ] Dashboard SSE reconnection — disconnect SSE stream, verify auto-reconnect and data continuity
+- [x] Dashboard SSE reconnection — disconnect SSE stream, verify auto-reconnect and data continuity
 - [ ] Credential rotation — update credentials while scheduler is running, verify new creds are used
 
 ## Lower Priority
 
 - [ ] Agent-to-agent communication — one agent triggers another via `al-rerun`
-- [ ] Log streaming — verify `al logs` streams live output from running agents
+- [x] Log streaming — verify `al logs` streams live output from running agents
 - [ ] Deployment with custom Dockerfile — push agent with custom Dockerfile, verify image build
 - [ ] Deployment upgrade path — deploy v1, upgrade to v2, verify agents restart with new code
 - [ ] Resource lock contention — two agents competing for the same lock, verify mutual exclusion
 - [ ] Webhook retry/deduplication — deliver duplicate webhook, verify single execution
-- [ ] Stats and usage tracking — run agents, verify stats API returns correct execution counts
+- [x] Stats and usage tracking — run agents, verify stats API returns correct execution counts
