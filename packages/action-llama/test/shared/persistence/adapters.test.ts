@@ -405,4 +405,128 @@ describe("StatsStoreAdapter – query methods", () => {
       expect(sqlMock).toHaveBeenCalledWith(expect.any(String), [0]);
     });
   });
+
+  describe("pruneAsync via prune()", () => {
+    it("calls sql to delete old runs and call edges", async () => {
+      const result = mockAdapter.prune(30);
+      expect(result).toEqual({ runs: 0, callEdges: 0 });
+
+      // Wait for async pruneAsync to complete
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(sqlMock).toHaveBeenCalledWith(
+        expect.stringContaining("DELETE FROM runs"),
+        expect.any(Array)
+      );
+      expect(sqlMock).toHaveBeenCalledWith(
+        expect.stringContaining("DELETE FROM call_edges"),
+        expect.any(Array)
+      );
+    });
+  });
+});
+
+/** Create a mock persistence store where the same stream object is returned every time */
+function createMockPersistenceWithSingleStream() {
+  const sqlMock = vi.fn().mockResolvedValue([]);
+  const appendMock = vi.fn().mockResolvedValue(undefined);
+  const singleStream = {
+    append: appendMock,
+    replay: vi.fn().mockReturnValue((async function* () {})()),
+    getSnapshot: vi.fn().mockResolvedValue(null),
+    saveSnapshot: vi.fn().mockResolvedValue(undefined),
+  };
+  const mockStore = {
+    events: {
+      stream: (_name: string) => singleStream,
+      listStreams: vi.fn().mockResolvedValue([]),
+    },
+    kv: {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue(undefined),
+      delete: vi.fn().mockResolvedValue(undefined),
+      deleteAll: vi.fn().mockResolvedValue(undefined),
+      list: vi.fn().mockResolvedValue([]),
+    },
+    query: { sql: sqlMock },
+    transaction: vi.fn(async (fn: any) => fn(mockStore)),
+    close: vi.fn().mockResolvedValue(undefined),
+  } as unknown as PersistenceStore;
+  return { mockStore, appendMock, sqlMock };
+}
+
+describe("StatsStoreAdapter – async error handlers", () => {
+  it("logs error to console.error when recordRunAsync fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { mockStore, appendMock } = createMockPersistenceWithSingleStream();
+    appendMock.mockRejectedValue(new Error("append failed"));
+
+    const adapter = new StatsStoreAdapter(mockStore);
+    adapter.recordRun(makeRun());
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Failed to record run event:",
+      expect.any(Error)
+    );
+    errorSpy.mockRestore();
+  });
+
+  it("logs error to console.error when recordCallEdgeAsync fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { mockStore, appendMock } = createMockPersistenceWithSingleStream();
+    appendMock.mockRejectedValue(new Error("call edge append failed"));
+
+    const adapter = new StatsStoreAdapter(mockStore);
+    adapter.recordCallEdge(makeCallEdge());
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Failed to record call edge event:",
+      expect.any(Error)
+    );
+    errorSpy.mockRestore();
+  });
+
+  it("logs error to console.error when updateCallEdgeAsync fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { mockStore, appendMock } = createMockPersistenceWithSingleStream();
+
+    const adapter = new StatsStoreAdapter(mockStore);
+    const id = adapter.recordCallEdge(makeCallEdge());
+
+    // Wait for recordCallEdge async to run (successfully)
+    await new Promise((r) => setTimeout(r, 10));
+    errorSpy.mockClear();
+
+    // Now make append fail for the update
+    appendMock.mockRejectedValue(new Error("update append failed"));
+    adapter.updateCallEdge(id, { durationMs: 1000, status: "completed" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Failed to update call edge event:",
+      expect.any(Error)
+    );
+    errorSpy.mockRestore();
+  });
+
+  it("logs error to console.error when pruneAsync fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { mockStore, sqlMock } = createMockPersistenceWithSingleStream();
+    sqlMock.mockRejectedValue(new Error("sql failed"));
+
+    const adapter = new StatsStoreAdapter(mockStore);
+    adapter.prune(30);
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Failed to prune stats:",
+      expect.any(Error)
+    );
+    errorSpy.mockRestore();
+  });
 });
