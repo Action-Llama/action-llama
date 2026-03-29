@@ -193,4 +193,94 @@ describe("new", () => {
       "my-project"
     );
   });
+
+  // ─── non-interactive mode ────────────────────────────────────────────────
+
+  describe("non-interactive mode (opts.interactive === false)", () => {
+    it("uses anthropic provider by default", async () => {
+      const output = await captureLog(() =>
+        execute("my-project", { interactive: false })
+      );
+
+      expect(mockSelect).not.toHaveBeenCalled();
+      expect(output).toContain("Model Provider: anthropic (non-interactive)");
+      expect(output).toContain("Skipping credential setup");
+      expect(output).toContain("Setup complete!");
+    });
+
+    it("uses provided provider and model in non-interactive mode", async () => {
+      const output = await captureLog(() =>
+        execute("my-project", { interactive: false, provider: "openai", model: "gpt-4o" })
+      );
+
+      expect(mockSelect).not.toHaveBeenCalled();
+      expect(output).toContain("Model Provider: openai (non-interactive)");
+      expect(output).toContain("Model: gpt-4o (non-interactive)");
+      expect(output).toContain("You'll need to configure API key later");
+
+      expect(mockScaffoldProject).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          models: expect.objectContaining({
+            gpt4o: expect.objectContaining({
+              provider: "openai",
+              model: "gpt-4o",
+            }),
+          }),
+        }),
+        [],
+        "my-project"
+      );
+    });
+
+    it("defaults to claude-sonnet-4 with thinkingLevel medium when anthropic and no model specified", async () => {
+      await captureLog(() =>
+        execute("my-project", { interactive: false, provider: "anthropic" })
+      );
+
+      expect(mockScaffoldProject).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          models: expect.objectContaining({
+            sonnet: expect.objectContaining({
+              provider: "anthropic",
+              model: "claude-sonnet-4-20250514",
+              thinkingLevel: "medium",
+            }),
+          }),
+        }),
+        [],
+        "my-project"
+      );
+    });
+
+    it("defaults to gpt-4o when openai and no model specified", async () => {
+      const output = await captureLog(() =>
+        execute("my-project", { interactive: false, provider: "openai" })
+      );
+
+      expect(output).toContain("Model: gpt-4o (non-interactive)");
+      expect(mockScaffoldProject).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          models: expect.objectContaining({
+            gpt4o: expect.objectContaining({
+              provider: "openai",
+              model: "gpt-4o",
+            }),
+          }),
+        }),
+        [],
+        "my-project"
+      );
+    });
+
+    it("logs anthropic pi auth message in non-interactive anthropic mode", async () => {
+      const output = await captureLog(() =>
+        execute("my-project", { interactive: false, provider: "anthropic" })
+      );
+
+      expect(output).toContain("Will use existing pi auth");
+    });
+  });
 });
