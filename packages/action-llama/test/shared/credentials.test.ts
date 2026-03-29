@@ -11,6 +11,10 @@ import {
   parseCredentialRef,
   requireCredentialRef,
   resolveAgentCredentials,
+  getDefaultBackend,
+  resetDefaultBackend,
+  sanitizeEnvPart,
+  setDefaultBackend,
 } from "../../src/shared/credentials.js";
 import { CREDENTIALS_DIR } from "../../src/shared/paths.js";
 
@@ -115,6 +119,63 @@ describe("credentials", () => {
         { type: "git_ssh", instance: "botty" },
         { type: "sentry_token", instance: "default" },
       ]);
+    });
+  });
+
+  describe("getDefaultBackend", () => {
+    it("returns the current default credential backend", () => {
+      const backend = getDefaultBackend();
+      expect(backend).toBeDefined();
+      expect(typeof backend.exists).toBe("function");
+      expect(typeof backend.read).toBe("function");
+    });
+  });
+
+  describe("resetDefaultBackend", () => {
+    it("resets the backend to a new FilesystemBackend", () => {
+      const mockBackend = {
+        exists: async () => true,
+        read: async () => "mock",
+        readAll: async () => ({}),
+        write: async () => {},
+        writeAll: async () => {},
+        listInstances: async () => [],
+        list: async () => [],
+      };
+
+      setDefaultBackend(mockBackend as any);
+      expect(getDefaultBackend()).toBe(mockBackend);
+
+      resetDefaultBackend();
+
+      // After reset, it should be a different backend (FilesystemBackend)
+      const restoredBackend = getDefaultBackend();
+      expect(restoredBackend).not.toBe(mockBackend);
+      expect(typeof restoredBackend.exists).toBe("function");
+    });
+  });
+
+  describe("sanitizeEnvPart", () => {
+    it("returns alphanumeric strings unchanged", () => {
+      expect(sanitizeEnvPart("github_token")).toBe("github_token");
+      expect(sanitizeEnvPart("abc123")).toBe("abc123");
+    });
+
+    it("encodes hyphens", () => {
+      expect(sanitizeEnvPart("my-instance")).toBe("my_x2dinstance");
+    });
+
+    it("encodes dots", () => {
+      expect(sanitizeEnvPart("v1.0")).toBe("v1_x2e0");
+    });
+
+    it("encodes multiple special characters", () => {
+      const encoded = sanitizeEnvPart("foo-bar.baz");
+      expect(encoded).toBe("foo_x2dbar_x2ebaz");
+    });
+
+    it("does not encode underscores", () => {
+      expect(sanitizeEnvPart("foo_bar")).toBe("foo_bar");
     });
   });
 });
