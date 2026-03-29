@@ -2,11 +2,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { EventEmitter } from "events";
 import type { Runtime, ContainerRuntime } from "../../src/docker/runtime.js";
 
-// Mock child_process so spawn is controllable
+// Mock child_process so spawn and execFileSync are controllable
 const mockSpawn = vi.fn();
+const mockExecFileSync = vi.fn(() => "");
 vi.mock("child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("child_process")>();
-  return { ...actual, spawn: mockSpawn };
+  return { ...actual, spawn: mockSpawn, execFileSync: mockExecFileSync };
 });
 
 // Mock fs operations for testing file permissions
@@ -434,6 +435,38 @@ describe("LocalDockerRuntime.buildImage (async)", () => {
       // The build should still succeed because the error is caught
       expect(true).toBe(true); // Just verifying no exception propagated
     });
+
+    it("applies additionalTags after successful build", async () => {
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+      mockMkdtempSync.mockReturnValueOnce("/tmp/al-ctx-tags");
+      mockExecFileSync.mockReturnValue("");
+
+      const runtime = new LocalDockerRuntime();
+
+      const buildPromise = runtime.buildImage({
+        tag: "test:v1.2.3",
+        dockerfile: "Dockerfile",
+        contextDir: "/tmp/test-ctx",
+        dockerfileContent: "FROM node:20",
+        additionalTags: ["test:latest", "test:1"],
+      });
+
+      fakeProc.emit("close", 0);
+      await buildPromise;
+
+      // docker tag should be called for each additional tag
+      expect(mockExecFileSync).toHaveBeenCalledWith(
+        "docker",
+        ["tag", "test:v1.2.3", "test:latest"],
+        expect.any(Object)
+      );
+      expect(mockExecFileSync).toHaveBeenCalledWith(
+        "docker",
+        ["tag", "test:v1.2.3", "test:1"],
+        expect.any(Object)
+      );
+    });
   });
 });
 
@@ -613,5 +646,235 @@ describe("LocalDockerRuntime.waitForExit", () => {
     fakeWaitProc.emit("error", new Error("ENOENT docker not found"));
 
     await expect(exitPromise).rejects.toThrow("ENOENT docker not found");
+  });
+});
+
+describe("LocalDockerRuntime.isAgentRunning", () => {
+  beforeEach(() => {
+    mockExecFileSync.mockReset();
+  });
+
+  it("returns true when docker ps shows matching containers", async () => {
+    mockExecFileSync.mockReturnValue("al-myagent-abc123");
+    const runtime = new LocalDockerRuntime();
+    const result = await runtime.isAgentRunning("myagent");
+    expect(result).toBe(true);
+  });
+
+  it("returns false when docker ps shows no containers", async () => {
+    mockExecFileSync.mockReturnValue("");
+    const runtime = new LocalDockerRuntime();
+    const result = await runtime.isAgentRunning("myagent");
+    expect(result).toBe(false);
+  });
+
+  it("returns false when docker throws an error", async () => {
+    mockExecFileSync.mockImplementation(() => {
+      throw new Error("docker not found");
+    });
+    const runtime = new LocalDockerRuntime();
+    const result = await runtime.isAgentRunning("myagent");
+    expect(result).toBe(false);
+  });
+});
+
+describe("LocalDockerRuntime.listRunningAgents", () => {
+  beforeEach(() => {
+    mockExecFileSync.mockReset();
+  });
+
+  it("returns empty array when no containers are running", async () => {
+    mockExecFileSync.mockReturnValue("");
+    const runtime = new LocalDockerRuntime();
+    const agents = await runtime.listRunningAgents();
+    expect(agents).toEqual([]);
+  });
+
+  it("returns parsed agents from docker ps output", async () => {
+    mockExecFileSync.mockReturnValue(
+      "al-dev-abc123\tUp 5 minutes\t2024-01-01 12:00:00 +0000 UTC"
+    );
+    const runtime = new LocalDockerRuntime();
+    const agents = await runtime.listRunningAgents();
+    expect(agents).toHaveLength(1);
+    expect(agents[0].agentName).toBe("dev");
+    expect(agents[0].taskId).toBe("al-dev-abc123");
+    expect(agents[0].status).toBe("Up 5 minutes");
+  });
+
+  it("returns empty array when docker throws an error", async () => {
+    mockExecFileSync.mockImplementation(() => {
+      throw new Error("docker not found");
+    });
+    const runtime = new LocalDockerRuntime();
+    const agents = await runtime.listRunningAgents();
+    expect(agents).toEqual([]);
+  });
+
+  it("parses multi-segment agent names correctly", async () => {
+    mockExecFileSync.mockReturnValue(
+      "al-my-agent-name-abc123\tUp 1 minute\t2024-01-01 12:00:00 +0000 UTC"
+    );
+    const runtime = new LocalDockerRuntime();
+    const agents = await runtime.listRunningAgents();
+    expect(agents[0].agentName).toBe("my-agent-name");
+  });
+});
+
+describe("LocalDockerRuntime.kill and remove", () => {
+  beforeEach(() => {
+    mockExecFileSync.mockReset();
+  });
+
+  it("kill calls docker kill on the container", async () => {
+    mockExecFileSync.mockReturnValue("");
+    const runtime = new LocalDockerRuntime();
+    await runtime.kill("al-dev-abc123");
+    expect(mockExecFileSync).toHaveBeenCalledWith(
+      "docker",
+      ["kill", "al-dev-abc123"],
+      expect.objectContaining({ encoding: "utf-8" })
+    );
+  });
+
+  it("kill does not throw when docker kill fails", async () => {
+    mockExecFileSync.mockImplementation(() => {
+      throw new Error("no such container");
+    });
+    const runtime = new LocalDockerRuntime();
+    await expect(runtime.kill("al-dev-abc123")).resolves.toBeUndefined();
+  });
+
+  it("remove calls docker rm -f on the container", async () => {
+    mockExecFileSync.mockReturnValue("");
+    const runtime = new LocalDockerRuntime();
+    await runtime.remove("al-dev-abc123");
+    expect(mockExecFileSync).toHaveBeenCalledWith(
+      "docker",
+      ["rm", "-f", "al-dev-abc123"],
+      expect.objectContaining({ encoding: "utf-8" })
+    );
+  });
+
+  it("remove does not throw when docker rm fails", async () => {
+    mockExecFileSync.mockImplementation(() => {
+      throw new Error("no such container");
+    });
+    const runtime = new LocalDockerRuntime();
+    await expect(runtime.remove("al-dev-abc123")).resolves.toBeUndefined();
+  });
+});
+
+describe("LocalDockerRuntime.launch", () => {
+  beforeEach(() => {
+    mockExecFileSync.mockReset();
+    mockExecFileSync.mockReturnValue("");
+  });
+
+  it("launches container with volume credentials and returns container name", async () => {
+    const runtime = new LocalDockerRuntime();
+    const containerName = await runtime.launch({
+      agentName: "dev",
+      image: "al-dev:latest",
+      env: { GITHUB_TOKEN: "abc123" },
+      credentials: {
+        strategy: "volume",
+        stagingDir: "/tmp/al-creds-test",
+        bundle: {},
+      },
+    });
+    expect(containerName).toMatch(/^al-dev-/);
+    expect(mockExecFileSync).toHaveBeenCalledWith(
+      "docker",
+      expect.arrayContaining(["run", "-d", "--name", containerName]),
+      expect.any(Object)
+    );
+  });
+
+  it("passes env vars as -e flags", async () => {
+    const runtime = new LocalDockerRuntime();
+    await runtime.launch({
+      agentName: "dev",
+      image: "al-dev:latest",
+      env: { MY_VAR: "value1", OTHER: "value2" },
+      credentials: { strategy: "volume", stagingDir: "/tmp/creds", bundle: {} },
+    });
+    const callArgs = mockExecFileSync.mock.calls[0][1] as string[];
+    expect(callArgs).toContain("-e");
+    expect(callArgs).toContain("MY_VAR=value1");
+    expect(callArgs).toContain("OTHER=value2");
+  });
+
+  it("passes tmpfs credentials mount when strategy is tmpfs", async () => {
+    const runtime = new LocalDockerRuntime();
+    await runtime.launch({
+      agentName: "dev",
+      image: "al-dev:latest",
+      env: {},
+      credentials: { strategy: "tmpfs", stagingDir: "/tmp/creds", bundle: {} },
+    });
+    const callArgs = mockExecFileSync.mock.calls[0][1] as string[];
+    expect(callArgs).toContain("--tmpfs");
+  });
+
+  it("passes cpus flag when cpus option is provided", async () => {
+    const runtime = new LocalDockerRuntime();
+    await runtime.launch({
+      agentName: "dev",
+      image: "al-dev:latest",
+      env: {},
+      credentials: { strategy: "volume", stagingDir: "/tmp/creds", bundle: {} },
+      cpus: 2,
+    });
+    const callArgs = mockExecFileSync.mock.calls[0][1] as string[];
+    expect(callArgs).toContain("--cpus");
+    expect(callArgs).toContain("2");
+  });
+});
+
+describe("LocalDockerRuntime.fetchLogs", () => {
+  beforeEach(() => {
+    mockExecFileSync.mockReset();
+  });
+
+  it("returns log lines from docker logs output", async () => {
+    mockExecFileSync
+      .mockReturnValueOnce("al-dev-abc123") // docker ps -a
+      .mockReturnValueOnce("line 1\nline 2\nline 3"); // docker logs
+    const runtime = new LocalDockerRuntime();
+    const logs = await runtime.fetchLogs("dev", 10);
+    expect(logs).toContain("line 1");
+    expect(logs).toContain("line 2");
+    expect(logs).toContain("line 3");
+  });
+
+  it("returns empty array when no containers match", async () => {
+    mockExecFileSync.mockReturnValue(""); // docker ps -a returns empty
+    const runtime = new LocalDockerRuntime();
+    const logs = await runtime.fetchLogs("dev", 10);
+    expect(logs).toEqual([]);
+  });
+
+  it("returns empty array when docker ps throws", async () => {
+    mockExecFileSync.mockImplementation(() => {
+      throw new Error("docker not running");
+    });
+    const runtime = new LocalDockerRuntime();
+    const logs = await runtime.fetchLogs("dev", 10);
+    expect(logs).toEqual([]);
+  });
+});
+
+describe("LocalDockerRuntime.followLogs and getTaskUrl", () => {
+  it("followLogs returns a noop stop handle", () => {
+    const runtime = new LocalDockerRuntime();
+    const handle = runtime.followLogs("dev", () => {});
+    expect(handle).toHaveProperty("stop");
+    expect(() => handle.stop()).not.toThrow();
+  });
+
+  it("getTaskUrl returns null for local runtime", () => {
+    const runtime = new LocalDockerRuntime();
+    expect(runtime.getTaskUrl()).toBeNull();
   });
 });
