@@ -31,9 +31,9 @@ function mockStatusTracker() {
 }
 
 describe("dashboard data routes", () => {
-  function createApp() {
+  function createApp(tracker = mockStatusTracker()) {
     const app = new Hono();
-    registerDashboardDataRoutes(app, mockStatusTracker());
+    registerDashboardDataRoutes(app, tracker);
     return app;
   }
 
@@ -45,12 +45,89 @@ describe("dashboard data routes", () => {
     expect(res.headers.get("Connection")).toBe("keep-alive");
   });
 
-  it("serves /dashboard/api/locks", async () => {
+  it("serves /dashboard/api/locks — returns empty locks when fetch fails", async () => {
     const app = createApp();
     const res = await app.request("/dashboard/api/locks");
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data).toHaveProperty("locks");
+    expect(Array.isArray(data.locks)).toBe(true);
+  });
+
+  it("serves /dashboard/api/locks — returns data when fetch succeeds", async () => {
+    // Mock global fetch to simulate a successful locks endpoint
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ locks: [{ id: "lock-1", resource: "github://test/repo" }] }),
+    }) as any;
+
+    try {
+      const app = createApp();
+      const res = await app.request("/dashboard/api/locks");
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.locks).toHaveLength(1);
+      expect(data.locks[0].id).toBe("lock-1");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("serves /dashboard/api/locks — falls back to empty locks when response not ok", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+    }) as any;
+
+    try {
+      const app = createApp();
+      const res = await app.request("/dashboard/api/locks");
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data).toEqual({ locks: [] });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("status-stream SSE payload includes invalidated items when available", async () => {
+    const tracker = {
+      ...mockStatusTracker(),
+      flushInvalidations: () => ["agent-1", "agent-2"],
+    } as any;
+    const app = createApp(tracker);
+    const res = await app.request("/dashboard/api/status-stream");
+    // Read only the first chunk from the SSE stream with a timeout
+    const reader = res.body!.getReader();
+    const { value } = await Promise.race([
+      reader.read(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 2000)),
+    ]);
+    reader.cancel();
+    const text = new TextDecoder().decode(value);
+    const dataLine = text.split("\n").find((l) => l.startsWith("data:"));
+    expect(dataLine).toBeDefined();
+    const payload = JSON.parse(dataLine!.replace("data:", "").trim());
+    expect(payload.invalidated).toEqual(["agent-1", "agent-2"]);
+  });
+
+  it("status-stream SSE payload does not include invalidated when empty", async () => {
+    const app = createApp();
+    const res = await app.request("/dashboard/api/status-stream");
+    // Read only the first chunk from the SSE stream
+    const reader = res.body!.getReader();
+    const { value } = await Promise.race([
+      reader.read(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 2000)),
+    ]);
+    reader.cancel();
+    const text = new TextDecoder().decode(value);
+    const dataLine = text.split("\n").find((l) => l.startsWith("data:"));
+    expect(dataLine).toBeDefined();
+    const payload = JSON.parse(dataLine!.replace("data:", "").trim());
+    expect(payload.invalidated).toBeUndefined();
   });
 });
 
