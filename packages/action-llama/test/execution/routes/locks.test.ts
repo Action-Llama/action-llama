@@ -416,3 +416,134 @@ describe("Lock Routes — URI validation", () => {
     });
   });
 });
+
+describe("Lock Routes — invalid JSON body", () => {
+  let app: Hono, registry: Map<string, ContainerRegistration>, lockStore: LockStore;
+
+  beforeEach(() => {
+    ({ app, registry, lockStore } = setup());
+    register(registry, "secret-a", "agent-a");
+  });
+  afterEach(() => lockStore.dispose());
+
+  it("POST /locks/acquire returns 400 for non-JSON body", async () => {
+    const res = await app.request("/locks/acquire", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "not valid json {{{",
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("invalid JSON body");
+  });
+
+  it("POST /locks/release returns 400 for non-JSON body", async () => {
+    const res = await app.request("/locks/release", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "not valid json {{{",
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("invalid JSON body");
+  });
+
+  it("POST /locks/heartbeat returns 400 for non-JSON body", async () => {
+    const res = await app.request("/locks/heartbeat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "not valid json {{{",
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("invalid JSON body");
+  });
+});
+
+describe("POST /locks/release — additional validation", () => {
+  let app: Hono, registry: Map<string, ContainerRegistration>, lockStore: LockStore;
+
+  beforeEach(() => {
+    ({ app, registry, lockStore } = setup());
+    register(registry, "secret-a", "agent-a");
+  });
+  afterEach(() => lockStore.dispose());
+
+  it("returns 400 when secret is missing", async () => {
+    const res = await app.request("/locks/release", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resourceKey: "github://repo/issues/1" }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("missing secret");
+  });
+
+  it("returns 400 when resourceKey is missing", async () => {
+    const res = await app.request("/locks/release", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret: "secret-a" }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("missing resourceKey");
+  });
+});
+
+describe("POST /locks/heartbeat — additional validation", () => {
+  let app: Hono, registry: Map<string, ContainerRegistration>, lockStore: LockStore;
+
+  beforeEach(() => {
+    ({ app, registry, lockStore } = setup());
+    register(registry, "secret-a", "agent-a");
+  });
+  afterEach(() => lockStore.dispose());
+
+  it("returns 400 when secret is missing", async () => {
+    const res = await app.request("/locks/heartbeat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resourceKey: "github://repo/issues/1" }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("missing secret");
+  });
+});
+
+describe("POST /locks/acquire — deadlock detection", () => {
+  let app: Hono, registry: Map<string, ContainerRegistration>, lockStore: LockStore;
+
+  beforeEach(() => {
+    ({ app, registry, lockStore } = setup());
+    register(registry, "secret-1", "agent-a", "agent-a-1");
+    register(registry, "secret-2", "agent-b", "agent-b-1");
+  });
+  afterEach(() => lockStore.dispose());
+
+  it("returns 409 with deadlock flag when a deadlock cycle is detected", async () => {
+    // agent-a-1 acquires resource-A
+    await acquire(app, { secret: "secret-1", resourceKey: "github://app/resource/A" });
+    // agent-b-1 acquires resource-B
+    await acquire(app, { secret: "secret-2", resourceKey: "github://app/resource/B" });
+
+    // agent-a-1 tries to acquire resource-B (held by agent-b-1) → conflict; waitingFor[agent-a-1] = resource-B
+    const conflictRes = await acquire(app, { secret: "secret-1", resourceKey: "github://app/resource/B" });
+    expect(conflictRes.status).toBe(409);
+    const conflictBody = await conflictRes.json();
+    expect(conflictBody.ok).toBe(false);
+    expect(conflictBody.holder).toBe("agent-b-1");
+
+    // agent-b-1 tries to acquire resource-A (held by agent-a-1) → deadlock detected
+    const deadlockRes = await acquire(app, { secret: "secret-2", resourceKey: "github://app/resource/A" });
+    expect(deadlockRes.status).toBe(409);
+    const deadlockBody = await deadlockRes.json();
+    expect(deadlockBody.ok).toBe(false);
+    expect(deadlockBody.deadlock).toBe(true);
+    expect(deadlockBody.reason).toContain("possible deadlock");
+    expect(Array.isArray(deadlockBody.cycle)).toBe(true);
+    expect(deadlockBody.cycle.length).toBeGreaterThan(0);
+  });
+});
