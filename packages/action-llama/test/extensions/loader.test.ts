@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { loadBuiltinExtensions, isExtension } from "../../src/extensions/loader.js";
+import { loadBuiltinExtensions, isExtension, getGlobalRegistry } from "../../src/extensions/loader.js";
 import { globalRegistry } from "../../src/extensions/registry.js";
 
 // Mock the imports to avoid loading actual extensions during tests
@@ -180,6 +180,37 @@ describe("Extension Loader", () => {
       expect(openAIModelExtension.init).toHaveBeenCalled();
       expect(anthropicModelExtension.init).toHaveBeenCalled();
       expect(customModelExtension.init).toHaveBeenCalled();
+    });
+
+    it("should register vault extension when VAULT_ADDR is set", async () => {
+      const { vaultCredentialExtension } = await import("../../src/credentials/providers/index.js");
+
+      const originalVaultAddr = process.env.VAULT_ADDR;
+      process.env.VAULT_ADDR = "http://localhost:8200";
+      try {
+        await loadBuiltinExtensions();
+        expect(vaultCredentialExtension.init).toHaveBeenCalled();
+      } finally {
+        if (originalVaultAddr === undefined) {
+          delete process.env.VAULT_ADDR;
+        } else {
+          process.env.VAULT_ADDR = originalVaultAddr;
+        }
+      }
+    });
+  });
+
+  describe("getGlobalRegistry", () => {
+    it("returns the global registry instance", () => {
+      const registry = getGlobalRegistry();
+      expect(registry).toBeDefined();
+      expect(typeof registry.register).toBe("function");
+      expect(typeof registry.get).toBe("function");
+    });
+
+    it("returns the same reference as globalRegistry", () => {
+      const registry = getGlobalRegistry();
+      expect(registry).toBe(globalRegistry);
     });
   });
 });

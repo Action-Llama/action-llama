@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { ExtensionRegistry } from "../../src/extensions/registry.js";
-import type { Extension, TelemetryExtension, WebhookExtension } from "../../src/extensions/types.js";
+import type {
+  Extension,
+  TelemetryExtension,
+  WebhookExtension,
+  RuntimeExtension,
+  ModelExtension,
+  CredentialExtension,
+} from "../../src/extensions/types.js";
 
 describe("ExtensionRegistry", () => {
   let registry: ExtensionRegistry;
@@ -277,6 +284,154 @@ describe("ExtensionRegistry", () => {
         version: "2.0.0",
         description: "Test extension 2"
       });
+    });
+  });
+
+  describe("type-specific getters", () => {
+    function makeExtension(type: "webhook" | "telemetry" | "runtime" | "model" | "credential", name: string): Extension {
+      return {
+        metadata: { name, type, version: "1.0.0", description: `${type}/${name}` },
+        init: vi.fn().mockResolvedValue(undefined),
+        shutdown: vi.fn().mockResolvedValue(undefined),
+      };
+    }
+
+    it("getTelemetryExtension returns registered telemetry extension", async () => {
+      const ext = makeExtension("telemetry", "otel");
+      await registry.register(ext);
+      const found = registry.getTelemetryExtension("otel");
+      expect(found).toBe(ext);
+      expect(registry.getTelemetryExtension("nonexistent")).toBeUndefined();
+    });
+
+    it("getRuntimeExtension returns registered runtime extension", async () => {
+      const ext = makeExtension("runtime", "local");
+      await registry.register(ext);
+      const found = registry.getRuntimeExtension("local");
+      expect(found).toBe(ext);
+      expect(registry.getRuntimeExtension("nonexistent")).toBeUndefined();
+    });
+
+    it("getModelExtension returns registered model extension", async () => {
+      const ext = makeExtension("model", "openai");
+      await registry.register(ext);
+      const found = registry.getModelExtension("openai");
+      expect(found).toBe(ext);
+      expect(registry.getModelExtension("nonexistent")).toBeUndefined();
+    });
+
+    it("getCredentialExtension returns registered credential extension", async () => {
+      const ext = makeExtension("credential", "file");
+      await registry.register(ext);
+      const found = registry.getCredentialExtension("file");
+      expect(found).toBe(ext);
+      expect(registry.getCredentialExtension("nonexistent")).toBeUndefined();
+    });
+
+    it("getAllTelemetryExtensions returns all telemetry extensions", async () => {
+      await registry.register(makeExtension("telemetry", "otel"));
+      const all = registry.getAllTelemetryExtensions();
+      expect(all).toHaveLength(1);
+      expect(all[0].metadata.name).toBe("otel");
+    });
+
+    it("getAllRuntimeExtensions returns all runtime extensions", async () => {
+      await registry.register(makeExtension("runtime", "local"));
+      await registry.register(makeExtension("runtime", "ssh"));
+      const all = registry.getAllRuntimeExtensions();
+      expect(all).toHaveLength(2);
+      expect(all.map(e => e.metadata.name)).toContain("local");
+      expect(all.map(e => e.metadata.name)).toContain("ssh");
+    });
+
+    it("getAllModelExtensions returns all model extensions", async () => {
+      await registry.register(makeExtension("model", "anthropic"));
+      const all = registry.getAllModelExtensions();
+      expect(all).toHaveLength(1);
+      expect(all[0].metadata.name).toBe("anthropic");
+    });
+
+    it("getAllCredentialExtensions returns all credential extensions", async () => {
+      await registry.register(makeExtension("credential", "file"));
+      const all = registry.getAllCredentialExtensions();
+      expect(all).toHaveLength(1);
+      expect(all[0].metadata.name).toBe("file");
+    });
+
+    it("getAllCredentialTypes returns all registered credential types", async () => {
+      const ext: Extension = {
+        metadata: {
+          name: "typed-cred",
+          type: "credential",
+          version: "1.0.0",
+          description: "extension with credential types",
+          providesCredentialTypes: [
+            { type: "my_api_key", fields: ["key"], description: "My API key" },
+            { type: "my_token", fields: ["token"], description: "My token" },
+          ],
+        },
+        init: vi.fn().mockResolvedValue(undefined),
+        shutdown: vi.fn().mockResolvedValue(undefined),
+      };
+      await registry.register(ext);
+
+      const all = registry.getAllCredentialTypes();
+      expect(all).toHaveLength(2);
+      expect(all.map(t => t.type)).toContain("my_api_key");
+      expect(all.map(t => t.type)).toContain("my_token");
+    });
+  });
+
+  describe("registration edge cases", () => {
+    it("throws when registering with an invalid extension type", async () => {
+      // Force invalid type by casting — this simulates an unknown type
+      const ext = {
+        metadata: { name: "bad", type: "unknown-type" as any, version: "1.0.0", description: "bad" },
+        init: vi.fn().mockResolvedValue(undefined),
+        shutdown: vi.fn().mockResolvedValue(undefined),
+      };
+      await expect(registry.register(ext)).rejects.toThrow("Invalid extension type: unknown-type");
+    });
+
+    it("unregister with invalid type returns without error", async () => {
+      // Should not throw for unknown type
+      await expect(
+        registry.unregister("webhook" as any, "nonexistent")
+      ).resolves.not.toThrow();
+    });
+
+    it("required credential with instance name includes instance in error message", async () => {
+      mockCredentialChecker.mockResolvedValue(false);
+      const ext: Extension = {
+        metadata: {
+          name: "inst-ext",
+          type: "webhook",
+          version: "1.0.0",
+          description: "test",
+          requiredCredentials: [{ type: "github_token", instance: "myorg", description: "GitHub token" }],
+        },
+        init: vi.fn().mockResolvedValue(undefined),
+        shutdown: vi.fn().mockResolvedValue(undefined),
+      };
+      await expect(registry.register(ext)).rejects.toThrow("Missing required credential: github_token:myorg");
+    });
+  });
+
+  describe("shutdown error handling", () => {
+    it("logs warning but does not throw when a shutdown fails", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const ext: Extension = {
+        metadata: { name: "failing-ext", type: "webhook", version: "1.0.0", description: "test" },
+        init: vi.fn().mockResolvedValue(undefined),
+        shutdown: vi.fn().mockRejectedValue(new Error("shutdown failure")),
+      };
+      await registry.register(ext);
+      await expect(registry.shutdown()).resolves.not.toThrow();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("failing-ext"),
+        expect.any(Error)
+      );
+      warnSpy.mockRestore();
     });
   });
 });
