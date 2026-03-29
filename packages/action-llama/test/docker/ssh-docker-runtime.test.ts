@@ -456,4 +456,158 @@ describe("SshDockerRuntime", () => {
       expect(lines).toHaveLength(0);
     });
   });
+
+  describe("buildImage", () => {
+    function makeFakeTar() {
+      const proc = new EventEmitter() as any;
+      proc.stdout = new EventEmitter();
+      proc.stdout.pipe = vi.fn();
+      proc.stderr = new EventEmitter();
+      proc.kill = vi.fn();
+      return proc;
+    }
+
+    function makeFakeSshBuild(exitCode = 0, delay = 0) {
+      const proc = new EventEmitter() as any;
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.stdin = { end: vi.fn(), pipe: vi.fn() };
+      proc.kill = vi.fn();
+      if (delay === 0) {
+        process.nextTick(() => proc.emit("close", exitCode));
+      } else {
+        setTimeout(() => proc.emit("close", exitCode), delay);
+      }
+      return proc;
+    }
+
+    beforeEach(() => {
+      mockSpawn.mockReset();
+    });
+
+    it("calls onProgress and returns tag on successful build", async () => {
+      const fakeTar = makeFakeTar();
+      const fakeSsh = makeFakeSshBuild(0);
+      mockSpawn
+        .mockReturnValueOnce(fakeTar)
+        .mockReturnValueOnce(fakeSsh);
+
+      const progress: string[] = [];
+      const result = await runtime.buildImage({
+        tag: "al-dev:v1",
+        dockerfile: "Dockerfile",
+        contextDir: "/tmp/ctx",
+        dockerfileContent: "FROM node:20\nRUN echo hello",
+        onProgress: (msg) => progress.push(msg),
+      });
+
+      expect(result).toBe("al-dev:v1");
+      expect(progress).toContain("Building image on VPS via SSH");
+    });
+
+    it("forwards SSH build stderr lines as progress", async () => {
+      const fakeTar = makeFakeTar();
+      const fakeSsh = makeFakeSshBuild(0);
+
+      // Emit some build output on stderr before closing
+      const origNextTick = process.nextTick.bind(process);
+      mockSpawn
+        .mockReturnValueOnce(fakeTar)
+        .mockReturnValueOnce(fakeSsh);
+
+      const progress: string[] = [];
+      const buildPromise = runtime.buildImage({
+        tag: "al-dev:v1",
+        dockerfile: "Dockerfile",
+        contextDir: "/tmp/ctx",
+        dockerfileContent: "FROM node:20",
+        onProgress: (msg) => progress.push(msg),
+      });
+
+      // Emit stderr build progress before close
+      fakeSsh.stderr.emit("data", Buffer.from("Step 1/2: FROM node:20\nStep 2/2: RUN echo\n"));
+
+      await buildPromise;
+      expect(progress).toContain("Step 1/2: FROM node:20");
+    });
+
+    it("rejects when SSH build fails", async () => {
+      const fakeTar = makeFakeTar();
+      const fakeSsh = makeFakeSshBuild(1);
+      fakeSsh.stderr.emit = vi.fn(); // suppress before close
+      mockSpawn
+        .mockReturnValueOnce(fakeTar)
+        .mockReturnValueOnce(fakeSsh);
+
+      // Emit the close with error code
+      await expect(
+        runtime.buildImage({
+          tag: "al-dev:v1",
+          dockerfile: "Dockerfile",
+          contextDir: "/tmp/ctx",
+          dockerfileContent: "FROM node:20\nRUN exit 1",
+        })
+      ).rejects.toThrow("Remote docker build failed");
+    });
+
+    it("rejects when tar spawn emits error", async () => {
+      const fakeTar = makeFakeTar();
+      const fakeSsh = makeFakeSshBuild(0);
+      mockSpawn
+        .mockReturnValueOnce(fakeTar)
+        .mockReturnValueOnce(fakeSsh);
+
+      const buildPromise = runtime.buildImage({
+        tag: "al-dev:v1",
+        dockerfile: "Dockerfile",
+        contextDir: "/tmp/ctx",
+        dockerfileContent: "FROM node:20",
+      });
+
+      fakeTar.emit("error", new Error("tar not found"));
+      await expect(buildPromise).rejects.toThrow("tar not found");
+    });
+
+    it("rejects when ssh spawn emits error", async () => {
+      const fakeTar = makeFakeTar();
+      const fakeSsh = makeFakeSshBuild(0);
+      mockSpawn
+        .mockReturnValueOnce(fakeTar)
+        .mockReturnValueOnce(fakeSsh);
+
+      const buildPromise = runtime.buildImage({
+        tag: "al-dev:v1",
+        dockerfile: "Dockerfile",
+        contextDir: "/tmp/ctx",
+        dockerfileContent: "FROM node:20",
+      });
+
+      fakeSsh.emit("error", new Error("ssh connection refused"));
+      await expect(buildPromise).rejects.toThrow("ssh connection refused");
+    });
+  });
+
+  describe("waitForExit timeout", () => {
+    it("rejects with timeout error and kills the container", async () => {
+      vi.useFakeTimers();
+
+      const fakeProc = new EventEmitter() as any;
+      fakeProc.stdout = new EventEmitter();
+      fakeProc.stderr = new EventEmitter();
+      fakeProc.kill = vi.fn();
+      mockSpawn.mockReturnValue(fakeProc);
+      mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+        cb(null, "", "");
+      });
+
+      const exitPromise = runtime.waitForExit("al-test-abc", 30);
+
+      vi.advanceTimersByTime(30_001);
+
+      await expect(exitPromise).rejects.toThrow("timed out");
+      expect(fakeProc.kill).toHaveBeenCalled();
+
+      vi.useRealTimers();
+    });
+  });
 });
