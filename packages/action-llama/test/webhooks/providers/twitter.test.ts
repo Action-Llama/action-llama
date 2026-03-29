@@ -229,6 +229,187 @@ describe("TwitterWebhookProvider", () => {
       expect(ctx).not.toBeNull();
       expect(ctx!.sender).toBe("unknown");
     });
+
+    it("parses unfollow_events", () => {
+      const body = {
+        for_user_id: "123456",
+        unfollow_events: [
+          {
+            created_timestamp: "1742000000000",
+            type: "unfollow",
+            source: { id: "111", screen_name: "alice" },
+            target: { id: "222", screen_name: "bob" },
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.event).toBe("unfollow_events");
+      expect(ctx!.action).toBe("unfollow");
+      expect(ctx!.sender).toBe("alice");
+      expect(ctx!.title).toContain("unfollowed");
+      expect(ctx!.title).toContain("bob");
+    });
+
+    it("parses block_events", () => {
+      const body = {
+        for_user_id: "123456",
+        block_events: [
+          {
+            created_timestamp: "1742000000000",
+            type: "block",
+            source: { id: "111", screen_name: "alice" },
+            target: { id: "222", screen_name: "charlie" },
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.event).toBe("block_events");
+      expect(ctx!.action).toBe("block");
+      expect(ctx!.sender).toBe("alice");
+      expect(ctx!.title).toContain("blocked");
+      expect(ctx!.title).toContain("charlie");
+    });
+
+    it("parses unblock_events", () => {
+      const body = {
+        for_user_id: "123456",
+        unblock_events: [
+          {
+            created_timestamp: "1742000000000",
+            type: "unblock",
+            source: { id: "111", screen_name: "alice" },
+            target: { id: "222", screen_name: "charlie" },
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.event).toBe("unblock_events");
+      expect(ctx!.sender).toBe("alice");
+      expect(ctx!.title).toContain("unblocked");
+    });
+
+    it("parses mute_events", () => {
+      const body = {
+        for_user_id: "123456",
+        mute_events: [
+          {
+            created_timestamp: "1742000000000",
+            type: "mute",
+            source: { id: "111", screen_name: "alice" },
+            target: { id: "222", screen_name: "dave" },
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.event).toBe("mute_events");
+      expect(ctx!.action).toBe("mute");
+      expect(ctx!.sender).toBe("alice");
+      expect(ctx!.title).toContain("muted");
+      expect(ctx!.title).toContain("dave");
+    });
+
+    it("parses unmute_events", () => {
+      const body = {
+        for_user_id: "123456",
+        unmute_events: [
+          {
+            created_timestamp: "1742000000000",
+            type: "unmute",
+            source: { id: "111", screen_name: "alice" },
+            target: { id: "222", screen_name: "dave" },
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.event).toBe("unmute_events");
+      expect(ctx!.sender).toBe("alice");
+      expect(ctx!.title).toContain("unmuted");
+    });
+
+    it("parses direct_message_indicate_typing_events", () => {
+      const body = {
+        for_user_id: "123456",
+        direct_message_indicate_typing_events: [
+          {
+            created_timestamp: "1742000000000",
+            sender_id: "777",
+            recipient_id: "123456",
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.event).toBe("direct_message_indicate_typing_events");
+      expect(ctx!.sender).toBe("777");
+      expect(ctx!.title).toContain("777");
+      expect(ctx!.title).toContain("Typing indicator");
+    });
+
+    it("parses direct_message_mark_read_events", () => {
+      const body = {
+        for_user_id: "123456",
+        direct_message_mark_read_events: [
+          {
+            created_timestamp: "1742000000000",
+            sender_id: "888",
+            recipient_id: "123456",
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.event).toBe("direct_message_mark_read_events");
+      expect(ctx!.sender).toBe("888");
+      expect(ctx!.title).toContain("888");
+    });
+
+    it("handles unknown event key with default case", () => {
+      const body = {
+        for_user_id: "123456",
+        some_unknown_events: [{ id: "001" }],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.event).toBe("some_unknown_events");
+      expect(ctx!.title).toBe("some_unknown_events");
+    });
+
+    it("uses source id as sender when screen_name is missing for follow events", () => {
+      const body = {
+        for_user_id: "123456",
+        follow_events: [
+          {
+            created_timestamp: "1742000000000",
+            source: { id: "111" },
+            target: { id: "222" },
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.sender).toBe("111");
+    });
+
+    it("uses tweet user id_str as sender when screen_name is missing for tweet_create_events", () => {
+      const body = {
+        for_user_id: "123456",
+        tweet_create_events: [
+          {
+            id_str: "abc",
+            text: "hello",
+            user: { id_str: "456" },
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.sender).toBe("456");
+    });
   });
 
   describe("matchesFilter", () => {
