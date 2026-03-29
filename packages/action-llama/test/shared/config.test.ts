@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "fs";
 import { resolve, join } from "path";
 import { tmpdir } from "os";
 import { stringify as stringifyTOML } from "smol-toml";
-import { loadGlobalConfig, loadProjectConfig, loadAgentConfig, loadAgentBody, discoverAgents, validateAgentName, loadSharedFiles } from "../../src/shared/config.js";
+import { loadGlobalConfig, loadProjectConfig, loadAgentConfig, loadAgentBody, discoverAgents, validateAgentName, loadSharedFiles, updateProjectScale, getProjectScale, getAgentScale, updateAgentRuntimeField } from "../../src/shared/config.js";
 import type { GlobalConfig } from "../../src/shared/config.js";
 import { ENVIRONMENTS_DIR } from "../../src/shared/paths.js";
 
@@ -740,5 +740,132 @@ describe("loadSharedFiles", () => {
   it("returns empty object for empty shared/ directory", () => {
     mkdirSync(resolve(tmpDir, "shared"), { recursive: true });
     expect(loadSharedFiles(tmpDir)).toEqual({});
+  });
+});
+
+describe("updateProjectScale", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("writes scale to config.toml", () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({ models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514" } } }));
+
+    updateProjectScale(tmpDir, 3);
+
+    const loaded = loadGlobalConfig(tmpDir);
+    expect(loaded.scale).toBe(3);
+  });
+
+  it("overwrites existing scale", () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514" } },
+      scale: 1,
+    }));
+
+    updateProjectScale(tmpDir, 7);
+
+    const loaded = loadGlobalConfig(tmpDir);
+    expect(loaded.scale).toBe(7);
+  });
+});
+
+describe("getProjectScale", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns scale from config.toml", () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514" } },
+      scale: 4,
+    }));
+
+    expect(getProjectScale(tmpDir)).toBe(4);
+  });
+
+  it("returns default scale of 5 when scale is not set", () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({ models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514" } } }));
+
+    expect(getProjectScale(tmpDir)).toBe(5);
+  });
+});
+
+describe("getAgentScale", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-test-"));
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({ models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514" } } }));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns scale from per-agent config.toml", () => {
+    writeSkillMd(tmpDir, "dev", { models: ["sonnet"], credentials: [], schedule: "*/5 * * * *", scale: 2 });
+
+    expect(getAgentScale(tmpDir, "dev")).toBe(2);
+  });
+
+  it("returns 1 when scale is not set in agent config", () => {
+    writeSkillMd(tmpDir, "dev", { models: ["sonnet"], credentials: [], schedule: "*/5 * * * *" });
+
+    expect(getAgentScale(tmpDir, "dev")).toBe(1);
+  });
+});
+
+describe("updateAgentRuntimeField", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-test-"));
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({ models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514" } } }));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("creates config.toml with the field when it doesn't exist", () => {
+    // Set up agent with base config.toml (including models required by loadAgentConfig)
+    writeSkillMd(tmpDir, "dev", { models: ["sonnet"], credentials: [], schedule: "*/5 * * * *" });
+
+    updateAgentRuntimeField(tmpDir, "dev", "scale", 3);
+
+    const config = loadAgentConfig(tmpDir, "dev");
+    expect(config.scale).toBe(3);
+  });
+
+  it("updates an existing scale field", () => {
+    writeSkillMd(tmpDir, "dev", { models: ["sonnet"], credentials: [], schedule: "*/5 * * * *", scale: 1 });
+
+    updateAgentRuntimeField(tmpDir, "dev", "scale", 5);
+
+    const config = loadAgentConfig(tmpDir, "dev");
+    expect(config.scale).toBe(5);
+  });
+
+  it("preserves other fields when updating", () => {
+    writeSkillMd(tmpDir, "dev", { models: ["sonnet"], credentials: [], schedule: "*/5 * * * *", scale: 2, timeout: 120 });
+
+    updateAgentRuntimeField(tmpDir, "dev", "scale", 4);
+
+    const config = loadAgentConfig(tmpDir, "dev");
+    expect(config.scale).toBe(4);
+    expect(config.timeout).toBe(120);
   });
 });
