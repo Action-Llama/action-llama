@@ -1,5 +1,15 @@
 # @action-llama/action-llama
 
+## 0.18.8
+
+### Patch Changes
+
+- [`36092c1`](https://github.com/Action-Llama/action-llama/commit/36092c1504404467830dd11628e9833fdaaf41a1) Thanks [@asselstine](https://github.com/asselstine)! - `al doctor` now checks whether host-user runtime agents' system user is in the `docker` group. It warns if the user is missing from the group and, on Linux, attempts to fix it automatically with `sudo usermod -aG docker <user>`.
+
+- [#381](https://github.com/Action-Llama/action-llama/pull/381) [`f68eb80`](https://github.com/Action-Llama/action-llama/commit/f68eb80c7c216485271d41226e47c14ca61d2d1a) Thanks [@asselstine](https://github.com/asselstine)! - Fix missing assistant text in `host-user` runtime logs. Output emitted between `launch()` and `streamLogs()` was silently dropped because `pipe()` put the stream into flowing mode immediately. Lines are now buffered from process start and replayed when `streamLogs()` attaches. Closes [#380](https://github.com/Action-Llama/action-llama/issues/380).
+
+- [`e4f4e8c`](https://github.com/Action-Llama/action-llama/commit/e4f4e8ccb5f4c117845f90d9ae17b4fa6f405ab1) Thanks [@asselstine](https://github.com/asselstine)! - Remove repository dispatch to Action-Llama/agents from the release workflow. The agents deploy trigger is no longer needed.
+
 ## 0.18.7
 
 ### Patch Changes
