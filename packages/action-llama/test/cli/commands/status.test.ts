@@ -216,3 +216,209 @@ describe("status with locks", () => {
     expect(output).not.toContain("Active locks:");
   });
 });
+
+describe("status printAgentConfig — repos filter and scale/timeout", () => {
+  let tmpDir: string;
+  let fetchSpy: any;
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("no gateway"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it("shows repos filter in webhook config", async () => {
+    tmpDir = makeTmpProject({
+      agents: [
+        {
+          name: "wh-repos",
+          webhooks: [
+            { source: "github", events: ["push"], repos: ["owner/repo1", "owner/repo2"] },
+          ],
+        },
+      ],
+    });
+
+    const output = await captureLog(() => execute({ project: tmpDir, agent: "wh-repos" }));
+    expect(output).toContain("Webhooks:");
+    expect(output).toContain("repos: owner/repo1, owner/repo2");
+  });
+
+  it("shows scale in agent config when scale > 1", async () => {
+    tmpDir = makeTmpProject({
+      agents: [{ name: "scaled-agent", scale: 3 }],
+    });
+
+    const output = await captureLog(() => execute({ project: tmpDir, agent: "scaled-agent" }));
+    expect(output).toContain("Scale: 3");
+  });
+
+  it("shows timeout in agent config when timeout is set", async () => {
+    tmpDir = makeTmpProject({
+      agents: [{ name: "timeout-agent", timeout: 3600 }],
+    });
+
+    const output = await captureLog(() => execute({ project: tmpDir, agent: "timeout-agent" }));
+    expect(output).toContain("Timeout: 3600s");
+  });
+});
+
+describe("status with running instances from gateway", () => {
+  let tmpDir: string;
+  let fetchSpy: any;
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, "fetch");
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it("shows running instances table in summary view", async () => {
+    tmpDir = makeTmpProject({
+      agents: [{ name: "dev" }],
+    });
+
+    const now = Date.now();
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      text: () => Promise.resolve(JSON.stringify({
+        scheduler: { paused: false, mode: "local" },
+        instances: [
+          {
+            id: "dev-abc12345678901234567",
+            agentName: "dev",
+            status: "running",
+            trigger: "manual",
+            startedAt: now - 60000,
+          },
+        ],
+        agents: [{ name: "dev", enabled: true }],
+        running: 1,
+        queueSizes: {},
+      })),
+    });
+    fetchSpy.mockResolvedValueOnce({ ok: false }); // /locks/status
+
+    const output = await captureLog(() => execute({ project: tmpDir }));
+    expect(output).toContain("Running Instances:");
+    expect(output).toContain("INSTANCE ID");
+    expect(output).toContain("dev");
+    expect(output).toContain("running");
+    expect(output).toContain("manual");
+  });
+
+  it("shows PAUSED status for disabled agent in per-agent detail", async () => {
+    tmpDir = makeTmpProject();
+
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      text: () => Promise.resolve(JSON.stringify({
+        scheduler: { paused: false, mode: "local" },
+        instances: [],
+        agents: [{ name: "dev", enabled: false }],
+        running: 0,
+        queueSizes: {},
+      })),
+    });
+    fetchSpy.mockResolvedValueOnce({ ok: false });
+
+    const output = await captureLog(() => execute({ project: tmpDir, agent: "dev" }));
+    expect(output).toContain("Agent: dev");
+    expect(output).toContain("Status: PAUSED");
+  });
+
+  it("shows running instances for specific agent in per-agent detail", async () => {
+    tmpDir = makeTmpProject();
+
+    const now = Date.now();
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      text: () => Promise.resolve(JSON.stringify({
+        scheduler: { paused: false, mode: "local" },
+        instances: [
+          {
+            id: "dev-instance-1",
+            agentName: "dev",
+            status: "running",
+            trigger: "cron",
+            startedAt: now - 30000,
+          },
+        ],
+        agents: [{ name: "dev", enabled: true }],
+        running: 1,
+        queueSizes: {},
+      })),
+    });
+    fetchSpy.mockResolvedValueOnce({ ok: false });
+
+    const output = await captureLog(() => execute({ project: tmpDir, agent: "dev" }));
+    expect(output).toContain("Agent: dev");
+    expect(output).toContain("Running Instances:");
+    expect(output).toContain("dev");
+    expect(output).toContain("running");
+  });
+
+  it("shows scheduler runtime and gateway port in summary view", async () => {
+    tmpDir = makeTmpProject({
+      agents: [{ name: "dev" }],
+    });
+
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      text: () => Promise.resolve(JSON.stringify({
+        scheduler: {
+          paused: false,
+          mode: "local",
+          runtime: "docker",
+          gatewayPort: 9090,
+        },
+        instances: [],
+        agents: [{ name: "dev", enabled: true }],
+        running: 0,
+        queueSizes: {},
+      })),
+    });
+    fetchSpy.mockResolvedValueOnce({ ok: false });
+
+    const output = await captureLog(() => execute({ project: tmpDir }));
+    expect(output).toContain("Runtime: docker");
+    expect(output).toContain("Gateway: http://localhost:9090");
+    expect(output).toContain("No running instances.");
+  });
+
+  it("shows truncated instance ID when ID is long", async () => {
+    tmpDir = makeTmpProject({
+      agents: [{ name: "dev" }],
+    });
+
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      text: () => Promise.resolve(JSON.stringify({
+        scheduler: { paused: false, mode: "local" },
+        instances: [
+          {
+            id: "dev-abcdef1234567890abcdef1234567890",  // very long ID
+            agentName: "dev",
+            status: "running",
+            trigger: null,
+            startedAt: Date.now() - 10000,
+          },
+        ],
+        agents: [{ name: "dev", enabled: true }],
+        running: 1,
+        queueSizes: {},
+      })),
+    });
+    fetchSpy.mockResolvedValueOnce({ ok: false });
+
+    const output = await captureLog(() => execute({ project: tmpDir }));
+    expect(output).toContain("...");  // truncated ID
+    expect(output).toContain("-");    // dash for no trigger
+  });
+});
