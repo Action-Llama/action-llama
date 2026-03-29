@@ -69,10 +69,15 @@ vi.mock("../../src/shared/credentials.js", () => ({
   resetDefaultBackend: () => {},
 }));
 
+vi.mock("../../src/hooks/runner.js", () => ({
+  runHooks: vi.fn(async () => ({ durationMs: 50 })),
+}));
+
 import { AgentRunner } from "../../src/agents/runner.js";
 import pino from "pino";
 import { makeAgentConfig as makeAgentConfigBase } from "../helpers.js";
 import type { AgentConfig } from "../../src/shared/config.js";
+import { runHooks } from "../../src/hooks/runner.js";
 
 function makeRunnerAgentConfig(overrides?: Partial<AgentConfig>): AgentConfig {
   return makeAgentConfigBase({
@@ -538,5 +543,291 @@ describe("AgentRunner", () => {
     await runner.run("Test");
     expect(process.env.AL_SIGNAL_DIR).toBeUndefined();
     expect(process.env.PATH).toBe(originalPath);
+  });
+
+  describe("abort", () => {
+    it("calls abort without throwing", () => {
+      const runner = new AgentRunner(makeRunnerAgentConfig(), makeLogger(), tmpDir);
+      expect(() => runner.abort()).not.toThrow();
+    });
+
+    it("logs abort request", () => {
+      const logger = makeLogger();
+      const infoSpy = vi.spyOn(logger, "info");
+      const runner = new AgentRunner(makeRunnerAgentConfig(), logger, tmpDir);
+      runner.abort();
+      expect(infoSpy).toHaveBeenCalledWith("Agent runner abort requested");
+    });
+  });
+
+  describe("triggerInfo variants", () => {
+    it("logs 'agent (source)' when type is agent with source", async () => {
+      const logger = makeLogger();
+      const infoSpy = vi.spyOn(logger, "info");
+      const runner = new AgentRunner(makeRunnerAgentConfig(), logger, tmpDir);
+      mockPrompt.mockResolvedValue(undefined);
+      mockSubscribe.mockImplementation(() => {});
+
+      await runner.run("Test", { type: "agent", source: "other-agent" });
+
+      // _runInternal formats as "agent (other-agent)" for type=agent with source
+      expect(infoSpy).toHaveBeenCalledWith(
+        expect.stringContaining("agent (other-agent)")
+      );
+    });
+
+    it("logs trigger type without source when type is not agent", async () => {
+      const logger = makeLogger();
+      const infoSpy = vi.spyOn(logger, "info");
+      const runner = new AgentRunner(makeRunnerAgentConfig(), logger, tmpDir);
+      mockPrompt.mockResolvedValue(undefined);
+      mockSubscribe.mockImplementation(() => {});
+
+      // For non-agent types, _runInternal uses triggerInfo.type only (not source)
+      await runner.run("Test", { type: "webhook", source: "github" });
+
+      expect(infoSpy).toHaveBeenCalledWith(
+        expect.stringContaining("triggered by webhook")
+      );
+    });
+  });
+
+  describe("message_end event", () => {
+    it("logs assistant text when message_end fires after text_delta", async () => {
+      const logger = makeLogger();
+      const infoSpy = vi.spyOn(logger, "info");
+      const runner = new AgentRunner(makeRunnerAgentConfig(), logger, tmpDir);
+      mockPrompt.mockResolvedValue(undefined);
+
+      mockSubscribe.mockImplementation((callback: Function) => {
+        callback({
+          type: "message_update",
+          assistantMessageEvent: { type: "text_delta", delta: "Hello world" },
+        });
+        callback({ type: "message_end" });
+      });
+
+      await runner.run("Test");
+      expect(infoSpy).toHaveBeenCalledWith({ text: "Hello world" }, "assistant");
+    });
+
+    it("does not log assistant when message_end fires with no prior text", async () => {
+      const logger = makeLogger();
+      const infoSpy = vi.spyOn(logger, "info");
+      const runner = new AgentRunner(makeRunnerAgentConfig(), logger, tmpDir);
+      mockPrompt.mockResolvedValue(undefined);
+      mockSubscribe.mockImplementation((callback: Function) => {
+        callback({ type: "message_end" });
+      });
+
+      await runner.run("Test");
+      expect(infoSpy).not.toHaveBeenCalledWith(
+        expect.objectContaining({ text: expect.anything() }),
+        "assistant"
+      );
+    });
+  });
+
+  describe("tool error with structured JSON content", () => {
+    it("extracts text from JSON-structured tool error result", async () => {
+      const logger = makeLogger();
+      const errorSpy = vi.spyOn(logger, "error");
+      const runner = new AgentRunner(makeRunnerAgentConfig(), logger, tmpDir);
+      mockPrompt.mockResolvedValue(undefined);
+
+      const structuredError = JSON.stringify({
+        content: [{ text: "Execution failed: access denied" }],
+      });
+      mockSubscribe.mockImplementation((callback: Function) => {
+        callback({
+          type: "tool_execution_end",
+          toolName: "bash",
+          toolCallId: "call-json",
+          result: structuredError,
+          isError: true,
+        });
+      });
+
+      await runner.run("Test");
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tool: "bash",
+          result: structuredError.slice(0, 1000),
+        }),
+        "tool error"
+      );
+    });
+
+    it("prefixes error detail with origin command when available", async () => {
+      const logger = makeLogger();
+      const runner = new AgentRunner(makeRunnerAgentConfig(), logger, tmpDir);
+      mockPrompt.mockResolvedValue(undefined);
+
+      const mockStatusTracker = {
+        startRun: vi.fn(),
+        registerInstance: vi.fn(),
+        endRun: vi.fn(),
+        completeInstance: vi.fn(),
+        addLogLine: vi.fn(),
+        setAgentError: vi.fn(),
+      };
+
+      const runnerWithTracker = new AgentRunner(
+        makeRunnerAgentConfig(),
+        logger,
+        tmpDir,
+        mockStatusTracker as any
+      );
+
+      mockSubscribe.mockImplementation((callback: Function) => {
+        callback({
+          type: "tool_execution_start",
+          toolName: "bash",
+          toolCallId: "call-cmd",
+          args: { command: "ls -la /root" },
+        });
+        callback({
+          type: "tool_execution_end",
+          toolName: "bash",
+          toolCallId: "call-cmd",
+          result: "ls: cannot access '/root': Permission denied",
+          isError: true,
+        });
+      });
+
+      await runnerWithTracker.run("Test");
+      expect(mockStatusTracker.setAgentError).toHaveBeenCalledWith(
+        "dev",
+        expect.stringContaining("$ ls -la /root")
+      );
+    });
+  });
+
+  describe("pre and post hooks", () => {
+    beforeEach(() => {
+      vi.mocked(runHooks).mockClear();
+    });
+
+    it("runs pre-hooks when configured and returns preHookMs in outcome", async () => {
+      const runner = new AgentRunner(
+        makeRunnerAgentConfig({ hooks: { pre: ["echo pre-hook"] } }),
+        makeLogger(),
+        tmpDir
+      );
+      mockPrompt.mockResolvedValue(undefined);
+      mockSubscribe.mockImplementation(() => {});
+
+      const outcome = await runner.run("Test");
+      expect(vi.mocked(runHooks)).toHaveBeenCalledWith(
+        ["echo pre-hook"],
+        "pre",
+        expect.objectContaining({ env: expect.any(Object) })
+      );
+      expect(outcome.preHookMs).toBe(50);
+    });
+
+    it("runs post-hooks when configured and returns postHookMs in outcome", async () => {
+      const runner = new AgentRunner(
+        makeRunnerAgentConfig({ hooks: { post: ["echo post-hook"] } }),
+        makeLogger(),
+        tmpDir
+      );
+      mockPrompt.mockResolvedValue(undefined);
+      mockSubscribe.mockImplementation(() => {});
+
+      const outcome = await runner.run("Test");
+      expect(vi.mocked(runHooks)).toHaveBeenCalledWith(
+        ["echo post-hook"],
+        "post",
+        expect.objectContaining({ env: expect.any(Object) })
+      );
+      expect(outcome.postHookMs).toBe(50);
+    });
+
+    it("does not call runHooks when no hooks configured", async () => {
+      const runner = new AgentRunner(makeRunnerAgentConfig(), makeLogger(), tmpDir);
+      mockPrompt.mockResolvedValue(undefined);
+      mockSubscribe.mockImplementation(() => {});
+
+      await runner.run("Test");
+      expect(vi.mocked(runHooks)).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("git_ssh credential handling", () => {
+    it("sets GIT_AUTHOR_NAME and GIT_AUTHOR_EMAIL when git_ssh credential is present", async () => {
+      // Clear git env vars before test so we can detect the 'undefined' branch in finally
+      const savedAuthorName = process.env.GIT_AUTHOR_NAME;
+      const savedAuthorEmail = process.env.GIT_AUTHOR_EMAIL;
+      delete process.env.GIT_AUTHOR_NAME;
+      delete process.env.GIT_AUTHOR_EMAIL;
+
+      const runner = new AgentRunner(
+        makeRunnerAgentConfig({ credentials: ["git_ssh:default"] }),
+        makeLogger(),
+        tmpDir
+      );
+      mockPrompt.mockResolvedValue(undefined);
+      mockSubscribe.mockImplementation(() => {});
+
+      await runner.run("Test");
+
+      // After run, git env vars should be restored to undefined (deleted)
+      expect(process.env.GIT_AUTHOR_NAME).toBeUndefined();
+      expect(process.env.GIT_AUTHOR_EMAIL).toBeUndefined();
+      expect(mockPrompt).toHaveBeenCalled();
+
+      // Restore
+      if (savedAuthorName !== undefined) process.env.GIT_AUTHOR_NAME = savedAuthorName;
+      if (savedAuthorEmail !== undefined) process.env.GIT_AUTHOR_EMAIL = savedAuthorEmail;
+    });
+  });
+
+  describe("unrecoverable error threshold", () => {
+    it("logs abort message when unrecoverable errors exceed threshold", async () => {
+      const logger = makeLogger();
+      const errorSpy = vi.spyOn(logger, "error");
+      const runner = new AgentRunner(makeRunnerAgentConfig(), logger, tmpDir);
+      mockPrompt.mockResolvedValue(undefined);
+
+      // Fire UNRECOVERABLE_THRESHOLD (3) unrecoverable tool errors
+      mockSubscribe.mockImplementation((callback: Function) => {
+        for (let i = 0; i < 3; i++) {
+          callback({
+            type: "tool_execution_end",
+            toolName: "bash",
+            toolCallId: `call-unrecov-${i}`,
+            result: "permission denied: cannot access repository",
+            isError: true,
+          });
+        }
+      });
+
+      await runner.run("Test");
+      expect(errorSpy).toHaveBeenCalledWith(
+        "Aborting: repeated auth/permission failures — check credentials"
+      );
+    });
+  });
+
+  describe("all models rate-limited backoff", () => {
+    it("logs warning and backs off when all models are rate-limited", async () => {
+      vi.useFakeTimers();
+      const logger = makeLogger();
+      const warnSpy = vi.spyOn(logger, "warn");
+      const runner = new AgentRunner(makeRunnerAgentConfig(), logger, tmpDir);
+      mockSubscribe.mockImplementation(() => {});
+      mockPrompt.mockRejectedValue(new Error("rate_limit: Too Many Requests"));
+
+      const runPromise = runner.run("Test");
+      await vi.runAllTimersAsync();
+      await runPromise;
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ pass: 1, delayMs: expect.any(Number) }),
+        "all models exhausted, backing off"
+      );
+      vi.useRealTimers();
+    });
   });
 });
