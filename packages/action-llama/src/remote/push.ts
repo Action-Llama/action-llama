@@ -9,6 +9,7 @@ import type { GlobalConfig } from "../shared/config.js";
 import { loadGlobalConfig } from "../shared/config.js";
 import { loadEnvToml, deepMerge } from "../shared/environment.js";
 import { CREDENTIALS_DIR } from "../shared/paths.js";
+import { ConfigError } from "../shared/errors.js";
 import { VPS_CONSTANTS } from "../cloud/vps/constants.js";
 import { sshOptionsFromConfig, sshExec, sshSpawn, rsyncTo, buildSshArgs, type SshOptions } from "./ssh.js";
 import { collectCredentialRefs, credentialRefsToRelativePaths, IMPLICIT_CREDENTIAL_REFS } from "../shared/credential-refs.js";
@@ -102,31 +103,58 @@ async function syncRequiredCredentials(
     credentialRefs.add(ref);
   }
   const relativePaths = credentialRefsToRelativePaths(credentialRefs);
-  
+
   if (relativePaths.length === 0) return;
-  
-  // Create remote credential directories
-  const mkdirCommands = relativePaths
+
+  // Verify all required credentials exist locally — never create placeholders
+  // on the remote, as empty directories can overwrite real credentials.
+  const presentPaths: string[] = [];
+  const missingRefs: string[] = [];
+  for (const relPath of relativePaths) {
+    const localPath = resolve(CREDENTIALS_DIR, relPath);
+    if (existsSync(localPath)) {
+      presentPaths.push(relPath);
+    } else {
+      // Implicit credentials (e.g. gateway_api_key) are auto-generated on the
+      // server — they are not expected to exist locally.
+      const type = relPath.split("/")[0];
+      const isImplicit = [...IMPLICIT_CREDENTIAL_REFS].some(ref => {
+        const [refType] = ref.split(":");
+        return refType === type;
+      });
+      if (!isImplicit) {
+        missingRefs.push(relPath.replace("/", ":"));
+      }
+    }
+  }
+
+  if (missingRefs.length > 0) {
+    throw new ConfigError(
+      `Cannot push: ${missingRefs.length} credential(s) missing locally: ${missingRefs.join(", ")}. ` +
+      `Run "al doctor" to set up credentials before pushing.`
+    );
+  }
+
+  if (presentPaths.length === 0) return;
+
+  // Create remote credential directories only for credentials that exist locally
+  const mkdirCommands = presentPaths
     .map(path => dirname(path))
     .filter((dir, index, self) => dir !== "." && self.indexOf(dir) === index)
     .map(dir => `mkdir -p ${remotePath}/${dir}`);
-  
+
   if (mkdirCommands.length > 0 && !rsyncFlags.includes("--dry-run")) {
     await sshExec(ssh, mkdirCommands.join(" && "));
   }
-  
+
   // Rsync each credential directory
   const tasks: Promise<void>[] = [];
-  for (const relPath of relativePaths) {
+  for (const relPath of presentPaths) {
     const localPath = resolve(CREDENTIALS_DIR, relPath);
     const remoteDir = `${remotePath}/${relPath}`;
-    
-    // Check if local path exists before trying to sync
-    if (existsSync(localPath)) {
-      tasks.push(rsyncTo(ssh, localPath, remoteDir, undefined, rsyncFlags));
-    }
+    tasks.push(rsyncTo(ssh, localPath, remoteDir, undefined, rsyncFlags));
   }
-  
+
   await Promise.all(tasks);
 }
 

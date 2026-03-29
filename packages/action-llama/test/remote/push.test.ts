@@ -64,6 +64,7 @@ vi.mock("../../src/shared/config.js", async (importOriginal) => {
   };
 });
 
+import { ConfigError } from "../../src/shared/errors.js";
 import { buildSystemdUnit, pushToServer, pushAgentToServer, computePkgHash } from "../../src/remote/push.js";
 
 describe("buildSystemdUnit", () => {
@@ -485,6 +486,61 @@ describe("pushToServer", () => {
     expect(socketPath).toMatch(/^\/tmp\/al-ssh-/);
   });
 
+  it("fails when non-implicit credentials are missing locally", async () => {
+    // github_token does not exist locally, gateway_api_key (implicit) is OK to be missing
+    mockExistsSync.mockImplementation((path: string) => {
+      if (typeof path === "string" && path.includes("github_token")) return false;
+      return true;
+    });
+
+    const origLog = console.log;
+    console.log = () => {};
+    try {
+      await expect(pushToServer({
+        projectPath: "/tmp/project",
+        serverConfig: { host: "h" },
+        globalConfig: {},
+        envName: "my-server",
+      })).rejects.toThrow("credential(s) missing locally");
+    } finally {
+      console.log = origLog;
+    }
+
+    // Must NOT have rsynced any credential directories (project/frontend rsyncs may fire in parallel)
+    const credRsyncCalls = mockRsyncTo.mock.calls.filter(
+      (c: any[]) => typeof c[2] === "string" && c[2].includes("credentials"),
+    );
+    expect(credRsyncCalls).toHaveLength(0);
+  });
+
+  it("allows implicit credentials (gateway_api_key) to be missing locally", async () => {
+    // Only gateway_api_key in the credential set, and it doesn't exist locally
+    mockCollectCredentialRefs.mockReturnValue(new Set([]));
+    mockCredentialRefsToRelativePaths.mockReturnValue(["gateway_api_key/default"]);
+    mockExistsSync.mockImplementation((path: string) => {
+      if (typeof path === "string" && path.includes("gateway_api_key")) return false;
+      if (typeof path === "string" && path.endsWith(".env.toml")) return false;
+      return true;
+    });
+    mockSshExec.mockResolvedValue("ok");
+
+    const origLog = console.log;
+    console.log = () => {};
+    try {
+      await pushToServer({
+        projectPath: "/tmp/project",
+        serverConfig: { host: "h" },
+        globalConfig: {},
+        envName: "my-server",
+      });
+    } finally {
+      console.log = origLog;
+    }
+
+    // Should succeed — implicit credentials don't block push
+    expect(mockBootstrapServer).toHaveBeenCalled();
+  });
+
   it("sets controlPath on SSH options", async () => {
     mockSshExec.mockResolvedValue("ok");
 
@@ -667,6 +723,26 @@ describe("pushAgentToServer", () => {
 
     expect(mockUnlinkSync).toHaveBeenCalled();
     expect(mockUnlinkSync.mock.calls[0][0]).toMatch(/^\/tmp\/al-ssh-/);
+  });
+
+  it("fails when non-implicit credentials are missing locally", async () => {
+    mockExistsSync.mockImplementation((path: string) => {
+      if (typeof path === "string" && path.includes("github_token")) return false;
+      return true;
+    });
+
+    const origLog = console.log;
+    console.log = () => {};
+    try {
+      await expect(pushAgentToServer({
+        projectPath: "/tmp/project",
+        serverConfig: { host: "h" },
+        globalConfig: {},
+        agentName: "my-agent",
+      })).rejects.toThrow("credential(s) missing locally");
+    } finally {
+      console.log = origLog;
+    }
   });
 
   it("prints hot-reload message on success", async () => {
