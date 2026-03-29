@@ -54,12 +54,22 @@ function resolveGid(username: string): number | undefined {
   }
 }
 
+interface LogStreamState {
+  stdoutBuffer: string;
+  stderrBuffer: string;
+  bufferedLines: string[];
+  bufferedStderr: string[];
+  onLine: ((line: string) => void) | null;
+  onStderr: ((text: string) => void) | null;
+}
+
 export class HostUserRuntime implements Runtime {
   readonly needsGateway = false;
 
   private runAs: string;
   private processes = new Map<string, ChildProcess>();
   private runAgentNames = new Map<string, string>();
+  private logStreams = new Map<string, LogStreamState>();
 
   constructor(runAs: string = "al-agent") {
     this.runAs = runAs;
@@ -189,18 +199,66 @@ export class HostUserRuntime implements Runtime {
       cwd: workDir,
     });
 
-    // Pipe stdout/stderr to log file
-    proc.stdout?.pipe(logStream);
-    proc.stderr?.pipe(logStream);
+    // Set up buffering stream state — captures all output from process start,
+    // so streamLogs() can flush buffered lines without any data loss.
+    const streamState: LogStreamState = {
+      stdoutBuffer: "",
+      stderrBuffer: "",
+      bufferedLines: [],
+      bufferedStderr: [],
+      onLine: null,
+      onStderr: null,
+    };
 
+    proc.stdout?.on("data", (chunk: Buffer) => {
+      const text = chunk.toString();
+      // Always write raw data to the run log file
+      logStream.write(text);
+      // Assemble complete lines and forward or buffer them
+      streamState.stdoutBuffer += text;
+      const lines = streamState.stdoutBuffer.split("\n");
+      streamState.stdoutBuffer = lines.pop() || "";
+      for (const line of lines) {
+        if (streamState.onLine) {
+          streamState.onLine(line);
+        } else {
+          streamState.bufferedLines.push(line);
+        }
+      }
+    });
+
+    proc.stderr?.on("data", (chunk: Buffer) => {
+      const text = chunk.toString();
+      logStream.write(text);
+      const trimmed = text.trim();
+      if (trimmed) {
+        if (streamState.onStderr) {
+          streamState.onStderr(trimmed);
+        } else {
+          streamState.bufferedStderr.push(trimmed);
+        }
+      }
+    });
+
+    this.logStreams.set(runId, streamState);
     this.processes.set(runId, proc);
     this.runAgentNames.set(runId, opts.agentName);
 
     // Clean up tracking on exit
     proc.on("exit", () => {
+      // Flush any remaining partial stdout line
+      if (streamState.stdoutBuffer.trim()) {
+        if (streamState.onLine) {
+          streamState.onLine(streamState.stdoutBuffer);
+        } else {
+          streamState.bufferedLines.push(streamState.stdoutBuffer);
+        }
+        streamState.stdoutBuffer = "";
+      }
       logStream.end();
       this.processes.delete(runId);
       this.runAgentNames.delete(runId);
+      this.logStreams.delete(runId);
     });
 
     return runId;
@@ -214,26 +272,32 @@ export class HostUserRuntime implements Runtime {
     const proc = this.processes.get(runId);
     if (!proc) return { stop: () => {} };
 
-    let buffer = "";
-    const onData = (chunk: Buffer) => {
-      buffer += chunk.toString();
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-      for (const line of lines) {
-        onLine(line);
-      }
-    };
+    const streamState = this.logStreams.get(runId);
+    if (!streamState) return { stop: () => {} };
 
-    proc.stdout?.on("data", onData);
-    proc.stderr?.on("data", (chunk: Buffer) => {
-      const text = chunk.toString().trim();
-      if (text && onStderr) onStderr(text);
-    });
+    // Flush lines buffered between launch() and now (no data loss)
+    for (const line of streamState.bufferedLines) {
+      onLine(line);
+    }
+    streamState.bufferedLines.length = 0;
+
+    for (const text of streamState.bufferedStderr) {
+      if (onStderr) onStderr(text);
+    }
+    streamState.bufferedStderr.length = 0;
+
+    // Forward all future lines through the callbacks
+    streamState.onLine = onLine;
+    streamState.onStderr = onStderr ?? null;
 
     return {
       stop: () => {
-        proc.stdout?.removeListener("data", onData);
-        if (buffer.trim()) onLine(buffer);
+        streamState.onLine = null;
+        streamState.onStderr = null;
+        if (streamState.stdoutBuffer.trim()) {
+          onLine(streamState.stdoutBuffer);
+          streamState.stdoutBuffer = "";
+        }
       },
     };
   }

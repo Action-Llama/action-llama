@@ -208,6 +208,55 @@ describe("HostUserRuntime", () => {
       expect(() => handle.stop()).not.toThrow();
     });
 
+    it("buffers lines emitted before streamLogs() is called and replays them", async () => {
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+
+      const runId = await runtime.launch({
+        image: "ignored",
+        agentName: "buffer-test",
+        env: {},
+        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
+      });
+
+      // Simulate data arriving BEFORE streamLogs() is attached (the race condition)
+      fakeProc.stdout.emit("data", Buffer.from("early line one\nearly line two\n"));
+
+      // Now attach streamLogs — should receive both buffered lines
+      const lines: string[] = [];
+      runtime.streamLogs(runId, (line) => lines.push(line));
+
+      expect(lines).toEqual(["early line one", "early line two"]);
+
+      // Lines emitted after should also be received
+      fakeProc.stdout.emit("data", Buffer.from("late line\n"));
+      expect(lines).toEqual(["early line one", "early line two", "late line"]);
+
+      fakeProc.emit("exit", 0);
+    });
+
+    it("buffers stderr emitted before streamLogs() and replays it", async () => {
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+
+      const runId = await runtime.launch({
+        image: "ignored",
+        agentName: "buffer-stderr",
+        env: {},
+        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
+      });
+
+      // Emit stderr before streamLogs() is attached
+      fakeProc.stderr.emit("data", Buffer.from("early stderr\n"));
+
+      const errors: string[] = [];
+      runtime.streamLogs(runId, () => {}, (msg) => errors.push(msg));
+
+      expect(errors).toContain("early stderr");
+
+      fakeProc.emit("exit", 0);
+    });
+
     it("receives stdout lines from active process", async () => {
       const fakeProc = makeFakeProc();
       mockSpawn.mockReturnValueOnce(fakeProc);
