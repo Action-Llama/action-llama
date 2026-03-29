@@ -10,10 +10,7 @@ export async function execute(opts: {
   agent?: string;
   env?: string;
   dryRun?: boolean;
-  noCreds?: boolean;
-  credsOnly?: boolean;
-  filesOnly?: boolean;
-  all?: boolean;
+  skipCreds?: boolean;
   forceInstall?: boolean;
   headless?: boolean;
 }): Promise<void> {
@@ -52,9 +49,7 @@ export async function execute(opts: {
     );
   }
 
-  // Determine what to sync
-  const syncCreds = !opts.noCreds && (opts.credsOnly || opts.all || (!opts.filesOnly));
-  const syncFiles = opts.filesOnly || opts.all || (!opts.credsOnly);
+  const skipCreds = opts.skipCreds ?? false;
 
   // Single-agent push — lightweight path (no restart, hot-reloaded)
   if (opts.agent) {
@@ -66,8 +61,8 @@ export async function execute(opts: {
       globalConfig,
       agentName: opts.agent,
       dryRun: opts.dryRun,
-      noCreds: !syncCreds,
-      noFiles: !syncFiles,
+      noCreds: skipCreds,
+      noFiles: false,
     });
     return;
   }
@@ -78,7 +73,7 @@ export async function execute(opts: {
     project: projectPath,
     env: envName,
     checkOnly: opts.headless ?? false,  // Run interactively by default
-    skipCredentials: opts.noCreds ?? false,
+    skipCredentials: skipCreds,
     silent: true
   });
 
@@ -90,8 +85,8 @@ export async function execute(opts: {
     serverConfig,
     globalConfig,
     dryRun: opts.dryRun,
-    noCreds: !syncCreds,
-    noFiles: !syncFiles,
+    noCreds: skipCreds,
+    noFiles: false,
     forceInstall: opts.forceInstall,
   });
 }

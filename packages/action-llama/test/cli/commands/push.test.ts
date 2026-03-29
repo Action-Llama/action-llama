@@ -113,11 +113,11 @@ describe("push command", () => {
     });
   });
 
-  it("passes skipCredentials to doctor and noCreds to pushToServer when --no-creds is set", async () => {
+  it("passes skipCredentials to doctor and noCreds to pushToServer when --skip-creds is set", async () => {
     mockResolveEnvironmentName.mockReturnValue("srv");
     mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
 
-    await captureLog(() => execute({ project: ".", env: "srv", headless: true, noCreds: true }));
+    await captureLog(() => execute({ project: ".", env: "srv", headless: true, skipCreds: true }));
 
     expect(mockDoctorExecute).toHaveBeenCalledOnce();
     expect(mockDoctorExecute.mock.calls[0][0]).toMatchObject({
@@ -126,9 +126,10 @@ describe("push command", () => {
       skipCredentials: true,
     });
     expect(mockPushToServer.mock.calls[0][0].noCreds).toBe(true);
+    expect(mockPushToServer.mock.calls[0][0].noFiles).toBe(false);
   });
 
-  it("does not skip credentials when --no-creds is not set", async () => {
+  it("does not skip credentials when --skip-creds is not set", async () => {
     mockResolveEnvironmentName.mockReturnValue("srv");
     mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
 
@@ -139,6 +140,7 @@ describe("push command", () => {
       skipCredentials: false,
     });
     expect(mockPushToServer.mock.calls[0][0].noCreds).toBe(false);
+    expect(mockPushToServer.mock.calls[0][0].noFiles).toBe(false);
   });
 
   it("throws when doctor fails (e.g. missing credentials)", async () => {
@@ -171,36 +173,6 @@ describe("push command", () => {
     await captureLog(() => execute({ project: ".", env: "srv", dryRun: true }));
 
     expect(mockPushToServer.mock.calls[0][0].dryRun).toBe(true);
-  });
-
-  it("passes noCreds when --creds-only is false and --files-only is true", async () => {
-    mockResolveEnvironmentName.mockReturnValue("srv");
-    mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
-
-    await captureLog(() => execute({ project: ".", env: "srv", filesOnly: true }));
-
-    expect(mockPushToServer.mock.calls[0][0].noCreds).toBe(true);
-    expect(mockPushToServer.mock.calls[0][0].noFiles).toBe(false);
-  });
-
-  it("passes noFiles when --creds-only is true", async () => {
-    mockResolveEnvironmentName.mockReturnValue("srv");
-    mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
-
-    await captureLog(() => execute({ project: ".", env: "srv", credsOnly: true }));
-
-    expect(mockPushToServer.mock.calls[0][0].noFiles).toBe(true);
-    expect(mockPushToServer.mock.calls[0][0].noCreds).toBe(false);
-  });
-
-  it("syncs everything with --all flag", async () => {
-    mockResolveEnvironmentName.mockReturnValue("srv");
-    mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
-
-    await captureLog(() => execute({ project: ".", env: "srv", all: true }));
-
-    expect(mockPushToServer.mock.calls[0][0].noCreds).toBe(false);
-    expect(mockPushToServer.mock.calls[0][0].noFiles).toBe(false);
   });
 
   // --- Single-agent push ---
@@ -246,7 +218,7 @@ describe("push command", () => {
     mockLoadEnvironmentConfig.mockReturnValue({ server: { host: "h" } });
     mockDiscoverAgents.mockReturnValue(["dev"]);
 
-    await captureLog(() => execute({ project: ".", env: "srv", agent: "dev", filesOnly: true, dryRun: true }));
+    await captureLog(() => execute({ project: ".", env: "srv", agent: "dev", skipCreds: true, dryRun: true }));
 
     expect(mockPushAgentToServer.mock.calls[0][0]).toMatchObject({
       agentName: "dev",
