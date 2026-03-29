@@ -313,4 +313,82 @@ describe("al update", () => {
     await expect(execute("nonexistent", { project: projectPath }))
       .rejects.toThrow('Agent "nonexistent" not found');
   });
+
+  it("shows agent-specific message when named agent exists but has no source field", async () => {
+    createProject({
+      "local-only": {
+        skillMd: "---\nname: local-only\n---\n\n# Local\n",
+        configToml: { credentials: [] },
+      },
+    });
+
+    const { execute } = await import("../../../src/cli/commands/update.js");
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: any[]) => logs.push(args.map(String).join(" "));
+    try {
+      await execute("local-only", { project: projectPath });
+    } finally {
+      console.log = origLog;
+    }
+
+    expect(logs.some(l => l.includes('"local-only"') && l.includes("nothing to update"))).toBe(true);
+  });
+
+  it("shows error message when update fails for one agent and continues", async () => {
+    const skillContent = "---\nname: bad-agent\n---\n\n# Bad\n";
+
+    // Create a repo with a bad URL that will fail during git operations
+    createProject({
+      "bad-agent": {
+        skillMd: skillContent,
+        configToml: { source: "https://nonexistent.invalid/repo.git" },
+      },
+    });
+
+    const { execute } = await import("../../../src/cli/commands/update.js");
+    const errors: string[] = [];
+    const origError = console.error;
+    console.error = (...args: any[]) => errors.push(args.map(String).join(" "));
+    try {
+      await execute(undefined, { project: projectPath });
+    } finally {
+      console.error = origError;
+    }
+
+    expect(errors.some(e => e.includes("failed"))).toBe(true);
+  });
+
+  it("shows summary with multiple statuses for multi-agent update", async () => {
+    const skillContent = "---\nname: agent1\n---\n\n# Agent1\n";
+
+    // Create two agents: one up-to-date, one will fail
+    createGitRepo(repoPath, { "SKILL.md": skillContent });
+
+    createProject({
+      "agent1": {
+        skillMd: skillContent,
+        configToml: { source: repoPath },
+      },
+      "agent2": {
+        skillMd: "---\nname: agent2\n---\n\n# Agent2\n",
+        configToml: { source: "https://nonexistent.invalid/repo.git" },
+      },
+    });
+
+    vi.mocked(confirm).mockResolvedValue(false); // skip updates
+
+    const { execute } = await import("../../../src/cli/commands/update.js");
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: any[]) => logs.push(args.map(String).join(" "));
+    try {
+      await execute(undefined, { project: projectPath });
+    } finally {
+      console.log = origLog;
+    }
+
+    // Should show "Done:" summary since there are multiple agents
+    expect(logs.some(l => l.includes("Done:"))).toBe(true);
+  });
 });
