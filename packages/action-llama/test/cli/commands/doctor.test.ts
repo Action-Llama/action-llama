@@ -119,6 +119,7 @@ vi.mock("child_process", async (importOriginal) => {
 const mockEnsureGatewayApiKey = vi.fn();
 vi.mock("../../../src/control/api-key.js", () => ({
   ensureGatewayApiKey: (...args: any[]) => mockEnsureGatewayApiKey(...args),
+  loadGatewayApiKey: vi.fn().mockResolvedValue("test-api-key"),
 }));
 
 import { execute } from "../../../src/cli/commands/doctor.js";

@@ -1,10 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
 import { Hono } from "hono";
-import { safeCompare, authMiddleware } from "../../src/control/auth.js";
+import { safeCompare, authMiddleware, type ApiKeySource } from "../../src/control/auth.js";
 
 const API_KEY = "test-api-key-abc123";
 
-function makeApp(apiKey: string, sessionStore?: any) {
+function makeApp(apiKey: ApiKeySource, sessionStore?: any) {
   const app = new Hono();
   app.use("/*", authMiddleware(apiKey, sessionStore));
   app.get("/protected", (c) => c.json({ ok: true }));
@@ -122,6 +122,68 @@ describe("authMiddleware", () => {
       expect(res.status).toBe(401);
       const body = await res.json();
       expect(body.error).toBe("Unauthorized");
+    });
+  });
+
+  describe("provider function (hot-reload) support", () => {
+    it("accepts a provider function and resolves the key on each request", async () => {
+      const provider = vi.fn().mockResolvedValue(API_KEY);
+      const app = makeApp(provider);
+
+      const res = await app.request("/protected", {
+        headers: { Authorization: `Bearer ${API_KEY}` },
+      });
+      expect(res.status).toBe(200);
+      // Provider must be called for each request
+      expect(provider).toHaveBeenCalledTimes(1);
+    });
+
+    it("uses the new key immediately after credential rotation", async () => {
+      const OLD_KEY = "old-gateway-key";
+      const NEW_KEY = "new-gateway-key-rotated";
+
+      // currentKey simulates reading the credential file; starts with the old key
+      let currentKey = OLD_KEY;
+      const provider = vi.fn().mockImplementation(async () => currentKey);
+
+      const app = makeApp(provider);
+
+      // Old key works
+      const res1 = await app.request("/protected", {
+        headers: { Authorization: `Bearer ${OLD_KEY}` },
+      });
+      expect(res1.status).toBe(200);
+
+      // New key is rejected before rotation
+      const res2 = await app.request("/protected", {
+        headers: { Authorization: `Bearer ${NEW_KEY}` },
+      });
+      expect(res2.status).toBe(401);
+
+      // Simulate credential rotation on disk
+      currentKey = NEW_KEY;
+
+      // Old key is now rejected
+      const res3 = await app.request("/protected", {
+        headers: { Authorization: `Bearer ${OLD_KEY}` },
+      });
+      expect(res3.status).toBe(401);
+
+      // New key is now accepted without restarting the server
+      const res4 = await app.request("/protected", {
+        headers: { Authorization: `Bearer ${NEW_KEY}` },
+      });
+      expect(res4.status).toBe(200);
+    });
+
+    it("rejects all requests when provider returns undefined", async () => {
+      const provider = vi.fn().mockResolvedValue(undefined);
+      const app = makeApp(provider);
+
+      const res = await app.request("/protected", {
+        headers: { Authorization: "Bearer anything" },
+      });
+      expect(res.status).toBe(401);
     });
   });
 });

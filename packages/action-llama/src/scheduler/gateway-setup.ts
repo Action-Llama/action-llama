@@ -15,7 +15,7 @@ import type { StateStore } from "../shared/state-store.js";
 import type { StatsStore } from "../stats/store.js";
 import type { Logger } from "../shared/logger.js";
 import { createLogger, createFileOnlyLogger } from "../shared/logger.js";
-import { ensureGatewayApiKey } from "../control/api-key.js";
+import { ensureGatewayApiKey, loadGatewayApiKey } from "../control/api-key.js";
 import type { SchedulerEventBus } from "./events.js";
 import type { SchedulerState } from "./state.js";
 import { runWithReruns } from "../execution/execution.js";
@@ -94,7 +94,9 @@ export async function setupGateway(opts: {
     projectPath,
     webUI,
     lockTimeout: globalConfig.resourceLockTimeout,
-    apiKey: gatewayApiKey,
+    // Pass a provider so the key is re-read from disk on every auth check,
+    // enabling hot-reload of rotated credentials without restarting the scheduler.
+    apiKey: loadGatewayApiKey,
     stateStore,
     statsStore,
     events,
