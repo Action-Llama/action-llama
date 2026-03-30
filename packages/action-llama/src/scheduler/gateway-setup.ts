@@ -19,6 +19,7 @@ import { ensureGatewayApiKey, loadGatewayApiKey } from "../control/api-key.js";
 import type { SchedulerEventBus } from "./events.js";
 import type { SchedulerState } from "./state.js";
 import { runWithReruns } from "../execution/execution.js";
+import { dispatchOrQueue } from "../execution/dispatch-policy.js";
 import { randomBytes } from "node:crypto";
 import type { Runtime } from "../docker/runtime.js";
 import { ChatContainerLauncher } from "../chat/container-launcher.js";
@@ -135,34 +136,44 @@ export async function setupGateway(opts: {
         logger.info("Scheduler resumed via control API");
       },
       triggerAgent: async (name: string, prompt?: string): Promise<{ instanceId: string } | string> => {
-        if (statusTracker?.isPaused()) return "Scheduler is paused";
         const config = agentConfigs.find((a) => a.name === name);
         if (!config) return `Agent "${name}" not found`;
-        const pool = state.runnerPools[name];
-        const instanceId = `${name}-${randomBytes(4).toString("hex")}`;
-        if (pool && state.schedulerCtx) {
-          // Scheduler fully ready — try to get a runner, fall back to enqueue
-          const runner = pool.getAvailableRunner();
-          if (runner) {
-            logger.info({ agent: name, hasPrompt: !!prompt, instanceId }, "manual trigger via control API");
-            runWithReruns(runner, config, 0, state.schedulerCtx, prompt, instanceId).catch((err) => {
-              logger.error({ err, agent: name }, "manual trigger run failed");
-            });
-            return { instanceId };
-          }
-          // All runners busy — enqueue (pass undefined pool so tryRunOrEnqueue skips runner check)
+
+        // Global pause check — must run before scheduler-readiness check
+        if (statusTracker?.isPaused()) return "Scheduler is paused";
+
+        // Early exit: if scheduler context is not ready, queue directly
+        if (!state.schedulerCtx) {
           if (!state.workQueue) return "Scheduler is not ready";
           const { dropped } = state.workQueue.enqueue(name, { type: 'manual', prompt });
           if (dropped) logger.warn({ agent: name }, "queue full, oldest event dropped");
+          const instanceId = `${name}-${randomBytes(4).toString("hex")}`;
+          logger.info({ agent: name, hasPrompt: !!prompt, instanceId, queued: true }, "manual trigger queued (agents building)");
+          return { instanceId };
+        }
+
+        const result = dispatchOrQueue(name, { type: 'manual', prompt }, {
+          pool: state.runnerPools[name],
+          workQueue: state.schedulerCtx.workQueue,
+          isAgentEnabled: statusTracker?.isAgentEnabled ? (n) => statusTracker.isAgentEnabled!(n) : undefined,
+        });
+
+        if (result.action === "dispatched") {
+          const instanceId = `${name}-${randomBytes(4).toString("hex")}`;
+          logger.info({ agent: name, hasPrompt: !!prompt, instanceId }, "manual trigger via control API");
+          runWithReruns(result.runner, config, 0, state.schedulerCtx, prompt, instanceId).catch((err) => {
+            logger.error({ err, agent: name }, "manual trigger run failed");
+          });
+          return { instanceId };
+        }
+        if (result.action === "queued") {
+          const instanceId = `${name}-${randomBytes(4).toString("hex")}`;
+          if (result.dropped) logger.warn({ agent: name }, "queue full, oldest event dropped");
           logger.info({ agent: name, hasPrompt: !!prompt, instanceId, queued: true }, "manual trigger queued (all runners busy)");
           return { instanceId };
         }
-        // Pools not ready yet (still building) — queue for later
-        if (!state.workQueue) return "Scheduler is not ready";
-        const { dropped } = state.workQueue.enqueue(name, { type: 'manual', prompt });
-        if (dropped) logger.warn({ agent: name }, "queue full, oldest event dropped");
-        logger.info({ agent: name, hasPrompt: !!prompt, instanceId, queued: true }, "manual trigger queued (agents building)");
-        return { instanceId };
+        // rejected (scale=0 or pool disabled)
+        return `Agent "${name}" has no available runners (all busy)`;
       },
       enableAgent: async (name: string) => {
         if (!statusTracker) return false;

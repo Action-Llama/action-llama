@@ -22,3 +22,5 @@ export { createRunnerPools } from "./runner-setup.js";
 export { createContainerRuntime, buildAgentImages } from "./runtime-factory.js";
 export { buildAllImages, buildSingleAgentImage } from "./image-builder.js";
 export { wireCallDispatcher } from "./call-dispatcher.js";
+export { dispatchOrQueue } from "./dispatch-policy.js";
+export type { DispatchResult, DispatchOptions } from "./dispatch-policy.js";

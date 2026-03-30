@@ -13,6 +13,7 @@ import type { SchedulerContext } from "./execution.js";
 import {
   executeRun, drainQueues, makeTriggeredPrompt,
 } from "./execution.js";
+import { dispatchOrQueue } from "./dispatch-policy.js";
 
 export function wireCallDispatcher(
   gateway: GatewayServer,
@@ -23,9 +24,11 @@ export function wireCallDispatcher(
   const callStore = gateway.callStore;
 
   gateway.setCallDispatcher((entry) => {
+    // Global pause check — first regardless of other validations
     if (statusTracker?.isPaused()) {
       return { ok: false, reason: "scheduler is paused" };
     }
+    // Call-specific validation (not part of dispatch policy)
     if (entry.callerAgent === entry.targetAgent) {
       return { ok: false, reason: "agent cannot call itself" };
     }
@@ -37,18 +40,30 @@ export function wireCallDispatcher(
       return { ok: false, reason: `target agent "${entry.targetAgent}" not found` };
     }
     const pool = runnerPools[entry.targetAgent];
+    // Pool missing or scale=0 is a hard rejection for sub-agent calls (caller gets immediate error)
     if (!pool || pool.size === 0) {
       return { ok: false, reason: `target agent "${entry.targetAgent}" is disabled` };
     }
 
-    const runner = pool.getAvailableRunner();
-    if (runner) {
+    const result = dispatchOrQueue(entry.targetAgent, {
+      type: 'agent-trigger',
+      sourceAgent: entry.callerAgent,
+      context: entry.context,
+      depth: entry.depth,
+      callId: entry.callId,
+    }, {
+      pool,
+      workQueue: schedulerCtx.workQueue,
+      isAgentEnabled: schedulerCtx.isAgentEnabled,
+    });
+
+    if (result.action === "dispatched") {
       logger.info({ caller: entry.callerAgent, target: entry.targetAgent, depth: entry.depth }, "dispatching call");
       callStore?.setRunning(entry.callId);
       const prompt = makeTriggeredPrompt(targetConfig, entry.callerAgent, entry.context, schedulerCtx);
-      executeRun(runner, prompt, { type: 'agent', source: entry.callerAgent }, entry.targetAgent, entry.depth + 1, schedulerCtx)
-        .then(({ result, returnValue }) => {
-          if (result === "completed" || result === "rerun") {
+      executeRun(result.runner, prompt, { type: 'agent', source: entry.callerAgent }, entry.targetAgent, entry.depth + 1, schedulerCtx)
+        .then(({ result: runResult, returnValue }) => {
+          if (runResult === "completed" || runResult === "rerun") {
             callStore?.complete(entry.callId, returnValue);
           } else {
             callStore?.fail(entry.callId, "agent run failed");
@@ -59,19 +74,16 @@ export function wireCallDispatcher(
           callStore?.fail(entry.callId, err?.message || "unknown error");
           logger.error({ err, target: entry.targetAgent }, "called agent run failed");
         });
-    } else {
-      schedulerCtx.workQueue.enqueue(entry.targetAgent, {
-        type: 'agent-trigger',
-        sourceAgent: entry.callerAgent,
-        context: entry.context,
-        depth: entry.depth,
-        callId: entry.callId,
-      });
+      return { ok: true };
+    }
+    if (result.action === "queued") {
       logger.info({ caller: entry.callerAgent, target: entry.targetAgent }, "all runners busy, call queued");
       drainQueues(schedulerCtx).catch((err) => {
         logger.error({ err }, "drain after al-subagent queue failed");
       });
+      return { ok: true };
     }
-    return { ok: true };
+    // rejected
+    return { ok: false, reason: result.reason };
   });
 }

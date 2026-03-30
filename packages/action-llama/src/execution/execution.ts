@@ -5,6 +5,7 @@ import {
 } from "../agents/prompt.js";
 import type { WorkQueue, QueuedWorkItem } from "../shared/work-queue.js";
 import { RunnerPool, type PoolRunner } from "./runner-pool.js";
+import { dispatchOrQueue } from "./dispatch-policy.js";
 import type { AgentConfig } from "../shared/config.js";
 import type { WebhookContext } from "../webhooks/types.js";
 import type { createLogger } from "../shared/logger.js";
@@ -180,10 +181,6 @@ export function dispatchTriggers(
       continue;
     }
     const pool = ctx.runnerPools[agent];
-    if (pool.size === 0) {
-      ctx.logger.info({ source: sourceAgent, target: agent }, "target disabled (scale=0), skipping");
-      continue;
-    }
 
     // Record call edge
     let callEdgeId: number | undefined;
@@ -202,36 +199,49 @@ export function dispatchTriggers(
       }
     }
 
-    if (ctx.isAgentEnabled && !ctx.isAgentEnabled(agent)) {
-      ctx.workQueue.enqueue(agent, { type: 'agent-trigger', sourceAgent, context, depth });
-      ctx.statusTracker?.setQueuedWebhooks(agent, ctx.workQueue.size(agent));
-      ctx.logger.info({ source: sourceAgent, target: agent }, "target agent is paused, trigger queued");
+    const result = dispatchOrQueue(agent, { type: 'agent-trigger', sourceAgent, context, depth } as WorkItem, {
+      pool,
+      workQueue: ctx.workQueue,
+      isPaused: ctx.isPaused,
+      isAgentEnabled: ctx.isAgentEnabled,
+    });
+
+    if (result.action === "rejected") {
+      if (result.reason === "agent is disabled (scale=0)") {
+        ctx.logger.info({ source: sourceAgent, target: agent }, "target disabled (scale=0), skipping");
+      } else {
+        ctx.logger.info({ source: sourceAgent, target: agent, reason: result.reason }, "trigger skipped");
+      }
       continue;
     }
-    const runner = pool.getAvailableRunner();
-    if (!runner) {
-      ctx.workQueue.enqueue(agent, { type: 'agent-trigger', sourceAgent, context, depth });
+    if (result.action === "queued") {
       ctx.statusTracker?.setQueuedWebhooks(agent, ctx.workQueue.size(agent));
-      ctx.logger.info({ source: sourceAgent, target: agent }, "all runners busy, trigger queued");
+      if (result.cause === "agent-disabled") {
+        ctx.logger.info({ source: sourceAgent, target: agent }, "target agent is paused, trigger queued");
+      } else {
+        ctx.logger.info({ source: sourceAgent, target: agent }, "all runners busy, trigger queued");
+      }
       continue;
     }
+    // result.action === "dispatched"
+    const dispatchedRunner = result.runner;
     ctx.logger.info({ source: sourceAgent, target: agent, depth }, "agent trigger firing");
     const prompt = makeTriggeredPrompt(targetConfig, sourceAgent, context, ctx);
     const edgeStartedAt = Date.now();
     
     // Create instance lifecycle for triggered run (if supported)
     const instanceLifecycle = ctx.statusTracker?.createInstance ? 
-      ctx.statusTracker.createInstance(runner.instanceId, agent, `agent:${sourceAgent}`) || undefined :
+      ctx.statusTracker.createInstance(dispatchedRunner.instanceId, agent, `agent:${sourceAgent}`) || undefined :
       undefined;
     
-    executeRun(runner, prompt, { type: 'agent', source: sourceAgent, context }, agent, depth + 1, ctx, instanceLifecycle)
+    executeRun(dispatchedRunner, prompt, { type: 'agent', source: sourceAgent, context }, agent, depth + 1, ctx, instanceLifecycle)
       .then((outcome) => {
         if (callEdgeId != null && ctx.statsStore) {
           try {
             ctx.statsStore.updateCallEdge(callEdgeId, {
               durationMs: Date.now() - edgeStartedAt,
               status: outcome.result === "error" ? "error" : "completed",
-              targetInstance: runner.instanceId,
+              targetInstance: dispatchedRunner.instanceId,
             });
           } catch { /* best-effort */ }
         }
