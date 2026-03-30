@@ -8,7 +8,8 @@
  */
 
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 
 export interface AgentSignals {
   rerun: boolean;
@@ -91,6 +92,12 @@ echo '{"ok":true}'
   writeFileSync(join(binDir, "al-status"), alStatus, { mode: 0o755 });
   writeFileSync(join(binDir, "al-return"), alReturn, { mode: 0o755 });
   writeFileSync(join(binDir, "al-exit"), alExit, { mode: 0o755 });
+
+  // Copy al-bash-init.sh from docker/bin/ (included in the npm package).
+  const thisDir = dirname(fileURLToPath(import.meta.url));
+  const packageRoot = join(thisDir, "..", "..");
+  const bashInitSrc = join(packageRoot, "docker", "bin", "al-bash-init.sh");
+  writeFileSync(join(binDir, "al-bash-init.sh"), readFileSync(bashInitSrc), { mode: 0o755 });
 }
 
 /**

@@ -5,7 +5,7 @@ import { fileURLToPath } from "url";
 import { loadCredentialField, loadCredentialFields, parseCredentialRef } from "../../shared/credentials.js";
 import { discoverAgents, loadAgentConfig, loadGlobalConfig } from "../../shared/config.js";
 import { builtinCredentials } from "../../credentials/builtins/index.js";
-import { BASH_COMMAND_PREFIX } from "../../agents/bash-prefix.js";
+import { BASH_COMMAND_PREFIX, ensureBinDir } from "../../agents/bash-prefix.js";
 
 function resolvePackageRoot(): string {
   const thisFile = fileURLToPath(import.meta.url);
@@ -86,6 +86,9 @@ export interface ChatOpts {
 }
 
 export async function execute(opts: ChatOpts): Promise<void> {
+  // Ensure agent shell scripts (al-bash-init.sh, etc.) are on PATH for local sessions.
+  ensureBinDir();
+
   if (opts.agent) {
     // Remote mode: when --env is set and gateway URL exists, use RemoteTransport
     if (opts.env) {
