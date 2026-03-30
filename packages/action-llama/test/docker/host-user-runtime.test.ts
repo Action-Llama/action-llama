@@ -491,4 +491,100 @@ describe("HostUserRuntime", () => {
       fakeProc.emit("exit", 0);
     });
   });
+
+  describe("waitForExit SIGKILL escalation", () => {
+    function makeFakeProc() {
+      const { EventEmitter } = require("events");
+      const proc = new EventEmitter();
+      proc.kill = vi.fn();
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.stdout.pipe = vi.fn();
+      return proc;
+    }
+
+    it("sends SIGKILL after 5s grace period when process is still alive after timeout", async () => {
+      vi.useFakeTimers();
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+
+      const runId = await runtime.launch({
+        image: "ignored",
+        agentName: "sigkill-test",
+        env: {},
+        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
+      });
+
+      const exitPromise = runtime.waitForExit(runId, 10);
+      // Advance past the timeout (10s) + SIGKILL grace (5s)
+      vi.advanceTimersByTime(10_001);
+      await expect(exitPromise).rejects.toThrow();
+      // SIGTERM should be sent immediately
+      expect(fakeProc.kill).toHaveBeenCalledWith("SIGTERM");
+
+      // Now advance past the 5s grace period — process is still in `processes` map
+      vi.advanceTimersByTime(5_001);
+      // SIGKILL should be sent
+      expect(fakeProc.kill).toHaveBeenCalledWith("SIGKILL");
+
+      vi.useRealTimers();
+    });
+  });
+
+  describe("kill SIGKILL escalation", () => {
+    function makeFakeProc() {
+      const { EventEmitter } = require("events");
+      const proc = new EventEmitter();
+      proc.kill = vi.fn();
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.stdout.pipe = vi.fn();
+      return proc;
+    }
+
+    it("escalates to SIGKILL after 5s grace period when process persists", async () => {
+      vi.useFakeTimers();
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+
+      const runId = await runtime.launch({
+        image: "ignored",
+        agentName: "kill-sigkill",
+        env: {},
+        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
+      });
+
+      await runtime.kill(runId);
+      expect(fakeProc.kill).toHaveBeenCalledWith("SIGTERM");
+
+      // Process is still alive (not removed from map), advance past grace period
+      vi.advanceTimersByTime(5_001);
+      expect(fakeProc.kill).toHaveBeenCalledWith("SIGKILL");
+
+      fakeProc.emit("exit", 0);
+      vi.useRealTimers();
+    });
+  });
+
+  describe("fetchLogs with log files", () => {
+    const RUNS_DIR = join(tmpdir(), "al-runs");
+
+    it("returns log lines from matching agent log files", async () => {
+      // Create mock log files in RUNS_DIR
+      mkdirSync(RUNS_DIR, { recursive: true });
+      const logFile = join(RUNS_DIR, "al-fetch-test-abc123.log");
+      writeFileSync(logFile, '{"level":30,"time":1000,"msg":"hello"}\n{"level":30,"time":1001,"msg":"world"}\n');
+
+      try {
+        const lines = await runtime.fetchLogs("fetch-test", 10);
+        expect(Array.isArray(lines)).toBe(true);
+        expect(lines.length).toBeGreaterThan(0);
+        expect(lines.some((l) => l.includes("hello"))).toBe(true);
+      } finally {
+        rmSync(logFile, { force: true });
+      }
+    });
+  });
+
+
 });

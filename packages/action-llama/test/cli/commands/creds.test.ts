@@ -326,6 +326,29 @@ describe("creds types", () => {
     expect(output).toContain("GIT_SSH_KEY");
     expect(output).toContain("Agent context:");
   });
+
+  it("source callback returns all choices for empty input and filtered choices for non-empty input", async () => {
+    // Use a mock that calls the source function so we exercise the filtering logic
+    let capturedSource: ((input: string | undefined) => any[]) | undefined;
+    mockSearch.mockImplementationOnce(async (opts: any) => {
+      capturedSource = opts.source;
+      // Call source with no input (should return all choices)
+      const allChoices = opts.source(undefined);
+      expect(Array.isArray(allChoices)).toBe(true);
+      expect(allChoices.length).toBeGreaterThan(0);
+      // Call source with a filter
+      const filtered = opts.source("github");
+      expect(Array.isArray(filtered)).toBe(true);
+      return "github_token";
+    });
+    mockConfirm.mockResolvedValueOnce(false);
+
+    await types();
+
+    expect(capturedSource).toBeDefined();
+    const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("GitHub Token");
+  });
 });
 
 describe("creds ls — additional edge cases", () => {
