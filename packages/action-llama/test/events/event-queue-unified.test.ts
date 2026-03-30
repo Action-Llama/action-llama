@@ -387,6 +387,32 @@ describe("EventSourcedWorkQueue", () => {
 
       queue2.close();
     });
+
+    it("replays WORK_DEQUEUED and WORK_DROPPED with correct workIds so size is exact after initialize()", async () => {
+      // Regression test: buildQueueState must pass the original workId when replaying
+      // WORK_QUEUED events, otherwise WORK_DEQUEUED / WORK_DROPPED replay silently fails.
+      const smallQueue = new EventSourcedWorkQueue<string>(store, 1);
+
+      smallQueue.enqueue("agent-replay-exact", "item-1");
+      await flushAsync();
+      // Second enqueue evicts item-1 via WORK_DROPPED and adds item-2
+      smallQueue.enqueue("agent-replay-exact", "item-2");
+      await flushAsync();
+      await flushAsync();
+
+      expect(smallQueue.size("agent-replay-exact")).toBe(1);
+      smallQueue.close();
+
+      // Rebuild from persisted events
+      const queue2 = new EventSourcedWorkQueue<string>(store, 100);
+      await queue2.initialize();
+
+      // Must be exactly 1 — if workId was not preserved during replay,
+      // WORK_DROPPED would fail to find item-1 and size would incorrectly be 2.
+      expect(queue2.size("agent-replay-exact")).toBe(1);
+
+      queue2.close();
+    });
   });
 
   describe("max-size eviction", () => {
