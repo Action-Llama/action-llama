@@ -319,6 +319,38 @@ describe("environment context", () => {
   });
 });
 
+describe("host-user environment context", () => {
+  it("does not mention /app/static or read-only root filesystem", () => {
+    const result = buildPromptSkeleton(agentConfig, { hostUser: true });
+    expect(result).not.toContain("/app/static");
+    expect(result).not.toContain("The root filesystem is read-only");
+  });
+
+  it("describes writable filesystem and CWD", () => {
+    const result = buildPromptSkeleton(agentConfig, { hostUser: true });
+    expect(result).toContain("writable");
+    expect(result).toContain("current directory");
+  });
+
+  it("uses $AL_CREDENTIALS_PATH instead of /credentials/", () => {
+    const result = buildPromptSkeleton(agentConfig, { hostUser: true });
+    expect(result).toContain("$AL_CREDENTIALS_PATH");
+    expect(result).not.toContain("`/credentials/`");
+  });
+
+  it("still includes credential env vars and anti-exfiltration policy", () => {
+    const result = buildPromptSkeleton(agentConfig, { hostUser: true });
+    expect(result).toContain("GITHUB_TOKEN");
+    expect(result).toContain("Anti-exfiltration");
+  });
+
+  it("docker mode still references /credentials/", () => {
+    const result = buildPromptSkeleton(agentConfig);
+    expect(result).toContain("`/credentials/`");
+    expect(result).not.toContain("$AL_CREDENTIALS_PATH");
+  });
+});
+
 describe("prompt suffix functions", () => {
   it("buildScheduledSuffix returns schedule text", () => {
     expect(buildScheduledSuffix()).toContain("running on a schedule");

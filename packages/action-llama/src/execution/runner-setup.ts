@@ -48,6 +48,11 @@ export async function createRunnerPools(opts: RunnerSetupOpts): Promise<RunnerSe
 
   const createRunner = (agentConfig: AgentConfig, image: string): PoolRunner => {
     const agentRuntime = agentRuntimeOverrides[agentConfig.name] || runtime;
+    // Host-user agents run directly on the host — use localhost instead of
+    // the Docker-internal "gateway" hostname which requires --add-host DNS.
+    const effectiveGatewayUrl = agentRuntimeOverrides[agentConfig.name]
+      ? (process.env.GATEWAY_URL || `http://localhost:${gatewayPort}`)
+      : gatewayUrl;
     return new ContainerAgentRunnerClass(
       agentRuntime,
       globalConfig,
@@ -55,7 +60,7 @@ export async function createRunnerPools(opts: RunnerSetupOpts): Promise<RunnerSe
       mkLogger(projectPath, agentConfig.name),
       registerContainer,
       unregisterContainer,
-      gatewayUrl,
+      effectiveGatewayUrl,
       projectPath,
       image,
       statusTracker,

@@ -8,6 +8,8 @@ export interface PromptSkills {
   locking?: boolean;
   subagents?: boolean;
   availableAgents?: Array<{ name: string; description: string }>;
+  /** When true, emit host-user environment context instead of Docker defaults. */
+  hostUser?: boolean;
 }
 
 export function buildLockSkill(): string {
@@ -127,10 +129,11 @@ function buildConfigBlock(agentConfig: AgentConfig): string {
   return JSON.stringify(agentConfig.params ?? {});
 }
 
-export function buildCredentialContext(credentials: string[]): string {
+export function buildCredentialContext(credentials: string[], options?: { hostUser?: boolean }): string {
+  const credPath = options?.hostUser ? "`$AL_CREDENTIALS_PATH`" : "`/credentials/`";
   const lines = [
     "<credential-context>",
-    "Credential files are mounted at `/credentials/` (read-only).",
+    `Credential files are available at ${credPath} (read-only).`,
     "",
     "Environment variables already set from credentials:",
   ];
@@ -163,7 +166,17 @@ export function buildCredentialContext(credentials: string[]): string {
   return lines.join("\n");
 }
 
-function buildEnvironmentContext(): string {
+function buildEnvironmentContext(options?: { hostUser?: boolean }): string {
+  if (options?.hostUser) {
+    return [
+      "<environment>",
+      "**Filesystem:** The filesystem is writable. Your working directory is your current CWD.",
+      "Clone repos and write files directly in the current directory.",
+      "",
+      "**Environment variables:** Use `setenv NAME value` to persist variables across bash commands.",
+      "</environment>",
+    ].join("\n");
+  }
   return [
     "<environment>",
     "**Filesystem:** The root filesystem is read-only. `/tmp` is the only writable directory.",
@@ -195,8 +208,9 @@ function buildSkillsBlock(skills?: PromptSkills): string {
  */
 export function buildPromptSkeleton(agentConfig: AgentConfig, skills?: PromptSkills): string {
   const configBlock = buildConfigBlock(agentConfig);
-  const credentialBlock = buildCredentialContext(agentConfig.credentials);
-  const environmentBlock = buildEnvironmentContext();
+  const hostUser = skills?.hostUser;
+  const credentialBlock = buildCredentialContext(agentConfig.credentials, { hostUser });
+  const environmentBlock = buildEnvironmentContext({ hostUser });
   const skillsBlock = buildSkillsBlock(skills);
   return `<agent-config>\n${configBlock}\n</agent-config>\n\n${credentialBlock}\n\n${environmentBlock}${skillsBlock}`;
 }

@@ -10,7 +10,8 @@
  */
 
 import { existsSync, readFileSync, readdirSync, statSync, mkdirSync, writeFileSync } from "fs";
-import { resolve } from "path";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
 import { loadAgentConfig, loadAgentBody, loadGlobalConfig } from "../../shared/config.js";
 import type { AgentConfig } from "../../shared/config.js";
 import { parseCredentialRef } from "../../shared/credentials.js";
@@ -129,6 +130,13 @@ export async function execute(agent: string, opts: { project: string }): Promise
     process.env.HOME = workDir;
   }
 
+  // Add bin scripts (rlock, al-status, etc.) to PATH so the agent can find them.
+  // In Docker these live at /app/bin; in host-user mode we resolve from the package.
+  const binDir = resolve(dirname(fileURLToPath(import.meta.url)), "../../../docker/bin");
+  if (existsSync(binDir)) {
+    process.env.PATH = `${binDir}:${process.env.PATH || ""}`;
+  }
+
   emitLog("info", "host-user agent starting", { agent, workDir, credPath });
 
   // Load agent config from project
@@ -177,7 +185,7 @@ export async function execute(agent: string, opts: { project: string }): Promise
   );
 
   // Build prompt
-  const skills: PromptSkills = { locking: !!gatewayUrl };
+  const skills: PromptSkills = { locking: !!gatewayUrl, hostUser: true };
   const skeleton = buildPromptSkeleton(agentConfig, skills);
   const dynamicSuffix = process.env.PROMPT || "";
   const fullPrompt = dynamicSuffix ? `${skeleton}\n\n${dynamicSuffix}` : skeleton;
