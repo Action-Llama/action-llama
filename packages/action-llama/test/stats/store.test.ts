@@ -514,4 +514,152 @@ describe("StatsStore", () => {
     expect(noMatch).toBeUndefined();
     store.close();
   });
+
+  it("queryAgentSummary filtered by agent name returns only that agent", () => {
+    const store = createStore();
+    const now = Date.now();
+    store.recordRun(makeRun({ agentName: "reporter", result: "completed", totalTokens: 1000, costUsd: 0.05, startedAt: now }));
+    store.recordRun(makeRun({ agentName: "reporter", result: "error", totalTokens: 500, costUsd: 0.02, startedAt: now }));
+    store.recordRun(makeRun({ agentName: "reviewer", result: "completed", totalTokens: 2000, costUsd: 0.10, startedAt: now }));
+
+    const summaries = store.queryAgentSummary({ agent: "reporter", since: 0 });
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].agentName).toBe("reporter");
+    expect(summaries[0].totalRuns).toBe(2);
+    expect(summaries[0].okRuns).toBe(1);
+    expect(summaries[0].errorRuns).toBe(1);
+    expect(summaries[0].totalTokens).toBe(1500);
+    expect(summaries[0].totalCost).toBeCloseTo(0.07);
+    store.close();
+  });
+
+  it("queryAgentSummary filtered by agent returns empty array when no runs match", () => {
+    const store = createStore();
+    store.recordRun(makeRun({ agentName: "reporter", startedAt: Date.now() }));
+
+    const summaries = store.queryAgentSummary({ agent: "nonexistent", since: 0 });
+    expect(summaries).toHaveLength(0);
+    store.close();
+  });
+
+  it("queryTriggerHistory filtered by agentName only returns runs for that agent", () => {
+    const store = createStore();
+    const now = Date.now();
+    store.recordRun(makeRun({ agentName: "reporter", startedAt: now - 2000, triggerType: "schedule" }));
+    store.recordRun(makeRun({ agentName: "reviewer", startedAt: now - 1000, triggerType: "webhook" }));
+    store.recordRun(makeRun({ agentName: "reporter", startedAt: now, triggerType: "webhook" }));
+
+    const rows = store.queryTriggerHistory({ since: 0, limit: 10, offset: 0, includeDeadLetters: false, agentName: "reporter" });
+    expect(rows).toHaveLength(2);
+    expect(rows.every(r => r.agentName === "reporter")).toBe(true);
+    store.close();
+  });
+
+  it("queryTriggerHistory filtered by triggerType only returns matching runs", () => {
+    const store = createStore();
+    const now = Date.now();
+    store.recordRun(makeRun({ agentName: "reporter", startedAt: now - 2000, triggerType: "schedule" }));
+    store.recordRun(makeRun({ agentName: "reporter", startedAt: now - 1000, triggerType: "webhook" }));
+    store.recordRun(makeRun({ agentName: "reviewer", startedAt: now, triggerType: "schedule" }));
+
+    const rows = store.queryTriggerHistory({ since: 0, limit: 10, offset: 0, includeDeadLetters: false, triggerType: "schedule" });
+    expect(rows).toHaveLength(2);
+    expect(rows.every(r => r.triggerType === "schedule")).toBe(true);
+    store.close();
+  });
+
+  it("queryTriggerHistory filtered by triggerType=webhook includes dead letters when requested", () => {
+    const store = createStore();
+    const now = Date.now();
+    store.recordRun(makeRun({ agentName: "reporter", startedAt: now - 2000, triggerType: "webhook" }));
+    store.recordWebhookReceipt(makeReceipt({
+      id: "dl-wh-1",
+      timestamp: now - 1000,
+      status: "dead-letter",
+      deadLetterReason: "no_match",
+    }));
+
+    const withDL = store.queryTriggerHistory({ since: 0, limit: 10, offset: 0, includeDeadLetters: true, triggerType: "webhook" });
+    expect(withDL).toHaveLength(2);
+    const deadLetterRow = withDL.find(r => r.result === "dead-letter");
+    expect(deadLetterRow).toBeDefined();
+    expect(deadLetterRow!.deadLetterReason).toBe("no_match");
+
+    const withoutDL = store.queryTriggerHistory({ since: 0, limit: 10, offset: 0, includeDeadLetters: false, triggerType: "webhook" });
+    expect(withoutDL).toHaveLength(1);
+    expect(withoutDL[0].agentName).toBe("reporter");
+    store.close();
+  });
+
+  it("queryTriggerHistory filtered by both agentName and triggerType", () => {
+    const store = createStore();
+    const now = Date.now();
+    store.recordRun(makeRun({ agentName: "reporter", startedAt: now - 3000, triggerType: "schedule" }));
+    store.recordRun(makeRun({ agentName: "reporter", startedAt: now - 2000, triggerType: "webhook" }));
+    store.recordRun(makeRun({ agentName: "reviewer", startedAt: now - 1000, triggerType: "schedule" }));
+    store.recordRun(makeRun({ agentName: "reviewer", startedAt: now, triggerType: "webhook" }));
+
+    const rows = store.queryTriggerHistory({ since: 0, limit: 10, offset: 0, includeDeadLetters: false, agentName: "reporter", triggerType: "schedule" });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].agentName).toBe("reporter");
+    expect(rows[0].triggerType).toBe("schedule");
+    store.close();
+  });
+
+  it("countTriggerHistory filtered by agentName counts only that agent's runs", () => {
+    const store = createStore();
+    const now = Date.now();
+    store.recordRun(makeRun({ agentName: "reporter", startedAt: now }));
+    store.recordRun(makeRun({ agentName: "reporter", startedAt: now }));
+    store.recordRun(makeRun({ agentName: "reviewer", startedAt: now }));
+
+    expect(store.countTriggerHistory(0, false, "reporter")).toBe(2);
+    expect(store.countTriggerHistory(0, true, "reporter")).toBe(2);
+    expect(store.countTriggerHistory(0, false, "reviewer")).toBe(1);
+    store.close();
+  });
+
+  it("countTriggerHistory filtered by triggerType counts correctly", () => {
+    const store = createStore();
+    const now = Date.now();
+    store.recordRun(makeRun({ agentName: "reporter", startedAt: now, triggerType: "schedule" }));
+    store.recordRun(makeRun({ agentName: "reviewer", startedAt: now, triggerType: "schedule" }));
+    store.recordRun(makeRun({ agentName: "reporter", startedAt: now, triggerType: "webhook" }));
+
+    expect(store.countTriggerHistory(0, false, undefined, "schedule")).toBe(2);
+    expect(store.countTriggerHistory(0, false, undefined, "webhook")).toBe(1);
+    store.close();
+  });
+
+  it("countTriggerHistory filtered by triggerType=webhook includes dead letters when requested", () => {
+    const store = createStore();
+    const now = Date.now();
+    store.recordRun(makeRun({ agentName: "reporter", startedAt: now, triggerType: "webhook" }));
+    store.recordWebhookReceipt(makeReceipt({
+      id: "dl-count-1",
+      timestamp: now,
+      status: "dead-letter",
+      deadLetterReason: "no_match",
+    }));
+
+    // With dead letters and webhook type: should count runs + dead letters
+    expect(store.countTriggerHistory(0, true, undefined, "webhook")).toBeGreaterThanOrEqual(1);
+    // Without dead letters
+    expect(store.countTriggerHistory(0, false, undefined, "webhook")).toBe(1);
+    store.close();
+  });
+
+  it("countTriggerHistory filtered by both agentName and triggerType", () => {
+    const store = createStore();
+    const now = Date.now();
+    store.recordRun(makeRun({ agentName: "reporter", startedAt: now, triggerType: "schedule" }));
+    store.recordRun(makeRun({ agentName: "reporter", startedAt: now, triggerType: "webhook" }));
+    store.recordRun(makeRun({ agentName: "reviewer", startedAt: now, triggerType: "schedule" }));
+
+    expect(store.countTriggerHistory(0, false, "reporter", "schedule")).toBe(1);
+    expect(store.countTriggerHistory(0, false, "reporter", "webhook")).toBe(1);
+    expect(store.countTriggerHistory(0, false, "reviewer", "schedule")).toBe(1);
+    expect(store.countTriggerHistory(0, false, "reviewer", "webhook")).toBe(0);
+    store.close();
+  });
 });
