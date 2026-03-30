@@ -287,4 +287,107 @@ describe("Chat API routes", () => {
       expect(body.sessions).toEqual([]);
     });
   });
+
+  describe("error paths", () => {
+    it("logs error and removes session when launchCallback fails after session creation", async () => {
+      // Make launchCallback fail asynchronously
+      launchCallback.mockRejectedValueOnce(new Error("container launch failed"));
+
+      const res = await app.request("/api/chat/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentName: "failing-agent" }),
+      });
+      expect(res.status).toBe(200);
+      const { sessionId } = await res.json();
+
+      // Wait for the async launchCallback rejection to be handled
+      await new Promise((r) => setTimeout(r, 20));
+
+      // Session should have been removed on launch failure
+      expect(sessionManager.getSession(sessionId)).toBeUndefined();
+      // Logger should have been called with error
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.objectContaining({ err: "container launch failed" }),
+        "failed to launch chat container"
+      );
+    });
+
+    it("returns 500 when sessionManager.createSession throws unexpectedly", async () => {
+      // Spy on createSession to throw
+      const createSpy = vi.spyOn(sessionManager, "createSession").mockImplementationOnce(() => {
+        throw new Error("Unexpected internal error");
+      });
+
+      const res = await app.request("/api/chat/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentName: "new-agent" }),
+      });
+      expect(res.status).toBe(500);
+      const body = await res.json();
+      expect(body.error).toContain("Unexpected internal error");
+      createSpy.mockRestore();
+    });
+
+    it("logs warning but continues when stopCallback fails during clear", async () => {
+      // Create a session
+      const createRes = await app.request("/api/chat/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentName: "test-agent" }),
+      });
+      const { sessionId } = await createRes.json();
+
+      // Make stopCallback fail
+      stopCallback.mockRejectedValueOnce(new Error("stop failed"));
+
+      const clearRes = await app.request(`/api/chat/sessions/${sessionId}/clear`, {
+        method: "POST",
+      });
+      // Should still succeed and return a new session
+      expect(clearRes.status).toBe(200);
+      const clearBody = await clearRes.json();
+      expect(clearBody.sessionId).toBeDefined();
+      expect(clearBody.sessionId).not.toBe(sessionId);
+
+      // Logger should have warned about the stop failure
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ err: "stop failed" }),
+        "error stopping chat container during clear"
+      );
+    });
+
+    it("logs error when launchCallback fails during clear", async () => {
+      // Create a session - first launch succeeds
+      const createRes = await app.request("/api/chat/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentName: "test-agent" }),
+      });
+      const { sessionId } = await createRes.json();
+
+      // Wait for first launchCallback to resolve
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Now make the NEXT launchCallback call fail (for the clear)
+      launchCallback.mockRejectedValueOnce(new Error("clear launch failed"));
+
+      const clearRes = await app.request(`/api/chat/sessions/${sessionId}/clear`, {
+        method: "POST",
+      });
+      expect(clearRes.status).toBe(200);
+      const { sessionId: newId } = await clearRes.json();
+
+      // Wait for async rejection to be handled
+      await new Promise((r) => setTimeout(r, 20));
+
+      // New session should have been removed on failure
+      expect(sessionManager.getSession(newId)).toBeUndefined();
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.objectContaining({ err: "clear launch failed" }),
+        "failed to launch chat container after clear"
+      );
+    });
+  });
 });
