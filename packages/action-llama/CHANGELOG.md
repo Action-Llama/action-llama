@@ -1,5 +1,11 @@
 # @action-llama/action-llama
 
+## 0.19.1
+
+### Patch Changes
+
+- [`d2245f2`](https://github.com/Action-Llama/action-llama/commit/d2245f215acf9cf9b85340d3ed4fe553d95ef906) Thanks [@asselstine](https://github.com/asselstine)! - Fix startup crash (`Can't find meta/_journal.json`) by including the `drizzle/` migrations folder in the published npm package. Previously the folder was missing from the `files` array in `package.json`, so database migrations failed at runtime.
+
 ## 0.19.0
 
 ### Minor Changes
