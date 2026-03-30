@@ -30,7 +30,7 @@ export class AgentError extends Error {
 }
 
 // --- Unrecoverable error detection ---
-// Consolidated from agents/runner.ts and agents/execution-engine.ts.
+// Used by agents/session-loop.ts and agents/container-entry.ts.
 
 export const UNRECOVERABLE_PATTERNS = [
   "permission denied",
