@@ -287,5 +287,7 @@ describe("wireCallDispatcher", () => {
       await vi.waitFor(() => expect(gateway.callStore.fail).toHaveBeenCalled());
       expect(gateway.callStore.fail).toHaveBeenCalledWith("call-fail", "agent run failed");
     });
+
+
   });
 });
