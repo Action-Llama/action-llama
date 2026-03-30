@@ -667,7 +667,7 @@ describe("setupGateway", () => {
         await controlDeps.stopScheduler();
 
         expect(schedulerCtx.shuttingDown).toBe(true);
-        expect(workQueue.clearAll).toHaveBeenCalledOnce();
+        expect(workQueue.clearAll).not.toHaveBeenCalled();
         expect(workQueue.close).toHaveBeenCalledOnce();
         expect(job1.stop).toHaveBeenCalledOnce();
         expect(processExitSpy).toHaveBeenCalledWith(0);

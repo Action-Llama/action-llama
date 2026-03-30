@@ -60,6 +60,17 @@ export class ContainerRegistry {
     return Array.from(this.cache.values());
   }
 
+  /**
+   * Find the secret and registration for a container by its container name.
+   * Used during re-adoption of orphan containers on scheduler restart.
+   */
+  findByContainerName(containerName: string): { secret: string; reg: ContainerRegistration } | undefined {
+    for (const [secret, reg] of this.cache.entries()) {
+      if (reg.containerName === containerName) return { secret, reg };
+    }
+    return undefined;
+  }
+
   /** Remove all registrations from both the cache and the persistent store. */
   async clear(): Promise<void> {
     for (const key of this.cache.keys()) {
