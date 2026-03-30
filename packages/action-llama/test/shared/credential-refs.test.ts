@@ -134,3 +134,90 @@ describe("WEBHOOK_SECRET_TYPES", () => {
     expect(WEBHOOK_SECRET_TYPES.sentry).toBe("sentry_client_secret");
   });
 });
+
+describe("collectCredentialRefs — model provider keys", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("adds provider key ref for models with non-pi_auth authType", () => {
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadAgentConfig.mockReturnValue({
+      name: "dev",
+      credentials: [],
+      models: [{ provider: "anthropic", authType: "api_key" }],
+    });
+
+    const refs = collectCredentialRefs("/tmp/project", {});
+    expect(refs.has("anthropic_key")).toBe(true);
+  });
+
+  it("adds provider key ref when authType is undefined (not pi_auth)", () => {
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadAgentConfig.mockReturnValue({
+      name: "dev",
+      credentials: [],
+      models: [{ provider: "openai" }],
+    });
+
+    const refs = collectCredentialRefs("/tmp/project", {});
+    expect(refs.has("openai_key")).toBe(true);
+  });
+
+  it("does not add provider key ref for models with pi_auth", () => {
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadAgentConfig.mockReturnValue({
+      name: "dev",
+      credentials: [],
+      models: [{ provider: "anthropic", authType: "pi_auth" }],
+    });
+
+    const refs = collectCredentialRefs("/tmp/project", {});
+    expect(refs.has("anthropic_key")).toBe(false);
+    expect(refs.size).toBe(0);
+  });
+
+  it("skips webhook trigger when source is not in global webhooks config (missing sourceConfig)", () => {
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadAgentConfig.mockReturnValue({
+      name: "dev",
+      credentials: [],
+      webhooks: [{ source: "nonexistent-source", events: ["push"] }],
+    });
+
+    // The 'nonexistent-source' key is not in the webhooks config
+    const refs = collectCredentialRefs("/tmp/project", { webhooks: {} });
+    expect(refs.size).toBe(0);
+  });
+
+  it("skips webhook trigger when provider type has no credentials (missing providerCreds)", () => {
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadAgentConfig.mockReturnValue({
+      name: "dev",
+      credentials: [],
+      webhooks: [{ source: "my-custom", events: ["event"] }],
+    });
+
+    // Use a webhook type that has no entry in PROVIDER_CREDENTIALS
+    const refs = collectCredentialRefs("/tmp/project", {
+      webhooks: { "my-custom": { type: "unknown_provider_type_xyz" as any } },
+    });
+    expect(refs.size).toBe(0);
+  });
+
+  it("deduplicates: does not add webhook secret if agent already has cred type directly", () => {
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadAgentConfig.mockReturnValue({
+      name: "dev",
+      credentials: ["github_webhook_secret"],
+      webhooks: [{ source: "my-github", events: ["issues"] }],
+    });
+
+    const refs = collectCredentialRefs("/tmp/project", {
+      webhooks: { "my-github": { type: "github" } },
+    });
+    // The agent's direct "github_webhook_secret" ref is there, but no duplicates
+    expect(refs.has("github_webhook_secret")).toBe(true);
+    expect(refs.size).toBe(1);
+  });
+});
