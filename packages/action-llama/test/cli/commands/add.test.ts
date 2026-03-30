@@ -5,6 +5,17 @@ import { tmpdir } from "os";
 import { execFileSync } from "child_process";
 import { stringify as stringifyTOML, parse as parseTOML } from "smol-toml";
 
+// Mock interactive prompts so tests don't hang
+const { mockSelect, mockInput } = vi.hoisted(() => ({
+  mockSelect: vi.fn(),
+  mockInput: vi.fn(),
+}));
+
+vi.mock("@inquirer/prompts", () => ({
+  select: (...args: any[]) => mockSelect(...args),
+  input: (...args: any[]) => mockInput(...args),
+}));
+
 // We test the pure helper functions by importing them indirectly through execute,
 // plus test normalizeRepo and discoverSkills behavior through integration-style tests.
 
@@ -205,6 +216,158 @@ describe("al add", () => {
       const { execute } = await import("../../../src/cli/commands/add.js");
       await expect(execute("nonexistent-user/nonexistent-repo-abc123", { project: projectPath }))
         .rejects.toThrow();
+    });
+  });
+
+  describe("discoverSkills — edge cases", () => {
+    it("skips non-directory entries in skills/ subdirectory", async () => {
+      createGitRepo(repoPath, {
+        "skills/a-file.txt": "not a directory",
+        "skills/real-skill/SKILL.md": "---\nname: real-skill\n---\n\n# Real\n",
+      });
+
+      const agentModule = await import("../../../src/cli/commands/agent.js");
+      vi.spyOn(agentModule, "configAgent").mockResolvedValue();
+
+      const { execute } = await import("../../../src/cli/commands/add.js");
+      await execute(repoPath, { agent: "real-skill", project: projectPath });
+
+      // Only the real skill directory should be installed
+      expect(existsSync(resolve(projectPath, "agents", "real-skill", "SKILL.md"))).toBe(true);
+    });
+
+    it("skips directories in skills/ that have no SKILL.md", async () => {
+      createGitRepo(repoPath, {
+        "skills/empty-dir/README.md": "no skill here",
+        "skills/has-skill/SKILL.md": "---\nname: has-skill\n---\n\n# Skill\n",
+      });
+
+      const agentModule = await import("../../../src/cli/commands/agent.js");
+      vi.spyOn(agentModule, "configAgent").mockResolvedValue();
+
+      const { execute } = await import("../../../src/cli/commands/add.js");
+      await execute(repoPath, { agent: "has-skill", project: projectPath });
+
+      expect(existsSync(resolve(projectPath, "agents", "has-skill", "SKILL.md"))).toBe(true);
+    });
+
+    it("deduplicates skills when root SKILL.md name matches a skills/ directory name", async () => {
+      // Root SKILL.md is named "my-skill" and skills/my-skill/ also exists
+      createGitRepo(repoPath, {
+        "SKILL.md": "---\nname: my-skill\n---\n\n# Root\n",
+        "skills/my-skill/SKILL.md": "---\nname: my-skill\n---\n\n# Duplicate\n",
+      });
+
+      const agentModule = await import("../../../src/cli/commands/agent.js");
+      vi.spyOn(agentModule, "configAgent").mockResolvedValue();
+
+      const { execute } = await import("../../../src/cli/commands/add.js");
+      // Should install once, not throw about duplicate
+      await execute(repoPath, { agent: "my-skill", project: projectPath });
+
+      expect(existsSync(resolve(projectPath, "agents", "my-skill", "SKILL.md"))).toBe(true);
+    });
+
+    it("falls back to directory entry name when SKILL.md has no frontmatter name", async () => {
+      createGitRepo(repoPath, {
+        "skills/unnamed-dir/SKILL.md": "# No frontmatter here\n\nJust content.\n",
+      });
+
+      const agentModule = await import("../../../src/cli/commands/agent.js");
+      vi.spyOn(agentModule, "configAgent").mockResolvedValue();
+
+      const { execute } = await import("../../../src/cli/commands/add.js");
+      // Agent name should fall back to the directory name "unnamed-dir"
+      await execute(repoPath, { agent: "unnamed-dir", project: projectPath });
+
+      expect(existsSync(resolve(projectPath, "agents", "unnamed-dir", "SKILL.md"))).toBe(true);
+    });
+
+    it("uses select prompt when multiple skills exist and no --agent flag", async () => {
+      createGitRepo(repoPath, {
+        "skills/alpha/SKILL.md": "---\nname: alpha\ndescription: Alpha skill\n---\n\n# Alpha\n",
+        "skills/beta/SKILL.md": "---\nname: beta\ndescription: Beta skill\n---\n\n# Beta\n",
+      });
+
+      // Mock select to return the "alpha" skill
+      mockSelect.mockImplementation(({ choices }: { choices: any[] }) => {
+        return Promise.resolve(choices.find((c) => c.value?.name === "alpha")?.value);
+      });
+
+      const agentModule = await import("../../../src/cli/commands/agent.js");
+      vi.spyOn(agentModule, "configAgent").mockResolvedValue();
+
+      const { execute } = await import("../../../src/cli/commands/add.js");
+      await execute(repoPath, { project: projectPath });
+
+      expect(mockSelect).toHaveBeenCalledOnce();
+      expect(existsSync(resolve(projectPath, "agents", "alpha", "SKILL.md"))).toBe(true);
+    });
+  });
+
+  describe("agent name validation edge cases", () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    it("prompts for a new name when skill name is not a valid agent name", async () => {
+      // Create a skill with an invalid name (has spaces)
+      createGitRepo(repoPath, {
+        "SKILL.md": "---\nname: invalid name with spaces\n---\n\n# Bad Name\n",
+      });
+
+      // Mock input to return a valid name
+      mockInput.mockResolvedValueOnce("valid-name");
+
+      const agentModule = await import("../../../src/cli/commands/agent.js");
+      vi.spyOn(agentModule, "configAgent").mockResolvedValue();
+
+      const { execute } = await import("../../../src/cli/commands/add.js");
+      await execute(repoPath, { project: projectPath });
+
+      expect(mockInput).toHaveBeenCalledOnce();
+      expect(existsSync(resolve(projectPath, "agents", "valid-name", "SKILL.md"))).toBe(true);
+    });
+
+    it("prompts for a new name when agent directory already exists", async () => {
+      createGitRepo(repoPath, {
+        "SKILL.md": "---\nname: existing-agent\n---\n\n# Already Installed\n",
+      });
+
+      // Pre-create the agents directory to simulate conflict
+      mkdirSync(resolve(projectPath, "agents", "existing-agent"), { recursive: true });
+
+      // Mock input to return a non-conflicting name
+      mockInput.mockResolvedValueOnce("existing-agent-v2");
+
+      const agentModule = await import("../../../src/cli/commands/agent.js");
+      vi.spyOn(agentModule, "configAgent").mockResolvedValue();
+
+      const { execute } = await import("../../../src/cli/commands/add.js");
+      await execute(repoPath, { project: projectPath });
+
+      expect(mockInput).toHaveBeenCalledOnce();
+      expect(existsSync(resolve(projectPath, "agents", "existing-agent-v2", "SKILL.md"))).toBe(true);
+    });
+  });
+
+  describe("config.toml handling edge cases", () => {
+    it("falls back to empty object when repo config.toml contains invalid TOML", async () => {
+      createGitRepo(repoPath, {
+        "SKILL.md": "---\nname: my-skill\n---\n\n# My Skill\n",
+        "config.toml": "this is [not valid] toml ===\n",
+      });
+
+      const agentModule = await import("../../../src/cli/commands/agent.js");
+      vi.spyOn(agentModule, "configAgent").mockResolvedValue();
+
+      const { execute } = await import("../../../src/cli/commands/add.js");
+      await execute(repoPath, { project: projectPath });
+
+      // Should still succeed, with config.toml containing only the source field
+      const configToml = readFileSync(resolve(projectPath, "agents", "my-skill", "config.toml"), "utf-8");
+      const config = parseTOML(configToml) as Record<string, unknown>;
+      expect(config.source).toBe(repoPath);
     });
   });
 });
