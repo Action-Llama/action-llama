@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useInvalidation } from "../hooks/useInvalidation";
 import { useStatusStream } from "../hooks/StatusStreamContext";
 import { TriggerTypeBadge, ResultBadge } from "../components/Badge";
@@ -11,7 +11,10 @@ import { agentHueStyle } from "../lib/color";
 const PAGE_SIZE = 50;
 
 export function TriggerHistoryPage() {
-  const { name: agentFilter } = useParams<{ name?: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const agentFilter = searchParams.get("agent") || undefined;
+  const triggerTypeFilter = searchParams.get("type") || undefined;
+
   const [triggers, setTriggers] = useState<TriggerHistoryRow[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -20,10 +23,26 @@ export function TriggerHistoryPage() {
   const { agents, instances } = useStatusStream();
   const agentNames = agents.map((a) => a.name);
 
+  const setFilter = useCallback(
+    (key: string, value: string | undefined) => {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        if (value) {
+          next.set(key, value);
+        } else {
+          next.delete(key);
+        }
+        next.delete("offset");
+        return next;
+      });
+    },
+    [setSearchParams],
+  );
+
   const load = useCallback(
     (newOffset: number, deadLetters: boolean) => {
       setLoading(true);
-      getTriggerHistory(PAGE_SIZE, newOffset, deadLetters, agentFilter)
+      getTriggerHistory(PAGE_SIZE, newOffset, deadLetters, agentFilter, triggerTypeFilter)
         .then((data) => {
           setTriggers(data.triggers);
           setTotal(data.total);
@@ -32,7 +51,7 @@ export function TriggerHistoryPage() {
         .catch(() => {})
         .finally(() => setLoading(false));
     },
-    [agentFilter],
+    [agentFilter, triggerTypeFilter],
   );
 
   useEffect(() => {
@@ -49,7 +68,16 @@ export function TriggerHistoryPage() {
     // Only include running instances on the first page
     if (offset > 0) return triggers;
     const running: TriggerHistoryRow[] = instances
-      .filter((inst) => inst.status === "running" && (!agentFilter || inst.agentName === agentFilter))
+      .filter((inst) => {
+        if (inst.status !== "running") return false;
+        if (agentFilter && inst.agentName !== agentFilter) return false;
+        if (triggerTypeFilter) {
+          const sep = inst.trigger.indexOf(":");
+          const type = sep > -1 ? inst.trigger.slice(0, sep) : inst.trigger;
+          if (type !== triggerTypeFilter) return false;
+        }
+        return true;
+      })
       .map((inst) => {
         const sep = inst.trigger.indexOf(":");
         return {
@@ -64,9 +92,18 @@ export function TriggerHistoryPage() {
     const apiIds = new Set(triggers.map((t) => t.instanceId));
     const unique = running.filter((r) => !apiIds.has(r.instanceId));
     return [...unique, ...triggers].sort((a, b) => b.ts - a.ts);
-  }, [instances, triggers, offset, agentFilter]);
+  }, [instances, triggers, offset, agentFilter, triggerTypeFilter]);
 
-  const runningCount = instances.filter((i) => i.status === "running" && (!agentFilter || i.agentName === agentFilter)).length;
+  const runningCount = instances.filter((i) => {
+    if (i.status !== "running") return false;
+    if (agentFilter && i.agentName !== agentFilter) return false;
+    if (triggerTypeFilter) {
+      const sep = i.trigger.indexOf(":");
+      const type = sep > -1 ? i.trigger.slice(0, sep) : i.trigger;
+      if (type !== triggerTypeFilter) return false;
+    }
+    return true;
+  }).length;
   const adjustedTotal = total + runningCount;
 
   const page = Math.floor(offset / PAGE_SIZE) + 1;
@@ -76,45 +113,34 @@ export function TriggerHistoryPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <Link
-            to={agentFilter ? `/dashboard/agents/${encodeURIComponent(agentFilter)}` : "/dashboard"}
-            className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+        <h1 className="text-xl font-bold text-slate-900 dark:text-white">Triggers</h1>
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Agent filter */}
+          <select
+            value={agentFilter || ""}
+            onChange={(e) => setFilter("agent", e.target.value || undefined)}
+            className="text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white px-2 py-1"
           >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 19l-7-7 7-7"
-              />
-            </svg>
-          </Link>
-          {agentFilter ? (
-            <div className="flex items-center gap-2">
-              <span
-                className="w-3 h-3 rounded-full shrink-0 agent-color-dot"
-                style={agentHueStyle(agentFilter, agentNames)}
-              />
-              <h1 className="text-xl font-bold text-slate-900 dark:text-white">
-                {agentFilter}
-              </h1>
-              <span className="text-xl text-slate-400 dark:text-slate-500 font-light">
-                Trigger History
-              </span>
-            </div>
-          ) : (
-            <h1 className="text-xl font-bold text-slate-900 dark:text-white">
-              Trigger History
-            </h1>
-          )}
-        </div>
-        {!agentFilter && (
+            <option value="">All Agents</option>
+            {agents.map((a) => (
+              <option key={a.name} value={a.name}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+          {/* Trigger type filter */}
+          <select
+            value={triggerTypeFilter || ""}
+            onChange={(e) => setFilter("type", e.target.value || undefined)}
+            className="text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white px-2 py-1"
+          >
+            <option value="">All Types</option>
+            <option value="schedule">Schedule</option>
+            <option value="webhook">Webhook</option>
+            <option value="manual">Manual</option>
+            <option value="agent">Agent</option>
+          </select>
+          {/* Dead letters checkbox */}
           <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 cursor-pointer">
             <input
               type="checkbox"
@@ -124,7 +150,7 @@ export function TriggerHistoryPage() {
             />
             Show dead letters
           </label>
-        )}
+        </div>
       </div>
 
       {/* Table */}

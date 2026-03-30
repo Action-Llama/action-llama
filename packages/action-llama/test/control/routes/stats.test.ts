@@ -184,7 +184,7 @@ describe("stats routes", () => {
         includeDeadLetters: true,
         agentName: "reporter",
       });
-      expect(stats.countTriggerHistory).toHaveBeenCalledWith(9999, true, "reporter");
+      expect(stats.countTriggerHistory).toHaveBeenCalledWith(9999, true, "reporter", undefined);
     });
 
     it("defaults limit to 50 and offset to 0", async () => {

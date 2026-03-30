@@ -1,18 +1,16 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useStatusStream } from "../hooks/StatusStreamContext";
-import { useInvalidation } from "../hooks/useInvalidation";
-import { StateBadge, TriggerTypeBadge, ResultBadge } from "../components/Badge";
+import { StateBadge } from "../components/Badge";
 import {
-  getTriggerHistory,
   triggerAgent,
   killAgentInstances,
   enableAgent,
   disableAgent,
 } from "../lib/api";
-import type { AgentStatus, TriggerHistoryRow } from "../lib/api";
+import type { AgentStatus } from "../lib/api";
 import { RunModal } from "../components/RunModal";
-import { fmtTokens, fmtSessionTime, fmtRelativeTime } from "../lib/format";
+import { fmtTokens, fmtSessionTime } from "../lib/format";
 import { agentHueStyle } from "../lib/color";
 
 function formatScale(agent: AgentStatus): string {
@@ -89,9 +87,8 @@ function ActionMenu({
 
 export function DashboardPage() {
   const navigate = useNavigate();
-  const { agents, schedulerInfo, instances } = useStatusStream();
+  const { agents, schedulerInfo } = useStatusStream();
   const agentNames = agents.map((a) => a.name);
-  const [triggers, setTriggers] = useState<TriggerHistoryRow[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [runModalAgent, setRunModalAgent] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -106,41 +103,6 @@ export function DashboardPage() {
     }, 150);
     return () => clearTimeout(debounceRef.current);
   }, [searchQuery]);
-
-  // Fetch recent triggers
-  const refetchTriggers = useCallback(() => {
-    getTriggerHistory(5, 0, false)
-      .then((data) => setTriggers(data.triggers))
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    refetchTriggers();
-  }, [refetchTriggers]);
-
-  useInvalidation("triggers", undefined, refetchTriggers);
-
-  const mergedTriggers = useMemo(() => {
-    const running: TriggerHistoryRow[] = instances
-      .filter((inst) => inst.status === "running")
-      .map((inst) => {
-        const sep = inst.trigger.indexOf(":");
-        return {
-          ts: new Date(inst.startedAt).getTime(),
-          triggerType: sep > -1 ? inst.trigger.slice(0, sep) : inst.trigger,
-          triggerSource: sep > -1 ? inst.trigger.slice(sep + 1).trim() : undefined,
-          agentName: inst.agentName,
-          instanceId: inst.id,
-          result: "running",
-        };
-      });
-    // Deduplicate: if a running instance already appears in the API response, skip it
-    const apiIds = new Set(triggers.map((t) => t.instanceId));
-    const unique = running.filter((r) => !apiIds.has(r.instanceId));
-    return [...unique, ...triggers]
-      .sort((a, b) => b.ts - a.ts)
-      .slice(0, 5);
-  }, [instances, triggers]);
 
   const totalTokens = agents.reduce(
     (sum, a) => sum + (a.cumulativeUsage?.totalTokens ?? 0),
@@ -230,123 +192,6 @@ export function DashboardPage() {
           </div>
         </div>
       )}
-
-      {/* Recent Triggers — full width */}
-      <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-200 dark:border-slate-800">
-          <h2 className="text-sm font-medium text-slate-900 dark:text-white">
-            Recent Triggers
-          </h2>
-          <Link
-            to="/dashboard/triggers"
-            className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
-          >
-            View all
-          </Link>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 dark:border-slate-800">
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide w-[1%] whitespace-nowrap">
-                  Time
-                </th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide w-[1%] whitespace-nowrap">
-                  Type
-                </th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide w-[1%] whitespace-nowrap">
-                  Source
-                </th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                  Instance
-                </th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                  Agent
-                </th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide w-[1%] whitespace-nowrap">
-                  Status
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {mergedTriggers.map((t, i) => (
-                <tr
-                  key={`${t.ts}-${i}`}
-                  className="border-b border-slate-100 dark:border-slate-800/50 last:border-0"
-                >
-                  <td className="px-4 py-2 text-slate-600 dark:text-slate-400 text-xs whitespace-nowrap">
-                    {fmtRelativeTime(t.ts)}
-                  </td>
-                  <td className="px-4 py-2 whitespace-nowrap">
-                    <TriggerTypeBadge type={t.triggerType} />
-                  </td>
-                  <td className="px-4 py-2 text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                    {t.triggerSource ? (
-                      t.triggerType === "agent" ? (
-                        <Link
-                          to={`/dashboard/agents/${encodeURIComponent(t.triggerSource)}`}
-                          className="text-blue-600 dark:text-blue-400 hover:underline"
-                        >
-                          {t.triggerSource}
-                        </Link>
-                      ) : (
-                        t.triggerSource
-                      )
-                    ) : (
-                      "\u2014"
-                    )}
-                  </td>
-                  <td className="px-4 py-2 min-w-0">
-                    {t.instanceId ? (
-                      <Link
-                        to={`/dashboard/agents/${encodeURIComponent(t.agentName ?? "")}/instances/${encodeURIComponent(t.instanceId)}`}
-                        className="font-mono text-xs text-blue-600 dark:text-blue-400 hover:underline truncate block"
-                        title={t.instanceId}
-                      >
-                        {t.instanceId}
-                      </Link>
-                    ) : (
-                      <span className="text-xs text-slate-400">{"\u2014"}</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2 min-w-0">
-                    {t.agentName ? (
-                      <Link
-                        to={`/dashboard/agents/${encodeURIComponent(t.agentName)}`}
-                        className="hover:underline truncate flex items-center gap-1.5"
-                        title={t.agentName}
-                      >
-                        <span
-                          className="w-2 h-2 rounded-full shrink-0 agent-color-dot"
-                          style={agentHueStyle(t.agentName, agentNames)}
-                        />
-                        <span className="agent-color-text truncate" style={agentHueStyle(t.agentName, agentNames)}>
-                          {t.agentName}
-                        </span>
-                      </Link>
-                    ) : (
-                      "\u2014"
-                    )}
-                  </td>
-                  <td className="px-4 py-2 whitespace-nowrap">
-                    <ResultBadge result={t.result} deadLetterReason={t.deadLetterReason} />
-                  </td>
-                </tr>
-              ))}
-              {mergedTriggers.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={6}
-                    className="px-4 py-6 text-center text-slate-500 dark:text-slate-400 text-xs"
-                  >
-                    No recent triggers
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
 
       {/* Agents table — full width */}
       <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">

@@ -32,6 +32,7 @@ function Navbar() {
   }, [navigate]);
 
   const isSettings = location.pathname === "/dashboard/config";
+  const isTriggers = location.pathname === "/triggers";
 
   return (
     <header className="border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-3">
@@ -42,6 +43,19 @@ function Navbar() {
             className="text-lg font-bold text-slate-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
           >
             Action Llama
+          </Link>
+          <Link
+            to="/triggers"
+            className={`flex items-center gap-1.5 text-sm transition-colors ${
+              isTriggers
+                ? "text-blue-600 dark:text-blue-400"
+                : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            Triggers
           </Link>
           <Link
             to="/dashboard/config"
