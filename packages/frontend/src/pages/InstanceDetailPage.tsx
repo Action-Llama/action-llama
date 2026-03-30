@@ -52,6 +52,7 @@ export function InstanceDetailPage() {
   >([]);
   const [following, setFollowing] = useState(true);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const [connected, setConnected] = useState(false);
   const cursorRef = useRef<string | null>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
@@ -211,9 +212,30 @@ export function InstanceDetailPage() {
             </svg>
           </Link>
           <div>
-            <h1 className="text-xl font-bold text-slate-900 dark:text-white font-mono">
-              {shortId(id)}
-            </h1>
+            <div className="flex items-center gap-1.5">
+              <h1 className="text-xl font-bold text-slate-900 dark:text-white font-mono break-all">
+                {id}
+              </h1>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(id);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                }}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                title="Copy instance ID"
+              >
+                {copied ? (
+                  <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                )}
+              </button>
+            </div>
             <div className="text-xs text-slate-500 dark:text-slate-400">
               {name}
             </div>
