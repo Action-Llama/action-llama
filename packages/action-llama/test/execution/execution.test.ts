@@ -8,12 +8,16 @@ import {
   drainQueues,
   runWithReruns,
   makeManualPrompt,
+  makeScheduledPrompt,
+  makeWebhookPrompt,
+  makeTriggeredPrompt,
   DEFAULT_MAX_RERUNS,
   DEFAULT_MAX_TRIGGER_DEPTH,
   type SchedulerContext,
   type WorkItem,
 } from "../../src/execution/execution.js";
 import type { AgentConfig } from "../../src/shared/config.js";
+import type { WebhookContext } from "../../src/webhooks/types.js";
 
 function makeRunner(overrides: Partial<PoolRunner> = {}): PoolRunner {
   return {
@@ -450,5 +454,320 @@ describe("makeManualPrompt", () => {
     expect(result).toContain("<agent-config>");
     expect(result).toContain("<user-prompt>");
     expect(result).toContain("deploy");
+  });
+});
+
+describe("makeScheduledPrompt", () => {
+  it("returns scheduled suffix when useBakedImages is true", () => {
+    const config = makeAgentConfig("a");
+    const ctx = makeCtx({ useBakedImages: true });
+    const result = makeScheduledPrompt(config, ctx);
+    expect(result).toContain("schedule");
+    expect(result).not.toContain("<agent-config>");
+  });
+
+  it("returns full prompt when useBakedImages is false", () => {
+    const config = makeAgentConfig("a");
+    const ctx = makeCtx({ useBakedImages: false });
+    const result = makeScheduledPrompt(config, ctx);
+    expect(result).toContain("<agent-config>");
+    expect(result).not.toContain("<user-prompt>");
+  });
+});
+
+describe("makeWebhookPrompt", () => {
+  const webhookCtx: WebhookContext = {
+    event: "push",
+    action: "opened",
+    payload: { ref: "main" },
+    headers: {},
+    source: "github",
+  };
+
+  it("returns webhook suffix when useBakedImages is true", () => {
+    const config = makeAgentConfig("a");
+    const ctx = makeCtx({ useBakedImages: true });
+    const result = makeWebhookPrompt(config, webhookCtx, ctx);
+    expect(result).toContain("push");
+    expect(result).not.toContain("<agent-config>");
+  });
+
+  it("returns full webhook prompt when useBakedImages is false", () => {
+    const config = makeAgentConfig("a");
+    const ctx = makeCtx({ useBakedImages: false });
+    const result = makeWebhookPrompt(config, webhookCtx, ctx);
+    expect(result).toContain("<agent-config>");
+    expect(result).toContain("push");
+  });
+});
+
+describe("makeTriggeredPrompt", () => {
+  it("returns called suffix when useBakedImages is true", () => {
+    const config = makeAgentConfig("b");
+    const ctx = makeCtx({ useBakedImages: true });
+    const result = makeTriggeredPrompt(config, "agent-a", "deploy context", ctx);
+    expect(result).toContain("agent-a");
+    expect(result).toContain("deploy context");
+    expect(result).not.toContain("<agent-config>");
+  });
+
+  it("returns full triggered prompt when useBakedImages is false", () => {
+    const config = makeAgentConfig("b");
+    const ctx = makeCtx({ useBakedImages: false });
+    const result = makeTriggeredPrompt(config, "agent-a", "deploy context", ctx);
+    expect(result).toContain("<agent-config>");
+    expect(result).toContain("agent-a");
+    expect(result).toContain("deploy context");
+  });
+});
+
+describe("executeRun — instanceLifecycle", () => {
+  it("calls lifecycle.complete() on successful run", async () => {
+    const runner = makeRunner({
+      run: vi.fn().mockResolvedValue({ result: "completed", triggers: [] }),
+    });
+    const lifecycle = { start: vi.fn(), complete: vi.fn(), fail: vi.fn() };
+    const ctx = makeCtx();
+
+    await executeRun(runner, "prompt", { type: "schedule" }, "a", 0, ctx, lifecycle as any);
+
+    expect(lifecycle.start).toHaveBeenCalledOnce();
+    expect(lifecycle.complete).toHaveBeenCalledOnce();
+    expect(lifecycle.fail).not.toHaveBeenCalled();
+  });
+
+  it("calls lifecycle.fail() on runner error", async () => {
+    const runner = makeRunner({
+      run: vi.fn().mockRejectedValue(new Error("container crashed")),
+    });
+    const lifecycle = { start: vi.fn(), complete: vi.fn(), fail: vi.fn() };
+    const ctx = makeCtx();
+
+    const { result } = await executeRun(runner, "prompt", { type: "schedule" }, "a", 0, ctx, lifecycle as any);
+
+    expect(result).toBe("error");
+    expect(lifecycle.start).toHaveBeenCalledOnce();
+    expect(lifecycle.fail).toHaveBeenCalledWith("container crashed");
+    expect(lifecycle.complete).not.toHaveBeenCalled();
+  });
+
+  it("calls lifecycle.fail() when outcome has exitReason", async () => {
+    const runner = makeRunner({
+      run: vi.fn().mockResolvedValue({ result: "error", exitCode: 1, exitReason: "timeout", triggers: [] }),
+    });
+    const lifecycle = { start: vi.fn(), complete: vi.fn(), fail: vi.fn() };
+    const ctx = makeCtx();
+
+    await executeRun(runner, "prompt", { type: "schedule" }, "a", 0, ctx, lifecycle as any);
+
+    expect(lifecycle.fail).toHaveBeenCalledWith("timeout");
+    expect(lifecycle.complete).not.toHaveBeenCalled();
+  });
+});
+
+describe("executeRun — statsStore", () => {
+  it("records run stats when statsStore is provided", async () => {
+    const runner = makeRunner({
+      run: vi.fn().mockResolvedValue({
+        result: "completed",
+        exitCode: 0,
+        triggers: [],
+        usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, cost: 0.01, turnCount: 3 },
+      }),
+    });
+    const statsStore = { recordRun: vi.fn(), recordCallEdge: vi.fn(), updateCallEdge: vi.fn() };
+    const ctx = makeCtx({ statsStore: statsStore as any });
+
+    await executeRun(runner, "prompt", { type: "schedule" }, "a", 0, ctx);
+
+    expect(statsStore.recordRun).toHaveBeenCalledOnce();
+    const call = statsStore.recordRun.mock.calls[0][0];
+    expect(call.agentName).toBe("a");
+    expect(call.triggerType).toBe("schedule");
+    expect(call.result).toBe("completed");
+    expect(call.inputTokens).toBe(100);
+    expect(call.outputTokens).toBe(50);
+    expect(call.totalTokens).toBe(150);
+    expect(call.costUsd).toBe(0.01);
+    expect(call.turnCount).toBe(3);
+  });
+
+  it("does not throw when statsStore.recordRun throws", async () => {
+    const runner = makeRunner({
+      run: vi.fn().mockResolvedValue({ result: "completed", triggers: [] }),
+    });
+    const statsStore = { recordRun: vi.fn().mockImplementation(() => { throw new Error("db error"); }) };
+    const ctx = makeCtx({ statsStore: statsStore as any });
+
+    await expect(executeRun(runner, "prompt", { type: "schedule" }, "a", 0, ctx)).resolves.toBeDefined();
+    expect(ctx.logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error), agent: "a" }),
+      "failed to record run stats"
+    );
+  });
+});
+
+describe("executeRun — onRunComplete and returnValue", () => {
+  it("calls onRunComplete with correct event data", async () => {
+    const runner = makeRunner({
+      run: vi.fn().mockResolvedValue({ result: "completed", triggers: [] }),
+    });
+    const onRunComplete = vi.fn();
+    const ctx = makeCtx({ onRunComplete });
+
+    await executeRun(runner, "prompt", { type: "manual" }, "my-agent", 0, ctx);
+
+    expect(onRunComplete).toHaveBeenCalledOnce();
+    expect(onRunComplete).toHaveBeenCalledWith({
+      agentName: "my-agent",
+      result: "completed",
+      triggerType: "manual",
+    });
+  });
+
+  it("returns returnValue from runner outcome", async () => {
+    const runner = makeRunner({
+      run: vi.fn().mockResolvedValue({ result: "completed", triggers: [], returnValue: "my-return" }),
+    });
+    const ctx = makeCtx();
+
+    const { returnValue } = await executeRun(runner, "prompt", { type: "schedule" }, "a", 0, ctx);
+
+    expect(returnValue).toBe("my-return");
+  });
+});
+
+describe("dispatchTriggers — statsStore call edge recording", () => {
+  it("records call edge in statsStore when callerInstanceId is provided", async () => {
+    const targetRunner = makeRunner({ instanceId: "b-runner" });
+    const statsStore = {
+      recordRun: vi.fn(),
+      recordCallEdge: vi.fn().mockReturnValue(42),
+      updateCallEdge: vi.fn(),
+    };
+    const ctx = makeCtx({
+      agentConfigs: [makeAgentConfig("a"), makeAgentConfig("b")],
+      runnerPools: {
+        a: new RunnerPool([makeRunner()]),
+        b: new RunnerPool([targetRunner]),
+      },
+      statsStore: statsStore as any,
+    });
+
+    dispatchTriggers([{ agent: "b", context: "hi" }], "a", 0, ctx, "caller-instance-1");
+
+    expect(statsStore.recordCallEdge).toHaveBeenCalledOnce();
+    const edge = statsStore.recordCallEdge.mock.calls[0][0];
+    expect(edge.callerAgent).toBe("a");
+    expect(edge.callerInstance).toBe("caller-instance-1");
+    expect(edge.targetAgent).toBe("b");
+    expect(edge.depth).toBe(1);
+    expect(edge.status).toBe("pending");
+  });
+
+  it("does not record call edge when callerInstanceId is not provided", () => {
+    const targetRunner = makeRunner({ instanceId: "b-runner" });
+    const statsStore = {
+      recordRun: vi.fn(),
+      recordCallEdge: vi.fn().mockReturnValue(1),
+      updateCallEdge: vi.fn(),
+    };
+    const ctx = makeCtx({
+      agentConfigs: [makeAgentConfig("a"), makeAgentConfig("b")],
+      runnerPools: {
+        a: new RunnerPool([makeRunner()]),
+        b: new RunnerPool([targetRunner]),
+      },
+      statsStore: statsStore as any,
+    });
+
+    dispatchTriggers([{ agent: "b", context: "hi" }], "a", 0, ctx);
+
+    expect(statsStore.recordCallEdge).not.toHaveBeenCalled();
+  });
+
+  it("does not throw when statsStore.recordCallEdge throws", () => {
+    const targetRunner = makeRunner({ instanceId: "b-runner" });
+    const statsStore = {
+      recordRun: vi.fn(),
+      recordCallEdge: vi.fn().mockImplementation(() => { throw new Error("db error"); }),
+      updateCallEdge: vi.fn(),
+    };
+    const ctx = makeCtx({
+      agentConfigs: [makeAgentConfig("a"), makeAgentConfig("b")],
+      runnerPools: {
+        a: new RunnerPool([makeRunner()]),
+        b: new RunnerPool([targetRunner]),
+      },
+      statsStore: statsStore as any,
+    });
+
+    expect(() => dispatchTriggers([{ agent: "b", context: "hi" }], "a", 0, ctx, "caller-instance")).not.toThrow();
+    expect(ctx.logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "failed to record call edge"
+    );
+  });
+});
+
+describe("drainQueues — agent-trigger with callId", () => {
+  it("calls callStore.complete when trigger run completes successfully", async () => {
+    const runner = makeRunner({ instanceId: "b" });
+    const callStore = { setRunning: vi.fn(), complete: vi.fn(), fail: vi.fn() };
+    const configA = makeAgentConfig("a");
+    const configB = makeAgentConfig("b");
+    const ctx = makeCtx({
+      agentConfigs: [configA, configB],
+      runnerPools: {
+        a: new RunnerPool([makeRunner()]),
+        b: new RunnerPool([runner]),
+      },
+      callStore: callStore as any,
+    });
+    ctx.workQueue.enqueue("b", {
+      type: "agent-trigger",
+      sourceAgent: "a",
+      context: "some context",
+      depth: 0,
+      callId: "call-123",
+    });
+
+    await drainQueues(ctx);
+    // Wait for async operations to settle
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(callStore.setRunning).toHaveBeenCalledWith("call-123");
+    expect(callStore.complete).toHaveBeenCalledWith("call-123", undefined);
+  });
+
+  it("calls callStore.fail when trigger run fails", async () => {
+    const runner = makeRunner({
+      instanceId: "b",
+      run: vi.fn().mockResolvedValue({ result: "error", triggers: [], exitCode: 1 }),
+    });
+    const callStore = { setRunning: vi.fn(), complete: vi.fn(), fail: vi.fn() };
+    const configA = makeAgentConfig("a");
+    const configB = makeAgentConfig("b");
+    const ctx = makeCtx({
+      agentConfigs: [configA, configB],
+      runnerPools: {
+        a: new RunnerPool([makeRunner()]),
+        b: new RunnerPool([runner]),
+      },
+      callStore: callStore as any,
+    });
+    ctx.workQueue.enqueue("b", {
+      type: "agent-trigger",
+      sourceAgent: "a",
+      context: "some context",
+      depth: 0,
+      callId: "call-456",
+    });
+
+    await drainQueues(ctx);
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(callStore.setRunning).toHaveBeenCalledWith("call-456");
+    expect(callStore.fail).toHaveBeenCalledWith("call-456", "agent run failed");
   });
 });
