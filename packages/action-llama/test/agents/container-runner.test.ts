@@ -491,4 +491,354 @@ describe("ContainerAgentRunner", () => {
       expect(unregisterContainer).toHaveBeenCalledWith(expect.any(String));
     });
   });
+
+  // ── abort() before any container is running ─────────────────────────────
+
+  describe("abort() without an active container", () => {
+    it("sets _aborting without throwing even when no container has been launched", () => {
+      const runner = createRunner();
+      // abort() before run() — _containerName is undefined
+      expect(() => runner.abort()).not.toThrow();
+      // runtime.kill should NOT be called since there's no container
+      expect((runtime.kill as any).mock.calls).toHaveLength(0);
+    });
+  });
+
+  // ── forwardLogLine: tool error surface ──────────────────────────────────
+
+  describe("forwardLogLine — tool error surfacing", () => {
+    function createRunnerWithLogCapture(extraOpts?: { statusTracker?: any }) {
+      let capturedOnLine: ((line: string) => void) | undefined;
+      const captureRuntime = createMockRuntime({
+        streamLogs: vi.fn().mockImplementation((_name: string, onLine: (line: string) => void) => {
+          capturedOnLine = onLine;
+          return { stop: vi.fn() };
+        }),
+      });
+      const mockStatusTracker = extraOpts?.statusTracker;
+      const runner = new ContainerAgentRunner(
+        captureRuntime, globalConfig, agentConfig, mockLogger,
+        vi.fn(), vi.fn(), "", "/tmp", "test-image:latest", mockStatusTracker,
+      );
+      return { runner, captureRuntime, getCapturedOnLine: () => capturedOnLine };
+    }
+
+    function makeMockStatusTracker() {
+      return {
+        startRun: vi.fn(),
+        endRun: vi.fn(),
+        registerInstance: vi.fn(),
+        unregisterInstance: vi.fn(),
+        completeInstance: vi.fn(),
+        addLogLine: vi.fn(),
+        setAgentError: vi.fn(),
+        setTaskUrl: vi.fn(),
+        isAgentEnabled: vi.fn().mockReturnValue(true),
+        isPaused: vi.fn().mockReturnValue(false),
+      };
+    }
+
+    it("surfaces tool error with plain string result to status tracker", async () => {
+      const mockStatusTracker = makeMockStatusTracker();
+      const { runner, getCapturedOnLine } = createRunnerWithLogCapture({ statusTracker: mockStatusTracker });
+
+      const runPromise = runner.run("test prompt");
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+
+      const onLine = getCapturedOnLine();
+      if (onLine) {
+        onLine(JSON.stringify({
+          _log: true, level: "error", msg: "tool error",
+          result: "Command failed: bash",
+          ts: Date.now(),
+        }));
+      }
+      await runPromise;
+
+      expect(mockStatusTracker.setAgentError).toHaveBeenCalledWith(
+        "test-agent",
+        expect.stringContaining("Command failed: bash"),
+      );
+    });
+
+    it("extracts text from JSON-encoded tool error result (content[0].text)", async () => {
+      const mockStatusTracker = makeMockStatusTracker();
+      const { runner, getCapturedOnLine } = createRunnerWithLogCapture({ statusTracker: mockStatusTracker });
+
+      const runPromise = runner.run("test prompt");
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+
+      const innerResult = JSON.stringify({ content: [{ text: "Permission denied" }] });
+      const onLine = getCapturedOnLine();
+      if (onLine) {
+        onLine(JSON.stringify({
+          _log: true, level: "error", msg: "tool error",
+          result: innerResult, cmd: "rm -rf /protected",
+          ts: Date.now(),
+        }));
+      }
+      await runPromise;
+
+      expect(mockStatusTracker.setAgentError).toHaveBeenCalledWith(
+        "test-agent",
+        expect.stringContaining("Permission denied"),
+      );
+    });
+
+    it("includes cmd prefix in tool error message when cmd is present", async () => {
+      const mockStatusTracker = makeMockStatusTracker();
+      const { runner, getCapturedOnLine } = createRunnerWithLogCapture({ statusTracker: mockStatusTracker });
+
+      const runPromise = runner.run("test prompt");
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+
+      const onLine = getCapturedOnLine();
+      if (onLine) {
+        onLine(JSON.stringify({
+          _log: true, level: "error", msg: "tool error",
+          result: "exit code 1", cmd: "npm test",
+          ts: Date.now(),
+        }));
+      }
+      await runPromise;
+
+      expect(mockStatusTracker.setAgentError).toHaveBeenCalledWith(
+        "test-agent",
+        expect.stringContaining("$ npm test"),
+      );
+    });
+  });
+
+  // ── forwardLogLine: token-usage ──────────────────────────────────────────
+
+  describe("forwardLogLine — token-usage and OTel attributes", () => {
+    it("captures token usage from log line and includes it in the RunOutcome", async () => {
+      let capturedOnLine: ((line: string) => void) | undefined;
+      const captureRuntime = createMockRuntime({
+        streamLogs: vi.fn().mockImplementation((_name: string, onLine: (line: string) => void) => {
+          capturedOnLine = onLine;
+          return { stop: vi.fn() };
+        }),
+      });
+      const runner = new ContainerAgentRunner(
+        captureRuntime, globalConfig, agentConfig, mockLogger,
+        vi.fn(), vi.fn(), "", "/tmp", "test-image:latest",
+      );
+
+      const runPromise = runner.run("test prompt");
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+
+      if (capturedOnLine) {
+        capturedOnLine(JSON.stringify({
+          _log: true, level: "info", msg: "token-usage",
+          inputTokens: 500, outputTokens: 200, cacheReadTokens: 50,
+          cacheWriteTokens: 10, totalTokens: 750, cost: 0.005, turnCount: 3,
+          ts: Date.now(),
+        }));
+      }
+      const result = await runPromise;
+
+      expect(result.usage).toMatchObject({
+        inputTokens: 500,
+        outputTokens: 200,
+        cacheReadTokens: 50,
+        cacheWriteTokens: 10,
+        totalTokens: 750,
+        cost: 0.005,
+        turnCount: 3,
+      });
+    });
+  });
+
+  // ── streamLogs stderr callback ───────────────────────────────────────────
+
+  describe("streamLogs stderr callback", () => {
+    it("logs container stderr output at warn level", async () => {
+      let capturedStderr: ((text: string) => void) | undefined;
+      const childLogger = makeMockLogger();
+      const parentLogger = { ...mockLogger, child: vi.fn().mockReturnValue(childLogger) };
+
+      const captureRuntime = createMockRuntime({
+        streamLogs: vi.fn().mockImplementation(
+          (_name: string, _onLine: (line: string) => void, onStderr: (text: string) => void) => {
+            capturedStderr = onStderr;
+            return { stop: vi.fn() };
+          }
+        ),
+      });
+      const runner = new ContainerAgentRunner(
+        captureRuntime, globalConfig, agentConfig, parentLogger as any,
+        vi.fn(), vi.fn(), "", "/tmp", "test-image:latest",
+      );
+
+      const runPromise = runner.run("test prompt");
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+
+      if (capturedStderr) {
+        capturedStderr("Error: something went wrong on stderr");
+      }
+      await runPromise;
+
+      expect(childLogger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ stderr: expect.stringContaining("something went wrong") }),
+        "container stderr",
+      );
+    });
+  });
+
+  // ── _aborting + non-zero exit code ───────────────────────────────────────
+
+  describe("run() with abort while container is running (exit code 1)", () => {
+    it("logs 'container killed (abort requested)' when _aborting is true and exit is non-zero", async () => {
+      let capturedOnLine: ((line: string) => void) | undefined;
+      let resolveLaunch!: (value: string) => void;
+      const childLogger = makeMockLogger();
+      const parentLogger = { ...mockLogger, child: vi.fn().mockReturnValue(childLogger) };
+
+      let resolveExit!: (code: number) => void;
+      const abortRuntime = createMockRuntime({
+        launch: vi.fn().mockImplementation(() => new Promise((r) => { resolveLaunch = r; })),
+        waitForExit: vi.fn().mockImplementation(() => new Promise((r) => { resolveExit = r; })),
+        streamLogs: vi.fn().mockImplementation((_name: string, onLine: (line: string) => void) => {
+          capturedOnLine = onLine;
+          return { stop: vi.fn() };
+        }),
+      });
+
+      const runner = new ContainerAgentRunner(
+        abortRuntime, globalConfig, agentConfig, parentLogger as any,
+        vi.fn(), vi.fn(), "", "/tmp", "test-image:latest",
+      );
+
+      const runPromise = runner.run("test prompt");
+      await Promise.resolve();
+      resolveLaunch("container-kill-test");
+
+      // Wait for the run to get past launch
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+
+      // Abort while running
+      runner.abort();
+      // Simulate container exiting non-zero after being killed
+      resolveExit(137);
+
+      const result = await runPromise;
+      expect(result.result).toBe("error");
+      expect(childLogger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ exitCode: 137 }),
+        "container killed (abort requested)",
+      );
+    });
+  });
+
+  // ── run() exception path ─────────────────────────────────────────────────
+
+  describe("run() when launch throws", () => {
+    it("returns 'error' result when runtime.launch throws", async () => {
+      const failRuntime = createMockRuntime({
+        launch: vi.fn().mockRejectedValue(new Error("Docker daemon not running")),
+      });
+      const runner = createRunner({ runtime: failRuntime });
+      const result = await runner.run("test prompt");
+      expect(result.result).toBe("error");
+    });
+
+    it("includes error message in the run outcome when launch throws", async () => {
+      const failRuntime = createMockRuntime({
+        launch: vi.fn().mockRejectedValue(new Error("out of disk space")),
+      });
+      const runner = createRunner({ runtime: failRuntime });
+      const result = await runner.run("test prompt");
+      // result.result is "error", no exception thrown
+      expect(result.result).toBe("error");
+    });
+  });
+
+  // ── pi_auth model skip in credential resolution ──────────────────────────
+
+  describe("run() with pi_auth model", () => {
+    it("skips adding credential ref for pi_auth models", async () => {
+      const piAuthConfig: AgentConfig = {
+        name: "pi-agent",
+        credentials: [],
+        models: [
+          { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "pi_auth" },
+        ],
+        schedule: "*/5 * * * *",
+      };
+      const runner = new ContainerAgentRunner(
+        runtime, globalConfig, piAuthConfig, mockLogger,
+        vi.fn(), vi.fn(), "", "/tmp", "test-image:latest",
+      );
+      const result = await runner.run("test prompt");
+      // Should complete successfully without attempting to add anthropic_key credential
+      expect(result.result).toBe("completed");
+      // prepareCredentials is called with empty credRefs (pi_auth skipped)
+      expect((runtime.prepareCredentials as any).mock.calls[0][0]).toEqual([]);
+    });
+  });
+
+  // ── telemetry context injection ──────────────────────────────────────────
+
+  describe("run() with active telemetry context", () => {
+    it("injects OTEL_TRACE_PARENT env var when telemetry provides an active context", async () => {
+      const mockTelemetryModule = await import("../../src/telemetry/index.js");
+
+      const mockTelemetryManager = {
+        getActiveContext: vi.fn().mockReturnValue("00-traceid-spanid-01"),
+        withSpan: vi.fn().mockImplementation((_name: string, fn: (span: any) => any) =>
+          fn({ setAttributes: vi.fn(), recordException: vi.fn(), setStatus: vi.fn(), end: vi.fn() })
+        ),
+      };
+
+      const getTelemetrySpy = vi.spyOn(mockTelemetryModule, "getTelemetry")
+        .mockReturnValue(mockTelemetryManager as any);
+
+      const runner = new ContainerAgentRunner(
+        runtime, globalConfig, agentConfig, mockLogger,
+        vi.fn(), vi.fn(), "", "/tmp", "test-image:latest",
+      );
+
+      await runner.run("test prompt");
+
+      getTelemetrySpy.mockRestore();
+
+      // The runtime.launch should have been called with env including OTEL_TRACE_PARENT
+      const launchCall = (runtime.launch as any).mock.calls[0][0];
+      expect(launchCall.env).toMatchObject({ OTEL_TRACE_PARENT: "00-traceid-spanid-01" });
+    });
+
+    it("injects OTEL_EXPORTER_OTLP_ENDPOINT when telemetry endpoint is configured", async () => {
+      const mockTelemetryModule = await import("../../src/telemetry/index.js");
+
+      const mockTelemetryManager = {
+        getActiveContext: vi.fn().mockReturnValue("00-traceid-spanid-02"),
+        withSpan: vi.fn().mockImplementation((_name: string, fn: (span: any) => any) =>
+          fn({ setAttributes: vi.fn(), recordException: vi.fn(), setStatus: vi.fn(), end: vi.fn() })
+        ),
+      };
+
+      const getTelemetrySpy = vi.spyOn(mockTelemetryModule, "getTelemetry")
+        .mockReturnValue(mockTelemetryManager as any);
+
+      const configWithTelemetry: GlobalConfig = {
+        telemetry: { enabled: true, endpoint: "http://localhost:4318", provider: "otlp" as any },
+      };
+
+      const runner = new ContainerAgentRunner(
+        runtime, configWithTelemetry, agentConfig, mockLogger,
+        vi.fn(), vi.fn(), "", "/tmp", "test-image:latest",
+      );
+
+      await runner.run("test prompt");
+
+      getTelemetrySpy.mockRestore();
+
+      const launchCall = (runtime.launch as any).mock.calls[0][0];
+      expect(launchCall.env).toMatchObject({
+        OTEL_TRACE_PARENT: "00-traceid-spanid-02",
+        OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4318",
+      });
+    });
+  });
 });
