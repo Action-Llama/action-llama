@@ -88,6 +88,7 @@ async function readEntriesForward(
   afterTime?: number,
   beforeTime?: number,
   instanceFilter?: string,
+  grep?: RegExp,
 ): Promise<{ entries: LogEntry[]; newOffset: number }> {
   try {
     const stat = await fs.stat(filePath);
@@ -108,6 +109,7 @@ async function readEntriesForward(
         if (afterTime && entry.time <= afterTime) continue;
         if (beforeTime && entry.time >= beforeTime) continue;
         if (instanceFilter && entry.instance !== instanceFilter) continue;
+        if (grep && !grep.test(JSON.stringify(entry))) continue;
         entries.push(entry);
       }
 
@@ -127,6 +129,7 @@ async function readLastEntries(
   afterTime?: number,
   beforeTime?: number,
   instanceFilter?: string,
+  grep?: RegExp,
 ): Promise<{ entries: LogEntry[]; byteOffset: number }> {
   try {
     const stat = await fs.stat(filePath);
@@ -161,6 +164,7 @@ async function readLastEntries(
           if (afterTime && entry.time <= afterTime) continue;
           if (beforeTime && entry.time >= beforeTime) continue;
           if (instanceFilter && entry.instance !== instanceFilter) continue;
+          if (grep && !grep.test(JSON.stringify(entry))) continue;
           entries.unshift(entry);
           if (entries.length > limit) entries.shift();
         }
@@ -170,7 +174,8 @@ async function readLastEntries(
         const entry = parseLine(remainder);
         if (entry) {
           const inRange = (!afterTime || entry.time > afterTime) && (!beforeTime || entry.time < beforeTime)
-            && (!instanceFilter || entry.instance === instanceFilter);
+            && (!instanceFilter || entry.instance === instanceFilter)
+            && (!grep || grep.test(JSON.stringify(entry)));
           if (inRange) {
             entries.unshift(entry);
             if (entries.length > limit) entries.shift();
@@ -197,14 +202,20 @@ function parseQueryParams(query: Record<string, string | undefined>) {
   const cursor = query.cursor || undefined;
   const after = query.after ? parseInt(query.after, 10) : undefined;
   const before = query.before ? parseInt(query.before, 10) : undefined;
+  const grep = query.grep || undefined;
 
-  return { lines, cursor, after: isNaN(after as number) ? undefined : after, before: isNaN(before as number) ? undefined : before };
+  return { lines, cursor, after: isNaN(after as number) ? undefined : after, before: isNaN(before as number) ? undefined : before, grep };
 }
 
 export function registerLogRoutes(app: Hono, projectPath: string): void {
   // ── Scheduler logs ────────────────────────────────────────────────────────
   app.get("/api/logs/scheduler", async (c) => {
-    const { lines, cursor, after, before } = parseQueryParams(c.req.query());
+    const { lines, cursor, after, before, grep } = parseQueryParams(c.req.query());
+    let grepRe: RegExp | undefined;
+    if (grep) {
+      try { grepRe = new RegExp(grep); }
+      catch { return c.json({ error: "Invalid grep pattern" }, 400); }
+    }
 
     if (cursor) {
       const parsed = decodeCursor(cursor);
@@ -216,7 +227,7 @@ export function registerLogRoutes(app: Hono, projectPath: string): void {
       const currentDate = dateFromLogFile(file);
       // If date rolled over, read from start of new file
       const offset = currentDate !== parsed.date ? 0 : parsed.offsets[0] || 0;
-      const { entries, newOffset } = await readEntriesForward(file, offset, lines, after, before);
+      const { entries, newOffset } = await readEntriesForward(file, offset, lines, after, before, undefined, grepRe);
       const newCursor = encodeCursor(currentDate || parsed.date, [newOffset]);
       return c.json({ entries, cursor: newCursor, hasMore: entries.length >= lines });
     }
@@ -224,7 +235,7 @@ export function registerLogRoutes(app: Hono, projectPath: string): void {
     const file = findLatestLogFile(projectPath, "scheduler");
     if (!file) return c.json({ entries: [], cursor: null, hasMore: false });
 
-    const { entries, byteOffset } = await readLastEntries(file, lines, after, before);
+    const { entries, byteOffset } = await readLastEntries(file, lines, after, before, undefined, grepRe);
     const date = dateFromLogFile(file) || "";
     const resCursor = encodeCursor(date, [byteOffset]);
     return c.json({ entries, cursor: resCursor, hasMore: false });
@@ -235,7 +246,12 @@ export function registerLogRoutes(app: Hono, projectPath: string): void {
     const name = c.req.param("name");
     if (!SAFE_AGENT_NAME.test(name)) return c.json({ error: "Invalid agent name" }, 400);
 
-    const { lines, cursor, after, before } = parseQueryParams(c.req.query());
+    const { lines, cursor, after, before, grep } = parseQueryParams(c.req.query());
+    let grepRe: RegExp | undefined;
+    if (grep) {
+      try { grepRe = new RegExp(grep); }
+      catch { return c.json({ error: "Invalid grep pattern" }, 400); }
+    }
 
     const file = findLatestLogFile(projectPath, name);
     if (!file) return c.json({ entries: [], cursor: null, hasMore: false });
@@ -245,12 +261,12 @@ export function registerLogRoutes(app: Hono, projectPath: string): void {
       if (!parsed) return c.json({ error: "Invalid cursor" }, 400);
       const currentDate = dateFromLogFile(file);
       const offset = currentDate !== parsed.date ? 0 : parsed.offsets[0] || 0;
-      const { entries, newOffset } = await readEntriesForward(file, offset, lines, after, before);
+      const { entries, newOffset } = await readEntriesForward(file, offset, lines, after, before, undefined, grepRe);
       const newCursor = encodeCursor(currentDate || parsed.date, [newOffset]);
       return c.json({ entries, cursor: newCursor, hasMore: entries.length >= lines });
     }
 
-    const { entries, byteOffset } = await readLastEntries(file, lines, after, before);
+    const { entries, byteOffset } = await readLastEntries(file, lines, after, before, undefined, grepRe);
     const date = dateFromLogFile(file) || "";
     return c.json({ entries, cursor: encodeCursor(date, [byteOffset]), hasMore: false });
   });
@@ -262,7 +278,12 @@ export function registerLogRoutes(app: Hono, projectPath: string): void {
     if (!SAFE_AGENT_NAME.test(name)) return c.json({ error: "Invalid agent name" }, 400);
     if (!SAFE_AGENT_NAME.test(instanceId)) return c.json({ error: "Invalid instance ID" }, 400);
 
-    const { lines, cursor, after, before } = parseQueryParams(c.req.query());
+    const { lines, cursor, after, before, grep } = parseQueryParams(c.req.query());
+    let grepRe: RegExp | undefined;
+    if (grep) {
+      try { grepRe = new RegExp(grep); }
+      catch { return c.json({ error: "Invalid grep pattern" }, 400); }
+    }
     const instanceFilter = instanceId;
 
     const file = findLatestLogFile(projectPath, name);
@@ -273,12 +294,12 @@ export function registerLogRoutes(app: Hono, projectPath: string): void {
       if (!parsed) return c.json({ error: "Invalid cursor" }, 400);
       const currentDate = dateFromLogFile(file);
       const offset = currentDate !== parsed.date ? 0 : parsed.offsets[0] || 0;
-      const { entries, newOffset } = await readEntriesForward(file, offset, lines, after, before, instanceFilter);
+      const { entries, newOffset } = await readEntriesForward(file, offset, lines, after, before, instanceFilter, grepRe);
       const newCursor = encodeCursor(currentDate || parsed.date, [newOffset]);
       return c.json({ entries, cursor: newCursor, hasMore: entries.length >= lines });
     }
 
-    const { entries, byteOffset } = await readLastEntries(file, lines, after, before, instanceFilter);
+    const { entries, byteOffset } = await readLastEntries(file, lines, after, before, instanceFilter, grepRe);
     const date = dateFromLogFile(file) || "";
     return c.json({ entries, cursor: encodeCursor(date, [byteOffset]), hasMore: false });
   });

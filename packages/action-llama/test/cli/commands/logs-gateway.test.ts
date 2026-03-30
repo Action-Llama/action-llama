@@ -182,4 +182,104 @@ describe("logs command — gateway path", () => {
       expect(output.some((l) => l.includes("Run completed"))).toBe(true);
     });
   });
+
+  // ── --after / --before passed as query params ────────────────────────────
+
+  describe("--after / --before forwarded to gateway", () => {
+    it("passes after as Unix timestamp query param", async () => {
+      let calledPath = "";
+      mockGatewayFetch.mockImplementation(async (opts: { path: string }) => {
+        calledPath = opts.path;
+        return { ok: true, json: async () => ({ entries: [], cursor: null, hasMore: false }) };
+      });
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", after: "2h" });
+      console.log = origLog;
+
+      expect(calledPath).toContain("after=");
+      // Verify it's a numeric Unix timestamp in the URL
+      const match = calledPath.match(/after=(\d+)/);
+      expect(match).not.toBeNull();
+      const ts = parseInt(match![1], 10);
+      // Should be roughly 2 hours ago (within 10 second tolerance)
+      expect(ts).toBeGreaterThan(Date.now() - 2 * 3_600_000 - 10_000);
+      expect(ts).toBeLessThan(Date.now() - 2 * 3_600_000 + 10_000);
+    });
+
+    it("passes before as Unix timestamp query param", async () => {
+      let calledPath = "";
+      mockGatewayFetch.mockImplementation(async (opts: { path: string }) => {
+        calledPath = opts.path;
+        return { ok: true, json: async () => ({ entries: [], cursor: null, hasMore: false }) };
+      });
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", before: "2025-03-28T12:00:00Z" });
+      console.log = origLog;
+
+      expect(calledPath).toContain("before=");
+      const match = calledPath.match(/before=(\d+)/);
+      expect(match).not.toBeNull();
+      expect(parseInt(match![1], 10)).toBe(new Date("2025-03-28T12:00:00Z").getTime());
+    });
+  });
+
+  // ── --grep forwarded to gateway + client-side filtering ──────────────────
+
+  describe("--grep with gateway", () => {
+    it("passes grep pattern as query param to gateway", async () => {
+      let calledPath = "";
+      mockGatewayFetch.mockImplementation(async (opts: { path: string }) => {
+        calledPath = opts.path;
+        return { ok: true, json: async () => ({ entries: [], cursor: null, hasMore: false }) };
+      });
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", grep: "deploy" });
+      console.log = origLog;
+
+      expect(calledPath).toContain("grep=deploy");
+    });
+
+    it("applies client-side grep filtering on entries returned by gateway", async () => {
+      const entries = [
+        makePinoEntry({ msg: "bash", cmd: "deploy to prod" }),
+        makePinoEntry({ msg: "bash", cmd: "echo hello" }),
+        makePinoEntry({ msg: "bash", cmd: "deploy to staging" }),
+      ];
+      mockGatewayFetch.mockResolvedValueOnce(makeGatewayResponse(entries));
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", grep: "deploy" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(2);
+      expect(output.every((l) => l.includes("deploy"))).toBe(true);
+    });
+
+    it("shows 'No log entries found' when grep filters out all entries", async () => {
+      const entries = [
+        makePinoEntry({ msg: "bash", cmd: "echo hello" }),
+      ];
+      mockGatewayFetch.mockResolvedValueOnce(makeGatewayResponse(entries));
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", grep: "deploy" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("No log entries found");
+    });
+  });
 });
