@@ -491,3 +491,135 @@ describe("POST /control/agents/:name/kill error paths", () => {
     expect(body.error).toContain("kill error");
   });
 });
+
+// ── scheduler pause/resume error handlers ─────────────────────────────────────
+
+describe("POST /control/pause error handler", () => {
+  it("returns 500 when pauseScheduler throws", async () => {
+    const { app } = setup({
+      pauseScheduler: vi.fn(async () => { throw new Error("pause exploded"); }),
+    });
+    const res = await app.request("/control/pause", { method: "POST" });
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toContain("pause exploded");
+  });
+});
+
+describe("POST /control/resume error handler", () => {
+  it("returns 500 when resumeScheduler throws", async () => {
+    const { app } = setup({
+      resumeScheduler: vi.fn(async () => { throw new Error("resume exploded"); }),
+    });
+    const res = await app.request("/control/resume", { method: "POST" });
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toContain("resume exploded");
+  });
+});
+
+// ── triggerAgent success with no instanceId ───────────────────────────────────
+
+describe("POST /control/trigger/:name — non-string non-object result", () => {
+  it("returns 200 when triggerAgent returns an object without instanceId", async () => {
+    // triggerAgent returns a generic object (not { instanceId } and not a string)
+    const { app } = setup({
+      triggerAgent: vi.fn(async () => ({ queued: true }) as any),
+    });
+    const res = await app.request("/control/trigger/agent-a", { method: "POST" });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.message).toContain("triggered");
+  });
+});
+
+// ── agent disable error handler ───────────────────────────────────────────────
+
+describe("POST /control/agents/:name/disable error handler", () => {
+  it("returns 500 when disableAgent throws", async () => {
+    const { app } = setup({
+      disableAgent: vi.fn(async () => { throw new Error("disable exploded"); }),
+    });
+    const res = await app.request("/control/agents/agent-a/disable", { method: "POST" });
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toContain("disable exploded");
+  });
+});
+
+// ── agent pause (alias for disable) error handler ────────────────────────────
+
+describe("POST /control/agents/:name/pause error handler", () => {
+  it("returns 500 when disableAgent throws during agent pause", async () => {
+    const { app } = setup({
+      disableAgent: vi.fn(async () => { throw new Error("pause-alias exploded"); }),
+    });
+    const res = await app.request("/control/agents/agent-a/pause", { method: "POST" });
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toContain("pause-alias exploded");
+  });
+});
+
+// ── agent resume (alias for enable) error handler ─────────────────────────────
+
+describe("POST /control/agents/:name/resume error handler", () => {
+  it("returns 500 when enableAgent throws during agent resume", async () => {
+    const { app } = setup({
+      enableAgent: vi.fn(async () => { throw new Error("resume-alias exploded"); }),
+    });
+    const res = await app.request("/control/agents/agent-a/resume", { method: "POST" });
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toContain("resume-alias exploded");
+  });
+});
+
+// ── GET /control/status without statusTracker ─────────────────────────────────
+
+describe("GET /control/status without statusTracker", () => {
+  it("returns 503 when statusTracker is not available", async () => {
+    const { app } = setup({ statusTracker: undefined });
+    const res = await app.request("/control/status");
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.error).toContain("not available");
+  });
+});
+
+// ── project scale update error handler ───────────────────────────────────────
+
+describe("POST /control/project/scale error handler", () => {
+  it("returns 500 when updateProjectScale throws", async () => {
+    const { app } = setup({
+      updateProjectScale: vi.fn(async () => { throw new Error("project scale exploded"); }),
+    });
+    const res = await app.request("/control/project/scale", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scale: 2 }),
+    });
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toContain("project scale exploded");
+  });
+});
+
+// ── agent scale update error handler ─────────────────────────────────────────
+
+describe("POST /control/agents/:name/scale error handler", () => {
+  it("returns 500 when updateAgentScale throws", async () => {
+    const { app } = setup({
+      updateAgentScale: vi.fn(async () => { throw new Error("agent scale exploded"); }),
+    });
+    const res = await app.request("/control/agents/agent-a/scale", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scale: 2 }),
+    });
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toContain("agent scale exploded");
+  });
+});
