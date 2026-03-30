@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { resolveWebhookSource, buildFilterFromTrigger, validateTriggerFields, resolveCredentialInstance, PROVIDER_CREDENTIALS, PROVIDER_TO_CREDENTIAL, PROVIDER_TO_SECRET_FIELD, KNOWN_PROVIDER_TYPES, registerWebhookBindings, setupWebhookRegistry } from "../../src/events/webhook-setup.js";
 import type { WebhookSourceConfig } from "../../src/shared/config.js";
+import * as twitterSubscribeMod from "../../src/webhooks/providers/twitter-subscribe.js";
 
 vi.mock("../../src/shared/credentials.js", () => ({
   listCredentialInstances: vi.fn().mockResolvedValue([]),
@@ -579,5 +580,174 @@ describe("registerWebhookBindings", () => {
     expect(registry.addBinding).toHaveBeenCalledOnce();
     const binding = registry.addBinding.mock.calls[0][0];
     expect(binding.source).toBe("my-cred");
+  });
+});
+
+// ─── buildFilterFromTrigger — assignee and author (GitHub + Linear) ────────
+
+describe("buildFilterFromTrigger — GitHub assignee and author filters", () => {
+  it("builds GitHub filter with assignee", () => {
+    const filter = buildFilterFromTrigger(
+      { source: "my-github", assignee: "alice" } as any,
+      "github"
+    );
+    expect(filter).toEqual({ assignee: "alice" });
+  });
+
+  it("builds GitHub filter with author", () => {
+    const filter = buildFilterFromTrigger(
+      { source: "my-github", author: "bob" } as any,
+      "github"
+    );
+    expect(filter).toEqual({ author: "bob" });
+  });
+
+  it("builds GitHub filter with all fields: assignee, author, labels, branches", () => {
+    const filter = buildFilterFromTrigger(
+      { source: "my-github", assignee: "alice", author: "bob", labels: ["bug"], branches: ["main"] } as any,
+      "github"
+    );
+    expect(filter).toEqual({ assignee: "alice", author: "bob", labels: ["bug"], branches: ["main"] });
+  });
+});
+
+describe("buildFilterFromTrigger — Linear filters", () => {
+  it("builds Linear filter with labels", () => {
+    const filter = buildFilterFromTrigger(
+      { source: "my-linear", labels: ["bug", "urgent"] } as any,
+      "linear"
+    );
+    expect(filter).toEqual({ labels: ["bug", "urgent"] });
+  });
+
+  it("builds Linear filter with assignee", () => {
+    const filter = buildFilterFromTrigger(
+      { source: "my-linear", assignee: "alice" } as any,
+      "linear"
+    );
+    expect(filter).toEqual({ assignee: "alice" });
+  });
+
+  it("builds Linear filter with author", () => {
+    const filter = buildFilterFromTrigger(
+      { source: "my-linear", author: "bob" } as any,
+      "linear"
+    );
+    expect(filter).toEqual({ author: "bob" });
+  });
+
+  it("returns undefined when no linear filter fields are set", () => {
+    const filter = buildFilterFromTrigger({ source: "my-linear" } as any, "linear");
+    expect(filter).toBeUndefined();
+  });
+
+  it("builds Linear filter with all supported fields", () => {
+    const filter = buildFilterFromTrigger(
+      { source: "my-linear", events: ["Issue"], actions: ["create"], organizations: ["acme"], labels: ["p0"], assignee: "alice", author: "bob" } as any,
+      "linear"
+    );
+    expect(filter).toEqual({ events: ["Issue"], actions: ["create"], organizations: ["acme"], labels: ["p0"], assignee: "alice", author: "bob" });
+  });
+});
+
+// ─── setupWebhookRegistry — Twitter auto-subscribe path ──────────────────
+
+describe("setupWebhookRegistry — Twitter auto-subscribe", () => {
+  const makeLogger = () => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    child: vi.fn().mockReturnThis(),
+  }) as any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockedListCredentialInstances.mockResolvedValue([]);
+    mockedLoadCredentialField.mockResolvedValue(undefined);
+  });
+
+  it("calls twitterAutoSubscribe when all required Twitter credentials are available", async () => {
+    const logger = makeLogger();
+    const mockedTwitterAutoSubscribe = vi.mocked(twitterSubscribeMod.twitterAutoSubscribe);
+
+    // Provide all required credentials for Twitter auto-subscribe
+    mockedLoadCredentialField.mockImplementation((_type, _inst, field) => {
+      const values: Record<string, string> = {
+        bearer_token: "bearer-abc",
+        access_token: "access-xyz",
+        refresh_token: "refresh-123",
+        client_id: "client-id-456",
+        client_secret: "client-secret-789",
+      };
+      return Promise.resolve(values[field]);
+    });
+
+    await setupWebhookRegistry(
+      {
+        webhooks: {
+          "my-twitter": { type: "twitter", x_twitter_api: "default", x_twitter_user_oauth2: "default" },
+        },
+      } as any,
+      logger
+    );
+
+    // Give the auto-subscribe promise time to settle
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(mockedTwitterAutoSubscribe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bearerToken: "bearer-abc",
+        oauth2AccessToken: "access-xyz",
+        oauth2ClientId: "client-id-456",
+        oauth2ClientSecret: "client-secret-789",
+      })
+    );
+  });
+
+  it("does NOT call twitterAutoSubscribe when bearer token is missing", async () => {
+    const logger = makeLogger();
+    const mockedTwitterAutoSubscribe = vi.mocked(twitterSubscribeMod.twitterAutoSubscribe);
+    mockedTwitterAutoSubscribe.mockClear();
+
+    // bearer_token is missing
+    mockedLoadCredentialField.mockImplementation((_type, _inst, field) => {
+      const values: Record<string, string> = {
+        access_token: "access-xyz",
+        client_id: "client-id-456",
+        client_secret: "client-secret-789",
+      };
+      return Promise.resolve(values[field] ?? undefined);
+    });
+
+    await setupWebhookRegistry(
+      {
+        webhooks: {
+          "my-twitter": { type: "twitter", x_twitter_api: "default", x_twitter_user_oauth2: "default" },
+        },
+      } as any,
+      logger
+    );
+
+    expect(mockedTwitterAutoSubscribe).not.toHaveBeenCalled();
+  });
+
+  it("skips secret loading for provider types with no credential mapping", async () => {
+    const logger = makeLogger();
+
+    // "test" type has no entry in PROVIDER_TO_CREDENTIAL, so credType is undefined → skip
+    const result = await setupWebhookRegistry(
+      {
+        webhooks: {
+          "my-test": { type: "test" },
+        },
+      } as any,
+      logger
+    );
+
+    // No secrets loaded (since test provider has no credential mapping)
+    expect(result.secrets).toEqual({});
+    // listCredentialInstances should not have been called for test provider
+    expect(mockedListCredentialInstances).not.toHaveBeenCalled();
   });
 });
