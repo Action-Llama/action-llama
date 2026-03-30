@@ -670,4 +670,177 @@ describe("StatusTracker", () => {
     const agent = tracker.getAllAgents()[0];
     expect(agent.state).toBe("building");
   });
+
+  it("completeBuild transitions agent from building to idle", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+
+    tracker.startBuild("dev", "image update");
+    expect(tracker.getAllAgents()[0].state).toBe("building");
+
+    tracker.completeBuild("dev");
+    const agent = tracker.getAllAgents()[0];
+    expect(agent.state).toBe("idle");
+  });
+
+  it("completeBuild fires agent:build-complete event and emits update", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.startBuild("dev");
+
+    const listener = vi.fn();
+    tracker.on("update", listener);
+
+    tracker.completeBuild("dev");
+    expect(listener).toHaveBeenCalled();
+  });
+
+  it("completeBuild is safe for unknown agent (guard return)", () => {
+    const tracker = new StatusTracker();
+    expect(() => tracker.completeBuild("nonexistent")).not.toThrow();
+  });
+
+  it("startBuild is safe for unknown agent (guard return)", () => {
+    const tracker = new StatusTracker();
+    expect(() => tracker.startBuild("nonexistent", "reason")).not.toThrow();
+  });
+
+  // ── guard returns for unknown agents ─────────────────────────────────────
+
+  it("startRun is safe for unknown agent", () => {
+    const tracker = new StatusTracker();
+    expect(() => tracker.startRun("nonexistent")).not.toThrow();
+    expect(tracker.getAllAgents()).toHaveLength(0);
+  });
+
+  it("endRun is safe for unknown agent", () => {
+    const tracker = new StatusTracker();
+    expect(() => tracker.endRun("nonexistent", 1000)).not.toThrow();
+    expect(tracker.getAllAgents()).toHaveLength(0);
+  });
+
+  it("setTaskUrl is safe for unknown agent", () => {
+    const tracker = new StatusTracker();
+    expect(() => tracker.setTaskUrl("nonexistent", "https://example.com")).not.toThrow();
+    expect(tracker.getAllAgents()).toHaveLength(0);
+  });
+
+  it("setAgentDescription is safe for unknown agent", () => {
+    const tracker = new StatusTracker();
+    expect(() => tracker.setAgentDescription("nonexistent", "some desc")).not.toThrow();
+    expect(tracker.getAllAgents()).toHaveLength(0);
+  });
+
+  it("setAgentError is safe for unknown agent", () => {
+    const tracker = new StatusTracker();
+    expect(() => tracker.setAgentError("nonexistent", "some error")).not.toThrow();
+    expect(tracker.getAllAgents()).toHaveLength(0);
+  });
+
+  it("setQueuedWebhooks is safe for unknown agent", () => {
+    const tracker = new StatusTracker();
+    expect(() => tracker.setQueuedWebhooks("nonexistent", 5)).not.toThrow();
+    expect(tracker.getAllAgents()).toHaveLength(0);
+  });
+
+  it("completeInstance is safe for unknown instance id", () => {
+    const tracker = new StatusTracker();
+    expect(() => tracker.completeInstance("nonexistent-instance", "completed")).not.toThrow();
+  });
+
+  it("updateAgentScale is safe for unknown agent", () => {
+    const tracker = new StatusTracker();
+    expect(() => tracker.updateAgentScale("nonexistent", 3)).not.toThrow();
+    expect(tracker.getAllAgents()).toHaveLength(0);
+  });
+
+  it("createInstance returns null for unknown agent", () => {
+    const tracker = new StatusTracker();
+    const result = tracker.createInstance("inst-1", "nonexistent", "schedule");
+    expect(result).toBeNull();
+  });
+
+  // ── AgentLifecycle event handlers wired in registerAgent ─────────────────
+
+  it("agent:build-complete event on lifecycle emits tracker update", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.startBuild("dev");
+
+    const listener = vi.fn();
+    tracker.on("update", listener);
+    listener.mockClear();
+
+    // Trigger agent:build-complete by completing the build through the lifecycle
+    const lifecycle = tracker.getAgentLifecycle("dev");
+    lifecycle!.completeBuild();
+
+    expect(listener).toHaveBeenCalled();
+  });
+
+  it("agent:error event on lifecycle emits tracker update", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+
+    const listener = vi.fn();
+    tracker.on("update", listener);
+    listener.mockClear();
+
+    const lifecycle = tracker.getAgentLifecycle("dev");
+    lifecycle!.setError("something went wrong");
+
+    expect(listener).toHaveBeenCalled();
+  });
+
+  it("agent:error-cleared event on lifecycle emits tracker update", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+
+    const lifecycle = tracker.getAgentLifecycle("dev");
+    lifecycle!.setError("initial error");
+
+    const listener = vi.fn();
+    tracker.on("update", listener);
+    listener.mockClear();
+
+    lifecycle!.clearError();
+
+    expect(listener).toHaveBeenCalled();
+  });
+
+  // ── instance lifecycle event handlers in createInstance ──────────────────
+
+  it("instance:error event on InstanceLifecycle emits tracker update", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+
+    const instanceLifecycle = tracker.createInstance("dev-err1", "dev", "schedule");
+    expect(instanceLifecycle).not.toBeNull();
+
+    instanceLifecycle!.start();
+
+    const listener = vi.fn();
+    tracker.on("update", listener);
+    listener.mockClear();
+
+    instanceLifecycle!.fail("container exited with code 1");
+
+    expect(listener).toHaveBeenCalled();
+  });
+
+  it("instance:kill event on InstanceLifecycle emits tracker update", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+
+    const instanceLifecycle = tracker.createInstance("dev-kill1", "dev", "schedule");
+    expect(instanceLifecycle).not.toBeNull();
+
+    const listener = vi.fn();
+    tracker.on("update", listener);
+    listener.mockClear();
+
+    instanceLifecycle!.kill("shutting down");
+
+    expect(listener).toHaveBeenCalled();
+  });
 });
