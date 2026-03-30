@@ -50,7 +50,7 @@ export class EventSourcedWorkQueue<T> implements WorkQueue<T> {
           state.enqueue({
             context: event.data.context,
             receivedAt: new Date(event.data.receivedAt),
-          });
+          }, event.data.workId);
           break;
         case EventTypes.WORK_DEQUEUED:
           state.dequeue(event.data.workId);
