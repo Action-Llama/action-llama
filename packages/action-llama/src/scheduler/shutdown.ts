@@ -8,6 +8,7 @@ import type { StateStore } from "../shared/state-store.js";
 import type { Logger } from "../shared/logger.js";
 import type { SchedulerContext } from "../execution/execution.js";
 import type { StatsStore } from "../stats/index.js";
+import type { AppDb } from "../db/connection.js";
 
 export function registerShutdownHandlers(deps: {
   logger: Logger;
@@ -16,10 +17,11 @@ export function registerShutdownHandlers(deps: {
   gateway?: GatewayServer;
   stateStore?: StateStore;
   statsStore?: StatsStore;
+  sharedDb?: AppDb;
   telemetry?: any;
   watcherHandle: { stop: () => void };
 }): void {
-  const { logger, schedulerCtx, cronJobs, gateway, stateStore, statsStore, telemetry, watcherHandle } = deps;
+  const { logger, schedulerCtx, cronJobs, gateway, stateStore, statsStore, sharedDb, telemetry, watcherHandle } = deps;
 
   const shutdown = async () => {
     logger.info("Shutting down scheduler...");
@@ -38,6 +40,12 @@ export function registerShutdownHandlers(deps: {
     }
     if (statsStore) {
       statsStore.close();
+    }
+    // Close the shared DB connection (after stores are done with it)
+    if (sharedDb) {
+      try {
+        (sharedDb as any).$client.close();
+      } catch {}
     }
 
     // Shutdown telemetry
