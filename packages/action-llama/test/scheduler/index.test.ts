@@ -305,7 +305,7 @@ describe("startScheduler", () => {
         running: 1,
         scale: 1,
       }),
-      "all runners busy, scheduled run queued"
+      "all runners busy, work queued"
     );
   });
 
@@ -549,7 +549,7 @@ describe("startScheduler", () => {
       expect(mockRun).not.toHaveBeenCalled();
       expect(mockLoggerInfo).not.toHaveBeenCalledWith(
         expect.objectContaining({ agent: "dev" }),
-        "all runners busy, scheduled run queued"
+        "all runners busy, work queued"
       );
     });
 

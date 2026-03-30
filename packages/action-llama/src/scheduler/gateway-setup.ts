@@ -139,28 +139,29 @@ export async function setupGateway(opts: {
         const config = agentConfigs.find((a) => a.name === name);
         if (!config) return `Agent "${name}" not found`;
         const pool = state.runnerPools[name];
-        if (!pool || !state.schedulerCtx) {
-          // Pools not ready yet (still building) — queue for later
+        const instanceId = `${name}-${randomBytes(4).toString("hex")}`;
+        if (pool && state.schedulerCtx) {
+          // Scheduler fully ready — try to get a runner, fall back to enqueue
+          const runner = pool.getAvailableRunner();
+          if (runner) {
+            logger.info({ agent: name, hasPrompt: !!prompt, instanceId }, "manual trigger via control API");
+            runWithReruns(runner, config, 0, state.schedulerCtx, prompt, instanceId).catch((err) => {
+              logger.error({ err, agent: name }, "manual trigger run failed");
+            });
+            return { instanceId };
+          }
+          // All runners busy — enqueue (pass undefined pool so tryRunOrEnqueue skips runner check)
           if (!state.workQueue) return "Scheduler is not ready";
           const { dropped } = state.workQueue.enqueue(name, { type: 'manual', prompt });
           if (dropped) logger.warn({ agent: name }, "queue full, oldest event dropped");
-          const instanceId = `${name}-${randomBytes(4).toString("hex")}`;
-          logger.info({ agent: name, hasPrompt: !!prompt, instanceId, queued: true }, "manual trigger queued (agents building)");
-          return { instanceId };
-        }
-        const runner = pool.getAvailableRunner();
-        if (!runner) {
-          const { dropped } = state.workQueue!.enqueue(name, { type: 'manual', prompt });
-          if (dropped) logger.warn({ agent: name }, "queue full, oldest event dropped");
-          const instanceId = `${name}-${randomBytes(4).toString("hex")}`;
           logger.info({ agent: name, hasPrompt: !!prompt, instanceId, queued: true }, "manual trigger queued (all runners busy)");
           return { instanceId };
         }
-        const instanceId = `${name}-${randomBytes(4).toString("hex")}`;
-        logger.info({ agent: name, hasPrompt: !!prompt, instanceId }, "manual trigger via control API");
-        runWithReruns(runner, config, 0, state.schedulerCtx, prompt, instanceId).catch((err) => {
-          logger.error({ err, agent: name }, "manual trigger run failed");
-        });
+        // Pools not ready yet (still building) — queue for later
+        if (!state.workQueue) return "Scheduler is not ready";
+        const { dropped } = state.workQueue.enqueue(name, { type: 'manual', prompt });
+        if (dropped) logger.warn({ agent: name }, "queue full, oldest event dropped");
+        logger.info({ agent: name, hasPrompt: !!prompt, instanceId, queued: true }, "manual trigger queued (agents building)");
         return { instanceId };
       },
       enableAgent: async (name: string) => {

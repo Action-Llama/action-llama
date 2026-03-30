@@ -12,6 +12,7 @@ import type { ContainerRegistration } from "./types.js";
 import type { Logger } from "../shared/logger.js";
 import { createLogger, createFileOnlyLogger } from "../shared/logger.js";
 import { RunnerPool, type PoolRunner } from "./runner-pool.js";
+import { enforceProjectScaleCap } from "../scheduler/policies/index.js";
 
 export interface RunnerSetupResult {
   runnerPools: Record<string, RunnerPool>;
@@ -67,58 +68,9 @@ export async function createRunnerPools(opts: RunnerSetupOpts): Promise<RunnerSe
     );
   };
 
-  // Enforce project-wide scale limit
+  // Enforce project-wide scale limit via policy module
   const defaultScale = globalConfig.defaultAgentScale ?? 1;
-  let totalScale = 0;
-  const adjustedConfigs = agentConfigs.map(config => ({ ...config }));
-
-  // Warn if defaultAgentScale * agentCount exceeds project scale cap
-  if (globalConfig.scale !== undefined && globalConfig.defaultAgentScale !== undefined) {
-    const totalRequested = agentConfigs.reduce(
-      (sum, c) => sum + (c.scale ?? defaultScale), 0
-    );
-    if (totalRequested > globalConfig.scale) {
-      logger.warn({
-        defaultAgentScale: globalConfig.defaultAgentScale,
-        agentCount: agentConfigs.length,
-        totalRequested,
-        projectScale: globalConfig.scale,
-      }, "Total requested agent scale (%d) exceeds project scale cap (%d) — agents will be throttled",
-        totalRequested, globalConfig.scale);
-    }
-  }
-
-  if (globalConfig.scale !== undefined) {
-    for (let i = 0; i < adjustedConfigs.length; i++) {
-      const config = adjustedConfigs[i];
-      const requestedScale = config.scale ?? defaultScale;
-      const remainingCapacity = globalConfig.scale - totalScale;
-
-      if (remainingCapacity <= 0) {
-        config.scale = 1; // Ensure at least 1 runner per agent
-        if (requestedScale > 1) {
-          logger.warn({
-            agent: config.name,
-            requested: requestedScale,
-            reduced: 1,
-            projectLimit: globalConfig.scale,
-          }, "Agent scale reduced due to project scale limit");
-        }
-        totalScale += 1;
-      } else if (requestedScale > remainingCapacity) {
-        config.scale = remainingCapacity;
-        logger.warn({
-          agent: config.name,
-          requested: requestedScale,
-          reduced: remainingCapacity,
-          projectLimit: globalConfig.scale,
-        }, "Agent scale reduced due to project scale limit");
-        totalScale += remainingCapacity;
-      } else {
-        totalScale += requestedScale;
-      }
-    }
-  }
+  const adjustedConfigs = enforceProjectScaleCap(agentConfigs, globalConfig, logger);
 
   const runnerPools: Record<string, RunnerPool> = {};
   const actualScales: Record<string, number> = {};
