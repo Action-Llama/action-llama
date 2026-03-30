@@ -14,6 +14,7 @@ import { randomUUID } from "crypto";
 import {
   mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync,
   chownSync, readFileSync, existsSync, createWriteStream,
+  readdirSync,
 } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -25,6 +26,48 @@ import { parseCredentialRef, getDefaultBackend } from "../shared/credentials.js"
 import { CONSTANTS } from "../shared/constants.js";
 
 const RUNS_DIR = join(tmpdir(), "al-runs");
+
+/** Metadata persisted alongside a running process for orphan recovery. */
+interface PidFileData {
+  pid: number;
+  agentName: string;
+  env: Record<string, string>;
+  startedAt: string;
+}
+
+function pidFilePath(runId: string): string {
+  return join(RUNS_DIR, `${runId}.pid`);
+}
+
+function writePidFile(runId: string, data: PidFileData): void {
+  try {
+    writeFileSync(pidFilePath(runId), JSON.stringify(data) + "\n", { mode: 0o644 });
+  } catch { /* best effort */ }
+}
+
+function readPidFile(runId: string): PidFileData | null {
+  try {
+    const content = readFileSync(pidFilePath(runId), "utf-8");
+    return JSON.parse(content.trim());
+  } catch {
+    return null;
+  }
+}
+
+function removePidFile(runId: string): void {
+  try {
+    rmSync(pidFilePath(runId));
+  } catch { /* best effort */ }
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** Resolve the UID for an OS user. Returns undefined if user doesn't exist. */
 function resolveUid(username: string): number | undefined {
@@ -79,11 +122,27 @@ export class HostUserRuntime implements Runtime {
     for (const [, name] of this.runAgentNames) {
       if (name === agentName) return true;
     }
+
+    // Check PID files for orphaned processes from a previous scheduler session
+    try {
+      if (!existsSync(RUNS_DIR)) return false;
+      const prefix = `al-${agentName}-`;
+      for (const f of readdirSync(RUNS_DIR)) {
+        if (!f.startsWith(prefix) || !f.endsWith(".pid")) continue;
+        const runId = f.slice(0, -4);
+        const data = readPidFile(runId);
+        if (data && isProcessAlive(data.pid)) return true;
+      }
+    } catch { /* best effort */ }
+
     return false;
   }
 
   async listRunningAgents(): Promise<RunningAgent[]> {
     const agents: RunningAgent[] = [];
+    const knownRunIds = new Set<string>();
+
+    // In-memory tracked processes (current scheduler session)
     for (const [runId, agentName] of this.runAgentNames) {
       if (this.processes.has(runId)) {
         agents.push({
@@ -92,8 +151,38 @@ export class HostUserRuntime implements Runtime {
           runtimeId: runId,
           status: "running",
         });
+        knownRunIds.add(runId);
       }
     }
+
+    // Scan PID files for orphaned processes from a previous scheduler session
+    try {
+      if (!existsSync(RUNS_DIR)) return agents;
+      for (const file of readdirSync(RUNS_DIR)) {
+        if (!file.endsWith(".pid")) continue;
+        const runId = file.slice(0, -4);
+        if (knownRunIds.has(runId)) continue;
+
+        const data = readPidFile(runId);
+        if (!data) {
+          removePidFile(runId);
+          continue;
+        }
+
+        if (isProcessAlive(data.pid)) {
+          agents.push({
+            agentName: data.agentName,
+            taskId: runId,
+            runtimeId: runId,
+            status: "running",
+            startedAt: new Date(data.startedAt),
+          });
+        } else {
+          removePidFile(runId);
+        }
+      }
+    } catch { /* best effort */ }
+
     return agents;
   }
 
@@ -244,6 +333,20 @@ export class HostUserRuntime implements Runtime {
     this.processes.set(runId, proc);
     this.runAgentNames.set(runId, opts.agentName);
 
+    // Write PID file for orphan recovery across scheduler restarts
+    if (proc.pid) {
+      writePidFile(runId, {
+        pid: proc.pid,
+        agentName: opts.agentName,
+        env: {
+          ...(opts.env.SHUTDOWN_SECRET ? { SHUTDOWN_SECRET: opts.env.SHUTDOWN_SECRET } : {}),
+          ...(opts.env.GATEWAY_URL ? { GATEWAY_URL: opts.env.GATEWAY_URL } : {}),
+          AL_CREDENTIALS_PATH: opts.credentials.stagingDir,
+        },
+        startedAt: new Date().toISOString(),
+      });
+    }
+
     // Clean up tracking on exit
     proc.on("exit", () => {
       // Flush any remaining partial stdout line
@@ -259,6 +362,7 @@ export class HostUserRuntime implements Runtime {
       this.processes.delete(runId);
       this.runAgentNames.delete(runId);
       this.logStreams.delete(runId);
+      removePidFile(runId);
     });
 
     return runId;
@@ -343,22 +447,42 @@ export class HostUserRuntime implements Runtime {
           proc.kill("SIGKILL");
         }
       }, 5000);
+      return;
+    }
+
+    // Orphan: kill via PID file
+    const data = readPidFile(runId);
+    if (data && isProcessAlive(data.pid)) {
+      try {
+        process.kill(data.pid, "SIGTERM");
+        // Escalate after grace period
+        setTimeout(() => {
+          try {
+            if (isProcessAlive(data.pid)) {
+              process.kill(data.pid, "SIGKILL");
+            }
+          } catch { /* process may have exited */ }
+          removePidFile(runId);
+        }, 5000);
+      } catch { /* process may have exited */ }
+    } else {
+      removePidFile(runId);
     }
   }
 
   async remove(runId: string): Promise<void> {
-    // Clean up working directory
+    // Clean up working directory and PID file
     const workDir = join(RUNS_DIR, runId);
     try {
       rmSync(workDir, { recursive: true, force: true });
     } catch { /* best effort */ }
+    removePidFile(runId);
   }
 
   async fetchLogs(agentName: string, limit: number): Promise<string[]> {
     // Read from log files in RUNS_DIR matching this agent
     try {
       if (!existsSync(RUNS_DIR)) return [];
-      const { readdirSync } = await import("fs");
       const files = readdirSync(RUNS_DIR)
         .filter(f => f.startsWith(`al-${agentName}-`) && f.endsWith(".log"))
         .sort()
@@ -391,7 +515,20 @@ export class HostUserRuntime implements Runtime {
     return null;
   }
 
-  async inspectContainer(): Promise<null> {
-    return null;
+  async inspectContainer(runId: string): Promise<{ env: Record<string, string> } | null> {
+    const data = readPidFile(runId);
+    if (!data) return null;
+    if (!isProcessAlive(data.pid)) {
+      removePidFile(runId);
+      return null;
+    }
+    return { env: data.env };
+  }
+
+  /** Terminate all tracked child processes (called during graceful shutdown). */
+  async shutdown(): Promise<void> {
+    for (const [, proc] of this.processes) {
+      try { proc.kill("SIGTERM"); } catch { /* best effort */ }
+    }
   }
 }

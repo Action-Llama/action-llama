@@ -273,4 +273,60 @@ describe("registerShutdownHandlers", () => {
     expect(ctx.shuttingDown).toBe(true);
     expect(processExitSpy).toHaveBeenCalledWith(0);
   });
+
+  it("calls runtime.shutdown() if runtime has shutdown method", async () => {
+    const ctx = makeSchedulerCtx();
+    const logger = makeLogger();
+    const runtime = { shutdown: vi.fn().mockResolvedValue(undefined) } as any;
+
+    registerShutdownHandlers({
+      logger,
+      schedulerCtx: ctx,
+      cronJobs: [],
+      watcherHandle: { stop: vi.fn() },
+      runtime,
+    });
+
+    await originalListeners["SIGINT"][0]();
+
+    expect(runtime.shutdown).toHaveBeenCalledOnce();
+    expect(processExitSpy).toHaveBeenCalledWith(0);
+  });
+
+  it("does not call shutdown on runtime without shutdown method", async () => {
+    const ctx = makeSchedulerCtx();
+    const logger = makeLogger();
+    const runtime = {} as any; // no shutdown method
+
+    registerShutdownHandlers({
+      logger,
+      schedulerCtx: ctx,
+      cronJobs: [],
+      watcherHandle: { stop: vi.fn() },
+      runtime,
+    });
+
+    // Should not throw
+    await expect(originalListeners["SIGINT"][0]()).resolves.toBeUndefined();
+    expect(processExitSpy).toHaveBeenCalledWith(0);
+  });
+
+  it("continues shutdown even if runtime.shutdown() throws", async () => {
+    const ctx = makeSchedulerCtx();
+    const logger = makeLogger();
+    const runtime = { shutdown: vi.fn().mockRejectedValue(new Error("shutdown error")) } as any;
+
+    registerShutdownHandlers({
+      logger,
+      schedulerCtx: ctx,
+      cronJobs: [],
+      watcherHandle: { stop: vi.fn() },
+      runtime,
+    });
+
+    await originalListeners["SIGINT"][0]();
+
+    expect(runtime.shutdown).toHaveBeenCalledOnce();
+    expect(processExitSpy).toHaveBeenCalledWith(0);
+  });
 });

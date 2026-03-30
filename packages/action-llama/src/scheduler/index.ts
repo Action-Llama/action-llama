@@ -248,7 +248,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // Graceful shutdown
   registerShutdownHandlers({
-    logger, schedulerCtx, cronJobs, gateway, stateStore, statsStore, sharedDb, telemetry, watcherHandle,
+    logger, schedulerCtx, cronJobs, gateway, stateStore, statsStore, sharedDb, telemetry, watcherHandle, runtime,
   });
 
   return { cronJobs, runnerPools, gateway, webhookRegistry, webhookUrls, statusTracker, schedulerCtx, events };
