@@ -247,7 +247,7 @@ export class SshDockerRuntime implements Runtime, ContainerRuntime {
       "--tmpfs", "/tmp:rw,exec,nosuid,uid=1000,gid=1000",
       "--cap-drop", "ALL",
       "--security-opt", "no-new-privileges:true",
-      "--pids-limit", "256",
+      "--pids-limit", String(CONSTANTS.CONTAINER_PIDS_LIMIT),
       "--memory", memory,
     ];
 

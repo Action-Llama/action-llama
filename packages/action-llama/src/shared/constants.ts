@@ -93,5 +93,8 @@ export const CONSTANTS = {
 
   /** Container group ID */
   CONTAINER_GID: 1000,
+
+  /** Max number of processes (PIDs) allowed inside an agent container */
+  CONTAINER_PIDS_LIMIT: 1024,
 } satisfies Record<string, string | number | ((...args: any[]) => string)>;
 
