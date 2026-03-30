@@ -25,7 +25,7 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 
 ## Lower Priority
 
-- [ ] Agent-to-agent communication — one agent triggers another via `al-rerun`
+- [x] Agent-to-agent communication — one agent triggers another via `al-rerun`
 - [x] Log streaming — verify `al logs` streams live output from running agents
 - [ ] Deployment with custom Dockerfile — push agent with custom Dockerfile, verify image build
 - [ ] Deployment upgrade path — deploy v1, upgrade to v2, verify agents restart with new code
