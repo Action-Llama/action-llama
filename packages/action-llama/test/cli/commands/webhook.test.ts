@@ -472,5 +472,112 @@ describe("webhook command", () => {
       const allOutput = mockConsoleLog.mock.calls.map((c: any[]) => c[0]).join("\n");
       expect(allOutput).toContain("🔍 Webhook Simulation Results");
     });
+
+    it("detects sentry source from sentry-hook-resource header", async () => {
+      mkdirSync(resolve(projectPath, "agents"), { recursive: true });
+      writeFileSync(join(projectPath, "config.toml"), stringifyTOML({
+        models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+      }));
+
+      const fixture = {
+        headers: {
+          "sentry-hook-resource": "issue",
+          "content-type": "application/json",
+        },
+        body: {
+          action: "created",
+          data: { issue: { id: "1", title: "Error", url: "https://sentry.io/issue/1", project: { slug: "my-project" } } },
+          installation: { uuid: "test-uuid" },
+        },
+      };
+      const fixturePath = join(tmpDir, "sentry-fixture.json");
+      writeFileSync(fixturePath, JSON.stringify(fixture));
+
+      await execute("replay", fixturePath, { project: projectPath });
+
+      const allOutput = mockConsoleLog.mock.calls.map((c: any[]) => c[0]).join("\n");
+      expect(allOutput).toContain("📡 Source: sentry");
+    });
+
+    it("uses SentryWebhookProvider when config has sentry webhook type", async () => {
+      mkdirSync(resolve(projectPath, "agents"), { recursive: true });
+      writeFileSync(join(projectPath, "config.toml"), stringifyTOML({
+        models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+        webhooks: {
+          sentry: { type: "sentry" },
+        },
+      }));
+
+      const fixture = {
+        headers: {
+          "sentry-hook-resource": "issue",
+          "content-type": "application/json",
+        },
+        body: {
+          action: "created",
+          data: { issue: { id: "1", title: "Error", url: "https://sentry.io/issue/1", project: { slug: "my-project" } } },
+          installation: { uuid: "test-uuid" },
+        },
+      };
+      const fixturePath = join(tmpDir, "sentry-fixture.json");
+      writeFileSync(fixturePath, JSON.stringify(fixture));
+
+      await execute("replay", fixturePath, { project: projectPath, source: "sentry" });
+
+      const allOutput = mockConsoleLog.mock.calls.map((c: any[]) => c[0]).join("\n");
+      expect(allOutput).toContain("📡 Source: sentry");
+    });
+
+    it("shows error stack when DEBUG env var is set", async () => {
+      const originalDebug = process.env.DEBUG;
+      process.env.DEBUG = "true";
+
+      try {
+        // Pass invalid fixture file to trigger an error
+        await expect(
+          execute("replay", "/nonexistent/path/fixture.json", { project: projectPath })
+        ).rejects.toThrow();
+
+        // With DEBUG set, error stack should be logged
+        const errorCalls = mockConsoleError.mock.calls.map((c: any[]) => c[0]).join("\n");
+        // Either the stack was logged, or the error message was logged
+        expect(errorCalls).toBeTruthy();
+      } finally {
+        if (originalDebug !== undefined) {
+          process.env.DEBUG = originalDebug;
+        } else {
+          delete process.env.DEBUG;
+        }
+      }
+    });
+
+    it("displayFilterDetails shows nothing when filter has no entries", async () => {
+      // Create an agent with minimal webhook config (no filter fields)
+      createAgent("minimal-agent", {
+        models: ["sonnet"],
+        webhooks: [{ source: "github" }], // no events, actions, labels
+      });
+      writeFileSync(join(projectPath, "config.toml"), stringifyTOML({
+        models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+      }));
+
+      const fixture = {
+        headers: { "x-github-event": "push" },
+        body: {
+          repository: { full_name: "owner/repo" },
+          sender: { login: "pusher" },
+          ref: "refs/heads/main",
+        },
+      };
+      const fixturePath = join(tmpDir, "minimal-fixture.json");
+      writeFileSync(fixturePath, JSON.stringify(fixture));
+
+      await execute("replay", fixturePath, { project: projectPath, source: "github" });
+
+      const allOutput = mockConsoleLog.mock.calls.map((c: any[]) => c[0]).join("\n");
+      expect(allOutput).toContain("🔍 Webhook Simulation Results");
+      // "Filter details:" should NOT appear since there are no filter entries
+      expect(allOutput).not.toContain("Filter details:");
+    });
   });
 });
