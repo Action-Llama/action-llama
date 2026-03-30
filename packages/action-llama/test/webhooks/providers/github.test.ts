@@ -486,4 +486,154 @@ describe("GitHubWebhookProvider", () => {
       expect(provider.matchesFilter(failedWorkflow, successFilter)).toBe(false);
     });
   });
+
+  describe("getDeliveryId", () => {
+    it("returns the x-github-delivery header value", () => {
+      expect(provider.getDeliveryId({ "x-github-delivery": "abc-123" })).toBe("abc-123");
+    });
+
+    it("returns null when x-github-delivery header is missing", () => {
+      expect(provider.getDeliveryId({})).toBeNull();
+      expect(provider.getDeliveryId({ "x-other-header": "value" })).toBeNull();
+    });
+  });
+
+  describe("parseEvent edge cases", () => {
+    it("returns null for issues event when body.issue is missing", () => {
+      const result = provider.parseEvent(
+        { "x-github-event": "issues" },
+        {
+          action: "labeled",
+          repository: { full_name: "acme/app" },
+          sender: { login: "user1" },
+          // issue field intentionally omitted
+        }
+      );
+      expect(result).toBeNull();
+    });
+
+    it("returns null for pull_request event when body.pull_request is missing", () => {
+      const result = provider.parseEvent(
+        { "x-github-event": "pull_request" },
+        {
+          action: "opened",
+          repository: { full_name: "acme/app" },
+          sender: { login: "user1" },
+          // pull_request field intentionally omitted
+        }
+      );
+      expect(result).toBeNull();
+    });
+
+    it("returns null for issue_comment event when comment is missing", () => {
+      const result = provider.parseEvent(
+        { "x-github-event": "issue_comment" },
+        {
+          action: "created",
+          repository: { full_name: "acme/app" },
+          sender: { login: "user1" },
+          issue: { number: 1, title: "test", user: { login: "a" }, labels: [] },
+          // comment field intentionally omitted
+        }
+      );
+      expect(result).toBeNull();
+    });
+
+    it("returns null for issue_comment event when issue is missing", () => {
+      const result = provider.parseEvent(
+        { "x-github-event": "issue_comment" },
+        {
+          action: "created",
+          repository: { full_name: "acme/app" },
+          sender: { login: "user1" },
+          comment: { body: "A comment", html_url: "https://github.com/acme/app/issues/1#comment-1" },
+          // issue field intentionally omitted
+        }
+      );
+      expect(result).toBeNull();
+    });
+
+    it("handles issue_comment event with undefined labels on issue", () => {
+      const result = provider.parseEvent(
+        { "x-github-event": "issue_comment" },
+        {
+          action: "created",
+          repository: { full_name: "acme/app" },
+          sender: { login: "user1" },
+          issue: {
+            number: 5,
+            title: "Some issue",
+            user: { login: "author" },
+            // labels intentionally omitted (undefined)
+          },
+          comment: {
+            body: "A comment",
+            html_url: "https://github.com/acme/app/issues/5#comment-1",
+          },
+        }
+      );
+      expect(result).not.toBeNull();
+      expect(result!.labels).toEqual([]);
+    });
+
+    it("returns null for pull_request_review event when pull_request is missing", () => {
+      const result = provider.parseEvent(
+        { "x-github-event": "pull_request_review" },
+        {
+          action: "submitted",
+          repository: { full_name: "acme/app" },
+          sender: { login: "reviewer" },
+          review: { body: "LGTM", html_url: "https://github.com" },
+          // pull_request intentionally omitted
+        }
+      );
+      expect(result).toBeNull();
+    });
+
+    it("returns null for pull_request_review event when review is missing", () => {
+      const result = provider.parseEvent(
+        { "x-github-event": "pull_request_review" },
+        {
+          action: "submitted",
+          repository: { full_name: "acme/app" },
+          sender: { login: "reviewer" },
+          pull_request: { number: 1, title: "PR", user: { login: "a" }, head: { ref: "main" } },
+          // review intentionally omitted
+        }
+      );
+      expect(result).toBeNull();
+    });
+
+    it("returns null for workflow_run event when workflow_run body field is missing", () => {
+      const result = provider.parseEvent(
+        { "x-github-event": "workflow_run" },
+        {
+          action: "completed",
+          repository: { full_name: "acme/app" },
+          sender: { login: "user1" },
+          // workflow_run field intentionally omitted
+        }
+      );
+      expect(result).toBeNull();
+    });
+
+    it("uses pusher name as author fallback in push event when head_commit has no author username", () => {
+      const result = provider.parseEvent(
+        { "x-github-event": "push" },
+        {
+          ref: "refs/heads/main",
+          repository: { full_name: "acme/app" },
+          sender: { login: "user1" },
+          compare: "https://github.com/acme/app/compare/abc...def",
+          head_commit: {
+            message: "fix: bug",
+            author: { name: "John Doe" }, // no username field
+          },
+          pusher: { name: "johndoe" },
+        }
+      );
+      expect(result).not.toBeNull();
+      expect(result!.author).toBe("johndoe");
+    });
+  });
 });
