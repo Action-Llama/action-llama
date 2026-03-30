@@ -243,6 +243,47 @@ describe("RunnerPool", () => {
     });
   });
 
+  describe("shrinkTo", () => {
+    it("removes idle runners until pool reaches target size", () => {
+      pool = new RunnerPool([runner1, runner2, runner3] as any[]);
+      expect(pool.size).toBe(3);
+
+      const removed = pool.shrinkTo(1);
+      expect(removed).toBe(2);
+      expect(pool.size).toBe(1);
+    });
+
+    it("returns 0 when pool is already at or below target size", () => {
+      pool = new RunnerPool([runner1, runner2] as any[]);
+      const removed = pool.shrinkTo(3);
+      expect(removed).toBe(0);
+      expect(pool.size).toBe(2);
+    });
+
+    it("stops shrinking when all remaining runners are busy", () => {
+      runner1.isRunning = true;
+      runner2.isRunning = false;
+      runner3.isRunning = false;
+      pool = new RunnerPool([runner1, runner2, runner3] as any[]);
+
+      // shrinkTo(2) should remove one idle runner (runner3 or runner2)
+      const removed = pool.shrinkTo(2);
+      expect(removed).toBe(1);
+      expect(pool.size).toBe(2);
+    });
+
+    it("cannot shrink below running runners count when all are busy", () => {
+      runner1.isRunning = true;
+      runner2.isRunning = true;
+      pool = new RunnerPool([runner1, runner2] as any[]);
+
+      // All busy — shrinkTo(0) can't remove any
+      const removed = pool.shrinkTo(0);
+      expect(removed).toBe(0);
+      expect(pool.size).toBe(2);
+    });
+  });
+
   describe("single runner pool", () => {
     beforeEach(() => {
       pool = new RunnerPool([runner1]);
