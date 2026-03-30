@@ -1,26 +1,20 @@
 import { readFileSync, existsSync, rmSync } from "fs";
 import { spawnSync } from "child_process";
-import { getModel } from "@mariozechner/pi-ai";
 import {
-  AuthStorage,
-  createAgentSession,
   DefaultResourceLoader,
-  SessionManager,
   SettingsManager,
-  createCodingTools,
 } from "@mariozechner/pi-coding-agent";
-import { ModelCircuitBreaker, selectAvailableModels, isRateLimitError } from "./model-fallback.js";
+import { ModelCircuitBreaker } from "./model-fallback.js";
 import type { AgentConfig } from "../shared/config.js";
 import { getExitCodeMessage } from "../shared/exit-codes.js";
 import { ensureSignalDir, readSignals } from "./signals.js";
-import { BASH_COMMAND_PREFIX } from "./bash-prefix.js";
 import { runHooks } from "../hooks/runner.js";
 import { processContextInjection } from "./context-injection.js";
 import { parseFrontmatter } from "../shared/frontmatter.js";
 import { initTelemetry } from "../telemetry/index.js";
 import type { TelemetryConfig } from "../telemetry/types.js";
-import { sessionStatsToUsage } from "../shared/usage.js";
 import { loadContainerCredentials } from "./credential-setup.js";
+import { runSessionLoop } from "./session-loop.js";
 
 // Structured log line — written to stdout, parsed by ContainerAgentRunner on the host
 function emitLog(level: string, msg: string, data?: Record<string, any>) {
@@ -241,172 +235,22 @@ export async function handleInvocation(init: AgentInit): Promise<number> {
     fullPrompt = envPrompt;
   }
 
-  const UNRECOVERABLE_PATTERNS = [
-    "permission denied",
-    "could not read from remote repository",
-    "resource not accessible by personal access token",
-    "bad credentials",
-    "authentication failed",
-    "the requested url returned error: 403",
-    "denied to ",
-  ];
-  const isUnrecoverableError = (text: string) =>
-    UNRECOVERABLE_PATTERNS.some((p) => text.toLowerCase().includes(p));
-  const UNRECOVERABLE_THRESHOLD = 3;
-
-  // Mirror the host-mode AgentRunner's session event logging
-  const pendingCmds = new Map<string, string>();
-  let outputText = "";
-  let currentTurnText = "";
-  let eventCount = 0;
-  let unrecoverableErrors = 0;
-  let abortedDueToErrors = false;
-
   // Fresh circuit breaker per container — each run tries from the top
   const containerBreaker = new ModelCircuitBreaker();
 
-  // Model fallback loop
-  const MAX_PASSES = 3;
-  const DEFAULT_BACKOFF_MS = 30_000;
-  const MAX_BACKOFF_MS = 300_000;
-  let promptResult: any;
-
-  for (let pass = 0; pass <= MAX_PASSES; pass++) {
-    const availableModels = selectAvailableModels(agentConfig.models, containerBreaker);
-    let modelSucceeded = false;
-
-    for (const modelConfig of availableModels) {
-      const llmModel = getModel(modelConfig.provider as any, modelConfig.model as any);
-      const modelThinking = modelConfig.thinkingLevel;
-
-      emitLog("info", "creating agent session", { model: modelConfig.model, thinking: modelThinking });
-
-      const authStorage = AuthStorage.create();
-      const providerKey = providerKeys.get(modelConfig.provider);
-      if (providerKey) {
-        authStorage.setRuntimeApiKey(modelConfig.provider, providerKey);
-      }
-
-      const { session } = await createAgentSession({
-        cwd,
-        model: llmModel,
-        thinkingLevel: modelThinking,
-        authStorage,
-        resourceLoader,
-        tools: createCodingTools(cwd, {
-          bash: { commandPrefix: BASH_COMMAND_PREFIX },
-        }),
-        sessionManager: SessionManager.inMemory(),
-        settingsManager,
-      });
-
-      session.subscribe((event) => {
-        eventCount++;
-        if (event.type !== "message_update") {
-          const extra: Record<string, any> = { type: event.type, eventCount };
-          if (event.type === "message_start" || event.type === "message_end") {
-            extra.role = (event as any).role || (event as any).message?.role;
-            extra.content = JSON.stringify((event as any).content || (event as any).message?.content || []).slice(0, 500);
-            extra.stopReason = (event as any).stopReason || (event as any).stop_reason;
-          }
-          if (event.type === "turn_end") {
-            extra.turnResult = JSON.stringify(event).slice(0, 500);
-          }
-          emitLog("debug", "event", extra);
-        }
-        if ((event as any).type === "error") {
-          emitLog("error", "session error", { error: String((event as any).error || (event as any).message || JSON.stringify(event)) });
-        }
-        if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
-          const delta = event.assistantMessageEvent.delta;
-          outputText += delta;
-          currentTurnText += delta;
-        }
-        if (event.type === "message_end") {
-          if (currentTurnText.trim()) {
-            emitLog("info", "assistant", { text: currentTurnText.trim() });
-          }
-          currentTurnText = "";
-        }
-        if (event.type === "tool_execution_start") {
-          const cmd = String(event.args?.command || "");
-          if (event.toolName === "bash") {
-            pendingCmds.set(event.toolCallId, cmd);
-            emitLog("info", "bash", { cmd: cmd.slice(0, 200) });
-          } else {
-            emitLog("debug", "tool start", { tool: event.toolName });
-          }
-        }
-        if (event.type === "tool_execution_end") {
-          const resultStr = typeof event.result === "string"
-            ? event.result
-            : JSON.stringify(event.result);
-          const originCmd = pendingCmds.get(event.toolCallId);
-          pendingCmds.delete(event.toolCallId);
-
-          if (event.isError) {
-            emitLog("error", "tool error", { tool: event.toolName, cmd: originCmd?.slice(0, 200), result: resultStr.slice(0, 1000) });
-            let errorMsg = resultStr;
-            try {
-              const parsed = JSON.parse(resultStr);
-              if (parsed?.content?.[0]?.text) errorMsg = parsed.content[0].text;
-            } catch { /* use raw string */ }
-            if (isUnrecoverableError(errorMsg)) {
-              unrecoverableErrors++;
-              if (unrecoverableErrors >= UNRECOVERABLE_THRESHOLD) {
-                emitLog("error", "Aborting: repeated auth/permission failures — check credentials");
-                abortedDueToErrors = true;
-                session.dispose();
-              }
-            }
-          } else {
-            emitLog("debug", "tool done", { tool: event.toolName, resultLength: resultStr.length });
-          }
-        }
-      });
-
-      try {
-        promptResult = await session.prompt(fullPrompt);
-        containerBreaker.recordSuccess(modelConfig.provider, modelConfig.model);
-
-        emitLog("info", "prompt returned", { eventCount, resultType: typeof promptResult, resultKeys: promptResult ? Object.keys(promptResult) : [] });
-
-        const sessionStats = session.getSessionStats();
-        const usage = sessionStatsToUsage(sessionStats);
-        emitLog("info", "token-usage", {
-          inputTokens: usage.inputTokens,
-          outputTokens: usage.outputTokens,
-          cacheReadTokens: usage.cacheReadTokens,
-          cacheWriteTokens: usage.cacheWriteTokens,
-          totalTokens: usage.totalTokens,
-          cost: usage.cost,
-          turnCount: usage.turnCount,
-        });
-
-        session.dispose();
-        modelSucceeded = true;
-        break;
-      } catch (promptErr: any) {
-        const msg = String(promptErr?.message || promptErr || "");
-        if (isRateLimitError(msg)) {
-          containerBreaker.recordFailure(modelConfig.provider, modelConfig.model);
-          emitLog("warn", "rate limited, trying next model", { provider: modelConfig.provider, model: modelConfig.model });
-          session.dispose();
-          continue;
-        }
-        session.dispose();
-        throw promptErr;
-      }
-    }
-
-    if (modelSucceeded) break;
-
-    if (pass < MAX_PASSES) {
-      const delayMs = Math.min(DEFAULT_BACKOFF_MS * Math.pow(2, pass), MAX_BACKOFF_MS);
-      emitLog("warn", "all models exhausted, backing off", { pass: pass + 1, delayMs });
-      await new Promise((r) => setTimeout(r, delayMs));
-    }
-  }
+  // Run the shared model-fallback + session loop
+  let abortedDueToErrors = false;
+  const loopResult = await runSessionLoop(fullPrompt, {
+    models: agentConfig.models,
+    circuitBreaker: containerBreaker,
+    cwd,
+    resourceLoader,
+    settingsManager,
+    providerKeys,
+    log: emitLog,
+    onUnrecoverableAbort: () => { abortedDueToErrors = true; },
+  });
+  const { outputText } = loopResult;
 
   clearTimeout(timer);
 

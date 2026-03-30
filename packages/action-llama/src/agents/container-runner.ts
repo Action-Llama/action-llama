@@ -4,7 +4,7 @@ import type { Logger } from "../shared/logger.js";
 import type { Runtime, RuntimeCredentials } from "../docker/runtime.js";
 import type { ContainerRegistration } from "../execution/types.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
-import type { RunResult, RunOutcome } from "./runner.js";
+import type { RunResult, RunOutcome } from "./types.js";
 import { DEFAULT_AGENT_TIMEOUT } from "../shared/constants.js";
 import { withSpan, getTelemetry } from "../telemetry/index.js";
 import { SpanKind } from "@opentelemetry/api";
@@ -138,6 +138,116 @@ export class ContainerAgentRunner {
   }
 
   /**
+   * Monitor a running container: stream logs, wait for exit, interpret the
+   * exit code, and clean up. Called by both _runInternalContainer (after
+   * launch) and adoptContainer (skipping launch).
+   *
+   * Returns { runResult, runError } and handles all gateway/credential/
+   * container cleanup in its finally block.
+   */
+  private async monitorContainer(opts: {
+    containerName: string;
+    shutdownSecret: string;
+    timeout: number;
+    credentials?: RuntimeCredentials;
+    logPrefix?: string;
+    parentSpan?: any;
+  }): Promise<{ runResult: RunResult; runError: string | undefined }> {
+    const { containerName, shutdownSecret, timeout, credentials, logPrefix, parentSpan } = opts;
+    let runError: string | undefined;
+    let runResult: RunResult = "error";
+    let logStream: { stop: () => void } | undefined;
+
+    try {
+      // Register container with gateway for shutdown, locking, and log ingestion.
+      if (this.gatewayUrl) {
+        await this.registerContainer(shutdownSecret, {
+          containerName,
+          agentName: this.agentConfig.name,
+          instanceId: this.instanceId,
+        });
+      }
+
+      // Stream logs in real-time via runtime
+      logStream = this.runtime.streamLogs(
+        containerName,
+        (line) => this.forwardLogLine(line),
+        (text) => this.logger.warn({ stderr: text.slice(0, 500) }, "container stderr"),
+      );
+
+      const startTime = Date.now();
+      const exitCode = await this.runtime.waitForExit(containerName, timeout);
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+      // Give the log stream a moment to flush
+      await new Promise((r) => setTimeout(r, 500));
+      logStream.stop();
+      logStream = undefined;
+
+      if (exitCode === 42) {
+        runResult = "rerun";
+        this.logger.info({ exitCode, elapsed: `${elapsed}s` }, `${logPrefix ?? "container"} finished (rerun requested)`);
+      } else if (exitCode !== 0) {
+        if (this._aborting) {
+          this.logger.info({ exitCode, elapsed: `${elapsed}s` }, `${logPrefix ?? "container"} killed (abort requested)`);
+        } else {
+          this.logger.error({ exitCode, elapsed: `${elapsed}s` }, `${logPrefix ?? "container"} exited with error`);
+        }
+        runError = `Container exited with code ${exitCode}`;
+        runResult = "error";
+      } else {
+        runResult = "completed";
+        this.logger.info({ exitCode, elapsed: `${elapsed}s` }, `${logPrefix ?? "container"} finished`);
+      }
+      this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} ${runResult} (${elapsed}s)`);
+    } catch (err: any) {
+      this.logger.error({ err }, `${this.agentConfig.name} container monitoring failed`);
+      runError = String(err?.message || err).slice(0, 200);
+    } finally {
+      if (logStream) logStream.stop();
+      if (this.gatewayUrl) {
+        await this.unregisterContainer(shutdownSecret);
+      }
+      if (credentials) {
+        this.runtime.cleanupCredentials(credentials);
+      }
+      if (containerName) {
+        await this.runtime.remove(containerName);
+      }
+      this._containerName = undefined;
+
+      // Add telemetry attributes for the execution result
+      if (parentSpan) {
+        const attrs: Record<string, any> = {
+          "execution.result": runResult,
+          "execution.has_return_value": !!this._returnValue,
+          "container.name": containerName || "",
+        };
+
+        // Add token usage OTel attributes if available
+        if (this._tokenUsage) {
+          const usage = this._tokenUsage as TokenUsage;
+          attrs["llm.token.input"] = usage.inputTokens;
+          attrs["llm.token.output"] = usage.outputTokens;
+          attrs["llm.token.cache_read"] = usage.cacheReadTokens;
+          attrs["llm.token.cache_write"] = usage.cacheWriteTokens;
+          attrs["llm.token.total"] = usage.totalTokens;
+          attrs["llm.cost.total"] = usage.cost;
+          attrs["llm.turns"] = usage.turnCount;
+        }
+
+        parentSpan.setAttributes(attrs);
+
+        if (runResult === "error") {
+          parentSpan.recordException(new Error(`Container execution failed: ${runError || "Unknown error"}`));
+        }
+      }
+    }
+
+    return { runResult, runError };
+  }
+
+  /**
    * Adopt an already-running container from a previous scheduler session.
    * Re-attaches log streaming, monitors exit, and records the result.
    * Skips image launch, credential preparation, and env setup.
@@ -162,8 +272,6 @@ export class ContainerAgentRunner {
     this.logger = this.baseLogger.child({ instance: this.instanceId });
 
     const runStartTime = Date.now();
-    let runError: string | undefined;
-    let runResult: RunResult = "error";
 
     this.statusTracker?.startRun(this.agentConfig.name, "re-adopted");
     this.statusTracker?.registerInstance({
@@ -174,68 +282,23 @@ export class ContainerAgentRunner {
       trigger: "re-adopted",
     });
 
-    let logStream: { stop: () => void } | undefined;
+    this.logger.info({ container: containerName }, "re-adopted orphan container");
+    this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} re-adopted`);
 
-    try {
-      const timeout = this.agentConfig.timeout ?? this.globalConfig.local?.timeout ?? DEFAULT_AGENT_TIMEOUT;
+    const timeout = this.agentConfig.timeout ?? this.globalConfig.local?.timeout ?? DEFAULT_AGENT_TIMEOUT;
 
-      // Re-register with gateway so locks/shutdown/calls route correctly
-      if (this.gatewayUrl) {
-        await this.registerContainer(shutdownSecret, {
-          containerName,
-          agentName: this.agentConfig.name,
-          instanceId: this.instanceId,
-        });
-      }
+    const { runResult, runError } = await this.monitorContainer({
+      containerName,
+      shutdownSecret,
+      timeout,
+      logPrefix: "adopted container",
+    });
 
-      this.logger.info({ container: containerName }, "re-adopted orphan container");
-      this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} re-adopted`);
-
-      // Re-attach log streaming
-      logStream = this.runtime.streamLogs(
-        containerName,
-        (line) => this.forwardLogLine(line),
-        (text) => this.logger.warn({ stderr: text.slice(0, 500) }, "container stderr"),
-      );
-
-      // Wait for exit
-      const startTime = Date.now();
-      const exitCode = await this.runtime.waitForExit(containerName, timeout);
-      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-
-      // Give the log stream a moment to flush
-      await new Promise((r) => setTimeout(r, 500));
-      logStream.stop();
-      logStream = undefined;
-
-      if (exitCode === 42) {
-        runResult = "rerun";
-      } else if (exitCode !== 0) {
-        runError = `Container exited with code ${exitCode}`;
-        runResult = "error";
-      } else {
-        runResult = "completed";
-      }
-      this.logger.info({ exitCode, elapsed: `${elapsed}s` }, `adopted container finished (${runResult})`);
-      this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} ${runResult} (${elapsed}s)`);
-    } catch (err: any) {
-      this.logger.error({ err }, "adopted container monitoring failed");
-      runError = String(err?.message || err).slice(0, 200);
-    } finally {
-      if (logStream) logStream.stop();
-      if (this.gatewayUrl) {
-        await this.unregisterContainer(shutdownSecret);
-      }
-      if (containerName) {
-        await this.runtime.remove(containerName);
-      }
-      this._containerName = undefined;
-      const elapsed = Date.now() - runStartTime;
-      const instanceStatus = this._aborting ? "killed" as const : runError ? "error" as const : "completed" as const;
-      this.statusTracker?.completeInstance(this.instanceId, instanceStatus);
-      this.statusTracker?.endRun(this.agentConfig.name, elapsed, runError, this._tokenUsage);
-      this._running = false;
-    }
+    const elapsed = Date.now() - runStartTime;
+    const instanceStatus = this._aborting ? "killed" as const : runError ? "error" as const : "completed" as const;
+    this.statusTracker?.completeInstance(this.instanceId, instanceStatus);
+    this.statusTracker?.endRun(this.agentConfig.name, elapsed, runError, this._tokenUsage);
+    this._running = false;
 
     return { result: runResult, triggers: [], returnValue: this._returnValue, usage: this._tokenUsage };
   }
@@ -309,7 +372,6 @@ export class ContainerAgentRunner {
     const shutdownSecret = randomUUID();
     let credentials: RuntimeCredentials | undefined;
     let containerName: string | undefined;
-    let logStream: { stop: () => void } | undefined;
 
     try {
       const timeout = this.agentConfig.timeout ?? this.globalConfig.local?.timeout ?? DEFAULT_AGENT_TIMEOUT;
@@ -363,15 +425,6 @@ export class ContainerAgentRunner {
       });
       this._containerName = containerName;
 
-      // Register container with gateway for shutdown, locking, and log ingestion.
-      if (this.gatewayUrl) {
-        await this.registerContainer(shutdownSecret, {
-          containerName,
-          agentName: this.agentConfig.name,
-          instanceId: this.instanceId,
-        });
-      }
-
       // Set cloud console URL for TUI display
       const taskUrl = this.runtime.getTaskUrl(containerName);
       if (taskUrl) {
@@ -380,87 +433,34 @@ export class ContainerAgentRunner {
 
       this.logger.info({ container: containerName }, "container launched");
 
-      // Stream logs in real-time via runtime
-      logStream = this.runtime.streamLogs(
+      // Monitor the container (stream logs, wait for exit, cleanup)
+      ({ runResult, runError } = await this.monitorContainer({
         containerName,
-        (line) => this.forwardLogLine(line),
-        (text) => this.logger.warn({ stderr: text.slice(0, 500) }, "container stderr")
-      );
-
-      const startTime = Date.now();
-      const exitCode = await this.runtime.waitForExit(containerName, timeout);
-      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-
-      // Give the log stream a moment to flush
-      await new Promise((r) => setTimeout(r, 500));
-      logStream.stop();
-      logStream = undefined;
-
-      if (exitCode === 42) {
-        // Exit code 42 = rerun requested
-        this.logger.info({ exitCode, elapsed: `${elapsed}s` }, "container finished (rerun requested)");
-        runResult = "rerun";
-      } else if (exitCode !== 0) {
-        if (this._aborting) {
-          this.logger.info({ exitCode, elapsed: `${elapsed}s` }, "container killed (abort requested)");
-        } else {
-          this.logger.error({ exitCode, elapsed: `${elapsed}s` }, "container exited with error");
-        }
-        runError = `Container exited with code ${exitCode}`;
-        runResult = "error";
-      } else {
-        this.logger.info({ exitCode, elapsed: `${elapsed}s` }, "container finished");
-        runResult = "completed";
-      }
-      this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} ${runResult} (${elapsed}s)`);
+        shutdownSecret,
+        timeout,
+        credentials,
+        parentSpan,
+      }));
+      // monitorContainer already cleaned up credentials and container
+      credentials = undefined;
+      containerName = undefined;
     } catch (err: any) {
       this.logger.error({ err }, `${this.agentConfig.name} container run failed`);
       runError = String(err?.message || err).slice(0, 200);
-    } finally {
-      if (logStream) logStream.stop();
-      if (this.gatewayUrl) {
-        await this.unregisterContainer(shutdownSecret);
-      }
+      // If we failed before monitorContainer ran, clean up what we have
       if (credentials) {
         this.runtime.cleanupCredentials(credentials);
       }
       if (containerName) {
-        await this.runtime.remove(containerName);
+        await this.runtime.remove(containerName).catch(() => {});
       }
       this._containerName = undefined;
+    } finally {
       const elapsed = Date.now() - runStartTime;
       const instanceStatus = this._aborting ? "killed" as const : runError ? "error" as const : "completed" as const;
       this.statusTracker?.completeInstance(this.instanceId, instanceStatus);
       this.statusTracker?.endRun(this.agentConfig.name, elapsed, runError, this._tokenUsage);
       this._running = false;
-      
-      // Add telemetry attributes for the execution result
-      if (parentSpan) {
-        const attrs: Record<string, any> = {
-          "execution.result": runResult,
-          "execution.elapsed_ms": elapsed,
-          "execution.has_return_value": !!this._returnValue,
-          "container.name": containerName || "",
-        };
-
-        // Add token usage OTel attributes if available
-        if (this._tokenUsage) {
-          const usage = this._tokenUsage as TokenUsage;
-          attrs["llm.token.input"] = usage.inputTokens;
-          attrs["llm.token.output"] = usage.outputTokens;
-          attrs["llm.token.cache_read"] = usage.cacheReadTokens;
-          attrs["llm.token.cache_write"] = usage.cacheWriteTokens;
-          attrs["llm.token.total"] = usage.totalTokens;
-          attrs["llm.cost.total"] = usage.cost;
-          attrs["llm.turns"] = usage.turnCount;
-        }
-
-        parentSpan.setAttributes(attrs);
-
-        if (runResult === "error") {
-          parentSpan.recordException(new Error(`Container execution failed: ${runError || "Unknown error"}`));
-        }
-      }
     }
     return { result: runResult, triggers: [], returnValue: this._returnValue, usage: this._tokenUsage };
   }

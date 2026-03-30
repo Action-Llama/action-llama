@@ -192,21 +192,21 @@ export async function execute(agent: string, opts: { project: string }): Promise
   const fullPrompt = dynamicSuffix ? `${skeleton}\n\n${dynamicSuffix}` : skeleton;
 
   // Set up agent session
-  const { getModel } = await import("@mariozechner/pi-ai");
   const {
-    AuthStorage, createAgentSession, DefaultResourceLoader,
-    SessionManager, SettingsManager, createCodingTools,
+    DefaultResourceLoader,
+    SettingsManager,
   } = await import("@mariozechner/pi-coding-agent");
-  const { BASH_COMMAND_PREFIX } = await import("../../agents/bash-prefix.js");
   const { ensureSignalDir, readSignals } = await import("../../agents/signals.js");
-  const { ModelCircuitBreaker, selectAvailableModels, isRateLimitError } = await import("../../agents/model-fallback.js");
+  const { ModelCircuitBreaker } = await import("../../agents/model-fallback.js");
   const { getExitCodeMessage } = await import("../../shared/exit-codes.js");
-  const { sessionStatsToUsage } = await import("../../shared/usage.js");
+  const { runSessionLoop } = await import("../../agents/session-loop.js");
 
   // Signal directory
   const signalDir = resolve(workDir || "/tmp", "signals");
   ensureSignalDir(signalDir);
   process.env.AL_SIGNAL_DIR = signalDir;
+
+  const cwd = workDir || "/tmp";
 
   const resourceLoader = new DefaultResourceLoader({
     noExtensions: true,
@@ -221,125 +221,21 @@ export async function execute(agent: string, opts: { project: string }): Promise
     retry: { enabled: true, maxRetries: 2 },
   });
 
-  // Model fallback loop (mirrors container-entry.ts)
+  // Model fallback loop (shared with container-entry.ts via session-loop.ts)
   const containerBreaker = new ModelCircuitBreaker();
-  const MAX_PASSES = 3;
-  const DEFAULT_BACKOFF_MS = 30_000;
-  const MAX_BACKOFF_MS = 300_000;
-
-  const UNRECOVERABLE_PATTERNS = [
-    "permission denied", "could not read from remote repository",
-    "resource not accessible by personal access token", "bad credentials",
-    "authentication failed", "the requested url returned error: 403", "denied to ",
-  ];
-  const isUnrecoverableError = (text: string) =>
-    UNRECOVERABLE_PATTERNS.some((p) => text.toLowerCase().includes(p));
-  const UNRECOVERABLE_THRESHOLD = 3;
-
-  let outputText = "";
-  let currentTurnText = "";
-  let eventCount = 0;
-  let unrecoverableErrors = 0;
   let abortedDueToErrors = false;
-  const pendingCmds = new Map<string, string>();
 
-  for (let pass = 0; pass <= MAX_PASSES; pass++) {
-    const availableModels = selectAvailableModels(agentConfig.models, containerBreaker);
-    let modelSucceeded = false;
-
-    for (const modelConfig of availableModels) {
-      const llmModel = getModel(modelConfig.provider as any, modelConfig.model as any);
-
-      emitLog("info", "creating agent session", { model: modelConfig.model, thinking: modelConfig.thinkingLevel });
-
-      const authStorage = AuthStorage.create();
-      const providerKey = providerKeys.get(modelConfig.provider);
-      if (providerKey) authStorage.setRuntimeApiKey(modelConfig.provider, providerKey);
-
-      const cwd = workDir || "/tmp";
-      const { session } = await createAgentSession({
-        cwd,
-        model: llmModel,
-        thinkingLevel: modelConfig.thinkingLevel,
-        authStorage,
-        resourceLoader,
-        tools: createCodingTools(cwd, { bash: { commandPrefix: BASH_COMMAND_PREFIX } }),
-        sessionManager: SessionManager.inMemory(),
-        settingsManager,
-      });
-
-      session.subscribe((event) => {
-        eventCount++;
-        if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
-          const delta = event.assistantMessageEvent.delta;
-          outputText += delta;
-          currentTurnText += delta;
-        }
-        if (event.type === "message_end") {
-          if (currentTurnText.trim()) emitLog("info", "assistant", { text: currentTurnText.trim() });
-          currentTurnText = "";
-        }
-        if (event.type === "tool_execution_start" && event.toolName === "bash") {
-          const cmd = String(event.args?.command || "");
-          pendingCmds.set(event.toolCallId, cmd);
-          emitLog("info", "bash", { cmd: cmd.slice(0, 200) });
-        }
-        if (event.type === "tool_execution_end") {
-          const resultStr = typeof event.result === "string" ? event.result : JSON.stringify(event.result);
-          const originCmd = pendingCmds.get(event.toolCallId);
-          pendingCmds.delete(event.toolCallId);
-          if (event.isError) {
-            emitLog("error", "tool error", { tool: event.toolName, cmd: originCmd?.slice(0, 200), result: resultStr.slice(0, 1000) });
-            let errorMsg = resultStr;
-            try { const p = JSON.parse(resultStr); if (p?.content?.[0]?.text) errorMsg = p.content[0].text; } catch {}
-            if (isUnrecoverableError(errorMsg)) {
-              unrecoverableErrors++;
-              if (unrecoverableErrors >= UNRECOVERABLE_THRESHOLD) {
-                emitLog("error", "Aborting: repeated auth/permission failures — check credentials");
-                abortedDueToErrors = true;
-                session.dispose();
-              }
-            }
-          }
-        }
-      });
-
-      try {
-        await session.prompt(fullPrompt);
-        containerBreaker.recordSuccess(modelConfig.provider, modelConfig.model);
-
-        const sessionStats = session.getSessionStats();
-        const usage = sessionStatsToUsage(sessionStats);
-        emitLog("info", "token-usage", {
-          inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,
-          cacheReadTokens: usage.cacheReadTokens, cacheWriteTokens: usage.cacheWriteTokens,
-          totalTokens: usage.totalTokens, cost: usage.cost, turnCount: usage.turnCount,
-        });
-
-        session.dispose();
-        modelSucceeded = true;
-        break;
-      } catch (promptErr: any) {
-        const msg = String(promptErr?.message || promptErr || "");
-        if (isRateLimitError(msg)) {
-          containerBreaker.recordFailure(modelConfig.provider, modelConfig.model);
-          emitLog("warn", "rate limited, trying next model", { provider: modelConfig.provider, model: modelConfig.model });
-          session.dispose();
-          continue;
-        }
-        session.dispose();
-        throw promptErr;
-      }
-    }
-
-    if (modelSucceeded) break;
-
-    if (pass < MAX_PASSES) {
-      const delayMs = Math.min(DEFAULT_BACKOFF_MS * Math.pow(2, pass), MAX_BACKOFF_MS);
-      emitLog("warn", "all models exhausted, backing off", { pass: pass + 1, delayMs });
-      await new Promise((r) => setTimeout(r, delayMs));
-    }
-  }
+  const loopResult = await runSessionLoop(fullPrompt, {
+    models: agentConfig.models,
+    circuitBreaker: containerBreaker,
+    cwd,
+    resourceLoader,
+    settingsManager,
+    providerKeys,
+    log: emitLog,
+    onUnrecoverableAbort: () => { abortedDueToErrors = true; },
+  });
+  const { outputText } = loopResult;
 
   clearTimeout(timer);
 
