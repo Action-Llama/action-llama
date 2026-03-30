@@ -19,6 +19,7 @@ import { registerShutdownHandlers } from "./shutdown.js";
 import { loadDependencies } from "./dependencies.js";
 import { createPersistence } from "./persistence.js";
 import { recoverOrphanContainers } from "./orphan-recovery.js";
+import { syncTrackerScales, tryRunOrEnqueue } from "./policies/index.js";
 
 export type { SchedulerContext, WorkItem } from "../execution/execution.js";
 export { SchedulerEventBus } from "./events.js";
@@ -89,27 +90,28 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
             return false;
           }
           const pool = state.runnerPools[config.name];
-          if (!pool || !state.schedulerCtx) {
-            // Pools or scheduler not ready yet (still building) — queue for later
-            const { dropped } = workQueue.enqueue(config.name, { type: 'webhook', context });
+          // Use undefined pool when scheduler is not ready yet (still building)
+          const effectivePool = (pool && state.schedulerCtx) ? pool : undefined;
+          const { runner, enqueued } = tryRunOrEnqueue(
+            effectivePool, workQueue, config.name, { type: 'webhook', context },
+            logger, { event: context.event },
+          );
+          if (enqueued) {
             statusTracker?.setQueuedWebhooks(config.name, workQueue.size(config.name));
-            logger.info({ agent: config.name, event: context.event, queueSize: workQueue.size(config.name) }, "webhook queued (agents building)");
-            if (dropped) logger.warn({ agent: config.name }, "queue full, oldest event dropped");
+            if (!effectivePool) {
+              logger.info({ agent: config.name, event: context.event, queueSize: workQueue.size(config.name) }, "webhook queued (agents building)");
+            } else {
+              logger.info({ agent: config.name, event: context.event, queueSize: workQueue.size(config.name) }, "webhook queued");
+            }
             return true;
           }
-          const runner = pool.getAvailableRunner();
-          if (!runner) {
-            const { dropped } = workQueue.enqueue(config.name, { type: 'webhook', context });
-            statusTracker?.setQueuedWebhooks(config.name, workQueue.size(config.name));
-            logger.info({ agent: config.name, event: context.event, queueSize: workQueue.size(config.name) }, "webhook queued");
-            if (dropped) logger.warn({ agent: config.name }, "queue full, oldest event dropped");
-            return true;
+          if (runner) {
+            logger.info({ agent: config.name, event: context.event, action: context.action }, "webhook triggering agent");
+            const prompt = makeWebhookPrompt(config, context, state.schedulerCtx!);
+            executeRun(runner, prompt, { type: 'webhook', source: context.event, receiptId: context.receiptId }, config.name, 0, state.schedulerCtx!)
+              .then(() => drainQueues(state.schedulerCtx!))
+              .catch((err) => logger.error({ err, agent: config.name }, "webhook run failed"));
           }
-          logger.info({ agent: config.name, event: context.event, action: context.action }, "webhook triggering agent");
-          const prompt = makeWebhookPrompt(config, context, state.schedulerCtx);
-          executeRun(runner, prompt, { type: 'webhook', source: context.event, receiptId: context.receiptId }, config.name, 0, state.schedulerCtx)
-            .then(() => drainQueues(state.schedulerCtx!))
-            .catch((err) => logger.error({ err, agent: config.name }, "webhook run failed"));
           return true;
         },
         logger,
@@ -152,15 +154,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // Sync status tracker with actual pool sizes (may differ from configured scale
   // when a project-wide scale cap throttles individual agents)
-  if (statusTracker) {
-    for (const [agentName, actualScale] of Object.entries(actualScales)) {
-      const registeredScale = statusTracker.getAgentScale(agentName);
-      if (registeredScale !== actualScale) {
-        statusTracker.updateAgentScale(agentName, actualScale);
-        logger.info({ agent: agentName, registeredScale, actualScale }, "synced status tracker scale with actual pool size");
-      }
-    }
-  }
+  syncTrackerScales(actualScales, statusTracker, logger);
 
   // Populate late-binding state
   Object.assign(state.runnerPools, runnerPools);
@@ -195,16 +189,17 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     globalConfig, agentConfigs,
     onScheduledRun: async (agentConfig) => {
       const pool = runnerPools[agentConfig.name];
-      const availableRunner = pool.getAvailableRunner();
-      if (!availableRunner) {
-        const { dropped } = schedulerCtx.workQueue.enqueue(agentConfig.name, { type: 'schedule' });
+      const { runner, enqueued } = tryRunOrEnqueue(
+        pool, schedulerCtx.workQueue, agentConfig.name, { type: 'schedule' }, logger,
+      );
+      if (enqueued) {
         schedulerCtx.statusTracker?.setQueuedWebhooks(agentConfig.name, schedulerCtx.workQueue.size(agentConfig.name));
-        logger.info({ agent: agentConfig.name, running: pool.runningJobCount, scale: pool.size }, "all runners busy, scheduled run queued");
-        if (dropped) logger.warn({ agent: agentConfig.name }, "queue full, oldest event dropped");
         return;
       }
-      logger.info({ agent: agentConfig.name, running: pool.runningJobCount, scale: pool.size }, "triggering scheduled run");
-      await runWithReruns(availableRunner, agentConfig, 0, schedulerCtx);
+      if (runner) {
+        logger.info({ agent: agentConfig.name, running: pool.runningJobCount, scale: pool.size }, "triggering scheduled run");
+        await runWithReruns(runner, agentConfig, 0, schedulerCtx);
+      }
     },
     statusTracker, logger, timezone, anyWebhooks,
     gatewayPort: gateway ? gatewayPort : undefined,
