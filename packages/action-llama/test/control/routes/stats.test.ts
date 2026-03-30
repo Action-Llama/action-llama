@@ -13,9 +13,10 @@ function mockStatsStore() {
   } as any;
 }
 
-function mockStatusTracker(instances: any[] = []) {
+function mockStatusTracker(instances: any[] = [], agents: any[] = []) {
   return {
     getInstances: vi.fn().mockReturnValue(instances),
+    getAllAgents: vi.fn().mockReturnValue(agents),
     isPaused: vi.fn().mockReturnValue(false),
   } as any;
 }
@@ -295,6 +296,206 @@ describe("stats routes", () => {
 
       expect(data.triggers[0].triggerType).toBe("schedule");
       expect(data.triggers[0].triggerSource).toBeNull();
+    });
+
+    it("filters running instances by triggerType when triggerType param is provided", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([]);
+      stats.countTriggerHistory.mockReturnValue(0);
+
+      const instances = [
+        { id: "inst-1", agentName: "reporter", status: "running", startedAt: new Date().toISOString(), trigger: "schedule:nightly" },
+        { id: "inst-2", agentName: "reporter", status: "running", startedAt: new Date().toISOString(), trigger: "webhook:github" },
+      ];
+      const tracker = mockStatusTracker(instances);
+      const app = createApp(stats, tracker);
+
+      const res = await app.request("/api/stats/triggers?triggerType=schedule");
+      const data = await res.json();
+
+      expect(data.triggers).toHaveLength(1);
+      expect(data.triggers[0].instanceId).toBe("inst-1");
+      expect(data.triggers[0].triggerType).toBe("schedule");
+    });
+
+    it("passes triggerType filter to queryTriggerHistory and countTriggerHistory", async () => {
+      const stats = mockStatsStore();
+      const app = createApp(stats);
+
+      await app.request("/api/stats/triggers?triggerType=webhook");
+      expect(stats.queryTriggerHistory).toHaveBeenCalledWith(
+        expect.objectContaining({ triggerType: "webhook" })
+      );
+      expect(stats.countTriggerHistory).toHaveBeenCalledWith(0, false, undefined, "webhook");
+    });
+  });
+
+  describe("GET /api/stats/jobs", () => {
+    it("returns empty jobs when no stats store is provided", async () => {
+      const app = createApp();
+
+      const res = await app.request("/api/stats/jobs");
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.jobs).toEqual([]);
+      expect(data.total).toBe(0);
+      expect(data.limit).toBe(50);
+      expect(data.offset).toBe(0);
+      expect(data.pending).toEqual({});
+      expect(data.totalPending).toBe(0);
+    });
+
+    it("returns jobs from the stats store", async () => {
+      const stats = mockStatsStore();
+      const job = { ts: 1000, triggerType: "schedule", agentName: "reporter", instanceId: "j1", result: "completed" };
+      stats.queryTriggerHistory.mockReturnValue([job]);
+      stats.countTriggerHistory.mockReturnValue(1);
+      const app = createApp(stats);
+
+      const res = await app.request("/api/stats/jobs");
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.jobs).toHaveLength(1);
+      expect(data.jobs[0]).toMatchObject(job);
+      expect(data.total).toBe(1);
+    });
+
+    it("passes correct params to queryTriggerHistory (always excludes dead letters)", async () => {
+      const stats = mockStatsStore();
+      const app = createApp(stats);
+
+      await app.request("/api/stats/jobs?limit=20&offset=40&since=9999&agent=reporter");
+      expect(stats.queryTriggerHistory).toHaveBeenCalledWith({
+        since: 9999,
+        limit: 20,
+        offset: 40,
+        includeDeadLetters: false,
+        agentName: "reporter",
+      });
+      expect(stats.countTriggerHistory).toHaveBeenCalledWith(9999, false, "reporter");
+    });
+
+    it("merges unique running instances from statusTracker on first page", async () => {
+      const stats = mockStatsStore();
+      const existingJob = { ts: 500, triggerType: "schedule", agentName: "reporter", instanceId: "existing-id", result: "completed" };
+      stats.queryTriggerHistory.mockReturnValue([existingJob]);
+      stats.countTriggerHistory.mockReturnValue(1);
+
+      const instances = [
+        { id: "existing-id", agentName: "reporter", status: "running", startedAt: new Date(2000).toISOString(), trigger: "schedule" },
+        { id: "new-running-id", agentName: "reporter", status: "running", startedAt: new Date(3000).toISOString(), trigger: "manual:user" },
+      ];
+      const tracker = mockStatusTracker(instances);
+      const app = createApp(stats, tracker);
+
+      const res = await app.request("/api/stats/jobs");
+      const data = await res.json();
+
+      // existing-id is in runs already, so only new-running-id is added
+      expect(data.jobs).toHaveLength(2);
+      expect(data.total).toBe(2);
+      const runningJob = data.jobs.find((j: any) => j.instanceId === "new-running-id");
+      expect(runningJob).toBeDefined();
+      expect(runningJob.result).toBe("running");
+      expect(runningJob.triggerType).toBe("manual");
+      expect(runningJob.triggerSource).toBe("user");
+    });
+
+    it("does not merge running instances when offset > 0", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([]);
+      stats.countTriggerHistory.mockReturnValue(0);
+
+      const tracker = mockStatusTracker([
+        { id: "r1", agentName: "reporter", status: "running", startedAt: new Date().toISOString(), trigger: "schedule" },
+      ]);
+      const app = createApp(stats, tracker);
+
+      const res = await app.request("/api/stats/jobs?offset=10");
+      const data = await res.json();
+      expect(data.jobs).toHaveLength(0);
+      expect(data.total).toBe(0);
+    });
+
+    it("filters running instances by agent when agent param is provided", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([]);
+      stats.countTriggerHistory.mockReturnValue(0);
+
+      const instances = [
+        { id: "inst-1", agentName: "reporter", status: "running", startedAt: new Date().toISOString(), trigger: "schedule" },
+        { id: "inst-2", agentName: "other-agent", status: "running", startedAt: new Date().toISOString(), trigger: "schedule" },
+      ];
+      const tracker = mockStatusTracker(instances);
+      const app = createApp(stats, tracker);
+
+      const res = await app.request("/api/stats/jobs?agent=reporter");
+      const data = await res.json();
+
+      expect(data.jobs).toHaveLength(1);
+      expect(data.jobs[0].instanceId).toBe("inst-1");
+    });
+
+    it("reports pending counts from statusTracker agents", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([]);
+      stats.countTriggerHistory.mockReturnValue(0);
+
+      const agents = [
+        { name: "reporter", queuedWebhooks: 3 },
+        { name: "other", queuedWebhooks: 0 },
+        { name: "deployer", queuedWebhooks: 5 },
+      ];
+      const tracker = mockStatusTracker([], agents);
+      const app = createApp(stats, tracker);
+
+      const res = await app.request("/api/stats/jobs");
+      const data = await res.json();
+
+      expect(data.pending).toEqual({ reporter: 3, deployer: 5 });
+      expect(data.totalPending).toBe(8);
+    });
+
+    it("filters pending counts by agent when agent param is provided", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([]);
+      stats.countTriggerHistory.mockReturnValue(0);
+
+      const agents = [
+        { name: "reporter", queuedWebhooks: 3 },
+        { name: "other", queuedWebhooks: 7 },
+      ];
+      const tracker = mockStatusTracker([], agents);
+      const app = createApp(stats, tracker);
+
+      const res = await app.request("/api/stats/jobs?agent=reporter");
+      const data = await res.json();
+
+      expect(data.pending).toEqual({ reporter: 3 });
+      expect(data.totalPending).toBe(3);
+    });
+
+    it("returns empty pending when no statusTracker is provided", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([]);
+      stats.countTriggerHistory.mockReturnValue(0);
+      const app = createApp(stats);
+
+      const res = await app.request("/api/stats/jobs");
+      const data = await res.json();
+
+      expect(data.pending).toEqual({});
+      expect(data.totalPending).toBe(0);
+    });
+
+    it("clamps limit to 100 and offset to 0 minimum", async () => {
+      const stats = mockStatsStore();
+      const app = createApp(stats);
+
+      await app.request("/api/stats/jobs?limit=999&offset=-5");
+      expect(stats.queryTriggerHistory).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 100, offset: 0 })
+      );
     });
   });
 });
