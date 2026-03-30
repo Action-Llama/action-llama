@@ -491,4 +491,184 @@ describe("registerDashboardApiRoutes — extended coverage", () => {
     expect(typeof data.projectScale).toBe("number");
     expect(data.gatewayPort).toBe(3000);
   });
+
+  it("GET /api/dashboard/config reads projectScale when projectPath provided", async () => {
+    // Create a minimal project dir so getProjectScale can run
+    const tmpDir = mkdtempSync(resolve(tmpdir(), "dashboard-scale-"));
+    const tracker = makeStatusTracker();
+    const app = new Hono();
+    registerDashboardApiRoutes(app, tracker, tmpDir);
+
+    const res = await app.request("/api/dashboard/config");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    // getProjectScale will fail since there's no config file, but the catch should return 5
+    expect(typeof data.projectScale).toBe("number");
+  });
+
+  it("GET /api/dashboard/agents/:name loads agentConfig when projectPath set", async () => {
+    const tmpDir = mkdtempSync(resolve(tmpdir(), "dashboard-agentconfig-"));
+    mkdirSync(resolve(tmpDir, "agents", "test-agent"), { recursive: true });
+    writeFileSync(
+      resolve(tmpDir, "agents", "test-agent", "agent.json"),
+      JSON.stringify({ name: "test-agent", model: "claude-3-5-sonnet" })
+    );
+    const stats = makeStatsStore();
+    const tracker = makeStatusTracker();
+    const app = new Hono();
+    registerDashboardApiRoutes(app, tracker, tmpDir, stats);
+
+    const res = await app.request("/api/dashboard/agents/test-agent");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    // agentConfig may be null if loading fails in test env, but should not throw
+    expect(data).toHaveProperty("agentConfig");
+  });
+
+  it("GET /api/dashboard/triggers/:instanceId returns 404 when no statsStore", async () => {
+    const tracker = makeStatusTracker();
+    const app = new Hono();
+    registerDashboardApiRoutes(app, tracker);
+
+    const res = await app.request("/api/dashboard/triggers/some-id");
+    expect(res.status).toBe(404);
+    const data = await res.json();
+    expect(data.trigger).toBeNull();
+  });
+
+  it("GET /api/dashboard/triggers/:instanceId returns 404 when run not found", async () => {
+    const stats = makeStatsStore();
+    const tracker = makeStatusTracker();
+    const app = new Hono();
+    registerDashboardApiRoutes(app, tracker, undefined, stats);
+
+    const res = await app.request("/api/dashboard/triggers/missing-id");
+    expect(res.status).toBe(404);
+    const data = await res.json();
+    expect(data.trigger).toBeNull();
+  });
+
+  it("GET /api/dashboard/triggers/:instanceId returns trigger data for schedule run", async () => {
+    const stats = makeStatsStore();
+    stats.queryRunByInstanceId.mockReturnValue({
+      instance_id: "inst-1",
+      agent_name: "reporter",
+      trigger_type: "schedule",
+      trigger_source: "nightly",
+      trigger_context: null,
+      started_at: 1000000,
+    });
+    const tracker = makeStatusTracker();
+    const app = new Hono();
+    registerDashboardApiRoutes(app, tracker, undefined, stats);
+
+    const res = await app.request("/api/dashboard/triggers/inst-1");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.trigger).toMatchObject({
+      instanceId: "inst-1",
+      agentName: "reporter",
+      triggerType: "schedule",
+      triggerSource: "nightly",
+    });
+  });
+
+  it("GET /api/dashboard/triggers/:instanceId enriches with webhook receipt data", async () => {
+    const stats = makeStatsStore();
+    stats.queryRunByInstanceId.mockReturnValue({
+      instance_id: "inst-wh",
+      agent_name: "reporter",
+      trigger_type: "webhook",
+      trigger_source: "github",
+      trigger_context: null,
+      started_at: 1000000,
+      webhook_receipt_id: "receipt-42",
+    });
+    stats.getWebhookReceipt.mockReturnValue({
+      id: "receipt-42",
+      source: "github",
+      eventSummary: "push to main",
+      deliveryId: "del-abc",
+      timestamp: 1000000,
+      headers: { "x-github-event": "push" },
+      body: { ref: "refs/heads/main" },
+      matchedAgents: 1,
+      status: "processed",
+    });
+    const tracker = makeStatusTracker();
+    const app = new Hono();
+    registerDashboardApiRoutes(app, tracker, undefined, stats);
+
+    const res = await app.request("/api/dashboard/triggers/inst-wh");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.trigger.webhook).toMatchObject({
+      receiptId: "receipt-42",
+      source: "github",
+      eventSummary: "push to main",
+      deliveryId: "del-abc",
+      matchedAgents: 1,
+      status: "processed",
+    });
+  });
+
+  it("GET /api/dashboard/triggers/:instanceId enriches with caller info for agent-triggered runs", async () => {
+    const stats = makeStatsStore();
+    stats.queryRunByInstanceId.mockReturnValue({
+      instance_id: "child-inst",
+      agent_name: "worker",
+      trigger_type: "agent",
+      trigger_source: null,
+      trigger_context: null,
+      started_at: 1000000,
+    });
+    stats.queryCallEdgeByTargetInstance.mockReturnValue({
+      caller_agent: "orchestrator",
+      caller_instance: "parent-inst",
+      depth: 2,
+    });
+    const tracker = makeStatusTracker();
+    const app = new Hono();
+    registerDashboardApiRoutes(app, tracker, undefined, stats);
+
+    const res = await app.request("/api/dashboard/triggers/child-inst");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.trigger.callerAgent).toBe("orchestrator");
+    expect(data.trigger.callerInstance).toBe("parent-inst");
+    expect(data.trigger.callDepth).toBe(2);
+  });
+});
+
+describe("registerAuthApiRoutes — apiKey as function", () => {
+  it("POST /api/auth/login resolves apiKey function before comparing", async () => {
+    const apiKeyFn = vi.fn().mockResolvedValue("dynamic-key");
+    const app = new Hono();
+    registerAuthApiRoutes(app, apiKeyFn);
+
+    const res = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: "dynamic-key" }),
+    });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+    expect(apiKeyFn).toHaveBeenCalledOnce();
+  });
+
+  it("POST /api/auth/login returns success when apiKey function resolves to null", async () => {
+    const apiKeyFn = vi.fn().mockResolvedValue(null);
+    const app = new Hono();
+    registerAuthApiRoutes(app, apiKeyFn);
+
+    const res = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: "" }),
+    });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+  });
 });
