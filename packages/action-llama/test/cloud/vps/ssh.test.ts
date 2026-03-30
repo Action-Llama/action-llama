@@ -13,7 +13,7 @@ vi.mock("child_process", async (importOriginal) => {
   return { ...actual, execFile: mockExecFile, execFileSync: mockExecFileSync, spawn: mockSpawn };
 });
 
-const { sshExec, sshSpawn, scpBuffer, testConnection, clearKnownHost } = await import("../../../src/cloud/vps/ssh.js");
+const { sshExec, sshSpawn, scp, scpBuffer, testConnection, clearKnownHost } = await import("../../../src/cloud/vps/ssh.js");
 type SshConfig = import("../../../src/cloud/vps/ssh.js").SshConfig;
 
 const testConfig: SshConfig = {
@@ -144,6 +144,97 @@ describe("ssh helpers", () => {
 
       const result = await testConnection(testConfig);
       expect(result).toBe(false);
+    });
+  });
+
+  // ── scp ──────────────────────────────────────────────────────────────────
+
+  describe("scp", () => {
+    it("copies file via scp successfully", async () => {
+      mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: any, cb: Function) => {
+        // Check that scp is called with the local and remote paths
+        expect(args[args.length - 2]).toBe("/local/path/file.txt");
+        expect(args[args.length - 1]).toBe("root@1.2.3.4:/remote/path/file.txt");
+        cb(null);
+      });
+
+      await expect(scp(testConfig, "/local/path/file.txt", "/remote/path/file.txt")).resolves.toBeUndefined();
+    });
+
+    it("includes SSH options in scp args", async () => {
+      let capturedArgs: string[] = [];
+      mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: any, cb: Function) => {
+        capturedArgs = args;
+        cb(null);
+      });
+
+      await scp(testConfig, "/local/file", "/remote/file");
+
+      expect(capturedArgs).toContain("-p");
+      expect(capturedArgs).toContain("22");
+      expect(capturedArgs).toContain("-i");
+      expect(capturedArgs).toContain("/home/test/.ssh/id_rsa");
+    });
+
+    it("rejects when scp fails with an error", async () => {
+      const scpError = new Error("Permission denied (publickey).");
+      mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+        cb(scpError);
+      });
+
+      await expect(scp(testConfig, "/local/file", "/remote/file")).rejects.toThrow("Permission denied");
+    });
+  });
+
+  // ── scpBuffer stderr data ─────────────────────────────────────────────────
+
+  describe("scpBuffer stderr capture", () => {
+    it("includes stderr output in rejection message", async () => {
+      const fakeProc = new EventEmitter();
+      (fakeProc as any).stdin = { end: vi.fn() };
+      (fakeProc as any).stdout = new EventEmitter();
+      (fakeProc as any).stderr = new EventEmitter();
+      mockSpawn.mockReturnValue(fakeProc);
+
+      const promise = scpBuffer(testConfig, "data", "/tmp/file");
+
+      // Emit stderr data before close
+      (fakeProc as any).stderr.emit("data", Buffer.from("ssh: connect to host failed\n"));
+      (fakeProc as any).stderr.emit("data", Buffer.from("Permission denied.\n"));
+
+      fakeProc.emit("close", 255);
+
+      await expect(promise).rejects.toThrow("ssh: connect to host failed");
+    });
+
+    it("resolves when exit code is 0 after stderr output", async () => {
+      const fakeProc = new EventEmitter();
+      (fakeProc as any).stdin = { end: vi.fn() };
+      (fakeProc as any).stdout = new EventEmitter();
+      (fakeProc as any).stderr = new EventEmitter();
+      mockSpawn.mockReturnValue(fakeProc);
+
+      const promise = scpBuffer(testConfig, "data", "/tmp/file");
+
+      // Stderr data (warnings) but still exit code 0
+      (fakeProc as any).stderr.emit("data", Buffer.from("Warning: Permanently added host.\n"));
+      fakeProc.emit("close", 0);
+
+      await expect(promise).resolves.toBeUndefined();
+    });
+
+    it("rejects on process error event", async () => {
+      const fakeProc = new EventEmitter();
+      (fakeProc as any).stdin = { end: vi.fn() };
+      (fakeProc as any).stdout = new EventEmitter();
+      (fakeProc as any).stderr = new EventEmitter();
+      mockSpawn.mockReturnValue(fakeProc);
+
+      const promise = scpBuffer(testConfig, "data", "/tmp/file");
+
+      fakeProc.emit("error", new Error("spawn failed"));
+
+      await expect(promise).rejects.toThrow("spawn failed");
     });
   });
 });
