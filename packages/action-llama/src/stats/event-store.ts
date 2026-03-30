@@ -376,8 +376,11 @@ export class EventSourcedStatsStore {
       totalDuration: number;
       durationCount: number;
     }>();
+
+    // Map from callId -> "callerAgent:targetAgent" key for joining with completion events
+    const callIdToKey = new Map<number, string>();
     
-    // Process call initiation events
+    // Process call initiation events to build count/depth stats and callId index
     for await (const event of this.statsStream.replay({
       type: EventTypes.CALL_INITIATED,
       from: query.since,
@@ -394,13 +397,37 @@ export class EventSourcedStatsStore {
       
       stats.count++;
       stats.totalDepth += event.data.depth || 0;
-      
-      if (event.data.durationMs) {
+      callGraph.set(key, stats);
+
+      if (event.data.callId !== undefined) {
+        callIdToKey.set(event.data.callId, key);
+      }
+    }
+
+    // Process completion events (CALL_COMPLETED and CALL_FAILED) to accumulate duration stats
+    for (const completionType of [EventTypes.CALL_COMPLETED, EventTypes.CALL_FAILED]) {
+      for await (const event of this.statsStream.replay({
+        type: completionType,
+        from: query.since,
+      })) {
+        if (!event.data.durationMs) continue;
+
+        // Determine the callGraph key: prefer callerAgent/targetAgent on event, fall back to callIdToKey
+        let key: string | undefined;
+        if (event.data.callerAgent && event.data.targetAgent) {
+          key = `${event.data.callerAgent}:${event.data.targetAgent}`;
+        } else if (event.data.callId !== undefined) {
+          key = callIdToKey.get(event.data.callId);
+        }
+
+        if (!key) continue;
+
+        const stats = callGraph.get(key);
+        if (!stats) continue;
+
         stats.totalDuration += event.data.durationMs;
         stats.durationCount++;
       }
-      
-      callGraph.set(key, stats);
     }
     
     // Convert to final format
