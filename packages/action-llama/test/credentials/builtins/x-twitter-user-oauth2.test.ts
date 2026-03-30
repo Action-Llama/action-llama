@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { createServer } from "http";
 
 // Mock child_process to prevent browser from being opened
 vi.mock("child_process", () => ({
@@ -255,6 +256,263 @@ describe("x_twitter_user_oauth2 credential", () => {
       expect(mockedConfirm).not.toHaveBeenCalled();
       // The password prompts for client_id and client_secret were called
       expect(mockedPassword).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("PKCE flow — server handler edge cases", () => {
+    /**
+     * Helper: override createServer mock for a single call so we control
+     * exactly what requests the server handler receives.
+     */
+    function mockServerWithRequests(requests: Array<{ url: string }>) {
+      let localHandler: ((req: any, res: any) => void) | null = null;
+
+      vi.mocked(createServer).mockImplementationOnce((handler: any) => {
+        localHandler = handler;
+        const serverMock = {
+          on: vi.fn(),
+          close: vi.fn(),
+          listen: vi.fn((_port: number, _host: string, cb: () => void) => {
+            // Run the listen callback (logs authUrl, starts browser, sets timeout)
+            cb();
+            // Fire each request in sequence through the handler
+            for (const reqSpec of requests) {
+              const res = { writeHead: vi.fn(), end: vi.fn() };
+              localHandler!(reqSpec, res);
+            }
+          }),
+        };
+        return serverMock;
+      });
+    }
+
+    it("returns 404 and continues when request path is not /callback", async () => {
+      let localHandler: ((req: any, res: any) => void) | null = null;
+      const notFoundRes = { writeHead: vi.fn(), end: vi.fn() };
+
+      vi.mocked(createServer).mockImplementationOnce((handler: any) => {
+        localHandler = handler;
+        const serverMock = {
+          on: vi.fn(),
+          close: vi.fn(),
+          listen: vi.fn((_port: number, _host: string, cb: () => void) => {
+            cb();
+            // First: non-/callback request → should 404
+            localHandler!({ url: "/health" }, notFoundRes);
+            // Second: terminate the flow with an error callback
+            const errorRes = { writeHead: vi.fn(), end: vi.fn() };
+            localHandler!({ url: "/callback?error=abort_after_404" }, errorRes);
+          }),
+        };
+        return serverMock;
+      });
+
+      mockedPassword
+        .mockResolvedValueOnce("cid" as any)
+        .mockResolvedValueOnce("csec" as any);
+
+      await expect(
+        xTwitterUserOauth2.prompt!({})
+      ).rejects.toThrow("OAuth 2.0 authorization error: abort_after_404");
+
+      expect(notFoundRes.writeHead).toHaveBeenCalledWith(404);
+      expect(notFoundRes.end).toHaveBeenCalled();
+    });
+
+    it("rejects when code is missing from the callback URL", async () => {
+      // No code parameter — state mismatch / invalid callback
+      mockServerWithRequests([{ url: "/callback?state=whatever" }]);
+
+      mockedPassword
+        .mockResolvedValueOnce("cid" as any)
+        .mockResolvedValueOnce("csec" as any);
+
+      await expect(
+        xTwitterUserOauth2.prompt!({})
+      ).rejects.toThrow("OAuth 2.0 callback: missing code or state mismatch");
+    });
+
+    it("rejects when state does not match the expected value", async () => {
+      // Code is present but state is wrong
+      mockServerWithRequests([{ url: "/callback?code=authcode&state=wrong_state_value" }]);
+
+      mockedPassword
+        .mockResolvedValueOnce("cid" as any)
+        .mockResolvedValueOnce("csec" as any);
+
+      await expect(
+        xTwitterUserOauth2.prompt!({})
+      ).rejects.toThrow("OAuth 2.0 callback: missing code or state mismatch");
+    });
+  });
+
+  describe("PKCE flow — token exchange", () => {
+    /**
+     * Build a createServer mock that:
+     * 1. Captures the authUrl from console.log to extract the state
+     * 2. Fires the success callback with the correct code + state
+     * 3. Optionally tracks socket connections for shutdown coverage
+     */
+    function mockServerWithSuccessfulCallback() {
+      let localHandler: ((req: any, res: any) => void) | null = null;
+      let capturedState: string | null = null;
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation((...args: any[]) => {
+        const msg = String(args[0] || "");
+        // The listen callback logs the authUrl which contains `&state=<hex>`
+        const match = msg.match(/[?&]state=([^&\s]+)/);
+        if (match) capturedState = match[1];
+      });
+
+      const mockSocket = { on: vi.fn(), destroy: vi.fn() };
+      let connectionHandler: ((sock: any) => void) | null = null;
+      const serverMock = {
+        on: vi.fn((event: string, handler: any) => {
+          if (event === "connection") connectionHandler = handler;
+        }),
+        close: vi.fn(),
+        listen: vi.fn((_port: number, _host: string, cb: () => void) => {
+          cb(); // runs the listen callback → logs authUrl → capturedState is set
+          // Exercise socket connection tracking (covers lines 98-99, 103)
+          if (connectionHandler) {
+            connectionHandler(mockSocket);
+            // Simulate socket close event to cover connections.delete
+            const closeHandler = mockSocket.on.mock.calls.find(
+              (c: any[]) => c[0] === "close"
+            )?.[1];
+            if (closeHandler) closeHandler();
+          }
+          // Now fire the success callback with the real state
+          const res = { writeHead: vi.fn(), end: vi.fn() };
+          localHandler!({ url: `/callback?code=test_auth_code&state=${capturedState}` }, res);
+        }),
+      };
+
+      vi.mocked(createServer).mockImplementationOnce((handler: any) => {
+        localHandler = handler;
+        return serverMock;
+      });
+
+      return { consoleSpy };
+    }
+
+    it("resolves with access_token and refresh_token when token exchange succeeds", async () => {
+      const { consoleSpy } = mockServerWithSuccessfulCallback();
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ access_token: "at_abc123", refresh_token: "rt_xyz789" }),
+      });
+
+      mockedPassword
+        .mockResolvedValueOnce("  my-client-id  " as any)
+        .mockResolvedValueOnce("  my-client-secret  " as any);
+
+      const result = await xTwitterUserOauth2.prompt!({});
+
+      expect(result).toEqual({
+        values: {
+          client_id: "my-client-id",
+          client_secret: "my-client-secret",
+          access_token: "at_abc123",
+          refresh_token: "rt_xyz789",
+        },
+      });
+
+      consoleSpy.mockRestore();
+    });
+
+    it("uses empty string for refresh_token when server omits it", async () => {
+      const { consoleSpy } = mockServerWithSuccessfulCallback();
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ access_token: "at_only" }), // no refresh_token
+      });
+
+      mockedPassword
+        .mockResolvedValueOnce("cid" as any)
+        .mockResolvedValueOnce("csec" as any);
+
+      const result = await xTwitterUserOauth2.prompt!({});
+      expect((result as any).values.refresh_token).toBe("");
+      expect((result as any).values.access_token).toBe("at_only");
+
+      consoleSpy.mockRestore();
+    });
+
+    it("rejects when token exchange HTTP response is not ok", async () => {
+      const { consoleSpy } = mockServerWithSuccessfulCallback();
+
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: async () => "Bad Request",
+      });
+
+      mockedPassword
+        .mockResolvedValueOnce("cid" as any)
+        .mockResolvedValueOnce("csec" as any);
+
+      await expect(
+        xTwitterUserOauth2.prompt!({})
+      ).rejects.toThrow("Token exchange failed (400): Bad Request");
+
+      consoleSpy.mockRestore();
+    });
+
+    it("rejects when token exchange response is missing access_token", async () => {
+      const { consoleSpy } = mockServerWithSuccessfulCallback();
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ token_type: "bearer" }), // no access_token
+      });
+
+      mockedPassword
+        .mockResolvedValueOnce("cid" as any)
+        .mockResolvedValueOnce("csec" as any);
+
+      await expect(
+        xTwitterUserOauth2.prompt!({})
+      ).rejects.toThrow("Token exchange response missing access_token");
+
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe("PKCE flow — timeout", () => {
+    it("rejects after 2 minutes with a timeout error", async () => {
+      vi.useFakeTimers();
+
+      // Server that never fires any callback (simulates no user interaction)
+      vi.mocked(createServer).mockImplementationOnce((_handler: any) => {
+        return {
+          on: vi.fn(),
+          close: vi.fn(),
+          listen: vi.fn((_port: number, _host: string, cb: () => void) => {
+            cb(); // run listen callback but never fire a request
+          }),
+        };
+      });
+
+      mockedPassword
+        .mockResolvedValueOnce("cid" as any)
+        .mockResolvedValueOnce("csec" as any);
+
+      // Attach error handler immediately so Node.js never sees an unhandled rejection
+      let caughtError: Error | null = null;
+      const promptPromise = xTwitterUserOauth2.prompt!({}).catch((e) => {
+        caughtError = e;
+      });
+
+      // Advance fake timers by 2 minutes to trigger the timeout
+      await vi.advanceTimersByTimeAsync(120_001);
+      await promptPromise;
+
+      expect(caughtError).not.toBeNull();
+      expect(caughtError!.message).toBe("OAuth 2.0 authorization timed out (2 minutes)");
+
+      vi.useRealTimers();
     });
   });
 });
