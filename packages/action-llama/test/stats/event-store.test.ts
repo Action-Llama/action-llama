@@ -227,6 +227,47 @@ describe("EventSourcedStatsStore", () => {
       if (abEdge) expect(abEdge.count).toBe(2);
       if (acEdge) expect(acEdge.count).toBe(1);
     });
+
+    it("computes avgDurationMs from CALL_COMPLETED events via updateCallEdge", async () => {
+      const id1 = await store.recordCallEdge(makeCallEdge({ callerAgent: "orch", targetAgent: "worker" }));
+      const id2 = await store.recordCallEdge(makeCallEdge({ callerAgent: "orch", targetAgent: "worker" }));
+      await store.updateCallEdge(id1, { durationMs: 1000, status: "completed" });
+      await store.updateCallEdge(id2, { durationMs: 3000, status: "completed" });
+
+      const graph = await store.queryCallGraph();
+      const edge = graph.find((e) => e.callerAgent === "orch" && e.targetAgent === "worker");
+      expect(edge).toBeDefined();
+      expect(edge!.avgDurationMs).toBe(2000);
+    });
+
+    it("computes avgDurationMs from CALL_COMPLETED events when durationMs is set on recordCallEdge", async () => {
+      await store.recordCallEdge(makeCallEdge({ callerAgent: "a", targetAgent: "b", durationMs: 500, status: "completed" }));
+      await store.recordCallEdge(makeCallEdge({ callerAgent: "a", targetAgent: "b", durationMs: 1500, status: "completed" }));
+
+      const graph = await store.queryCallGraph();
+      const edge = graph.find((e) => e.callerAgent === "a" && e.targetAgent === "b");
+      expect(edge).toBeDefined();
+      expect(edge!.avgDurationMs).toBe(1000);
+    });
+
+    it("computes avgDurationMs from CALL_FAILED events", async () => {
+      const id = await store.recordCallEdge(makeCallEdge({ callerAgent: "a", targetAgent: "b" }));
+      await store.updateCallEdge(id, { durationMs: 200, status: "error" });
+
+      const graph = await store.queryCallGraph();
+      const edge = graph.find((e) => e.callerAgent === "a" && e.targetAgent === "b");
+      expect(edge).toBeDefined();
+      expect(edge!.avgDurationMs).toBe(200);
+    });
+
+    it("returns null avgDurationMs when no completion events exist", async () => {
+      await store.recordCallEdge(makeCallEdge({ callerAgent: "a", targetAgent: "b" }));
+
+      const graph = await store.queryCallGraph();
+      const edge = graph.find((e) => e.callerAgent === "a" && e.targetAgent === "b");
+      expect(edge).toBeDefined();
+      expect(edge!.avgDurationMs).toBeNull();
+    });
   });
 
   describe("createSnapshot / loadSnapshot", () => {
