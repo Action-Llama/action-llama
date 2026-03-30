@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { rmSync } from "fs";
+import { rmSync, mkdirSync, writeFileSync } from "fs";
 import { resolve } from "path";
 import { mkdtempSync } from "fs";
 import { tmpdir } from "os";
@@ -155,6 +155,81 @@ describe("FilesystemBackend", () => {
       setup();
       FilesystemBackend.writeSync("github_token", "default", "token", "val", tmpDir);
       expect(FilesystemBackend.existsSync("github_token", "default", tmpDir)).toBe(true);
+    });
+
+    it("readAllSync skips subdirectories inside the instance directory", () => {
+      setup();
+      FilesystemBackend.writeSync("git_ssh", "default", "id_rsa", "private-key", tmpDir);
+      // Create a subdirectory inside the instance dir — should be skipped
+      mkdirSync(resolve(tmpDir, "git_ssh", "default", "subdir"), { recursive: true });
+      const result = FilesystemBackend.readAllSync("git_ssh", "default", tmpDir);
+      expect(result).toEqual({ id_rsa: "private-key" });
+    });
+
+    it("readAllSync returns undefined when instance dir has only subdirectories (no files)", () => {
+      setup();
+      // Create instance dir with only a subdirectory
+      mkdirSync(resolve(tmpDir, "git_ssh", "default", "only-subdir"), { recursive: true });
+      const result = FilesystemBackend.readAllSync("git_ssh", "default", tmpDir);
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe("edge cases", () => {
+    it("list() returns empty array when baseDir does not exist", async () => {
+      // Use a non-existent directory as the base
+      const nonExistentDir = join(tmpdir(), "al-nonexistent-" + Date.now());
+      const backend2 = new FilesystemBackend(nonExistentDir);
+      const entries = await backend2.list();
+      expect(entries).toEqual([]);
+    });
+
+    it("list() skips non-directory entries at the type level", async () => {
+      setup();
+      // Create a regular file at the type level (not a directory)
+      writeFileSync(resolve(tmpDir, "not-a-dir"), "some content");
+      await backend.write("github_token", "default", "token", "t1");
+      const entries = await backend.list();
+      // Only github_token/default/token should appear; the file "not-a-dir" at type level should be skipped
+      expect(entries).toEqual([{ type: "github_token", instance: "default", field: "token" }]);
+    });
+
+    it("list() skips non-directory entries at the instance level", async () => {
+      setup();
+      // Create type dir, then put a regular file where an instance dir would be
+      mkdirSync(resolve(tmpDir, "github_token"), { recursive: true });
+      writeFileSync(resolve(tmpDir, "github_token", "not-an-instance-dir"), "content");
+      await backend.write("github_token", "default", "token", "t1");
+      const entries = await backend.list();
+      // Only github_token/default/token; the file is skipped
+      expect(entries).toEqual([{ type: "github_token", instance: "default", field: "token" }]);
+    });
+
+    it("list() skips subdirectories at the field level", async () => {
+      setup();
+      await backend.write("git_ssh", "default", "id_rsa", "key");
+      // Create a subdirectory inside the instance dir — should be skipped during list()
+      mkdirSync(resolve(tmpDir, "git_ssh", "default", "subdir"), { recursive: true });
+      const entries = await backend.list();
+      // Only id_rsa field, not the subdir
+      expect(entries).toEqual([{ type: "git_ssh", instance: "default", field: "id_rsa" }]);
+    });
+
+    it("readAll() skips subdirectories inside instance directory", async () => {
+      setup();
+      await backend.write("git_ssh", "default", "id_rsa", "private-key");
+      // Add a subdirectory inside the instance dir
+      mkdirSync(resolve(tmpDir, "git_ssh", "default", "subdir"), { recursive: true });
+      const result = await backend.readAll("git_ssh", "default");
+      expect(result).toEqual({ id_rsa: "private-key" });
+    });
+
+    it("readAll() returns undefined when instance dir has only subdirectories", async () => {
+      setup();
+      // Create instance dir with only a subdirectory, no field files
+      mkdirSync(resolve(tmpDir, "git_ssh", "default", "only-subdir"), { recursive: true });
+      const result = await backend.readAll("git_ssh", "default");
+      expect(result).toBeUndefined();
     });
   });
 });
