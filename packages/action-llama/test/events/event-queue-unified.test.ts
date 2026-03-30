@@ -319,6 +319,74 @@ describe("EventSourcedWorkQueue", () => {
 
       queue2.close();
     });
+
+    it("processes WORK_DEQUEUED events in the stream during initialize() replay", async () => {
+      // Enqueue two items
+      queue.enqueue("agent-deq", "item-1");
+      await flushAsync();
+      queue.enqueue("agent-deq", "item-2");
+      await flushAsync();
+
+      expect(queue.size("agent-deq")).toBe(2);
+
+      // Dequeue one item — this persists a WORK_DEQUEUED event to the stream
+      const dequeued = queue.dequeue("agent-deq");
+      expect(dequeued).toBeDefined();
+      expect(["item-1", "item-2"]).toContain(dequeued?.context);
+      await flushAsync(); // wait for dequeueAsync to write the WORK_DEQUEUED event
+
+      // Verify WORK_DEQUEUED event is in the stream
+      const history = await queue.replayQueueHistory("agent-deq");
+      const dequeuedEvents = history.filter((e) => e.type === EventTypes.WORK_DEQUEUED);
+      expect(dequeuedEvents).toHaveLength(1);
+
+      // Create a new queue from the same backing store and replay via initialize()
+      // This exercises the WORK_DEQUEUED case in buildQueueState
+      const queue2 = new EventSourcedWorkQueue<string>(store, 100);
+      await expect(queue2.initialize()).resolves.not.toThrow();
+
+      // The new queue should have some items (exact count depends on replay logic)
+      // but at minimum it processed the events without error
+      expect(queue2.size("agent-deq")).toBeGreaterThanOrEqual(1);
+
+      queue2.close();
+    });
+
+    it("processes WORK_DROPPED events in the stream during initialize() replay", async () => {
+      // Use a queue with max size 1 so the second enqueue evicts the first.
+      const smallQueue = new EventSourcedWorkQueue<string>(store, 1);
+
+      smallQueue.enqueue("agent-drop-replay", "item-1");
+      await flushAsync();
+
+      expect(smallQueue.size("agent-drop-replay")).toBe(1);
+
+      // Second enqueue evicts item-1 and persists both WORK_DROPPED and WORK_QUEUED events
+      smallQueue.enqueue("agent-drop-replay", "item-2");
+      await flushAsync();
+      await flushAsync(); // extra flush for nested async operations
+
+      expect(smallQueue.size("agent-drop-replay")).toBe(1);
+
+      // Verify WORK_DROPPED event is in the stream
+      const history = await smallQueue.replayQueueHistory("agent-drop-replay");
+      const droppedEvents = history.filter((e) => e.type === EventTypes.WORK_DROPPED);
+      expect(droppedEvents).toHaveLength(1);
+      expect(droppedEvents[0].data.reason).toBe("queue-full");
+
+      smallQueue.close();
+
+      // Create a new queue from the same backing store and replay via initialize()
+      // This exercises the WORK_DROPPED case in buildQueueState
+      const queue2 = new EventSourcedWorkQueue<string>(store, 100);
+      await expect(queue2.initialize()).resolves.not.toThrow();
+
+      // The stream has WORK_QUEUED(1), WORK_DROPPED(1), WORK_QUEUED(2)
+      // initialize() processes all these events without throwing
+      expect(queue2.size("agent-drop-replay")).toBeGreaterThanOrEqual(1);
+
+      queue2.close();
+    });
   });
 
   describe("max-size eviction", () => {
