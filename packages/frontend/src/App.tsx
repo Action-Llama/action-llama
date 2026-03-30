@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useParams } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { LoginPage } from "./pages/LoginPage";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -9,6 +9,11 @@ import { ProjectConfigPage } from "./pages/ProjectConfigPage";
 import { AgentSkillPage } from "./pages/AgentSkillPage";
 import { ChatPage } from "./pages/ChatPage";
 import { WebhookReceiptPage } from "./pages/WebhookReceiptPage";
+
+function AgentTriggersRedirect() {
+  const { name } = useParams<{ name: string }>();
+  return <Navigate to={`/triggers?agent=${encodeURIComponent(name ?? "")}`} replace />;
+}
 
 export function App() {
   return (
@@ -25,13 +30,14 @@ export function App() {
         />
         <Route
           path="/dashboard/agents/:name/triggers"
-          element={<TriggerHistoryPage />}
+          element={<AgentTriggersRedirect />}
         />
         <Route
           path="/dashboard/agents/:name/skill"
           element={<AgentSkillPage />}
         />
-        <Route path="/dashboard/triggers" element={<TriggerHistoryPage />} />
+        <Route path="/dashboard/triggers" element={<Navigate to="/triggers" replace />} />
+        <Route path="/triggers" element={<TriggerHistoryPage />} />
         <Route path="/dashboard/webhooks/:receiptId" element={<WebhookReceiptPage />} />
         <Route path="/dashboard/config" element={<ProjectConfigPage />} />
       </Route>

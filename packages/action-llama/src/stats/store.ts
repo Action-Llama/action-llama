@@ -301,6 +301,45 @@ export class StatsStore {
       countTriggerHistoryByAgent: this.db.prepare(
         "SELECT COUNT(*) AS count FROM runs WHERE started_at > @since AND agent_name = @agentName"
       ),
+      queryTriggerHistoryByType: this.db.prepare(`
+        SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
+               trigger_type AS triggerType, trigger_source AS triggerSource,
+               result, webhook_receipt_id AS webhookReceiptId,
+               NULL AS deadLetterReason
+        FROM runs WHERE started_at > @since AND trigger_type = @triggerType
+        ORDER BY ts DESC LIMIT @limit OFFSET @offset
+      `),
+      queryTriggerHistoryByTypeWithDeadLetters: this.db.prepare(`
+        SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
+               trigger_type AS triggerType, trigger_source AS triggerSource,
+               result, webhook_receipt_id AS webhookReceiptId,
+               NULL AS deadLetterReason
+        FROM runs WHERE started_at > @since AND trigger_type = @triggerType
+        UNION ALL
+        SELECT timestamp AS ts, NULL AS instanceId, NULL AS agentName,
+               'webhook' AS triggerType, source AS triggerSource,
+               'dead-letter' AS result, id AS webhookReceiptId,
+               dead_letter_reason AS deadLetterReason
+        FROM webhook_receipts WHERE status = 'dead-letter' AND timestamp > @since
+        ORDER BY ts DESC LIMIT @limit OFFSET @offset
+      `),
+      queryTriggerHistoryByAgentAndType: this.db.prepare(`
+        SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
+               trigger_type AS triggerType, trigger_source AS triggerSource,
+               result, webhook_receipt_id AS webhookReceiptId,
+               NULL AS deadLetterReason
+        FROM runs WHERE started_at > @since AND agent_name = @agentName AND trigger_type = @triggerType
+        ORDER BY ts DESC LIMIT @limit OFFSET @offset
+      `),
+      countTriggerHistoryByType: this.db.prepare(
+        "SELECT COUNT(*) AS count FROM runs WHERE started_at > @since AND trigger_type = @triggerType"
+      ),
+      countTriggerHistoryByTypeWithDeadLetters: this.db.prepare(
+        "SELECT (SELECT COUNT(*) FROM runs WHERE started_at > @since AND trigger_type = @triggerType) + (SELECT COUNT(*) FROM webhook_receipts WHERE status = 'dead-letter' AND timestamp > @since) AS count"
+      ),
+      countTriggerHistoryByAgentAndType: this.db.prepare(
+        "SELECT COUNT(*) AS count FROM runs WHERE started_at > @since AND agent_name = @agentName AND trigger_type = @triggerType"
+      ),
       pruneRuns: this.db.prepare("DELETE FROM runs WHERE started_at < @threshold"),
       pruneCallEdges: this.db.prepare("DELETE FROM call_edges WHERE started_at < @threshold"),
       queryCallEdgeByTarget: this.db.prepare(
@@ -451,17 +490,40 @@ export class StatsStore {
     return row ? this.mapReceipt(row) : undefined;
   }
 
-  queryTriggerHistory(opts: { since: number; limit: number; offset: number; includeDeadLetters: boolean; agentName?: string }): TriggerHistoryRow[] {
-    if (opts.agentName) {
-      return this.stmts.queryTriggerHistoryByAgent.all({ since: opts.since, limit: opts.limit, offset: opts.offset, agentName: opts.agentName }) as TriggerHistoryRow[];
+  queryTriggerHistory(opts: { since: number; limit: number; offset: number; includeDeadLetters: boolean; agentName?: string; triggerType?: string }): TriggerHistoryRow[] {
+    const { since, limit, offset, includeDeadLetters, agentName, triggerType } = opts;
+    if (agentName && triggerType) {
+      return this.stmts.queryTriggerHistoryByAgentAndType.all({ since, limit, offset, agentName, triggerType }) as TriggerHistoryRow[];
     }
-    const stmt = opts.includeDeadLetters ? this.stmts.queryTriggerHistory : this.stmts.queryTriggerHistoryNoDeadLetters;
-    return stmt.all({ since: opts.since, limit: opts.limit, offset: opts.offset }) as TriggerHistoryRow[];
+    if (agentName) {
+      return this.stmts.queryTriggerHistoryByAgent.all({ since, limit, offset, agentName }) as TriggerHistoryRow[];
+    }
+    if (triggerType) {
+      // For non-webhook types, dead letters are always webhook so we can skip them unless filtering for webhook
+      if (includeDeadLetters && triggerType === "webhook") {
+        return this.stmts.queryTriggerHistoryByTypeWithDeadLetters.all({ since, limit, offset, triggerType }) as TriggerHistoryRow[];
+      }
+      return this.stmts.queryTriggerHistoryByType.all({ since, limit, offset, triggerType }) as TriggerHistoryRow[];
+    }
+    const stmt = includeDeadLetters ? this.stmts.queryTriggerHistory : this.stmts.queryTriggerHistoryNoDeadLetters;
+    return stmt.all({ since, limit, offset }) as TriggerHistoryRow[];
   }
 
-  countTriggerHistory(since: number, includeDeadLetters: boolean, agentName?: string): number {
+  countTriggerHistory(since: number, includeDeadLetters: boolean, agentName?: string, triggerType?: string): number {
+    if (agentName && triggerType) {
+      const row = this.stmts.countTriggerHistoryByAgentAndType.get({ since, agentName, triggerType }) as any;
+      return row?.count ?? 0;
+    }
     if (agentName) {
       const row = this.stmts.countTriggerHistoryByAgent.get({ since, agentName }) as any;
+      return row?.count ?? 0;
+    }
+    if (triggerType) {
+      if (includeDeadLetters && triggerType === "webhook") {
+        const row = this.stmts.countTriggerHistoryByTypeWithDeadLetters.get({ since, triggerType }) as any;
+        return row?.count ?? 0;
+      }
+      const row = this.stmts.countTriggerHistoryByType.get({ since, triggerType }) as any;
       return row?.count ?? 0;
     }
     const stmt = includeDeadLetters ? this.stmts.countTriggerHistory : this.stmts.countTriggerHistoryNoDeadLetters;

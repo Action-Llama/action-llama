@@ -245,9 +245,11 @@ export function getTriggerHistory(
   offset: number,
   includeDeadLetters: boolean,
   agent?: string,
+  triggerType?: string,
 ): Promise<{ triggers: TriggerHistoryRow[]; total: number }> {
   let url = `/api/stats/triggers?limit=${limit}&offset=${offset}&all=${includeDeadLetters ? "1" : "0"}`;
   if (agent) url += `&agent=${encodeURIComponent(agent)}`;
+  if (triggerType) url += `&triggerType=${encodeURIComponent(triggerType)}`;
   return fetchJSON(url);
 }
 

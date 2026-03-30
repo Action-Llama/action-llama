@@ -345,7 +345,7 @@ export function AgentDetailPage() {
             Recent Triggers
           </h2>
           <Link
-            to={`/dashboard/agents/${encodeURIComponent(name)}/triggers`}
+            to={`/triggers?agent=${encodeURIComponent(name)}`}
             className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
           >
             View all
