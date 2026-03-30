@@ -987,4 +987,241 @@ describe("logs command", () => {
     });
   });
 
+  // ── --grep filtering ──────────────────────────────────────────────────────
+
+  describe("--grep filtering (local file path)", () => {
+    it("filters entries matching the grep pattern", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      const t = Date.now();
+      const content = [
+        makePinoLine({ msg: "bash", cmd: "deploy", time: t }),
+        makePinoLine({ msg: "bash", cmd: "echo hello", time: t + 1000 }),
+        makePinoLine({ msg: "bash", cmd: "deploy again", time: t + 2000 }),
+        makePinoLine({ msg: "run completed", time: t + 3000 }),
+      ].join("\n") + "\n";
+      writeFileSync(logFile, content);
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", grep: "deploy" });
+      console.log = origLog;
+
+      // Only lines containing "deploy" in their JSON representation
+      expect(output).toHaveLength(2);
+      expect(output[0]).toContain("deploy");
+      expect(output[1]).toContain("deploy");
+    });
+
+    it("grep searches the full JSON line (including non-msg fields)", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      const t = Date.now();
+      const content = [
+        makePinoLine({ msg: "bash", cmd: "docker ps", time: t }),
+        makePinoLine({ msg: "bash", cmd: "ls -la", time: t + 1000 }),
+      ].join("\n") + "\n";
+      writeFileSync(logFile, content);
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      // Search for "docker" in the cmd field (not msg)
+      await execute("dev", { project: tmpDir, lines: "50", grep: "docker" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("docker ps");
+    });
+
+    it("exits with error on invalid grep pattern", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({ msg: "test" }) + "\n");
+
+      const origExit = process.exit;
+      const origError = console.error;
+      let exitCode: number | undefined;
+      let errorMsg = "";
+
+      process.exit = ((code?: number) => { exitCode = code; throw new Error("EXIT"); }) as any;
+      console.error = (...args: any[]) => { errorMsg = args.join(" "); };
+
+      try {
+        await execute("dev", { project: tmpDir, lines: "50", grep: "[invalid" });
+      } catch {
+        // expected EXIT thrown
+      } finally {
+        process.exit = origExit;
+        console.error = origError;
+      }
+
+      expect(exitCode).toBe(1);
+      expect(errorMsg).toContain("Invalid grep pattern");
+    });
+  });
+
+  // ── --after / --before filtering ─────────────────────────────────────────
+
+  describe("--after / --before filtering (local file path)", () => {
+    it("filters entries with --after (relative duration)", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      // Create entries: 5 hours ago and 1 hour ago
+      const now = Date.now();
+      const content = [
+        makePinoLine({ msg: "bash", cmd: "echo old", time: now - 5 * 3_600_000 }),
+        makePinoLine({ msg: "bash", cmd: "echo recent", time: now - 1 * 3_600_000 }),
+      ].join("\n") + "\n";
+      writeFileSync(logFile, content);
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", after: "2h" });
+      console.log = origLog;
+
+      // Only the entry within the last 2 hours
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("echo recent");
+    });
+
+    it("filters entries with --before (ISO date string)", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      const cutoff = new Date("2025-03-28T12:00:00Z").getTime();
+      const content = [
+        makePinoLine({ msg: "bash", cmd: "echo before cutoff", time: cutoff - 1000 }),
+        makePinoLine({ msg: "bash", cmd: "echo after cutoff", time: cutoff + 1000 }),
+      ].join("\n") + "\n";
+      writeFileSync(logFile, content);
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", before: "2025-03-28T12:00:00Z" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("echo before cutoff");
+    });
+
+    it("filters entries with both --after and --before", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      const base = new Date("2025-03-28T10:00:00Z").getTime();
+      const content = [
+        makePinoLine({ msg: "bash", cmd: "msg A", time: base }),           // 10:00 (excluded: not strictly after 10:00)
+        makePinoLine({ msg: "bash", cmd: "msg B", time: base + 3_600_000 }), // 11:00 (included)
+        makePinoLine({ msg: "bash", cmd: "msg C", time: base + 2 * 3_600_000 }), // 12:00 (included)
+        makePinoLine({ msg: "bash", cmd: "msg D", time: base + 3 * 3_600_000 }), // 13:00 (excluded: not strictly before 13:00)
+      ].join("\n") + "\n";
+      writeFileSync(logFile, content);
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", after: "2025-03-28T10:00:00Z", before: "2025-03-28T13:00:00Z" });
+      console.log = origLog;
+
+      // Entries strictly after 10:00 and strictly before 13:00 → msg B and msg C
+      expect(output).toHaveLength(2);
+      expect(output[0]).toContain("msg B");
+      expect(output[1]).toContain("msg C");
+    });
+
+    it("exits with error on invalid --after value", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({ msg: "test" }) + "\n");
+
+      const origExit = process.exit;
+      const origError = console.error;
+      let exitCode: number | undefined;
+      let errorMsg = "";
+
+      process.exit = ((code?: number) => { exitCode = code; throw new Error("EXIT"); }) as any;
+      console.error = (...args: any[]) => { errorMsg = args.join(" "); };
+
+      try {
+        await execute("dev", { project: tmpDir, lines: "50", after: "not-a-time" });
+      } catch {
+        // expected EXIT
+      } finally {
+        process.exit = origExit;
+        console.error = origError;
+      }
+
+      expect(exitCode).toBe(1);
+      expect(errorMsg).toContain("Invalid time value");
+    });
+
+    it("accepts ISO date string for --after", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      const cutoff = new Date("2025-03-28T12:00:00Z").getTime();
+      const content = [
+        makePinoLine({ msg: "bash", cmd: "echo before", time: cutoff - 1000 }),
+        makePinoLine({ msg: "bash", cmd: "echo after", time: cutoff + 1000 }),
+      ].join("\n") + "\n";
+      writeFileSync(logFile, content);
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", after: "2025-03-28T12:00:00Z" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("echo after");
+    });
+
+    it("accepts day-based relative duration for --after", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      const now = Date.now();
+      const content = [
+        makePinoLine({ msg: "bash", cmd: "echo too old", time: now - 10 * 86_400_000 }),
+        makePinoLine({ msg: "bash", cmd: "echo recent", time: now - 1 * 86_400_000 }),
+      ].join("\n") + "\n";
+      writeFileSync(logFile, content);
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", after: "7d" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("echo recent");
+    });
+  });
+
+  // ── --grep combined with --after / --before ───────────────────────────────
+
+  describe("--grep combined with --after / --before", () => {
+    it("applies both time range and grep filter", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      const now = Date.now();
+      const content = [
+        makePinoLine({ msg: "bash", cmd: "echo error old", time: now - 5 * 3_600_000 }),
+        makePinoLine({ msg: "bash", cmd: "echo hello recent", time: now - 1 * 3_600_000 }),
+        makePinoLine({ msg: "bash", cmd: "echo error recent", time: now - 30 * 60_000 }),
+      ].join("\n") + "\n";
+      writeFileSync(logFile, content);
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", after: "2h", grep: "error" });
+      console.log = origLog;
+
+      // Only the "error recent" entry is both within 2h AND matches "error"
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("echo error recent");
+    });
+  });
+
 });

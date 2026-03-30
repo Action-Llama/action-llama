@@ -345,4 +345,145 @@ describe("log API routes", () => {
       expect(res.status).toBe(200);
     });
   });
+
+  // ── grep filtering ──────────────────────────────────────────────────────
+
+  describe("grep filtering", () => {
+    it("filters scheduler entries by grep pattern", async () => {
+      const lines = [
+        pinoLine(30, 1710700001000, "deploy started"),
+        pinoLine(30, 1710700002000, "health check"),
+        pinoLine(30, 1710700003000, "deploy finished"),
+      ];
+      writeFileSync(join(logsPath, "scheduler-2024-03-18.log"), lines.join("\n") + "\n");
+
+      const app = createTestApp(tmpDir);
+      const res = await app.request("/api/logs/scheduler?grep=deploy");
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.entries).toHaveLength(2);
+      expect(data.entries[0].msg).toBe("deploy started");
+      expect(data.entries[1].msg).toBe("deploy finished");
+    });
+
+    it("filters agent log entries by grep pattern", async () => {
+      const lines = [
+        pinoLine(30, 1710700001000, "deploy started"),
+        pinoLine(30, 1710700002000, "health check"),
+        pinoLine(30, 1710700003000, "deploy finished"),
+      ];
+      writeFileSync(join(logsPath, "dev-2024-03-18.log"), lines.join("\n") + "\n");
+
+      const app = createTestApp(tmpDir);
+      const res = await app.request("/api/logs/agents/dev?grep=deploy");
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.entries).toHaveLength(2);
+      expect(data.entries[0].msg).toBe("deploy started");
+      expect(data.entries[1].msg).toBe("deploy finished");
+    });
+
+    it("filters instance log entries by grep pattern", async () => {
+      const lines = [
+        pinoLine(30, 1710700001000, "deploy started", { instance: "dev-aa11bb22" }),
+        pinoLine(30, 1710700002000, "health check", { instance: "dev-aa11bb22" }),
+        pinoLine(30, 1710700003000, "deploy finished", { instance: "dev-aa11bb22" }),
+      ];
+      writeFileSync(join(logsPath, "dev-2024-03-18.log"), lines.join("\n") + "\n");
+
+      const app = createTestApp(tmpDir);
+      const res = await app.request("/api/logs/agents/dev/dev-aa11bb22?grep=deploy");
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.entries).toHaveLength(2);
+      expect(data.entries[0].msg).toBe("deploy started");
+      expect(data.entries[1].msg).toBe("deploy finished");
+    });
+
+    it("returns 400 for invalid grep pattern on scheduler", async () => {
+      const app = createTestApp(tmpDir);
+      const res = await app.request("/api/logs/scheduler?grep=%5Binvalid");
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.error).toBe("Invalid grep pattern");
+    });
+
+    it("returns 400 for invalid grep pattern on agent logs", async () => {
+      const app = createTestApp(tmpDir);
+      const res = await app.request("/api/logs/agents/dev?grep=%5Binvalid");
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.error).toBe("Invalid grep pattern");
+    });
+
+    it("returns 400 for invalid grep pattern on instance logs", async () => {
+      writeFileSync(join(logsPath, "dev-2024-03-18.log"), pinoLine(30, 1710700001000, "msg") + "\n");
+      const app = createTestApp(tmpDir);
+      const res = await app.request("/api/logs/agents/dev/dev-aa11bb22?grep=%5Binvalid");
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.error).toBe("Invalid grep pattern");
+    });
+
+    it("grep searches the full JSON line (including extra fields)", async () => {
+      const lines = [
+        pinoLine(30, 1710700001000, "bash", { cmd: "docker ps" }),
+        pinoLine(30, 1710700002000, "bash", { cmd: "echo hello" }),
+      ];
+      writeFileSync(join(logsPath, "scheduler-2024-03-18.log"), lines.join("\n") + "\n");
+
+      const app = createTestApp(tmpDir);
+      const res = await app.request("/api/logs/scheduler?grep=docker");
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.entries).toHaveLength(1);
+      expect((data.entries[0] as any).cmd).toBe("docker ps");
+    });
+
+    it("combines grep with after/before time range", async () => {
+      const lines = [
+        pinoLine(30, 1710700001000, "deploy old"),
+        pinoLine(30, 1710700005000, "deploy recent"),
+        pinoLine(30, 1710700007000, "health check"),
+      ];
+      writeFileSync(join(logsPath, "scheduler-2024-03-18.log"), lines.join("\n") + "\n");
+
+      const app = createTestApp(tmpDir);
+      const res = await app.request("/api/logs/scheduler?after=1710700003000&grep=deploy");
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.entries).toHaveLength(1);
+      expect(data.entries[0].msg).toBe("deploy recent");
+    });
+
+    it("grep works with cursor pagination (returns only matching new entries)", async () => {
+      const lines = [
+        pinoLine(30, 1710700001000, "deploy started"),
+        pinoLine(30, 1710700002000, "health check"),
+      ];
+      writeFileSync(join(logsPath, "scheduler-2024-03-18.log"), lines.join("\n") + "\n");
+
+      const app = createTestApp(tmpDir);
+      // Initial fetch
+      const res1 = await app.request("/api/logs/scheduler?lines=10&grep=deploy");
+      const data1 = await res1.json();
+      expect(data1.entries).toHaveLength(1);
+      const cursor = data1.cursor;
+
+      // Append new data: one matching and one non-matching entry
+      const newLines = [
+        pinoLine(30, 1710700010000, "deploy finished"),
+        pinoLine(30, 1710700011000, "status update"),
+      ];
+      writeFileSync(
+        join(logsPath, "scheduler-2024-03-18.log"),
+        lines.join("\n") + "\n" + newLines.join("\n") + "\n",
+      );
+
+      const res2 = await app.request(`/api/logs/scheduler?cursor=${encodeURIComponent(cursor)}&grep=deploy`);
+      const data2 = await res2.json();
+      expect(data2.entries).toHaveLength(1);
+      expect(data2.entries[0].msg).toBe("deploy finished");
+    });
+  });
 });

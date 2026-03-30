@@ -121,6 +121,9 @@ program
   .option("-a, --all", "show all log levels (no filtering)")
   .option("-E, --env <name>", "use named environment")
   .option("-i, --instance <N>", "instance number (for agents with scale > 1)")
+  .option("-g, --grep <pattern>", "filter log lines matching regex pattern (searches full JSON line)")
+  .option("--after <time>", "show entries after this time (ISO date or relative: 2h, 7d)")
+  .option("--before <time>", "show entries before this time (ISO date or relative: 2h, 7d)")
   .action(withCommand(async (agent: string, opts) => {
     const { execute } = await import("./commands/logs.js");
     await execute(agent, opts);
