@@ -198,6 +198,94 @@ describe("Extension Loader", () => {
         }
       }
     });
+
+    it("catches vault registration failure and warns when VAULT_ADDR is set but vault init throws", async () => {
+      const { vaultCredentialExtension } = await import("../../src/credentials/providers/index.js");
+
+      const originalVaultAddr = process.env.VAULT_ADDR;
+      process.env.VAULT_ADDR = "http://localhost:8200";
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      // Make vault init fail for this test
+      vi.mocked(vaultCredentialExtension.init).mockRejectedValueOnce(new Error("vault unavailable"));
+      try {
+        await expect(loadBuiltinExtensions()).resolves.not.toThrow();
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringContaining("Vault"),
+          expect.stringContaining("vault unavailable"),
+        );
+      } finally {
+        warnSpy.mockRestore();
+        if (originalVaultAddr === undefined) {
+          delete process.env.VAULT_ADDR;
+        } else {
+          process.env.VAULT_ADDR = originalVaultAddr;
+        }
+      }
+    });
+
+    it("catches telemetry extension load failure and warns", async () => {
+      const { otelExtension } = await import("../../src/telemetry/providers/otel.js");
+
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      vi.mocked(otelExtension.init).mockRejectedValueOnce(new Error("otel unavailable"));
+      try {
+        await expect(loadBuiltinExtensions()).resolves.not.toThrow();
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringContaining("telemetry"),
+          expect.any(Error),
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it("catches runtime extension load failure and warns", async () => {
+      const { localDockerExtension } = await import("../../src/docker/providers/index.js");
+
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      vi.mocked(localDockerExtension.init).mockRejectedValueOnce(new Error("docker unavailable"));
+      try {
+        await expect(loadBuiltinExtensions()).resolves.not.toThrow();
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringContaining("runtime"),
+          expect.any(Error),
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it("catches model extension load failure and warns", async () => {
+      const { openAIModelExtension } = await import("../../src/models/providers/index.js");
+
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      vi.mocked(openAIModelExtension.init).mockRejectedValueOnce(new Error("openai unavailable"));
+      try {
+        await expect(loadBuiltinExtensions()).resolves.not.toThrow();
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringContaining("model"),
+          expect.any(Error),
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it("catches credential extension load failure when fileCredentialExtension init throws", async () => {
+      const { fileCredentialExtension } = await import("../../src/credentials/providers/index.js");
+
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      vi.mocked(fileCredentialExtension.init).mockRejectedValueOnce(new Error("file cred unavailable"));
+      try {
+        await expect(loadBuiltinExtensions()).resolves.not.toThrow();
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringContaining("credential"),
+          expect.any(Error),
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
   });
 
   describe("getGlobalRegistry", () => {
