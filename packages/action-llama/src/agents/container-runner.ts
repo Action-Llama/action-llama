@@ -5,6 +5,7 @@ import type { Runtime, RuntimeCredentials } from "../docker/runtime.js";
 import type { ContainerRegistration } from "../execution/types.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import type { RunResult, RunOutcome } from "./types.js";
+import { DEFAULT_AGENT_TIMEOUT } from "../shared/constants.js";
 import { withSpan, getTelemetry } from "../telemetry/index.js";
 import { SpanKind } from "@opentelemetry/api";
 import type { TokenUsage } from "../shared/usage.js";
@@ -284,7 +285,7 @@ export class ContainerAgentRunner {
     this.logger.info({ container: containerName }, "re-adopted orphan container");
     this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} re-adopted`);
 
-    const timeout = this.agentConfig.timeout ?? this.globalConfig.local?.timeout ?? 900;
+    const timeout = this.agentConfig.timeout ?? this.globalConfig.local?.timeout ?? DEFAULT_AGENT_TIMEOUT;
 
     const { runResult, runError } = await this.monitorContainer({
       containerName,
@@ -373,7 +374,7 @@ export class ContainerAgentRunner {
     let containerName: string | undefined;
 
     try {
-      const timeout = this.agentConfig.timeout ?? this.globalConfig.local?.timeout ?? 900;
+      const timeout = this.agentConfig.timeout ?? this.globalConfig.local?.timeout ?? DEFAULT_AGENT_TIMEOUT;
 
       // Resolve credential refs — include provider keys for all models in the chain
       const credRefs = [...new Set(this.agentConfig.credentials)];

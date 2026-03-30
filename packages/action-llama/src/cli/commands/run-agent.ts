@@ -13,6 +13,7 @@ import { existsSync, readFileSync, readdirSync, statSync, mkdirSync, writeFileSy
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { loadAgentConfig, loadAgentBody, loadGlobalConfig } from "../../shared/config.js";
+import { DEFAULT_AGENT_TIMEOUT } from "../../shared/constants.js";
 import type { AgentConfig } from "../../shared/config.js";
 import { parseCredentialRef } from "../../shared/credentials.js";
 import { builtinCredentials } from "../../credentials/builtins/index.js";
@@ -143,7 +144,7 @@ export async function execute(agent: string, opts: { project: string }): Promise
   const agentConfig = loadAgentConfig(projectPath, agent);
   const skillBody = loadAgentBody(projectPath, agent);
   const globalConfig = loadGlobalConfig(projectPath);
-  const timeoutSeconds = agentConfig.timeout ?? globalConfig.local?.timeout ?? 900;
+  const timeoutSeconds = agentConfig.timeout ?? globalConfig.local?.timeout ?? DEFAULT_AGENT_TIMEOUT;
 
   // Load and inject credentials
   const providerKeys = loadAndInjectCredentials(agentConfig, credPath);

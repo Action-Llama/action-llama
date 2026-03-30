@@ -42,6 +42,9 @@ export function imageTags(name: string): [primary: string, ...aliases: string[]]
   return [`${name}:${GIT_SHA}`, `${name}:${VERSION}`, `${name}:latest`];
 }
 
+/** Default agent container timeout in seconds (1 hour). */
+export const DEFAULT_AGENT_TIMEOUT = 3600;
+
 export const CONSTANTS = {
   /** Default prefix for secret names across all providers */
   DEFAULT_SECRET_PREFIX: "action-llama",

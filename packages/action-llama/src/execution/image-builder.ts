@@ -9,7 +9,7 @@ import { resolve as resolvePath, dirname } from "path";
 import { fileURLToPath } from "url";
 import { loadSharedFiles, type AgentConfig, type GlobalConfig } from "../shared/config.js";
 import type { Runtime, ContainerRuntime } from "../docker/runtime.js";
-import { CONSTANTS, imageTags } from "../shared/constants.js";
+import { CONSTANTS, DEFAULT_AGENT_TIMEOUT, imageTags } from "../shared/constants.js";
 import { buildPromptSkeleton, type PromptSkills } from "../agents/prompt.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import type { Logger } from "../shared/logger.js";
@@ -169,7 +169,7 @@ export async function buildSingleAgentImage(opts: SingleAgentBuildOpts): Promise
   const hasCustomDockerfile = existsSync(resolvePath(agentPath, "Dockerfile"));
   const skillPath = resolvePath(agentPath, "SKILL.md");
   const skillMd = existsSync(skillPath) ? readFileSync(skillPath, "utf-8") : "";
-  const timeout = String(agentConfig.timeout ?? globalConfig.local?.timeout ?? 900);
+  const timeout = String(agentConfig.timeout ?? globalConfig.local?.timeout ?? DEFAULT_AGENT_TIMEOUT);
   const extraFiles: Record<string, string> = {
     "agent-config.json": JSON.stringify(agentConfig),
     "SKILL.md": skillMd,
