@@ -132,6 +132,53 @@ vi.mock("../../src/shared/state-store.js", () => ({
   }),
 }));
 
+// Mock extensions loader — using vi.fn() named with "mock" prefix so vitest allows it in factories
+const mockLoadBuiltinExtensions = vi.fn().mockResolvedValue(undefined);
+vi.mock("../../src/extensions/loader.js", () => ({
+  loadBuiltinExtensions: (...args: any[]) => mockLoadBuiltinExtensions(...args),
+  isExtension: (obj: any) => obj !== null && typeof obj === "object" && "metadata" in obj,
+  getGlobalRegistry: () => ({}),
+}));
+
+// Mock execution/runtime-factory.js to avoid needing extensions registered in global registry
+vi.mock("../../src/execution/runtime-factory.js", () => ({
+  createContainerRuntime: vi.fn().mockResolvedValue({
+    runtime: {
+      needsGateway: true,
+      isAgentRunning: async () => false,
+      listRunningAgents: async () => [],
+      launch: async () => "mock-container",
+      kill: async () => {},
+      remove: async () => {},
+      fetchLogs: async () => [],
+      followLogs: () => ({ stop: () => {} }),
+      getTaskUrl: () => null,
+      buildImage: async () => "mock-image",
+      pushImage: async (img: string) => img,
+      streamLogs: () => ({ stop: () => {} }),
+      waitForExit: async () => 0,
+      prepareCredentials: async () => ({ strategy: "volume", stagingDir: "/tmp/mock", bundle: {} }),
+      cleanupCredentials: () => {},
+    },
+    agentRuntimeOverrides: {},
+  }),
+  buildAgentImages: vi.fn().mockResolvedValue({
+    baseImage: "test-base-image",
+    agentImages: {},
+  }),
+}));
+
+// Mock telemetry
+const mockTelemetryInit = vi.fn().mockResolvedValue(undefined);
+const mockTelemetryShutdown = vi.fn().mockResolvedValue(undefined);
+const mockInitTelemetry = vi.fn().mockReturnValue({
+  init: mockTelemetryInit,
+  shutdown: mockTelemetryShutdown,
+});
+vi.mock("../../src/telemetry/index.js", () => ({
+  initTelemetry: (...args: any[]) => mockInitTelemetry(...args),
+}));
+
 // Mock logger
 const mockLoggerInfo = vi.fn();
 const mockLoggerWarn = vi.fn();
@@ -550,6 +597,151 @@ describe("startScheduler", () => {
       expect(fast.timeout).toBe(300);
       expect(slow.timeout).toBe(1800);
       expect(dflt.timeout).toBeUndefined();
+    });
+  });
+
+  describe("telemetry initialization", () => {
+    function setupTelemetryProject(dir: string) {
+      const globalConfig = {
+        telemetry: {
+          enabled: true,
+          provider: "otel",
+          endpoint: "http://localhost:4317",
+          serviceName: "action-llama-test",
+        },
+        models: {
+          sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
+        },
+      };
+      writeFileSync(resolve(dir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
+
+      const agentDir = resolve(dir, "agents", "dev");
+      mkdirSync(agentDir, { recursive: true });
+      writeAgentConfig(agentDir, {
+        name: "dev",
+        credentials: ["github_token"],
+        models: ["sonnet"],
+        schedule: "*/5 * * * *",
+      });
+      mkdirSync(resolve(dir, ".al", "state", "dev"), { recursive: true });
+    }
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+      cronCallbacks.length = 0;
+      mockIsRunning = false;
+      tmpDir = mkdtempSync(join(tmpdir(), "al-sched-telemetry-"));
+      setupTelemetryProject(tmpDir);
+    });
+
+    it("initializes telemetry when telemetry.enabled is true in config", async () => {
+      await startScheduler(tmpDir);
+
+      // initTelemetry should have been called with the telemetry config
+      expect(mockInitTelemetry).toHaveBeenCalledWith(
+        expect.objectContaining({ enabled: true, provider: "otel" })
+      );
+      // telemetry.init() should have been called
+      expect(mockTelemetryInit).toHaveBeenCalledTimes(1);
+      // Telemetry initialized log
+      expect(mockLoggerInfo).toHaveBeenCalledWith("Telemetry initialized successfully");
+    });
+
+    it("logs warning when telemetry init fails", async () => {
+      mockTelemetryInit.mockRejectedValueOnce(new Error("otel init failed"));
+
+      await startScheduler(tmpDir);
+
+      // Should warn about telemetry failure
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        expect.objectContaining({ error: "otel init failed" }),
+        "Failed to initialize telemetry"
+      );
+    });
+  });
+
+  describe("extension loading", () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      cronCallbacks.length = 0;
+      mockIsRunning = false;
+      tmpDir = mkdtempSync(join(tmpdir(), "al-sched-ext-"));
+      setupProject(tmpDir);
+    });
+
+    it("logs warning when loadBuiltinExtensions throws", async () => {
+      mockLoadBuiltinExtensions.mockRejectedValueOnce(new Error("ext load failed"));
+
+      await startScheduler(tmpDir);
+
+      // Should warn about extension load failure
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        expect.objectContaining({ error: "ext load failed" }),
+        "Failed to load extensions"
+      );
+    });
+
+    it("logs success when loadBuiltinExtensions resolves", async () => {
+      // Default mock already resolves — just verify the success log is emitted
+      await startScheduler(tmpDir);
+
+      expect(mockLoggerInfo).toHaveBeenCalledWith("Extensions loaded successfully");
+    });
+  });
+
+  describe("status tracker scale sync", () => {
+    function setupScaleProject2(dir: string) {
+      const globalConfig = {
+        models: {
+          sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
+        },
+      };
+      writeFileSync(resolve(dir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
+
+      const agents = [
+        { name: "scaled-up-agent", credentials: ["github_token"], models: ["sonnet"], schedule: "*/5 * * * *", scale: 3 },
+      ];
+
+      for (const agent of agents) {
+        const agentDir = resolve(dir, "agents", agent.name);
+        mkdirSync(agentDir, { recursive: true });
+        writeAgentConfig(agentDir, agent);
+        mkdirSync(resolve(dir, ".al", "state", agent.name), { recursive: true });
+      }
+    }
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+      cronCallbacks.length = 0;
+      mockIsRunning = false;
+      tmpDir = mkdtempSync(join(tmpdir(), "al-sched-scale-sync-"));
+      setupScaleProject2(tmpDir);
+    });
+
+    it("syncs status tracker scale when actual scale differs from registered scale", async () => {
+      // statusTracker.getAgentScale returns 1 (registered), but actual scale is 3
+      const tracker = {
+        isPaused: vi.fn().mockReturnValue(false),
+        isAgentEnabled: vi.fn().mockReturnValue(true),
+        registerAgent: vi.fn(),
+        setPaused: vi.fn(),
+        setNextRunAt: vi.fn(),
+        on: vi.fn(),
+        enableAgent: vi.fn(),
+        disableAgent: vi.fn(),
+        getAgentScale: vi.fn().mockReturnValue(1), // returns 1, but actual is 3
+        updateAgentScale: vi.fn(),
+      } as any;
+
+      await startScheduler(tmpDir, undefined, tracker);
+
+      // updateAgentScale should be called to sync the scale from 1 → 3
+      expect(tracker.updateAgentScale).toHaveBeenCalledWith("scaled-up-agent", 3);
+      // And a log should be emitted
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        expect.objectContaining({ agent: "scaled-up-agent", registeredScale: 1, actualScale: 3 }),
+        "synced status tracker scale with actual pool size"
+      );
     });
   });
 });
