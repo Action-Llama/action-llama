@@ -28,10 +28,6 @@ jobs:
           node-version: 24
           registry-url: "https://registry.npmjs.org"
 
-      - run: npm ci
-      - run: npm run build
-      - run: npm test
-
       - name: Check for changesets
         id: has-changesets
         run: |
@@ -39,7 +35,15 @@ jobs:
             echo "has_changesets=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_changesets=false" >> "$GITHUB_OUTPUT"
+            echo "No changesets found — skipping release."
           fi
+
+      - run: npm ci
+        if: steps.has-changesets.outputs.has_changesets == 'true'
+      - run: npm run build
+        if: steps.has-changesets.outputs.has_changesets == 'true'
+      - run: npm test
+        if: steps.has-changesets.outputs.has_changesets == 'true'
 
       - name: Version packages
         if: steps.has-changesets.outputs.has_changesets == 'true'
