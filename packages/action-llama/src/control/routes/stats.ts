@@ -70,6 +70,63 @@ export function registerStatsRoutes(app: Hono, statsStore?: StatsStore, statusTr
     return c.json({ triggers: mergedTriggers, total: mergedTotal, limit, offset });
   });
 
+  // Paginated jobs (pending + running + completed, no dead letters)
+  app.get("/api/stats/jobs", (c) => {
+    const limit = Math.min(100, Math.max(1, parseInt(c.req.query("limit") || "50", 10) || 50));
+    const offset = Math.max(0, parseInt(c.req.query("offset") || "0", 10) || 0);
+    const since = parseInt(c.req.query("since") || "0", 10) || 0;
+    const agentFilter = c.req.query("agent") || undefined;
+
+    // Completed/errored jobs from runs table (no dead letters — dead letters aren't jobs)
+    const runs = statsStore
+      ? statsStore.queryTriggerHistory({ since, limit, offset, includeDeadLetters: false, agentName: agentFilter })
+      : [];
+    const total = statsStore ? statsStore.countTriggerHistory(since, false, agentFilter) : 0;
+
+    // Running instances (only on first page)
+    let mergedJobs = runs;
+    let mergedTotal = total;
+    if (statusTracker && offset === 0) {
+      const running = statusTracker.getInstances()
+        .filter((inst) => {
+          if (inst.status !== "running") return false;
+          if (agentFilter && inst.agentName !== agentFilter) return false;
+          return true;
+        })
+        .map((inst) => {
+          const sep = inst.trigger.indexOf(":");
+          return {
+            ts: new Date(inst.startedAt).getTime(),
+            triggerType: sep > -1 ? inst.trigger.slice(0, sep) : inst.trigger,
+            triggerSource: sep > -1 ? inst.trigger.slice(sep + 1).trim() : null,
+            agentName: inst.agentName,
+            instanceId: inst.id,
+            result: "running",
+            webhookReceiptId: null,
+            deadLetterReason: null,
+          };
+        });
+      const runningIds = new Set(runs.map((r: any) => r.instanceId));
+      const uniqueRunning = running.filter((r) => !runningIds.has(r.instanceId));
+      mergedJobs = [...uniqueRunning, ...runs].sort((a: any, b: any) => b.ts - a.ts);
+      mergedTotal = total + uniqueRunning.length;
+    }
+
+    // Pending counts per agent
+    const agents = statusTracker ? statusTracker.getAllAgents() : [];
+    const pending: Record<string, number> = {};
+    for (const a of agents) {
+      if (a.queuedWebhooks > 0) {
+        if (!agentFilter || a.name === agentFilter) {
+          pending[a.name] = a.queuedWebhooks;
+        }
+      }
+    }
+    const totalPending = Object.values(pending).reduce((s, n) => s + n, 0);
+
+    return c.json({ jobs: mergedJobs, total: mergedTotal, pending, totalPending, limit, offset });
+  });
+
   // Single webhook receipt by ID
   app.get("/api/stats/webhooks/:receiptId", (c) => {
     const receiptId = c.req.param("receiptId");

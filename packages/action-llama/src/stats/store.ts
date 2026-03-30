@@ -24,6 +24,7 @@ export interface RunRecord {
   preHookMs?: number;
   postHookMs?: number;
   webhookReceiptId?: string;
+  triggerContext?: string;
 }
 
 export interface WebhookReceipt {
@@ -130,6 +131,7 @@ export class StatsStore {
       preHookMs: run.preHookMs ?? null,
       postHookMs: run.postHookMs ?? null,
       webhookReceiptId: run.webhookReceiptId ?? null,
+      triggerContext: run.triggerContext ?? null,
     }).run();
   }
 

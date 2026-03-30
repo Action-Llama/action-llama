@@ -7,7 +7,7 @@ import { StateBadge, TriggerTypeBadge, ResultBadge } from "../components/Badge";
 import {
   getAgentDetail,
   getAgentLogs,
-  getTriggerHistory,
+  getJobs,
   triggerAgent,
   killAgentInstances,
   killInstance,
@@ -17,7 +17,7 @@ import {
 } from "../lib/api";
 import type {
   AgentDetailData,
-  TriggerHistoryRow,
+  JobRow,
   LogEntry,
   AgentInstance,
 } from "../lib/api";
@@ -63,8 +63,9 @@ export function AgentDetailPage() {
   const { agents, instances } = useStatusStream();
   const agentNames = agents.map((a) => a.name);
   const [detail, setDetail] = useState<AgentDetailData | null>(null);
-  const [triggers, setTriggers] = useState<TriggerHistoryRow[]>([]);
-  const [triggersTotal, setTriggersTotal] = useState(0);
+  const [jobs, setJobs] = useState<JobRow[]>([]);
+  const [jobsTotal, setJobsTotal] = useState(0);
+  const [jobsPending, setJobsPending] = useState(0);
   const [triggersOffset, setTriggersOffset] = useState(0);
   const triggersLimit = 5;
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -96,23 +97,24 @@ export function AgentDetailPage() {
     refetchDetail();
   }, [refetchDetail]);
 
-  // Load triggers
-  const refetchTriggers = useCallback(() => {
+  // Load jobs
+  const refetchJobs = useCallback(() => {
     if (!name) return;
-    getTriggerHistory(triggersLimit, triggersOffset, false, name)
+    getJobs(triggersLimit, triggersOffset, name)
       .then((d) => {
-        setTriggers(d.triggers);
-        setTriggersTotal(d.total);
+        setJobs(d.jobs);
+        setJobsTotal(d.total);
+        setJobsPending(d.totalPending);
       })
       .catch(() => {});
   }, [name, triggersOffset]);
 
   useEffect(() => {
-    refetchTriggers();
-  }, [refetchTriggers]);
+    refetchJobs();
+  }, [refetchJobs]);
 
   useInvalidation("stats", name, refetchDetail);
-  useInvalidation("triggers", name, refetchTriggers);
+  useInvalidation("runs", name, refetchJobs);
 
   // Poll logs
   useEffect(() => {
@@ -165,8 +167,36 @@ export function AgentDetailPage() {
   if (!name) return null;
 
   const summary = detail?.summary;
+
+  // Merge running instances into jobs list for the agent detail page
+  const mergedJobs: JobRow[] = triggersOffset === 0
+    ? (() => {
+        const running: JobRow[] = liveInstances.map((inst) => {
+          const sep = inst.trigger.indexOf(":");
+          return {
+            ts: new Date(inst.startedAt).getTime(),
+            triggerType: sep > -1 ? inst.trigger.slice(0, sep) : inst.trigger,
+            triggerSource: sep > -1 ? inst.trigger.slice(sep + 1).trim() : null,
+            agentName: inst.agentName,
+            instanceId: inst.id,
+            result: "running",
+            webhookReceiptId: null,
+            deadLetterReason: null,
+          };
+        });
+        const jobIds = new Set(jobs.map((j) => j.instanceId));
+        const unique = running.filter((r) => !jobIds.has(r.instanceId));
+        return [...unique, ...jobs].sort((a, b) => b.ts - a.ts);
+      })()
+    : jobs;
+
+  const runningOnPage = triggersOffset === 0 ? liveInstances.length : 0;
+  const adjustedJobsTotal = jobsTotal + runningOnPage;
   const triggersPage = Math.floor(triggersOffset / triggersLimit) + 1;
-  const triggersTotalPages = Math.max(1, Math.ceil(triggersTotal / triggersLimit));
+  const triggersTotalPages = Math.max(1, Math.ceil(adjustedJobsTotal / triggersLimit));
+
+  // Use live pending count from SSE stream if available
+  const livePending = agent?.queuedWebhooks ?? jobsPending;
 
   return (
     <div className="space-y-6">
@@ -338,14 +368,21 @@ export function AgentDetailPage() {
         </div>
       )}
 
-      {/* Recent Triggers */}
+      {/* Jobs */}
       <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-200 dark:border-slate-800">
-          <h2 className="text-sm font-medium text-slate-900 dark:text-white">
-            Recent Triggers
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-medium text-slate-900 dark:text-white">
+              Jobs
+            </h2>
+            {livePending > 0 && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
+                {livePending} pending
+              </span>
+            )}
+          </div>
           <Link
-            to={`/triggers?agent=${encodeURIComponent(name)}`}
+            to={`/jobs?agent=${encodeURIComponent(name)}`}
             className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
           >
             View all
@@ -359,10 +396,7 @@ export function AgentDetailPage() {
                   Time
                 </th>
                 <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide w-[1%] whitespace-nowrap">
-                  Type
-                </th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide w-[1%] whitespace-nowrap">
-                  Source
+                  Trigger
                 </th>
                 <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
                   Instance
@@ -373,58 +407,51 @@ export function AgentDetailPage() {
               </tr>
             </thead>
             <tbody>
-              {triggers.map((t, i) => (
+              {mergedJobs.map((j, i) => (
                 <tr
-                  key={`${t.ts}-${i}`}
+                  key={`${j.ts}-${i}`}
                   className="border-b border-slate-100 dark:border-slate-800/50 last:border-0"
                 >
                   <td className="px-4 py-2 text-slate-600 dark:text-slate-400 text-xs whitespace-nowrap">
-                    {fmtRelativeTime(t.ts)}
+                    {fmtRelativeTime(j.ts)}
                   </td>
                   <td className="px-4 py-2 whitespace-nowrap">
-                    <TriggerTypeBadge type={t.triggerType} />
-                  </td>
-                  <td className="px-4 py-2 text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                    {t.triggerSource ? (
-                      t.triggerType === "agent" ? (
-                        <Link
-                          to={`/dashboard/agents/${encodeURIComponent(t.triggerSource)}`}
-                          className="text-blue-600 dark:text-blue-400 hover:underline"
-                        >
-                          {t.triggerSource}
-                        </Link>
-                      ) : (
-                        t.triggerSource
-                      )
+                    {j.instanceId ? (
+                      <Link
+                        to={`/dashboard/triggers/${encodeURIComponent(j.instanceId)}`}
+                        className="flex items-center gap-1.5 hover:opacity-80"
+                      >
+                        <TriggerTypeBadge type={j.triggerType} />
+                      </Link>
                     ) : (
-                      "\u2014"
+                      <TriggerTypeBadge type={j.triggerType} />
                     )}
                   </td>
                   <td className="px-4 py-2 min-w-0">
-                    {t.instanceId ? (
+                    {j.instanceId ? (
                       <Link
-                        to={`/dashboard/agents/${encodeURIComponent(name)}/instances/${encodeURIComponent(t.instanceId)}`}
+                        to={`/dashboard/agents/${encodeURIComponent(name)}/instances/${encodeURIComponent(j.instanceId)}`}
                         className="font-mono text-xs text-blue-600 dark:text-blue-400 hover:underline truncate block"
-                        title={t.instanceId}
+                        title={j.instanceId}
                       >
-                        {t.instanceId}
+                        {shortId(j.instanceId)}
                       </Link>
                     ) : (
                       <span className="text-xs text-slate-400">{"\u2014"}</span>
                     )}
                   </td>
                   <td className="px-4 py-2 whitespace-nowrap">
-                    <ResultBadge result={t.result} deadLetterReason={t.deadLetterReason} />
+                    <ResultBadge result={j.result} deadLetterReason={j.deadLetterReason} />
                   </td>
                 </tr>
               ))}
-              {triggers.length === 0 && (
+              {mergedJobs.length === 0 && (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={4}
                     className="px-4 py-6 text-center text-slate-500 dark:text-slate-400 text-xs"
                   >
-                    No recent triggers
+                    No jobs yet
                   </td>
                 </tr>
               )}
@@ -445,7 +472,7 @@ export function AgentDetailPage() {
             </span>
             <button
               onClick={() => setTriggersOffset((o) => o + triggersLimit)}
-              disabled={triggersOffset + triggersLimit >= triggersTotal}
+              disabled={triggersOffset + triggersLimit >= adjustedJobsTotal}
               className="px-3 py-1 text-xs rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
             >
               Next

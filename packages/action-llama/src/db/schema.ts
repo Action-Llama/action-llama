@@ -67,6 +67,7 @@ export const runsTable = sqliteTable(
     preHookMs: integer("pre_hook_ms"),
     postHookMs: integer("post_hook_ms"),
     webhookReceiptId: text("webhook_receipt_id"),
+    triggerContext: text("trigger_context"),
   },
   (t) => [
     index("idx_runs_agent").on(t.agentName, t.startedAt),
