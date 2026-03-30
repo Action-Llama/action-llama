@@ -1,5 +1,21 @@
 # @action-llama/action-llama
 
+## 0.18.11
+
+### Patch Changes
+
+- [`1f8e247`](https://github.com/Action-Llama/action-llama/commit/1f8e247922985d996be9d0e31c467175fe629421) Thanks [@asselstine](https://github.com/asselstine)! - Add `--grep`, `--after`, and `--before` flags to `al logs` for filtering log output by pattern and time range. Closes [#385](https://github.com/Action-Llama/action-llama/issues/385).
+
+- [`90c13a1`](https://github.com/Action-Llama/action-llama/commit/90c13a144df036338cd09858cfc672fc1b1d562e) Thanks [@asselstine](https://github.com/asselstine)! - Increase default agent timeout from 900s (15 min) to 3600s (1 hour). Centralize the default in a single `DEFAULT_AGENT_TIMEOUT` constant.
+
+- [`1f8e247`](https://github.com/Action-Llama/action-llama/commit/1f8e247922985d996be9d0e31c467175fe629421) Thanks [@asselstine](https://github.com/asselstine)! - Persist scheduler state so running agent jobs survive scheduler restarts. On startup, the scheduler now re-adopts containers that are still running instead of killing them, and the SQLite-backed work queue is no longer cleared on shutdown. Closes [#388](https://github.com/Action-Llama/action-llama/issues/388).
+
+- [`1f8e247`](https://github.com/Action-Llama/action-llama/commit/1f8e247922985d996be9d0e31c467175fe629421) Thanks [@asselstine](https://github.com/asselstine)! - Fix webhooks and manual triggers being dropped during the initial Docker image build phase. Incoming triggers are now queued and processed once the build completes. Closes [#391](https://github.com/Action-Llama/action-llama/issues/391).
+
+- [`ab4c5d5`](https://github.com/Action-Llama/action-llama/commit/ab4c5d532d5f0d546f5e99626fa5aac16e406a6b) Thanks [@asselstine](https://github.com/asselstine)! - Move `setenv` bash function from an inline TypeScript string to a proper shell script (`al-bash-init.sh`). The function now handles multiple name/value pairs (`setenv A 1 B 2`) and tolerates stray `setenv` tokens between pairs — a common LLM mistake that previously wasted several tool calls per run.
+
+- [`1f8e247`](https://github.com/Action-Llama/action-llama/commit/1f8e247922985d996be9d0e31c467175fe629421) Thanks [@asselstine](https://github.com/asselstine)! - Add `/triggers` SPA fallback route to the gateway so direct navigation to the triggers page works correctly. Closes [#392](https://github.com/Action-Llama/action-llama/issues/392).
+
 ## 0.18.10
 
 ### Patch Changes
