@@ -289,4 +289,64 @@ describe("runSessionLoop", () => {
 
     await expect(runSessionLoop("Test", makeOpts())).rejects.toThrow("Internal server error");
   });
+
+  it("logs message_start and message_end events with role/content/stopReason", async () => {
+    const log = vi.fn();
+    mockPrompt.mockResolvedValue(undefined);
+    mockSubscribe.mockImplementation((callback: Function) => {
+      // Emit message_start event
+      callback({
+        type: "message_start",
+        role: "assistant",
+        content: [{ type: "text", text: "Hello" }],
+        stopReason: null,
+      });
+      // Emit message_end event
+      callback({
+        type: "message_end",
+        role: "assistant",
+        content: [{ type: "text", text: "Hello" }],
+        stopReason: "end_turn",
+      });
+      // Emit turn_end event
+      callback({
+        type: "turn_end",
+        result: "success",
+        turnCount: 1,
+      });
+      // Emit error type event
+      callback({
+        type: "error",
+        error: "Something went wrong",
+      });
+      // Emit message_update (text_delta) to accumulate text
+      callback({
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", delta: "hello world" },
+      });
+    });
+
+    await runSessionLoop("Test prompt", makeOpts({ log }));
+
+    // message_start should have been logged as debug
+    expect(log).toHaveBeenCalledWith(
+      "debug", "event",
+      expect.objectContaining({ type: "message_start", role: "assistant" })
+    );
+    // message_end should have been logged as debug
+    expect(log).toHaveBeenCalledWith(
+      "debug", "event",
+      expect.objectContaining({ type: "message_end", stopReason: "end_turn" })
+    );
+    // turn_end should have been logged as debug
+    expect(log).toHaveBeenCalledWith(
+      "debug", "event",
+      expect.objectContaining({ type: "turn_end", turnResult: expect.any(String) })
+    );
+    // error event should have been logged
+    expect(log).toHaveBeenCalledWith(
+      "error", "session error",
+      expect.objectContaining({ error: expect.stringContaining("Something went wrong") })
+    );
+  });
 });
