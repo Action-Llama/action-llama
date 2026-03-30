@@ -1,5 +1,38 @@
 # @action-llama/action-llama
 
+## 0.19.0
+
+### Minor Changes
+
+- [#407](https://github.com/Action-Llama/action-llama/pull/407) [`983bf7d`](https://github.com/Action-Llama/action-llama/commit/983bf7d76b1bb592271d8585fad9f8f96ea00550) Thanks [@asselstine](https://github.com/asselstine)! - Reduce duplicated orchestration between host and container runners
+
+  - Extract shared `RunResult`, `RunOutcome`, `TriggerRequest` types into `src/agents/types.ts`
+  - Create `src/agents/session-loop.ts` with shared model-fallback + session-creation + event-subscription loop
+  - Refactor `container-entry.ts` and `cli/commands/run-agent.ts` to use the shared session loop
+  - Extract shared container monitoring logic into `ContainerAgentRunner.monitorContainer()` private method, used by both `run()` and `adoptContainer()`
+  - Remove dead code: `src/agents/runner.ts` (`AgentRunner` class) and `src/agents/execution-engine.ts` (`ExecutionEngine` class) were unused in production
+  - Add tests for `session-loop.ts`
+
+### Patch Changes
+
+- [#412](https://github.com/Action-Llama/action-llama/pull/412) [`b49f875`](https://github.com/Action-Llama/action-llama/commit/b49f87572a9134c2401555608bd750d2602bb3fa) Thanks [@asselstine](https://github.com/asselstine)! - Refactor scheduler startup into explicit phases. Extract `dependencies.ts`, `persistence.ts`, and `orphan-recovery.ts` from `scheduler/index.ts` for independent testability. No behavior changes.
+
+- [#409](https://github.com/Action-Llama/action-llama/pull/409) [`0103fab`](https://github.com/Action-Llama/action-llama/commit/0103fab1a884cebf25b535ba257fe957757f4640) Thanks [@asselstine](https://github.com/asselstine)! - Introduce Drizzle ORM as the data access layer for all SQLite operations. Consolidates the three separate databases (`.al/state.db`, `.al/stats.db`, `.al/work-queue.db`) into a single `.al/action-llama.db` managed by Drizzle migrations. On startup, pending migrations are applied automatically and existing data from legacy databases is migrated transparently. Existing `.db` files are backed up to `.al/backups/<timestamp>/` before migration. Closes [#398](https://github.com/Action-Llama/action-llama/issues/398).
+
+- [#410](https://github.com/Action-Llama/action-llama/pull/410) [`7794dd8`](https://github.com/Action-Llama/action-llama/commit/7794dd80c8152f4f2d7e50ebd2036f2f5fab4907) Thanks [@asselstine](https://github.com/asselstine)! - Fix ghost runner leak and manual trigger queuing when all runners are busy.
+
+  When `withSpan` threw before `_runInternalContainer` ran, the `ContainerAgentRunner` would be permanently stuck with `isRunning === true`, causing the runner pool to show "all busy" even though the status tracker had no record of it. The `run()` method now wraps the `withSpan` call in a try/catch and resets `_running` on failure.
+
+  Manual triggers via the control API now queue when all runners are busy (matching webhook/schedule behavior) instead of returning an error string. This means pressing Run in the dashboard while an agent is running will queue the request and return an instanceId.
+
+  Frontend API errors with JSON bodies (e.g. `{"error":"..."}`) now display the human-readable message instead of raw JSON.
+
+  Closes [#404](https://github.com/Action-Llama/action-llama/issues/404)
+
+- [`6696a90`](https://github.com/Action-Llama/action-llama/commit/6696a90f32eb2db424be1f74743b368f36e21594) Thanks [@asselstine](https://github.com/asselstine)! - Increase container PID limit from 256 to 1024 to prevent EAGAIN fork failures in agents that run heavy workloads (npm install, test suites, etc.)
+
+- [#413](https://github.com/Action-Llama/action-llama/pull/413) [`9fe3158`](https://github.com/Action-Llama/action-llama/commit/9fe3158e080beae2cbf127159fb150d62a22e71b) Thanks [@asselstine](https://github.com/asselstine)! - Add explicit Jobs queue to the dashboard. Replaces "Recent Triggers" on agent detail pages with a "Jobs" section showing pending, running, and completed jobs. Adds a new /jobs page with agent filtering and pagination. Adds a trigger detail page at /dashboard/triggers/:instanceId with type-specific info (webhook headers/body, agent caller chain, manual prompt, schedule time). Persists trigger context (prompt for manual triggers, context for agent triggers) in the runs table for traceability. Wires up pending job counts from the work queue to the UI. Closes [#408](https://github.com/Action-Llama/action-llama/issues/408).
+
 ## 0.18.11
 
 ### Patch Changes
