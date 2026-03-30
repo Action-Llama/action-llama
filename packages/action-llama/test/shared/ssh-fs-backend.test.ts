@@ -151,4 +151,80 @@ describe("SshFilesystemBackend", () => {
       expect(fields).toBeUndefined();
     });
   });
+
+  describe("writeAll", () => {
+    it("writes each field via write", async () => {
+      const fakeProc1 = new EventEmitter();
+      const stdinEnd1 = vi.fn();
+      (fakeProc1 as any).stdin = { end: stdinEnd1 };
+      (fakeProc1 as any).stdout = new EventEmitter();
+      (fakeProc1 as any).stderr = new EventEmitter();
+
+      const fakeProc2 = new EventEmitter();
+      const stdinEnd2 = vi.fn();
+      (fakeProc2 as any).stdin = { end: stdinEnd2 };
+      (fakeProc2 as any).stdout = new EventEmitter();
+      (fakeProc2 as any).stderr = new EventEmitter();
+
+      mockSpawn
+        .mockReturnValueOnce(fakeProc1)
+        .mockReturnValueOnce(fakeProc2);
+
+      const promise = backend.writeAll("github_token", "default", { token: "ghp_abc", client_id: "cid" });
+
+      fakeProc1.emit("close", 0);
+      await new Promise((r) => setImmediate(r));
+      fakeProc2.emit("close", 0);
+      await promise;
+
+      expect(stdinEnd1).toHaveBeenCalledWith("ghp_abc\n");
+      expect(stdinEnd2).toHaveBeenCalledWith("cid\n");
+    });
+
+    it("writes a single field correctly", async () => {
+      const fakeProc = new EventEmitter();
+      const stdinEnd = vi.fn();
+      (fakeProc as any).stdin = { end: stdinEnd };
+      (fakeProc as any).stdout = new EventEmitter();
+      (fakeProc as any).stderr = new EventEmitter();
+      mockSpawn.mockReturnValue(fakeProc);
+
+      const promise = backend.writeAll("anthropic_key", "default", { api_key: "sk-ant-123" });
+      fakeProc.emit("close", 0);
+      await promise;
+
+      expect(stdinEnd).toHaveBeenCalledWith("sk-ant-123\n");
+    });
+  });
+
+  describe("listInstances", () => {
+    it("returns instance names for a credential type", async () => {
+      mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+        cb(null, "default\nwork\n", "");
+      });
+
+      const instances = await backend.listInstances("github_token");
+      expect(instances).toEqual(["default", "work"]);
+    });
+
+    it("returns empty array when no instances exist", async () => {
+      mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+        const err: any = new Error("no such directory");
+        err.code = 1;
+        cb(err, "", "");
+      });
+
+      const instances = await backend.listInstances("nonexistent_type");
+      expect(instances).toEqual([]);
+    });
+
+    it("returns empty array when stdout is empty", async () => {
+      mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+        cb(null, "", "");
+      });
+
+      const instances = await backend.listInstances("github_token");
+      expect(instances).toEqual([]);
+    });
+  });
 });
