@@ -3,6 +3,7 @@
  *
  * These tests verify that:
  * - POST /webhooks/:source dispatches to matched agents
+ * - Duplicate webhook delivery IDs (x-github-delivery) are deduplicated
  * - Unknown webhook sources return 404
  * - Webhook receipts are recorded in the stats store
  * - Webhook events that match agent filters return matched >= 1
@@ -572,5 +573,271 @@ EOF`,
     expect(stats.total).toBeGreaterThan(0);
     const deadLetters = stats.triggers.filter((t: any) => t.result === "dead-letter");
     expect(deadLetters.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Webhook retry/deduplication: duplicate delivery IDs are rejected
+// ---------------------------------------------------------------------------
+
+const DEDUP_PORT = 8285;
+const DEDUP_API_KEY = "webhook-dedup-e2e-key-55555";
+const DEDUP_COOKIE = "/tmp/cookies-webhook-dedup.txt";
+
+describe("Webhook Retry/Deduplication", { timeout: 300000 }, () => {
+  let dedupCtx: E2ETestContext;
+  let dedupContainer: ContainerInfo;
+
+  beforeAll(async () => {
+    dedupCtx = new E2ETestContext();
+    await dedupCtx.setup();
+
+    dedupContainer = await setupLocalActionLlama(dedupCtx);
+
+    // Configure gateway API key
+    await dedupCtx.executeInContainer(dedupContainer, [
+      "bash",
+      "-c",
+      `mkdir -p ~/.action-llama/credentials/gateway_api_key/default && echo -n '${DEDUP_API_KEY}' > ~/.action-llama/credentials/gateway_api_key/default/key`,
+    ]);
+
+    // Register a GitHub webhook source named "github" (source name must match the
+    // provider type so that webhookConfigs["github"] resolves allowUnsigned=true at
+    // dispatch time). The GitHub provider implements getDeliveryId() which reads the
+    // x-github-delivery header — enabling dedup checks in the route handler.
+    await dedupCtx.executeInContainer(dedupContainer, [
+      "bash",
+      "-c",
+      `cd /home/testuser/test-project && cat >> config.toml << 'EOF'
+
+[gateway]
+port = ${DEDUP_PORT}
+
+[webhooks.github]
+type = "github"
+allowUnsigned = true
+EOF`,
+    ]);
+
+    // Create a minimal agent that subscribes to "issues" events from the github source.
+    // We need at least one bound agent so the gateway has something to dispatch to.
+    const agentDir = "/home/testuser/test-project/agents/dedup-test-agent";
+    await dedupCtx.executeInContainer(dedupContainer, [
+      "bash",
+      "-c",
+      `mkdir -p ${agentDir}`,
+    ]);
+
+    await dedupCtx.executeInContainer(dedupContainer, [
+      "bash",
+      "-c",
+      `cat > ${agentDir}/SKILL.md << 'EOF'
+---
+description: "Deduplication test agent"
+---
+
+# Dedup Test Agent
+
+You are a test agent used to verify webhook deduplication.
+EOF`,
+    ]);
+
+    await dedupCtx.executeInContainer(dedupContainer, [
+      "bash",
+      "-c",
+      `cat > ${agentDir}/config.toml << 'EOF'
+models = ["sonnet"]
+credentials = ["github_token", "anthropic_key"]
+
+[[webhooks]]
+source = "github"
+events = ["issues"]
+actions = ["opened"]
+EOF`,
+    ]);
+
+    await dedupCtx.executeInContainer(dedupContainer, [
+      "bash",
+      "-c",
+      `chown -R testuser:testuser ${agentDir}`,
+    ]);
+
+    // Start the scheduler/gateway
+    await dedupCtx.executeInContainer(dedupContainer, [
+      "bash",
+      "-c",
+      `cd /home/testuser/test-project && nohup al start --headless --web-ui > /tmp/dedup-scheduler.log 2>&1 & echo $! > /tmp/dedup-scheduler.pid`,
+    ]);
+
+    // Poll until the health endpoint responds
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      try {
+        const health = await dedupCtx.executeInContainer(dedupContainer, [
+          "curl",
+          "-sf",
+          `http://localhost:${DEDUP_PORT}/health`,
+        ]);
+        if (health.includes("ok")) break;
+      } catch {
+        // not ready yet
+      }
+      if (i === 29) {
+        const logs = await dedupCtx.executeInContainer(dedupContainer, [
+          "cat",
+          "/tmp/dedup-scheduler.log",
+        ]).catch(() => "no logs");
+        throw new Error(`Dedup gateway did not become healthy within 30s.\nLogs: ${logs}`);
+      }
+    }
+
+    // Login for authenticated API calls
+    await dedupCtx.executeInContainer(dedupContainer, [
+      "bash",
+      "-c",
+      `curl -sf -c ${DEDUP_COOKIE} -X POST -H 'Content-Type: application/json' -d '{"key":"${DEDUP_API_KEY}"}' http://localhost:${DEDUP_PORT}/api/auth/login`,
+    ]);
+  }, 300000);
+
+  afterAll(async () => {
+    if (dedupCtx && dedupContainer) {
+      try {
+        await dedupCtx.executeInContainer(dedupContainer, [
+          "bash",
+          "-c",
+          "if [ -f /tmp/dedup-scheduler.pid ]; then kill $(cat /tmp/dedup-scheduler.pid) 2>/dev/null; rm -f /tmp/dedup-scheduler.pid; fi",
+        ]);
+      } catch {
+        // process might already be dead
+      }
+    }
+    if (dedupCtx) await dedupCtx.cleanup();
+  }, 120000);
+
+  it("first delivery with a unique x-github-delivery ID is accepted", async () => {
+    // Build a valid GitHub issues.opened payload
+    const deliveryId = `dedup-e2e-first-${Date.now()}`;
+    const payload = JSON.stringify({
+      action: "opened",
+      issue: {
+        number: 1,
+        title: "First delivery",
+        body: "First issue body",
+        user: { login: "user-a" },
+        html_url: "https://github.com/test-org/test-repo/issues/1",
+      },
+      repository: { full_name: "test-org/test-repo" },
+      sender: { login: "user-a" },
+    });
+
+    const response = await dedupCtx.executeInContainer(dedupContainer, [
+      "bash",
+      "-c",
+      `curl -s -X POST \
+        -H 'Content-Type: application/json' \
+        -H 'X-GitHub-Event: issues' \
+        -H 'X-GitHub-Delivery: ${deliveryId}' \
+        -d '${payload.replace(/'/g, "'\\''")}' \
+        http://localhost:${DEDUP_PORT}/webhooks/github 2>/dev/null`,
+    ]);
+
+    const body = JSON.parse(response);
+    // First delivery must succeed — ok=true and duplicate flag must not be set.
+    // matched may be 0 if the agent is not yet running (the agent waits for its next
+    // cron trigger), but the receipt must be stored so a subsequent replay is deduplicated.
+    expect(body.ok).toBe(true);
+    expect(body.duplicate).not.toBe(true);
+    expect(typeof body.matched).toBe("number");
+  });
+
+  it("second delivery with the same x-github-delivery ID is rejected as duplicate", async () => {
+    // Use a fixed delivery ID so we can guarantee reuse across two requests.
+    const deliveryId = `dedup-e2e-dup-${Date.now()}`;
+    const payload = JSON.stringify({
+      action: "opened",
+      issue: {
+        number: 2,
+        title: "Duplicate delivery test",
+        body: "Duplicate body",
+        user: { login: "user-b" },
+        html_url: "https://github.com/test-org/test-repo/issues/2",
+      },
+      repository: { full_name: "test-org/test-repo" },
+      sender: { login: "user-b" },
+    });
+
+    const curlCmd = `curl -s -X POST \
+      -H 'Content-Type: application/json' \
+      -H 'X-GitHub-Event: issues' \
+      -H 'X-GitHub-Delivery: ${deliveryId}' \
+      -d '${payload.replace(/'/g, "'\\''")}' \
+      http://localhost:${DEDUP_PORT}/webhooks/github 2>/dev/null`;
+
+    // First delivery — must succeed
+    const firstRaw = await dedupCtx.executeInContainer(dedupContainer, [
+      "bash",
+      "-c",
+      curlCmd,
+    ]);
+    const first = JSON.parse(firstRaw);
+    expect(first.ok).toBe(true);
+    expect(first.duplicate).not.toBe(true);
+
+    // Second delivery with identical x-github-delivery ID — must be deduplicated
+    const secondRaw = await dedupCtx.executeInContainer(dedupContainer, [
+      "bash",
+      "-c",
+      curlCmd,
+    ]);
+    const second = JSON.parse(secondRaw);
+
+    // The scheduler should detect the duplicate receipt and skip dispatch
+    expect(second.ok).toBe(true);
+    expect(second.duplicate).toBe(true);
+    expect(second.matched).toBe(0);
+    expect(second.skipped).toBe(0);
+  });
+
+  it("two different delivery IDs are both accepted independently", async () => {
+    const ts = Date.now();
+    const payload = JSON.stringify({
+      action: "opened",
+      issue: {
+        number: 3,
+        title: "Unique delivery",
+        body: "body",
+        user: { login: "user-c" },
+        html_url: "https://github.com/test-org/test-repo/issues/3",
+      },
+      repository: { full_name: "test-org/test-repo" },
+      sender: { login: "user-c" },
+    });
+
+    const sendWithId = async (id: string) =>
+      dedupCtx.executeInContainer(dedupContainer, [
+        "bash",
+        "-c",
+        `curl -s -X POST \
+          -H 'Content-Type: application/json' \
+          -H 'X-GitHub-Event: issues' \
+          -H 'X-GitHub-Delivery: ${id}' \
+          -d '${payload.replace(/'/g, "'\\''")}' \
+          http://localhost:${DEDUP_PORT}/webhooks/github 2>/dev/null`,
+      ]);
+
+    const [rawA, rawB] = await Promise.all([
+      sendWithId(`dedup-e2e-unique-a-${ts}`),
+      sendWithId(`dedup-e2e-unique-b-${ts}`),
+    ]);
+
+    const a = JSON.parse(rawA);
+    const b = JSON.parse(rawB);
+
+    // Both unique delivery IDs should be accepted
+    expect(a.ok).toBe(true);
+    expect(a.duplicate).not.toBe(true);
+
+    expect(b.ok).toBe(true);
+    expect(b.duplicate).not.toBe(true);
   });
 });

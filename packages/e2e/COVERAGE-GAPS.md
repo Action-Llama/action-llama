@@ -30,5 +30,5 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [ ] Deployment with custom Dockerfile — push agent with custom Dockerfile, verify image build
 - [ ] Deployment upgrade path — deploy v1, upgrade to v2, verify agents restart with new code
 - [ ] Resource lock contention — two agents competing for the same lock, verify mutual exclusion
-- [ ] Webhook retry/deduplication — deliver duplicate webhook, verify single execution
+- [x] Webhook retry/deduplication — deliver duplicate webhook, verify single execution
 - [x] Stats and usage tracking — run agents, verify stats API returns correct execution counts
