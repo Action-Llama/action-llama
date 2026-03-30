@@ -1,5 +1,11 @@
 # @action-llama/action-llama
 
+## 0.19.2
+
+### Patch Changes
+
+- [`25ea33a`](https://github.com/Action-Llama/action-llama/commit/25ea33ac48e32ee9366fe161b5f45e5db63c2d8d) Thanks [@asselstine](https://github.com/asselstine)! - Fix MaxListenersExceededWarning during `al start` by raising the process event listener limit. The scheduler, TUI, gateway, and telemetry collectively register more than Node's default 10 cleanup handlers per signal.
+
 ## 0.19.1
 
 ### Patch Changes
