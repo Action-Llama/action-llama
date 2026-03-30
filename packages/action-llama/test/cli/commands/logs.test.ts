@@ -867,4 +867,124 @@ describe("logs command", () => {
     expect(output[0]).toContain("echo yesterday");
   });
 
+  // ── Additional uncovered paths ───────────────────────────────────────────
+
+  describe("additional uncovered paths", () => {
+    it("skips debug entries that are not 'tool start' and not in SKIP_MESSAGES", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      const content = [
+        makePinoLine({ level: 20, msg: "some internal debug message" }), // debug, not tool start, not in SKIP_MESSAGES
+        makePinoLine({ msg: "run completed" }),
+      ].join("\n") + "\n";
+      writeFileSync(logFile, content);
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50" });
+      console.log = origLog;
+
+      // Debug entry should be skipped; only run completed should appear
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("Run completed");
+    });
+
+    it("shows error entries with extra fields beyond error and stack", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({
+        level: 50,
+        msg: "container crashed",
+        exitCode: 137,
+        signal: "SIGKILL",
+      }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("ERROR: container crashed");
+      // Extra fields (exitCode, signal) should appear in the output
+      expect(output[0]).toContain("exitCode");
+    });
+
+    it("returns null from findLogFile when logs directory does not exist at all", async () => {
+      // Create a project dir WITHOUT creating the .al/logs subdirectory
+      const noLogsDir = mkdtempSync(join(tmpdir(), "al-nodir-"));
+      // .al/logs does NOT exist here
+
+      const origExit = process.exit;
+      const origError = console.error;
+      let exitCode: number | undefined;
+      let errorMsg = "";
+
+      process.exit = ((code?: number) => {
+        exitCode = code;
+        throw new Error("EXIT");
+      }) as any;
+      console.error = (...args: any[]) => { errorMsg = args.join(" "); };
+
+      try {
+        await execute("dev", { project: noLogsDir, lines: "50" });
+      } catch {
+        // Expected EXIT thrown from process.exit mock
+      } finally {
+        process.exit = origExit;
+        console.error = origError;
+        rmSync(noLogsDir, { recursive: true, force: true });
+      }
+
+      expect(exitCode).toBe(1);
+      expect(errorMsg).toContain("dev");
+    });
+
+    it("handles empty log file gracefully (returns no output)", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, ""); // empty file — 0 bytes
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50" });
+      console.log = origLog;
+
+      expect(output).toHaveLength(0);
+    });
+
+    it("shifts oldest entries out when run header pushes entries over n limit", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      const t = Date.now();
+      // Write 5 assistant entries + 1 run-start + 1 assistant to exceed limit of 5
+      const lines = [
+        makePinoLine({ msg: "assistant", text: "msg 1", time: t }),
+        makePinoLine({ msg: "assistant", text: "msg 2", time: t + 1000 }),
+        makePinoLine({ msg: "assistant", text: "msg 3", time: t + 2000 }),
+        makePinoLine({ msg: "assistant", text: "msg 4", time: t + 3000 }),
+        makePinoLine({ msg: "assistant", text: "msg 5", time: t + 4000 }),
+        // run-start entry generates both a header AND a formatted entry,
+        // so when header is pushed entries.length exceeds n → shift
+        makePinoLine({ msg: "Starting dev run (schedule)", time: t + 5000, name: "dev" }),
+        makePinoLine({ msg: "assistant", text: "msg 7", time: t + 6000 }),
+      ];
+      writeFileSync(logFile, lines.join("\n") + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "5" });
+      console.log = origLog;
+
+      // Should produce exactly 5 entries (overflow causes oldest to be dropped)
+      expect(output).toHaveLength(5);
+      // The last entry should be msg 7
+      expect(output[output.length - 1]).toContain("msg 7");
+    });
+  });
+
 });
