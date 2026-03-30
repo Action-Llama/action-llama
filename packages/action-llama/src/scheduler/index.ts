@@ -174,44 +174,6 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   logger.info({ runtime: "local" }, "Container mode enabled — initializing infrastructure");
 
-  // Check for orphan containers from a previous scheduler run
-  try {
-    const ownAgentNames = new Set(activeAgentConfigs.map((a) => a.name));
-    const orphans = (await runtime.listRunningAgents()).filter((o) => ownAgentNames.has(o.agentName));
-    if (orphans.length > 0) {
-      for (const orphan of orphans) {
-        logger.warn({ agent: orphan.agentName, task: orphan.taskId }, "found orphan container");
-      }
-      for (const orphan of orphans) {
-        try { await runtime.kill(orphan.taskId); await runtime.remove(orphan.taskId); } catch {}
-      }
-      logger.info({ count: orphans.length }, "cleaned up local orphan containers");
-    }
-  } catch (err) {
-    logger.debug({ err }, "orphan detection skipped (runtime does not support listing)");
-  }
-
-  // Clean up stale container registry entries and their locks.
-  // At this point all containers from the previous run are dead (either exited
-  // normally or just killed above). No new containers have been launched yet,
-  // so every registry entry is stale.
-  try {
-    const staleEntries = gateway.containerRegistry.listAll();
-    if (staleEntries.length > 0) {
-      let releasedLocks = 0;
-      for (const entry of staleEntries) {
-        releasedLocks += gateway.lockStore.releaseAll(entry.instanceId);
-      }
-      await gateway.containerRegistry.clear();
-      logger.info(
-        { releasedLocks, staleRegistrations: staleEntries.length },
-        "cleaned up orphan locks and stale container registrations",
-      );
-    }
-  } catch (err) {
-    logger.warn({ err }, "failed to clean up stale container registrations");
-  }
-
   // Build base + per-agent images (only for agents using container runtime)
   const containerAgentConfigs = activeAgentConfigs.filter(
     (a) => !agentRuntimeOverrides[a.name] // agents without overrides use the default container runtime
@@ -250,6 +212,116 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // Populate late-binding state
   Object.assign(state.runnerPools, runnerPools);
+
+  // Re-adopt orphan containers from a previous scheduler run (or clean up stale state)
+  try {
+    const ownAgentNames = new Set(activeAgentConfigs.map((a) => a.name));
+    const orphans = (await runtime.listRunningAgents()).filter((o) => ownAgentNames.has(o.agentName));
+
+    if (orphans.length > 0) {
+      const registeredContainers = gateway.containerRegistry.listAll();
+      const runningNames = new Set(orphans.map((o) => o.taskId));
+      let adopted = 0;
+      let killed = 0;
+
+      for (const orphan of orphans) {
+        const found = gateway.containerRegistry.findByContainerName(orphan.taskId);
+
+        if (!found) {
+          // Container exists but has no registry entry — unknown, kill it
+          logger.warn({ agent: orphan.agentName, task: orphan.taskId }, "killing unregistered orphan container");
+          try { await runtime.kill(orphan.taskId); await runtime.remove(orphan.taskId); } catch {}
+          killed++;
+          continue;
+        }
+
+        const { secret: oldSecret, reg } = found;
+        const pool = runnerPools[orphan.agentName];
+        if (!pool) {
+          logger.warn({ agent: orphan.agentName, task: orphan.taskId }, "no runner pool for orphan, killing");
+          try { await runtime.kill(orphan.taskId); await runtime.remove(orphan.taskId); } catch {}
+          gateway.lockStore.releaseAll(reg.instanceId);
+          await gateway.containerRegistry.unregister(oldSecret);
+          killed++;
+          continue;
+        }
+
+        // Get shutdown secret from container env vars
+        let shutdownSecret: string | undefined;
+        if (runtime.inspectContainer) {
+          const info = await runtime.inspectContainer(orphan.taskId);
+          shutdownSecret = info?.env?.SHUTDOWN_SECRET;
+        }
+
+        if (!shutdownSecret) {
+          logger.warn({ agent: orphan.agentName, task: orphan.taskId }, "cannot read SHUTDOWN_SECRET from orphan, killing");
+          try { await runtime.kill(orphan.taskId); await runtime.remove(orphan.taskId); } catch {}
+          gateway.lockStore.releaseAll(reg.instanceId);
+          await gateway.containerRegistry.unregister(oldSecret);
+          killed++;
+          continue;
+        }
+
+        const runner = pool.getAvailableRunner();
+        if (!runner) {
+          logger.warn({ agent: orphan.agentName, task: orphan.taskId }, "no available runner for orphan, killing");
+          try { await runtime.kill(orphan.taskId); await runtime.remove(orphan.taskId); } catch {}
+          gateway.lockStore.releaseAll(reg.instanceId);
+          await gateway.containerRegistry.unregister(oldSecret);
+          killed++;
+          continue;
+        }
+
+        // Unregister old secret mapping — will be re-registered inside adoptContainer
+        await gateway.containerRegistry.unregister(oldSecret);
+
+        logger.info({ agent: orphan.agentName, task: orphan.taskId, instance: reg.instanceId }, "re-adopting orphan container");
+
+        const containerRunner = runner as any;
+        if (typeof containerRunner.adoptContainer === "function") {
+          containerRunner
+            .adoptContainer(orphan.taskId, shutdownSecret, reg.instanceId, { type: "schedule" as const, source: "re-adopted" })
+            .then(() => { if (state.schedulerCtx) drainQueues(state.schedulerCtx); })
+            .catch((err: any) => logger.error({ err, agent: orphan.agentName }, "orphan re-adoption failed"));
+          adopted++;
+        } else {
+          logger.warn({ agent: orphan.agentName }, "runner does not support adoption, killing orphan");
+          try { await runtime.kill(orphan.taskId); await runtime.remove(orphan.taskId); } catch {}
+          killed++;
+        }
+      }
+
+      // Clean up registry entries for containers that exited while scheduler was down
+      for (const reg of registeredContainers) {
+        if (!runningNames.has(reg.containerName)) {
+          const found = gateway.containerRegistry.findByContainerName(reg.containerName);
+          if (found) {
+            gateway.lockStore.releaseAll(reg.instanceId);
+            await gateway.containerRegistry.unregister(found.secret);
+            logger.info({ agent: reg.agentName, instance: reg.instanceId }, "cleaned up stale registration (container exited while scheduler was down)");
+          }
+        }
+      }
+
+      logger.info({ adopted, killed, total: orphans.length }, "orphan container handling complete");
+    } else {
+      // No running containers — clean up all stale registry entries
+      const staleEntries = gateway.containerRegistry.listAll();
+      if (staleEntries.length > 0) {
+        let releasedLocks = 0;
+        for (const entry of staleEntries) {
+          releasedLocks += gateway.lockStore.releaseAll(entry.instanceId);
+        }
+        await gateway.containerRegistry.clear();
+        logger.info(
+          { releasedLocks, staleRegistrations: staleEntries.length },
+          "cleaned up stale registrations (no running containers)",
+        );
+      }
+    }
+  } catch (err) {
+    logger.debug({ err }, "orphan detection/re-adoption skipped (runtime does not support listing)");
+  }
 
   // Create scheduler context (work queue was already created early above)
   const skills: PromptSkills = { locking: true };

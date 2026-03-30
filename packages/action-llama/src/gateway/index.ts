@@ -256,6 +256,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
         app.get("/login", (c) => c.html(indexHtml));
         app.get("/dashboard", (c) => c.html(indexHtml));
         app.get("/dashboard/*", (c) => c.html(indexHtml));
+        app.get("/triggers", (c) => c.html(indexHtml));
       } else {
         logger.warn("@action-llama/frontend not found — dashboard UI will not be served. API routes are still available.");
       }

@@ -25,7 +25,6 @@ export function registerShutdownHandlers(deps: {
     logger.info("Shutting down scheduler...");
     watcherHandle.stop();
     schedulerCtx.shuttingDown = true;
-    schedulerCtx.workQueue.clearAll();
     schedulerCtx.workQueue.close();
     for (const job of cronJobs) {
       job.stop();

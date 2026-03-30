@@ -437,4 +437,20 @@ export class LocalDockerRuntime implements Runtime, ContainerRuntime {
     return null;
   }
 
+  async inspectContainer(containerName: string): Promise<{ env: Record<string, string> } | null> {
+    try {
+      const raw = docker("inspect", "--format", "{{json .Config.Env}}", containerName);
+      // Returns JSON array like ["KEY=val", "KEY2=val2"]
+      const envArr: string[] = JSON.parse(raw);
+      const env: Record<string, string> = {};
+      for (const entry of envArr) {
+        const idx = entry.indexOf("=");
+        if (idx > 0) env[entry.slice(0, idx)] = entry.slice(idx + 1);
+      }
+      return { env };
+    } catch {
+      return null;
+    }
+  }
+
 }

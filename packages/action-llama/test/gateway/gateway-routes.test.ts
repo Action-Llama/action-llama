@@ -143,6 +143,43 @@ describe("Gateway /login SPA route", () => {
   });
 });
 
+// ── /triggers SPA route ───────────────────────────────────────────────────────
+
+describe("Gateway /triggers SPA route", () => {
+  let gateway: any;
+  let frontendDist: string;
+  const logger = makeLogger();
+  const TEST_API_KEY = "test-key-triggers-101";
+
+  beforeAll(async () => {
+    frontendDist = createMockFrontendDist();
+    gateway = await startGateway({
+      port: 0,
+      logger,
+      apiKey: TEST_API_KEY,
+      webUI: true,
+      statusTracker: mockStatusTracker(),
+      frontendDistPath: frontendDist,
+    });
+  });
+
+  afterAll(async () => {
+    await gateway.close();
+    rmSync(frontendDist, { recursive: true, force: true });
+  });
+
+  it("serves index.html at /triggers", async () => {
+    const addr = gateway.server.address() as any;
+    const res = await fetch(`http://localhost:${addr.port}/triggers`, {
+      headers: { Authorization: `Bearer ${TEST_API_KEY}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('<div id="root">');
+    expect(res.headers.get("content-type")).toContain("text/html");
+  });
+});
+
 // ── /chat and /chat/* SPA routes ──────────────────────────────────────────────
 
 describe("Gateway /chat SPA routes", () => {

@@ -1,5 +1,35 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+// Mock child_process to prevent browser from being opened
+vi.mock("child_process", () => ({
+  exec: vi.fn(),
+}));
+
+// Mock http to prevent a real server from being started and to immediately
+// simulate an OAuth callback so the PKCE flow resolves/rejects fast.
+let capturedHandler: ((req: any, res: any) => void) | null = null;
+
+vi.mock("http", () => ({
+  createServer: vi.fn((handler: (req: any, res: any) => void) => {
+    capturedHandler = handler;
+    return {
+      on: vi.fn(),
+      close: vi.fn(),
+      listen: vi.fn((_port: number, _host: string, callback: () => void) => {
+        // Call the listen callback immediately (no real port is opened)
+        callback();
+        // Immediately invoke the captured handler with an error callback request
+        // so that runPkceFlow rejects right away instead of hanging for 2 minutes.
+        if (capturedHandler) {
+          const mockReq = { url: "/callback?error=test_abort" };
+          const mockRes = { writeHead: vi.fn(), end: vi.fn() };
+          capturedHandler(mockReq, mockRes);
+        }
+      }),
+    };
+  }),
+}));
+
 vi.mock("@inquirer/prompts", () => ({
   confirm: vi.fn(),
   password: vi.fn(),
@@ -20,10 +50,11 @@ describe("x_twitter_user_oauth2 credential", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFetch.mockClear();
+    capturedHandler = null;
   });
 
   afterEach(() => {
-    vi.resetAllMocks();
+    vi.restoreAllMocks();
   });
 
   describe("metadata", () => {
@@ -210,25 +241,20 @@ describe("x_twitter_user_oauth2 credential", () => {
     });
 
     it("does not ask to reuse when access_token is missing", async () => {
-      // When no access_token, should not show the reuse prompt (falls into main flow)
-      // The prompt would need clientId/secret and then run PKCE — we'll just check confirm isn't called
+      // When no access_token the reuse prompt is skipped and the PKCE flow runs.
+      // The http mock immediately fires an error callback so prompt() rejects fast.
       mockedPassword
         .mockResolvedValueOnce("new-client-id" as any)
         .mockResolvedValueOnce("new-client-secret" as any);
 
-      // Since PKCE flow would start a real HTTP server, we can't fully test it here.
-      // Just verify confirm was NOT called with the reuse message.
-      // We'll interrupt by having PKCE fail fast.
-      const promptPromise = xTwitterUserOauth2.prompt!({ client_id: "cid", client_secret: "csec" });
-      // PKCE will timeout eventually — we just need to check confirm behavior
-      // Actually this would hang waiting for the PKCE server. Let's just verify no confirm.
-      // We need to abort. Let's mock the createServer to immediately reject.
-      // Actually, we can observe that confirm was not yet called at this point.
-      // Since PKCE uses a real server + timeout of 2 min, we should not proceed.
-      // Let's just test that the confirm for reuse is not shown.
+      await expect(
+        xTwitterUserOauth2.prompt!({ client_id: "cid", client_secret: "csec" })
+      ).rejects.toThrow("OAuth 2.0 authorization error");
+
+      // The reuse confirm prompt must NOT have been shown
       expect(mockedConfirm).not.toHaveBeenCalled();
-      // Cleanup: we can't easily await so just ignore the hanging promise
-      promptPromise.catch(() => {}); // suppress unhandled rejection
+      // The password prompts for client_id and client_secret were called
+      expect(mockedPassword).toHaveBeenCalledTimes(2);
     });
   });
 });

@@ -841,4 +841,82 @@ describe("ContainerAgentRunner", () => {
       });
     });
   });
+
+  describe("adoptContainer()", () => {
+    it("re-registers, streams logs, waits for exit, then cleans up", async () => {
+      const registerContainer = vi.fn().mockResolvedValue(undefined);
+      const unregisterContainer = vi.fn().mockResolvedValue(undefined);
+      const runner = new ContainerAgentRunner(
+        runtime, globalConfig, agentConfig, mockLogger,
+        registerContainer, unregisterContainer, "http://gateway:8080", "/tmp", "test-image:latest",
+      );
+
+      const outcome = await runner.adoptContainer("al-test-agent-abc", "my-secret", "test-agent-abc");
+
+      expect(registerContainer).toHaveBeenCalledWith("my-secret", expect.objectContaining({
+        containerName: "al-test-agent-abc",
+        agentName: "test-agent",
+        instanceId: "test-agent-abc",
+      }));
+      expect(runtime.streamLogs).toHaveBeenCalledWith("al-test-agent-abc", expect.any(Function), expect.any(Function));
+      expect(runtime.waitForExit).toHaveBeenCalledWith("al-test-agent-abc", expect.any(Number));
+      expect(unregisterContainer).toHaveBeenCalledWith("my-secret");
+      expect(runtime.remove).toHaveBeenCalledWith("al-test-agent-abc");
+      expect(outcome.result).toBe("completed");
+    });
+
+    it("returns error when container exits with non-zero code", async () => {
+      const errorRuntime = createMockRuntime({
+        waitForExit: vi.fn().mockResolvedValue(1),
+      });
+      const runner = new ContainerAgentRunner(
+        errorRuntime, globalConfig, agentConfig, mockLogger,
+        vi.fn(), vi.fn(), "", "/tmp", "test-image:latest",
+      );
+
+      const outcome = await runner.adoptContainer("al-test-agent-err", "secret", "test-agent-err");
+      expect(outcome.result).toBe("error");
+    });
+
+    it("returns rerun when container exits with code 42", async () => {
+      const rerunRuntime = createMockRuntime({
+        waitForExit: vi.fn().mockResolvedValue(42),
+      });
+      const runner = new ContainerAgentRunner(
+        rerunRuntime, globalConfig, agentConfig, mockLogger,
+        vi.fn(), vi.fn(), "", "/tmp", "test-image:latest",
+      );
+
+      const outcome = await runner.adoptContainer("al-test-agent-rerun", "secret", "test-agent-rerun");
+      expect(outcome.result).toBe("rerun");
+    });
+
+    it("returns error immediately when runner is already busy", async () => {
+      const runner = new ContainerAgentRunner(
+        runtime, globalConfig, agentConfig, mockLogger,
+        vi.fn(), vi.fn(), "", "/tmp", "test-image:latest",
+      );
+
+      // Start a run to mark the runner as busy
+      const runPromise = runner.run("busy");
+      await Promise.resolve(); // let it enter async
+
+      const outcome = await runner.adoptContainer("other-container", "secret", "other-instance");
+      expect(outcome.result).toBe("error");
+
+      // Clean up
+      await runPromise;
+    });
+
+    it("skips registerContainer when gatewayUrl is empty", async () => {
+      const registerContainer = vi.fn().mockResolvedValue(undefined);
+      const runner = new ContainerAgentRunner(
+        runtime, globalConfig, agentConfig, mockLogger,
+        registerContainer, vi.fn(), "", "/tmp", "test-image:latest",
+      );
+
+      await runner.adoptContainer("al-test-agent-nogw", "secret", "test-agent-nogw");
+      expect(registerContainer).not.toHaveBeenCalled();
+    });
+  });
 });

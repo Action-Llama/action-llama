@@ -187,6 +187,27 @@ function formatRunHeader(entry: LogEntry): string | null {
   return null;
 }
 
+// ── Time value parsing ────────────────────────────────────────────────────────
+
+/**
+ * Parse a time value string into a Unix timestamp (ms).
+ * Accepts relative durations like "2h" or "7d", and ISO date strings.
+ */
+function parseTimeValue(value: string): number {
+  // Try relative duration: Nh or Nd
+  const relMatch = value.match(/^(\d+)(h|d)$/);
+  if (relMatch) {
+    const n = parseInt(relMatch[1], 10);
+    const unit = relMatch[2];
+    const ms = unit === "h" ? n * 3_600_000 : n * 86_400_000;
+    return Date.now() - ms;
+  }
+  // Try ISO date / any date string
+  const parsed = Date.parse(value);
+  if (!isNaN(parsed)) return parsed;
+  throw new Error(`Invalid time value: "${value}". Use a relative duration (e.g. 2h, 7d) or an ISO date string.`);
+}
+
 // ── Shared parsing & file helpers ─────────────────────────────────────────────
 
 // ── Log level mapping ────────────────────────────────────────────────────────
@@ -310,14 +331,14 @@ async function readLastNLines(filePath: string, n: number): Promise<string[]> {
   return lines.slice(-n); // Ensure we return exactly n lines (or fewer if file is smaller)
 }
 
-async function readLastN(filePath: string, n: number, fmt: Formatter): Promise<void> {
+async function readLastN(filePath: string, n: number, fmt: Formatter, showRunHeaders = false): Promise<void> {
   const lines = await readLastNLines(filePath, n * 3); // Read more raw lines to account for filtering
   const entries: string[] = [];
 
   for (const line of lines) {
     const entry = parseLine(line);
     if (entry) {
-      const header = fmt === formatConversationEntry ? formatRunHeader(entry) : null;
+      const header = showRunHeaders ? formatRunHeader(entry) : null;
       const formatted = fmt(entry);
       if (header) {
         entries.push(header);
@@ -335,7 +356,7 @@ async function readLastN(filePath: string, n: number, fmt: Formatter): Promise<v
   }
 }
 
-async function readNewData(filePath: string, start: number, fmt: Formatter): Promise<{ newPosition: number }> {
+async function readNewData(filePath: string, start: number, fmt: Formatter, showRunHeaders = false): Promise<{ newPosition: number }> {
   const currentSize = statSync(filePath).size;
   if (currentSize <= start) return { newPosition: start };
 
@@ -345,7 +366,7 @@ async function readNewData(filePath: string, start: number, fmt: Formatter): Pro
   for await (const line of rl) {
     const entry = parseLine(line);
     if (entry) {
-      if (fmt === formatConversationEntry) {
+      if (showRunHeaders) {
         const header = formatRunHeader(entry);
         if (header) console.log(header);
       }
@@ -357,8 +378,8 @@ async function readNewData(filePath: string, start: number, fmt: Formatter): Pro
   return { newPosition: currentSize };
 }
 
-async function followFile(filePath: string, lastN: number, fmt: Formatter): Promise<void> {
-  await readLastN(filePath, lastN, fmt);
+async function followFile(filePath: string, lastN: number, fmt: Formatter, showRunHeaders = false): Promise<void> {
+  await readLastN(filePath, lastN, fmt, showRunHeaders);
 
   let position = statSync(filePath).size;
 
@@ -379,7 +400,7 @@ async function followFile(filePath: string, lastN: number, fmt: Formatter): Prom
 
   const readNewChanges = async () => {
     try {
-      const { newPosition } = await readNewData(filePath, position, fmt);
+      const { newPosition } = await readNewData(filePath, position, fmt, showRunHeaders);
       position = newPosition;
     } catch {
       // File may have been rotated or removed — ignore
@@ -416,7 +437,7 @@ async function followFile(filePath: string, lastN: number, fmt: Formatter): Prom
 
 export async function execute(
   agent: string,
-  opts: { project: string; lines: string; follow?: boolean; date?: string; raw?: boolean; all?: boolean; env?: string; instance?: string }
+  opts: { project: string; lines: string; follow?: boolean; date?: string; raw?: boolean; all?: boolean; env?: string; instance?: string; grep?: string; after?: string; before?: string }
 ): Promise<void> {
   const projectPath = resolve(opts.project);
   const fmt: Formatter = opts.raw
@@ -430,6 +451,24 @@ export async function execute(
     : undefined;
 
   const n = parseInt(opts.lines, 10);
+
+  // Parse --after / --before / --grep
+  let afterTs: number | undefined;
+  let beforeTs: number | undefined;
+  let grepRe: RegExp | undefined;
+
+  if (opts.after) {
+    try { afterTs = parseTimeValue(opts.after); }
+    catch (e: any) { console.error(`Error: ${e.message}`); process.exit(1); }
+  }
+  if (opts.before) {
+    try { beforeTs = parseTimeValue(opts.before); }
+    catch (e: any) { console.error(`Error: ${e.message}`); process.exit(1); }
+  }
+  if (opts.grep) {
+    try { grepRe = new RegExp(opts.grep); }
+    catch { console.error(`Error: Invalid grep pattern: "${opts.grep}"`); process.exit(1); }
+  }
 
   // Build API path
   let apiPath: string;
@@ -455,24 +494,40 @@ export async function execute(
       }
     };
 
+    // Helper to apply grep filter on entries received from gateway
+    const applyGrepFilter = (entries: LogEntry[]): LogEntry[] => {
+      if (!grepRe) return entries;
+      return entries.filter((e) => grepRe!.test(JSON.stringify(e)));
+    };
+
+    // Build base query params (time range + grep forwarded for server-side pre-filtering)
+    const buildBaseParams = () => {
+      const p = new URLSearchParams({ lines: String(n) });
+      if (afterTs !== undefined) p.set("after", String(afterTs));
+      if (beforeTs !== undefined) p.set("before", String(beforeTs));
+      if (opts.grep) p.set("grep", opts.grep);
+      return p;
+    };
+
     if (opts.follow) {
       // Initial fetch
-      const params = new URLSearchParams({ lines: String(n) });
+      const params = buildBaseParams();
       const res = await gatewayFetch({ project: opts.project, path: `${apiPath}?${params}`, env: opts.env });
       if (!res.ok) throw new Error(`Gateway returned ${res.status}`);
       const data = await res.json() as { entries: LogEntry[]; cursor: string | null; hasMore: boolean };
-      formatAndPrintEntries(data.entries);
+      formatAndPrintEntries(applyGrepFilter(data.entries));
       let cursor = data.cursor;
 
       // Poll with cursor
       const poll = async () => {
         const p = new URLSearchParams();
         if (cursor) p.set("cursor", cursor);
+        if (opts.grep) p.set("grep", opts.grep);
         try {
           const r = await gatewayFetch({ project: opts.project, path: `${apiPath}?${p}`, env: opts.env });
           if (r.ok) {
             const d = await r.json() as { entries: LogEntry[]; cursor: string | null; hasMore: boolean };
-            formatAndPrintEntries(d.entries);
+            formatAndPrintEntries(applyGrepFilter(d.entries));
             if (d.cursor) cursor = d.cursor;
           }
         } catch {
@@ -487,14 +542,15 @@ export async function execute(
       });
       await new Promise(() => {});
     } else {
-      const params = new URLSearchParams({ lines: String(n) });
+      const params = buildBaseParams();
       const res = await gatewayFetch({ project: opts.project, path: `${apiPath}?${params}`, env: opts.env });
       if (!res.ok) throw new Error(`Gateway returned ${res.status}`);
       const data = await res.json() as { entries: LogEntry[]; cursor: string | null; hasMore: boolean };
-      if (data.entries.length === 0) {
+      const filtered = applyGrepFilter(data.entries);
+      if (filtered.length === 0) {
         console.log(`No log entries found for "${agent}".`);
       } else {
-        formatAndPrintEntries(data.entries);
+        formatAndPrintEntries(filtered);
       }
     }
   } catch {
@@ -508,16 +564,23 @@ export async function execute(
       process.exit(1);
     }
 
-    // When --instance is specified, wrap the formatter to skip non-matching entries
+    // When --instance / --after / --before / --grep are specified, wrap the formatter
     const instanceFilter = instanceSuffix !== undefined ? `${agent}-${instanceSuffix}` : undefined;
-    const filteredFmt: Formatter = instanceFilter
-      ? (entry) => entry.instance === instanceFilter ? fmt(entry) : null
-      : fmt;
+    const filteredFmt: Formatter = (entry) => {
+      if (instanceFilter && entry.instance !== instanceFilter) return null;
+      if (afterTs !== undefined && entry.time <= afterTs) return null;
+      if (beforeTs !== undefined && entry.time >= beforeTs) return null;
+      if (grepRe && !grepRe.test(JSON.stringify(entry))) return null;
+      return fmt(entry);
+    };
+
+    // Show run headers only in default conversation mode (not raw, not --all)
+    const showRunHeaders = fmt === formatConversationEntry;
 
     if (opts.follow) {
-      await followFile(logFile, n, filteredFmt);
+      await followFile(logFile, n, filteredFmt, showRunHeaders);
     } else {
-      await readLastN(logFile, n, filteredFmt);
+      await readLastN(logFile, n, filteredFmt, showRunHeaders);
     }
   }
 }
