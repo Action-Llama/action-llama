@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock child_process.execFile before importing
+// Mock child_process.execFile and spawn before importing
 const mockExecFile = vi.fn();
+const mockSpawn = vi.fn();
 vi.mock("child_process", () => ({
   execFile: (...args: any[]) => mockExecFile(...args),
+  spawn: (...args: any[]) => mockSpawn(...args),
 }));
 
-import { buildSshArgs, sshExec, rsyncTo, sshOptionsFromConfig } from "../../src/remote/ssh.js";
+import { buildSshArgs, sshExec, rsyncTo, sshOptionsFromConfig, sshSpawn } from "../../src/remote/ssh.js";
 
 describe("sshOptionsFromConfig", () => {
   it("applies defaults", () => {
@@ -179,5 +181,41 @@ describe("rsyncTo", () => {
     const rsyncArgs: string[] = mockExecFile.mock.calls[0][1];
     expect(rsyncArgs).toContain("--dry-run");
     expect(rsyncArgs).toContain("-v");
+  });
+});
+
+describe("sshSpawn", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("calls spawn with ssh and correct arguments", () => {
+    const fakeProcess = { pid: 1234, stdout: null, stderr: null };
+    mockSpawn.mockReturnValue(fakeProcess);
+
+    const result = sshSpawn({ host: "example.com", user: "deploy", port: 22 }, "tail -f /var/log/app.log");
+
+    expect(mockSpawn).toHaveBeenCalledOnce();
+    const [cmd, args, opts] = mockSpawn.mock.calls[0];
+    expect(cmd).toBe("ssh");
+    expect(args).toContain("deploy@example.com");
+    expect(args).toContain("tail -f /var/log/app.log");
+    expect(args).toContain("-p");
+    expect(args).toContain("22");
+    expect(opts).toEqual({ stdio: ["ignore", "pipe", "pipe"] });
+    expect(result).toBe(fakeProcess);
+  });
+
+  it("includes keyPath in ssh args when provided", () => {
+    const fakeProcess = { pid: 5678, stdout: null, stderr: null };
+    mockSpawn.mockReturnValue(fakeProcess);
+
+    sshSpawn({ host: "host.example.com", user: "root", port: 2222, keyPath: "/home/user/.ssh/id_ed25519" }, "ls /tmp");
+
+    const [, args] = mockSpawn.mock.calls[0];
+    expect(args).toContain("-i");
+    expect(args).toContain("/home/user/.ssh/id_ed25519");
+    expect(args).toContain("-p");
+    expect(args).toContain("2222");
   });
 });
