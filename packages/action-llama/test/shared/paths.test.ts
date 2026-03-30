@@ -6,10 +6,15 @@ import {
   AL_HOME_DIR,
   CREDENTIALS_DIR,
   STATE_DIR,
+  ENVIRONMENTS_DIR,
   projectDir,
   logsDir,
   eventsDir,
   agentDir,
+  statsDbPath,
+  dbPath,
+  stateDbPath,
+  workQueueDbPath,
 } from "../../src/shared/paths.js";
 
 describe("paths", () => {
@@ -43,5 +48,25 @@ describe("paths", () => {
 
   it("agentDir appends agent type", () => {
     expect(agentDir("/proj", "dev")).toBe(resolve("/proj", "agents", "dev"));
+  });
+
+  it("ENVIRONMENTS_DIR is under AL_HOME_DIR", () => {
+    expect(ENVIRONMENTS_DIR).toBe(resolve(homedir(), ".action-llama", "environments"));
+  });
+
+  it("statsDbPath appends .al/stats.db", () => {
+    expect(statsDbPath("/proj")).toBe(resolve("/proj", ".al", "stats.db"));
+  });
+
+  it("dbPath appends .al/action-llama.db", () => {
+    expect(dbPath("/proj")).toBe(resolve("/proj", ".al", "action-llama.db"));
+  });
+
+  it("stateDbPath appends .al/state.db (deprecated)", () => {
+    expect(stateDbPath("/proj")).toBe(resolve("/proj", ".al", "state.db"));
+  });
+
+  it("workQueueDbPath appends .al/work-queue.db (deprecated)", () => {
+    expect(workQueueDbPath("/proj")).toBe(resolve("/proj", ".al", "work-queue.db"));
   });
 });

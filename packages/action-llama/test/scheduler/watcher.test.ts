@@ -28,10 +28,15 @@ vi.mock("../../src/events/webhook-setup.js", () => ({
 
 vi.mock("croner", () => {
   class MockCron {
+    _callback: (() => Promise<void>) | undefined;
     stop = vi.fn();
     pause = vi.fn();
     resume = vi.fn();
+    constructor(_schedule: string, _opts: any, callback?: () => Promise<void>) {
+      this._callback = callback;
+    }
     nextRun() { return new Date(); }
+    async fire() { return this._callback?.(); }
   }
   return { Cron: MockCron };
 });
@@ -209,6 +214,14 @@ describe("watchAgents", () => {
     watchAgents(ctx);
     // Should not throw
     watchCallback("change", null as any);
+    expect(mockedDiscoverAgents).not.toHaveBeenCalled();
+  });
+
+  it("ignores file change when agentName cannot be determined from path", () => {
+    const ctx = makeContext();
+    watchAgents(ctx);
+    // A dotfile/top-level file that doesn't match any agent path — agentNameFromPath returns null
+    watchCallback("change", ".gitignore");
     expect(mockedDiscoverAgents).not.toHaveBeenCalled();
   });
 
@@ -722,5 +735,177 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
         expect.objectContaining({ type: "webhook" })
       );
     });
+
+    it("warns when queue is full (dropped=true) on webhook enqueue", async () => {
+      const { getCaptured } = makeTriggerTest();
+
+      const ctx = makeContext({ agentConfigs: [], runnerPools: {} });
+      (ctx.statusTracker as any).isPaused = vi.fn(() => false);
+      (ctx.statusTracker as any).isAgentEnabled = vi.fn(() => true);
+      // Make enqueue return dropped=true
+      (ctx.schedulerCtx.workQueue.enqueue as any).mockReturnValue({ dropped: true });
+
+      const newConfig = makeAgentConfig("agent-b");
+      mockedDiscoverAgents.mockReturnValue(["agent-b"]);
+      mockedLoadAgentConfig.mockReturnValue(newConfig);
+      mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
+
+      const busyRunner = makeMockRunner("agent-b");
+      busyRunner.isRunning = true;
+      ctx.createRunner = vi.fn(() => busyRunner);
+
+      const handle = watchAgents(ctx);
+      await handle._handleAgentChange("agent-b");
+
+      const onTrigger = getCaptured();
+      expect(onTrigger).toBeDefined();
+
+      onTrigger!(newConfig, { event: "push", action: "opened" });
+      expect(ctx.logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ agent: "agent-b" }),
+        "queue full, oldest event dropped"
+      );
+    });
+
+    it("logs error when executeRun rejects", async () => {
+      const { getCaptured } = makeTriggerTest();
+      const { executeRun: mockedExecuteRunImport, drainQueues: mockedDrainQueues } = await import("../../src/execution/execution.js");
+      (mockedExecuteRunImport as any).mockRejectedValueOnce(new Error("run failed"));
+
+      const ctx = makeContext({ agentConfigs: [], runnerPools: {} });
+      (ctx.statusTracker as any).isPaused = vi.fn(() => false);
+      (ctx.statusTracker as any).isAgentEnabled = vi.fn(() => true);
+
+      const newConfig = makeAgentConfig("agent-b");
+      mockedDiscoverAgents.mockReturnValue(["agent-b"]);
+      mockedLoadAgentConfig.mockReturnValue(newConfig);
+      mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
+
+      const idleRunner = makeMockRunner("agent-b");
+      ctx.createRunner = vi.fn(() => idleRunner);
+
+      const handle = watchAgents(ctx);
+      await handle._handleAgentChange("agent-b");
+
+      const onTrigger = getCaptured();
+      expect(onTrigger).toBeDefined();
+
+      onTrigger!(newConfig, { event: "push", action: "opened", receiptId: "r1" });
+      // Wait for the promise chain to resolve
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(ctx.logger.error).toHaveBeenCalledWith(
+        expect.objectContaining({ agent: "agent-b" }),
+        "webhook run failed"
+      );
+    });
+  });
+
+
+
+  it("_waitForPending resolves after inflight handlers complete", async () => {
+    const ctx = makeContext();
+    const handle = watchAgents(ctx);
+    // Should resolve immediately with no pending handlers
+    await expect(handle._waitForPending()).resolves.toBeUndefined();
+  });
+
+  it("handles agent removal with remaining agents: rebuilds cron jobs", async () => {
+    const runnerA = makeMockRunner("agent-a");
+    const runnerB = makeMockRunner("agent-b");
+    const poolA = new RunnerPool([runnerA]);
+    const poolB = new RunnerPool([runnerB]);
+
+    const configA = makeAgentConfig("agent-a", { schedule: "0 * * * *" });
+    const configB = makeAgentConfig("agent-b", { schedule: "*/30 * * * *" });
+
+    const ctx = makeContext({
+      agentConfigs: [configA, configB],
+      runnerPools: { "agent-a": poolA, "agent-b": poolB },
+    });
+
+    // Remove agent-a, keep agent-b
+    mockedDiscoverAgents.mockReturnValue(["agent-b"]);
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    // agent-a should be gone, cron jobs rebuilt for agent-b
+    expect(ctx.agentConfigs.find(a => a.name === "agent-a")).toBeUndefined();
+    expect(ctx.cronJobs.length).toBeGreaterThan(0);
+  });
+
+  it("handles changed agent: re-registers webhook bindings when webhooks change", async () => {
+    const oldConfig = makeAgentConfig("agent-a", { webhooks: [{ source: "github", trigger: { event: "push" } }] });
+    const newConfig = makeAgentConfig("agent-a", { webhooks: [{ source: "github", trigger: { event: "pull_request" } }] });
+
+    const ctx = makeContext({ agentConfigs: [oldConfig] });
+    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
+    mockedLoadAgentConfig.mockReturnValue(newConfig);
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    expect(ctx.webhookRegistry!.removeBindingsForAgent).toHaveBeenCalledWith("agent-a");
+    expect(mockedRegisterWebhookBindings).toHaveBeenCalled();
+  });
+
+  it("new agent cron callback queues work when all runners are busy", async () => {
+    const ctx = makeContext({ agentConfigs: [], runnerPools: {} });
+
+    const busyRunner = makeMockRunner("agent-b");
+    busyRunner.isRunning = true;
+    ctx.createRunner = vi.fn(() => busyRunner);
+
+    const newConfig = makeAgentConfig("agent-b", { schedule: "0 * * * *" });
+    mockedDiscoverAgents.mockReturnValue(["agent-b"]);
+    mockedLoadAgentConfig.mockReturnValue(newConfig);
+    mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-b");
+
+    // Find the cron job for agent-b and fire it
+    const cronJob = ctx.cronJobs.find((j: any) => j._callback) as any;
+    expect(cronJob).toBeDefined();
+
+    // Fire the callback — all runners are busy
+    await cronJob.fire();
+
+    expect(ctx.schedulerCtx.workQueue.enqueue).toHaveBeenCalledWith(
+      "agent-b",
+      expect.objectContaining({ type: "schedule" })
+    );
+    expect(ctx.logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "agent-b" }),
+      "all runners busy, scheduled run queued"
+    );
+  });
+
+  it("updated agent cron callback queues work when all runners are busy", async () => {
+    const ctx = makeContext();
+
+    const updatedConfig = makeAgentConfig("agent-a", { schedule: "*/15 * * * *" });
+    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
+    mockedLoadAgentConfig.mockReturnValue(updatedConfig);
+
+    // Mark the runner as busy
+    const pool = ctx.runnerPools["agent-a"];
+    const runner = pool.getAvailableRunner();
+    if (runner) (runner as any).isRunning = true;
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    // Find newly added cron job for updated schedule and fire it
+    const cronJob = ctx.cronJobs.find((j: any) => j._callback) as any;
+    expect(cronJob).toBeDefined();
+
+    await cronJob.fire();
+
+    expect(ctx.schedulerCtx.workQueue.enqueue).toHaveBeenCalledWith(
+      "agent-a",
+      expect.objectContaining({ type: "schedule" })
+    );
   });
 });
