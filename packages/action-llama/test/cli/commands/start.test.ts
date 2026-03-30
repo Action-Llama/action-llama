@@ -48,12 +48,25 @@ vi.mock("../../../src/cli/gateway-client.js", () => ({
   gatewayFetch: vi.fn().mockRejectedValue(new Error("ECONNREFUSED")),
 }));
 
+// Mock credentials
+vi.mock("../../../src/shared/credentials.js", () => ({
+  credentialExists: vi.fn().mockResolvedValue(true),
+}));
+
+// Mock plain-logger for headless mode
+vi.mock("../../../src/tui/plain-logger.js", () => ({
+  attachPlainLogger: vi.fn().mockReturnValue({ detach: vi.fn() }),
+}));
+
 import { execute } from "../../../src/cli/commands/start.js";
 import { startScheduler } from "../../../src/scheduler/index.js";
 import { StatusTracker } from "../../../src/tui/status-tracker.js";
 import { resolveEnvironmentName, loadEnvironmentConfig } from "../../../src/shared/environment.js";
 import { sshExec } from "../../../src/remote/ssh.js";
 import { gatewayFetch } from "../../../src/cli/gateway-client.js";
+import { credentialExists } from "../../../src/shared/credentials.js";
+import { attachPlainLogger } from "../../../src/tui/plain-logger.js";
+import { loadGlobalConfig } from "../../../src/shared/config.js";
 
 describe("start", () => {
   beforeEach(() => {
@@ -61,6 +74,8 @@ describe("start", () => {
     // Default: no environment (local mode)
     vi.mocked(resolveEnvironmentName).mockReturnValue(undefined);
     vi.mocked(gatewayFetch).mockRejectedValue(new Error("ECONNREFUSED"));
+    vi.mocked(credentialExists).mockResolvedValue(true);
+    vi.mocked(loadGlobalConfig).mockReturnValue({});
   });
 
   it("calls startScheduler with StatusTracker and renders TUI", async () => {
@@ -151,6 +166,137 @@ describe("start", () => {
       expect(startScheduler).not.toHaveBeenCalled();
 
       warnSpy.mockRestore();
+      logSpy.mockRestore();
+      vi.useRealTimers();
+    });
+  });
+
+  // ── SKILL.md guard ──────────────────────────────────────────────────────
+
+  it("throws when SKILL.md exists in project directory (agent directory guard)", async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import("fs");
+    const { join } = await import("path");
+    const { tmpdir } = await import("os");
+
+    const tmpDir = mkdtempSync(join(tmpdir(), "al-start-skill-"));
+    writeFileSync(join(tmpDir, "SKILL.md"), "# Agent skill");
+
+    try {
+      await expect(execute({ project: tmpDir })).rejects.toThrow(
+        /looks like an agent directory/,
+      );
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  // ── Security validation: webUi/expose without API key ────────────────────
+
+  it("throws ConfigError when --web-ui is used without a gateway API key", async () => {
+    vi.mocked(credentialExists).mockResolvedValue(false);
+
+    const { ConfigError } = await import("../../../src/shared/errors.js");
+    await expect(execute({ project: "/tmp/test", webUi: true })).rejects.toThrow(ConfigError);
+  });
+
+  it("throws ConfigError when --expose is used without a gateway API key", async () => {
+    vi.mocked(credentialExists).mockResolvedValue(false);
+
+    const { ConfigError } = await import("../../../src/shared/errors.js");
+    await expect(execute({ project: "/tmp/test", expose: true })).rejects.toThrow(ConfigError);
+  });
+
+  // ── Port override ────────────────────────────────────────────────────────
+
+  it("applies port override from opts.port when no gateway config exists", async () => {
+    vi.mocked(loadGlobalConfig).mockReturnValue({});
+
+    const promise = execute({ project: "/tmp/test", port: 9090 });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(startScheduler).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ gateway: expect.objectContaining({ port: 9090 }) }),
+      expect.any(StatusTracker),
+      undefined,
+      undefined
+    );
+    // Don't await promise — it hangs forever
+  });
+
+  it("applies port override from opts.port when gateway config already exists", async () => {
+    vi.mocked(loadGlobalConfig).mockReturnValue({ gateway: { port: 8080 } });
+
+    const promise = execute({ project: "/tmp/test", port: 7777 });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(startScheduler).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ gateway: expect.objectContaining({ port: 7777 }) }),
+      expect.any(StatusTracker),
+      undefined,
+      undefined
+    );
+    // Don't await promise — it hangs forever
+  });
+
+  // ── Local config: enabled = true else branch ──────────────────────────────
+
+  it("sets local.enabled = true when local config already exists", async () => {
+    vi.mocked(loadGlobalConfig).mockReturnValue({ local: { enabled: false } });
+
+    const promise = execute({ project: "/tmp/test" });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(startScheduler).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ local: expect.objectContaining({ enabled: true }) }),
+      expect.any(StatusTracker),
+      undefined,
+      undefined
+    );
+    // Don't await promise
+  });
+
+  // ── Headless mode ────────────────────────────────────────────────────────
+
+  it("uses attachPlainLogger instead of renderTUI when headless=true", async () => {
+    const promise = execute({ project: "/tmp/test", headless: true });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(attachPlainLogger).toHaveBeenCalledWith(expect.any(StatusTracker));
+    // Don't await promise
+  });
+
+  // ── Poll healthy=true ─────────────────────────────────────────────────────
+
+  describe("remote server start — healthy poll path", () => {
+    beforeEach(() => {
+      vi.mocked(resolveEnvironmentName).mockReturnValue("staging");
+      vi.mocked(loadEnvironmentConfig).mockReturnValue({
+        server: { host: "192.168.1.100" },
+      });
+    });
+
+    it("sets healthy=true and logs 'Service started' when poll succeeds", async () => {
+      vi.useFakeTimers();
+
+      // Initial health check → not running; SSH start succeeds; poll → healthy
+      vi.mocked(gatewayFetch)
+        .mockRejectedValueOnce(new Error("ECONNREFUSED"))
+        .mockResolvedValue({ ok: true } as Response);
+      vi.mocked(sshExec).mockResolvedValue("");
+
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      const promise = execute({ project: "/tmp/test", env: "staging" });
+
+      // Advance timers past the 2s poll interval so the poll fires and health check succeeds
+      await vi.advanceTimersByTimeAsync(3_000);
+
+      await promise;
+
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("Service started"));
       logSpy.mockRestore();
       vi.useRealTimers();
     });
