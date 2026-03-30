@@ -284,5 +284,91 @@ describe("vps_ssh credential", () => {
 
       expect(mockedRmSync).toHaveBeenCalledWith("/tmp/al-keygen-failclean", { recursive: true, force: true });
     });
+
+    describe("paste mode — password validate function", () => {
+      async function capturePasswordValidate(): Promise<(v: string) => true | string> {
+        let validateFn: ((v: string) => true | string) | undefined;
+        mockedPassword.mockImplementationOnce((opts: any) => {
+          validateFn = opts.validate;
+          return Promise.resolve("-----BEGIN RSA PRIVATE KEY-----\nKEY\n-----END RSA PRIVATE KEY-----" as any);
+        });
+        mockedMkdtempSync.mockReturnValue("/tmp/al-keygen-val" as any);
+        mockedExecSync.mockReturnValue(Buffer.from("ssh-rsa AAAA pubkey\n") as any);
+        mockedSelect.mockResolvedValue("paste" as any);
+        await vpsSsh.prompt!({});
+        return validateFn!;
+      }
+
+      it("returns 'Key is required' for an empty string", async () => {
+        const validate = await capturePasswordValidate();
+        expect(validate("")).toBe("Key is required");
+      });
+
+      it("returns 'Key is required' for whitespace-only input", async () => {
+        const validate = await capturePasswordValidate();
+        expect(validate("   ")).toBe("Key is required");
+      });
+
+      it("returns error when input does not contain PRIVATE KEY header", async () => {
+        const validate = await capturePasswordValidate();
+        expect(validate("not a key at all")).toBe(
+          "Does not look like a private key — expected a PEM-formatted key"
+        );
+      });
+
+      it("returns true for a valid PEM private key string", async () => {
+        const validate = await capturePasswordValidate();
+        expect(validate("-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----")).toBe(true);
+      });
+    });
+
+    describe("paste mode — fallback public key input validate function", () => {
+      it("returns 'Public key is required' for empty input", async () => {
+        mockedSelect.mockResolvedValue("paste" as any);
+        mockedPassword.mockResolvedValue("-----BEGIN RSA PRIVATE KEY-----\nKEY\n-----END RSA PRIVATE KEY-----" as any);
+        mockedMkdtempSync.mockReturnValue("/tmp/al-keygen-pubval" as any);
+        mockedExecSync.mockImplementation(() => { throw new Error("no keygen"); });
+
+        let pubValidateFn: ((v: string) => true | string) | undefined;
+        mockedInput.mockImplementationOnce((opts: any) => {
+          pubValidateFn = opts.validate;
+          return Promise.resolve("ssh-rsa AAAA pubkey" as any);
+        });
+
+        await vpsSsh.prompt!({});
+
+        expect(pubValidateFn).toBeDefined();
+        expect(pubValidateFn!("")).toBe("Public key is required");
+        expect(pubValidateFn!("  ")).toBe("Public key is required");
+        expect(pubValidateFn!("ssh-rsa AAAA validkey")).toBe(true);
+      });
+    });
+  });
+
+  describe("prompt — file mode validate function", () => {
+    it("validates that the file path is not empty", async () => {
+      mockedSelect.mockResolvedValue("file" as any);
+
+      let filePathValidateFn: ((v: string) => true | string) | undefined;
+      mockedInput.mockImplementationOnce((opts: any) => {
+        filePathValidateFn = opts.validate;
+        return Promise.resolve("/home/user/.ssh/id_ed25519" as any);
+      });
+
+      mockedExistsSync.mockImplementation((p: any) => {
+        if (p === "/home/user/.ssh/id_ed25519") return true;
+        if (String(p).endsWith(".pub")) return false;
+        return false;
+      });
+      mockedReadFileSync.mockReturnValueOnce("-----BEGIN OPENSSH PRIVATE KEY-----\nED_KEY\n-----END OPENSSH PRIVATE KEY-----" as any);
+      mockedExecSync.mockReturnValue(Buffer.from("ssh-ed25519 AAAA derived\n") as any);
+
+      await vpsSsh.prompt!({});
+
+      expect(filePathValidateFn).toBeDefined();
+      expect(filePathValidateFn!("")).toBe("Path is required");
+      expect(filePathValidateFn!("  ")).toBe("Path is required");
+      expect(filePathValidateFn!("/any/valid/path")).toBe(true);
+    });
   });
 });
