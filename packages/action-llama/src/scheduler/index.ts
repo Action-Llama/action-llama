@@ -4,7 +4,6 @@ import { createLogger, createFileOnlyLogger } from "../shared/logger.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import type { PromptSkills } from "../agents/prompt.js";
 import { CONSTANTS } from "../shared/constants.js";
-import { createWorkQueue } from "../events/event-queue.js";
 import { createContainerRuntime, buildAgentImages } from "../execution/runtime-factory.js";
 import { setupWebhookRegistry, registerWebhookBindings } from "../events/webhook-setup.js";
 import { initTelemetry } from "../telemetry/index.js";
@@ -73,31 +72,38 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     statusTracker?.registerAgent(agentConfig.name, agentConfig.scale ?? 1, agentConfig.description);
   }
 
-  // Create persistent state store (SQLite)
+  // Run database migrations and open the consolidated DB connection
+  const { runMigrations } = await import("../db/migrate.js");
+  const { resolve: resolvePath } = await import("path");
+  const { dbPath } = await import("../shared/paths.js");
+  const consolidatedDbPath = dbPath(projectPath);
+  const { fileURLToPath } = await import("url");
+  const migrationsFolder = resolvePath(
+    fileURLToPath(new URL("../../drizzle", import.meta.url))
+  );
+  const sharedDb = runMigrations(consolidatedDbPath, migrationsFolder);
+  logger.info("Database: SQLite (.al/action-llama.db)");
+
+  // Create persistent state store (using shared DB)
   let stateStore: StateStore | undefined;
   {
-    const { createStateStore } = await import("../shared/state-store.js");
-    const { resolve: resolvePath } = await import("path");
-    stateStore = await createStateStore({
-      type: "sqlite",
-      path: resolvePath(projectPath, ".al", "state.db"),
-    });
-    logger.info("State store: SQLite (.al/state.db)");
+    const { SqliteStateStore } = await import("../shared/state-store-sqlite.js");
+    stateStore = new SqliteStateStore(sharedDb);
+    logger.info("State store: SQLite (.al/action-llama.db)");
   }
 
-  // Create stats store (SQLite)
+  // Create stats store (using shared DB)
   let statsStore: StatsStore | undefined;
   {
     const { StatsStore: StatsStoreClass } = await import("../stats/index.js");
-    const { statsDbPath } = await import("../shared/paths.js");
-    statsStore = new StatsStoreClass(statsDbPath(projectPath));
+    statsStore = new StatsStoreClass(sharedDb);
     // Auto-prune old data on startup
     const retentionDays = globalConfig.historyRetentionDays ?? 14;
     const pruned = statsStore.prune(retentionDays);
     if (pruned.runs > 0 || pruned.callEdges > 0 || pruned.receipts > 0) {
       logger.info({ prunedRuns: pruned.runs, prunedCallEdges: pruned.callEdges, prunedReceipts: pruned.receipts, retentionDays }, "Pruned old stats data");
     }
-    logger.info("Stats store: SQLite (.al/stats.db)");
+    logger.info("Stats store: SQLite (.al/action-llama.db)");
   }
 
   // Create the lifecycle event bus
@@ -113,10 +119,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // Create work queue early (before Docker builds) so incoming webhooks can be queued
   const queueSize = globalConfig.workQueueSize ?? globalConfig.webhookQueueSize ?? 20;
-  const workQueue = await createWorkQueue<WorkItem>(queueSize, {
-    type: "sqlite",
-    path: (await import("path")).resolve(projectPath, ".al", "work-queue.db"),
-  });
+  const { SqliteWorkQueue } = await import("../events/event-queue-sqlite.js");
+  const workQueue = new SqliteWorkQueue<WorkItem>(queueSize, sharedDb);
   state.workQueue = workQueue;
 
   // Start gateway early (before Docker builds) so users can see build status
@@ -389,7 +393,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // Graceful shutdown
   registerShutdownHandlers({
-    logger, schedulerCtx, cronJobs, gateway, stateStore, statsStore, telemetry, watcherHandle,
+    logger, schedulerCtx, cronJobs, gateway, stateStore, statsStore, sharedDb, telemetry, watcherHandle,
   });
 
   return { cronJobs, runnerPools, gateway, webhookRegistry, webhookUrls, statusTracker, schedulerCtx, events };

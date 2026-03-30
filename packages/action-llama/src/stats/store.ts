@@ -1,6 +1,8 @@
-import Database from "better-sqlite3";
-import { mkdirSync } from "fs";
-import { dirname } from "path";
+import { eq, and, gt, lt, desc, sql, asc } from "drizzle-orm";
+import { createDb } from "../db/connection.js";
+import { applyMigrations } from "../db/migrate.js";
+import { runsTable, webhookReceiptsTable, callEdgesTable } from "../db/schema.js";
+import type { AppDb } from "../db/connection.js";
 
 export interface RunRecord {
   instanceId: string;
@@ -85,282 +87,30 @@ export interface CallEdgeSummary {
   avgDurationMs: number | null;
 }
 
+/**
+ * SQLite-backed StatsStore using Drizzle ORM.
+ *
+ * Supports two constructor signatures:
+ *   new StatsStore(dbPath: string)  — creates its own connection (backward compat)
+ *   new StatsStore(db: AppDb)       — uses a shared connection (preferred)
+ */
 export class StatsStore {
-  private db: InstanceType<typeof Database>;
-  private stmts: any;
+  private db: AppDb;
+  private ownDb: boolean;
 
-  constructor(dbPath: string) {
-    mkdirSync(dirname(dbPath), { recursive: true });
-    this.db = new Database(dbPath);
-    this.db.pragma("journal_mode = WAL");
-
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS runs (
-        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-        instance_id        TEXT NOT NULL,
-        agent_name         TEXT NOT NULL,
-        trigger_type       TEXT NOT NULL,
-        trigger_source     TEXT,
-        result             TEXT NOT NULL,
-        exit_code          INTEGER,
-        started_at         INTEGER NOT NULL,
-        duration_ms        INTEGER NOT NULL,
-        input_tokens       INTEGER NOT NULL DEFAULT 0,
-        output_tokens      INTEGER NOT NULL DEFAULT 0,
-        cache_read_tokens  INTEGER NOT NULL DEFAULT 0,
-        cache_write_tokens INTEGER NOT NULL DEFAULT 0,
-        total_tokens       INTEGER NOT NULL DEFAULT 0,
-        cost_usd           REAL NOT NULL DEFAULT 0,
-        turn_count         INTEGER NOT NULL DEFAULT 0,
-        error_message      TEXT,
-        pre_hook_ms        INTEGER,
-        post_hook_ms       INTEGER
-      )
-    `);
-
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS webhook_receipts (
-        id                 TEXT PRIMARY KEY,
-        delivery_id        TEXT,
-        source             TEXT NOT NULL,
-        event_summary      TEXT,
-        timestamp          INTEGER NOT NULL,
-        headers            TEXT,
-        body               TEXT,
-        matched_agents     INTEGER NOT NULL DEFAULT 0,
-        status             TEXT NOT NULL,
-        dead_letter_reason TEXT
-      )
-    `);
-
-    this.db.exec("CREATE INDEX IF NOT EXISTS idx_wr_timestamp ON webhook_receipts(timestamp)");
-    this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_wr_delivery ON webhook_receipts(delivery_id) WHERE delivery_id IS NOT NULL");
-
-    // Migrate: add webhook_receipt_id column to runs if missing
-    const runsColumns = this.db.pragma("table_info(runs)") as { name: string }[];
-    if (!runsColumns.some(c => c.name === "webhook_receipt_id")) {
-      this.db.exec("ALTER TABLE runs ADD COLUMN webhook_receipt_id TEXT");
+  constructor(dbOrPath: string | AppDb) {
+    if (typeof dbOrPath === "string") {
+      this.db = createDb(dbOrPath);
+      this.ownDb = true;
+      applyMigrations(this.db);
+    } else {
+      this.db = dbOrPath;
+      this.ownDb = false;
     }
-
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS call_edges (
-        id               INTEGER PRIMARY KEY AUTOINCREMENT,
-        caller_agent     TEXT NOT NULL,
-        caller_instance  TEXT NOT NULL,
-        target_agent     TEXT NOT NULL,
-        target_instance  TEXT,
-        depth            INTEGER NOT NULL DEFAULT 0,
-        started_at       INTEGER NOT NULL,
-        duration_ms      INTEGER,
-        status           TEXT NOT NULL DEFAULT 'pending'
-      )
-    `);
-
-    this.db.exec("CREATE INDEX IF NOT EXISTS idx_runs_agent ON runs(agent_name, started_at)");
-    this.db.exec("CREATE INDEX IF NOT EXISTS idx_runs_started ON runs(started_at)");
-    this.db.exec("CREATE INDEX IF NOT EXISTS idx_calls_caller ON call_edges(caller_agent, started_at)");
-    this.db.exec("CREATE INDEX IF NOT EXISTS idx_calls_target ON call_edges(target_agent, started_at)");
-    this.db.exec("CREATE INDEX IF NOT EXISTS idx_calls_target_instance ON call_edges(target_instance)");
-
-    this.stmts = {
-      insertRun: this.db.prepare(`
-        INSERT INTO runs (
-          instance_id, agent_name, trigger_type, trigger_source, result, exit_code,
-          started_at, duration_ms, input_tokens, output_tokens, cache_read_tokens,
-          cache_write_tokens, total_tokens, cost_usd, turn_count, error_message,
-          pre_hook_ms, post_hook_ms, webhook_receipt_id
-        ) VALUES (
-          @instanceId, @agentName, @triggerType, @triggerSource, @result, @exitCode,
-          @startedAt, @durationMs, @inputTokens, @outputTokens, @cacheReadTokens,
-          @cacheWriteTokens, @totalTokens, @costUsd, @turnCount, @errorMessage,
-          @preHookMs, @postHookMs, @webhookReceiptId
-        )
-      `),
-      insertCallEdge: this.db.prepare(`
-        INSERT INTO call_edges (
-          caller_agent, caller_instance, target_agent, target_instance, depth, started_at, duration_ms, status
-        ) VALUES (
-          @callerAgent, @callerInstance, @targetAgent, @targetInstance, @depth, @startedAt, @durationMs, @status
-        )
-      `),
-      updateCallEdge: this.db.prepare(`
-        UPDATE call_edges SET duration_ms = @durationMs, status = @status, target_instance = COALESCE(@targetInstance, target_instance) WHERE id = @id
-      `),
-      queryRuns: this.db.prepare(`
-        SELECT * FROM runs WHERE started_at >= @since ORDER BY started_at DESC LIMIT @limit
-      `),
-      queryRunsByAgent: this.db.prepare(`
-        SELECT * FROM runs WHERE agent_name = @agent AND started_at >= @since ORDER BY started_at DESC LIMIT @limit
-      `),
-      agentSummary: this.db.prepare(`
-        SELECT
-          agent_name as agentName,
-          COUNT(*) as totalRuns,
-          SUM(CASE WHEN result IN ('completed', 'rerun') THEN 1 ELSE 0 END) as okRuns,
-          SUM(CASE WHEN result = 'error' THEN 1 ELSE 0 END) as errorRuns,
-          AVG(duration_ms) as avgDurationMs,
-          SUM(total_tokens) as totalTokens,
-          SUM(cost_usd) as totalCost,
-          AVG(pre_hook_ms) as avgPreHookMs,
-          AVG(post_hook_ms) as avgPostHookMs
-        FROM runs
-        WHERE started_at >= @since
-        GROUP BY agent_name
-        ORDER BY totalRuns DESC
-      `),
-      agentSummaryByName: this.db.prepare(`
-        SELECT
-          agent_name as agentName,
-          COUNT(*) as totalRuns,
-          SUM(CASE WHEN result IN ('completed', 'rerun') THEN 1 ELSE 0 END) as okRuns,
-          SUM(CASE WHEN result = 'error' THEN 1 ELSE 0 END) as errorRuns,
-          AVG(duration_ms) as avgDurationMs,
-          SUM(total_tokens) as totalTokens,
-          SUM(cost_usd) as totalCost,
-          AVG(pre_hook_ms) as avgPreHookMs,
-          AVG(post_hook_ms) as avgPostHookMs
-        FROM runs
-        WHERE agent_name = @agent AND started_at >= @since
-        GROUP BY agent_name
-      `),
-      callGraph: this.db.prepare(`
-        SELECT
-          caller_agent as callerAgent,
-          target_agent as targetAgent,
-          COUNT(*) as count,
-          AVG(depth) as avgDepth,
-          AVG(duration_ms) as avgDurationMs
-        FROM call_edges
-        WHERE started_at >= @since
-        GROUP BY caller_agent, target_agent
-        ORDER BY count DESC
-      `),
-      queryRunsByAgentPaginated: this.db.prepare(`
-        SELECT * FROM runs WHERE agent_name = @agent ORDER BY started_at DESC LIMIT @limit OFFSET @offset
-      `),
-      countRunsByAgent: this.db.prepare(`
-        SELECT COUNT(*) as count FROM runs WHERE agent_name = @agent
-      `),
-      queryRunByInstanceId: this.db.prepare(`
-        SELECT * FROM runs WHERE instance_id = @instanceId LIMIT 1
-      `),
-      insertReceipt: this.db.prepare(`
-        INSERT INTO webhook_receipts (
-          id, delivery_id, source, event_summary, timestamp, headers, body,
-          matched_agents, status, dead_letter_reason
-        ) VALUES (
-          @id, @deliveryId, @source, @eventSummary, @timestamp, @headers, @body,
-          @matchedAgents, @status, @deadLetterReason
-        )
-      `),
-      findReceiptByDeliveryId: this.db.prepare(
-        "SELECT * FROM webhook_receipts WHERE delivery_id = @deliveryId LIMIT 1"
-      ),
-      getReceipt: this.db.prepare(
-        "SELECT * FROM webhook_receipts WHERE id = @id LIMIT 1"
-      ),
-      updateReceiptStatus: this.db.prepare(
-        "UPDATE webhook_receipts SET matched_agents = @matchedAgents, status = @status, dead_letter_reason = @deadLetterReason WHERE id = @id"
-      ),
-      queryTriggerHistory: this.db.prepare(`
-        SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
-               trigger_type AS triggerType, trigger_source AS triggerSource,
-               result, webhook_receipt_id AS webhookReceiptId,
-               NULL AS deadLetterReason
-        FROM runs WHERE started_at > @since
-        UNION ALL
-        SELECT timestamp AS ts, NULL AS instanceId, NULL AS agentName,
-               'webhook' AS triggerType, source AS triggerSource,
-               'dead-letter' AS result, id AS webhookReceiptId,
-               dead_letter_reason AS deadLetterReason
-        FROM webhook_receipts WHERE status = 'dead-letter' AND timestamp > @since
-        ORDER BY ts DESC LIMIT @limit OFFSET @offset
-      `),
-      queryTriggerHistoryNoDeadLetters: this.db.prepare(`
-        SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
-               trigger_type AS triggerType, trigger_source AS triggerSource,
-               result, webhook_receipt_id AS webhookReceiptId,
-               NULL AS deadLetterReason
-        FROM runs WHERE started_at > @since
-        ORDER BY ts DESC LIMIT @limit OFFSET @offset
-      `),
-      countTriggerHistory: this.db.prepare(
-        "SELECT (SELECT COUNT(*) FROM runs WHERE started_at > @since) + (SELECT COUNT(*) FROM webhook_receipts WHERE status = 'dead-letter' AND timestamp > @since) AS count"
-      ),
-      countTriggerHistoryNoDeadLetters: this.db.prepare(
-        "SELECT COUNT(*) AS count FROM runs WHERE started_at > @since"
-      ),
-      queryTriggerHistoryByAgent: this.db.prepare(`
-        SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
-               trigger_type AS triggerType, trigger_source AS triggerSource,
-               result, webhook_receipt_id AS webhookReceiptId,
-               NULL AS deadLetterReason
-        FROM runs WHERE started_at > @since AND agent_name = @agentName
-        ORDER BY ts DESC LIMIT @limit OFFSET @offset
-      `),
-      countTriggerHistoryByAgent: this.db.prepare(
-        "SELECT COUNT(*) AS count FROM runs WHERE started_at > @since AND agent_name = @agentName"
-      ),
-      queryTriggerHistoryByType: this.db.prepare(`
-        SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
-               trigger_type AS triggerType, trigger_source AS triggerSource,
-               result, webhook_receipt_id AS webhookReceiptId,
-               NULL AS deadLetterReason
-        FROM runs WHERE started_at > @since AND trigger_type = @triggerType
-        ORDER BY ts DESC LIMIT @limit OFFSET @offset
-      `),
-      queryTriggerHistoryByTypeWithDeadLetters: this.db.prepare(`
-        SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
-               trigger_type AS triggerType, trigger_source AS triggerSource,
-               result, webhook_receipt_id AS webhookReceiptId,
-               NULL AS deadLetterReason
-        FROM runs WHERE started_at > @since AND trigger_type = @triggerType
-        UNION ALL
-        SELECT timestamp AS ts, NULL AS instanceId, NULL AS agentName,
-               'webhook' AS triggerType, source AS triggerSource,
-               'dead-letter' AS result, id AS webhookReceiptId,
-               dead_letter_reason AS deadLetterReason
-        FROM webhook_receipts WHERE status = 'dead-letter' AND timestamp > @since
-        ORDER BY ts DESC LIMIT @limit OFFSET @offset
-      `),
-      queryTriggerHistoryByAgentAndType: this.db.prepare(`
-        SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
-               trigger_type AS triggerType, trigger_source AS triggerSource,
-               result, webhook_receipt_id AS webhookReceiptId,
-               NULL AS deadLetterReason
-        FROM runs WHERE started_at > @since AND agent_name = @agentName AND trigger_type = @triggerType
-        ORDER BY ts DESC LIMIT @limit OFFSET @offset
-      `),
-      countTriggerHistoryByType: this.db.prepare(
-        "SELECT COUNT(*) AS count FROM runs WHERE started_at > @since AND trigger_type = @triggerType"
-      ),
-      countTriggerHistoryByTypeWithDeadLetters: this.db.prepare(
-        "SELECT (SELECT COUNT(*) FROM runs WHERE started_at > @since AND trigger_type = @triggerType) + (SELECT COUNT(*) FROM webhook_receipts WHERE status = 'dead-letter' AND timestamp > @since) AS count"
-      ),
-      countTriggerHistoryByAgentAndType: this.db.prepare(
-        "SELECT COUNT(*) AS count FROM runs WHERE started_at > @since AND agent_name = @agentName AND trigger_type = @triggerType"
-      ),
-      pruneRuns: this.db.prepare("DELETE FROM runs WHERE started_at < @threshold"),
-      pruneCallEdges: this.db.prepare("DELETE FROM call_edges WHERE started_at < @threshold"),
-      queryCallEdgeByTarget: this.db.prepare(
-        "SELECT * FROM call_edges WHERE target_instance = @targetInstance LIMIT 1"
-      ),
-      pruneReceipts: this.db.prepare("DELETE FROM webhook_receipts WHERE timestamp < @threshold"),
-      globalSummary: this.db.prepare(`
-        SELECT
-          COUNT(*) as totalRuns,
-          SUM(CASE WHEN result IN ('completed', 'rerun') THEN 1 ELSE 0 END) as okRuns,
-          SUM(CASE WHEN result = 'error' THEN 1 ELSE 0 END) as errorRuns,
-          SUM(total_tokens) as totalTokens,
-          SUM(cost_usd) as totalCost
-        FROM runs
-        WHERE started_at >= @since
-      `),
-    };
   }
 
   recordRun(run: RunRecord): void {
-    this.stmts.insertRun.run({
+    this.db.insert(runsTable).values({
       instanceId: run.instanceId,
       agentName: run.agentName,
       triggerType: run.triggerType,
@@ -380,11 +130,11 @@ export class StatsStore {
       preHookMs: run.preHookMs ?? null,
       postHookMs: run.postHookMs ?? null,
       webhookReceiptId: run.webhookReceiptId ?? null,
-    });
+    }).run();
   }
 
   recordCallEdge(edge: CallEdgeRecord): number {
-    const result = this.stmts.insertCallEdge.run({
+    const result = this.db.insert(callEdgesTable).values({
       callerAgent: edge.callerAgent,
       callerInstance: edge.callerInstance,
       targetAgent: edge.targetAgent,
@@ -393,55 +143,110 @@ export class StatsStore {
       startedAt: edge.startedAt,
       durationMs: edge.durationMs ?? null,
       status: edge.status ?? "pending",
-    });
+    }).run();
     return Number(result.lastInsertRowid);
   }
 
   updateCallEdge(id: number, updates: { durationMs?: number; status?: string; targetInstance?: string }): void {
-    this.stmts.updateCallEdge.run({
-      id,
-      durationMs: updates.durationMs ?? null,
-      status: updates.status ?? null,
-      targetInstance: updates.targetInstance ?? null,
-    });
+    this.db.update(callEdgesTable)
+      .set({
+        durationMs: updates.durationMs ?? undefined,
+        status: updates.status ?? undefined,
+        targetInstance: updates.targetInstance
+          ? updates.targetInstance
+          : undefined,
+      })
+      .where(eq(callEdgesTable.id, id))
+      .run();
   }
 
   queryRunsByAgentPaginated(agent: string, limit: number, offset: number): any[] {
-    return this.stmts.queryRunsByAgentPaginated.all({ agent, limit, offset });
+    return (this.db as any).$client
+      .prepare("SELECT * FROM runs WHERE agent_name = ? ORDER BY started_at DESC LIMIT ? OFFSET ?")
+      .all(agent, limit, offset);
   }
 
   countRunsByAgent(agent: string): number {
-    const row = this.stmts.countRunsByAgent.get({ agent }) as any;
+    const row = (this.db as any).$client
+      .prepare("SELECT COUNT(*) as count FROM runs WHERE agent_name = ?")
+      .get(agent) as any;
     return row?.count ?? 0;
   }
 
   queryRunByInstanceId(instanceId: string): any | undefined {
-    return this.stmts.queryRunByInstanceId.get({ instanceId });
+    return (this.db as any).$client
+      .prepare("SELECT * FROM runs WHERE instance_id = ? LIMIT 1")
+      .get(instanceId) as any;
   }
 
   queryCallEdgeByTargetInstance(targetInstance: string): { caller_agent: string; caller_instance: string; target_agent: string; target_instance: string; depth: number; started_at: number; duration_ms: number | null; status: string } | undefined {
-    return this.stmts.queryCallEdgeByTarget.get({ targetInstance }) as any;
+    return (this.db as any).$client
+      .prepare("SELECT * FROM call_edges WHERE target_instance = ? LIMIT 1")
+      .get(targetInstance) as any;
   }
 
   queryRuns(query: RunQuery = {}): any[] {
     const since = query.since ?? 0;
     const limit = query.limit ?? 100;
     if (query.agent) {
-      return this.stmts.queryRunsByAgent.all({ agent: query.agent, since, limit });
+      return (this.db as any).$client
+        .prepare("SELECT * FROM runs WHERE agent_name = ? AND started_at >= ? ORDER BY started_at DESC LIMIT ?")
+        .all(query.agent, since, limit);
     }
-    return this.stmts.queryRuns.all({ since, limit });
+    return (this.db as any).$client
+      .prepare("SELECT * FROM runs WHERE started_at >= ? ORDER BY started_at DESC LIMIT ?")
+      .all(since, limit);
   }
 
   queryAgentSummary(query: { agent?: string; since?: number } = {}): AgentSummary[] {
     const since = query.since ?? 0;
+    const client = (this.db as any).$client;
     if (query.agent) {
-      return this.stmts.agentSummaryByName.all({ agent: query.agent, since }) as AgentSummary[];
+      return client.prepare(`
+        SELECT
+          agent_name as agentName,
+          COUNT(*) as totalRuns,
+          SUM(CASE WHEN result IN ('completed', 'rerun') THEN 1 ELSE 0 END) as okRuns,
+          SUM(CASE WHEN result = 'error' THEN 1 ELSE 0 END) as errorRuns,
+          AVG(duration_ms) as avgDurationMs,
+          SUM(total_tokens) as totalTokens,
+          SUM(cost_usd) as totalCost,
+          AVG(pre_hook_ms) as avgPreHookMs,
+          AVG(post_hook_ms) as avgPostHookMs
+        FROM runs
+        WHERE agent_name = ? AND started_at >= ?
+        GROUP BY agent_name
+      `).all(query.agent, since) as AgentSummary[];
     }
-    return this.stmts.agentSummary.all({ since }) as AgentSummary[];
+    return client.prepare(`
+      SELECT
+        agent_name as agentName,
+        COUNT(*) as totalRuns,
+        SUM(CASE WHEN result IN ('completed', 'rerun') THEN 1 ELSE 0 END) as okRuns,
+        SUM(CASE WHEN result = 'error' THEN 1 ELSE 0 END) as errorRuns,
+        AVG(duration_ms) as avgDurationMs,
+        SUM(total_tokens) as totalTokens,
+        SUM(cost_usd) as totalCost,
+        AVG(pre_hook_ms) as avgPreHookMs,
+        AVG(post_hook_ms) as avgPostHookMs
+      FROM runs
+      WHERE started_at >= ?
+      GROUP BY agent_name
+      ORDER BY totalRuns DESC
+    `).all(since) as AgentSummary[];
   }
 
   queryGlobalSummary(since: number = 0): { totalRuns: number; okRuns: number; errorRuns: number; totalTokens: number; totalCost: number } {
-    const row = this.stmts.globalSummary.get({ since }) as any;
+    const row = (this.db as any).$client.prepare(`
+      SELECT
+        COUNT(*) as totalRuns,
+        SUM(CASE WHEN result IN ('completed', 'rerun') THEN 1 ELSE 0 END) as okRuns,
+        SUM(CASE WHEN result = 'error' THEN 1 ELSE 0 END) as errorRuns,
+        SUM(total_tokens) as totalTokens,
+        SUM(cost_usd) as totalCost
+      FROM runs
+      WHERE started_at >= ?
+    `).get(since) as any;
     return {
       totalRuns: row.totalRuns ?? 0,
       okRuns: row.okRuns ?? 0,
@@ -453,11 +258,22 @@ export class StatsStore {
 
   queryCallGraph(query: { since?: number } = {}): CallEdgeSummary[] {
     const since = query.since ?? 0;
-    return this.stmts.callGraph.all({ since }) as CallEdgeSummary[];
+    return (this.db as any).$client.prepare(`
+      SELECT
+        caller_agent as callerAgent,
+        target_agent as targetAgent,
+        COUNT(*) as count,
+        AVG(depth) as avgDepth,
+        AVG(duration_ms) as avgDurationMs
+      FROM call_edges
+      WHERE started_at >= ?
+      GROUP BY caller_agent, target_agent
+      ORDER BY count DESC
+    `).all(since) as CallEdgeSummary[];
   }
 
   recordWebhookReceipt(receipt: WebhookReceipt): void {
-    this.stmts.insertReceipt.run({
+    this.db.insert(webhookReceiptsTable).values({
       id: receipt.id,
       deliveryId: receipt.deliveryId ?? null,
       source: receipt.source,
@@ -468,66 +284,129 @@ export class StatsStore {
       matchedAgents: receipt.matchedAgents,
       status: receipt.status,
       deadLetterReason: receipt.deadLetterReason ?? null,
-    });
+    }).run();
   }
 
   updateWebhookReceiptStatus(id: string, matchedAgents: number, status: "processed" | "dead-letter", deadLetterReason?: string): void {
-    this.stmts.updateReceiptStatus.run({
-      id,
-      matchedAgents,
-      status,
-      deadLetterReason: deadLetterReason ?? null,
-    });
+    this.db.update(webhookReceiptsTable)
+      .set({ matchedAgents, status, deadLetterReason: deadLetterReason ?? null })
+      .where(eq(webhookReceiptsTable.id, id))
+      .run();
   }
 
   findWebhookReceiptByDeliveryId(deliveryId: string): WebhookReceipt | undefined {
-    const row = this.stmts.findReceiptByDeliveryId.get({ deliveryId }) as any;
+    const row = (this.db as any).$client
+      .prepare("SELECT * FROM webhook_receipts WHERE delivery_id = ? LIMIT 1")
+      .get(deliveryId) as any;
     return row ? this.mapReceipt(row) : undefined;
   }
 
   getWebhookReceipt(id: string): WebhookReceipt | undefined {
-    const row = this.stmts.getReceipt.get({ id }) as any;
+    const row = (this.db as any).$client
+      .prepare("SELECT * FROM webhook_receipts WHERE id = ? LIMIT 1")
+      .get(id) as any;
     return row ? this.mapReceipt(row) : undefined;
   }
 
   queryTriggerHistory(opts: { since: number; limit: number; offset: number; includeDeadLetters: boolean; agentName?: string; triggerType?: string }): TriggerHistoryRow[] {
     const { since, limit, offset, includeDeadLetters, agentName, triggerType } = opts;
+    const client = (this.db as any).$client;
+
     if (agentName && triggerType) {
-      return this.stmts.queryTriggerHistoryByAgentAndType.all({ since, limit, offset, agentName, triggerType }) as TriggerHistoryRow[];
+      return client.prepare(`
+        SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
+               trigger_type AS triggerType, trigger_source AS triggerSource,
+               result, webhook_receipt_id AS webhookReceiptId,
+               NULL AS deadLetterReason
+        FROM runs WHERE started_at > ? AND agent_name = ? AND trigger_type = ?
+        ORDER BY ts DESC LIMIT ? OFFSET ?
+      `).all(since, agentName, triggerType, limit, offset) as TriggerHistoryRow[];
     }
     if (agentName) {
-      return this.stmts.queryTriggerHistoryByAgent.all({ since, limit, offset, agentName }) as TriggerHistoryRow[];
+      return client.prepare(`
+        SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
+               trigger_type AS triggerType, trigger_source AS triggerSource,
+               result, webhook_receipt_id AS webhookReceiptId,
+               NULL AS deadLetterReason
+        FROM runs WHERE started_at > ? AND agent_name = ?
+        ORDER BY ts DESC LIMIT ? OFFSET ?
+      `).all(since, agentName, limit, offset) as TriggerHistoryRow[];
     }
     if (triggerType) {
-      // For non-webhook types, dead letters are always webhook so we can skip them unless filtering for webhook
       if (includeDeadLetters && triggerType === "webhook") {
-        return this.stmts.queryTriggerHistoryByTypeWithDeadLetters.all({ since, limit, offset, triggerType }) as TriggerHistoryRow[];
+        return client.prepare(`
+          SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
+                 trigger_type AS triggerType, trigger_source AS triggerSource,
+                 result, webhook_receipt_id AS webhookReceiptId,
+                 NULL AS deadLetterReason
+          FROM runs WHERE started_at > ? AND trigger_type = ?
+          UNION ALL
+          SELECT timestamp AS ts, NULL AS instanceId, NULL AS agentName,
+                 'webhook' AS triggerType, source AS triggerSource,
+                 'dead-letter' AS result, id AS webhookReceiptId,
+                 dead_letter_reason AS deadLetterReason
+          FROM webhook_receipts WHERE status = 'dead-letter' AND timestamp > ?
+          ORDER BY ts DESC LIMIT ? OFFSET ?
+        `).all(since, triggerType, since, limit, offset) as TriggerHistoryRow[];
       }
-      return this.stmts.queryTriggerHistoryByType.all({ since, limit, offset, triggerType }) as TriggerHistoryRow[];
+      return client.prepare(`
+        SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
+               trigger_type AS triggerType, trigger_source AS triggerSource,
+               result, webhook_receipt_id AS webhookReceiptId,
+               NULL AS deadLetterReason
+        FROM runs WHERE started_at > ? AND trigger_type = ?
+        ORDER BY ts DESC LIMIT ? OFFSET ?
+      `).all(since, triggerType, limit, offset) as TriggerHistoryRow[];
     }
-    const stmt = includeDeadLetters ? this.stmts.queryTriggerHistory : this.stmts.queryTriggerHistoryNoDeadLetters;
-    return stmt.all({ since, limit, offset }) as TriggerHistoryRow[];
+    if (includeDeadLetters) {
+      return client.prepare(`
+        SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
+               trigger_type AS triggerType, trigger_source AS triggerSource,
+               result, webhook_receipt_id AS webhookReceiptId,
+               NULL AS deadLetterReason
+        FROM runs WHERE started_at > ?
+        UNION ALL
+        SELECT timestamp AS ts, NULL AS instanceId, NULL AS agentName,
+               'webhook' AS triggerType, source AS triggerSource,
+               'dead-letter' AS result, id AS webhookReceiptId,
+               dead_letter_reason AS deadLetterReason
+        FROM webhook_receipts WHERE status = 'dead-letter' AND timestamp > ?
+        ORDER BY ts DESC LIMIT ? OFFSET ?
+      `).all(since, since, limit, offset) as TriggerHistoryRow[];
+    }
+    return client.prepare(`
+      SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
+             trigger_type AS triggerType, trigger_source AS triggerSource,
+             result, webhook_receipt_id AS webhookReceiptId,
+             NULL AS deadLetterReason
+      FROM runs WHERE started_at > ?
+      ORDER BY ts DESC LIMIT ? OFFSET ?
+    `).all(since, limit, offset) as TriggerHistoryRow[];
   }
 
   countTriggerHistory(since: number, includeDeadLetters: boolean, agentName?: string, triggerType?: string): number {
+    const client = (this.db as any).$client;
     if (agentName && triggerType) {
-      const row = this.stmts.countTriggerHistoryByAgentAndType.get({ since, agentName, triggerType }) as any;
+      const row = client.prepare("SELECT COUNT(*) AS count FROM runs WHERE started_at > ? AND agent_name = ? AND trigger_type = ?").get(since, agentName, triggerType) as any;
       return row?.count ?? 0;
     }
     if (agentName) {
-      const row = this.stmts.countTriggerHistoryByAgent.get({ since, agentName }) as any;
+      const row = client.prepare("SELECT COUNT(*) AS count FROM runs WHERE started_at > ? AND agent_name = ?").get(since, agentName) as any;
       return row?.count ?? 0;
     }
     if (triggerType) {
       if (includeDeadLetters && triggerType === "webhook") {
-        const row = this.stmts.countTriggerHistoryByTypeWithDeadLetters.get({ since, triggerType }) as any;
+        const row = client.prepare("SELECT (SELECT COUNT(*) FROM runs WHERE started_at > ? AND trigger_type = ?) + (SELECT COUNT(*) FROM webhook_receipts WHERE status = 'dead-letter' AND timestamp > ?) AS count").get(since, triggerType, since) as any;
         return row?.count ?? 0;
       }
-      const row = this.stmts.countTriggerHistoryByType.get({ since, triggerType }) as any;
+      const row = client.prepare("SELECT COUNT(*) AS count FROM runs WHERE started_at > ? AND trigger_type = ?").get(since, triggerType) as any;
       return row?.count ?? 0;
     }
-    const stmt = includeDeadLetters ? this.stmts.countTriggerHistory : this.stmts.countTriggerHistoryNoDeadLetters;
-    const row = stmt.get({ since }) as any;
+    if (includeDeadLetters) {
+      const row = client.prepare("SELECT (SELECT COUNT(*) FROM runs WHERE started_at > ?) + (SELECT COUNT(*) FROM webhook_receipts WHERE status = 'dead-letter' AND timestamp > ?) AS count").get(since, since) as any;
+      return row?.count ?? 0;
+    }
+    const row = client.prepare("SELECT COUNT(*) AS count FROM runs WHERE started_at > ?").get(since) as any;
     return row?.count ?? 0;
   }
 
@@ -548,9 +427,10 @@ export class StatsStore {
 
   prune(olderThanDays: number): { runs: number; callEdges: number; receipts: number } {
     const threshold = Date.now() - olderThanDays * 24 * 60 * 60 * 1000;
-    const runsResult = this.stmts.pruneRuns.run({ threshold });
-    const callEdgesResult = this.stmts.pruneCallEdges.run({ threshold });
-    const receiptsResult = this.stmts.pruneReceipts.run({ threshold });
+    const client = (this.db as any).$client;
+    const runsResult = client.prepare("DELETE FROM runs WHERE started_at < ?").run(threshold);
+    const callEdgesResult = client.prepare("DELETE FROM call_edges WHERE started_at < ?").run(threshold);
+    const receiptsResult = client.prepare("DELETE FROM webhook_receipts WHERE timestamp < ?").run(threshold);
     return {
       runs: runsResult.changes,
       callEdges: callEdgesResult.changes,
@@ -559,6 +439,8 @@ export class StatsStore {
   }
 
   close(): void {
-    this.db.close();
+    if (this.ownDb) {
+      (this.db as any).$client.close();
+    }
   }
 }

@@ -42,6 +42,7 @@
     "build:assets": "node -e \"const fs=require('fs'),s='../frontend/dist',d='dist/frontend';fs.existsSync(s+'/index.html')?(fs.cpSync(s,d,{recursive:true}),console.log('Copied frontend dist → dist/frontend')):console.log('Frontend dist not found, skipping')\"",
     "clean": "rm -rf dist",
     "prebuild": "npm run clean",
+    "db:generate": "drizzle-kit generate",
     "test:playwright": "npx playwright test --config playwright.config.ts"
   },
   "dependencies": {
@@ -59,6 +60,7 @@
     "better-sqlite3": "^12.8.0",
     "commander": "^14.0.3",
     "croner": "^10.0.1",
+    "drizzle-orm": "^0.38.4",
     "hono": "^4.12.5",
     "ink": "^6.8.0",
     "pino": "^10.3.1",
@@ -73,6 +75,7 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/react": "^19.2.14",
     "@types/ws": "^8.18.1",
+    "drizzle-kit": "^0.30.6",
     "ink-testing-library": "^4.0.0"
   }
 }

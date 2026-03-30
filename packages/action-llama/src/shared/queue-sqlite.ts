@@ -1,13 +1,15 @@
-import Database from "better-sqlite3";
-import { mkdirSync } from "fs";
-import { dirname } from "path";
+import { eq, and, asc } from "drizzle-orm";
 import { randomUUID } from "crypto";
+import { createDb } from "../db/connection.js";
+import { applyMigrations } from "../db/migrate.js";
+import { queueTable } from "../db/schema.js";
+import type { AppDb } from "../db/connection.js";
 import type { Queue, QueueItem } from "./queue.js";
 
 /**
- * SQLite-backed Queue.
+ * SQLite-backed Queue using Drizzle ORM.
  *
- * All queue instances sharing a file use a single `queue` table,
+ * All queue instances sharing a connection use a single `queue` table,
  * differentiated by a `name` column — the same pattern SqliteStateStore
  * uses for namespaces.
  *
@@ -17,12 +19,14 @@ import type { Queue, QueueItem } from "./queue.js";
  *
  * Dequeue is atomic: a transaction selects and deletes the head rows
  * so concurrent readers (if any) cannot claim the same items.
+ *
+ * Supports two constructor signatures:
+ *   new SqliteQueue(dbPath: string, name)  — creates its own connection (backward compat)
+ *   new SqliteQueue(db: AppDb, name)        — uses a shared connection (preferred)
  */
 export class SqliteQueue<T> implements Queue<T> {
-  private db: InstanceType<typeof Database>;
-  // better-sqlite3 generic Statement types don't compose with ReturnType<>;
-  // the public Queue interface provides the type safety boundary.
-  private stmts: any;
+  private db: AppDb;
+  private ownDb: boolean;
   private readonly name: string;
   private _dequeueTransaction: (name: string, limit: number) => Array<{
     id: string;
@@ -30,47 +34,28 @@ export class SqliteQueue<T> implements Queue<T> {
     enqueued_at: number;
   }>;
 
-  constructor(dbPath: string, name: string) {
+  constructor(dbOrPath: string | AppDb, name: string) {
     this.name = name;
-    mkdirSync(dirname(dbPath), { recursive: true });
-    this.db = new Database(dbPath);
-    this.db.pragma("journal_mode = WAL");
 
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS queue (
-        id          TEXT NOT NULL,
-        name        TEXT NOT NULL,
-        payload     TEXT NOT NULL,
-        enqueued_at INTEGER NOT NULL,
-        PRIMARY KEY (name, id)
-      )
-    `);
-    this.db.exec(
-      "CREATE INDEX IF NOT EXISTS idx_queue_name ON queue(name)"
-    );
+    if (typeof dbOrPath === "string") {
+      this.db = createDb(dbOrPath);
+      this.ownDb = true;
+      applyMigrations(this.db);
+    } else {
+      this.db = dbOrPath;
+      this.ownDb = false;
+    }
 
-    // Prepare statements once for performance.
-    this.stmts = {
-      enqueue: this.db.prepare(
-        "INSERT INTO queue (id, name, payload, enqueued_at) VALUES (?, ?, ?, ?)"
-      ),
-      peek: this.db.prepare(
-        "SELECT id, payload, enqueued_at FROM queue WHERE name = ? ORDER BY rowid ASC LIMIT ?"
-      ),
-      delete: this.db.prepare("DELETE FROM queue WHERE name = ? AND id = ?"),
-      size: this.db.prepare("SELECT COUNT(*) AS n FROM queue WHERE name = ?"),
-    };
+    const client = (this.db as any).$client;
 
     // Pre-compiled transaction for atomic dequeue (select + delete in one shot).
-    this._dequeueTransaction = this.db.transaction(
-      (name: string, limit: number) => {
-        const rows = this.stmts.peek.all(name, limit) as Array<{
-          id: string;
-          payload: string;
-          enqueued_at: number;
-        }>;
+    this._dequeueTransaction = client.transaction(
+      (queueName: string, limit: number) => {
+        const rows = client
+          .prepare("SELECT id, payload, enqueued_at FROM queue WHERE name = ? ORDER BY rowid ASC LIMIT ?")
+          .all(queueName, limit) as Array<{ id: string; payload: string; enqueued_at: number }>;
         for (const row of rows) {
-          this.stmts.delete.run(name, row.id);
+          client.prepare("DELETE FROM queue WHERE name = ? AND id = ?").run(queueName, row.id);
         }
         return rows;
       }
@@ -79,7 +64,12 @@ export class SqliteQueue<T> implements Queue<T> {
 
   async enqueue(payload: T): Promise<string> {
     const id = randomUUID();
-    this.stmts.enqueue.run(id, this.name, JSON.stringify(payload), Date.now());
+    this.db.insert(queueTable).values({
+      id,
+      name: this.name,
+      payload: JSON.stringify(payload),
+      enqueuedAt: Date.now(),
+    }).run();
     return id;
   }
 
@@ -93,11 +83,9 @@ export class SqliteQueue<T> implements Queue<T> {
   }
 
   async peek(limit = 1): Promise<QueueItem<T>[]> {
-    const rows = this.stmts.peek.all(this.name, limit) as Array<{
-      id: string;
-      payload: string;
-      enqueued_at: number;
-    }>;
+    const rows = (this.db as any).$client
+      .prepare("SELECT id, payload, enqueued_at FROM queue WHERE name = ? ORDER BY rowid ASC LIMIT ?")
+      .all(this.name, limit) as Array<{ id: string; payload: string; enqueued_at: number }>;
     return rows.map((r) => ({
       id: r.id,
       payload: JSON.parse(r.payload) as T,
@@ -106,11 +94,15 @@ export class SqliteQueue<T> implements Queue<T> {
   }
 
   async size(): Promise<number> {
-    const row = this.stmts.size.get(this.name) as { n: number };
+    const row = (this.db as any).$client
+      .prepare("SELECT COUNT(*) AS n FROM queue WHERE name = ?")
+      .get(this.name) as { n: number };
     return row.n;
   }
 
   async close(): Promise<void> {
-    this.db.close();
+    if (this.ownDb) {
+      (this.db as any).$client.close();
+    }
   }
 }

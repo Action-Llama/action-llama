@@ -1,7 +1,9 @@
-import Database from "better-sqlite3";
-import { mkdirSync } from "fs";
-import { dirname } from "path";
+import { eq, asc } from "drizzle-orm";
 import { randomUUID } from "crypto";
+import { createDb } from "../db/connection.js";
+import { applyMigrations } from "../db/migrate.js";
+import { workQueueTable } from "../db/schema.js";
+import type { AppDb } from "../db/connection.js";
 import type { WorkQueue, QueuedWorkItem, EnqueueResult } from "./event-queue.js";
 
 /**
@@ -11,21 +13,17 @@ import type { WorkQueue, QueuedWorkItem, EnqueueResult } from "./event-queue.js"
  * survives process crashes and restarts without a separate
  * persistence layer.
  *
- * Uses better-sqlite3 for synchronous embedded storage.
+ * Uses Drizzle ORM with better-sqlite3 for synchronous embedded storage.
  * Dequeue is atomic (transaction: select + delete) to prevent
  * concurrent double-claims.
+ *
+ * Supports two constructor signatures:
+ *   new SqliteWorkQueue(maxSize, dbPath: string)  — creates its own connection (backward compat)
+ *   new SqliteWorkQueue(maxSize, db: AppDb)        — uses a shared connection (preferred)
  */
 export class SqliteWorkQueue<T> implements WorkQueue<T> {
-  private db: InstanceType<typeof Database>;
-  private stmts: {
-    enqueue: any;
-    dequeue_peek: any;
-    delete_by_id: any;
-    size: any;
-    clear_agent: any;
-    clear_all: any;
-    oldest: any;
-  };
+  private db: AppDb;
+  private ownDb: boolean;
   private maxSize: number;
 
   private _dequeueTransaction: (agent: string) => {
@@ -41,73 +39,47 @@ export class SqliteWorkQueue<T> implements WorkQueue<T> {
     receivedAt: number,
   ) => { dropped?: { payload: string; received_at: number } };
 
-  constructor(maxSize: number, dbPath: string) {
+  constructor(maxSize: number, dbOrPath: string | AppDb) {
     this.maxSize = maxSize;
 
-    mkdirSync(dirname(dbPath), { recursive: true });
-    this.db = new Database(dbPath);
-    this.db.pragma("journal_mode = WAL");
+    if (typeof dbOrPath === "string") {
+      this.db = createDb(dbOrPath);
+      this.ownDb = true;
+      applyMigrations(this.db);
+    } else {
+      this.db = dbOrPath;
+      this.ownDb = false;
+    }
 
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS work_queue (
-        id          TEXT    NOT NULL,
-        agent       TEXT    NOT NULL,
-        payload     TEXT    NOT NULL,
-        received_at INTEGER NOT NULL,
-        PRIMARY KEY (agent, id)
-      )
-    `);
-    this.db.exec(
-      "CREATE INDEX IF NOT EXISTS idx_wq_agent ON work_queue(agent)",
-    );
-
-    this.stmts = {
-      enqueue: this.db.prepare(
-        "INSERT INTO work_queue (id, agent, payload, received_at) VALUES (?, ?, ?, ?)",
-      ),
-      dequeue_peek: this.db.prepare(
-        "SELECT id, payload, received_at FROM work_queue WHERE agent = ? ORDER BY rowid ASC LIMIT 1",
-      ),
-      delete_by_id: this.db.prepare(
-        "DELETE FROM work_queue WHERE agent = ? AND id = ?",
-      ),
-      size: this.db.prepare(
-        "SELECT COUNT(*) AS n FROM work_queue WHERE agent = ?",
-      ),
-      clear_agent: this.db.prepare("DELETE FROM work_queue WHERE agent = ?"),
-      clear_all: this.db.prepare("DELETE FROM work_queue"),
-      oldest: this.db.prepare(
-        "SELECT id, payload, received_at FROM work_queue WHERE agent = ? ORDER BY rowid ASC LIMIT 1",
-      ),
-    };
+    const client = (this.db as any).$client;
 
     // Atomic dequeue: peek + delete in one transaction
-    this._dequeueTransaction = this.db.transaction((agent: string) => {
-      const row = this.stmts.dequeue_peek.get(agent) as
-        | { id: string; payload: string; received_at: number }
-        | undefined;
+    this._dequeueTransaction = client.transaction((agent: string) => {
+      const row = client
+        .prepare("SELECT id, payload, received_at FROM work_queue WHERE agent = ? ORDER BY rowid ASC LIMIT 1")
+        .get(agent) as { id: string; payload: string; received_at: number } | undefined;
       if (!row) return undefined;
-      this.stmts.delete_by_id.run(agent, row.id);
+      client.prepare("DELETE FROM work_queue WHERE agent = ? AND id = ?").run(agent, row.id);
       return row;
     });
 
     // Atomic enqueue with overflow: insert + conditionally drop oldest
-    this._enqueueTransaction = this.db.transaction(
+    this._enqueueTransaction = client.transaction(
       (agent: string, id: string, payload: string, receivedAt: number) => {
-        const { n } = this.stmts.size.get(agent) as { n: number };
+        const sizeRow = client.prepare("SELECT COUNT(*) AS n FROM work_queue WHERE agent = ?").get(agent) as { n: number };
         let dropped: { payload: string; received_at: number } | undefined;
 
-        if (n >= this.maxSize) {
-          const oldest = this.stmts.oldest.get(agent) as
-            | { id: string; payload: string; received_at: number }
-            | undefined;
+        if (sizeRow.n >= this.maxSize) {
+          const oldest = client
+            .prepare("SELECT id, payload, received_at FROM work_queue WHERE agent = ? ORDER BY rowid ASC LIMIT 1")
+            .get(agent) as { id: string; payload: string; received_at: number } | undefined;
           if (oldest) {
-            this.stmts.delete_by_id.run(agent, oldest.id);
+            client.prepare("DELETE FROM work_queue WHERE agent = ? AND id = ?").run(agent, oldest.id);
             dropped = { payload: oldest.payload, received_at: oldest.received_at };
           }
         }
 
-        this.stmts.enqueue.run(id, agent, payload, receivedAt);
+        client.prepare("INSERT INTO work_queue (id, agent, payload, received_at) VALUES (?, ?, ?, ?)").run(id, agent, payload, receivedAt);
         return { dropped };
       },
     );
@@ -143,19 +115,23 @@ export class SqliteWorkQueue<T> implements WorkQueue<T> {
   }
 
   size(agentName: string): number {
-    const row = this.stmts.size.get(agentName) as { n: number };
+    const row = (this.db as any).$client
+      .prepare("SELECT COUNT(*) AS n FROM work_queue WHERE agent = ?")
+      .get(agentName) as { n: number };
     return row.n;
   }
 
   clear(agentName: string): void {
-    this.stmts.clear_agent.run(agentName);
+    this.db.delete(workQueueTable).where(eq(workQueueTable.agent, agentName)).run();
   }
 
   clearAll(): void {
-    this.stmts.clear_all.run();
+    this.db.delete(workQueueTable).run();
   }
 
   close(): void {
-    this.db.close();
+    if (this.ownDb) {
+      (this.db as any).$client.close();
+    }
   }
 }

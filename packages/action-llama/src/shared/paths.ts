@@ -26,3 +26,18 @@ export function agentDir(projectPath: string, agentType: string): string {
 export function statsDbPath(projectPath: string): string {
   return resolve(projectPath, ".al", "stats.db");
 }
+
+/** Path to the consolidated action-llama database. */
+export function dbPath(projectPath: string): string {
+  return resolve(projectPath, ".al", "action-llama.db");
+}
+
+/** @deprecated Use dbPath() instead. */
+export function stateDbPath(projectPath: string): string {
+  return resolve(projectPath, ".al", "state.db");
+}
+
+/** @deprecated Use dbPath() instead. */
+export function workQueueDbPath(projectPath: string): string {
+  return resolve(projectPath, ".al", "work-queue.db");
+}
