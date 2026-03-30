@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { installSignalCommands, readSignals } from "../../src/agents/signals.js";
+import { installSignalCommands, readSignals, ensureSignalDir } from "../../src/agents/signals.js";
 
 describe("signals", () => {
   let tmpDir: string;
@@ -17,6 +17,21 @@ describe("signals", () => {
 
   afterEach(() => {
     rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  describe("ensureSignalDir", () => {
+    it("creates the signal directory if it does not exist", () => {
+      const newDir = join(tmpDir, "signal-subdir", "nested");
+      expect(existsSync(newDir)).toBe(false);
+      ensureSignalDir(newDir);
+      expect(existsSync(newDir)).toBe(true);
+    });
+
+    it("is idempotent — does not throw if directory already exists", () => {
+      mkdirSync(signalDir, { recursive: true });
+      expect(() => ensureSignalDir(signalDir)).not.toThrow();
+      expect(existsSync(signalDir)).toBe(true);
+    });
   });
 
   describe("installSignalCommands", () => {

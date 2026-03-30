@@ -48,4 +48,16 @@ describe("vultr_api_key credential", () => {
       "Vultr API key validation failed (HTTP 401)",
     );
   });
+
+  it("validate throws with empty body when text() rejects", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      text: () => Promise.reject(new Error("failed to read body")),
+    });
+
+    await expect(vultrApiKey.validate!({ api_key: "bad-key" })).rejects.toThrow(
+      "Vultr API key validation failed (HTTP 500): ",
+    );
+  });
 });

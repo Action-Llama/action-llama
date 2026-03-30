@@ -15,6 +15,7 @@ import {
   resetDefaultBackend,
   sanitizeEnvPart,
   setDefaultBackend,
+  listCredentialInstances,
 } from "../../src/shared/credentials.js";
 import { CREDENTIALS_DIR } from "../../src/shared/paths.js";
 
@@ -119,6 +120,20 @@ describe("credentials", () => {
         { type: "git_ssh", instance: "botty" },
         { type: "sentry_token", instance: "default" },
       ]);
+    });
+  });
+
+  describe("listCredentialInstances", () => {
+    it("returns an empty array when no instances exist for a credential type", async () => {
+      const instances = await listCredentialInstances("nonexistent-cred-type-xyz");
+      expect(Array.isArray(instances)).toBe(true);
+      expect(instances).toHaveLength(0);
+    });
+
+    it("returns instances after writing a credential", async () => {
+      await writeCredentialField("test-list-cred", "instance-a", "field1", "value1");
+      const instances = await listCredentialInstances("test-list-cred");
+      expect(instances).toContain("instance-a");
     });
   });
 

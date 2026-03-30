@@ -196,6 +196,15 @@ describe("pause command", () => {
 
     await expect(execute(undefined, { project: tmpDir })).rejects.toThrow("Already paused");
   });
+
+  it("re-throws non-ECONNREFUSED errors from gatewayFetch directly", async () => {
+    const { execute } = await import("../../../src/cli/commands/pause.js");
+
+    const networkError = new Error("Network timeout: connection reset");
+    mockGatewayFetch.mockRejectedValue(networkError);
+
+    await expect(execute(undefined, { project: tmpDir })).rejects.toThrow("Network timeout: connection reset");
+  });
 });
 
 // ─── resume command ─────────────────────────────────────────────────────────
