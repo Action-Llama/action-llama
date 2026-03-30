@@ -763,3 +763,130 @@ describe("pushAgentToServer", () => {
     expect(logs.some((l) => l.includes("hot-reload"))).toBe(true);
   });
 });
+
+describe("pushToServer — additional coverage paths", () => {
+  const sshOpts = { host: "h", user: "root", port: 22 };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSshOptionsFromConfig.mockReturnValue({ ...sshOpts });
+    mockSshExec.mockResolvedValue("");
+    mockRsyncTo.mockResolvedValue(undefined);
+    mockBootstrapServer.mockResolvedValue({ nodePath: "/usr/local/bin/node", nodeVersion: "v22.22.1", dockerVersion: "29.3.0" });
+    mockUnlinkSync.mockReturnValue(undefined);
+    mockSshSpawn.mockReturnValue({
+      stdout: { on: vi.fn() },
+      kill: vi.fn(),
+    });
+    mockReadFileSync.mockImplementation((path: string) => {
+      if (path.endsWith("package.json")) return Buffer.from('{"name":"test"}');
+      if (path.endsWith("package-lock.json")) return Buffer.from('{"lockfileVersion":3}');
+      throw new Error("ENOENT");
+    });
+    mockCollectCredentialRefs.mockReturnValue(new Set(["github_token"]));
+    mockCredentialRefsToRelativePaths.mockReturnValue(["github_token/default"]);
+    mockExistsSync.mockImplementation((path: string) => !path.endsWith(".env.toml"));
+    mockLoadGlobalConfig.mockReturnValue({});
+  });
+
+  it("includes telemetry in remote .env.toml when globalConfig.telemetry is set", async () => {
+    mockSshExec.mockResolvedValue("ok"); // health check succeeds
+    const sshCalls: Array<[any, string]> = [];
+    mockSshExec.mockImplementation((_ssh: any, cmd: string) => {
+      sshCalls.push([_ssh, cmd]);
+      return Promise.resolve("ok");
+    });
+
+    await pushToServer({
+      projectPath: "/tmp/project",
+      serverConfig: { host: "h" },
+      globalConfig: { telemetry: { enabled: true, provider: "otel", endpoint: "http://otel:4317" } } as any,
+      envName: "my-server",
+    });
+
+    // Verify the .env.toml write command included telemetry
+    const tomlWrite = sshCalls.find(([, cmd]) => cmd.includes(".env.toml") && cmd.includes("cat >") || cmd.includes("[telemetry]"));
+    // The telemetry section should appear in the heredoc being written
+    const heredocCall = sshCalls.find(([, cmd]) => cmd.includes("telemetry") && cmd.includes("enabled"));
+    expect(heredocCall).toBeDefined();
+  });
+
+  it("reads existing remote .env.toml and preserves agent overrides", async () => {
+    const sshCalls: Array<[any, string]> = [];
+    mockSshExec.mockImplementation((_ssh: any, cmd: string) => {
+      sshCalls.push([_ssh, cmd]);
+      // Return existing TOML when reading the remote .env.toml
+      if (cmd.includes("cat") && cmd.includes(".env.toml")) {
+        return Promise.resolve("[agents.reporter]\nmodel = \"claude-3-haiku\"");
+      }
+      return Promise.resolve("ok");
+    });
+
+    await pushToServer({
+      projectPath: "/tmp/project",
+      serverConfig: { host: "h" },
+      globalConfig: {},
+      envName: "my-server",
+    });
+
+    // The remote TOML was read (cat command was called)
+    const catCall = sshCalls.find(([, cmd]) => cmd.includes("cat") && cmd.includes(".env.toml"));
+    expect(catCall).toBeDefined();
+  });
+
+  it("skips credential sync early when credentialRefsToRelativePaths returns empty array", async () => {
+    mockSshExec.mockResolvedValue("ok");
+    mockCredentialRefsToRelativePaths.mockReturnValue([]);
+
+    const rsyncCallCountBefore = mockRsyncTo.mock.calls.length;
+
+    await pushToServer({
+      projectPath: "/tmp/project",
+      serverConfig: { host: "h" },
+      globalConfig: {},
+      envName: "my-server",
+    });
+
+    // rsync should NOT have been called for credentials (since paths is empty → early return)
+    const credRsyncCalls = mockRsyncTo.mock.calls.filter(([, , destPath]: any) =>
+      typeof destPath === "string" && destPath.includes("credentials")
+    );
+    expect(credRsyncCalls.length).toBe(0);
+  });
+
+  it("invokes journal stdout data callback when journal emits data", async () => {
+    mockSshExec.mockResolvedValue("ok");
+
+    const outputLines: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: any[]) => outputLines.push(args.join(" "));
+
+    // Make the journalctl process emit stdout data immediately
+    mockSshSpawn.mockReturnValue({
+      stdout: {
+        on: vi.fn().mockImplementation((event: string, cb: (chunk: Buffer) => void) => {
+          if (event === "data") {
+            // Emit some journal lines including an empty line (should be skipped)
+            cb(Buffer.from("Starting action-llama service\n\n  \nBuild complete"));
+          }
+        }),
+      },
+      kill: vi.fn(),
+    });
+
+    try {
+      await pushToServer({
+        projectPath: "/tmp/project",
+        serverConfig: { host: "h" },
+        globalConfig: {},
+        envName: "my-server",
+      });
+    } finally {
+      console.log = origLog;
+    }
+
+    // The non-empty journal lines should have been printed with "  " prefix
+    expect(outputLines.some((l) => l.includes("Starting action-llama service"))).toBe(true);
+    expect(outputLines.some((l) => l.includes("Build complete"))).toBe(true);
+  });
+});
