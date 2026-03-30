@@ -376,19 +376,23 @@ describe("setupGateway", () => {
       expect(mockWorkQueue.enqueue).toHaveBeenCalledWith("dev", { type: 'manual', prompt: undefined });
     });
 
-    it("returns error string when no available runner", async () => {
+    it("queues manual trigger when all runners are busy", async () => {
       const gatewayResult = makeGatewayResult();
       const statusTracker = { isPaused: vi.fn().mockReturnValue(false) };
       const pool = { getAvailableRunner: vi.fn().mockReturnValue(null) };
-      const schedulerCtx = { workQueue: { size: vi.fn().mockReturnValue(0) } } as any;
-      const state = makeSchedulerState({ runnerPools: { dev: pool }, schedulerCtx });
+      const mockWorkQueue = { enqueue: vi.fn().mockReturnValue({ dropped: false }), size: vi.fn().mockReturnValue(1) };
+      const schedulerCtx = { workQueue: mockWorkQueue } as any;
+      const state = makeSchedulerState({ runnerPools: { dev: pool }, schedulerCtx, workQueue: mockWorkQueue });
       const opts = { ...makeBaseOpts(state, gatewayResult), statusTracker: statusTracker as any };
 
       await setupGateway(opts);
 
       const { controlDeps } = mockStartGateway.mock.calls[0][0];
-      const result = await controlDeps.triggerAgent("dev");
-      expect(result).toBe('Agent "dev" has no available runners (all busy)');
+      const result = await controlDeps.triggerAgent("dev", "do something");
+
+      expect(result).toHaveProperty("instanceId");
+      expect((result as any).instanceId).toMatch(/^dev-[0-9a-f]{8}$/);
+      expect(mockWorkQueue.enqueue).toHaveBeenCalledWith("dev", { type: 'manual', prompt: "do something" });
     });
 
     it("returns error string when scheduler context is not ready", async () => {

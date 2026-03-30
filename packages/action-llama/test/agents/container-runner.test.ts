@@ -127,6 +127,20 @@ describe("ContainerAgentRunner", () => {
       expect(result.result).toBe("error");
       expect(runner.isRunning).toBe(false);
     });
+
+    it("resets _running when withSpan setup fails before _runInternalContainer runs", async () => {
+      const mockTelemetryModule = await import("../../src/telemetry/index.js");
+      const spy = vi.spyOn(mockTelemetryModule, "withSpan")
+        .mockRejectedValueOnce(new Error("span setup failed"));
+
+      const runner = createRunner();
+      const result = await runner.run("test prompt");
+
+      expect(result.result).toBe("error");
+      expect(runner.isRunning).toBe(false); // Must not be stuck as ghost runner
+
+      spy.mockRestore();
+    });
   });
 
   // ── setImage / setAgentConfig accessors ─────────────────────────────────
