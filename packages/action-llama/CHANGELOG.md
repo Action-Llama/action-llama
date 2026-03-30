@@ -1,5 +1,11 @@
 # @action-llama/action-llama
 
+## 0.18.10
+
+### Patch Changes
+
+- [`ebfb4e5`](https://github.com/Action-Llama/action-llama/commit/ebfb4e5f2d57dd53c8710a354eb053ba56560f3f) Thanks [@asselstine](https://github.com/asselstine)! - Move changeset check before npm install/build/test in the release workflow so the workflow exits early when there are no changesets, avoiding unnecessary CI time.
+
 ## 0.18.9
 
 ### Patch Changes
