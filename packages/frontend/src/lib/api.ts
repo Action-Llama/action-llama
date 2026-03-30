@@ -11,7 +11,13 @@ async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || `HTTP ${res.status}`);
+    let message = text || `HTTP ${res.status}`;
+    try {
+      const json = JSON.parse(text);
+      if (typeof json.error === "string") message = json.error;
+      else if (typeof json.message === "string") message = json.message;
+    } catch { /* not JSON — use raw text */ }
+    throw new Error(message);
   }
   return res.json();
 }

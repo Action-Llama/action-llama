@@ -149,7 +149,13 @@ export async function setupGateway(opts: {
           return { instanceId };
         }
         const runner = pool.getAvailableRunner();
-        if (!runner) return `Agent "${name}" has no available runners (all busy)`;
+        if (!runner) {
+          const { dropped } = state.workQueue!.enqueue(name, { type: 'manual', prompt });
+          if (dropped) logger.warn({ agent: name }, "queue full, oldest event dropped");
+          const instanceId = `${name}-${randomBytes(4).toString("hex")}`;
+          logger.info({ agent: name, hasPrompt: !!prompt, instanceId, queued: true }, "manual trigger queued (all runners busy)");
+          return { instanceId };
+        }
         const instanceId = `${name}-${randomBytes(4).toString("hex")}`;
         logger.info({ agent: name, hasPrompt: !!prompt, instanceId }, "manual trigger via control API");
         runWithReruns(runner, config, 0, state.schedulerCtx, prompt, instanceId).catch((err) => {

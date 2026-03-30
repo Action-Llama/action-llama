@@ -316,26 +316,34 @@ export class ContainerAgentRunner {
     this.instanceId = instanceId ?? `${this.agentConfig.name}-${randomBytes(4).toString("hex")}`;
     this.logger = this.baseLogger.child({ instance: this.instanceId });
 
-    return await withSpan(
-      "container_agent.run",
-      async (span) => {
-        span.setAttributes({
-          "agent.name": this.agentConfig.name,
-          "agent.run_id": this.instanceId,
-          "agent.trigger_type": triggerInfo?.type || "manual",
-          "agent.trigger_source": triggerInfo?.source || "",
-          "agent.model_provider": this.agentConfig.models[0]?.provider,
-          "agent.model_name": this.agentConfig.models[0]?.model,
-          "execution.environment": "container",
-          "runtime.type": this.runtime.constructor.name,
-          "container.image": this.image,
-        });
+    try {
+      return await withSpan(
+        "container_agent.run",
+        async (span) => {
+          span.setAttributes({
+            "agent.name": this.agentConfig.name,
+            "agent.run_id": this.instanceId,
+            "agent.trigger_type": triggerInfo?.type || "manual",
+            "agent.trigger_source": triggerInfo?.source || "",
+            "agent.model_provider": this.agentConfig.models[0]?.provider,
+            "agent.model_name": this.agentConfig.models[0]?.model,
+            "execution.environment": "container",
+            "runtime.type": this.runtime.constructor.name,
+            "container.image": this.image,
+          });
 
-        return this._runInternalContainer(prompt, triggerInfo, span);
-      },
-      {},
-      SpanKind.INTERNAL
-    );
+          return this._runInternalContainer(prompt, triggerInfo, span);
+        },
+        {},
+        SpanKind.INTERNAL
+      );
+    } catch (err: any) {
+      // withSpan failed before _runInternalContainer could run its cleanup.
+      // Reset _running to avoid a permanent ghost runner state.
+      this._running = false;
+      this.logger.error({ err }, "container run setup failed");
+      return { result: "error", triggers: [] };
+    }
   }
 
   private async _runInternalContainer(prompt: string, triggerInfo?: { type: 'schedule' | 'manual' | 'webhook' | 'agent'; source?: string }, parentSpan?: any): Promise<RunOutcome> {
