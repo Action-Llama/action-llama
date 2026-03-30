@@ -168,7 +168,6 @@ export async function setupGateway(opts: {
         logger.info("Stop requested via control API");
         if (state.schedulerCtx) {
           state.schedulerCtx.shuttingDown = true;
-          state.schedulerCtx.workQueue.clearAll();
           state.schedulerCtx.workQueue.close();
         }
         for (const job of state.cronJobs) job.stop();

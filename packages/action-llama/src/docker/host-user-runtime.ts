@@ -390,4 +390,8 @@ export class HostUserRuntime implements Runtime {
   getTaskUrl(): string | null {
     return null;
   }
+
+  async inspectContainer(): Promise<null> {
+    return null;
+  }
 }

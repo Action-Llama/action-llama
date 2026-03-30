@@ -74,7 +74,7 @@ describe("registerShutdownHandlers", () => {
 
     expect(watcherStop).toHaveBeenCalledOnce();
     expect(ctx.shuttingDown).toBe(true);
-    expect(ctx.workQueue.clearAll).toHaveBeenCalledOnce();
+    expect(ctx.workQueue.clearAll).not.toHaveBeenCalled();
     expect(ctx.workQueue.close).toHaveBeenCalledOnce();
     expect(processExitSpy).toHaveBeenCalledWith(0);
   });

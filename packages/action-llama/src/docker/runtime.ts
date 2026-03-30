@@ -125,6 +125,13 @@ export interface Runtime {
 
   /** Return a URL for this task/execution, or null. */
   getTaskUrl(runId: string): string | null;
+
+  /**
+   * Inspect a running container and return its environment variables.
+   * Returns null if the container is not found or inspection is not supported.
+   * Optional — only implemented by runtimes that manage Docker containers directly.
+   */
+  inspectContainer?(containerName: string): Promise<{ env: Record<string, string> } | null>;
 }
 
 /**

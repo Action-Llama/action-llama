@@ -878,3 +878,41 @@ describe("LocalDockerRuntime.followLogs and getTaskUrl", () => {
     expect(runtime.getTaskUrl()).toBeNull();
   });
 });
+
+describe("LocalDockerRuntime.inspectContainer", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("parses environment variables from docker inspect output", async () => {
+    mockExecFileSync.mockReturnValue(JSON.stringify(["KEY=val", "SHUTDOWN_SECRET=abc123", "EMPTY="]));
+    const runtime = new LocalDockerRuntime();
+    const result = await runtime.inspectContainer("al-test-agent-abc");
+    expect(result).not.toBeNull();
+    expect(result!.env).toEqual({ KEY: "val", SHUTDOWN_SECRET: "abc123", EMPTY: "" });
+  });
+
+  it("handles env vars with = in the value", async () => {
+    mockExecFileSync.mockReturnValue(JSON.stringify(["BASE64=abc=def=ghi"]));
+    const runtime = new LocalDockerRuntime();
+    const result = await runtime.inspectContainer("al-test-agent-abc");
+    expect(result!.env).toEqual({ BASE64: "abc=def=ghi" });
+  });
+
+  it("returns null when docker inspect throws (container not found)", async () => {
+    mockExecFileSync.mockImplementation(() => {
+      throw new Error("No such container");
+    });
+    const runtime = new LocalDockerRuntime();
+    const result = await runtime.inspectContainer("nonexistent-container");
+    expect(result).toBeNull();
+  });
+
+  it("returns empty env object for container with no env vars", async () => {
+    mockExecFileSync.mockReturnValue("[]");
+    const runtime = new LocalDockerRuntime();
+    const result = await runtime.inspectContainer("al-test-agent-abc");
+    expect(result).not.toBeNull();
+    expect(result!.env).toEqual({});
+  });
+});

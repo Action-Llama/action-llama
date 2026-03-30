@@ -239,6 +239,52 @@ describe("ContainerRegistry", () => {
     });
   });
 
+  describe("findByContainerName()", () => {
+    it("returns undefined when the registry is empty", () => {
+      const registry = new ContainerRegistry();
+      expect(registry.findByContainerName("container-1")).toBeUndefined();
+    });
+
+    it("returns the secret and registration for a known container name", async () => {
+      const reg = makeReg({ containerName: "my-container", instanceId: "i1" });
+      const registry = new ContainerRegistry();
+      await registry.register("secret-xyz", reg);
+
+      const result = registry.findByContainerName("my-container");
+      expect(result).toBeDefined();
+      expect(result!.secret).toBe("secret-xyz");
+      expect(result!.reg).toEqual(reg);
+    });
+
+    it("returns undefined for an unknown container name", async () => {
+      const registry = new ContainerRegistry();
+      await registry.register("secret-xyz", makeReg({ containerName: "known-container" }));
+
+      expect(registry.findByContainerName("unknown-container")).toBeUndefined();
+    });
+
+    it("finds the correct entry among multiple registrations", async () => {
+      const registry = new ContainerRegistry();
+      const reg1 = makeReg({ containerName: "container-a", instanceId: "i1" });
+      const reg2 = makeReg({ containerName: "container-b", instanceId: "i2" });
+      await registry.register("secret-1", reg1);
+      await registry.register("secret-2", reg2);
+
+      const result = registry.findByContainerName("container-b");
+      expect(result).toBeDefined();
+      expect(result!.secret).toBe("secret-2");
+      expect(result!.reg).toEqual(reg2);
+    });
+
+    it("returns undefined after the entry is unregistered", async () => {
+      const registry = new ContainerRegistry();
+      await registry.register("secret-xyz", makeReg({ containerName: "my-container" }));
+      await registry.unregister("secret-xyz");
+
+      expect(registry.findByContainerName("my-container")).toBeUndefined();
+    });
+  });
+
   describe("size", () => {
     it("returns 0 for a new registry", () => {
       const registry = new ContainerRegistry();

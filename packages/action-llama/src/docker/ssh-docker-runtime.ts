@@ -416,4 +416,8 @@ export class SshDockerRuntime implements Runtime, ContainerRuntime {
   getTaskUrl(): string | null {
     return null; // No cloud console for VPS
   }
+
+  async inspectContainer(): Promise<null> {
+    return null;
+  }
 }
