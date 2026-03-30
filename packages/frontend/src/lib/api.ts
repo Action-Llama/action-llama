@@ -116,6 +116,40 @@ export interface TriggerHistoryRow {
   deadLetterReason?: string | null;
 }
 
+export interface JobRow {
+  ts: number;
+  triggerType: string;
+  triggerSource?: string | null;
+  agentName?: string | null;
+  instanceId?: string | null;
+  result: string;
+  webhookReceiptId?: string | null;
+  deadLetterReason?: string | null;
+}
+
+export interface TriggerDetailData {
+  instanceId: string;
+  agentName: string;
+  triggerType: string;
+  triggerSource?: string | null;
+  triggerContext?: string | null;
+  startedAt: number;
+  webhook?: {
+    receiptId: string;
+    source: string;
+    eventSummary?: string | null;
+    deliveryId?: string | null;
+    timestamp: number;
+    headers?: string | null;
+    body?: string | null;
+    matchedAgents: number;
+    status: string;
+  };
+  callerAgent?: string;
+  callerInstance?: string;
+  callDepth?: number;
+}
+
 export interface WebhookReceiptDetail {
   id: string;
   deliveryId?: string;
@@ -257,6 +291,20 @@ export function getTriggerHistory(
   if (agent) url += `&agent=${encodeURIComponent(agent)}`;
   if (triggerType) url += `&triggerType=${encodeURIComponent(triggerType)}`;
   return fetchJSON(url);
+}
+
+export function getJobs(
+  limit: number,
+  offset: number,
+  agent?: string,
+): Promise<{ jobs: JobRow[]; total: number; pending: Record<string, number>; totalPending: number }> {
+  let url = `/api/stats/jobs?limit=${limit}&offset=${offset}`;
+  if (agent) url += `&agent=${encodeURIComponent(agent)}`;
+  return fetchJSON(url);
+}
+
+export function getTriggerDetail(instanceId: string): Promise<{ trigger: TriggerDetailData | null }> {
+  return fetchJSON(`/api/dashboard/triggers/${encodeURIComponent(instanceId)}`);
 }
 
 export function getInstanceDetail(

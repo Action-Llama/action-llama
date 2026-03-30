@@ -92,6 +92,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
           if (!pool || !state.schedulerCtx) {
             // Pools or scheduler not ready yet (still building) — queue for later
             const { dropped } = workQueue.enqueue(config.name, { type: 'webhook', context });
+            statusTracker?.setQueuedWebhooks(config.name, workQueue.size(config.name));
             logger.info({ agent: config.name, event: context.event, queueSize: workQueue.size(config.name) }, "webhook queued (agents building)");
             if (dropped) logger.warn({ agent: config.name }, "queue full, oldest event dropped");
             return true;
@@ -99,6 +100,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
           const runner = pool.getAvailableRunner();
           if (!runner) {
             const { dropped } = workQueue.enqueue(config.name, { type: 'webhook', context });
+            statusTracker?.setQueuedWebhooks(config.name, workQueue.size(config.name));
             logger.info({ agent: config.name, event: context.event, queueSize: workQueue.size(config.name) }, "webhook queued");
             if (dropped) logger.warn({ agent: config.name }, "queue full, oldest event dropped");
             return true;
@@ -196,6 +198,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
       const availableRunner = pool.getAvailableRunner();
       if (!availableRunner) {
         const { dropped } = schedulerCtx.workQueue.enqueue(agentConfig.name, { type: 'schedule' });
+        schedulerCtx.statusTracker?.setQueuedWebhooks(agentConfig.name, schedulerCtx.workQueue.size(agentConfig.name));
         logger.info({ agent: agentConfig.name, running: pool.runningJobCount, scale: pool.size }, "all runners busy, scheduled run queued");
         if (dropped) logger.warn({ agent: agentConfig.name }, "queue full, oldest event dropped");
         return;

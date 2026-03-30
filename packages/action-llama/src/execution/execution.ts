@@ -79,7 +79,7 @@ export function makeTriggeredPrompt(agentConfig: AgentConfig, sourceAgent: strin
 /** Run a single agent and dispatch any resulting triggers. */
 export async function executeRun(
   runner: PoolRunner, prompt: string,
-  triggerInfo: { type: 'schedule' | 'manual' | 'webhook' | 'agent'; source?: string; receiptId?: string },
+  triggerInfo: { type: 'schedule' | 'manual' | 'webhook' | 'agent'; source?: string; receiptId?: string; context?: string },
   agentName: string, depth: number, ctx: SchedulerContext,
   instanceLifecycle?: InstanceLifecycle,
   instanceId?: string
@@ -149,6 +149,7 @@ export async function executeRun(
         preHookMs: outcome.preHookMs,
         postHookMs: outcome.postHookMs,
         webhookReceiptId: triggerInfo.receiptId,
+        triggerContext: triggerInfo.context,
       });
     } catch (err) {
       ctx.logger.warn({ err, agent: agentName }, "failed to record run stats");
@@ -203,12 +204,14 @@ export function dispatchTriggers(
 
     if (ctx.isAgentEnabled && !ctx.isAgentEnabled(agent)) {
       ctx.workQueue.enqueue(agent, { type: 'agent-trigger', sourceAgent, context, depth });
+      ctx.statusTracker?.setQueuedWebhooks(agent, ctx.workQueue.size(agent));
       ctx.logger.info({ source: sourceAgent, target: agent }, "target agent is paused, trigger queued");
       continue;
     }
     const runner = pool.getAvailableRunner();
     if (!runner) {
       ctx.workQueue.enqueue(agent, { type: 'agent-trigger', sourceAgent, context, depth });
+      ctx.statusTracker?.setQueuedWebhooks(agent, ctx.workQueue.size(agent));
       ctx.logger.info({ source: sourceAgent, target: agent }, "all runners busy, trigger queued");
       continue;
     }
@@ -221,7 +224,7 @@ export function dispatchTriggers(
       ctx.statusTracker.createInstance(runner.instanceId, agent, `agent:${sourceAgent}`) || undefined :
       undefined;
     
-    executeRun(runner, prompt, { type: 'agent', source: sourceAgent }, agent, depth + 1, ctx, instanceLifecycle)
+    executeRun(runner, prompt, { type: 'agent', source: sourceAgent, context }, agent, depth + 1, ctx, instanceLifecycle)
       .then((outcome) => {
         if (callEdgeId != null && ctx.statsStore) {
           try {
@@ -261,6 +264,8 @@ export async function drainQueues(ctx: SchedulerContext): Promise<void> {
       if (!item) break;
       fireQueuedItem(item, runner, agentConfig, ctx);
     }
+    // Update pending count after draining
+    ctx.statusTracker?.setQueuedWebhooks(agentConfig.name, ctx.workQueue.size(agentConfig.name));
   }
 }
 
@@ -295,7 +300,7 @@ function fireQueuedItem(
     
     const prompt = makeTriggeredPrompt(agentConfig, work.sourceAgent, work.context, ctx);
     if (work.callId) ctx.callStore?.setRunning(work.callId);
-    executeRun(runner, prompt, { type: 'agent', source: work.sourceAgent }, agentConfig.name, work.depth + 1, ctx, instanceLifecycle)
+    executeRun(runner, prompt, { type: 'agent', source: work.sourceAgent, context: work.context }, agentConfig.name, work.depth + 1, ctx, instanceLifecycle)
       .then(({ result, returnValue }) => {
         if (work.callId) {
           if (result === "completed" || result === "rerun") ctx.callStore?.complete(work.callId, returnValue);
@@ -338,7 +343,7 @@ export async function runWithReruns(
     : makeScheduledPrompt(agentConfig, ctx);
 
   let { result } = await executeRun(
-    runner, initialPrompt, { type: triggerType, source: prompt ? 'user-prompt' : undefined }, agentConfig.name, depth, ctx, instanceLifecycle, instanceId
+    runner, initialPrompt, { type: triggerType, source: prompt ? 'user-prompt' : undefined, context: prompt }, agentConfig.name, depth, ctx, instanceLifecycle, instanceId
   );
 
   let reruns = 0;

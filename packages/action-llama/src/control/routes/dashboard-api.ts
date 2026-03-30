@@ -176,6 +176,53 @@ export function registerDashboardApiRoutes(
     }
   });
 
+  // Trigger detail by instance ID (unified across all trigger types)
+  app.get("/api/dashboard/triggers/:instanceId", (c) => {
+    const instanceId = c.req.param("instanceId");
+    if (!statsStore) return c.json({ trigger: null }, 404);
+
+    const run = statsStore.queryRunByInstanceId(instanceId);
+    if (!run) return c.json({ trigger: null }, 404);
+
+    const result: Record<string, unknown> = {
+      instanceId: run.instance_id,
+      agentName: run.agent_name,
+      triggerType: run.trigger_type,
+      triggerSource: run.trigger_source ?? null,
+      triggerContext: run.trigger_context ?? null,
+      startedAt: run.started_at,
+    };
+
+    // Enrich with type-specific details
+    if (run.trigger_type === "webhook" && run.webhook_receipt_id) {
+      const receipt = statsStore.getWebhookReceipt(run.webhook_receipt_id);
+      if (receipt) {
+        result.webhook = {
+          receiptId: receipt.id,
+          source: receipt.source,
+          eventSummary: receipt.eventSummary ?? null,
+          deliveryId: receipt.deliveryId ?? null,
+          timestamp: receipt.timestamp,
+          headers: receipt.headers ?? null,
+          body: receipt.body ?? null,
+          matchedAgents: receipt.matchedAgents,
+          status: receipt.status,
+        };
+      }
+    }
+
+    if (run.trigger_type === "agent") {
+      const edge = statsStore.queryCallEdgeByTargetInstance(instanceId);
+      if (edge) {
+        result.callerAgent = edge.caller_agent;
+        result.callerInstance = edge.caller_instance;
+        result.callDepth = edge.depth;
+      }
+    }
+
+    return c.json({ trigger: result });
+  });
+
   // Project config
   app.get("/api/dashboard/config", (c) => {
     const info = statusTracker.getSchedulerInfo();

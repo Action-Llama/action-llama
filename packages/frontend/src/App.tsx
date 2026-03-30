@@ -5,6 +5,8 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { AgentDetailPage } from "./pages/AgentDetailPage";
 import { InstanceDetailPage } from "./pages/InstanceDetailPage";
 import { TriggerHistoryPage } from "./pages/TriggerHistoryPage";
+import { JobsPage } from "./pages/JobsPage";
+import { TriggerDetailPage } from "./pages/TriggerDetailPage";
 import { ProjectConfigPage } from "./pages/ProjectConfigPage";
 import { AgentSkillPage } from "./pages/AgentSkillPage";
 import { ChatPage } from "./pages/ChatPage";
@@ -38,6 +40,8 @@ export function App() {
         />
         <Route path="/dashboard/triggers" element={<Navigate to="/triggers" replace />} />
         <Route path="/triggers" element={<TriggerHistoryPage />} />
+        <Route path="/jobs" element={<JobsPage />} />
+        <Route path="/dashboard/triggers/:instanceId" element={<TriggerDetailPage />} />
         <Route path="/dashboard/webhooks/:receiptId" element={<WebhookReceiptPage />} />
         <Route path="/dashboard/config" element={<ProjectConfigPage />} />
       </Route>
