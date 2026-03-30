@@ -1,5 +1,28 @@
 # @action-llama/action-llama
 
+## 0.20.0
+
+### Minor Changes
+
+- [#417](https://github.com/Action-Llama/action-llama/pull/417) [`8060033`](https://github.com/Action-Llama/action-llama/commit/806003383a04d05d37b526b3a8bad11079c66c16) Thanks [@asselstine](https://github.com/asselstine)! - Extract webhook queueing / dispatch policy into `dispatchOrQueue()` in `src/execution/dispatch-policy.ts`. Centralizes the "check paused → check pool → check runner → queue or execute" decision that was previously duplicated across five call sites (webhook handler, cron handler, triggerAgent, call-dispatcher, dispatchTriggers). Pure refactoring — no behavior changes.
+
+### Patch Changes
+
+- [`2518841`](https://github.com/Action-Llama/action-llama/commit/2518841e90078e80090a7d498cba870ead12643a) Thanks [@asselstine](https://github.com/asselstine)! - Add orphan recovery for HostUserRuntime (no-Docker mode). Previously, if the
+  scheduler crashed or restarted while a HostUserRuntime agent was running, the
+  orphaned process was invisible to the new scheduler — leading to zombie agents,
+  duplicate runs, and leaked resources. Now HostUserRuntime writes PID files
+  alongside each running process, enabling `listRunningAgents()` and
+  `inspectContainer()` to discover and re-adopt orphans on restart, matching the
+  resilience of Docker-based runtimes. The scheduler shutdown handler also
+  terminates tracked child processes on graceful exit.
+
+- [`f13edb5`](https://github.com/Action-Llama/action-llama/commit/f13edb5d7082e54e415f1a442874ae5760324d3e) Thanks [@asselstine](https://github.com/asselstine)! - Move integration tests from action-llama package into the e2e package so that
+  `npm test` runs only fast unit tests. Integration tests are now available via
+  `npm run test:integration` which delegates to the e2e workspace. Added
+  `./internals/*` subpath exports to expose internal modules needed by the
+  integration harness.
+
 ## 0.19.2
 
 ### Patch Changes
