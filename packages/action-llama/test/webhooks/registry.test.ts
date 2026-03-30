@@ -390,4 +390,205 @@ describe("WebhookRegistry", () => {
       expect(result.parseError).toMatch(/missing payload/);
     });
   });
+
+  // ── getFilterDetails — individual filter properties ──────────────────────
+
+  describe("getFilterDetails — filter property coverage", () => {
+    function makeProviderWithContext(ctx: Record<string, unknown>): WebhookProvider {
+      return makeProvider({
+        parseEvent: () => ({
+          source: "github",
+          event: "issues",
+          action: "labeled",
+          repo: "acme/app",
+          sender: "user1",
+          timestamp: new Date().toISOString(),
+          ...ctx,
+        } as any),
+        matchesFilter: () => false, // Force unmatched so filterDetails is populated
+      });
+    }
+
+    it("populates filterDetails.action when filter has 'actions'", () => {
+      registry.registerProvider(makeProviderWithContext({ action: "labeled" }));
+      registry.addBinding({
+        agentName: "dev",
+        type: "github",
+        source: "MyOrg",
+        filter: { actions: ["labeled"] } as any,
+        trigger: vi.fn(),
+      });
+      const result = registry.dryRunDispatch("github", {}, "{}");
+      expect(result.bindings[0].filterDetails?.action).toBe(true);
+    });
+
+    it("sets filterDetails.action to false when context has no action", () => {
+      registry.registerProvider(makeProviderWithContext({ action: undefined }));
+      registry.addBinding({
+        agentName: "dev",
+        type: "github",
+        source: "MyOrg",
+        filter: { actions: ["labeled"] } as any,
+        trigger: vi.fn(),
+      });
+      const result = registry.dryRunDispatch("github", {}, "{}");
+      expect(result.bindings[0].filterDetails?.action).toBe(false);
+    });
+
+    it("populates filterDetails.repo when filter has 'repos'", () => {
+      registry.registerProvider(makeProviderWithContext({ repo: "acme/app" }));
+      registry.addBinding({
+        agentName: "dev",
+        type: "github",
+        source: "MyOrg",
+        filter: { repos: ["acme/app"] } as any,
+        trigger: vi.fn(),
+      });
+      const result = registry.dryRunDispatch("github", {}, "{}");
+      expect(result.bindings[0].filterDetails?.repo).toBe(true);
+    });
+
+    it("populates filterDetails.org when filter has 'org'", () => {
+      registry.registerProvider(makeProviderWithContext({ repo: "acme/app" }));
+      registry.addBinding({
+        agentName: "dev",
+        type: "github",
+        source: "MyOrg",
+        filter: { org: "acme" } as any,
+        trigger: vi.fn(),
+      });
+      const result = registry.dryRunDispatch("github", {}, "{}");
+      expect(result.bindings[0].filterDetails?.org).toBe(true);
+    });
+
+    it("populates filterDetails.org when filter has 'orgs' array", () => {
+      registry.registerProvider(makeProviderWithContext({ repo: "acme/app" }));
+      registry.addBinding({
+        agentName: "dev",
+        type: "github",
+        source: "MyOrg",
+        filter: { orgs: ["acme", "other"] } as any,
+        trigger: vi.fn(),
+      });
+      const result = registry.dryRunDispatch("github", {}, "{}");
+      expect(result.bindings[0].filterDetails?.org).toBe(true);
+    });
+
+    it("populates filterDetails.org when filter has 'organizations' array", () => {
+      registry.registerProvider(makeProviderWithContext({ repo: "acme/app" }));
+      registry.addBinding({
+        agentName: "dev",
+        type: "github",
+        source: "MyOrg",
+        filter: { organizations: ["acme"] } as any,
+        trigger: vi.fn(),
+      });
+      const result = registry.dryRunDispatch("github", {}, "{}");
+      expect(result.bindings[0].filterDetails?.org).toBe(true);
+    });
+
+    it("populates filterDetails.label when filter has 'labels' and context has labels", () => {
+      registry.registerProvider(makeProviderWithContext({ labels: ["bug", "enhancement"] }));
+      registry.addBinding({
+        agentName: "dev",
+        type: "github",
+        source: "MyOrg",
+        filter: { labels: ["bug"] } as any,
+        trigger: vi.fn(),
+      });
+      const result = registry.dryRunDispatch("github", {}, "{}");
+      expect(result.bindings[0].filterDetails?.label).toBe(true);
+    });
+
+    it("populates filterDetails.assignee when filter has 'assignee'", () => {
+      registry.registerProvider(makeProviderWithContext({ assignee: "alice" }));
+      registry.addBinding({
+        agentName: "dev",
+        type: "github",
+        source: "MyOrg",
+        filter: { assignee: "alice" } as any,
+        trigger: vi.fn(),
+      });
+      const result = registry.dryRunDispatch("github", {}, "{}");
+      expect(result.bindings[0].filterDetails?.assignee).toBe(true);
+    });
+
+    it("populates filterDetails.author when filter has 'author'", () => {
+      registry.registerProvider(makeProviderWithContext({ author: "bob" }));
+      registry.addBinding({
+        agentName: "dev",
+        type: "github",
+        source: "MyOrg",
+        filter: { author: "bob" } as any,
+        trigger: vi.fn(),
+      });
+      const result = registry.dryRunDispatch("github", {}, "{}");
+      expect(result.bindings[0].filterDetails?.author).toBe(true);
+    });
+
+    it("populates filterDetails.branch when filter has 'branches'", () => {
+      registry.registerProvider(makeProviderWithContext({ branch: "main" }));
+      registry.addBinding({
+        agentName: "dev",
+        type: "github",
+        source: "MyOrg",
+        filter: { branches: ["main"] } as any,
+        trigger: vi.fn(),
+      });
+      const result = registry.dryRunDispatch("github", {}, "{}");
+      expect(result.bindings[0].filterDetails?.branch).toBe(true);
+    });
+
+    it("sets filterDetails.branch to false when context has no branch", () => {
+      registry.registerProvider(makeProviderWithContext({ branch: undefined }));
+      registry.addBinding({
+        agentName: "dev",
+        type: "github",
+        source: "MyOrg",
+        filter: { branches: ["main"] } as any,
+        trigger: vi.fn(),
+      });
+      const result = registry.dryRunDispatch("github", {}, "{}");
+      expect(result.bindings[0].filterDetails?.branch).toBe(false);
+    });
+
+    it("populates filterDetails.conclusion when filter has 'conclusions'", () => {
+      registry.registerProvider(makeProviderWithContext({ conclusion: "success" }));
+      registry.addBinding({
+        agentName: "dev",
+        type: "github",
+        source: "MyOrg",
+        filter: { conclusions: ["success"] } as any,
+        trigger: vi.fn(),
+      });
+      const result = registry.dryRunDispatch("github", {}, "{}");
+      expect(result.bindings[0].filterDetails?.conclusion).toBe(true);
+    });
+
+    it("sets filterDetails.conclusion to false when context has no conclusion", () => {
+      registry.registerProvider(makeProviderWithContext({ conclusion: undefined }));
+      registry.addBinding({
+        agentName: "dev",
+        type: "github",
+        source: "MyOrg",
+        filter: { conclusions: ["success"] } as any,
+        trigger: vi.fn(),
+      });
+      const result = registry.dryRunDispatch("github", {}, "{}");
+      expect(result.bindings[0].filterDetails?.conclusion).toBe(false);
+    });
+
+    it("populates filterDetails.resource when filter has 'resources'", () => {
+      registry.registerProvider(makeProviderWithContext({ event: "issue_alert" }));
+      registry.addBinding({
+        agentName: "dev",
+        type: "github",
+        source: "MyOrg",
+        filter: { resources: ["issue_alert"] } as any,
+        trigger: vi.fn(),
+      });
+      const result = registry.dryRunDispatch("github", {}, "{}");
+      expect(result.bindings[0].filterDetails?.resource).toBe(true);
+    });
+  });
 });
