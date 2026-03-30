@@ -108,7 +108,16 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     runnerPools: {},
     cronJobs: [],
     schedulerCtx: null,
+    workQueue: null,
   };
+
+  // Create work queue early (before Docker builds) so incoming webhooks can be queued
+  const queueSize = globalConfig.workQueueSize ?? globalConfig.webhookQueueSize ?? 20;
+  const workQueue = await createWorkQueue<WorkItem>(queueSize, {
+    type: "sqlite",
+    path: (await import("path")).resolve(projectPath, ".al", "work-queue.db"),
+  });
+  state.workQueue = workQueue;
 
   // Start gateway early (before Docker builds) so users can see build status
   const { gateway, gatewayPort, registerContainer, unregisterContainer, setChatRuntime } = await setupGateway({
@@ -116,6 +125,47 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     webhookRegistry, webhookSecrets, webhookConfigs: webhookSources, stateStore, statsStore, events, telemetry,
     mkLogger, statusTracker, webUI, expose, logger,
   });
+
+  // Register webhook bindings early (before Docker builds) so incoming webhooks are queued
+  if (webhookRegistry) {
+    for (const agentConfig of activeAgentConfigs) {
+      if (!agentConfig.webhooks?.length) continue;
+      registerWebhookBindings({
+        agentConfig,
+        webhookRegistry,
+        webhookSources,
+        onTrigger: (config, context) => {
+          if (statusTracker && !statusTracker.isAgentEnabled(config.name)) return false;
+          if (statusTracker?.isPaused()) {
+            logger.info({ agent: config.name, event: context.event }, "scheduler paused, webhook rejected");
+            return false;
+          }
+          const pool = state.runnerPools[config.name];
+          if (!pool || !state.schedulerCtx) {
+            // Pools or scheduler not ready yet (still building) — queue for later
+            const { dropped } = workQueue.enqueue(config.name, { type: 'webhook', context });
+            logger.info({ agent: config.name, event: context.event, queueSize: workQueue.size(config.name) }, "webhook queued (agents building)");
+            if (dropped) logger.warn({ agent: config.name }, "queue full, oldest event dropped");
+            return true;
+          }
+          const runner = pool.getAvailableRunner();
+          if (!runner) {
+            const { dropped } = workQueue.enqueue(config.name, { type: 'webhook', context });
+            logger.info({ agent: config.name, event: context.event, queueSize: workQueue.size(config.name) }, "webhook queued");
+            if (dropped) logger.warn({ agent: config.name }, "queue full, oldest event dropped");
+            return true;
+          }
+          logger.info({ agent: config.name, event: context.event, action: context.action }, "webhook triggering agent");
+          const prompt = makeWebhookPrompt(config, context, state.schedulerCtx);
+          executeRun(runner, prompt, { type: 'webhook', source: context.event, receiptId: context.receiptId }, config.name, 0, state.schedulerCtx)
+            .then(() => drainQueues(state.schedulerCtx!))
+            .catch((err) => logger.error({ err, agent: config.name }, "webhook run failed"));
+          return true;
+        },
+        logger,
+      });
+    }
+  }
 
   // Create the container runtime
   const { runtime, agentRuntimeOverrides } = await createContainerRuntime(
@@ -273,12 +323,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     logger.debug({ err }, "orphan detection/re-adoption skipped (runtime does not support listing)");
   }
 
-  // Create work queue + scheduler context
-  const queueSize = globalConfig.workQueueSize ?? globalConfig.webhookQueueSize ?? 20;
-  const workQueue = await createWorkQueue<WorkItem>(queueSize, {
-    type: "sqlite",
-    path: (await import("path")).resolve(projectPath, ".al", "work-queue.db"),
-  });
+  // Create scheduler context (work queue was already created early above)
   const skills: PromptSkills = { locking: true };
   const callStore = gateway.callStore;
   const schedulerCtx: SchedulerContext = {
@@ -293,40 +338,6 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // Wire up call dispatcher
   wireCallDispatcher(gateway, schedulerCtx, statusTracker);
-
-  // Set up webhook bindings
-  if (webhookRegistry) {
-    for (const agentConfig of activeAgentConfigs) {
-      if (!agentConfig.webhooks?.length) continue;
-      registerWebhookBindings({
-        agentConfig,
-        webhookRegistry,
-        webhookSources,
-        onTrigger: (config, context) => {
-          if (statusTracker && !statusTracker.isAgentEnabled(config.name)) return false;
-          if (statusTracker?.isPaused()) {
-            logger.info({ agent: config.name, event: context.event }, "scheduler paused, webhook rejected");
-            return false;
-          }
-          const pool = runnerPools[config.name];
-          const runner = pool.getAvailableRunner();
-          if (!runner) {
-            const { dropped } = schedulerCtx.workQueue.enqueue(config.name, { type: 'webhook', context });
-            logger.info({ agent: config.name, event: context.event, queueSize: schedulerCtx.workQueue.size(config.name) }, "webhook queued");
-            if (dropped) logger.warn({ agent: config.name }, "queue full, oldest event dropped");
-            return true;
-          }
-          logger.info({ agent: config.name, event: context.event, action: context.action }, "webhook triggering agent");
-          const prompt = makeWebhookPrompt(config, context, schedulerCtx);
-          executeRun(runner, prompt, { type: 'webhook', source: context.event, receiptId: context.receiptId }, config.name, 0, schedulerCtx)
-            .then(() => drainQueues(schedulerCtx))
-            .catch((err) => logger.error({ err, agent: config.name }, "webhook run failed"));
-          return true;
-        },
-        logger,
-      });
-    }
-  }
 
   // Set up cron jobs
   const { cronJobs, agentCronJobs, webhookUrls } = setupCronJobs({

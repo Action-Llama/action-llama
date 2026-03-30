@@ -179,6 +179,18 @@ vi.mock("../../src/telemetry/index.js", () => ({
   initTelemetry: (...args: any[]) => mockInitTelemetry(...args),
 }));
 
+// Mock webhook-setup (track call order for early binding test)
+const mockRegisterWebhookBindings = vi.fn();
+const mockSetupWebhookRegistry = vi.fn().mockResolvedValue({ registry: undefined, secrets: {} });
+vi.mock("../../src/events/webhook-setup.js", async (importOriginal) => {
+  const actual = await importOriginal() as Record<string, unknown>;
+  return {
+    ...actual,
+    setupWebhookRegistry: (...args: any[]) => mockSetupWebhookRegistry(...args),
+    registerWebhookBindings: (...args: any[]) => mockRegisterWebhookBindings(...args),
+  };
+});
+
 // Mock logger
 const mockLoggerInfo = vi.fn();
 const mockLoggerWarn = vi.fn();
@@ -742,6 +754,64 @@ describe("startScheduler", () => {
         expect.objectContaining({ agent: "scaled-up-agent", registeredScale: 1, actualScale: 3 }),
         "synced status tracker scale with actual pool size"
       );
+    });
+  });
+
+  describe("early webhook binding (before image builds)", () => {
+    function setupWebhookProject(dir: string) {
+      const globalConfig = {
+        models: {
+          sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
+        },
+        webhooks: {
+          github: { provider: "github", secret: "test-secret" },
+        },
+      };
+      writeFileSync(resolve(dir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
+
+      const agentDir = resolve(dir, "agents", "dev");
+      mkdirSync(agentDir, { recursive: true });
+      writeAgentConfig(agentDir, {
+        name: "dev",
+        credentials: ["github_token"],
+        models: ["sonnet"],
+        webhooks: [{ source: "github", events: ["push"] }],
+      });
+      mkdirSync(resolve(dir, ".al", "state", "dev"), { recursive: true });
+    }
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+      cronCallbacks.length = 0;
+      mockIsRunning = false;
+      tmpDir = mkdtempSync(join(tmpdir(), "al-sched-webhooks-"));
+      setupWebhookProject(tmpDir);
+    });
+
+    it("registers webhook bindings before buildAgentImages", async () => {
+      // Track call order by recording invocation indices
+      const callOrder: string[] = [];
+      const { buildAgentImages } = await import("../../src/execution/runtime-factory.js");
+      (buildAgentImages as any).mockImplementation(async (...args: any[]) => {
+        callOrder.push("buildAgentImages");
+        return { baseImage: "test-base-image", agentImages: { dev: "test-dev-image" } };
+      });
+      mockSetupWebhookRegistry.mockResolvedValue({
+        registry: { bind: vi.fn(), unbind: vi.fn() },
+        secrets: {},
+      });
+      mockRegisterWebhookBindings.mockImplementation(() => {
+        callOrder.push("registerWebhookBindings");
+      });
+
+      await startScheduler(tmpDir);
+
+      expect(mockRegisterWebhookBindings).toHaveBeenCalled();
+      expect(callOrder).toContain("registerWebhookBindings");
+      expect(callOrder).toContain("buildAgentImages");
+      const bindIdx = callOrder.indexOf("registerWebhookBindings");
+      const buildIdx = callOrder.indexOf("buildAgentImages");
+      expect(bindIdx).toBeLessThan(buildIdx);
     });
   });
 });
