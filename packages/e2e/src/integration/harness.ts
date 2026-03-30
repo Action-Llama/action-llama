@@ -12,13 +12,13 @@ import { execFileSync } from "child_process";
 import { createServer } from "net";
 import { stringify as stringifyTOML } from "smol-toml";
 import { stringify as stringifyYAML } from "yaml";
-import type { GlobalConfig, AgentConfig } from "../../src/shared/config.js";
-import type { WebhookContext } from "../../src/webhooks/types.js";
-import { setDefaultBackend, resetDefaultBackend } from "../../src/shared/credentials.js";
-import { FilesystemBackend } from "../../src/shared/filesystem-backend.js";
-import type { RunCompleteEvent } from "../../src/execution/execution.js";
-import type { SchedulerEventBus, SchedulerEventMap } from "../../src/scheduler/events.js";
-import { makeAgentConfig, makeModel } from "../helpers.js";
+import type { GlobalConfig, AgentConfig } from "@action-llama/action-llama/internals/config";
+import type { WebhookContext } from "@action-llama/action-llama/internals/webhook-types";
+import { setDefaultBackend, resetDefaultBackend } from "@action-llama/action-llama/internals/credentials";
+import { FilesystemBackend } from "@action-llama/action-llama/internals/filesystem-backend";
+import type { RunCompleteEvent } from "@action-llama/action-llama/internals/execution";
+import type { SchedulerEventBus, SchedulerEventMap } from "@action-llama/action-llama/internals/scheduler-events";
+import { makeAgentConfig, makeModel } from "./helpers.js";
 
 export interface HarnessAgent {
   name: string;
@@ -80,7 +80,7 @@ export class IntegrationHarness {
   readonly gatewayPort: number;
   readonly credentialDir: string;
 
-  private _scheduler: Awaited<ReturnType<typeof import("../../src/scheduler/index.js").startScheduler>> | null = null;
+  private _scheduler: Awaited<ReturnType<typeof import("@action-llama/action-llama/internals/scheduler").startScheduler>> | null = null;
   readonly apiKey: string;
 
   /** The event bus from the scheduler — exposed so tests can subscribe. */
@@ -200,13 +200,13 @@ export class IntegrationHarness {
    * Start the scheduler (triggers real Docker builds, gateway, cron, webhooks).
    */
   async start(): Promise<void> {
-    const { startScheduler } = await import("../../src/scheduler/index.js");
+    const { startScheduler } = await import("@action-llama/action-llama/internals/scheduler");
     const globalConfig: GlobalConfig = {
       gateway: { port: this.gatewayPort },
     };
 
     // Re-load the actual config from disk
-    const { loadGlobalConfig } = await import("../../src/shared/config.js");
+    const { loadGlobalConfig } = await import("@action-llama/action-llama/internals/config");
     const loadedConfig = loadGlobalConfig(this.projectPath);
 
     this._scheduler = await startScheduler(
@@ -273,10 +273,10 @@ export class IntegrationHarness {
 
   /**
    * Manually trigger an agent run via the control API.
-   * 
+   *
    * This method is used in integration tests to manually start agents
    * since automatic initial runs of scheduled agents were removed.
-   * 
+   *
    * @param agentName - The name of the agent to trigger
    * @throws {Error} If the trigger request fails or the agent doesn't exist
    */

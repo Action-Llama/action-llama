@@ -7,12 +7,12 @@
   "scripts": {
     "build": "npm run build -w packages/shared && npm run build -w packages/frontend && npm run build -w packages/action-llama",
     "clean": "npm run clean -w packages/action-llama && rm -rf packages/shared/dist",
-    "test": "vitest run --config packages/action-llama/vitest.config.ts",
+    "test": "vitest run --project unit --config packages/action-llama/vitest.config.ts",
     "test:unit": "vitest run --project unit --config packages/action-llama/vitest.config.ts",
-    "test:integration": "vitest run --project integration --config packages/action-llama/vitest.config.ts",
+    "test:integration": "npm test -w packages/e2e -- --project integration",
     "test:watch": "vitest --project unit --config packages/action-llama/vitest.config.ts",
     "test:coverage": "vitest run --coverage --config packages/action-llama/vitest.config.ts",
-    "test:e2e": "npm test -w packages/e2e",
+    "test:e2e": "npm test -w packages/e2e -- --project e2e",
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "npm run build && changeset publish -w packages/action-llama --tag next"

@@ -18,16 +18,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: "unit",
-          exclude: ["**/node_modules/**", "**/.claude/worktrees/**", "test/integration/**", "**/packages/e2e/**", "**/*.spec.ts"],
-        },
-      },
-      {
-        extends: true,
-        test: {
-          name: "integration",
-          include: ["test/integration/**/*.test.ts"],
-          pool: "forks",
-          testTimeout: 1_800_000,
+          exclude: ["**/node_modules/**", "**/.claude/worktrees/**", "**/packages/e2e/**", "**/*.spec.ts"],
         },
       },
     ],
