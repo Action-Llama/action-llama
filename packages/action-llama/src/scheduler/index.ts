@@ -8,6 +8,7 @@ import { createContainerRuntime, buildAgentImages } from "../execution/runtime-f
 import { setupWebhookRegistry, registerWebhookBindings } from "../events/webhook-setup.js";
 import type { WorkItem, SchedulerContext } from "../execution/execution.js";
 import { drainQueues, makeWebhookPrompt, executeRun, runWithReruns } from "../execution/execution.js";
+import { dispatchOrQueue } from "../execution/dispatch-policy.js";
 import { SchedulerEventBus } from "./events.js";
 import type { SchedulerState } from "./state.js";
 import { validateAndDiscover } from "./validation.js";
@@ -19,7 +20,7 @@ import { registerShutdownHandlers } from "./shutdown.js";
 import { loadDependencies } from "./dependencies.js";
 import { createPersistence } from "./persistence.js";
 import { recoverOrphanContainers } from "./orphan-recovery.js";
-import { syncTrackerScales, tryRunOrEnqueue } from "./policies/index.js";
+import { syncTrackerScales } from "./policies/index.js";
 
 export type { SchedulerContext, WorkItem } from "../execution/execution.js";
 export { SchedulerEventBus } from "./events.js";
@@ -84,35 +85,39 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
         webhookRegistry,
         webhookSources,
         onTrigger: (config, context) => {
-          if (statusTracker && !statusTracker.isAgentEnabled(config.name)) return false;
-          if (statusTracker?.isPaused()) {
-            logger.info({ agent: config.name, event: context.event }, "scheduler paused, webhook rejected");
-            return false;
-          }
-          const pool = state.runnerPools[config.name];
-          // Use undefined pool when scheduler is not ready yet (still building)
-          const effectivePool = (pool && state.schedulerCtx) ? pool : undefined;
-          const { runner, enqueued } = tryRunOrEnqueue(
-            effectivePool, workQueue, config.name, { type: 'webhook', context },
-            logger, { event: context.event },
-          );
-          if (enqueued) {
+          // Early exit: if scheduler context is not ready, queue directly
+          if (!state.schedulerCtx) {
+            const { dropped } = workQueue.enqueue(config.name, { type: 'webhook', context });
             statusTracker?.setQueuedWebhooks(config.name, workQueue.size(config.name));
-            if (!effectivePool) {
-              logger.info({ agent: config.name, event: context.event, queueSize: workQueue.size(config.name) }, "webhook queued (agents building)");
-            } else {
-              logger.info({ agent: config.name, event: context.event, queueSize: workQueue.size(config.name) }, "webhook queued");
-            }
+            logger.info({ agent: config.name, event: context.event, queueSize: workQueue.size(config.name) }, "webhook queued (agents building)");
+            if (dropped) logger.warn({ agent: config.name }, "queue full, oldest event dropped");
             return true;
           }
-          if (runner) {
+
+          const result = dispatchOrQueue(config.name, { type: 'webhook', context } as WorkItem, {
+            pool: state.runnerPools[config.name],
+            workQueue,
+            isPaused: () => !!statusTracker?.isPaused(),
+            isAgentEnabled: statusTracker ? (n) => statusTracker.isAgentEnabled(n) : undefined,
+          });
+
+          if (result.action === "dispatched") {
             logger.info({ agent: config.name, event: context.event, action: context.action }, "webhook triggering agent");
-            const prompt = makeWebhookPrompt(config, context, state.schedulerCtx!);
-            executeRun(runner, prompt, { type: 'webhook', source: context.event, receiptId: context.receiptId }, config.name, 0, state.schedulerCtx!)
+            const prompt = makeWebhookPrompt(config, context, state.schedulerCtx);
+            executeRun(result.runner, prompt, { type: 'webhook', source: context.event, receiptId: context.receiptId }, config.name, 0, state.schedulerCtx)
               .then(() => drainQueues(state.schedulerCtx!))
               .catch((err) => logger.error({ err, agent: config.name }, "webhook run failed"));
+            return true;
           }
-          return true;
+          if (result.action === "queued") {
+            statusTracker?.setQueuedWebhooks(config.name, workQueue.size(config.name));
+            logger.info({ agent: config.name, event: context.event, queueSize: workQueue.size(config.name) }, "webhook queued");
+            if (result.dropped) logger.warn({ agent: config.name }, "queue full, oldest event dropped");
+            return true;
+          }
+          // rejected (paused or agent disabled)
+          logger.info({ agent: config.name, event: context.event, reason: result.reason }, "webhook rejected");
+          return false;
         },
         logger,
       });
@@ -188,18 +193,24 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     activeAgentConfigs, webhookSources,
     globalConfig, agentConfigs,
     onScheduledRun: async (agentConfig) => {
-      const pool = runnerPools[agentConfig.name];
-      const { runner, enqueued } = tryRunOrEnqueue(
-        pool, schedulerCtx.workQueue, agentConfig.name, { type: 'schedule' }, logger,
-      );
-      if (enqueued) {
-        schedulerCtx.statusTracker?.setQueuedWebhooks(agentConfig.name, schedulerCtx.workQueue.size(agentConfig.name));
-        return;
-      }
-      if (runner) {
+      const result = dispatchOrQueue(agentConfig.name, { type: 'schedule' } as WorkItem, {
+        pool: runnerPools[agentConfig.name],
+        workQueue: schedulerCtx.workQueue,
+        isPaused: schedulerCtx.isPaused,
+        isAgentEnabled: schedulerCtx.isAgentEnabled,
+      });
+
+      if (result.action === "dispatched") {
+        const pool = runnerPools[agentConfig.name];
         logger.info({ agent: agentConfig.name, running: pool.runningJobCount, scale: pool.size }, "triggering scheduled run");
-        await runWithReruns(runner, agentConfig, 0, schedulerCtx);
+        await runWithReruns(result.runner, agentConfig, 0, schedulerCtx);
+      } else if (result.action === "queued") {
+        const pool = runnerPools[agentConfig.name];
+        schedulerCtx.statusTracker?.setQueuedWebhooks(agentConfig.name, schedulerCtx.workQueue.size(agentConfig.name));
+        logger.info({ agent: agentConfig.name, running: pool?.runningJobCount, scale: pool?.size }, "all runners busy, work queued");
+        if (result.dropped) logger.warn({ agent: agentConfig.name }, "queue full, oldest event dropped");
       }
+      // rejected case: paused or disabled — cron-setup already handles paused check before calling onScheduledRun
     },
     statusTracker, logger, timezone, anyWebhooks,
     gatewayPort: gateway ? gatewayPort : undefined,
