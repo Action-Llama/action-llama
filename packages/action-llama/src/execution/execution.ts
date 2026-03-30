@@ -20,7 +20,8 @@ export const DEFAULT_MAX_TRIGGER_DEPTH = 3;
 export type WorkItem =
   | { type: 'webhook'; context: WebhookContext }
   | { type: 'agent-trigger'; sourceAgent: string; context: string; depth: number; callId?: string }
-  | { type: 'schedule' };
+  | { type: 'schedule' }
+  | { type: 'manual'; prompt?: string };
 
 export interface RunCompleteEvent {
   agentName: string;
@@ -312,6 +313,11 @@ function fireQueuedItem(
     // runWithReruns already calls drainQueues on completion and handles instance lifecycle
     runWithReruns(runner, agentConfig, 0, ctx)
       .catch((err) => ctx.logger.error({ err, agent: agentConfig.name }, "queued scheduled run failed"));
+
+  } else if (work.type === 'manual') {
+    ctx.logger.info({ agent: agentConfig.name, ageMs }, "draining queued manual trigger");
+    runWithReruns(runner, agentConfig, 0, ctx, work.prompt)
+      .catch((err) => ctx.logger.error({ err, agent: agentConfig.name }, "queued manual trigger failed"));
   }
 }
 

@@ -316,6 +316,37 @@ describe("drainQueues", () => {
 
     expect(runner.run).not.toHaveBeenCalled();
   });
+
+  it("drains queued manual trigger", async () => {
+    const runner = makeRunner({ instanceId: "a" });
+    const config = makeAgentConfig("a");
+    const ctx = makeCtx({
+      agentConfigs: [config],
+      runnerPools: { a: new RunnerPool([runner]) },
+    });
+    ctx.workQueue.enqueue("a", { type: "manual", prompt: "do something" });
+
+    await drainQueues(ctx);
+
+    expect(runner.run).toHaveBeenCalledOnce();
+    const [, triggerInfo] = (runner.run as any).mock.calls[0];
+    expect(triggerInfo.type).toBe("manual");
+  });
+
+  it("drains queued manual trigger without prompt", async () => {
+    const runner = makeRunner({ instanceId: "a" });
+    const config = makeAgentConfig("a");
+    const ctx = makeCtx({
+      agentConfigs: [config],
+      runnerPools: { a: new RunnerPool([runner]) },
+    });
+    ctx.workQueue.enqueue("a", { type: "manual" });
+
+    await drainQueues(ctx);
+
+    // When no prompt is provided, runWithReruns treats it as a schedule run
+    expect(runner.run).toHaveBeenCalledOnce();
+  });
 });
 
 describe("runWithReruns", () => {

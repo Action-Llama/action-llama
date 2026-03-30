@@ -103,6 +103,7 @@ function makeSchedulerState(overrides?: Partial<any>) {
     runnerPools: {},
     cronJobs: [],
     schedulerCtx: null,
+    workQueue: null,
     ...overrides,
   };
 }
@@ -343,7 +344,7 @@ describe("setupGateway", () => {
       expect(result).toBe("Scheduler is paused");
     });
 
-    it("returns error string when agent pool is not found", async () => {
+    it("returns error string when agent config is not found", async () => {
       const gatewayResult = makeGatewayResult();
       const statusTracker = { isPaused: vi.fn().mockReturnValue(false) };
       const state = makeSchedulerState({ runnerPools: {} });
@@ -352,15 +353,35 @@ describe("setupGateway", () => {
       await setupGateway(opts);
 
       const { controlDeps } = mockStartGateway.mock.calls[0][0];
+      // "unknown" is not in agentConfigs, so config check fails first
+      const result = await controlDeps.triggerAgent("unknown");
+      expect(result).toBe('Agent "unknown" not found');
+    });
+
+    it("queues manual trigger when pools are not ready (building)", async () => {
+      const gatewayResult = makeGatewayResult();
+      const statusTracker = { isPaused: vi.fn().mockReturnValue(false) };
+      const mockWorkQueue = { enqueue: vi.fn().mockReturnValue({ accepted: true }), size: vi.fn().mockReturnValue(1) };
+      // pool is missing (still building), but workQueue is available
+      const state = makeSchedulerState({ runnerPools: {}, workQueue: mockWorkQueue });
+      const opts = { ...makeBaseOpts(state, gatewayResult), statusTracker: statusTracker as any };
+
+      await setupGateway(opts);
+
+      const { controlDeps } = mockStartGateway.mock.calls[0][0];
       const result = await controlDeps.triggerAgent("dev");
-      expect(result).toBe('Agent "dev" not found');
+
+      expect(result).toHaveProperty("instanceId");
+      expect((result as any).instanceId).toMatch(/^dev-[0-9a-f]{8}$/);
+      expect(mockWorkQueue.enqueue).toHaveBeenCalledWith("dev", { type: 'manual', prompt: undefined });
     });
 
     it("returns error string when no available runner", async () => {
       const gatewayResult = makeGatewayResult();
       const statusTracker = { isPaused: vi.fn().mockReturnValue(false) };
       const pool = { getAvailableRunner: vi.fn().mockReturnValue(null) };
-      const state = makeSchedulerState({ runnerPools: { dev: pool } });
+      const schedulerCtx = { workQueue: { size: vi.fn().mockReturnValue(0) } } as any;
+      const state = makeSchedulerState({ runnerPools: { dev: pool }, schedulerCtx });
       const opts = { ...makeBaseOpts(state, gatewayResult), statusTracker: statusTracker as any };
 
       await setupGateway(opts);
@@ -428,7 +449,8 @@ describe("setupGateway", () => {
 
       const { controlDeps } = mockStartGateway.mock.calls[0][0];
       const result = await controlDeps.triggerAgent("unknown");
-      expect(result).toBe('Agent "unknown" config not found');
+      // Config check is now first — returns "not found" (not "config not found")
+      expect(result).toBe('Agent "unknown" not found');
     });
   });
 

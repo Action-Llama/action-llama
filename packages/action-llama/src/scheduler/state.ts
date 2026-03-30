@@ -9,10 +9,12 @@
 
 import type { Cron } from "croner";
 import type { RunnerPool } from "../execution/runner-pool.js";
-import type { SchedulerContext } from "../execution/execution.js";
+import type { SchedulerContext, WorkItem } from "../execution/execution.js";
+import type { WorkQueue } from "../shared/work-queue.js";
 
 export interface SchedulerState {
   runnerPools: Record<string, RunnerPool>;
   cronJobs: Cron[];
   schedulerCtx: SchedulerContext | null;
+  workQueue: WorkQueue<WorkItem> | null;
 }
