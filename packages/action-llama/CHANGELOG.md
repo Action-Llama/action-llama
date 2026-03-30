@@ -1,5 +1,15 @@
 # @action-llama/action-llama
 
+## 0.18.9
+
+### Patch Changes
+
+- [`830c50f`](https://github.com/Action-Llama/action-llama/commit/830c50f4de34abad98e38b245fccf79fefc16d11) Thanks [@asselstine](https://github.com/asselstine)! - `al push` now fails with a clear error when required credentials are missing locally, instead of silently creating empty placeholder directories on the remote server. Implicit credentials like `gateway_api_key` (which are auto-generated on the server) are exempt from this check. Run `al doctor` to set up missing credentials before pushing.
+
+- [`2861796`](https://github.com/Action-Llama/action-llama/commit/2861796c76e013c2d8781b1c3d7ad81b36a082b9) Thanks [@asselstine](https://github.com/asselstine)! - Fix host-user runtime environment so agents can connect to the gateway and find tools. Gateway URL now uses `localhost` instead of Docker-internal `gateway` hostname, bin scripts (`rlock`, `al-status`, etc.) are added to PATH, and the agent prompt correctly describes a writable filesystem with CWD instead of Docker-specific `/app/static` and read-only assumptions. Credential context references `$AL_CREDENTIALS_PATH` instead of the Docker volume mount at `/credentials/`.
+
+- [`3a1757e`](https://github.com/Action-Llama/action-llama/commit/3a1757ee77bdb044cf7fccb47dfa269d9308a124) Thanks [@asselstine](https://github.com/asselstine)! - Remove redundant `--creds-only`, `--files-only`, and `--all` flags from `al push`. The `--skip-creds` flag is sufficient since push only syncs two things (files and credentials) and there's no real use case for syncing only credentials without files.
+
 ## 0.18.8
 
 ### Patch Changes
