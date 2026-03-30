@@ -58,6 +58,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add .
           git commit -m "release: version packages"
+          git pull --rebase origin main
           git push
 
       - name: Publish to npm
