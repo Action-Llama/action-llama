@@ -370,3 +370,49 @@ describe("Gateway unregisterContainer releases locks and fails calls", () => {
     );
   });
 });
+
+// ── /jobs SPA route and path traversal prevention ────────────────────────────
+
+describe("Gateway /jobs SPA route and path traversal prevention", () => {
+  let gateway: any;
+  let frontendDist: string;
+  const logger = makeLogger();
+  const TEST_API_KEY = "test-key-jobs-999";
+
+  beforeAll(async () => {
+    frontendDist = createMockFrontendDist();
+    gateway = await startGateway({
+      port: 0,
+      logger,
+      apiKey: TEST_API_KEY,
+      webUI: true,
+      statusTracker: mockStatusTracker(),
+      frontendDistPath: frontendDist,
+    });
+  });
+
+  afterAll(async () => {
+    await gateway.close();
+    rmSync(frontendDist, { recursive: true, force: true });
+  });
+
+  it("serves index.html at /jobs", async () => {
+    const addr = gateway.server.address() as any;
+    const res = await fetch(`http://localhost:${addr.port}/jobs`);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('<div id="root">');
+    expect(res.headers.get("content-type")).toContain("text/html");
+  });
+
+  it("returns 404 for path traversal attempts on /assets/*", async () => {
+    const addr = gateway.server.address() as any;
+    // Try to escape the frontendDist directory
+    const res = await fetch(
+      `http://localhost:${addr.port}/assets/%2F..%2F..%2Fetc%2Fpasswd`,
+      { headers: { Authorization: `Bearer ${TEST_API_KEY}` } }
+    );
+    // Should return 404 (path traversal blocked)
+    expect(res.status).toBe(404);
+  });
+});
