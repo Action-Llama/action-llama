@@ -6,9 +6,6 @@ import type { PromptSkills } from "../agents/prompt.js";
 import { CONSTANTS } from "../shared/constants.js";
 import { createContainerRuntime, buildAgentImages } from "../execution/runtime-factory.js";
 import { setupWebhookRegistry, registerWebhookBindings } from "../events/webhook-setup.js";
-import { initTelemetry } from "../telemetry/index.js";
-import type { StateStore } from "../shared/state-store.js";
-import type { StatsStore } from "../stats/index.js";
 import type { WorkItem, SchedulerContext } from "../execution/execution.js";
 import { drainQueues, makeWebhookPrompt, executeRun, runWithReruns } from "../execution/execution.js";
 import { SchedulerEventBus } from "./events.js";
@@ -19,7 +16,9 @@ import { createRunnerPools } from "../execution/runner-setup.js";
 import { wireCallDispatcher } from "../execution/call-dispatcher.js";
 import { setupCronJobs, setupEnableDisableHandlers } from "../events/cron-setup.js";
 import { registerShutdownHandlers } from "./shutdown.js";
-import { loadBuiltinExtensions } from "../extensions/loader.js";
+import { loadDependencies } from "./dependencies.js";
+import { createPersistence } from "./persistence.js";
+import { recoverOrphanContainers } from "./orphan-recovery.js";
 
 export type { SchedulerContext, WorkItem } from "../execution/execution.js";
 export { SchedulerEventBus } from "./events.js";
@@ -31,29 +30,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   const globalConfig = globalConfigOverride || loadGlobalConfig(projectPath);
 
-  // Only load model extensions for providers actually referenced in config
-  const usedProviders = globalConfig.models
-    ? new Set(Object.values(globalConfig.models).map(m => m.provider))
-    : undefined;
-
-  try {
-    await loadBuiltinExtensions(undefined, usedProviders);
-    logger.info("Extensions loaded successfully");
-  } catch (error: any) {
-    logger.warn({ error: error.message }, "Failed to load extensions");
-  }
-
-  // Initialize telemetry if enabled
-  let telemetry: any;
-  if (globalConfig.telemetry?.enabled) {
-    try {
-      telemetry = initTelemetry(globalConfig.telemetry);
-      await telemetry.init();
-      logger.info("Telemetry initialized successfully");
-    } catch (error: any) {
-      logger.warn({ error: error.message }, "Failed to initialize telemetry");
-    }
-  }
+  // === Phase 1: Load dependencies (extensions + telemetry) ===
+  const { telemetry } = await loadDependencies(globalConfig, logger);
 
   // Discover agents and validate config
   const validated = await validateAndDiscover(projectPath, globalConfig, logger);
@@ -72,39 +50,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     statusTracker?.registerAgent(agentConfig.name, agentConfig.scale ?? 1, agentConfig.description);
   }
 
-  // Run database migrations and open the consolidated DB connection
-  const { runMigrations } = await import("../db/migrate.js");
-  const { resolve: resolvePath } = await import("path");
-  const { dbPath } = await import("../shared/paths.js");
-  const consolidatedDbPath = dbPath(projectPath);
-  const { fileURLToPath } = await import("url");
-  const migrationsFolder = resolvePath(
-    fileURLToPath(new URL("../../drizzle", import.meta.url))
-  );
-  const sharedDb = runMigrations(consolidatedDbPath, migrationsFolder);
-  logger.info("Database: SQLite (.al/action-llama.db)");
-
-  // Create persistent state store (using shared DB)
-  let stateStore: StateStore | undefined;
-  {
-    const { SqliteStateStore } = await import("../shared/state-store-sqlite.js");
-    stateStore = new SqliteStateStore(sharedDb);
-    logger.info("State store: SQLite (.al/action-llama.db)");
-  }
-
-  // Create stats store (using shared DB)
-  let statsStore: StatsStore | undefined;
-  {
-    const { StatsStore: StatsStoreClass } = await import("../stats/index.js");
-    statsStore = new StatsStoreClass(sharedDb);
-    // Auto-prune old data on startup
-    const retentionDays = globalConfig.historyRetentionDays ?? 14;
-    const pruned = statsStore.prune(retentionDays);
-    if (pruned.runs > 0 || pruned.callEdges > 0 || pruned.receipts > 0) {
-      logger.info({ prunedRuns: pruned.runs, prunedCallEdges: pruned.callEdges, prunedReceipts: pruned.receipts, retentionDays }, "Pruned old stats data");
-    }
-    logger.info("Stats store: SQLite (.al/action-llama.db)");
-  }
+  // === Phase 2: Create persistence layer (database, stores, work queue) ===
+  const { sharedDb, stateStore, statsStore, workQueue } = await createPersistence(projectPath, globalConfig, logger);
 
   // Create the lifecycle event bus
   const events = new SchedulerEventBus();
@@ -116,12 +63,9 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     schedulerCtx: null,
     workQueue: null,
   };
-
-  // Create work queue early (before Docker builds) so incoming webhooks can be queued
-  const queueSize = globalConfig.workQueueSize ?? globalConfig.webhookQueueSize ?? 20;
-  const { SqliteWorkQueue } = await import("../events/event-queue-sqlite.js");
-  const workQueue = new SqliteWorkQueue<WorkItem>(queueSize, sharedDb);
   state.workQueue = workQueue;
+
+  // === Phase 3: Create ingress (gateway + webhook bindings) ===
 
   // Start gateway early (before Docker builds) so users can see build status
   const { gateway, gatewayPort, registerContainer, unregisterContainer, setChatRuntime } = await setupGateway({
@@ -171,6 +115,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     }
   }
 
+  // === Phase 4: Create execution runtime (container runtime + images + runner pools) ===
+
   // Create the container runtime
   const { runtime, agentRuntimeOverrides } = await createContainerRuntime(
     globalConfig, activeAgentConfigs, logger,
@@ -217,115 +163,11 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   // Populate late-binding state
   Object.assign(state.runnerPools, runnerPools);
 
-  // Re-adopt orphan containers from a previous scheduler run (or clean up stale state)
-  try {
-    const ownAgentNames = new Set(activeAgentConfigs.map((a) => a.name));
-    const orphans = (await runtime.listRunningAgents()).filter((o) => ownAgentNames.has(o.agentName));
-
-    if (orphans.length > 0) {
-      const registeredContainers = gateway.containerRegistry.listAll();
-      const runningNames = new Set(orphans.map((o) => o.taskId));
-      let adopted = 0;
-      let killed = 0;
-
-      for (const orphan of orphans) {
-        const found = gateway.containerRegistry.findByContainerName(orphan.taskId);
-
-        if (!found) {
-          // Container exists but has no registry entry — unknown, kill it
-          logger.warn({ agent: orphan.agentName, task: orphan.taskId }, "killing unregistered orphan container");
-          try { await runtime.kill(orphan.taskId); await runtime.remove(orphan.taskId); } catch {}
-          killed++;
-          continue;
-        }
-
-        const { secret: oldSecret, reg } = found;
-        const pool = runnerPools[orphan.agentName];
-        if (!pool) {
-          logger.warn({ agent: orphan.agentName, task: orphan.taskId }, "no runner pool for orphan, killing");
-          try { await runtime.kill(orphan.taskId); await runtime.remove(orphan.taskId); } catch {}
-          gateway.lockStore.releaseAll(reg.instanceId);
-          await gateway.containerRegistry.unregister(oldSecret);
-          killed++;
-          continue;
-        }
-
-        // Get shutdown secret from container env vars
-        let shutdownSecret: string | undefined;
-        if (runtime.inspectContainer) {
-          const info = await runtime.inspectContainer(orphan.taskId);
-          shutdownSecret = info?.env?.SHUTDOWN_SECRET;
-        }
-
-        if (!shutdownSecret) {
-          logger.warn({ agent: orphan.agentName, task: orphan.taskId }, "cannot read SHUTDOWN_SECRET from orphan, killing");
-          try { await runtime.kill(orphan.taskId); await runtime.remove(orphan.taskId); } catch {}
-          gateway.lockStore.releaseAll(reg.instanceId);
-          await gateway.containerRegistry.unregister(oldSecret);
-          killed++;
-          continue;
-        }
-
-        const runner = pool.getAvailableRunner();
-        if (!runner) {
-          logger.warn({ agent: orphan.agentName, task: orphan.taskId }, "no available runner for orphan, killing");
-          try { await runtime.kill(orphan.taskId); await runtime.remove(orphan.taskId); } catch {}
-          gateway.lockStore.releaseAll(reg.instanceId);
-          await gateway.containerRegistry.unregister(oldSecret);
-          killed++;
-          continue;
-        }
-
-        // Unregister old secret mapping — will be re-registered inside adoptContainer
-        await gateway.containerRegistry.unregister(oldSecret);
-
-        logger.info({ agent: orphan.agentName, task: orphan.taskId, instance: reg.instanceId }, "re-adopting orphan container");
-
-        const containerRunner = runner as any;
-        if (typeof containerRunner.adoptContainer === "function") {
-          containerRunner
-            .adoptContainer(orphan.taskId, shutdownSecret, reg.instanceId, { type: "schedule" as const, source: "re-adopted" })
-            .then(() => { if (state.schedulerCtx) drainQueues(state.schedulerCtx); })
-            .catch((err: any) => logger.error({ err, agent: orphan.agentName }, "orphan re-adoption failed"));
-          adopted++;
-        } else {
-          logger.warn({ agent: orphan.agentName }, "runner does not support adoption, killing orphan");
-          try { await runtime.kill(orphan.taskId); await runtime.remove(orphan.taskId); } catch {}
-          killed++;
-        }
-      }
-
-      // Clean up registry entries for containers that exited while scheduler was down
-      for (const reg of registeredContainers) {
-        if (!runningNames.has(reg.containerName)) {
-          const found = gateway.containerRegistry.findByContainerName(reg.containerName);
-          if (found) {
-            gateway.lockStore.releaseAll(reg.instanceId);
-            await gateway.containerRegistry.unregister(found.secret);
-            logger.info({ agent: reg.agentName, instance: reg.instanceId }, "cleaned up stale registration (container exited while scheduler was down)");
-          }
-        }
-      }
-
-      logger.info({ adopted, killed, total: orphans.length }, "orphan container handling complete");
-    } else {
-      // No running containers — clean up all stale registry entries
-      const staleEntries = gateway.containerRegistry.listAll();
-      if (staleEntries.length > 0) {
-        let releasedLocks = 0;
-        for (const entry of staleEntries) {
-          releasedLocks += gateway.lockStore.releaseAll(entry.instanceId);
-        }
-        await gateway.containerRegistry.clear();
-        logger.info(
-          { releasedLocks, staleRegistrations: staleEntries.length },
-          "cleaned up stale registrations (no running containers)",
-        );
-      }
-    }
-  } catch (err) {
-    logger.debug({ err }, "orphan detection/re-adoption skipped (runtime does not support listing)");
-  }
+  // === Phase 5: Recover previous state (orphan containers) ===
+  await recoverOrphanContainers({
+    runtime, gateway, runnerPools, activeAgentConfigs,
+    schedulerState: state, logger,
+  });
 
   // Create scheduler context (work queue was already created early above)
   const skills: PromptSkills = { locking: true };
@@ -339,6 +181,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // Populate late-binding state
   state.schedulerCtx = schedulerCtx;
+
+  // === Phase 6: Wire triggers (cron + webhook + call dispatcher) ===
 
   // Wire up call dispatcher
   wireCallDispatcher(gateway, schedulerCtx, statusTracker);
@@ -376,6 +220,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     setupEnableDisableHandlers({ statusTracker, agentCronJobs, logger });
   }
 
+  // === Phase 7: Start background services (queue drain + watcher + shutdown) ===
+
   // Drain persisted queue items
   drainQueues(schedulerCtx).catch((err) => {
     logger.error({ err }, "initial queue drain failed");
@@ -398,4 +244,3 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   return { cronJobs, runnerPools, gateway, webhookRegistry, webhookUrls, statusTracker, schedulerCtx, events };
 }
-
