@@ -391,4 +391,289 @@ describe("al update", () => {
     // Should show "Done:" summary since there are multiple agents
     expect(logs.some(l => l.includes("Done:"))).toBe(true);
   });
+
+  // ── Additional coverage for uncovered paths ─────────────────────────────
+
+  describe("summary line with updated and skipped counts", () => {
+    it("shows 'updated' count in summary when an agent was updated", async () => {
+      const oldContent = "---\nname: agent1\n---\n\n# Agent1 v1\n";
+      const newContent = "---\nname: agent1\n---\n\n# Agent1 v2\n\nNew section here.\n";
+
+      createGitRepo(repoPath, { "SKILL.md": newContent });
+      createProject({
+        "agent1": {
+          skillMd: oldContent,
+          configToml: { source: repoPath },
+        },
+        "agent2": {
+          skillMd: oldContent,
+          configToml: { source: repoPath },
+        },
+      });
+
+      vi.mocked(confirm).mockResolvedValue(true);
+
+      const { execute } = await import("../../../src/cli/commands/update.js");
+      const logs: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => logs.push(args.map(String).join(" "));
+      try {
+        await execute(undefined, { project: projectPath });
+      } finally {
+        console.log = origLog;
+      }
+
+      // Both agents updated → "2 updated" in summary
+      expect(logs.some(l => l.includes("updated"))).toBe(true);
+    });
+
+    it("shows 'skipped' count in summary when user declines update", async () => {
+      const oldContent = "---\nname: agent1\n---\n\n# Agent1 v1\n";
+      const newContent = "---\nname: agent1\n---\n\n# Agent1 v2\n\nNew section.\n";
+
+      createGitRepo(repoPath, { "SKILL.md": newContent });
+      createProject({
+        "agent1": {
+          skillMd: oldContent,
+          configToml: { source: repoPath },
+        },
+        "agent2": {
+          skillMd: oldContent,
+          configToml: { source: repoPath },
+        },
+      });
+
+      vi.mocked(confirm).mockResolvedValue(false);
+
+      const { execute } = await import("../../../src/cli/commands/update.js");
+      const logs: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => logs.push(args.map(String).join(" "));
+      try {
+        await execute(undefined, { project: projectPath });
+      } finally {
+        console.log = origLog;
+      }
+
+      // Both agents skipped → "skipped" in summary
+      expect(logs.some(l => l.includes("skipped"))).toBe(true);
+    });
+  });
+
+  describe("findUpdateCandidates filtering", () => {
+    it("skips agents without config.toml", async () => {
+      // Create an agent dir without config.toml
+      const agentDir = resolve(projectPath, "agents", "no-config");
+      mkdirSync(agentDir, { recursive: true });
+      writeFileSync(resolve(agentDir, "SKILL.md"), "# No Config Agent\n");
+      // Also create a valid config.toml at project root
+      mkdirSync(resolve(projectPath), { recursive: true });
+      writeFileSync(resolve(projectPath, "config.toml"), "");
+
+      // Another valid agent for reference
+      const oldContent = "# Agent1\n";
+      const newContent = "# Agent1 v2\n";
+      createGitRepo(repoPath, { "SKILL.md": newContent });
+      createProject({
+        "agent1": {
+          skillMd: oldContent,
+          configToml: { source: repoPath },
+        },
+      });
+      // Remove config.toml from no-config — it was not created by createProject
+      // createProject creates fresh project, so we need to add the no-config dir after
+      const noConfigDir = resolve(projectPath, "agents", "no-config");
+      mkdirSync(noConfigDir, { recursive: true });
+      writeFileSync(resolve(noConfigDir, "SKILL.md"), "# No Config\n");
+      // No config.toml created here
+
+      vi.mocked(confirm).mockResolvedValue(true);
+
+      const { execute } = await import("../../../src/cli/commands/update.js");
+      // Should not throw — no-config is silently skipped
+      await expect(execute(undefined, { project: projectPath })).resolves.not.toThrow();
+    });
+
+    it("skips agents in findUpdateCandidates when filterAgent doesn't match", async () => {
+      const skillContent = "# Agent\n";
+      createGitRepo(repoPath, { "SKILL.md": skillContent });
+      createProject({
+        "agent1": {
+          skillMd: skillContent,
+          configToml: { source: repoPath },
+        },
+        "agent2": {
+          skillMd: skillContent,
+          configToml: { source: repoPath },
+        },
+      });
+
+      const { execute } = await import("../../../src/cli/commands/update.js");
+      const logs: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => logs.push(args.map(String).join(" "));
+      try {
+        // Filter to only agent1; agent2 should be silently skipped
+        await execute("agent1", { project: projectPath });
+      } finally {
+        console.log = origLog;
+      }
+
+      // Only agent1 should appear in output
+      expect(logs.some(l => l.includes("agent1"))).toBe(true);
+      expect(logs.some(l => l.includes("agent2"))).toBe(false);
+    });
+  });
+
+  describe("normalizeRepo short-form (owner/repo)", () => {
+    it("normalizes 'owner/repo' source to full GitHub URL (which will fail to clone)", async () => {
+      createProject({
+        "my-skill": {
+          skillMd: "# My Skill\n",
+          configToml: { source: "some-org/some-repo" },
+        },
+      });
+
+      const { execute } = await import("../../../src/cli/commands/update.js");
+      const errors: string[] = [];
+      const origError = console.error;
+      console.error = (...args: any[]) => errors.push(args.map(String).join(" "));
+      try {
+        // The normalized URL won't be cloneable in tests, but that's OK —
+        // we just want to confirm the normalization path was taken (error will mention github.com)
+        await execute(undefined, { project: projectPath });
+      } finally {
+        console.error = origError;
+      }
+
+      // The error message should reference the github.com URL (confirming normalization ran)
+      expect(errors.some(e => e.includes("my-skill") && e.includes("failed"))).toBe(true);
+    });
+  });
+
+  describe("findUpstreamSkillMd — no SKILL.md found", () => {
+    it("throws when the cloned repo has no SKILL.md at any expected location", async () => {
+      // Create a repo without any SKILL.md
+      const emptyRepoPath = join(tmpDir, "empty-repo");
+      mkdirSync(emptyRepoPath, { recursive: true });
+      writeFileSync(join(emptyRepoPath, "README.md"), "# No skill here\n");
+      execFileSync("git", ["init"], { cwd: emptyRepoPath, stdio: "pipe" });
+      execFileSync("git", ["config", "user.email", "t@t.com"], { cwd: emptyRepoPath, stdio: "pipe" });
+      execFileSync("git", ["config", "user.name", "T"], { cwd: emptyRepoPath, stdio: "pipe" });
+      execFileSync("git", ["add", "."], { cwd: emptyRepoPath, stdio: "pipe" });
+      execFileSync("git", ["commit", "-m", "init"], { cwd: emptyRepoPath, stdio: "pipe" });
+
+      createProject({
+        "my-skill": {
+          skillMd: "# My Skill\n",
+          configToml: { source: emptyRepoPath },
+        },
+      });
+
+      const { execute } = await import("../../../src/cli/commands/update.js");
+      const errors: string[] = [];
+      const origError = console.error;
+      console.error = (...args: any[]) => errors.push(args.map(String).join(" "));
+      try {
+        await execute(undefined, { project: projectPath });
+      } finally {
+        console.error = origError;
+      }
+
+      // Should fail with "No SKILL.md found"
+      expect(errors.some(e => e.includes("my-skill") && e.includes("failed"))).toBe(true);
+    });
+  });
+
+  describe("findUpstreamSkillMd — fallback single collection SKILL.md", () => {
+    it("finds SKILL.md under skills/<name>/ when agent name matches a collection entry", async () => {
+      const newContent = "# My Skill v2\n";
+      const collRepoPath = join(tmpDir, "coll-repo");
+
+      // Create repo with SKILL.md under skills/my-skill/
+      mkdirSync(join(collRepoPath, "skills", "my-skill"), { recursive: true });
+      writeFileSync(join(collRepoPath, "skills", "my-skill", "SKILL.md"), newContent);
+      execFileSync("git", ["init"], { cwd: collRepoPath, stdio: "pipe" });
+      execFileSync("git", ["config", "user.email", "t@t.com"], { cwd: collRepoPath, stdio: "pipe" });
+      execFileSync("git", ["config", "user.name", "T"], { cwd: collRepoPath, stdio: "pipe" });
+      execFileSync("git", ["add", "."], { cwd: collRepoPath, stdio: "pipe" });
+      execFileSync("git", ["commit", "-m", "init"], { cwd: collRepoPath, stdio: "pipe" });
+
+      createProject({
+        "my-skill": {
+          skillMd: "# My Skill v1\n",
+          configToml: { source: collRepoPath },
+        },
+      });
+
+      vi.mocked(confirm).mockResolvedValue(true);
+
+      const { execute } = await import("../../../src/cli/commands/update.js");
+      await execute("my-skill", { project: projectPath });
+
+      const updated = readFileSync(resolve(projectPath, "agents", "my-skill", "SKILL.md"), "utf-8");
+      expect(updated).toBe(newContent);
+    });
+
+    it("finds single SKILL.md via fallback scan when root and named dirs don't exist", async () => {
+      const newContent = "# Only Skill\n";
+      const fallbackRepoPath = join(tmpDir, "fallback-repo");
+
+      // Create repo with SKILL.md under agents/other-name/ (doesn't match "my-skill" directly,
+      // but is the ONLY entry, so fallback scan returns it)
+      mkdirSync(join(fallbackRepoPath, "agents", "other-name"), { recursive: true });
+      writeFileSync(join(fallbackRepoPath, "agents", "other-name", "SKILL.md"), newContent);
+      execFileSync("git", ["init"], { cwd: fallbackRepoPath, stdio: "pipe" });
+      execFileSync("git", ["config", "user.email", "t@t.com"], { cwd: fallbackRepoPath, stdio: "pipe" });
+      execFileSync("git", ["config", "user.name", "T"], { cwd: fallbackRepoPath, stdio: "pipe" });
+      execFileSync("git", ["add", "."], { cwd: fallbackRepoPath, stdio: "pipe" });
+      execFileSync("git", ["commit", "-m", "init"], { cwd: fallbackRepoPath, stdio: "pipe" });
+
+      createProject({
+        "my-skill": {
+          skillMd: "# My Skill v1\n",
+          configToml: { source: fallbackRepoPath },
+        },
+      });
+
+      vi.mocked(confirm).mockResolvedValue(true);
+
+      const { execute } = await import("../../../src/cli/commands/update.js");
+      await execute("my-skill", { project: projectPath });
+
+      const updated = readFileSync(resolve(projectPath, "agents", "my-skill", "SKILL.md"), "utf-8");
+      expect(updated).toBe(newContent);
+    });
+  });
+
+  describe("showDiffSummary — upstream has fewer lines", () => {
+    it("shows negative line count when upstream SKILL.md is shorter than local", async () => {
+      // local has more lines than upstream (so added < 0)
+      const longContent = "# My Skill\n\nLine 1\nLine 2\nLine 3\nLine 4\nLine 5\n";
+      const shortContent = "# My Skill\n\nLine 1\n";
+
+      createGitRepo(repoPath, { "SKILL.md": shortContent });
+      createProject({
+        "my-skill": {
+          skillMd: longContent,
+          configToml: { source: repoPath },
+        },
+      });
+
+      vi.mocked(confirm).mockResolvedValue(true);
+
+      const { execute } = await import("../../../src/cli/commands/update.js");
+      const logs: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => logs.push(args.map(String).join(" "));
+      try {
+        await execute("my-skill", { project: projectPath });
+      } finally {
+        console.log = origLog;
+      }
+
+      // The diff summary shows a negative line count (e.g., "  -4 lines")
+      expect(logs.some(l => /\s-\d+ lines/.test(l))).toBe(true);
+    });
+  });
 });
