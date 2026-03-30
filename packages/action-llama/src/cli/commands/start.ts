@@ -12,6 +12,10 @@ import { credentialExists } from "../../shared/credentials.js";
 import { ConfigError } from "../../shared/errors.js";
 
 export async function execute(opts: { project: string; env?: string; headless?: boolean; webUi?: boolean; expose?: boolean; port?: number }): Promise<void> {
+  // The scheduler registers multiple cleanup handlers (TUI, gateway, cron, telemetry, etc.)
+  // which collectively exceed Node's default limit of 10 per event.
+  process.setMaxListeners(20);
+
   const projectPath = resolve(opts.project);
 
   // Guard: refuse to run if the project path looks like an agent directory
