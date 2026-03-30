@@ -5,6 +5,7 @@ import type { Runtime, RuntimeCredentials } from "../docker/runtime.js";
 import type { ContainerRegistration } from "../execution/types.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import type { RunResult, RunOutcome } from "./runner.js";
+import { DEFAULT_AGENT_TIMEOUT } from "../shared/constants.js";
 import { withSpan, getTelemetry } from "../telemetry/index.js";
 import { SpanKind } from "@opentelemetry/api";
 import type { TokenUsage } from "../shared/usage.js";
@@ -176,7 +177,7 @@ export class ContainerAgentRunner {
     let logStream: { stop: () => void } | undefined;
 
     try {
-      const timeout = this.agentConfig.timeout ?? this.globalConfig.local?.timeout ?? 900;
+      const timeout = this.agentConfig.timeout ?? this.globalConfig.local?.timeout ?? DEFAULT_AGENT_TIMEOUT;
 
       // Re-register with gateway so locks/shutdown/calls route correctly
       if (this.gatewayUrl) {
@@ -311,7 +312,7 @@ export class ContainerAgentRunner {
     let logStream: { stop: () => void } | undefined;
 
     try {
-      const timeout = this.agentConfig.timeout ?? this.globalConfig.local?.timeout ?? 900;
+      const timeout = this.agentConfig.timeout ?? this.globalConfig.local?.timeout ?? DEFAULT_AGENT_TIMEOUT;
 
       // Resolve credential refs — include provider keys for all models in the chain
       const credRefs = [...new Set(this.agentConfig.credentials)];

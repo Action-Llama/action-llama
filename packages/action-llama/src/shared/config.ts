@@ -142,7 +142,7 @@ export interface AgentConfig {
   hooks?: AgentHooks;
   params?: Record<string, unknown>;
   scale?: number; // Number of concurrent runs allowed (default: 1)
-  timeout?: number; // Max runtime in seconds (falls back to global local.timeout, then 900)
+  timeout?: number; // Max runtime in seconds (falls back to global local.timeout, then DEFAULT_AGENT_TIMEOUT)
   license?: string;
   compatibility?: string;
   runtime?: AgentRuntimeType;
