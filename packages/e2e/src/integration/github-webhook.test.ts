@@ -281,6 +281,74 @@ describe.skipIf(!DOCKER)("integration: GitHub webhook provider", { timeout: 300_
     expect(res.status).toBe(401);
   });
 
+  it("duplicate webhook delivery ID is rejected with duplicate:true", async () => {
+    // When the same X-GitHub-Delivery ID is received twice, the webhook
+    // system checks the stats store and short-circuits on the duplicate.
+    // The second delivery should return { ok: true, matched: 0, duplicate: true }.
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "dedup-agent",
+          webhooks: [{ source: "github", events: ["issues"] }],
+          testScript: "#!/bin/sh\necho 'dedup-agent ran'\nexit 0\n",
+        },
+      ],
+      globalConfig: {
+        webhooks: { github: { type: "github", allowUnsigned: true } },
+      },
+    });
+
+    await harness.start();
+
+    const deliveryId = `dedup-test-delivery-${Date.now()}`;
+    const payload = {
+      action: "opened",
+      issue: {
+        number: 42,
+        title: "Duplicate delivery test issue",
+        html_url: "https://github.com/acme/app/issues/42",
+        user: { login: "tester" },
+        labels: [],
+      },
+      repository: { full_name: "acme/app" },
+      sender: { login: "tester" },
+    };
+
+    // First delivery — should succeed and trigger the agent
+    const res1 = await fetch(`http://127.0.0.1:${harness.gatewayPort}/webhooks/github`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-GitHub-Event": "issues",
+        "X-GitHub-Delivery": deliveryId,
+      },
+      body: JSON.stringify(payload),
+    });
+    expect(res1.ok).toBe(true);
+    const body1 = await res1.json();
+    expect(body1.matched).toBeGreaterThanOrEqual(1);
+
+    // Wait for the first run to complete
+    const run = await harness.waitForRunResult("dedup-agent");
+    expect(run.result).toBe("completed");
+
+    // Second delivery with the same ID — should be deduplicated
+    const res2 = await fetch(`http://127.0.0.1:${harness.gatewayPort}/webhooks/github`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-GitHub-Event": "issues",
+        "X-GitHub-Delivery": deliveryId,
+      },
+      body: JSON.stringify(payload),
+    });
+    expect(res2.ok).toBe(true);
+    const body2 = await res2.json();
+    // Duplicate deliveries are short-circuited
+    expect(body2.duplicate).toBe(true);
+    expect(body2.matched).toBe(0);
+  });
+
   it("GitHub ping event is silently ignored — returns ok:true with matched:0", async () => {
     // GitHub sends a 'ping' event when a webhook is first configured.
     // The GitHub provider's parseEvent() returns null for ping events,
