@@ -88,3 +88,4 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Control kill-agent 404 and stats run null — POST /control/agents/:name/kill for nonexistent agent → 404; GET /api/stats/agents/:name/runs/:instanceId for unknown instanceId → { run: null } 200 (control.test.ts, stats-jobs.test.ts)
 - [x] Dashboard API for agent-triggered runs — parentEdge and callerAgent/callDepth fields populated when callee was triggered via al-subagent; stats/store queryCallEdgeByTargetInstance exercised (dashboard-agent-trigger-api.test.ts)
 - [x] Dashboard API for webhook-triggered runs — webhookReceipt in instance detail and webhook field in trigger detail populated for webhook-triggered runs (dashboard-webhook-trigger-api.test.ts)
+- [x] Activity endpoint triggerSource from webhook — webhook-triggered activity row has triggerSource populated via stats/store getWebhookSourcesBatch batch lookup (stats-activity-filters.test.ts)

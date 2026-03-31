@@ -287,5 +287,51 @@ describe.skipIf(!DOCKER)(
       expect(Array.isArray(body.jobs)).toBe(true);
       expect(body.total).toBeGreaterThanOrEqual(1);
     });
+
+    it("webhook-triggered activity row has triggerSource populated via getWebhookSourcesBatch", async () => {
+      // When an agent is triggered by a webhook, the activity endpoint enriches
+      // the row's triggerSource field with the webhook source name via
+      // stats/store.ts getWebhookSourcesBatch (batch lookup by receipt IDs).
+      harness = await IntegrationHarness.create({
+        agents: [
+          {
+            name: "webhook-source-agent",
+            webhooks: [{ source: "wh-source-test" }],
+            testScript: "#!/bin/sh\necho 'ran'\nexit 0\n",
+          },
+        ],
+        globalConfig: {
+          webhooks: { "wh-source-test": { type: "test", allowUnsigned: true } },
+        },
+      });
+
+      await harness.start();
+
+      // Trigger via webhook
+      const wh = await harness.sendWebhook({
+        source: "wh-source-test",
+        event: "push",
+        sender: "tester",
+        repo: "test/repo",
+      });
+      expect(wh.ok).toBe(true);
+
+      await harness.waitForRunResult("webhook-source-agent", 120_000);
+      await new Promise((r) => setTimeout(r, 500));
+
+      // Fetch activity and verify the webhook row has triggerSource set
+      const res = await statsAPI(
+        harness,
+        "/api/stats/activity?agent=webhook-source-agent&triggerType=webhook",
+      );
+      expect(res.status).toBe(200);
+      const actBody = await res.json() as { rows: Array<Record<string, unknown>>; total: number };
+      expect(actBody.total).toBeGreaterThanOrEqual(1);
+
+      // The triggerSource should be the source name from the webhook receipt
+      const row = actBody.rows[0]!;
+      // triggerSource is enriched from stats store webhook receipt via getWebhookSourcesBatch
+      expect(row.triggerSource).toBeTruthy();
+    });
   },
 );
