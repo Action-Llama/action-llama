@@ -161,6 +161,19 @@ describe("POST /control/stop", () => {
     const body = await res.json();
     expect(body.error).toContain("Stop not available");
   });
+
+  it("still returns 200 when stopScheduler rejects after the response (.catch path)", async () => {
+    // stopScheduler is called inside setTimeout, and its rejection is silently swallowed by .catch(() => {})
+    const stopScheduler = vi.fn().mockRejectedValue(new Error("stop failed"));
+    const { app } = setup({ stopScheduler });
+    const res = await app.request("/control/stop", { method: "POST" });
+    // Response is sent BEFORE stopScheduler resolves/rejects
+    expect(res.status).toBe(200);
+    // Wait for the setTimeout + rejection to propagate (100ms timeout + buffer)
+    await new Promise((r) => setTimeout(r, 150));
+    // No error should have propagated — the .catch(() => {}) swallows it
+    expect(stopScheduler).toHaveBeenCalled();
+  });
 });
 
 describe("POST /control/trigger/:name", () => {

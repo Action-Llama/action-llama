@@ -303,6 +303,29 @@ describe("drainQueues", () => {
     expect(runner.run).not.toHaveBeenCalled();
   });
 
+  it("breaks when dequeue returns undefined before all runners are exhausted (more runners than items)", async () => {
+    // Two runners but only one queued item — the second runner iteration should break
+    const runner1 = makeRunner({ instanceId: "a-1" });
+    const runner2 = makeRunner({ instanceId: "a-2" });
+    const config = makeAgentConfig("a");
+    const ctx = makeCtx({
+      agentConfigs: [config],
+      runnerPools: { a: new RunnerPool([runner1, runner2]) },
+    });
+
+    // Only one item in the queue, but two available runners
+    ctx.workQueue.enqueue("a", {
+      type: "webhook",
+      context: { event: "push", action: "", payload: {}, headers: {}, source: "github" } as any,
+    });
+
+    await drainQueues(ctx);
+
+    // runner1 should have fired the item, runner2 should not have been used (queue empty → break)
+    expect(runner1.run).toHaveBeenCalledOnce();
+    expect(runner2.run).not.toHaveBeenCalled();
+  });
+
   it("skips queued work for disabled agents", async () => {
     const runner = makeRunner({ instanceId: "a" });
     const config = makeAgentConfig("a");

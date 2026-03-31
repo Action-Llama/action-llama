@@ -750,4 +750,41 @@ describe("setupWebhookRegistry — Twitter auto-subscribe", () => {
     // listCredentialInstances should not have been called for test provider
     expect(mockedListCredentialInstances).not.toHaveBeenCalled();
   });
+
+  it("logs warning when twitterAutoSubscribe rejects (.catch path)", async () => {
+    const logger = makeLogger();
+    const mockedTwitterAutoSubscribe = vi.mocked(twitterSubscribeMod.twitterAutoSubscribe);
+    const subscribeError = new Error("Twitter subscribe failed");
+    mockedTwitterAutoSubscribe.mockRejectedValueOnce(subscribeError);
+
+    // Provide all required credentials for Twitter auto-subscribe
+    mockedLoadCredentialField.mockImplementation((_type, _inst, field) => {
+      const values: Record<string, string> = {
+        bearer_token: "bearer-abc",
+        access_token: "access-xyz",
+        refresh_token: "refresh-123",
+        client_id: "client-id-456",
+        client_secret: "client-secret-789",
+      };
+      return Promise.resolve(values[field]);
+    });
+
+    await setupWebhookRegistry(
+      {
+        webhooks: {
+          "my-twitter": { type: "twitter", x_twitter_api: "default", x_twitter_user_oauth2: "default" },
+        },
+      } as any,
+      logger
+    );
+
+    // Wait for the async .catch() to fire
+    await new Promise((r) => setTimeout(r, 20));
+
+    // The .catch() callback logs a warning with the error
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: subscribeError }),
+      "Twitter auto-subscribe failed"
+    );
+  });
 });
