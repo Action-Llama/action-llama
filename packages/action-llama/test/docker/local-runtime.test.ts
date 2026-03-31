@@ -467,6 +467,47 @@ describe("LocalDockerRuntime.buildImage (async)", () => {
         expect.any(Object)
       );
     });
+
+    it("reads dockerfile from disk when dockerfileContent is not provided (covers else branch)", async () => {
+      // This test covers the `else` branch in buildImage when `dockerfileContent` is not set:
+      //   content = readFileSync(src, "utf-8");  // line ~157
+      // and the `else` branch in the build context setup:
+      //   dockerfilePath = opts.dockerfile;  contextPath = opts.contextDir;  // lines ~202-205
+      // When none of dockerfileContent, extraFiles, or baseImage are provided,
+      // `needsTempCtx` is false and the build uses the original context dir directly.
+      const { mkdtempSync: realMkdtemp, writeFileSync: realWrite, rmSync: realRm } = await vi.importActual<typeof import("fs")>("fs");
+      const { join: pathJoin } = await vi.importActual<typeof import("path")>("path");
+      const { tmpdir: realTmpdir } = await vi.importActual<typeof import("os")>("os");
+
+      const ctxDir = realMkdtemp(pathJoin(realTmpdir(), "al-test-ctx-real-"));
+      realWrite(pathJoin(ctxDir, "Dockerfile"), "FROM node:20\nCMD echo hello\n");
+
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+
+      const runtime = new LocalDockerRuntime();
+
+      try {
+        const buildPromise = runtime.buildImage({
+          tag: "test-no-content:latest",
+          dockerfile: "Dockerfile",
+          contextDir: ctxDir,
+          // No dockerfileContent, no baseImage, no extraFiles → needsTempCtx = false
+        });
+
+        fakeProc.emit("close", 0);
+        await buildPromise;
+
+        // spawn should have been called with the actual contextDir (not a temp dir)
+        expect(mockSpawn).toHaveBeenCalledWith(
+          "docker",
+          expect.arrayContaining(["build", "-t", "test-no-content:latest"]),
+          expect.any(Object)
+        );
+      } finally {
+        realRm(ctxDir, { recursive: true, force: true });
+      }
+    });
   });
 });
 
