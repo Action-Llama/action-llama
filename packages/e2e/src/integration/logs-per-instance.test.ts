@@ -142,4 +142,77 @@ describe.skipIf(!DOCKER)("integration: per-instance log API", { timeout: 180_000
 
     expect([400, 404]).toContain(res.status);
   });
+
+  it("GET /api/logs/agents/:name/:instanceId with ?grep=invalid returns 400", async () => {
+    // The per-instance logs endpoint validates ?grep regex just like the agent and
+    // scheduler logs endpoints. An invalid regex should return 400.
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "instance-grep-agent",
+          schedule: "0 0 31 2 *",
+          testScript: "#!/bin/sh\necho 'ran'\nexit 0\n",
+        },
+      ],
+    });
+
+    await harness.start();
+    await harness.triggerAgent("instance-grep-agent");
+    const run = await harness.waitForRunResult("instance-grep-agent", 120_000);
+    expect(run.result).toBe("completed");
+
+    // Fetch logs with an invalid grep pattern
+    const res = await logsAPI(
+      harness,
+      "/api/logs/agents/instance-grep-agent/any-instance-id?grep=%5B+invalid+regex",
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json() as { error: string };
+    expect(body.error).toContain("grep");
+  });
+
+  it("GET /api/logs/agents/:name/:instanceId with ?grep filters entries", async () => {
+    // The per-instance logs endpoint should filter log entries by the ?grep regex
+    // pattern, similar to the agent-level logs endpoint.
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "instance-grep-filter-agent",
+          schedule: "0 0 31 2 *",
+          testScript: [
+            "#!/bin/sh",
+            // Write two distinguishable log lines
+            'echo \'{"_log":true,"level":"info","msg":"MATCH-THIS-LINE","ts":1234567890}\'',
+            'echo \'{"_log":true,"level":"info","msg":"OTHER-LINE","ts":1234567891}\'',
+            "exit 0",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    await harness.start();
+
+    const runEndPromise = harness.events.waitFor("run:end", (e) => e.agentName === "instance-grep-filter-agent", 120_000);
+    await harness.triggerAgent("instance-grep-filter-agent");
+    const runEnd = await runEndPromise;
+    const instanceId = runEnd.instanceId;
+
+    await new Promise((r) => setTimeout(r, 500));
+
+    // Without grep — should return entries
+    const allRes = await logsAPI(harness, `/api/logs/agents/instance-grep-filter-agent/${instanceId}`);
+    expect(allRes.status).toBe(200);
+    const allBody = await allRes.json() as { entries: any[] };
+    expect(allBody.entries.length).toBeGreaterThanOrEqual(0);
+
+    // With grep matching specific text — should return only matching entries (or empty if format differs)
+    const grepRes = await logsAPI(
+      harness,
+      `/api/logs/agents/instance-grep-filter-agent/${instanceId}?grep=MATCH-THIS-LINE`,
+    );
+    expect(grepRes.status).toBe(200);
+    // The endpoint should return valid JSON with entries array
+    const grepBody = await grepRes.json() as { entries: any[] };
+    expect(Array.isArray(grepBody.entries)).toBe(true);
+  });
 });

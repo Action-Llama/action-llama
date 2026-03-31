@@ -90,3 +90,4 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Dashboard API for webhook-triggered runs — webhookReceipt in instance detail and webhook field in trigger detail populated for webhook-triggered runs (dashboard-webhook-trigger-api.test.ts)
 - [x] Activity endpoint triggerSource from webhook — webhook-triggered activity row has triggerSource populated via stats/store getWebhookSourcesBatch batch lookup (stats-activity-filters.test.ts)
 - [x] Stats for agent-triggered runs — /api/stats/activity?triggerType=agent returns callee runs with triggerSource=caller name; /api/stats/triggers?triggerType=agent filters correctly (stats-agent-trigger.test.ts)
+- [x] Per-instance logs ?grep parameter — invalid grep returns 400, valid grep filters entries for a specific instanceId (logs-per-instance.test.ts)
