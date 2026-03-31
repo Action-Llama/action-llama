@@ -301,4 +301,33 @@ describe("Extension Loader", () => {
       expect(registry).toBe(globalRegistry);
     });
   });
+
+  describe("loadBuiltinExtensions — outer catch block", () => {
+    it("logs error and rethrows when Object.assign(globalRegistry, registry) throws", async () => {
+      // Spy on Object.assign to make the registry merge step fail.
+      // This exercises the outer try-catch in loadBuiltinExtensions (stmts 8-9).
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const origAssign = Object.assign;
+      // Replace Object.assign with a function that throws on the first call
+      let called = false;
+      Object.assign = function(target: any, ...sources: any[]) {
+        if (!called) {
+          called = true;
+          throw new Error("simulated assign failure");
+        }
+        return origAssign(target, ...sources);
+      } as any;
+
+      try {
+        await expect(loadBuiltinExtensions()).rejects.toThrow("simulated assign failure");
+        expect(errorSpy).toHaveBeenCalledWith(
+          "Failed to load built-in extensions:",
+          expect.any(Error)
+        );
+      } finally {
+        Object.assign = origAssign;
+        errorSpy.mockRestore();
+      }
+    });
+  });
 });
