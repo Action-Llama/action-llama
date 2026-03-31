@@ -190,6 +190,28 @@ describe("AgentLifecycle", () => {
       expect(agent.getState()).toBe("idle");
     });
 
+    it("removeInstance skips state update when agent is in building state (_updateStateFromInstanceCount early return)", () => {
+      // Start a build so the agent is in "building" state
+      agent.startBuild();
+      expect(agent.getState()).toBe("building");
+
+      // Add and start an instance (agent stays in "building")
+      const instance = new InstanceLifecycle("inst-building", agentName, "schedule");
+      agent.addInstance(instance);
+      instance.start();
+      // Agent should still be in "building" — no state transition on instance:start during build
+      expect(agent.getState()).toBe("building");
+      expect(agent.runningInstanceCount).toBe(1);
+
+      // removeInstance on a running instance calls _updateStateFromInstanceCount()
+      // which should hit the early return since state is "building"
+      const removed = agent.removeInstance("inst-building");
+      expect(removed).toBe(true);
+      // After removal, running count decreases but state stays "building"
+      expect(agent.runningInstanceCount).toBe(0);
+      expect(agent.getState()).toBe("building"); // still building, not idle
+    });
+
     it("should handle instance failures", () => {
       const instance = new InstanceLifecycle("inst-1", agentName, "schedule");
       const endSpy = vi.fn();

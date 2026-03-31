@@ -216,6 +216,8 @@ describe("listEnvironments", () => {
     // Just verify it returns an array (may or may not have entries depending on state)
     expect(Array.isArray(envs)).toBe(true);
   });
+
+
 });
 
 describe("writeEnvironmentConfig / environmentExists", () => {

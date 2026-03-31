@@ -564,4 +564,52 @@ describe("x_twitter_user_oauth2 credential", () => {
       expect(mockSockDestroy).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe("prompt — client_id and client_secret validate callbacks", () => {
+    it("client_id validate callback accepts non-empty and rejects empty input", async () => {
+      let capturedClientIdValidate: ((v: string) => any) | undefined;
+      let callCount = 0;
+
+      mockedPassword.mockImplementation((opts: any) => {
+        callCount++;
+        if (callCount === 1) {
+          // First password call = client_id
+          capturedClientIdValidate = opts.validate;
+        }
+        return Promise.resolve(callCount === 1 ? "my-client-id" : "my-client-secret") as any;
+      });
+
+      await expect(
+        xTwitterUserOauth2.prompt!({})
+      ).rejects.toThrow(); // PKCE flow throws (mocked immediately)
+
+      expect(capturedClientIdValidate).toBeTypeOf("function");
+      expect(capturedClientIdValidate!("some-id")).toBe(true);
+      expect(capturedClientIdValidate!("  ")).toBe("Client ID is required");
+      expect(capturedClientIdValidate!("")).toBe("Client ID is required");
+    });
+
+    it("client_secret validate callback accepts non-empty and rejects empty input", async () => {
+      let capturedClientSecretValidate: ((v: string) => any) | undefined;
+      let callCount = 0;
+
+      mockedPassword.mockImplementation((opts: any) => {
+        callCount++;
+        if (callCount === 2) {
+          // Second password call = client_secret
+          capturedClientSecretValidate = opts.validate;
+        }
+        return Promise.resolve(callCount === 1 ? "my-client-id" : "my-client-secret") as any;
+      });
+
+      await expect(
+        xTwitterUserOauth2.prompt!({})
+      ).rejects.toThrow(); // PKCE flow throws (mocked immediately)
+
+      expect(capturedClientSecretValidate).toBeTypeOf("function");
+      expect(capturedClientSecretValidate!("some-secret")).toBe(true);
+      expect(capturedClientSecretValidate!("  ")).toBe("Client Secret is required");
+      expect(capturedClientSecretValidate!("")).toBe("Client Secret is required");
+    });
+  });
 });
