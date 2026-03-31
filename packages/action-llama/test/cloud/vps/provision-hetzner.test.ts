@@ -119,6 +119,41 @@ vi.mock("../../../src/cloud/vps/hetzner-api.js", () => ({
   applyFirewallToServer: (...args: any[]) => mockHetznerApplyFirewallToServer(...args),
 }));
 
+// Mock Cloudflare API
+const {
+  mockVerifyToken,
+  mockListAllZones,
+  mockUpsertDnsRecord,
+  mockCreateOriginCertificate,
+  mockSetSslMode,
+} = vi.hoisted(() => ({
+  mockVerifyToken: vi.fn().mockResolvedValue(true),
+  mockListAllZones: vi.fn().mockResolvedValue([]),
+  mockUpsertDnsRecord: vi.fn().mockResolvedValue({ id: "dns-record-123" }),
+  mockCreateOriginCertificate: vi.fn().mockResolvedValue({ certificate: "cert", private_key: "key" }),
+  mockSetSslMode: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("../../../src/cloud/cloudflare/api.js", () => ({
+  verifyToken: (...args: any[]) => mockVerifyToken(...args),
+  listAllZones: (...args: any[]) => mockListAllZones(...args),
+  upsertDnsRecord: (...args: any[]) => mockUpsertDnsRecord(...args),
+  createOriginCertificate: (...args: any[]) => mockCreateOriginCertificate(...args),
+  setSslMode: (...args: any[]) => mockSetSslMode(...args),
+}));
+
+// Mock nginx module
+const { mockInstallNginx, mockConfigureNginx } = vi.hoisted(() => ({
+  mockInstallNginx: vi.fn().mockResolvedValue(undefined),
+  mockConfigureNginx: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("../../../src/cloud/vps/nginx.js", () => ({
+  installNginx: (...args: any[]) => mockInstallNginx(...args),
+  configureNginx: (...args: any[]) => mockConfigureNginx(...args),
+  generateNginxConfig: () => "server {}",
+}));
+
 // Mock vultr-api (not used in hetzner path, but provision.ts imports it dynamically)
 vi.mock("../../../src/cloud/vps/vultr-api.js", () => ({
   listPlans: vi.fn(),
@@ -792,5 +827,225 @@ describe("Hetzner VPS provisioning", () => {
 
     const result = await setupVpsCloud();
     expect(result).toBeNull();
+  });
+});
+
+// --- Helpers for Hetzner + Cloudflare tests ---
+
+function resetAllHetznerMocks() {
+  vi.clearAllMocks();
+  mockBackendRead.mockResolvedValue("fake-hetzner-key");
+  mockWriteCredentialField.mockResolvedValue(undefined);
+  mockWriteCredentialFields.mockResolvedValue(undefined);
+  mockLoadCredentialFields.mockResolvedValue(undefined);
+  mockCredentialExists.mockResolvedValue(false);
+  mockVerifyToken.mockResolvedValue(true);
+  mockListAllZones.mockResolvedValue([]);
+  mockUpsertDnsRecord.mockResolvedValue({ id: "dns-record-123" });
+  mockCreateOriginCertificate.mockResolvedValue({ certificate: "cert", private_key: "key" });
+  mockSetSslMode.mockResolvedValue(undefined);
+  mockInstallNginx.mockResolvedValue(undefined);
+  mockConfigureNginx.mockResolvedValue(undefined);
+}
+
+/**
+ * Set up promptCloudflareHttps to return a valid CloudflareConfig.
+ * - Uses stored CF token
+ * - Selects example.com zone + "agents" subdomain
+ */
+function setupCloudflareMocksForHetzner() {
+  mockBackendRead.mockImplementation((type: string) => {
+    if (type === "cloudflare_origin_cert") return Promise.resolve(null);
+    return Promise.resolve("stored-cf-token");
+  });
+  mockListAllZones.mockResolvedValue([{ id: "zone-1", name: "example.com", status: "active" }]);
+  mockSearch.mockResolvedValueOnce({ id: "zone-1", name: "example.com" }); // zone selection
+  mockInput.mockResolvedValueOnce("agents"); // subdomain
+}
+
+/**
+ * Complete the Hetzner wizard after promptCloudflareHttps returns null or a config.
+ * Sets up catalog, firewall, server, SSH mocks and confirmation.
+ */
+function setupFullHetznerFlow() {
+  setupHetznerCatalogMocks();
+  setupHetznerFirewallMocks(true);
+  setupHetznerServerMocks();
+
+  mockSearch
+    .mockResolvedValueOnce("cx22")   // server type
+    .mockResolvedValueOnce("fsn1")   // location
+    // ubuntu-22.04 auto-selected
+    .mockResolvedValueOnce("1");     // SSH key (string id)
+
+  setupSshMocks();
+
+  // Final "VPS ready" confirmation
+  mockConfirm.mockResolvedValueOnce(true);
+}
+
+describe("Hetzner provisioning with Cloudflare HTTPS", () => {
+  beforeEach(() => resetAllHetznerMocks());
+
+  it("includes Cloudflare metadata in result on successful CF setup", async () => {
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    setupCloudflareMocksForHetzner();
+    setupFullHetznerFlow();
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+    expect(result?.cloudflareHostname).toBe("agents.example.com");
+    expect(result?.cloudflareDnsRecordId).toBe("dns-record-123");
+    expect(result?.gatewayUrl).toBe("https://agents.example.com");
+    expect(mockUpsertDnsRecord).toHaveBeenCalled();
+    expect(mockInstallNginx).toHaveBeenCalled();
+    expect(mockConfigureNginx).toHaveBeenCalled();
+  });
+
+  it("creates new origin certificate when none exists", async () => {
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    setupCloudflareMocksForHetzner();
+    mockCreateOriginCertificate.mockResolvedValue({ certificate: "new-cert", private_key: "new-key" });
+
+    setupFullHetznerFlow();
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(mockCreateOriginCertificate).toHaveBeenCalled();
+    expect(mockWriteCredentialFields).toHaveBeenCalledWith("cloudflare_origin_cert", "agents.example.com", {
+      certificate: "new-cert",
+      private_key: "new-key",
+    });
+  });
+
+  it("uses existing origin certificate when available and user declines regenerate", async () => {
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    mockBackendRead.mockImplementation((_type: string, _instance: string, field?: string) => {
+      if (field === "certificate") return Promise.resolve("existing-cert");
+      if (field === "private_key") return Promise.resolve("existing-key");
+      return Promise.resolve("stored-cf-token");
+    });
+    mockListAllZones.mockResolvedValue([{ id: "zone-1", name: "example.com", status: "active" }]);
+    mockSearch.mockResolvedValueOnce({ id: "zone-1", name: "example.com" });
+    mockInput.mockResolvedValueOnce("agents");
+
+    setupFullHetznerFlow();
+    // After "VPS ready" confirm, decline regenerate cert
+    mockConfirm.mockResolvedValueOnce(false);
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(mockCreateOriginCertificate).not.toHaveBeenCalled();
+    expect(mockInstallNginx).toHaveBeenCalled();
+    expect(mockConfigureNginx).toHaveBeenCalled();
+  });
+
+  it("falls back to http URL when DNS record creation fails", async () => {
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    setupCloudflareMocksForHetzner();
+    mockUpsertDnsRecord.mockRejectedValue(new Error("DNS API error"));
+
+    setupFullHetznerFlow();
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+    expect(result?.cloudflareDnsRecordId).toBeUndefined();
+    expect(result?.gatewayUrl).not.toContain("https://agents.example.com");
+  });
+
+  it("falls back to http URL when origin cert creation fails", async () => {
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    setupCloudflareMocksForHetzner();
+    mockCreateOriginCertificate.mockRejectedValue(new Error("Cert API error"));
+
+    setupFullHetznerFlow();
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+    expect(result?.gatewayUrl).not.toBe("https://agents.example.com");
+    expect(mockInstallNginx).not.toHaveBeenCalled();
+  });
+
+  it("falls back to http URL when nginx install fails", async () => {
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    setupCloudflareMocksForHetzner();
+    mockInstallNginx.mockRejectedValue(new Error("nginx install failed"));
+
+    setupFullHetznerFlow();
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+    expect(result?.gatewayUrl).not.toBe("https://agents.example.com");
+    expect(mockConfigureNginx).not.toHaveBeenCalled();
+  });
+
+  it("falls back to http URL when nginx configure fails", async () => {
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    setupCloudflareMocksForHetzner();
+    mockConfigureNginx.mockRejectedValue(new Error("nginx configure failed"));
+
+    setupFullHetznerFlow();
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+    expect(result?.gatewayUrl).not.toBe("https://agents.example.com");
+  });
+
+  it("continues with warning when setSslMode fails", async () => {
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    setupCloudflareMocksForHetzner();
+    mockSetSslMode.mockRejectedValue(new Error("SSL mode API error"));
+
+    setupFullHetznerFlow();
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+    expect(result?.cloudflareHostname).toBe("agents.example.com");
+    expect(result?.gatewayUrl).toBe("https://agents.example.com");
+  });
+
+  it("sets gatewayUrl to https and hetznerServerId in result", async () => {
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    setupCloudflareMocksForHetzner();
+    setupFullHetznerFlow();
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(result?.hetznerServerId).toBe(42);
+    expect(result?.hetznerLocation).toBe("fsn1");
+    expect(result?.gatewayUrl).toBe("https://agents.example.com");
   });
 });
