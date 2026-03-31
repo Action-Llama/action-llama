@@ -422,3 +422,111 @@ describe("status with running instances from gateway", () => {
     expect(output).toContain("-");    // dash for no trigger
   });
 });
+
+describe("status — isRemote error paths", () => {
+  let tmpDir: string;
+  let fetchSpy: any;
+  let envFile: string;
+
+  beforeEach(() => {
+    tmpDir = makeTmpProject();
+    fetchSpy = vi.spyOn(globalThis, "fetch");
+    // Create a minimal environment file so loadGlobalConfig doesn't throw
+    const { mkdirSync: mkd, writeFileSync: wf } = require("fs");
+    const { homedir } = require("os");
+    const { join: j } = require("path");
+    const envDir = j(homedir(), ".action-llama", "environments");
+    mkd(envDir, { recursive: true });
+    envFile = j(envDir, "test-remote.toml");
+    wf(envFile, ""); // empty TOML = no overrides
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    try { rmSync(envFile); } catch {}
+    vi.restoreAllMocks();
+  });
+
+  it("exits with error when isRemote and gateway returns non-OK status", async () => {
+    // Setting env makes isRemote = true; non-OK response hits the else-if branch
+    fetchSpy.mockResolvedValue({
+      ok: false,
+      status: 503,
+      text: () => Promise.resolve("{}"),
+    });
+
+    const origExit = process.exit;
+    const origError = console.error;
+    let exitCode: number | undefined;
+    let errorMsg = "";
+
+    process.exit = ((code?: number) => {
+      exitCode = code;
+      throw new Error("EXIT");
+    }) as any;
+    console.error = (...args: any[]) => { errorMsg += args.join(" "); };
+
+    try {
+      await execute({ project: tmpDir, env: "test-remote" });
+    } catch {
+      // expected EXIT
+    } finally {
+      process.exit = origExit;
+      console.error = origError;
+    }
+
+    expect(exitCode).toBe(1);
+    expect(errorMsg).toContain("HTTP 503");
+  });
+
+  it("exits with error when isRemote and gateway fetch throws", async () => {
+    fetchSpy.mockRejectedValue(new Error("ECONNREFUSED"));
+
+    const origExit = process.exit;
+    const origError = console.error;
+    let exitCode: number | undefined;
+    let errorMsg = "";
+
+    process.exit = ((code?: number) => {
+      exitCode = code;
+      throw new Error("EXIT");
+    }) as any;
+    console.error = (...args: any[]) => { errorMsg += args.join(" "); };
+
+    try {
+      await execute({ project: tmpDir, env: "test-remote" });
+    } catch {
+      // expected EXIT
+    } finally {
+      process.exit = origExit;
+      console.error = origError;
+    }
+
+    expect(exitCode).toBe(1);
+    expect(errorMsg).toContain("ECONNREFUSED");
+  });
+});
+
+describe("status — agent with description", () => {
+  let tmpDir: string;
+  let fetchSpy: any;
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("no gateway"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it("shows agent description in summary view when agent has description", async () => {
+    tmpDir = makeTmpProject({
+      agents: [{ name: "desc-agent", description: "Handles deployment tasks" }],
+    });
+
+    const output = await captureLog(() => execute({ project: tmpDir }));
+    // The description is printed as a sidebar note in the agents list
+    expect(output).toContain("desc-agent: Handles deployment tasks");
+  });
+});
