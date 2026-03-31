@@ -49,6 +49,50 @@ describe.skipIf(!DOCKER)("integration: scheduler", { timeout: 180_000 }, () => {
     expect(run.result).toBe("completed");
   });
 
+  it("run:start event is emitted with correct agentName, instanceId, and trigger", async () => {
+    // Verifies that the scheduler event bus emits 'run:start' when an agent
+    // run begins, and that the emitted instanceId matches the one returned
+    // by the control API trigger response.
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "run-start-agent",
+          schedule: "0 0 31 2 *",
+          testScript: "#!/bin/sh\necho 'run-start-agent ran'\nexit 0\n",
+        },
+      ],
+    });
+
+    await harness.start();
+
+    // Subscribe to run:start before triggering
+    const startPromise = harness.events.waitFor(
+      "run:start",
+      (e) => e.agentName === "run-start-agent",
+      30_000,
+    );
+
+    // Trigger the agent and capture the instanceId from the HTTP response
+    const triggerRes = await harness.controlAPI("POST", "/trigger/run-start-agent");
+    expect(triggerRes.ok).toBe(true);
+    const triggerBody = await triggerRes.json();
+    const triggerInstanceId = triggerBody.instanceId as string;
+    expect(triggerInstanceId).toBeTruthy();
+
+    // Wait for run:start event
+    const startEvent = await startPromise;
+    expect(startEvent.agentName).toBe("run-start-agent");
+    expect(startEvent.instanceId).toBeTruthy();
+    // The instanceId in the event should match what the trigger API returned
+    expect(startEvent.instanceId).toBe(triggerInstanceId);
+    // The trigger field should indicate a manual trigger
+    expect(startEvent.trigger).toBe("manual");
+
+    // Wait for the run to complete
+    const run = await harness.waitForRunResult("run-start-agent");
+    expect(run.result).toBe("completed");
+  });
+
   it("runs multiple agents concurrently", async () => {
     harness = await IntegrationHarness.create({
       agents: [
