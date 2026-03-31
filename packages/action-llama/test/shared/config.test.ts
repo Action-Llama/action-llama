@@ -284,6 +284,52 @@ Do the work.
     const body = loadAgentBody(tmpDir, "nonexistent");
     expect(body).toBe("");
   });
+
+  it("throws ConfigError when SKILL.md has invalid YAML frontmatter", () => {
+    const agentDir = resolve(tmpDir, "agents", "broken");
+    mkdirSync(agentDir, { recursive: true });
+    // YAML with an undefined alias will cause parseYAML to throw
+    writeFileSync(resolve(agentDir, "SKILL.md"), "---\nkey: *undefined_alias\n---\n\n# Body");
+
+    expect(() => loadAgentBody(tmpDir, "broken")).toThrow(/Error parsing/);
+  });
+});
+
+describe("discoverAgents — additional edge cases", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-discover-"));
+    mkdirSync(resolve(tmpDir, "agents"), { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("skips 'node_modules' directory via excluded set", () => {
+    // Create node_modules directory inside agents/
+    const nodeModulesDir = resolve(tmpDir, "agents", "node_modules");
+    mkdirSync(nodeModulesDir, { recursive: true });
+    writeFileSync(resolve(nodeModulesDir, "SKILL.md"), "---\n---\n");
+
+    const agents = discoverAgents(tmpDir);
+    expect(agents).not.toContain("node_modules");
+    expect(agents).toEqual([]);
+  });
+
+  it("skips regular files (non-directories) inside agents/", () => {
+    // Create a regular file alongside a real agent directory
+    const agentDir = resolve(tmpDir, "agents", "worker");
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(resolve(agentDir, "SKILL.md"), "---\n---\n");
+    // This file should be skipped by the isDirectory() check
+    writeFileSync(resolve(tmpDir, "agents", "not-a-dir.txt"), "content");
+
+    const agents = discoverAgents(tmpDir);
+    expect(agents).toEqual(["worker"]);
+    expect(agents).not.toContain("not-a-dir.txt");
+  });
 });
 
 describe("loadGlobalConfig projectName", () => {
