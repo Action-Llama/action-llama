@@ -416,4 +416,188 @@ describe("Chat WebSocket handler", () => {
       await new Promise<void>((resolve) => srv.close(() => resolve()));
     });
   });
+
+  // ── Error event handling ─────────────────────────────────────────────────
+
+  describe("WebSocket error event handling", () => {
+    it("logs warning when browser WebSocket emits an error event", async () => {
+      vi.clearAllMocks();
+      const session = sessionManager.createSession("test-agent");
+      const browser = new WebSocket(`ws://127.0.0.1:${port}/chat/ws/${session.sessionId}`, {
+        headers: { Authorization: `Bearer ${TEST_API_KEY}` },
+      });
+      await waitForOpen(browser);
+
+      // Emit error directly on the server-side WebSocket object
+      const serverConn = wsState.browserConnections.get(session.sessionId);
+      expect(serverConn).toBeDefined();
+      serverConn!.ws.emit("error", new Error("simulated browser connection error"));
+
+      // Give event handlers a chance to run
+      await new Promise((r) => setTimeout(r, 20));
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: session.sessionId }),
+        "browser WebSocket error",
+      );
+
+      browser.close();
+    });
+
+    it("logs warning when container WebSocket emits an error event", async () => {
+      vi.clearAllMocks();
+      const session = sessionManager.createSession("test-agent");
+      const container = new WebSocket(`ws://127.0.0.1:${port}/chat/container/${session.sessionId}`);
+      await waitForOpen(container);
+      // Authenticate container
+      const authOk = waitForMessage(container);
+      container.send(JSON.stringify({ type: "auth", token: session.sessionId }));
+      await authOk;
+
+      // Emit error directly on the server-side container WebSocket
+      const serverConn = wsState.containerConnections.get(session.sessionId);
+      expect(serverConn).toBeDefined();
+      serverConn!.ws.emit("error", new Error("simulated container error"));
+
+      await new Promise((r) => setTimeout(r, 20));
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: session.sessionId }),
+        "container WebSocket error",
+      );
+
+      container.close();
+    });
+  });
+});
+
+// ── shutdownSession tests (separate describe with fake timers from start) ──
+
+describe("Chat WebSocket handler — shutdownSession via idle cleanup", () => {
+  // We use fake timers for this entire describe so that setInterval in
+  // attachChatWebSocket is under fake-timer control from the start.
+  // Network operations (listen, WebSocket open/message) work independently of timers.
+
+  let srv: ReturnType<typeof createServer>;
+  let wsState2: ChatWebSocketState;
+  let mgr: ChatSessionManager;
+  let port2: number;
+  const logger2 = {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  };
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    // Enable fake timers BEFORE creating the ws-handler so setInterval is under fake control.
+    // Network operations (listen, WebSocket) use real I/O and work independently of timers.
+    vi.useFakeTimers();
+
+    mgr = new ChatSessionManager(5);
+    srv = createServer();
+    wsState2 = attachChatWebSocket(srv, mgr, TEST_API_KEY, undefined, logger2 as any);
+
+    // server.listen() uses native I/O — wrap in a promise that resolves on the callback
+    await new Promise<void>((resolve) => srv.listen(0, "127.0.0.1", resolve));
+    port2 = (srv.address() as any).port;
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    clearInterval(wsState2.cleanupInterval);
+    await new Promise<void>((resolve) => srv.close(() => resolve()));
+  });
+
+  it("closes browser and container connections and calls stopContainer when idle session cleaned up", async () => {
+    const stopContainer = vi.fn().mockResolvedValue(undefined);
+    wsState2.stopContainer = stopContainer;
+
+    // Connect browser (WebSocket events are I/O-driven, not timer-driven)
+    const session = mgr.createSession("test-agent");
+    const browser = new WebSocket(`ws://127.0.0.1:${port2}/chat/ws/${session.sessionId}`, {
+      headers: { Authorization: `Bearer ${TEST_API_KEY}` },
+    });
+    await waitForOpen(browser);
+
+    // Connect and authenticate container
+    const container = new WebSocket(`ws://127.0.0.1:${port2}/chat/container/${session.sessionId}`);
+    await waitForOpen(container);
+    const authOk = waitForMessage(container);
+    container.send(JSON.stringify({ type: "auth", token: session.sessionId }));
+    await authOk;
+
+    // Verify connections tracked
+    expect(wsState2.browserConnections.has(session.sessionId)).toBe(true);
+    expect(wsState2.containerConnections.has(session.sessionId)).toBe(true);
+
+    // Make session idle (16 minutes ago) — use fake Date.now() offset
+    const s = mgr.getSession(session.sessionId)!;
+    (s as any).lastActivityAt = new Date(Date.now() - 16 * 60 * 1000);
+
+    // Advance fake timers by 60s to fire the setInterval cleanup callback
+    // advanceTimersByTimeAsync also flushes all resulting microtasks/promises
+    await vi.advanceTimersByTimeAsync(60_000);
+    // Flush remaining microtasks (e.g., the async shutdownSession await chain)
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(stopContainer).toHaveBeenCalledWith(session.sessionId);
+    expect(wsState2.browserConnections.has(session.sessionId)).toBe(false);
+    expect(wsState2.containerConnections.has(session.sessionId)).toBe(false);
+  });
+
+  it("logs warning and continues when stopContainer throws during idle cleanup", async () => {
+    const stopContainer = vi.fn().mockRejectedValue(new Error("stop failed"));
+    wsState2.stopContainer = stopContainer;
+
+    const session = mgr.createSession("test-agent");
+
+    // Connect browser so shutdownSession has something to close
+    const browser = new WebSocket(`ws://127.0.0.1:${port2}/chat/ws/${session.sessionId}`, {
+      headers: { Authorization: `Bearer ${TEST_API_KEY}` },
+    });
+    await waitForOpen(browser);
+
+    // Make session idle
+    const s = mgr.getSession(session.sessionId)!;
+    (s as any).lastActivityAt = new Date(Date.now() - 16 * 60 * 1000);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(stopContainer).toHaveBeenCalledWith(session.sessionId);
+    expect(logger2.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: session.sessionId }),
+      "failed to stop chat container",
+    );
+  });
+
+  it("shuts down container-only session during idle cleanup (no stopContainer set)", async () => {
+    // No stopContainer set — exercises the `if (state.stopContainer)` false branch
+    const session = mgr.createSession("test-agent");
+
+    const container = new WebSocket(`ws://127.0.0.1:${port2}/chat/container/${session.sessionId}`);
+    await waitForOpen(container);
+    const authOk = waitForMessage(container);
+    container.send(JSON.stringify({ type: "auth", token: session.sessionId }));
+    await authOk;
+
+    expect(wsState2.containerConnections.has(session.sessionId)).toBe(true);
+
+    // Make session idle
+    const s = mgr.getSession(session.sessionId)!;
+    (s as any).lastActivityAt = new Date(Date.now() - 16 * 60 * 1000);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(wsState2.containerConnections.has(session.sessionId)).toBe(false);
+  });
 });
