@@ -1,5 +1,31 @@
 # @action-llama/action-llama
 
+## 0.22.0
+
+### Minor Changes
+
+- [#439](https://github.com/Action-Llama/action-llama/pull/439) [`df637a5`](https://github.com/Action-Llama/action-llama/commit/df637a5dce3e04167ce2db6421dc770cd3af3567) Thanks [@asselstine](https://github.com/asselstine)! - Add Google Cloud Run Jobs as a first-class agent execution runtime.
+
+  Agents can now run as ephemeral Cloud Run Jobs while the scheduler continues to run on a local machine or VPS. Key features:
+
+  - **`CloudRunRuntime`** — implements `Runtime` and `ContainerRuntime`, launching agents as Cloud Run Jobs
+  - **Secret Manager credentials** — each credential field is staged as an ephemeral Secret Manager secret, mounted at `/credentials/<type>/<instance>/<field>` (identical layout to Docker volume mounts)
+  - **Artifact Registry** — agent images are pushed to Google Artifact Registry with automatic pruning of old tags (keeps 3 most recent)
+  - **Cloud Logging** — agent logs are streamed via Cloud Logging API (3s polling)
+  - **Orphan recovery** — `listRunningAgents()` discovers active Cloud Run Jobs; orphaned jobs are killed on scheduler restart
+  - **`gcp_service_account` credential** — new built-in credential type for GCP service account JSON keys
+  - **`CloudRunConfig` config type** — new `[cloud] provider = "cloud-run"` environment file config
+  - **`cloudRunDockerExtension`** — registers the new runtime as an extension
+  - **Docs** — new guide at `guides/cloud-run-runtime.mdx` and reference updates
+
+### Patch Changes
+
+- [#435](https://github.com/Action-Llama/action-llama/pull/435) [`2701ed9`](https://github.com/Action-Llama/action-llama/commit/2701ed9f9e3d369b57e7ccbaea7d372fa2441229) Thanks [@asselstine](https://github.com/asselstine)! - Fix EACCES errors in host-user-runtime tests when /tmp/al-runs is root-owned.
+
+  The source code now reads `AL_RUNS_DIR` from the environment (falling back to the existing `/tmp/al-runs` default), and the test suite creates an isolated temp directory per test run and points `AL_RUNS_DIR` at it via `process.env`. This prevents permission errors when `/tmp/al-runs` already exists and is owned by root.
+
+- [#436](https://github.com/Action-Llama/action-llama/pull/436) [`fe33d47`](https://github.com/Action-Llama/action-llama/commit/fe33d47f163d8e694efc4f1bac8ddf85363bb5a6) Thanks [@asselstine](https://github.com/asselstine)! - Replace jq dependency in al-subagent and al-subagent-wait scripts with shell string concatenation, fixing test failures in environments without jq installed
+
 ## 0.21.0
 
 ### Minor Changes
