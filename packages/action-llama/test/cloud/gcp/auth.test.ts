@@ -171,4 +171,33 @@ describe("GcpAuth", () => {
 
     await expect(auth.getAccessToken()).rejects.toThrow("GCP token exchange failed (HTTP 401)");
   });
+
+  it("uses empty string body when res.text() throws on token error response", async () => {
+    const { generateKeyPairSync } = await import("crypto");
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const pemKey = privateKey.export({ type: "pkcs1", format: "pem" }) as string;
+
+    const keyJson = JSON.stringify({
+      type: "service_account",
+      project_id: "my-project",
+      private_key_id: "key123",
+      private_key: pemKey,
+      client_email: "test@my-project.iam.gserviceaccount.com",
+      client_id: "12345",
+      auth_uri: "https://accounts.google.com/o/oauth2/auth",
+      token_uri: "https://oauth2.googleapis.com/token",
+    });
+
+    // text() rejects — triggers the .catch(() => "") fallback
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      text: () => Promise.reject(new Error("body read failed")),
+    });
+
+    const key = parseServiceAccountKey(keyJson);
+    const auth = new GcpAuth(key);
+
+    await expect(auth.getAccessToken()).rejects.toThrow("GCP token exchange failed (HTTP 500)");
+  });
 });
