@@ -142,12 +142,8 @@ export function ActivityTable({
                     {row.instanceId ? (
                       <Link
                         to={`/dashboard/agents/${encodeURIComponent(row.agentName)}/instances/${encodeURIComponent(row.instanceId)}`}
-                        className="hover:underline inline-flex items-center gap-1.5"
+                        className="hover:underline"
                       >
-                        <span
-                          className="w-2 h-2 rounded-full shrink-0 agent-color-dot"
-                          style={agentHueStyle(row.agentName, agentNames)}
-                        />
                         <span
                           className="agent-color-text font-medium"
                           style={agentHueStyle(row.agentName, agentNames)}
@@ -158,12 +154,8 @@ export function ActivityTable({
                     ) : (
                       <Link
                         to={`/dashboard/agents/${encodeURIComponent(row.agentName)}`}
-                        className="hover:underline inline-flex items-center gap-1.5"
+                        className="hover:underline"
                       >
-                        <span
-                          className="w-2 h-2 rounded-full shrink-0 agent-color-dot"
-                          style={agentHueStyle(row.agentName, agentNames)}
-                        />
                         <span
                           className="agent-color-text font-medium"
                           style={agentHueStyle(row.agentName, agentNames)}
