@@ -410,6 +410,172 @@ describe("TwitterWebhookProvider", () => {
       expect(ctx).not.toBeNull();
       expect(ctx!.sender).toBe("456");
     });
+
+    it("block_events: uses source.id as sender when screen_name is missing", () => {
+      const body = {
+        for_user_id: "123456",
+        block_events: [
+          {
+            created_timestamp: "1742000000000",
+            type: "block",
+            source: { id: "111" },
+            target: { id: "222" },
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.sender).toBe("111");
+      expect(ctx!.title).toContain("blocked");
+    });
+
+    it("block_events: uses base.timestamp when created_timestamp is missing", () => {
+      const body = {
+        for_user_id: "123456",
+        block_events: [
+          {
+            type: "block",
+            source: { id: "111", screen_name: "alice" },
+            target: { id: "222", screen_name: "bob" },
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.timestamp).toBeDefined();
+    });
+
+    it("mute_events: uses source.id as sender when screen_name is missing", () => {
+      const body = {
+        for_user_id: "123456",
+        mute_events: [
+          {
+            created_timestamp: "1742000000000",
+            type: "mute",
+            source: { id: "111" },
+            target: { id: "222" },
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.sender).toBe("111");
+      expect(ctx!.title).toContain("muted");
+    });
+
+    it("mute_events: uses base.timestamp when created_timestamp is missing", () => {
+      const body = {
+        for_user_id: "123456",
+        mute_events: [
+          {
+            type: "mute",
+            source: { id: "111", screen_name: "alice" },
+            target: { id: "222", screen_name: "bob" },
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.timestamp).toBeDefined();
+    });
+
+    it("direct_message_events: uses unknown as sender when sender_id is missing", () => {
+      const body = {
+        for_user_id: "123456",
+        direct_message_events: [
+          {
+            created_timestamp: "1742000000000",
+            message_create: {
+              message_data: { text: "hello" },
+            },
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.sender).toBe("unknown");
+      expect(ctx!.title).toContain("unknown");
+    });
+
+    it("direct_message_events: uses base.timestamp when created_timestamp is missing", () => {
+      const body = {
+        for_user_id: "123456",
+        direct_message_events: [
+          {
+            message_create: {
+              sender_id: "999",
+              message_data: { text: "hi" },
+            },
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.timestamp).toBeDefined();
+      expect(ctx!.sender).toBe("999");
+    });
+
+    it("direct_message_indicate_typing_events: uses unknown as sender when sender_id is missing", () => {
+      const body = {
+        for_user_id: "123456",
+        direct_message_indicate_typing_events: [
+          {
+            created_timestamp: "1742000000000",
+            recipient_id: "123456",
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.sender).toBe("unknown");
+      expect(ctx!.title).toContain("unknown");
+    });
+
+    it("direct_message_indicate_typing_events: uses base.timestamp when created_timestamp is missing", () => {
+      const body = {
+        for_user_id: "123456",
+        direct_message_indicate_typing_events: [
+          {
+            sender_id: "777",
+            recipient_id: "123456",
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.timestamp).toBeDefined();
+    });
+
+    it("direct_message_mark_read_events: uses unknown as sender when sender_id is missing", () => {
+      const body = {
+        for_user_id: "123456",
+        direct_message_mark_read_events: [
+          {
+            created_timestamp: "1742000000000",
+            recipient_id: "123456",
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.sender).toBe("unknown");
+      expect(ctx!.title).toContain("unknown");
+    });
+
+    it("direct_message_mark_read_events: uses base.timestamp when created_timestamp is missing", () => {
+      const body = {
+        for_user_id: "123456",
+        direct_message_mark_read_events: [
+          {
+            sender_id: "888",
+            recipient_id: "123456",
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.timestamp).toBeDefined();
+    });
   });
 
   describe("matchesFilter", () => {
