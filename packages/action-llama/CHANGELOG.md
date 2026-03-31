@@ -1,5 +1,14 @@
 # @action-llama/action-llama
 
+## 0.23.6
+
+### Patch Changes
+
+- [`a5da1e1`](https://github.com/Action-Llama/action-llama/commit/a5da1e1995330e395efe7160b4d838b965b44436) Thanks [@asselstine](https://github.com/asselstine)! - Fix release workflow: split npm publish into separate steps so that a failure publishing @action-llama/skill does not block @action-llama/action-llama.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.23.6
+
 ## 0.23.5
 
 ### Patch Changes
