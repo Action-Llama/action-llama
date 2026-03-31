@@ -1058,6 +1058,53 @@ describe("CloudRunRuntime", () => {
       // Temp dir should have been cleaned up
       expect(mockRmSync).toHaveBeenCalledWith("/tmp/al-ctx-test", { recursive: true });
     });
+
+    it("rejects with timeout error and kills process when build exceeds 300s (covers timer body)", async () => {
+      vi.useFakeTimers();
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+
+      const runtime = makeRuntime();
+      const buildPromise = runtime.buildImage({
+        tag: "timeout-image:latest",
+        dockerfile: "Dockerfile",
+        contextDir: "/tmp/ctx",
+        dockerfileContent: "FROM node:20",
+      });
+
+      // Attach the rejection expectation BEFORE advancing timers to avoid an
+      // "unhandled rejection" window between when the timer fires and when we
+      // reach the rejects.toThrow assertion.
+      const rejection = expect(buildPromise).rejects.toThrow("Docker build timed out after 300s");
+
+      // Advance timers past the 300s build timeout (lines 224-225)
+      await vi.advanceTimersByTimeAsync(301_000);
+      await rejection;
+
+      expect(fakeProc.kill).toHaveBeenCalledTimes(1);
+
+      vi.useRealTimers();
+    });
+  });
+
+  describe("waitForExit — unknown condition state (line 509 coverage)", () => {
+    it("returns 0 when completedCondition has an unrecognised state (not SUCCEEDED or FAILED)", async () => {
+      vi.mocked(pollExecutionUntilDone).mockResolvedValue({
+        name: "exec-unknown",
+        uid: "uid-unknown",
+        createTime: "2026-01-01T00:00:00Z",
+        completionTime: "2026-01-01T01:00:00Z",
+        // State is neither CONDITION_SUCCEEDED nor CONDITION_FAILED
+        conditions: [{ type: "Completed", state: "CONDITION_UNKNOWN" }],
+      });
+
+      const runtime = makeRuntime();
+      (runtime as any).executionNames.set("job-unknown", "exec-unknown");
+      const code = await runtime.waitForExit("job-unknown", 3600);
+
+      // The final return 0 (line 509) is reached for unrecognised condition states
+      expect(code).toBe(0);
+    });
   });
 
   describe("isAgentRunning error handling", () => {
