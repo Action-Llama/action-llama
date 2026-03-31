@@ -93,6 +93,12 @@ describe("validateOutbound", () => {
     expect(result.valid).toBe(false);
   });
 
+  it("rejects invalid JSON outbound", () => {
+    const result = validateOutbound("not valid json{{{");
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Invalid JSON");
+  });
+
   it("rejects oversized outbound", () => {
     const large = JSON.stringify({ type: "assistant_message", text: "x".repeat(65 * 1024), done: false });
     const result = validateOutbound(large);

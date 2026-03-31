@@ -129,6 +129,69 @@ describe("MemoryBackend — eventReplay to filter", () => {
   });
 });
 
+// ─── createPersistenceStore with unknown backend type ─────────────────────────
+
+describe("createPersistenceStore — unknown backend type", () => {
+  it("throws an error for an unsupported persistence backend type", async () => {
+    await expect(
+      createPersistenceStore({ type: "unknown-backend-xyz" as any })
+    ).rejects.toThrow("Unsupported persistence backend: unknown-backend-xyz");
+  });
+});
+
+// ─── transaction with existing events snapshot ───────────────────────────────
+
+describe("MemoryBackend — transactionBegin snapshots events", () => {
+  it("snapshots existing events when beginning a transaction, allowing rollback", async () => {
+    const store = await createPersistenceStore({ type: "memory" });
+
+    // Append an event so the events map has entries
+    const stream = store.events.stream("test-stream-tx");
+    await stream.append(createEvent("test", { value: "before" }));
+
+    // Verify event exists
+    const beforeEvents: any[] = [];
+    for await (const evt of stream.replay({})) {
+      beforeEvents.push(evt);
+    }
+    expect(beforeEvents).toHaveLength(1);
+
+    // Use transaction with rollback — this calls transactionBegin() which
+    // snapshots the events map (covers the [...v] spread on line 205)
+    let caughtError: Error | null = null;
+    try {
+      await store.transaction(async (txStore) => {
+        // Append another event during the transaction
+        const txStream = txStore.events.stream("test-stream-tx");
+        await txStream.append(createEvent("test", { value: "during" }));
+
+        const duringEvents: any[] = [];
+        for await (const evt of txStream.replay({})) {
+          duringEvents.push(evt);
+        }
+        expect(duringEvents).toHaveLength(2);
+
+        // Force rollback by throwing
+        throw new Error("rollback");
+      });
+    } catch (err: any) {
+      caughtError = err;
+    }
+
+    expect(caughtError?.message).toBe("rollback");
+
+    // After rollback, events should be back to 1
+    const afterEvents: any[] = [];
+    for await (const evt of stream.replay({})) {
+      afterEvents.push(evt);
+    }
+    expect(afterEvents).toHaveLength(1);
+    expect((afterEvents[0] as any).data.value).toBe("before");
+
+    await store.close();
+  });
+});
+
 // ─── sweep() via fake timers ──────────────────────────────────────────────────
 
 describe("MemoryBackend — sweep() via timer", () => {
