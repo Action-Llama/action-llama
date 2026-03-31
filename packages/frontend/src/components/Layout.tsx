@@ -43,7 +43,8 @@ function Navbar() {
             to="/dashboard"
             className="text-lg font-bold text-slate-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
           >
-            Action Llama
+            <span className="hidden sm:inline">Action Llama</span>
+            <span className="sm:hidden">AL</span>
           </Link>
           <Link
             to="/dashboard"
@@ -53,13 +54,13 @@ function Navbar() {
                 : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
             }`}
           >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-5 h-5 sm:w-4 sm:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <rect x="3" y="4" width="18" height="12" rx="2" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
               <circle cx="9" cy="10" r="1.5" fill="currentColor" stroke="none" />
               <circle cx="15" cy="10" r="1.5" fill="currentColor" stroke="none" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 20h8M12 16v4" />
             </svg>
-            Agents
+            <span className="hidden sm:inline">Agents</span>
           </Link>
           <Link
             to="/activity"
@@ -69,10 +70,10 @@ function Navbar() {
                 : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
             }`}
           >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-5 h-5 sm:w-4 sm:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
-            Activity
+            <span className="hidden sm:inline">Activity</span>
           </Link>
           <Link
             to="/dashboard/config"
@@ -83,7 +84,7 @@ function Navbar() {
             }`}
           >
             <svg
-              className="w-4 h-4"
+              className="w-5 h-5 sm:w-4 sm:h-4"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -101,7 +102,7 @@ function Navbar() {
                 d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
               />
             </svg>
-            Settings
+            <span className="hidden sm:inline">Settings</span>
           </Link>
         </div>
         <div className="flex items-center gap-3">
