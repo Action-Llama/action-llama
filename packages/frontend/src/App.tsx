@@ -3,11 +3,11 @@ import { Layout } from "./components/Layout";
 import { LoginPage } from "./pages/LoginPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { AgentDetailPage } from "./pages/AgentDetailPage";
+import { AgentAdminPage } from "./pages/AgentAdminPage";
 import { InstanceDetailPage } from "./pages/InstanceDetailPage";
 import { ActivityPage } from "./pages/ActivityPage";
 import { TriggerDetailPage } from "./pages/TriggerDetailPage";
 import { ProjectConfigPage } from "./pages/ProjectConfigPage";
-import { AgentSkillPage } from "./pages/AgentSkillPage";
 import { AgentStatsPage } from "./pages/AgentStatsPage";
 import { ChatPage } from "./pages/ChatPage";
 import { WebhookReceiptPage } from "./pages/WebhookReceiptPage";
@@ -15,6 +15,11 @@ import { WebhookReceiptPage } from "./pages/WebhookReceiptPage";
 function AgentTriggersRedirect() {
   const { name } = useParams<{ name: string }>();
   return <Navigate to={`/activity?agent=${encodeURIComponent(name ?? "")}`} replace />;
+}
+
+function AgentSkillRedirect() {
+  const { name } = useParams<{ name: string }>();
+  return <Navigate to={`/dashboard/agents/${encodeURIComponent(name ?? "")}/admin`} replace />;
 }
 
 export function App() {
@@ -35,8 +40,12 @@ export function App() {
           element={<AgentTriggersRedirect />}
         />
         <Route
+          path="/dashboard/agents/:name/admin"
+          element={<AgentAdminPage />}
+        />
+        <Route
           path="/dashboard/agents/:name/skill"
-          element={<AgentSkillPage />}
+          element={<AgentSkillRedirect />}
         />
         <Route
           path="/dashboard/agents/:name/stats"
