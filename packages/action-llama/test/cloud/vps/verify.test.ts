@@ -275,4 +275,272 @@ describe("verifyEnvironment", () => {
     expect(ssl?.detail).toContain("strict");
     expect(mockSetSslMode).toHaveBeenCalledWith("cf-token", "zone-1", "strict");
   });
+
+  it("reports Docker not installed", async () => {
+    mockBackendRead({});
+    mockTestConnection.mockResolvedValue(true);
+    mockSshExec.mockImplementation((_cfg, cmd) => {
+      if (cmd === "node --version") return Promise.resolve({ stdout: "v22.22.1", stderr: "", exitCode: 0 });
+      if (cmd.includes("docker info")) return Promise.resolve({ stdout: "", stderr: "error", exitCode: 1 });
+      if (cmd.includes("curl")) return Promise.resolve(sshOk());
+      return Promise.resolve(sshOk());
+    });
+
+    const server: ServerConfig = { host: "1.2.3.4", user: "root", port: 22 };
+    const results = await verifyEnvironment({ server, mode: "check" });
+    const docker = results.find((r) => r.name === "Docker");
+    expect(docker?.status).toBe("fail");
+    expect(docker?.detail).toBe("not installed");
+    expect(docker?.fixable).toBe(false);
+  });
+
+  it("fixes Node.js installation successfully in fix mode", async () => {
+    mockBackendRead({});
+    mockTestConnection.mockResolvedValue(true);
+    // First call (node --version): not installed; second call (node --version after install): success
+    let nodeCallCount = 0;
+    mockSshExec.mockImplementation((_cfg, cmd) => {
+      if (cmd === "node --version") {
+        nodeCallCount++;
+        if (nodeCallCount === 1) return Promise.resolve({ stdout: "", stderr: "not found", exitCode: 1 });
+        return Promise.resolve({ stdout: "v22.0.0", stderr: "", exitCode: 0 });
+      }
+      if (cmd.includes("nodesource")) return Promise.resolve({ stdout: "done", stderr: "", exitCode: 0 });
+      if (cmd.includes("docker info")) return Promise.resolve({ stdout: "29.0.0", stderr: "", exitCode: 0 });
+      if (cmd.includes("curl")) return Promise.resolve(sshOk());
+      return Promise.resolve(sshOk());
+    });
+
+    const server: ServerConfig = { host: "1.2.3.4", user: "root", port: 22 };
+    const results = await verifyEnvironment({ server, mode: "fix" });
+    const node = results.find((r) => r.name === "Node.js");
+    expect(node?.status).toBe("fixed");
+    expect(node?.detail).toContain("v22.0.0");
+  });
+
+  it("reports Node.js installation failed when install command fails in fix mode", async () => {
+    mockBackendRead({});
+    mockTestConnection.mockResolvedValue(true);
+    mockSshExec.mockImplementation((_cfg, cmd) => {
+      if (cmd === "node --version") return Promise.resolve({ stdout: "", stderr: "not found", exitCode: 1 });
+      if (cmd.includes("nodesource")) return Promise.resolve({ stdout: "", stderr: "install failed", exitCode: 1 });
+      if (cmd.includes("docker info")) return Promise.resolve({ stdout: "29.0.0", stderr: "", exitCode: 0 });
+      if (cmd.includes("curl")) return Promise.resolve(sshOk());
+      return Promise.resolve(sshOk());
+    });
+
+    const server: ServerConfig = { host: "1.2.3.4", user: "root", port: 22 };
+    const results = await verifyEnvironment({ server, mode: "fix" });
+    const node = results.find((r) => r.name === "Node.js");
+    expect(node?.status).toBe("fail");
+    expect(node?.detail).toBe("installation failed");
+  });
+
+  it("returns warn when listFirewallGroups API throws", async () => {
+    mockBackendRead({
+      "vultr_api_key/default/api_key": "vultr-key",
+      "cloudflare_api_token/default/api_token": "cf-token",
+    });
+    mockTestConnection.mockResolvedValue(true);
+    mockSshExec.mockImplementation((_cfg, cmd) => {
+      if (cmd === "node --version") return Promise.resolve({ stdout: "v22.22.1", stderr: "", exitCode: 0 });
+      if (cmd.includes("docker info")) return Promise.resolve({ stdout: "29.3.0", stderr: "", exitCode: 0 });
+      if (cmd.includes("systemctl is-active")) return Promise.resolve({ stdout: "active", stderr: "", exitCode: 0 });
+      if (cmd.includes("curl")) return Promise.resolve(sshOk());
+      return Promise.resolve(sshOk());
+    });
+    mockListFirewallGroups.mockRejectedValue(new Error("network timeout"));
+    mockFindDnsRecord.mockResolvedValue({ id: "rec-1", type: "A", name: "agents.example.com", content: "1.2.3.4", proxied: true, ttl: 1 });
+    mockGetSslMode.mockResolvedValue("strict");
+
+    const results = await verifyEnvironment({ server: baseServer(), mode: "check" });
+    const fw = results.find((r) => r.name === "Vultr firewall");
+    expect(fw?.status).toBe("warn");
+    expect(fw?.detail).toContain("network timeout");
+  });
+
+  it("returns warn when listFirewallRules API throws", async () => {
+    mockBackendRead({
+      "vultr_api_key/default/api_key": "vultr-key",
+      "cloudflare_api_token/default/api_token": "cf-token",
+    });
+    mockTestConnection.mockResolvedValue(true);
+    mockSshExec.mockImplementation((_cfg, cmd) => {
+      if (cmd === "node --version") return Promise.resolve({ stdout: "v22.22.1", stderr: "", exitCode: 0 });
+      if (cmd.includes("docker info")) return Promise.resolve({ stdout: "29.3.0", stderr: "", exitCode: 0 });
+      if (cmd.includes("systemctl is-active")) return Promise.resolve({ stdout: "active", stderr: "", exitCode: 0 });
+      if (cmd.includes("curl")) return Promise.resolve(sshOk());
+      return Promise.resolve(sshOk());
+    });
+    mockListFirewallGroups.mockResolvedValue([{ id: "fw-1", description: "action-llama", date_created: "", date_modified: "", instance_count: 1, rule_count: 0, max_rule_count: 50 }]);
+    mockListFirewallRules.mockRejectedValue(new Error("rules API down"));
+    mockFindDnsRecord.mockResolvedValue({ id: "rec-1", type: "A", name: "agents.example.com", content: "1.2.3.4", proxied: true, ttl: 1 });
+    mockGetSslMode.mockResolvedValue("strict");
+
+    const results = await verifyEnvironment({ server: baseServer(), mode: "check" });
+    const fw = results.find((r) => r.name === "Vultr firewall");
+    expect(fw?.status).toBe("warn");
+    expect(fw?.detail).toContain("rules API down");
+  });
+
+  it("returns warn when no action-llama firewall group exists", async () => {
+    mockBackendRead({
+      "vultr_api_key/default/api_key": "vultr-key",
+      "cloudflare_api_token/default/api_token": "cf-token",
+    });
+    mockTestConnection.mockResolvedValue(true);
+    mockSshExec.mockImplementation((_cfg, cmd) => {
+      if (cmd === "node --version") return Promise.resolve({ stdout: "v22.22.1", stderr: "", exitCode: 0 });
+      if (cmd.includes("docker info")) return Promise.resolve({ stdout: "29.3.0", stderr: "", exitCode: 0 });
+      if (cmd.includes("systemctl is-active")) return Promise.resolve({ stdout: "active", stderr: "", exitCode: 0 });
+      if (cmd.includes("curl")) return Promise.resolve(sshOk());
+      return Promise.resolve(sshOk());
+    });
+    // Return groups with no "action-llama" description
+    mockListFirewallGroups.mockResolvedValue([{ id: "fw-1", description: "other-group", date_created: "", date_modified: "", instance_count: 0, rule_count: 0, max_rule_count: 50 }]);
+    mockFindDnsRecord.mockResolvedValue({ id: "rec-1", type: "A", name: "agents.example.com", content: "1.2.3.4", proxied: true, ttl: 1 });
+    mockGetSslMode.mockResolvedValue("strict");
+
+    const results = await verifyEnvironment({ server: baseServer(), mode: "check" });
+    const fw = results.find((r) => r.name === "Vultr firewall");
+    expect(fw?.status).toBe("warn");
+    expect(fw?.detail).toContain("no 'action-llama' firewall group found");
+  });
+
+  it("reports DNS fail with 'no record' when no DNS record exists in check mode", async () => {
+    mockBackendRead({
+      "vultr_api_key/default/api_key": "vultr-key",
+      "cloudflare_api_token/default/api_token": "cf-token",
+    });
+    mockTestConnection.mockResolvedValue(true);
+    mockSshExec.mockImplementation((_cfg, cmd) => {
+      if (cmd === "node --version") return Promise.resolve({ stdout: "v22.22.1", stderr: "", exitCode: 0 });
+      if (cmd.includes("docker info")) return Promise.resolve({ stdout: "29.3.0", stderr: "", exitCode: 0 });
+      if (cmd.includes("systemctl is-active")) return Promise.resolve({ stdout: "active", stderr: "", exitCode: 0 });
+      if (cmd.includes("curl")) return Promise.resolve(sshOk());
+      return Promise.resolve(sshOk());
+    });
+    mockListFirewallGroups.mockResolvedValue([{ id: "fw-1", description: "action-llama", date_created: "", date_modified: "", instance_count: 1, rule_count: 6, max_rule_count: 50 }]);
+    mockListFirewallRules.mockResolvedValue([
+      { ip_type: "v4", protocol: "tcp", port: "22" },
+      { ip_type: "v4", protocol: "tcp", port: "80" },
+      { ip_type: "v4", protocol: "tcp", port: "443" },
+    ]);
+    // No DNS record exists
+    mockFindDnsRecord.mockResolvedValue(null);
+    mockGetSslMode.mockResolvedValue("strict");
+
+    const results = await verifyEnvironment({ server: baseServer(), mode: "check" });
+    const dns = results.find((r) => r.name === "DNS");
+    expect(dns?.status).toBe("fail");
+    expect(dns?.detail).toContain("no record");
+    expect(dns?.detail).toContain("1.2.3.4");
+  });
+
+  it("restarts nginx successfully in fix mode when nginx is inactive", async () => {
+    mockBackendRead({
+      "cloudflare_api_token/default/api_token": "cf-token",
+    });
+    mockTestConnection.mockResolvedValue(true);
+    mockSshExec.mockImplementation((_cfg, cmd) => {
+      if (cmd === "node --version") return Promise.resolve({ stdout: "v22.22.1", stderr: "", exitCode: 0 });
+      if (cmd.includes("docker info")) return Promise.resolve({ stdout: "29.3.0", stderr: "", exitCode: 0 });
+      if (cmd === "systemctl is-active nginx") return Promise.resolve({ stdout: "inactive", stderr: "", exitCode: 1 });
+      if (cmd === "systemctl restart nginx") return Promise.resolve({ stdout: "", stderr: "", exitCode: 0 });
+      if (cmd.includes("curl")) return Promise.resolve(sshOk());
+      return Promise.resolve(sshOk());
+    });
+    mockFindDnsRecord.mockResolvedValue({ id: "rec-1", type: "A", name: "agents.example.com", content: "1.2.3.4", proxied: true, ttl: 1 });
+    mockGetSslMode.mockResolvedValue("strict");
+
+    const server: ServerConfig = { host: "1.2.3.4", user: "root", port: 22, cloudflareHostname: "agents.example.com", cloudflareZoneId: "zone-1" };
+    const results = await verifyEnvironment({ server, mode: "fix" });
+    const nginx = results.find((r) => r.name === "nginx");
+    expect(nginx?.status).toBe("fixed");
+    expect(nginx?.detail).toBe("restarted");
+  });
+
+  it("reports nginx restart failed in fix mode when restart command fails", async () => {
+    mockBackendRead({
+      "cloudflare_api_token/default/api_token": "cf-token",
+    });
+    mockTestConnection.mockResolvedValue(true);
+    mockSshExec.mockImplementation((_cfg, cmd) => {
+      if (cmd === "node --version") return Promise.resolve({ stdout: "v22.22.1", stderr: "", exitCode: 0 });
+      if (cmd.includes("docker info")) return Promise.resolve({ stdout: "29.3.0", stderr: "", exitCode: 0 });
+      if (cmd === "systemctl is-active nginx") return Promise.resolve({ stdout: "failed", stderr: "", exitCode: 1 });
+      if (cmd === "systemctl restart nginx") return Promise.resolve({ stdout: "", stderr: "restart failed", exitCode: 1 });
+      if (cmd.includes("curl")) return Promise.resolve(sshOk());
+      return Promise.resolve(sshOk());
+    });
+    mockFindDnsRecord.mockResolvedValue({ id: "rec-1", type: "A", name: "agents.example.com", content: "1.2.3.4", proxied: true, ttl: 1 });
+    mockGetSslMode.mockResolvedValue("strict");
+
+    const server: ServerConfig = { host: "1.2.3.4", user: "root", port: 22, cloudflareHostname: "agents.example.com", cloudflareZoneId: "zone-1" };
+    const results = await verifyEnvironment({ server, mode: "fix" });
+    const nginx = results.find((r) => r.name === "nginx");
+    expect(nginx?.status).toBe("fail");
+    expect(nginx?.detail).toBe("restart failed");
+  });
+
+  it("reports nginx not running in check mode when nginx is inactive", async () => {
+    mockBackendRead({
+      "cloudflare_api_token/default/api_token": "cf-token",
+    });
+    mockTestConnection.mockResolvedValue(true);
+    mockSshExec.mockImplementation((_cfg, cmd) => {
+      if (cmd === "node --version") return Promise.resolve({ stdout: "v22.22.1", stderr: "", exitCode: 0 });
+      if (cmd.includes("docker info")) return Promise.resolve({ stdout: "29.3.0", stderr: "", exitCode: 0 });
+      if (cmd === "systemctl is-active nginx") return Promise.resolve({ stdout: "inactive", stderr: "", exitCode: 1 });
+      if (cmd.includes("curl")) return Promise.resolve(sshOk());
+      return Promise.resolve(sshOk());
+    });
+    mockFindDnsRecord.mockResolvedValue({ id: "rec-1", type: "A", name: "agents.example.com", content: "1.2.3.4", proxied: true, ttl: 1 });
+    mockGetSslMode.mockResolvedValue("strict");
+
+    const server: ServerConfig = { host: "1.2.3.4", user: "root", port: 22, cloudflareHostname: "agents.example.com", cloudflareZoneId: "zone-1" };
+    const results = await verifyEnvironment({ server, mode: "check" });
+    const nginx = results.find((r) => r.name === "nginx");
+    expect(nginx?.status).toBe("fail");
+    expect(nginx?.detail).toBe("inactive");
+  });
+
+  it("reports SSL mode fail in check mode when SSL mode is not strict", async () => {
+    mockBackendRead({
+      "cloudflare_api_token/default/api_token": "cf-token",
+    });
+    mockTestConnection.mockResolvedValue(true);
+    mockSshExec.mockImplementation((_cfg, cmd) => {
+      if (cmd === "node --version") return Promise.resolve({ stdout: "v22.22.1", stderr: "", exitCode: 0 });
+      if (cmd.includes("docker info")) return Promise.resolve({ stdout: "29.3.0", stderr: "", exitCode: 0 });
+      if (cmd.includes("curl")) return Promise.resolve(sshOk());
+      return Promise.resolve(sshOk());
+    });
+    mockGetSslMode.mockResolvedValue("flexible");
+
+    const server: ServerConfig = { host: "1.2.3.4", user: "root", port: 22, cloudflareZoneId: "zone-1" };
+    const results = await verifyEnvironment({ server, mode: "check" });
+    const ssl = results.find((r) => r.name === "Cloudflare SSL");
+    expect(ssl?.status).toBe("fail");
+    expect(ssl?.detail).toContain("flexible");
+    expect(ssl?.detail).toContain("strict");
+  });
+
+  it("reports gateway skip when curl health check fails", async () => {
+    mockBackendRead({});
+    mockTestConnection.mockResolvedValue(true);
+    mockSshExec.mockImplementation((_cfg, cmd) => {
+      if (cmd === "node --version") return Promise.resolve({ stdout: "v22.22.1", stderr: "", exitCode: 0 });
+      if (cmd.includes("docker info")) return Promise.resolve({ stdout: "29.3.0", stderr: "", exitCode: 0 });
+      // gateway health check fails
+      if (cmd.includes("curl")) return Promise.resolve({ stdout: "", stderr: "connection refused", exitCode: 1 });
+      return Promise.resolve(sshOk());
+    });
+
+    const server: ServerConfig = { host: "1.2.3.4", user: "root", port: 22 };
+    const results = await verifyEnvironment({ server, mode: "check" });
+    const gw = results.find((r) => r.name === "Gateway");
+    expect(gw?.status).toBe("skip");
+    expect(gw?.detail).toContain("al push");
+  });
 });
