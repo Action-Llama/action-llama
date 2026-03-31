@@ -32,3 +32,7 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Resource lock contention — two agents competing for the same lock, verify mutual exclusion
 - [x] Webhook retry/deduplication — deliver duplicate webhook, verify single execution
 - [x] Stats and usage tracking — run agents, verify stats API returns correct execution counts
+
+## Newly Identified Gaps
+
+- [x] Chat session management — create, retrieve idempotently, delete, and clear chat sessions via REST API (chat.test.ts)

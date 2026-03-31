@@ -198,8 +198,10 @@ export class IntegrationHarness {
 
   /**
    * Start the scheduler (triggers real Docker builds, gateway, cron, webhooks).
+   *
+   * @param opts.webUI - Enable web UI routes including chat session management (default: false)
    */
-  async start(): Promise<void> {
+  async start(opts?: { webUI?: boolean }): Promise<void> {
     const { startScheduler } = await import("@action-llama/action-llama/internals/scheduler");
     const globalConfig: GlobalConfig = {
       gateway: { port: this.gatewayPort },
@@ -212,9 +214,9 @@ export class IntegrationHarness {
     this._scheduler = await startScheduler(
       this.projectPath,
       loadedConfig,
-      undefined, // no status tracker
-      false,     // no web UI
-      true,      // expose — bind to 0.0.0.0 so Docker containers can reach gateway via host-gateway
+      undefined,            // no status tracker
+      opts?.webUI ?? false, // web UI (enables chat routes when true)
+      true,                 // expose — bind to 0.0.0.0 so Docker containers can reach gateway via host-gateway
     );
 
     // Wire up run completion instrumentation via the event bus
