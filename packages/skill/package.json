@@ -20,6 +20,9 @@
     "dist",
     "content"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc"
   }
