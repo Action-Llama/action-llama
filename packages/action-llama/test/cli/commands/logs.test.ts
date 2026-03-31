@@ -3,9 +3,13 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
 
-// Force file-reading fallback by making gatewayFetch reject
+// Controllable mock for gatewayFetch — defaults to reject (file-reading fallback)
+const { mockGatewayFetch } = vi.hoisted(() => ({
+  mockGatewayFetch: vi.fn().mockRejectedValue(new Error("no gateway")),
+}));
+
 vi.mock("../../../src/cli/gateway-client.js", () => ({
-  gatewayFetch: () => Promise.reject(new Error("no gateway")),
+  gatewayFetch: (...args: any[]) => mockGatewayFetch(...args),
 }));
 
 import { execute } from "../../../src/cli/commands/logs.js";
@@ -1221,6 +1225,213 @@ describe("logs command", () => {
       // Only the "error recent" entry is both within 2h AND matches "error"
       expect(output).toHaveLength(1);
       expect(output[0]).toContain("echo error recent");
+    });
+  });
+
+  // ── Invalid --before value ──────────────────────────────────────────────────
+
+  describe("--before error handling", () => {
+    it("exits with error on invalid --before value", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({ msg: "test" }) + "\n");
+
+      const origExit = process.exit;
+      const origError = console.error;
+      let exitCode: number | undefined;
+      let errorMsg = "";
+
+      process.exit = ((code?: number) => { exitCode = code; throw new Error("EXIT"); }) as any;
+      console.error = (...args: any[]) => { errorMsg = args.join(" "); };
+
+      try {
+        await execute("dev", { project: tmpDir, lines: "50", before: "not-a-time" });
+      } catch {
+        // expected EXIT
+      } finally {
+        process.exit = origExit;
+        console.error = origError;
+      }
+
+      expect(exitCode).toBe(1);
+      expect(errorMsg).toContain("Error:");
+    });
+  });
+
+  // ── parseLine with empty line ───────────────────────────────────────────────
+
+  describe("parseLine with whitespace-only lines", () => {
+    it("skips whitespace-only log lines gracefully", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      // Include empty lines and whitespace lines between real entries
+      const content = [
+        makePinoLine({ msg: "bash", cmd: "echo first" }),
+        "",
+        "   ",
+        makePinoLine({ msg: "bash", cmd: "echo second" }),
+        "\t",
+      ].join("\n") + "\n";
+      writeFileSync(logFile, content);
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", raw: true });
+      console.log = origLog;
+
+      // Should show both commands, skipping the empty/whitespace lines
+      expect(output).toHaveLength(2);
+      expect(output[0]).toContain("echo first");
+      expect(output[1]).toContain("echo second");
+    });
+  });
+
+  // ── Gateway path tests ──────────────────────────────────────────────────────
+
+  describe("gateway path (non-follow)", () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      // Default: reject (existing tests rely on this)
+      mockGatewayFetch.mockRejectedValue(new Error("no gateway"));
+    });
+
+    it("fetches and displays log entries from gateway when available", async () => {
+      const entries = [
+        { level: 30, time: Date.now(), msg: "bash", cmd: "echo hello", name: "dev", pid: 1, hostname: "h" },
+        { level: 30, time: Date.now() + 1000, msg: "assistant", text: "Done.", name: "dev", pid: 1, hostname: "h" },
+      ];
+
+      mockGatewayFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ entries, cursor: null, hasMore: false }),
+      } as any);
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      try {
+        await execute("dev", { project: tmpDir, lines: "50" });
+      } finally {
+        console.log = origLog;
+      }
+
+      expect(mockGatewayFetch).toHaveBeenCalledOnce();
+      // Should display the bash command and assistant text
+      expect(output.some((l) => l.includes("echo hello"))).toBe(true);
+      expect(output.some((l) => l.includes("Done."))).toBe(true);
+    });
+
+    it("displays 'No log entries found' message when gateway returns empty results", async () => {
+      mockGatewayFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ entries: [], cursor: null, hasMore: false }),
+      } as any);
+
+      const output: string[] = [];
+      const logs: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      try {
+        await execute("dev", { project: tmpDir, lines: "50" });
+      } finally {
+        console.log = origLog;
+      }
+
+      expect(output.some((l) => l.includes('No log entries found'))).toBe(true);
+    });
+
+    it("uses /api/logs/scheduler path for agent named 'scheduler'", async () => {
+      mockGatewayFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ entries: [], cursor: null, hasMore: false }),
+      } as any);
+
+      await execute("scheduler", { project: tmpDir, lines: "50" });
+
+      const callArg = mockGatewayFetch.mock.calls[0][0];
+      expect(callArg.path).toContain("/api/logs/scheduler");
+    });
+
+    it("uses instance-specific path when instanceSuffix is set", async () => {
+      mockGatewayFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ entries: [], cursor: null, hasMore: false }),
+      } as any);
+
+      await execute("dev", { project: tmpDir, lines: "50", instance: "abc12345" });
+
+      const callArg = mockGatewayFetch.mock.calls[0][0];
+      expect(callArg.path).toContain("/api/logs/agents/dev/abc12345");
+    });
+
+    it("falls back to file when gateway returns non-ok status", async () => {
+      mockGatewayFetch.mockResolvedValue({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      } as any);
+
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({ msg: "bash", cmd: "echo fallback" }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      try {
+        await execute("dev", { project: tmpDir, lines: "50" });
+      } finally {
+        console.log = origLog;
+      }
+
+      // Should fall back to file reading
+      expect(output.some((l) => l.includes("echo fallback"))).toBe(true);
+    });
+
+    it("applies grep filter to gateway results", async () => {
+      const entries = [
+        { level: 30, time: Date.now(), msg: "bash", cmd: "echo match", name: "dev", pid: 1, hostname: "h" },
+        { level: 30, time: Date.now() + 1000, msg: "bash", cmd: "echo other", name: "dev", pid: 1, hostname: "h" },
+      ];
+      mockGatewayFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ entries, cursor: null, hasMore: false }),
+      } as any);
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      try {
+        await execute("dev", { project: tmpDir, lines: "50", grep: "match" });
+      } finally {
+        console.log = origLog;
+      }
+
+      expect(output.some((l) => l.includes("echo match"))).toBe(true);
+      expect(output.every((l) => !l.includes("echo other"))).toBe(true);
+    });
+
+    it("uses raw formatter when --raw is set and gateway responds", async () => {
+      const entries = [
+        { level: 30, time: Date.now(), msg: "bash", cmd: "echo raw", name: "dev", pid: 1, hostname: "h" },
+      ];
+      mockGatewayFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ entries, cursor: null, hasMore: false }),
+      } as any);
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      try {
+        await execute("dev", { project: tmpDir, lines: "50", raw: true });
+      } finally {
+        console.log = origLog;
+      }
+
+      // Raw mode shows INFO label
+      expect(output.some((l) => l.includes("INFO"))).toBe(true);
     });
   });
 
