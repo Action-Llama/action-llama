@@ -283,4 +283,53 @@ describe("Cloudflare API client", () => {
 
     await expect(listZones("bad-token", "example.com")).rejects.toThrow(CloudflareApiError);
   });
+
+  it("throws CloudflareApiError when response is ok but success=false (with error messages)", async () => {
+    // Response with ok:true but success:false - this exercises the data.success check
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        success: false,
+        errors: [{ message: "Invalid API token" }],
+      }),
+      text: () => Promise.resolve(""),
+    });
+
+    let err: any;
+    try {
+      await listZones(TOKEN, "example.com");
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(CloudflareApiError);
+    expect(err.message).toContain("Invalid API token");
+  });
+
+  it("uses 'Unknown error' when success=false and errors is undefined (nullish coalescing)", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        success: false,
+        // no errors field → data.errors is undefined → ?? "Unknown error" fires
+      }),
+      text: () => Promise.resolve(""),
+    });
+
+    await expect(listZones(TOKEN, "example.com")).rejects.toThrow("Unknown error");
+  });
+
+  it("handles res.text() throwing during HTTP error response", async () => {
+    // res.ok = false, and res.text() also throws
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({}),
+      text: () => Promise.reject(new Error("text() failed")),
+    });
+
+    // Should still throw a CloudflareApiError, with empty body from the catch fallback
+    await expect(listZones(TOKEN, "example.com")).rejects.toThrow(CloudflareApiError);
+  });
 });

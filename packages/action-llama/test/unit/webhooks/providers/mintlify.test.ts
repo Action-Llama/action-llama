@@ -116,5 +116,41 @@ describe("MintlifyWebhookProvider", () => {
       filter.branches = ["develop"];
       expect(provider.matchesFilter(context, filter)).toBe(false);
     });
+
+    it("returns false when filter specifies actions but context has no action", () => {
+      const noActionContext = {
+        source: "mintlify",
+        event: "build",
+        // no action field
+        repo: "my-docs",
+        branch: "main",
+        sender: "user@example.com",
+        timestamp: "2023-01-01T00:00:00Z",
+        title: "Build",
+        body: "Some message",
+      } as any;
+
+      const filter: MintlifyWebhookFilter = { actions: ["failed"] };
+      expect(provider.matchesFilter(noActionContext, filter)).toBe(false);
+    });
+  });
+
+  describe("parseEvent with body.error field", () => {
+    it("sets context.body to 'Build failed: <error>' when body.error is present on a failed build", () => {
+      const payload = {
+        event: "build",
+        action: "failed",
+        project: "my-docs",
+        branch: "main",
+        error: "Compilation failed: unexpected token",
+        url: "https://mintlify.com/build/456",
+        user: { email: "dev@example.com" },
+      };
+
+      const context = provider.parseEvent({}, payload);
+      expect(context).not.toBeNull();
+      expect(context?.body).toBe("Build failed: Compilation failed: unexpected token");
+      expect(context?.conclusion).toBe("failure");
+    });
   });
 });
