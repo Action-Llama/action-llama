@@ -23,16 +23,29 @@ function formatScale(agent: AgentStatus): string {
   return "";
 }
 
+function SpinnerIcon() {
+  return (
+    <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+    </svg>
+  );
+}
+
 function ActionMenu({
   agent,
   isPaused,
   onAction,
   onRunClick,
+  killingAgents,
+  onKillAgent,
 }: {
   agent: AgentStatus;
   isPaused: boolean;
   onAction: (fn: () => Promise<unknown>) => void;
   onRunClick: () => void;
+  killingAgents: Set<string>;
+  onKillAgent: (agentName: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -67,11 +80,16 @@ function ActionMenu({
             Run
           </button>
           <button
-            onClick={() => { onAction(() => killAgentInstances(agent.name)); setOpen(false); }}
-            disabled={agent.runningCount === 0}
+            onClick={() => { onKillAgent(agent.name); setOpen(false); }}
+            disabled={agent.runningCount === 0 || killingAgents.has(agent.name)}
             className="w-full text-left px-3 py-1.5 text-xs text-red-700 dark:text-red-400 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            Kill
+            {killingAgents.has(agent.name) ? (
+              <span className="flex items-center gap-1">
+                <SpinnerIcon />
+                Killing…
+              </span>
+            ) : "Kill"}
           </button>
           <button
             onClick={() => { onAction(() => agent.enabled ? disableAgent(agent.name) : enableAgent(agent.name)); setOpen(false); }}
@@ -90,6 +108,7 @@ export function DashboardPage() {
   const { agents, schedulerInfo } = useStatusStream();
   const agentNames = agents.map((a) => a.name);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [killingAgents, setKillingAgents] = useState<Set<string>>(new Set());
   const [runModalAgent, setRunModalAgent] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -120,6 +139,22 @@ export function DashboardPage() {
     },
     [],
   );
+
+  const handleKillAgent = useCallback(async (agentName: string) => {
+    setKillingAgents((prev) => new Set(prev).add(agentName));
+    setActionError(null);
+    try {
+      await killAgentInstances(agentName);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Action failed");
+    } finally {
+      setKillingAgents((prev) => {
+        const next = new Set(prev);
+        next.delete(agentName);
+        return next;
+      });
+    }
+  }, []);
 
   const isPaused = schedulerInfo?.paused ?? false;
 
@@ -294,14 +329,17 @@ export function DashboardPage() {
                         Run
                       </button>
                       <button
-                        onClick={() =>
-                          handleAction(() => killAgentInstances(agent.name))
-                        }
-                        disabled={agent.runningCount === 0}
+                        onClick={() => handleKillAgent(agent.name)}
+                        disabled={agent.runningCount === 0 || killingAgents.has(agent.name)}
                         className="px-2 py-1 text-xs rounded bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
                         title="Kill all instances"
                       >
-                        Kill
+                        {killingAgents.has(agent.name) ? (
+                          <span className="flex items-center gap-1">
+                            <SpinnerIcon />
+                            Killing…
+                          </span>
+                        ) : "Kill"}
                       </button>
                       <button
                         onClick={() =>
@@ -322,7 +360,7 @@ export function DashboardPage() {
                     </div>
                     {/* Mobile: dropdown */}
                     <div className="sm:hidden">
-                      <ActionMenu agent={agent} isPaused={isPaused} onAction={handleAction} onRunClick={() => setRunModalAgent(agent.name)} />
+                      <ActionMenu agent={agent} isPaused={isPaused} onAction={handleAction} onRunClick={() => setRunModalAgent(agent.name)} killingAgents={killingAgents} onKillAgent={handleKillAgent} />
                     </div>
                   </td>
                 </tr>
