@@ -356,5 +356,61 @@ describe("AgentLifecycle", () => {
       // Should stay in error state despite running instance
       expect(agent.getState()).toBe("error");
     });
+
+    it("should not auto-transition when in building state", () => {
+      agent.startBuild();
+
+      const instance = new InstanceLifecycle("inst-2", agentName, "schedule");
+      agent.addInstance(instance);
+      instance.start();
+
+      // Should stay in building state despite running instance
+      expect(agent.getState()).toBe("building");
+    });
+
+    it("emits agent:instance-end without state transition when instance ends in non-running agent state", () => {
+      // Put agent in error state then complete an instance
+      agent.setError("Some error");
+
+      const instance = new InstanceLifecycle("inst-3", agentName, "schedule");
+      agent.addInstance(instance);
+      instance.start();
+
+      const spy = vi.fn();
+      agent.on("agent:instance-end", spy);
+
+      // Complete the instance; agent is in "error" state, so no state transition
+      instance.complete();
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentName,
+          instanceId: "inst-3",
+          reason: "completed",
+          fromState: "error",
+          toState: "error",
+        })
+      );
+      // Agent should remain in error state
+      expect(agent.getState()).toBe("error");
+    });
+  });
+
+  describe("AgentLifecycle class getters", () => {
+    it("agentName getter returns the agent name", () => {
+      expect(agent.agentName).toBe(agentName);
+    });
+
+    it("totalInstanceCount getter returns total instance count", () => {
+      expect(agent.totalInstanceCount).toBe(0);
+
+      const instance1 = new InstanceLifecycle("inst-a", agentName, "schedule");
+      agent.addInstance(instance1);
+      expect(agent.totalInstanceCount).toBe(1);
+
+      const instance2 = new InstanceLifecycle("inst-b", agentName, "schedule");
+      agent.addInstance(instance2);
+      expect(agent.totalInstanceCount).toBe(2);
+    });
   });
 });
