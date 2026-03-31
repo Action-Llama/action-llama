@@ -576,5 +576,37 @@ describe("webhook routes – additional paths", () => {
       const body = await res.json();
       expect(body.error).toContain("payload too large");
     });
+
+    it("logs warning and continues when updateWebhookReceiptStatus throws on first call during replay (line 293)", async () => {
+      // This test properly covers line 293:
+      //   logger.warn({ err }, "failed to update replay receipt status")
+      // by making updateWebhookReceiptStatus throw synchronously on the FIRST call.
+      const stats = mockStatsStore();
+      stats.getWebhookReceipt.mockReturnValue({
+        id: "r-throw-first",
+        source: "test",
+        eventSummary: "test.event",
+        timestamp: Date.now(),
+        headers: JSON.stringify({ "content-type": "application/json" }),
+        body: JSON.stringify({ event: "push" }),
+        matchedAgents: 1,
+        status: "processed",
+      });
+      stats.recordWebhookReceipt.mockReturnValue(undefined);
+      // Always throw on the first (and only) updateWebhookReceiptStatus call
+      stats.updateWebhookReceiptStatus.mockImplementation(() => {
+        throw new Error("db write error");
+      });
+
+      const { app } = buildApp([new TestProvider()], { statsStore: stats });
+      const res = await app.request("/api/webhooks/r-throw-first/replay", { method: "POST" });
+
+      // Despite the throw in the catch block, the replay should complete successfully
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.ok).toBe(true);
+      // updateWebhookReceiptStatus was called once and threw — covered line 293
+      expect(stats.updateWebhookReceiptStatus).toHaveBeenCalledTimes(1);
+    });
   });
 });
