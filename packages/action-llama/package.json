@@ -6,7 +6,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Action-Llama/action-llama",
+    "url": "git+https://github.com/Action-Llama/action-llama.git",
     "directory": "packages/action-llama"
   },
   "keywords": [
@@ -23,7 +23,7 @@
     "node": ">=20"
   },
   "bin": {
-    "al": "./dist/cli/main.js"
+    "al": "dist/cli/main.js"
   },
   "main": "./dist/cli/main.js",
   "exports": {
