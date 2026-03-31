@@ -159,6 +159,44 @@ vi.mock("../../../src/cloud/vps/nginx.js", () => ({
   generateNginxConfig: () => "server {}",
 }));
 
+// Mock hetzner-api
+const {
+  mockHetznerListLocations,
+  mockHetznerListServerTypes,
+  mockHetznerListImages,
+  mockHetznerListSshKeys,
+  mockHetznerCreateSshKey,
+  mockHetznerCreateServer,
+  mockHetznerGetServer,
+  mockHetznerListFirewalls,
+  mockHetznerCreateFirewall,
+  mockHetznerApplyFirewallToServer,
+} = vi.hoisted(() => ({
+  mockHetznerListLocations: vi.fn(),
+  mockHetznerListServerTypes: vi.fn(),
+  mockHetznerListImages: vi.fn(),
+  mockHetznerListSshKeys: vi.fn(),
+  mockHetznerCreateSshKey: vi.fn(),
+  mockHetznerCreateServer: vi.fn(),
+  mockHetznerGetServer: vi.fn(),
+  mockHetznerListFirewalls: vi.fn(),
+  mockHetznerCreateFirewall: vi.fn(),
+  mockHetznerApplyFirewallToServer: vi.fn(),
+}));
+
+vi.mock("../../../src/cloud/vps/hetzner-api.js", () => ({
+  listLocations: (...args: any[]) => mockHetznerListLocations(...args),
+  listServerTypes: (...args: any[]) => mockHetznerListServerTypes(...args),
+  listImages: (...args: any[]) => mockHetznerListImages(...args),
+  listSshKeys: (...args: any[]) => mockHetznerListSshKeys(...args),
+  createSshKey: (...args: any[]) => mockHetznerCreateSshKey(...args),
+  createServer: (...args: any[]) => mockHetznerCreateServer(...args),
+  getServer: (...args: any[]) => mockHetznerGetServer(...args),
+  listFirewalls: (...args: any[]) => mockHetznerListFirewalls(...args),
+  createFirewall: (...args: any[]) => mockHetznerCreateFirewall(...args),
+  applyFirewallToServer: (...args: any[]) => mockHetznerApplyFirewallToServer(...args),
+}));
+
 const { setupVpsCloud } = await import("../../../src/cloud/vps/provision.js");
 
 // --- Test data ---
@@ -280,6 +318,16 @@ describe("VPS provisioning", () => {
     mockSetSslMode.mockReset().mockResolvedValue(undefined);
     mockInstallNginx.mockReset().mockResolvedValue(undefined);
     mockConfigureNginx.mockReset().mockResolvedValue(undefined);
+    mockHetznerListLocations.mockReset().mockResolvedValue([]);
+    mockHetznerListServerTypes.mockReset().mockResolvedValue([]);
+    mockHetznerListImages.mockReset().mockResolvedValue([]);
+    mockHetznerListSshKeys.mockReset().mockResolvedValue([]);
+    mockHetznerCreateSshKey.mockReset().mockResolvedValue(undefined);
+    mockHetznerCreateServer.mockReset().mockResolvedValue(undefined);
+    mockHetznerGetServer.mockReset().mockResolvedValue(undefined);
+    mockHetznerListFirewalls.mockReset().mockResolvedValue([]);
+    mockHetznerCreateFirewall.mockReset().mockResolvedValue(undefined);
+    mockHetznerApplyFirewallToServer.mockReset().mockResolvedValue(undefined);
   });
 
   describe("existing server path", () => {
@@ -933,6 +981,17 @@ function resetAllMocks() {
   mockSetSslMode.mockResolvedValue(undefined);
   mockInstallNginx.mockResolvedValue(undefined);
   mockConfigureNginx.mockResolvedValue(undefined);
+  // Hetzner mocks
+  mockHetznerListLocations.mockResolvedValue([]);
+  mockHetznerListServerTypes.mockResolvedValue([]);
+  mockHetznerListImages.mockResolvedValue([]);
+  mockHetznerListSshKeys.mockResolvedValue([]);
+  mockHetznerCreateSshKey.mockResolvedValue(undefined);
+  mockHetznerCreateServer.mockResolvedValue(undefined);
+  mockHetznerGetServer.mockResolvedValue(undefined);
+  mockHetznerListFirewalls.mockResolvedValue([]);
+  mockHetznerCreateFirewall.mockResolvedValue(undefined);
+  mockHetznerApplyFirewallToServer.mockResolvedValue(undefined);
 }
 
 describe("promptCloudflareHttps full success path", () => {
@@ -1265,5 +1324,482 @@ describe("Vultr wizard navigation", () => {
     expect(result).not.toBeNull();
     expect(result?.provider).toBe("vps");
     expect(mockSearch).toHaveBeenCalledTimes(4);
+  });
+});
+
+// --- Hetzner test data ---
+
+const HETZNER_SERVER_TYPES = [
+  {
+    id: 1,
+    name: "cx22",
+    description: "CX22",
+    cores: 2,
+    memory: 4,
+    disk: 40,
+    architecture: "x86",
+    deprecation: null,
+    prices: [{ location: "fsn1", price_hourly: { net: "0.006", gross: "0.007" }, price_monthly: { net: "3.79", gross: "4.51" } }],
+    locations: [{ id: 1, name: "fsn1", deprecation: null }],
+  },
+  {
+    id: 2,
+    name: "cx32",
+    description: "CX32",
+    cores: 4,
+    memory: 8,
+    disk: 80,
+    architecture: "x86",
+    deprecation: null,
+    prices: [{ location: "fsn1", price_hourly: { net: "0.013", gross: "0.015" }, price_monthly: { net: "8.90", gross: "10.59" } }],
+    locations: [{ id: 1, name: "fsn1", deprecation: null }],
+  },
+];
+
+const HETZNER_LOCATIONS = [
+  { id: 1, name: "fsn1", description: "Falkenstein DC Park 1", country: "DE", city: "Falkenstein", latitude: 50.47612, longitude: 12.37071, network_zone: "eu-central" },
+  { id: 2, name: "nbg1", description: "Nuremberg DC Park 1", country: "DE", city: "Nuremberg", latitude: 49.452102, longitude: 11.076665, network_zone: "eu-central" },
+];
+
+const HETZNER_IMAGES = [
+  { id: 1, type: "system", status: "available", name: "ubuntu-22.04", description: "Ubuntu 22.04", os_flavor: "ubuntu", os_version: "22.04", architecture: "x86", deprecated: null },
+  { id: 2, type: "system", status: "available", name: "ubuntu-24.04", description: "Ubuntu 24.04", os_flavor: "ubuntu", os_version: "24.04", architecture: "x86", deprecated: null },
+  { id: 3, type: "system", status: "available", name: "debian-12", description: "Debian 12", os_flavor: "debian", os_version: "12", architecture: "x86", deprecated: null },
+];
+
+const HETZNER_SSH_KEYS = [
+  { id: 101, name: "mykey", fingerprint: "aa:bb:cc", public_key: "ssh-rsa AAAA...existing", labels: {}, created: "2024-01-01" },
+];
+
+const HETZNER_SERVER_PENDING = {
+  id: 42,
+  name: "action-llama",
+  status: "initializing",
+  public_net: { ipv4: { ip: "0.0.0.0", blocked: false }, ipv6: { ip: "::", blocked: false } },
+  server_type: { id: 1, name: "cx22", cores: 2, memory: 4, disk: 40 },
+  datacenter: { id: 1, name: "fsn1-dc14", location: { id: 1, name: "fsn1", country: "DE", city: "Falkenstein" } },
+  created: "2024-01-01",
+};
+
+const HETZNER_SERVER_RUNNING = {
+  ...HETZNER_SERVER_PENDING,
+  status: "running",
+  public_net: { ipv4: { ip: "5.9.10.11", blocked: false }, ipv6: { ip: "::", blocked: false } },
+};
+
+function setupHetznerCatalogMocks() {
+  mockHetznerListServerTypes.mockResolvedValue(HETZNER_SERVER_TYPES);
+  mockHetznerListLocations.mockResolvedValue(HETZNER_LOCATIONS);
+  mockHetznerListImages.mockResolvedValue(HETZNER_IMAGES);
+  mockHetznerListSshKeys.mockResolvedValue(HETZNER_SSH_KEYS);
+}
+
+function setupHetznerFirewallMocks(existing = true) {
+  if (existing) {
+    mockHetznerListFirewalls.mockResolvedValue([
+      { id: 10, name: "action-llama", labels: {}, rules: [], applied_to: [] },
+    ]);
+  } else {
+    mockHetznerListFirewalls.mockResolvedValue([]);
+    mockHetznerCreateFirewall.mockResolvedValue({ id: 11, name: "action-llama", labels: {}, rules: [], applied_to: [] });
+  }
+  mockHetznerApplyFirewallToServer.mockResolvedValue(undefined);
+}
+
+function setupHetznerServerMocks() {
+  mockHetznerCreateServer.mockResolvedValue(HETZNER_SERVER_PENDING);
+  mockHetznerGetServer.mockResolvedValue(HETZNER_SERVER_RUNNING);
+}
+
+describe("Hetzner provisioning path", () => {
+  beforeEach(() => resetAllMocks());
+
+  it("provisions a Hetzner VPS with existing SSH key and firewall", async () => {
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
+
+    setupHetznerCatalogMocks();
+    setupHetznerFirewallMocks(true);
+    setupHetznerServerMocks();
+
+    // Wizard: server type, location, SSH key (OS auto-selected to ubuntu-22.04)
+    mockSearch
+      .mockResolvedValueOnce("cx22")    // server type
+      .mockResolvedValueOnce("fsn1")    // location
+      .mockResolvedValueOnce("101");    // existing Hetzner SSH key
+
+    setupSshMocks();
+    mockConfirm.mockResolvedValueOnce(true); // "VPS ready. Continue?"
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+    expect(result?.host).toBe("5.9.10.11");
+    expect(result?.hetznerServerId).toBe(42);
+    expect(result?.hetznerLocation).toBe("fsn1");
+    expect(result?.gatewayUrl).toBe("http://5.9.10.11:3000");
+    expect(mockHetznerCreateServer).toHaveBeenCalledWith("fake-vultr-key", expect.objectContaining({
+      name: "action-llama",
+      server_type: "cx22",
+      location: "fsn1",
+    }));
+  });
+
+  it("provisions Hetzner VPS and calls onInstanceCreated with partial then full config", async () => {
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(false);
+
+    setupHetznerCatalogMocks();
+    setupHetznerFirewallMocks(true);
+    setupHetznerServerMocks();
+
+    mockSearch
+      .mockResolvedValueOnce("cx22")
+      .mockResolvedValueOnce("fsn1")
+      .mockResolvedValueOnce("101");
+
+    setupSshMocks();
+    mockConfirm.mockResolvedValueOnce(true);
+
+    const partialCallbacks: Record<string, unknown>[] = [];
+    const result = await setupVpsCloud((partial) => partialCallbacks.push({ ...partial }));
+
+    expect(result).not.toBeNull();
+    // First callback: PENDING host
+    expect(partialCallbacks.length).toBeGreaterThanOrEqual(1);
+    expect(partialCallbacks[0].provider).toBe("vps");
+    expect(partialCallbacks[0].hetznerServerId).toBe(42);
+  });
+
+  it("creates new Hetzner firewall when none exists", async () => {
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(false);
+
+    setupHetznerCatalogMocks();
+    setupHetznerFirewallMocks(false); // no existing firewall
+    setupHetznerServerMocks();
+
+    mockSearch
+      .mockResolvedValueOnce("cx22")
+      .mockResolvedValueOnce("fsn1")
+      .mockResolvedValueOnce("101");
+
+    setupSshMocks();
+    mockConfirm.mockResolvedValueOnce(true);
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(mockHetznerCreateFirewall).toHaveBeenCalledWith(
+      "fake-vultr-key",
+      "action-llama",
+      expect.arrayContaining([expect.objectContaining({ port: "22" })]),
+    );
+  });
+
+  it("returns null when user declines final VPS ready confirmation", async () => {
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(false);
+
+    setupHetznerCatalogMocks();
+    setupHetznerFirewallMocks(true);
+    setupHetznerServerMocks();
+
+    mockSearch
+      .mockResolvedValueOnce("cx22")
+      .mockResolvedValueOnce("fsn1")
+      .mockResolvedValueOnce("101");
+
+    setupSshMocks();
+    mockConfirm.mockResolvedValueOnce(false); // Decline "VPS ready. Continue?"
+
+    const result = await setupVpsCloud();
+    expect(result).toBeNull();
+  });
+
+  it("returns null when Hetzner server never becomes active (timeout)", async () => {
+    vi.useFakeTimers();
+
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(false);
+
+    setupHetznerCatalogMocks();
+    setupHetznerFirewallMocks(true);
+
+    // Server created but always stays pending (never running)
+    mockHetznerCreateServer.mockResolvedValue(HETZNER_SERVER_PENDING);
+    mockHetznerGetServer.mockResolvedValue(HETZNER_SERVER_PENDING);
+
+    mockSearch
+      .mockResolvedValueOnce("cx22")
+      .mockResolvedValueOnce("fsn1")
+      .mockResolvedValueOnce("101");
+
+    const resultPromise = setupVpsCloud();
+
+    // Advance past 10-minute timeout
+    for (let i = 0; i < 70; i++) {
+      await vi.advanceTimersByTimeAsync(10_000);
+    }
+
+    const result = await resultPromise;
+    expect(result).toBeNull();
+
+    vi.useRealTimers();
+  });
+
+  it("returns null when final SSH check fails after Hetzner server is running and cloud-init completes", async () => {
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(false);
+
+    setupHetznerCatalogMocks();
+    setupHetznerFirewallMocks(true);
+    setupHetznerServerMocks();
+
+    mockSearch
+      .mockResolvedValueOnce("cx22")
+      .mockResolvedValueOnce("fsn1")
+      .mockResolvedValueOnce("101");
+
+    // Polling loop: testConnection succeeds, node/docker succeed → loop breaks
+    // Final testConnection fails → return null
+    let callCount = 0;
+    mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: any, cb: Function) => {
+      callCount++;
+      const command = args[args.length - 1];
+      if (command.includes("echo ok") && callCount === 1) {
+        cb(null, "ok\n", ""); // testConnection in loop: OK
+      } else if (command.includes("node --version")) {
+        cb(null, "v22.14.0\n", "");
+      } else if (command.includes("docker info")) {
+        cb(null, "24.0.7\n", "");
+      } else if (command.includes("echo ok") && callCount > 1) {
+        // Final testConnection: fail
+        cb(new Error("Connection refused"), "", "Connection refused");
+      } else {
+        cb(null, "ok\n", "");
+      }
+    });
+
+    const result = await setupVpsCloud();
+    expect(result).toBeNull();
+  });
+
+  it("prompts for Hetzner API key when not found in credentials", async () => {
+    mockBackendRead.mockResolvedValue(null); // No stored key
+
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(false);
+    mockPassword.mockResolvedValueOnce("new-hetzner-key");
+
+    setupHetznerCatalogMocks();
+    setupHetznerFirewallMocks(true);
+    setupHetznerServerMocks();
+
+    mockSearch
+      .mockResolvedValueOnce("cx22")
+      .mockResolvedValueOnce("fsn1")
+      .mockResolvedValueOnce("101");
+
+    setupSshMocks();
+    mockConfirm.mockResolvedValueOnce(true);
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(mockPassword).toHaveBeenCalledOnce();
+    expect(mockWriteCredentialField).toHaveBeenCalledWith("hetzner_api_key", "default", "api_key", "new-hetzner-key");
+  });
+
+  it("creates new SSH key via promptCredential when user selects __new__", async () => {
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(false);
+
+    setupHetznerCatalogMocks();
+    setupHetznerFirewallMocks(true);
+    setupHetznerServerMocks();
+
+    mockSearch
+      .mockResolvedValueOnce("cx22")
+      .mockResolvedValueOnce("fsn1")
+      .mockResolvedValueOnce("__new__"); // Create new key
+
+    mockPromptCredential.mockResolvedValueOnce({
+      values: { public_key: "ssh-rsa AAAA...new", private_key: "-----BEGIN..." },
+    });
+    mockHetznerCreateSshKey.mockResolvedValue({ id: 202, name: "action-llama", fingerprint: "xx:yy", public_key: "ssh-rsa AAAA...new", labels: {}, created: "2024-01-01" });
+
+    setupSshMocks();
+    mockConfirm.mockResolvedValueOnce(true);
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(mockHetznerCreateSshKey).toHaveBeenCalledWith("fake-vultr-key", "action-llama", "ssh-rsa AAAA...new");
+    expect(mockWriteCredentialFields).toHaveBeenCalledWith("vps_ssh", "default", expect.objectContaining({ public_key: "ssh-rsa AAAA...new" }));
+  });
+
+  it("uses existing AL vps_ssh credential and uploads to Hetzner if not already there", async () => {
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(false);
+
+    // vps_ssh credential exists
+    mockCredentialExists.mockResolvedValue(true);
+    mockLoadCredentialFields.mockResolvedValue({ public_key: "ssh-rsa AAAA...al-key", private_key: "-----BEGIN..." });
+
+    // Hetzner has no matching key
+    const keysWithoutAlKey = [{ id: 101, name: "otherkey", fingerprint: "aa:bb", public_key: "ssh-rsa AAAA...other", labels: {}, created: "2024-01-01" }];
+    mockHetznerListSshKeys.mockResolvedValue(keysWithoutAlKey);
+    mockHetznerListServerTypes.mockResolvedValue(HETZNER_SERVER_TYPES);
+    mockHetznerListLocations.mockResolvedValue(HETZNER_LOCATIONS);
+    mockHetznerListImages.mockResolvedValue(HETZNER_IMAGES);
+
+    setupHetznerFirewallMocks(true);
+    setupHetznerServerMocks();
+    mockHetznerCreateSshKey.mockResolvedValue({ id: 303, name: "action-llama", fingerprint: "zz:aa", public_key: "ssh-rsa AAAA...al-key", labels: {}, created: "2024-01-01" });
+
+    mockSearch
+      .mockResolvedValueOnce("cx22")
+      .mockResolvedValueOnce("fsn1")
+      .mockResolvedValueOnce("__al_credential__");
+
+    setupSshMocks();
+    mockConfirm.mockResolvedValueOnce(true);
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(mockHetznerCreateSshKey).toHaveBeenCalledWith("fake-vultr-key", "action-llama", "ssh-rsa AAAA...al-key");
+  });
+
+  it("reuses existing Hetzner key when AL credential public key already exists on Hetzner", async () => {
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(false);
+
+    mockCredentialExists.mockResolvedValue(true);
+    mockLoadCredentialFields.mockResolvedValue({ public_key: "ssh-rsa AAAA...existing", private_key: "-----BEGIN..." });
+
+    // HETZNER_SSH_KEYS already has public_key "ssh-rsa AAAA...existing"
+    setupHetznerCatalogMocks();
+    setupHetznerFirewallMocks(true);
+    setupHetznerServerMocks();
+
+    mockSearch
+      .mockResolvedValueOnce("cx22")
+      .mockResolvedValueOnce("fsn1")
+      .mockResolvedValueOnce("__al_credential__");
+
+    setupSshMocks();
+    mockConfirm.mockResolvedValueOnce(true);
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    // Should NOT upload the key again since it already exists
+    expect(mockHetznerCreateSshKey).not.toHaveBeenCalled();
+  });
+
+  it("includes cloudflare metadata in result on successful CF setup via Hetzner", async () => {
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    setupCloudflareMocks();
+
+    setupHetznerCatalogMocks();
+    setupHetznerFirewallMocks(false); // new firewall (adds http/https ports for CF)
+    setupHetznerServerMocks();
+
+    mockSearch
+      .mockResolvedValueOnce("cx22")    // server type
+      .mockResolvedValueOnce("fsn1")    // location
+      .mockResolvedValueOnce("101");    // SSH key
+
+    setupSshMocks();
+    mockConfirm.mockResolvedValueOnce(true); // "VPS ready. Continue?"
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+    expect(result?.cloudflareHostname).toBe("agents.example.com");
+    expect(result?.cloudflareDnsRecordId).toBe("dns-record-123");
+    expect(result?.gatewayUrl).toBe("https://agents.example.com");
+    expect(mockUpsertDnsRecord).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      "agents.example.com",
+      "5.9.10.11",
+      true,
+    );
+  });
+
+  it("returns result without CF on Hetzner DNS record failure", async () => {
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    setupCloudflareMocks();
+    mockUpsertDnsRecord.mockRejectedValue(new Error("DNS API failed"));
+
+    setupHetznerCatalogMocks();
+    setupHetznerFirewallMocks(true);
+    setupHetznerServerMocks();
+
+    mockSearch
+      .mockResolvedValueOnce("cx22")
+      .mockResolvedValueOnce("fsn1")
+      .mockResolvedValueOnce("101");
+
+    setupSshMocks();
+    mockConfirm.mockResolvedValueOnce(true);
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+    // DNS failed → fall back to HTTP URL, no CF metadata
+    expect(result?.cloudflareDnsRecordId).toBeUndefined();
+    expect(result?.gatewayUrl).toContain("http://");
+  });
+
+  it("goes back when Esc pressed at server type selection", async () => {
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(false);
+
+    setupHetznerCatalogMocks();
+    setupHetznerFirewallMocks(true);
+    setupHetznerServerMocks();
+
+    // Esc at server type (step 0) → return null
+    mockSearch.mockResolvedValueOnce(null);
+
+    const result = await setupVpsCloud();
+    expect(result).toBeNull();
+  });
+
+  it("goes back when Esc pressed at location selection", async () => {
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(false);
+
+    setupHetznerCatalogMocks();
+    setupHetznerFirewallMocks(true);
+    setupHetznerServerMocks();
+
+    mockSearch
+      .mockResolvedValueOnce("cx22")    // server type (step 0)
+      .mockResolvedValueOnce(null)      // Esc at location (step 1) → back to step 0
+      .mockResolvedValueOnce("cx22")    // server type again
+      .mockResolvedValueOnce("fsn1")    // location retry
+      // OS auto-selected
+      .mockResolvedValueOnce("101");    // SSH key
+
+    setupSshMocks();
+    mockConfirm.mockResolvedValueOnce(true);
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    // search was called: type, Esc@loc, type again, loc, SSH key = 5 times
+    expect(mockSearch).toHaveBeenCalledTimes(5);
   });
 });
