@@ -1,6 +1,6 @@
 {
   "name": "@action-llama/skill",
-  "version": "0.23.4",
+  "version": "0.23.5",
   "description": "AI integration content for Action Llama projects — AGENTS.md, MCP config, Claude Code commands.",
   "type": "module",
   "license": "MIT",

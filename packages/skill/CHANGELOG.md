@@ -1,0 +1,9 @@
+# @action-llama/skill
+
+## 0.23.5
+
+### Patch Changes
+
+- [`225df08`](https://github.com/Action-Llama/action-llama/commit/225df08dca0e467cc0236eb6f6e94f4bb757847d) Thanks [@asselstine](https://github.com/asselstine)! - Extract AI integration content (AGENTS.md, MCP config, Claude Code commands) into new `@action-llama/skill` package. Scaffolded projects now depend on `@action-llama/skill` and receive content updates via `npm update` instead of re-scaffolding.
+
+- [`fa48b28`](https://github.com/Action-Llama/action-llama/commit/fa48b28d16070d3eaa463c417a3e24b374735c09) Thanks [@asselstine](https://github.com/asselstine)! - Sync skill package version with action-llama and add fixed versioning so both packages always release together.
