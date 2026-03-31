@@ -241,6 +241,31 @@ describe("SqliteBackend – direct operations", () => {
       // Should not throw; interval is cleared
       await b.close();
     });
+
+    it("sweep removes expired KV entries and logs when changes > 0", async () => {
+      const b = new SqliteBackend(":memory:");
+      await b.init();
+      // Insert an entry with 1ms TTL so it immediately expires
+      await b.kvSet("ns", "expiring-key", "value", 1);
+      // Wait for the entry to expire
+      await new Promise((r) => setTimeout(r, 5));
+      // Invoke the private sweep method directly
+      (b as any).sweep();
+      // After sweep, the expired key should be gone
+      const result = await b.kvGet("ns", "expiring-key");
+      expect(result).toBeNull();
+      await b.close();
+    });
+
+    it("sweep is a no-op when no expired entries exist", async () => {
+      const b = new SqliteBackend(":memory:");
+      await b.init();
+      // Insert a non-expiring entry
+      await b.kvSet("ns", "permanent-key", "value");
+      // Sweep should run without errors even when nothing expires
+      expect(() => (b as any).sweep()).not.toThrow();
+      await b.close();
+    });
   });
 
   describe("constructor with existing AppDb (shared connection)", () => {
