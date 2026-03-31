@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useStatusStream } from "../hooks/StatusStreamContext";
-import { StateBadge, TriggerBadge } from "../components/Badge";
+import { TriggerBadge } from "../components/Badge";
 import {
   triggerAgent,
   killAgentInstances,
@@ -11,6 +11,23 @@ import {
 import type { AgentStatus } from "../lib/api";
 import { RunModal } from "../components/RunModal";
 import { agentHueStyle } from "../lib/color";
+
+const ROW_STATE_STYLES: Record<string, string> = {
+  running:
+    "border-l-2 border-l-green-500 dark:border-l-green-400 bg-green-50/40 dark:bg-green-950/20",
+  building:
+    "border-l-2 border-l-yellow-500 dark:border-l-yellow-400 bg-yellow-50/40 dark:bg-yellow-950/20",
+  error:
+    "border-l-2 border-l-red-500 dark:border-l-red-400 bg-red-50/30 dark:bg-red-950/20",
+  idle: "",
+};
+
+const STATE_DOT_COLORS: Record<string, string> = {
+  running: "bg-green-500",
+  building: "bg-yellow-500",
+  error: "bg-red-500",
+  idle: "bg-slate-400",
+};
 
 function formatScale(agent: AgentStatus): string {
   if (agent.state === "running" && agent.scale > 1) {
@@ -217,9 +234,6 @@ export function DashboardPage() {
                 <th className="hidden lg:table-cell text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
                   Description
                 </th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                  State
-                </th>
                 <th className="text-right px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
                   Actions
                 </th>
@@ -229,7 +243,7 @@ export function DashboardPage() {
               {filteredAgents.map((agent) => (
                 <tr
                   key={agent.name}
-                  className="border-b border-slate-100 dark:border-slate-800/50 last:border-0 hover:bg-slate-100/50 dark:hover:bg-slate-800/30"
+                  className={`border-b border-slate-100 dark:border-slate-800/50 last:border-0 hover:bg-slate-100/50 dark:hover:bg-slate-800/30 ${ROW_STATE_STYLES[agent.state] ?? ""}`}
                 >
                   <td className="px-4 py-2.5 min-w-0 max-w-[240px]">
                     <Link
@@ -237,10 +251,23 @@ export function DashboardPage() {
                       className="font-medium hover:underline truncate flex items-center gap-1.5"
                       title={agent.name}
                     >
+                      <span
+                        className={`w-2 h-2 rounded-full shrink-0 ${STATE_DOT_COLORS[agent.state] ?? "bg-slate-400"}`}
+                      />
                       <span className="agent-color-text truncate" style={{ fontSize: "16px", ...agentHueStyle(agent.name, agentNames) }}>
                         {agent.name}
                       </span>
                     </Link>
+                    {agent.scale > 1 && (
+                      <span className="ml-1 text-xs text-slate-500">
+                        {formatScale(agent)}
+                      </span>
+                    )}
+                    {!agent.enabled && (
+                      <span className="ml-1 text-xs text-slate-500 italic">
+                        (disabled)
+                      </span>
+                    )}
                     {/* Trigger badges (schedule, webhook labels) */}
                     {(agent.triggers?.length ?? 0) > 0 && (
                       <div className="flex flex-wrap gap-1 mt-0.5">
@@ -258,19 +285,6 @@ export function DashboardPage() {
                   </td>
                   <td className="hidden lg:table-cell px-4 py-2.5 text-xs text-slate-500 dark:text-slate-400 min-w-0 max-w-[300px] truncate">
                     {agent.description ?? "\u2014"}
-                  </td>
-                  <td className="px-4 py-2.5 whitespace-nowrap">
-                    <StateBadge state={agent.state} />
-                    {agent.scale > 1 && (
-                      <span className="ml-1 text-xs text-slate-500">
-                        {formatScale(agent)}
-                      </span>
-                    )}
-                    {!agent.enabled && (
-                      <span className="ml-1 text-xs text-slate-500 italic">
-                        (disabled)
-                      </span>
-                    )}
                   </td>
                   <td className="px-4 py-2.5 text-right">
                     {/* Desktop: inline buttons */}
@@ -323,7 +337,7 @@ export function DashboardPage() {
               {filteredAgents.length === 0 && debouncedQuery && (
                 <tr>
                   <td
-                    colSpan={4}
+                    colSpan={3}
                     className="px-4 py-8 text-center text-slate-500 dark:text-slate-400"
                   >
                     No agents matching &lsquo;{debouncedQuery}&rsquo;
@@ -333,7 +347,7 @@ export function DashboardPage() {
               {filteredAgents.length === 0 && !debouncedQuery && (
                 <tr>
                   <td
-                    colSpan={4}
+                    colSpan={3}
                     className="px-4 py-8 text-center text-slate-500 dark:text-slate-400"
                   >
                     No agents found
