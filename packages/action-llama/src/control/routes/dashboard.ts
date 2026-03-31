@@ -53,8 +53,26 @@ export function registerDashboardDataRoutes(
       // Send initial state
       send();
 
+      // Throttle updates: coalesce rapid-fire events into at most 1 send per 500ms
+      let pending = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const throttledSend = () => {
+        if (timer) {
+          pending = true;
+          return;
+        }
+        send();
+        timer = setTimeout(() => {
+          timer = null;
+          if (pending) {
+            pending = false;
+            send();
+          }
+        }, 500);
+      };
+
       // Listen for updates
-      statusTracker.on("update", send);
+      statusTracker.on("update", throttledSend);
 
       // Keep connection alive with periodic heartbeats
       const heartbeat = setInterval(() => {
@@ -63,7 +81,8 @@ export function registerDashboardDataRoutes(
 
       // Cleanup on disconnect
       stream.onAbort(() => {
-        statusTracker.removeListener("update", send);
+        statusTracker.removeListener("update", throttledSend);
+        if (timer) clearTimeout(timer);
         clearInterval(heartbeat);
       });
 
