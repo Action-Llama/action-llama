@@ -13,6 +13,7 @@ import {
   runJob,
   getExecution,
   listExecutions,
+  listJobs,
   pollExecutionUntilDone,
 } from "../../../src/cloud/gcp/cloud-run-api.js";
 import type { GcpAuth } from "../../../src/cloud/gcp/auth.js";
@@ -259,5 +260,46 @@ describe("gcpFetch - text() failure fallback", () => {
 
     await expect(gcpFetch(mockAuth, "https://example.com/test")).rejects.toThrow(GcpApiError);
     // No assertion on body content — just verifying the catch fallback doesn't crash
+  });
+});
+
+describe("listJobs", () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it("returns list of jobs when API responds with jobs array", async () => {
+    const mockJobs = [
+      { name: "projects/my-project/locations/us-central1/jobs/job-1", uid: "uid-1" },
+      { name: "projects/my-project/locations/us-central1/jobs/job-2", uid: "uid-2" },
+    ];
+    mockFetch.mockResolvedValueOnce(mockResponse({ jobs: mockJobs }));
+
+    const result = await listJobs(mockAuth, PROJECT, REGION);
+
+    expect(result).toEqual(mockJobs);
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining(`/projects/${PROJECT}/locations/${REGION}/jobs`),
+      expect.any(Object),
+    );
+  });
+
+  it("returns empty array when API returns no jobs field", async () => {
+    mockFetch.mockResolvedValueOnce(mockResponse({}));
+
+    const result = await listJobs(mockAuth, PROJECT, REGION);
+
+    expect(result).toEqual([]);
+  });
+
+  it("returns empty array when API returns null data", async () => {
+    // gcpFetch returns null when response has empty body
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve(""),
+    });
+
+    const result = await listJobs(mockAuth, PROJECT, REGION);
+
+    expect(result).toEqual([]);
   });
 });
