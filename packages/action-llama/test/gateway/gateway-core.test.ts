@@ -175,3 +175,38 @@ describe("Gateway container registration and unregistration", () => {
     expect(true).toBe(true);
   });
 });
+
+describe("Gateway — projectPath + apiKey without webUI (log+stats routes only)", () => {
+  let gateway: any;
+  const logger = makeLogger();
+  let projectPath: string;
+
+  beforeAll(async () => {
+    projectPath = mkdtempSync(join(tmpdir(), "gw-log-routes-"));
+    // No webUI, but apiKey + projectPath — exercises the else-if branch in gateway/index.ts
+    gateway = await startGateway({
+      port: 0,
+      logger,
+      projectPath,
+      apiKey: "test-api-key",
+      webUI: false,
+    });
+  });
+
+  afterAll(async () => {
+    await gateway.close();
+  });
+
+  it("starts successfully without webUI when apiKey and projectPath are provided", () => {
+    expect(gateway).toBeDefined();
+    expect(gateway.server).toBeDefined();
+  });
+
+  it("health endpoint still responds when started without webUI", async () => {
+    const addr = gateway.server.address() as any;
+    const res = await fetch(`http://localhost:${addr.port}/health`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe("ok");
+  });
+});
