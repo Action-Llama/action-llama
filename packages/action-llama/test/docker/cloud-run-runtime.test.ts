@@ -80,6 +80,7 @@ import { createJob, deleteJob, runJob, listJobs, listExecutions, pollExecutionUn
 import { createSecret, addSecretVersion, deleteSecret } from "../../src/cloud/gcp/secret-manager-api.js";
 import { listLogEntries, extractLogText, buildJobLogFilter } from "../../src/cloud/gcp/logging-api.js";
 import { getDefaultBackend } from "../../src/shared/credentials.js";
+import { cleanupOldImages } from "../../src/cloud/gcp/artifact-registry-api.js";
 
 const mockAuth: GcpAuth = {
   getAccessToken: vi.fn().mockResolvedValue("test-token"),
@@ -1018,6 +1019,121 @@ describe("CloudRunRuntime", () => {
       const runtime = makeRuntime();
       const agents = await runtime.listRunningAgents();
       expect(agents).toEqual([]);
+    });
+  });
+
+  describe("pushImage", () => {
+    function makeFakeDockerProc() {
+      const proc = new EventEmitter() as EventEmitter & {
+        stderr: EventEmitter;
+        kill: ReturnType<typeof vi.fn>;
+      };
+      proc.stderr = new EventEmitter();
+      proc.kill = vi.fn();
+      return proc;
+    }
+
+    beforeEach(() => {
+      mockSpawn.mockReset();
+      vi.mocked(cleanupOldImages).mockResolvedValue(undefined);
+    });
+
+    it("executes docker login, tag, push and returns registry URI", async () => {
+      const loginProc = makeFakeDockerProc();
+      const tagProc = makeFakeDockerProc();
+      const pushProc = makeFakeDockerProc();
+
+      mockSpawn
+        .mockReturnValueOnce(loginProc)
+        .mockReturnValueOnce(tagProc)
+        .mockReturnValueOnce(pushProc);
+
+      const runtime = makeRuntime();
+      const pushPromise = runtime.pushImage("my-image:latest");
+
+      // Resolve each _dockerExec call in sequence
+      await Promise.resolve();
+      loginProc.emit("close", 0);
+      await Promise.resolve();
+      await Promise.resolve();
+      tagProc.emit("close", 0);
+      await Promise.resolve();
+      await Promise.resolve();
+      pushProc.emit("close", 0);
+
+      const result = await pushPromise;
+
+      expect(result).toBe("us-central1-docker.pkg.dev/my-project/my-repo/my-image:latest");
+      // login called with correct args
+      const loginCall = mockSpawn.mock.calls[0];
+      expect(loginCall[1]).toContain("login");
+      expect(loginCall[1]).toContain("oauth2accesstoken");
+      expect(loginCall[1]).toContain("test-token");
+      // tag called
+      const tagCall = mockSpawn.mock.calls[1];
+      expect(tagCall[1]).toContain("tag");
+      // push called
+      const pushCall = mockSpawn.mock.calls[2];
+      expect(pushCall[1]).toContain("push");
+      // cleanupOldImages called after push
+      expect(cleanupOldImages).toHaveBeenCalled();
+    });
+
+    it("continues when cleanupOldImages throws (best effort)", async () => {
+      vi.mocked(cleanupOldImages).mockRejectedValue(new Error("Cleanup failed"));
+
+      const loginProc = makeFakeDockerProc();
+      const tagProc = makeFakeDockerProc();
+      const pushProc = makeFakeDockerProc();
+
+      mockSpawn
+        .mockReturnValueOnce(loginProc)
+        .mockReturnValueOnce(tagProc)
+        .mockReturnValueOnce(pushProc);
+
+      const runtime = makeRuntime();
+      const pushPromise = runtime.pushImage("my-image:latest");
+
+      await Promise.resolve();
+      loginProc.emit("close", 0);
+      await Promise.resolve();
+      await Promise.resolve();
+      tagProc.emit("close", 0);
+      await Promise.resolve();
+      await Promise.resolve();
+      pushProc.emit("close", 0);
+
+      // Should resolve successfully despite cleanup failure
+      const result = await pushPromise;
+      expect(result).toContain("my-image:latest");
+    });
+
+    it("_dockerExec rejects when docker exits with non-zero code", async () => {
+      const loginProc = makeFakeDockerProc();
+      mockSpawn.mockReturnValueOnce(loginProc);
+
+      const runtime = makeRuntime();
+      const pushPromise = runtime.pushImage("my-image:latest");
+
+      await Promise.resolve();
+      // Simulate docker login failure
+      loginProc.stderr.emit("data", Buffer.from("authentication required\n"));
+      loginProc.emit("close", 1);
+
+      await expect(pushPromise).rejects.toThrow("docker login failed (exit 1)");
+    });
+
+    it("_dockerExec rejects on spawn error", async () => {
+      const loginProc = makeFakeDockerProc();
+      mockSpawn.mockReturnValueOnce(loginProc);
+
+      const runtime = makeRuntime();
+      const pushPromise = runtime.pushImage("my-image:latest");
+
+      await Promise.resolve();
+      loginProc.emit("error", new Error("spawn ENOENT"));
+
+      await expect(pushPromise).rejects.toThrow("spawn ENOENT");
     });
   });
 });
