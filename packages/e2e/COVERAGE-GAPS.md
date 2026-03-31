@@ -81,3 +81,4 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] /locks/list endpoint — container acquires lock then list shows it, release empties list, missing secret returns 400, invalid secret returns 403 (locks-list-endpoint.test.ts)
 - [x] Signal route error paths — POST /signals/rerun|status|trigger|return: missing secret → 400, invalid secret → 403, invalid JSON body → 400 (signals-error-paths.test.ts)
 - [x] /calls route error paths — POST /calls: missing secret → 400, invalid secret → 403, missing targetAgent → 400, invalid JSON → 400; GET /calls/:callId: missing secret → 400, invalid secret → 403 (calls-error-paths.test.ts)
+- [x] al-subagent-wait returnValue from al-return — caller reads returnValue field from wait result when callee uses al-return, returnValue is null when callee exits without al-return (subagent-return-value.test.ts)
