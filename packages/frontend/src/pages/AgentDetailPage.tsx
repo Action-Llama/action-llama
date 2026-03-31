@@ -82,7 +82,7 @@ export function AgentDetailPage() {
         .catch(() => {});
     };
     poll();
-    const id = setInterval(poll, 2000);
+    const id = setInterval(poll, 4000);
     return () => clearInterval(id);
   }, [name]);
 

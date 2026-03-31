@@ -74,7 +74,7 @@ export function InstanceDetailPage() {
 
   useInvalidation("instance", name, refetchDetail);
 
-  // Poll logs
+  // Poll logs (slower when not running)
   useEffect(() => {
     if (!name || !id) return;
     const poll = () => {
@@ -91,9 +91,10 @@ export function InstanceDetailPage() {
         .catch(() => setConnected(false));
     };
     poll();
-    const interval = setInterval(poll, 1500);
+    const intervalMs = isRunning ? 3000 : 10000;
+    const interval = setInterval(poll, intervalMs);
     return () => clearInterval(interval);
-  }, [name, id]);
+  }, [name, id, isRunning]);
 
   // Poll locks
   useEffect(() => {
@@ -110,7 +111,7 @@ export function InstanceDetailPage() {
         .catch(() => {});
     };
     poll();
-    const interval = setInterval(poll, 2000);
+    const interval = setInterval(poll, 5000);
     return () => clearInterval(interval);
   }, [isRunning, id, name]);
 

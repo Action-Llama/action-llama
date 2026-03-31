@@ -1,25 +1,43 @@
 const BASE = "";
 
 async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    credentials: "same-origin",
-    ...init,
-  });
-  if (res.status === 401) {
-    window.location.href = "/login";
-    throw new Error("Unauthorized");
+  const MAX_RETRIES = 2;
+
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(`${BASE}${path}`, {
+      credentials: "same-origin",
+      ...init,
+    });
+
+    if (res.status === 401) {
+      window.location.href = "/login";
+      throw new Error("Unauthorized");
+    }
+
+    // Retry on 429 with exponential backoff
+    if (res.status === 429 && attempt < MAX_RETRIES) {
+      const retryAfterHeader = res.headers.get("Retry-After");
+      const baseWaitMs = retryAfterHeader
+        ? parseFloat(retryAfterHeader) * 1000
+        : 1000;
+      const waitMs = baseWaitMs * Math.pow(2, attempt);
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      continue;
+    }
+
+    if (!res.ok) {
+      const text = await res.text();
+      let message = text || `HTTP ${res.status}`;
+      try {
+        const json = JSON.parse(text);
+        if (typeof json.error === "string") message = json.error;
+        else if (typeof json.message === "string") message = json.message;
+      } catch { /* not JSON — use raw text */ }
+      throw new Error(message);
+    }
+
+    return res.json();
   }
-  if (!res.ok) {
-    const text = await res.text();
-    let message = text || `HTTP ${res.status}`;
-    try {
-      const json = JSON.parse(text);
-      if (typeof json.error === "string") message = json.error;
-      else if (typeof json.message === "string") message = json.message;
-    } catch { /* not JSON — use raw text */ }
-    throw new Error(message);
-  }
-  return res.json();
 }
 
 function ctrlPost<T = { success: boolean; message?: string }>(
