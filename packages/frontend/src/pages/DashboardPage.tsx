@@ -190,7 +190,7 @@ export function DashboardPage() {
 
       {/* Token usage bar */}
       {totalTokens > 0 && (
-        <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+        <div className="hidden md:block bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-3">
           <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">
             Token Usage by Agent{schedulerInfo?.startedAt ? ` (${fmtSessionTime(schedulerInfo.startedAt)})` : ""}
           </div>
