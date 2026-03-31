@@ -17,4 +17,6 @@ export interface WorkQueue<T> {
   clear(agentName: string): void;
   clearAll(): void;
   close(): void;
+  /** Set a per-agent max queue size, overriding the global default. */
+  setAgentMaxSize(agentName: string, maxSize: number): void;
 }

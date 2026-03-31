@@ -155,6 +155,36 @@ function workQueueSuite(
       expect(queue.dequeue("agent-a")?.context).toBe("event-2");
       expect(queue.dequeue("agent-a")).toBeUndefined();
     });
+
+    it("respects per-agent maxSize override", () => {
+      ({ queue, cleanup } = factory(100)); // global max = 100
+      queue.setAgentMaxSize("agent-a", 2);
+      queue.enqueue("agent-a", "event-1");
+      queue.enqueue("agent-a", "event-2");
+      const result = queue.enqueue("agent-a", "event-3");
+      expect(result.dropped?.context).toBe("event-1");
+      expect(queue.size("agent-a")).toBe(2);
+    });
+
+    it("per-agent maxSize does not affect other agents", () => {
+      ({ queue, cleanup } = factory(100));
+      queue.setAgentMaxSize("agent-a", 1);
+      queue.enqueue("agent-a", "a-1");
+      queue.enqueue("agent-b", "b-1");
+      queue.enqueue("agent-b", "b-2");
+      queue.enqueue("agent-b", "b-3");
+      expect(queue.size("agent-a")).toBe(1);
+      expect(queue.size("agent-b")).toBe(3);
+    });
+
+    it("falls back to global maxSize when no per-agent override", () => {
+      ({ queue, cleanup } = factory(2));
+      queue.enqueue("agent-a", "event-1");
+      queue.enqueue("agent-a", "event-2");
+      const result = queue.enqueue("agent-a", "event-3");
+      expect(result.dropped?.context).toBe("event-1");
+      expect(queue.size("agent-a")).toBe(2);
+    });
   });
 }
 

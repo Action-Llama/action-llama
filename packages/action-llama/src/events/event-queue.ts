@@ -10,9 +10,14 @@ export type { QueuedWorkItem, EnqueueResult, WorkQueue } from "../shared/work-qu
 export class MemoryWorkQueue<T> implements WorkQueue<T> {
   private queues = new Map<string, QueuedWorkItem<T>[]>();
   private maxSize: number;
+  private agentMaxSizes = new Map<string, number>();
 
   constructor(maxSize = 100) {
     this.maxSize = maxSize;
+  }
+
+  setAgentMaxSize(agentName: string, maxSize: number): void {
+    this.agentMaxSizes.set(agentName, maxSize);
   }
 
   enqueue(agentName: string, context: T, receivedAt?: Date): EnqueueResult<T> {
@@ -22,7 +27,8 @@ export class MemoryWorkQueue<T> implements WorkQueue<T> {
       this.queues.set(agentName, queue);
     }
     let dropped: QueuedWorkItem<T> | undefined;
-    if (queue.length >= this.maxSize) {
+    const effectiveMax = this.agentMaxSizes.get(agentName) ?? this.maxSize;
+    if (queue.length >= effectiveMax) {
       dropped = queue.shift();
     }
     queue.push({ context, receivedAt: receivedAt || new Date() });
