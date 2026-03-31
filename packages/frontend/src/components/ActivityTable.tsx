@@ -38,11 +38,16 @@ const ROW_STATUS_STYLES: Record<string, string> = {
     "border-l-2 border-l-green-500 dark:border-l-green-400",
 };
 
-/** Build link to trigger detail page */
-function triggerDetailPath(row: ActivityRow): string | null {
-  if (row.instanceId) return `/dashboard/triggers/${encodeURIComponent(row.instanceId)}`;
-  if (row.webhookReceiptId) return `/dashboard/webhooks/${encodeURIComponent(row.webhookReceiptId)}`;
-  return null;
+/** Build a trigger label from the row's trigger fields */
+function triggerLabel(row: ActivityRow): string {
+  // For webhooks: prefer "source event_summary" (e.g. "github issues opened")
+  if (row.triggerType === "webhook" && row.triggerSource) {
+    if (row.eventSummary && row.eventSummary !== row.triggerSource) {
+      return `${row.triggerSource} ${row.eventSummary}`;
+    }
+    return row.triggerSource;
+  }
+  return row.triggerType;
 }
 
 interface ActivityTableProps {
@@ -62,20 +67,42 @@ export function ActivityTable({
     <table className="w-full text-sm">
       <thead>
         <tr className="border-b border-slate-200 dark:border-slate-800">
-          <th className="text-left pl-6 pr-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+          <th className="text-left pl-6 pr-1 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide w-[1%] whitespace-nowrap">
             Time
           </th>
-          <th className="text-left px-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-            Instance
-          </th>
-          <th className="hidden sm:table-cell text-left px-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-            Trigger
+          <th className="text-left pl-2 pr-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+            Description
           </th>
         </tr>
       </thead>
       <tbody>
         {rows.map((row, i) => {
-          const detailPath = triggerDetailPath(row);
+          const isDeadLetter = row.result === "dead-letter";
+          const badge = triggerLabel(row);
+
+          // Build trigger badge element (optionally wrapped in a link)
+          const detailPath = row.instanceId
+            ? `/dashboard/triggers/${encodeURIComponent(row.instanceId)}`
+            : row.webhookReceiptId
+              ? `/dashboard/webhooks/${encodeURIComponent(row.webhookReceiptId)}`
+              : null;
+
+          const triggerEl = detailPath ? (
+            <Link to={detailPath} className="inline-flex items-center gap-1 hover:underline">
+              <TriggerBadge label={badge} />
+              {row.triggerType !== "webhook" && row.triggerSource && (
+                <span className="text-xs text-slate-500 dark:text-slate-400">{row.triggerSource}</span>
+              )}
+            </Link>
+          ) : (
+            <span className="inline-flex items-center gap-1">
+              <TriggerBadge label={badge} />
+              {row.triggerType !== "webhook" && row.triggerSource && (
+                <span className="text-xs text-slate-500 dark:text-slate-400">{row.triggerSource}</span>
+              )}
+            </span>
+          );
+
           return (
             <tr
               key={`${row.ts}-${i}`}
@@ -85,7 +112,7 @@ export function ActivityTable({
             >
               {/* Time — relative if < 6h, with status dot */}
               <td
-                className="pl-4 pr-2 py-2.5 text-slate-600 dark:text-slate-400 text-xs whitespace-nowrap"
+                className="pl-4 pr-1 py-2.5 text-slate-600 dark:text-slate-400 text-xs whitespace-nowrap align-top w-[1%]"
                 title={new Date(row.ts).toLocaleString()}
               >
                 <span className="inline-flex items-center gap-1.5">
@@ -97,101 +124,59 @@ export function ActivityTable({
                 </span>
               </td>
 
-              {/* Instance — full instanceId, colored like its agent */}
-              <td className="px-2 py-2.5">
-                {row.instanceId && row.agentName ? (
-                  <Link
-                    to={`/dashboard/agents/${encodeURIComponent(row.agentName)}/instances/${encodeURIComponent(row.instanceId)}`}
-                    className="hover:underline flex items-center gap-1.5"
-                    style={{ fontSize: "16px" }}
-                  >
-                    <span
-                      className="w-2 h-2 rounded-full shrink-0 agent-color-dot"
-                      style={agentHueStyle(row.agentName, agentNames)}
-                    />
-                    <span
-                      className="agent-color-text font-mono"
-                      style={agentHueStyle(row.agentName, agentNames)}
-                    >
-                      {row.instanceId}
-                    </span>
-                  </Link>
+              {/* Description — agent name + trigger, or just trigger for dead letters */}
+              <td className="pl-2 pr-2 py-2.5">
+                {isDeadLetter ? (
+                  // Dead letter: just trigger badge + reason
+                  <div className="flex flex-col gap-0.5">
+                    {triggerEl}
+                    {row.deadLetterReason && (
+                      <span className="text-xs text-red-500 dark:text-red-400">
+                        {row.deadLetterReason.replace(/_/g, " ")}
+                      </span>
+                    )}
+                  </div>
                 ) : row.agentName ? (
-                  <Link
-                    to={`/dashboard/agents/${encodeURIComponent(row.agentName)}`}
-                    className="hover:underline flex items-center gap-1.5"
-                    style={{ fontSize: "16px" }}
-                  >
-                    <span
-                      className="w-2 h-2 rounded-full shrink-0 agent-color-dot"
-                      style={agentHueStyle(row.agentName, agentNames)}
-                    />
-                    <span
-                      className="agent-color-text"
-                      style={agentHueStyle(row.agentName, agentNames)}
-                    >
-                      {row.agentName}
-                    </span>
-                  </Link>
+                  // Agent activity: name on top, trigger below
+                  <div className="flex flex-col gap-0.5">
+                    {row.instanceId ? (
+                      <Link
+                        to={`/dashboard/agents/${encodeURIComponent(row.agentName)}/instances/${encodeURIComponent(row.instanceId)}`}
+                        className="hover:underline inline-flex items-center gap-1.5"
+                      >
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0 agent-color-dot"
+                          style={agentHueStyle(row.agentName, agentNames)}
+                        />
+                        <span
+                          className="agent-color-text font-medium"
+                          style={agentHueStyle(row.agentName, agentNames)}
+                        >
+                          {row.agentName}
+                        </span>
+                      </Link>
+                    ) : (
+                      <Link
+                        to={`/dashboard/agents/${encodeURIComponent(row.agentName)}`}
+                        className="hover:underline inline-flex items-center gap-1.5"
+                      >
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0 agent-color-dot"
+                          style={agentHueStyle(row.agentName, agentNames)}
+                        />
+                        <span
+                          className="agent-color-text font-medium"
+                          style={agentHueStyle(row.agentName, agentNames)}
+                        >
+                          {row.agentName}
+                        </span>
+                      </Link>
+                    )}
+                    {triggerEl}
+                  </div>
                 ) : (
                   <span className="text-slate-400 text-xs">{"\u2014"}</span>
                 )}
-                {/* Mobile-only trigger display */}
-                <div className="sm:hidden mt-0.5">
-                  {(() => {
-                    const badgeLabel =
-                      row.triggerType === "webhook" && row.triggerSource
-                        ? row.triggerSource
-                        : row.triggerType;
-                    const secondary =
-                      row.triggerType !== "webhook" && row.triggerSource ? (
-                        <span className="text-xs text-slate-500 dark:text-slate-400">
-                          {row.triggerSource}
-                        </span>
-                      ) : null;
-                    return detailPath ? (
-                      <Link to={detailPath} className="inline-flex items-center gap-1 hover:underline">
-                        <TriggerBadge label={badgeLabel} />
-                        {secondary}
-                      </Link>
-                    ) : (
-                      <span className="inline-flex items-center gap-1">
-                        <TriggerBadge label={badgeLabel} />
-                        {secondary}
-                      </span>
-                    );
-                  })()}
-                </div>
-              </td>
-
-              {/* Trigger — links to trigger detail (hidden on mobile) */}
-              <td className="hidden sm:table-cell px-2 py-2.5">
-                {(() => {
-                  const badgeLabel =
-                    row.triggerType === "webhook" && row.triggerSource
-                      ? row.triggerSource
-                      : row.triggerType;
-                  const secondary =
-                    row.triggerType !== "webhook" && row.triggerSource ? (
-                      <span className="text-xs text-slate-600 dark:text-slate-400">
-                        {row.triggerSource}
-                      </span>
-                    ) : null;
-                  return detailPath ? (
-                    <Link
-                      to={detailPath}
-                      className="inline-flex items-center gap-1.5 hover:underline"
-                    >
-                      <TriggerBadge label={badgeLabel} />
-                      {secondary}
-                    </Link>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5">
-                      <TriggerBadge label={badgeLabel} />
-                      {secondary}
-                    </span>
-                  );
-                })()}
               </td>
             </tr>
           );
@@ -199,7 +184,7 @@ export function ActivityTable({
         {rows.length === 0 && loading && (
           <tr>
             <td
-              colSpan={3}
+              colSpan={2}
               className="px-4 py-8 text-center text-slate-500 dark:text-slate-400"
             >
               Loading...
@@ -209,7 +194,7 @@ export function ActivityTable({
         {rows.length === 0 && !loading && (
           <tr>
             <td
-              colSpan={3}
+              colSpan={2}
               className="px-4 py-8 text-center text-slate-500 dark:text-slate-400"
             >
               {emptyMessage}

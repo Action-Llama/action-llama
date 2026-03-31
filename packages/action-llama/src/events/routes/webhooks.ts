@@ -159,10 +159,21 @@ export function registerWebhookRoutes(
     const receiptId = randomUUID();
     const deliveryId = provider.getDeliveryId?.(headers) ?? null;
 
-    // Parse event summary from headers for the receipt
-    const eventSummary = headers["x-github-event"]
-      ? `${headers["x-github-event"]}${headers["x-github-event"] && headers["x-github-event"] !== "ping" ? "" : ""}`
-      : source;
+    // Parse event summary from headers + body action for the receipt
+    // e.g. "issues opened", "pull_request closed", "push"
+    let eventSummary = source;
+    const githubEvent = headers["x-github-event"];
+    if (githubEvent) {
+      eventSummary = githubEvent;
+      try {
+        const parsed = JSON.parse(rawBody);
+        if (parsed && typeof parsed.action === "string") {
+          eventSummary = `${githubEvent} ${parsed.action}`;
+        }
+      } catch {
+        // body not JSON — use event header only
+      }
+    }
 
     // Record initial receipt (pending dispatch)
     if (statsStore) {

@@ -313,6 +313,17 @@ export class StatsStore {
     return Object.fromEntries(rows.map((r) => [r.id, r.source]));
   }
 
+  /** Batch-fetch source + eventSummary for webhook receipt IDs */
+  getWebhookDetailsBatch(ids: string[]): Record<string, { source: string; eventSummary?: string }> {
+    if (ids.length === 0) return {};
+    const client = (this.db as any).$client;
+    const placeholders = ids.map(() => "?").join(",");
+    const rows = client.prepare(
+      `SELECT id, source, event_summary FROM webhook_receipts WHERE id IN (${placeholders})`
+    ).all(...ids) as { id: string; source: string; event_summary?: string }[];
+    return Object.fromEntries(rows.map((r) => [r.id, { source: r.source, eventSummary: r.event_summary ?? undefined }]));
+  }
+
   getWebhookReceipt(id: string): WebhookReceipt | undefined {
     const row = (this.db as any).$client
       .prepare("SELECT * FROM webhook_receipts WHERE id = ? LIMIT 1")

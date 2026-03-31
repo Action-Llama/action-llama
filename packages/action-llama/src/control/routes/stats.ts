@@ -243,16 +243,20 @@ export function registerStatsRoutes(
       return b.ts - a.ts;
     });
 
-    // Enrich webhook rows with provider name from receipts (handles pre-fix historical data)
+    // Enrich webhook rows with provider name + event summary from receipts
     if (statsStore) {
       const receiptIds = allRows
         .filter((r: any) => r.triggerType === "webhook" && r.webhookReceiptId)
         .map((r: any) => r.webhookReceiptId as string);
       if (receiptIds.length > 0) {
-        const sources = statsStore.getWebhookSourcesBatch(receiptIds);
+        const details = statsStore.getWebhookDetailsBatch(receiptIds);
         for (const row of allRows) {
-          if (row.webhookReceiptId && sources[row.webhookReceiptId]) {
-            row.triggerSource = sources[row.webhookReceiptId];
+          if (row.webhookReceiptId && details[row.webhookReceiptId]) {
+            const d = details[row.webhookReceiptId];
+            row.triggerSource = d.source;
+            if (d.eventSummary && d.eventSummary !== d.source) {
+              row.eventSummary = d.eventSummary;
+            }
           }
         }
       }

@@ -9,6 +9,7 @@ function mockStatsStore() {
     queryRunByInstanceId: vi.fn().mockReturnValue(undefined),
     getWebhookReceipt: vi.fn().mockReturnValue(undefined),
     getWebhookSourcesBatch: vi.fn().mockReturnValue({}),
+    getWebhookDetailsBatch: vi.fn().mockReturnValue({}),
     queryTriggerHistory: vi.fn().mockReturnValue([]),
     countTriggerHistory: vi.fn().mockReturnValue(0),
   } as any;

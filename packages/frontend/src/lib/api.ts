@@ -150,6 +150,8 @@ export interface ActivityRow {
   ts: number;
   triggerType: string;
   triggerSource?: string | null;
+  /** Webhook event detail, e.g. "issues opened", "push" */
+  eventSummary?: string | null;
   agentName?: string | null;
   instanceId?: string | null;
   /** "pending" | "running" | "completed" | "rerun" | "error" | "dead-letter" */
