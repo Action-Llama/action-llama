@@ -598,4 +598,91 @@ describe("log API routes", () => {
       expect(res.status).toBe(400);
     });
   });
+
+  describe("additional uncovered paths", () => {
+    it("returns 400 for invalid agent name in /:name/:instanceId route", async () => {
+      const app = createTestApp(tmpDir);
+      // Invalid name (contains uppercase) in the instance-specific route
+      const res = await app.request("/api/logs/agents/INVALID!/dev-aa11bb22");
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.error).toBe("Invalid agent name");
+    });
+
+    it("returns empty entries when cursor is provided but no scheduler log file exists", async () => {
+      // No log files created — cursor provided but file missing
+      const validCursor = Buffer.from("2024-03-18:0").toString("base64url");
+
+      const app = createTestApp(tmpDir);
+      const res = await app.request(`/api/logs/scheduler?cursor=${encodeURIComponent(validCursor)}`);
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.entries).toEqual([]);
+      expect(data.cursor).toBeNull();
+      expect(data.hasMore).toBe(false);
+    });
+
+    it("breaks when entries.length hits the limit in forward read (cursor path)", async () => {
+      // Write more entries than the limit
+      const manyLines = Array.from({ length: 10 }, (_, i) =>
+        pinoLine(30, 1710700001000 + i * 1000, `msg-${i}`)
+      );
+      writeFileSync(join(logsPath, "scheduler-2024-03-18.log"), manyLines.join("\n") + "\n");
+
+      const app = createTestApp(tmpDir);
+      // Get initial cursor
+      const res1 = await app.request("/api/logs/scheduler?lines=3");
+      const data1 = await res1.json();
+      expect(data1.entries).toHaveLength(3); // last 3
+      const cursor = data1.cursor;
+
+      // Now forward read from cursor with limit=3 and 7 more entries available
+      // This should trigger the `entries.length >= limit` break
+      const res2 = await app.request(`/api/logs/scheduler?cursor=${encodeURIComponent(cursor)}&lines=3`);
+      const data2 = await res2.json();
+      // Should return at most 3 entries
+      expect(data2.entries.length).toBeLessThanOrEqual(3);
+    });
+
+    it("filters by after time in forward read (cursor path)", async () => {
+      const lines = [
+        pinoLine(30, 1710700001000, "before"),
+        pinoLine(30, 1710700005000, "after"),
+        pinoLine(30, 1710700009000, "after2"),
+      ];
+      writeFileSync(join(logsPath, "scheduler-2024-03-18.log"), lines.join("\n") + "\n");
+
+      const app = createTestApp(tmpDir);
+      // Get cursor at start of file
+      const res1 = await app.request("/api/logs/scheduler?lines=1");
+      const cursor = (await res1.json()).cursor;
+
+      // Forward read with after=1710700003000 → should skip "before"
+      const res2 = await app.request(
+        `/api/logs/scheduler?cursor=${encodeURIComponent(cursor)}&after=1710700003000`
+      );
+      const data2 = await res2.json();
+      expect(data2.entries.every((e: any) => e.time > 1710700003000)).toBe(true);
+    });
+
+    it("filters by before time in forward read (cursor path)", async () => {
+      const lines = [
+        pinoLine(30, 1710700001000, "early"),
+        pinoLine(30, 1710700005000, "mid"),
+        pinoLine(30, 1710700009000, "late"),
+      ];
+      writeFileSync(join(logsPath, "scheduler-2024-03-18.log"), lines.join("\n") + "\n");
+
+      const app = createTestApp(tmpDir);
+      const res1 = await app.request("/api/logs/scheduler?lines=1");
+      const cursor = (await res1.json()).cursor;
+
+      // Forward read with before=1710700007000 → should exclude "late"
+      const res2 = await app.request(
+        `/api/logs/scheduler?cursor=${encodeURIComponent(cursor)}&before=1710700007000`
+      );
+      const data2 = await res2.json();
+      expect(data2.entries.every((e: any) => e.time < 1710700007000)).toBe(true);
+    });
+  });
 });
