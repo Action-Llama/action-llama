@@ -291,11 +291,11 @@ function fireQueuedItem(
     
     // Create instance lifecycle for webhook run (if supported)
     const instanceLifecycle = ctx.statusTracker?.createInstance ? 
-      ctx.statusTracker.createInstance(runner.instanceId, agentConfig.name, `webhook:${work.context.event}`) || undefined :
+      ctx.statusTracker.createInstance(runner.instanceId, agentConfig.name, `webhook:${work.context.source}`) || undefined :
       undefined;
     
     const prompt = makeWebhookPrompt(agentConfig, work.context, ctx);
-    executeRun(runner, prompt, { type: 'webhook', source: work.context.event, receiptId: work.context.receiptId }, agentConfig.name, 0, ctx, instanceLifecycle)
+    executeRun(runner, prompt, { type: 'webhook', source: work.context.source, receiptId: work.context.receiptId }, agentConfig.name, 0, ctx, instanceLifecycle)
       .then(() => drainQueues(ctx))
       .catch((err) => ctx.logger.error({ err, agent: agentConfig.name }, "queued webhook failed"));
 

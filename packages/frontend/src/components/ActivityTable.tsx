@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { TriggerTypeBadge, ResultBadge } from "./Badge";
+import { TriggerBadge, ResultBadge } from "./Badge";
 import type { ActivityRow } from "../lib/api";
 import { fmtSmartTime } from "../lib/format";
 import { agentHueStyle } from "../lib/color";
@@ -83,28 +83,32 @@ export function ActivityTable({
 
               {/* Trigger — links to trigger detail */}
               <td className="px-2 py-2.5">
-                {detailPath ? (
-                  <Link
-                    to={detailPath}
-                    className="inline-flex items-center gap-1.5 hover:underline"
-                  >
-                    <TriggerTypeBadge type={row.triggerType} />
-                    {row.triggerSource && (
+                {(() => {
+                  const badgeLabel =
+                    row.triggerType === "webhook" && row.triggerSource
+                      ? row.triggerSource
+                      : row.triggerType;
+                  const secondary =
+                    row.triggerType !== "webhook" && row.triggerSource ? (
                       <span className="text-xs text-slate-600 dark:text-slate-400">
                         {row.triggerSource}
                       </span>
-                    )}
-                  </Link>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5">
-                    <TriggerTypeBadge type={row.triggerType} />
-                    {row.triggerSource && (
-                      <span className="text-xs text-slate-600 dark:text-slate-400">
-                        {row.triggerSource}
-                      </span>
-                    )}
-                  </span>
-                )}
+                    ) : null;
+                  return detailPath ? (
+                    <Link
+                      to={detailPath}
+                      className="inline-flex items-center gap-1.5 hover:underline"
+                    >
+                      <TriggerBadge label={badgeLabel} />
+                      {secondary}
+                    </Link>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5">
+                      <TriggerBadge label={badgeLabel} />
+                      {secondary}
+                    </span>
+                  );
+                })()}
               </td>
 
               {/* Instance — full instanceId, colored like its agent */}

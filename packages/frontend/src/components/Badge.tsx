@@ -18,6 +18,10 @@ export function TriggerBadge({ label }: { label: string }) {
       "bg-sky-50 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400",
     mintlify:
       "bg-teal-50 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400",
+    manual:
+      "bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400",
+    agent:
+      "bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400",
   };
   const cls =
     colors[key] ??
