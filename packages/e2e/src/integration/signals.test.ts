@@ -233,6 +233,41 @@ describe.skipIf(!DOCKER)("integration: signals and exit codes", { timeout: 180_0
     await harness.waitForRunResult("al-rerun-agent");
   });
 
+  it("run:end event includes exitCode for error exits", async () => {
+    // The run:end event should include the exitCode when a container exits
+    // with a non-zero code. This is used by the dashboard to show exit codes.
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "exit-code-agent",
+          schedule: "0 0 31 2 *",
+          testScript: [
+            "#!/bin/sh",
+            // Exit with a specific non-zero code
+            "exit 2",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    await harness.start();
+
+    // Subscribe to run:end to capture the full event with exitCode
+    const runEndPromise = harness.events.waitFor(
+      "run:end",
+      (e) => e.agentName === "exit-code-agent",
+      60_000,
+    );
+
+    await harness.triggerAgent("exit-code-agent");
+
+    const runEnd = await runEndPromise;
+    expect(runEnd.agentName).toBe("exit-code-agent");
+    expect(runEnd.result).toBe("error");
+    // exitCode should be present and reflect the container's exit code
+    expect(runEnd.exitCode).toBe(2);
+  });
+
   it("structured log lines are forwarded by container runner", async () => {
     harness = await IntegrationHarness.create({
       agents: [

@@ -70,3 +70,4 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Chat session list endpoint — GET /api/chat/sessions returns active sessions, new session appears in list (chat.test.ts)
 - [x] Chat session limit enforcement — POST /api/chat/sessions returns 429 when maxChatSessions limit is reached (chat.test.ts)
 - [x] run:start event correlation — verify run:start event's instanceId matches trigger API response instanceId, trigger field is 'manual' (scheduler.test.ts)
+- [x] run:end event exitCode — verify run:end event includes exitCode matching the container's exit code for error exits (signals.test.ts)
