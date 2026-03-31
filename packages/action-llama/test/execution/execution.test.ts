@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { PoolRunner } from "../../src/execution/runner-pool.js";
 import { RunnerPool } from "../../src/execution/runner-pool.js";
 import { MemoryWorkQueue } from "../../src/events/event-queue.js";
+import * as executionModule from "../../src/execution/execution.js";
 import {
   executeRun,
   dispatchTriggers,
@@ -800,5 +801,192 @@ describe("drainQueues — agent-trigger with callId", () => {
 
     expect(callStore.setRunning).toHaveBeenCalledWith("call-456");
     expect(callStore.fail).toHaveBeenCalledWith("call-456", "agent run failed");
+  });
+});
+
+describe("dispatchTriggers — rejected reason other than scale=0", () => {
+  it("logs 'trigger skipped' info message for non-scale-0 rejected reasons", () => {
+    const runner = makeRunner({ instanceId: "a" });
+    const ctx = makeCtx({
+      agentConfigs: [makeAgentConfig("a"), makeAgentConfig("b")],
+      runnerPools: {
+        a: new RunnerPool([runner]),
+        // No pool for "b" — with default queueWhenBusy=true → will queue
+        // Use isPaused to trigger "rejected" reason "scheduler is paused"
+      },
+      isPaused: () => true,
+    });
+
+    // dispatchTriggers from "a" to "b" with global isPaused → rejected with "scheduler is paused"
+    dispatchTriggers([{ agent: "b", context: "ctx" }], "a", 0, ctx);
+
+    expect(ctx.logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: "scheduler is paused" }),
+      "trigger skipped"
+    );
+  });
+});
+
+describe("drainQueues — schedule work item", () => {
+  it("drains queued schedule-type items", async () => {
+    const runner = makeRunner({ instanceId: "a" });
+    const config = makeAgentConfig("a");
+    const ctx = makeCtx({
+      agentConfigs: [config],
+      runnerPools: { a: new RunnerPool([runner]) },
+    });
+    ctx.workQueue.enqueue("a", { type: "schedule" });
+
+    await drainQueues(ctx);
+    // Wait for async run to complete
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(runner.run).toHaveBeenCalledOnce();
+  });
+
+  it("logs error when queued scheduled run throws (via onRunComplete)", async () => {
+    const runner = makeRunner({ instanceId: "a" });
+    const config = makeAgentConfig("a");
+    // Make executeRun throw by providing an onRunComplete that throws
+    const ctx = makeCtx({
+      agentConfigs: [config],
+      runnerPools: { a: new RunnerPool([runner]) },
+      onRunComplete: () => { throw new Error("schedule run failed"); },
+    });
+    ctx.workQueue.enqueue("a", { type: "schedule" });
+
+    await drainQueues(ctx);
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(ctx.logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "a" }),
+      "queued scheduled run failed"
+    );
+  });
+
+  it("logs error when queued manual trigger run throws (via onRunComplete)", async () => {
+    const runner = makeRunner({ instanceId: "a" });
+    const config = makeAgentConfig("a");
+    const ctx = makeCtx({
+      agentConfigs: [config],
+      runnerPools: { a: new RunnerPool([runner]) },
+      onRunComplete: () => { throw new Error("manual run failed"); },
+    });
+    ctx.workQueue.enqueue("a", { type: "manual", prompt: "run this" });
+
+    await drainQueues(ctx);
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(ctx.logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "a" }),
+      "queued manual trigger failed"
+    );
+  });
+
+  it("logs error when queued webhook run throws (via onRunComplete)", async () => {
+    const runner = makeRunner({ instanceId: "a" });
+    const config = makeAgentConfig("a");
+    const ctx = makeCtx({
+      agentConfigs: [config],
+      runnerPools: { a: new RunnerPool([runner]) },
+      onRunComplete: () => { throw new Error("webhook run failed"); },
+    });
+    const webhookCtx: WorkItem = {
+      type: "webhook",
+      context: { event: "push", payload: {}, receiptId: "r1", headers: {} },
+    };
+    ctx.workQueue.enqueue("a", webhookCtx);
+
+    await drainQueues(ctx);
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(ctx.logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "a" }),
+      "queued webhook failed"
+    );
+  });
+
+  it("logs error when queued agent-trigger run throws (via onRunComplete, with callId)", async () => {
+    const runnerA = makeRunner({ instanceId: "a" });
+    const runnerB = makeRunner({ instanceId: "b" });
+    const callStore = { setRunning: vi.fn(), complete: vi.fn(), fail: vi.fn() };
+    const configA = makeAgentConfig("a");
+    const configB = makeAgentConfig("b");
+    const ctx = makeCtx({
+      agentConfigs: [configA, configB],
+      runnerPools: {
+        a: new RunnerPool([runnerA]),
+        b: new RunnerPool([runnerB]),
+      },
+      callStore: callStore as any,
+      // onRunComplete throws to cause executeRun to reject
+      onRunComplete: () => { throw new Error("agent trigger failed"); },
+    });
+    ctx.workQueue.enqueue("b", {
+      type: "agent-trigger",
+      sourceAgent: "a",
+      context: "some context",
+      depth: 0,
+      callId: "call-err",
+    });
+
+    await drainQueues(ctx);
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(ctx.logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "b" }),
+      "queued trigger failed"
+    );
+    // callStore.fail should be called via the catch handler
+    expect(callStore.fail).toHaveBeenCalledWith("call-err", "agent trigger failed");
+  });
+});
+
+describe("dispatchTriggers — executeRun rejection catch block", () => {
+  it("logs error when executeRun rejects during triggered dispatch (via onRunComplete)", async () => {
+    const runnerA = makeRunner({ instanceId: "a" });
+    const runnerB = makeRunner({ instanceId: "b" });
+
+    const statsStore = {
+      recordCallEdge: vi.fn().mockReturnValue(42),
+      updateCallEdge: vi.fn(),
+      recordRun: vi.fn(),
+    };
+
+    let callCount = 0;
+    const ctx = makeCtx({
+      agentConfigs: [makeAgentConfig("a"), makeAgentConfig("b")],
+      runnerPools: {
+        a: new RunnerPool([runnerA]),
+        b: new RunnerPool([runnerB]),
+      },
+      statsStore: statsStore as any,
+      // First call is for runner "a", second call is for dispatched "b" trigger
+      // Make the second call (for "b") throw so the .catch() in dispatchTriggers fires
+      onRunComplete: () => {
+        callCount++;
+        if (callCount >= 2) throw new Error("triggered run exploded");
+      },
+    });
+
+    // runner "a" returns a trigger to agent "b"
+    runnerA.run = vi.fn().mockResolvedValue({
+      result: "completed",
+      triggers: [{ agent: "b", context: "go" }],
+    });
+
+    await executeRun(runnerA, "prompt", { type: "schedule" }, "a", 0, ctx);
+    // Wait for the dispatched "b" run to complete and catch() to fire
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(ctx.logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ target: "b" }),
+      "triggered run failed"
+    );
+    // statsStore.updateCallEdge should be called with error status
+    expect(statsStore.updateCallEdge).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({ status: "error" })
+    );
   });
 });
