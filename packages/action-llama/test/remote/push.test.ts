@@ -1,5 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// Mock child_process execFile (used by sshExecSafe in push.ts)
+// We use the custom promisify symbol so that push.ts's `promisify(execFileCb)` picks up our mock.
+const { mockExecFileCb, mockExecFilePromisified } = vi.hoisted(() => {
+  const mockPromisified = vi.fn().mockResolvedValue({ stdout: "", stderr: "" });
+  const mockCallback = vi.fn();
+  // Attach the custom promisify symbol so that promisify(mockCallback) uses mockPromisified
+  Object.defineProperty(mockCallback, Symbol.for("nodejs.util.promisify.custom"), {
+    value: mockPromisified,
+    writable: true,
+    configurable: true,
+  });
+  return { mockExecFileCb: mockCallback, mockExecFilePromisified: mockPromisified };
+});
+
+vi.mock("child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("child_process")>();
+  return { ...actual, execFile: mockExecFileCb };
+});
+
 // Mock SSH module
 const mockSshExec = vi.fn();
 const mockSshSpawn = vi.fn();
@@ -191,6 +210,8 @@ describe("pushToServer", () => {
     mockRsyncTo.mockResolvedValue(undefined);
     mockBootstrapServer.mockResolvedValue({ nodePath: "/usr/local/bin/node", nodeVersion: "v22.22.1", dockerVersion: "29.3.0" });
     mockUnlinkSync.mockReturnValue(undefined);
+    // Default execFile mock: returns empty stdout (safe for sshExecSafe calls)
+    mockExecFilePromisified.mockResolvedValue({ stdout: "", stderr: "" });
     // Mock sshSpawn to return a fake journal-tailing process
     mockSshSpawn.mockReturnValue({
       stdout: { on: vi.fn() },
@@ -913,5 +934,176 @@ describe("pushToServer — additional coverage paths", () => {
       typeof dest === "string" && dest.includes("frontend")
     );
     expect(frontendRsync).toBeUndefined();
+  });
+
+  it("resolveFrontendDist returns dist path when workspace frontend package index.html exists", async () => {
+    // Make existsSync return false for the bundled path (../frontend/index.html)
+    // but true for the workspace-linked distDir/index.html
+    mockExistsSync.mockImplementation((path: string) => {
+      const p = String(path);
+      // The bundled dir is resolve(dirname(import.meta.url), "..", "frontend")
+      // so the bundled index.html path contains ".../src/frontend/index.html"
+      if (p.endsWith("index.html") && p.includes("/src/frontend")) return false;
+      if (p.endsWith(".env.toml")) return false;
+      // workspace-linked frontend dist/index.html → return true
+      return true;
+    });
+
+    mockSshExec.mockResolvedValue("ok"); // health check succeeds
+
+    // Should complete — resolveFrontendDist should return the workspace dist path
+    await pushToServer({
+      projectPath: "/tmp/project",
+      serverConfig: { host: "h" },
+      globalConfig: {},
+      envName: "my-server",
+    });
+
+    // Should have attempted an rsync with a source ending in "dist"
+    const frontendRsync = mockRsyncTo.mock.calls.find(([, src]: any) =>
+      typeof src === "string" && src.includes("dist")
+    );
+    expect(frontendRsync).toBeDefined();
+  });
+});
+
+describe("pushToServer — healthCheck failure paths", () => {
+  const sshOpts = { host: "h", user: "root", port: 22 };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSshOptionsFromConfig.mockReturnValue({ ...sshOpts });
+    mockRsyncTo.mockResolvedValue(undefined);
+    mockBootstrapServer.mockResolvedValue({ nodePath: "/usr/local/bin/node", nodeVersion: "v22.22.1", dockerVersion: "29.3.0" });
+    mockUnlinkSync.mockReturnValue(undefined);
+    mockSshSpawn.mockReturnValue({
+      stdout: { on: vi.fn() },
+      kill: vi.fn(),
+    });
+    mockReadFileSync.mockImplementation((path: string) => {
+      if (path.endsWith("package.json")) return Buffer.from('{"name":"test"}');
+      if (path.endsWith("package-lock.json")) return Buffer.from('{"lockfileVersion":3}');
+      throw new Error("ENOENT");
+    });
+    mockCollectCredentialRefs.mockReturnValue(new Set(["github_token"]));
+    mockCredentialRefsToRelativePaths.mockReturnValue(["github_token/default"]);
+    mockExistsSync.mockImplementation((path: string) => !String(path).endsWith(".env.toml"));
+    mockLoadGlobalConfig.mockReturnValue({});
+    // Default: sshExecSafe returns empty string (all exec calls succeed)
+    mockExecFilePromisified.mockResolvedValue({ stdout: "", stderr: "" });
+  });
+
+  it("logs service-failed diagnostics when service reports failed status", async () => {
+    // All SSH commands succeed except the health check curl
+    mockSshExec.mockImplementation(async (_ssh: any, cmd: string) => {
+      if (cmd.includes("curl -sf")) throw new Error("curl: (7) connection refused");
+      return "";
+    });
+
+    // sshExecSafe uses execFile (promisified) — return "failed" for systemctl is-active
+    mockExecFilePromisified.mockImplementation(async (_cmd: string, args: string[]) => {
+      const command = Array.isArray(args) ? args[args.length - 1] : "";
+      if (command.includes("systemctl is-active")) {
+        return { stdout: "failed\n", stderr: "" };
+      }
+      if (command.includes("systemctl status")) {
+        return { stdout: "● action-llama.service - FAILED\n   Active: failed", stderr: "" };
+      }
+      if (command.includes("journalctl")) {
+        return { stdout: "Error: something went wrong\n", stderr: "" };
+      }
+      return { stdout: "", stderr: "" };
+    });
+
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: any[]) => logs.push(args.join(" "));
+    try {
+      await pushToServer({
+        projectPath: "/tmp/project",
+        serverConfig: { host: "h" },
+        globalConfig: {},
+        envName: "my-server",
+      });
+    } finally {
+      console.log = origLog;
+    }
+
+    expect(logs.some((l) => l.includes("Service failed to start"))).toBe(true);
+    expect(logs.some((l) => l.includes("Service status"))).toBe(true);
+    expect(logs.some((l) => l.includes("Recent logs"))).toBe(true);
+  });
+
+  it("logs service-failed diagnostics when service reports inactive status", async () => {
+    mockSshExec.mockImplementation(async (_ssh: any, cmd: string) => {
+      if (cmd.includes("curl -sf")) throw new Error("curl: (7) connection refused");
+      return "";
+    });
+
+    mockExecFilePromisified.mockImplementation(async (_cmd: string, args: string[]) => {
+      const command = Array.isArray(args) ? args[args.length - 1] : "";
+      if (command.includes("systemctl is-active")) {
+        return { stdout: "inactive\n", stderr: "" };
+      }
+      return { stdout: "", stderr: "" };
+    });
+
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: any[]) => logs.push(args.join(" "));
+    try {
+      await pushToServer({
+        projectPath: "/tmp/project",
+        serverConfig: { host: "h" },
+        globalConfig: {},
+        envName: "my-server",
+      });
+    } finally {
+      console.log = origLog;
+    }
+
+    expect(logs.some((l) => l.includes("Service failed to start"))).toBe(true);
+  });
+
+  it("sshExecSafe returns combined stdout+stderr when execFile throws with output", async () => {
+    // Force health check to fail and service to report failed
+    // so sshExecSafe is called for systemctl status / journalctl diagnostics
+    mockSshExec.mockImplementation(async (_ssh: any, cmd: string) => {
+      if (cmd.includes("curl -sf")) throw new Error("connection refused");
+      return "";
+    });
+
+    // First promisified call (systemctl is-active): returns "failed" to break out of loop
+    // Subsequent calls (systemctl status, journalctl): throw with stdout+stderr attached
+    let execCallCount = 0;
+    mockExecFilePromisified.mockImplementation(async (_cmd: string, args: string[]) => {
+      execCallCount++;
+      const command = Array.isArray(args) ? args[args.length - 1] : "";
+      if (command.includes("systemctl is-active")) {
+        return { stdout: "failed\n", stderr: "" };
+      }
+      // Simulate execFile error with stdout/stderr output
+      const err: any = new Error("exit 1");
+      err.stdout = "status output from stdout";
+      err.stderr = "additional stderr";
+      throw err;
+    });
+
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: any[]) => logs.push(args.join(" "));
+    try {
+      await pushToServer({
+        projectPath: "/tmp/project",
+        serverConfig: { host: "h" },
+        globalConfig: {},
+        envName: "my-server",
+      });
+    } finally {
+      console.log = origLog;
+    }
+
+    // sshExecSafe catches the error and returns combined stdout+stderr
+    expect(logs.some((l) => l.includes("status output from stdout") || l.includes("additional stderr"))).toBe(true);
   });
 });
