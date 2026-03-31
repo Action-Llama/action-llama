@@ -1129,4 +1129,162 @@ describe("App TUI", () => {
     expect(output).toContain("Error");
     expect(output).toContain("Permission denied");
   });
+
+  it("navigates up with up arrow in main view", async () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.registerAgent("reviewer");
+    tracker.setSchedulerInfo({
+      mode: "host",
+      gatewayPort: null,
+      cronJobCount: 0,
+      webhooksActive: false,
+      webhookUrls: [],
+      startedAt: new Date(),
+      paused: false,
+    });
+
+    instance = render(<App statusTracker={tracker} />);
+
+    // Press down to select reviewer, then up to go back to dev
+    instance.stdin.write("\u001B[B"); // Down arrow
+    await new Promise((r) => setTimeout(r, 50));
+
+    instance.stdin.write("\u001B[A"); // Up arrow
+    await new Promise((r) => setTimeout(r, 50));
+
+    const output = instance.lastFrame()!;
+    // After going down then up, dev should be selected again (selection wraps back)
+    expect(output).toContain("▶");
+    expect(output).toContain("dev");
+  });
+
+  it("increases agent scale with up arrow in agent config view", async () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.setSchedulerInfo({
+      mode: "host",
+      gatewayPort: null,
+      cronJobCount: 0,
+      webhooksActive: false,
+      webhookUrls: [],
+      startedAt: new Date(),
+      paused: false,
+    });
+
+    instance = render(<App statusTracker={tracker} projectPath="/tmp/project" />);
+
+    // Open agent config
+    instance.stdin.write("a");
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(instance.lastFrame()!).toContain("Agent Configuration");
+
+    // Press up arrow to increase scale
+    instance.stdin.write("\u001B[A"); // Up arrow
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Scale should have increased from default (modified indicator should appear)
+    const output = instance.lastFrame()!;
+    expect(output).toContain("Agent Configuration");
+    expect(output).toContain("modified");
+  });
+
+  it("decreases agent scale with down arrow in agent config view", async () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.setSchedulerInfo({
+      mode: "host",
+      gatewayPort: null,
+      cronJobCount: 0,
+      webhooksActive: false,
+      webhookUrls: [],
+      startedAt: new Date(),
+      paused: false,
+    });
+
+    instance = render(<App statusTracker={tracker} projectPath="/tmp/project" />);
+
+    // Open agent config
+    instance.stdin.write("a");
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Press up twice to get scale > 1, then down once
+    instance.stdin.write("\u001B[A"); // Up arrow
+    await new Promise((r) => setTimeout(r, 50));
+    instance.stdin.write("\u001B[A"); // Up arrow again
+    await new Promise((r) => setTimeout(r, 50));
+    instance.stdin.write("\u001B[B"); // Down arrow
+    await new Promise((r) => setTimeout(r, 50));
+
+    const output = instance.lastFrame()!;
+    expect(output).toContain("Agent Configuration");
+    // Scale was increased then decreased, should still show modified
+    expect(output).toContain("modified");
+  });
+
+  it("shows error when agent scale save fails", async () => {
+    const { updateAgentRuntimeField } = await import("../../src/shared/config.js");
+    vi.mocked(updateAgentRuntimeField).mockImplementationOnce(() => {
+      throw new Error("Agent config save failed");
+    });
+
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.setSchedulerInfo({
+      mode: "host",
+      gatewayPort: null,
+      cronJobCount: 0,
+      webhooksActive: false,
+      webhookUrls: [],
+      startedAt: new Date(),
+      paused: false,
+    });
+
+    instance = render(<App statusTracker={tracker} projectPath="/tmp/project" />);
+
+    // Open agent config
+    instance.stdin.write("a");
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Press Enter to save (will fail)
+    instance.stdin.write("\r");
+    await new Promise((r) => setTimeout(r, 100));
+
+    const output = instance.lastFrame()!;
+    expect(output).toContain("Error");
+    expect(output).toContain("Agent config save failed");
+  });
+
+  it("renders nothing in header when scheduler info is null", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    // Do NOT call setSchedulerInfo — info stays null
+
+    instance = render(<App statusTracker={tracker} />);
+    const output = instance.lastFrame()!;
+
+    // Without info, the Header component returns null — no Action Llama header
+    expect(output).not.toContain("Action Llama");
+  });
+
+  it("renders agent row with null last run time (formatRelativeTime null path)", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.setSchedulerInfo({
+      mode: "host",
+      gatewayPort: null,
+      cronJobCount: 0,
+      webhooksActive: false,
+      webhookUrls: [],
+      startedAt: new Date(),
+      paused: false,
+    });
+    // Agent with no last run — lastRunEnd and lastDuration are null
+
+    instance = render(<App statusTracker={tracker} />);
+    const output = instance.lastFrame()!;
+    // Should render without error; dev agent is shown in idle/waiting state
+    expect(output).toContain("dev");
+  });
 });

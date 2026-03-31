@@ -122,4 +122,24 @@ describe("SqliteStateStore", () => {
     await store.close();
     vi.restoreAllMocks();
   });
+
+  it("sweep timer callback fires and removes expired entries when interval elapses", async () => {
+    // Use fake timers so we can advance time without waiting
+    vi.useFakeTimers({ now: Date.now() });
+
+    const store = createStore();
+    // Insert an already-expired entry and a live entry
+    await store.set("ns", "expired", "gone", { ttl: -1 });
+    await store.set("ns", "alive", "here", { ttl: 3600 });
+
+    // Advance fake timers by 60 seconds to fire the sweep interval callback
+    vi.advanceTimersByTime(60_000);
+
+    // The callback () => this.sweep() should have run, removing the expired row
+    expect(await store.get("ns", "expired")).toBeNull();
+    expect(await store.get("ns", "alive")).toBe("here");
+
+    vi.useRealTimers();
+    await store.close();
+  });
 });
