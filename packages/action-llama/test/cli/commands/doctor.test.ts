@@ -402,6 +402,26 @@ describe("doctor", () => {
     expect(mockPromptCredential).not.toHaveBeenCalled();
   });
 
+  it("shows [ok] and skips prompting when credential exists in promptCredentials (non-checkOnly)", async () => {
+    // This exercises the promptCredentials() path (not checkCredentials()),
+    // covering loadCredentialFields() when credentialExists returns true.
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["github_token"] });
+    mockResolveCredential.mockReturnValue({
+      id: "github_token",
+      label: "GitHub Token",
+      fields: [{ name: "token" }],
+    });
+    mockCredentialExists.mockReturnValue(true);
+    // loadCredentialFields returns existing fields (token is present, no optional fields missing)
+    // The default mock in vi.mock returns undefined, which means missingOptional = []
+    // so we fall into the "[ok]" branch and continue without prompting.
+
+    const output = await captureLog(() => execute({ project: "." }));
+    expect(output).toContain("[ok] GitHub Token");
+    expect(mockPromptCredential).not.toHaveBeenCalled();
+  });
+
   it("skips writing when promptCredential returns undefined", async () => {
     mockDiscoverAgents.mockReturnValue(["dev"]);
     mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["git_ssh"] });

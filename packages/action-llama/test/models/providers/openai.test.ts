@@ -84,6 +84,19 @@ describe("OpenAIProvider", () => {
       // Should not throw because NODE_ENV is "test"
       await expect(provider.validateConfig({ provider: "openai" })).resolves.toBeUndefined();
     });
+
+    it("throws when no API key and NODE_ENV is not test", async () => {
+      const origNodeEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = "production";
+      try {
+        const provider = new OpenAIProvider(makeConfig({ apiKey: "" }));
+        await expect(
+          provider.validateConfig({ provider: "openai" })
+        ).rejects.toThrow("OpenAI API key is required in config or OPENAI_API_KEY environment variable");
+      } finally {
+        process.env.NODE_ENV = origNodeEnv;
+      }
+    });
   });
 
   describe("getDefaultModel", () => {

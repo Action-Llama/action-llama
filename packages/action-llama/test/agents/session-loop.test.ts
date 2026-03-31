@@ -183,6 +183,31 @@ describe("runSessionLoop", () => {
     expect(result.unrecoverableErrors).toBe(3);
   });
 
+  it("extracts error message from JSON-wrapped tool result content", async () => {
+    const onUnrecoverableAbort = vi.fn();
+    mockPrompt.mockResolvedValue(undefined);
+
+    // Fire UNRECOVERABLE_THRESHOLD (3) auth failures where result is JSON
+    // with content[0].text containing the error message
+    mockSubscribe.mockImplementation((callback: Function) => {
+      for (let i = 0; i < 3; i++) {
+        callback({
+          type: "tool_execution_end",
+          toolName: "bash",
+          toolCallId: `call-${i}`,
+          result: JSON.stringify({ content: [{ text: "permission denied: cannot access repository" }] }),
+          isError: true,
+        });
+      }
+    });
+
+    const result = await runSessionLoop("Test", makeOpts({ onUnrecoverableAbort }));
+
+    expect(onUnrecoverableAbort).toHaveBeenCalledTimes(1);
+    expect(result.aborted).toBe(true);
+    expect(result.unrecoverableErrors).toBe(3);
+  });
+
   it("emits bash command logs for tool_execution_start events", async () => {
     const logFn = vi.fn();
     mockPrompt.mockResolvedValue(undefined);
