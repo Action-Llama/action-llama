@@ -10,14 +10,12 @@ import {
 } from "../lib/api";
 import type { AgentDetailData, RunRecord } from "../lib/api";
 import { fmtDur, fmtCost, fmtTokens, fmtSmartTime, shortId } from "../lib/format";
-import { agentHueStyle } from "../lib/color";
 
 const PAGE_SIZE = 20;
 
 export function AgentStatsPage() {
   const { name } = useParams<{ name: string }>();
   const { agents } = useStatusStream();
-  const agentNames = agents.map((a) => a.name);
   const [detail, setDetail] = useState<AgentDetailData | null>(null);
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [totalRuns, setTotalRuns] = useState(0);
@@ -78,10 +76,6 @@ export function AgentStatsPage() {
               />
             </svg>
           </Link>
-          <span
-            className="w-3 h-3 rounded-full shrink-0 agent-color-dot"
-            style={agentHueStyle(name ?? "", agentNames)}
-          />
           <div>
             <h1 className="text-xl font-bold text-slate-900 dark:text-white">
               {name}

@@ -2,7 +2,7 @@
  * Deterministic agent color generation.
  *
  * Hashes the agent name to a hue (0-360) and returns it.
- * Use with the `.agent-color-bg` and `.agent-color-dot` CSS classes
+ * Use with the `.agent-color-bg` and `.agent-color-text` CSS classes
  * by setting `--agent-hue` as an inline style.
  */
 

@@ -201,10 +201,6 @@ export function JobsPage() {
                           : `/dashboard/agents/${encodeURIComponent(j.agentName)}`}
                         className="hover:underline text-xs flex items-center gap-1.5"
                       >
-                        <span
-                          className="w-2 h-2 rounded-full shrink-0 agent-color-dot"
-                          style={agentHueStyle(j.agentName, agentNames)}
-                        />
                         <span className="agent-color-text" style={agentHueStyle(j.agentName, agentNames)}>
                           {j.agentName}
                         </span>
