@@ -2,7 +2,8 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useStatusStream } from "../hooks/StatusStreamContext";
 import { useInvalidation } from "../hooks/useInvalidation";
-import { StateBadge, TriggerTypeBadge, ResultBadge } from "../components/Badge";
+import { StateBadge } from "../components/Badge";
+import { ActivityTable } from "../components/ActivityTable";
 import {
   getAgentDetail,
   getAgentLogs,
@@ -17,17 +18,7 @@ import type {
 } from "../lib/api";
 import { RunModal } from "../components/RunModal";
 import { RunDropdown } from "../components/RunDropdown";
-import { fmtSmartTime } from "../lib/format";
 import { agentHueStyle } from "../lib/color";
-
-const ROW_STATUS_STYLES: Record<string, string> = {
-  pending: "border-l-2 border-l-amber-400 dark:border-l-amber-500 bg-amber-50/40 dark:bg-amber-950/20",
-  running: "border-l-2 border-l-blue-500 dark:border-l-blue-400 bg-blue-50/40 dark:bg-blue-950/20",
-  completed: "border-l-2 border-l-green-500 dark:border-l-green-400",
-  error: "border-l-2 border-l-red-500 dark:border-l-red-400 bg-red-50/30 dark:bg-red-950/20",
-  "dead-letter": "border-l-2 border-l-red-300 dark:border-l-red-700 bg-red-50/20 dark:bg-red-950/10",
-  rerun: "border-l-2 border-l-green-500 dark:border-l-green-400",
-};
 
 function formatLogEntry(entry: LogEntry): {
   text: string;
@@ -260,61 +251,11 @@ export function AgentDetailPage() {
           </Link>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 dark:border-slate-800">
-                <th className="text-left pl-4 pr-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Time</th>
-                <th className="text-left px-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Status</th>
-                <th className="text-left px-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Trigger</th>
-                <th className="text-left px-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Instance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {activity.map((row, i) => (
-                <tr
-                  key={`${row.ts}-${i}`}
-                  className={`border-b border-slate-100 dark:border-slate-800/50 last:border-b-0 hover:bg-slate-100/60 dark:hover:bg-slate-800/40 transition-colors ${ROW_STATUS_STYLES[row.result] ?? ""}`}
-                >
-                  <td className="pl-4 pr-2 py-2.5 text-slate-600 dark:text-slate-400 text-xs whitespace-nowrap" title={new Date(row.ts).toLocaleString()}>
-                    {fmtSmartTime(row.ts)}
-                  </td>
-                  <td className="px-2 py-2.5">
-                    <ResultBadge result={row.result} deadLetterReason={row.deadLetterReason} />
-                  </td>
-                  <td className="px-2 py-2.5">
-                    {row.instanceId ? (
-                      <Link to={`/dashboard/triggers/${encodeURIComponent(row.instanceId)}`} className="inline-flex items-center gap-1.5 hover:underline">
-                        <TriggerTypeBadge type={row.triggerType} />
-                        {row.triggerSource && <span className="text-xs text-slate-600 dark:text-slate-400">{row.triggerSource}</span>}
-                      </Link>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5">
-                        <TriggerTypeBadge type={row.triggerType} />
-                        {row.triggerSource && <span className="text-xs text-slate-600 dark:text-slate-400">{row.triggerSource}</span>}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-2 py-2.5">
-                    {row.instanceId ? (
-                      <Link
-                        to={`/dashboard/agents/${encodeURIComponent(name)}/instances/${encodeURIComponent(row.instanceId)}`}
-                        className="font-mono text-xs text-blue-600 dark:text-blue-400 hover:underline"
-                      >
-                        {row.instanceId}
-                      </Link>
-                    ) : (
-                      <span className="text-slate-400 text-xs">{"\u2014"}</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {activity.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-slate-500 dark:text-slate-400 text-xs">No activity yet</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+          <ActivityTable
+            rows={activity}
+            agentNames={agentNames}
+            emptyMessage="No activity yet"
+          />
         </div>
       </div>
 
