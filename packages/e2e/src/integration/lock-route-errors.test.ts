@@ -182,5 +182,104 @@ describe.skipIf(!DOCKER)(
       const body = await res.json() as { error: string };
       expect(body.error).toContain("JSON");
     });
+
+    it("POST /locks/acquire with missing secret returns 400", async () => {
+      // The /locks/acquire route validates: secret → resourceKey (URI) → registry lookup.
+      // Missing or empty secret returns 400 before any registry check.
+      harness = await IntegrationHarness.create({
+        agents: [
+          {
+            name: "acquire-nosecret-agent",
+            schedule: "0 0 31 2 *",
+            testScript: "#!/bin/sh\nexit 0\n",
+          },
+        ],
+      });
+
+      await harness.start();
+
+      const res = await fetch(`http://127.0.0.1:${harness.gatewayPort}/locks/acquire`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resourceKey: "test://some/resource" }),
+        // no secret field
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json() as { error: string };
+      expect(body.error).toContain("secret");
+    });
+
+    it("POST /locks/acquire with missing resourceKey returns 400", async () => {
+      // Secret (non-empty string) passes first check; missing resourceKey → 400.
+      harness = await IntegrationHarness.create({
+        agents: [
+          {
+            name: "acquire-noresource-agent",
+            schedule: "0 0 31 2 *",
+            testScript: "#!/bin/sh\nexit 0\n",
+          },
+        ],
+      });
+
+      await harness.start();
+
+      const res = await fetch(`http://127.0.0.1:${harness.gatewayPort}/locks/acquire`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ secret: "some-secret-string" }),
+        // no resourceKey field
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json() as { error: string };
+      expect(body.error).toContain("resourceKey");
+    });
+
+    it("POST /locks/release with missing secret returns 400", async () => {
+      harness = await IntegrationHarness.create({
+        agents: [
+          {
+            name: "release-nosecret-agent",
+            schedule: "0 0 31 2 *",
+            testScript: "#!/bin/sh\nexit 0\n",
+          },
+        ],
+      });
+
+      await harness.start();
+
+      const res = await fetch(`http://127.0.0.1:${harness.gatewayPort}/locks/release`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resourceKey: "test://some/resource" }),
+        // no secret
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json() as { error: string };
+      expect(body.error).toContain("secret");
+    });
+
+    it("POST /locks/heartbeat with missing secret returns 400", async () => {
+      harness = await IntegrationHarness.create({
+        agents: [
+          {
+            name: "heartbeat-nosecret-agent",
+            schedule: "0 0 31 2 *",
+            testScript: "#!/bin/sh\nexit 0\n",
+          },
+        ],
+      });
+
+      await harness.start();
+
+      const res = await fetch(`http://127.0.0.1:${harness.gatewayPort}/locks/heartbeat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resourceKey: "test://some/resource" }),
+        // no secret
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json() as { error: string };
+      expect(body.error).toContain("secret");
+    });
   },
 );

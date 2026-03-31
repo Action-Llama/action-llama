@@ -93,3 +93,4 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Per-instance logs ?grep parameter — invalid grep returns 400, valid grep filters entries for a specific instanceId (logs-per-instance.test.ts)
 - [x] /shutdown route error paths — invalid JSON → 400, missing secret → 400, invalid secret → 403 (shutdown-error-paths.test.ts)
 - [x] Webhook form-urlencoded missing payload field — POST with application/x-www-form-urlencoded and no payload field returns 400 (webhook-edge-cases.test.ts)
+- [x] Lock route missing field errors — POST /locks/acquire: missing secret → 400, missing resourceKey → 400; POST /locks/release: missing secret → 400; POST /locks/heartbeat: missing secret → 400 (lock-route-errors.test.ts)
