@@ -172,6 +172,23 @@ describe("loadCredentialsFromVolume", () => {
     expect(bundle.github_token?.default?.token).toBe("valid-token");
     clearCredPath();
   });
+
+  it("skips instance-level entries that are files (not directories) via !isDirectory() continue", () => {
+    setCredPath(tempDir);
+    // Create a type directory with a FILE at the instance level (not a directory)
+    // statSync succeeds but isDirectory() returns false → continue is executed
+    mkdirSync(join(tempDir, "github_token"), { recursive: true });
+    writeFileSync(join(tempDir, "github_token", "not-a-dir"), "just a file");
+    // Valid instance alongside
+    mkdirSync(join(tempDir, "github_token", "default"), { recursive: true });
+    writeFileSync(join(tempDir, "github_token", "default", "token"), "valid-token");
+
+    const bundle = loadCredentialsFromVolume();
+    // The file entry should be skipped (not treated as an instance)
+    expect(bundle.github_token?.["not-a-dir"]).toBeUndefined();
+    expect(bundle.github_token?.default?.token).toBe("valid-token");
+    clearCredPath();
+  });
 });
 
 // --- hasEnvCredentials ---
