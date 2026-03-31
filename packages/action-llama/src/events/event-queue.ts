@@ -35,6 +35,12 @@ export class MemoryWorkQueue<T> implements WorkQueue<T> {
     return queue.shift();
   }
 
+  peek(agentName: string, limit?: number): QueuedWorkItem<T>[] {
+    const queue = this.queues.get(agentName);
+    if (!queue || queue.length === 0) return [];
+    return limit !== undefined ? queue.slice(0, limit) : [...queue];
+  }
+
   size(agentName: string): number {
     return this.queues.get(agentName)?.length ?? 0;
   }

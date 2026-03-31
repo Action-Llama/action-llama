@@ -114,6 +114,22 @@ export class SqliteWorkQueue<T> implements WorkQueue<T> {
     };
   }
 
+  peek(agentName: string, limit?: number): QueuedWorkItem<T>[] {
+    const client = (this.db as any).$client;
+    const sql =
+      limit !== undefined
+        ? "SELECT payload, received_at FROM work_queue WHERE agent = ? ORDER BY rowid ASC LIMIT ?"
+        : "SELECT payload, received_at FROM work_queue WHERE agent = ? ORDER BY rowid ASC";
+    const rows: { payload: string; received_at: number }[] =
+      limit !== undefined
+        ? client.prepare(sql).all(agentName, limit)
+        : client.prepare(sql).all(agentName);
+    return rows.map((r) => ({
+      context: JSON.parse(r.payload) as T,
+      receivedAt: new Date(r.received_at),
+    }));
+  }
+
   size(agentName: string): number {
     const row = (this.db as any).$client
       .prepare("SELECT COUNT(*) AS n FROM work_queue WHERE agent = ?")

@@ -15,7 +15,10 @@ export interface ControlRoutesDeps {
   updateProjectScale?: (scale: number) => Promise<boolean>;
   updateAgentScale?: (name: string, scale: number) => Promise<boolean>;
   logger?: Logger;
-  workQueue?: { size(agentName: string): number };
+  workQueue?: {
+    size(agentName: string): number;
+    peek(agentName: string): { context: unknown; receivedAt: Date }[];
+  };
 }
 
 export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps) {

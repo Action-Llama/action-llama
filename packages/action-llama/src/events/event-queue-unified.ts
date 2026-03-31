@@ -157,6 +157,15 @@ export class EventSourcedWorkQueue<T> implements WorkQueue<T> {
     );
   }
 
+  peek(agentName: string, limit?: number): QueuedWorkItem<T>[] {
+    const state = this.queueState.get(agentName);
+    if (!state) return [];
+    const all = state.getAllItems()
+      .sort((a, b) => a.order - b.order)
+      .map((i) => i.item);
+    return limit !== undefined ? all.slice(0, limit) : all;
+  }
+
   size(agentName: string): number {
     const state = this.queueState.get(agentName);
     return state ? state.size() : 0;

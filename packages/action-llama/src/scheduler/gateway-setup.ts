@@ -222,6 +222,7 @@ export async function setupGateway(opts: {
       },
       workQueue: {
         size: (agentName: string) => state.schedulerCtx?.workQueue.size(agentName) ?? 0,
+        peek: (agentName: string) => state.schedulerCtx?.workQueue.peek(agentName) ?? [],
       },
     },
   });

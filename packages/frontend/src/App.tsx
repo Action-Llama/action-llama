@@ -4,8 +4,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { AgentDetailPage } from "./pages/AgentDetailPage";
 import { InstanceDetailPage } from "./pages/InstanceDetailPage";
-import { TriggerHistoryPage } from "./pages/TriggerHistoryPage";
-import { JobsPage } from "./pages/JobsPage";
+import { ActivityPage } from "./pages/ActivityPage";
 import { TriggerDetailPage } from "./pages/TriggerDetailPage";
 import { ProjectConfigPage } from "./pages/ProjectConfigPage";
 import { AgentSkillPage } from "./pages/AgentSkillPage";
@@ -14,7 +13,7 @@ import { WebhookReceiptPage } from "./pages/WebhookReceiptPage";
 
 function AgentTriggersRedirect() {
   const { name } = useParams<{ name: string }>();
-  return <Navigate to={`/triggers?agent=${encodeURIComponent(name ?? "")}`} replace />;
+  return <Navigate to={`/activity?agent=${encodeURIComponent(name ?? "")}`} replace />;
 }
 
 export function App() {
@@ -38,9 +37,10 @@ export function App() {
           path="/dashboard/agents/:name/skill"
           element={<AgentSkillPage />}
         />
-        <Route path="/dashboard/triggers" element={<Navigate to="/triggers" replace />} />
-        <Route path="/triggers" element={<TriggerHistoryPage />} />
-        <Route path="/jobs" element={<JobsPage />} />
+        <Route path="/dashboard/triggers" element={<Navigate to="/activity" replace />} />
+        <Route path="/activity" element={<ActivityPage />} />
+        <Route path="/triggers" element={<Navigate to="/activity" replace />} />
+        <Route path="/jobs" element={<Navigate to="/activity" replace />} />
         <Route path="/dashboard/triggers/:instanceId" element={<TriggerDetailPage />} />
         <Route path="/dashboard/webhooks/:receiptId" element={<WebhookReceiptPage />} />
         <Route path="/dashboard/config" element={<ProjectConfigPage />} />

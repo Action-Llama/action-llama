@@ -2,7 +2,19 @@ import type { Hono } from "hono";
 import type { StatsStore } from "../../stats/store.js";
 import type { StatusTracker } from "../../tui/status-tracker.js";
 
-export function registerStatsRoutes(app: Hono, statsStore?: StatsStore, statusTracker?: StatusTracker): void {
+export interface StatsControlDeps {
+  workQueue?: {
+    size(agentName: string): number;
+    peek(agentName: string): { context: unknown; receivedAt: Date }[];
+  };
+}
+
+export function registerStatsRoutes(
+  app: Hono,
+  statsStore?: StatsStore,
+  statusTracker?: StatusTracker,
+  controlDeps?: StatsControlDeps,
+): void {
   // Paginated runs for an agent
   app.get("/api/stats/agents/:name/runs", (c) => {
     const name = c.req.param("name");
@@ -125,6 +137,116 @@ export function registerStatsRoutes(app: Hono, statsStore?: StatsStore, statusTr
     const totalPending = Object.values(pending).reduce((s, n) => s + n, 0);
 
     return c.json({ jobs: mergedJobs, total: mergedTotal, pending, totalPending, limit, offset });
+  });
+
+  // Unified activity feed — runs + running instances + pending queue items + dead letters
+  app.get("/api/stats/activity", (c) => {
+    const limit = Math.min(100, Math.max(1, parseInt(c.req.query("limit") || "50", 10) || 50));
+    const offset = Math.max(0, parseInt(c.req.query("offset") || "0", 10) || 0);
+    const since = parseInt(c.req.query("since") || "0", 10) || 0;
+    const agentFilter = c.req.query("agent") || undefined;
+    const triggerTypeFilter = c.req.query("triggerType") || undefined;
+    const statusFilter = c.req.query("status") || "all";
+
+    // Base rows from runs table (include dead letters)
+    const rows: any[] = statsStore
+      ? statsStore.queryTriggerHistory({
+          since,
+          limit: 10000, // fetch all then filter/paginate after merge
+          offset: 0,
+          includeDeadLetters: true,
+          agentName: agentFilter,
+          triggerType: triggerTypeFilter,
+        })
+      : [];
+
+    // Merge running instances (avoid duplicates)
+    let allRows: any[] = [...rows];
+    if (statusTracker) {
+      const runningInRows = new Set(rows.map((r: any) => r.instanceId).filter(Boolean));
+      const running = statusTracker
+        .getInstances()
+        .filter((inst) => {
+          if (inst.status !== "running") return false;
+          if (agentFilter && inst.agentName !== agentFilter) return false;
+          if (triggerTypeFilter) {
+            const sep = inst.trigger.indexOf(":");
+            const type = sep > -1 ? inst.trigger.slice(0, sep) : inst.trigger;
+            if (type !== triggerTypeFilter) return false;
+          }
+          return !runningInRows.has(inst.id);
+        })
+        .map((inst) => {
+          const sep = inst.trigger.indexOf(":");
+          return {
+            ts: new Date(inst.startedAt).getTime(),
+            triggerType: sep > -1 ? inst.trigger.slice(0, sep) : inst.trigger,
+            triggerSource: sep > -1 ? inst.trigger.slice(sep + 1).trim() : null,
+            agentName: inst.agentName,
+            instanceId: inst.id,
+            result: "running",
+            webhookReceiptId: null,
+            deadLetterReason: null,
+          };
+        });
+      allRows = [...running, ...allRows];
+    }
+
+    // Merge pending queue items
+    if (controlDeps?.workQueue) {
+      const agents = statusTracker ? statusTracker.getAllAgents() : [];
+      const agentsToCheck = agentFilter
+        ? agents.filter((a) => a.name === agentFilter)
+        : agents;
+      for (const agent of agentsToCheck) {
+        const items = controlDeps.workQueue!.peek(agent.name);
+        for (const item of items) {
+          const ctx = item.context as any;
+          let triggerType = "manual";
+          let triggerSource: string | null = null;
+          if (ctx && typeof ctx === "object") {
+            if (ctx.type === "webhook") {
+              triggerType = "webhook";
+              triggerSource = ctx.source ?? null;
+            } else if (ctx.type === "schedule") {
+              triggerType = "schedule";
+            } else if (ctx.type === "agent-trigger" || ctx.type === "agent") {
+              triggerType = "agent";
+              triggerSource = ctx.callerAgent ?? null;
+            } else if (ctx.type === "manual") {
+              triggerType = "manual";
+            } else if (ctx.type) {
+              triggerType = ctx.type;
+            }
+          }
+          if (triggerTypeFilter && triggerType !== triggerTypeFilter) continue;
+          allRows.push({
+            ts: item.receivedAt.getTime(),
+            triggerType,
+            triggerSource,
+            agentName: agent.name,
+            instanceId: null,
+            result: "pending",
+            webhookReceiptId: null,
+            deadLetterReason: null,
+          });
+        }
+      }
+    }
+
+    // Sort all rows by ts descending
+    allRows.sort((a, b) => b.ts - a.ts);
+
+    // Apply status filter
+    let filtered = allRows;
+    if (statusFilter && statusFilter !== "all") {
+      filtered = allRows.filter((r) => r.result === statusFilter);
+    }
+
+    const total = filtered.length;
+    const paginated = filtered.slice(offset, offset + limit);
+
+    return c.json({ rows: paginated, total, limit, offset });
   });
 
   // Single webhook receipt by ID
