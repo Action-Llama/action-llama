@@ -20,7 +20,7 @@ while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
     _code=$(printf '%s' "$_raw" | tail -n1)
     # On connection failure during polling, keep trying
     case "$_code" in 000) ALL_DONE=false; continue;; esac
-    STATUS=$(printf '%s' "$_raw" | sed '$d' | jq -r .status 2>/dev/null)
+    STATUS=$(printf '%s' "$_raw" | sed '$d' | sed -n 's/.*"status":"\([^"]*\)".*/\1/p')
     case "$STATUS" in running|pending) ALL_DONE=false;; esac
   done
   if $ALL_DONE; then break; fi

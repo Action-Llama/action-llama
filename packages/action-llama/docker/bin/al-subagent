@@ -7,8 +7,7 @@ if [ -z "$1" ]; then echo '{"ok":false,"reason":"usage: echo ctx | al-subagent <
 CONTEXT=$(cat)
 _raw=$(curl -s -w '\n%{http_code}' -X POST "$GATEWAY_URL/calls" \
   -H 'Content-Type: application/json' \
-  -d "$(jq -n --arg s "$SHUTDOWN_SECRET" --arg t "$1" --arg c "$CONTEXT" \
-    '{secret:$s,targetAgent:$t,context:$c}')")
+  -d '{"secret":"'"$SHUTDOWN_SECRET"'","targetAgent":"'"$1"'","context":"'"$CONTEXT"'"}')
 AL_HTTP_CODE=$(printf '%s' "$_raw" | tail -n1)
 printf '%s' "$_raw" | sed '$d'
 http_exit "$AL_HTTP_CODE"
