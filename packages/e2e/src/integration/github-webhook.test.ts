@@ -280,4 +280,46 @@ describe.skipIf(!DOCKER)("integration: GitHub webhook provider", { timeout: 300_
     const res = await sendGitHubWebhook(harness, "issues", payload);
     expect(res.status).toBe(401);
   });
+
+  it("GitHub ping event is silently ignored — returns ok:true with matched:0", async () => {
+    // GitHub sends a 'ping' event when a webhook is first configured.
+    // The GitHub provider's parseEvent() returns null for ping events,
+    // which causes the registry to return { ok: true, matched: 0 }.
+    // The agent should NOT be triggered.
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "ping-test-agent",
+          webhooks: [{ source: "github", events: ["issues"] }],
+          testScript: "#!/bin/sh\nexit 0\n",
+        },
+      ],
+      globalConfig: {
+        webhooks: { github: { type: "github", allowUnsigned: true } },
+      },
+    });
+
+    await harness.start();
+
+    // Send a GitHub ping event (sent when webhook is first registered)
+    const res = await fetch(`http://127.0.0.1:${harness.gatewayPort}/webhooks/github`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-GitHub-Event": "ping",
+        "X-GitHub-Delivery": `ping-delivery-${Date.now()}`,
+      },
+      body: JSON.stringify({
+        zen: "Practicality beats purity.",
+        hook_id: 12345,
+        hook: { type: "Repository", id: 12345, active: true },
+      }),
+    });
+
+    expect(res.ok).toBe(true);
+    const body = await res.json();
+    // Ping events are parsed as null → no agents matched, but dispatch succeeded
+    expect(body.ok).toBe(true);
+    expect(body.matched).toBe(0);
+  });
 });
