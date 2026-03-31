@@ -177,4 +177,31 @@ describe.skipIf(!DOCKER)("integration: webhook stats tracking", { timeout: 180_0
     const triggersBody = await triggersRes.json();
     expect(triggersBody.total).toBeGreaterThanOrEqual(2);
   });
+
+  it("GET /api/stats/webhooks/:receiptId returns 404 for nonexistent receipt ID", async () => {
+    // When a receipt ID does not exist in the stats store, the endpoint
+    // should return 404 with { receipt: null }.
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "receipt-404-agent",
+          webhooks: [{ source: "test-hook" }],
+          testScript: "#!/bin/sh\nexit 0\n",
+        },
+      ],
+      globalConfig: {
+        webhooks: { "test-hook": { type: "test" } },
+      },
+    });
+
+    await harness.start();
+
+    // Query a nonexistent receipt ID
+    const res = await statsAPI(harness, "/api/stats/webhooks/nonexistent-receipt-id-xyz");
+    expect(res.status).toBe(404);
+
+    const body = await res.json();
+    expect(body).toHaveProperty("receipt");
+    expect(body.receipt).toBeNull();
+  });
 });
