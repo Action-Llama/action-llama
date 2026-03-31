@@ -262,10 +262,6 @@ export function ActivityPage() {
                           style={{ fontSize: "16px" }}
                         >
                           <span
-                            className="w-2 h-2 rounded-full shrink-0 agent-color-dot"
-                            style={agentHueStyle(row.agentName, agentNames)}
-                          />
-                          <span
                             className="agent-color-text font-mono"
                             style={agentHueStyle(row.agentName, agentNames)}
                           >
@@ -278,10 +274,6 @@ export function ActivityPage() {
                           className="hover:underline flex items-center gap-1.5"
                           style={{ fontSize: "16px" }}
                         >
-                          <span
-                            className="w-2 h-2 rounded-full shrink-0 agent-color-dot"
-                            style={agentHueStyle(row.agentName, agentNames)}
-                          />
                           <span
                             className="agent-color-text"
                             style={agentHueStyle(row.agentName, agentNames)}

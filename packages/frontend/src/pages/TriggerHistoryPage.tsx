@@ -209,10 +209,6 @@ export function TriggerHistoryPage() {
                         to={`/dashboard/agents/${encodeURIComponent(t.agentName)}`}
                         className="hover:underline text-xs flex items-center gap-1.5"
                       >
-                        <span
-                          className="w-2 h-2 rounded-full shrink-0 agent-color-dot"
-                          style={agentHueStyle(t.agentName, agentNames)}
-                        />
                         <span className="agent-color-text" style={agentHueStyle(t.agentName, agentNames)}>
                           {t.agentName}
                         </span>
