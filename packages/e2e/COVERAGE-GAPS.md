@@ -75,3 +75,4 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Scheduler rejects agent with no schedule and no webhooks — validateAgentConfig() throws ConfigError on startup (scheduler-validation.test.ts)
 - [x] Logs API timestamp filtering — ?after=<future> returns empty, ?before=0 returns empty (logs-api.test.ts)
 - [x] Stats/activity advanced filters — ?triggerType= filter on activity (not tested on triggers only), ?since=<future> returns empty, comma-separated ?status=completed,errored, ?status=all vs single filter, stats/jobs pending+totalPending response fields (stats-activity-filters.test.ts)
+- [x] Webhook endpoint edge cases — POST to unknown source returns 404, Content-Length > 10 MB returns 413, valid payload accepted, invalid JSON body handled gracefully (webhook-edge-cases.test.ts)
