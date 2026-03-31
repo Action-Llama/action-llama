@@ -8,6 +8,7 @@ WORKDIR /app
 
 # Copy the built action-llama package
 COPY packages/action-llama/dist ./action-llama/dist
+COPY packages/action-llama/drizzle ./action-llama/drizzle
 COPY packages/action-llama/package.json ./action-llama/
 COPY packages/shared/dist ./shared/dist
 COPY packages/shared/package.json ./shared/

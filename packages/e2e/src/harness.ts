@@ -370,6 +370,7 @@ export class E2ETestContext {
     if (imageName === "action-llama-local") {
       const requiredPaths = [
         'packages/action-llama/dist',
+        'packages/action-llama/drizzle',
         'packages/action-llama/package.json',
         'packages/shared/dist',
         'packages/shared/package.json'
