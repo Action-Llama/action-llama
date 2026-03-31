@@ -14,10 +14,26 @@ import { AgentError } from "../shared/errors.js";
 import { buildAllImages } from "./image-builder.js";
 import type { PromptSkills } from "../agents/prompt.js";
 import { globalRegistry } from "../extensions/registry.js";
+import { HostUserRuntime } from "../docker/host-user-runtime.js";
 
 export interface RuntimeResult {
   runtime: Runtime;
   agentRuntimeOverrides: Record<string, Runtime>;
+}
+
+/**
+ * Create a per-agent Runtime override for agents with a [runtime] config section.
+ * Returns undefined if no override is needed (e.g. default container runtime).
+ * Extracted as a named function so it can be called during both startup and
+ * hot-reload without requiring a dynamic import.
+ */
+export function createAgentRuntimeOverride(agentConfig: AgentConfig): Runtime | undefined {
+  if (agentConfig.runtime?.type === "host-user") {
+    const runAs = agentConfig.runtime.run_as ?? "al-agent";
+    const groups = agentConfig.runtime.groups ?? [];
+    return new HostUserRuntime(runAs, groups);
+  }
+  return undefined;
 }
 
 export async function createContainerRuntime(
@@ -58,12 +74,13 @@ export async function createContainerRuntime(
   // Build per-agent runtime overrides for agents with [runtime] config
   const agentRuntimeOverrides: Record<string, Runtime> = {};
   for (const agentConfig of activeAgentConfigs) {
-    if (agentConfig.runtime?.type === "host-user") {
-      const runAs = agentConfig.runtime.run_as ?? "al-agent";
-      const groups = agentConfig.runtime.groups ?? [];
-      const { HostUserRuntime } = await import("../docker/host-user-runtime.js");
-      agentRuntimeOverrides[agentConfig.name] = new HostUserRuntime(runAs, groups);
-      logger.info({ agent: agentConfig.name, runAs, groups }, "using host-user runtime");
+    const override = createAgentRuntimeOverride(agentConfig);
+    if (override) {
+      agentRuntimeOverrides[agentConfig.name] = override;
+      logger.info(
+        { agent: agentConfig.name, runAs: agentConfig.runtime?.run_as ?? "al-agent", groups: agentConfig.runtime?.groups ?? [] },
+        "using host-user runtime",
+      );
     }
   }
 

@@ -48,6 +48,16 @@ vi.mock("../../src/execution/execution.js", () => ({
   drainQueues: vi.fn(async () => {}),
 }));
 
+const { mockHostUserRuntime, mockCreateAgentRuntimeOverride } = vi.hoisted(() => {
+  const inst = { type: "mock-host-user-runtime" } as any;
+  const fn = vi.fn((_config: any) => inst);
+  return { mockHostUserRuntime: inst, mockCreateAgentRuntimeOverride: fn };
+});
+
+vi.mock("../../src/execution/runtime-factory.js", () => ({
+  createAgentRuntimeOverride: mockCreateAgentRuntimeOverride,
+}));
+
 import { watch } from "fs";
 import { discoverAgents, loadAgentConfig, validateAgentConfig } from "../../src/shared/config.js";
 import { buildSingleAgentImage } from "../../src/execution/image-builder.js";
@@ -289,6 +299,43 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     expect(ctx.statusTracker!.setAgentState).toHaveBeenCalledWith("agent-a", "building");
     expect(ctx.statusTracker!.setAgentState).toHaveBeenCalledWith("agent-a", "idle");
     expect(ctx.statusTracker!.addLogLine).toHaveBeenCalledWith("agent-a", "hot-reloaded");
+  });
+
+  it("handles changed agent: updates agentRuntimeOverrides and runner runtime when runtime config changes", async () => {
+    const runner = {
+      ...makeMockRunner("agent-a"),
+      setRuntime: vi.fn(),
+    };
+    const pool = new RunnerPool([runner]);
+    // Start with a host-user agent that has no docker group
+    const oldConfig = makeAgentConfig("agent-a", {
+      runtime: { type: "host-user", run_as: "al-agent", groups: [] },
+    });
+    const ctx = makeContext({
+      agentConfigs: [oldConfig],
+      runnerPools: { "agent-a": pool },
+      agentRuntimeOverrides: { "agent-a": { type: "old-host-user-runtime" } as any },
+    });
+
+    // New config adds docker group
+    const updatedConfig = makeAgentConfig("agent-a", {
+      runtime: { type: "host-user", run_as: "al-agent", groups: ["docker"] },
+    });
+    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
+    mockedLoadAgentConfig.mockReturnValue(updatedConfig);
+
+    // Make createAgentRuntimeOverride return the mock runtime for the new config
+    mockCreateAgentRuntimeOverride.mockReturnValue(mockHostUserRuntime);
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    // createAgentRuntimeOverride should have been called with the new config
+    expect(mockCreateAgentRuntimeOverride).toHaveBeenCalledWith(updatedConfig);
+    // agentRuntimeOverrides should be updated with the new runtime
+    expect(ctx.agentRuntimeOverrides["agent-a"]).toBe(mockHostUserRuntime);
+    // Existing runner should have its runtime updated via setRuntime
+    expect(runner.setRuntime).toHaveBeenCalledWith(mockHostUserRuntime);
   });
 
   it("handles new agent: creates runners and pool", async () => {

@@ -67,6 +67,10 @@ export class ContainerAgentRunner {
     this.agentConfig = config;
   }
 
+  setRuntime(runtime: Runtime): void {
+    this.runtime = runtime;
+  }
+
   get containerName(): string | undefined {
     return this._containerName;
   }
