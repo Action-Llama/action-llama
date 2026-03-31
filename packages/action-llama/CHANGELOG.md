@@ -1,5 +1,11 @@
 # @action-llama/action-llama
 
+## 0.23.3
+
+### Patch Changes
+
+- [`efe3a4e`](https://github.com/Action-Llama/action-llama/commit/efe3a4e3da4fb0923429416a9dc419139f5507e4) Thanks [@asselstine](https://github.com/asselstine)! - Fix npm packaging: correct repository URL format and remove leading `./` from bin path so the `al` CLI resolves correctly when installed from npm.
+
 ## 0.23.2
 
 ### Patch Changes
