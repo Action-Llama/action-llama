@@ -41,7 +41,7 @@ function buildWebhookTrigger(pool: RunnerPool, ctx: HotReloadContext) {
     }
     ctx.logger.info({ agent: config.name, event: context.event, action: context.action }, "webhook triggering agent");
     const prompt = makeWebhookPrompt(config, context, ctx.schedulerCtx);
-    executeRun(runner, prompt, { type: 'webhook', source: context.event, receiptId: context.receiptId }, config.name, 0, ctx.schedulerCtx)
+    executeRun(runner, prompt, { type: 'webhook', source: context.source, receiptId: context.receiptId }, config.name, 0, ctx.schedulerCtx)
       .then(() => drainQueues(ctx.schedulerCtx))
       .catch((err) => ctx.logger.error({ err, agent: config.name }, "webhook run failed"));
     return true;

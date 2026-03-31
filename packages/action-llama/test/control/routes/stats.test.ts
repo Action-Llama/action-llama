@@ -8,6 +8,7 @@ function mockStatsStore() {
     countRunsByAgent: vi.fn().mockReturnValue(0),
     queryRunByInstanceId: vi.fn().mockReturnValue(undefined),
     getWebhookReceipt: vi.fn().mockReturnValue(undefined),
+    getWebhookSourcesBatch: vi.fn().mockReturnValue({}),
     queryTriggerHistory: vi.fn().mockReturnValue([]),
     countTriggerHistory: vi.fn().mockReturnValue(0),
   } as any;
@@ -564,7 +565,7 @@ describe("stats routes", () => {
         workQueue: {
           size: vi.fn().mockReturnValue(1),
           peek: vi.fn().mockReturnValue([
-            { context: { type: "webhook", source: "github" }, receivedAt: new Date(3000) },
+            { context: { type: "webhook", context: { source: "github", event: "issues" } }, receivedAt: new Date(3000) },
           ]),
         },
       };
@@ -937,7 +938,7 @@ describe("stats routes", () => {
         workQueue: {
           size: vi.fn().mockReturnValue(2),
           peek: vi.fn().mockReturnValue([
-            { context: { type: "webhook", source: "github" }, receivedAt: new Date(1000) },
+            { context: { type: "webhook", context: { source: "github", event: "issues" } }, receivedAt: new Date(1000) },
             { context: { type: "schedule" }, receivedAt: new Date(2000) },
           ]),
         },
