@@ -178,6 +178,10 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
     ctx.statusTracker?.registerAgent(agentName, scale, agentConfig.description);
     ctx.statusTracker?.setAgentTriggers(agentName, buildTriggerLabels(agentConfig));
 
+    if (agentConfig.maxWorkQueueSize !== undefined) {
+      ctx.schedulerCtx.workQueue.setAgentMaxSize(agentName, agentConfig.maxWorkQueueSize);
+    }
+
     if (scale === 0) {
       ctx.agentConfigs.push(agentConfig);
       ctx.logger.info({ agent: agentName }, "hot reload: agent registered (scale=0, disabled)");
@@ -414,6 +418,11 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
       } else {
         ctx.statusTracker?.setNextRunAt(agentName, null);
       }
+    }
+
+    // Apply per-agent work queue size override if changed
+    if (newConfig.maxWorkQueueSize !== undefined) {
+      ctx.schedulerCtx.workQueue.setAgentMaxSize(agentName, newConfig.maxWorkQueueSize);
     }
 
     // Handle webhook changes

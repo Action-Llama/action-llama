@@ -127,6 +127,7 @@ export interface AgentRuntimeConfig {
   params?: Record<string, unknown>;
   scale?: number;
   timeout?: number;
+  maxWorkQueueSize?: number;
   runtime?: AgentRuntimeType;
 }
 
@@ -145,6 +146,7 @@ export interface AgentConfig {
   params?: Record<string, unknown>;
   scale?: number; // Number of concurrent runs allowed (default: 1)
   timeout?: number; // Max runtime in seconds (falls back to global local.timeout, then 900)
+  maxWorkQueueSize?: number; // Max queued work items (falls back to global workQueueSize)
   license?: string;
   compatibility?: string;
   runtime?: AgentRuntimeType;

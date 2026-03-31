@@ -25,6 +25,7 @@ export class SqliteWorkQueue<T> implements WorkQueue<T> {
   private db: AppDb;
   private ownDb: boolean;
   private maxSize: number;
+  private agentMaxSizes = new Map<string, number>();
 
   private _dequeueTransaction: (agent: string) => {
     id: string;
@@ -37,6 +38,7 @@ export class SqliteWorkQueue<T> implements WorkQueue<T> {
     id: string,
     payload: string,
     receivedAt: number,
+    maxSize: number,
   ) => { dropped?: { payload: string; received_at: number } };
 
   constructor(maxSize: number, dbOrPath: string | AppDb) {
@@ -65,11 +67,11 @@ export class SqliteWorkQueue<T> implements WorkQueue<T> {
 
     // Atomic enqueue with overflow: insert + conditionally drop oldest
     this._enqueueTransaction = client.transaction(
-      (agent: string, id: string, payload: string, receivedAt: number) => {
+      (agent: string, id: string, payload: string, receivedAt: number, maxSize: number) => {
         const sizeRow = client.prepare("SELECT COUNT(*) AS n FROM work_queue WHERE agent = ?").get(agent) as { n: number };
         let dropped: { payload: string; received_at: number } | undefined;
 
-        if (sizeRow.n >= this.maxSize) {
+        if (sizeRow.n >= maxSize) {
           const oldest = client
             .prepare("SELECT id, payload, received_at FROM work_queue WHERE agent = ? ORDER BY rowid ASC LIMIT 1")
             .get(agent) as { id: string; payload: string; received_at: number } | undefined;
@@ -85,14 +87,20 @@ export class SqliteWorkQueue<T> implements WorkQueue<T> {
     );
   }
 
+  setAgentMaxSize(agentName: string, maxSize: number): void {
+    this.agentMaxSizes.set(agentName, maxSize);
+  }
+
   enqueue(agentName: string, context: T, receivedAt?: Date): EnqueueResult<T> {
     const id = randomUUID();
     const ts = (receivedAt || new Date()).getTime();
+    const effectiveMax = this.agentMaxSizes.get(agentName) ?? this.maxSize;
     const { dropped: droppedRow } = this._enqueueTransaction(
       agentName,
       id,
       JSON.stringify(context),
       ts,
+      effectiveMax,
     );
 
     let dropped: QueuedWorkItem<T> | undefined;

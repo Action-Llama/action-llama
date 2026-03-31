@@ -13,12 +13,17 @@ export class EventSourcedWorkQueue<T> implements WorkQueue<T> {
   private agentStreams = new Map<string, EventStreamWrapper>();
   private queueState = new Map<string, QueueState<T>>();
   private maxSize: number;
+  private agentMaxSizes = new Map<string, number>();
 
   constructor(
     private persistence: PersistenceStore,
     maxSize: number = 100
   ) {
     this.maxSize = maxSize;
+  }
+
+  setAgentMaxSize(agentName: string, maxSize: number): void {
+    this.agentMaxSizes.set(agentName, maxSize);
   }
 
   private getAgentStream(agentName: string): EventStreamWrapper {
@@ -83,8 +88,9 @@ export class EventSourcedWorkQueue<T> implements WorkQueue<T> {
     const workId = `${agentName}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
     // Check if we need to drop oldest item
+    const effectiveMax = this.agentMaxSizes.get(agentName) ?? this.maxSize;
     let droppedItem: QueuedWorkItem<T> | undefined;
-    if (state.size() >= this.maxSize) {
+    if (state.size() >= effectiveMax) {
       const oldest = state.getOldest();
       if (oldest) {
         await stream.appendTyped(

@@ -66,7 +66,7 @@ samplingRate = 0.5
 |-------|------|---------|-------------|
 | `maxReruns` | number | `10` | Maximum consecutive reruns when an agent requests a rerun via `al-rerun` before stopping |
 | `maxCallDepth` | number | `3` | Maximum depth for agent-to-agent call chains (A calls B calls C = depth 2) |
-| `workQueueSize` | number | `100` | Maximum queued work items (webhook events + agent calls) per agent when all runners are busy |
+| `workQueueSize` | number | `100` | Maximum queued work items (webhook events + agent calls) per agent when all runners are busy. Can be overridden per-agent with `maxWorkQueueSize` in the agent's `config.toml`. |
 | `scale` | number | _(unlimited)_ | Project-wide cap on total concurrent runners across all agents |
 | `resourceLockTimeout` | number | `1800` | Default lock TTL in seconds. Locks expire automatically after this duration unless refreshed via heartbeat. See [Resource Locks](/concepts/resource-locks). |
 | `historyRetentionDays` | number | `14` | Number of days to retain run history and webhook receipts in the local SQLite stats database. Older entries are pruned automatically. |

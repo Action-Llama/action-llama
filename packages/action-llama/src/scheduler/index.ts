@@ -69,6 +69,14 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   };
   state.workQueue = workQueue;
 
+  // Apply per-agent work queue size overrides
+  for (const agentConfig of agentConfigs) {
+    if (agentConfig.maxWorkQueueSize !== undefined) {
+      workQueue.setAgentMaxSize(agentConfig.name, agentConfig.maxWorkQueueSize);
+      logger.info({ agent: agentConfig.name, maxWorkQueueSize: agentConfig.maxWorkQueueSize }, "per-agent work queue size configured");
+    }
+  }
+
   // === Phase 3: Create ingress (gateway + webhook bindings) ===
 
   // Start gateway early (before Docker builds) so users can see build status

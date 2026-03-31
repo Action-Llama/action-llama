@@ -80,6 +80,11 @@ scale = 2
 # Optional: max runtime in seconds (default: falls back to [local].timeout, then 900)
 timeout = 600
 
+# Optional: max queued work items for this agent (default: global workQueueSize)
+# When all runners are busy, incoming events are queued up to this limit.
+# Oldest events are dropped to make room for newer ones.
+maxWorkQueueSize = 50
+
 # Optional: webhook triggers (instead of or in addition to schedule)
 [[webhooks]]
 source = "my-github"
@@ -138,6 +143,7 @@ run_as = "al-agent"           # OS user to run as (default: "al-agent")
 | `schedule` | string | No* | Cron expression for polling |
 | `scale` | number | No | Number of concurrent runs allowed (default: 1). Set to `0` to disable the agent. Use lock skills in your actions to coordinate instances. See [Resource Locks](/concepts/resource-locks). |
 | `timeout` | number | No | Max runtime in seconds. Falls back to `[local].timeout` in project config, then `900`. See [Timeout](#timeout). |
+| `maxWorkQueueSize` | number | No | Maximum queued work items when all runners are busy. Falls back to global `workQueueSize` (default: 20). Oldest events are dropped to make room for newer ones. |
 | `webhooks` | array | No* | Array of webhook trigger objects. See [Webhooks](/reference/webhooks). |
 | `hooks` | table | No | Pre/post hooks that run around the LLM session. See [Hooks](#hooks). |
 | `params` | table | No | Custom key-value params for the agent prompt |

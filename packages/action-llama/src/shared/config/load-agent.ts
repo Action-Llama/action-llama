@@ -64,6 +64,7 @@ export function loadAgentConfig(projectPath: string, agentName: string): AgentCo
     params: runtime.params,
     scale: runtime.scale,
     timeout: runtime.timeout,
+    maxWorkQueueSize: runtime.maxWorkQueueSize,
     runtime: runtime.runtime,
   };
 

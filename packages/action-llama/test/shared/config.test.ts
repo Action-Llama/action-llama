@@ -13,7 +13,7 @@ function writeModelsConfig(dir: string, models: Record<string, unknown>, extra?:
 }
 
 /** Helper to write SKILL.md (portable fields only) and per-agent config.toml (runtime fields). */
-function writeSkillMd(dir: string, agentName: string, opts: { models: string[]; credentials?: string[]; schedule?: string; hooks?: unknown; description?: string; params?: unknown; scale?: number; timeout?: number }) {
+function writeSkillMd(dir: string, agentName: string, opts: { models: string[]; credentials?: string[]; schedule?: string; hooks?: unknown; description?: string; params?: unknown; scale?: number; timeout?: number; maxWorkQueueSize?: number }) {
   const agentDir = resolve(dir, "agents", agentName);
   mkdirSync(agentDir, { recursive: true });
 
@@ -32,6 +32,7 @@ function writeSkillMd(dir: string, agentName: string, opts: { models: string[]; 
   if (opts.params) runtime.params = opts.params;
   if (opts.scale !== undefined) runtime.scale = opts.scale;
   if (opts.timeout !== undefined) runtime.timeout = opts.timeout;
+  if (opts.maxWorkQueueSize !== undefined) runtime.maxWorkQueueSize = opts.maxWorkQueueSize;
   writeFileSync(resolve(agentDir, "config.toml"), stringifyTOML(runtime));
 }
 
@@ -248,6 +249,29 @@ name: [
 
     const loaded = loadAgentConfig(tmpDir, "dev");
     expect(loaded.description).toBe("Solves GitHub issues by writing code");
+  });
+
+  it("loads maxWorkQueueSize from agent config.toml", () => {
+    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
+    writeSkillMd(tmpDir, "dev", {
+      models: ["sonnet"],
+      credentials: ["github_token"],
+      maxWorkQueueSize: 50,
+    });
+
+    const loaded = loadAgentConfig(tmpDir, "dev");
+    expect(loaded.maxWorkQueueSize).toBe(50);
+  });
+
+  it("maxWorkQueueSize is undefined when not set in agent config.toml", () => {
+    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL });
+    writeSkillMd(tmpDir, "dev", {
+      models: ["sonnet"],
+      credentials: ["github_token"],
+    });
+
+    const loaded = loadAgentConfig(tmpDir, "dev");
+    expect(loaded.maxWorkQueueSize).toBeUndefined();
   });
 });
 
