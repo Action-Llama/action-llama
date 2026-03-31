@@ -1,0 +1,167 @@
+/**
+ * Integration test: verify the logs API returns log entries after agent runs.
+ *
+ * The scheduler writes structured JSON logs to .al/logs/<name>-<date>.log.
+ * These are exposed via:
+ *   GET /api/logs/scheduler        — scheduler process logs
+ *   GET /api/logs/agents/:name     — per-agent logs (all instances)
+ *
+ * Both endpoints are protected by the gateway API key.
+ *
+ * Covers: log API routes (not previously tested by integration tests).
+ */
+import { describe, it, expect, afterEach } from "vitest";
+import { IntegrationHarness, isDockerAvailable } from "./harness.js";
+
+const DOCKER = isDockerAvailable();
+
+describe.skipIf(!DOCKER)("integration: logs API", { timeout: 180_000 }, () => {
+  let harness: IntegrationHarness;
+
+  afterEach(async () => {
+    if (harness) await harness.shutdown();
+  });
+
+  /**
+   * Helper to fetch a logs API endpoint with the harness API key.
+   */
+  async function logsAPI(h: IntegrationHarness, path: string): Promise<Response> {
+    return fetch(`http://127.0.0.1:${h.gatewayPort}${path}`, {
+      headers: {
+        Authorization: `Bearer ${h.apiKey}`,
+      },
+    });
+  }
+
+  it("scheduler logs endpoint returns entries after scheduler starts", async () => {
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "logs-agent",
+          schedule: "0 0 31 2 *",
+          testScript: "#!/bin/sh\necho 'logs-agent ran'\nexit 0\n",
+        },
+      ],
+    });
+
+    await harness.start();
+
+    // Run an agent to generate some log entries
+    await harness.triggerAgent("logs-agent");
+    await harness.waitForRunResult("logs-agent");
+
+    // Give pino a moment to flush to disk
+    await new Promise((r) => setTimeout(r, 1_000));
+
+    // Query scheduler logs
+    const res = await logsAPI(harness, "/api/logs/scheduler");
+    expect(res.ok).toBe(true);
+
+    const body = await res.json();
+    expect(body).toHaveProperty("entries");
+    expect(body).toHaveProperty("cursor");
+    expect(Array.isArray(body.entries)).toBe(true);
+
+    // Scheduler should have written some log lines
+    expect(body.entries.length).toBeGreaterThan(0);
+
+    // Each entry should have basic log fields
+    const entry = body.entries[0];
+    expect(entry).toHaveProperty("level");
+    expect(entry).toHaveProperty("time");
+    expect(entry).toHaveProperty("msg");
+  });
+
+  it("agent logs endpoint returns entries after agent runs", async () => {
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "agent-log-test",
+          schedule: "0 0 31 2 *",
+          testScript: [
+            "#!/bin/sh",
+            'echo "agent-log-test: hello from test script"',
+            "exit 0",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    await harness.start();
+
+    await harness.triggerAgent("agent-log-test");
+    await harness.waitForRunResult("agent-log-test");
+
+    // Give pino a moment to flush
+    await new Promise((r) => setTimeout(r, 1_000));
+
+    const res = await logsAPI(harness, "/api/logs/agents/agent-log-test");
+    expect(res.ok).toBe(true);
+
+    const body = await res.json();
+    expect(body).toHaveProperty("entries");
+    expect(Array.isArray(body.entries)).toBe(true);
+    expect(body.entries.length).toBeGreaterThan(0);
+
+    // Verify entries are from the correct agent
+    const hasAgentName = body.entries.some(
+      (e: any) => e.msg?.includes("agent-log-test") || e.agent === "agent-log-test"
+    );
+    expect(hasAgentName).toBe(true);
+  });
+
+  it("agent logs endpoint returns 400 for invalid agent name", async () => {
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "valid-agent",
+          schedule: "0 0 31 2 *",
+          testScript: "#!/bin/sh\nexit 0\n",
+        },
+      ],
+    });
+
+    await harness.start();
+
+    // Try an agent name with invalid characters (path traversal attempt)
+    const res = await logsAPI(harness, "/api/logs/agents/../etc/passwd");
+    // Either 400 (rejected) or 404 (not found) is acceptable
+    expect([400, 404].includes(res.status)).toBe(true);
+  });
+
+  it("logs endpoint supports cursor-based pagination", async () => {
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "paginated-log-agent",
+          schedule: "0 0 31 2 *",
+          testScript: "#!/bin/sh\nexit 0\n",
+        },
+      ],
+    });
+
+    await harness.start();
+
+    // Run the agent to generate logs
+    await harness.triggerAgent("paginated-log-agent");
+    await harness.waitForRunResult("paginated-log-agent");
+
+    await new Promise((r) => setTimeout(r, 1_000));
+
+    // First page
+    const res1 = await logsAPI(harness, "/api/logs/scheduler?lines=5");
+    expect(res1.ok).toBe(true);
+    const body1 = await res1.json();
+    expect(body1).toHaveProperty("cursor");
+
+    // Second page using cursor — should be valid (may be empty if no more entries)
+    const cursor = encodeURIComponent(body1.cursor || "");
+    if (cursor) {
+      const res2 = await logsAPI(harness, `/api/logs/scheduler?cursor=${cursor}`);
+      expect(res2.ok).toBe(true);
+      const body2 = await res2.json();
+      expect(body2).toHaveProperty("entries");
+      expect(Array.isArray(body2.entries)).toBe(true);
+    }
+  });
+});
