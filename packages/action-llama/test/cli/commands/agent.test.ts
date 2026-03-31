@@ -84,6 +84,8 @@ vi.mock("../../../src/credentials/prompter.js", () => ({
 }));
 
 import { newAgent, configAgent } from "../../../src/cli/commands/agent.js";
+import { listCredentialInstances, writeCredentialFields } from "../../../src/shared/credentials.js";
+import { promptCredential } from "../../../src/credentials/prompter.js";
 
 describe("agent new", () => {
   let tmpDir: string;
@@ -918,5 +920,217 @@ describe("agent config", () => {
     // The model status should show as invalid since global config is empty (no models defined)
     const modelChoice = menuChoices.find((c: any) => c.value === "model");
     expect(modelChoice).toBeDefined();
+  });
+
+  // ── Additional coverage for uncovered paths ──────────────────────────────
+
+  it("edits model — creates new openai model via __create__ path (covers openai else-if branch)", async () => {
+    createAgentConfig("openai-create-agent", { credentials: [], models: ["sonnet"] });
+
+    mockSelect
+      .mockResolvedValueOnce("model")          // menu: model
+      .mockResolvedValueOnce("__create__")     // Select model: create new
+      .mockResolvedValueOnce("openai")         // Select LLM provider: openai
+      .mockResolvedValueOnce("gpt-4o-mini")    // Select model (openai choices): gpt-4o-mini
+      .mockResolvedValueOnce("done");          // menu: done
+    mockInput
+      .mockResolvedValueOnce("gpt4mini");      // model reference name
+
+    await configAgent("openai-create-agent", { project: tmpDir });
+
+    const projectToml = parseTOML(readFileSync(resolve(tmpDir, "config.toml"), "utf-8")) as any;
+    expect(projectToml.models["gpt4mini"]).toBeDefined();
+    expect(projectToml.models["gpt4mini"].provider).toBe("openai");
+    expect(projectToml.models["gpt4mini"].model).toBe("gpt-4o-mini");
+    // openai models do not get a thinkingLevel
+    expect(projectToml.models["gpt4mini"].thinkingLevel).toBeUndefined();
+  });
+
+  it("editModel uses currentProvider defaultModel branch when config.models already has a provider", async () => {
+    // Navigate to model section twice: first pick an existing model (sets config.models),
+    // then navigate again so currentProvider is set and defaultModel = modelNames.find(...)
+    createAgentConfig("two-model-nav", { credentials: [], models: ["sonnet"] });
+
+    mockSelect
+      .mockResolvedValueOnce("model")                     // menu: model (1st visit)
+      .mockResolvedValueOnce("sonnet")                    // Select model: pick existing "sonnet"
+      .mockResolvedValueOnce("model")                     // menu: model (2nd visit)
+      .mockResolvedValueOnce("__create__")               // Select model: create new
+      .mockResolvedValueOnce("anthropic")                 // Select LLM provider: anthropic
+      .mockResolvedValueOnce("claude-haiku-3-5-20241022") // Select model (anthropic)
+      .mockResolvedValueOnce("off")                       // Thinking level: off
+      .mockResolvedValueOnce("done");                     // menu: done
+    mockInput
+      .mockResolvedValueOnce("haiku");                    // model reference name (2nd visit)
+
+    await configAgent("two-model-nav", { project: tmpDir });
+
+    const projectToml = parseTOML(readFileSync(resolve(tmpDir, "config.toml"), "utf-8")) as any;
+    expect(projectToml.models["haiku"]).toBeDefined();
+    expect(projectToml.models["haiku"].provider).toBe("anthropic");
+    expect(projectToml.models["haiku"].model).toBe("claude-haiku-3-5-20241022");
+    expect(projectToml.models["haiku"].thinkingLevel).toBe("off");
+  });
+
+  it("adds webhook source with github provider — calls pickOrAddCredentialInstance, skip credential", async () => {
+    // github provider has credType → pickOrAddCredentialInstance is called
+    // User skips credential → sourceConfig.credential NOT set
+    createAgentConfig("github-src-skip", { credentials: [], models: ["sonnet"] });
+    // config.toml has no webhooks section → "no sources" path
+
+    mockSelect
+      .mockResolvedValueOnce("webhooks")    // menu: webhooks
+      .mockResolvedValueOnce("github")      // provider type in addWebhookSourceWithName
+      .mockResolvedValueOnce("__skip__")    // pickOrAddCredentialInstance: skip
+      .mockResolvedValueOnce("done");       // menu: done after returning from editWebhooks
+    mockConfirm
+      .mockResolvedValueOnce(true);         // "Would you like to add a webhook source now?"
+    mockInput
+      .mockResolvedValueOnce("my-github");  // source name
+
+    await configAgent("github-src-skip", { project: tmpDir });
+
+    const projectToml = parseTOML(readFileSync(resolve(tmpDir, "config.toml"), "utf-8")) as any;
+    expect(projectToml.webhooks?.["my-github"]).toBeDefined();
+    expect(projectToml.webhooks?.["my-github"].type).toBe("github");
+    // Credential skipped → not stored
+    expect(projectToml.webhooks?.["my-github"].credential).toBeUndefined();
+  });
+
+  it("pickOrAddCredentialInstance — selects existing instance (covers loop body and return choice)", async () => {
+    // listCredentialInstances returns two instances so the for-loop runs
+    vi.mocked(listCredentialInstances).mockResolvedValueOnce(["default", "my-project"]);
+
+    createAgentConfig("pick-cred-inst", { credentials: [], models: ["sonnet"] });
+
+    mockSelect
+      .mockResolvedValueOnce("webhooks")    // menu: webhooks
+      .mockResolvedValueOnce("github")      // provider type
+      .mockResolvedValueOnce("my-project")  // pickOrAddCredentialInstance: pick existing "my-project"
+      .mockResolvedValueOnce("done");       // menu: done
+    mockConfirm
+      .mockResolvedValueOnce(true);         // "Would you like to add a webhook source now?"
+    mockInput
+      .mockResolvedValueOnce("my-github");  // source name
+
+    await configAgent("pick-cred-inst", { project: tmpDir });
+
+    const projectToml = parseTOML(readFileSync(resolve(tmpDir, "config.toml"), "utf-8")) as any;
+    expect(projectToml.webhooks?.["my-github"]).toBeDefined();
+    // Credential set to the selected existing instance
+    expect(projectToml.webhooks?.["my-github"].credential).toBe("my-project");
+  });
+
+  it("pickOrAddCredentialInstance — __add__ with existing instances prompts for new instance name", async () => {
+    // instances.length > 0 → asks for new instance name via input
+    vi.mocked(listCredentialInstances).mockResolvedValueOnce(["default"]);
+
+    createAgentConfig("add-cred-inst", { credentials: [], models: ["sonnet"] });
+
+    mockSelect
+      .mockResolvedValueOnce("webhooks")    // menu: webhooks
+      .mockResolvedValueOnce("github")      // provider type
+      .mockResolvedValueOnce("__add__")     // pickOrAddCredentialInstance: add new
+      .mockResolvedValueOnce("done");       // menu: done
+    mockConfirm
+      .mockResolvedValueOnce(true);         // "Would you like to add a webhook source now?"
+    mockInput
+      .mockResolvedValueOnce("my-github")   // source name
+      .mockResolvedValueOnce("project-b");  // new credential instance name (instances.length > 0)
+    // promptCredential returns undefined → no writeCredentialFields call
+
+    await configAgent("add-cred-inst", { project: tmpDir });
+
+    const projectToml = parseTOML(readFileSync(resolve(tmpDir, "config.toml"), "utf-8")) as any;
+    expect(projectToml.webhooks?.["my-github"]).toBeDefined();
+    // credential set to "project-b" (returned even when promptCredential returns undefined)
+    expect(projectToml.webhooks?.["my-github"].credential).toBe("project-b");
+  });
+
+  it("pickOrAddCredentialInstance — __add__ with non-empty promptCredential result writes credential fields", async () => {
+    vi.mocked(listCredentialInstances).mockResolvedValueOnce([]);
+    vi.mocked(promptCredential).mockResolvedValueOnce({ values: { secret: "test-secret" }, skipped: false } as any);
+
+    createAgentConfig("write-cred-inst", { credentials: [], models: ["sonnet"] });
+
+    mockSelect
+      .mockResolvedValueOnce("webhooks")    // menu: webhooks
+      .mockResolvedValueOnce("github")      // provider type
+      .mockResolvedValueOnce("__add__")     // pickOrAddCredentialInstance: add new (empty instances)
+      .mockResolvedValueOnce("done");       // menu: done
+    mockConfirm
+      .mockResolvedValueOnce(true);         // "Would you like to add a webhook source now?"
+    mockInput
+      .mockResolvedValueOnce("my-github");  // source name
+
+    await configAgent("write-cred-inst", { project: tmpDir });
+
+    // writeCredentialFields should have been called with the credential data
+    expect(vi.mocked(writeCredentialFields)).toHaveBeenCalledWith(
+      "github_webhook_secret",
+      "default",
+      { secret: "test-secret" },
+    );
+  });
+
+  it("editWebhooks — no sources but agent has triggers: rewriteTriggerSources updates trigger source", async () => {
+    // Agent has a trigger referencing "old-github" — config.toml has no webhooks section
+    // After adding a new source "new-github", the trigger's source gets rewritten
+    createAgentConfig("rewrite-a-agent", {
+      credentials: [],
+      models: ["sonnet"],
+      webhooks: [{ source: "old-github", events: ["push"] }],
+    });
+
+    mockSelect
+      .mockResolvedValueOnce("webhooks")    // menu: webhooks
+      .mockResolvedValueOnce("test")        // provider type (no credType for "test")
+      .mockResolvedValueOnce("done");       // menu: done
+    mockConfirm
+      .mockResolvedValueOnce(true);         // "Would you like to add a webhook source now?"
+    mockInput
+      .mockResolvedValueOnce("new-github"); // source name in addWebhookSourceWithName
+
+    await configAgent("rewrite-a-agent", { project: tmpDir });
+
+    // The trigger source should be rewritten from "old-github" to "new-github"
+    const agentToml = parseTOML(readFileSync(resolve(tmpDir, "agents", "rewrite-a-agent", "config.toml"), "utf-8")) as any;
+    expect(agentToml.webhooks).toHaveLength(1);
+    expect(agentToml.webhooks[0].source).toBe("new-github");
+  });
+
+  it("editWebhooks — missing source with existing sources, user accepts, triggers rewritten (L584-587)", async () => {
+    // config.toml has a webhooks source "existing-src" but NOT "missing-src"
+    // Agent trigger references "missing-src" → missingSources = ["missing-src"]
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+      webhooks: { "existing-src": { type: "test" } },
+    }));
+    createAgentConfig("rewrite-b-agent", {
+      credentials: [],
+      models: ["sonnet"],
+      webhooks: [{ source: "missing-src", events: ["push"] }],
+    });
+
+    mockSelect
+      .mockResolvedValueOnce("webhooks")    // menu: webhooks
+      .mockResolvedValueOnce("test")        // provider type for new source (no credType)
+      .mockResolvedValueOnce("done");       // menu: done
+    mockConfirm
+      .mockResolvedValueOnce(true);         // "Source 'missing-src' not found. Create a webhook source now?"
+    mockInput
+      .mockResolvedValueOnce("new-source"); // new source name in addWebhookSourceWithName
+
+    await configAgent("rewrite-b-agent", { project: tmpDir });
+
+    // The trigger source should be rewritten from "missing-src" to "new-source"
+    const agentToml = parseTOML(readFileSync(resolve(tmpDir, "agents", "rewrite-b-agent", "config.toml"), "utf-8")) as any;
+    expect(agentToml.webhooks).toHaveLength(1);
+    expect(agentToml.webhooks[0].source).toBe("new-source");
+
+    // The new source should exist in config.toml
+    const projectToml = parseTOML(readFileSync(resolve(tmpDir, "config.toml"), "utf-8")) as any;
+    expect(projectToml.webhooks?.["new-source"]).toBeDefined();
+    expect(projectToml.webhooks?.["new-source"].type).toBe("test");
   });
 });
