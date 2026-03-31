@@ -33,12 +33,7 @@ export function registerLockRoutes(
 
     // Validate that resourceKey is a valid URI
     try {
-      const url = new URL(resourceKey);
-      const validSchemePattern = /^[a-z][a-z0-9+.-]*$/;
-      if (!validSchemePattern.test(url.protocol.slice(0, -1))) {
-        logger.warn({ route: "/locks/acquire", resourceKey }, "invalid URI scheme");
-        return c.json({ error: `Invalid URI scheme '${url.protocol}'. URI schemes must match pattern [a-z][a-z0-9+.-]*:` }, 400);
-      }
+      new URL(resourceKey);
     } catch (error) {
       logger.warn({ route: "/locks/acquire", resourceKey }, "invalid URI format");
       return c.json({ error: `Invalid URI format: ${error instanceof Error ? error.message : 'unknown error'}` }, 400);
@@ -103,12 +98,7 @@ export function registerLockRoutes(
 
     // Validate that resourceKey is a valid URI
     try {
-      const url = new URL(resourceKey);
-      const validSchemePattern = /^[a-z][a-z0-9+.-]*$/;
-      if (!validSchemePattern.test(url.protocol.slice(0, -1))) {
-        logger.warn({ route: "/locks/release", resourceKey }, "invalid URI scheme");
-        return c.json({ error: `Invalid URI scheme '${url.protocol}'. URI schemes must match pattern [a-z][a-z0-9+.-]*:` }, 400);
-      }
+      new URL(resourceKey);
     } catch (error) {
       logger.warn({ route: "/locks/release", resourceKey }, "invalid URI format");
       return c.json({ error: `Invalid URI format: ${error instanceof Error ? error.message : 'unknown error'}` }, 400);
@@ -154,12 +144,7 @@ export function registerLockRoutes(
 
     // Validate that resourceKey is a valid URI
     try {
-      const url = new URL(resourceKey);
-      const validSchemePattern = /^[a-z][a-z0-9+.-]*$/;
-      if (!validSchemePattern.test(url.protocol.slice(0, -1))) {
-        logger.warn({ route: "/locks/heartbeat", resourceKey }, "invalid URI scheme");
-        return c.json({ error: `Invalid URI scheme '${url.protocol}'. URI schemes must match pattern [a-z][a-z0-9+.-]*:` }, 400);
-      }
+      new URL(resourceKey);
     } catch (error) {
       logger.warn({ route: "/locks/heartbeat", resourceKey }, "invalid URI format");
       return c.json({ error: `Invalid URI format: ${error instanceof Error ? error.message : 'unknown error'}` }, 400);
