@@ -93,7 +93,7 @@ export function TriggerDetailPage() {
           </Link>
           <div>
             <h1 className="text-xl font-bold text-slate-900 dark:text-white font-mono">
-              {shortId(trigger.instanceId)}
+              {trigger.instanceId}
             </h1>
             <div className="text-xs text-slate-500 dark:text-slate-400">Trigger Detail</div>
           </div>
@@ -145,7 +145,7 @@ export function TriggerDetailPage() {
               to={`/dashboard/agents/${encodeURIComponent(trigger.agentName)}/instances/${encodeURIComponent(trigger.instanceId)}`}
               className="font-mono text-xs text-blue-600 dark:text-blue-400 hover:underline"
             >
-              {shortId(trigger.instanceId)}
+              {trigger.instanceId}
             </Link>
           </div>
           <div className="px-4 py-3 flex items-center justify-between">
