@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { TriggerBadge } from "./Badge";
 import type { ActivityRow } from "../lib/api";
-import { fmtSmartTime } from "../lib/format";
+import { fmtSmartTime, shortId } from "../lib/format";
 import { agentHueStyle } from "../lib/color";
 
 const STATUS_DOT_COLOR: Record<string, string> = {
@@ -71,7 +71,10 @@ export function ActivityTable({
             Time
           </th>
           <th className="text-left pl-2 pr-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-            Description
+            Trigger
+          </th>
+          <th className="text-left pl-2 pr-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide hidden sm:table-cell">
+            Agent
           </th>
         </tr>
       </thead>
@@ -103,6 +106,33 @@ export function ActivityTable({
             </span>
           );
 
+          // Agent instance ID element (colored, linked)
+          const agentEl = !isDeadLetter && row.agentName && row.instanceId ? (
+            <Link
+              to={`/dashboard/agents/${encodeURIComponent(row.agentName)}/instances/${encodeURIComponent(row.instanceId)}`}
+              className="hover:underline"
+            >
+              <span
+                className="agent-color-text font-medium font-mono text-xs"
+                style={agentHueStyle(row.agentName, agentNames)}
+              >
+                {shortId(row.instanceId)}
+              </span>
+            </Link>
+          ) : !isDeadLetter && row.agentName ? (
+            <Link
+              to={`/dashboard/agents/${encodeURIComponent(row.agentName)}`}
+              className="hover:underline"
+            >
+              <span
+                className="agent-color-text font-medium text-xs"
+                style={agentHueStyle(row.agentName, agentNames)}
+              >
+                {row.agentName}
+              </span>
+            </Link>
+          ) : null;
+
           return (
             <tr
               key={`${row.ts}-${i}`}
@@ -124,51 +154,25 @@ export function ActivityTable({
                 </span>
               </td>
 
-              {/* Description — agent name + trigger, or just trigger for dead letters */}
+              {/* Trigger — badge with dead-letter reason; on mobile also shows agent below */}
               <td className="pl-2 pr-2 py-2.5">
-                {isDeadLetter ? (
-                  // Dead letter: just trigger badge + reason
-                  <div className="flex flex-col gap-0.5">
-                    {triggerEl}
-                    {row.deadLetterReason && (
-                      <span className="text-xs text-red-500 dark:text-red-400">
-                        {row.deadLetterReason.replace(/_/g, " ")}
-                      </span>
-                    )}
-                  </div>
-                ) : row.agentName ? (
-                  // Agent activity: name on top, trigger below
-                  <div className="flex flex-col gap-0.5">
-                    {row.instanceId ? (
-                      <Link
-                        to={`/dashboard/agents/${encodeURIComponent(row.agentName)}/instances/${encodeURIComponent(row.instanceId)}`}
-                        className="hover:underline"
-                      >
-                        <span
-                          className="agent-color-text font-medium"
-                          style={agentHueStyle(row.agentName, agentNames)}
-                        >
-                          {row.agentName}
-                        </span>
-                      </Link>
-                    ) : (
-                      <Link
-                        to={`/dashboard/agents/${encodeURIComponent(row.agentName)}`}
-                        className="hover:underline"
-                      >
-                        <span
-                          className="agent-color-text font-medium"
-                          style={agentHueStyle(row.agentName, agentNames)}
-                        >
-                          {row.agentName}
-                        </span>
-                      </Link>
-                    )}
-                    {triggerEl}
-                  </div>
-                ) : (
-                  <span className="text-slate-400 text-xs">{"\u2014"}</span>
-                )}
+                <div className="flex flex-col gap-0.5">
+                  {triggerEl}
+                  {isDeadLetter && row.deadLetterReason && (
+                    <span className="text-xs text-red-500 dark:text-red-400">
+                      {row.deadLetterReason.replace(/_/g, " ")}
+                    </span>
+                  )}
+                  {/* Mobile: show agent instance below trigger */}
+                  {agentEl && (
+                    <span className="sm:hidden">{agentEl}</span>
+                  )}
+                </div>
+              </td>
+
+              {/* Agent — instance ID (hidden on mobile, shown in trigger cell instead) */}
+              <td className="pl-2 pr-2 py-2.5 hidden sm:table-cell align-top">
+                {agentEl ?? <span className="text-slate-400 text-xs">{"\u2014"}</span>}
               </td>
             </tr>
           );
@@ -176,7 +180,7 @@ export function ActivityTable({
         {rows.length === 0 && loading && (
           <tr>
             <td
-              colSpan={2}
+              colSpan={3}
               className="px-4 py-8 text-center text-slate-500 dark:text-slate-400"
             >
               Loading...
@@ -186,7 +190,7 @@ export function ActivityTable({
         {rows.length === 0 && !loading && (
           <tr>
             <td
-              colSpan={2}
+              colSpan={3}
               className="px-4 py-8 text-center text-slate-500 dark:text-slate-400"
             >
               {emptyMessage}
