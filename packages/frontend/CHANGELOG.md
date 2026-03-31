@@ -1,5 +1,17 @@
 # @action-llama/frontend
 
+## 0.19.2
+
+### Patch Changes
+
+- [`3984ef7`](https://github.com/Action-Llama/action-llama/commit/3984ef7554cf995e92375b7736ff89ffc0ade498) Thanks [@asselstine](https://github.com/asselstine)! - Restructure activity table from two columns (Time, Description) to three columns (Time, Trigger, Agent). The Trigger column shows the trigger badge component, and the Agent column shows the colored instance ID linked to the instance detail page. Dead letters omit the agent column. On mobile the agent instance ID stacks underneath the trigger.
+
+- [`4f278d9`](https://github.com/Action-Llama/action-llama/commit/4f278d90d09893630991b0f39eb6e3325b5373e2) Thanks [@asselstine](https://github.com/asselstine)! - Centralize frontend polling into a single `usePolling` hook so that interval management, in-flight guards, abort signals, and cleanup are handled consistently across all pages.
+
+- [`c7ad5a4`](https://github.com/Action-Llama/action-llama/commit/c7ad5a430c00e7b46ab31adba360924bd56b9333) Thanks [@asselstine](https://github.com/asselstine)! - Remove running/scale fraction from dashboard agent status cell, showing only the status dot aligned with the agent name.
+
+- [`414edd4`](https://github.com/Action-Llama/action-llama/commit/414edd43374379ac94c44d452444adf536872c2e) Thanks [@asselstine](https://github.com/asselstine)! - Remove leftover agent color dots from the Activity table description column. Agent names now left-align exactly with the webhook trigger badge below them.
+
 ## 0.19.1
 
 ### Patch Changes
