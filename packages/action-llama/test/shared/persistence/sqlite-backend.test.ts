@@ -3,7 +3,7 @@
  * of operations not exercised by the higher-level unified-store tests.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, existsSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -264,6 +264,30 @@ describe("SqliteBackend – direct operations", () => {
       await b.kvSet("ns", "permanent-key", "value");
       // Sweep should run without errors even when nothing expires
       expect(() => (b as any).sweep()).not.toThrow();
+      await b.close();
+    });
+
+    it("sweep timer callback fires when interval elapses via fake timers", async () => {
+      // Use fake timers to trigger the sweep interval without waiting 60s
+      vi.useFakeTimers({ now: Date.now() });
+
+      const b = new SqliteBackend(":memory:");
+      await b.init();
+
+      // Insert an entry with 1ms TTL — it will expire immediately
+      const realNow = vi.getRealSystemTime();
+      await b.kvSet("ns", "expired-key", "gone", 1);
+
+      // Advance fake timers by 60 seconds to fire the sweep callback
+      // The sweep callback () => this.sweep() at line 43 will be triggered
+      vi.advanceTimersByTime(60_000);
+
+      // After sweep, the expired entry is removed from the database
+      // (kvGet also excludes expired entries, so either way it returns null)
+      const result = await b.kvGet("ns", "expired-key");
+      expect(result).toBeNull();
+
+      vi.useRealTimers();
       await b.close();
     });
   });

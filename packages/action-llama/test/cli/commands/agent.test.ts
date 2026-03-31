@@ -1133,4 +1133,54 @@ describe("agent config", () => {
     expect(projectToml.webhooks?.["new-source"]).toBeDefined();
     expect(projectToml.webhooks?.["new-source"].type).toBe("test");
   });
+
+  it("webhooks source name validate callback rejects empty and accepts non-empty names", async () => {
+    createAgentConfig("wh-validate", { credentials: [], models: ["sonnet"] });
+
+    let capturedValidate: ((v: string) => any) | undefined;
+    mockInput.mockImplementationOnce((opts: any) => {
+      capturedValidate = opts.validate;
+      return Promise.resolve("valid-source");
+    });
+
+    mockSelect
+      .mockResolvedValueOnce("webhooks")    // menu: webhooks
+      .mockResolvedValueOnce("github")      // provider type
+      .mockResolvedValueOnce("__skip__")    // skip webhook secret
+      .mockResolvedValueOnce("back")        // back
+      .mockResolvedValueOnce("done");       // done
+    mockConfirm.mockResolvedValueOnce(true); // accept to add source
+
+    await configAgent("wh-validate", { project: tmpDir });
+
+    expect(capturedValidate).toBeTypeOf("function");
+    expect(capturedValidate!("my-source")).toBe(true);
+    expect(capturedValidate!("  ")).toBe("Name is required");
+    expect(capturedValidate!("")).toBe("Name is required");
+  });
+
+  it("model name validate callback rejects empty and accepts non-empty names", async () => {
+    createAgentConfig("model-validate-agent", { credentials: [], models: ["sonnet"] });
+
+    let capturedModelNameValidate: ((v: string) => any) | undefined;
+    mockInput.mockImplementationOnce((opts: any) => {
+      capturedModelNameValidate = opts.validate;
+      return Promise.resolve("opus");
+    });
+
+    mockSelect
+      .mockResolvedValueOnce("model")
+      .mockResolvedValueOnce("__create__")
+      .mockResolvedValueOnce("anthropic")
+      .mockResolvedValueOnce("claude-opus-4-20250514")
+      .mockResolvedValueOnce("none")
+      .mockResolvedValueOnce("done");
+
+    await configAgent("model-validate-agent", { project: tmpDir });
+
+    expect(capturedModelNameValidate).toBeTypeOf("function");
+    expect(capturedModelNameValidate!("my-model")).toBe(true);
+    expect(capturedModelNameValidate!("  ")).toBe("Name is required");
+    expect(capturedModelNameValidate!("")).toBe("Name is required");
+  });
 });
