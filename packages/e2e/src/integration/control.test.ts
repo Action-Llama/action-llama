@@ -119,4 +119,43 @@ describe.skipIf(!DOCKER)("integration: control API", { timeout: 180_000 }, () =>
     const res = await harness.controlAPI("POST", "/trigger/nonexistent");
     expect(res.status).toBe(404);
   });
+
+  it("trigger with custom prompt body passes prompt to container via PROMPT env var", async () => {
+    // The trigger endpoint accepts a JSON body with a `prompt` field.
+    // When provided, it is passed to the container as the PROMPT env var
+    // wrapped in a <user-prompt> block. The test-script verifies it arrives.
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "prompt-agent",
+          schedule: "0 0 31 2 *",
+          testScript: [
+            "#!/bin/sh",
+            "set -e",
+            // Verify PROMPT is set and contains our custom text
+            'test -n "$PROMPT" || { echo "PROMPT env var not set"; exit 1; }',
+            'echo "$PROMPT" | grep -q "custom-integration-test-marker" || { echo "custom marker not found in PROMPT: $PROMPT"; exit 1; }',
+            'echo "prompt-agent: custom prompt verified OK"',
+            "exit 0",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    await harness.start();
+
+    // Trigger with a custom prompt body
+    const triggerRes = await harness.controlAPI("POST", "/trigger/prompt-agent", {
+      prompt: "custom-integration-test-marker: please handle this request",
+    });
+    expect(triggerRes.ok).toBe(true);
+    const triggerBody = await triggerRes.json();
+    expect(triggerBody.success).toBe(true);
+    // The response should include an instanceId
+    expect(triggerBody.instanceId).toBeTruthy();
+
+    // Wait for the run to complete — test-script verifies the PROMPT contains our marker
+    const run = await harness.waitForRunResult("prompt-agent", 120_000);
+    expect(run.result).toBe("completed");
+  });
 });
