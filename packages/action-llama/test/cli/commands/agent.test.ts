@@ -826,4 +826,97 @@ describe("agent config", () => {
     const toml = parseTOML(readFileSync(resolve(agentDir, "config.toml"), "utf-8")) as any;
     expect(toml.source).toBe("https://github.com/example/agent.git");
   });
+
+  it("shows invalid cron indicator when schedule has wrong field count", async () => {
+    // Create agent with a 4-field cron (invalid — needs 5)
+    createAgentConfig("invalid-cron-agent", {
+      credentials: [],
+      models: ["sonnet"],
+      schedule: "* * * *",
+    });
+
+    let menuChoices: any[] = [];
+    mockSelect.mockImplementationOnce(async (opts: any) => {
+      menuChoices = opts.choices;
+      return "done";
+    });
+
+    await configAgent("invalid-cron-agent", { project: tmpDir });
+
+    const scheduleChoice = menuChoices.find((c: any) => c.value === "schedule");
+    expect(scheduleChoice.name).toContain("✗");
+    expect(scheduleChoice.name).toContain("invalid cron");
+  });
+
+  it("removes all params and cleans up empty params object", async () => {
+    createAgentConfig("params-rm-all", {
+      credentials: [],
+      models: ["sonnet"],
+      params: { only: "one" },
+    });
+
+    mockSelect
+      .mockResolvedValueOnce("params")          // menu: params
+      .mockResolvedValueOnce("edit:only")       // select param
+      .mockResolvedValueOnce("remove")          // choose to remove
+      .mockResolvedValueOnce("back")            // params: back
+      .mockResolvedValueOnce("done");           // menu: done
+
+    await configAgent("params-rm-all", { project: tmpDir });
+
+    const toml = parseTOML(readFileSync(resolve(tmpDir, "agents", "params-rm-all", "config.toml"), "utf-8")) as any;
+    // All params removed → params should be undefined
+    expect(toml.params).toBeUndefined();
+  });
+
+  it("removes multiple webhook triggers in correct order (reverse index)", async () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+      webhooks: { "my-github": { type: "github" } },
+    }));
+    createAgentConfig("wh-multi-remove", {
+      credentials: [],
+      models: ["sonnet"],
+      webhooks: [
+        { source: "my-github", events: ["push"] },
+        { source: "my-github", events: ["pull_request"] },
+        { source: "my-github", events: ["issues"] },
+      ],
+    });
+
+    mockSelect
+      .mockResolvedValueOnce("webhooks")  // menu: webhooks
+      .mockResolvedValueOnce("remove")    // webhooks: remove trigger
+      .mockResolvedValueOnce("back")      // webhooks: back
+      .mockResolvedValueOnce("done");     // menu: done
+    // Remove indices 0 and 2 (first and last) — requires sort comparator to handle multiple
+    mockCheckbox.mockResolvedValueOnce([0, 2]);
+
+    await configAgent("wh-multi-remove", { project: tmpDir });
+
+    const toml = parseTOML(readFileSync(resolve(tmpDir, "agents", "wh-multi-remove", "config.toml"), "utf-8")) as any;
+    // Only the middle trigger (pull_request) should remain
+    expect(toml.webhooks).toHaveLength(1);
+    expect(toml.webhooks[0].events).toEqual(["pull_request"]);
+  });
+
+  it("safeLoadGlobalConfig returns empty object when global config.toml is invalid TOML", async () => {
+    // Overwrite config.toml with invalid TOML to trigger safeLoadGlobalConfig catch
+    writeFileSync(resolve(tmpDir, "config.toml"), "this is [not valid] = = toml\n");
+
+    createAgentConfig("safe-cfg-agent", { credentials: [], models: ["sonnet"] });
+
+    let menuChoices: any[] = [];
+    mockSelect.mockImplementationOnce(async (opts: any) => {
+      menuChoices = opts.choices;
+      return "done";
+    });
+
+    // Should not throw even with invalid global config
+    await configAgent("safe-cfg-agent", { project: tmpDir });
+
+    // The model status should show as invalid since global config is empty (no models defined)
+    const modelChoice = menuChoices.find((c: any) => c.value === "model");
+    expect(modelChoice).toBeDefined();
+  });
 });
