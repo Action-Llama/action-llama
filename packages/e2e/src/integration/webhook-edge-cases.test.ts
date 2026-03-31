@@ -202,5 +202,42 @@ describe.skipIf(!DOCKER)(
         expect(body.error).toBeTruthy();
       }
     });
+
+    it("POST /webhooks/:source with application/x-www-form-urlencoded and missing payload field returns 400", async () => {
+      // When a webhook arrives with Content-Type: application/x-www-form-urlencoded
+      // but no `payload` field in the form body, the registry returns an error
+      // "missing payload in form body" → route returns 400.
+      // This exercises the form-encoded body handling path in webhooks/registry.ts.
+      harness = await IntegrationHarness.create({
+        agents: [
+          {
+            name: "form-payload-agent",
+            webhooks: [{ source: "form-hook" }],
+            testScript: "#!/bin/sh\necho 'ran'\nexit 0\n",
+          },
+        ],
+        globalConfig: {
+          webhooks: { "form-hook": { type: "test", allowUnsigned: true } },
+        },
+      });
+
+      await harness.start();
+
+      // POST with form-urlencoded content-type but no 'payload' field
+      const res = await fetch(
+        `http://127.0.0.1:${harness.gatewayPort}/webhooks/form-hook`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: "foo=bar&baz=qux",
+          // Note: no 'payload' field — this is the missing payload case
+        },
+      );
+
+      // Should return 400 for missing payload field
+      expect(res.status).toBe(400);
+      const body = await res.json() as any;
+      expect(body.error).toBeTruthy();
+    });
   },
 );

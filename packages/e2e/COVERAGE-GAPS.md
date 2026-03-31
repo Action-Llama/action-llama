@@ -92,3 +92,4 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Stats for agent-triggered runs — /api/stats/activity?triggerType=agent returns callee runs with triggerSource=caller name; /api/stats/triggers?triggerType=agent filters correctly (stats-agent-trigger.test.ts)
 - [x] Per-instance logs ?grep parameter — invalid grep returns 400, valid grep filters entries for a specific instanceId (logs-per-instance.test.ts)
 - [x] /shutdown route error paths — invalid JSON → 400, missing secret → 400, invalid secret → 403 (shutdown-error-paths.test.ts)
+- [x] Webhook form-urlencoded missing payload field — POST with application/x-www-form-urlencoded and no payload field returns 400 (webhook-edge-cases.test.ts)
