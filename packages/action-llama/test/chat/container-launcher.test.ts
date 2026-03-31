@@ -222,5 +222,86 @@ describe("ChatContainerLauncher", () => {
       await launcher.stopChatContainer(session.sessionId);
       expect(unregisterContainer).not.toHaveBeenCalled();
     });
+
+    it("logs warning when unregisterContainer throws", async () => {
+      unregisterContainer.mockRejectedValueOnce(new Error("unregister failed"));
+
+      const session = sessionManager.createSession("test-agent");
+      await launcher.launchChatContainer("test-agent", session.sessionId);
+
+      await launcher.stopChatContainer(session.sessionId);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: session.sessionId }),
+        "failed to unregister chat container",
+      );
+    });
+  });
+
+  describe("default callbacks", () => {
+    it("uses default registerContainer (no-op) when not provided", async () => {
+      // Create launcher without registerContainer or unregisterContainer
+      const launcherWithDefaults = new ChatContainerLauncher({
+        runtime,
+        globalConfig: {} as GlobalConfig,
+        agentConfigs: [agentConfig],
+        gatewayUrl: "http://localhost:8080",
+        logger,
+        sessionManager,
+        images: new Map([["test-agent", "test-image:latest"]]),
+        // no registerContainer or unregisterContainer
+      });
+
+      const session = sessionManager.createSession("test-agent");
+      // Should not throw — default registerContainer is a no-op
+      const containerName = await launcherWithDefaults.launchChatContainer("test-agent", session.sessionId);
+      expect(containerName).toBe("chat-container-abc");
+    });
+
+    it("uses default unregisterContainer (no-op) when not provided", async () => {
+      const launcherWithDefaults = new ChatContainerLauncher({
+        runtime,
+        globalConfig: {} as GlobalConfig,
+        agentConfigs: [agentConfig],
+        gatewayUrl: "http://localhost:8080",
+        logger,
+        sessionManager,
+        images: new Map([["test-agent", "test-image:latest"]]),
+        // no unregisterContainer
+      });
+
+      const session = sessionManager.createSession("test-agent");
+      await launcherWithDefaults.launchChatContainer("test-agent", session.sessionId);
+      // Should not throw — default unregisterContainer is a no-op
+      await launcherWithDefaults.stopChatContainer(session.sessionId);
+      expect(runtime.kill).toHaveBeenCalledWith("chat-container-abc");
+    });
+  });
+
+  describe("credential resolution", () => {
+    it("skips adding provider key for pi_auth models", async () => {
+      const piAuthAgent: AgentConfig = {
+        name: "pi-agent",
+        credentials: [],
+        models: [{ provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "pi_auth" }],
+        schedule: "*/5 * * * *",
+      };
+      const piLauncher = new ChatContainerLauncher({
+        runtime,
+        globalConfig: {} as GlobalConfig,
+        agentConfigs: [piAuthAgent],
+        gatewayUrl: "http://localhost:8080",
+        logger,
+        sessionManager,
+        images: new Map([["pi-agent", "pi-image:latest"]]),
+        registerContainer: registerContainer as any,
+        unregisterContainer: unregisterContainer as any,
+      });
+
+      const session = sessionManager.createSession("pi-agent");
+      await piLauncher.launchChatContainer("pi-agent", session.sessionId);
+
+      // prepareCredentials should be called with empty array (no key added for pi_auth)
+      expect(runtime.prepareCredentials).toHaveBeenCalledWith([]);
+    });
   });
 });
