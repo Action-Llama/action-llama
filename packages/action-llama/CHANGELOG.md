@@ -1,5 +1,15 @@
 # @action-llama/action-llama
 
+## 0.23.4
+
+### Patch Changes
+
+- [`b80e01c`](https://github.com/Action-Llama/action-llama/commit/b80e01c08d18ac62e3c5eba3836a1e480ac6c040) Thanks [@asselstine](https://github.com/asselstine)! - Fix manual triggers being recorded as "schedule" type. When clicking "Run" without a prompt, the trigger type was incorrectly inferred from prompt presence. Now uses an explicit trigger parameter.
+
+- [`560e0cd`](https://github.com/Action-Llama/action-llama/commit/560e0cd9be3defa203f19be147e1ce805a6217aa) Thanks [@asselstine](https://github.com/asselstine)! - Fix setenv command for host-user runtime: scope env file per agent instance to prevent cross-instance conflicts, and add confirmation output so agents get feedback when setenv succeeds or fails.
+
+- [`6d46757`](https://github.com/Action-Llama/action-llama/commit/6d46757d4db72a177b2bf1f3ab42b881d0cdf13a) Thanks [@asselstine](https://github.com/asselstine)! - Add job summary to the Release GitHub Action showing the published npm version, or "no new changes" when there are no changesets to release.
+
 ## 0.23.3
 
 ### Patch Changes
