@@ -176,6 +176,40 @@ describe("doctor", () => {
     expect(mockPromptCredential).not.toHaveBeenCalled();
   });
 
+  it("reports unknown global config fields as validation error", async () => {
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: [] });
+    mockLoadAgentRuntimeConfig.mockReturnValue({});
+    mockCollectCredentialRefs.mockReturnValue(new Set());
+    // Make config.toml exist to trigger global config validation
+    mockExistsSync.mockImplementation((p: string) => String(p).endsWith("config.toml") && !String(p).includes("agents"));
+    mockReadFileSync.mockReturnValue("[models]\n");
+    // Return unknown fields from global config check
+    mockDetectGlobalConfigUnknownFields.mockReturnValue(["badField", "anotherBadField"]);
+
+    await expect(execute({ project: ".", skipCredentials: true })).rejects.toThrow(
+      "Unknown fields in config.toml: badField, anotherBadField"
+    );
+  });
+
+  it("reports pi_auth model type as container-mode validation error", async () => {
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: [] });
+    mockLoadAgentRuntimeConfig.mockReturnValue({
+      models: ["pi-model"],
+    });
+    mockLoadGlobalConfig.mockReturnValue({
+      models: {
+        "pi-model": { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "pi_auth" },
+      },
+    });
+    mockCollectCredentialRefs.mockReturnValue(new Set());
+
+    await expect(execute({ project: ".", skipCredentials: true })).rejects.toThrow(
+      "pi_auth"
+    );
+  });
+
   it("prints ok for all credentials already present", async () => {
     mockDiscoverAgents.mockReturnValue(["dev"]);
     mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["github_token"] });
