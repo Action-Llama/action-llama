@@ -809,6 +809,92 @@ describe("setupGateway", () => {
       expect(result).toEqual([pendingItem]);
     });
 
+    it("logs warning when queue is full and event is dropped in early-exit path (schedulerCtx null)", async () => {
+      const gatewayResult = makeGatewayResult();
+      const mockWorkQueue = { enqueue: vi.fn().mockReturnValue({ dropped: { context: {}, receivedAt: new Date() } }), size: vi.fn().mockReturnValue(1) };
+      const state = makeSchedulerState({ workQueue: mockWorkQueue, schedulerCtx: null });
+      const logger = makeLogger();
+      const opts = { ...makeBaseOpts(state, gatewayResult), logger };
+
+      await setupGateway(opts);
+
+      const { controlDeps } = mockStartGateway.mock.calls[0][0];
+      const result = await controlDeps.triggerAgent("dev", "test prompt");
+
+      expect(result).toHaveProperty("instanceId");
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ agent: "dev" }),
+        "queue full, oldest event dropped",
+      );
+    });
+
+    it("logs warning when queue is full and event is dropped in queued path (all runners busy)", async () => {
+      const gatewayResult = makeGatewayResult();
+      const pool = { getAvailableRunner: vi.fn().mockReturnValue(null) };
+      const mockWorkQueue = { enqueue: vi.fn().mockReturnValue({ dropped: { context: {}, receivedAt: new Date() } }), size: vi.fn().mockReturnValue(1) };
+      const schedulerCtx = { workQueue: mockWorkQueue } as any;
+      const state = makeSchedulerState({ runnerPools: { dev: pool }, schedulerCtx, workQueue: mockWorkQueue });
+      const logger = makeLogger();
+      const opts = { ...makeBaseOpts(state, gatewayResult), logger };
+
+      await setupGateway(opts);
+
+      const { controlDeps } = mockStartGateway.mock.calls[0][0];
+      const result = await controlDeps.triggerAgent("dev", "do something");
+
+      expect(result).toHaveProperty("instanceId");
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ agent: "dev" }),
+        "queue full, oldest event dropped",
+      );
+    });
+
+    it("logs error when runWithReruns throws during triggered run", async () => {
+      const { runWithReruns } = await import("../../src/execution/execution.js");
+      const runError = new Error("run exploded");
+      vi.mocked(runWithReruns).mockRejectedValueOnce(runError);
+
+      const gatewayResult = makeGatewayResult();
+      const mockRunner = { run: vi.fn().mockResolvedValue({ result: "completed", triggers: [] }) };
+      const pool = { getAvailableRunner: vi.fn().mockReturnValue(mockRunner) };
+      const schedulerCtx = { workQueue: { size: vi.fn().mockReturnValue(0) } } as any;
+      const state = makeSchedulerState({ runnerPools: { dev: pool }, schedulerCtx });
+      const logger = makeLogger();
+      const opts = { ...makeBaseOpts(state, gatewayResult), logger };
+
+      await setupGateway(opts);
+
+      const { controlDeps } = mockStartGateway.mock.calls[0][0];
+      const result = await controlDeps.triggerAgent("dev", "do something");
+
+      expect(result).toHaveProperty("instanceId");
+      // Give time for the async error to propagate
+      await new Promise((r) => setTimeout(r, 50));
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.objectContaining({ err: runError, agent: "dev" }),
+        "manual trigger run failed",
+      );
+    });
+
+    it("uses isAgentEnabled from statusTracker when dispatching", async () => {
+      const gatewayResult = makeGatewayResult();
+      const isAgentEnabled = vi.fn().mockReturnValue(true);
+      const statusTracker = { isPaused: vi.fn().mockReturnValue(false), isAgentEnabled };
+      const mockRunner = { run: vi.fn().mockResolvedValue({ result: "completed", triggers: [] }) };
+      const pool = { getAvailableRunner: vi.fn().mockReturnValue(mockRunner) };
+      const schedulerCtx = { workQueue: { size: vi.fn().mockReturnValue(0) } } as any;
+      const state = makeSchedulerState({ runnerPools: { dev: pool }, schedulerCtx });
+      const opts = { ...makeBaseOpts(state, gatewayResult), statusTracker: statusTracker as any };
+
+      await setupGateway(opts);
+
+      const { controlDeps } = mockStartGateway.mock.calls[0][0];
+      await controlDeps.triggerAgent("dev", "do something");
+
+      // isAgentEnabled should have been called during dispatch
+      expect(isAgentEnabled).toHaveBeenCalled();
+    });
+
     it("calls stateStore.close and telemetry.shutdown when provided", async () => {
       const processExitSpy = vi.spyOn(process, "exit").mockImplementation((_code?: any) => undefined as never);
 
