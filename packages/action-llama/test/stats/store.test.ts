@@ -704,4 +704,48 @@ describe("StatsStore", () => {
     expect(Object.keys(result)).toHaveLength(1);
     store.close();
   });
+
+  // --- getWebhookDetailsBatch tests ---
+
+  it("getWebhookDetailsBatch returns empty object for empty ids array", () => {
+    const store = createStore();
+    const result = store.getWebhookDetailsBatch([]);
+    expect(result).toEqual({});
+    store.close();
+  });
+
+  it("getWebhookDetailsBatch returns id→{source, eventSummary} mapping", () => {
+    const store = createStore();
+    store.recordWebhookReceipt(makeReceipt({ id: "detail-1", source: "github", eventSummary: "issues.labeled" }));
+    store.recordWebhookReceipt(makeReceipt({ id: "detail-2", source: "slack", eventSummary: "message" }));
+    store.recordWebhookReceipt(makeReceipt({ id: "detail-3", source: "linear", eventSummary: undefined }));
+
+    const result = store.getWebhookDetailsBatch(["detail-1", "detail-2", "detail-3"]);
+    expect(result["detail-1"]).toEqual({ source: "github", eventSummary: "issues.labeled" });
+    expect(result["detail-2"]).toEqual({ source: "slack", eventSummary: "message" });
+    expect(result["detail-3"].source).toBe("linear");
+    expect(result["detail-3"].eventSummary).toBeUndefined();
+    store.close();
+  });
+
+  it("getWebhookDetailsBatch only returns requested ids", () => {
+    const store = createStore();
+    store.recordWebhookReceipt(makeReceipt({ id: "detail-a", source: "github", eventSummary: "push" }));
+    store.recordWebhookReceipt(makeReceipt({ id: "detail-b", source: "slack", eventSummary: "message" }));
+
+    const result = store.getWebhookDetailsBatch(["detail-a"]);
+    expect(Object.keys(result)).toHaveLength(1);
+    expect(result["detail-a"].source).toBe("github");
+    expect(result["detail-b"]).toBeUndefined();
+    store.close();
+  });
+
+  it("getWebhookDetailsBatch returns empty object when none of the ids exist", () => {
+    const store = createStore();
+    store.recordWebhookReceipt(makeReceipt({ id: "existing-detail", source: "github" }));
+
+    const result = store.getWebhookDetailsBatch(["nonexistent-x", "nonexistent-y"]);
+    expect(result).toEqual({});
+    store.close();
+  });
 });
