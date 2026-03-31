@@ -9,9 +9,6 @@ import {
   getActivity,
   triggerAgent,
   killAgentInstances,
-  enableAgent,
-  disableAgent,
-  updateAgentScale,
 } from "../lib/api";
 import type {
   AgentDetailData,
@@ -19,6 +16,7 @@ import type {
   LogEntry,
 } from "../lib/api";
 import { RunModal } from "../components/RunModal";
+import { RunDropdown } from "../components/RunDropdown";
 import { fmtSmartTime } from "../lib/format";
 import { agentHueStyle } from "../lib/color";
 
@@ -71,7 +69,6 @@ export function AgentDetailPage() {
   const [detail, setDetail] = useState<AgentDetailData | null>(null);
   const [activity, setActivity] = useState<ActivityRow[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [scaleInput, setScaleInput] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [killingAll, setKillingAll] = useState(false);
   const [showRunModal, setShowRunModal] = useState(false);
@@ -86,7 +83,6 @@ export function AgentDetailPage() {
     getAgentDetail(name)
       .then((d) => {
         setDetail(d);
-        if (d.agent) setScaleInput(String(d.agent.scale));
       })
       .catch(() => {});
   }, [name]);
@@ -133,11 +129,6 @@ export function AgentDetailPage() {
     }
   }, [logs]);
 
-  // Sync scale input when agent updates
-  useEffect(() => {
-    if (agent) setScaleInput(String(agent.scale));
-  }, [agent?.scale]);
-
   const handleAction = useCallback(async (fn: () => Promise<unknown>) => {
     setActionError(null);
     try {
@@ -146,13 +137,6 @@ export function AgentDetailPage() {
       setActionError(err instanceof Error ? err.message : "Action failed");
     }
   }, []);
-
-  const handleScaleUpdate = useCallback(() => {
-    if (!name) return;
-    const val = parseInt(scaleInput, 10);
-    if (isNaN(val) || val < 1) return;
-    handleAction(() => updateAgentScale(name, val));
-  }, [name, scaleInput, handleAction]);
 
   if (!name) return null;
 
@@ -192,38 +176,23 @@ export function AgentDetailPage() {
           )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {agent && (
-            <div className="flex items-center gap-1 mr-1">
-              <span className="text-xs text-slate-500 dark:text-slate-400">Scale:</span>
-              <input
-                type="number"
-                min={1}
-                value={scaleInput}
-                onChange={(e) => setScaleInput(e.target.value)}
-                className="w-16 px-2 py-1 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded text-base text-slate-900 dark:text-slate-200"
-              />
-              <button
-                onClick={handleScaleUpdate}
-                className="px-2 py-1.5 text-xs font-medium rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors"
-              >
-                Set
-              </button>
-            </div>
-          )}
-          <button
-            onClick={() => setShowRunModal(true)}
+          <RunDropdown
             disabled={agent ? !agent.enabled : false}
-            className="px-3 py-1.5 text-xs font-medium rounded-md bg-green-600 hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
-          >
-            Run
-          </button>
-          <Link
-            to={`/chat/${encodeURIComponent(name)}`}
-            className="px-3 py-1.5 text-xs font-medium rounded-md bg-purple-600 hover:bg-purple-700 text-white transition-colors"
-          >
-            Chat
-          </Link>
+            onQuickRun={async () => {
+              try {
+                const result = await triggerAgent(name!, undefined);
+                if (result?.instanceId) {
+                  navigate(`/dashboard/agents/${encodeURIComponent(name!)}/instances/${encodeURIComponent(result.instanceId)}`);
+                }
+              } catch (err) {
+                setActionError(err instanceof Error ? err.message : "Action failed");
+              }
+            }}
+            onRunWithPrompt={() => setShowRunModal(true)}
+            onChat={() => navigate(`/chat/${encodeURIComponent(name!)}`)}
+          />
           <button
+            id="agent-kill-btn"
             onClick={async () => {
               setKillingAll(true);
               setActionError(null);
@@ -244,24 +213,6 @@ export function AgentDetailPage() {
               </span>
             ) : "Kill"}
           </button>
-          {agent && (
-            <button
-              onClick={() =>
-                handleAction(() =>
-                  agent.enabled
-                    ? disableAgent(name)
-                    : enableAgent(name),
-                )
-              }
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                agent.enabled
-                  ? "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600"
-                  : "bg-blue-600 hover:bg-blue-700 text-white"
-              }`}
-            >
-              {agent.enabled ? "Disable" : "Enable"}
-            </button>
-          )}
           <Link
             to={`/dashboard/agents/${encodeURIComponent(name)}/stats`}
             className="px-3 py-1.5 text-xs font-medium rounded-md bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5"
@@ -272,10 +223,14 @@ export function AgentDetailPage() {
             Stats
           </Link>
           <Link
-            to={`/dashboard/agents/${encodeURIComponent(name)}/skill`}
-            className="px-3 py-1.5 text-xs font-medium rounded-md bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
+            to={`/dashboard/agents/${encodeURIComponent(name)}/admin`}
+            className="px-3 py-1.5 text-xs font-medium rounded-md bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors flex items-center gap-1"
           >
-            View Skill
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            Admin
           </Link>
         </div>
       </div>

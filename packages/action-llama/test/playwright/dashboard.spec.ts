@@ -237,34 +237,10 @@ test.describe("Agent detail", () => {
     await expect(page.locator("#agent-state")).toContainText("running", { timeout: 5000 });
   });
 
-  test("Enable/Disable toggle updates via SSE", async ({ page }) => {
-    const btn = page.locator("#toggle-btn");
-    await expect(btn).toContainText("Disable");
-    await btn.click();
-    await expect(btn).toContainText("Enable", { timeout: 5000 });
-    await btn.click();
-    await expect(btn).toContainText("Disable", { timeout: 5000 });
-  });
-
-  test("View Skill link is visible", async ({ page }) => {
-    const link = page.locator('a[href="/dashboard/agents/single-agent/skill"]');
+  test("Admin link is visible", async ({ page }) => {
+    const link = page.locator('a[href="/dashboard/agents/single-agent/admin"]');
     await expect(link).toBeVisible();
-    await expect(link).toContainText("View Skill");
-  });
-
-  test("scale input shows current value and Update button exists", async ({ page }) => {
-    await expect(page.locator("#agent-scale-input")).toBeVisible();
-    await expect(page.locator("#agent-scale-input")).toHaveValue("1");
-    await expect(page.locator("#update-agent-scale-btn")).toBeVisible();
-  });
-
-  test("scale update shows success alert", async ({ page }) => {
-    const dialogPromise = page.waitForEvent("dialog");
-    await page.fill("#agent-scale-input", "3");
-    await page.click("#update-agent-scale-btn");
-    const dialog = await dialogPromise;
-    expect(dialog.message()).toContain("Agent scale updated");
-    await dialog.accept();
+    await expect(link).toContainText("Admin");
   });
 
   test("Kill All button is disabled when no instances running", async ({ page }) => {
@@ -305,13 +281,58 @@ test.describe("Agent detail", () => {
   });
 });
 
+// ──── Agent admin ─────────────────────────────────────────────────────
+
+test.describe("Agent admin", () => {
+  test.beforeEach(async ({ page, request }) => {
+    await resetState(request);
+    await login(page);
+    await page.goto("/dashboard/agents/single-agent/admin");
+  });
+
+  test("shows agent name and Admin subtitle", async ({ page }) => {
+    await expect(page.locator("h1")).toContainText("single-agent");
+    await expect(page.locator("text=Admin")).toBeVisible();
+  });
+
+  test("scale input shows current value and Update button exists", async ({ page }) => {
+    await expect(page.locator("#agent-scale-input")).toBeVisible();
+    await expect(page.locator("#agent-scale-input")).toHaveValue("1");
+    await expect(page.locator("#update-agent-scale-btn")).toBeVisible();
+  });
+
+  test("scale update shows success alert", async ({ page }) => {
+    const dialogPromise = page.waitForEvent("dialog");
+    await page.fill("#agent-scale-input", "3");
+    await page.click("#update-agent-scale-btn");
+    const dialog = await dialogPromise;
+    expect(dialog.message()).toContain("Agent scale updated");
+    await dialog.accept();
+  });
+
+  test("Enable/Disable toggle updates via SSE", async ({ page }) => {
+    const btn = page.locator("#toggle-btn");
+    await expect(btn).toContainText("Disable");
+    await btn.click();
+    await expect(btn).toContainText("Enable", { timeout: 5000 });
+    await btn.click();
+    await expect(btn).toContainText("Disable", { timeout: 5000 });
+  });
+
+  test("skill route redirects to admin", async ({ page }) => {
+    await page.goto("/dashboard/agents/single-agent/skill");
+    await page.waitForURL("**/dashboard/agents/single-agent/admin");
+    await expect(page.locator("h1")).toContainText("single-agent");
+  });
+});
+
 // ──── Agent detail (scaled) ───────────────────────────────────────────
 
 test.describe("Agent detail — scaled agent", () => {
   test.beforeEach(async ({ page, request }) => {
     await resetState(request);
     await login(page);
-    await page.goto("/dashboard/agents/scaled-agent");
+    await page.goto("/dashboard/agents/scaled-agent/admin");
   });
 
   test("shows scale=2 in the scale input", async ({ page }) => {
