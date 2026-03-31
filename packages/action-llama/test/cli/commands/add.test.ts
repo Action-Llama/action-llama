@@ -329,6 +329,32 @@ describe("al add", () => {
       expect(existsSync(resolve(projectPath, "agents", "valid-name", "SKILL.md"))).toBe(true);
     });
 
+    it("validate callback for invalid name prompt returns true for valid name and error message for invalid", async () => {
+      createGitRepo(repoPath, {
+        "SKILL.md": "---\nname: invalid name with spaces\n---\n\n# Bad Name\n",
+      });
+
+      let capturedValidate: ((v: string) => string | true | Promise<string | true>) | undefined;
+      mockInput.mockImplementation(({ validate }: { validate: (v: string) => string | true | Promise<string | true> }) => {
+        capturedValidate = validate;
+        return Promise.resolve("valid-name");
+      });
+
+      const agentModule = await import("../../../src/cli/commands/agent.js");
+      vi.spyOn(agentModule, "configAgent").mockResolvedValue();
+
+      const { execute } = await import("../../../src/cli/commands/add.js");
+      await execute(repoPath, { project: projectPath });
+
+      expect(capturedValidate).toBeDefined();
+      // Valid name should return true
+      expect(capturedValidate!("valid-name")).toBe(true);
+      // Invalid name should return an error message string
+      const errorResult = capturedValidate!("invalid name");
+      expect(typeof errorResult).toBe("string");
+      expect(errorResult).not.toBe(true);
+    });
+
     it("prompts for a new name when agent directory already exists", async () => {
       createGitRepo(repoPath, {
         "SKILL.md": "---\nname: existing-agent\n---\n\n# Already Installed\n",
@@ -348,6 +374,41 @@ describe("al add", () => {
 
       expect(mockInput).toHaveBeenCalledOnce();
       expect(existsSync(resolve(projectPath, "agents", "existing-agent-v2", "SKILL.md"))).toBe(true);
+    });
+
+    it("validate callback for conflict prompt returns error for invalid name, error for existing dir, true for valid new name", async () => {
+      createGitRepo(repoPath, {
+        "SKILL.md": "---\nname: existing-agent\n---\n\n# Already Installed\n",
+      });
+
+      // Pre-create the agents directory to simulate conflict
+      mkdirSync(resolve(projectPath, "agents", "existing-agent"), { recursive: true });
+      // Also pre-create another conflicting directory for testing
+      mkdirSync(resolve(projectPath, "agents", "also-exists"), { recursive: true });
+
+      let capturedValidate: ((v: string) => string | true | Promise<string | true>) | undefined;
+      mockInput.mockImplementation(({ validate }: { validate: (v: string) => string | true | Promise<string | true> }) => {
+        capturedValidate = validate;
+        return Promise.resolve("brand-new-name");
+      });
+
+      const agentModule = await import("../../../src/cli/commands/agent.js");
+      vi.spyOn(agentModule, "configAgent").mockResolvedValue();
+
+      const { execute } = await import("../../../src/cli/commands/add.js");
+      await execute(repoPath, { project: projectPath });
+
+      expect(capturedValidate).toBeDefined();
+      // Invalid agent name returns error message
+      const invalidResult = capturedValidate!("invalid name");
+      expect(typeof invalidResult).toBe("string");
+      expect(invalidResult).not.toBe(true);
+      // Name that already exists returns error
+      const existsResult = capturedValidate!("also-exists");
+      expect(typeof existsResult).toBe("string");
+      expect(existsResult).toContain("already exists");
+      // Valid new name (one that doesn't exist as a directory) returns true
+      expect(capturedValidate!("completely-fresh-name-xyz")).toBe(true);
     });
   });
 
