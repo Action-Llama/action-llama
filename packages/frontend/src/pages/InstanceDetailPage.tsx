@@ -77,10 +77,14 @@ export function InstanceDetailPage() {
   // Poll logs (slower when not running)
   useEffect(() => {
     if (!name || !id) return;
+    const controller = new AbortController();
+    let inFlight = false;
     const poll = () => {
+      if (inFlight) return;
+      inFlight = true;
       const params: Record<string, string> = { limit: "100" };
       if (cursorRef.current) params.cursor = cursorRef.current;
-      getInstanceLogs(name, id, params)
+      getInstanceLogs(name, id, params, controller.signal)
         .then((d) => {
           setConnected(true);
           if (d.entries.length > 0) {
@@ -88,19 +92,24 @@ export function InstanceDetailPage() {
             if (d.cursor) cursorRef.current = d.cursor;
           }
         })
-        .catch(() => setConnected(false));
+        .catch(() => setConnected(false))
+        .finally(() => { inFlight = false; });
     };
     poll();
     const intervalMs = isRunning ? 3000 : 10000;
     const interval = setInterval(poll, intervalMs);
-    return () => clearInterval(interval);
+    return () => { clearInterval(interval); controller.abort(); };
   }, [name, id, isRunning]);
 
   // Poll locks
   useEffect(() => {
     if (!isRunning) return;
+    const controller = new AbortController();
+    let inFlight = false;
     const poll = () => {
-      getLocks()
+      if (inFlight) return;
+      inFlight = true;
+      getLocks(controller.signal)
         .then((d) => {
           setLocks(
             d.locks.filter(
@@ -108,11 +117,12 @@ export function InstanceDetailPage() {
             ),
           );
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => { inFlight = false; });
     };
     poll();
     const interval = setInterval(poll, 5000);
-    return () => clearInterval(interval);
+    return () => { clearInterval(interval); controller.abort(); };
   }, [isRunning, id, name]);
 
   // Scroll follow

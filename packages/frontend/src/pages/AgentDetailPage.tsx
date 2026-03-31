@@ -69,21 +69,26 @@ export function AgentDetailPage() {
   // Poll logs
   useEffect(() => {
     if (!name) return;
+    const controller = new AbortController();
+    let inFlight = false;
     const poll = () => {
+      if (inFlight) return;
+      inFlight = true;
       const params: Record<string, string> = { limit: "50" };
       if (cursorRef.current) params.cursor = cursorRef.current;
-      getAgentLogs(name, params)
+      getAgentLogs(name, params, controller.signal)
         .then((d) => {
           if (d.entries.length > 0) {
             setLogs((prev) => [...prev, ...d.entries].slice(-200));
             if (d.cursor) cursorRef.current = d.cursor;
           }
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => { inFlight = false; });
     };
     poll();
     const id = setInterval(poll, 4000);
-    return () => clearInterval(id);
+    return () => { clearInterval(id); controller.abort(); };
   }, [name]);
 
   // Scroll logs to bottom on new entries

@@ -363,7 +363,7 @@ export function getInstanceDetail(
   );
 }
 
-export function getLocks(): Promise<{
+export function getLocks(signal?: AbortSignal): Promise<{
   locks: {
     resourceKey: string;
     holder?: string;
@@ -371,7 +371,7 @@ export function getLocks(): Promise<{
     agentName?: string;
   }[];
 }> {
-  return fetchJSON("/dashboard/api/locks");
+  return fetchJSON("/dashboard/api/locks", signal ? { signal } : undefined);
 }
 
 export interface LogEntry {
@@ -392,10 +392,12 @@ export interface LogEntry {
 export function getAgentLogs(
   name: string,
   params: Record<string, string>,
+  signal?: AbortSignal,
 ): Promise<{ entries: LogEntry[]; cursor: string | null; hasMore: boolean }> {
   const qs = new URLSearchParams(params).toString();
   return fetchJSON(
     `/api/logs/agents/${encodeURIComponent(name)}${qs ? `?${qs}` : ""}`,
+    signal ? { signal } : undefined,
   );
 }
 
@@ -403,10 +405,12 @@ export function getInstanceLogs(
   name: string,
   instanceId: string,
   params: Record<string, string>,
+  signal?: AbortSignal,
 ): Promise<{ entries: LogEntry[]; cursor: string | null; hasMore: boolean }> {
   const qs = new URLSearchParams(params).toString();
   return fetchJSON(
     `/api/logs/agents/${encodeURIComponent(name)}/${encodeURIComponent(instanceId)}${qs ? `?${qs}` : ""}`,
+    signal ? { signal } : undefined,
   );
 }
 
