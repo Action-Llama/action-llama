@@ -971,6 +971,22 @@ describe("HostUserRuntime", () => {
       const lines = await runtime.fetchLogs("fetchlimit-agent", 5);
       expect(lines.length).toBeLessThanOrEqual(5);
     });
+
+    it("returns empty array when runs directory path is a file (readdirSync throws ENOTDIR)", async () => {
+      // Replace the testRunsDir (a directory) with a plain file.
+      // existsSync returns true for a file, so the early-return guard is bypassed,
+      // but readdirSync(filePath) throws ENOTDIR — the outer catch block (line 556)
+      // handles this and returns [].
+      rmSync(testRunsDir, { recursive: true, force: true });
+      writeFileSync(testRunsDir, "not-a-directory");
+
+      const lines = await runtime.fetchLogs("some-agent", 10);
+      expect(lines).toEqual([]);
+
+      // Remove the file so afterEach cleanup (rmSync with recursive:true) doesn't see it
+      // as a non-empty directory (it would succeed on a file too, but make it explicit).
+      rmSync(testRunsDir, { force: true });
+    });
   });
 
   describe("followLogs", () => {
@@ -979,6 +995,43 @@ describe("HostUserRuntime", () => {
       expect(typeof result.stop).toBe("function");
       // Calling stop should not throw
       result.stop();
+    });
+  });
+
+  describe("kill — OrphanProcess.kill returns false on signal error (line 146)", () => {
+    it("OrphanProcess.kill catches exception and returns false when process.kill throws for SIGTERM", async () => {
+      vi.useFakeTimers();
+
+      const fakePid = 77331; // unlikely to match any real process
+      const runId = "al-orphan-kill-err-abc123";
+      writePidFileManually(runId, {
+        pid: fakePid,
+        agentName: "test-orphan-killerr",
+        env: {},
+        startedAt: new Date().toISOString(),
+      });
+
+      // signal 0 => success so isProcessAlive() returns true (reattach proceeds)
+      // any real signal (SIGTERM/SIGKILL) => throws ESRCH so OrphanProcess.kill returns false
+      const killSpy = vi.spyOn(process, "kill").mockImplementation(((pid: number, signal: any) => {
+        if (signal === 0) return true;
+        const err = Object.assign(new Error(`kill ESRCH ${pid}`), { code: "ESRCH" });
+        throw err;
+      }) as any);
+
+      // reattach() creates an OrphanProcess with fakePid and stores it in this.processes
+      const attached = runtime.reattach(runId);
+      expect(attached).toBe(true);
+
+      // kill() finds the OrphanProcess, calls proc.kill("SIGTERM")
+      // OrphanProcess.kill calls process.kill(fakePid, "SIGTERM") which throws
+      // The catch block in OrphanProcess.kill executes: return false  (line 146)
+      await runtime.kill(runId);
+
+      expect(killSpy).toHaveBeenCalledWith(fakePid, "SIGTERM");
+
+      killSpy.mockRestore();
+      vi.useRealTimers();
     });
   });
 
