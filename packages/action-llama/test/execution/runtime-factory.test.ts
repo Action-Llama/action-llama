@@ -84,7 +84,9 @@ describe("createContainerRuntime", () => {
 
   it("throws AgentError when the runtime type is not registered", async () => {
     registrySpy.mockReturnValue(undefined);
-    vi.spyOn(globalRegistry, "getAllRuntimeExtensions").mockReturnValue([]);
+    vi.spyOn(globalRegistry, "getAllRuntimeExtensions").mockReturnValue([
+      { metadata: { name: "local", type: "runtime", version: "1.0.0", description: "Local Docker" }, provider: {} as any, init: vi.fn(), shutdown: vi.fn() },
+    ]);
 
     await expect(
       createContainerRuntime({} as any, [], makeLogger())
