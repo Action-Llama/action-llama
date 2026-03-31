@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { StatusTracker } from "../../src/tui/status-tracker.js";
+import { StatusTracker, buildTriggerLabels } from "../../src/tui/status-tracker.js";
 
 describe("StatusTracker", () => {
   it("registers agents and returns them", () => {
@@ -861,5 +861,92 @@ describe("StatusTracker", () => {
   it("isAgentEnabled returns false for unregistered agent", () => {
     const tracker = new StatusTracker();
     expect(tracker.isAgentEnabled("unknown-agent")).toBe(false);
+  });
+
+  it("registers agent with empty triggers array by default", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    const agent = tracker.getAllAgents()[0];
+    expect(agent.triggers).toEqual([]);
+  });
+
+  it("setAgentTriggers updates the agent triggers and emits update", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+
+    const listener = vi.fn();
+    tracker.on("update", listener);
+    listener.mockClear();
+
+    tracker.setAgentTriggers("dev", ["schedule", "github issues created"]);
+
+    const agent = tracker.getAllAgents()[0];
+    expect(agent.triggers).toEqual(["schedule", "github issues created"]);
+    expect(listener).toHaveBeenCalled();
+  });
+
+  it("setAgentTriggers on unregistered agent is a no-op", () => {
+    const tracker = new StatusTracker();
+    // Should not throw
+    tracker.setAgentTriggers("unknown", ["schedule"]);
+    expect(tracker.getAllAgents()).toHaveLength(0);
+  });
+});
+
+describe("buildTriggerLabels", () => {
+  it("returns empty array when no schedule or webhooks", () => {
+    expect(buildTriggerLabels({ name: "dev" } as any)).toEqual([]);
+  });
+
+  it("returns ['schedule'] when schedule is set", () => {
+    expect(buildTriggerLabels({ name: "dev", schedule: "0 * * * *" } as any)).toEqual(["schedule"]);
+  });
+
+  it("returns label with source, event, and action for single-event+action webhook", () => {
+    const config = {
+      name: "dev",
+      webhooks: [{ source: "github", events: ["issues"], actions: ["created"] }],
+    };
+    expect(buildTriggerLabels(config as any)).toEqual(["github issues created"]);
+  });
+
+  it("returns label with only source for multi-event webhook", () => {
+    const config = {
+      name: "dev",
+      webhooks: [{ source: "github", events: ["issues", "pull_request"] }],
+    };
+    expect(buildTriggerLabels(config as any)).toEqual(["github"]);
+  });
+
+  it("returns label with source and event (no action) when multiple actions", () => {
+    const config = {
+      name: "dev",
+      webhooks: [{ source: "github", events: ["issues"], actions: ["created", "closed"] }],
+    };
+    expect(buildTriggerLabels(config as any)).toEqual(["github issues"]);
+  });
+
+  it("returns label with just source when no events specified", () => {
+    const config = {
+      name: "dev",
+      webhooks: [{ source: "sentry" }],
+    };
+    expect(buildTriggerLabels(config as any)).toEqual(["sentry"]);
+  });
+
+  it("handles schedule + multiple webhooks", () => {
+    const config = {
+      name: "dev",
+      schedule: "0 8 * * *",
+      webhooks: [
+        { source: "github", events: ["issues"], actions: ["created"] },
+        { source: "sentry", events: ["event_alert"], actions: ["triggered"] },
+      ],
+    };
+    expect(buildTriggerLabels(config as any)).toEqual([
+      "schedule",
+      "github issues created",
+      "sentry event_alert triggered",
+    ]);
   });
 });

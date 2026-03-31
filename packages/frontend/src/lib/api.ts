@@ -53,6 +53,7 @@ export interface AgentStatus {
   lastRunUsage: TokenUsage | null;
   cumulativeUsage: TokenUsage | null;
   locks?: { resourceKey: string; holder?: string; heldSince?: string }[];
+  triggers?: string[];
 }
 
 export interface TokenUsage {

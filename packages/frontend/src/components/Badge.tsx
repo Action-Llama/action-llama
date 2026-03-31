@@ -1,3 +1,36 @@
+export function TriggerBadge({ label }: { label: string }) {
+  // Determine color based on the first word (the trigger type/source)
+  const key = label.split(" ")[0];
+  const colors: Record<string, string> = {
+    schedule:
+      "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400",
+    github:
+      "bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400",
+    sentry:
+      "bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400",
+    linear:
+      "bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400",
+    slack:
+      "bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400",
+    discord:
+      "bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400",
+    twitter:
+      "bg-sky-50 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400",
+    mintlify:
+      "bg-teal-50 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400",
+  };
+  const cls =
+    colors[key] ??
+    "bg-slate-50 text-slate-500 dark:bg-slate-800/50 dark:text-slate-400";
+  return (
+    <span
+      className={`inline-block px-1.5 py-0 text-[10px] leading-4 font-medium rounded ${cls}`}
+    >
+      {label}
+    </span>
+  );
+}
+
 const triggerColors: Record<string, string> = {
   schedule:
     "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",

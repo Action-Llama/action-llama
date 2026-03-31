@@ -4,6 +4,35 @@ import type { TokenUsage } from "../shared/usage.js";
 import { addTokenUsage, zeroTokenUsage } from "../shared/usage.js";
 import { AgentLifecycle } from "../execution/lifecycle/agent-lifecycle.js";
 import { InstanceLifecycle } from "../execution/lifecycle/instance-lifecycle.js";
+import type { AgentConfig } from "../shared/config/types.js";
+
+/**
+ * Build a list of human-readable trigger label strings from an agent's config.
+ * Returns labels like "schedule", "github issues created", "sentry event_alert", etc.
+ */
+export function buildTriggerLabels(config: AgentConfig): string[] {
+  const labels: string[] = [];
+  // Schedule
+  if (config.schedule) {
+    labels.push("schedule");
+  }
+  // Webhooks — one badge per entry
+  if (config.webhooks) {
+    for (const wh of config.webhooks) {
+      // Format: "{source} {event} {action}" for single-event+single-action configs
+      // Fall back to just "{source}" for complex configs (multiple events)
+      const parts: string[] = [wh.source];
+      if (wh.events && wh.events.length === 1) {
+        parts.push(wh.events[0]);
+        if (wh.actions && wh.actions.length === 1) {
+          parts.push(wh.actions[0]);
+        }
+      }
+      labels.push(parts.join(" "));
+    }
+  }
+  return labels;
+}
 
 export interface AgentStatus {
   name: string;
@@ -23,6 +52,7 @@ export interface AgentStatus {
   lastRunUsage: TokenUsage | null;
   cumulativeUsage: TokenUsage | null;  // accumulated across all runs in this session
   locks?: Array<{ resourceKey: string; heldSince: number; }>; // resource locks held by this agent
+  triggers: string[]; // computed trigger labels (e.g. "schedule", "github issues created")
 }
 
 export interface SchedulerInfo {
@@ -111,6 +141,7 @@ export class StatusTracker extends EventEmitter {
       lastRunUsage: null,
       cumulativeUsage: null,
       locks: [],
+      triggers: [],
     });
     this.emit("update");
   }
@@ -200,6 +231,13 @@ export class StatusTracker extends EventEmitter {
     const agent = this.agents.get(name);
     if (!agent) return;
     agent.description = description;
+    this.emit("update");
+  }
+
+  setAgentTriggers(name: string, triggers: string[]): void {
+    const agent = this.agents.get(name);
+    if (!agent) return;
+    agent.triggers = triggers;
     this.emit("update");
   }
 
