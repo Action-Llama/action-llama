@@ -564,6 +564,47 @@ describe("registerDashboardApiRoutes — extended coverage", () => {
     expect(data.trigger).toBeNull();
   });
 
+  it("GET /api/dashboard/triggers/:instanceId falls back to running instance from status tracker", async () => {
+    const stats = makeStatsStore();
+    // Run not in DB yet (still running)
+    stats.queryRunByInstanceId.mockReturnValue(undefined);
+
+    const runningInstances = [
+      { id: "running-inst-1", agentName: "my-agent", status: "running", startedAt: "2025-01-15T10:00:00Z", trigger: "webhook:github" },
+    ];
+    const tracker = makeStatusTracker(runningInstances);
+    const app = new Hono();
+    registerDashboardApiRoutes(app, tracker, undefined, stats);
+
+    const res = await app.request("/api/dashboard/triggers/running-inst-1");
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(data.trigger).toEqual({
+      instanceId: "running-inst-1",
+      agentName: "my-agent",
+      triggerType: "webhook",
+      triggerSource: "github",
+      triggerContext: null,
+      startedAt: new Date("2025-01-15T10:00:00Z").getTime(),
+    });
+  });
+
+  it("GET /api/dashboard/triggers/:instanceId falls back to running instance without statsStore", async () => {
+    const runningInstances = [
+      { id: "inst-abc", agentName: "bot", status: "running", startedAt: "2025-01-15T12:00:00Z", trigger: "manual" },
+    ];
+    const tracker = makeStatusTracker(runningInstances);
+    const app = new Hono();
+    registerDashboardApiRoutes(app, tracker);
+
+    const res = await app.request("/api/dashboard/triggers/inst-abc");
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(data.trigger.instanceId).toBe("inst-abc");
+    expect(data.trigger.triggerType).toBe("manual");
+    expect(data.trigger.triggerSource).toBeNull();
+  });
+
   it("GET /api/dashboard/triggers/:instanceId returns trigger data for schedule run", async () => {
     const stats = makeStatsStore();
     stats.queryRunByInstanceId.mockReturnValue({

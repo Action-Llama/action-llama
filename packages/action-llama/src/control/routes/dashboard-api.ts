@@ -179,10 +179,29 @@ export function registerDashboardApiRoutes(
   // Trigger detail by instance ID (unified across all trigger types)
   app.get("/api/dashboard/triggers/:instanceId", (c) => {
     const instanceId = c.req.param("instanceId");
-    if (!statsStore) return c.json({ trigger: null }, 404);
 
-    const run = statsStore.queryRunByInstanceId(instanceId);
-    if (!run) return c.json({ trigger: null }, 404);
+    const run = statsStore?.queryRunByInstanceId(instanceId);
+
+    // Fall back to status tracker for running instances not yet in the DB
+    if (!run) {
+      const inst = statusTracker.getInstances().find((i) => i.id === instanceId);
+      if (!inst) return c.json({ trigger: null }, 404);
+
+      const sep = inst.trigger.indexOf(":");
+      const triggerType = sep > -1 ? inst.trigger.slice(0, sep) : inst.trigger;
+      const triggerSource = sep > -1 ? inst.trigger.slice(sep + 1).trim() : null;
+
+      return c.json({
+        trigger: {
+          instanceId: inst.id,
+          agentName: inst.agentName,
+          triggerType,
+          triggerSource,
+          triggerContext: null,
+          startedAt: new Date(inst.startedAt).getTime(),
+        },
+      });
+    }
 
     const result: Record<string, unknown> = {
       instanceId: run.instance_id,
@@ -193,8 +212,8 @@ export function registerDashboardApiRoutes(
       startedAt: run.started_at,
     };
 
-    // Enrich with type-specific details
-    if (run.trigger_type === "webhook" && run.webhook_receipt_id) {
+    // Enrich with type-specific details (statsStore is guaranteed non-null if run exists)
+    if (run.trigger_type === "webhook" && run.webhook_receipt_id && statsStore) {
       const receipt = statsStore.getWebhookReceipt(run.webhook_receipt_id);
       if (receipt) {
         result.webhook = {
@@ -211,7 +230,7 @@ export function registerDashboardApiRoutes(
       }
     }
 
-    if (run.trigger_type === "agent") {
+    if (run.trigger_type === "agent" && statsStore) {
       const edge = statsStore.queryCallEdgeByTargetInstance(instanceId);
       if (edge) {
         result.callerAgent = edge.caller_agent;
