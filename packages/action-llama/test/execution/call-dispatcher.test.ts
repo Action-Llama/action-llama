@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { wireCallDispatcher } from "../../src/execution/call-dispatcher.js";
+import * as executionModule from "../../src/execution/execution.js";
+import * as dispatchPolicyModule from "../../src/execution/dispatch-policy.js";
 import { RunnerPool } from "../../src/execution/runner-pool.js";
 import { MemoryWorkQueue } from "../../src/events/event-queue.js";
 import {
@@ -247,6 +249,87 @@ describe("wireCallDispatcher", () => {
       const result = dispatch(makeEntry({ targetAgent: "agent-b" }));
       // Falls through to "target not found" because no agent-b in config
       expect(result).toEqual({ ok: false, reason: 'target agent "agent-b" not found' });
+    });
+
+    it("returns ok: false with the reason when dispatchOrQueue returns rejected", () => {
+      const runner = makeRunner({ instanceId: "agent-b" });
+      const pool = new RunnerPool([runner]);
+      ctx = makeCtx({
+        agentConfigs: [makeAgentConfig("agent-a"), makeAgentConfig("agent-b")],
+        runnerPools: { "agent-b": pool },
+      });
+
+      // Force dispatchOrQueue to return a rejected result
+      const dispatchSpy = vi
+        .spyOn(dispatchPolicyModule, "dispatchOrQueue")
+        .mockReturnValueOnce({ action: "rejected", reason: "test rejection reason" });
+
+      wireCallDispatcher(gateway as any, ctx);
+      const dispatch = gateway.getDispatcher()!;
+
+      const result = dispatch(makeEntry({ callerAgent: "agent-a", targetAgent: "agent-b" }));
+      expect(result).toEqual({ ok: false, reason: "test rejection reason" });
+
+      dispatchSpy.mockRestore();
+    });
+
+    it("fails call store and logs error when executeRun promise rejects", async () => {
+      const runner = makeRunner({
+        instanceId: "agent-b",
+        run: vi.fn().mockRejectedValue(new Error("run exploded")),
+      });
+      const pool = new RunnerPool([runner]);
+      ctx = makeCtx({
+        agentConfigs: [makeAgentConfig("agent-a"), makeAgentConfig("agent-b")],
+        runnerPools: { "agent-b": pool },
+      });
+
+      // Spy on executeRun to reject
+      const execSpy = vi
+        .spyOn(executionModule, "executeRun")
+        .mockRejectedValueOnce(new Error("run exploded"));
+
+      wireCallDispatcher(gateway as any, ctx);
+      const dispatch = gateway.getDispatcher()!;
+
+      dispatch(makeEntry({ callerAgent: "agent-a", targetAgent: "agent-b", callId: "call-throw" }));
+
+      await vi.waitFor(() => expect(gateway.callStore.fail).toHaveBeenCalled());
+      expect(gateway.callStore.fail).toHaveBeenCalledWith("call-throw", "run exploded");
+      expect(ctx.logger.error).toHaveBeenCalledWith(
+        expect.objectContaining({ target: "agent-b" }),
+        "called agent run failed"
+      );
+
+      execSpy.mockRestore();
+    });
+
+    it("logs error when drainQueues throws after queuing", async () => {
+      const busyRunner = makeRunner({ instanceId: "agent-b", isRunning: true });
+      const pool = new RunnerPool([busyRunner]);
+      ctx = makeCtx({
+        agentConfigs: [makeAgentConfig("agent-a"), makeAgentConfig("agent-b")],
+        runnerPools: { "agent-b": pool },
+      });
+
+      // Spy on drainQueues to reject
+      const drainSpy = vi
+        .spyOn(executionModule, "drainQueues")
+        .mockRejectedValueOnce(new Error("drain failed"));
+
+      wireCallDispatcher(gateway as any, ctx);
+      const dispatch = gateway.getDispatcher()!;
+
+      const result = dispatch(makeEntry({ callerAgent: "agent-a", targetAgent: "agent-b" }));
+      expect(result).toEqual({ ok: true });
+
+      await vi.waitFor(() => expect(ctx.logger.error).toHaveBeenCalled());
+      expect(ctx.logger.error).toHaveBeenCalledWith(
+        expect.objectContaining({ err: expect.any(Error) }),
+        "drain after al-subagent queue failed"
+      );
+
+      drainSpy.mockRestore();
     });
 
     it("completes call store on successful run", async () => {
