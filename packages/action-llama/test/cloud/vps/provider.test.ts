@@ -11,6 +11,17 @@ vi.mock("child_process", async (importOriginal) => {
   return { ...actual, execFile: mockExecFile, spawn: mockSpawn };
 });
 
+// Mock provision and teardown modules (they use interactive prompts/SSH)
+const mockSetupVpsCloud = vi.fn().mockResolvedValue({ provider: "vps", host: "10.0.0.1" });
+vi.mock("../../../src/cloud/vps/provision.js", () => ({
+  setupVpsCloud: (...args: any[]) => mockSetupVpsCloud(...args),
+}));
+
+const mockTeardownVps = vi.fn().mockResolvedValue(undefined);
+vi.mock("../../../src/cloud/vps/teardown.js", () => ({
+  teardownVps: (...args: any[]) => mockTeardownVps(...args),
+}));
+
 const { VpsProvider } = await import("../../../src/cloud/vps/provider.js");
 type VpsConfig = import("../../../src/shared/config.js").VpsConfig;
 
@@ -285,5 +296,20 @@ describe("VpsProvider", () => {
     // Nothing in the buffer, so onLine should not be called
     expect(receivedLines).toHaveLength(0);
     expect(mockProc.kill).toHaveBeenCalled();
+  });
+
+  it("provision() calls setupVpsCloud and returns its result", async () => {
+    mockSetupVpsCloud.mockResolvedValueOnce({ provider: "vps", host: "10.0.0.1" });
+
+    const result = await provider.provision();
+
+    expect(mockSetupVpsCloud).toHaveBeenCalledOnce();
+    expect(result).toEqual({ provider: "vps", host: "10.0.0.1" });
+  });
+
+  it("teardown() calls teardownVps with projectPath and config", async () => {
+    await provider.teardown("/test/project");
+
+    expect(mockTeardownVps).toHaveBeenCalledWith("/test/project", testConfig);
   });
 });

@@ -329,4 +329,48 @@ describe("registerShutdownHandlers", () => {
     expect(runtime.shutdown).toHaveBeenCalledOnce();
     expect(processExitSpy).toHaveBeenCalledWith(0);
   });
+
+  it("closes sharedDb on shutdown when provided", async () => {
+    const ctx = makeSchedulerCtx();
+    const logger = makeLogger();
+    const mockDbClose = vi.fn();
+    const sharedDb = { $client: { close: mockDbClose } } as any;
+
+    registerShutdownHandlers({
+      logger,
+      schedulerCtx: ctx,
+      cronJobs: [],
+      watcherHandle: { stop: vi.fn() },
+      sharedDb,
+    });
+
+    await originalListeners["SIGINT"][0]();
+
+    expect(mockDbClose).toHaveBeenCalledOnce();
+    expect(processExitSpy).toHaveBeenCalledWith(0);
+  });
+
+  it("handles sharedDb close errors gracefully without crashing", async () => {
+    const ctx = makeSchedulerCtx();
+    const logger = makeLogger();
+    const sharedDb = {
+      $client: {
+        close: vi.fn().mockImplementation(() => {
+          throw new Error("db close failed");
+        }),
+      },
+    } as any;
+
+    registerShutdownHandlers({
+      logger,
+      schedulerCtx: ctx,
+      cronJobs: [],
+      watcherHandle: { stop: vi.fn() },
+      sharedDb,
+    });
+
+    // Should not throw even if $client.close() throws
+    await expect(originalListeners["SIGINT"][0]()).resolves.toBeUndefined();
+    expect(processExitSpy).toHaveBeenCalledWith(0);
+  });
 });

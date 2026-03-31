@@ -296,4 +296,33 @@ describe("scaffoldProject", () => {
     }
   });
 
+  it("includes description, license, and compatibility in SKILL.md frontmatter when set", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
+    const projDir = resolve(tmpDir, "my-project");
+
+    const defaultModel = { provider: "anthropic" as const, model: "claude-sonnet-4-20250514", authType: "api_key" as const };
+    const agentsWithMeta: ScaffoldAgent[] = [
+      {
+        name: "my-agent",
+        config: {
+          name: "my-agent",
+          credentials: [],
+          models: [defaultModel],
+          description: "My custom agent description",
+          license: "MIT",
+          compatibility: "claude-3",
+        } as any,
+      },
+    ];
+
+    scaffoldProject(projDir, makeGlobalConfig(), agentsWithMeta);
+
+    const skillPath = resolve(projDir, "agents", "my-agent", "SKILL.md");
+    expect(existsSync(skillPath)).toBe(true);
+
+    const content = readFileSync(skillPath, "utf-8");
+    expect(content).toContain("description: My custom agent description");
+    expect(content).toContain("license: MIT");
+    expect(content).toContain("compatibility: claude-3");
+  });
 });

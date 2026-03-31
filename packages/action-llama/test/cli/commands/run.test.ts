@@ -145,4 +145,19 @@ describe("run", () => {
       "looks like an agent directory"
     );
   });
+
+  it("rethrows non-ECONNREFUSED errors from gatewayFetch as-is", async () => {
+    const dir = makeTmpProject({
+      agents: [{ name: "dev", schedule: "*/5 * * * *" }],
+    });
+
+    const networkError = new Error("network timeout");
+    mockGatewayFetch.mockRejectedValue(networkError);
+
+    // Should throw the original error (not wrapped in "Scheduler not running")
+    await expect(execute("dev", undefined, { project: dir })).rejects.toThrow("network timeout");
+    await expect(execute("dev", undefined, { project: dir })).rejects.not.toThrow(
+      "Scheduler not running"
+    );
+  });
 });
