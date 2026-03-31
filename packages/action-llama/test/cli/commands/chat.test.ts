@@ -81,6 +81,7 @@ vi.mock("../../../src/cli/commands/chat.js", async (importOriginal) => {
 import { execute } from "../../../src/cli/commands/chat.js";
 import { createAgentSession } from "@mariozechner/pi-coding-agent";
 import { ensureGatewayApiKey } from "../../../src/control/api-key.js";
+import { loadCredentialFields } from "../../../src/shared/credentials.js";
 
 describe("chat", () => {
   beforeEach(() => {
@@ -282,4 +283,45 @@ describe("chat", () => {
       try { rmSync(environmentPath(testEnvName)); } catch {}
     }
   });
+
+  it("skips credential when loadCredentialFields returns null (stmt 41: if (!fields) continue)", async () => {
+    // Mock loadCredentialFields to return null for the first call — triggers the continue branch
+    vi.mocked(loadCredentialFields).mockResolvedValueOnce(null as any);
+
+    const dir = makeTmpProject();
+    // execute should succeed even when credential fields are null (just skipped)
+    await execute({ project: dir, agent: "dev" });
+    expect(mockRun).toHaveBeenCalled();
+  });
+
+  it("probeGateway aborts fetch when timeout fires (covers setTimeout callback)", async () => {
+    // Simulate a slow gateway that never responds — the AbortController timeout fires
+    vi.useFakeTimers();
+    let fetchAborted = false;
+    vi.stubGlobal("fetch", vi.fn().mockImplementation((_url: string, opts: any) => {
+      return new Promise((_resolve, reject) => {
+        opts?.signal?.addEventListener?.("abort", () => {
+          fetchAborted = true;
+          reject(new DOMException("The operation was aborted", "AbortError"));
+        });
+      });
+    }));
+
+    try {
+      const dir = makeTmpProject();
+      // Start execute but don't await yet — probeGateway will be called and wait for fetch
+      const execPromise = execute({ project: dir, agent: "dev" });
+
+      // Advance time async — this allows pending microtasks/timers to run
+      // The 2000ms timeout in probeGateway fires, aborting the fetch request
+      await vi.advanceTimersByTimeAsync(3000);
+
+      // execute should complete now (fetch rejected → probeGateway returns false)
+      await execPromise;
+      expect(fetchAborted).toBe(true);
+      expect(mockRun).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 10000);
 });
