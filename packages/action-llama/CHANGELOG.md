@@ -1,5 +1,68 @@
 # @action-llama/action-llama
 
+## 0.21.0
+
+### Minor Changes
+
+- [#426](https://github.com/Action-Llama/action-llama/pull/426) [`af9e0fb`](https://github.com/Action-Llama/action-llama/commit/af9e0fbe77afee8195bc6574b32e2530310d5853) Thanks [@asselstine](https://github.com/asselstine)! - Add `groups` field to `AgentRuntimeType` for host-user runtime Docker socket access
+
+  The `[runtime]` table in `agents/<name>/config.toml` now accepts a `groups` array
+  that specifies additional OS groups the agent process should run with. When set, the
+  host-user runtime passes `-g <group>` to `sudo` so the agent gains access to resources
+  protected by that group (e.g. the Docker socket requires the `docker` group).
+
+  Example `config.toml` for an agent that needs Docker access:
+
+  ```toml
+  [runtime]
+  type = "host-user"
+  groups = ["docker"]
+  ```
+
+  The `al doctor` command now also validates that any explicitly-configured groups exist
+  on the system, warning if a configured group is not found.
+
+  This fixes the e2e-coverage-improver agent's inability to run `npm run test:e2e` due
+  to the Docker socket being inaccessible when running as `al-agent` without docker group
+  membership.
+
+### Patch Changes
+
+- [#428](https://github.com/Action-Llama/action-llama/pull/428) [`819390c`](https://github.com/Action-Llama/action-llama/commit/819390c091fcec7f17415a599523b4ad4fbfe7d9) Thanks [@asselstine](https://github.com/asselstine)! - Add missing `groups = ["docker"]` to e2e-coverage-improver agent config
+
+  The `e2e-coverage-improver` agent's `config.toml` was missing the `groups = ["docker"]`
+  field that was introduced in PR [#426](https://github.com/Action-Llama/action-llama/issues/426). Without it, the agent runs without Docker group
+  membership and cannot connect to `/var/run/docker.sock`, causing all e2e test runs to
+  fail with `EACCES /var/run/docker.sock`. Closes [#427](https://github.com/Action-Llama/action-llama/issues/427).
+
+- [#434](https://github.com/Action-Llama/action-llama/pull/434) [`8b22a34`](https://github.com/Action-Llama/action-llama/commit/8b22a34e255842543933f03d231fdb2348dcfaa8) Thanks [@asselstine](https://github.com/asselstine)! - Fix e2e-coverage-improver config.toml to include complete configuration
+
+  PR [#428](https://github.com/Action-Llama/action-llama/issues/428) created the config.toml with only the `[runtime]` section, missing the
+  `models`, `credentials`, `schedule`, `timeout`, and `[params]` fields required
+  for the agent to run correctly. This restores the full configuration including
+  `groups = ["docker"]` so the agent has Docker socket access.
+
+- [#430](https://github.com/Action-Llama/action-llama/pull/430) [`38d36b1`](https://github.com/Action-Llama/action-llama/commit/38d36b19c5c5975ec064b882312c305cfa6f6d0a) Thanks [@asselstine](https://github.com/asselstine)! - Fix hot-reload not updating HostUserRuntime when agent runtime config changes
+
+  When an agent's `config.toml` is modified at runtime (e.g. adding `groups = ["docker"]` to the `[runtime]` section), the hot-reload watcher now correctly:
+
+  1. Creates a new `HostUserRuntime` with the updated configuration (runAs user and groups)
+  2. Updates `agentRuntimeOverrides` so future agent launches use the new runtime
+  3. Calls `setRuntime` on all existing runners in the pool so even in-flight or next-queued runs pick up the change
+
+  Previously, the watcher updated the `AgentConfig` but left the old `HostUserRuntime` instance (without the docker group) in place, causing Docker socket access failures for agents that gained `groups = ["docker"]` via a live config edit.
+
+- [#419](https://github.com/Action-Llama/action-llama/pull/419) [`070a6e1`](https://github.com/Action-Llama/action-llama/commit/070a6e166b757178d104f657c2d67167d5d4bcbf) Thanks [@asselstine](https://github.com/asselstine)! - Fix HostUserRuntime orphan reattachment after scheduler restart. Previously,
+  adopted orphan processes failed immediately because waitForExit and streamLogs
+  had no handle to the process spawned by the previous scheduler. Now stdio is
+  directed to the log file (not pipes) so child processes survive restarts, and
+  reattach() reconstructs in-memory state from PID files. All methods (streamLogs,
+  waitForExit, kill) follow a single code path for both fresh and adopted processes.
+
+- [#423](https://github.com/Action-Llama/action-llama/pull/423) [`b2b8d95`](https://github.com/Action-Llama/action-llama/commit/b2b8d9554057f8f178d726aaf12bfb04faa2e54c) Thanks [@asselstine](https://github.com/asselstine)! - Merge the Triggers and Jobs pages into a unified Activity page. The new Activity page shows pending queue items, running instances, completed jobs, errors, and dead letters all in one view, sorted by timestamp. A Status filter replaces the dead-letters checkbox, and all existing /triggers and /jobs URLs redirect to /activity. Agent detail pages link to /activity?agent=X.
+
+  Also adds a `peek()` method to the WorkQueue interface (MemoryWorkQueue, SqliteWorkQueue, EventSourcedWorkQueue) to expose queued items without consuming them, enabling pending items to appear as rows in the Activity feed.
+
 ## 0.20.0
 
 ### Minor Changes
