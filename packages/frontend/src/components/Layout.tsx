@@ -34,6 +34,7 @@ function Navbar() {
   const isSettings = location.pathname === "/dashboard/config";
   const isAgents = location.pathname === "/dashboard" || location.pathname.startsWith("/dashboard/agents");
   const isActivity = location.pathname === "/activity";
+  const isStats = location.pathname === "/stats";
 
   return (
     <header className="border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-3">
@@ -74,6 +75,19 @@ function Navbar() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
             <span className="hidden sm:inline">Activity</span>
+          </Link>
+          <Link
+            to="/stats"
+            className={`flex items-center gap-1.5 text-sm transition-colors ${
+              isStats
+                ? "text-blue-600 dark:text-blue-400"
+                : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+            }`}
+          >
+            <svg className="w-5 h-5 sm:w-4 sm:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            <span className="hidden sm:inline">Stats</span>
           </Link>
           <Link
             to="/dashboard/config"
