@@ -301,4 +301,40 @@ describe("start", () => {
       vi.useRealTimers();
     });
   });
+
+  it("shutdown: SIGINT handler calls cleanup and exits with code 0", async () => {
+    // Capture the SIGINT handler registered by execute
+    let capturedSigint: (() => void) | undefined;
+    const origProcessOn = process.on.bind(process);
+    const processOnSpy = vi.spyOn(process, "on").mockImplementation((event: any, handler: any) => {
+      if (event === "SIGINT" || event === "SIGTERM") {
+        capturedSigint = handler;
+      }
+      // Pass through to real process.on so other listeners still work
+      return origProcessOn(event, handler);
+    });
+
+    // Mock process.exit to prevent actual exit
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+
+    try {
+      const _promise = execute({ project: "/tmp/test" });
+
+      // Allow execute to start and register SIGINT/SIGTERM handlers
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(capturedSigint).toBeDefined();
+
+      // Calling the shutdown function should invoke cleanup() and process.exit(0)
+      capturedSigint!();
+
+      expect(exitSpy).toHaveBeenCalledWith(0);
+    } finally {
+      processOnSpy.mockRestore();
+      exitSpy.mockRestore();
+      // Remove the actual SIGINT listener we registered via passthrough
+      process.removeAllListeners("SIGINT");
+      process.removeAllListeners("SIGTERM");
+    }
+  });
 });
