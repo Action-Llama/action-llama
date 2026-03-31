@@ -702,6 +702,48 @@ describe("setupGateway", () => {
       }
     });
 
+    it("returns error string when agent has no runners (rejected: scale=0 pool)", async () => {
+      const gatewayResult = makeGatewayResult();
+      const statusTracker = { isPaused: vi.fn().mockReturnValue(false) };
+      // Empty pool (scale=0): no runners available → dispatchOrQueue returns "rejected"
+      const pool = { getAvailableRunner: vi.fn().mockReturnValue(undefined), size: 0, getAllAvailableRunners: vi.fn().mockReturnValue([]) };
+      const workQueue = { enqueue: vi.fn().mockReturnValue({ accepted: false }), size: vi.fn().mockReturnValue(0), dequeue: vi.fn(), peek: vi.fn().mockReturnValue([]), clear: vi.fn(), clearAll: vi.fn(), close: vi.fn() };
+      const schedulerCtx = { workQueue } as any;
+      const state = makeSchedulerState({ runnerPools: { dev: pool as any }, schedulerCtx });
+      const opts = { ...makeBaseOpts(state, gatewayResult), statusTracker: statusTracker as any };
+
+      await setupGateway(opts);
+
+      const { controlDeps } = mockStartGateway.mock.calls[0][0];
+      const result = await controlDeps.triggerAgent("dev");
+      expect(typeof result).toBe("string");
+      expect(result).toContain("no available runners");
+    });
+
+    it("workQueue.peek delegates to schedulerCtx.workQueue.peek when available", async () => {
+      const gatewayResult = makeGatewayResult();
+      const pendingItem = { context: { type: "manual" }, receivedAt: new Date() };
+      const workQueue = {
+        enqueue: vi.fn(),
+        size: vi.fn().mockReturnValue(1),
+        dequeue: vi.fn(),
+        peek: vi.fn().mockReturnValue([pendingItem]),
+        clear: vi.fn(),
+        clearAll: vi.fn(),
+        close: vi.fn(),
+      };
+      const schedulerCtx = { workQueue } as any;
+      const state = makeSchedulerState({ schedulerCtx });
+      const opts = makeBaseOpts(state, gatewayResult);
+
+      await setupGateway(opts);
+
+      const { controlDeps } = mockStartGateway.mock.calls[0][0];
+      const result = controlDeps.workQueue.peek("dev");
+      expect(workQueue.peek).toHaveBeenCalledWith("dev");
+      expect(result).toEqual([pendingItem]);
+    });
+
     it("calls stateStore.close and telemetry.shutdown when provided", async () => {
       const processExitSpy = vi.spyOn(process, "exit").mockImplementation((_code?: any) => undefined as never);
 
