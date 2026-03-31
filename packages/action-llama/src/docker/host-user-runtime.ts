@@ -32,7 +32,10 @@ import type {
 import { parseCredentialRef, getDefaultBackend } from "../shared/credentials.js";
 import { CONSTANTS } from "../shared/constants.js";
 
-const RUNS_DIR = join(tmpdir(), "al-runs");
+/** Returns the runs directory, honouring the AL_RUNS_DIR env var override. */
+function getRunsDir(): string {
+  return process.env.AL_RUNS_DIR ?? join(tmpdir(), "al-runs");
+}
 const ORPHAN_POLL_MS = 500;
 
 /** Metadata persisted alongside a running process for orphan recovery. */
@@ -44,7 +47,7 @@ interface PidFileData {
 }
 
 function pidFilePath(runId: string): string {
-  return join(RUNS_DIR, `${runId}.pid`);
+  return join(getRunsDir(), `${runId}.pid`);
 }
 
 function writePidFile(runId: string, data: PidFileData): void {
@@ -172,9 +175,9 @@ export class HostUserRuntime implements Runtime {
 
     // Check PID files for orphaned processes from a previous scheduler session
     try {
-      if (!existsSync(RUNS_DIR)) return false;
+      if (!existsSync(getRunsDir())) return false;
       const prefix = `al-${agentName}-`;
-      for (const f of readdirSync(RUNS_DIR)) {
+      for (const f of readdirSync(getRunsDir())) {
         if (!f.startsWith(prefix) || !f.endsWith(".pid")) continue;
         const runId = f.slice(0, -4);
         const data = readPidFile(runId);
@@ -204,8 +207,8 @@ export class HostUserRuntime implements Runtime {
 
     // Scan PID files for orphaned processes from a previous scheduler session
     try {
-      if (!existsSync(RUNS_DIR)) return agents;
-      for (const file of readdirSync(RUNS_DIR)) {
+      if (!existsSync(getRunsDir())) return agents;
+      for (const file of readdirSync(getRunsDir())) {
         if (!file.endsWith(".pid")) continue;
         const runId = file.slice(0, -4);
         if (knownRunIds.has(runId)) continue;
@@ -295,10 +298,10 @@ export class HostUserRuntime implements Runtime {
     const runId = `al-${opts.agentName}-${randomUUID().slice(0, 8)}`;
 
     // Ensure runs directory exists
-    mkdirSync(RUNS_DIR, { recursive: true });
+    mkdirSync(getRunsDir(), { recursive: true });
 
     // Create working directory
-    const workDir = join(RUNS_DIR, runId);
+    const workDir = join(getRunsDir(), runId);
     mkdirSync(workDir, { recursive: true, mode: 0o755 });
 
     const uid = resolveUid(this.runAs);
@@ -309,7 +312,7 @@ export class HostUserRuntime implements Runtime {
 
     // Create log file — child writes directly to this fd so output survives
     // scheduler restarts. streamLogs() tails this file using fs.watch().
-    const logPath = join(RUNS_DIR, `${runId}.log`);
+    const logPath = join(getRunsDir(), `${runId}.log`);
     const logFd = openSync(logPath, "a");
 
     // Build env vars for the child process
@@ -405,7 +408,7 @@ export class HostUserRuntime implements Runtime {
     onLine: (line: string) => void,
     _onStderr?: (text: string) => void,
   ): { stop: () => void } {
-    const logPath = join(RUNS_DIR, `${runId}.log`);
+    const logPath = join(getRunsDir(), `${runId}.log`);
     if (!existsSync(logPath)) return { stop: () => {} };
 
     let offset = 0;
@@ -520,7 +523,7 @@ export class HostUserRuntime implements Runtime {
 
   async remove(runId: string): Promise<void> {
     // Clean up working directory and PID file
-    const workDir = join(RUNS_DIR, runId);
+    const workDir = join(getRunsDir(), runId);
     try {
       rmSync(workDir, { recursive: true, force: true });
     } catch { /* best effort */ }
@@ -530,8 +533,8 @@ export class HostUserRuntime implements Runtime {
   async fetchLogs(agentName: string, limit: number): Promise<string[]> {
     // Read from log files in RUNS_DIR matching this agent
     try {
-      if (!existsSync(RUNS_DIR)) return [];
-      const files = readdirSync(RUNS_DIR)
+      if (!existsSync(getRunsDir())) return [];
+      const files = readdirSync(getRunsDir())
         .filter(f => f.startsWith(`al-${agentName}-`) && f.endsWith(".log"))
         .sort()
         .reverse();
@@ -540,7 +543,7 @@ export class HostUserRuntime implements Runtime {
       for (const file of files) {
         if (allLines.length >= limit) break;
         try {
-          const content = readFileSync(join(RUNS_DIR, file), "utf-8");
+          const content = readFileSync(join(getRunsDir(), file), "utf-8");
           allLines.push(...content.split("\n").filter(Boolean));
         } catch { /* file may be gone */ }
       }
