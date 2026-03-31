@@ -294,6 +294,25 @@ describe("verifyEnvironment", () => {
     expect(docker?.fixable).toBe(false);
   });
 
+  it("reports Node.js not installed in check mode (no fix attempted)", async () => {
+    // When node --version fails and mode is "check", checkNode returns "not installed"
+    mockBackendRead({});
+    mockTestConnection.mockResolvedValue(true);
+    mockSshExec.mockImplementation((_cfg, cmd) => {
+      if (cmd === "node --version") return Promise.resolve({ stdout: "", stderr: "command not found", exitCode: 127 });
+      if (cmd.includes("docker info")) return Promise.resolve({ stdout: "29.0.0", stderr: "", exitCode: 0 });
+      if (cmd.includes("curl")) return Promise.resolve(sshOk());
+      return Promise.resolve(sshOk());
+    });
+
+    const server: ServerConfig = { host: "1.2.3.4", user: "root", port: 22 };
+    const results = await verifyEnvironment({ server, mode: "check" });
+    const node = results.find((r) => r.name === "Node.js");
+    expect(node?.status).toBe("fail");
+    expect(node?.detail).toBe("not installed");
+    expect(node?.fixable).toBe(true);
+  });
+
   it("fixes Node.js installation successfully in fix mode", async () => {
     mockBackendRead({});
     mockTestConnection.mockResolvedValue(true);
