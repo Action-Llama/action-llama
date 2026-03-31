@@ -266,4 +266,55 @@ describe.skipIf(!DOCKER)("integration: chat session management API", { timeout: 
     // Cleanup: delete the new session
     await chatAPI(harness, "DELETE", `/api/chat/sessions/${clearBody.sessionId}`);
   });
+
+  it("GET /api/chat/sessions lists active sessions", async () => {
+    // The GET /api/chat/sessions endpoint returns all active chat sessions.
+    // After creating a session, it should appear in the list.
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "chat-list-agent",
+          schedule: "0 0 31 2 *",
+          testScript: "#!/bin/sh\necho 'list-agent'\nexit 0\n",
+        },
+      ],
+    });
+
+    // Start with webUI=true to enable chat routes
+    await harness.start({ webUI: true });
+
+    // Build agent image first
+    await harness.triggerAgent("chat-list-agent");
+    await harness.waitForRunResult("chat-list-agent");
+
+    // Initially, no sessions should exist
+    const emptyRes = await chatAPI(harness, "GET", "/api/chat/sessions");
+    expect(emptyRes.ok).toBe(true);
+    const emptyBody = await emptyRes.json();
+    expect(Array.isArray(emptyBody.sessions)).toBe(true);
+    const initialCount = emptyBody.sessions.length;
+
+    // Create a session
+    const createRes = await chatAPI(harness, "POST", "/api/chat/sessions", {
+      agentName: "chat-list-agent",
+    });
+    expect(createRes.ok).toBe(true);
+    const { sessionId } = await createRes.json();
+
+    // List sessions — should include the new one
+    const listRes = await chatAPI(harness, "GET", "/api/chat/sessions");
+    expect(listRes.ok).toBe(true);
+    const listBody = await listRes.json();
+    expect(Array.isArray(listBody.sessions)).toBe(true);
+    expect(listBody.sessions.length).toBe(initialCount + 1);
+
+    const found = listBody.sessions.find((s: any) => s.sessionId === sessionId);
+    expect(found).toBeTruthy();
+    expect(found.agentName).toBe("chat-list-agent");
+    expect(found).toHaveProperty("createdAt");
+    expect(found).toHaveProperty("lastActivityAt");
+
+    // Cleanup
+    await chatAPI(harness, "DELETE", `/api/chat/sessions/${sessionId}`);
+  });
 });

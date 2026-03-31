@@ -67,3 +67,4 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Webhook receipt 404 — GET /api/stats/webhooks/:receiptId returns 404 with receipt:null for nonexistent receipt ID (webhook-stats.test.ts)
 - [x] Activity endpoint status filter — ?status=completed filters to completed rows only, ?status=all returns all results (stats-jobs.test.ts)
 - [x] Logs API invalid cursor — malformed cursor parameter returns 400 with error message (logs-api.test.ts)
+- [x] Chat session list endpoint — GET /api/chat/sessions returns active sessions, new session appears in list (chat.test.ts)
