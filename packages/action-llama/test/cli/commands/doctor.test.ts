@@ -1127,4 +1127,162 @@ describe("doctor", () => {
       expect(mockExecFileSync).toHaveBeenCalled();
     });
   });
+
+  describe("global config read error", () => {
+    it("catches errors thrown while reading global config.toml", async () => {
+      mockValidateAgentConfig.mockReset();
+      mockDiscoverAgents.mockReturnValue(["dev"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: [] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({});
+      mockCollectCredentialRefs.mockReturnValue(new Set());
+      mockCredentialExists.mockReturnValue(true);
+
+      // Make existsSync return true for config.toml so we enter the try block
+      mockExistsSync.mockImplementation((p: string) => String(p).endsWith("config.toml"));
+      // Make readFileSync throw when reading config.toml
+      mockReadFileSync.mockImplementation((p: string) => {
+        if (String(p).endsWith("config.toml")) throw new Error("permission denied");
+        return "";
+      });
+
+      // Should throw ConfigError containing the global config error
+      await expect(execute({ project: ".", skipCredentials: true })).rejects.toThrow("Error reading global config");
+    });
+  });
+
+  describe("validateAgentConfig catch path", () => {
+    it("pushes error when validateAgentConfig throws", async () => {
+      mockValidateAgentConfig.mockReset();
+      mockDiscoverAgents.mockReturnValue(["bad-agent"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "bad-agent", credentials: [] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({ name: "bad-agent" });
+      mockCollectCredentialRefs.mockReturnValue(new Set());
+      mockCredentialExists.mockReturnValue(true);
+
+      // Make validateAgentConfig (from config.js) throw
+      mockValidateAgentConfig.mockImplementation(() => {
+        throw new Error("invalid agent name from validate");
+      });
+
+      // Should throw ConfigError containing the validation error
+      await expect(execute({ project: ".", skipCredentials: true })).rejects.toThrow("invalid agent name from validate");
+    });
+  });
+
+  describe("outer agent validation catch path", () => {
+    it("catches errors thrown during agent validation loop", async () => {
+      mockValidateAgentConfig.mockReset();
+      mockDiscoverAgents.mockReturnValue(["broken-agent"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "broken-agent", credentials: [] });
+      mockCollectCredentialRefs.mockReturnValue(new Set());
+      mockCredentialExists.mockReturnValue(true);
+
+      // Make loadAgentRuntimeConfig throw unexpectedly
+      mockLoadAgentRuntimeConfig.mockImplementation(() => {
+        throw new Error("config file corrupted");
+      });
+
+      // Should throw ConfigError containing the agent error
+      await expect(execute({ project: ".", skipCredentials: true })).rejects.toThrow("config file corrupted");
+    });
+  });
+
+  // Only run these tests on Linux (where isLinux=true in doctor.ts)
+  describe("host-user user creation fail (Linux, no checkOnly)", () => {
+    it("records error when useradd fails", async () => {
+      if (process.platform !== "linux") return; // Skip on non-Linux
+
+      mockValidateAgentConfig.mockReset();
+      mockDiscoverAgents.mockReturnValue(["e2e"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "e2e", credentials: [] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({ runtime: { type: "host-user" } });
+      mockCredentialExists.mockReturnValue(true);
+      mockCollectCredentialRefs.mockReturnValue(new Set());
+
+      mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+        // User doesn't exist (id throws)
+        if (cmd === "id" && args[0] === "al-agent") throw new Error("no such user");
+        // useradd fails
+        if (cmd === "sudo" && args[0] === "useradd") throw new Error("useradd failed");
+        // Other commands succeed
+        if (cmd === "sudo") return Buffer.from("");
+        if (cmd === "getent") throw new Error("no docker");
+        return Buffer.from("");
+      });
+
+      // Should throw ConfigError with user creation error message
+      await expect(execute({ project: ".", skipCredentials: true })).rejects.toThrow("Failed to create user");
+    });
+  });
+
+  describe("host-user docker group usermod (Linux, no checkOnly)", () => {
+    it("adds user to docker group and logs success", async () => {
+      if (process.platform !== "linux") return; // Skip on non-Linux
+
+      mockValidateAgentConfig.mockReset();
+      mockDiscoverAgents.mockReturnValue(["e2e"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "e2e", credentials: [] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({ runtime: { type: "host-user" } });
+      mockCredentialExists.mockReturnValue(true);
+      mockCollectCredentialRefs.mockReturnValue(new Set());
+
+      mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+        // User exists
+        if (cmd === "id" && args[0] === "al-agent") return Buffer.from("1001");
+        // sudo -n check succeeds
+        if (cmd === "sudo" && args[0] === "-n") return Buffer.from("");
+        // sudoers tee succeeds
+        if (cmd === "sudo" && args[0] === "tee") return Buffer.from("");
+        // sudoers chmod succeeds
+        if (cmd === "sudo" && args[0] === "chmod") return Buffer.from("");
+        // docker group exists
+        if (cmd === "getent" && args[0] === "group" && args[1] === "docker") return Buffer.from("docker:x:999:");
+        // User NOT in docker group
+        if (cmd === "id" && args[0] === "-Gn") return Buffer.from("al-agent");
+        // usermod succeeds (not checkOnly, so this path runs)
+        if (cmd === "sudo" && args[0] === "usermod") return Buffer.from("");
+        throw new Error(`unexpected: ${cmd} ${args.join(" ")}`);
+      });
+
+      const output = await captureLog(() =>
+        execute({ project: ".", skipCredentials: true })
+      );
+      expect(output).toContain("Added");
+      expect(output).toContain("docker group");
+    });
+
+    it("warns when usermod fails to add user to docker group", async () => {
+      if (process.platform !== "linux") return; // Skip on non-Linux
+
+      mockValidateAgentConfig.mockReset();
+      mockDiscoverAgents.mockReturnValue(["e2e"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "e2e", credentials: [] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({ runtime: { type: "host-user" } });
+      mockCredentialExists.mockReturnValue(true);
+      mockCollectCredentialRefs.mockReturnValue(new Set());
+
+      mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+        // User exists
+        if (cmd === "id" && args[0] === "al-agent") return Buffer.from("1001");
+        // sudo -n check succeeds
+        if (cmd === "sudo" && args[0] === "-n") return Buffer.from("");
+        // sudoers tee and chmod succeed
+        if (cmd === "sudo" && args[0] === "tee") return Buffer.from("");
+        if (cmd === "sudo" && args[0] === "chmod") return Buffer.from("");
+        // docker group exists
+        if (cmd === "getent" && args[0] === "group" && args[1] === "docker") return Buffer.from("docker:x:999:");
+        // User NOT in docker group
+        if (cmd === "id" && args[0] === "-Gn") return Buffer.from("al-agent");
+        // usermod FAILS
+        if (cmd === "sudo" && args[0] === "usermod") throw new Error("usermod: permission denied");
+        throw new Error(`unexpected: ${cmd} ${args.join(" ")}`);
+      });
+
+      const output = await captureLog(() =>
+        execute({ project: ".", skipCredentials: true })
+      );
+      // Should warn about docker group
+      expect(output).toContain("docker group");
+    });
+  });
 });
