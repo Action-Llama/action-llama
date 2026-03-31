@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Hono } from "hono";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
+import { promises as fsPromises } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { registerLogRoutes } from "../../../src/control/routes/logs.js";
@@ -825,6 +826,75 @@ describe("log API routes", () => {
       expect(data.entries.every((e: any) => e.time < 1710700007000)).toBe(true);
       expect(data.entries.some((e: any) => e.msg === "late")).toBe(false);
       expect(data.entries.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  describe("error handling — catch block coverage", () => {
+    it("returns empty entries when the .al/logs directory does not exist (findLogFiles catch)", async () => {
+      // Use a fresh temp dir WITHOUT creating the .al/logs subdirectory
+      // readdirSync on a non-existent directory throws ENOENT → catch → return []
+      const emptyDir = mkdtempSync(join(tmpdir(), "al-logs-nodir-"));
+      try {
+        const app = createTestApp(emptyDir);
+        const res = await app.request("/api/logs/scheduler");
+        expect(res.status).toBe(200);
+        const data = await res.json();
+        expect(data.entries).toEqual([]);
+        expect(data.hasMore).toBe(false);
+      } finally {
+        rmSync(emptyDir, { recursive: true, force: true });
+      }
+    });
+
+    it("returns empty entries when fs.stat throws in readEntriesForward (catch block)", async () => {
+      // Create a log file so findLatestLogFile returns a valid path
+      writeFileSync(
+        join(logsPath, "scheduler-2024-03-18.log"),
+        pinoLine(30, 1710700001000, "test-entry") + "\n"
+      );
+
+      // Mock fs.promises.stat to throw (simulates e.g. permission error or race condition)
+      const statSpy = vi.spyOn(fsPromises, "stat").mockRejectedValueOnce(
+        Object.assign(new Error("EPERM: operation not permitted"), { code: "EPERM" })
+      );
+
+      try {
+        // Use a cursor to trigger readEntriesForward
+        const cursor = Buffer.from("2024-03-18:0").toString("base64url");
+        const app = createTestApp(tmpDir);
+        const res = await app.request(`/api/logs/scheduler?cursor=${encodeURIComponent(cursor)}`);
+        // readEntriesForward catches the stat error and returns { entries: [], newOffset: byteOffset }
+        expect(res.status).toBe(200);
+        const data = await res.json();
+        expect(data.entries).toEqual([]);
+      } finally {
+        statSpy.mockRestore();
+      }
+    });
+
+    it("returns empty entries when fs.stat throws in readLastEntries (catch block)", async () => {
+      // Create a log file so findLatestLogFile returns a valid path
+      writeFileSync(
+        join(logsPath, "scheduler-2024-03-18.log"),
+        pinoLine(30, 1710700001000, "test-entry") + "\n"
+      );
+
+      // Mock fs.promises.stat to throw
+      const statSpy = vi.spyOn(fsPromises, "stat").mockRejectedValueOnce(
+        Object.assign(new Error("EPERM: operation not permitted"), { code: "EPERM" })
+      );
+
+      try {
+        // No cursor → triggers readLastEntries
+        const app = createTestApp(tmpDir);
+        const res = await app.request("/api/logs/scheduler");
+        // readLastEntries catches the stat error and returns { entries: [], byteOffset: 0 }
+        expect(res.status).toBe(200);
+        const data = await res.json();
+        expect(data.entries).toEqual([]);
+      } finally {
+        statSpy.mockRestore();
+      }
     });
   });
 });
