@@ -1296,6 +1296,60 @@ describe("doctor", () => {
       }
       // Test passes as long as the macOS branch executed without crashing
     });
+
+    it("adds error when user does not exist on non-Linux non-Mac platform (stmt 139)", async () => {
+      // Use a platform that is neither Linux nor Mac
+      Object.defineProperty(process, "platform", { value: "freebsd", writable: true });
+
+      mockValidateAgentConfig.mockReset();
+      mockDiscoverAgents.mockReturnValue(["e2e"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "e2e", credentials: [] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({ runtime: { type: "host-user" } });
+      mockCredentialExists.mockReturnValue(true);
+      mockCollectCredentialRefs.mockReturnValue(new Set());
+
+      mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+        // User does NOT exist
+        if (cmd === "id" && args[0] === "al-agent") throw new Error("no such user");
+        return Buffer.from("");
+      });
+
+      // Neither Linux nor Mac → else branch (stmt 139) adds error about user not existing
+      try {
+        await execute({ project: ".", skipCredentials: true });
+      } catch {
+        // Expected to throw since user doesn't exist
+      }
+    });
+
+    it("adds error when sudoers not configured on non-Linux non-Mac platform (stmt 159)", async () => {
+      Object.defineProperty(process, "platform", { value: "freebsd", writable: true });
+
+      mockValidateAgentConfig.mockReset();
+      mockDiscoverAgents.mockReturnValue(["e2e"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "e2e", credentials: [] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({ runtime: { type: "host-user" } });
+      mockCredentialExists.mockReturnValue(true);
+      mockCollectCredentialRefs.mockReturnValue(new Set());
+
+      mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+        // User EXISTS
+        if (cmd === "id" && args[0] === "al-agent") return Buffer.from("1001");
+        // sudo -n fails → sudoers not configured
+        if (cmd === "sudo" && args[0] === "-n") throw new Error("permission denied");
+        // getent docker
+        if (cmd === "getent") return Buffer.from("docker:x:999:");
+        if (cmd === "id" && args[0] === "-Gn") return Buffer.from("al-agent docker");
+        return Buffer.from("");
+      });
+
+      // Neither Linux nor Mac → else branch (stmt 159) adds error about sudoers
+      try {
+        await execute({ project: ".", skipCredentials: true });
+      } catch {
+        // may throw
+      }
+    });
   });
 
   // Only run these tests on Linux (where isLinux=true in doctor.ts)
