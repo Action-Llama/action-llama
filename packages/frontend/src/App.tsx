@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate, useParams } from "react-router-dom";
 import { Layout } from "./components/Layout";
+import { AgentLayout } from "./components/AgentLayout";
 import { LoginPage } from "./pages/LoginPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { AgentDetailPage } from "./pages/AgentDetailPage";
@@ -19,7 +20,7 @@ function AgentTriggersRedirect() {
 
 function AgentSkillRedirect() {
   const { name } = useParams<{ name: string }>();
-  return <Navigate to={`/dashboard/agents/${encodeURIComponent(name ?? "")}/admin`} replace />;
+  return <Navigate to={`/dashboard/agents/${encodeURIComponent(name ?? "")}/settings`} replace />;
 }
 
 export function App() {
@@ -30,26 +31,17 @@ export function App() {
       <Route path="/chat/:agent" element={<ChatPage />} />
       <Route element={<Layout />}>
         <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/dashboard/agents/:name" element={<AgentDetailPage />} />
+        <Route path="/dashboard/agents/:name" element={<AgentLayout />}>
+          <Route index element={<AgentDetailPage />} />
+          <Route path="stats" element={<AgentStatsPage />} />
+          <Route path="settings" element={<AgentAdminPage />} />
+          <Route path="admin" element={<Navigate to="settings" replace />} />
+          <Route path="skill" element={<AgentSkillRedirect />} />
+          <Route path="triggers" element={<AgentTriggersRedirect />} />
+        </Route>
         <Route
           path="/dashboard/agents/:name/instances/:id"
           element={<InstanceDetailPage />}
-        />
-        <Route
-          path="/dashboard/agents/:name/triggers"
-          element={<AgentTriggersRedirect />}
-        />
-        <Route
-          path="/dashboard/agents/:name/admin"
-          element={<AgentAdminPage />}
-        />
-        <Route
-          path="/dashboard/agents/:name/skill"
-          element={<AgentSkillRedirect />}
-        />
-        <Route
-          path="/dashboard/agents/:name/stats"
-          element={<AgentStatsPage />}
         />
         <Route path="/dashboard/triggers" element={<Navigate to="/activity" replace />} />
         <Route path="/activity" element={<ActivityPage />} />

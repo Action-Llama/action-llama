@@ -237,10 +237,10 @@ test.describe("Agent detail", () => {
     await expect(page.locator("#agent-state")).toContainText("running", { timeout: 5000 });
   });
 
-  test("Admin link is visible", async ({ page }) => {
-    const link = page.locator('a[href="/dashboard/agents/single-agent/admin"]');
+  test("Settings tab is visible", async ({ page }) => {
+    const link = page.locator('a[href="/dashboard/agents/single-agent/settings"]');
     await expect(link).toBeVisible();
-    await expect(link).toContainText("Admin");
+    await expect(link).toContainText("Settings");
   });
 
   test("Kill All button is disabled when no instances running", async ({ page }) => {
@@ -287,12 +287,12 @@ test.describe("Agent admin", () => {
   test.beforeEach(async ({ page, request }) => {
     await resetState(request);
     await login(page);
-    await page.goto("/dashboard/agents/single-agent/admin");
+    await page.goto("/dashboard/agents/single-agent/settings");
   });
 
-  test("shows agent name and Admin subtitle", async ({ page }) => {
+  test("shows agent name and Settings tab", async ({ page }) => {
     await expect(page.locator("h1")).toContainText("single-agent");
-    await expect(page.locator("text=Admin")).toBeVisible();
+    await expect(page.locator("text=Settings")).toBeVisible();
   });
 
   test("scale input shows current value and Update button exists", async ({ page }) => {
@@ -319,9 +319,9 @@ test.describe("Agent admin", () => {
     await expect(btn).toContainText("Disable", { timeout: 5000 });
   });
 
-  test("skill route redirects to admin", async ({ page }) => {
+  test("skill route redirects to settings", async ({ page }) => {
     await page.goto("/dashboard/agents/single-agent/skill");
-    await page.waitForURL("**/dashboard/agents/single-agent/admin");
+    await page.waitForURL("**/dashboard/agents/single-agent/settings");
     await expect(page.locator("h1")).toContainText("single-agent");
   });
 });
@@ -332,7 +332,7 @@ test.describe("Agent detail — scaled agent", () => {
   test.beforeEach(async ({ page, request }) => {
     await resetState(request);
     await login(page);
-    await page.goto("/dashboard/agents/scaled-agent/admin");
+    await page.goto("/dashboard/agents/scaled-agent/settings");
   });
 
   test("shows scale=2 in the scale input", async ({ page }) => {
