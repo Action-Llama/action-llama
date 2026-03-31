@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   localDockerExtension,
   sshDockerExtension,
+  cloudRunDockerExtension,
 } from "../../../src/docker/providers/index.js";
 
 describe("localDockerExtension", () => {
@@ -154,6 +155,44 @@ describe("sshDockerExtension", () => {
       it("has envMapping for private_key", () => {
         expect(sshKeyType.envMapping).toEqual({ private_key: "SSH_PRIVATE_KEY" });
       });
+    });
+  });
+});
+
+describe("cloudRunDockerExtension", () => {
+  describe("metadata", () => {
+    it("has name 'cloud-run'", () => {
+      expect(cloudRunDockerExtension.metadata.name).toBe("cloud-run");
+    });
+
+    it("has version '1.0.0'", () => {
+      expect(cloudRunDockerExtension.metadata.version).toBe("1.0.0");
+    });
+
+    it("has type 'runtime'", () => {
+      expect(cloudRunDockerExtension.metadata.type).toBe("runtime");
+    });
+
+    it("requires gcp_service_account credential", () => {
+      const types = cloudRunDockerExtension.metadata.requiredCredentials!.map((c) => c.type);
+      expect(types).toContain("gcp_service_account");
+    });
+
+    it("has a non-empty description", () => {
+      expect(typeof cloudRunDockerExtension.metadata.description).toBe("string");
+      expect(cloudRunDockerExtension.metadata.description.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("init", () => {
+    it("resolves without error when no config is provided", async () => {
+      await expect(cloudRunDockerExtension.init()).resolves.toBeUndefined();
+    });
+  });
+
+  describe("shutdown", () => {
+    it("resolves without error", async () => {
+      await expect(cloudRunDockerExtension.shutdown()).resolves.toBeUndefined();
     });
   });
 });

@@ -15,7 +15,8 @@ export interface RuntimeLaunchOpts {
 export type RuntimeCredentials =
   | { strategy: "volume"; stagingDir: string; bundle: CredentialBundle }
   | { strategy: "tmpfs"; stagingDir: string; bundle: CredentialBundle }
-  | { strategy: "host-user"; stagingDir: string; bundle: CredentialBundle };
+  | { strategy: "host-user"; stagingDir: string; bundle: CredentialBundle }
+  | { strategy: "secret-manager"; secretRefs: Array<{ secretName: string; mountPath: string }>; bundle: CredentialBundle };
 
 export type CredentialBundle = Record<string, Record<string, Record<string, string>>>;
 

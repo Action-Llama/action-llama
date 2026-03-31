@@ -33,6 +33,7 @@
             "group": "Guides",
             "pages": [
               "guides/deploying-to-vps",
+              "guides/cloud-run-runtime",
               "guides/continuous-deployment",
               "guides/dynamic-context",
               "guides/shared-context",

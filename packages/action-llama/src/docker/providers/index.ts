@@ -2,9 +2,10 @@
  * Docker runtime provider extensions
  */
 
-import type { RuntimeExtension } from "../../extensions/types.js";
+import type { RuntimeExtension, ExtensionConfig } from "../../extensions/types.js";
 import { LocalDockerRuntime } from "../local-runtime.js";
 import { SshDockerRuntime } from "../ssh-docker-runtime.js";
+import { CloudRunRuntime } from "../cloud-run-runtime.js";
 
 /**
  * Local Docker runtime extension
@@ -74,4 +75,44 @@ export const sshDockerExtension: RuntimeExtension = {
   async shutdown() { 
     // SSH connections are managed per-operation, no persistent state to clean up
   }
+};
+
+/**
+ * Google Cloud Run Jobs runtime extension
+ */
+export const cloudRunDockerExtension: RuntimeExtension = {
+  metadata: {
+    name: "cloud-run",
+    version: "1.0.0",
+    description: "Google Cloud Run Jobs runtime — runs agents as ephemeral Cloud Run Jobs with credentials via Secret Manager",
+    type: "runtime",
+    requiredCredentials: [
+      {
+        type: "gcp_service_account",
+        description: "GCP service account key for Cloud Run and Secret Manager access",
+      },
+    ],
+  },
+  provider: null as any,
+  async init(config?: ExtensionConfig) {
+    if (
+      config?.keyJson &&
+      config?.project &&
+      config?.region &&
+      config?.artifactRegistry
+    ) {
+      const { GcpAuth, parseServiceAccountKey } = await import("../../cloud/gcp/auth.js");
+      const auth = new GcpAuth(parseServiceAccountKey(config.keyJson as string));
+      this.provider = new CloudRunRuntime({
+        auth,
+        project: config.project as string,
+        region: config.region as string,
+        artifactRegistry: config.artifactRegistry as string,
+        serviceAccount: config.serviceAccount as string | undefined,
+      });
+    }
+  },
+  async shutdown() {
+    // Cloud Run Jobs are stateless — no persistent connections to clean up
+  },
 };
