@@ -191,6 +191,212 @@ describe("SentryWebhookProvider", () => {
       );
       expect(ctx!.sender).toBe("application");
     });
+
+    it("uses 'unknown' sender when actor has no name or type", () => {
+      const ctx = provider.parseEvent(
+        { "sentry-hook-resource": "issue" },
+        {
+          action: "created",
+          data: { issue: { title: "Test", project: { slug: "p" } } },
+          actor: {},
+        }
+      );
+      expect(ctx!.sender).toBe("unknown");
+    });
+
+    it("uses 'unknown' sender when actor is absent", () => {
+      const ctx = provider.parseEvent(
+        { "sentry-hook-resource": "issue" },
+        {
+          action: "created",
+          data: { issue: { title: "Test", project: { slug: "p" } } },
+        }
+      );
+      expect(ctx!.sender).toBe("unknown");
+    });
+
+    it("handles event_alert with missing data and event fields", () => {
+      const ctx = provider.parseEvent(
+        { "sentry-hook-resource": "event_alert" },
+        {
+          action: "triggered",
+          actor: { name: "Sentry" },
+          // No 'data' field at all
+        }
+      );
+      expect(ctx).not.toBeNull();
+      expect(ctx!.event).toBe("event_alert");
+      expect(ctx!.repo).toBe("");
+      // truncate(undefined) returns undefined, not ""
+      expect(ctx!.title).toBeUndefined();
+      expect(ctx!.url).toBeUndefined();
+      expect(ctx!.body).toBeUndefined();
+    });
+
+    it("handles metric_alert with no organization slug", () => {
+      const ctx = provider.parseEvent(
+        { "sentry-hook-resource": "metric_alert" },
+        {
+          action: "critical",
+          data: {
+            metric_alert: {
+              title: "High latency",
+              web_url: "https://sentry.io/alerts/999",
+              // No organization field
+            },
+          },
+          actor: { name: "Sentry" },
+        }
+      );
+      expect(ctx!.repo).toBe("");
+      expect(ctx!.title).toBe("High latency");
+    });
+
+    it("handles metric_alert with empty data", () => {
+      const ctx = provider.parseEvent(
+        { "sentry-hook-resource": "metric_alert" },
+        {
+          action: "resolved",
+          actor: { name: "Sentry" },
+          // No data
+        }
+      );
+      expect(ctx).not.toBeNull();
+      expect(ctx!.repo).toBe("");
+      // truncate(undefined) returns undefined
+      expect(ctx!.title).toBeUndefined();
+    });
+
+    it("handles issue without project slug", () => {
+      const ctx = provider.parseEvent(
+        { "sentry-hook-resource": "issue" },
+        {
+          action: "resolved",
+          data: {
+            issue: {
+              title: "Resolved issue",
+              web_url: "https://sentry.io/issues/333",
+              // No project field
+            },
+          },
+          actor: { name: "Alice" },
+        }
+      );
+      expect(ctx!.repo).toBe("");
+      expect(ctx!.title).toBe("Resolved issue");
+    });
+
+    it("handles issue without assignedTo", () => {
+      const ctx = provider.parseEvent(
+        { "sentry-hook-resource": "issue" },
+        {
+          action: "created",
+          data: {
+            issue: {
+              title: "Unassigned issue",
+              project: { slug: "backend" },
+              // No assignedTo
+            },
+          },
+          actor: { name: "Alice" },
+        }
+      );
+      expect(ctx!.assignee).toBeUndefined();
+    });
+
+    it("handles issue resource with missing data and issue fields", () => {
+      const ctx = provider.parseEvent(
+        { "sentry-hook-resource": "issue" },
+        {
+          action: "created",
+          actor: { name: "System" },
+          // No data field at all
+        }
+      );
+      expect(ctx).not.toBeNull();
+      expect(ctx!.repo).toBe("");
+      expect(ctx!.title).toBeUndefined();
+    });
+
+    it("handles error resource without project slug", () => {
+      const ctx = provider.parseEvent(
+        { "sentry-hook-resource": "error" },
+        {
+          action: "created",
+          data: {
+            error: {
+              title: "SyntaxError",
+              web_url: "https://sentry.io/errors/444",
+              message: "Unexpected token",
+              // No project field
+            },
+          },
+          actor: { name: "System" },
+        }
+      );
+      expect(ctx!.repo).toBe("");
+      expect(ctx!.title).toBe("SyntaxError");
+      expect(ctx!.body).toBe("Unexpected token");
+    });
+
+    it("handles comment with no issue project slug", () => {
+      const ctx = provider.parseEvent(
+        { "sentry-hook-resource": "comment" },
+        {
+          action: "created",
+          data: {
+            comment: { text: "LGTM" },
+            issue: {
+              title: "Bug report",
+              // No project field
+            },
+          },
+          actor: { name: "Bob" },
+        }
+      );
+      expect(ctx!.repo).toBe("");
+      expect(ctx!.comment).toBe("LGTM");
+    });
+
+    it("handles error resource with missing data and error fields", () => {
+      const ctx = provider.parseEvent(
+        { "sentry-hook-resource": "error" },
+        {
+          action: "created",
+          actor: { name: "System" },
+          // No data field
+        }
+      );
+      expect(ctx).not.toBeNull();
+      expect(ctx!.repo).toBe("");
+      expect(ctx!.title).toBeUndefined();
+    });
+
+    it("handles comment resource with missing data, comment and issue fields", () => {
+      const ctx = provider.parseEvent(
+        { "sentry-hook-resource": "comment" },
+        {
+          action: "created",
+          actor: { name: "System" },
+          // No data field
+        }
+      );
+      expect(ctx).not.toBeNull();
+      expect(ctx!.repo).toBe("");
+      expect(ctx!.comment).toBeUndefined();
+    });
+
+    it("handles unknown resource with no action (title falls back to resource)", () => {
+      const ctx = provider.parseEvent(
+        { "sentry-hook-resource": "deploy" },
+        {
+          // No action field
+          actor: { name: "CI" },
+        }
+      );
+      expect(ctx).not.toBeNull();
+      expect(ctx!.title).toBe("deploy");
+    });
   });
 
   describe("matchesFilter", () => {
