@@ -963,6 +963,70 @@ describe("stats routes", () => {
       expect(runningRows.every((r: any) => r.triggerType === "schedule")).toBe(true);
     });
 
+    it("enriches webhook rows with triggerSource and eventSummary from receipt details", async () => {
+      const stats = mockStatsStore();
+      // Return a webhook row with a webhookReceiptId
+      stats.queryTriggerHistory.mockReturnValue([
+        {
+          ts: 1000,
+          triggerType: "webhook",
+          triggerSource: null,
+          agentName: "reporter",
+          instanceId: "i-wh",
+          result: "completed",
+          webhookReceiptId: "receipt-1",
+          deadLetterReason: null,
+        },
+      ]);
+      // Return details for that receipt with source + eventSummary
+      stats.getWebhookDetailsBatch.mockReturnValue({
+        "receipt-1": { source: "github", eventSummary: "issues opened" },
+      });
+      const app = createApp(stats);
+
+      const res = await app.request("/api/stats/activity");
+      expect(res.status).toBe(200);
+      const data = await res.json();
+
+      const webhookRow = data.rows.find((r: any) => r.instanceId === "i-wh");
+      expect(webhookRow).toBeDefined();
+      // triggerSource should be set from d.source
+      expect(webhookRow.triggerSource).toBe("github");
+      // eventSummary should be set because it differs from source
+      expect(webhookRow.eventSummary).toBe("issues opened");
+    });
+
+    it("sets triggerSource but not eventSummary when eventSummary equals source", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([
+        {
+          ts: 1000,
+          triggerType: "webhook",
+          triggerSource: null,
+          agentName: "reporter",
+          instanceId: "i-wh2",
+          result: "completed",
+          webhookReceiptId: "receipt-2",
+          deadLetterReason: null,
+        },
+      ]);
+      // eventSummary equals source — should set triggerSource but NOT set eventSummary
+      stats.getWebhookDetailsBatch.mockReturnValue({
+        "receipt-2": { source: "github", eventSummary: "github" },
+      });
+      const app = createApp(stats);
+
+      const res = await app.request("/api/stats/activity");
+      expect(res.status).toBe(200);
+      const data = await res.json();
+
+      const webhookRow = data.rows.find((r: any) => r.instanceId === "i-wh2");
+      expect(webhookRow).toBeDefined();
+      expect(webhookRow.triggerSource).toBe("github");
+      // eventSummary should NOT be set since it equals source
+      expect(webhookRow.eventSummary).toBeUndefined();
+    });
+
     it("filters pending queue items by triggerType in activity endpoint (L222)", async () => {
       const stats = mockStatsStore();
       stats.queryTriggerHistory.mockReturnValue([]);
