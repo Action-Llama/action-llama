@@ -1852,14 +1852,17 @@ describe("Hetzner provisioning path", () => {
         .mockResolvedValueOnce("fsn1")
         .mockResolvedValueOnce("101");
 
-      let iteration = 0;
+      // Use a call counter to control mock behavior per-call, not per-iteration variable.
+      // This avoids the race condition where `iteration` is set before microtasks run.
+      let nodeVersionCallCount = 0;
       mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: any, cb: Function) => {
         const command = args[args.length - 1];
         if (command.includes("echo ok")) {
           cb(null, "ok\n", ""); // SSH always ready
         } else if (command.includes("node --version")) {
-          if (iteration === 0) {
-            // First iteration: node not ready
+          nodeVersionCallCount++;
+          if (nodeVersionCallCount === 1) {
+            // First call: node not ready (cloud-init still running)
             cb({ code: 1 }, "", "node: command not found");
           } else {
             cb(null, "v22.14.0\n", "");
@@ -1874,13 +1877,14 @@ describe("Hetzner provisioning path", () => {
 
       // After first iteration, the loop hits setTimeout(10_000).
       // Advance past the sleep so the second iteration can run.
-      iteration = 1;
       await vi.advanceTimersByTimeAsync(10_000);
 
       const result = await resultPromise;
 
       expect(result).not.toBeNull();
       expect(result?.provider).toBe("vps");
+      // Verify node --version was called at least twice (once failing, once succeeding)
+      expect(nodeVersionCallCount).toBeGreaterThanOrEqual(2);
     } finally {
       vi.useRealTimers();
     }
@@ -1905,6 +1909,7 @@ describe("Hetzner provisioning path", () => {
         .mockResolvedValueOnce("fsn1")
         .mockResolvedValueOnce("101");
 
+      // Use a call counter to ensure only the FIRST "echo ok" call fails.
       let sshEchoCallCount = 0;
       mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: any, cb: Function) => {
         const command = args[args.length - 1];
@@ -1932,6 +1937,8 @@ describe("Hetzner provisioning path", () => {
 
       expect(result).not.toBeNull();
       expect(result?.provider).toBe("vps");
+      // Verify echo ok was called at least twice (once failing, once succeeding)
+      expect(sshEchoCallCount).toBeGreaterThanOrEqual(2);
     } finally {
       vi.useRealTimers();
     }
