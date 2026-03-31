@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, appendFileSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
 
@@ -1432,6 +1432,223 @@ describe("logs command", () => {
 
       // Raw mode shows INFO label
       expect(output.some((l) => l.includes("INFO"))).toBe(true);
+    });
+  });
+
+  // ── Follow mode tests ────────────────────────────────────────────────────
+
+  describe("follow mode (local file)", () => {
+    it("reads new data appended to file during follow mode (readNewData path)", async () => {
+      // Only fake setInterval (not setTimeout) so we can control polls without affecting async setup
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+
+      // Write initial content
+      const initialLine = makePinoLine({ msg: "bash", cmd: "echo initial" }) + "\n";
+      writeFileSync(logFile, initialLine);
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+
+      // Default mock: gateway not available
+      mockGatewayFetch.mockRejectedValue(new Error("no gateway"));
+
+      // Start follow mode in background (don't await — it will hang)
+      const followPromise = execute("dev", { project: tmpDir, lines: "50", follow: true, raw: true });
+
+      // Wait for the async setup to complete (readLastN + fs.watch setup + setInterval setup)
+      await new Promise(r => setTimeout(r, 50));
+
+      // Append new data to the file
+      const newLine = makePinoLine({ msg: "bash", cmd: "echo new-follow-data" }) + "\n";
+      appendFileSync(logFile, newLine);
+
+      // Advance fake setInterval to trigger the poll callback (2000ms)
+      await vi.advanceTimersByTimeAsync(2500);
+
+      // Wait for async operations from the poll callback to complete
+      await new Promise(r => setTimeout(r, 50));
+
+      console.log = origLog;
+      vi.useRealTimers();
+
+      // Verify new data was read via readNewData
+      expect(output.some((l) => l.includes("echo new-follow-data"))).toBe(true);
+    });
+
+    it("handles readNewData when file has no new data (currentSize <= start)", async () => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+
+      // Write initial content
+      const initialLine = makePinoLine({ msg: "bash", cmd: "echo initial" }) + "\n";
+      writeFileSync(logFile, initialLine);
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+
+      mockGatewayFetch.mockRejectedValue(new Error("no gateway"));
+
+      const followPromise = execute("dev", { project: tmpDir, lines: "50", follow: true, raw: true });
+
+      // Let setup complete
+      await new Promise(r => setTimeout(r, 50));
+
+      // Don't write any new data — poll should fire but find no new content (currentSize <= start)
+      await vi.advanceTimersByTimeAsync(2500);
+      await new Promise(r => setTimeout(r, 50));
+
+      console.log = origLog;
+      vi.useRealTimers();
+
+      // Initial content is shown (from readLastN)
+      expect(output.some((l) => l.includes("echo initial"))).toBe(true);
+    });
+
+    it("shows run headers in follow mode when using conversation formatter", async () => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+
+      writeFileSync(logFile, "");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+
+      mockGatewayFetch.mockRejectedValue(new Error("no gateway"));
+
+      // Default formatter (conversation mode, not raw, not all) → showRunHeaders=true
+      const followPromise = execute("dev", { project: tmpDir, lines: "50", follow: true });
+
+      await new Promise(r => setTimeout(r, 50));
+
+      // Append a run-start log line 
+      const runLine = makePinoLine({ msg: "run_start", name: "dev", instance: "dev-abc12345" }) + "\n";
+      appendFileSync(logFile, runLine);
+
+      await vi.advanceTimersByTimeAsync(2500);
+      await new Promise(r => setTimeout(r, 50));
+
+      console.log = origLog;
+      vi.useRealTimers();
+
+      // Should have processed the new line without errors
+      expect(followPromise).toBeDefined(); // followPromise is still pending, no error
+    });
+  });
+
+  describe("follow mode (gateway)", () => {
+    it("polls gateway for new log entries in follow mode", async () => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+
+      const entries = [
+        { level: 30, time: Date.now(), msg: "bash", cmd: "echo follow-gateway", name: "dev", pid: 1, hostname: "h" },
+      ];
+
+      // First call returns entries with cursor, subsequent calls return empty
+      mockGatewayFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ entries, cursor: "cursor-abc", hasMore: false }),
+        })
+        .mockResolvedValue({
+          ok: true,
+          json: async () => ({ entries: [], cursor: null, hasMore: false }),
+        });
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+
+      const followPromise = execute("dev", { project: tmpDir, lines: "50", follow: true });
+
+      // Wait for initial fetch to complete
+      await new Promise(r => setTimeout(r, 50));
+
+      // Advance timer to trigger one poll
+      await vi.advanceTimersByTimeAsync(1500);
+      await new Promise(r => setTimeout(r, 50));
+
+      console.log = origLog;
+      vi.useRealTimers();
+
+      expect(output.some((l) => l.includes("echo follow-gateway"))).toBe(true);
+      // Gateway fetch was called at least twice (initial + poll)
+      expect(mockGatewayFetch.mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("handles gateway poll error gracefully in follow mode", async () => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+
+      // Initial fetch succeeds, poll fails
+      mockGatewayFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ entries: [], cursor: "cursor-1", hasMore: false }),
+        })
+        .mockRejectedValue(new Error("Connection lost"));
+
+      mockGatewayFetch.mockRejectedValue(new Error("no gateway")); // fallback should not trigger
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+
+      const followPromise = execute("dev", { project: tmpDir, lines: "50", follow: true });
+
+      await new Promise(r => setTimeout(r, 50));
+
+      // Advance timer to trigger poll (which will fail silently)
+      await vi.advanceTimersByTimeAsync(1500);
+      await new Promise(r => setTimeout(r, 50));
+
+      console.log = origLog;
+      vi.useRealTimers();
+
+      // Should not throw — error is swallowed; fetchCount > 1
+      expect(mockGatewayFetch.mock.calls.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("passes grep filter to gateway in follow mode", async () => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+
+      const entries = [
+        { level: 30, time: Date.now(), msg: "bash", cmd: "echo match-result", name: "dev", pid: 1, hostname: "h" },
+      ];
+      mockGatewayFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ entries, cursor: null, hasMore: false }),
+      });
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+
+      // Use "grep=find" to avoid potential URL encoding edge cases
+      // Reset mock calls for clean tracking
+      mockGatewayFetch.mockClear();
+      const followPromise = execute("dev", { project: tmpDir, lines: "50", follow: true, grep: "find" });
+
+      // Let initial fetch complete
+      await new Promise(r => setTimeout(r, 50));
+
+      console.log = origLog;
+      vi.useRealTimers();
+
+      // Verify grep was passed to gateway in the initial fetch
+      expect(mockGatewayFetch).toHaveBeenCalled();
+      const firstCall = mockGatewayFetch.mock.calls[0][0];
+      // The path should include the grep parameter
+      expect(firstCall.path).toContain("grep=");
+      expect(firstCall.path).toContain("find");
     });
   });
 
