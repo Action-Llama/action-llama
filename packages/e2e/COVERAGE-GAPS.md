@@ -79,3 +79,4 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Stats/jobs pagination and filtering — ?limit+?offset pagination, ?since=<future> returns empty, empty store returns valid shape, dead-letter entries excluded from jobs (stats-jobs-pagination.test.ts)
 - [x] Scheduler logs grep and lines parameters — ?grep regex filtering on /api/logs/scheduler, invalid ?grep returns 400, ?lines limits count, default response shape always present (logs-scheduler-filters.test.ts)
 - [x] /locks/list endpoint — container acquires lock then list shows it, release empties list, missing secret returns 400, invalid secret returns 403 (locks-list-endpoint.test.ts)
+- [x] Signal route error paths — POST /signals/rerun|status|trigger|return: missing secret → 400, invalid secret → 403, invalid JSON body → 400 (signals-error-paths.test.ts)
