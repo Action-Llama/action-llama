@@ -232,5 +232,77 @@ describe.skipIf(!DOCKER)(
       const body = await res.json() as { error: string };
       expect(body.error).toContain("JSON");
     });
+
+    it("POST /signals/trigger with present secret but missing targetAgent returns 400", async () => {
+      // The /signals/trigger route validates: secret → targetAgent → context → registry lookup.
+      // A non-empty secret string passes the first check; missing targetAgent → 400 before
+      // the 403 registry lookup. This tests the specific "missing targetAgent" 400 branch.
+      harness = await IntegrationHarness.create({
+        agents: [
+          {
+            name: "sig-trigger-no-target",
+            schedule: "0 0 31 2 *",
+            testScript: "#!/bin/sh\nexit 0\n",
+          },
+        ],
+      });
+
+      await harness.start();
+
+      const res = await signalPost(harness, "/signals/trigger", {
+        secret: "some-secret-string",
+        // targetAgent is missing — should hit missing targetAgent 400 before registry 403
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json() as { error: string };
+      expect(body.error).toContain("targetAgent");
+    });
+
+    it("POST /signals/trigger with present secret+targetAgent but missing context returns 400", async () => {
+      // secret + targetAgent present → reaches context validation → 400 "missing context"
+      harness = await IntegrationHarness.create({
+        agents: [
+          {
+            name: "sig-trigger-no-context",
+            schedule: "0 0 31 2 *",
+            testScript: "#!/bin/sh\nexit 0\n",
+          },
+        ],
+      });
+
+      await harness.start();
+
+      const res = await signalPost(harness, "/signals/trigger", {
+        secret: "some-secret-string",
+        targetAgent: "some-agent",
+        // context is missing
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json() as { error: string };
+      expect(body.error).toContain("context");
+    });
+
+    it("POST /signals/return with present secret but missing value returns 400", async () => {
+      // secret (non-empty string) passes first check; missing value → 400 before registry 403.
+      harness = await IntegrationHarness.create({
+        agents: [
+          {
+            name: "sig-return-no-value",
+            schedule: "0 0 31 2 *",
+            testScript: "#!/bin/sh\nexit 0\n",
+          },
+        ],
+      });
+
+      await harness.start();
+
+      const res = await signalPost(harness, "/signals/return", {
+        secret: "some-secret-string",
+        // value is missing — should hit missing value 400 before registry 403
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json() as { error: string };
+      expect(body.error).toContain("value");
+    });
   },
 );
