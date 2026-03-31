@@ -72,3 +72,4 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] run:start event correlation — verify run:start event's instanceId matches trigger API response instanceId, trigger field is 'manual' (scheduler.test.ts)
 - [x] run:end event exitCode — verify run:end event includes exitCode matching the container's exit code for error exits (signals.test.ts)
 - [x] Dashboard instance detail API — GET /api/dashboard/agents/:name/instances/:id returns run details, null for unknown instanceId; GET /api/dashboard/triggers/:instanceId returns trigger info for manual runs, 404 for unknown instanceId (dashboard-instance-api.test.ts)
+- [x] Scheduler rejects agent with no schedule and no webhooks — validateAgentConfig() throws ConfigError on startup (scheduler-validation.test.ts)
