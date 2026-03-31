@@ -662,4 +662,46 @@ describe("StatsStore", () => {
     expect(store.countTriggerHistory(0, false, "reviewer", "webhook")).toBe(0);
     store.close();
   });
+
+  it("getWebhookSourcesBatch returns empty object for empty ids array", () => {
+    const store = createStore();
+    const result = store.getWebhookSourcesBatch([]);
+    expect(result).toEqual({});
+    store.close();
+  });
+
+  it("getWebhookSourcesBatch returns id→source mapping for existing receipts", () => {
+    const store = createStore();
+    store.recordWebhookReceipt(makeReceipt({ id: "batch-1", source: "github" }));
+    store.recordWebhookReceipt(makeReceipt({ id: "batch-2", source: "slack" }));
+    store.recordWebhookReceipt(makeReceipt({ id: "batch-3", source: "linear" }));
+
+    const result = store.getWebhookSourcesBatch(["batch-1", "batch-2"]);
+    expect(result).toEqual({
+      "batch-1": "github",
+      "batch-2": "slack",
+    });
+    // batch-3 was not requested
+    expect(result["batch-3"]).toBeUndefined();
+    store.close();
+  });
+
+  it("getWebhookSourcesBatch returns empty object when none of the ids exist", () => {
+    const store = createStore();
+    store.recordWebhookReceipt(makeReceipt({ id: "existing-1", source: "github" }));
+
+    const result = store.getWebhookSourcesBatch(["nonexistent-a", "nonexistent-b"]);
+    expect(result).toEqual({});
+    store.close();
+  });
+
+  it("getWebhookSourcesBatch handles single id correctly", () => {
+    const store = createStore();
+    store.recordWebhookReceipt(makeReceipt({ id: "single-batch", source: "sentry" }));
+
+    const result = store.getWebhookSourcesBatch(["single-batch"]);
+    expect(result["single-batch"]).toBe("sentry");
+    expect(Object.keys(result)).toHaveLength(1);
+    store.close();
+  });
 });

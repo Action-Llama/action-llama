@@ -8,6 +8,7 @@ function mockStatsStore() {
     countRunsByAgent: vi.fn().mockReturnValue(0),
     queryRunByInstanceId: vi.fn().mockReturnValue(undefined),
     getWebhookReceipt: vi.fn().mockReturnValue(undefined),
+    getWebhookSourcesBatch: vi.fn().mockReturnValue({}),
     queryTriggerHistory: vi.fn().mockReturnValue([]),
     countTriggerHistory: vi.fn().mockReturnValue(0),
   } as any;
@@ -564,7 +565,7 @@ describe("stats routes", () => {
         workQueue: {
           size: vi.fn().mockReturnValue(1),
           peek: vi.fn().mockReturnValue([
-            { context: { type: "webhook", source: "github" }, receivedAt: new Date(3000) },
+            { context: { type: "webhook", context: { source: "github", event: "issues" } }, receivedAt: new Date(3000) },
           ]),
         },
       };
@@ -635,7 +636,7 @@ describe("stats routes", () => {
       );
     });
 
-    it("sorts all rows by ts descending", async () => {
+    it("sorts rows by status group (pending → running → rest) then ts descending", async () => {
       const stats = mockStatsStore();
       stats.queryTriggerHistory.mockReturnValue([
         { ts: 1000, triggerType: "schedule", agentName: "reporter", instanceId: "i1", result: "completed" },
@@ -650,10 +651,44 @@ describe("stats routes", () => {
       const res = await app.request("/api/stats/activity");
       const data = await res.json();
 
-      // Rows should be sorted newest first: ts=2000 (running), ts=1000 (completed), ts=300 (error)
+      // Rows should be sorted by group then ts: running (ts=2000), completed (ts=1000), error (ts=300)
+      expect(data.rows[0].result).toBe("running");
       expect(data.rows[0].ts).toBe(2000);
+      expect(data.rows[1].result).toBe("completed");
       expect(data.rows[1].ts).toBe(1000);
+      expect(data.rows[2].result).toBe("error");
       expect(data.rows[2].ts).toBe(300);
+    });
+
+    it("sorts pending rows before running, and running before completed/error", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([
+        { ts: 5000, triggerType: "schedule", agentName: "reporter", instanceId: "i-completed", result: "completed" },
+        { ts: 1000, triggerType: "webhook", agentName: "reporter", instanceId: "i-error", result: "error" },
+      ]);
+
+      const tracker = mockStatusTracker([
+        { id: "i-running", agentName: "reporter", status: "running", startedAt: new Date(3000).toISOString(), trigger: "manual" },
+      ], [
+        { name: "reporter" },
+      ]);
+
+      const controlDeps = {
+        workQueue: {
+          size: vi.fn().mockReturnValue(1),
+          peek: vi.fn().mockReturnValue([
+            { context: { type: "webhook", source: "github" }, receivedAt: new Date(2000) },
+          ]),
+        },
+      };
+
+      const app = createApp(stats, tracker, controlDeps);
+      const res = await app.request("/api/stats/activity");
+      const data = await res.json();
+
+      // Expected order: pending (ts=2000), running (ts=3000), completed (ts=5000), error (ts=1000)
+      // pending and running come before completed/error regardless of their ts values
+      expect(data.rows.map((r: any) => r.result)).toEqual(["pending", "running", "completed", "error"]);
     });
 
     it("paginates results with limit and offset", async () => {
@@ -937,7 +972,7 @@ describe("stats routes", () => {
         workQueue: {
           size: vi.fn().mockReturnValue(2),
           peek: vi.fn().mockReturnValue([
-            { context: { type: "webhook", source: "github" }, receivedAt: new Date(1000) },
+            { context: { type: "webhook", context: { source: "github", event: "issues" } }, receivedAt: new Date(1000) },
             { context: { type: "schedule" }, receivedAt: new Date(2000) },
           ]),
         },

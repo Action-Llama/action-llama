@@ -166,6 +166,28 @@ describe.skipIf(!DOCKER)("integration: control API", { timeout: 180_000 }, () =>
     expect(runEnd).toBeTruthy();
   });
 
+  it("POST /control/agents/:name/kill for nonexistent agent name returns 404", async () => {
+    // When the agent name does not exist in the scheduler's runner pools,
+    // killAgent returns null → the route returns 404.
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "kill-missing-agent-host",
+          schedule: "0 0 31 2 *",
+          testScript: "#!/bin/sh\nexit 0\n",
+        },
+      ],
+    });
+
+    await harness.start();
+
+    // Try to kill a completely nonexistent agent
+    const res = await harness.controlAPI("POST", "/agents/nonexistent-agent-xyz/kill");
+    expect(res.status).toBe(404);
+    const body = await res.json() as { error: string };
+    expect(body.error).toContain("nonexistent-agent-xyz");
+  });
+
   it("kill nonexistent instanceId returns 404", async () => {
     harness = await IntegrationHarness.create({
       agents: [

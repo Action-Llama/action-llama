@@ -173,5 +173,85 @@ describe.skipIf(!DOCKER)(
       const body = await res.json() as { error: string };
       expect(body.error).toContain("secret");
     });
+
+    it("POST /calls with present secret but missing targetAgent returns 400", async () => {
+      // The /calls route validates in order: secret → targetAgent → context → registry lookup.
+      // A non-empty secret string that is not in the registry still passes the
+      // first check, so we reach the "missing targetAgent" branch (400) before the
+      // 403 registry check.
+      harness = await IntegrationHarness.create({
+        agents: [
+          {
+            name: "calls-err-no-target",
+            schedule: "0 0 31 2 *",
+            testScript: "#!/bin/sh\nexit 0\n",
+          },
+        ],
+      });
+      await harness.start();
+
+      const res = await callsPost(harness, {
+        secret: "some-secret-string",
+        context: "{}",
+        // targetAgent is missing
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json() as { error: string };
+      expect(body.error).toContain("targetAgent");
+    });
+
+    it("POST /calls with present secret and targetAgent but missing context returns 400", async () => {
+      // secret (non-empty string) + targetAgent present → reaches the context validation.
+      // context is undefined → 400 "missing context" before registry lookup.
+      harness = await IntegrationHarness.create({
+        agents: [
+          {
+            name: "calls-err-no-context",
+            schedule: "0 0 31 2 *",
+            testScript: "#!/bin/sh\nexit 0\n",
+          },
+        ],
+      });
+      await harness.start();
+
+      const res = await callsPost(harness, {
+        secret: "some-secret-string",
+        targetAgent: "some-agent",
+        // context is missing
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json() as { error: string };
+      expect(body.error).toContain("context");
+    });
+
+    it("GET /calls/:callId with valid secret but unknown callId returns 404", async () => {
+      // A running container with a valid secret queries an unknown callId.
+      // The call store returns null → 404 "call not found".
+      harness = await IntegrationHarness.create({
+        agents: [
+          {
+            name: "calls-get-unknown-id",
+            schedule: "0 0 31 2 *",
+            testScript: [
+              "#!/bin/sh",
+              // Query an unknown callId using the container's own secret
+              "set +e",
+              'RESULT=$(curl -s "$GATEWAY_URL/calls/nonexistent-call-id-xyz?secret=$SHUTDOWN_SECRET")',
+              "set -e",
+              'STATUS=$(echo "$RESULT" | jq -r .error)',
+              // The route returns {"error":"call not found"} with 404
+              'test "$STATUS" = "call not found" || { echo "unexpected response: $RESULT"; exit 1; }',
+              'echo "calls-get-unknown-id: got expected call not found OK"',
+              "exit 0",
+            ].join("\n"),
+          },
+        ],
+      });
+      await harness.start();
+
+      await harness.triggerAgent("calls-get-unknown-id");
+      const run = await harness.waitForRunResult("calls-get-unknown-id", 60_000);
+      expect(run.result).toBe("completed");
+    });
   },
 );

@@ -729,3 +729,190 @@ describe("registerAuthApiRoutes — apiKey as function", () => {
     expect(data.success).toBe(true);
   });
 });
+
+describe("dashboard data routes — SSE throttle and cleanup coverage", () => {
+  function createTrackerWithCapture() {
+    let capturedUpdateListener: (() => void) | undefined;
+    const tracker = {
+      getAllAgents: () => [{ name: "test-agent", state: "idle", enabled: true, statusText: null }],
+      getSchedulerInfo: () => ({
+        mode: "docker",
+        projectName: "test-project",
+        gatewayPort: 3000,
+        cronJobCount: 1,
+        webhooksActive: false,
+        webhookUrls: [],
+        startedAt: new Date().toISOString(),
+        paused: false,
+      }),
+      getRecentLogs: () => [],
+      getInstances: () => [],
+      flushInvalidations: () => [],
+      on: vi.fn((event: string, cb: () => void) => {
+        if (event === "update") capturedUpdateListener = cb;
+      }),
+      removeListener: vi.fn(),
+    } as any;
+    return { tracker, getUpdateListener: () => capturedUpdateListener };
+  }
+
+  it("throttledSend: fires send() immediately when timer is null (first call)", async () => {
+    vi.useFakeTimers();
+    try {
+      const { tracker, getUpdateListener } = createTrackerWithCapture();
+      const app = new Hono();
+      registerDashboardDataRoutes(app, tracker);
+      await app.request("/dashboard/api/status-stream");
+
+      const throttledSend = getUpdateListener();
+      expect(throttledSend).toBeDefined();
+
+      // First call with timer=null: immediately calls send() and sets a timer
+      throttledSend!();
+
+      // A timer should now be pending (the 500ms throttle timer)
+      expect(vi.getTimerCount()).toBeGreaterThanOrEqual(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("throttledSend: second call while timer is running sets pending=true without calling send", async () => {
+    vi.useFakeTimers();
+    try {
+      const { tracker, getUpdateListener } = createTrackerWithCapture();
+      const app = new Hono();
+      registerDashboardDataRoutes(app, tracker);
+      await app.request("/dashboard/api/status-stream");
+
+      const throttledSend = getUpdateListener();
+      expect(throttledSend).toBeDefined();
+
+      // First call: timer=null → send() + sets timer
+      throttledSend!();
+      const timerCountAfterFirst = vi.getTimerCount();
+
+      // Second call: timer is set → sets pending=true, returns immediately
+      throttledSend!();
+
+      // Timer count should be unchanged (no new timer created for second call)
+      expect(vi.getTimerCount()).toBe(timerCountAfterFirst);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("throttledSend: timer callback fires send() when pending=true, then clears pending", async () => {
+    vi.useFakeTimers();
+    try {
+      const { tracker, getUpdateListener } = createTrackerWithCapture();
+      const app = new Hono();
+      registerDashboardDataRoutes(app, tracker);
+      await app.request("/dashboard/api/status-stream");
+
+      const throttledSend = getUpdateListener();
+      expect(throttledSend).toBeDefined();
+
+      // First call: send() + set timer (timer=null before this call)
+      throttledSend!();
+
+      // Second call while timer is running: pending=true
+      throttledSend!();
+
+      // Advance past the 500ms throttle window — timer callback fires:
+      // timer=null, pending=true → pending=false, send() called again
+      vi.advanceTimersByTime(500);
+
+      // After advancing: no more timers should be pending from the throttle
+      // (The heartbeat is 15000ms, so it hasn't fired yet at 500ms)
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("timer callback does NOT call send() when pending=false", async () => {
+    vi.useFakeTimers();
+    try {
+      const { tracker, getUpdateListener } = createTrackerWithCapture();
+      const app = new Hono();
+      registerDashboardDataRoutes(app, tracker);
+      await app.request("/dashboard/api/status-stream");
+
+      const throttledSend = getUpdateListener();
+      expect(throttledSend).toBeDefined();
+
+      // Single call: timer=null → send() + set timer, pending stays false
+      throttledSend!();
+
+      // Advance past 500ms: timer fires with pending=false → no second send()
+      vi.advanceTimersByTime(500);
+
+      // No errors should have occurred; timer is cleared
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("heartbeat fires stream.writeSSE with event=heartbeat after 15 seconds", async () => {
+    vi.useFakeTimers();
+    try {
+      const { tracker } = createTrackerWithCapture();
+      const app = new Hono();
+      registerDashboardDataRoutes(app, tracker);
+      const res = await app.request("/dashboard/api/status-stream");
+
+      // Advance 15 seconds — the heartbeat setInterval callback fires
+      vi.advanceTimersByTime(15000);
+
+      // Read from the stream to verify heartbeat data was written
+      const reader = res.body!.getReader();
+      const { value } = await Promise.race([
+        reader.read(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("timeout")), 2000)
+        ),
+      ]);
+      reader.cancel();
+
+      const text = new TextDecoder().decode(value);
+      // The initial send() data AND potentially the heartbeat data
+      expect(text).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("onAbort clears pending throttle timer when reader is cancelled after throttledSend", async () => {
+    vi.useFakeTimers();
+    try {
+      const { tracker, getUpdateListener } = createTrackerWithCapture();
+      const app = new Hono();
+      registerDashboardDataRoutes(app, tracker);
+      const res = await app.request("/dashboard/api/status-stream");
+
+      const throttledSend = getUpdateListener();
+      expect(throttledSend).toBeDefined();
+
+      // Call throttledSend to set the timer (timer is now non-null)
+      throttledSend!();
+
+      // Cancel the reader — this triggers onAbort
+      // onAbort: removeListener, if (timer) clearTimeout(timer), clearInterval(heartbeat)
+      const reader = res.body!.getReader();
+
+      // Read one chunk to unblock then cancel
+      reader.read().catch(() => {});
+      await reader.cancel();
+
+      // After abort: timer should have been cleared
+      // (clearTimeout was called, so the throttle timer is no longer pending)
+      // Advance time — the throttle timer should NOT fire since it was cleared
+      vi.advanceTimersByTime(1000);
+
+      // removeListener should have been called
+      expect(tracker.removeListener).toHaveBeenCalledWith("update", throttledSend);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

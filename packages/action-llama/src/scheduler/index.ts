@@ -106,7 +106,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
           if (result.action === "dispatched") {
             logger.info({ agent: config.name, event: context.event, action: context.action }, "webhook triggering agent");
             const prompt = makeWebhookPrompt(config, context, state.schedulerCtx);
-            executeRun(result.runner, prompt, { type: 'webhook', source: context.event, receiptId: context.receiptId }, config.name, 0, state.schedulerCtx)
+            executeRun(result.runner, prompt, { type: 'webhook', source: context.source, receiptId: context.receiptId }, config.name, 0, state.schedulerCtx)
               .then(() => drainQueues(state.schedulerCtx!))
               .catch((err) => logger.error({ err, agent: config.name }, "webhook run failed"));
             return true;

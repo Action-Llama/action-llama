@@ -207,7 +207,7 @@ export function registerStatsRoutes(
           if (ctx && typeof ctx === "object") {
             if (ctx.type === "webhook") {
               triggerType = "webhook";
-              triggerSource = ctx.source ?? null;
+              triggerSource = ctx.context?.source ?? null;
             } else if (ctx.type === "schedule") {
               triggerType = "schedule";
             } else if (ctx.type === "agent-trigger" || ctx.type === "agent") {
@@ -234,8 +234,29 @@ export function registerStatsRoutes(
       }
     }
 
-    // Sort all rows by ts descending
-    allRows.sort((a, b) => b.ts - a.ts);
+    // Sort rows by status group (pending → running → rest), then by ts descending within each group
+    const statusPriority: Record<string, number> = { pending: 0, running: 1 };
+    allRows.sort((a, b) => {
+      const pa = statusPriority[a.result] ?? 2;
+      const pb = statusPriority[b.result] ?? 2;
+      if (pa !== pb) return pa - pb;
+      return b.ts - a.ts;
+    });
+
+    // Enrich webhook rows with provider name from receipts (handles pre-fix historical data)
+    if (statsStore) {
+      const receiptIds = allRows
+        .filter((r: any) => r.triggerType === "webhook" && r.webhookReceiptId)
+        .map((r: any) => r.webhookReceiptId as string);
+      if (receiptIds.length > 0) {
+        const sources = statsStore.getWebhookSourcesBatch(receiptIds);
+        for (const row of allRows) {
+          if (row.webhookReceiptId && sources[row.webhookReceiptId]) {
+            row.triggerSource = sources[row.webhookReceiptId];
+          }
+        }
+      }
+    }
 
     // Apply status filter (supports comma-separated values, e.g. "pending,running,completed")
     let filtered = allRows;

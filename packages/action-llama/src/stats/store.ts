@@ -303,6 +303,16 @@ export class StatsStore {
     return row ? this.mapReceipt(row) : undefined;
   }
 
+  getWebhookSourcesBatch(ids: string[]): Record<string, string> {
+    if (ids.length === 0) return {};
+    const client = (this.db as any).$client;
+    const placeholders = ids.map(() => "?").join(",");
+    const rows = client.prepare(
+      `SELECT id, source FROM webhook_receipts WHERE id IN (${placeholders})`
+    ).all(...ids) as { id: string; source: string }[];
+    return Object.fromEntries(rows.map((r) => [r.id, r.source]));
+  }
+
   getWebhookReceipt(id: string): WebhookReceipt | undefined {
     const row = (this.db as any).$client
       .prepare("SELECT * FROM webhook_receipts WHERE id = ? LIMIT 1")

@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { EventSourcedStatsStore } from "../../src/stats/event-store.js";
 import { createPersistenceStore, type PersistenceStore } from "../../src/shared/persistence/index.js";
 import type { RunRecord, CallEdgeRecord } from "../../src/stats/store.js";
+import { createEvent, EventTypes } from "../../src/shared/persistence/event-store.js";
 
 function makeRun(overrides: Partial<RunRecord> = {}): RunRecord {
   return {
@@ -506,6 +507,147 @@ describe("EventSourcedStatsStore", () => {
       const graph = await store.queryCallGraph();
       // Should not throw
       expect(Array.isArray(graph)).toBe(true);
+    });
+
+    it("skips CALL_COMPLETED when callerAgent:targetAgent key is not in callGraph (stmt 426)", async () => {
+      // Append a CALL_COMPLETED event with callerAgent and targetAgent set,
+      // but without any prior CALL_INITIATED event for this pair.
+      // This causes callGraph.get(key) to return undefined → if (!stats) continue;
+      await persistence.events.stream("stats").append(
+        createEvent(EventTypes.CALL_COMPLETED, {
+          callerAgent: "orphan-caller",
+          targetAgent: "orphan-target",
+          durationMs: 500,
+        })
+      );
+
+      const graph = await store.queryCallGraph();
+      // The orphan completion is skipped — no edge should exist for this pair
+      const orphanEdge = graph.find(
+        (e: any) => e.callerAgent === "orphan-caller" && e.targetAgent === "orphan-target"
+      );
+      expect(orphanEdge).toBeUndefined();
+      expect(Array.isArray(graph)).toBe(true);
+    });
+  });
+
+  describe("queryAgentSummary — sort comparator coverage", () => {
+    it("invokes sort comparator when 2+ agents exist (covers b.totalRuns - a.totalRuns)", async () => {
+      // Record 3 runs for "heavy-agent" and 1 for "light-agent"
+      await store.recordRun(makeRun({ agentName: "heavy-agent", result: "completed" }));
+      await store.recordRun(makeRun({ agentName: "heavy-agent", result: "completed" }));
+      await store.recordRun(makeRun({ agentName: "heavy-agent", result: "completed" }));
+      await store.recordRun(makeRun({ agentName: "light-agent", result: "completed" }));
+
+      // Query without agent filter to get all summaries — sort comparator is invoked
+      const summaries = await store.queryAgentSummary();
+
+      expect(summaries.length).toBeGreaterThanOrEqual(2);
+
+      const heavyIdx = summaries.findIndex((s: any) => s.agentName === "heavy-agent");
+      const lightIdx = summaries.findIndex((s: any) => s.agentName === "light-agent");
+
+      // heavy-agent (3 runs) should appear before light-agent (1 run) — sorted descending
+      expect(heavyIdx).toBeGreaterThanOrEqual(0);
+      expect(lightIdx).toBeGreaterThanOrEqual(0);
+      expect(heavyIdx).toBeLessThan(lightIdx);
+      expect(summaries[heavyIdx].totalRuns).toBe(3);
+      expect(summaries[lightIdx].totalRuns).toBe(1);
+    });
+  });
+
+  describe("queryRuns — agent filter skips mismatched agentName in completion events", () => {
+    it("skips RUN_COMPLETED event when its agentName differs from query.agent (inconsistent data)", async () => {
+      // Create a scenario where a RUN_STARTED event is for "dev" but the paired
+      // RUN_COMPLETED event has agentName "reviewer" — simulating inconsistent data.
+      // The filter at line 172 should skip the completion event.
+      const instanceId = `inconsistent-completed-${Date.now()}`;
+
+      await persistence.events.stream("stats").append(
+        createEvent(EventTypes.RUN_STARTED, {
+          instanceId,
+          agentName: "dev",
+          triggerType: "manual",
+          triggerSource: null,
+          startedAt: Date.now(),
+        })
+      );
+
+      await persistence.events.stream("stats").append(
+        createEvent(EventTypes.RUN_COMPLETED, {
+          instanceId,
+          agentName: "reviewer", // different agent — inconsistent!
+          result: "completed",
+          exitCode: 0,
+          startedAt: Date.now(),
+          durationMs: 1000,
+          inputTokens: 100,
+          outputTokens: 50,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          totalTokens: 150,
+          costUsd: 0.001,
+          turnCount: 1,
+          errorMessage: null,
+          preHookMs: null,
+          postHookMs: null,
+        })
+      );
+
+      // Query for "dev": the start event is included in runStartEvents,
+      // but the completion agentName ("reviewer") != query.agent ("dev") → continue (line 172)
+      const runs = await store.queryRuns({ agent: "dev" });
+
+      // The inconsistent instance should not appear in the results
+      const inconsistentRun = runs.find((r: any) => r.instance_id === instanceId);
+      expect(inconsistentRun).toBeUndefined();
+      expect(Array.isArray(runs)).toBe(true);
+    });
+
+    it("skips RUN_FAILED event when its agentName differs from query.agent (inconsistent data)", async () => {
+      // Same scenario but with a RUN_FAILED event having a mismatched agent.
+      // The filter at line 200 should skip the failure event.
+      const instanceId = `inconsistent-failed-${Date.now()}`;
+
+      await persistence.events.stream("stats").append(
+        createEvent(EventTypes.RUN_STARTED, {
+          instanceId,
+          agentName: "dev",
+          triggerType: "manual",
+          triggerSource: null,
+          startedAt: Date.now(),
+        })
+      );
+
+      await persistence.events.stream("stats").append(
+        createEvent(EventTypes.RUN_FAILED, {
+          instanceId,
+          agentName: "reviewer", // different agent — inconsistent!
+          result: "error",
+          exitCode: 1,
+          startedAt: Date.now(),
+          durationMs: 500,
+          inputTokens: 50,
+          outputTokens: 10,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          totalTokens: 60,
+          costUsd: 0,
+          turnCount: 1,
+          errorMessage: "timeout",
+          preHookMs: null,
+          postHookMs: null,
+        })
+      );
+
+      // Query for "dev": the start event is included, but the failure agentName
+      // ("reviewer") != query.agent ("dev") → continue (line 200)
+      const runs = await store.queryRuns({ agent: "dev" });
+
+      // The inconsistent instance should not appear
+      const inconsistentRun = runs.find((r: any) => r.instance_id === instanceId);
+      expect(inconsistentRun).toBeUndefined();
+      expect(Array.isArray(runs)).toBe(true);
     });
   });
 });
