@@ -329,6 +329,7 @@ describe("runSessionLoop", () => {
     await runSessionLoop("Test prompt", makeOpts({ log }));
 
     // message_start should have been logged as debug
+
     expect(log).toHaveBeenCalledWith(
       "debug", "event",
       expect.objectContaining({ type: "message_start", role: "assistant" })
@@ -348,5 +349,53 @@ describe("runSessionLoop", () => {
       "error", "session error",
       expect.objectContaining({ error: expect.stringContaining("Something went wrong") })
     );
+  });
+
+  it("logs accumulated assistant text when message_end fires after text_delta", async () => {
+    const log = vi.fn();
+    mockPrompt.mockResolvedValue(undefined);
+    mockSubscribe.mockImplementation((callback: Function) => {
+      // Accumulate text via text_delta BEFORE message_end
+      callback({
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", delta: "Hello from assistant" },
+      });
+      callback({
+        type: "message_end",
+        role: "assistant",
+        content: [],
+        stopReason: "end_turn",
+      });
+    });
+
+    await runSessionLoop("Test prompt", makeOpts({ log }));
+
+    // Should log "assistant" info with the accumulated text
+    expect(log).toHaveBeenCalledWith("info", "assistant", { text: "Hello from assistant" });
+  });
+
+  it("logs non-bash tool start as debug tool start", async () => {
+    const log = vi.fn();
+    mockPrompt.mockResolvedValue(undefined);
+    mockSubscribe.mockImplementation((callback: Function) => {
+      callback({
+        type: "tool_execution_start",
+        toolName: "web_search",
+        toolCallId: "call-search",
+        args: { query: "latest news" },
+      });
+      callback({
+        type: "tool_execution_end",
+        toolName: "web_search",
+        toolCallId: "call-search",
+        result: "some results",
+        isError: false,
+      });
+    });
+
+    await runSessionLoop("Test", makeOpts({ log }));
+
+    // Should log as debug "tool start" (not "bash")
+    expect(log).toHaveBeenCalledWith("debug", "tool start", { tool: "web_search" });
   });
 });
