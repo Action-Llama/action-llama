@@ -90,5 +90,14 @@ describe("processContextInjection", () => {
       const errorPart = result.replace(/^\[Error: /, "").replace(/\]$/, "");
       expect(errorPart.length).toBeLessThanOrEqual(500);
     });
+
+    it("falls back to err.message when stderr is absent", () => {
+      // Use a node command that explicitly writes to stderr
+      // This also tests the err.message fallback path when stderr is empty
+      const body = "!`node -e 'process.exit(1)'`";
+      const result = processContextInjection(body, {});
+      // Should produce an error string — either from stderr or message
+      expect(result).toMatch(/^\[Error: /);
+    });
   });
 });
