@@ -164,4 +164,30 @@ describe.skipIf(!DOCKER)("integration: logs API", { timeout: 180_000 }, () => {
       expect(Array.isArray(body2.entries)).toBe(true);
     }
   });
+
+  it("logs endpoint returns 400 for invalid (malformed) cursor", async () => {
+    // The cursor parameter must be a valid base64url-encoded string in the
+    // format "date:offsets". If the cursor cannot be decoded correctly,
+    // the endpoint should return 400 with { error: "Invalid cursor" }.
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "invalid-cursor-agent",
+          schedule: "0 0 31 2 *",
+          testScript: "#!/bin/sh\nexit 0\n",
+        },
+      ],
+    });
+
+    await harness.start();
+
+    // Send an invalid cursor that cannot be decoded to the expected format
+    // "not-a-valid-cursor" is base64url characters but decodes to garbage
+    const res = await logsAPI(harness, "/api/logs/scheduler?cursor=not-a-valid-cursor-format");
+    expect(res.status).toBe(400);
+
+    const body = await res.json();
+    expect(body).toHaveProperty("error");
+    expect(body.error).toContain("cursor");
+  });
 });
