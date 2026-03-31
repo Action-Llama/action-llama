@@ -611,6 +611,91 @@ describe("webhook routes – additional paths", () => {
   });
 });
 
+describe("webhook routes – x-github-event header parsing", () => {
+  function buildApp(opts: { statsStore?: any; bindings?: Array<{ agentName: string; trigger: (ctx: WebhookContext) => boolean }> } = {}) {
+    const app = new Hono();
+    const logger = mockLogger();
+    const registry = new WebhookRegistry(logger);
+    registry.registerProvider(new TestProvider());
+    for (const binding of opts.bindings ?? []) {
+      registry.addBinding({ agentName: binding.agentName, type: "test", trigger: binding.trigger });
+    }
+    registerWebhookRoutes(app, registry, {}, {}, logger, undefined, opts.statsStore);
+    return { app };
+  }
+
+  it("uses x-github-event header as eventSummary when body has no action field", async () => {
+    const stats = mockStatsStore();
+    const { app } = buildApp({
+      statsStore: stats,
+      bindings: [{ agentName: "reporter", trigger: () => true }],
+    });
+
+    const res = await app.request("/webhooks/test", {
+      method: "POST",
+      body: JSON.stringify({ data: "no action here" }),
+      headers: {
+        "content-type": "application/json",
+        "x-github-event": "push",
+      },
+    });
+
+    expect(res.status).toBe(200);
+    // eventSummary should be "push" (header value, no action found)
+    expect(stats.recordWebhookReceipt).toHaveBeenCalledWith(
+      expect.objectContaining({ eventSummary: "push" })
+    );
+  });
+
+  it("combines x-github-event with body action field for eventSummary", async () => {
+    const stats = mockStatsStore();
+    const { app } = buildApp({
+      statsStore: stats,
+      bindings: [{ agentName: "reporter", trigger: () => true }],
+    });
+
+    const res = await app.request("/webhooks/test", {
+      method: "POST",
+      body: JSON.stringify({ action: "opened" }),
+      headers: {
+        "content-type": "application/json",
+        "x-github-event": "pull_request",
+      },
+    });
+
+    expect(res.status).toBe(200);
+    // eventSummary should be "pull_request opened"
+    expect(stats.recordWebhookReceipt).toHaveBeenCalledWith(
+      expect.objectContaining({ eventSummary: "pull_request opened" })
+    );
+  });
+
+  it("falls back to x-github-event only when body is non-JSON (catch block fires, eventSummary = github event)", async () => {
+    const stats = mockStatsStore();
+    const { app } = buildApp({
+      statsStore: stats,
+      bindings: [{ agentName: "reporter", trigger: () => true }],
+    });
+
+    const res = await app.request("/webhooks/test", {
+      method: "POST",
+      body: "not-json-content",
+      headers: {
+        "content-type": "text/plain",
+        "x-github-event": "issues",
+      },
+    });
+
+    // Dispatch will fail because body is non-JSON, but the receipt is recorded before dispatch
+    // The x-github-event catch block (body not JSON) still executes and eventSummary = "issues"
+    expect(stats.recordWebhookReceipt).toHaveBeenCalledWith(
+      expect.objectContaining({ eventSummary: "issues" })
+    );
+    // Route returns error since dispatch fails on non-JSON body
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("webhook routes – body read failure", () => {
   function buildApp(providers: WebhookProvider[], opts: { bindings?: Array<{ agentName: string; source: string; trigger: () => boolean }> } = {}) {
     const app = new Hono();
