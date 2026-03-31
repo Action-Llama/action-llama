@@ -637,7 +637,48 @@ describe("SshDockerRuntime", () => {
       expect(result.bundle).toEqual({});
       expect(result.strategy).toBe("volume");
     });
+
+    it("skips credential when readAll returns null for the credential", async () => {
+      // Override the credentials mock temporarily to return null for readAll
+      const credsMod = await import("../../src/shared/credentials.js") as any;
+      const origGetDefaultBackend = credsMod.getDefaultBackend;
+      credsMod.getDefaultBackend = () => ({
+        readAll: () => Promise.resolve(null),
+      });
+
+      mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+        cb(null, "", "");
+      });
+
+      try {
+        const result = await runtime.prepareCredentials(["github_token:default"]);
+        // readAll returned null, so the credential was skipped → bundle is empty
+        expect(result.bundle).toEqual({});
+      } finally {
+        credsMod.getDefaultBackend = origGetDefaultBackend;
+      }
+    });
   });
+
+  describe("fetchLogs — error handling", () => {
+    it("returns empty array when SSH command throws", async () => {
+      mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+        cb(new Error("SSH connection failed"), "", "");
+      });
+
+      const logs = await runtime.fetchLogs("test-agent", 10);
+      expect(logs).toEqual([]);
+    });
+  });
+
+  describe("inspectContainer", () => {
+    it("returns null (no cloud console for VPS)", async () => {
+      const result = await runtime.inspectContainer("al-test-agent-abc123");
+      expect(result).toBeNull();
+    });
+  });
+
+
 
   describe("buildImage — additional paths", () => {
     function makeFakeTar() {
