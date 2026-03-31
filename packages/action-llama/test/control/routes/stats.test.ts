@@ -673,5 +673,218 @@ describe("stats routes", () => {
       expect(data.rows).toHaveLength(2);
       expect(data.rows[0].instanceId).toBe("i2"); // second row after sort
     });
+
+    it("filters out non-running instances from statusTracker in activity endpoint", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([]);
+
+      // Provide one running and one non-running instance
+      const tracker = mockStatusTracker([
+        { id: "r1", agentName: "reporter", status: "running", startedAt: new Date().toISOString(), trigger: "schedule" },
+        { id: "r2", agentName: "reporter", status: "completed", startedAt: new Date().toISOString(), trigger: "schedule" },
+      ], []);
+
+      const app = createApp(stats, tracker);
+      const res = await app.request("/api/stats/activity");
+      const data = await res.json();
+
+      // Only the running instance should be merged in
+      const runningRows = data.rows.filter((r: any) => r.result === "running");
+      expect(runningRows).toHaveLength(1);
+      expect(runningRows[0].instanceId).toBe("r1");
+    });
+
+    it("filters workQueue items by agent when agent param is provided", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([]);
+
+      const tracker = mockStatusTracker([], [
+        { name: "reporter" },
+        { name: "other-agent" },
+      ]);
+
+      const controlDeps = {
+        workQueue: {
+          size: vi.fn().mockReturnValue(1),
+          peek: vi.fn().mockReturnValue([
+            { context: { type: "schedule" }, receivedAt: new Date(3000) },
+          ]),
+        },
+      };
+
+      const app = createApp(stats, tracker, controlDeps);
+      const res = await app.request("/api/stats/activity?agent=reporter");
+      const data = await res.json();
+
+      // workQueue.peek should only be called for the reporter agent
+      expect(controlDeps.workQueue.peek).toHaveBeenCalledWith("reporter");
+      expect(controlDeps.workQueue.peek).not.toHaveBeenCalledWith("other-agent");
+
+      const pending = data.rows.find((r: any) => r.result === "pending");
+      expect(pending).toBeDefined();
+      expect(pending.agentName).toBe("reporter");
+    });
+
+    it("classifies queue items with ctx.type=agent-trigger as agent triggerType", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([]);
+
+      const tracker = mockStatusTracker([], [{ name: "reporter" }]);
+
+      const controlDeps = {
+        workQueue: {
+          size: vi.fn().mockReturnValue(1),
+          peek: vi.fn().mockReturnValue([
+            { context: { type: "agent-trigger", callerAgent: "planner" }, receivedAt: new Date(3000) },
+          ]),
+        },
+      };
+
+      const app = createApp(stats, tracker, controlDeps);
+      const res = await app.request("/api/stats/activity");
+      const data = await res.json();
+
+      const pending = data.rows.find((r: any) => r.result === "pending");
+      expect(pending).toBeDefined();
+      expect(pending.triggerType).toBe("agent");
+      expect(pending.triggerSource).toBe("planner");
+    });
+
+    it("classifies queue items with ctx.type=agent as agent triggerType", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([]);
+
+      const tracker = mockStatusTracker([], [{ name: "reporter" }]);
+
+      const controlDeps = {
+        workQueue: {
+          size: vi.fn().mockReturnValue(1),
+          peek: vi.fn().mockReturnValue([
+            { context: { type: "agent", callerAgent: "orchestrator" }, receivedAt: new Date(3000) },
+          ]),
+        },
+      };
+
+      const app = createApp(stats, tracker, controlDeps);
+      const res = await app.request("/api/stats/activity");
+      const data = await res.json();
+
+      const pending = data.rows.find((r: any) => r.result === "pending");
+      expect(pending).toBeDefined();
+      expect(pending.triggerType).toBe("agent");
+      expect(pending.triggerSource).toBe("orchestrator");
+    });
+
+    it("classifies queue items with ctx.type=manual as manual triggerType", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([]);
+
+      const tracker = mockStatusTracker([], [{ name: "reporter" }]);
+
+      const controlDeps = {
+        workQueue: {
+          size: vi.fn().mockReturnValue(1),
+          peek: vi.fn().mockReturnValue([
+            { context: { type: "manual" }, receivedAt: new Date(3000) },
+          ]),
+        },
+      };
+
+      const app = createApp(stats, tracker, controlDeps);
+      const res = await app.request("/api/stats/activity");
+      const data = await res.json();
+
+      const pending = data.rows.find((r: any) => r.result === "pending");
+      expect(pending).toBeDefined();
+      expect(pending.triggerType).toBe("manual");
+      expect(pending.triggerSource).toBeNull();
+    });
+
+    it("classifies queue items with unknown ctx.type using the raw type string", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([]);
+
+      const tracker = mockStatusTracker([], [{ name: "reporter" }]);
+
+      const controlDeps = {
+        workQueue: {
+          size: vi.fn().mockReturnValue(1),
+          peek: vi.fn().mockReturnValue([
+            { context: { type: "custom-trigger-type" }, receivedAt: new Date(3000) },
+          ]),
+        },
+      };
+
+      const app = createApp(stats, tracker, controlDeps);
+      const res = await app.request("/api/stats/activity");
+      const data = await res.json();
+
+      const pending = data.rows.find((r: any) => r.result === "pending");
+      expect(pending).toBeDefined();
+      expect(pending.triggerType).toBe("custom-trigger-type");
+    });
+  });
+
+  describe("GET /api/stats/triggers - non-running instance filter", () => {
+    it("filters out non-running instances from statusTracker in triggers endpoint", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([]);
+      stats.countTriggerHistory.mockReturnValue(0);
+
+      const tracker = mockStatusTracker([
+        { id: "r1", agentName: "reporter", status: "running", startedAt: new Date().toISOString(), trigger: "schedule" },
+        { id: "r2", agentName: "reporter", status: "failed", startedAt: new Date().toISOString(), trigger: "schedule" },
+      ]);
+
+      const app = createApp(stats, tracker);
+      const res = await app.request("/api/stats/triggers");
+      const data = await res.json();
+
+      // Only the running instance should be merged in
+      const runningItems = data.triggers.filter((t: any) => t.result === "running");
+      expect(runningItems).toHaveLength(1);
+      expect(runningItems[0].instanceId).toBe("r1");
+    });
+  });
+
+  describe("GET /api/stats/jobs - non-running instance filter", () => {
+    it("filters out non-running instances from statusTracker in jobs endpoint", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([]);
+      stats.countTriggerHistory.mockReturnValue(0);
+
+      const tracker = mockStatusTracker([
+        { id: "j1", agentName: "reporter", status: "running", startedAt: new Date().toISOString(), trigger: "schedule" },
+        { id: "j2", agentName: "reporter", status: "completed", startedAt: new Date().toISOString(), trigger: "schedule" },
+      ], [{ name: "reporter" }]);
+
+      const app = createApp(stats, tracker);
+      const res = await app.request("/api/stats/jobs");
+      const data = await res.json();
+
+      // Only the running instance should be merged in
+      const runningJobs = data.jobs.filter((j: any) => j.result === "running");
+      expect(runningJobs).toHaveLength(1);
+      expect(runningJobs[0].instanceId).toBe("j1");
+    });
+
+    it("includes all running instances regardless of trigger type in jobs endpoint", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([]);
+      stats.countTriggerHistory.mockReturnValue(0);
+
+      const tracker = mockStatusTracker([
+        { id: "j1", agentName: "reporter", status: "running", startedAt: new Date().toISOString(), trigger: "schedule:nightly" },
+        { id: "j2", agentName: "reporter", status: "running", startedAt: new Date().toISOString(), trigger: "webhook:github" },
+      ], [{ name: "reporter" }]);
+
+      const app = createApp(stats, tracker);
+      const res = await app.request("/api/stats/jobs");
+      const data = await res.json();
+
+      // Both running instances should be included since jobs doesn't filter by triggerType
+      const runningJobs = data.jobs.filter((j: any) => j.result === "running");
+      expect(runningJobs).toHaveLength(2);
+    });
   });
 });

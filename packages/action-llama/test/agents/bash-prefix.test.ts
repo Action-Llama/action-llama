@@ -41,5 +41,6 @@ describe("bash-prefix", () => {
 
       expect(pathAfterFirst).toBe(pathAfterSecond);
     });
+
   });
 });
