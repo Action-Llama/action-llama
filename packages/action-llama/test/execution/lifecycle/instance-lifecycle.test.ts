@@ -28,6 +28,14 @@ describe("InstanceLifecycle", () => {
       expect(info.startedAt).toBeNull();
       expect(info.endedAt).toBeNull();
     });
+
+    it("agentName getter returns the agent name", () => {
+      expect(instance.agentName).toBe(agentName);
+    });
+
+    it("trigger getter returns the trigger string", () => {
+      expect(instance.trigger).toBe(trigger);
+    });
   });
 
   describe("valid state transitions", () => {

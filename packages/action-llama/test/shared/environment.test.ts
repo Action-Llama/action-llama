@@ -278,5 +278,11 @@ describe("writeEnvToml", () => {
     const result = loadEnvToml(tmpDir);
     expect(result?.environment).toBe("new");
   });
+
+  it("throws ConfigError when existing .env.toml has invalid TOML", () => {
+    // Write invalid TOML to the file
+    writeFileSync(resolve(tmpDir, ".env.toml"), "environment = {bad toml");
+    expect(() => writeEnvToml(tmpDir, { environment: "new" })).toThrow(/\.env\.toml/);
+  });
 });
 
