@@ -401,4 +401,77 @@ describe("recoverOrphanContainers", () => {
     expect(runtime.kill).not.toHaveBeenCalled();
     expect(containerRegistry.unregister).not.toHaveBeenCalled();
   });
+
+  it("calls drainQueues in .then() callback when schedulerCtx is provided after successful re-adoption", async () => {
+    const orphan = { taskId: "container-123", agentName: "agent-a" };
+    const reg = { containerName: "container-123", agentName: "agent-a", instanceId: "agent-a-1" };
+    const lockStore = makeLockStore();
+    const containerRegistry = makeContainerRegistry({
+      listAll: vi.fn().mockReturnValue([reg]),
+      findByContainerName: vi.fn().mockReturnValue({ secret: "old-secret", reg }),
+    });
+    const runtime = makeRuntime({
+      listRunningAgents: vi.fn().mockResolvedValue([orphan]),
+      inspectContainer: vi.fn().mockResolvedValue({ env: { SHUTDOWN_SECRET: "my-secret" } }),
+    });
+    const mockAdoptContainer = vi.fn().mockResolvedValue(undefined);
+    const containerRunner = makeContainerRunner(mockAdoptContainer);
+    const pool = makeRunnerPool(containerRunner);
+    const gateway = makeGateway(containerRegistry, lockStore);
+    const logger = makeLogger();
+
+    // Provide a non-null schedulerCtx so drainQueues is called in the .then() callback
+    const fakeSchedulerCtx = { agentRuns: new Map() } as any;
+
+    await recoverOrphanContainers({
+      runtime, gateway,
+      runnerPools: { "agent-a": pool },
+      activeAgentConfigs: [{ name: "agent-a" }] as any,
+      schedulerState: { schedulerCtx: fakeSchedulerCtx }, logger,
+    });
+
+    // Wait for the async .then() callback to fire
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(mockAdoptContainer).toHaveBeenCalledOnce();
+    // drainQueues should have been called with the schedulerCtx
+    expect(mockDrainQueues).toHaveBeenCalledWith(fakeSchedulerCtx);
+  });
+
+  it("logs error in .catch() callback when adoptContainer rejects", async () => {
+    const orphan = { taskId: "container-123", agentName: "agent-a" };
+    const reg = { containerName: "container-123", agentName: "agent-a", instanceId: "agent-a-1" };
+    const lockStore = makeLockStore();
+    const containerRegistry = makeContainerRegistry({
+      listAll: vi.fn().mockReturnValue([reg]),
+      findByContainerName: vi.fn().mockReturnValue({ secret: "old-secret", reg }),
+    });
+    const runtime = makeRuntime({
+      listRunningAgents: vi.fn().mockResolvedValue([orphan]),
+      inspectContainer: vi.fn().mockResolvedValue({ env: { SHUTDOWN_SECRET: "my-secret" } }),
+    });
+    const adoptionError = new Error("adoption failed");
+    const mockAdoptContainer = vi.fn().mockRejectedValue(adoptionError);
+    const containerRunner = makeContainerRunner(mockAdoptContainer);
+    const pool = makeRunnerPool(containerRunner);
+    const gateway = makeGateway(containerRegistry, lockStore);
+    const logger = makeLogger();
+
+    await recoverOrphanContainers({
+      runtime, gateway,
+      runnerPools: { "agent-a": pool },
+      activeAgentConfigs: [{ name: "agent-a" }] as any,
+      schedulerState: { schedulerCtx: null }, logger,
+    });
+
+    // Wait for the async .catch() callback to fire
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(mockAdoptContainer).toHaveBeenCalledOnce();
+    // logger.error should have been called with the rejection error
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: adoptionError, agent: "agent-a" }),
+      "orphan re-adoption failed"
+    );
+  });
 });

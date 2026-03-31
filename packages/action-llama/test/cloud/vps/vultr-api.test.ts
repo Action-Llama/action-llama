@@ -145,6 +145,19 @@ describe("Vultr API client", () => {
     await expect(listRegions(API_KEY)).rejects.toThrow("Vultr API /regions failed (HTTP 403)");
   });
 
+  it("throws VultrApiError with empty body when res.text() rejects", async () => {
+    // When res.text() throws, the .catch(() => "") fallback is used, yielding an empty body string
+    mockFetch.mockResolvedValueOnce({
+      ok: false, status: 500, text: () => Promise.reject(new Error("body read failed")),
+    });
+
+    const err = await listRegions(API_KEY).catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toContain("Vultr API /regions failed (HTTP 500)");
+    // Body should be empty string from the catch fallback
+    expect(err.message).not.toContain("body read failed");
+  });
+
   describe("Firewall Groups", () => {
     it("listFirewallGroups returns firewall groups", async () => {
       mockFetch.mockResolvedValueOnce(mockResponse({
