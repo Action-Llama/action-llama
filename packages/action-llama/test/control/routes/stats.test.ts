@@ -887,4 +887,70 @@ describe("stats routes", () => {
       expect(runningJobs).toHaveLength(2);
     });
   });
+
+  describe("GET /api/stats/activity — filter coverage for uncovered paths", () => {
+    it("filters running instances by agentName in activity endpoint (L171)", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([]);
+
+      // Two instances with different agentNames; filter for "reporter" should exclude "other"
+      const tracker = mockStatusTracker([
+        { id: "inst-reporter", agentName: "reporter", status: "running", startedAt: new Date().toISOString(), trigger: "schedule" },
+        { id: "inst-other", agentName: "other-agent", status: "running", startedAt: new Date().toISOString(), trigger: "schedule" },
+      ], [{ name: "reporter" }, { name: "other-agent" }]);
+      const app = createApp(stats, tracker);
+
+      const res = await app.request("/api/stats/activity?agent=reporter");
+      const data = await res.json();
+
+      // Only "reporter" running instance should appear
+      const runningRows = data.rows.filter((r: any) => r.result === "running");
+      expect(runningRows.every((r: any) => r.agentName === "reporter")).toBe(true);
+    });
+
+    it("filters running instances by triggerType in activity endpoint (L172-175)", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([]);
+
+      // Two instances with different trigger types
+      const tracker = mockStatusTracker([
+        { id: "inst-sched", agentName: "reporter", status: "running", startedAt: new Date().toISOString(), trigger: "schedule" },
+        { id: "inst-wh", agentName: "reporter", status: "running", startedAt: new Date().toISOString(), trigger: "webhook:github" },
+      ], [{ name: "reporter" }]);
+      const app = createApp(stats, tracker);
+
+      const res = await app.request("/api/stats/activity?triggerType=schedule");
+      const data = await res.json();
+
+      // Only "schedule" trigger instance should appear in running rows
+      const runningRows = data.rows.filter((r: any) => r.result === "running");
+      expect(runningRows.every((r: any) => r.triggerType === "schedule")).toBe(true);
+    });
+
+    it("filters pending queue items by triggerType in activity endpoint (L222)", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([]);
+
+      // One tracker agent with a work queue containing both webhook and schedule items
+      const tracker = mockStatusTracker([], [{ name: "reporter" }]);
+      const controlDeps = {
+        workQueue: {
+          size: vi.fn().mockReturnValue(2),
+          peek: vi.fn().mockReturnValue([
+            { context: { type: "webhook", source: "github" }, receivedAt: new Date(1000) },
+            { context: { type: "schedule" }, receivedAt: new Date(2000) },
+          ]),
+        },
+      };
+      const app = createApp(stats, tracker, controlDeps);
+
+      const res = await app.request("/api/stats/activity?triggerType=schedule");
+      const data = await res.json();
+
+      // The webhook queue item should be filtered out by L222
+      const pendingRows = data.rows.filter((r: any) => r.result === "pending");
+      expect(pendingRows.every((r: any) => r.triggerType === "schedule")).toBe(true);
+      expect(pendingRows.some((r: any) => r.triggerType === "webhook")).toBe(false);
+    });
+  });
 });
