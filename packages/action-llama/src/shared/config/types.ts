@@ -35,7 +35,19 @@ export interface VpsConfig {
   cloudflareHostname?: string;
 }
 
-export type CloudConfig = VpsConfig;
+export interface CloudRunConfig {
+  provider: "cloud-run";
+  /** GCP project ID */
+  project: string;
+  /** GCP region, e.g. "us-central1" */
+  region: string;
+  /** Artifact Registry repository name */
+  artifactRegistry: string;
+  /** Optional service account email for Workload Identity */
+  serviceAccount?: string;
+}
+
+export type CloudConfig = VpsConfig | CloudRunConfig;
 
 
 export interface GatewayConfig {

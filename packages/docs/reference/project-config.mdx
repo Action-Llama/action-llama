@@ -209,3 +209,23 @@ keyPath = "~/.ssh/id_rsa"
 basePath = "/opt/action-llama"
 expose = true
 ```
+
+### Cloud Run Jobs runtime (environment file)
+
+To run agents as Cloud Run Jobs instead of local Docker containers, add a `[cloud]` section to your environment file. The scheduler still runs wherever you host it; only agent execution is offloaded to GCP.
+
+```toml
+# ~/.action-llama/environments/production.toml
+[cloud]
+provider = "cloud-run"
+project = "my-gcp-project"
+region = "us-central1"
+artifact_registry = "al-agents"
+# Optional: service account email for job execution identity
+# service_account = "al-agent-runner@my-gcp-project.iam.gserviceaccount.com"
+
+[gateway]
+url = "https://your-gateway.example.com"  # Must be publicly reachable
+```
+
+See [Running Agents on Cloud Run Jobs](/guides/cloud-run-runtime) for full setup instructions.
