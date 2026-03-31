@@ -1276,6 +1276,58 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     );
   });
 
+  // ── rebuildCronJobs: skip agents without schedule or without pool ──────────
+
+  it("rebuildCronJobs skips agent without a schedule (covers !agentConfig.schedule continue)", async () => {
+    const runnerA = makeMockRunner("agent-a");
+    const poolA = new RunnerPool([runnerA]);
+
+    // configA has NO schedule; configB will be removed
+    const configA = makeAgentConfig("agent-a", { schedule: undefined }); // no schedule
+    const configB = makeAgentConfig("agent-b", { schedule: "0 * * * *" });
+
+    const ctx = makeContext({
+      agentConfigs: [configA, configB],
+      runnerPools: { "agent-a": poolA },
+    });
+
+    // Remove agent-b → rebuildCronJobs runs for remaining agents
+    // agent-a has no schedule → skipped (continue)
+    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-b");
+
+    // No cron jobs should be created for agent-a (no schedule)
+    const cronJobForA = ctx.cronJobs.find((j: any) => j._callback);
+    expect(cronJobForA).toBeUndefined();
+  });
+
+  it("rebuildCronJobs skips agent with schedule but no runner pool (covers !pool continue)", async () => {
+    const runnerA = makeMockRunner("agent-a");
+    const poolA = new RunnerPool([runnerA]);
+
+    // configA has a schedule but NO pool entry; configB will be removed
+    const configA = makeAgentConfig("agent-a", { schedule: "0 * * * *" });
+    const configB = makeAgentConfig("agent-b", { schedule: "*/5 * * * *" });
+
+    const ctx = makeContext({
+      agentConfigs: [configA, configB],
+      runnerPools: { "agent-b": poolA }, // no pool for agent-a
+    });
+
+    // Remove agent-b → rebuildCronJobs runs for remaining agents
+    // agent-a has schedule but no pool → skipped (continue)
+    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-b");
+
+    // No cron job for agent-a (pool missing)
+    const cronJobForA = ctx.cronJobs.find((j: any) => j._callback);
+    expect(cronJobForA).toBeUndefined();
+  });
+
   // ── handleUpdatedAgent: revert to container runtime (lines 335-336) ────────
 
   it("updated agent: reverts agentRuntimeOverrides to container runtime when new config has no host-user runtime", async () => {
