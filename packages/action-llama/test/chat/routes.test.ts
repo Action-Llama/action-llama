@@ -389,5 +389,29 @@ describe("Chat API routes", () => {
         "failed to launch chat container after clear"
       );
     });
+
+    it("returns 500 when sessionManager.createSession throws during clear", async () => {
+      // First create a session
+      const createRes = await app.request("/api/chat/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentName: "test-agent" }),
+      });
+      const { sessionId } = await createRes.json();
+
+      // Make createSession throw on the next call (during clear)
+      const createSpy = vi.spyOn(sessionManager, "createSession").mockImplementationOnce(() => {
+        throw new Error("Session creation failed during clear");
+      });
+
+      const clearRes = await app.request(`/api/chat/sessions/${sessionId}/clear`, {
+        method: "POST",
+      });
+      expect(clearRes.status).toBe(500);
+      const body = await clearRes.json();
+      expect(body.error).toContain("Session creation failed during clear");
+
+      createSpy.mockRestore();
+    });
   });
 });

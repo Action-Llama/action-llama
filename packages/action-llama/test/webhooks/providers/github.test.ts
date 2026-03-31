@@ -635,5 +635,29 @@ describe("GitHubWebhookProvider", () => {
       expect(result).not.toBeNull();
       expect(result!.author).toBe("johndoe");
     });
+
+    it("parses issue_comment event with non-empty labels (covers l.name mapping)", () => {
+      const ctx = provider.parseEvent(
+        { "x-github-event": "issue_comment" },
+        {
+          action: "created",
+          repository: { full_name: "acme/app" },
+          sender: { login: "user1" },
+          issue: {
+            number: 7,
+            title: "Labeled issue",
+            user: { login: "author5" },
+            labels: [{ name: "bug" }, { name: "urgent" }],
+          },
+          comment: {
+            body: "A comment on a labeled issue",
+            html_url: "https://github.com/acme/app/issues/7#comment-2",
+          },
+        }
+      );
+      expect(ctx).not.toBeNull();
+      expect(ctx!.event).toBe("issue_comment");
+      expect(ctx!.labels).toEqual(["bug", "urgent"]);
+    });
   });
 });
