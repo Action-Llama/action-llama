@@ -775,5 +775,56 @@ describe("log API routes", () => {
       const data = await res.json();
       expect(data.entries).toEqual([]);
     });
+
+    it("breaks when entries.length reaches limit in readEntriesForward (cursor at offset 0)", async () => {
+      // To cover the `break` in `if (entries.length >= limit) break;` in readEntriesForward:
+      // we construct a cursor pointing to offset 0 of the file (start), so the forward read
+      // processes all entries from the beginning and hits the limit.
+      const manyLines = Array.from({ length: 10 }, (_, i) =>
+        pinoLine(30, 1710700001000 + i * 1000, `entry-${i}`)
+      );
+      writeFileSync(join(logsPath, "scheduler-2024-03-18.log"), manyLines.join("\n") + "\n");
+
+      // Cursor at offset 0 — forward read starts from beginning of file
+      const cursor = Buffer.from("2024-03-18:0").toString("base64url");
+
+      const app = createTestApp(tmpDir);
+      // Request with limit=3 and 10 entries available → should break after 3
+      const res = await app.request(
+        `/api/logs/scheduler?cursor=${encodeURIComponent(cursor)}&lines=3`
+      );
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      // Should return exactly limit entries (break was hit)
+      expect(data.entries).toHaveLength(3);
+      expect(data.entries[0].msg).toBe("entry-0");
+      expect(data.entries[2].msg).toBe("entry-2");
+    });
+
+    it("filters out entries with time >= beforeTime in readEntriesForward (cursor at offset 0)", async () => {
+      // To cover `if (beforeTime && entry.time >= beforeTime) continue;` in readEntriesForward:
+      // use a cursor at offset 0 and pass a beforeTime that excludes some entries.
+      const logLines = [
+        pinoLine(30, 1710700001000, "early"),
+        pinoLine(30, 1710700005000, "mid"),
+        pinoLine(30, 1710700009000, "late"),
+      ];
+      writeFileSync(join(logsPath, "scheduler-2024-03-18.log"), logLines.join("\n") + "\n");
+
+      // Cursor at offset 0 — forward read starts from beginning of file
+      const cursor = Buffer.from("2024-03-18:0").toString("base64url");
+
+      const app = createTestApp(tmpDir);
+      // before=1710700007000 → entries with time >= 1710700007000 are skipped ("late")
+      const res = await app.request(
+        `/api/logs/scheduler?cursor=${encodeURIComponent(cursor)}&before=1710700007000`
+      );
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      // "late" (time=1710700009000) should be excluded; "early" and "mid" should be included
+      expect(data.entries.every((e: any) => e.time < 1710700007000)).toBe(true);
+      expect(data.entries.some((e: any) => e.msg === "late")).toBe(false);
+      expect(data.entries.length).toBeGreaterThanOrEqual(2);
+    });
   });
 });
