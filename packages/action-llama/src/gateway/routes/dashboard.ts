@@ -7,6 +7,7 @@ import type { StatusTracker } from "../../tui/status-tracker.js";
 import type { ApiKeySource } from "../../control/auth.js";
 import type { StatsStore } from "../../stats/store.js";
 import type { Logger } from "../../shared/logger.js";
+import type { StatsControlDeps } from "../../control/routes/stats.js";
 
 /**
  * Register all dashboard-related routes: SSE data stream, JSON API,
@@ -22,6 +23,7 @@ export async function registerDashboardRoutes(
     apiKey: ApiKeySource;
     statsStore?: StatsStore;
     logger: Logger;
+    controlDeps?: StatsControlDeps;
   },
 ): Promise<void> {
   const { statusTracker, projectPath, statsStore } = opts;
@@ -38,7 +40,7 @@ export async function registerDashboardRoutes(
   }
 
   // Stats API routes
-  registerStatsRoutes(app, statsStore, statusTracker);
+  registerStatsRoutes(app, statsStore, statusTracker, opts.controlDeps);
 
   // Root redirect to dashboard
   app.get("/", (c) => c.redirect("/dashboard"));

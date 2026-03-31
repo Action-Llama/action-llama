@@ -32,8 +32,7 @@ function Navbar() {
   }, [navigate]);
 
   const isSettings = location.pathname === "/dashboard/config";
-  const isTriggers = location.pathname === "/triggers";
-  const isJobs = location.pathname === "/jobs";
+  const isActivity = location.pathname === "/activity";
 
   return (
     <header className="border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-3">
@@ -46,9 +45,9 @@ function Navbar() {
             Action Llama
           </Link>
           <Link
-            to="/triggers"
+            to="/activity"
             className={`flex items-center gap-1.5 text-sm transition-colors ${
-              isTriggers
+              isActivity
                 ? "text-blue-600 dark:text-blue-400"
                 : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
             }`}
@@ -56,20 +55,7 @@ function Navbar() {
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
-            Triggers
-          </Link>
-          <Link
-            to="/jobs"
-            className={`flex items-center gap-1.5 text-sm transition-colors ${
-              isJobs
-                ? "text-blue-600 dark:text-blue-400"
-                : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
-            }`}
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-            </svg>
-            Jobs
+            Activity
           </Link>
           <Link
             to="/dashboard/config"

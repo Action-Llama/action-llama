@@ -382,7 +382,7 @@ export function AgentDetailPage() {
             )}
           </div>
           <Link
-            to={`/jobs?agent=${encodeURIComponent(name)}`}
+            to={`/activity?agent=${encodeURIComponent(name)}`}
             className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
           >
             View all

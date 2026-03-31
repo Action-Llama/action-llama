@@ -85,6 +85,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
         apiKey: opts.apiKey,
         statsStore: opts.statsStore,
         logger: opts.logger,
+        controlDeps: opts.controlDeps,
       });
     }
   } else if (opts.projectPath && opts.apiKey) {

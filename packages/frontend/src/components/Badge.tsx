@@ -19,6 +19,13 @@ export function TriggerTypeBadge({ type }: { type: string }) {
 }
 
 export function ResultBadge({ result, deadLetterReason }: { result: string; deadLetterReason?: string | null }) {
+  if (result === "pending") {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
+        pending
+      </span>
+    );
+  }
   if (result === "completed" || result === "rerun") {
     return (
       <span className="text-green-600 dark:text-green-400 text-xs font-medium">

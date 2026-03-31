@@ -127,6 +127,18 @@ export interface JobRow {
   deadLetterReason?: string | null;
 }
 
+export interface ActivityRow {
+  ts: number;
+  triggerType: string;
+  triggerSource?: string | null;
+  agentName?: string | null;
+  instanceId?: string | null;
+  /** "pending" | "running" | "completed" | "rerun" | "error" | "dead-letter" */
+  result: string;
+  webhookReceiptId?: string | null;
+  deadLetterReason?: string | null;
+}
+
 export interface TriggerDetailData {
   instanceId: string;
   agentName: string;
@@ -300,6 +312,20 @@ export function getJobs(
 ): Promise<{ jobs: JobRow[]; total: number; pending: Record<string, number>; totalPending: number }> {
   let url = `/api/stats/jobs?limit=${limit}&offset=${offset}`;
   if (agent) url += `&agent=${encodeURIComponent(agent)}`;
+  return fetchJSON(url);
+}
+
+export function getActivity(
+  limit: number,
+  offset: number,
+  agent?: string,
+  triggerType?: string,
+  status?: string,
+): Promise<{ rows: ActivityRow[]; total: number }> {
+  let url = `/api/stats/activity?limit=${limit}&offset=${offset}`;
+  if (agent) url += `&agent=${encodeURIComponent(agent)}`;
+  if (triggerType) url += `&triggerType=${encodeURIComponent(triggerType)}`;
+  if (status && status !== "all") url += `&status=${encodeURIComponent(status)}`;
   return fetchJSON(url);
 }
 

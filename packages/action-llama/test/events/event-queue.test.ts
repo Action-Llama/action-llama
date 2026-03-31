@@ -111,6 +111,50 @@ function workQueueSuite(
       expect(queue.size("agent-a")).toBe(0);
       expect(queue.size("agent-b")).toBe(0);
     });
+
+    it("peek returns items in FIFO order without removing them", () => {
+      ({ queue, cleanup } = factory());
+      queue.enqueue("agent-a", "event-1");
+      queue.enqueue("agent-a", "event-2");
+      queue.enqueue("agent-a", "event-3");
+
+      const peeked = queue.peek("agent-a");
+      expect(peeked).toHaveLength(3);
+      expect(peeked[0].context).toBe("event-1");
+      expect(peeked[1].context).toBe("event-2");
+      expect(peeked[2].context).toBe("event-3");
+
+      // Items should still be in the queue
+      expect(queue.size("agent-a")).toBe(3);
+    });
+
+    it("peek respects the limit parameter", () => {
+      ({ queue, cleanup } = factory());
+      queue.enqueue("agent-a", "event-1");
+      queue.enqueue("agent-a", "event-2");
+      queue.enqueue("agent-a", "event-3");
+
+      const peeked = queue.peek("agent-a", 2);
+      expect(peeked).toHaveLength(2);
+      expect(peeked[0].context).toBe("event-1");
+      expect(peeked[1].context).toBe("event-2");
+    });
+
+    it("peek returns empty array for unknown agent", () => {
+      ({ queue, cleanup } = factory());
+      expect(queue.peek("unknown")).toEqual([]);
+    });
+
+    it("peek does not affect subsequent dequeue operations", () => {
+      ({ queue, cleanup } = factory());
+      queue.enqueue("agent-a", "event-1");
+      queue.enqueue("agent-a", "event-2");
+
+      queue.peek("agent-a");
+      expect(queue.dequeue("agent-a")?.context).toBe("event-1");
+      expect(queue.dequeue("agent-a")?.context).toBe("event-2");
+      expect(queue.dequeue("agent-a")).toBeUndefined();
+    });
   });
 }
 

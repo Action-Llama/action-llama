@@ -21,9 +21,9 @@ function mockStatusTracker(instances: any[] = [], agents: any[] = []) {
   } as any;
 }
 
-function createApp(statsStore?: any, statusTracker?: any) {
+function createApp(statsStore?: any, statusTracker?: any, controlDeps?: any) {
   const app = new Hono();
-  registerStatsRoutes(app, statsStore, statusTracker);
+  registerStatsRoutes(app, statsStore, statusTracker, controlDeps);
   return app;
 }
 
@@ -496,6 +496,182 @@ describe("stats routes", () => {
       expect(stats.queryTriggerHistory).toHaveBeenCalledWith(
         expect.objectContaining({ limit: 100, offset: 0 })
       );
+    });
+  });
+
+  describe("GET /api/stats/activity", () => {
+    it("returns empty rows when no stats store is provided", async () => {
+      const app = createApp();
+
+      const res = await app.request("/api/stats/activity");
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.rows).toEqual([]);
+      expect(data.total).toBe(0);
+      expect(data.limit).toBe(50);
+      expect(data.offset).toBe(0);
+    });
+
+    it("returns rows from the stats store including dead letters", async () => {
+      const stats = mockStatsStore();
+      const completedRow = { ts: 1000, triggerType: "schedule", agentName: "reporter", instanceId: "i1", result: "completed", webhookReceiptId: null, deadLetterReason: null };
+      const deadLetterRow = { ts: 500, triggerType: "webhook", agentName: "reporter", instanceId: null, result: "dead-letter", webhookReceiptId: "r1", deadLetterReason: "no_match" };
+      stats.queryTriggerHistory.mockReturnValue([completedRow, deadLetterRow]);
+      const app = createApp(stats);
+
+      const res = await app.request("/api/stats/activity");
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.rows).toHaveLength(2);
+      expect(data.total).toBe(2);
+      // Should always pass includeDeadLetters: true
+      expect(stats.queryTriggerHistory).toHaveBeenCalledWith(
+        expect.objectContaining({ includeDeadLetters: true })
+      );
+    });
+
+    it("merges running instances from statusTracker", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([
+        { ts: 500, triggerType: "schedule", agentName: "reporter", instanceId: "i1", result: "completed" },
+      ]);
+
+      const tracker = mockStatusTracker([
+        { id: "inst-running", agentName: "reporter", status: "running", startedAt: new Date(2000).toISOString(), trigger: "webhook:github" },
+      ]);
+      const app = createApp(stats, tracker);
+
+      const res = await app.request("/api/stats/activity");
+      const data = await res.json();
+
+      expect(data.rows).toHaveLength(2);
+      const running = data.rows.find((r: any) => r.result === "running");
+      expect(running).toBeDefined();
+      expect(running.instanceId).toBe("inst-running");
+      expect(running.triggerType).toBe("webhook");
+      expect(running.triggerSource).toBe("github");
+    });
+
+    it("merges pending queue items from controlDeps.workQueue.peek", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([]);
+
+      const tracker = mockStatusTracker([], [
+        { name: "reporter", queuedWebhooks: 1 },
+      ]);
+
+      const controlDeps = {
+        workQueue: {
+          size: vi.fn().mockReturnValue(1),
+          peek: vi.fn().mockReturnValue([
+            { context: { type: "webhook", source: "github" }, receivedAt: new Date(3000) },
+          ]),
+        },
+      };
+
+      const app = createApp(stats, tracker, controlDeps);
+
+      const res = await app.request("/api/stats/activity");
+      const data = await res.json();
+
+      const pending = data.rows.find((r: any) => r.result === "pending");
+      expect(pending).toBeDefined();
+      expect(pending.triggerType).toBe("webhook");
+      expect(pending.triggerSource).toBe("github");
+      expect(pending.instanceId).toBeNull();
+      expect(pending.agentName).toBe("reporter");
+    });
+
+    it("filters by status=pending returns only pending rows", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([
+        { ts: 500, triggerType: "schedule", agentName: "reporter", instanceId: "i1", result: "completed" },
+      ]);
+
+      const tracker = mockStatusTracker([], [{ name: "reporter", queuedWebhooks: 1 }]);
+      const controlDeps = {
+        workQueue: {
+          size: vi.fn().mockReturnValue(1),
+          peek: vi.fn().mockReturnValue([
+            { context: { type: "schedule" }, receivedAt: new Date(3000) },
+          ]),
+        },
+      };
+      const app = createApp(stats, tracker, controlDeps);
+
+      const res = await app.request("/api/stats/activity?status=pending");
+      const data = await res.json();
+
+      expect(data.rows.every((r: any) => r.result === "pending")).toBe(true);
+    });
+
+    it("filters by status=dead-letter returns only dead letters", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([
+        { ts: 1000, triggerType: "schedule", agentName: "reporter", instanceId: "i1", result: "completed" },
+        { ts: 500, triggerType: "webhook", agentName: "reporter", instanceId: null, result: "dead-letter", webhookReceiptId: "r1", deadLetterReason: "no_match" },
+      ]);
+
+      const app = createApp(stats);
+
+      const res = await app.request("/api/stats/activity?status=dead-letter");
+      const data = await res.json();
+
+      expect(data.rows).toHaveLength(1);
+      expect(data.rows[0].result).toBe("dead-letter");
+    });
+
+    it("filters by agent parameter", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([
+        { ts: 1000, triggerType: "schedule", agentName: "reporter", instanceId: "i1", result: "completed" },
+      ]);
+
+      const app = createApp(stats);
+
+      await app.request("/api/stats/activity?agent=reporter");
+      expect(stats.queryTriggerHistory).toHaveBeenCalledWith(
+        expect.objectContaining({ agentName: "reporter" })
+      );
+    });
+
+    it("sorts all rows by ts descending", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([
+        { ts: 1000, triggerType: "schedule", agentName: "reporter", instanceId: "i1", result: "completed" },
+        { ts: 300, triggerType: "webhook", agentName: "reporter", instanceId: "i2", result: "error" },
+      ]);
+
+      const tracker = mockStatusTracker([
+        { id: "r1", agentName: "reporter", status: "running", startedAt: new Date(2000).toISOString(), trigger: "manual" },
+      ]);
+      const app = createApp(stats, tracker);
+
+      const res = await app.request("/api/stats/activity");
+      const data = await res.json();
+
+      // Rows should be sorted newest first: ts=2000 (running), ts=1000 (completed), ts=300 (error)
+      expect(data.rows[0].ts).toBe(2000);
+      expect(data.rows[1].ts).toBe(1000);
+      expect(data.rows[2].ts).toBe(300);
+    });
+
+    it("paginates results with limit and offset", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([
+        { ts: 3000, result: "completed", triggerType: "schedule", agentName: "a", instanceId: "i1" },
+        { ts: 2000, result: "completed", triggerType: "schedule", agentName: "a", instanceId: "i2" },
+        { ts: 1000, result: "completed", triggerType: "schedule", agentName: "a", instanceId: "i3" },
+      ]);
+
+      const app = createApp(stats);
+
+      const res = await app.request("/api/stats/activity?limit=2&offset=1");
+      const data = await res.json();
+
+      expect(data.total).toBe(3);
+      expect(data.rows).toHaveLength(2);
+      expect(data.rows[0].instanceId).toBe("i2"); // second row after sort
     });
   });
 });
