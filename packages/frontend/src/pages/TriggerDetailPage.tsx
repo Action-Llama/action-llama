@@ -5,6 +5,7 @@ import { getTriggerDetail, replayWebhook } from "../lib/api";
 import type { TriggerDetailData } from "../lib/api";
 import { fmtDateTime, shortId } from "../lib/format";
 import { agentHueStyle } from "../lib/color";
+import { decodeBody } from "../lib/decode-body";
 import { useStatusStream } from "../hooks/StatusStreamContext";
 
 function prettyJson(raw: string | null | undefined): string {
@@ -214,16 +215,35 @@ export function TriggerDetailPage() {
               </pre>
             </div>
           )}
-          {trigger.webhook.body && (
-            <div className="border-t border-slate-200 dark:border-slate-800">
-              <div className="px-4 py-2.5 border-b border-slate-100 dark:border-slate-800/50">
-                <h3 className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Body</h3>
-              </div>
-              <pre className="px-4 py-3 text-xs font-mono text-slate-700 dark:text-slate-300 overflow-x-auto whitespace-pre-wrap break-all">
-                {prettyJson(trigger.webhook.body)}
-              </pre>
-            </div>
-          )}
+          {(() => {
+            const decoded = decodeBody(trigger.webhook.body, trigger.webhook.headers);
+            return (
+              <>
+                {decoded && (
+                  <div className="border-t border-slate-200 dark:border-slate-800">
+                    <div className="px-4 py-2.5 border-b border-slate-100 dark:border-slate-800/50">
+                      <h3 className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">{decoded.label}</h3>
+                    </div>
+                    <pre className="px-4 py-3 text-xs font-mono text-slate-700 dark:text-slate-300 overflow-x-auto whitespace-pre-wrap break-all max-h-96 overflow-y-auto">
+                      {decoded.content}
+                    </pre>
+                  </div>
+                )}
+                {trigger.webhook!.body && (
+                  <div className="border-t border-slate-200 dark:border-slate-800">
+                    <div className="px-4 py-2.5 border-b border-slate-100 dark:border-slate-800/50">
+                      <h3 className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                        {decoded ? "Raw Body" : "Body"}
+                      </h3>
+                    </div>
+                    <pre className="px-4 py-3 text-xs font-mono text-slate-700 dark:text-slate-300 overflow-x-auto whitespace-pre-wrap break-all">
+                      {prettyJson(trigger.webhook!.body)}
+                    </pre>
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
 
