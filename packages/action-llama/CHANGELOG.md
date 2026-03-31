@@ -1,5 +1,12 @@
 # @action-llama/action-llama
 
+## 0.23.7
+
+### Patch Changes
+
+- Updated dependencies [[`90fa493`](https://github.com/Action-Llama/action-llama/commit/90fa49380da515753d1203b50e941244dc68e0f5)]:
+  - @action-llama/skill@0.23.7
+
 ## 0.23.6
 
 ### Patch Changes

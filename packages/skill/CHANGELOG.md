@@ -1,5 +1,11 @@
 # @action-llama/skill
 
+## 0.23.7
+
+### Patch Changes
+
+- [`90fa493`](https://github.com/Action-Llama/action-llama/commit/90fa49380da515753d1203b50e941244dc68e0f5) Thanks [@asselstine](https://github.com/asselstine)! - Fix npm publish for @action-llama/skill by setting public access in publishConfig.
+
 ## 0.23.6
 
 ## 0.23.5
