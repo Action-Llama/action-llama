@@ -94,6 +94,14 @@ describe("credentials", () => {
     it("throws for missing credential", async () => {
       await expect(requireCredentialRef("nonexistent_type:missing")).rejects.toThrow("not found");
     });
+
+    it("resolves without throwing when credential exists", async () => {
+      // Write a credential so it exists
+      await writeCredentialField(testType, testInstance, "api_key", "test-value");
+
+      // Should resolve without error
+      await expect(requireCredentialRef(`${testType}:${testInstance}`)).resolves.toBeUndefined();
+    });
   });
 
   describe("loadCredentialField", () => {

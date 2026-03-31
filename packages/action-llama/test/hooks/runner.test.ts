@@ -160,6 +160,17 @@ describe("runHooks", () => {
       const errorLog = ctx.logs.find(l => l.level === "error");
       expect(errorLog!.data!.error).toContain("timeout reached");
     });
+
+    it("falls back to String(err) when thrown value has no stderr or message", async () => {
+      const ctx = makeCtx();
+      // Throw a non-Error primitive (no .stderr, no .message)
+      mockExecSync.mockImplementation(() => { throw "plain-string-error"; });
+
+      await expect(runHooks(["cmd"], "pre", ctx)).rejects.toThrow();
+
+      const errorLog = ctx.logs.find(l => l.level === "error");
+      expect(errorLog!.data!.error).toContain("plain-string-error");
+    });
   });
 
   describe("phase label in logs", () => {
