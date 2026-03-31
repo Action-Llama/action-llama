@@ -1,24 +1,6 @@
-import { mkdirSync, writeFileSync, existsSync, readFileSync, copyFileSync, symlinkSync, lstatSync, realpathSync, readdirSync } from "fs";
+import { mkdirSync, writeFileSync, existsSync, readFileSync } from "fs";
 import { execSync } from "child_process";
-import { resolve, relative } from "path";
-import { agentsMdPath, commandsDir, mcpJsonPath as skillMcpJsonPath } from "@action-llama/skill";
-
-/**
- * Scaffold Claude Code slash commands into .claude/commands/.
- * Copies command files from @action-llama/skill content.
- * Skips files that already exist to avoid overwriting user customizations.
- */
-export function scaffoldClaudeCommands(projectPath: string): void {
-  const destDir = resolve(projectPath, ".claude", "commands");
-  mkdirSync(destDir, { recursive: true });
-  for (const entry of readdirSync(commandsDir)) {
-    if (!entry.endsWith(".md")) continue;
-    const dest = resolve(destDir, entry);
-    if (!existsSync(dest)) {
-      copyFileSync(resolve(commandsDir, entry), dest);
-    }
-  }
-}
+import { resolve } from "path";
 import { fileURLToPath } from "url";
 import { stringify as stringifyTOML } from "smol-toml";
 import { stringify as stringifyYAML } from "yaml";
@@ -38,10 +20,6 @@ export function resolvePackageRoot(): string {
   return resolve(thisFile, "..", "..", "..");
 }
 
-/** Check if a path exists as a symlink (even dangling). Returns false if nothing exists. */
-function lstatSafe(path: string): boolean {
-  try { return lstatSync(path).isSymbolicLink(); } catch { return false; }
-}
 
 export interface ScaffoldAgent {
   name: string;
@@ -102,7 +80,6 @@ export function scaffoldProject(
       type: "module",
       dependencies: {
         "@action-llama/action-llama": VERSION,
-        "@action-llama/skill": VERSION,
       },
     };
     writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
@@ -120,31 +97,6 @@ export function scaffoldProject(
 
   for (const agent of agents) {
     scaffoldAgent(projectPath, agent);
-  }
-
-  // Symlink AGENTS.md and CLAUDE.md to @action-llama/skill's content/AGENTS.md.
-  // Uses a relative symlink so it works if the project moves.
-  // Falls back to a regular copy if symlinks fail (e.g. Windows without Developer Mode)
-  // or if the target doesn't exist (e.g. running from source before npm install).
-  const agentRefExists = existsSync(agentsMdPath);
-  for (const name of ["AGENTS.md", "CLAUDE.md"]) {
-    const dest = resolve(projectPath, name);
-    if (!existsSync(dest) && !lstatSafe(dest)) {
-      if (agentRefExists) {
-        try {
-          const relTarget = relative(realpathSync(projectPath), agentsMdPath);
-          symlinkSync(relTarget, dest);
-          continue;
-        } catch {
-          // Fall through to copy
-        }
-      }
-      try {
-        copyFileSync(agentsMdPath, dest);
-      } catch {
-        // Skip if package can't be resolved
-      }
-    }
   }
 
   // Create workspace directory
@@ -170,12 +122,4 @@ export function scaffoldProject(
     ].join("\n"));
   }
 
-  // Create .mcp.json for Claude Code MCP integration
-  const mcpJsonDest = resolve(projectPath, ".mcp.json");
-  if (!existsSync(mcpJsonDest)) {
-    copyFileSync(skillMcpJsonPath, mcpJsonDest);
-  }
-
-  // Scaffold Claude Code slash commands
-  scaffoldClaudeCommands(projectPath);
 }

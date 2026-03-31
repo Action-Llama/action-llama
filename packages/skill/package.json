@@ -1,7 +1,7 @@
 {
   "name": "@action-llama/skill",
   "version": "0.23.8",
-  "description": "AI integration content for Action Llama projects — AGENTS.md, MCP config, Claude Code commands.",
+  "description": "Action Llama plugin for AI coding tools — skills, MCP config, and reference docs for creating, running, and debugging LLM agents.",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -13,17 +13,20 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    },
-    "./content/*": "./content/*"
+    }
   },
   "files": [
     "dist",
-    "content"
+    ".claude-plugin",
+    "skills",
+    ".mcp.json"
   ],
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "tsc"
+    "build": "node --experimental-strip-types src/build-docs.ts && tsc",
+    "build:docs": "node --experimental-strip-types src/build-docs.ts",
+    "test": "vitest run --config vitest.config.ts"
   }
 }

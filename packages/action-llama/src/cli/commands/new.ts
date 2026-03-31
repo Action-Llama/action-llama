@@ -141,7 +141,6 @@ export async function execute(name: string, opts: NewCommandOptions = {}): Promi
   scaffoldProject(projectPath, globalConfig, [], name);
 
   console.log(`  Wrote ${projectPath}/package.json`);
-  console.log(`  Linked ${projectPath}/AGENTS.md`);
   console.log(`  Created state directories`);
 
   console.log("\n--- Installing dependencies ---\n");
@@ -157,6 +156,7 @@ Setup complete!
 
 Next steps:
   cd ${name}
+  npx skills add Action-Llama/skill       # Install AI skills for Claude Code
   npx al add Action-Llama/agents -a dev   # Install your first agent
   npx al start                             # Start the gateway
 `);

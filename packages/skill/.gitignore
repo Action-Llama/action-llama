@@ -1,0 +1,6 @@
+dist/
+
+# Generated from docs at build time (see src/build-docs.ts)
+skills/al/agent-authoring.md
+skills/al/operations.md
+skills/al/debugging.md

@@ -1,3 +1,9 @@
+---
+name: iterate
+description: Run an Action Llama agent, analyze output, and improve its instructions. Repeats up to 3 cycles. Use when iterating on, improving, or refining an agent.
+argument-hint: "[agent-name]"
+---
+
 # Iterate on an agent
 
 Run an agent, analyze its output, and improve its instructions. Repeats up to 3 cycles or until the agent runs cleanly.

@@ -8,19 +8,19 @@ The scheduler is the heart of Action Llama. It discovers agents, fires cron trig
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────┐
+┌──────────────────────────────────────────────┐
 │                 Scheduler                    │
 │  Discovers agents, fires cron triggers,      │
 │  manages runner pool and work queue          │
-├─────────────────────────────────────────────┤
+├──────────────────────────────────────────────┤
 │                  Gateway                     │
 │  HTTP server: webhooks, resource locks,      │
 │  dashboard, agent signals, control API       │
-├───────────┬───────────┬─────────────────────┤
+├───────────┬───────────┬──────────────────────┤
 │ Container │ Container │   Host-User Process  │
 │  Agent A  │  Agent A  │       Agent B        │
 │ (run 1)   │ (run 2)   │      (run 1)         │
-└───────────┴───────────┴─────────────────────┘
+└───────────┴───────────┴──────────────────────┘
 ```
 
 - **Scheduler** — discovers agents by scanning for directories with `SKILL.md`. Registers cron jobs and webhook triggers. Manages a pool of runners per agent (configurable via `scale`) and a durable work queue for buffering events when runners are busy.

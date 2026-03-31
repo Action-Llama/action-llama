@@ -1,0 +1,14 @@
+{
+  "name": "al",
+  "description": "Action Llama — CLI tool for running LLM agents as scripts. Create, run, debug, and manage autonomous agents triggered by cron schedules and webhooks.",
+  "version": "0.23.8",
+  "author": {
+    "name": "Action Llama"
+  },
+  "homepage": "https://docs.actionllama.org",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Action-Llama/action-llama"
+  },
+  "license": "MIT"
+}

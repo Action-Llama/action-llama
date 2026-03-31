@@ -1,3 +1,9 @@
+---
+name: run
+description: Trigger an Action Llama agent run and report the results. Use when running, triggering, or testing an agent.
+argument-hint: "[agent-name]"
+---
+
 # Run an agent
 
 Trigger an agent run and report the results.

@@ -311,39 +311,3 @@ describe("mcp server tools", () => {
   });
 });
 
-describe("scaffold includes .mcp.json", () => {
-  let tmpDir: string;
-
-  afterEach(() => {
-    if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  it("scaffoldProject creates .mcp.json", async () => {
-    const { scaffoldProject } = await import("../../src/setup/scaffold.js");
-    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-mcp-"));
-    const projDir = resolve(tmpDir, "my-project");
-    scaffoldProject(projDir, {}, []);
-
-    const mcpPath = resolve(projDir, ".mcp.json");
-    expect(existsSync(mcpPath)).toBe(true);
-    const content = JSON.parse(readFileSync(mcpPath, "utf-8"));
-    expect(content.mcpServers["action-llama"]).toEqual({
-      command: "al",
-      args: ["mcp", "serve"],
-    });
-  });
-
-  it("does not overwrite existing .mcp.json", async () => {
-    const { scaffoldProject } = await import("../../src/setup/scaffold.js");
-    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-mcp-"));
-    const projDir = resolve(tmpDir, "my-project");
-    mkdirSync(projDir, { recursive: true });
-    writeFileSync(resolve(projDir, ".mcp.json"), JSON.stringify({ custom: true }));
-
-    scaffoldProject(projDir, {}, []);
-
-    const content = JSON.parse(readFileSync(resolve(projDir, ".mcp.json"), "utf-8"));
-    expect(content.custom).toBe(true);
-    expect(content.mcpServers).toBeUndefined();
-  });
-});

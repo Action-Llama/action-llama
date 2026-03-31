@@ -1,3 +1,8 @@
+---
+name: status
+description: Show a rich overview of the Action Llama project status including scheduler state and agent details. Use when checking status, health, or state of the project.
+---
+
 # Status overview
 
 Show a rich overview of the Action Llama project status.
