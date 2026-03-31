@@ -19,6 +19,7 @@ import type { WebhookRegistry } from "../webhooks/registry.js";
 import type { WebhookSourceConfig } from "../shared/config.js";
 import { RunnerPool, type PoolRunner } from "../execution/runner-pool.js";
 import { buildSingleAgentImage } from "../execution/image-builder.js";
+import { createAgentRuntimeOverride } from "../execution/runtime-factory.js";
 import { registerWebhookBindings } from "../events/webhook-setup.js";
 import type { SchedulerContext } from "../execution/execution.js";
 import { runWithReruns, makeWebhookPrompt, executeRun, drainQueues } from "../execution/execution.js";
@@ -316,6 +317,26 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
     // Update description in status tracker (may have changed in SKILL.md frontmatter)
     ctx.statusTracker?.setAgentDescription(agentName, newConfig.description);
 
+    // Detect runtime config changes and update the agentRuntimeOverrides if needed.
+    // This ensures that when [runtime] settings change (e.g. groups = ["docker"] is added),
+    // subsequent agent launches use the updated HostUserRuntime with the new configuration.
+    const oldRuntimeConfig = JSON.stringify(oldConfig?.runtime ?? null);
+    const newRuntimeConfig = JSON.stringify(newConfig.runtime ?? null);
+    if (oldRuntimeConfig !== newRuntimeConfig) {
+      const newOverride = createAgentRuntimeOverride(newConfig);
+      if (newOverride) {
+        ctx.agentRuntimeOverrides[agentName] = newOverride;
+        ctx.logger.info(
+          { agent: agentName, runAs: newConfig.runtime?.run_as ?? "al-agent", groups: newConfig.runtime?.groups ?? [] },
+          "hot reload: updated host-user runtime config",
+        );
+      } else {
+        // Reverted to container runtime — remove the host-user override
+        delete ctx.agentRuntimeOverrides[agentName];
+        ctx.logger.info({ agent: agentName }, "hot reload: reverted to container runtime");
+      }
+    }
+
     // Rebuild image (only for container-based runtimes)
     const agentRuntime = ctx.agentRuntimeOverrides[agentName] || ctx.runtime;
     let image = ctx.agentImages[agentName] || ctx.baseImage;
@@ -336,7 +357,7 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
     }
     ctx.agentImages[agentName] = image;
 
-    // Update existing runners with new image and config
+    // Update existing runners with new image, config, and runtime (if changed)
     const pool = ctx.runnerPools[agentName];
     if (pool) {
       for (const runner of pool.allRunners) {
@@ -345,6 +366,14 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
         }
         if ('setAgentConfig' in runner && typeof (runner as any).setAgentConfig === 'function') {
           (runner as any).setAgentConfig(newConfig);
+        }
+        // Propagate runtime changes to existing runners so in-flight and future
+        // launches within the same runner instance use the updated runtime config.
+        if (oldRuntimeConfig !== newRuntimeConfig) {
+          const updatedRuntime = ctx.agentRuntimeOverrides[agentName] || ctx.runtime;
+          if ('setRuntime' in runner && typeof (runner as any).setRuntime === 'function') {
+            (runner as any).setRuntime(updatedRuntime);
+          }
         }
       }
 
