@@ -32,7 +32,7 @@ const STATE_DOT_COLORS: Record<string, string> = {
 function StatusCell({ agent }: { agent: AgentStatus }) {
   const dotColor = STATE_DOT_COLORS[agent.state] ?? "bg-slate-400";
   return (
-    <span className={`inline-block w-2 h-2 rounded-full ${dotColor}`} />
+    <span className={`inline-block w-2 h-2 rounded-full ${dotColor}`} title={agent.state} />
   );
 }
 

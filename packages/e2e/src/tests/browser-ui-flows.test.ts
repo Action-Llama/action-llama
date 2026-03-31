@@ -231,8 +231,8 @@ EOF`,
       const agentVisible = await page.locator("text=echo-agent").first().isVisible();
       expect(agentVisible).toBe(true);
 
-      // Agent state should show (idle, since nothing is running)
-      await page.waitForSelector("text=idle", { timeout: 5000 });
+      // Agent state should show (idle dot, since nothing is running)
+      await page.waitForSelector('span[title="idle"]', { timeout: 5000 });
     } finally {
       await page.close();
     }
