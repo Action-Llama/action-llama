@@ -856,6 +856,111 @@ describe("ContainerAgentRunner", () => {
     });
   });
 
+  describe("setRuntime()", () => {
+    it("replaces the runtime used by the runner", async () => {
+      const runner = createRunner();
+      const newRuntime = createMockRuntime({
+        launch: vi.fn().mockResolvedValue("new-container-456"),
+      });
+      runner.setRuntime(newRuntime);
+      await runner.run("test prompt");
+      // Should have used the new runtime's launch
+      expect(newRuntime.launch).toHaveBeenCalled();
+      expect((runtime.launch as any).mock.calls).toHaveLength(0);
+    });
+  });
+
+  describe("abort() when runtime.kill throws", () => {
+    it("does not propagate the error (swallows kill failure gracefully)", async () => {
+      let resolveLaunch!: (value: string) => void;
+      const killError = new Error("kill failed");
+      const killingRuntime = createMockRuntime({
+        launch: vi.fn().mockImplementation(() => new Promise((r) => { resolveLaunch = r; })),
+        kill: vi.fn().mockRejectedValue(killError),
+        waitForExit: vi.fn().mockResolvedValue(1), // non-zero to resolve run after abort
+      });
+      const childWarn = vi.fn();
+      const loggerWithChild = {
+        ...makeMockLogger(),
+        child: () => ({ ...makeMockLogger(), warn: childWarn }),
+      } as any;
+      const runner = new ContainerAgentRunner(
+        killingRuntime, globalConfig, agentConfig, loggerWithChild,
+        vi.fn(), vi.fn(), "", "/tmp", "test-image:latest",
+      );
+      const runPromise = runner.run("test prompt");
+      await Promise.resolve();
+      resolveLaunch("al-killing-container");
+      await Promise.resolve();
+      await Promise.resolve();
+
+      runner.abort();
+      // Allow the kill rejection to be processed
+      await new Promise((r) => setTimeout(r, 50));
+
+      const result = await runPromise;
+      expect(result).toBeDefined();
+      // The runner should have logged the kill failure as a warning
+      expect(childWarn).toHaveBeenCalledWith(
+        expect.objectContaining({ err: killError }),
+        "Failed to kill container during abort",
+      );
+    });
+  });
+
+  describe("monitorContainer exception path", () => {
+    it("catches exception from waitForExit and stops logStream in finally", async () => {
+      const mockLogStop = vi.fn();
+      const errorOnWait = new Error("waitForExit exploded");
+      const failRuntime = createMockRuntime({
+        streamLogs: vi.fn().mockReturnValue({ stop: mockLogStop }),
+        waitForExit: vi.fn().mockRejectedValue(errorOnWait),
+      });
+      const childError = vi.fn();
+      const loggerWithChild = {
+        ...makeMockLogger(),
+        child: () => ({ ...makeMockLogger(), error: childError }),
+      } as any;
+      const runner = new ContainerAgentRunner(
+        failRuntime, globalConfig, agentConfig, loggerWithChild,
+        vi.fn(), vi.fn(), "", "/tmp", "test-image:latest",
+      );
+      const result = await runner.run("test prompt");
+
+      // The error should be captured in runError → result is "error"
+      expect(result.result).toBe("error");
+      // logger.error should have been called with the monitoring failure message
+      expect(childError).toHaveBeenCalledWith(
+        expect.objectContaining({ err: errorOnWait }),
+        expect.stringContaining("container monitoring failed"),
+      );
+      // logStream.stop() should have been called in the finally block (line 211)
+      // because the exception was thrown while logStream was still set
+      expect(mockLogStop).toHaveBeenCalled();
+    });
+  });
+
+  describe("credential resolution — providerKey already present", () => {
+    it("skips duplicate providerKey when credential ref already includes it", async () => {
+      const configWithExistingKey: AgentConfig = {
+        name: "test-agent",
+        credentials: ["anthropic_key"],  // already has the key
+        models: [{ provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" }],
+        schedule: "*/5 * * * *",
+      };
+      const runner = new ContainerAgentRunner(
+        runtime, globalConfig, configWithExistingKey, mockLogger,
+        vi.fn(), vi.fn(), "", "/tmp", "test-image:latest",
+      );
+      await runner.run("test prompt");
+
+      // prepareCredentials should be called with anthropic_key exactly once (not duplicated)
+      const credRefs = (runtime.prepareCredentials as any).mock.calls[0][0];
+      const anthropicKeyCount = credRefs.filter((r: string) => r === "anthropic_key").length;
+      expect(anthropicKeyCount).toBe(1);
+    });
+  });
+
   describe("adoptContainer()", () => {
     it("re-registers, streams logs, waits for exit, then cleans up", async () => {
       const registerContainer = vi.fn().mockResolvedValue(undefined);
