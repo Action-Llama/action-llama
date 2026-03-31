@@ -267,3 +267,15 @@ describe("isTerminalAgentState", () => {
     expect(isTerminalAgentState("error")).toBe(false);
   });
 });
+
+describe("InstanceLifecycle class getters", () => {
+  it("agentName getter returns the agent name", () => {
+    const lifecycle = new InstanceLifecycle("inst-1", "my-agent", "schedule");
+    expect(lifecycle.agentName).toBe("my-agent");
+  });
+
+  it("trigger getter returns the trigger string", () => {
+    const lifecycle = new InstanceLifecycle("inst-2", "my-agent", "webhook");
+    expect(lifecycle.trigger).toBe("webhook");
+  });
+});

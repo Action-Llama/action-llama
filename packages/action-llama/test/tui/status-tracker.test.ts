@@ -843,4 +843,23 @@ describe("StatusTracker", () => {
 
     expect(listener).toHaveBeenCalled();
   });
+
+  it("enableAgent on unregistered agent is a no-op and does not throw", () => {
+    const tracker = new StatusTracker();
+    // Should not throw and should not modify anything
+    tracker.enableAgent("unknown-agent");
+    expect(tracker.getAllAgents()).toHaveLength(0);
+  });
+
+  it("disableAgent on unregistered agent is a no-op and does not throw", () => {
+    const tracker = new StatusTracker();
+    // Should not throw and should not modify anything
+    tracker.disableAgent("unknown-agent");
+    expect(tracker.getAllAgents()).toHaveLength(0);
+  });
+
+  it("isAgentEnabled returns false for unregistered agent", () => {
+    const tracker = new StatusTracker();
+    expect(tracker.isAgentEnabled("unknown-agent")).toBe(false);
+  });
 });

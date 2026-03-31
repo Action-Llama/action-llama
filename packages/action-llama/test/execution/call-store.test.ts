@@ -203,4 +203,72 @@ describe("CallStore", () => {
       expect(store.check(entry.callId, "a")).toBeNull();
     });
   });
+
+  describe("get", () => {
+    it("returns the call entry by callId", () => {
+      const entry = store.create({ callerAgent: "a", callerInstanceId: "a", targetAgent: "b", context: "ctx", depth: 0 });
+      const result = store.get(entry.callId);
+      expect(result).toBeDefined();
+      expect(result?.callId).toBe(entry.callId);
+      expect(result?.status).toBe("pending");
+      expect(result?.targetAgent).toBe("b");
+    });
+
+    it("returns undefined for a non-existent callId", () => {
+      expect(store.get("does-not-exist")).toBeUndefined();
+    });
+  });
+
+  describe("init with state store", () => {
+    it("hydrates in-memory state from persisted entries", async () => {
+      // Create a minimal StateStore with pre-populated call entries
+      const persistedCallId = "pre-existing-call-123";
+      const callEntry = {
+        callId: persistedCallId,
+        callerAgent: "agent-x",
+        callerInstanceId: "agent-x",
+        targetAgent: "agent-y",
+        context: "some context",
+        depth: 0,
+        status: "pending" as const,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      const storeData = new Map<string, unknown>();
+      storeData.set(`calls:${persistedCallId}`, callEntry);
+
+      const mockStateStore = {
+        get: async (_ns: string, _key: string) => null,
+        set: async () => {},
+        delete: async () => {},
+        deleteAll: async () => {},
+        list: async <T>(_ns: string): Promise<Array<{ key: string; value: T }>> => {
+          if (_ns === "calls") {
+            return [{ key: persistedCallId, value: callEntry as T }];
+          }
+          return [];
+        },
+        close: async () => {},
+      };
+
+      const storeWithPersistence = new CallStore(9999, mockStateStore as any);
+      await storeWithPersistence.init();
+
+      // The persisted entry should now be accessible via get()
+      const retrieved = storeWithPersistence.get(persistedCallId);
+      expect(retrieved).toBeDefined();
+      expect(retrieved?.callId).toBe(persistedCallId);
+      expect(retrieved?.callerAgent).toBe("agent-x");
+      expect(retrieved?.targetAgent).toBe("agent-y");
+
+      storeWithPersistence.dispose();
+    });
+
+    it("init with no state store is a no-op", async () => {
+      const emptyStore = new CallStore(9999);
+      await expect(emptyStore.init()).resolves.not.toThrow();
+      emptyStore.dispose();
+    });
+  });
 });
