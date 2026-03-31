@@ -7,14 +7,21 @@
  *  - Working directory: /tmp/al-runs/<instance-id>/ (chowned to agent user)
  *  - Logs written to /tmp/al-runs/<instance-id>.log (owned by scheduler)
  *  - No image builds, no containers, no Docker dependency
+ *
+ * Stdio is directed to the log file (not pipes), so the child process survives
+ * scheduler restarts. On restart, `reattach()` reconstructs the in-memory state
+ * from the PID file, and all methods (streamLogs, waitForExit, kill) follow the
+ * same code path as a freshly launched process.
  */
 
-import { spawn, execFileSync, type ChildProcess } from "child_process";
+import { spawn, execFileSync } from "child_process";
+import { EventEmitter } from "events";
 import { randomUUID } from "crypto";
 import {
   mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync,
-  chownSync, readFileSync, existsSync, createWriteStream,
-  readdirSync,
+  chownSync, readFileSync, existsSync,
+  readdirSync, openSync, readSync, closeSync, statSync, watch,
+  type FSWatcher,
 } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -26,6 +33,7 @@ import { parseCredentialRef, getDefaultBackend } from "../shared/credentials.js"
 import { CONSTANTS } from "../shared/constants.js";
 
 const RUNS_DIR = join(tmpdir(), "al-runs");
+const ORPHAN_POLL_MS = 500;
 
 /** Metadata persisted alongside a running process for orphan recovery. */
 interface PidFileData {
@@ -97,22 +105,59 @@ function resolveGid(username: string): number | undefined {
   }
 }
 
-interface LogStreamState {
-  stdoutBuffer: string;
-  stderrBuffer: string;
-  bufferedLines: string[];
-  bufferedStderr: string[];
-  onLine: ((line: string) => void) | null;
-  onStderr: ((text: string) => void) | null;
+/**
+ * Minimal process handle that both ChildProcess and OrphanProcess satisfy.
+ * Keeps waitForExit / kill / shutdown on a single code path.
+ */
+interface ProcessHandle {
+  pid: number | undefined;
+  kill(signal?: NodeJS.Signals | number): boolean;
+  on(event: string, listener: (...args: any[]) => void): any;
+}
+
+/**
+ * Wraps a bare OS PID (discovered via PID file) so it behaves like a
+ * ChildProcess to the rest of the runtime.  Polls liveness and emits
+ * "exit" when the process disappears.
+ */
+class OrphanProcess extends EventEmitter implements ProcessHandle {
+  readonly pid: number;
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
+
+  constructor(pid: number) {
+    super();
+    this.pid = pid;
+    this.pollTimer = setInterval(() => {
+      if (!isProcessAlive(pid)) {
+        this.stop();
+        this.emit("exit", 0, null);
+      }
+    }, ORPHAN_POLL_MS);
+  }
+
+  kill(signal?: NodeJS.Signals | number): boolean {
+    try {
+      process.kill(this.pid, signal);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  stop(): void {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
+  }
 }
 
 export class HostUserRuntime implements Runtime {
   readonly needsGateway = false;
 
   private runAs: string;
-  private processes = new Map<string, ChildProcess>();
+  private processes = new Map<string, ProcessHandle>();
   private runAgentNames = new Map<string, string>();
-  private logStreams = new Map<string, LogStreamState>();
 
   constructor(runAs: string = "al-agent") {
     this.runAs = runAs;
@@ -260,9 +305,10 @@ export class HostUserRuntime implements Runtime {
       try { chownSync(workDir, uid, gid); } catch { /* non-root */ }
     }
 
-    // Create log file (owned by scheduler user, not agent user)
+    // Create log file — child writes directly to this fd so output survives
+    // scheduler restarts. streamLogs() tails this file using fs.watch().
     const logPath = join(RUNS_DIR, `${runId}.log`);
-    const logStream = createWriteStream(logPath, { flags: "a" });
+    const logFd = openSync(logPath, "a");
 
     // Build env vars for the child process
     const env: Record<string, string> = {
@@ -283,54 +329,15 @@ export class HostUserRuntime implements Runtime {
       alBin, "_run-agent", opts.agentName,
       "--project", process.cwd(),
     ], {
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["ignore", logFd, logFd],
       env,
       cwd: workDir,
     });
 
-    // Set up buffering stream state — captures all output from process start,
-    // so streamLogs() can flush buffered lines without any data loss.
-    const streamState: LogStreamState = {
-      stdoutBuffer: "",
-      stderrBuffer: "",
-      bufferedLines: [],
-      bufferedStderr: [],
-      onLine: null,
-      onStderr: null,
-    };
+    // Close the fd in the parent — child has its own copy
+    closeSync(logFd);
 
-    proc.stdout?.on("data", (chunk: Buffer) => {
-      const text = chunk.toString();
-      // Always write raw data to the run log file
-      logStream.write(text);
-      // Assemble complete lines and forward or buffer them
-      streamState.stdoutBuffer += text;
-      const lines = streamState.stdoutBuffer.split("\n");
-      streamState.stdoutBuffer = lines.pop() || "";
-      for (const line of lines) {
-        if (streamState.onLine) {
-          streamState.onLine(line);
-        } else {
-          streamState.bufferedLines.push(line);
-        }
-      }
-    });
-
-    proc.stderr?.on("data", (chunk: Buffer) => {
-      const text = chunk.toString();
-      logStream.write(text);
-      const trimmed = text.trim();
-      if (trimmed) {
-        if (streamState.onStderr) {
-          streamState.onStderr(trimmed);
-        } else {
-          streamState.bufferedStderr.push(trimmed);
-        }
-      }
-    });
-
-    this.logStreams.set(runId, streamState);
-    this.processes.set(runId, proc);
+    this.processes.set(runId, proc as unknown as ProcessHandle);
     this.runAgentNames.set(runId, opts.agentName);
 
     // Write PID file for orphan recovery across scheduler restarts
@@ -349,58 +356,89 @@ export class HostUserRuntime implements Runtime {
 
     // Clean up tracking on exit
     proc.on("exit", () => {
-      // Flush any remaining partial stdout line
-      if (streamState.stdoutBuffer.trim()) {
-        if (streamState.onLine) {
-          streamState.onLine(streamState.stdoutBuffer);
-        } else {
-          streamState.bufferedLines.push(streamState.stdoutBuffer);
-        }
-        streamState.stdoutBuffer = "";
-      }
-      logStream.end();
       this.processes.delete(runId);
       this.runAgentNames.delete(runId);
-      this.logStreams.delete(runId);
       removePidFile(runId);
     });
 
     return runId;
   }
 
+  /**
+   * Re-attach to an orphaned process from a previous scheduler session.
+   * Reads the PID file and reconstructs in-memory state so that streamLogs,
+   * waitForExit, and kill all work through the same code path as launch().
+   */
+  reattach(runId: string): boolean {
+    if (this.processes.has(runId)) return true;
+
+    const data = readPidFile(runId);
+    if (!data || !isProcessAlive(data.pid)) return false;
+
+    const orphan = new OrphanProcess(data.pid);
+    this.processes.set(runId, orphan);
+    this.runAgentNames.set(runId, data.agentName);
+
+    orphan.on("exit", () => {
+      orphan.stop();
+      this.processes.delete(runId);
+      this.runAgentNames.delete(runId);
+      removePidFile(runId);
+    });
+
+    return true;
+  }
+
   streamLogs(
     runId: string,
     onLine: (line: string) => void,
-    onStderr?: (text: string) => void,
+    _onStderr?: (text: string) => void,
   ): { stop: () => void } {
-    const proc = this.processes.get(runId);
-    if (!proc) return { stop: () => {} };
+    const logPath = join(RUNS_DIR, `${runId}.log`);
+    if (!existsSync(logPath)) return { stop: () => {} };
 
-    const streamState = this.logStreams.get(runId);
-    if (!streamState) return { stop: () => {} };
+    let offset = 0;
+    let lineBuffer = "";
+    let stopped = false;
 
-    // Flush lines buffered between launch() and now (no data loss)
-    for (const line of streamState.bufferedLines) {
-      onLine(line);
-    }
-    streamState.bufferedLines.length = 0;
+    const readNewData = () => {
+      if (stopped) return;
+      try {
+        const size = statSync(logPath).size;
+        if (size <= offset) return;
+        const buf = Buffer.alloc(size - offset);
+        const fd = openSync(logPath, "r");
+        try {
+          readSync(fd, buf, 0, buf.length, offset);
+        } finally {
+          closeSync(fd);
+        }
+        offset = size;
 
-    for (const text of streamState.bufferedStderr) {
-      if (onStderr) onStderr(text);
-    }
-    streamState.bufferedStderr.length = 0;
+        lineBuffer += buf.toString();
+        const lines = lineBuffer.split("\n");
+        lineBuffer = lines.pop() || "";
+        for (const line of lines) {
+          onLine(line);
+        }
+      } catch { /* file may have been removed */ }
+    };
 
-    // Forward all future lines through the callbacks
-    streamState.onLine = onLine;
-    streamState.onStderr = onStderr ?? null;
+    // Read existing content, then watch for new writes (inotify/kqueue)
+    readNewData();
+
+    let watcher: FSWatcher | null = null;
+    try {
+      watcher = watch(logPath, () => readNewData());
+    } catch { /* watch may fail on some filesystems */ }
 
     return {
       stop: () => {
-        streamState.onLine = null;
-        streamState.onStderr = null;
-        if (streamState.stdoutBuffer.trim()) {
-          onLine(streamState.stdoutBuffer);
-          streamState.stdoutBuffer = "";
+        stopped = true;
+        if (watcher) { watcher.close(); watcher = null; }
+        if (lineBuffer.trim()) {
+          onLine(lineBuffer);
+          lineBuffer = "";
         }
       },
     };
@@ -425,12 +463,12 @@ export class HostUserRuntime implements Runtime {
         reject(new Error(`Agent ${runId} timed out after ${timeoutSeconds}s`));
       }, timeoutSeconds * 1000);
 
-      proc.on("exit", (code) => {
+      proc.on("exit", (code: number | null) => {
         clearTimeout(timer);
         resolve(code ?? 1);
       });
 
-      proc.on("error", (err) => {
+      proc.on("error", (err: Error) => {
         clearTimeout(timer);
         reject(err);
       });
@@ -450,12 +488,11 @@ export class HostUserRuntime implements Runtime {
       return;
     }
 
-    // Orphan: kill via PID file
+    // Not tracked — try PID file as last resort (e.g. kill called before reattach)
     const data = readPidFile(runId);
     if (data && isProcessAlive(data.pid)) {
       try {
         process.kill(data.pid, "SIGTERM");
-        // Escalate after grace period
         setTimeout(() => {
           try {
             if (isProcessAlive(data.pid)) {

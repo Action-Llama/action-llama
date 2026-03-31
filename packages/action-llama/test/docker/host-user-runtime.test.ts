@@ -27,8 +27,28 @@ vi.mock("../../src/shared/credentials.js", () => ({
 import { HostUserRuntime } from "../../src/docker/host-user-runtime.js";
 import type { RuntimeCredentials } from "../../src/docker/runtime.js";
 
+const RUNS_DIR = join(tmpdir(), "al-runs");
+
 describe("HostUserRuntime", () => {
   let runtime: HostUserRuntime;
+
+  function makeFakeProc(pid?: number) {
+    const { EventEmitter } = require("events");
+    const proc = new EventEmitter();
+    proc.pid = pid ?? 12345;
+    proc.kill = vi.fn();
+    return proc;
+  }
+
+  function writePidFileManually(runId: string, data: any) {
+    mkdirSync(RUNS_DIR, { recursive: true });
+    writeFileSync(join(RUNS_DIR, `${runId}.pid`), JSON.stringify(data) + "\n");
+  }
+
+  function writeLogFile(runId: string, content: string) {
+    mkdirSync(RUNS_DIR, { recursive: true });
+    writeFileSync(join(RUNS_DIR, `${runId}.log`), content);
+  }
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -39,6 +59,19 @@ describe("HostUserRuntime", () => {
       return "";
     });
     runtime = new HostUserRuntime("al-agent");
+  });
+
+  afterEach(() => {
+    // Clean up test artifacts in RUNS_DIR
+    try {
+      for (const f of readdirSync(RUNS_DIR)) {
+        if (f.includes("-test-") || f.includes("buffer-") || f.includes("stream-") ||
+            f.includes("wait-") || f.includes("kill-") || f.includes("active-") ||
+            f.includes("listed-") || f.includes("sigkill-") || f.includes("shutdown-")) {
+          rmSync(join(RUNS_DIR, f), { recursive: true, force: true });
+        }
+      }
+    } catch { /* dir may not exist */ }
   });
 
   describe("needsGateway", () => {
@@ -92,14 +125,9 @@ describe("HostUserRuntime", () => {
   });
 
   describe("launch", () => {
-    it("spawns sudo with correct arguments", async () => {
-      const mockProc = {
-        stdout: { pipe: vi.fn(), on: vi.fn() },
-        stderr: { pipe: vi.fn(), on: vi.fn() },
-        on: vi.fn(),
-        kill: vi.fn(),
-      };
-      mockSpawn.mockReturnValue(mockProc);
+    it("spawns sudo with correct arguments and file-based stdio", async () => {
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
 
       const runId = await runtime.launch({
         image: "ignored",
@@ -113,7 +141,8 @@ describe("HostUserRuntime", () => {
         "sudo",
         expect.arrayContaining(["-u", "al-agent"]),
         expect.objectContaining({
-          stdio: ["ignore", "pipe", "pipe"],
+          // stdio uses file descriptors (numbers) for stdout/stderr
+          stdio: ["ignore", expect.any(Number), expect.any(Number)],
         }),
       );
 
@@ -122,6 +151,8 @@ describe("HostUserRuntime", () => {
       const spawnEnv = spawnCall[2].env;
       expect(spawnEnv.AL_CREDENTIALS_PATH).toBe("/tmp/creds");
       expect(spawnEnv.PROMPT).toBe("do something");
+
+      fakeProc.emit("exit", 0);
     });
   });
 
@@ -142,10 +173,7 @@ describe("HostUserRuntime", () => {
     it("removes the working directory", async () => {
       const dir = mkdtempSync(join(tmpdir(), "al-test-run-"));
       const runId = dir.split("/").pop()!;
-      // Create a file in the dir
       writeFileSync(join(dir, "test.txt"), "hello");
-
-      // Note: remove() uses RUNS_DIR internally, so this tests the graceful handling
       await expect(runtime.remove(runId)).resolves.not.toThrow();
     });
   });
@@ -167,20 +195,16 @@ describe("HostUserRuntime", () => {
 
   describe("resolveUid/resolveGid fallback when id fails", () => {
     it("prepareCredentials works when user resolution fails (uid/gid = undefined)", async () => {
-      // Make id calls throw
       mockExecFileSync.mockImplementation(() => {
         throw new Error("id: no such user");
       });
-      // Re-create runtime with failing mock
       const rt = new HostUserRuntime("nonexistent-user");
 
       const tmpCreds = mkdtempSync(join(tmpdir(), "al-test-creds-"));
       try {
-        // Should not throw — chown is skipped when uid/gid undefined
         const result = await rt.prepareCredentials([]);
         expect(result.strategy).toBe("host-user");
         expect(result.stagingDir).toBeDefined();
-        // Cleanup
         rmSync(result.stagingDir, { recursive: true, force: true });
       } finally {
         rmSync(tmpCreds, { recursive: true, force: true });
@@ -188,151 +212,64 @@ describe("HostUserRuntime", () => {
     });
   });
 
-  // ── Processes lifecycle tests ─────────────────────────────────────────────
+  // ── streamLogs (file-tailing, same path for fresh and adopted) ──────────
 
-  describe("streamLogs with active process", () => {
-    function makeFakeProc() {
-      const { EventEmitter } = require("events");
-      const proc = new EventEmitter();
-      proc.stdout = new EventEmitter();
-      proc.stderr = new EventEmitter();
-      proc.kill = vi.fn();
-      proc.pipe = vi.fn();
-      proc.stdout.pipe = vi.fn();
-      proc.stderr.pipe = vi.fn();
-      return proc;
-    }
-
-    it("returns empty stop when process not found", () => {
+  describe("streamLogs", () => {
+    it("returns empty stop when log file does not exist", () => {
       const handle = runtime.streamLogs("nonexistent-run", () => {});
       expect(() => handle.stop()).not.toThrow();
     });
 
-    it("buffers lines emitted before streamLogs() is called and replays them", async () => {
-      const fakeProc = makeFakeProc();
-      mockSpawn.mockReturnValueOnce(fakeProc);
-
-      const runId = await runtime.launch({
-        image: "ignored",
-        agentName: "buffer-test",
-        env: {},
-        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
-      });
-
-      // Simulate data arriving BEFORE streamLogs() is attached (the race condition)
-      fakeProc.stdout.emit("data", Buffer.from("early line one\nearly line two\n"));
-
-      // Now attach streamLogs — should receive both buffered lines
-      const lines: string[] = [];
-      runtime.streamLogs(runId, (line) => lines.push(line));
-
-      expect(lines).toEqual(["early line one", "early line two"]);
-
-      // Lines emitted after should also be received
-      fakeProc.stdout.emit("data", Buffer.from("late line\n"));
-      expect(lines).toEqual(["early line one", "early line two", "late line"]);
-
-      fakeProc.emit("exit", 0);
-    });
-
-    it("buffers stderr emitted before streamLogs() and replays it", async () => {
-      const fakeProc = makeFakeProc();
-      mockSpawn.mockReturnValueOnce(fakeProc);
-
-      const runId = await runtime.launch({
-        image: "ignored",
-        agentName: "buffer-stderr",
-        env: {},
-        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
-      });
-
-      // Emit stderr before streamLogs() is attached
-      fakeProc.stderr.emit("data", Buffer.from("early stderr\n"));
-
-      const errors: string[] = [];
-      runtime.streamLogs(runId, () => {}, (msg) => errors.push(msg));
-
-      expect(errors).toContain("early stderr");
-
-      fakeProc.emit("exit", 0);
-    });
-
-    it("receives stdout lines from active process", async () => {
-      const fakeProc = makeFakeProc();
-      mockSpawn.mockReturnValueOnce(fakeProc);
-
-      const runId = await runtime.launch({
-        image: "ignored",
-        agentName: "stream-test",
-        env: {},
-        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
-      });
-
-      const lines: string[] = [];
-      runtime.streamLogs(runId, (line) => lines.push(line));
-
-      fakeProc.stdout.emit("data", Buffer.from("log line one\nlog line two\n"));
-      expect(lines).toEqual(["log line one", "log line two"]);
-
-      // Cleanup
-      fakeProc.emit("exit", 0);
-    });
-
-    it("receives stderr via onStderr callback", async () => {
-      const fakeProc = makeFakeProc();
-      mockSpawn.mockReturnValueOnce(fakeProc);
-
-      const runId = await runtime.launch({
-        image: "ignored",
-        agentName: "stream-stderr",
-        env: {},
-        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
-      });
-
-      const errors: string[] = [];
-      runtime.streamLogs(runId, () => {}, (msg) => errors.push(msg));
-
-      fakeProc.stderr.emit("data", Buffer.from("stderr warning\n"));
-      expect(errors).toContain("stderr warning");
-
-      fakeProc.emit("exit", 0);
-    });
-
-    it("stop() flushes buffered partial line and removes listener", async () => {
-      const fakeProc = makeFakeProc();
-      mockSpawn.mockReturnValueOnce(fakeProc);
-
-      const runId = await runtime.launch({
-        image: "ignored",
-        agentName: "stream-stop",
-        env: {},
-        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
-      });
+    it("reads existing log file content", () => {
+      const runId = "al-test-readlog-abc123";
+      writeLogFile(runId, "line one\nline two\n");
 
       const lines: string[] = [];
       const handle = runtime.streamLogs(runId, (line) => lines.push(line));
 
-      fakeProc.stdout.emit("data", Buffer.from("partial line without newline"));
+      expect(lines).toEqual(["line one", "line two"]);
       handle.stop();
+    });
 
-      expect(lines).toContain("partial line without newline");
+    it("flushes partial line on stop", () => {
+      const runId = "al-test-partial-abc123";
+      writeLogFile(runId, "complete line\npartial");
 
+      const lines: string[] = [];
+      const handle = runtime.streamLogs(runId, (line) => lines.push(line));
+
+      expect(lines).toEqual(["complete line"]);
+      handle.stop();
+      expect(lines).toContain("partial");
+    });
+
+    it("reads log file created by launch()", async () => {
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+
+      const runId = await runtime.launch({
+        image: "ignored",
+        agentName: "test-streamlaunch",
+        env: {},
+        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
+      });
+
+      // launch() creates the log file via openSync. Write some content to it.
+      const logPath = join(RUNS_DIR, `${runId}.log`);
+      writeFileSync(logPath, "hello from agent\n");
+
+      const lines: string[] = [];
+      const handle = runtime.streamLogs(runId, (line) => lines.push(line));
+
+      expect(lines).toContain("hello from agent");
+      handle.stop();
       fakeProc.emit("exit", 0);
     });
   });
 
-  describe("waitForExit with active process", () => {
-    function makeFakeProc() {
-      const { EventEmitter } = require("events");
-      const proc = new EventEmitter();
-      proc.stdout = new EventEmitter();
-      proc.stderr = new EventEmitter();
-      proc.kill = vi.fn();
-      proc.stdout.pipe = vi.fn();
-      proc.stderr.pipe = vi.fn();
-      return proc;
-    }
+  // ── waitForExit ─────────────────────────────────────────────────────────
 
+  describe("waitForExit", () => {
     it("resolves with 1 when process not found", async () => {
       const code = await runtime.waitForExit("nonexistent-run", 5);
       expect(code).toBe(1);
@@ -344,7 +281,7 @@ describe("HostUserRuntime", () => {
 
       const runId = await runtime.launch({
         image: "ignored",
-        agentName: "wait-test",
+        agentName: "test-wait",
         env: {},
         credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
       });
@@ -362,7 +299,7 @@ describe("HostUserRuntime", () => {
 
       const runId = await runtime.launch({
         image: "ignored",
-        agentName: "wait-null",
+        agentName: "test-waitnull",
         env: {},
         credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
       });
@@ -380,7 +317,7 @@ describe("HostUserRuntime", () => {
 
       const runId = await runtime.launch({
         image: "ignored",
-        agentName: "wait-error",
+        agentName: "test-waiterror",
         env: {},
         credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
       });
@@ -398,7 +335,7 @@ describe("HostUserRuntime", () => {
 
       const runId = await runtime.launch({
         image: "ignored",
-        agentName: "wait-timeout",
+        agentName: "test-waittimeout",
         env: {},
         credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
       });
@@ -411,27 +348,41 @@ describe("HostUserRuntime", () => {
 
       vi.useRealTimers();
     });
+
+    it("sends SIGKILL after 5s grace period when process persists after timeout", async () => {
+      vi.useFakeTimers();
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+
+      const runId = await runtime.launch({
+        image: "ignored",
+        agentName: "test-sigkill",
+        env: {},
+        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
+      });
+
+      const exitPromise = runtime.waitForExit(runId, 10);
+      vi.advanceTimersByTime(10_001);
+      await expect(exitPromise).rejects.toThrow();
+      expect(fakeProc.kill).toHaveBeenCalledWith("SIGTERM");
+
+      vi.advanceTimersByTime(5_001);
+      expect(fakeProc.kill).toHaveBeenCalledWith("SIGKILL");
+
+      vi.useRealTimers();
+    });
   });
 
-  describe("kill with active process", () => {
-    function makeFakeProc() {
-      const { EventEmitter } = require("events");
-      const proc = new EventEmitter();
-      proc.kill = vi.fn();
-      proc.stdout = new EventEmitter();
-      proc.stderr = new EventEmitter();
-      proc.stdout.pipe = vi.fn();
-      proc.stderr.pipe = vi.fn();
-      return proc;
-    }
+  // ── kill ─────────────────────────────────────────────────────────────────
 
+  describe("kill with active process", () => {
     it("sends SIGTERM to active process", async () => {
       const fakeProc = makeFakeProc();
       mockSpawn.mockReturnValueOnce(fakeProc);
 
       const runId = await runtime.launch({
         image: "ignored",
-        agentName: "kill-test",
+        agentName: "test-killactive",
         env: {},
         credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
       });
@@ -441,32 +392,45 @@ describe("HostUserRuntime", () => {
 
       fakeProc.emit("exit", 0);
     });
+
+    it("escalates to SIGKILL after 5s grace period", async () => {
+      vi.useFakeTimers();
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+
+      const runId = await runtime.launch({
+        image: "ignored",
+        agentName: "test-killescalate",
+        env: {},
+        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
+      });
+
+      await runtime.kill(runId);
+      expect(fakeProc.kill).toHaveBeenCalledWith("SIGTERM");
+
+      vi.advanceTimersByTime(5_001);
+      expect(fakeProc.kill).toHaveBeenCalledWith("SIGKILL");
+
+      fakeProc.emit("exit", 0);
+      vi.useRealTimers();
+    });
   });
 
-  describe("isAgentRunning / listRunningAgents with active process", () => {
-    function makeFakeProc() {
-      const { EventEmitter } = require("events");
-      const proc = new EventEmitter();
-      proc.kill = vi.fn();
-      proc.stdout = new EventEmitter();
-      proc.stderr = new EventEmitter();
-      proc.stdout.pipe = vi.fn();
-      proc.stderr.pipe = vi.fn();
-      return proc;
-    }
+  // ── isAgentRunning / listRunningAgents with active process ──────────────
 
+  describe("isAgentRunning / listRunningAgents with active process", () => {
     it("returns true for a running agent after launch", async () => {
       const fakeProc = makeFakeProc();
       mockSpawn.mockReturnValueOnce(fakeProc);
 
       await runtime.launch({
         image: "ignored",
-        agentName: "active-agent",
+        agentName: "test-active",
         env: {},
         credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
       });
 
-      expect(await runtime.isAgentRunning("active-agent")).toBe(true);
+      expect(await runtime.isAgentRunning("test-active")).toBe(true);
       expect(await runtime.isAgentRunning("other-agent")).toBe(false);
 
       fakeProc.emit("exit", 0);
@@ -478,110 +442,31 @@ describe("HostUserRuntime", () => {
 
       await runtime.launch({
         image: "ignored",
-        agentName: "listed-agent",
+        agentName: "test-listed",
         env: {},
         credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
       });
 
       const agents = await runtime.listRunningAgents();
       expect(agents).toHaveLength(1);
-      expect(agents[0].agentName).toBe("listed-agent");
+      expect(agents[0].agentName).toBe("test-listed");
       expect(agents[0].status).toBe("running");
 
       fakeProc.emit("exit", 0);
     });
   });
 
-  describe("waitForExit SIGKILL escalation", () => {
-    function makeFakeProc() {
-      const { EventEmitter } = require("events");
-      const proc = new EventEmitter();
-      proc.kill = vi.fn();
-      proc.stdout = new EventEmitter();
-      proc.stderr = new EventEmitter();
-      proc.stdout.pipe = vi.fn();
-      return proc;
-    }
-
-    it("sends SIGKILL after 5s grace period when process is still alive after timeout", async () => {
-      vi.useFakeTimers();
-      const fakeProc = makeFakeProc();
-      mockSpawn.mockReturnValueOnce(fakeProc);
-
-      const runId = await runtime.launch({
-        image: "ignored",
-        agentName: "sigkill-test",
-        env: {},
-        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
-      });
-
-      const exitPromise = runtime.waitForExit(runId, 10);
-      // Advance past the timeout (10s) + SIGKILL grace (5s)
-      vi.advanceTimersByTime(10_001);
-      await expect(exitPromise).rejects.toThrow();
-      // SIGTERM should be sent immediately
-      expect(fakeProc.kill).toHaveBeenCalledWith("SIGTERM");
-
-      // Now advance past the 5s grace period — process is still in `processes` map
-      vi.advanceTimersByTime(5_001);
-      // SIGKILL should be sent
-      expect(fakeProc.kill).toHaveBeenCalledWith("SIGKILL");
-
-      vi.useRealTimers();
-    });
-  });
-
-  describe("kill SIGKILL escalation", () => {
-    function makeFakeProc() {
-      const { EventEmitter } = require("events");
-      const proc = new EventEmitter();
-      proc.kill = vi.fn();
-      proc.stdout = new EventEmitter();
-      proc.stderr = new EventEmitter();
-      proc.stdout.pipe = vi.fn();
-      return proc;
-    }
-
-    it("escalates to SIGKILL after 5s grace period when process persists", async () => {
-      vi.useFakeTimers();
-      const fakeProc = makeFakeProc();
-      mockSpawn.mockReturnValueOnce(fakeProc);
-
-      const runId = await runtime.launch({
-        image: "ignored",
-        agentName: "kill-sigkill",
-        env: {},
-        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
-      });
-
-      await runtime.kill(runId);
-      expect(fakeProc.kill).toHaveBeenCalledWith("SIGTERM");
-
-      // Process is still alive (not removed from map), advance past grace period
-      vi.advanceTimersByTime(5_001);
-      expect(fakeProc.kill).toHaveBeenCalledWith("SIGKILL");
-
-      fakeProc.emit("exit", 0);
-      vi.useRealTimers();
-    });
-  });
-
   describe("fetchLogs with log files", () => {
-    const RUNS_DIR = join(tmpdir(), "al-runs");
-
     it("returns log lines from matching agent log files", async () => {
-      // Create mock log files in RUNS_DIR
-      mkdirSync(RUNS_DIR, { recursive: true });
-      const logFile = join(RUNS_DIR, "al-fetch-test-abc123.log");
-      writeFileSync(logFile, '{"level":30,"time":1000,"msg":"hello"}\n{"level":30,"time":1001,"msg":"world"}\n');
+      writeLogFile("al-test-fetch-abc123", '{"level":30,"time":1000,"msg":"hello"}\n{"level":30,"time":1001,"msg":"world"}\n');
 
       try {
-        const lines = await runtime.fetchLogs("fetch-test", 10);
+        const lines = await runtime.fetchLogs("test-fetch", 10);
         expect(Array.isArray(lines)).toBe(true);
         expect(lines.length).toBeGreaterThan(0);
         expect(lines.some((l) => l.includes("hello"))).toBe(true);
       } finally {
-        rmSync(logFile, { force: true });
+        rmSync(join(RUNS_DIR, "al-test-fetch-abc123.log"), { force: true });
       }
     });
   });
@@ -589,36 +474,6 @@ describe("HostUserRuntime", () => {
   // ── PID file tracking & orphan recovery ──────────────────────────────────
 
   describe("PID file tracking", () => {
-    const RUNS_DIR = join(tmpdir(), "al-runs");
-
-    function makeFakeProc(pid?: number) {
-      const { EventEmitter } = require("events");
-      const proc = new EventEmitter();
-      proc.pid = pid ?? 12345;
-      proc.kill = vi.fn();
-      proc.stdout = new EventEmitter();
-      proc.stderr = new EventEmitter();
-      proc.stdout.pipe = vi.fn();
-      proc.stderr.pipe = vi.fn();
-      return proc;
-    }
-
-    function writePidFileManually(runId: string, data: any) {
-      mkdirSync(RUNS_DIR, { recursive: true });
-      writeFileSync(join(RUNS_DIR, `${runId}.pid`), JSON.stringify(data) + "\n");
-    }
-
-    afterEach(() => {
-      // Clean up test PID files
-      try {
-        for (const f of readdirSync(RUNS_DIR)) {
-          if (f.endsWith(".pid") && f.includes("-test-")) {
-            rmSync(join(RUNS_DIR, f), { force: true });
-          }
-        }
-      } catch { /* dir may not exist */ }
-    });
-
     it("launch creates PID file with process metadata", async () => {
       const fakeProc = makeFakeProc(54321);
       mockSpawn.mockReturnValueOnce(fakeProc);
@@ -681,28 +536,11 @@ describe("HostUserRuntime", () => {
   });
 
   describe("orphan recovery via PID files", () => {
-    const RUNS_DIR = join(tmpdir(), "al-runs");
-
-    function writePidFileManually(runId: string, data: any) {
-      mkdirSync(RUNS_DIR, { recursive: true });
-      writeFileSync(join(RUNS_DIR, `${runId}.pid`), JSON.stringify(data) + "\n");
-    }
-
-    afterEach(() => {
-      try {
-        for (const f of readdirSync(RUNS_DIR)) {
-          if (f.endsWith(".pid") && f.includes("-test-")) {
-            rmSync(join(RUNS_DIR, f), { force: true });
-          }
-        }
-      } catch { /* dir may not exist */ }
-    });
-
     describe("listRunningAgents", () => {
       it("discovers orphan processes from PID files", async () => {
         const runId = "al-test-orphan-abc12345";
         writePidFileManually(runId, {
-          pid: process.pid, // current process is alive
+          pid: process.pid,
           agentName: "test-orphan",
           env: { SHUTDOWN_SECRET: "old-secret" },
           startedAt: "2026-03-30T12:00:00.000Z",
@@ -720,7 +558,7 @@ describe("HostUserRuntime", () => {
         const runId = "al-test-stale-deadbeef";
         const pidFile = join(RUNS_DIR, `${runId}.pid`);
         writePidFileManually(runId, {
-          pid: 2147483647, // almost certainly doesn't exist
+          pid: 2147483647,
           agentName: "test-stale",
           env: {},
           startedAt: new Date().toISOString(),
@@ -804,13 +642,12 @@ describe("HostUserRuntime", () => {
           startedAt: new Date().toISOString(),
         });
 
-        // Mock process.kill so we don't send real signals
         const killSpy = vi.spyOn(process, "kill").mockImplementation((() => true) as any);
 
         await runtime.kill(runId);
 
-        expect(killSpy).toHaveBeenCalledWith(fakePid, 0); // alive check
-        expect(killSpy).toHaveBeenCalledWith(fakePid, "SIGTERM"); // kill signal
+        expect(killSpy).toHaveBeenCalledWith(fakePid, 0);
+        expect(killSpy).toHaveBeenCalledWith(fakePid, "SIGTERM");
 
         killSpy.mockRestore();
       });
@@ -847,16 +684,161 @@ describe("HostUserRuntime", () => {
     });
   });
 
+  // ── reattach ────────────────────────────────────────────────────────────
+
+  describe("reattach", () => {
+    it("returns false when no PID file exists", () => {
+      expect(runtime.reattach("al-test-nonexistent-abc123")).toBe(false);
+    });
+
+    it("returns false when process is dead", () => {
+      const runId = "al-test-dead-reattach";
+      writePidFileManually(runId, {
+        pid: 2147483647,
+        agentName: "test-dead",
+        env: {},
+        startedAt: new Date().toISOString(),
+      });
+
+      expect(runtime.reattach(runId)).toBe(false);
+    });
+
+    it("returns true and registers process for alive orphan", async () => {
+      const runId = "al-test-alive-reattach";
+      writePidFileManually(runId, {
+        pid: process.pid,
+        agentName: "test-alive",
+        env: {},
+        startedAt: new Date().toISOString(),
+      });
+
+      expect(runtime.reattach(runId)).toBe(true);
+
+      // Process should now be tracked
+      expect(await runtime.isAgentRunning("test-alive")).toBe(true);
+      const agents = await runtime.listRunningAgents();
+      expect(agents.find(a => a.taskId === runId)).toBeDefined();
+    });
+
+    it("returns true if already tracked", async () => {
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+
+      const runId = await runtime.launch({
+        image: "ignored",
+        agentName: "test-already",
+        env: {},
+        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
+      });
+
+      expect(runtime.reattach(runId)).toBe(true);
+
+      fakeProc.emit("exit", 0);
+    });
+
+    it("allows waitForExit after reattach", async () => {
+      const runId = "al-test-reattach-wait";
+      writePidFileManually(runId, {
+        pid: process.pid,
+        agentName: "test-reattach-wait",
+        env: {},
+        startedAt: new Date().toISOString(),
+      });
+
+      expect(runtime.reattach(runId)).toBe(true);
+
+      // Mock isProcessAlive: alive first, then dead (triggers OrphanProcess exit)
+      let aliveChecks = 0;
+      const killSpy = vi.spyOn(process, "kill").mockImplementation(((pid: number, signal?: string | number) => {
+        if (signal === 0 || signal === undefined) {
+          aliveChecks++;
+          if (aliveChecks > 2) throw new Error("No such process");
+          return true;
+        }
+        return true;
+      }) as any);
+
+      const code = await runtime.waitForExit(runId, 30);
+      expect(code).toBe(0);
+
+      killSpy.mockRestore();
+    });
+
+    it("allows kill after reattach", async () => {
+      const runId = "al-test-reattach-kill";
+      writePidFileManually(runId, {
+        pid: process.pid,
+        agentName: "test-reattach-kill",
+        env: {},
+        startedAt: new Date().toISOString(),
+      });
+
+      const killSpy = vi.spyOn(process, "kill").mockImplementation((() => true) as any);
+
+      expect(runtime.reattach(runId)).toBe(true);
+      await runtime.kill(runId);
+
+      expect(killSpy).toHaveBeenCalledWith(process.pid, "SIGTERM");
+
+      killSpy.mockRestore();
+    });
+
+    it("allows streamLogs after reattach (tails log file)", () => {
+      const runId = "al-test-reattach-logs";
+      writePidFileManually(runId, {
+        pid: process.pid,
+        agentName: "test-reattach-logs",
+        env: {},
+        startedAt: new Date().toISOString(),
+      });
+      writeLogFile(runId, "orphan output line 1\norphan output line 2\n");
+
+      runtime.reattach(runId);
+
+      const lines: string[] = [];
+      const handle = runtime.streamLogs(runId, (line) => lines.push(line));
+
+      expect(lines).toEqual(["orphan output line 1", "orphan output line 2"]);
+      handle.stop();
+    });
+
+    it("cleans up tracking when orphan process exits", async () => {
+      const runId = "al-test-reattach-cleanup";
+      writePidFileManually(runId, {
+        pid: process.pid,
+        agentName: "test-reattach-cleanup",
+        env: {},
+        startedAt: new Date().toISOString(),
+      });
+
+      // Mock: alive once (for reattach), then dead (triggers exit)
+      let aliveChecks = 0;
+      const killSpy = vi.spyOn(process, "kill").mockImplementation(((pid: number, signal?: string | number) => {
+        if (signal === 0 || signal === undefined) {
+          aliveChecks++;
+          if (aliveChecks > 1) throw new Error("No such process");
+          return true;
+        }
+        return true;
+      }) as any);
+
+      expect(runtime.reattach(runId)).toBe(true);
+      expect(await runtime.isAgentRunning("test-reattach-cleanup")).toBe(true);
+
+      // Wait for the OrphanProcess poll to detect death and emit exit
+      await new Promise((r) => setTimeout(r, 600));
+
+      expect(await runtime.isAgentRunning("test-reattach-cleanup")).toBe(false);
+
+      killSpy.mockRestore();
+    });
+  });
+
+  // ── shutdown ────────────────────────────────────────────────────────────
+
   describe("shutdown", () => {
     it("sends SIGTERM to all tracked processes", async () => {
-      const { EventEmitter } = require("events");
-      const fakeProc = new EventEmitter();
-      fakeProc.pid = 99999;
-      fakeProc.kill = vi.fn();
-      fakeProc.stdout = new EventEmitter();
-      fakeProc.stderr = new EventEmitter();
-      fakeProc.stdout.pipe = vi.fn();
-      fakeProc.stderr.pipe = vi.fn();
+      const fakeProc = makeFakeProc(99999);
       mockSpawn.mockReturnValueOnce(fakeProc);
 
       await runtime.launch({

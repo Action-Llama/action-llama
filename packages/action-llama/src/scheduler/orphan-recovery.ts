@@ -85,6 +85,17 @@ export async function recoverOrphanContainers(opts: OrphanRecoveryOpts): Promise
           continue;
         }
 
+        // Re-attach to the orphaned process so streamLogs/waitForExit work normally
+        const reattach = (runtime as any).reattach;
+        if (typeof reattach === "function" && !reattach.call(runtime, orphan.taskId)) {
+          logger.warn({ agent: orphan.agentName, task: orphan.taskId }, "failed to reattach orphan, killing");
+          try { await runtime.kill(orphan.taskId); await runtime.remove(orphan.taskId); } catch {}
+          gateway.lockStore.releaseAll(reg.instanceId);
+          await gateway.containerRegistry.unregister(oldSecret);
+          killed++;
+          continue;
+        }
+
         // Unregister old secret mapping — will be re-registered inside adoptContainer
         await gateway.containerRegistry.unregister(oldSecret);
 

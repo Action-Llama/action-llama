@@ -261,6 +261,39 @@ describe("recoverOrphanContainers", () => {
     );
   });
 
+  it("kills orphan when reattach fails", async () => {
+    const orphan = { taskId: "container-123", agentName: "agent-a" };
+    const reg = { containerName: "container-123", agentName: "agent-a", instanceId: "agent-a-1" };
+    const lockStore = makeLockStore();
+    const containerRegistry = makeContainerRegistry({
+      listAll: vi.fn().mockReturnValue([reg]),
+      findByContainerName: vi.fn().mockReturnValue({ secret: "old-secret", reg }),
+    });
+    const runtime = makeRuntime({
+      listRunningAgents: vi.fn().mockResolvedValue([orphan]),
+      inspectContainer: vi.fn().mockResolvedValue({ env: { SHUTDOWN_SECRET: "my-secret" } }),
+      reattach: vi.fn().mockReturnValue(false), // reattach fails
+    });
+    const containerRunner = makeContainerRunner();
+    const pool = makeRunnerPool(containerRunner);
+    const gateway = makeGateway(containerRegistry, lockStore);
+    const logger = makeLogger();
+
+    await recoverOrphanContainers({
+      runtime, gateway,
+      runnerPools: { "agent-a": pool },
+      activeAgentConfigs: [{ name: "agent-a" }] as any,
+      schedulerState: { schedulerCtx: null }, logger,
+    });
+
+    expect(runtime.kill).toHaveBeenCalledWith("container-123");
+    expect(containerRegistry.unregister).toHaveBeenCalledWith("old-secret");
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "agent-a", task: "container-123" }),
+      "failed to reattach orphan, killing"
+    );
+  });
+
   it("kills orphan when runner does not support adoptContainer", async () => {
     const orphan = { taskId: "container-123", agentName: "agent-a" };
     const reg = { containerName: "container-123", agentName: "agent-a", instanceId: "agent-a-1" };
