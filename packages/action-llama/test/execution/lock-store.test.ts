@@ -229,6 +229,38 @@ describe("LockStore", () => {
       expect(result.reason).toContain("file:///tmp/res-X");
       expect(result.reason).toContain("file:///tmp/res-Y");
     });
+
+    it("returns regular conflict (no deadlock) when an intermediate lock in the cycle chain is expired", () => {
+      // Setup: A holds X with short TTL, B holds Y with long TTL, B waits for X
+      // After X expires, detectCycle encounters the expired lock and returns null,
+      // so A→Y should be a regular conflict (not deadlock)
+      vi.useFakeTimers();
+      try {
+        // A acquires X with a 1-second TTL
+        store.acquire("file:///tmp/res-X", "agent-a", 1);
+        // B acquires Y with no TTL (uses default 300s)
+        store.acquire("file:///tmp/res-Y", "agent-b");
+        // B tries X → conflict, B is now waiting for X
+        const bConflict = store.acquire("file:///tmp/res-X", "agent-b");
+        expect(bConflict.ok).toBe(false);
+        expect(bConflict.holder).toBe("agent-a");
+
+        // Advance time past X's expiry (1001ms)
+        vi.advanceTimersByTime(1001);
+
+        // A tries Y → detectCycle is called:
+        //   currentResource = Y (held by B, NOT expired)
+        //   blocker = B → B waits for X
+        //   currentResource = X → lock exists but expiresAt has passed → return null
+        // So detectCycle returns null → regular conflict (no deadlock)
+        const aResult = store.acquire("file:///tmp/res-Y", "agent-a");
+        expect(aResult.ok).toBe(false);
+        expect(aResult.deadlock).toBeUndefined();
+        expect(aResult.holder).toBe("agent-b");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   describe("release", () => {
