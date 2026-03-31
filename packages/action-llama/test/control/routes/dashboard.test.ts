@@ -481,6 +481,22 @@ describe("registerDashboardApiRoutes — extended coverage", () => {
     expect(data.body).toContain("Hello Skill");
   });
 
+  it("GET /api/dashboard/agents/:name/skill returns 500 when SKILL.md has invalid YAML frontmatter", async () => {
+    // parseFrontmatter throws on invalid YAML, which is caught by the outer try-catch → 500
+    const tmpDir = mkdtempSync(resolve(tmpdir(), "dashboard-test-"));
+    mkdirSync(resolve(tmpDir, "agents", "test-agent"), { recursive: true });
+    writeFileSync(
+      resolve(tmpDir, "agents", "test-agent", "SKILL.md"),
+      "---\n: invalid: yaml: : :\n---\n# Skill content\n"
+    );
+    const app = createApp(undefined, tmpDir);
+
+    const res = await app.request("/api/dashboard/agents/test-agent/skill");
+    expect(res.status).toBe(500);
+    const data = await res.json();
+    expect(data.body).toBe("");
+  });
+
   it("GET /api/dashboard/config returns project name and scale", async () => {
     const app = createApp();
 

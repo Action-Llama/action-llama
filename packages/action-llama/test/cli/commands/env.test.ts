@@ -225,6 +225,35 @@ describe("env prov", () => {
   it("throws ConfigError when name is invalid", async () => {
     await expect(prov("invalid name!")).rejects.toThrow("Invalid environment name");
   });
+
+  it("validate callback in input prompt accepts valid names and rejects invalid names", async () => {
+    // Capture the options passed to mockInput when name is not provided
+    const capturedEnvName = `test-validate-cb-${Date.now()}`;
+    let capturedValidate: ((v: string) => any) | undefined;
+    mockInput.mockImplementationOnce((opts: any) => {
+      capturedValidate = opts.validate;
+      return Promise.resolve(capturedEnvName);
+    });
+    mockSetupVpsCloud.mockResolvedValueOnce({ provider: "vps", host: "1.2.3.4" });
+    mockTestConnection.mockResolvedValueOnce(true);
+    mockSshExec.mockResolvedValueOnce({ exitCode: 0, stdout: "v22.14.0", stderr: "" });
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await prov(undefined);
+    logSpy.mockRestore();
+    mockInput.mockReset();
+    mockTestConnection.mockReset();
+    mockSshExec.mockReset();
+
+    // Clean up created env file
+    try { rmSync(environmentPath(capturedEnvName)); } catch {}
+
+    // The validate function should have been captured — test both valid and invalid names
+    expect(capturedValidate).toBeTypeOf("function");
+    expect(capturedValidate!("valid-name")).toBe(true);
+    expect(capturedValidate!("INVALID")).not.toBe(true); // uppercase not allowed
+    expect(capturedValidate!("  ")).not.toBe(true); // empty after trim not allowed
+  });
 });
 
 describe("env prov persists provider fields", () => {
