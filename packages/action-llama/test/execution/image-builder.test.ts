@@ -379,4 +379,92 @@ describe("buildAllImages", () => {
     // The baseImage in the result should be the custom image
     expect(result.baseImage).toBe("my-custom-base:v2");
   });
+
+  it("invokes progressCb (statusTracker + onProgress) when buildImage calls onProgress", async () => {
+    const agentDir = resolve(tmpDir, "agents", "worker");
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(resolve(agentDir, "SKILL.md"), "# Worker");
+
+    const agentConfig: AgentConfig = {
+      name: "worker",
+      credentials: [],
+      models: [{ provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" }],
+      schedule: "*/5 * * * *",
+    };
+
+    // Create a mock runtime whose buildImage calls opts.onProgress so that progressCb body runs
+    const runtimeWithProgress: Runtime & ContainerRuntime = {
+      buildImage: vi.fn(async (opts: BuildImageOpts) => {
+        opts.onProgress?.("Building layers...");
+        return opts.tag;
+      }),
+      launchContainer: vi.fn(),
+      kill: vi.fn(),
+      listRunning: vi.fn().mockResolvedValue([]),
+      cleanup: vi.fn(),
+    } as unknown as Runtime & ContainerRuntime;
+
+    const statusTextCalls: Array<[string, string]> = [];
+    const mockStatusTracker = {
+      setAgentState: vi.fn(),
+      setAgentStatusText: vi.fn((name: string, msg: string) => statusTextCalls.push([name, msg])),
+      setBaseImageStatus: vi.fn(),
+      setProjectBaseStatus: vi.fn(),
+    } as any;
+
+    const outerProgressCalls: Array<[string, string]> = [];
+    await buildAllImages({
+      projectPath: tmpDir,
+      globalConfig: {},
+      activeAgentConfigs: [agentConfig],
+      runtime: runtimeWithProgress,
+      statusTracker: mockStatusTracker,
+      logger: makeLogger(),
+      onProgress: (label, msg) => outerProgressCalls.push([label, msg]),
+    });
+
+    // progressCb body should have been invoked with "Building layers..."
+    const agentProgressCalls = statusTextCalls.filter(([name]) => name === "worker");
+    expect(agentProgressCalls.some(([, msg]) => msg === "Building layers...")).toBe(true);
+    expect(outerProgressCalls.some(([label, msg]) => label === "worker" && msg === "Building layers...")).toBe(true);
+  });
+
+  it("includes test-script.sh in extraFiles when it exists in the agent directory", async () => {
+    const agentDir = resolve(tmpDir, "agents", "tester");
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(resolve(agentDir, "SKILL.md"), "# Tester");
+    writeFileSync(resolve(agentDir, "test-script.sh"), "#!/bin/bash\necho 'running tests'");
+
+    const agentConfig: AgentConfig = {
+      name: "tester",
+      credentials: [],
+      models: [{ provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" }],
+      schedule: "*/5 * * * *",
+    };
+
+    const capturedBuildOpts: BuildImageOpts[] = [];
+    const runtimeCapture: Runtime & ContainerRuntime = {
+      buildImage: vi.fn(async (opts: BuildImageOpts) => {
+        capturedBuildOpts.push(opts);
+        return opts.tag;
+      }),
+      launchContainer: vi.fn(),
+      kill: vi.fn(),
+      listRunning: vi.fn().mockResolvedValue([]),
+      cleanup: vi.fn(),
+    } as unknown as Runtime & ContainerRuntime;
+
+    await buildAllImages({
+      projectPath: tmpDir,
+      globalConfig: {},
+      activeAgentConfigs: [agentConfig],
+      runtime: runtimeCapture,
+      logger: makeLogger(),
+    });
+
+    // Find the agent image build call (last buildImage call with "tester" in tag)
+    const agentBuildCall = capturedBuildOpts.find((o) => o.tag?.includes("tester"));
+    expect(agentBuildCall).toBeDefined();
+    expect(agentBuildCall?.extraFiles?.["test-script.sh"]).toContain("echo 'running tests'");
+  });
 });
