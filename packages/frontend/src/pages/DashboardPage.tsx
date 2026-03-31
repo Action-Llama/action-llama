@@ -183,6 +183,11 @@ export function DashboardPage() {
         </div>
       )}
 
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h1 className="text-xl font-bold text-slate-900 dark:text-white">Agents</h1>
+      </div>
+
       {/* Token usage bar */}
       {totalTokens > 0 && (
         <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-3">
@@ -231,10 +236,7 @@ export function DashboardPage() {
       {/* Agents table — full width */}
       <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
         {/* Header with search */}
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-200 dark:border-slate-800">
-          <h2 className="text-sm font-medium text-slate-900 dark:text-white">
-            Agents
-          </h2>
+        <div className="flex items-center justify-end px-4 py-2.5 border-b border-slate-200 dark:border-slate-800">
           <div className="relative">
             <input
               type="text"
