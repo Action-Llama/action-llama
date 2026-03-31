@@ -120,6 +120,72 @@ describe.skipIf(!DOCKER)("integration: control API", { timeout: 180_000 }, () =>
     expect(res.status).toBe(404);
   });
 
+  it("kill specific instance by instanceId via POST /control/kill/:instanceId", async () => {
+    // When triggering an agent, the API returns an instanceId. This instanceId
+    // can be used to kill exactly that instance via POST /control/kill/:instanceId.
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "specific-kill-agent",
+          schedule: "0 0 31 2 *",
+          testScript: [
+            "#!/bin/sh",
+            // Long-running agent to give us time to kill it by instanceId
+            "sleep 300",
+            "exit 0",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    await harness.start();
+
+    // Trigger the agent and capture the instanceId from the response
+    const triggerRes = await harness.controlAPI("POST", "/trigger/specific-kill-agent");
+    expect(triggerRes.ok).toBe(true);
+    const triggerBody = await triggerRes.json();
+    expect(triggerBody.success).toBe(true);
+    const instanceId = triggerBody.instanceId as string;
+    expect(instanceId).toBeTruthy();
+
+    // Wait for the container to be running
+    await harness.waitForRunning("specific-kill-agent");
+
+    // Kill by specific instanceId
+    const killRes = await harness.controlAPI("POST", `/kill/${instanceId}`);
+    expect(killRes.ok).toBe(true);
+    const killBody = await killRes.json();
+    expect(killBody.success).toBe(true);
+
+    // Wait for the run to end (killed)
+    const runEnd = await harness.events.waitFor(
+      "run:end",
+      (e) => e.agentName === "specific-kill-agent",
+      60_000,
+    );
+    expect(runEnd).toBeTruthy();
+  });
+
+  it("kill nonexistent instanceId returns 404", async () => {
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "no-instance-agent",
+          schedule: "0 0 31 2 *",
+          testScript: "#!/bin/sh\nexit 0\n",
+        },
+      ],
+    });
+
+    await harness.start();
+    await harness.triggerAgent("no-instance-agent");
+    await harness.waitForRunResult("no-instance-agent");
+
+    // Try to kill a nonexistent instance
+    const res = await harness.controlAPI("POST", "/kill/nonexistent-instance-id-xyz");
+    expect(res.status).toBe(404);
+  });
+
   it("trigger with custom prompt body passes prompt to container via PROMPT env var", async () => {
     // The trigger endpoint accepts a JSON body with a `prompt` field.
     // When provided, it is passed to the container as the PROMPT env var
