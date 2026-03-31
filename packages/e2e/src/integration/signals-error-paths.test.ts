@@ -124,17 +124,16 @@ describe.skipIf(!DOCKER)(
 
       await harness.start();
 
-      // The secret is invalid, but the error for missing text should be caught first
-      // (actually the code checks secret first, then text — with invalid secret we get 403)
-      // So test the missing text path with a valid-but-missing-text body:
-      // We need a valid registered secret, but we don't have one from outside the container.
-      // Instead, test that the route returns 400 when secret is provided but no text:
+      // The /signals/status route validates: secret (non-null) → text (non-null) → registry lookup.
+      // A non-empty fake secret passes the first check.
+      // Missing text → 400 "missing text" BEFORE the 403 registry check.
       const res = await signalPost(harness, "/signals/status", {
-        secret: "completely-invalid-secret-xyz",
-        // no 'text' field — but will hit 403 for invalid secret first
+        secret: "some-fake-secret-string",
+        // no 'text' field — should hit missing text 400 before registry 403
       });
-      // Either 400 (text) or 403 (secret) is acceptable here
-      expect([400, 403]).toContain(res.status);
+      expect(res.status).toBe(400);
+      const body = await res.json() as { error: string };
+      expect(body.error).toContain("text");
     });
 
     it("POST /signals/trigger with missing secret returns 400", async () => {
