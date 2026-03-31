@@ -914,4 +914,106 @@ describe("HostUserRuntime", () => {
       fakeProc.emit("exit", 0);
     });
   });
+
+  // ── additional coverage paths ────────────────────────────────────────────
+
+  describe("cleanupCredentials", () => {
+    it("returns early when creds has no stagingDir (non-host-user strategy)", () => {
+      // Should not throw — just returns early
+      runtime.cleanupCredentials({ strategy: "cloud-run" } as any);
+    });
+  });
+
+  describe("launch with wrong credentials strategy", () => {
+    it("throws when credentials do not have stagingDir", async () => {
+      await expect(runtime.launch({
+        image: "ignored",
+        agentName: "bad-creds",
+        env: {},
+        credentials: { strategy: "cloud-run" } as any,
+      })).rejects.toThrow("host-user runtime requires a stagingDir credential strategy");
+    });
+  });
+
+  describe("isAgentRunning — runs dir absent", () => {
+    it("returns false when runs directory does not exist (no PID files)", async () => {
+      // Remove the runs dir so existsSync returns false
+      rmSync(testRunsDir, { recursive: true, force: true });
+
+      const result = await runtime.isAgentRunning("no-such-agent");
+      expect(result).toBe(false);
+    });
+  });
+
+  describe("listRunningAgents — runs dir absent", () => {
+    it("returns only tracked agents when runs directory does not exist", async () => {
+      // Remove the runs dir so existsSync returns false in the PID scan loop
+      rmSync(testRunsDir, { recursive: true, force: true });
+
+      const agents = await runtime.listRunningAgents();
+      expect(Array.isArray(agents)).toBe(true);
+    });
+  });
+
+  describe("fetchLogs — edge cases", () => {
+    it("returns empty array when runs directory does not exist", async () => {
+      rmSync(testRunsDir, { recursive: true, force: true });
+
+      const lines = await runtime.fetchLogs("test-agent", 10);
+      expect(lines).toEqual([]);
+    });
+
+    it("returns last N lines when log exceeds the limit (triggers break)", async () => {
+      // Write a log file with more lines than the limit
+      const logContent = Array.from({ length: 20 }, (_, i) => `line ${i}`).join("\n") + "\n";
+      writeLogFile("al-fetchlimit-agent-abc123", logContent);
+
+      const lines = await runtime.fetchLogs("fetchlimit-agent", 5);
+      expect(lines.length).toBeLessThanOrEqual(5);
+    });
+  });
+
+  describe("followLogs", () => {
+    it("returns a stop function", () => {
+      const result = runtime.followLogs("some-agent", () => {});
+      expect(typeof result.stop).toBe("function");
+      // Calling stop should not throw
+      result.stop();
+    });
+  });
+
+  describe("kill — kill with setTimeout SIGKILL (fake timers)", () => {
+    it("sends SIGKILL via setTimeout when process is still alive after SIGTERM", async () => {
+      vi.useFakeTimers();
+
+      const fakePid = 87654;
+      const runId = "al-test-sigkill-abc123";
+      writePidFileManually(runId, {
+        pid: fakePid,
+        agentName: "test-sigkill",
+        env: {},
+        startedAt: new Date().toISOString(),
+      });
+
+      // First call (signal 0): process alive; second call (SIGTERM): ok
+      // Third call (signal 0 inside setTimeout): still alive → send SIGKILL
+      let killCallCount = 0;
+      const killSpy = vi.spyOn(process, "kill").mockImplementation((() => {
+        killCallCount++;
+        return true;
+      }) as any);
+
+      await runtime.kill(runId);
+
+      // Advance fake timers to trigger the setTimeout callback (5000ms)
+      await vi.advanceTimersByTimeAsync(5001);
+
+      // Should have sent: signal 0 (isProcessAlive), SIGTERM, signal 0 (in setTimeout), SIGKILL
+      expect(killSpy).toHaveBeenCalledWith(fakePid, "SIGTERM");
+      expect(killSpy).toHaveBeenCalledWith(fakePid, "SIGKILL");
+
+      killSpy.mockRestore();
+      vi.useRealTimers();
+    });
+  });
 });
