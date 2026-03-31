@@ -388,4 +388,104 @@ describe("creds ls — additional edge cases", () => {
     const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
     expect(output).not.toContain("GitHub Token (github_token)");
   });
+
+  it("returns false for broken symlinks in CREDENTIALS_DIR (statSync throws)", async () => {
+    const { symlinkSync } = await import("fs");
+    // Create a valid type dir with a real instance dir
+    const typeDir = resolve(tmpDir, "github_token");
+    const instanceDir = resolve(typeDir, "default");
+    mkdirSync(instanceDir, { recursive: true });
+    writeFileSync(resolve(instanceDir, "token"), "val");
+    // Also add a broken symlink in CREDENTIALS_DIR → statSync will throw for it
+    symlinkSync(resolve(tmpDir, "nonexistent-target"), resolve(tmpDir, "broken-link"));
+
+    await list();
+
+    // github_token should still be listed (broken-link is filtered out)
+    const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("github_token");
+    // broken-link should not appear as a type
+    expect(output).not.toContain("broken-link");
+  });
+
+  it("returns false for broken symlinks inside a type dir (statSync throws for instance entry)", async () => {
+    const { symlinkSync } = await import("fs");
+    // Create a valid type dir with one real instance and one broken symlink instance
+    const typeDir = resolve(tmpDir, "github_token");
+    const instanceDir = resolve(typeDir, "default");
+    mkdirSync(instanceDir, { recursive: true });
+    writeFileSync(resolve(instanceDir, "token"), "val");
+    // Broken symlink inside typeDir → statSync throws → filtered out
+    symlinkSync(resolve(typeDir, "nonexistent-instance"), resolve(typeDir, "broken-instance-link"));
+
+    await list();
+
+    const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+    // "default" instance should be listed
+    expect(output).toContain("github_token");
+    // "broken-instance-link" should not appear as an instance
+    expect(output).not.toContain("broken-instance-link");
+  });
+
+  it("skips type when readdirSync throws for its directory (chmod 000)", async () => {
+    const { chmodSync } = await import("fs");
+    // Create two type dirs: one readable with data, one unreadable
+    const goodTypeDir = resolve(tmpDir, "github_token");
+    const goodInstanceDir = resolve(goodTypeDir, "default");
+    mkdirSync(goodInstanceDir, { recursive: true });
+    writeFileSync(resolve(goodInstanceDir, "token"), "val");
+
+    const badTypeDir = resolve(tmpDir, "anthropic_key");
+    mkdirSync(badTypeDir, { recursive: true });
+    // Make badTypeDir unreadable so readdirSync throws
+    chmodSync(badTypeDir, 0o000);
+
+    await list();
+
+    // Restore permissions so cleanup works
+    chmodSync(badTypeDir, 0o755);
+
+    const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+    // github_token should still appear
+    expect(output).toContain("github_token");
+    // anthropic_key should be skipped (continue was hit)
+    expect(output).not.toContain("anthropic_key");
+  });
+
+  it("lists instance with empty fields when readdirSync throws for instance dir (chmod 000)", async () => {
+    const { chmodSync } = await import("fs");
+    // Create a type dir and an unreadable instance dir
+    const typeDir = resolve(tmpDir, "github_token");
+    const instanceDir = resolve(typeDir, "default");
+    mkdirSync(instanceDir, { recursive: true });
+    // Make instanceDir unreadable so readdirSync throws → fields = []
+    chmodSync(instanceDir, 0o000);
+
+    await list();
+
+    // Restore permissions
+    chmodSync(instanceDir, 0o755);
+
+    const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+    // Instance should still be listed but with no fields
+    expect(output).toContain("github_token  ()");
+  });
+
+  it("returns false for broken symlinks inside instance dir (statSync throws for field entry)", async () => {
+    const { symlinkSync } = await import("fs");
+    // Create a type dir with an instance that has a real file and a broken symlink
+    const typeDir = resolve(tmpDir, "github_token");
+    const instanceDir = resolve(typeDir, "default");
+    mkdirSync(instanceDir, { recursive: true });
+    writeFileSync(resolve(instanceDir, "token"), "val");
+    // Broken symlink inside instanceDir → statSync throws → filtered out
+    symlinkSync(resolve(instanceDir, "nonexistent-field"), resolve(instanceDir, "broken-field-link"));
+
+    await list();
+
+    const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+    // "token" should be listed, but "broken-field-link" should not
+    expect(output).toContain("token");
+    expect(output).not.toContain("broken-field-link");
+  });
 });
