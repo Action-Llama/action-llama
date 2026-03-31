@@ -173,6 +173,58 @@ describe("env prov", () => {
     mockTestConnection.mockReset();
     mockSshExec.mockReset();
   });
+
+  it("reports unfixable issues when SSH connection fails (verifyServerReady fail path)", async () => {
+    writeEnvironmentConfig(testEnvName, {
+      server: { host: "1.2.3.4", user: "root" },
+    });
+
+    // SSH check fails → status="fail", fixable=false → L130 triggered
+    mockTestConnection.mockResolvedValue(false);
+
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: any[]) => logs.push(args.map(String).join(" "));
+    try {
+      await prov(testEnvName);
+    } finally {
+      console.log = origLog;
+      mockTestConnection.mockReset();
+      mockSshExec.mockReset();
+    }
+
+    // Should have logged the "could not be auto-fixed" message
+    expect(logs.some((l) => l.includes("could not be auto-fixed"))).toBe(true);
+  });
+
+  it("prompts for environment name when name is not provided", async () => {
+    const newName = `test-prov-prompt-${Date.now()}`;
+    // Mock input to return a valid name when prompted
+    mockInput.mockResolvedValueOnce(newName);
+    // Mock provisioning to return a server config
+    mockSetupVpsCloud.mockResolvedValueOnce({
+      provider: "vps",
+      host: "9.9.9.9",
+    });
+    // SSH ready after provisioning
+    mockTestConnection.mockResolvedValue(true);
+    mockSshExec.mockResolvedValue({ exitCode: 0, stdout: "v22.14.0", stderr: "" });
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await prov(undefined);
+    logSpy.mockRestore();
+    mockInput.mockReset();
+    mockTestConnection.mockReset();
+    mockSshExec.mockReset();
+
+    // The environment should have been created with the prompted name
+    expect(environmentExists(newName)).toBe(true);
+    try { rmSync(environmentPath(newName)); } catch {}
+  });
+
+  it("throws ConfigError when name is invalid", async () => {
+    await expect(prov("invalid name!")).rejects.toThrow("Invalid environment name");
+  });
 });
 
 describe("env prov persists provider fields", () => {
@@ -351,6 +403,22 @@ describe("env deprov", () => {
     await deprov(testEnvName, { project: tmpDir });
 
     expect(environmentExists(testEnvName)).toBe(false);
+  });
+
+  it("clears .env.toml environment binding when it points to the deleted env", async () => {
+    // Write .env.toml that binds to this env
+    writeEnvToml(tmpDir, { environment: testEnvName });
+    writeEnvironmentConfig(testEnvName, {
+      server: { host: "1.2.3.4" },
+    });
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await deprov(testEnvName, { project: tmpDir });
+    logSpy.mockRestore();
+
+    // .env.toml should have had its environment cleared
+    const envToml = loadEnvToml(tmpDir);
+    expect(envToml?.environment).toBeUndefined();
   });
 });
 
