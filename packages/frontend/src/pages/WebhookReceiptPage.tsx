@@ -4,6 +4,7 @@ import { ResultBadge } from "../components/Badge";
 import { getWebhookReceipt, replayWebhook } from "../lib/api";
 import type { WebhookReceiptDetail } from "../lib/api";
 import { fmtDateTime, shortId } from "../lib/format";
+import { decodeBody } from "../lib/decode-body";
 
 function prettyJson(raw: string | undefined): string {
   if (!raw) return "\u2014";
@@ -73,6 +74,7 @@ export function WebhookReceiptPage() {
 
   const canReplay = !!(receipt.headers || receipt.body);
   const resultForBadge = receipt.status === "processed" ? "completed" : "dead-letter";
+  const decoded = decodeBody(receipt.body, receipt.headers);
 
   return (
     <div className="space-y-6">
@@ -171,10 +173,24 @@ export function WebhookReceiptPage() {
         </div>
       </div>
 
-      {/* Body */}
+      {/* Decoded Body — shown when body needs decoding (form-encoded, base64) */}
+      {decoded && (
+        <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-slate-200 dark:border-slate-800">
+            <h2 className="text-sm font-medium text-slate-900 dark:text-white">{decoded.label}</h2>
+          </div>
+          <div className="bg-slate-950 p-3 max-h-96 overflow-y-auto">
+            <pre className="text-xs font-mono text-slate-300 whitespace-pre-wrap break-all">
+              {decoded.content}
+            </pre>
+          </div>
+        </div>
+      )}
+
+      {/* Raw Body */}
       <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
         <div className="px-4 py-2.5 border-b border-slate-200 dark:border-slate-800">
-          <h2 className="text-sm font-medium text-slate-900 dark:text-white">Body</h2>
+          <h2 className="text-sm font-medium text-slate-900 dark:text-white">{decoded ? "Raw Body" : "Body"}</h2>
         </div>
         <div className="bg-slate-950 p-3 max-h-96 overflow-y-auto">
           <pre className="text-xs font-mono text-slate-300 whitespace-pre-wrap break-all">

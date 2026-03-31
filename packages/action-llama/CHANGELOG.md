@@ -1,5 +1,15 @@
 # @action-llama/action-llama
 
+## 0.23.2
+
+### Patch Changes
+
+- [`149d155`](https://github.com/Action-Llama/action-llama/commit/149d15507af12e6d3017a7ea47eaab82ef380a93) Thanks [@asselstine](https://github.com/asselstine)! - Collapse "Instance" and "Trigger" columns into a single "Description" column in the activity table. Agent activity rows now show the agent name with the trigger badge underneath; dead letter rows show only the trigger. Webhook trigger badges now display detailed event info (e.g. "github issues opened" instead of just "github") by enriching activity rows with the webhook receipt's event summary.
+
+- [`41926bb`](https://github.com/Action-Llama/action-llama/commit/41926bb2f8633e541116d77d6d907df91696473e) Thanks [@asselstine](https://github.com/asselstine)! - Fix 429 errors in dashboard by reducing frontend polling frequency and adding retry-with-backoff. Log polling slowed from 1.5–2s to 3–4s (10s when instance is finished), lock polling from 2s to 5s. fetchJSON now retries up to 2 times on HTTP 429 with exponential backoff respecting the Retry-After header.
+
+- [`1c8de0a`](https://github.com/Action-Llama/action-llama/commit/1c8de0ab182c5ddeb37f561c5c3be1e0cb3ee14d) Thanks [@asselstine](https://github.com/asselstine)! - Show decoded body on webhook receipt and trigger detail pages when the payload is form-urlencoded or base64-encoded. The decoded view appears above the raw body, with JSON values within form params automatically parsed.
+
 ## 0.23.1
 
 ### Patch Changes

@@ -32,14 +32,7 @@ const STATE_DOT_COLORS: Record<string, string> = {
 function StatusCell({ agent }: { agent: AgentStatus }) {
   const dotColor = STATE_DOT_COLORS[agent.state] ?? "bg-slate-400";
   return (
-    <div className="flex flex-col items-center gap-0.5 w-6">
-      <span className={`w-2 h-2 rounded-full ${dotColor}`} />
-      <div className="flex flex-col items-center text-[10px] leading-tight text-slate-500 dark:text-slate-400 tabular-nums">
-        <span>{agent.runningCount}</span>
-        <span className="w-3 border-t border-slate-300 dark:border-slate-600" />
-        <span>{agent.scale}</span>
-      </div>
-    </div>
+    <span className={`inline-block w-2 h-2 rounded-full ${dotColor}`} />
   );
 }
 
@@ -250,7 +243,7 @@ export function DashboardPage() {
                   key={agent.name}
                   className={`border-b border-slate-100 dark:border-slate-800/50 last:border-0 hover:bg-slate-100/50 dark:hover:bg-slate-800/30 ${ROW_STATE_STYLES[agent.state] ?? ""}`}
                 >
-                  <td className="w-10 px-2 py-2.5 align-top">
+                  <td className="w-10 px-2 py-2.5 align-middle text-center">
                     <StatusCell agent={agent} />
                   </td>
                   <td className="px-4 py-2.5 min-w-0 max-w-[240px]">
