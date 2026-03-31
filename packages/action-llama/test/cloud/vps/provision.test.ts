@@ -123,6 +123,7 @@ const {
   mockVerifyToken,
   mockListAllZones,
   mockCreateDnsRecord,
+  mockUpsertDnsRecord,
   mockCreateOriginCertificate,
   mockCreatePageRule,
   mockSetSslMode,
@@ -130,6 +131,7 @@ const {
   mockVerifyToken: vi.fn().mockResolvedValue(true),
   mockListAllZones: vi.fn().mockResolvedValue([]),
   mockCreateDnsRecord: vi.fn().mockResolvedValue({}),
+  mockUpsertDnsRecord: vi.fn().mockResolvedValue({ id: "dns-record-123" }),
   mockCreateOriginCertificate: vi.fn().mockResolvedValue({ certificate: "cert", private_key: "key" }),
   mockCreatePageRule: vi.fn().mockResolvedValue({}),
   mockSetSslMode: vi.fn().mockResolvedValue(undefined),
@@ -139,9 +141,22 @@ vi.mock("../../../src/cloud/cloudflare/api.js", () => ({
   verifyToken: (...args: any[]) => mockVerifyToken(...args),
   listAllZones: (...args: any[]) => mockListAllZones(...args),
   createDnsRecord: (...args: any[]) => mockCreateDnsRecord(...args),
+  upsertDnsRecord: (...args: any[]) => mockUpsertDnsRecord(...args),
   createOriginCertificate: (...args: any[]) => mockCreateOriginCertificate(...args),
   createPageRule: (...args: any[]) => mockCreatePageRule(...args),
   setSslMode: (...args: any[]) => mockSetSslMode(...args),
+}));
+
+// Mock nginx module for Cloudflare HTTPS post-provisioning
+const { mockInstallNginx, mockConfigureNginx } = vi.hoisted(() => ({
+  mockInstallNginx: vi.fn().mockResolvedValue(undefined),
+  mockConfigureNginx: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("../../../src/cloud/vps/nginx.js", () => ({
+  installNginx: (...args: any[]) => mockInstallNginx(...args),
+  configureNginx: (...args: any[]) => mockConfigureNginx(...args),
+  generateNginxConfig: () => "server {}",
 }));
 
 const { setupVpsCloud } = await import("../../../src/cloud/vps/provision.js");
@@ -259,9 +274,12 @@ describe("VPS provisioning", () => {
     mockVerifyToken.mockReset().mockResolvedValue(true);
     mockListAllZones.mockReset().mockResolvedValue([]);
     mockCreateDnsRecord.mockReset().mockResolvedValue({});
+    mockUpsertDnsRecord.mockReset().mockResolvedValue({ id: "dns-record-123" });
     mockCreateOriginCertificate.mockReset().mockResolvedValue({ certificate: "cert", private_key: "key" });
     mockCreatePageRule.mockReset().mockResolvedValue({});
     mockSetSslMode.mockReset().mockResolvedValue(undefined);
+    mockInstallNginx.mockReset().mockResolvedValue(undefined);
+    mockConfigureNginx.mockReset().mockResolvedValue(undefined);
   });
 
   describe("existing server path", () => {
@@ -886,5 +904,366 @@ describe("promptCloudflareHttps paths", () => {
     expect(result?.provider).toBe("vps");
     expect(mockVerifyToken).toHaveBeenCalledWith("new-cf-token");
     expect(mockWriteCredentialField).toHaveBeenCalledWith("cloudflare_api_token", "default", "api_token", "new-cf-token");
+  });
+});
+
+/**
+ * Helper: set up mocks for a complete promptCloudflareHttps flow that succeeds
+ * (returns a non-null CloudflareConfig).
+ */
+function setupCloudflareMocks() {
+  mockBackendRead.mockImplementation((type: string) => {
+    if (type === "cloudflare_origin_cert") return Promise.resolve(null); // No existing cert
+    return Promise.resolve("stored-cf-token"); // All other types return vultr key / CF token
+  });
+  mockListAllZones.mockResolvedValue([{ id: "zone-1", name: "example.com", status: "active" }]);
+  // Zone selection + subdomain input
+  mockSearch.mockResolvedValueOnce({ id: "zone-1", name: "example.com" }); // zone selected
+  mockInput.mockResolvedValueOnce("agents"); // subdomain
+}
+
+/** Full beforeEach reset to avoid cross-test mock state pollution. */
+function resetAllMocks() {
+  vi.clearAllMocks();
+  mockBackendRead.mockResolvedValue("fake-vultr-key");
+  mockVerifyToken.mockResolvedValue(true);
+  mockListAllZones.mockResolvedValue([]);
+  mockUpsertDnsRecord.mockResolvedValue({ id: "dns-record-123" });
+  mockCreateOriginCertificate.mockResolvedValue({ certificate: "cert", private_key: "key" });
+  mockSetSslMode.mockResolvedValue(undefined);
+  mockInstallNginx.mockResolvedValue(undefined);
+  mockConfigureNginx.mockResolvedValue(undefined);
+}
+
+describe("promptCloudflareHttps full success path", () => {
+  beforeEach(() => resetAllMocks());
+
+  it("returns CloudflareConfig when zone and subdomain are selected", async () => {
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    setupCloudflareMocks();
+    setupFullVultrFlow();
+
+    const result = await setupVpsCloud();
+
+    // The zone was selected and subdomain was entered; hostname should be in result
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+    // The CF flow succeeds so we should have processed the DNS record
+    expect(mockUpsertDnsRecord).toHaveBeenCalled();
+  });
+
+  it("includes cloudflare metadata in result on successful CF setup", async () => {
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    setupCloudflareMocks();
+    setupFullVultrFlow();
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(result?.cloudflareHostname).toBe("agents.example.com");
+    expect(result?.cloudflareDnsRecordId).toBe("dns-record-123");
+    // gatewayUrl should be https when CF setup succeeds
+    expect(result?.gatewayUrl).toBe("https://agents.example.com");
+  });
+
+  it("creates new origin certificate when none exists", async () => {
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    setupCloudflareMocks();
+    // No existing cert → will generate new one
+    mockBackendRead.mockImplementation((type: string) => {
+      if (type === "cloudflare_origin_cert") return Promise.resolve(null);
+      return Promise.resolve("stored-cf-token");
+    });
+    mockCreateOriginCertificate.mockResolvedValue({ certificate: "new-cert", private_key: "new-key" });
+
+    setupFullVultrFlow();
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(mockCreateOriginCertificate).toHaveBeenCalled();
+    expect(mockWriteCredentialFields).toHaveBeenCalledWith("cloudflare_origin_cert", "agents.example.com", {
+      certificate: "new-cert",
+      private_key: "new-key",
+    });
+  });
+
+  it("uses existing origin certificate when available and user declines regenerate", async () => {
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    mockBackendRead.mockImplementation((_type: string, _instance: string, field?: string) => {
+      if (field === "certificate") return Promise.resolve("existing-cert");
+      if (field === "private_key") return Promise.resolve("existing-key");
+      return Promise.resolve("stored-cf-token");
+    });
+    mockListAllZones.mockResolvedValue([{ id: "zone-1", name: "example.com", status: "active" }]);
+    mockSearch.mockResolvedValueOnce({ id: "zone-1", name: "example.com" });
+    mockInput.mockResolvedValueOnce("agents");
+
+    // setupFullVultrFlow adds the "VPS ready" confirmation (true)
+    setupFullVultrFlow();
+    // AFTER the VPS ready confirm, we need "decline regenerate" confirm
+    mockConfirm.mockResolvedValueOnce(false);
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    // Should NOT generate a new certificate
+    expect(mockCreateOriginCertificate).not.toHaveBeenCalled();
+    expect(mockInstallNginx).toHaveBeenCalled();
+    expect(mockConfigureNginx).toHaveBeenCalled();
+  });
+
+  it("returns result without CF on DNS record failure", async () => {
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    setupCloudflareMocks();
+    mockUpsertDnsRecord.mockRejectedValue(new Error("DNS API error"));
+
+    setupFullVultrFlow();
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+    // Should fall back to http URL without cloudflare
+    expect(result?.gatewayUrl).not.toContain("https://agents.example.com");
+    // cloudflareDnsRecordId should NOT be in result (DNS failed)
+    expect(result?.cloudflareDnsRecordId).toBeUndefined();
+  });
+
+  it("returns result without CF on nginx install failure", async () => {
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    setupCloudflareMocks();
+    mockInstallNginx.mockRejectedValue(new Error("nginx install failed"));
+
+    setupFullVultrFlow();
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+    // Should fall back to http URL
+    expect(result?.gatewayUrl).not.toBe("https://agents.example.com");
+  });
+
+  it("returns result without CF on nginx configure failure", async () => {
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    setupCloudflareMocks();
+    mockConfigureNginx.mockRejectedValue(new Error("nginx configure failed"));
+
+    setupFullVultrFlow();
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+    expect(result?.gatewayUrl).not.toBe("https://agents.example.com");
+  });
+
+  it("continues with warning when setSslMode fails", async () => {
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    setupCloudflareMocks();
+    mockSetSslMode.mockRejectedValue(new Error("SSL mode API error"));
+
+    setupFullVultrFlow();
+
+    const result = await setupVpsCloud();
+
+    // Should still succeed overall even if SSL mode fails
+    expect(result).not.toBeNull();
+    // setSslMode failure is a warning — the gateway URL should still be set to https if we
+    // make it past the SSL mode step (this depends on whether the ssh health check succeeds)
+    expect(result?.provider).toBe("vps");
+    expect(result?.cloudflareHostname).toBe("agents.example.com");
+  });
+});
+
+describe("setupExistingServer additional paths", () => {
+  beforeEach(() => resetAllMocks());
+
+  it("configures firewall when user accepts firewall setup", async () => {
+    mockSelect.mockResolvedValueOnce("existing");
+
+    mockInput
+      .mockResolvedValueOnce("5.6.7.8")
+      .mockResolvedValueOnce("root")
+      .mockResolvedValueOnce("22")
+      .mockResolvedValueOnce("~/.ssh/id_rsa");
+
+    let callIdx = 0;
+    mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: any, cb: Function) => {
+      callIdx++;
+      if (callIdx === 1) {
+        cb(null, "ok\n", ""); // SSH connectivity test
+      } else {
+        cb(null, "24.0.7\n", ""); // Docker check and firewall
+      }
+    });
+
+    // Accept firewall setup
+    mockConfirm.mockResolvedValueOnce(true);
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+    // sshExec should have been called with ufw command
+    const sshCommands = mockExecFile.mock.calls.map((c: any[]) => c[1][c[1].length - 1]);
+    expect(sshCommands.some((cmd: string) => cmd.includes("ufw"))).toBe(true);
+  });
+});
+
+describe("Vultr wizard navigation", () => {
+  beforeEach(() => resetAllMocks());
+
+  it("returns null when user presses Esc at plan selection", async () => {
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
+
+    setupCatalogMocks();
+    setupFirewallMocks(true);
+    setupInstanceMocks();
+
+    // Esc at plan step → return null
+    mockSearch.mockResolvedValueOnce(null);
+
+    const result = await setupVpsCloud();
+    expect(result).toBeNull();
+  });
+
+  it("goes back to plan step when Esc pressed at region selection", async () => {
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
+
+    setupCatalogMocks();
+    setupFirewallMocks(true);
+    setupInstanceMocks();
+
+    mockSearch
+      .mockResolvedValueOnce("vc2-1c-1gb")  // plan (step 0)
+      .mockResolvedValueOnce(null)           // Esc at region (step 1) → go back to step 0
+      .mockResolvedValueOnce("vc2-1c-1gb")  // plan again (step 0 retry)
+      .mockResolvedValueOnce("atl")          // region (step 1 retry)
+      // OS auto-selected
+      .mockResolvedValueOnce("ssh-key-1");   // SSH key
+
+    setupSshMocks();
+    mockConfirm.mockResolvedValueOnce(true);
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+    // search was called 5 times: plan, Esc@region, plan again, region, SSH key
+    expect(mockSearch).toHaveBeenCalledTimes(5);
+  });
+
+  it("goes back when Esc pressed at SSH key selection", async () => {
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
+
+    setupCatalogMocks();
+    setupFirewallMocks(true);
+    setupInstanceMocks();
+
+    mockSearch
+      .mockResolvedValueOnce("vc2-1c-1gb")  // plan
+      .mockResolvedValueOnce("atl")          // region
+      // OS auto-selected
+      .mockResolvedValueOnce(null)           // Esc at SSH key → go back to step 2 (OS)
+      // OS auto-selected again
+      .mockResolvedValueOnce("ssh-key-1");   // SSH key retry
+
+    setupSshMocks();
+    mockConfirm.mockResolvedValueOnce(true);
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+  });
+
+  it("goes back when Esc pressed at OS selection", async () => {
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
+
+    // Use a small plan to trigger OS prompt
+    const smallPlan = [
+      { id: "vc2-1c-512mb", vcpu_count: 1, ram: 512, disk: 10, bandwidth: 0.5, monthly_cost: 2.5, type: "vc2", locations: ["atl"] },
+    ];
+    mockListPlans.mockResolvedValue(smallPlan);
+    mockListRegions.mockResolvedValue(TEST_REGIONS);
+    mockListOsImages.mockResolvedValue(TEST_OS_IMAGES);
+    mockListSshKeys.mockResolvedValue(TEST_SSH_KEYS);
+    setupFirewallMocks(true);
+
+    const smallInstance = { ...TEST_INSTANCE, plan: "vc2-1c-512mb", ram: 512 };
+    mockCreateInstance.mockResolvedValue(smallInstance);
+    mockGetInstance.mockResolvedValue(smallInstance);
+
+    mockSearch
+      .mockResolvedValueOnce("vc2-1c-512mb") // plan
+      .mockResolvedValueOnce("atl")           // region
+      .mockResolvedValueOnce(null)            // Esc at OS → go back to region
+      .mockResolvedValueOnce("atl")           // region again
+      .mockResolvedValueOnce(999)             // OS chosen (Alpine)
+      .mockResolvedValueOnce("ssh-key-1");    // SSH key
+
+    setupSshMocks();
+    mockConfirm.mockResolvedValueOnce(true);
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+  });
+
+  it("goes back to plan step when plan has no available regions", async () => {
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
+
+    // Plan with no regions available
+    const plansWithNoRegions = [
+      { id: "vc2-special", vcpu_count: 1, ram: 1024, disk: 25, bandwidth: 1, monthly_cost: 5, type: "vc2", locations: [] },
+      { id: "vc2-1c-1gb", vcpu_count: 1, ram: 1024, disk: 25, bandwidth: 1, monthly_cost: 5, type: "vc2", locations: ["atl"] },
+    ];
+    mockListPlans.mockResolvedValue(plansWithNoRegions);
+    mockListRegions.mockResolvedValue(TEST_REGIONS);
+    mockListOsImages.mockResolvedValue(TEST_OS_IMAGES);
+    mockListSshKeys.mockResolvedValue(TEST_SSH_KEYS);
+    setupFirewallMocks(true);
+    setupInstanceMocks();
+
+    mockSearch
+      .mockResolvedValueOnce("vc2-special")  // first plan choice (no regions)
+      // regionChoices.length === 0 → step-- back to plan
+      .mockResolvedValueOnce("vc2-1c-1gb")  // second plan choice (has regions)
+      .mockResolvedValueOnce("atl")          // region
+      // OS auto-selected
+      .mockResolvedValueOnce("ssh-key-1");   // SSH key
+
+    setupSshMocks();
+    mockConfirm.mockResolvedValueOnce(true);
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+    expect(mockSearch).toHaveBeenCalledTimes(4);
   });
 });
