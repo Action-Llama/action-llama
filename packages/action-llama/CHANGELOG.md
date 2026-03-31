@@ -1,5 +1,14 @@
 # @action-llama/action-llama
 
+## 0.23.8
+
+### Patch Changes
+
+- [`cc3a3f9`](https://github.com/Action-Llama/action-llama/commit/cc3a3f938ff6b7c7f82692b359741167896222f9) Thanks [@asselstine](https://github.com/asselstine)! - Improve startup performance by deferring non-critical module imports.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.23.8
+
 ## 0.23.7
 
 ### Patch Changes

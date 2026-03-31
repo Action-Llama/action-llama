@@ -1,5 +1,7 @@
 # @action-llama/skill
 
+## 0.23.8
+
 ## 0.23.7
 
 ### Patch Changes
