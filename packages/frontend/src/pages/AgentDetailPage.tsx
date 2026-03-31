@@ -7,23 +7,30 @@ import { StateBadge, TriggerTypeBadge, ResultBadge } from "../components/Badge";
 import {
   getAgentDetail,
   getAgentLogs,
-  getJobs,
+  getActivity,
   triggerAgent,
   killAgentInstances,
-  killInstance,
   enableAgent,
   disableAgent,
   updateAgentScale,
 } from "../lib/api";
 import type {
   AgentDetailData,
-  JobRow,
+  ActivityRow,
   LogEntry,
-  AgentInstance,
 } from "../lib/api";
 import { RunModal } from "../components/RunModal";
-import { fmtDur, fmtCost, fmtTokens, fmtRelativeTime, shortId } from "../lib/format";
+import { fmtDur, fmtCost, fmtTokens, fmtSmartTime } from "../lib/format";
 import { agentHueStyle } from "../lib/color";
+
+const ROW_STATUS_STYLES: Record<string, string> = {
+  pending: "border-l-2 border-l-amber-400 dark:border-l-amber-500 bg-amber-50/40 dark:bg-amber-950/20",
+  running: "border-l-2 border-l-blue-500 dark:border-l-blue-400 bg-blue-50/40 dark:bg-blue-950/20",
+  completed: "border-l-2 border-l-green-500 dark:border-l-green-400",
+  error: "border-l-2 border-l-red-500 dark:border-l-red-400 bg-red-50/30 dark:bg-red-950/20",
+  "dead-letter": "border-l-2 border-l-red-300 dark:border-l-red-700 bg-red-50/20 dark:bg-red-950/10",
+  rerun: "border-l-2 border-l-green-500 dark:border-l-green-400",
+};
 
 function formatLogEntry(entry: LogEntry): {
   text: string;
@@ -60,29 +67,19 @@ function formatLogEntry(entry: LogEntry): {
 export function AgentDetailPage() {
   const { name } = useParams<{ name: string }>();
   const navigate = useNavigate();
-  const { agents, instances } = useStatusStream();
+  const { agents } = useStatusStream();
   const agentNames = agents.map((a) => a.name);
   const [detail, setDetail] = useState<AgentDetailData | null>(null);
-  const [jobs, setJobs] = useState<JobRow[]>([]);
-  const [jobsTotal, setJobsTotal] = useState(0);
-  const [jobsPending, setJobsPending] = useState(0);
-  const [triggersOffset, setTriggersOffset] = useState(0);
-  const triggersLimit = 5;
+  const [activity, setActivity] = useState<ActivityRow[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [scaleInput, setScaleInput] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [killingAll, setKillingAll] = useState(false);
-  const [killingInstances, setKillingInstances] = useState<Set<string>>(new Set());
   const [showRunModal, setShowRunModal] = useState(false);
   const cursorRef = useRef<string | null>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
 
   const agent = agents.find((a) => a.name === name) ?? detail?.agent ?? null;
-  const liveInstances = instances.filter((inst) => inst.agentName === name && inst.status === "running");
-  const allRunning =
-    liveInstances.length > 0
-      ? liveInstances
-      : detail?.runningInstances ?? [];
 
   // Load detail
   const refetchDetail = useCallback(() => {
@@ -99,24 +96,16 @@ export function AgentDetailPage() {
     refetchDetail();
   }, [refetchDetail]);
 
-  // Load jobs
-  const refetchJobs = useCallback(() => {
+  // Load activity
+  const refetchActivity = useCallback(() => {
     if (!name) return;
-    getJobs(triggersLimit, triggersOffset, name)
-      .then((d) => {
-        setJobs(d.jobs);
-        setJobsTotal(d.total);
-        setJobsPending(d.totalPending);
-      })
-      .catch(() => {});
-  }, [name, triggersOffset]);
+    getActivity(5, 0, name).then((d) => setActivity(d.rows)).catch(() => {});
+  }, [name]);
 
-  useEffect(() => {
-    refetchJobs();
-  }, [refetchJobs]);
+  useEffect(() => { refetchActivity(); }, [refetchActivity]);
 
   useInvalidation("stats", name, refetchDetail);
-  useInvalidation("runs", name, refetchJobs);
+  useInvalidation("runs", name, refetchActivity);
 
   // Poll logs
   useEffect(() => {
@@ -169,36 +158,6 @@ export function AgentDetailPage() {
   if (!name) return null;
 
   const summary = detail?.summary;
-
-  // Merge running instances into jobs list for the agent detail page
-  const mergedJobs: JobRow[] = triggersOffset === 0
-    ? (() => {
-        const running: JobRow[] = liveInstances.map((inst) => {
-          const sep = inst.trigger.indexOf(":");
-          return {
-            ts: new Date(inst.startedAt).getTime(),
-            triggerType: sep > -1 ? inst.trigger.slice(0, sep) : inst.trigger,
-            triggerSource: sep > -1 ? inst.trigger.slice(sep + 1).trim() : null,
-            agentName: inst.agentName,
-            instanceId: inst.id,
-            result: "running",
-            webhookReceiptId: null,
-            deadLetterReason: null,
-          };
-        });
-        const jobIds = new Set(jobs.map((j) => j.instanceId));
-        const unique = running.filter((r) => !jobIds.has(r.instanceId));
-        return [...unique, ...jobs].sort((a, b) => b.ts - a.ts);
-      })()
-    : jobs;
-
-  const runningOnPage = triggersOffset === 0 ? liveInstances.length : 0;
-  const adjustedJobsTotal = jobsTotal + runningOnPage;
-  const triggersPage = Math.floor(triggersOffset / triggersLimit) + 1;
-  const triggersTotalPages = Math.max(1, Math.ceil(adjustedJobsTotal / triggersLimit));
-
-  // Use live pending count from SSE stream if available
-  const livePending = agent?.queuedWebhooks ?? jobsPending;
 
   return (
     <div className="space-y-6">
@@ -339,80 +298,14 @@ export function AgentDetailPage() {
         </div>
       )}
 
-      {/* Running Instances */}
-      {allRunning.length > 0 && (
-        <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-slate-200 dark:border-slate-800">
-            <h2 className="text-sm font-medium text-slate-900 dark:text-white">
-              Running Instances ({allRunning.length})
-            </h2>
-          </div>
-          <div className="divide-y divide-slate-100 dark:divide-slate-800/50">
-            {allRunning.map((inst: AgentInstance) => (
-              <div
-                key={inst.id}
-                className="px-4 py-3 flex items-center justify-between"
-              >
-                <div>
-                  <Link
-                    to={`/dashboard/agents/${encodeURIComponent(name)}/instances/${encodeURIComponent(inst.id)}`}
-                    className="text-sm font-mono text-blue-600 dark:text-blue-400 hover:underline"
-                  >
-                    {shortId(inst.id)}
-                  </Link>
-                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    {inst.trigger} &middot; started{" "}
-                    {new Date(inst.startedAt).toLocaleTimeString()}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-green-600 dark:text-green-400">
-                    {inst.status}
-                  </span>
-                  <button
-                    onClick={async () => {
-                      setKillingInstances((prev) => new Set(prev).add(inst.id));
-                      setActionError(null);
-                      try { await killInstance(inst.id); }
-                      catch (err) { setActionError(err instanceof Error ? err.message : "Action failed"); }
-                      finally {
-                        setKillingInstances((prev) => {
-                          const next = new Set(prev);
-                          next.delete(inst.id);
-                          return next;
-                        });
-                      }
-                    }}
-                    disabled={killingInstances.has(inst.id)}
-                    className="px-2 py-1 text-xs rounded bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
-                  >
-                    {killingInstances.has(inst.id) ? (
-                      <span className="flex items-center gap-1">
-                        <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                        </svg>
-                        Killing…
-                      </span>
-                    ) : "Kill"}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Jobs */}
+      {/* Activity */}
       <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center gap-2">
-            <h2 className="text-sm font-medium text-slate-900 dark:text-white">
-              Jobs
-            </h2>
-            {livePending > 0 && (
+            <h2 className="text-sm font-medium text-slate-900 dark:text-white">Activity</h2>
+            {(agent?.queuedWebhooks ?? 0) > 0 && (
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
-                {livePending} pending
+                {agent!.queuedWebhooks} pending
               </span>
             )}
           </div>
@@ -427,93 +320,59 @@ export function AgentDetailPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 dark:border-slate-800">
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide w-[1%] whitespace-nowrap">
-                  Time
-                </th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide w-[1%] whitespace-nowrap">
-                  Trigger
-                </th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                  Instance
-                </th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide w-[1%] whitespace-nowrap">
-                  Status
-                </th>
+                <th className="text-left pl-4 pr-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Time</th>
+                <th className="text-left px-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Status</th>
+                <th className="text-left px-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Trigger</th>
+                <th className="text-left px-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Instance</th>
               </tr>
             </thead>
             <tbody>
-              {mergedJobs.map((j, i) => (
+              {activity.map((row, i) => (
                 <tr
-                  key={`${j.ts}-${i}`}
-                  className="border-b border-slate-100 dark:border-slate-800/50 last:border-0"
+                  key={`${row.ts}-${i}`}
+                  className={`border-b border-slate-100 dark:border-slate-800/50 last:border-b-0 hover:bg-slate-100/60 dark:hover:bg-slate-800/40 transition-colors ${ROW_STATUS_STYLES[row.result] ?? ""}`}
                 >
-                  <td className="px-4 py-2 text-slate-600 dark:text-slate-400 text-xs whitespace-nowrap">
-                    {fmtRelativeTime(j.ts)}
+                  <td className="pl-4 pr-2 py-2.5 text-slate-600 dark:text-slate-400 text-xs whitespace-nowrap" title={new Date(row.ts).toLocaleString()}>
+                    {fmtSmartTime(row.ts)}
                   </td>
-                  <td className="px-4 py-2 whitespace-nowrap">
-                    {j.instanceId ? (
-                      <Link
-                        to={`/dashboard/triggers/${encodeURIComponent(j.instanceId)}`}
-                        className="flex items-center gap-1.5 hover:opacity-80"
-                      >
-                        <TriggerTypeBadge type={j.triggerType} />
+                  <td className="px-2 py-2.5">
+                    <ResultBadge result={row.result} deadLetterReason={row.deadLetterReason} />
+                  </td>
+                  <td className="px-2 py-2.5">
+                    {row.instanceId ? (
+                      <Link to={`/dashboard/triggers/${encodeURIComponent(row.instanceId)}`} className="inline-flex items-center gap-1.5 hover:underline">
+                        <TriggerTypeBadge type={row.triggerType} />
+                        {row.triggerSource && <span className="text-xs text-slate-600 dark:text-slate-400">{row.triggerSource}</span>}
                       </Link>
                     ) : (
-                      <TriggerTypeBadge type={j.triggerType} />
+                      <span className="inline-flex items-center gap-1.5">
+                        <TriggerTypeBadge type={row.triggerType} />
+                        {row.triggerSource && <span className="text-xs text-slate-600 dark:text-slate-400">{row.triggerSource}</span>}
+                      </span>
                     )}
                   </td>
-                  <td className="px-4 py-2 min-w-0">
-                    {j.instanceId ? (
+                  <td className="px-2 py-2.5">
+                    {row.instanceId ? (
                       <Link
-                        to={`/dashboard/agents/${encodeURIComponent(name)}/instances/${encodeURIComponent(j.instanceId)}`}
-                        className="font-mono text-xs text-blue-600 dark:text-blue-400 hover:underline truncate block"
-                        title={j.instanceId}
+                        to={`/dashboard/agents/${encodeURIComponent(name)}/instances/${encodeURIComponent(row.instanceId)}`}
+                        className="font-mono text-xs text-blue-600 dark:text-blue-400 hover:underline"
                       >
-                        {shortId(j.instanceId)}
+                        {row.instanceId}
                       </Link>
                     ) : (
-                      <span className="text-xs text-slate-400">{"\u2014"}</span>
+                      <span className="text-slate-400 text-xs">{"\u2014"}</span>
                     )}
-                  </td>
-                  <td className="px-4 py-2 whitespace-nowrap">
-                    <ResultBadge result={j.result} deadLetterReason={j.deadLetterReason} />
                   </td>
                 </tr>
               ))}
-              {mergedJobs.length === 0 && (
+              {activity.length === 0 && (
                 <tr>
-                  <td
-                    colSpan={4}
-                    className="px-4 py-6 text-center text-slate-500 dark:text-slate-400 text-xs"
-                  >
-                    No jobs yet
-                  </td>
+                  <td colSpan={4} className="px-4 py-6 text-center text-slate-500 dark:text-slate-400 text-xs">No activity yet</td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
-        {triggersTotalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-200 dark:border-slate-800">
-            <button
-              onClick={() => setTriggersOffset((o) => Math.max(0, o - triggersLimit))}
-              disabled={triggersOffset === 0}
-              className="px-3 py-1 text-xs rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
-            >
-              Previous
-            </button>
-            <span className="text-xs text-slate-500 dark:text-slate-400">
-              Page {triggersPage} of {triggersTotalPages}
-            </span>
-            <button
-              onClick={() => setTriggersOffset((o) => o + triggersLimit)}
-              disabled={triggersOffset + triggersLimit >= adjustedJobsTotal}
-              className="px-3 py-1 text-xs rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
-            >
-              Next
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Recent Logs */}
