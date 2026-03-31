@@ -182,4 +182,25 @@ describe.skipIf(!DOCKER)("integration: stats jobs and activity API", { timeout: 
       }
     }
   });
+
+  it("stats/agents/:name/runs/:instanceId returns { run: null } for unknown instanceId", async () => {
+    // When no run exists for the given instanceId, the endpoint returns
+    // { run: null } with HTTP 200 (not 404 — it is a presence-check endpoint).
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "run-null-agent",
+          schedule: "0 0 31 2 *",
+          testScript: "#!/bin/sh\nexit 0\n",
+        },
+      ],
+    });
+
+    await harness.start();
+
+    const res = await statsAPI(harness, "/api/stats/agents/run-null-agent/runs/nonexistent-instance-id-xyz");
+    expect(res.ok).toBe(true); // 200 not 404
+    const body = await res.json() as { run: null };
+    expect(body.run).toBeNull();
+  });
 });
