@@ -104,7 +104,7 @@ const AGENT_RUNTIME_CONFIG_SCHEMA: ConfigSchema = {
     },
     runtime: {
       required: new Set(),
-      optional: new Set(["type", "run_as"]),
+      optional: new Set(["type", "run_as", "groups"]),
       nested: {}
     },
   }

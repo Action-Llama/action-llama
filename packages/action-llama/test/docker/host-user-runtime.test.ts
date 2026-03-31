@@ -154,6 +154,68 @@ describe("HostUserRuntime", () => {
 
       fakeProc.emit("exit", 0);
     });
+
+    it("does not include -g flag when no groups configured", async () => {
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+
+      await runtime.launch({
+        image: "ignored",
+        agentName: "test-agent",
+        env: {},
+        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
+      });
+
+      const spawnCall = mockSpawn.mock.calls[0];
+      const sudoArgs: string[] = spawnCall[1];
+      expect(sudoArgs).not.toContain("-g");
+
+      fakeProc.emit("exit", 0);
+    });
+
+    it("includes -g flag when groups are configured", async () => {
+      const runtimeWithGroups = new HostUserRuntime("al-agent", ["docker"]);
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+
+      await runtimeWithGroups.launch({
+        image: "ignored",
+        agentName: "test-agent",
+        env: {},
+        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
+      });
+
+      const spawnCall = mockSpawn.mock.calls[0];
+      const sudoArgs: string[] = spawnCall[1];
+      expect(sudoArgs).toContain("-g");
+      expect(sudoArgs).toContain("docker");
+
+      // -g should come after -u and the runAs user
+      const gIndex = sudoArgs.indexOf("-g");
+      expect(sudoArgs[gIndex + 1]).toBe("docker");
+
+      fakeProc.emit("exit", 0);
+    });
+
+    it("uses first group when multiple groups are configured", async () => {
+      const runtimeWithGroups = new HostUserRuntime("al-agent", ["docker", "audio"]);
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+
+      await runtimeWithGroups.launch({
+        image: "ignored",
+        agentName: "test-agent",
+        env: {},
+        credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
+      });
+
+      const spawnCall = mockSpawn.mock.calls[0];
+      const sudoArgs: string[] = spawnCall[1];
+      const gIndex = sudoArgs.indexOf("-g");
+      expect(sudoArgs[gIndex + 1]).toBe("docker");
+
+      fakeProc.emit("exit", 0);
+    });
   });
 
   describe("isAgentRunning / listRunningAgents", () => {

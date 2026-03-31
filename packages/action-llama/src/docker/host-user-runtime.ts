@@ -156,11 +156,13 @@ export class HostUserRuntime implements Runtime {
   readonly needsGateway = false;
 
   private runAs: string;
+  private groups: string[];
   private processes = new Map<string, ProcessHandle>();
   private runAgentNames = new Map<string, string>();
 
-  constructor(runAs: string = "al-agent") {
+  constructor(runAs: string = "al-agent", groups: string[] = []) {
     this.runAs = runAs;
+    this.groups = groups;
   }
 
   async isAgentRunning(agentName: string): Promise<boolean> {
@@ -322,13 +324,22 @@ export class HostUserRuntime implements Runtime {
     // Find the `al` binary path
     const alBin = process.argv[1] || "al";
 
-    // Spawn: sudo -u <runAs> <al> _run-agent <agentName>
-    const proc = spawn("sudo", [
-      "-u", this.runAs,
+    // Build sudo args: sudo -u <runAs> [-g <group>] --preserve-env=... <al> _run-agent <agentName>
+    // When groups are configured, set the first group as the primary group so the agent
+    // process has the required group access (e.g. "docker" for Docker socket access).
+    // sudo running as root can set the group regardless of the user's /etc/group membership.
+    const sudoArgs: string[] = ["-u", this.runAs];
+    if (this.groups.length > 0) {
+      sudoArgs.push("-g", this.groups[0]);
+    }
+    sudoArgs.push(
       "--preserve-env=AL_CREDENTIALS_PATH,AL_WORK_DIR,AL_INSTANCE_ID,PROMPT,GATEWAY_URL,SHUTDOWN_SECRET,OTEL_TRACE_PARENT,OTEL_EXPORTER_OTLP_ENDPOINT,PATH,HOME",
       alBin, "_run-agent", opts.agentName,
       "--project", process.cwd(),
-    ], {
+    );
+
+    // Spawn: sudo -u <runAs> [-g <group>] <al> _run-agent <agentName>
+    const proc = spawn("sudo", sudoArgs, {
       stdio: ["ignore", logFd, logFd],
       env,
       cwd: workDir,
