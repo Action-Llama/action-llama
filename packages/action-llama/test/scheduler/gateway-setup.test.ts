@@ -433,6 +433,7 @@ describe("setupGateway", () => {
         expect.objectContaining({ name: "dev" }),
         0,
         schedulerCtx,
+        "manual",
         "do something",
         expect.stringMatching(/^dev-/),
       );

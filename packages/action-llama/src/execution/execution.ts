@@ -326,22 +326,23 @@ function fireQueuedItem(
   } else if (work.type === 'schedule') {
     ctx.logger.info({ agent: agentConfig.name, ageMs }, "draining queued scheduled run");
     // runWithReruns already calls drainQueues on completion and handles instance lifecycle
-    runWithReruns(runner, agentConfig, 0, ctx)
+    runWithReruns(runner, agentConfig, 0, ctx, 'schedule')
       .catch((err) => ctx.logger.error({ err, agent: agentConfig.name }, "queued scheduled run failed"));
 
   } else if (work.type === 'manual') {
     ctx.logger.info({ agent: agentConfig.name, ageMs }, "draining queued manual trigger");
-    runWithReruns(runner, agentConfig, 0, ctx, work.prompt)
+    runWithReruns(runner, agentConfig, 0, ctx, 'manual', work.prompt)
       .catch((err) => ctx.logger.error({ err, agent: agentConfig.name }, "queued manual trigger failed"));
   }
 }
 
 export async function runWithReruns(
-  runner: PoolRunner, agentConfig: AgentConfig, depth: number, ctx: SchedulerContext, prompt?: string, instanceId?: string
+  runner: PoolRunner, agentConfig: AgentConfig, depth: number, ctx: SchedulerContext,
+  trigger: 'schedule' | 'manual' = 'schedule', prompt?: string, instanceId?: string
 ): Promise<void> {
-  const isManual = prompt !== undefined;
-  const triggerType = isManual ? 'manual' as const : 'schedule' as const;
-  const triggerLabel = isManual ? "manual" : "schedule";
+  const isManual = trigger === 'manual';
+  const triggerType = trigger;
+  const triggerLabel = trigger;
 
   // Create instance lifecycle for this run (if supported)
   const instanceLifecycle = ctx.statusTracker?.createInstance ?

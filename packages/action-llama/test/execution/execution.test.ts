@@ -368,8 +368,9 @@ describe("drainQueues", () => {
 
     await drainQueues(ctx);
 
-    // When no prompt is provided, runWithReruns treats it as a schedule run
     expect(runner.run).toHaveBeenCalledOnce();
+    const [, triggerInfo] = (runner.run as any).mock.calls[0];
+    expect(triggerInfo.type).toBe("manual");
   });
 });
 
@@ -471,7 +472,7 @@ describe("runWithReruns", () => {
       runnerPools: { a: new RunnerPool([runner]) },
     });
 
-    await runWithReruns(runner, config, 0, ctx, "review PR #42");
+    await runWithReruns(runner, config, 0, ctx, 'manual', "review PR #42");
 
     expect(runner.run).toHaveBeenCalledTimes(1);
     const prompt = (runner.run as any).mock.calls[0][0];
@@ -480,6 +481,73 @@ describe("runWithReruns", () => {
     const triggerInfo = (runner.run as any).mock.calls[0][1];
     expect(triggerInfo.type).toBe("manual");
     expect(triggerInfo.source).toBe("user-prompt");
+  });
+
+  it("records trigger type as 'manual' even without a prompt", async () => {
+    const runner = makeRunner({
+      run: vi.fn().mockResolvedValue({ result: "completed", triggers: [] }),
+    });
+    const config = makeAgentConfig("a");
+    const statsStore = { recordRun: vi.fn(), recordCallEdge: vi.fn(), updateCallEdge: vi.fn() };
+    const ctx = makeCtx({
+      agentConfigs: [config],
+      runnerPools: { a: new RunnerPool([runner]) },
+      statsStore: statsStore as any,
+    });
+
+    await runWithReruns(runner, config, 0, ctx, 'manual');
+
+    expect(runner.run).toHaveBeenCalledTimes(1);
+    const triggerInfo = (runner.run as any).mock.calls[0][1];
+    expect(triggerInfo.type).toBe("manual");
+    // No prompt → no user-prompt source
+    expect(triggerInfo.source).toBeUndefined();
+    // Stats should record 'manual' trigger type
+    const statsCall = statsStore.recordRun.mock.calls[0][0];
+    expect(statsCall.triggerType).toBe("manual");
+  });
+
+  it("records trigger type as 'manual' with prompt and stores context", async () => {
+    const runner = makeRunner({
+      run: vi.fn().mockResolvedValue({ result: "completed", triggers: [] }),
+    });
+    const config = makeAgentConfig("a");
+    const statsStore = { recordRun: vi.fn(), recordCallEdge: vi.fn(), updateCallEdge: vi.fn() };
+    const ctx = makeCtx({
+      agentConfigs: [config],
+      runnerPools: { a: new RunnerPool([runner]) },
+      statsStore: statsStore as any,
+    });
+
+    await runWithReruns(runner, config, 0, ctx, 'manual', "deploy to prod");
+
+    const triggerInfo = (runner.run as any).mock.calls[0][1];
+    expect(triggerInfo.type).toBe("manual");
+    expect(triggerInfo.source).toBe("user-prompt");
+    expect(triggerInfo.context).toBe("deploy to prod");
+    // Stats should record 'manual' trigger type
+    const statsCall = statsStore.recordRun.mock.calls[0][0];
+    expect(statsCall.triggerType).toBe("manual");
+  });
+
+  it("uses 'schedule' trigger type by default", async () => {
+    const runner = makeRunner({
+      run: vi.fn().mockResolvedValue({ result: "completed", triggers: [] }),
+    });
+    const config = makeAgentConfig("a");
+    const statsStore = { recordRun: vi.fn(), recordCallEdge: vi.fn(), updateCallEdge: vi.fn() };
+    const ctx = makeCtx({
+      agentConfigs: [config],
+      runnerPools: { a: new RunnerPool([runner]) },
+      statsStore: statsStore as any,
+    });
+
+    await runWithReruns(runner, config, 0, ctx);
+
+    const triggerInfo = (runner.run as any).mock.calls[0][1];
+    expect(triggerInfo.type).toBe("schedule");
+    const statsCall = statsStore.recordRun.mock.calls[0][0];
+    expect(statsCall.triggerType).toBe("schedule");
   });
 });
 

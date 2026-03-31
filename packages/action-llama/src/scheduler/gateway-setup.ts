@@ -161,7 +161,7 @@ export async function setupGateway(opts: {
         if (result.action === "dispatched") {
           const instanceId = `${name}-${randomBytes(4).toString("hex")}`;
           logger.info({ agent: name, hasPrompt: !!prompt, instanceId }, "manual trigger via control API");
-          runWithReruns(result.runner, config, 0, state.schedulerCtx, prompt, instanceId).catch((err) => {
+          runWithReruns(result.runner, config, 0, state.schedulerCtx, 'manual', prompt, instanceId).catch((err) => {
             logger.error({ err, agent: name }, "manual trigger run failed");
           });
           return { instanceId };
