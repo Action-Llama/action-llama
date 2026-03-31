@@ -47,7 +47,7 @@ describe("gitExec", () => {
     // with the AL key path (it may still exist from process.env ambient value)
     const callEnv = mockExecFileSync.mock.calls.at(-1)![2].env as Record<string, string>;
     // The key specifically used for AL auth should not appear
-    expect(callEnv.GIT_SSH_COMMAND).not.toContain("git_ssh/default/id_rsa");
+    expect(callEnv.GIT_SSH_COMMAND ?? "").not.toContain("git_ssh/default/id_rsa");
   });
 
   it("sets GIT_SSH_COMMAND with AL key path when SSH key exists", () => {
