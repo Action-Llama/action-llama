@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { rmSync, mkdirSync, writeFileSync } from "fs";
+import { rmSync, mkdirSync, writeFileSync, symlinkSync } from "fs";
 import { resolve } from "path";
 import { mkdtempSync } from "fs";
 import { tmpdir } from "os";
@@ -230,6 +230,21 @@ describe("FilesystemBackend", () => {
       mkdirSync(resolve(tmpDir, "git_ssh", "default", "only-subdir"), { recursive: true });
       const result = await backend.readAll("git_ssh", "default");
       expect(result).toBeUndefined();
+    });
+
+    it("list() handles dangling symlinks at the field level without crashing (safeIsDir catch path)", async () => {
+      setup();
+      await backend.write("github_token", "default", "token", "real-token");
+      // Create a dangling symlink at the field level — statSync throws on dangling symlinks,
+      // which triggers the catch { return false } in safeIsDir
+      const symlinkPath = resolve(tmpDir, "github_token", "default", "dangling-link");
+      symlinkSync(resolve(tmpDir, "nonexistent-target-xyz"), symlinkPath);
+
+      // list() should not throw; the dangling symlink is treated as a non-directory entry
+      const entries = await backend.list();
+      // The real token entry should be present
+      const tokenEntry = entries.find((e) => e.field === "token");
+      expect(tokenEntry).toEqual({ type: "github_token", instance: "default", field: "token" });
     });
   });
 });

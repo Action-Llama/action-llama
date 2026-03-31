@@ -283,6 +283,23 @@ describe("al add", () => {
       expect(existsSync(resolve(projectPath, "agents", "unnamed-dir", "SKILL.md"))).toBe(true);
     });
 
+    it("falls back gracefully when SKILL.md has invalid YAML frontmatter (readSkillMeta catch path)", async () => {
+      // SKILL.md with invalid YAML inside frontmatter delimiters — this causes parseFrontmatter to throw,
+      // which triggers the catch { return {} } in readSkillMeta, falling back to directory name
+      createGitRepo(repoPath, {
+        "skills/bad-yaml-skill/SKILL.md": "---\n: invalid: yaml: : :\n---\n\n# Bad YAML Skill\n",
+      });
+
+      const agentModule = await import("../../../src/cli/commands/agent.js");
+      vi.spyOn(agentModule, "configAgent").mockResolvedValue();
+
+      const { execute } = await import("../../../src/cli/commands/add.js");
+      // The name should fall back to the directory name "bad-yaml-skill"
+      await execute(repoPath, { agent: "bad-yaml-skill", project: projectPath });
+
+      expect(existsSync(resolve(projectPath, "agents", "bad-yaml-skill", "SKILL.md"))).toBe(true);
+    });
+
     it("uses select prompt when multiple skills exist and no --agent flag", async () => {
       createGitRepo(repoPath, {
         "skills/alpha/SKILL.md": "---\nname: alpha\ndescription: Alpha skill\n---\n\n# Alpha\n",

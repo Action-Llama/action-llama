@@ -348,4 +348,53 @@ describe("promptCredential", () => {
       expect(result!.values.api_key).toBe("brand-new-key");
     });
   });
+
+  describe("validate function for non-optional fields", () => {
+    it("validate returns true for non-empty input", async () => {
+      mockedPassword.mockResolvedValue("valid-value" as any);
+      const def = makeDef({
+        fields: [{ name: "api_key", label: "API Key", description: "", secret: true }],
+      });
+
+      await promptCredential(def);
+
+      // Capture the options passed to the password mock
+      const call = mockedPassword.mock.calls[0][0] as any;
+      expect(call.validate).toBeTypeOf("function");
+
+      // Invoke the validate function directly with non-empty input
+      expect(call.validate("some-value")).toBe(true);
+    });
+
+    it("validate returns error message for empty input on non-optional fields", async () => {
+      mockedPassword.mockResolvedValue("valid-value" as any);
+      const def = makeDef({
+        fields: [{ name: "api_key", label: "API Key", description: "", secret: true }],
+      });
+
+      await promptCredential(def);
+
+      // Capture the validate function from the mock call
+      const call = mockedPassword.mock.calls[0][0] as any;
+      const validate = call.validate;
+
+      // Empty or whitespace-only input should fail validation
+      expect(validate("")).toBe("API Key is required");
+      expect(validate("   ")).toBe("API Key is required");
+    });
+
+    it("validate is undefined for optional fields", async () => {
+      mockedInput.mockResolvedValue("" as any);
+      const def = makeDef({
+        fields: [{ name: "opt_field", label: "Optional Field", description: "", secret: false, optional: true }],
+      });
+
+      await promptCredential(def);
+
+      // The input mock is called for non-secret fields
+      const call = mockedInput.mock.calls[0][0] as any;
+      // Optional fields should have validate: undefined
+      expect(call.validate).toBeUndefined();
+    });
+  });
 });
