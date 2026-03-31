@@ -956,6 +956,62 @@ describe("CloudRunRuntime", () => {
       );
     });
 
+    it("reads dockerfile from disk when dockerfileContent is not provided (absolute path)", async () => {
+      // Use an absolute dockerfile path so readFileSync reads it directly.
+      // readFileSync is NOT mocked (only mkdtempSync, mkdirSync, writeFileSync, rmSync are).
+      // We write the real file using the actual fs module (vi.importActual).
+      const realFsModule = await vi.importActual<typeof import("fs")>("fs");
+      const dockerfilePath = "/tmp/test-al-dockerfile-unit.Dockerfile";
+      realFsModule.writeFileSync(dockerfilePath, "FROM node:20\nRUN echo hello\n");
+
+      try {
+        const fakeProc = makeFakeProc();
+        mockSpawn.mockReturnValueOnce(fakeProc);
+
+        const runtime = makeRuntime();
+        // No dockerfileContent, pass an absolute dockerfile path
+        const buildPromise = runtime.buildImage({
+          tag: "read-from-disk:latest",
+          dockerfile: dockerfilePath,
+          contextDir: "/tmp",
+        });
+
+        fakeProc.emit("close", 0);
+        const result = await buildPromise;
+        expect(result).toBe("read-from-disk:latest");
+      } finally {
+        realFsModule.rmSync(dockerfilePath, { force: true });
+      }
+    });
+
+    it("inserts COPY line before USER directive when dockerfile has USER", async () => {
+      const fakeProc = makeFakeProc();
+      mockSpawn.mockReturnValueOnce(fakeProc);
+
+      const runtime = makeRuntime();
+      const buildPromise = runtime.buildImage({
+        tag: "user-directive:latest",
+        dockerfile: "Dockerfile",
+        contextDir: "/tmp/ctx",
+        dockerfileContent: "FROM node:20\nRUN echo hello\nUSER nonroot",
+        extraFiles: { "prompt.txt": "do stuff" },
+      });
+
+      fakeProc.emit("close", 0);
+      await buildPromise;
+
+      // Check that writeFileSync was called with Dockerfile content containing COPY before USER
+      const writeCall = mockWriteFileSync.mock.calls.find(
+        (c) => typeof c[0] === "string" && (c[0] as string).endsWith("Dockerfile")
+      );
+      expect(writeCall).toBeDefined();
+      const writtenContent = writeCall![1] as string;
+      const copyIdx = writtenContent.indexOf("COPY static/");
+      const userIdx = writtenContent.indexOf("USER ");
+      expect(copyIdx).not.toBe(-1);
+      expect(copyIdx).toBeLessThan(userIdx);
+    });
+
     it("tags additional images after build", async () => {
       const fakeMainProc = makeFakeProc();
       const fakeTagProc = makeFakeProc();
@@ -1137,3 +1193,4 @@ describe("CloudRunRuntime", () => {
     });
   });
 });
+
