@@ -65,3 +65,4 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] GitHub ping event is silently ignored — parseEvent returns null for ping, registry returns ok:true with matched:0, no agents triggered (github-webhook.test.ts)
 - [x] Webhook delivery deduplication — duplicate X-GitHub-Delivery ID returns duplicate:true and matched:0, no second agent trigger (github-webhook.test.ts)
 - [x] Webhook receipt 404 — GET /api/stats/webhooks/:receiptId returns 404 with receipt:null for nonexistent receipt ID (webhook-stats.test.ts)
+- [x] Activity endpoint status filter — ?status=completed filters to completed rows only, ?status=all returns all results (stats-jobs.test.ts)

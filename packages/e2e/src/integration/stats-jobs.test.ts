@@ -91,6 +91,59 @@ describe.skipIf(!DOCKER)("integration: stats jobs and activity API", { timeout: 
     expect(body.total).toBeGreaterThanOrEqual(1);
   });
 
+  it("stats/activity endpoint supports status filter for completed and pending rows", async () => {
+    // The activity endpoint supports a ?status= filter that can include
+    // comma-separated status values (e.g., "completed", "pending,running").
+    // This test verifies the status filtering logic.
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "status-filter-agent",
+          schedule: "0 0 31 2 *",
+          testScript: "#!/bin/sh\necho 'status-filter-agent ran'\nexit 0\n",
+        },
+      ],
+    });
+
+    await harness.start();
+
+    // Run the agent to create a completed record
+    await harness.triggerAgent("status-filter-agent");
+    await harness.waitForRunResult("status-filter-agent");
+
+    // Allow a moment for the run to be recorded in the stats store
+    await new Promise((r) => setTimeout(r, 500));
+
+    // Filter by completed status — should include our completed run
+    const completedRes = await statsAPI(
+      harness,
+      "/api/stats/activity?agent=status-filter-agent&status=completed",
+    );
+    expect(completedRes.ok).toBe(true);
+    const completedBody = await completedRes.json();
+    expect(completedBody.total).toBeGreaterThanOrEqual(1);
+    expect(completedBody.rows.every((r: any) => r.result === "completed")).toBe(true);
+
+    // Filter by pending status — should have no rows (no queued work)
+    const pendingRes = await statsAPI(
+      harness,
+      "/api/stats/activity?agent=status-filter-agent&status=pending",
+    );
+    expect(pendingRes.ok).toBe(true);
+    const pendingBody = await pendingRes.json();
+    // No pending items (agent completed and nothing is queued)
+    expect(pendingBody.rows.every((r: any) => r.result === "pending")).toBe(true);
+
+    // Filter by all — should include completed rows
+    const allRes = await statsAPI(
+      harness,
+      "/api/stats/activity?agent=status-filter-agent&status=all",
+    );
+    expect(allRes.ok).toBe(true);
+    const allBody = await allRes.json();
+    expect(allBody.total).toBeGreaterThanOrEqual(1);
+  });
+
   it("stats/agents/:name/runs/:instanceId returns single run details", async () => {
     harness = await IntegrationHarness.create({
       agents: [
