@@ -28,16 +28,32 @@ setenv() {
   done
   set -- "${args[@]}"
 
+  if [ $# -lt 2 ]; then
+    echo 'usage: setenv NAME value [NAME2 value2 ...]' >&2
+    return 1
+  fi
+
+  local _count=0
+
   # Process NAME VALUE pairs.
   while [ $# -ge 2 ]; do
     # Stop if the key isn't a valid variable name.
     if [[ ! "$1" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
-      break
+      echo "setenv: invalid variable name: $1" >&2
+      return 1
     fi
     printf 'export %s=%q\n' "$1" "$2" >> "$_AL_ENV_FILE"
     export "$1"="$2"
+    _count=$((_count + 1))
     shift 2
   done
+
+  # Confirm so the agent knows it worked.
+  if [ $_count -eq 1 ]; then
+    echo "set 1 variable"
+  else
+    echo "set $_count variables"
+  fi
 }
 
 # ---------- Restore persisted env ----------

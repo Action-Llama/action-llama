@@ -131,6 +131,12 @@ export async function execute(agent: string, opts: { project: string }): Promise
     process.env.HOME = workDir;
   }
 
+  // Scope the setenv persistence file to this agent instance.
+  // In Docker, /tmp/env.sh is fine because each container is isolated.
+  // In host-user mode, all instances share /tmp, so we must scope per-run.
+  const envFile = resolve(workDir || "/tmp", ".env.sh");
+  process.env.AL_ENV_FILE = envFile;
+
   // Add bin scripts (rlock, al-status, etc.) to PATH so the agent can find them.
   // In Docker these live at /app/bin; in host-user mode we resolve from the package.
   const binDir = resolve(dirname(fileURLToPath(import.meta.url)), "../../../docker/bin");
