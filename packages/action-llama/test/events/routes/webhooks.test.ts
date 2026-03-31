@@ -511,5 +511,70 @@ describe("webhook routes – additional paths", () => {
       // Without statsStore the replay route is not registered → 404
       expect(res.status).toBe(404);
     });
+
+    it("continues processing when recordWebhookReceipt throws (warning is logged)", async () => {
+      const stats = mockStatsStore();
+      stats.getWebhookReceipt.mockReturnValue({
+        id: "r-throw",
+        source: "test",
+        eventSummary: "test.event",
+        timestamp: Date.now(),
+        headers: JSON.stringify({ "content-type": "application/json" }),
+        body: JSON.stringify({ event: "push" }),
+        matchedAgents: 1,
+        status: "processed",
+      });
+      // Make recordWebhookReceipt throw to hit L278
+      stats.recordWebhookReceipt.mockImplementation(() => { throw new Error("db error"); });
+
+      const { app } = buildApp([new TestProvider()], { statsStore: stats });
+      const res = await app.request("/api/webhooks/r-throw/replay", { method: "POST" });
+      // Despite the throw, the replay should still complete
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.replayReceiptId).toBeDefined();
+    });
+
+    it("continues processing when updateWebhookReceiptStatus throws during replay (L293)", async () => {
+      const stats = mockStatsStore();
+      stats.getWebhookReceipt.mockReturnValue({
+        id: "r-update-throw",
+        source: "test",
+        eventSummary: "test.event",
+        timestamp: Date.now(),
+        headers: JSON.stringify({ "content-type": "application/json" }),
+        body: JSON.stringify({ event: "push" }),
+        matchedAgents: 1,
+        status: "processed",
+      });
+      // recordWebhookReceipt succeeds
+      stats.recordWebhookReceipt.mockReturnValue(undefined);
+      // updateWebhookReceiptStatus throws on the second call (replay update)
+      let callCount = 0;
+      stats.updateWebhookReceiptStatus.mockImplementation(() => {
+        callCount++;
+        if (callCount >= 2) throw new Error("update error");
+      });
+
+      const { app } = buildApp([new TestProvider()], { statsStore: stats });
+      const res = await app.request("/api/webhooks/r-update-throw/replay", { method: "POST" });
+      // Despite the throw, should complete successfully
+      expect(res.status).toBe(200);
+    });
+
+    it("returns 413 when actual body size exceeds 10MB (after read, no content-length header)", async () => {
+      // Send a large body without a content-length header so the pre-read size check passes,
+      // but the post-read check at L97 fires
+      const largeBody = "x".repeat(10 * 1024 * 1024 + 1);
+      const { app } = buildApp([new TestProvider()]);
+      const res = await app.request("/webhooks/test", {
+        method: "POST",
+        body: largeBody,
+        headers: { "content-type": "text/plain" }, // no content-length
+      });
+      expect(res.status).toBe(413);
+      const body = await res.json();
+      expect(body.error).toContain("payload too large");
+    });
   });
 });
