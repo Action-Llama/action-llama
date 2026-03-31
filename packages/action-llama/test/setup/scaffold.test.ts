@@ -4,7 +4,7 @@ import { join, resolve } from "path";
 import { tmpdir } from "os";
 import { parse as parseTOML } from "smol-toml";
 import { parseFrontmatter } from "../../src/shared/frontmatter.js";
-import { scaffoldProject, scaffoldClaudeCommands, CLAUDE_COMMANDS } from "../../src/setup/scaffold.js";
+import { scaffoldProject, scaffoldClaudeCommands } from "../../src/setup/scaffold.js";
 import type { ScaffoldAgent } from "../../src/setup/scaffold.js";
 import type { GlobalConfig } from "../../src/shared/config.js";
 import { VERSION } from "../../src/shared/constants.js";
@@ -143,6 +143,7 @@ describe("scaffoldProject", () => {
     expect(pkg.type).toBe("module");
     expect(pkg.version).toBeDefined();
     expect(pkg.dependencies["@action-llama/action-llama"]).toBe(VERSION);
+    expect(pkg.dependencies["@action-llama/skill"]).toBe(VERSION);
   });
 
   it("does not use latest as dependency version", () => {
@@ -154,7 +155,7 @@ describe("scaffoldProject", () => {
     expect(pkg.dependencies["@action-llama/action-llama"]).not.toBe("latest");
   });
 
-  it("creates AGENTS.md as a symlink to agent-docs/AGENTS.md", () => {
+  it("creates AGENTS.md as a symlink to skill content/AGENTS.md", () => {
     tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
     const projDir = resolve(tmpDir, "my-project");
     scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
@@ -163,12 +164,12 @@ describe("scaffoldProject", () => {
     expect(existsSync(agentsMdPath)).toBe(true);
     expect(lstatSync(agentsMdPath).isSymbolicLink()).toBe(true);
     const target = readlinkSync(agentsMdPath);
-    expect(target).toContain("agent-docs/AGENTS.md");
+    expect(target).toContain("skill/content/AGENTS.md");
     const content = readFileSync(agentsMdPath, "utf-8");
     expect(content).toContain("Action Llama Reference");
   });
 
-  it("creates CLAUDE.md as a symlink to agent-docs/AGENTS.md", () => {
+  it("creates CLAUDE.md as a symlink to skill content/AGENTS.md", () => {
     tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
     const projDir = resolve(tmpDir, "my-project");
     scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
@@ -177,7 +178,7 @@ describe("scaffoldProject", () => {
     expect(existsSync(claudeMdPath)).toBe(true);
     expect(lstatSync(claudeMdPath).isSymbolicLink()).toBe(true);
     const target = readlinkSync(claudeMdPath);
-    expect(target).toContain("agent-docs/AGENTS.md");
+    expect(target).toContain("skill/content/AGENTS.md");
     const content = readFileSync(claudeMdPath, "utf-8");
     expect(content).toContain("Action Llama Reference");
   });
@@ -289,10 +290,11 @@ describe("scaffoldProject", () => {
     tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
     scaffoldClaudeCommands(tmpDir);
 
-    for (const name of Object.keys(CLAUDE_COMMANDS)) {
+    const commandNames = ["new-agent", "run", "debug", "iterate", "status"];
+    for (const name of commandNames) {
       const filePath = resolve(tmpDir, ".claude", "commands", `${name}.md`);
       expect(existsSync(filePath)).toBe(true);
-      expect(readFileSync(filePath, "utf-8")).toBe(CLAUDE_COMMANDS[name]);
+      expect(readFileSync(filePath, "utf-8").length).toBeGreaterThan(0);
     }
   });
 

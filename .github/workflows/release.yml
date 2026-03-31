@@ -65,15 +65,35 @@ jobs:
           git pull --rebase origin main
           git push
 
+      - name: Rebuild after version bump
+        if: steps.has-changesets.outputs.has_changesets == 'true'
+        run: npm run build
+
+      - name: Dry-run publish (all packages)
+        if: steps.has-changesets.outputs.has_changesets == 'true'
+        run: |
+          npm publish -w packages/skill --access public --tag next --dry-run
+          npm publish -w packages/action-llama --access public --tag next --dry-run
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Publish to npm
         if: steps.has-changesets.outputs.has_changesets == 'true'
-        run: npm publish -w packages/action-llama --access public --tag next
+        run: |
+          npm publish -w packages/skill --access public --tag next
+          npm publish -w packages/action-llama --access public --tag next
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Job summary
         if: always()
         run: |
           if [ "${{ steps.has-changesets.outputs.has_changesets }}" = "true" ]; then
-            echo "## Released \`@action-llama/action-llama@${{ steps.version.outputs.new_version }}\`" >> "$GITHUB_STEP_SUMMARY"
+            SKILL_VERSION=$(node -p "require('./packages/skill/package.json').version")
+            echo "## Released packages" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "- \`@action-llama/skill@${SKILL_VERSION}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- \`@action-llama/action-llama@${{ steps.version.outputs.new_version }}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "Published to npm with the \`next\` dist-tag." >> "$GITHUB_STEP_SUMMARY"
           else

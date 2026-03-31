@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "action-llama": {
+      "command": "al",
+      "args": ["mcp", "serve"]
+    }
+  }
+}

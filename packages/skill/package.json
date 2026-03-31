@@ -1,0 +1,26 @@
+{
+  "name": "@action-llama/skill",
+  "version": "0.23.3",
+  "description": "AI integration content for Action Llama projects — AGENTS.md, MCP config, Claude Code commands.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Action-Llama/action-llama.git",
+    "directory": "packages/skill"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./content/*": "./content/*"
+  },
+  "files": [
+    "dist",
+    "content"
+  ],
+  "scripts": {
+    "build": "tsc"
+  }
+}

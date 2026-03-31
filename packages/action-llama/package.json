@@ -40,7 +40,6 @@
     "dist",
     "drizzle",
     "docker",
-    "agent-docs",
     "README.md",
     "LICENSE"
   ],
@@ -54,6 +53,7 @@
     "test:playwright": "npx playwright test --config playwright.config.ts"
   },
   "dependencies": {
+    "@action-llama/skill": "*",
     "@hono/node-server": "^1.19.11",
     "@inquirer/prompts": "^7",
     "@mariozechner/pi-ai": "^0.56.1",
