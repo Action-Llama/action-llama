@@ -1802,4 +1802,270 @@ describe("Hetzner provisioning path", () => {
     // search was called: type, Esc@loc, type again, loc, SSH key = 5 times
     expect(mockSearch).toHaveBeenCalledTimes(5);
   });
+
+  it("goes back when Esc pressed at SSH key selection", async () => {
+    // When user presses Esc at SSH key step (step 3), step-- → step 2.
+    // Since ubuntu-22.04 is in HETZNER_IMAGES, OS is auto-selected immediately at step 2.
+    // Then step 3 (SSH key) is shown again and the user picks a valid key.
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(false);
+
+    setupHetznerCatalogMocks();
+    setupHetznerFirewallMocks(true);
+    setupHetznerServerMocks();
+
+    mockSearch
+      .mockResolvedValueOnce("cx22")    // step 0: server type
+      .mockResolvedValueOnce("fsn1")    // step 1: location
+      // step 2: OS auto-selected (no search call)
+      .mockResolvedValueOnce(null)      // step 3: Esc at SSH key → step-- (to step 2)
+      // step 2 again: OS auto-selected
+      .mockResolvedValueOnce("101");    // step 3 again: SSH key picked
+
+    setupSshMocks();
+    mockConfirm.mockResolvedValueOnce(true); // "VPS ready. Continue?"
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+    // search: type, location, null@ssh, ssh = 4 calls
+    expect(mockSearch).toHaveBeenCalledTimes(4);
+  });
+
+  it("logs waiting message when SSH is ready but cloud-init has not finished (line 958)", async () => {
+    // This test covers line 958: console.log("Waiting for cloud-init to complete (Node.js + Docker)...")
+    // First polling iteration: SSH ready (testConnection ok), but node --version returns non-zero.
+    // Second iteration: everything succeeds → breaks the loop.
+    vi.useFakeTimers();
+    try {
+      mockSelect.mockResolvedValueOnce("hetzner");
+      mockConfirm.mockResolvedValueOnce(false);    // Decline HTTPS
+      mockConfirm.mockResolvedValueOnce(true);     // VPS ready — queue before starting
+
+      setupHetznerCatalogMocks();
+      setupHetznerFirewallMocks(true);
+      setupHetznerServerMocks();
+
+      mockSearch
+        .mockResolvedValueOnce("cx22")
+        .mockResolvedValueOnce("fsn1")
+        .mockResolvedValueOnce("101");
+
+      let iteration = 0;
+      mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: any, cb: Function) => {
+        const command = args[args.length - 1];
+        if (command.includes("echo ok")) {
+          cb(null, "ok\n", ""); // SSH always ready
+        } else if (command.includes("node --version")) {
+          if (iteration === 0) {
+            // First iteration: node not ready
+            cb({ code: 1 }, "", "node: command not found");
+          } else {
+            cb(null, "v22.14.0\n", "");
+          }
+        } else {
+          // docker info or anything else
+          cb(null, "24.0.7\n", "");
+        }
+      });
+
+      const resultPromise = setupVpsCloud();
+
+      // After first iteration, the loop hits setTimeout(10_000).
+      // Advance past the sleep so the second iteration can run.
+      iteration = 1;
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      const result = await resultPromise;
+
+      expect(result).not.toBeNull();
+      expect(result?.provider).toBe("vps");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("writes a dot when SSH is not yet reachable during polling (line 960)", async () => {
+    // This test covers line 960: process.stdout.write(".")
+    // First polling iteration: testConnection fails (echo ok returns wrong stdout).
+    // Second iteration: SSH ready, cloud-init done → loop breaks.
+    vi.useFakeTimers();
+    try {
+      mockSelect.mockResolvedValueOnce("hetzner");
+      mockConfirm.mockResolvedValueOnce(false);    // Decline HTTPS
+      mockConfirm.mockResolvedValueOnce(true);     // VPS ready — queue before starting
+
+      setupHetznerCatalogMocks();
+      setupHetznerFirewallMocks(true);
+      setupHetznerServerMocks();
+
+      mockSearch
+        .mockResolvedValueOnce("cx22")
+        .mockResolvedValueOnce("fsn1")
+        .mockResolvedValueOnce("101");
+
+      let sshEchoCallCount = 0;
+      mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: any, cb: Function) => {
+        const command = args[args.length - 1];
+        if (command.includes("echo ok")) {
+          sshEchoCallCount++;
+          if (sshEchoCallCount === 1) {
+            // First testConnection: SSH not ready (empty stdout → includes("ok") = false)
+            cb(null, "", "");
+          } else {
+            cb(null, "ok\n", "");
+          }
+        } else if (command.includes("node --version")) {
+          cb(null, "v22.14.0\n", "");
+        } else {
+          cb(null, "24.0.7\n", "");
+        }
+      });
+
+      const resultPromise = setupVpsCloud();
+
+      // Advance past first iteration's sleep
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      const result = await resultPromise;
+
+      expect(result).not.toBeNull();
+      expect(result?.provider).toBe("vps");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("logs nginx health check warning when curl returns non-zero exit code (Hetzner HTTPS)", async () => {
+    // Covers line 1091: "Note: nginx health check returned non-zero..."
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    setupCloudflareMocks();
+    setupHetznerCatalogMocks();
+    setupHetznerFirewallMocks(true);
+    setupHetznerServerMocks();
+
+    mockSearch
+      .mockResolvedValueOnce("cx22")
+      .mockResolvedValueOnce("fsn1")
+      .mockResolvedValueOnce("101");
+
+    // Custom SSH mock: curl health check returns non-zero
+    mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: any, cb: Function) => {
+      const command = args[args.length - 1];
+      if (command.includes("echo ok")) {
+        cb(null, "ok\n", "");
+      } else if (command.includes("node --version")) {
+        cb(null, "v22.14.0\n", "");
+      } else if (command.includes("curl")) {
+        cb({ code: 7 }, "", "curl: (7) Failed to connect"); // non-zero exit
+      } else {
+        cb(null, "24.0.7\n", "");
+      }
+    });
+
+    mockConfirm.mockResolvedValueOnce(true); // "VPS ready. Continue?"
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+    // gatewayUrl is still set to https even when curl health check fails
+    expect(result?.gatewayUrl).toBe("https://agents.example.com");
+  });
+
+  it("logs error and falls back when Cloudflare HTTPS sshExec throws unexpectedly (Hetzner)", async () => {
+    // Covers lines 1096-1097: outer catch in Hetzner HTTPS setup
+    // sshExec for curl health check throws (error with no 'code' property → sshExec rejects)
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    setupCloudflareMocks();
+    setupHetznerCatalogMocks();
+    setupHetznerFirewallMocks(true);
+    setupHetznerServerMocks();
+
+    mockSearch
+      .mockResolvedValueOnce("cx22")
+      .mockResolvedValueOnce("fsn1")
+      .mockResolvedValueOnce("101");
+
+    // Custom SSH mock: curl throws (no 'code' property → sshExec rejects)
+    mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: any, cb: Function) => {
+      const command = args[args.length - 1];
+      if (command.includes("echo ok")) {
+        cb(null, "ok\n", "");
+      } else if (command.includes("node --version")) {
+        cb(null, "v22.14.0\n", "");
+      } else if (command.includes("curl")) {
+        // Error without 'code' property causes sshExec to reject
+        cb(new Error("ECONNRESET"), "", "");
+      } else {
+        cb(null, "24.0.7\n", "");
+      }
+    });
+
+    mockConfirm.mockResolvedValueOnce(true); // "VPS ready. Continue?"
+
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const result = await setupVpsCloud();
+    consoleSpy.mockRestore();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+    // After outer catch, gatewayUrl is NOT set to https
+    expect(result?.gatewayUrl).not.toBe("https://agents.example.com");
+  });
+
+  it("goes back to server type step when selected type has no available locations", async () => {
+    // Covers lines 752-754: "This server type is not available in any location."
+    // A server type with no locations → step-- → user picks a valid type next time.
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(false);
+
+    // Custom server types: first type has no available locations, second has fsn1
+    const customServerTypes = [
+      {
+        id: 99,
+        name: "cx-no-loc",
+        description: "CX No Locations",
+        cores: 1,
+        memory: 2,
+        disk: 20,
+        architecture: "x86",
+        deprecation: null,
+        prices: [],
+        locations: [], // No available locations
+      },
+      ...HETZNER_SERVER_TYPES,
+    ];
+    mockHetznerListServerTypes.mockResolvedValue(customServerTypes);
+    mockHetznerListLocations.mockResolvedValue(HETZNER_LOCATIONS);
+    mockHetznerListImages.mockResolvedValue(HETZNER_IMAGES);
+    mockHetznerListSshKeys.mockResolvedValue(HETZNER_SSH_KEYS);
+    setupHetznerFirewallMocks(true);
+    setupHetznerServerMocks();
+
+    mockSearch
+      .mockResolvedValueOnce("cx-no-loc")  // step 0: server type with no locations
+      // step 1: no locations → step-- back to step 0
+      .mockResolvedValueOnce("cx22")       // step 0 again: valid server type
+      .mockResolvedValueOnce("fsn1")       // step 1: location
+      // OS auto-selected
+      .mockResolvedValueOnce("101");       // step 3: SSH key
+
+    setupSshMocks();
+    mockConfirm.mockResolvedValueOnce(true);
+
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const result = await setupVpsCloud();
+    consoleSpy.mockRestore();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+    // search: cx-no-loc, cx22, fsn1, ssh = 4 calls
+    expect(mockSearch).toHaveBeenCalledTimes(4);
+  });
 });
