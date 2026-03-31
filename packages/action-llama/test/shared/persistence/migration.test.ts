@@ -687,3 +687,114 @@ describe("LegacyMigrator.migrateAll — with legacyStatsStore", () => {
     await store.close();
   });
 });
+
+describe("LegacyMigrator.migrateStateStore — 100-item progress", () => {
+  it("calls onProgress at every 100 processed items during namespace migration", async () => {
+    const store = await createPersistenceStore({ type: "memory" });
+    const migrator = new LegacyMigrator(store);
+
+    // Create 100 items in one namespace to trigger the processed % 100 === 0 branch
+    const items = Array.from({ length: 100 }, (_, i) => ({
+      key: `key-${i}`,
+      value: { data: `value-${i}` },
+    }));
+    const legacyStore = makeMockStateStore({ locks: items });
+    const progressCalls: MigrationProgress[] = [];
+
+    await migrator.migrateStateStore(legacyStore, {
+      onProgress: (p) => progressCalls.push(p),
+    });
+
+    // Should have an onProgress call at processed === 100
+    const progressAt100 = progressCalls.find((p) => p.processed === 100);
+    expect(progressAt100).toBeDefined();
+    expect(progressAt100!.step).toContain("Migrating namespace: locks");
+    expect(progressAt100!.percentage).toBe(100);
+
+    await store.close();
+  });
+});
+
+describe("LegacyMigrator.migrateStatsStore — 100-item progress for runs", () => {
+  it("calls onProgress at every 100 processed run records", async () => {
+    const store = await createPersistenceStore({ type: "memory" });
+    const migrator = new LegacyMigrator(store);
+
+    // Create 100 run records
+    const runs = Array.from({ length: 100 }, (_, i) => ({
+      instance_id: `inst-${i}`,
+      agent_name: "test-agent",
+      trigger_type: "schedule",
+      trigger_source: null,
+      result: "completed",
+      exit_code: 0,
+      duration_ms: 1000,
+      input_tokens: 10,
+      output_tokens: 5,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+      total_tokens: 15,
+      cost_usd: 0.001,
+      turn_count: 1,
+      error_message: null,
+      pre_hook_ms: null,
+      post_hook_ms: null,
+    }));
+
+    vi.spyOn(store, "query", "get").mockReturnValue({
+      sql: vi.fn().mockImplementation(async (q: string) => {
+        if (q.includes("runs")) return runs;
+        return [];
+      }),
+    } as any);
+
+    const progressCalls: MigrationProgress[] = [];
+    await migrator.migrateStatsStore({} as any, {
+      onProgress: (p) => progressCalls.push(p),
+    });
+
+    // Should have an onProgress call at processed === 100 (after 100 runs)
+    const progressAt100 = progressCalls.find((p) => p.processed === 100);
+    expect(progressAt100).toBeDefined();
+    expect(progressAt100!.step).toBe("Migrating run records");
+
+    await store.close();
+  });
+});
+
+describe("LegacyMigrator.migrateStatsStore — 100-item progress for call edges", () => {
+  it("calls onProgress at every 100 processed call edge records", async () => {
+    const store = await createPersistenceStore({ type: "memory" });
+    const migrator = new LegacyMigrator(store);
+
+    // Create 100 call edge records
+    const callEdges = Array.from({ length: 100 }, (_, i) => ({
+      call_id: `call-${i}`,
+      caller_instance_id: `caller-${i}`,
+      callee_agent_name: "callee-agent",
+      callee_instance_id: `callee-inst-${i}`,
+      status: "completed",
+      duration_ms: 500,
+      started_at: Date.now() - 1000 * i,
+    }));
+
+    vi.spyOn(store, "query", "get").mockReturnValue({
+      sql: vi.fn().mockImplementation(async (q: string) => {
+        if (q.includes("call_edges")) return callEdges;
+        return [];
+      }),
+    } as any);
+
+    const progressCalls: MigrationProgress[] = [];
+    await migrator.migrateStatsStore({} as any, {
+      onProgress: (p) => progressCalls.push(p),
+    });
+
+    // Should have an onProgress call at processed === 100 (after 100 call edges)
+    const progressAt100 = progressCalls.find((p) => p.processed === 100);
+    expect(progressAt100).toBeDefined();
+    expect(progressAt100!.step).toBe("Migrating call records");
+
+    await store.close();
+  });
+});
