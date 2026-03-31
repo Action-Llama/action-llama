@@ -54,18 +54,28 @@ Examples:
 
 Every PR that changes behavior, fixes a bug, or adds a feature **must** include a changeset file. Changesets are how we track what changed between versions and generate the changelog.
 
-**How to create a changeset:**
+**How to create a changeset (non-interactive):**
 
-Create a new markdown file in `.changeset/` with a random short name (e.g., `.changeset/cool-dogs-fly.md`). The file format is:
+The `npx changeset add` CLI is interactive and cannot be fully automated. To create changesets non-interactively (e.g., from scripts or AI agents), write the file directly:
+
+```bash
+cat > .changeset/<short-name>.md << 'EOF'
+---
+"@action-llama/action-llama": patch
+---
+
+Short human-readable description of what changed and why.
+EOF
+```
+
+Use a random short kebab-case name (e.g., `cool-dogs-fly.md`). The file format is:
 
 ```markdown
 ---
 "@action-llama/action-llama": patch
 ---
 
-Short human-readable description of what changed and why.
-Include enough context that someone reading the changelog understands
-the change without looking at the diff.
+Description of the change for the changelog.
 ```
 
 **Bump type rules (pre-1.0):**

@@ -47,7 +47,11 @@ jobs:
 
       - name: Version packages
         if: steps.has-changesets.outputs.has_changesets == 'true'
-        run: npx changeset version
+        id: version
+        run: |
+          npx changeset version
+          VERSION=$(node -p "require('./packages/action-llama/package.json').version")
+          echo "new_version=$VERSION" >> "$GITHUB_OUTPUT"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -64,3 +68,16 @@ jobs:
       - name: Publish to npm
         if: steps.has-changesets.outputs.has_changesets == 'true'
         run: npm publish -w packages/action-llama --access public --tag next
+
+      - name: Job summary
+        if: always()
+        run: |
+          if [ "${{ steps.has-changesets.outputs.has_changesets }}" = "true" ]; then
+            echo "## Released \`@action-llama/action-llama@${{ steps.version.outputs.new_version }}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Published to npm with the \`next\` dist-tag." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## No new changes" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "No changesets found — nothing to release." >> "$GITHUB_STEP_SUMMARY"
+          fi
