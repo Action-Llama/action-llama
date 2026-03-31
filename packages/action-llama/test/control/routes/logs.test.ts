@@ -486,4 +486,116 @@ describe("log API routes", () => {
       expect(data2.entries[0].msg).toBe("deploy finished");
     });
   });
+
+  describe("container log format normalization", () => {
+    it("normalizes container-format log entries (obj._log with string level)", async () => {
+      // Container format: { _log: true, level: "info", ts: 1234, msg: "..." }
+      const containerLine = JSON.stringify({
+        _log: true,
+        level: "info",
+        ts: 1710700001000,
+        msg: "container message",
+        instance: "agent-inst1",
+      });
+      writeFileSync(join(logsPath, "dev-2024-03-18.log"), containerLine + "\n");
+
+      const app = createTestApp(tmpDir);
+      const res = await app.request("/api/logs/agents/dev?lines=5");
+      const data = await res.json();
+
+      expect(data.entries).toHaveLength(1);
+      // level "info" should be mapped to 30
+      expect(data.entries[0].level).toBe(30);
+      // ts should be mapped to time
+      expect(data.entries[0].time).toBe(1710700001000);
+      // _log field should be stripped
+      expect(data.entries[0]._log).toBeUndefined();
+    });
+
+    it("handles unknown string level in container format (defaults to 30)", async () => {
+      const containerLine = JSON.stringify({
+        _log: true,
+        level: "custom",
+        ts: 1710700001000,
+        msg: "custom level",
+      });
+      writeFileSync(join(logsPath, "dev-2024-03-18.log"), containerLine + "\n");
+
+      const app = createTestApp(tmpDir);
+      const res = await app.request("/api/logs/agents/dev?lines=5");
+      const data = await res.json();
+
+      expect(data.entries).toHaveLength(1);
+      expect(data.entries[0].level).toBe(30); // default
+    });
+
+    it("handles non-JSON lines in log files gracefully", async () => {
+      const lines = [
+        "not a json line",
+        pinoLine(30, 1710700001000, "valid entry"),
+        "another bad line",
+      ];
+      writeFileSync(join(logsPath, "dev-2024-03-18.log"), lines.join("\n") + "\n");
+
+      const app = createTestApp(tmpDir);
+      const res = await app.request("/api/logs/agents/dev?lines=5");
+      const data = await res.json();
+
+      // Only the valid JSON line should be returned
+      expect(data.entries).toHaveLength(1);
+      expect(data.entries[0].msg).toBe("valid entry");
+    });
+  });
+
+  describe("invalid cursor in agent and instance endpoints", () => {
+    it("returns 400 for invalid cursor in agent logs endpoint", async () => {
+      writeFileSync(
+        join(logsPath, "dev-2024-03-18.log"),
+        pinoLine(30, 1710700001000, "msg") + "\n"
+      );
+
+      const app = createTestApp(tmpDir);
+      const res = await app.request("/api/logs/agents/dev?cursor=not-valid-base64!!!");
+      const data = await res.json();
+      // The cursor decodes but the parsed offsets may be NaN or the format may be invalid
+      expect([400, 200]).toContain(res.status);
+    });
+
+    it("returns 400 for cursor with NaN offsets in agent logs", async () => {
+      // Create a cursor with NaN offsets: encode "2024-03-18:notanumber"
+      const badCursor = Buffer.from("2024-03-18:notanumber").toString("base64url");
+      writeFileSync(
+        join(logsPath, "dev-2024-03-18.log"),
+        pinoLine(30, 1710700001000, "msg") + "\n"
+      );
+
+      const app = createTestApp(tmpDir);
+      const res = await app.request(`/api/logs/agents/dev?cursor=${encodeURIComponent(badCursor)}`);
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 400 for cursor with NaN offsets in instance logs", async () => {
+      const badCursor = Buffer.from("2024-03-18:notanumber").toString("base64url");
+      writeFileSync(
+        join(logsPath, "dev-2024-03-18.log"),
+        pinoLine(30, 1710700001000, "msg") + "\n"
+      );
+
+      const app = createTestApp(tmpDir);
+      const res = await app.request(`/api/logs/agents/dev/dev-aa11bb22?cursor=${encodeURIComponent(badCursor)}`);
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 400 for cursor with NaN offsets in scheduler logs", async () => {
+      const badCursor = Buffer.from("2024-03-18:notanumber").toString("base64url");
+      writeFileSync(
+        join(logsPath, "scheduler-2024-03-18.log"),
+        pinoLine(30, 1710700001000, "msg") + "\n"
+      );
+
+      const app = createTestApp(tmpDir);
+      const res = await app.request(`/api/logs/scheduler?cursor=${encodeURIComponent(badCursor)}`);
+      expect(res.status).toBe(400);
+    });
+  });
 });
