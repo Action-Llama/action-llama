@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import {
@@ -141,6 +141,35 @@ describe("loadCredentialsFromVolume", () => {
     setCredPath(tempDir);
     const bundle = loadCredentialsFromVolume();
     expect(Object.keys(bundle)).toHaveLength(0);
+    clearCredPath();
+  });
+
+  it("skips dangling symlinks at type level via catch continue", () => {
+    setCredPath(tempDir);
+    // Dangling symlink → statSync throws ENOENT → catch { continue }
+    symlinkSync(join(tempDir, "nonexistent-target"), join(tempDir, "dangling-type"));
+    // Valid credential entry alongside it
+    mkdirSync(join(tempDir, "github_token", "default"), { recursive: true });
+    writeFileSync(join(tempDir, "github_token", "default", "token"), "valid-token");
+
+    const bundle = loadCredentialsFromVolume();
+    expect(bundle["dangling-type"]).toBeUndefined();
+    expect(bundle.github_token?.default?.token).toBe("valid-token");
+    clearCredPath();
+  });
+
+  it("skips dangling symlinks at instance level via catch continue", () => {
+    setCredPath(tempDir);
+    // Valid type directory, but with a dangling symlink for instance
+    mkdirSync(join(tempDir, "github_token"), { recursive: true });
+    symlinkSync(join(tempDir, "nonexistent-instance-target"), join(tempDir, "github_token", "dangling-instance"));
+    // Valid instance alongside
+    mkdirSync(join(tempDir, "github_token", "default"), { recursive: true });
+    writeFileSync(join(tempDir, "github_token", "default", "token"), "valid-token");
+
+    const bundle = loadCredentialsFromVolume();
+    expect(bundle.github_token?.["dangling-instance"]).toBeUndefined();
+    expect(bundle.github_token?.default?.token).toBe("valid-token");
     clearCredPath();
   });
 });
