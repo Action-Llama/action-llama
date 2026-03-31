@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useStatusStream } from "../hooks/StatusStreamContext";
 import { useInvalidation } from "../hooks/useInvalidation";
+import { usePolling } from "../hooks/usePolling";
 import { ActivityTable } from "../components/ActivityTable";
 import {
   getAgentLogs,
@@ -67,29 +68,20 @@ export function AgentDetailPage() {
   useInvalidation("runs", name, refetchActivity);
 
   // Poll logs
-  useEffect(() => {
-    if (!name) return;
-    const controller = new AbortController();
-    let inFlight = false;
-    const poll = () => {
-      if (inFlight) return;
-      inFlight = true;
+  usePolling(
+    async (signal) => {
+      if (!name) return;
       const params: Record<string, string> = { limit: "50" };
       if (cursorRef.current) params.cursor = cursorRef.current;
-      getAgentLogs(name, params, controller.signal)
-        .then((d) => {
-          if (d.entries.length > 0) {
-            setLogs((prev) => [...prev, ...d.entries].slice(-200));
-            if (d.cursor) cursorRef.current = d.cursor;
-          }
-        })
-        .catch(() => {})
-        .finally(() => { inFlight = false; });
-    };
-    poll();
-    const id = setInterval(poll, 4000);
-    return () => { clearInterval(id); controller.abort(); };
-  }, [name]);
+      const d = await getAgentLogs(name, params, signal);
+      if (d.entries.length > 0) {
+        setLogs((prev) => [...prev, ...d.entries].slice(-200));
+        if (d.cursor) cursorRef.current = d.cursor;
+      }
+    },
+    { intervalMs: 4000, enabled: !!name },
+    [name],
+  );
 
   // Scroll logs to bottom on new entries
   useEffect(() => {
