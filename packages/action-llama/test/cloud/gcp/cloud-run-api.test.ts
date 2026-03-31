@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock global fetch
 const mockFetch = vi.fn();
@@ -200,5 +200,64 @@ describe("pollExecutionUntilDone", () => {
     const assertion = expect(promise).rejects.toThrow("timed out");
     await vi.advanceTimersByTimeAsync(200);
     await assertion;
+  });
+
+  it("returns immediately when execution has no completionTime but condition is non-pending/non-reconciling", async () => {
+    const execName = "projects/p/locations/r/jobs/j/executions/e1";
+    // Return an exec with CONDITION_FAILED but no completionTime
+    mockFetch.mockResolvedValue(mockResponse({
+      name: execName,
+      uid: "uid1",
+      createTime: "2026-01-01T00:00:00Z",
+      // No completionTime
+      conditions: [{ type: "Completed", state: "CONDITION_FAILED", message: "Container exited" }],
+    }));
+
+    const promise = pollExecutionUntilDone(mockAuth, PROJECT, REGION, execName, 60000, 100);
+    await vi.runAllTimersAsync();
+    const result = await promise;
+    expect(result.name).toBe(execName);
+    expect(result.completionTime).toBeUndefined();
+  });
+
+  it("polls through CONDITION_RECONCILING then completes", async () => {
+    const execName = "projects/p/locations/r/jobs/j/executions/e1";
+    // First call: CONDITION_RECONCILING (keep polling)
+    // Second call: completionTime present
+    mockFetch
+      .mockResolvedValueOnce(mockResponse({
+        name: execName,
+        uid: "uid1",
+        createTime: "2026-01-01T00:00:00Z",
+        conditions: [{ type: "Completed", state: "CONDITION_RECONCILING" }],
+      }))
+      .mockResolvedValue(mockResponse({
+        name: execName,
+        uid: "uid1",
+        createTime: "2026-01-01T00:00:00Z",
+        completionTime: "2026-01-01T01:00:00Z",
+        conditions: [{ type: "Completed", state: "CONDITION_SUCCEEDED" }],
+      }));
+
+    const promise = pollExecutionUntilDone(mockAuth, PROJECT, REGION, execName, 60000, 100);
+    await vi.runAllTimersAsync();
+    const result = await promise;
+    expect(result.completionTime).toBe("2026-01-01T01:00:00Z");
+  });
+});
+
+describe("gcpFetch - text() failure fallback", () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it("uses empty string body when res.text() throws on non-ok response", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      // text() rejects — triggers the .catch(() => "") fallback
+      text: () => Promise.reject(new Error("body read failed")),
+    });
+
+    await expect(gcpFetch(mockAuth, "https://example.com/test")).rejects.toThrow(GcpApiError);
+    // No assertion on body content — just verifying the catch fallback doesn't crash
   });
 });

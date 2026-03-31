@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock child_process for SSH
 const { mockExecFile } = vi.hoisted(() => ({
@@ -118,6 +118,32 @@ vi.mock("../../../src/cloud/vps/vultr-api.js", () => ({
   listFirewallRules: (...args: any[]) => mockListFirewallRules(...args),
 }));
 
+// Mock Cloudflare API for promptCloudflareHttps and post-provisioning HTTPS setup
+const {
+  mockVerifyToken,
+  mockListAllZones,
+  mockCreateDnsRecord,
+  mockCreateOriginCertificate,
+  mockCreatePageRule,
+  mockSetSslMode,
+} = vi.hoisted(() => ({
+  mockVerifyToken: vi.fn().mockResolvedValue(true),
+  mockListAllZones: vi.fn().mockResolvedValue([]),
+  mockCreateDnsRecord: vi.fn().mockResolvedValue({}),
+  mockCreateOriginCertificate: vi.fn().mockResolvedValue({ certificate: "cert", private_key: "key" }),
+  mockCreatePageRule: vi.fn().mockResolvedValue({}),
+  mockSetSslMode: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("../../../src/cloud/cloudflare/api.js", () => ({
+  verifyToken: (...args: any[]) => mockVerifyToken(...args),
+  listAllZones: (...args: any[]) => mockListAllZones(...args),
+  createDnsRecord: (...args: any[]) => mockCreateDnsRecord(...args),
+  createOriginCertificate: (...args: any[]) => mockCreateOriginCertificate(...args),
+  createPageRule: (...args: any[]) => mockCreatePageRule(...args),
+  setSslMode: (...args: any[]) => mockSetSslMode(...args),
+}));
+
 const { setupVpsCloud } = await import("../../../src/cloud/vps/provision.js");
 
 // --- Test data ---
@@ -230,6 +256,12 @@ describe("VPS provisioning", () => {
     mockCreateFirewallGroup.mockReset();
     mockCreateFirewallRule.mockReset();
     mockListFirewallRules.mockReset();
+    mockVerifyToken.mockReset().mockResolvedValue(true);
+    mockListAllZones.mockReset().mockResolvedValue([]);
+    mockCreateDnsRecord.mockReset().mockResolvedValue({});
+    mockCreateOriginCertificate.mockReset().mockResolvedValue({ certificate: "cert", private_key: "key" });
+    mockCreatePageRule.mockReset().mockResolvedValue({});
+    mockSetSslMode.mockReset().mockResolvedValue(undefined);
   });
 
   describe("existing server path", () => {
@@ -732,5 +764,127 @@ describe("VPS provisioning", () => {
       // Note: searchWithEsc calls search with a source function, so we verify via the mock
       expect(mockSearch).toHaveBeenCalled();
     });
+  });
+});
+
+/**
+ * Helper: set up minimal Vultr mocks to complete provisionVultr after promptCloudflareHttps returns null.
+ */
+function setupFullVultrFlow() {
+  setupCatalogMocks();
+  setupFirewallMocks(true);
+  setupInstanceMocks();
+
+  // searchWithEsc calls for plan, region, SSH key
+  mockSearch
+    .mockResolvedValueOnce("vc2-1c-1gb")  // plan
+    .mockResolvedValueOnce("atl")          // region
+    .mockResolvedValueOnce("ssh-key-1");   // existing Vultr key
+
+  setupSshMocks();
+
+  // Final confirmation (proceed with provisioning)
+  mockConfirm.mockResolvedValueOnce(true);
+}
+
+describe("promptCloudflareHttps paths", () => {
+  beforeEach(() => {
+    // reset all already handled by outer beforeEach via describe scope
+  });
+
+  it("returns null from promptCloudflareHttps when listAllZones returns empty, then provisions normally", async () => {
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+    // Stored token found
+    mockBackendRead.mockResolvedValue("stored-cf-token");
+    // listAllZones returns empty → promptCloudflareHttps returns null
+    mockListAllZones.mockResolvedValue([]);
+
+    setupFullVultrFlow();
+
+    const result = await setupVpsCloud();
+    expect(result).toBeDefined();
+    expect(result?.provider).toBe("vps");
+    expect(mockListAllZones).toHaveBeenCalledWith("stored-cf-token");
+  });
+
+  it("returns null from promptCloudflareHttps when listAllZones throws, then provisions normally", async () => {
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+    mockBackendRead.mockResolvedValue("stored-cf-token");
+    mockListAllZones.mockRejectedValue(new Error("API unavailable"));
+
+    setupFullVultrFlow();
+
+    const result = await setupVpsCloud();
+    expect(result?.provider).toBe("vps");
+  });
+
+  it("returns null from promptCloudflareHttps when zone search throws AbortPromptError (ESC pressed)", async () => {
+    const { AbortPromptError } = await import("@inquirer/core");
+
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+    mockBackendRead.mockResolvedValue("stored-cf-token");
+    mockListAllZones.mockResolvedValue([
+      { id: "zone-1", name: "example.com", status: "active" },
+    ]);
+    // User presses ESC on zone search → AbortPromptError
+    mockSearch.mockRejectedValueOnce(new AbortPromptError());
+
+    setupFullVultrFlow();
+
+    const result = await setupVpsCloud();
+    expect(result?.provider).toBe("vps");
+  });
+
+  it("returns null from promptCloudflareHttps when no stored token and verifyToken returns false", async () => {
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+    // Return null for cloudflare, "fake-vultr-key" for vultr
+    mockBackendRead.mockImplementation((type: string) =>
+      type === "cloudflare_api_token" ? Promise.resolve(null) : Promise.resolve("fake-vultr-key")
+    );
+    mockPassword.mockResolvedValueOnce("bad-token");
+    mockVerifyToken.mockResolvedValue(false); // Token not active
+
+    setupFullVultrFlow();
+
+    const result = await setupVpsCloud();
+    expect(result?.provider).toBe("vps");
+    expect(mockVerifyToken).toHaveBeenCalledWith("bad-token");
+  });
+
+  it("returns null from promptCloudflareHttps when verifyToken throws", async () => {
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+    mockBackendRead.mockImplementation((type: string) =>
+      type === "cloudflare_api_token" ? Promise.resolve(null) : Promise.resolve("fake-vultr-key")
+    );
+    mockPassword.mockResolvedValueOnce("bad-token");
+    mockVerifyToken.mockRejectedValue(new Error("Network error"));
+
+    setupFullVultrFlow();
+
+    const result = await setupVpsCloud();
+    expect(result?.provider).toBe("vps");
+  });
+
+  it("promptCloudflareHttps prompts for new token when no stored token and token valid, then saves it", async () => {
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+    mockBackendRead.mockImplementation((type: string) =>
+      type === "cloudflare_api_token" ? Promise.resolve(null) : Promise.resolve("fake-vultr-key")
+    );
+    mockPassword.mockResolvedValueOnce("new-cf-token");
+    mockVerifyToken.mockResolvedValue(true); // Token is active
+    mockListAllZones.mockResolvedValue([]); // No zones → return null early
+
+    setupFullVultrFlow();
+
+    const result = await setupVpsCloud();
+    expect(result?.provider).toBe("vps");
+    expect(mockVerifyToken).toHaveBeenCalledWith("new-cf-token");
+    expect(mockWriteCredentialField).toHaveBeenCalledWith("cloudflare_api_token", "default", "api_token", "new-cf-token");
   });
 });
