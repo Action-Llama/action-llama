@@ -5,6 +5,8 @@ import { tmpdir } from "os";
 import { createQueue, type Queue } from "../../src/shared/queue.js";
 import { MemoryQueue } from "../../src/shared/queue-memory.js";
 import { SqliteQueue } from "../../src/shared/queue-sqlite.js";
+import { createDb } from "../../src/db/connection.js";
+import { applyMigrations } from "../../src/db/migrate.js";
 
 /**
  * Contract tests: every Queue implementation must pass these.
@@ -179,6 +181,20 @@ describe("Queue", () => {
       expect(await q1.size()).toBe(0);
       await q1.close();
       await q2.close();
+    });
+  });
+
+  describe("SqliteQueue — with existing AppDb (shared connection)", () => {
+    it("accepts an existing AppDb and uses ownDb = false path", async () => {
+      const sharedDb = createDb(":memory:");
+      applyMigrations(sharedDb);
+
+      const q = new SqliteQueue<string>(sharedDb as any, "shared-db-queue");
+      await q.enqueue("hello");
+      const dequeued = await q.dequeue();
+      expect(dequeued).toHaveLength(1);
+      expect(dequeued[0].payload).toBe("hello");
+      await q.close();
     });
   });
 

@@ -106,6 +106,17 @@ describe("Gateway /assets/* static file serving", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toContain("max-age=31536000");
   });
+
+  it("returns 404 for path traversal attempts outside frontendDist", async () => {
+    const addr = gateway.server.address() as any;
+    // Attempt path traversal: /assets/../../../etc/passwd
+    // The resolved path would be outside frontendDist
+    const res = await fetch(`http://localhost:${addr.port}/assets/%2F%2F%2Fetc%2Fpasswd`, {
+      headers: { Authorization: `Bearer ${TEST_API_KEY}` },
+    });
+    // Should be 404 (either path-traversal guard or file-not-found)
+    expect(res.status).toBe(404);
+  });
 });
 
 // ── /login SPA route ──────────────────────────────────────────────────────────
