@@ -26,6 +26,14 @@ describe("AgentLifecycle", () => {
       expect(info.lastRunAt).toBeNull();
       expect(info.lastBuildAt).toBeNull();
     });
+
+    it("agentName getter returns the agent name", () => {
+      expect(agent.agentName).toBe(agentName);
+    });
+
+    it("runningInstanceCount getter returns the running instance count", () => {
+      expect(agent.runningInstanceCount).toBe(0);
+    });
   });
 
   describe("build state transitions", () => {

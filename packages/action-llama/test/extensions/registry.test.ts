@@ -296,6 +296,14 @@ describe("ExtensionRegistry", () => {
       };
     }
 
+    it("getWebhookExtension returns registered webhook extension", async () => {
+      const ext = makeExtension("webhook", "my-webhook");
+      await registry.register(ext);
+      const found = registry.getWebhookExtension("my-webhook");
+      expect(found).toBe(ext);
+      expect(registry.getWebhookExtension("nonexistent")).toBeUndefined();
+    });
+
     it("getTelemetryExtension returns registered telemetry extension", async () => {
       const ext = makeExtension("telemetry", "otel");
       await registry.register(ext);
@@ -399,6 +407,15 @@ describe("ExtensionRegistry", () => {
         registry.unregister("webhook" as any, "nonexistent")
       ).resolves.not.toThrow();
     });
+
+    it("unregister for truly unknown type (no typeMap) returns without error", async () => {
+      // "unknown-type" is never initialized in the map, so typeMap is undefined
+      await expect(
+        registry.unregister("unknown-type" as any, "nonexistent")
+      ).resolves.not.toThrow();
+    });
+
+
 
     it("required credential with instance name includes instance in error message", async () => {
       mockCredentialChecker.mockResolvedValue(false);
