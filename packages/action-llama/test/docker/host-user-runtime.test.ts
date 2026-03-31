@@ -27,10 +27,9 @@ vi.mock("../../src/shared/credentials.js", () => ({
 import { HostUserRuntime } from "../../src/docker/host-user-runtime.js";
 import type { RuntimeCredentials } from "../../src/docker/runtime.js";
 
-const RUNS_DIR = join(tmpdir(), "al-runs");
-
 describe("HostUserRuntime", () => {
   let runtime: HostUserRuntime;
+  let testRunsDir: string;
 
   function makeFakeProc(pid?: number) {
     const { EventEmitter } = require("events");
@@ -41,17 +40,21 @@ describe("HostUserRuntime", () => {
   }
 
   function writePidFileManually(runId: string, data: any) {
-    mkdirSync(RUNS_DIR, { recursive: true });
-    writeFileSync(join(RUNS_DIR, `${runId}.pid`), JSON.stringify(data) + "\n");
+    mkdirSync(testRunsDir, { recursive: true });
+    writeFileSync(join(testRunsDir, `${runId}.pid`), JSON.stringify(data) + "\n");
   }
 
   function writeLogFile(runId: string, content: string) {
-    mkdirSync(RUNS_DIR, { recursive: true });
-    writeFileSync(join(RUNS_DIR, `${runId}.log`), content);
+    mkdirSync(testRunsDir, { recursive: true });
+    writeFileSync(join(testRunsDir, `${runId}.log`), content);
   }
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Create a fresh temp directory for each test so we never conflict with a
+    // pre-existing /tmp/al-runs that may be owned by a different user (e.g. root).
+    testRunsDir = mkdtempSync(join(tmpdir(), "al-runs-test-"));
+    process.env.AL_RUNS_DIR = testRunsDir;
     // Default: user exists with uid/gid 1001
     mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
       if (cmd === "id" && args[0] === "-u") return "1001\n";
@@ -62,16 +65,11 @@ describe("HostUserRuntime", () => {
   });
 
   afterEach(() => {
-    // Clean up test artifacts in RUNS_DIR
+    // Remove the per-test temp directory and restore the env var.
+    delete process.env.AL_RUNS_DIR;
     try {
-      for (const f of readdirSync(RUNS_DIR)) {
-        if (f.includes("-test-") || f.includes("buffer-") || f.includes("stream-") ||
-            f.includes("wait-") || f.includes("kill-") || f.includes("active-") ||
-            f.includes("listed-") || f.includes("sigkill-") || f.includes("shutdown-")) {
-          rmSync(join(RUNS_DIR, f), { recursive: true, force: true });
-        }
-      }
-    } catch { /* dir may not exist */ }
+      rmSync(testRunsDir, { recursive: true, force: true });
+    } catch { /* best effort */ }
   });
 
   describe("needsGateway", () => {
@@ -317,7 +315,7 @@ describe("HostUserRuntime", () => {
       });
 
       // launch() creates the log file via openSync. Write some content to it.
-      const logPath = join(RUNS_DIR, `${runId}.log`);
+      const logPath = join(testRunsDir, `${runId}.log`);
       writeFileSync(logPath, "hello from agent\n");
 
       const lines: string[] = [];
@@ -528,7 +526,7 @@ describe("HostUserRuntime", () => {
         expect(lines.length).toBeGreaterThan(0);
         expect(lines.some((l) => l.includes("hello"))).toBe(true);
       } finally {
-        rmSync(join(RUNS_DIR, "al-test-fetch-abc123.log"), { force: true });
+        rmSync(join(testRunsDir, "al-test-fetch-abc123.log"), { force: true });
       }
     });
   });
@@ -547,7 +545,7 @@ describe("HostUserRuntime", () => {
         credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
       });
 
-      const pidFile = join(RUNS_DIR, `${runId}.pid`);
+      const pidFile = join(testRunsDir, `${runId}.pid`);
       expect(existsSync(pidFile)).toBe(true);
 
       const data = JSON.parse(readFileSync(pidFile, "utf-8").trim());
@@ -572,7 +570,7 @@ describe("HostUserRuntime", () => {
         credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
       });
 
-      const pidFile = join(RUNS_DIR, `${runId}.pid`);
+      const pidFile = join(testRunsDir, `${runId}.pid`);
       expect(existsSync(pidFile)).toBe(true);
 
       fakeProc.emit("exit", 0);
@@ -590,7 +588,7 @@ describe("HostUserRuntime", () => {
         credentials: { strategy: "host-user" as const, stagingDir: "/tmp/creds", bundle: {} },
       });
 
-      const data = JSON.parse(readFileSync(join(RUNS_DIR, `${runId}.pid`), "utf-8").trim());
+      const data = JSON.parse(readFileSync(join(testRunsDir, `${runId}.pid`), "utf-8").trim());
       expect(data.env.SHUTDOWN_SECRET).toBeUndefined();
 
       fakeProc.emit("exit", 0);
@@ -618,7 +616,7 @@ describe("HostUserRuntime", () => {
 
       it("cleans up stale PID files for dead processes", async () => {
         const runId = "al-test-stale-deadbeef";
-        const pidFile = join(RUNS_DIR, `${runId}.pid`);
+        const pidFile = join(testRunsDir, `${runId}.pid`);
         writePidFileManually(runId, {
           pid: 2147483647,
           agentName: "test-stale",
@@ -633,12 +631,12 @@ describe("HostUserRuntime", () => {
 
       it("removes corrupt PID files", async () => {
         const runId = "al-test-corrupt-abc123";
-        mkdirSync(RUNS_DIR, { recursive: true });
-        writeFileSync(join(RUNS_DIR, `${runId}.pid`), "not valid json\n");
+        mkdirSync(testRunsDir, { recursive: true });
+        writeFileSync(join(testRunsDir, `${runId}.pid`), "not valid json\n");
 
         const agents = await runtime.listRunningAgents();
         expect(agents.find(a => a.taskId === runId)).toBeUndefined();
-        expect(existsSync(join(RUNS_DIR, `${runId}.pid`))).toBe(false);
+        expect(existsSync(join(testRunsDir, `${runId}.pid`))).toBe(false);
       });
     });
 
@@ -674,7 +672,7 @@ describe("HostUserRuntime", () => {
 
       it("returns null and cleans up PID file for dead process", async () => {
         const runId = "al-test-dead-abc12345";
-        const pidFile = join(RUNS_DIR, `${runId}.pid`);
+        const pidFile = join(testRunsDir, `${runId}.pid`);
         writePidFileManually(runId, {
           pid: 2147483647,
           agentName: "test-dead",
@@ -716,7 +714,7 @@ describe("HostUserRuntime", () => {
 
       it("cleans up PID file when orphan is already dead", async () => {
         const runId = "al-test-deadorphan-abc123";
-        const pidFile = join(RUNS_DIR, `${runId}.pid`);
+        const pidFile = join(testRunsDir, `${runId}.pid`);
         writePidFileManually(runId, {
           pid: 2147483647,
           agentName: "test-deadorphan",
@@ -732,7 +730,7 @@ describe("HostUserRuntime", () => {
     describe("remove cleans up PID file", () => {
       it("removes PID file along with working directory", async () => {
         const runId = "al-test-removepid-abc123";
-        const pidFile = join(RUNS_DIR, `${runId}.pid`);
+        const pidFile = join(testRunsDir, `${runId}.pid`);
         writePidFileManually(runId, {
           pid: 12345,
           agentName: "test-removepid",
