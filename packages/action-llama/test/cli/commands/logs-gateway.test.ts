@@ -229,6 +229,188 @@ describe("logs command — gateway path", () => {
     });
   });
 
+  // ── --follow mode via gateway (lines 514-543 in logs.ts) ─────────────────
+
+  describe("--follow mode via gateway", () => {
+    let mockProcessOn: ReturnType<typeof vi.spyOn>;
+    let mockProcessExit: ReturnType<typeof vi.spyOn>;
+    let capturedSigintHandler: ((...args: any[]) => void) | undefined;
+
+    beforeEach(() => {
+      capturedSigintHandler = undefined;
+      vi.useFakeTimers();
+
+      // Capture the SIGINT listener without actually registering it on process,
+      // so it doesn't leak across tests or interfere with Vitest's own signal handlers.
+      mockProcessOn = vi.spyOn(process, "on").mockImplementation((event: any, listener: any) => {
+        if (String(event) === "SIGINT") {
+          capturedSigintHandler = listener;
+        }
+        return process;
+      });
+
+      // Prevent process.exit from terminating the test runner.
+      mockProcessExit = vi.spyOn(process, "exit").mockImplementation((_code?: any) => {
+        return undefined as never;
+      });
+
+      mockGatewayFetch.mockReset();
+    });
+
+    afterEach(() => {
+      mockProcessOn.mockRestore();
+      mockProcessExit.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it("fetches and displays initial entries in follow mode, then exits cleanly on SIGINT", async () => {
+      const entries = [
+        makePinoEntry({ msg: "bash", cmd: "git push origin main" }),
+        makePinoEntry({ msg: "run completed" }),
+      ];
+      mockGatewayFetch.mockResolvedValueOnce(makeGatewayResponse(entries, "cursor-abc"));
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+
+      // Start follow mode — do NOT await; it blocks forever on `await new Promise(() => {})`
+      execute("dev", { project: tmpDir, lines: "50", follow: true });
+
+      // Advance fake clock by 0ms — this flushes pending microtasks (dynamic import +
+      // gatewayFetch + res.json()) without triggering the 1s poll interval.
+      await vi.advanceTimersByTimeAsync(0);
+
+      console.log = origLog;
+
+      // Initial entries must have been displayed
+      expect(output.some((l) => l.includes("git push origin main"))).toBe(true);
+      expect(output.some((l) => l.includes("Run completed"))).toBe(true);
+
+      // SIGINT handler must have been registered
+      expect(capturedSigintHandler).toBeDefined();
+
+      // Trigger SIGINT — should call clearInterval + process.exit(0)
+      capturedSigintHandler!();
+      expect(mockProcessExit).toHaveBeenCalledWith(0);
+    });
+
+    it("polls for new entries every second using the cursor from the previous response", async () => {
+      const initialEntries = [makePinoEntry({ msg: "bash", cmd: "npm test" })];
+      const pollEntries = [makePinoEntry({ msg: "bash", cmd: "npm run build" })];
+
+      mockGatewayFetch
+        .mockResolvedValueOnce(makeGatewayResponse(initialEntries, "cursor-1"))
+        .mockResolvedValueOnce(makeGatewayResponse(pollEntries, "cursor-2"));
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+
+      execute("dev", { project: tmpDir, lines: "50", follow: true });
+
+      // Flush initial fetch microtasks (import + fetch + json)
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Advance fake timers by 1 second to trigger the poll interval and flush poll microtasks
+      await vi.advanceTimersByTimeAsync(1000);
+
+      console.log = origLog;
+
+      // Both initial and polled entries should appear
+      expect(output.some((l) => l.includes("npm test"))).toBe(true);
+      expect(output.some((l) => l.includes("npm run build"))).toBe(true);
+
+      // Poll must have included the cursor from the initial response
+      expect(mockGatewayFetch).toHaveBeenCalledTimes(2);
+      const pollCallPath: string = mockGatewayFetch.mock.calls[1][0].path;
+      expect(pollCallPath).toContain("cursor=cursor-1");
+
+      capturedSigintHandler?.();
+    });
+
+    it("updates the cursor after each successful poll", async () => {
+      const entries1 = [makePinoEntry({ msg: "bash", cmd: "step-1" })];
+      const entries2 = [makePinoEntry({ msg: "bash", cmd: "step-2" })];
+      const entries3 = [makePinoEntry({ msg: "bash", cmd: "step-3" })];
+
+      mockGatewayFetch
+        .mockResolvedValueOnce(makeGatewayResponse(entries1, "cur-1"))
+        .mockResolvedValueOnce(makeGatewayResponse(entries2, "cur-2"))
+        .mockResolvedValueOnce(makeGatewayResponse(entries3, "cur-3"));
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+
+      execute("dev", { project: tmpDir, lines: "50", follow: true });
+      await vi.advanceTimersByTimeAsync(0); // Flush initial fetch
+
+      // First poll
+      await vi.advanceTimersByTimeAsync(1000);
+
+      // Second poll
+      await vi.advanceTimersByTimeAsync(1000);
+
+      console.log = origLog;
+
+      expect(output.some((l) => l.includes("step-1"))).toBe(true);
+      expect(output.some((l) => l.includes("step-2"))).toBe(true);
+      expect(output.some((l) => l.includes("step-3"))).toBe(true);
+
+      // Second poll must use cursor from first poll response
+      const poll2Path: string = mockGatewayFetch.mock.calls[2][0].path;
+      expect(poll2Path).toContain("cursor=cur-2");
+
+      capturedSigintHandler?.();
+    });
+
+    it("silently retries on poll network failure without crashing", async () => {
+      const initialEntries = [makePinoEntry({ msg: "bash", cmd: "echo start" })];
+
+      mockGatewayFetch
+        .mockResolvedValueOnce(makeGatewayResponse(initialEntries, "cursor-x"))
+        .mockRejectedValueOnce(new Error("network error")); // poll fails
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+
+      execute("dev", { project: tmpDir, lines: "50", follow: true });
+      await vi.advanceTimersByTimeAsync(0); // Flush initial fetch
+
+      // Advance to trigger poll (will fail silently in catch block)
+      await vi.advanceTimersByTimeAsync(1000);
+
+      console.log = origLog;
+
+      // Initial entries should still appear; test must not throw
+      expect(output.some((l) => l.includes("echo start"))).toBe(true);
+
+      // Clean up
+      capturedSigintHandler?.();
+    });
+
+    it("includes grep param in poll requests", async () => {
+      const calledPaths: string[] = [];
+      mockGatewayFetch.mockImplementation(async (opts: { path: string }) => {
+        calledPaths.push(opts.path);
+        return makeGatewayResponse([], "cursor-g");
+      });
+
+      execute("dev", { project: tmpDir, lines: "50", follow: true, grep: "deploy" });
+      await vi.advanceTimersByTimeAsync(0); // Flush initial fetch
+
+      await vi.advanceTimersByTimeAsync(1000); // Trigger poll
+
+      // Both initial fetch and poll should include grep param
+      expect(calledPaths[0]).toContain("grep=deploy");
+      expect(calledPaths[1]).toContain("grep=deploy");
+
+      capturedSigintHandler?.();
+    });
+  });
+
   // ── --grep forwarded to gateway + client-side filtering ──────────────────
 
   describe("--grep with gateway", () => {
