@@ -74,3 +74,4 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Dashboard instance detail API — GET /api/dashboard/agents/:name/instances/:id returns run details, null for unknown instanceId; GET /api/dashboard/triggers/:instanceId returns trigger info for manual runs, 404 for unknown instanceId (dashboard-instance-api.test.ts)
 - [x] Scheduler rejects agent with no schedule and no webhooks — validateAgentConfig() throws ConfigError on startup (scheduler-validation.test.ts)
 - [x] Logs API timestamp filtering — ?after=<future> returns empty, ?before=0 returns empty (logs-api.test.ts)
+- [x] Stats/activity advanced filters — ?triggerType= filter on activity (not tested on triggers only), ?since=<future> returns empty, comma-separated ?status=completed,errored, ?status=all vs single filter, stats/jobs pending+totalPending response fields (stats-activity-filters.test.ts)
