@@ -204,15 +204,22 @@ export function registerStatsRoutes(
           const ctx = item.context as any;
           let triggerType = "manual";
           let triggerSource: string | null = null;
+          let eventSummary: string | null = null;
           if (ctx && typeof ctx === "object") {
             if (ctx.type === "webhook") {
               triggerType = "webhook";
               triggerSource = ctx.context?.source ?? null;
+              const wctx = ctx.context;
+              if (wctx?.event) {
+                const parts = [wctx.event];
+                if (wctx.action) parts.push(wctx.action);
+                eventSummary = parts.join(" ");
+              }
             } else if (ctx.type === "schedule") {
               triggerType = "schedule";
             } else if (ctx.type === "agent-trigger" || ctx.type === "agent") {
               triggerType = "agent";
-              triggerSource = ctx.callerAgent ?? null;
+              triggerSource = ctx.sourceAgent ?? null;
             } else if (ctx.type === "manual") {
               triggerType = "manual";
             } else if (ctx.type) {
@@ -224,6 +231,7 @@ export function registerStatsRoutes(
             ts: item.receivedAt.getTime(),
             triggerType,
             triggerSource,
+            eventSummary,
             agentName: agent.name,
             instanceId: null,
             result: "pending",
