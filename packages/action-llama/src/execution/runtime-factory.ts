@@ -60,9 +60,10 @@ export async function createContainerRuntime(
   for (const agentConfig of activeAgentConfigs) {
     if (agentConfig.runtime?.type === "host-user") {
       const runAs = agentConfig.runtime.run_as ?? "al-agent";
+      const groups = agentConfig.runtime.groups ?? [];
       const { HostUserRuntime } = await import("../docker/host-user-runtime.js");
-      agentRuntimeOverrides[agentConfig.name] = new HostUserRuntime(runAs);
-      logger.info({ agent: agentConfig.name, runAs }, "using host-user runtime");
+      agentRuntimeOverrides[agentConfig.name] = new HostUserRuntime(runAs, groups);
+      logger.info({ agent: agentConfig.name, runAs, groups }, "using host-user runtime");
     }
   }
 

@@ -241,20 +241,29 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
   }
 
   // Validate host-user runtime requirements
-  const hostUserAgents = new Map<string, string>(); // agentName -> run_as
+  const hostUserAgents = new Map<string, { runAs: string; groups: string[] }>(); // agentName -> { runAs, groups }
   for (const name of agents) {
     try {
       const runtimeConfig = loadAgentRuntimeConfig(projectPath, name);
       if (runtimeConfig.runtime?.type === "host-user") {
         const runAs = runtimeConfig.runtime.run_as ?? "al-agent";
-        hostUserAgents.set(name, runAs);
+        const groups = runtimeConfig.runtime.groups ?? [];
+        hostUserAgents.set(name, { runAs, groups });
       }
     } catch { /* already caught above */ }
   }
 
   if (hostUserAgents.size > 0) {
     const { execFileSync } = await import("child_process");
-    const uniqueUsers = new Set(hostUserAgents.values());
+    // Deduplicate by runAs user — track max groups per user
+    const uniqueUsers = new Map<string, string[]>(); // runAs -> merged groups
+    for (const { runAs, groups } of hostUserAgents.values()) {
+      const existing = uniqueUsers.get(runAs) ?? [];
+      for (const g of groups) {
+        if (!existing.includes(g)) existing.push(g);
+      }
+      uniqueUsers.set(runAs, existing);
+    }
     const isLinux = process.platform === "linux";
     const isMac = process.platform === "darwin";
     const currentUser = process.env.USER || process.env.LOGNAME || "unknown";
@@ -263,7 +272,7 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
       console.log(`\n--- Host-User Runtime (${hostUserAgents.size} agent(s)) ---\n`);
     }
 
-    for (const runAs of uniqueUsers) {
+    for (const [runAs] of uniqueUsers) {
       // Check if user exists
       let userExists = false;
       try {
@@ -344,7 +353,8 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
           }
         }
 
-        // Check Docker group membership
+        // Check Docker group membership (always checked for host-user agents)
+        // and any explicitly-configured groups from [runtime] groups = [...]
         if (userExists) {
           let dockerGroupExists = false;
           try {
@@ -357,8 +367,8 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
           if (dockerGroupExists) {
             let inDockerGroup = false;
             try {
-              const groups = execFileSync("id", ["-Gn", runAs], { stdio: "pipe", timeout: 5000 }).toString();
-              inDockerGroup = groups.split(/\s+/).includes("docker");
+              const userGroups = execFileSync("id", ["-Gn", runAs], { stdio: "pipe", timeout: 5000 }).toString();
+              inDockerGroup = userGroups.split(/\s+/).includes("docker");
             } catch {
               // Failed to check groups
             }
@@ -383,6 +393,28 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
                 `Agents that need Docker will fail. Run:\n` +
                 `    sudo usermod -aG docker ${runAs}`
               );
+            }
+          }
+
+          // Check explicitly-configured additional groups
+          const configuredGroups = uniqueUsers.get(runAs) ?? [];
+          for (const groupName of configuredGroups) {
+            if (groupName === "docker") continue; // Already checked above
+            let groupExists = false;
+            try {
+              execFileSync("getent", ["group", groupName], { stdio: "pipe", timeout: 5000 });
+              groupExists = true;
+            } catch {
+              // Group doesn't exist on this system
+            }
+
+            if (!groupExists) {
+              validationWarnings.push(
+                `Group "${groupName}" configured for host-user runtime agent does not exist on this system. ` +
+                `The agent will start but may lack required access. Create the group or verify the configuration.`
+              );
+            } else {
+              if (!opts.silent) console.log(`  [ok] Group "${groupName}" exists`);
             }
           }
         }

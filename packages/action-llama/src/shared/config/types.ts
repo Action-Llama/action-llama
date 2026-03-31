@@ -98,6 +98,7 @@ export interface AgentHooks {
 export interface AgentRuntimeType {
   type?: "container" | "host-user";  // default: "container"
   run_as?: string;                   // OS user for host-user mode (default: "al-agent")
+  groups?: string[];                 // Additional OS groups for host-user mode (e.g. ["docker"])
 }
 
 /**

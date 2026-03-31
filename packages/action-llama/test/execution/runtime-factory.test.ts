@@ -20,7 +20,7 @@ vi.mock("../../src/docker/network.js", () => ({
 // HostUserRuntime mock
 vi.mock("../../src/docker/host-user-runtime.js", () => ({
   HostUserRuntime: class MockHostUserRuntime {
-    constructor(public runAs: string) {}
+    constructor(public runAs: string, public groups: string[] = []) {}
     isContainerRuntime = false;
   },
 }));
@@ -156,6 +156,46 @@ describe("createContainerRuntime", () => {
     const override = result.agentRuntimeOverrides["host-agent"] as any;
     expect(override).toBeDefined();
     expect(override.runAs).toBe("al-agent");
+  });
+
+  it("passes groups to HostUserRuntime when configured", async () => {
+    const { execFileSync } = await import("child_process");
+    vi.mocked(execFileSync).mockReturnValue(Buffer.from("Docker info"));
+
+    const agentWithGroups = makeAgentConfig({
+      name: "host-agent",
+      runtime: { type: "host-user", run_as: "al-agent", groups: ["docker"] } as any,
+    });
+
+    const result = await createContainerRuntime(
+      {} as any,
+      [agentWithGroups],
+      makeLogger()
+    );
+
+    const override = result.agentRuntimeOverrides["host-agent"] as any;
+    expect(override).toBeDefined();
+    expect(override.runAs).toBe("al-agent");
+    expect(override.groups).toEqual(["docker"]);
+  });
+
+  it("uses empty groups array when groups not specified in host-user runtime config", async () => {
+    const { execFileSync } = await import("child_process");
+    vi.mocked(execFileSync).mockReturnValue(Buffer.from("Docker info"));
+
+    const agentWithHostRuntime = makeAgentConfig({
+      name: "host-agent",
+      runtime: { type: "host-user" } as any,
+    });
+
+    const result = await createContainerRuntime(
+      {} as any,
+      [agentWithHostRuntime],
+      makeLogger()
+    );
+
+    const override = result.agentRuntimeOverrides["host-agent"] as any;
+    expect(override.groups).toEqual([]);
   });
 });
 

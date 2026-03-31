@@ -750,6 +750,71 @@ describe("doctor", () => {
     });
   });
 
+  describe("host-user configured groups check", () => {
+    beforeEach(() => {
+      // Default: user exists, sudo works, docker group exists (user in docker group),
+      // custom group "audio" also exists
+      mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+        if (cmd === "id" && args[0] === "al-agent") return Buffer.from("1001");
+        if (cmd === "id" && args[0] === "-Gn") return Buffer.from("al-agent docker");
+        if (cmd === "getent" && args[0] === "group" && args[1] === "docker") return Buffer.from("docker:x:999:");
+        if (cmd === "getent" && args[0] === "group" && args[1] === "audio") return Buffer.from("audio:x:29:");
+        if (cmd === "sudo" && args[0] === "-n") return Buffer.from("");
+        throw new Error(`unexpected execFileSync: ${cmd} ${args.join(" ")}`);
+      });
+    });
+
+    it("prints ok when a configured group exists on the system", async () => {
+      mockDiscoverAgents.mockReturnValue(["e2e"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "e2e", credentials: [] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({
+        runtime: { type: "host-user", groups: ["audio"] },
+      });
+      mockCredentialExists.mockReturnValue(true);
+
+      const output = await captureLog(() => execute({ project: ".", checkOnly: true }));
+      expect(output).toContain('[ok] Group "audio" exists');
+    });
+
+    it("warns when a configured group does not exist on the system", async () => {
+      mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+        if (cmd === "id" && args[0] === "al-agent") return Buffer.from("1001");
+        if (cmd === "id" && args[0] === "-Gn") return Buffer.from("al-agent docker");
+        if (cmd === "getent" && args[0] === "group" && args[1] === "docker") return Buffer.from("docker:x:999:");
+        if (cmd === "getent" && args[0] === "group" && args[1] === "nonexistent-group") throw new Error("not found");
+        if (cmd === "sudo" && args[0] === "-n") return Buffer.from("");
+        throw new Error(`unexpected execFileSync: ${cmd} ${args.join(" ")}`);
+      });
+
+      mockDiscoverAgents.mockReturnValue(["e2e"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "e2e", credentials: [] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({
+        runtime: { type: "host-user", groups: ["nonexistent-group"] },
+      });
+      mockCredentialExists.mockReturnValue(true);
+
+      const output = await captureLog(() => execute({ project: ".", checkOnly: true }));
+      expect(output).toContain('"nonexistent-group"');
+      expect(output).toContain("does not exist");
+    });
+
+    it("does not double-check docker group when it is in configured groups", async () => {
+      mockDiscoverAgents.mockReturnValue(["e2e"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "e2e", credentials: [] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({
+        runtime: { type: "host-user", groups: ["docker"] },
+      });
+      mockCredentialExists.mockReturnValue(true);
+
+      const output = await captureLog(() => execute({ project: ".", checkOnly: true }));
+      // docker group check is done by the normal docker group check, not the extra groups loop
+      expect(output).toContain("docker group");
+      // Should not have duplicate "ok" messages for docker
+      const dockerOkCount = (output.match(/\[ok\] Group "docker" exists/g) || []).length;
+      expect(dockerOkCount).toBe(0); // docker is skipped in the extra groups loop
+    });
+  });
+
   describe("project-root guard", () => {
     it("throws ConfigError when project path looks like an agent directory (SKILL.md at root)", async () => {
       // Simulate existsSync returning true for the SKILL.md at project root
