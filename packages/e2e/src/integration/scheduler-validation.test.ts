@@ -85,6 +85,34 @@ describe.skipIf(!DOCKER)("integration: scheduler configuration validation", { ti
     expect(startError!.message).toMatch(/schedule|webhooks/i);
   });
 
+  it("starts successfully with agent that has scale=0 (no schedule or webhooks required)", async () => {
+    // When scale=0 is set, validateAgentConfig() bypasses the schedule/webhook requirement.
+    // The scheduler should start without error because scale=0 means the agent is disabled.
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "active-agent",
+          schedule: "0 0 31 2 *",
+          testScript: "#!/bin/sh\nexit 0\n",
+        },
+        {
+          name: "disabled-zero-scale-agent",
+          // Intentionally no schedule and no webhooks — but scale=0 bypasses validation
+          config: { scale: 0 },
+          testScript: "#!/bin/sh\nexit 0\n",
+        },
+      ],
+    });
+
+    // Should start without error (scale=0 agent is disabled)
+    await expect(harness.start()).resolves.not.toThrow();
+
+    // The active agent should still work
+    await harness.triggerAgent("active-agent");
+    const run = await harness.waitForRunResult("active-agent", 120_000);
+    expect(run.result).toBe("completed");
+  });
+
   it("starts successfully with a valid api_key auth type", async () => {
     harness = await IntegrationHarness.create({
       agents: [
