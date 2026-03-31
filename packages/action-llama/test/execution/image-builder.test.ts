@@ -109,6 +109,77 @@ describe("buildSingleAgentImage shared files", () => {
     const keys = Object.keys(calls[0].extraFiles!);
     expect(keys.some(k => k.startsWith("shared/"))).toBe(false);
   });
+
+  it("uses empty string for SKILL.md when the file does not exist in agent directory", async () => {
+    // Create agent directory WITHOUT SKILL.md
+    const agentDir = resolve(tmpDir, "agents", "no-skill-agent");
+    mkdirSync(agentDir, { recursive: true });
+    // Note: no SKILL.md file created
+
+    const agentConfig: AgentConfig = {
+      ...baseAgentConfig,
+      name: "no-skill-agent",
+    };
+
+    const { runtime, calls } = createMockRuntime();
+    await buildSingleAgentImage({
+      agentConfig,
+      projectPath: tmpDir,
+      globalConfig: baseGlobalConfig,
+      runtime,
+      baseImage: "al-agent:latest",
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
+    });
+
+    expect(calls).toHaveLength(1);
+    // SKILL.md should be an empty string when the file doesn't exist
+    expect(calls[0].extraFiles?.["SKILL.md"]).toBe("");
+  });
+
+  it("uses no-op progressCb when onProgress is not provided", async () => {
+    const { runtime, calls } = createMockRuntime();
+
+    // Call without onProgress — should use no-op fallback
+    await expect(buildSingleAgentImage({
+      agentConfig: baseAgentConfig,
+      projectPath: tmpDir,
+      globalConfig: baseGlobalConfig,
+      runtime,
+      baseImage: "al-agent:latest",
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
+      // No onProgress provided
+    })).resolves.toBeDefined();
+
+    expect(calls).toHaveLength(1);
+    // The no-op progressCb should still be called without error
+    const progressCb = calls[0].onProgress;
+    expect(typeof progressCb).toBe("function");
+    expect(() => progressCb?.("test")).not.toThrow();
+  });
+
+  it("uses custom Dockerfile path and passes baseImage when Dockerfile exists in agent dir", async () => {
+    const agentDir = resolve(tmpDir, "agents", "dev");
+    // Create a custom Dockerfile in the agent directory
+    writeFileSync(resolve(agentDir, "Dockerfile"), "FROM ubuntu:22.04\nRUN echo custom");
+
+    const { runtime, calls } = createMockRuntime();
+    await buildSingleAgentImage({
+      agentConfig: baseAgentConfig,
+      projectPath: tmpDir,
+      globalConfig: baseGlobalConfig,
+      runtime,
+      baseImage: "al-agent:latest",
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
+    });
+
+    expect(calls).toHaveLength(1);
+    const buildCall = calls[0];
+    // With custom Dockerfile: dockerfile is the path, dockerfileContent is undefined, baseImage is set
+    expect(buildCall.dockerfile).toContain("Dockerfile");
+    expect(buildCall.dockerfile).not.toBe("Dockerfile"); // should be an absolute path
+    expect(buildCall.dockerfileContent).toBeUndefined();
+    expect(buildCall.baseImage).toBe("al-agent:latest");
+  });
 });
 
 describe("buildAllImages", () => {
