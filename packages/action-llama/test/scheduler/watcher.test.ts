@@ -955,4 +955,359 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
       expect.objectContaining({ type: "schedule" })
     );
   });
+
+  // ── handleNewAgent cron callback additional paths ──────────────────────────
+
+  it("new agent cron callback returns early when agent is disabled (isAgentEnabled=false)", async () => {
+    const ctx = makeContext({ agentConfigs: [], runnerPools: {} });
+
+    // Make isAgentEnabled return false
+    (ctx.statusTracker as any).isAgentEnabled = vi.fn(() => false);
+
+    const idleRunner = makeMockRunner("agent-b");
+    ctx.createRunner = vi.fn(() => idleRunner);
+
+    const newConfig = makeAgentConfig("agent-b", { schedule: "0 * * * *" });
+    mockedDiscoverAgents.mockReturnValue(["agent-b"]);
+    mockedLoadAgentConfig.mockReturnValue(newConfig);
+    mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-b");
+
+    const cronJob = ctx.cronJobs.find((j: any) => j._callback) as any;
+    expect(cronJob).toBeDefined();
+
+    const { runWithReruns: mockedRunWithReruns } = await import("../../src/execution/execution.js");
+
+    await cronJob.fire();
+
+    // runWithReruns should NOT have been called — agent disabled causes early return
+    expect(mockedRunWithReruns).not.toHaveBeenCalled();
+    // workQueue should also NOT have been enqueued
+    expect(ctx.schedulerCtx.workQueue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("new agent cron callback logs warn when work queue is full (dropped=true)", async () => {
+    const ctx = makeContext({ agentConfigs: [], runnerPools: {} });
+
+    // Queue returns dropped=true (queue full)
+    (ctx.schedulerCtx.workQueue.enqueue as any).mockReturnValue({ dropped: true });
+
+    const busyRunner = makeMockRunner("agent-b");
+    busyRunner.isRunning = true;
+    ctx.createRunner = vi.fn(() => busyRunner);
+
+    const newConfig = makeAgentConfig("agent-b", { schedule: "0 * * * *" });
+    mockedDiscoverAgents.mockReturnValue(["agent-b"]);
+    mockedLoadAgentConfig.mockReturnValue(newConfig);
+    mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-b");
+
+    const cronJob = ctx.cronJobs.find((j: any) => j._callback) as any;
+    expect(cronJob).toBeDefined();
+
+    await cronJob.fire();
+
+    expect(ctx.logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "agent-b" }),
+      "queue full, oldest event dropped"
+    );
+  });
+
+  it("new agent cron callback calls runWithReruns when runner is available", async () => {
+    const ctx = makeContext({ agentConfigs: [], runnerPools: {} });
+
+    const idleRunner = makeMockRunner("agent-b");
+    // isRunning is false by default — runner is available
+    ctx.createRunner = vi.fn(() => idleRunner);
+
+    const newConfig = makeAgentConfig("agent-b", { schedule: "0 * * * *" });
+    mockedDiscoverAgents.mockReturnValue(["agent-b"]);
+    mockedLoadAgentConfig.mockReturnValue(newConfig);
+    mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-b");
+
+    const cronJob = ctx.cronJobs.find((j: any) => j._callback) as any;
+    expect(cronJob).toBeDefined();
+
+    const { runWithReruns: mockedRunWithReruns } = await import("../../src/execution/execution.js");
+    (mockedRunWithReruns as any).mockResolvedValueOnce(undefined);
+
+    await cronJob.fire();
+
+    expect(mockedRunWithReruns).toHaveBeenCalledWith(
+      idleRunner,
+      newConfig,
+      0,
+      ctx.schedulerCtx
+    );
+  });
+
+  // ── handleUpdatedAgent cron callback additional paths ─────────────────────
+
+  it("updated agent cron callback returns early when agent is disabled (isAgentEnabled=false)", async () => {
+    const ctx = makeContext();
+    (ctx.statusTracker as any).isAgentEnabled = vi.fn(() => false);
+
+    const updatedConfig = makeAgentConfig("agent-a", { schedule: "*/15 * * * *" });
+    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
+    mockedLoadAgentConfig.mockReturnValue(updatedConfig);
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    const cronJob = ctx.cronJobs.find((j: any) => j._callback) as any;
+    expect(cronJob).toBeDefined();
+
+    const { runWithReruns: mockedRunWithReruns } = await import("../../src/execution/execution.js");
+
+    await cronJob.fire();
+
+    expect(mockedRunWithReruns).not.toHaveBeenCalled();
+    expect(ctx.schedulerCtx.workQueue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("updated agent cron callback logs warn when work queue is full (dropped=true)", async () => {
+    const ctx = makeContext();
+    (ctx.schedulerCtx.workQueue.enqueue as any).mockReturnValue({ dropped: true });
+
+    const updatedConfig = makeAgentConfig("agent-a", { schedule: "*/15 * * * *" });
+    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
+    mockedLoadAgentConfig.mockReturnValue(updatedConfig);
+
+    // Mark the runner as busy
+    const pool = ctx.runnerPools["agent-a"];
+    const runner = pool.getAvailableRunner();
+    if (runner) (runner as any).isRunning = true;
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    const cronJob = ctx.cronJobs.find((j: any) => j._callback) as any;
+    expect(cronJob).toBeDefined();
+
+    await cronJob.fire();
+
+    expect(ctx.logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "agent-a" }),
+      "queue full, oldest event dropped"
+    );
+  });
+
+  it("updated agent cron callback calls runWithReruns when runner is available", async () => {
+    const ctx = makeContext();
+
+    const updatedConfig = makeAgentConfig("agent-a", { schedule: "*/15 * * * *" });
+    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
+    mockedLoadAgentConfig.mockReturnValue(updatedConfig);
+    // runner is not busy (isRunning=false by default)
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    const cronJob = ctx.cronJobs.find((j: any) => j._callback) as any;
+    expect(cronJob).toBeDefined();
+
+    const { runWithReruns: mockedRunWithReruns } = await import("../../src/execution/execution.js");
+    (mockedRunWithReruns as any).mockResolvedValueOnce(undefined);
+
+    await cronJob.fire();
+
+    expect(mockedRunWithReruns).toHaveBeenCalledWith(
+      expect.anything(),
+      updatedConfig,
+      0,
+      ctx.schedulerCtx
+    );
+  });
+
+  // ── rebuildCronJobs cron callback paths (lines 452-466) ───────────────────
+
+  it("rebuildCronJobs cron callback returns early when agent is disabled (isAgentEnabled=false)", async () => {
+    const runnerA = makeMockRunner("agent-a");
+    const runnerB = makeMockRunner("agent-b");
+    const poolA = new RunnerPool([runnerA]);
+    const poolB = new RunnerPool([runnerB]);
+
+    const configA = makeAgentConfig("agent-a", { schedule: "0 * * * *" });
+    const configB = makeAgentConfig("agent-b", { schedule: "*/30 * * * *" });
+
+    const ctx = makeContext({
+      agentConfigs: [configA, configB],
+      runnerPools: { "agent-a": poolA, "agent-b": poolB },
+    });
+    (ctx.statusTracker as any).isAgentEnabled = vi.fn(() => false);
+
+    // Remove agent-a — triggers rebuildCronJobs for remaining agents
+    mockedDiscoverAgents.mockReturnValue(["agent-b"]);
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    const { runWithReruns: mockedRunWithReruns } = await import("../../src/execution/execution.js");
+
+    // Fire the rebuilt cron job for agent-b
+    const cronJob = ctx.cronJobs.find((j: any) => j._callback) as any;
+    expect(cronJob).toBeDefined();
+
+    await cronJob.fire();
+
+    // Agent disabled → early return
+    expect(mockedRunWithReruns).not.toHaveBeenCalled();
+    expect(ctx.schedulerCtx.workQueue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("rebuildCronJobs cron callback queues work when runner is busy", async () => {
+    const runnerA = makeMockRunner("agent-a");
+    const runnerB = makeMockRunner("agent-b");
+    const poolA = new RunnerPool([runnerA]);
+    const poolB = new RunnerPool([runnerB]);
+
+    const configA = makeAgentConfig("agent-a", { schedule: "0 * * * *" });
+    const configB = makeAgentConfig("agent-b", { schedule: "*/30 * * * *" });
+
+    const ctx = makeContext({
+      agentConfigs: [configA, configB],
+      runnerPools: { "agent-a": poolA, "agent-b": poolB },
+    });
+
+    // Remove agent-a → rebuildCronJobs creates new cron job for agent-b
+    mockedDiscoverAgents.mockReturnValue(["agent-b"]);
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    // Mark agent-b runner as busy
+    runnerB.isRunning = true;
+
+    const cronJob = ctx.cronJobs.find((j: any) => j._callback) as any;
+    expect(cronJob).toBeDefined();
+
+    await cronJob.fire();
+
+    expect(ctx.schedulerCtx.workQueue.enqueue).toHaveBeenCalledWith(
+      "agent-b",
+      expect.objectContaining({ type: "schedule" })
+    );
+    expect(ctx.logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "agent-b" }),
+      "all runners busy, scheduled run queued"
+    );
+  });
+
+  it("rebuildCronJobs cron callback logs warn when work queue is full (dropped=true)", async () => {
+    const runnerA = makeMockRunner("agent-a");
+    const runnerB = makeMockRunner("agent-b");
+    const poolA = new RunnerPool([runnerA]);
+    const poolB = new RunnerPool([runnerB]);
+
+    const configA = makeAgentConfig("agent-a", { schedule: "0 * * * *" });
+    const configB = makeAgentConfig("agent-b", { schedule: "*/30 * * * *" });
+
+    const ctx = makeContext({
+      agentConfigs: [configA, configB],
+      runnerPools: { "agent-a": poolA, "agent-b": poolB },
+    });
+
+    // Queue full
+    (ctx.schedulerCtx.workQueue.enqueue as any).mockReturnValue({ dropped: true });
+
+    // Remove agent-a
+    mockedDiscoverAgents.mockReturnValue(["agent-b"]);
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    // Mark runner busy
+    runnerB.isRunning = true;
+
+    const cronJob = ctx.cronJobs.find((j: any) => j._callback) as any;
+    expect(cronJob).toBeDefined();
+
+    await cronJob.fire();
+
+    expect(ctx.logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "agent-b" }),
+      "queue full, oldest event dropped"
+    );
+  });
+
+  it("rebuildCronJobs cron callback calls runWithReruns when runner is available", async () => {
+    const runnerA = makeMockRunner("agent-a");
+    const runnerB = makeMockRunner("agent-b");
+    const poolA = new RunnerPool([runnerA]);
+    const poolB = new RunnerPool([runnerB]);
+
+    const configA = makeAgentConfig("agent-a", { schedule: "0 * * * *" });
+    const configB = makeAgentConfig("agent-b", { schedule: "*/30 * * * *" });
+
+    const ctx = makeContext({
+      agentConfigs: [configA, configB],
+      runnerPools: { "agent-a": poolA, "agent-b": poolB },
+    });
+
+    // Remove agent-a
+    mockedDiscoverAgents.mockReturnValue(["agent-b"]);
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    // runner is idle (default isRunning=false)
+    const cronJob = ctx.cronJobs.find((j: any) => j._callback) as any;
+    expect(cronJob).toBeDefined();
+
+    const { runWithReruns: mockedRunWithReruns } = await import("../../src/execution/execution.js");
+    (mockedRunWithReruns as any).mockResolvedValueOnce(undefined);
+
+    await cronJob.fire();
+
+    expect(mockedRunWithReruns).toHaveBeenCalledWith(
+      runnerB,
+      configB,
+      0,
+      ctx.schedulerCtx
+    );
+  });
+
+  // ── handleUpdatedAgent: revert to container runtime (lines 335-336) ────────
+
+  it("updated agent: reverts agentRuntimeOverrides to container runtime when new config has no host-user runtime", async () => {
+    const runner = {
+      ...makeMockRunner("agent-a"),
+      setRuntime: vi.fn(),
+    };
+    const pool = new RunnerPool([runner]);
+    // Old config has host-user runtime
+    const oldConfig = makeAgentConfig("agent-a", {
+      runtime: { type: "host-user", run_as: "al-agent", groups: [] },
+    });
+    const ctx = makeContext({
+      agentConfigs: [oldConfig],
+      runnerPools: { "agent-a": pool },
+      agentRuntimeOverrides: { "agent-a": { type: "host-user-runtime" } as any },
+    });
+
+    // New config has NO host-user runtime (reverted to container runtime)
+    const updatedConfig = makeAgentConfig("agent-a", { schedule: "*/5 * * * *" });
+    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
+    mockedLoadAgentConfig.mockReturnValue(updatedConfig);
+
+    // createAgentRuntimeOverride returns null for the new config (no host-user runtime)
+    mockCreateAgentRuntimeOverride.mockReturnValueOnce(null);
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    // agentRuntimeOverrides should have the key removed
+    expect(ctx.agentRuntimeOverrides["agent-a"]).toBeUndefined();
+    expect(ctx.logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "agent-a" }),
+      "hot reload: reverted to container runtime"
+    );
+  });
 });
