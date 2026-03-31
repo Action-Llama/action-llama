@@ -1,5 +1,19 @@
 # @action-llama/action-llama
 
+## 0.23.0
+
+### Minor Changes
+
+- [#452](https://github.com/Action-Llama/action-llama/pull/452) [`f796147`](https://github.com/Action-Llama/action-llama/commit/f796147ccebe6bd1e242b0b6f5ba99575eab0e17) Thanks [@asselstine](https://github.com/asselstine)! - Add agent admin page with gear icon link from agent detail. Moves Scale, Enable/Disable, and Skill content to a combined admin page. Replaces Run/Chat buttons with a RunDropdown split-button component.
+
+### Patch Changes
+
+- [#448](https://github.com/Action-Llama/action-llama/pull/448) [`5f04184`](https://github.com/Action-Llama/action-llama/commit/5f04184c3dd5476b70803153726add3bf9f6d588) Thanks [@asselstine](https://github.com/asselstine)! - Remove dead code in execution/routes/locks.ts — the invalid URI scheme branch was unreachable since `new URL()` already rejects URIs with invalid schemes (e.g. `123://...`) by throwing, which is caught by the existing catch block.
+
+- [`48e1f14`](https://github.com/Action-Llama/action-llama/commit/48e1f140882445e812129cca7acf6d0991d1c3cb) Thanks [@asselstine](https://github.com/asselstine)! - Throttle SSE status stream (max 2/sec) and debounce invalidation-driven refetches (1s) to prevent 429 errors from rapid-fire updates during active agent runs.
+
+- [#453](https://github.com/Action-Llama/action-llama/pull/453) [`b176a4d`](https://github.com/Action-Llama/action-llama/commit/b176a4d5ad20357be33f0de7409312a9752af5e0) Thanks [@asselstine](https://github.com/asselstine)! - Add compact trigger badges to the agent dashboard. Each agent row now shows small, colored labels under the agent name indicating its configured triggers (e.g. "schedule", "github issues created"). Labels are computed from agent config and streamed via SSE. Closes [#441](https://github.com/Action-Llama/action-llama/issues/441).
+
 ## 0.22.0
 
 ### Minor Changes
