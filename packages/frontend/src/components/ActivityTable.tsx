@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { TriggerBadge } from "./Badge";
 import type { ActivityRow } from "../lib/api";
-import { fmtSmartTime, shortId } from "../lib/format";
+import { fmtSmartTime } from "../lib/format";
 import { agentHueStyle } from "../lib/color";
 
 const STATUS_DOT_COLOR: Record<string, string> = {
@@ -70,7 +70,7 @@ export function ActivityTable({
           <th className="text-left pl-6 pr-1 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide w-[1%] whitespace-nowrap">
             Time
           </th>
-          <th className="text-left pl-2 pr-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+          <th className="text-left pl-2 pr-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide w-[1%] whitespace-nowrap">
             Trigger
           </th>
           <th className="text-left pl-2 pr-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide hidden sm:table-cell">
@@ -116,7 +116,7 @@ export function ActivityTable({
                 className="agent-color-text font-medium font-mono text-xs"
                 style={agentHueStyle(row.agentName, agentNames)}
               >
-                {shortId(row.instanceId)}
+                {row.instanceId}
               </span>
             </Link>
           ) : !isDeadLetter && row.agentName ? (
@@ -155,7 +155,7 @@ export function ActivityTable({
               </td>
 
               {/* Trigger — badge with dead-letter reason; on mobile also shows agent below */}
-              <td className="pl-2 pr-2 py-2.5">
+              <td className="pl-2 pr-2 py-2.5 whitespace-nowrap">
                 <div className="flex flex-col gap-0.5">
                   {triggerEl}
                   {isDeadLetter && row.deadLetterReason && (

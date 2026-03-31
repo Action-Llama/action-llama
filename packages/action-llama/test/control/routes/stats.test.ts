@@ -771,7 +771,7 @@ describe("stats routes", () => {
         workQueue: {
           size: vi.fn().mockReturnValue(1),
           peek: vi.fn().mockReturnValue([
-            { context: { type: "agent-trigger", callerAgent: "planner" }, receivedAt: new Date(3000) },
+            { context: { type: "agent-trigger", sourceAgent: "planner" }, receivedAt: new Date(3000) },
           ]),
         },
       };
@@ -796,7 +796,7 @@ describe("stats routes", () => {
         workQueue: {
           size: vi.fn().mockReturnValue(1),
           peek: vi.fn().mockReturnValue([
-            { context: { type: "agent", callerAgent: "orchestrator" }, receivedAt: new Date(3000) },
+            { context: { type: "agent", sourceAgent: "orchestrator" }, receivedAt: new Date(3000) },
           ]),
         },
       };
