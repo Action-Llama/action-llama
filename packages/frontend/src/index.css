@@ -9,13 +9,6 @@
   background: hsl(var(--agent-hue) 50% 35%);
 }
 
-.agent-color-dot {
-  background: hsl(var(--agent-hue) 60% 45%);
-}
-.agent-color-dot:where(.dark, .dark *) {
-  background: hsl(var(--agent-hue) 60% 65%);
-}
-
 .agent-color-text {
   color: hsl(var(--agent-hue) 60% 40%);
 }

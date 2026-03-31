@@ -218,10 +218,6 @@ export function DashboardPage() {
                     key={a.name}
                     className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400"
                   >
-                    <span
-                      className="w-2 h-2 rounded-full agent-color-dot"
-                      style={agentHueStyle(a.name, agentNames)}
-                    />
                     <span className="agent-color-text" style={agentHueStyle(a.name, agentNames)}>
                       {a.name}
                     </span>
@@ -288,10 +284,6 @@ export function DashboardPage() {
                       className="font-medium hover:underline truncate flex items-center gap-1.5"
                       title={agent.name}
                     >
-                      <span
-                        className="w-2 h-2 rounded-full shrink-0 agent-color-dot"
-                        style={agentHueStyle(agent.name, agentNames)}
-                      />
                       <span className="agent-color-text truncate" style={{ fontSize: "16px", ...agentHueStyle(agent.name, agentNames) }}>
                         {agent.name}
                       </span>

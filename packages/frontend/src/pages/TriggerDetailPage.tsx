@@ -134,10 +134,6 @@ export function TriggerDetailPage() {
               to={`/dashboard/agents/${encodeURIComponent(trigger.agentName)}`}
               className="hover:underline text-xs flex items-center gap-1.5"
             >
-              <span
-                className="w-2 h-2 rounded-full shrink-0 agent-color-dot"
-                style={agentHueStyle(trigger.agentName, agentNames)}
-              />
               <span className="agent-color-text" style={agentHueStyle(trigger.agentName, agentNames)}>
                 {trigger.agentName}
               </span>
@@ -246,10 +242,6 @@ export function TriggerDetailPage() {
                     to={`/dashboard/agents/${encodeURIComponent(trigger.callerAgent)}`}
                     className="hover:underline text-xs flex items-center gap-1.5"
                   >
-                    <span
-                      className="w-2 h-2 rounded-full shrink-0 agent-color-dot"
-                      style={agentHueStyle(trigger.callerAgent, agentNames)}
-                    />
                     <span className="agent-color-text" style={agentHueStyle(trigger.callerAgent, agentNames)}>
                       {trigger.callerAgent}
                     </span>

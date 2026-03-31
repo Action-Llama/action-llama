@@ -18,7 +18,6 @@ import type {
 import { RunModal } from "../components/RunModal";
 import { RunDropdown } from "../components/RunDropdown";
 import { fmtSmartTime } from "../lib/format";
-import { agentHueStyle } from "../lib/color";
 
 const ROW_STATUS_STYLES: Record<string, string> = {
   pending: "border-l-2 border-l-amber-400 dark:border-l-amber-500 bg-amber-50/40 dark:bg-amber-950/20",
@@ -65,7 +64,6 @@ export function AgentDetailPage() {
   const { name } = useParams<{ name: string }>();
   const navigate = useNavigate();
   const { agents } = useStatusStream();
-  const agentNames = agents.map((a) => a.name);
   const [detail, setDetail] = useState<AgentDetailData | null>(null);
   const [activity, setActivity] = useState<ActivityRow[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -163,10 +161,6 @@ export function AgentDetailPage() {
               />
             </svg>
           </Link>
-          <span
-            className="w-3 h-3 rounded-full shrink-0 agent-color-dot"
-            style={agentHueStyle(name ?? "", agentNames)}
-          />
           <h1 className="text-xl font-bold text-slate-900 dark:text-white">
             {name}
           </h1>
