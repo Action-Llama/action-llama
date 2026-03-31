@@ -234,8 +234,14 @@ export function registerStatsRoutes(
       }
     }
 
-    // Sort all rows by ts descending
-    allRows.sort((a, b) => b.ts - a.ts);
+    // Sort rows by status group (pending → running → rest), then by ts descending within each group
+    const statusPriority: Record<string, number> = { pending: 0, running: 1 };
+    allRows.sort((a, b) => {
+      const pa = statusPriority[a.result] ?? 2;
+      const pb = statusPriority[b.result] ?? 2;
+      if (pa !== pb) return pa - pb;
+      return b.ts - a.ts;
+    });
 
     // Enrich webhook rows with provider name from receipts (handles pre-fix historical data)
     if (statsStore) {

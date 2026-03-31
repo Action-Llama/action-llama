@@ -2,7 +2,6 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useStatusStream } from "../hooks/StatusStreamContext";
 import { useInvalidation } from "../hooks/useInvalidation";
-import { StateBadge } from "../components/Badge";
 import { ActivityTable } from "../components/ActivityTable";
 import {
   getAgentDetail,
@@ -157,7 +156,6 @@ export function AgentDetailPage() {
           <h1 className="text-xl font-bold text-slate-900 dark:text-white">
             {name}
           </h1>
-          {agent && <StateBadge state={agent.state} />}
           {agent && !agent.enabled && (
             <span className="text-xs text-slate-500 italic">(disabled)</span>
           )}
