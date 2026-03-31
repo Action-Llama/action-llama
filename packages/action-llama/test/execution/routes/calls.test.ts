@@ -57,6 +57,17 @@ describe("POST /calls", () => {
     expect(body.callId).toBeTruthy();
   });
 
+  it("returns 400 for invalid JSON body", async () => {
+    const res = await app.request("/calls", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "not-valid-json{{{",
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("invalid JSON body");
+  });
+
   it("returns 400 for missing secret", async () => {
     const res = await postCall(app, { targetAgent: "b", context: "x" });
     expect(res.status).toBe(400);

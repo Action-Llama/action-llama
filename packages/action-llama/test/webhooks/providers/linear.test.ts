@@ -144,6 +144,23 @@ describe("LinearWebhookProvider", () => {
       expect(provider.parseEvent({}, {})).toBeNull();
     });
 
+    it("returns null when body has action/type/org but no data field", () => {
+      const body = { action: "create", type: "Issue", organizationId: "org-1" };
+      // data is undefined → extractContext returns null
+      expect(provider.parseEvent({}, body)).toBeNull();
+    });
+
+    it("returns null when Comment event has no issue in data", () => {
+      const body = {
+        action: "create",
+        type: "Comment",
+        organizationId: "org-1",
+        data: { id: "comment-1", body: "test comment" },
+        // data.issue is undefined
+      };
+      expect(provider.parseEvent({}, body)).toBeNull();
+    });
+
     it("handles truncation of long descriptions", () => {
       const longDescription = "x".repeat(5000); // Longer than MAX_TEXT_LENGTH
       const body = {
