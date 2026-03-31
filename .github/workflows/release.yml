@@ -72,16 +72,21 @@ jobs:
       - name: Dry-run publish (all packages)
         if: steps.has-changesets.outputs.has_changesets == 'true'
         run: |
-          npm publish -w packages/skill --access public --tag next --dry-run
           npm publish -w packages/action-llama --access public --tag next --dry-run
+          npm publish -w packages/skill --access public --tag next --dry-run
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish to npm
+      - name: Publish @action-llama/action-llama
         if: steps.has-changesets.outputs.has_changesets == 'true'
-        run: |
-          npm publish -w packages/skill --access public --tag next
-          npm publish -w packages/action-llama --access public --tag next
+        run: npm publish -w packages/action-llama --access public --tag next
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @action-llama/skill
+        if: steps.has-changesets.outputs.has_changesets == 'true'
+        continue-on-error: true
+        run: npm publish -w packages/skill --access public --tag next
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
