@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { InstanceLifecycle } from "../../../src/execution/lifecycle/instance-lifecycle.js";
+import { isTerminalInstanceState, isTerminalAgentState } from "../../../src/execution/lifecycle/index.js";
 
 describe("InstanceLifecycle", () => {
   let instance: InstanceLifecycle;
@@ -234,5 +235,27 @@ describe("InstanceLifecycle", () => {
       instance.start();
       expect(instance.isQueued()).toBe(false);
     });
+  });
+});
+
+describe("isTerminalInstanceState", () => {
+  it("returns false for non-terminal states", () => {
+    expect(isTerminalInstanceState("queued")).toBe(false);
+    expect(isTerminalInstanceState("running")).toBe(false);
+  });
+
+  it("returns true for terminal states", () => {
+    expect(isTerminalInstanceState("completed")).toBe(true);
+    expect(isTerminalInstanceState("error")).toBe(true);
+    expect(isTerminalInstanceState("killed")).toBe(true);
+  });
+});
+
+describe("isTerminalAgentState", () => {
+  it("returns false for non-terminal agent states", () => {
+    expect(isTerminalAgentState("idle")).toBe(false);
+    expect(isTerminalAgentState("running")).toBe(false);
+    expect(isTerminalAgentState("building")).toBe(false);
+    expect(isTerminalAgentState("error")).toBe(false);
   });
 });

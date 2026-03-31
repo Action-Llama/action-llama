@@ -9,6 +9,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { SqliteBackend } from "../../../src/shared/persistence/backends/sqlite.js";
 import { createEvent } from "../../../src/shared/persistence/event-store.js";
+import { createDb } from "../../../src/db/connection.js";
 
 describe("SqliteBackend – direct operations", () => {
   let backend: SqliteBackend;
@@ -239,6 +240,28 @@ describe("SqliteBackend – direct operations", () => {
       await b.init();
       // Should not throw; interval is cleared
       await b.close();
+    });
+  });
+
+  describe("constructor with existing AppDb (shared connection)", () => {
+    it("accepts an existing AppDb object and uses it without applying migrations", async () => {
+      // Create a shared DB connection
+      const sharedDb = createDb(":memory:");
+      // Manually apply migrations on the shared DB before passing it
+      const { applyMigrations } = await import("../../../src/db/migrate.js");
+      applyMigrations(sharedDb);
+
+      // SqliteBackend with an existing DB should not own it (ownDb = false)
+      const sharedBackend = new SqliteBackend(sharedDb as any);
+      await sharedBackend.init();
+
+      // Basic operations should work through the shared connection
+      await sharedBackend.kvSet("ns", "shared-key", { val: "shared" });
+      const result = await sharedBackend.kvGet<{ val: string }>("ns", "shared-key");
+      expect(result).toEqual({ val: "shared" });
+
+      // Close should NOT close the underlying DB (since ownDb is false)
+      await sharedBackend.close();
     });
   });
 });
