@@ -8,6 +8,7 @@ import { ActivityPage } from "./pages/ActivityPage";
 import { TriggerDetailPage } from "./pages/TriggerDetailPage";
 import { ProjectConfigPage } from "./pages/ProjectConfigPage";
 import { AgentSkillPage } from "./pages/AgentSkillPage";
+import { AgentStatsPage } from "./pages/AgentStatsPage";
 import { ChatPage } from "./pages/ChatPage";
 import { WebhookReceiptPage } from "./pages/WebhookReceiptPage";
 
@@ -36,6 +37,10 @@ export function App() {
         <Route
           path="/dashboard/agents/:name/skill"
           element={<AgentSkillPage />}
+        />
+        <Route
+          path="/dashboard/agents/:name/stats"
+          element={<AgentStatsPage />}
         />
         <Route path="/dashboard/triggers" element={<Navigate to="/activity" replace />} />
         <Route path="/activity" element={<ActivityPage />} />
