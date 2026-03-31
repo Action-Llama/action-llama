@@ -8,7 +8,7 @@ import {
   createPersistenceStore,
   type PersistenceStore,
 } from "../../src/shared/persistence/index.js";
-import { EventTypes } from "../../src/shared/persistence/event-store.js";
+import { EventTypes, EventStreamWrapper } from "../../src/shared/persistence/event-store.js";
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -454,6 +454,170 @@ describe("EventSourcedWorkQueue", () => {
       expect(droppedEvent).toBeDefined();
 
       smallQueue.close();
+    });
+  });
+
+  describe("peek", () => {
+    it("returns an empty array for an agent with no queue state (never enqueued)", () => {
+      const items = queue.peek("unknown-agent");
+      expect(items).toEqual([]);
+    });
+
+    it("returns all items in FIFO order when no limit is provided", async () => {
+      queue.enqueue("agent-peek", "item-1");
+      await flushAsync();
+      queue.enqueue("agent-peek", "item-2");
+      await flushAsync();
+      queue.enqueue("agent-peek", "item-3");
+      await flushAsync();
+
+      const items = queue.peek("agent-peek");
+      expect(items).toHaveLength(3);
+      expect(items[0].context).toBe("item-1");
+      expect(items[1].context).toBe("item-2");
+      expect(items[2].context).toBe("item-3");
+    });
+
+    it("returns up to the specified limit of items", async () => {
+      queue.enqueue("agent-peek-limit", "item-a");
+      await flushAsync();
+      queue.enqueue("agent-peek-limit", "item-b");
+      await flushAsync();
+      queue.enqueue("agent-peek-limit", "item-c");
+      await flushAsync();
+
+      const items = queue.peek("agent-peek-limit", 2);
+      expect(items).toHaveLength(2);
+      expect(items[0].context).toBe("item-a");
+      expect(items[1].context).toBe("item-b");
+    });
+
+    it("returns all items when limit equals queue size", async () => {
+      queue.enqueue("agent-peek-exact", "x");
+      await flushAsync();
+      queue.enqueue("agent-peek-exact", "y");
+      await flushAsync();
+
+      const items = queue.peek("agent-peek-exact", 2);
+      expect(items).toHaveLength(2);
+    });
+
+    it("returns all items when limit exceeds queue size", async () => {
+      queue.enqueue("agent-peek-over", "only");
+      await flushAsync();
+
+      const items = queue.peek("agent-peek-over", 100);
+      expect(items).toHaveLength(1);
+      expect(items[0].context).toBe("only");
+    });
+
+    it("does not remove items from the queue", async () => {
+      queue.enqueue("agent-peek-nodrain", "stay");
+      await flushAsync();
+
+      queue.peek("agent-peek-nodrain");
+      expect(queue.size("agent-peek-nodrain")).toBe(1);
+    });
+
+    it("returns empty array when limit is 0", async () => {
+      queue.enqueue("agent-peek-zero", "item");
+      await flushAsync();
+
+      const items = queue.peek("agent-peek-zero", 0);
+      expect(items).toEqual([]);
+    });
+  });
+
+  describe("error handling", () => {
+    it("logs error when enqueueAsync throws (appendTyped failure)", async () => {
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      // Make appendTyped throw on the first call
+      const appendSpy = vi
+        .spyOn(EventStreamWrapper.prototype, "appendTyped")
+        .mockRejectedValueOnce(new Error("storage failure"));
+
+      queue.enqueue("agent-err-enqueue", "payload");
+      await flushAsync();
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Failed to enqueue work for agent-err-enqueue"),
+        expect.any(Error)
+      );
+
+      consoleSpy.mockRestore();
+      appendSpy.mockRestore();
+    });
+
+    it("logs error when clearAsync throws (appendTyped failure)", async () => {
+      // Enqueue one item to build queue state
+      queue.enqueue("agent-err-clear", "payload");
+      await flushAsync();
+
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      // Make the next appendTyped call (the WORK_DROPPED event in clearAsync) throw
+      const appendSpy = vi
+        .spyOn(EventStreamWrapper.prototype, "appendTyped")
+        .mockRejectedValueOnce(new Error("storage failure"));
+
+      queue.clear("agent-err-clear");
+      await flushAsync();
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Failed to clear queue for agent-err-clear"),
+        expect.any(Error)
+      );
+
+      consoleSpy.mockRestore();
+      appendSpy.mockRestore();
+    });
+
+    it("logs error when clearAllAsync throws (appendTyped failure)", async () => {
+      // Enqueue items for two agents to populate agentStreams
+      queue.enqueue("agent-clearall-a", "payload-a");
+      await flushAsync();
+
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const appendSpy = vi
+        .spyOn(EventStreamWrapper.prototype, "appendTyped")
+        .mockRejectedValueOnce(new Error("storage failure"));
+
+      queue.clearAll();
+      await flushAsync();
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Failed to clear all queues"),
+        expect.any(Error)
+      );
+
+      consoleSpy.mockRestore();
+      appendSpy.mockRestore();
+    });
+
+    it("logs error when dequeueAsync throws (appendTyped failure)", async () => {
+      // Enqueue one item to build queue state
+      queue.enqueue("agent-err-deq", "payload");
+      await flushAsync();
+
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      // Make appendTyped throw during dequeueAsync
+      const appendSpy = vi
+        .spyOn(EventStreamWrapper.prototype, "appendTyped")
+        .mockRejectedValueOnce(new Error("storage failure"));
+
+      queue.dequeue("agent-err-deq");
+      await flushAsync();
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Failed to record dequeue for agent-err-deq"),
+        expect.any(Error)
+      );
+
+      consoleSpy.mockRestore();
+      appendSpy.mockRestore();
     });
   });
 });
