@@ -579,5 +579,187 @@ describe("webhook command", () => {
       // "Filter details:" should NOT appear since there are no filter entries
       expect(allOutput).not.toContain("Filter details:");
     });
+
+    it("displays full context fields (action, author, number, title, labels) when present", async () => {
+      // Use test webhook provider which skips signature validation and reads body as context
+      createAgent("context-agent", {
+        models: ["sonnet"],
+        webhooks: [{ source: "test", events: ["issues"] }],
+      });
+      writeFileSync(join(projectPath, "config.toml"), stringifyTOML({
+        models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+        webhooks: { test: { type: "test" } },
+      }));
+
+      const fixture = {
+        headers: { "x-test-event": "issues" },
+        body: {
+          source: "test",
+          event: "issues",
+          action: "opened",
+          repo: "owner/my-repo",
+          number: 99,
+          title: "Critical bug in production",
+          author: "alice",
+          labels: ["bug", "high-priority"],
+          sender: "alice",
+        },
+      };
+      const fixturePath = join(tmpDir, "context-fixture.json");
+      writeFileSync(fixturePath, JSON.stringify(fixture));
+
+      await execute("replay", fixturePath, { project: projectPath, source: "test" });
+
+      const allOutput = mockConsoleLog.mock.calls.map((c: any[]) => c[0]).join("\n");
+      expect(allOutput).toContain("📋 Webhook Context:");
+      expect(allOutput).toContain("Action: opened");
+      expect(allOutput).toContain("Author: alice");
+      expect(allOutput).toContain("Number: 99");
+      expect(allOutput).toContain("Title: Critical bug in production");
+      expect(allOutput).toContain("Labels: bug, high-priority");
+    });
+
+    it("displays unmatched agents section with filter details when agent filter does not match", async () => {
+      // Create an agent whose filter won't match (events: ["push"] but we send "issues")
+      createAgent("strict-agent", {
+        models: ["sonnet"],
+        webhooks: [{ source: "test", events: ["push"] }],
+      });
+      writeFileSync(join(projectPath, "config.toml"), stringifyTOML({
+        models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+        webhooks: { test: { type: "test" } },
+      }));
+
+      const fixture = {
+        headers: { "x-test-event": "issues" },
+        body: {
+          source: "test",
+          event: "issues",
+          repo: "owner/repo",
+          sender: "bob",
+        },
+      };
+      const fixturePath = join(tmpDir, "unmatched-filter-fixture.json");
+      writeFileSync(fixturePath, JSON.stringify(fixture));
+
+      await execute("replay", fixturePath, { project: projectPath, source: "test" });
+
+      const allOutput = mockConsoleLog.mock.calls.map((c: any[]) => c[0]).join("\n");
+      expect(allOutput).toContain("❌ Unmatched Agents");
+      expect(allOutput).toContain("strict-agent");
+      // Filter details should be shown since binding has a filter
+      expect(allOutput).toContain("Filter details:");
+    });
+
+    it("auto-detects github source from x-github-event header when source is not specified", async () => {
+      mkdirSync(resolve(projectPath, "agents"), { recursive: true });
+      writeFileSync(join(projectPath, "config.toml"), stringifyTOML({
+        models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+      }));
+
+      const fixture = {
+        headers: { "x-github-event": "push" },
+        body: {
+          repository: { full_name: "owner/repo" },
+          sender: { login: "pusher" },
+          ref: "refs/heads/main",
+        },
+      };
+      const fixturePath = join(tmpDir, "github-autodetect-fixture.json");
+      writeFileSync(fixturePath, JSON.stringify(fixture));
+
+      // No source option — detectSourceFromHeaders should return "github"
+      await execute("replay", fixturePath, { project: projectPath });
+
+      const allOutput = mockConsoleLog.mock.calls.map((c: any[]) => c[0]).join("\n");
+      expect(allOutput).toContain("📡 Source: github");
+    });
+
+    it("auto-detects sentry source from x-sentry-auth header when source is not specified", async () => {
+      mkdirSync(resolve(projectPath, "agents"), { recursive: true });
+      writeFileSync(join(projectPath, "config.toml"), stringifyTOML({
+        models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+        webhooks: { sentry: { type: "sentry" } },
+      }));
+
+      const fixture = {
+        headers: {
+          "x-sentry-auth": "Sentry sentry_key=abc123",
+          "content-type": "application/json",
+        },
+        body: {
+          action: "created",
+          data: { issue: { id: "1", title: "Crash", url: "https://sentry.io/1", project: { slug: "my-project" } } },
+          installation: { uuid: "test-uuid" },
+        },
+      };
+      const fixturePath = join(tmpDir, "sentry-auth-fixture.json");
+      writeFileSync(fixturePath, JSON.stringify(fixture));
+
+      // No source option — detectSourceFromHeaders should return "sentry" via x-sentry-auth
+      await execute("replay", fixturePath, { project: projectPath });
+
+      const allOutput = mockConsoleLog.mock.calls.map((c: any[]) => c[0]).join("\n");
+      expect(allOutput).toContain("📡 Source: sentry");
+    });
+
+    it("uses 'github' as default type for trigger without explicit source field", async () => {
+      // Trigger without source field — type should fall back to "github"
+      createAgent("default-type-agent", {
+        models: ["sonnet"],
+        webhooks: [{ events: ["push"] }], // no source field
+      });
+      writeFileSync(join(projectPath, "config.toml"), stringifyTOML({
+        models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+        webhooks: { github: { type: "github" } },
+      }));
+
+      const fixture = {
+        headers: { "x-github-event": "push" },
+        body: {
+          repository: { full_name: "owner/repo" },
+          sender: { login: "pusher" },
+          ref: "refs/heads/main",
+        },
+      };
+      const fixturePath = join(tmpDir, "default-type-fixture.json");
+      writeFileSync(fixturePath, JSON.stringify(fixture));
+
+      await execute("replay", fixturePath, { project: projectPath, source: "github" });
+
+      const allOutput = mockConsoleLog.mock.calls.map((c: any[]) => c[0]).join("\n");
+      expect(allOutput).toContain("🔍 Webhook Simulation Results");
+    });
+
+    it("calls handleInteractiveRun and displays run instructions when --run flag is set and agents match", async () => {
+      // Use test provider so validation passes
+      createAgent("run-agent", {
+        models: ["sonnet"],
+        webhooks: [{ source: "test", events: ["deploy"] }],
+      });
+      writeFileSync(join(projectPath, "config.toml"), stringifyTOML({
+        models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+        webhooks: { test: { type: "test" } },
+      }));
+
+      const fixture = {
+        headers: { "x-test-event": "deploy" },
+        body: {
+          source: "test",
+          event: "deploy",
+          repo: "owner/repo",
+          sender: "ci-bot",
+        },
+      };
+      const fixturePath = join(tmpDir, "run-fixture.json");
+      writeFileSync(fixturePath, JSON.stringify(fixture));
+
+      await execute("replay", fixturePath, { project: projectPath, source: "test", run: true });
+
+      const allOutput = mockConsoleLog.mock.calls.map((c: any[]) => c[0]).join("\n");
+      expect(allOutput).toContain("🚀 Interactive Run Mode");
+      expect(allOutput).toContain("run-agent");
+      expect(allOutput).toContain("al run run-agent");
+    });
   });
 });
