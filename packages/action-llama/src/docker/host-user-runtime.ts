@@ -286,12 +286,16 @@ export class HostUserRuntime implements Runtime {
   }
 
   cleanupCredentials(creds: RuntimeCredentials): void {
+    if (!('stagingDir' in creds)) return;
     try {
       rmSync(creds.stagingDir, { recursive: true, force: true });
     } catch { /* best effort */ }
   }
 
   async launch(opts: RuntimeLaunchOpts): Promise<string> {
+    if (!('stagingDir' in opts.credentials)) {
+      throw new Error(`host-user runtime requires a stagingDir credential strategy, got: ${opts.credentials.strategy}`);
+    }
     const runId = `al-${opts.agentName}-${randomUUID().slice(0, 8)}`;
 
     // Ensure runs directory exists
