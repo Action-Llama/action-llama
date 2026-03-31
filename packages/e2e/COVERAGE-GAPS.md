@@ -57,4 +57,5 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Stats API pagination — GET /api/stats/agents/:name/runs with page/limit params, verify paginated results, total count, default behavior (stats-pagination.test.ts)
 - [x] Logs API grep/lines parameters — grep filters by regex, invalid grep returns 400, lines limits entry count (logs-grep.test.ts)
 - [x] Stats triggers pagination/filtering — offset parameter, since time filter, triggerType filter for manual/webhook (stats-triggers-pagination.test.ts)
-- [ ] Control API status tracker unavailable — GET /control/instances and GET /control/status return 503 without status tracker (control-instances.test.ts)
+- [x] Control API status tracker unavailable — GET /control/instances and GET /control/status return 503 without status tracker (control-instances.test.ts)
+- [ ] Scheduler config validation — pi_auth rejected in container mode (ConfigError), api_key accepted (scheduler-validation.test.ts)
