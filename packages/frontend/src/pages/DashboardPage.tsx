@@ -29,14 +29,18 @@ const STATE_DOT_COLORS: Record<string, string> = {
   idle: "bg-slate-400",
 };
 
-function formatScale(agent: AgentStatus): string {
-  if (agent.state === "running" && agent.scale > 1) {
-    return `${agent.runningCount}/${agent.scale}`;
-  }
-  if (agent.scale > 1) {
-    return `\u00d7${agent.scale}`;
-  }
-  return "";
+function StatusCell({ agent }: { agent: AgentStatus }) {
+  const dotColor = STATE_DOT_COLORS[agent.state] ?? "bg-slate-400";
+  return (
+    <div className="flex flex-col items-center gap-0.5 w-6">
+      <span className={`w-2 h-2 rounded-full ${dotColor}`} />
+      <div className="flex flex-col items-center text-[10px] leading-tight text-slate-500 dark:text-slate-400 tabular-nums">
+        <span>{agent.runningCount}</span>
+        <span className="w-3 border-t border-slate-300 dark:border-slate-600" />
+        <span>{agent.scale}</span>
+      </div>
+    </div>
+  );
 }
 
 function SpinnerIcon() {
@@ -228,6 +232,7 @@ export function DashboardPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 dark:border-slate-800">
+                <th className="w-10 px-2 py-2.5" />
                 <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
                   Agent
                 </th>
@@ -245,24 +250,19 @@ export function DashboardPage() {
                   key={agent.name}
                   className={`border-b border-slate-100 dark:border-slate-800/50 last:border-0 hover:bg-slate-100/50 dark:hover:bg-slate-800/30 ${ROW_STATE_STYLES[agent.state] ?? ""}`}
                 >
+                  <td className="w-10 px-2 py-2.5 align-top">
+                    <StatusCell agent={agent} />
+                  </td>
                   <td className="px-4 py-2.5 min-w-0 max-w-[240px]">
                     <Link
                       to={`/dashboard/agents/${encodeURIComponent(agent.name)}`}
-                      className="font-medium hover:underline truncate flex items-center gap-1.5"
+                      className="font-medium hover:underline truncate block"
                       title={agent.name}
                     >
-                      <span
-                        className={`w-2 h-2 rounded-full shrink-0 ${STATE_DOT_COLORS[agent.state] ?? "bg-slate-400"}`}
-                      />
                       <span className="agent-color-text truncate" style={{ fontSize: "16px", ...agentHueStyle(agent.name, agentNames) }}>
                         {agent.name}
                       </span>
                     </Link>
-                    {agent.scale > 1 && (
-                      <span className="ml-1 text-xs text-slate-500">
-                        {formatScale(agent)}
-                      </span>
-                    )}
                     {!agent.enabled && (
                       <span className="ml-1 text-xs text-slate-500 italic">
                         (disabled)
@@ -337,7 +337,7 @@ export function DashboardPage() {
               {filteredAgents.length === 0 && debouncedQuery && (
                 <tr>
                   <td
-                    colSpan={3}
+                    colSpan={4}
                     className="px-4 py-8 text-center text-slate-500 dark:text-slate-400"
                   >
                     No agents matching &lsquo;{debouncedQuery}&rsquo;
@@ -347,7 +347,7 @@ export function DashboardPage() {
               {filteredAgents.length === 0 && !debouncedQuery && (
                 <tr>
                   <td
-                    colSpan={3}
+                    colSpan={4}
                     className="px-4 py-8 text-center text-slate-500 dark:text-slate-400"
                   >
                     No agents found
