@@ -317,4 +317,54 @@ describe.skipIf(!DOCKER)("integration: chat session management API", { timeout: 
     // Cleanup
     await chatAPI(harness, "DELETE", `/api/chat/sessions/${sessionId}`);
   });
+
+  it("POST /api/chat/sessions returns 429 when session limit is reached", async () => {
+    // When maxChatSessions is set to 1, creating a second session for a
+    // different agent should return 429 (session limit reached).
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "chat-limit-a",
+          schedule: "0 0 31 2 *",
+          testScript: "#!/bin/sh\nexit 0\n",
+        },
+        {
+          name: "chat-limit-b",
+          schedule: "0 0 31 2 *",
+          testScript: "#!/bin/sh\nexit 0\n",
+        },
+      ],
+      globalConfig: {
+        gateway: { maxChatSessions: 1 },
+      },
+    });
+
+    // Start with webUI=true to enable chat routes
+    await harness.start({ webUI: true });
+
+    // Build agent images
+    await harness.triggerAgent("chat-limit-a");
+    await harness.triggerAgent("chat-limit-b");
+    await harness.waitForRunResult("chat-limit-a");
+    await harness.waitForRunResult("chat-limit-b");
+
+    // Create the first session (within limit)
+    const firstRes = await chatAPI(harness, "POST", "/api/chat/sessions", {
+      agentName: "chat-limit-a",
+    });
+    expect(firstRes.ok).toBe(true);
+    const { sessionId } = await firstRes.json();
+
+    // Try to create a second session for a different agent — should hit the limit
+    const secondRes = await chatAPI(harness, "POST", "/api/chat/sessions", {
+      agentName: "chat-limit-b",
+    });
+    expect(secondRes.status).toBe(429);
+    const secondBody = await secondRes.json();
+    expect(secondBody).toHaveProperty("error");
+    expect(secondBody.error).toContain("limit");
+
+    // Cleanup
+    await chatAPI(harness, "DELETE", `/api/chat/sessions/${sessionId}`);
+  });
 });

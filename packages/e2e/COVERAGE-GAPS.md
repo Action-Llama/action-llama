@@ -68,3 +68,4 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Activity endpoint status filter — ?status=completed filters to completed rows only, ?status=all returns all results (stats-jobs.test.ts)
 - [x] Logs API invalid cursor — malformed cursor parameter returns 400 with error message (logs-api.test.ts)
 - [x] Chat session list endpoint — GET /api/chat/sessions returns active sessions, new session appears in list (chat.test.ts)
+- [x] Chat session limit enforcement — POST /api/chat/sessions returns 429 when maxChatSessions limit is reached (chat.test.ts)
