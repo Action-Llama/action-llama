@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useInvalidation } from "../hooks/useInvalidation";
 import { useStatusStream } from "../hooks/StatusStreamContext";
-import { TriggerTypeBadge, ResultBadge } from "../components/Badge";
+import { TriggerTypeBadge } from "../components/Badge";
 import { FilterSelect, MultiSelect } from "../components/FilterDropdown";
 import type { MultiSelectOption } from "../components/FilterDropdown";
 import { getActivity } from "../lib/api";
@@ -29,6 +29,24 @@ const TRIGGER_TYPE_OPTIONS = [
   { value: "manual", label: "Manual" },
   { value: "agent", label: "Agent" },
 ];
+
+const STATUS_DOT_COLOR: Record<string, string> = {
+  pending: "bg-amber-400",
+  running: "bg-blue-500 animate-pulse",
+  completed: "bg-green-500",
+  error: "bg-red-500",
+  "dead-letter": "bg-red-300 dark:bg-red-800",
+  rerun: "bg-green-500",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  pending: "Pending",
+  running: "Running",
+  completed: "Completed",
+  error: "Error",
+  "dead-letter": "Dead Letter",
+  rerun: "Rerun",
+};
 
 /** Row stripe color by status — subtle left border + background tint */
 const ROW_STATUS_STYLES: Record<string, string> = {
@@ -190,17 +208,14 @@ export function ActivityPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 dark:border-slate-800">
-                <th className="text-left pl-4 pr-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                <th className="text-left pl-6 pr-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
                   Time
                 </th>
                 <th className="text-left px-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                  Status
-                </th>
-                <th className="text-left px-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                  Trigger
-                </th>
-                <th className="text-left px-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
                   Instance
+                </th>
+                <th className="hidden sm:table-cell text-left px-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                  Trigger
                 </th>
               </tr>
             </thead>
@@ -214,43 +229,18 @@ export function ActivityPage() {
                       ROW_STATUS_STYLES[row.result] ?? ""
                     }`}
                   >
-                    {/* Time — relative if < 6h */}
+                    {/* Time — relative if < 6h, with status dot */}
                     <td
                       className="pl-4 pr-2 py-2.5 text-slate-600 dark:text-slate-400 text-xs whitespace-nowrap"
                       title={new Date(row.ts).toLocaleString()}
                     >
-                      {fmtSmartTime(row.ts)}
-                    </td>
-
-                    {/* Status */}
-                    <td className="px-2 py-2.5">
-                      <ResultBadge result={row.result} deadLetterReason={row.deadLetterReason} />
-                    </td>
-
-                    {/* Trigger — links to trigger detail */}
-                    <td className="px-2 py-2.5">
-                      {detailPath ? (
-                        <Link
-                          to={detailPath}
-                          className="inline-flex items-center gap-1.5 hover:underline"
-                        >
-                          <TriggerTypeBadge type={row.triggerType} />
-                          {row.triggerSource && (
-                            <span className="text-xs text-slate-600 dark:text-slate-400">
-                              {row.triggerSource}
-                            </span>
-                          )}
-                        </Link>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5">
-                          <TriggerTypeBadge type={row.triggerType} />
-                          {row.triggerSource && (
-                            <span className="text-xs text-slate-600 dark:text-slate-400">
-                              {row.triggerSource}
-                            </span>
-                          )}
-                        </span>
-                      )}
+                      <span className="inline-flex items-center gap-1.5">
+                        <span
+                          className={`w-2 h-2 rounded-full shrink-0 ${STATUS_DOT_COLOR[row.result] ?? "bg-slate-400"}`}
+                          title={STATUS_LABEL[row.result] ?? row.result}
+                        />
+                        {fmtSmartTime(row.ts)}
+                      </span>
                     </td>
 
                     {/* Instance — full instanceId, colored like its agent */}
@@ -284,6 +274,50 @@ export function ActivityPage() {
                       ) : (
                         <span className="text-slate-400 text-xs">{"\u2014"}</span>
                       )}
+                      {/* Mobile-only trigger display */}
+                      <div className="sm:hidden mt-0.5">
+                        {detailPath ? (
+                          <Link to={detailPath} className="inline-flex items-center gap-1 hover:underline">
+                            <TriggerTypeBadge type={row.triggerType} />
+                            {row.triggerSource && (
+                              <span className="text-xs text-slate-500 dark:text-slate-400">{row.triggerSource}</span>
+                            )}
+                          </Link>
+                        ) : (
+                          <span className="inline-flex items-center gap-1">
+                            <TriggerTypeBadge type={row.triggerType} />
+                            {row.triggerSource && (
+                              <span className="text-xs text-slate-500 dark:text-slate-400">{row.triggerSource}</span>
+                            )}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Trigger — links to trigger detail (hidden on mobile) */}
+                    <td className="hidden sm:table-cell px-2 py-2.5">
+                      {detailPath ? (
+                        <Link
+                          to={detailPath}
+                          className="inline-flex items-center gap-1.5 hover:underline"
+                        >
+                          <TriggerTypeBadge type={row.triggerType} />
+                          {row.triggerSource && (
+                            <span className="text-xs text-slate-600 dark:text-slate-400">
+                              {row.triggerSource}
+                            </span>
+                          )}
+                        </Link>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5">
+                          <TriggerTypeBadge type={row.triggerType} />
+                          {row.triggerSource && (
+                            <span className="text-xs text-slate-600 dark:text-slate-400">
+                              {row.triggerSource}
+                            </span>
+                          )}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 );
@@ -291,7 +325,7 @@ export function ActivityPage() {
               {rows.length === 0 && !loading && (
                 <tr>
                   <td
-                    colSpan={4}
+                    colSpan={3}
                     className="px-4 py-8 text-center text-slate-500 dark:text-slate-400"
                   >
                     No activity found
@@ -301,7 +335,7 @@ export function ActivityPage() {
               {loading && rows.length === 0 && (
                 <tr>
                   <td
-                    colSpan={4}
+                    colSpan={3}
                     className="px-4 py-8 text-center text-slate-500 dark:text-slate-400"
                   >
                     Loading...
