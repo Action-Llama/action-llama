@@ -2,6 +2,7 @@ import { loadGlobalConfig } from "../shared/config.js";
 import type { GlobalConfig } from "../shared/config.js";
 import { createLogger, createFileOnlyLogger } from "../shared/logger.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
+import { buildTriggerLabels } from "../tui/status-tracker.js";
 import type { PromptSkills } from "../agents/prompt.js";
 import { CONSTANTS } from "../shared/constants.js";
 import { createContainerRuntime, buildAgentImages } from "../execution/runtime-factory.js";
@@ -50,6 +51,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   // Register agents early so the TUI shows them during image builds
   for (const agentConfig of agentConfigs) {
     statusTracker?.registerAgent(agentConfig.name, agentConfig.scale ?? 1, agentConfig.description);
+    statusTracker?.setAgentTriggers(agentConfig.name, buildTriggerLabels(agentConfig));
   }
 
   // === Phase 2: Create persistence layer (database, stores, work queue) ===

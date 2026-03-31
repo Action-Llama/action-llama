@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useStatusStream } from "../hooks/StatusStreamContext";
-import { StateBadge } from "../components/Badge";
+import { StateBadge, TriggerBadge } from "../components/Badge";
 import {
   triggerAgent,
   killAgentInstances,
@@ -296,6 +296,14 @@ export function DashboardPage() {
                         {agent.name}
                       </span>
                     </Link>
+                    {/* Trigger badges (schedule, webhook labels) */}
+                    {(agent.triggers?.length ?? 0) > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-0.5">
+                        {agent.triggers!.map((t) => (
+                          <TriggerBadge key={t} label={t} />
+                        ))}
+                      </div>
+                    )}
                     {/* Description under name on small screens */}
                     {agent.description && (
                       <div className="lg:hidden text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">

@@ -13,6 +13,7 @@ import type { GlobalConfig, AgentConfig } from "../shared/config.js";
 import type { Runtime } from "../docker/runtime.js";
 import { isContainerRuntime } from "../docker/runtime.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
+import { buildTriggerLabels } from "../tui/status-tracker.js";
 import type { Logger } from "../shared/logger.js";
 import type { PromptSkills } from "../agents/prompt.js";
 import type { WebhookRegistry } from "../webhooks/registry.js";
@@ -175,6 +176,7 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
 
     const scale = agentConfig.scale ?? 1;
     ctx.statusTracker?.registerAgent(agentName, scale, agentConfig.description);
+    ctx.statusTracker?.setAgentTriggers(agentName, buildTriggerLabels(agentConfig));
 
     if (scale === 0) {
       ctx.agentConfigs.push(agentConfig);
@@ -316,6 +318,7 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
 
     // Update description in status tracker (may have changed in SKILL.md frontmatter)
     ctx.statusTracker?.setAgentDescription(agentName, newConfig.description);
+    ctx.statusTracker?.setAgentTriggers(agentName, buildTriggerLabels(newConfig));
 
     // Detect runtime config changes and update the agentRuntimeOverrides if needed.
     // This ensures that when [runtime] settings change (e.g. groups = ["docker"] is added),
