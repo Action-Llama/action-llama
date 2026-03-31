@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { SpanKind } from "@opentelemetry/api";
+import { SpanKind, propagation, context } from "@opentelemetry/api";
 import { TelemetryManager, initTelemetry, getTelemetry, createSpan, withSpan } from "../../src/telemetry/index.js";
 import type { TelemetryConfig } from "../../src/telemetry/types.js";
 
@@ -495,5 +495,74 @@ describe("TelemetryManager — initialized provider paths", () => {
     });
     expect(result).toBe("done");
     await instance.shutdown();
+  });
+
+  it("setSpanStatus catches exception from span.setAttribute and warns", async () => {
+    const { mockProvider, mockSpan } = makeInitializedManager();
+    const config: TelemetryConfig = { enabled: true, provider: "otel" };
+
+    const { globalRegistry } = await import("../../src/extensions/registry.js");
+    vi.spyOn(globalRegistry, "getTelemetryExtension").mockReturnValue({ provider: mockProvider } as any);
+
+    telemetry = new TelemetryManager(config);
+    await telemetry.init();
+
+    // Make span.setAttribute throw to trigger the catch block
+    mockSpan.setAttribute.mockImplementation(() => { throw new Error("span attribute error"); });
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const span = telemetry.createSpan("test.span");
+      // setSpanStatus with "timeout" calls span.setAttribute → should throw → caught
+      telemetry.setSpanStatus(span, "timeout");
+      expect(warnSpy).toHaveBeenCalledWith("Failed to set span status:", expect.any(Error));
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("getActiveContext catches exception from propagation.inject and returns undefined", async () => {
+    const { mockProvider } = makeInitializedManager();
+    const config: TelemetryConfig = { enabled: true, provider: "otel" };
+
+    const { globalRegistry } = await import("../../src/extensions/registry.js");
+    vi.spyOn(globalRegistry, "getTelemetryExtension").mockReturnValue({ provider: mockProvider } as any);
+
+    telemetry = new TelemetryManager(config);
+    await telemetry.init();
+
+    // Make propagation.inject throw
+    const injectSpy = vi.spyOn(propagation, "inject").mockImplementation(() => { throw new Error("inject error"); });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const ctx = telemetry.getActiveContext();
+      expect(ctx).toBeUndefined();
+      expect(warnSpy).toHaveBeenCalledWith("Failed to get active context:", expect.any(Error));
+    } finally {
+      injectSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("setTraceContext catches exception from propagation.extract and warns", async () => {
+    const { mockProvider } = makeInitializedManager();
+    const config: TelemetryConfig = { enabled: true, provider: "otel" };
+
+    const { globalRegistry } = await import("../../src/extensions/registry.js");
+    vi.spyOn(globalRegistry, "getTelemetryExtension").mockReturnValue({ provider: mockProvider } as any);
+
+    telemetry = new TelemetryManager(config);
+    await telemetry.init();
+
+    // Make propagation.extract throw
+    const extractSpy = vi.spyOn(propagation, "extract").mockImplementation(() => { throw new Error("extract error"); });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      telemetry.setTraceContext("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
+      expect(warnSpy).toHaveBeenCalledWith("Failed to set trace context:", expect.any(Error));
+    } finally {
+      extractSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
   });
 });
