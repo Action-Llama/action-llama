@@ -610,3 +610,42 @@ describe("webhook routes – additional paths", () => {
     });
   });
 });
+
+describe("webhook routes – body read failure", () => {
+  function buildApp(providers: WebhookProvider[], opts: { bindings?: Array<{ agentName: string; source: string; trigger: () => boolean }> } = {}) {
+    const app = new Hono();
+    const logger = mockLogger();
+    const registry = new WebhookRegistry(logger);
+    for (const p of providers) registry.registerProvider(p);
+    for (const b of opts.bindings ?? []) {
+      registry.addBinding({ agentName: b.agentName, type: b.source, trigger: b.trigger });
+    }
+    registerWebhookRoutes(app, registry, {}, {}, logger, undefined, undefined);
+    return { app };
+  }
+
+  it("returns 400 when c.req.text() throws (body read error, stmts 38-40)", async () => {
+    const { app } = buildApp([new TestProvider()], {
+      bindings: [{ agentName: "test-agent", source: "test", trigger: () => true }],
+    });
+
+    // Create a request with a body stream that errors when read
+    const errorStream = new ReadableStream({
+      start(controller) {
+        controller.error(new Error("simulated body read failure"));
+      },
+    });
+
+    const req = new Request("http://localhost/webhooks/test", {
+      method: "POST",
+      body: errorStream,
+      // @ts-ignore — duplex required for streaming in some environments
+      duplex: "half",
+    });
+
+    const res = await app.request(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("failed to read request body");
+  });
+});
