@@ -1,5 +1,13 @@
 # @action-llama/frontend
 
+## 0.19.1
+
+### Patch Changes
+
+- [`149d155`](https://github.com/Action-Llama/action-llama/commit/149d15507af12e6d3017a7ea47eaab82ef380a93) Thanks [@asselstine](https://github.com/asselstine)! - Collapse "Instance" and "Trigger" columns into a single "Description" column in the activity table. Agent activity rows now show the agent name with the trigger badge underneath; dead letter rows show only the trigger. Webhook trigger badges now display detailed event info (e.g. "github issues opened" instead of just "github") by enriching activity rows with the webhook receipt's event summary.
+
+- [`32a58c6`](https://github.com/Action-Llama/action-llama/commit/32a58c6fc258e17a80130e3a37e25aa382b146a4) Thanks [@asselstine](https://github.com/asselstine)! - Move agent status dot from inline (next to name) to its own column with a running/available count displayed as a compact fraction. Fixes alignment between agent name and trigger badges.
+
 ## 0.19.0
 
 ### Minor Changes
