@@ -143,4 +143,59 @@ describe.skipIf(!DOCKER)("integration: webhooks", { timeout: 180_000 }, () => {
     const responderRun = await harness.waitForRunResult("responder");
     expect(responderRun.result).toBe("completed");
   });
+
+  it("GET /webhooks/:source returns 404 when source does not support CRC challenge", async () => {
+    // The GET /webhooks/:source route handles CRC challenge-response handshakes
+    // (only supported by the Twitter provider). For all other webhook sources
+    // (like the test provider), it should return 404.
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "crc-test-agent",
+          webhooks: [{ source: "test-crc" }],
+          testScript: "#!/bin/sh\nexit 0\n",
+        },
+      ],
+      globalConfig: {
+        webhooks: { "test-crc": { type: "test" } },
+      },
+    });
+
+    await harness.start();
+
+    // The test provider does not implement handleCrcChallenge, so GET should return 404
+    const res = await fetch(
+      `http://127.0.0.1:${harness.gatewayPort}/webhooks/test-crc?crc_token=some_token`,
+    );
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toContain("CRC not supported");
+  });
+
+  it("GET /webhooks/:source returns 404 for a completely unknown source", async () => {
+    // When no provider is registered for the given source, the GET CRC
+    // challenge route also returns 404.
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "crc-unknown-agent",
+          webhooks: [{ source: "test-hook" }],
+          testScript: "#!/bin/sh\nexit 0\n",
+        },
+      ],
+      globalConfig: {
+        webhooks: { "test-hook": { type: "test" } },
+      },
+    });
+
+    await harness.start();
+
+    // "totally-unknown-source" has no registered provider
+    const res = await fetch(
+      `http://127.0.0.1:${harness.gatewayPort}/webhooks/totally-unknown-source?crc_token=x`,
+    );
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toContain("CRC not supported");
+  });
 });

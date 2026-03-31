@@ -61,3 +61,4 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Scheduler config validation — pi_auth rejected in container mode (ConfigError), api_key accepted (scheduler-validation.test.ts)
 - [x] Manual trigger with custom prompt body — POST /control/trigger/:name with prompt field passes text to container PROMPT env var, verified in test-script (control.test.ts)
 - [x] Kill specific instance by instanceId — POST /control/kill/:instanceId kills exactly the targeted runner, 404 for nonexistent instanceId (control.test.ts)
+- [x] Webhook CRC challenge GET route — GET /webhooks/:source returns 404 when provider doesn't support CRC, 404 for unknown source (webhooks.test.ts)
