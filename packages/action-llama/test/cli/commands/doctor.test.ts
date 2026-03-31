@@ -404,7 +404,8 @@ describe("doctor", () => {
 
   it("shows [ok] and skips prompting when credential exists in promptCredentials (non-checkOnly)", async () => {
     // This exercises the promptCredentials() path (not checkCredentials()),
-    // covering loadCredentialFields() when credentialExists returns true.
+    // specifically the `def.fields.filter((f) => f.optional && ...)` branch
+    // which requires loadCredentialFields() to return a truthy value (existing fields).
     mockDiscoverAgents.mockReturnValue(["dev"]);
     mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["github_token"] });
     mockResolveCredential.mockReturnValue({
@@ -413,11 +414,33 @@ describe("doctor", () => {
       fields: [{ name: "token" }],
     });
     mockCredentialExists.mockReturnValue(true);
-    // loadCredentialFields returns existing fields (token is present, no optional fields missing)
-    // The default mock in vi.mock returns undefined, which means missingOptional = []
-    // so we fall into the "[ok]" branch and continue without prompting.
 
-    const output = await captureLog(() => execute({ project: "." }));
+    // Override loadCredentialFields to return existing fields so `existing` is truthy
+    // This exercises the ternary: `existing ? def.fields.filter(...) : []`
+    vi.mock("../../../src/shared/credentials.js", () => ({
+      parseCredentialRef: (ref: string) => {
+        const sep = ref.indexOf(":");
+        if (sep === -1) return { type: ref, instance: "default" };
+        return { type: ref.slice(0, sep).trim(), instance: ref.slice(sep + 1).trim() };
+      },
+      credentialExists: (...args: any[]) => mockCredentialExists(...args),
+      listCredentialInstances: (...args: any[]) => mockListCredentialInstances(...args),
+      writeCredentialFields: (...args: any[]) => mockWriteCredentialFields(...args),
+      loadCredentialField: () => undefined,
+      loadCredentialFields: () => ({ token: "existing-token" }),
+      writeCredentialField: () => {},
+      backendLoadField: () => Promise.resolve(undefined),
+      backendLoadFields: () => Promise.resolve(undefined),
+      backendCredentialExists: (...args: any[]) => Promise.resolve(mockCredentialExists(...args)),
+      backendListInstances: (...args: any[]) => Promise.resolve(mockListCredentialInstances(...args)),
+      backendRequireCredentialRef: () => Promise.resolve(),
+      getDefaultBackend: () => {},
+      setDefaultBackend: () => {},
+      resetDefaultBackend: () => {},
+    }));
+
+    const { execute: freshExecute } = await import("../../../src/cli/commands/doctor.js");
+    const output = await captureLog(() => freshExecute({ project: "." }));
     expect(output).toContain("[ok] GitHub Token");
     expect(mockPromptCredential).not.toHaveBeenCalled();
   });
