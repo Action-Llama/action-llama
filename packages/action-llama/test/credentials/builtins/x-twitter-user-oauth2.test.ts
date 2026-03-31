@@ -515,4 +515,53 @@ describe("x_twitter_user_oauth2 credential", () => {
       vi.useRealTimers();
     });
   });
+
+  describe("PKCE flow — shutdown with active connections (line 103 coverage)", () => {
+    it("calls sock.destroy() on each active connection when the OAuth flow errors (covers shutdown body)", async () => {
+      // Build a mock socket that we can spy on
+      const mockSockDestroy = vi.fn();
+      const mockSock = {
+        destroy: mockSockDestroy,
+        on: vi.fn(), // sock.on("close", ...) — we don't care about this in this test
+      };
+
+      let localHandler: ((req: any, res: any) => void) | null = null;
+
+      // Override createServer for this one call so the "connection" event
+      // handler fires synchronously with our mock socket.
+      vi.mocked(createServer).mockImplementationOnce((handler: any) => {
+        localHandler = handler;
+        return {
+          // When the server registers a "connection" listener, immediately
+          // call it with mockSock so that connections.add(mockSock) runs.
+          on: vi.fn((event: string, cb: (...args: any[]) => void) => {
+            if (event === "connection") {
+              cb(mockSock);
+            }
+          }),
+          close: vi.fn(),
+          listen: vi.fn((_port: number, _host: string, listenCb: () => void) => {
+            listenCb(); // run the listen callback (opens browser, etc.)
+            // Immediately fire an error callback so the flow rejects and calls shutdown()
+            localHandler!(
+              { url: "/callback?error=test_conn_cleanup" },
+              { writeHead: vi.fn(), end: vi.fn() }
+            );
+          }),
+        };
+      });
+
+      mockedPassword
+        .mockResolvedValueOnce("test-cid" as any)
+        .mockResolvedValueOnce("test-csec" as any);
+
+      await expect(
+        xTwitterUserOauth2.prompt!({})
+      ).rejects.toThrow("OAuth 2.0 authorization error: test_conn_cleanup");
+
+      // shutdown() ran and iterated over connections — sock.destroy() must have
+      // been called exactly once (covers the for-loop body at line 103).
+      expect(mockSockDestroy).toHaveBeenCalledTimes(1);
+    });
+  });
 });
