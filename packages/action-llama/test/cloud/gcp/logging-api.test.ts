@@ -57,6 +57,14 @@ describe("listLogEntries", () => {
     expect(body.orderBy).toBe("timestamp desc");
   });
 
+  it("includes pageToken in request body when provided", async () => {
+    mockFetch.mockResolvedValueOnce(mockOkResponse({ entries: [] }));
+    await listLogEntries(mockAuth, PROJECT, "filter", 50, "timestamp asc", "next-page-token");
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.pageToken).toBe("next-page-token");
+  });
+
   it("returns entries from response", async () => {
     const entries = [
       { textPayload: "Hello", timestamp: "2026-01-01T00:00:00Z" },
