@@ -1,5 +1,31 @@
 # @action-llama/frontend
 
+## 0.19.0
+
+### Minor Changes
+
+- [#471](https://github.com/Action-Llama/action-llama/pull/471) [`3c448cf`](https://github.com/Action-Llama/action-llama/commit/3c448cf6a022f19f5142238b0e6b8484cd1e284d) Thanks [@asselstine](https://github.com/asselstine)! - Refactor agent pages into a tabbed layout with Activity, Stats, and Settings tabs. The agent header (name, state, Run/Kill buttons) is now shared via a new AgentLayout component and stays fixed across all tabs. This eliminates the page title jumping issue and provides cleaner navigation. The /admin route now redirects to /settings.
+
+- [#470](https://github.com/Action-Llama/action-llama/pull/470) [`76b70eb`](https://github.com/Action-Llama/action-llama/commit/76b70ebdec295e6d0e763b34aae5f0de44909831) Thanks [@asselstine](https://github.com/asselstine)! - Add top-level Stats page with per-agent token usage bar charts sorted by highest to lowest usage. Remove token usage bar from Dashboard page.
+
+### Patch Changes
+
+- [#460](https://github.com/Action-Llama/action-llama/pull/460) [`5bfa405`](https://github.com/Action-Llama/action-llama/commit/5bfa4055df89d3a9675105320ece880540c26a5e) Thanks [@asselstine](https://github.com/asselstine)! - Activity page UI tweaks: replace status column with colored dot on timestamp, reorder columns to Time → Instance → Trigger, hide trigger column on mobile with inline display below agent name
+
+- [#469](https://github.com/Action-Llama/action-llama/pull/469) [`97d35cc`](https://github.com/Action-Llama/action-llama/commit/97d35cc403e9bc3c2dee27f7784273ebe6ab37dc) Thanks [@asselstine](https://github.com/asselstine)! - Agent index page: replace State column with inline status dot next to agent name and add row background tinting by state
+
+- [#458](https://github.com/Action-Llama/action-llama/pull/458) [`736732f`](https://github.com/Action-Llama/action-llama/commit/736732f15979eb74dd4a40dc4beee043dede05d1) Thanks [@asselstine](https://github.com/asselstine)! - Remove colored dot indicator from agent name displays throughout the Web UI
+
+- [#463](https://github.com/Action-Llama/action-llama/pull/463) [`18c1eb7`](https://github.com/Action-Llama/action-llama/commit/18c1eb794f431d221121610236eae476e2051d95) Thanks [@asselstine](https://github.com/asselstine)! - Remove the runs table from the agent stats page, keeping only the summary stat cards.
+
+- [#465](https://github.com/Action-Llama/action-llama/pull/465) [`2c9ea22`](https://github.com/Action-Llama/action-llama/commit/2c9ea22d22d8a0d856002cc586bc90930abc7f8a) Thanks [@asselstine](https://github.com/asselstine)! - Unify webhook display: use provider-colored TriggerBadge everywhere
+
+  - Fix webhook trigger source to store provider name (e.g. "github") instead of event type (e.g. "issues") in scheduler, watcher, and execution
+  - Fix pending queue item source access in stats route (ctx.context?.source)
+  - Add getWebhookSourcesBatch() to StatsStore for enriching historical webhook rows
+  - Add "manual" and "agent" color variants to TriggerBadge
+  - Refactor ActivityTable to use TriggerBadge (source-colored) instead of TriggerTypeBadge, shared across Activity page and agent detail page
+
 ## 0.18.0
 
 ### Minor Changes

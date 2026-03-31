@@ -1,5 +1,23 @@
 # @action-llama/action-llama
 
+## 0.23.1
+
+### Patch Changes
+
+- [`cd179f5`](https://github.com/Action-Llama/action-llama/commit/cd179f5834276a4e877d364626c15a3f96ff7d4d) Thanks [@asselstine](https://github.com/asselstine)! - Fix "Trigger not found" on the trigger detail page for running webhook-triggered instances. The endpoint now falls back to the status tracker when a run hasn't been written to the database yet.
+
+- [`20d1059`](https://github.com/Action-Llama/action-llama/commit/20d1059b44b61b83da677823f86a2b605d97cb04) Thanks [@asselstine](https://github.com/asselstine)! - Skip E2E tests on pull requests so they are not required checks. E2E tests still run on push to main and manual workflow dispatch.
+
+- [#466](https://github.com/Action-Llama/action-llama/pull/466) [`da4503e`](https://github.com/Action-Llama/action-llama/commit/da4503eaa4688fe43aba0ba00c54e7a738e71975) Thanks [@asselstine](https://github.com/asselstine)! - Sort agent activity feed by status group (pending → running → completed/error) then by timestamp descending within each group. Also removes the status badge from the agent detail page header since the activity table provides sufficient status information. Closes [#464](https://github.com/Action-Llama/action-llama/issues/464).
+
+- [#465](https://github.com/Action-Llama/action-llama/pull/465) [`2c9ea22`](https://github.com/Action-Llama/action-llama/commit/2c9ea22d22d8a0d856002cc586bc90930abc7f8a) Thanks [@asselstine](https://github.com/asselstine)! - Unify webhook display: use provider-colored TriggerBadge everywhere
+
+  - Fix webhook trigger source to store provider name (e.g. "github") instead of event type (e.g. "issues") in scheduler, watcher, and execution
+  - Fix pending queue item source access in stats route (ctx.context?.source)
+  - Add getWebhookSourcesBatch() to StatsStore for enriching historical webhook rows
+  - Add "manual" and "agent" color variants to TriggerBadge
+  - Refactor ActivityTable to use TriggerBadge (source-colored) instead of TriggerTypeBadge, shared across Activity page and agent detail page
+
 ## 0.23.0
 
 ### Minor Changes
