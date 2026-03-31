@@ -198,4 +198,27 @@ describe("sentry_token credential", () => {
       });
     });
   });
+
+  describe("password prompt validate callback", () => {
+    it("validate callback returns true for non-empty token and error message for empty", async () => {
+      mockedConfirm.mockResolvedValueOnce(true as any);
+      mockedCheckbox.mockResolvedValue(["web"] as any);
+
+      let capturedValidate: ((v: string) => string | true | Promise<string | true>) | undefined;
+      mockedPassword.mockImplementation(({ validate }: { validate: (v: string) => string | true | Promise<string | true> }) => {
+        capturedValidate = validate;
+        return Promise.resolve("sntrys_test-token" as any);
+      });
+
+      await sentryToken.prompt!(undefined);
+
+      expect(capturedValidate).toBeDefined();
+      // Non-empty token should return true
+      expect(capturedValidate!("valid-token")).toBe(true);
+      // Empty / whitespace token should return error message
+      const emptyResult = capturedValidate!("   ");
+      expect(typeof emptyResult).toBe("string");
+      expect(emptyResult).not.toBe(true);
+    });
+  });
 });

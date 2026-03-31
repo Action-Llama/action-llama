@@ -64,6 +64,13 @@ describe("CustomProvider", () => {
       const provider = new CustomProvider(makeConfig());
       await expect(provider.init()).resolves.toBeUndefined();
     });
+
+    it("throws when baseUrl is cleared after construction", async () => {
+      const provider = new CustomProvider(makeConfig());
+      // Simulate state where baseUrl is unset after construction (defensive code path)
+      (provider as any).baseUrl = undefined;
+      await expect(provider.init()).rejects.toThrow("Custom provider requires baseUrl configuration");
+    });
   });
 
   describe("validateConfig", () => {

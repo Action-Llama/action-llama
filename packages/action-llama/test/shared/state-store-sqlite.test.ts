@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -107,5 +107,19 @@ describe("SqliteStateStore", () => {
     expect(removed).toBe(1);
     expect(await store.get("ns", "alive")).toBe("here");
     await store.close();
+  });
+
+  it("calls unref on the sweep timer when available", async () => {
+    const unrefSpy = vi.fn();
+    const origSetInterval = globalThis.setInterval;
+    // Override setInterval to return a timer with a spy on unref
+    const fakeTimer = { unref: unrefSpy } as any;
+    vi.spyOn(globalThis, "setInterval" as any).mockReturnValueOnce(fakeTimer);
+
+    const store = createStore();
+
+    expect(unrefSpy).toHaveBeenCalledOnce();
+    await store.close();
+    vi.restoreAllMocks();
   });
 });

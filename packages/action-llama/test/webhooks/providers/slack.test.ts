@@ -292,6 +292,13 @@ describe("SlackWebhookProvider", () => {
       expect(provider.matchesFilter(contextNoChannel, filter)).toBe(false);
     });
 
+    it("does not match channel filter when comment does not have channel: prefix", () => {
+      // comment is set but doesn't match the "channel:<id>" format
+      const contextBadComment = { ...context, comment: "general" };
+      const filter: SlackWebhookFilter = { channels: ["C789"] };
+      expect(provider.matchesFilter(contextBadComment, filter)).toBe(false);
+    });
+
     it("matches with combined filters all passing", () => {
       const filter: SlackWebhookFilter = {
         events: ["message"],
