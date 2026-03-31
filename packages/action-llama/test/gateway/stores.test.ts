@@ -32,15 +32,15 @@ describe("createGatewayStores", () => {
   });
 
   it("creates sessionStore when stateStore is provided", async () => {
-    // Use an in-memory SQLite state store
-    const { InMemoryStateStore } = await import("../../src/shared/persistence/in-memory.js").catch(
-      () => ({ InMemoryStateStore: undefined })
-    );
-    if (!InMemoryStateStore) {
-      // Skip if InMemoryStateStore is not available
-      return;
-    }
-    const stateStore = new InMemoryStateStore();
+    // Create a minimal in-memory StateStore implementation
+    const stateStore = {
+      get: async () => null,
+      set: async () => {},
+      delete: async () => {},
+      deleteAll: async () => {},
+      list: async () => [],
+      close: async () => {},
+    };
     const stores = await createGatewayStores({ lockTimeout: 30_000, stateStore });
     expect(stores.sessionStore).toBeDefined();
   });

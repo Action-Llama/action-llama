@@ -83,4 +83,16 @@ describe("oauth1AuthorizationHeader", () => {
     const header = oauth1AuthorizationHeader(params);
     expect(header).toContain("key%20with%20spaces%21");
   });
+
+  it("sorts params with same key by value (duplicate query param keys)", () => {
+    // Duplicate query keys trigger the a[0] === b[0] branch in the sort comparator
+    const params = {
+      ...baseParams,
+      url: "https://api.twitter.com/1.1/test.json?status=hello&status=world",
+    };
+    // Should not throw; just verify we get a valid OAuth header
+    const header = oauth1AuthorizationHeader(params);
+    expect(header).toMatch(/^OAuth /);
+    expect(header).toContain("oauth_signature=");
+  });
 });
