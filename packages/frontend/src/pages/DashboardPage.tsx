@@ -10,7 +10,6 @@ import {
 } from "../lib/api";
 import type { AgentStatus } from "../lib/api";
 import { RunModal } from "../components/RunModal";
-import { fmtTokens, fmtSessionTime } from "../lib/format";
 import { agentHueStyle } from "../lib/color";
 
 function formatScale(agent: AgentStatus): string {
@@ -123,11 +122,6 @@ export function DashboardPage() {
     return () => clearTimeout(debounceRef.current);
   }, [searchQuery]);
 
-  const totalTokens = agents.reduce(
-    (sum, a) => sum + (a.cumulativeUsage?.totalTokens ?? 0),
-    0,
-  );
-
   const handleAction = useCallback(
     async (fn: () => Promise<unknown>) => {
       setActionError(null);
@@ -187,47 +181,6 @@ export function DashboardPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">Agents</h1>
       </div>
-
-      {/* Token usage bar */}
-      {totalTokens > 0 && (
-        <div className="hidden md:block bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-3">
-          <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-            Token Usage by Agent{schedulerInfo?.startedAt ? ` (${fmtSessionTime(schedulerInfo.startedAt)})` : ""}
-          </div>
-          <div className="flex h-3 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-800">
-            {agents
-              .filter((a) => (a.cumulativeUsage?.totalTokens ?? 0) > 0)
-              .map((a) => {
-                const pct =
-                  ((a.cumulativeUsage?.totalTokens ?? 0) / totalTokens) * 100;
-                return (
-                  <div
-                    key={a.name}
-                    className="agent-color-bg transition-all"
-                    style={{ width: `${pct}%`, ...agentHueStyle(a.name, agentNames) }}
-                    title={`${a.name}: ${fmtTokens(a.cumulativeUsage?.totalTokens ?? 0)}`}
-                  />
-                );
-              })}
-          </div>
-          <div className="flex flex-wrap gap-3 mt-2">
-            {agents
-              .filter((a) => (a.cumulativeUsage?.totalTokens ?? 0) > 0)
-              .map((a) => (
-                  <span
-                    key={a.name}
-                    className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400"
-                  >
-                    <span className="agent-color-text" style={agentHueStyle(a.name, agentNames)}>
-                      {a.name}
-                    </span>
-                    :{" "}
-                    {fmtTokens(a.cumulativeUsage?.totalTokens ?? 0)}
-                  </span>
-                ))}
-          </div>
-        </div>
-      )}
 
       {/* Agents table — full width */}
       <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
