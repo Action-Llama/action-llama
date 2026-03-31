@@ -1,4 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+// Mock GCP auth module for cloudRunDockerExtension.init tests
+vi.mock("../../src/cloud/gcp/auth.js", () => ({
+  GcpAuth: class MockGcpAuth {
+    constructor(public key: any) {}
+    async getAccessToken() { return "mock-token"; }
+  },
+  parseServiceAccountKey: (json: string) => JSON.parse(json),
+}));
 import {
   localDockerExtension,
   sshDockerExtension,
@@ -187,6 +196,31 @@ describe("cloudRunDockerExtension", () => {
   describe("init", () => {
     it("resolves without error when no config is provided", async () => {
       await expect(cloudRunDockerExtension.init()).resolves.toBeUndefined();
+    });
+
+    it("initializes provider when all required config is provided", async () => {
+      const keyJson = JSON.stringify({
+        type: "service_account",
+        project_id: "my-project",
+        private_key_id: "key-id",
+        private_key: "-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----\n",
+        client_email: "sa@my-project.iam.gserviceaccount.com",
+        client_id: "123",
+        auth_uri: "https://accounts.google.com/o/oauth2/auth",
+        token_uri: "https://oauth2.googleapis.com/token",
+      });
+
+      await cloudRunDockerExtension.init({
+        keyJson,
+        project: "my-project",
+        region: "us-central1",
+        artifactRegistry: "my-repo",
+        serviceAccount: "sa@my-project.iam.gserviceaccount.com",
+      });
+
+      // Provider should now be set (not null)
+      expect(cloudRunDockerExtension.provider).toBeDefined();
+      expect(cloudRunDockerExtension.provider).not.toBeNull();
     });
   });
 
