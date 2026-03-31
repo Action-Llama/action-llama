@@ -889,4 +889,29 @@ describe("pushToServer — additional coverage paths", () => {
     expect(outputLines.some((l) => l.includes("Starting action-llama service"))).toBe(true);
     expect(outputLines.some((l) => l.includes("Build complete"))).toBe(true);
   });
+
+  it("resolveFrontendDist returns null when bundled frontend index.html is absent", async () => {
+    // Override existsSync to return false for index.html paths → resolveFrontendDist returns null
+    mockExistsSync.mockImplementation((path: string) => {
+      if (String(path).endsWith("index.html")) return false;
+      if (String(path).endsWith(".env.toml")) return false;
+      return true; // credential files exist
+    });
+
+    mockSshExec.mockResolvedValue("ok"); // health check succeeds
+
+    // Should complete without error (frontendDist = null → no frontend rsync)
+    await pushToServer({
+      projectPath: "/tmp/project",
+      serverConfig: { host: "h" },
+      globalConfig: {},
+      envName: "my-server",
+    });
+
+    // Verify no frontend rsync was attempted
+    const frontendRsync = mockRsyncTo.mock.calls.find(([, , dest]: any) =>
+      typeof dest === "string" && dest.includes("frontend")
+    );
+    expect(frontendRsync).toBeUndefined();
+  });
 });
