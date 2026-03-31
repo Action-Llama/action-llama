@@ -813,5 +813,165 @@ describe("startScheduler", () => {
       const buildIdx = callOrder.indexOf("buildAgentImages");
       expect(bindIdx).toBeLessThan(buildIdx);
     });
+
+    it("skips registerWebhookBindings for agents without webhooks configured", async () => {
+      // Add a second agent WITHOUT webhooks to the project
+      const agentDir2 = resolve(tmpDir, "agents", "reviewer");
+      mkdirSync(agentDir2, { recursive: true });
+      writeAgentConfig(agentDir2, {
+        name: "reviewer",
+        credentials: ["github_token"],
+        models: ["sonnet"],
+        schedule: "*/5 * * * *",
+        // No webhooks field
+      });
+      mkdirSync(resolve(tmpDir, ".al", "state", "reviewer"), { recursive: true });
+
+      mockSetupWebhookRegistry.mockResolvedValue({
+        registry: { bind: vi.fn(), unbind: vi.fn() },
+        secrets: {},
+      });
+
+      await startScheduler(tmpDir);
+
+      // registerWebhookBindings should only be called for "dev" (the agent with webhooks)
+      // NOT for "reviewer" (no webhooks configured)
+      expect(mockRegisterWebhookBindings).toHaveBeenCalledTimes(1);
+      const calledWith = mockRegisterWebhookBindings.mock.calls[0][0];
+      expect(calledWith.agentConfig.name).toBe("dev");
+    });
+
+    it("queues webhook directly when onTrigger fires before schedulerCtx is ready", async () => {
+      const fakeWebhookContext = {
+        event: "push",
+        action: "created",
+        receiptId: "test-receipt-123",
+        payload: { ref: "refs/heads/main" },
+      };
+
+      mockSetupWebhookRegistry.mockResolvedValue({
+        registry: { bind: vi.fn(), unbind: vi.fn() },
+        secrets: {},
+      });
+
+      // Make registerWebhookBindings call onTrigger immediately (before schedulerCtx is set)
+      mockRegisterWebhookBindings.mockImplementation((args: any) => {
+        // state.schedulerCtx is null at this point (set later in startScheduler)
+        args.onTrigger(args.agentConfig, fakeWebhookContext);
+      });
+
+      await startScheduler(tmpDir);
+
+      // The "webhook queued (agents building)" log should have been emitted
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agent: "dev",
+          event: "push",
+        }),
+        "webhook queued (agents building)"
+      );
+    });
+
+    it("queues webhook when dispatched after build but all runners are busy", async () => {
+      let capturedOnTrigger: ((config: any, context: any) => any) | undefined;
+      let capturedAgentConfig: any;
+
+      const fakeWebhookContext = {
+        event: "push",
+        action: "created",
+        receiptId: "test-receipt-456",
+        payload: { ref: "refs/heads/main" },
+      };
+
+      mockSetupWebhookRegistry.mockResolvedValue({
+        registry: { bind: vi.fn(), unbind: vi.fn() },
+        secrets: {},
+      });
+
+      // Capture the onTrigger callback without calling it immediately
+      mockRegisterWebhookBindings.mockImplementation((args: any) => {
+        capturedOnTrigger = args.onTrigger;
+        capturedAgentConfig = args.agentConfig;
+      });
+
+      // All runners busy
+      mockIsRunning = true;
+      await startScheduler(tmpDir);
+      vi.clearAllMocks();
+
+      // Now call the captured onTrigger — schedulerCtx is set, but runners are busy
+      // dispatchOrQueue returns { action: "queued" }
+      expect(capturedOnTrigger).toBeDefined();
+      const result = capturedOnTrigger!(capturedAgentConfig, fakeWebhookContext);
+
+      expect(result).toBe(true);
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agent: "dev",
+          event: "push",
+        }),
+        "webhook queued"
+      );
+    });
+  });
+
+  describe("cron queued with dropped event (line 211)", () => {
+    function setupSmallQueueProject(dir: string) {
+      const globalConfig = {
+        workQueueSize: 1, // tiny queue so the second enqueue drops the oldest
+        models: {
+          sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
+        },
+      };
+      writeFileSync(resolve(dir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
+
+      const agentDir = resolve(dir, "agents", "dev");
+      mkdirSync(agentDir, { recursive: true });
+      writeAgentConfig(agentDir, {
+        name: "dev",
+        credentials: ["github_token"],
+        models: ["sonnet"],
+        schedule: "*/5 * * * *",
+      });
+      mkdirSync(resolve(dir, ".al", "state", "dev"), { recursive: true });
+    }
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+      cronCallbacks.length = 0;
+      mockIsRunning = false;
+      tmpDir = mkdtempSync(join(tmpdir(), "al-sched-smallq-"));
+      setupSmallQueueProject(tmpDir);
+    });
+
+    it("logs a warning when the work queue drops the oldest event on overflow", async () => {
+      await startScheduler(tmpDir);
+      vi.clearAllMocks();
+
+      // All runners busy — work will be queued
+      mockIsRunning = true;
+
+      // First trigger — queue goes from 0 → 1 (at capacity), no drop
+      await cronCallbacks[0]();
+
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        expect.objectContaining({ agent: "dev" }),
+        "all runners busy, work queued"
+      );
+      expect(mockLoggerWarn).not.toHaveBeenCalledWith(
+        expect.objectContaining({ agent: "dev" }),
+        "queue full, oldest event dropped"
+      );
+
+      vi.clearAllMocks();
+
+      // Second trigger — queue is already at capacity (1), new item drops the oldest
+      await cronCallbacks[0]();
+
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        expect.objectContaining({ agent: "dev" }),
+        "queue full, oldest event dropped"
+      );
+    });
   });
 });
