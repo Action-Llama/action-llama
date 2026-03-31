@@ -290,7 +290,7 @@ export function DashboardPage() {
                         className="w-2 h-2 rounded-full shrink-0 agent-color-dot"
                         style={agentHueStyle(agent.name, agentNames)}
                       />
-                      <span className="agent-color-text truncate" style={agentHueStyle(agent.name, agentNames)}>
+                      <span className="agent-color-text truncate" style={{ fontSize: "16px", ...agentHueStyle(agent.name, agentNames) }}>
                         {agent.name}
                       </span>
                     </Link>

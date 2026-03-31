@@ -32,6 +32,7 @@ function Navbar() {
   }, [navigate]);
 
   const isSettings = location.pathname === "/dashboard/config";
+  const isAgents = location.pathname === "/dashboard" || location.pathname.startsWith("/dashboard/agents");
   const isActivity = location.pathname === "/activity";
 
   return (
@@ -43,6 +44,22 @@ function Navbar() {
             className="text-lg font-bold text-slate-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
           >
             Action Llama
+          </Link>
+          <Link
+            to="/dashboard"
+            className={`flex items-center gap-1.5 text-sm transition-colors ${
+              isAgents
+                ? "text-blue-600 dark:text-blue-400"
+                : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <rect x="3" y="4" width="18" height="12" rx="2" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+              <circle cx="9" cy="10" r="1.5" fill="currentColor" stroke="none" />
+              <circle cx="15" cy="10" r="1.5" fill="currentColor" stroke="none" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 20h8M12 16v4" />
+            </svg>
+            Agents
           </Link>
           <Link
             to="/activity"

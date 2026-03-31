@@ -77,6 +77,7 @@ export function registerSpaRoutes(app: Hono, frontendDist: string, logger: Logge
   app.get("/login", (c) => c.html(indexHtml));
   app.get("/dashboard", (c) => c.html(indexHtml));
   app.get("/dashboard/*", (c) => c.html(indexHtml));
+  app.get("/activity", (c) => c.html(indexHtml));
   app.get("/triggers", (c) => c.html(indexHtml));
   app.get("/jobs", (c) => c.html(indexHtml));
   app.get("/chat", (c) => c.html(indexHtml));

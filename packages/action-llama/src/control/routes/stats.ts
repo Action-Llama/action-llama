@@ -237,10 +237,11 @@ export function registerStatsRoutes(
     // Sort all rows by ts descending
     allRows.sort((a, b) => b.ts - a.ts);
 
-    // Apply status filter
+    // Apply status filter (supports comma-separated values, e.g. "pending,running,completed")
     let filtered = allRows;
     if (statusFilter && statusFilter !== "all") {
-      filtered = allRows.filter((r) => r.result === statusFilter);
+      const statuses = new Set(statusFilter.split(",").map((s: string) => s.trim()));
+      filtered = allRows.filter((r) => statuses.has(r.result));
     }
 
     const total = filtered.length;

@@ -65,3 +65,15 @@ export function fmtRelativeTime(ts: number | string): string {
   if (hours < 24) return `${hours}h ago`;
   return new Date(ts).toLocaleString();
 }
+
+/** Relative time if within cutoffHours, otherwise absolute datetime */
+export function fmtSmartTime(ts: number | string, cutoffHours = 6): string {
+  const ms = Date.now() - new Date(ts).getTime();
+  if (ms < 0 || ms >= cutoffHours * 3_600_000) return new Date(ts).toLocaleString();
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} min ago`;
+  const hours = Math.floor(min / 60);
+  return `${hours}h ago`;
+}

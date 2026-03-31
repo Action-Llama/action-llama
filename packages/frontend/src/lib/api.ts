@@ -320,12 +320,12 @@ export function getActivity(
   offset: number,
   agent?: string,
   triggerType?: string,
-  status?: string,
+  statuses?: string[],
 ): Promise<{ rows: ActivityRow[]; total: number }> {
   let url = `/api/stats/activity?limit=${limit}&offset=${offset}`;
   if (agent) url += `&agent=${encodeURIComponent(agent)}`;
   if (triggerType) url += `&triggerType=${encodeURIComponent(triggerType)}`;
-  if (status && status !== "all") url += `&status=${encodeURIComponent(status)}`;
+  if (statuses && statuses.length > 0) url += `&status=${statuses.map(encodeURIComponent).join(",")}`;
   return fetchJSON(url);
 }
 
