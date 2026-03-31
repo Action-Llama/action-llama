@@ -8,7 +8,8 @@
  *
  * Both endpoints are protected by the gateway API key.
  *
- * Covers: log API routes (not previously tested by integration tests).
+ * Covers: log API routes (not previously tested by integration tests),
+ *   including the ?after and ?before timestamp filtering parameters.
  */
 import { describe, it, expect, afterEach } from "vitest";
 import { IntegrationHarness, isDockerAvailable } from "./harness.js";
@@ -163,6 +164,71 @@ describe.skipIf(!DOCKER)("integration: logs API", { timeout: 180_000 }, () => {
       expect(body2).toHaveProperty("entries");
       expect(Array.isArray(body2.entries)).toBe(true);
     }
+  });
+
+  it("logs ?after parameter filters out entries older than the given timestamp", async () => {
+    // Fetch scheduler logs with ?after set to a timestamp far in the future.
+    // All existing log entries have timestamps from the past, so they should
+    // all be excluded and the endpoint should return an empty entries array.
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "after-filter-agent",
+          schedule: "0 0 31 2 *",
+          testScript: "#!/bin/sh\necho 'after-filter-agent ran'\nexit 0\n",
+        },
+      ],
+    });
+
+    await harness.start();
+    await harness.triggerAgent("after-filter-agent");
+    await harness.waitForRunResult("after-filter-agent");
+
+    await new Promise((r) => setTimeout(r, 1_000));
+
+    // Use a timestamp far in the future (year 2099) as the 'after' cutoff.
+    // No log entries should have timestamps after this point.
+    const futureTimestamp = new Date("2099-01-01").getTime();
+    const res = await logsAPI(harness, `/api/logs/scheduler?after=${futureTimestamp}`);
+    expect(res.ok).toBe(true);
+
+    const body = await res.json();
+    expect(body).toHaveProperty("entries");
+    expect(Array.isArray(body.entries)).toBe(true);
+    // All entries are from the past, so nothing should match
+    expect(body.entries).toHaveLength(0);
+  });
+
+  it("logs ?before parameter filters out entries newer than the given timestamp", async () => {
+    // Fetch scheduler logs with ?before set to epoch 0 (1970-01-01T00:00:00Z).
+    // All log entries are from the present era (timestamps > 0), so they should
+    // all be excluded and the endpoint should return an empty entries array.
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "before-filter-agent",
+          schedule: "0 0 31 2 *",
+          testScript: "#!/bin/sh\necho 'before-filter-agent ran'\nexit 0\n",
+        },
+      ],
+    });
+
+    await harness.start();
+    await harness.triggerAgent("before-filter-agent");
+    await harness.waitForRunResult("before-filter-agent");
+
+    await new Promise((r) => setTimeout(r, 1_000));
+
+    // Use epoch 0 as the 'before' cutoff.
+    // All log entries have timestamps well after epoch 0, so none should match.
+    const res = await logsAPI(harness, "/api/logs/scheduler?before=0");
+    expect(res.ok).toBe(true);
+
+    const body = await res.json();
+    expect(body).toHaveProperty("entries");
+    expect(Array.isArray(body.entries)).toBe(true);
+    // All entries have time > 0, so none should be "before" epoch 0
+    expect(body.entries).toHaveLength(0);
   });
 
   it("logs endpoint returns 400 for invalid (malformed) cursor", async () => {
