@@ -80,3 +80,4 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Scheduler logs grep and lines parameters — ?grep regex filtering on /api/logs/scheduler, invalid ?grep returns 400, ?lines limits count, default response shape always present (logs-scheduler-filters.test.ts)
 - [x] /locks/list endpoint — container acquires lock then list shows it, release empties list, missing secret returns 400, invalid secret returns 403 (locks-list-endpoint.test.ts)
 - [x] Signal route error paths — POST /signals/rerun|status|trigger|return: missing secret → 400, invalid secret → 403, invalid JSON body → 400 (signals-error-paths.test.ts)
+- [x] /calls route error paths — POST /calls: missing secret → 400, invalid secret → 403, missing targetAgent → 400, invalid JSON → 400; GET /calls/:callId: missing secret → 400, invalid secret → 403 (calls-error-paths.test.ts)
