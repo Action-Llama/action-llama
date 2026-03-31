@@ -80,6 +80,7 @@ vi.mock("../../../src/cli/commands/chat.js", async (importOriginal) => {
 
 import { execute } from "../../../src/cli/commands/chat.js";
 import { createAgentSession } from "@mariozechner/pi-coding-agent";
+import { ensureGatewayApiKey } from "../../../src/control/api-key.js";
 
 describe("chat", () => {
   beforeEach(() => {
@@ -246,5 +247,39 @@ describe("chat", () => {
     expect(output).toContain("new line");
     expect(output).toContain("Ctrl+C");
     expect(output).toContain("Ctrl+D");
+  });
+
+  it("includes '(could not load config)' in initial message for agents with broken config.toml", async () => {
+    // Create a project with one agent that has an invalid config.toml
+    const dir = makeTmpProject({
+      agents: [{ name: "dev" }],
+    });
+    // Overwrite dev's config.toml with invalid TOML so loadAgentConfig throws
+    writeFileSync(resolve(dir, "agents", "dev", "config.toml"), "this is [invalid] = toml\n");
+
+    capturedOptions = undefined;
+    await execute({ project: dir });
+
+    // The agent summary in the initialMessage should contain the fallback
+    expect(capturedOptions?.initialMessage).toContain("could not load config");
+  });
+
+  it("throws when executeRemoteChat receives null api key", async () => {
+    // Mock ensureGatewayApiKey to return null key
+    vi.mocked(ensureGatewayApiKey).mockResolvedValueOnce({ key: null as any, generated: false });
+
+    const testEnvName = `test-chat-nokey-${Date.now()}`;
+    try {
+      writeEnvironmentConfig(testEnvName, {
+        gateway: { url: "http://remote-host:9090", port: 9090 },
+      });
+
+      const dir = makeTmpProject();
+      await expect(
+        execute({ project: dir, agent: "dev", env: testEnvName })
+      ).rejects.toThrow("Gateway API key not found");
+    } finally {
+      try { rmSync(environmentPath(testEnvName)); } catch {}
+    }
   });
 });
