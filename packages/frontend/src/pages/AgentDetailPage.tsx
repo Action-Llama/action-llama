@@ -2,7 +2,6 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useStatusStream } from "../hooks/StatusStreamContext";
 import { useInvalidation } from "../hooks/useInvalidation";
-import { StatCard } from "../components/StatCard";
 import { StateBadge, TriggerTypeBadge, ResultBadge } from "../components/Badge";
 import {
   getAgentDetail,
@@ -20,7 +19,7 @@ import type {
   LogEntry,
 } from "../lib/api";
 import { RunModal } from "../components/RunModal";
-import { fmtDur, fmtCost, fmtTokens, fmtSmartTime } from "../lib/format";
+import { fmtSmartTime } from "../lib/format";
 import { agentHueStyle } from "../lib/color";
 
 const ROW_STATUS_STYLES: Record<string, string> = {
@@ -157,8 +156,6 @@ export function AgentDetailPage() {
 
   if (!name) return null;
 
-  const summary = detail?.summary;
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -266,6 +263,15 @@ export function AgentDetailPage() {
             </button>
           )}
           <Link
+            to={`/dashboard/agents/${encodeURIComponent(name)}/stats`}
+            className="px-3 py-1.5 text-xs font-medium rounded-md bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            Stats
+          </Link>
+          <Link
             to={`/dashboard/agents/${encodeURIComponent(name)}/skill`}
             className="px-3 py-1.5 text-xs font-medium rounded-md bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
           >
@@ -277,24 +283,6 @@ export function AgentDetailPage() {
       {actionError && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 text-sm text-red-700 dark:text-red-400">
           {actionError}
-        </div>
-      )}
-
-      {/* Stats */}
-      {summary && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <StatCard label="Total Runs" value={`${summary.totalRuns}`} />
-          <StatCard label="Success" value={`${summary.okRuns}`} />
-          <StatCard label="Errors" value={`${summary.errorRuns}`} />
-          <StatCard
-            label="Avg Duration"
-            value={summary.avgDurationMs ? fmtDur(summary.avgDurationMs) : "\u2014"}
-          />
-          <StatCard
-            label="Total Tokens"
-            value={fmtTokens(summary.totalTokens)}
-          />
-          <StatCard label="Total Cost" value={fmtCost(summary.totalCost)} />
         </div>
       )}
 
