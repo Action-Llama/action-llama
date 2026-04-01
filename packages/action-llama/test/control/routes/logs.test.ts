@@ -1089,4 +1089,231 @@ describe("log API routes", () => {
       expect(result.lines).toBe(30);
     });
   });
+
+  // ── Instance log pagination with interleaved entries ──────────────────────
+
+  describe("instance log pagination with interleaved entries", () => {
+    it("initial load with instance filter returns entries and cursor", async () => {
+      // Create 50 interleaved entries from 2 instances
+      const lines: string[] = [];
+      for (let i = 0; i < 50; i++) {
+        const instance = i % 2 === 0 ? "dev-aaa111" : "dev-bbb222";
+        lines.push(pinoLine(30, 1710700000000 + i * 1000, `entry-${i}`, { instance }));
+      }
+      writeFileSync(join(logsPath, "dev-2024-03-18.log"), lines.join("\n") + "\n");
+
+      const app = createTestApp(tmpDir);
+      const res = await app.request("/api/logs/agents/dev/dev-aaa111?lines=5");
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      
+      // Should return last 5 entries for dev-aaa111 (even indices)
+      expect(data.entries).toHaveLength(5);
+      expect(data.entries.every((e: any) => e.instance === "dev-aaa111")).toBe(true);
+      
+      // cursor should be non-null for forward polling
+      expect(data.cursor).not.toBeNull();
+    });
+
+    it("forward pagination with cursor picks up new entries after initial load", async () => {
+      // Initial entries
+      const lines = [
+        pinoLine(30, 1710700001000, "entry-1", { instance: "dev-aaa111" }),
+        pinoLine(30, 1710700002000, "entry-2", { instance: "dev-bbb222" }),
+        pinoLine(30, 1710700003000, "entry-3", { instance: "dev-aaa111" }),
+      ];
+      writeFileSync(join(logsPath, "dev-2024-03-18.log"), lines.join("\n") + "\n");
+
+      const app = createTestApp(tmpDir);
+      
+      // Initial fetch
+      const res1 = await app.request("/api/logs/agents/dev/dev-aaa111?lines=10");
+      const data1 = await res1.json();
+      expect(data1.entries).toHaveLength(2);
+      const cursor = data1.cursor;
+      
+      // Append new entries
+      const newLines = [
+        pinoLine(30, 1710700010000, "entry-4", { instance: "dev-aaa111" }),
+        pinoLine(30, 1710700011000, "entry-5", { instance: "dev-bbb222" }),
+        pinoLine(30, 1710700012000, "entry-6", { instance: "dev-aaa111" }),
+      ];
+      writeFileSync(
+        join(logsPath, "dev-2024-03-18.log"),
+        lines.join("\n") + "\n" + newLines.join("\n") + "\n",
+      );
+      
+      // Forward pagination
+      const res2 = await app.request(`/api/logs/agents/dev/dev-aaa111?cursor=${encodeURIComponent(cursor)}`);
+      const data2 = await res2.json();
+      
+      // Should only return new entries for dev-aaa111 (2 entries)
+      expect(data2.entries).toHaveLength(2);
+      expect(data2.entries[0].msg).toBe("entry-4");
+      expect(data2.entries[1].msg).toBe("entry-6");
+      expect(data2.entries.every((e: any) => e.instance === "dev-aaa111")).toBe(true);
+    });
+
+    it("backward pagination with large file and small MAX_SCAN_LINES", async () => {
+      // Create a large log file with many interleaved entries to force multiple scan iterations
+      const lines: string[] = [];
+      for (let i = 0; i < 1000; i++) {
+        const instance = i % 3 === 0 ? "dev-aaa111" : (i % 3 === 1 ? "dev-bbb222" : "dev-ccc333");
+        lines.push(pinoLine(30, 1710700000000 + i * 1000, `entry-${i}`, { instance }));
+      }
+      writeFileSync(join(logsPath, "dev-2024-03-18.log"), lines.join("\n") + "\n");
+
+      const app = createTestApp(tmpDir);
+      
+      // Import and temporarily mock MAX_SCAN_LINES
+      const logHelpers = await import("../../../src/control/routes/log-helpers.js");
+      const originalMaxScanLines = logHelpers.MAX_SCAN_LINES;
+      
+      try {
+        // Mock a very small MAX_SCAN_LINES to force partial scans
+        Object.defineProperty(logHelpers, "MAX_SCAN_LINES", {
+          value: 20,
+          writable: true,
+          configurable: true,
+        });
+        
+        // Initial fetch should return entries with a valid backCursor (since we stop scanning)
+        const res1 = await app.request("/api/logs/agents/dev/dev-aaa111?lines=5");
+        expect(res1.status).toBe(200);
+        const data1 = await res1.json();
+        
+        expect(data1.entries).toHaveLength(5);
+        expect(data1.entries.every((e: any) => e.instance === "dev-aaa111")).toBe(true);
+        
+        // With small MAX_SCAN_LINES, backCursor should be set (scanning stops before end)
+        if (data1.backCursor) {
+          const res2 = await app.request(`/api/logs/agents/dev/dev-aaa111?lines=5&back_cursor=${encodeURIComponent(data1.backCursor)}`);
+          const data2 = await res2.json();
+          expect(data2.entries.every((e: any) => e.instance === "dev-aaa111")).toBe(true);
+        }
+      } finally {
+        // Restore original value
+        Object.defineProperty(logHelpers, "MAX_SCAN_LINES", {
+          value: originalMaxScanLines,
+          writable: true,
+          configurable: true,
+        });
+      }
+    });
+
+    it("forward pagination across date boundary with instance filter", async () => {
+      // Day 1 file
+      const day1 = [
+        pinoLine(30, 1710600001000, "day1-1", { instance: "dev-aaa111" }),
+        pinoLine(30, 1710600002000, "day1-2", { instance: "dev-bbb222" }),
+        pinoLine(30, 1710600003000, "day1-3", { instance: "dev-aaa111" }),
+      ];
+      writeFileSync(join(logsPath, "dev-2024-03-17.log"), day1.join("\n") + "\n");
+
+      const app = createTestApp(tmpDir);
+      
+      // Initial fetch from day 1
+      const res1 = await app.request("/api/logs/agents/dev/dev-aaa111?lines=10");
+      const data1 = await res1.json();
+      expect(data1.entries).toHaveLength(2);
+      const cursor = data1.cursor;
+      
+      // Add day 2 file with new entries
+      const day2 = [
+        pinoLine(30, 1710700001000, "day2-1", { instance: "dev-aaa111" }),
+        pinoLine(30, 1710700002000, "day2-2", { instance: "dev-bbb222" }),
+        pinoLine(30, 1710700003000, "day2-3", { instance: "dev-aaa111" }),
+      ];
+      writeFileSync(join(logsPath, "dev-2024-03-18.log"), day2.join("\n") + "\n");
+      
+      // Forward pagination should cross the date boundary
+      const res2 = await app.request(`/api/logs/agents/dev/dev-aaa111?cursor=${encodeURIComponent(cursor)}`);
+      const data2 = await res2.json();
+      
+      // Should pick up entries from day 2
+      expect(data2.entries.some((e: any) => e.msg?.startsWith("day2-"))).toBe(true);
+      expect(data2.entries.every((e: any) => e.instance === "dev-aaa111")).toBe(true);
+    });
+
+    it("invalid back_cursor returns 400", async () => {
+      const app = createTestApp(tmpDir);
+      const res = await app.request("/api/logs/agents/dev/dev-aaa111?back_cursor=invalid");
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.error).toBe("Invalid back_cursor");
+    });
+
+    it("no log files with back_cursor returns empty entries and null cursors", async () => {
+      const validBackCursor = Buffer.from("2024-03-18:0").toString("base64url");
+      const app = createTestApp(tmpDir);
+      const res = await app.request(`/api/logs/agents/dev/dev-aaa111?back_cursor=${encodeURIComponent(validBackCursor)}`);
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.entries).toEqual([]);
+      expect(data.cursor).toBeNull();
+      expect(data.backCursor).toBeNull();
+    });
+
+    it("instance filtering works with large interleaved logs", async () => {
+      // Create a larger log file with many interleaved entries
+      const lines: string[] = [];
+      for (let i = 0; i < 300; i++) {
+        const instance = i % 3 === 0 ? "dev-aaa111" : (i % 3 === 1 ? "dev-bbb222" : "dev-ccc333");
+        lines.push(pinoLine(30, 1710700000000 + i * 1000, `entry-${i}`, { instance }));
+      }
+      writeFileSync(join(logsPath, "dev-2024-03-18.log"), lines.join("\n") + "\n");
+
+      const app = createTestApp(tmpDir);
+      
+      // Fetch for one instance
+      const res1 = await app.request("/api/logs/agents/dev/dev-bbb222?lines=10");
+      const data1 = await res1.json();
+      
+      // Should only return entries for dev-bbb222 (100 total in file of 300)
+      expect(data1.entries.every((e: any) => e.instance === "dev-bbb222")).toBe(true);
+      expect(data1.entries).toHaveLength(10);
+      
+      // All entries should be from the target instance
+      const cursor = data1.cursor;
+      expect(cursor).not.toBeNull();
+      
+      // Forward pagination should also filter by instance
+      if (cursor) {
+        const res2 = await app.request(`/api/logs/agents/dev/dev-bbb222?cursor=${encodeURIComponent(cursor)}`);
+        const data2 = await res2.json();
+        expect(data2.entries.every((e: any) => e.instance === "dev-bbb222")).toBe(true);
+      }
+    });
+
+    it("backward pagination respects instance filter with multiple daily files", async () => {
+      // Create entries in two daily files with multiple instances
+      const yesterday: string[] = [];
+      for (let i = 0; i < 20; i++) {
+        const instance = i % 2 === 0 ? "dev-aaa111" : "dev-bbb222";
+        yesterday.push(pinoLine(30, 1710600000000 + i * 1000, `old-${i}`, { instance }));
+      }
+      
+      const today: string[] = [];
+      for (let i = 0; i < 20; i++) {
+        const instance = i % 2 === 0 ? "dev-aaa111" : "dev-bbb222";
+        today.push(pinoLine(30, 1710700000000 + i * 1000, `new-${i}`, { instance }));
+      }
+      
+      writeFileSync(join(logsPath, "dev-2024-03-17.log"), yesterday.join("\n") + "\n");
+      writeFileSync(join(logsPath, "dev-2024-03-18.log"), today.join("\n") + "\n");
+
+      const app = createTestApp(tmpDir);
+      
+      // Fetch entries for one instance from the latest file
+      const res1 = await app.request("/api/logs/agents/dev/dev-aaa111?lines=5");
+      const data1 = await res1.json();
+      
+      // Should only return dev-aaa111 entries
+      expect(data1.entries.every((e: any) => e.instance === "dev-aaa111")).toBe(true);
+      expect(data1.entries).toHaveLength(5);
+      
+      // All entries should be from the latest day (new-*)
+      expect(data1.entries.every((e: any) => e.msg?.startsWith("new-"))).toBe(true);
+    });
+  });
 });

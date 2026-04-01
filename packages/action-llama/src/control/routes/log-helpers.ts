@@ -5,7 +5,7 @@ import { readdirSync, existsSync } from "fs";
 export const SAFE_AGENT_NAME = /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/;
 export const MAX_LINES = 2000;
 export const DEFAULT_LINES = 200;
-const MAX_SCAN_LINES = 500000;
+export let MAX_SCAN_LINES = 500000;
 
 export interface LogEntry {
   level: number;
