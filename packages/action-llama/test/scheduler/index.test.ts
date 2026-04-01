@@ -1045,4 +1045,118 @@ describe("startScheduler", () => {
       );
     });
   });
+
+  // ── Webhook queue overflow (dropped events) ─────────────────────────────
+
+  describe("webhook queue overflow (dropped events)", () => {
+    function setupSmallQueueWebhookProject(dir: string) {
+      const globalConfig = {
+        workQueueSize: 1, // tiny queue so second enqueue drops the oldest
+        models: {
+          sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
+        },
+        webhooks: {
+          github: { provider: "github", secret: "test-secret" },
+        },
+      };
+      writeFileSync(resolve(dir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
+
+      const agentDir = resolve(dir, "agents", "dev");
+      mkdirSync(agentDir, { recursive: true });
+      writeAgentConfig(agentDir, {
+        name: "dev",
+        credentials: ["github_token"],
+        models: ["sonnet"],
+        webhooks: [{ source: "github", events: ["push"] }],
+      });
+      mkdirSync(resolve(dir, ".al", "state", "dev"), { recursive: true });
+    }
+
+    let smallQueueTmpDir: string;
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+      cronCallbacks.length = 0;
+      mockIsRunning = false;
+      smallQueueTmpDir = mkdtempSync(join(tmpdir(), "al-sched-wq-overflow-"));
+      setupSmallQueueWebhookProject(smallQueueTmpDir);
+    });
+
+    afterEach(() => {
+      rmSync(smallQueueTmpDir, { recursive: true, force: true });
+    });
+
+    it("warns when webhook queue overflows during 'agents building' phase (line 103)", async () => {
+      const fakeContext = {
+        event: "push",
+        action: "created",
+        receiptId: "test-receipt-build",
+        payload: { ref: "refs/heads/main" },
+      };
+
+      mockSetupWebhookRegistry.mockResolvedValue({
+        registry: { bind: vi.fn(), unbind: vi.fn() },
+        secrets: {},
+      });
+
+      // Call onTrigger TWICE before schedulerCtx is set (agents still building).
+      // First call fills queue to capacity (size = 1). Second call overflows and drops
+      // the oldest item, exercising the `if (dropped) logger.warn(...)` branch.
+      mockRegisterWebhookBindings.mockImplementation((args: any) => {
+        args.onTrigger(args.agentConfig, { ...fakeContext, receiptId: "receipt-1" });
+        args.onTrigger(args.agentConfig, { ...fakeContext, receiptId: "receipt-2" });
+      });
+
+      await startScheduler(smallQueueTmpDir);
+
+      // The second trigger should have caused a drop warning
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        expect.objectContaining({ agent: "dev" }),
+        "queue full, oldest event dropped"
+      );
+    });
+
+    it("warns when webhook queue overflows after build with all runners busy (line 125)", async () => {
+      let capturedOnTrigger: ((config: any, context: any) => any) | undefined;
+      let capturedAgentConfig: any;
+
+      const fakeContext = {
+        event: "push",
+        action: "created",
+        receiptId: "test-receipt-busy",
+        payload: { ref: "refs/heads/main" },
+      };
+
+      mockSetupWebhookRegistry.mockResolvedValue({
+        registry: { bind: vi.fn(), unbind: vi.fn() },
+        secrets: {},
+      });
+
+      mockRegisterWebhookBindings.mockImplementation((args: any) => {
+        capturedOnTrigger = args.onTrigger;
+        capturedAgentConfig = args.agentConfig;
+      });
+
+      // All runners busy so dispatches are queued
+      mockIsRunning = true;
+      await startScheduler(smallQueueTmpDir);
+      vi.clearAllMocks();
+
+      expect(capturedOnTrigger).toBeDefined();
+
+      // First trigger: queue goes from 0 → 1 (at capacity); no drop
+      capturedOnTrigger!(capturedAgentConfig, { ...fakeContext, receiptId: "receipt-A" });
+      expect(mockLoggerWarn).not.toHaveBeenCalledWith(
+        expect.objectContaining({ agent: "dev" }),
+        "queue full, oldest event dropped"
+      );
+
+      // Second trigger: queue overflows, oldest item is dropped
+      capturedOnTrigger!(capturedAgentConfig, { ...fakeContext, receiptId: "receipt-B" });
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        expect.objectContaining({ agent: "dev" }),
+        "queue full, oldest event dropped"
+      );
+    });
+  });
 });
