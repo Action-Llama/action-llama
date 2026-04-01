@@ -3,7 +3,10 @@ import { Hono } from "hono";
 import { registerStatsRoutes } from "../../../src/control/routes/stats.js";
 
 function mockStatsStore() {
-  return {
+  let queryActivityRowsData: any[] = [];
+  let countActivityRowsData: number = 0;
+
+  const stats = {
     queryRunsByAgentPaginated: vi.fn().mockReturnValue([]),
     countRunsByAgent: vi.fn().mockReturnValue(0),
     queryRunByInstanceId: vi.fn().mockReturnValue(undefined),
@@ -12,9 +15,28 @@ function mockStatsStore() {
     getWebhookDetailsBatch: vi.fn().mockReturnValue({}),
     queryTriggerHistory: vi.fn().mockReturnValue([]),
     countTriggerHistory: vi.fn().mockReturnValue(0),
-    queryActivityRows: vi.fn().mockReturnValue([]),
-    countActivityRows: vi.fn().mockReturnValue(0),
+    queryActivityRows: vi.fn((opts) => queryActivityRowsData),
+    countActivityRows: vi.fn((opts) => countActivityRowsData),
+    queryActivityRowsWithCount: vi.fn((opts) => ({
+      rows: queryActivityRowsData,
+      total: countActivityRowsData,
+    })),
   } as any;
+
+  // Override mockReturnValue for queryActivityRows and countActivityRows to sync with queryActivityRowsWithCount
+  const originalQueryActivityRowsMock = stats.queryActivityRows;
+  stats.queryActivityRows.mockReturnValue = function (value: any) {
+    queryActivityRowsData = value;
+    return this;
+  };
+
+  const originalCountActivityRowsMock = stats.countActivityRows;
+  stats.countActivityRows.mockReturnValue = function (value: any) {
+    countActivityRowsData = value;
+    return this;
+  };
+
+  return stats;
 }
 
 function mockStatusTracker(instances: any[] = [], agents: any[] = []) {
@@ -530,7 +552,7 @@ describe("stats routes", () => {
       expect(data.rows).toHaveLength(2);
       expect(data.total).toBe(2);
       // Should always pass includeDeadLetters: true (no status filter)
-      expect(stats.queryActivityRows).toHaveBeenCalledWith(
+      expect(stats.queryActivityRowsWithCount).toHaveBeenCalledWith(
         expect.objectContaining({ includeDeadLetters: true })
       );
     });
@@ -657,7 +679,7 @@ describe("stats routes", () => {
 
       expect(data.rows).toHaveLength(1);
       expect(data.rows[0].result).toBe("dead-letter");
-      expect(stats.queryActivityRows).toHaveBeenCalledWith(
+      expect(stats.queryActivityRowsWithCount).toHaveBeenCalledWith(
         expect.objectContaining({ dbStatuses: ["dead-letter"], includeDeadLetters: true })
       );
     });
@@ -672,7 +694,7 @@ describe("stats routes", () => {
       const app = createApp(stats);
 
       await app.request("/api/stats/activity?agent=reporter");
-      expect(stats.queryActivityRows).toHaveBeenCalledWith(
+      expect(stats.queryActivityRowsWithCount).toHaveBeenCalledWith(
         expect.objectContaining({ agentName: "reporter" })
       );
     });
@@ -752,7 +774,7 @@ describe("stats routes", () => {
       expect(data.rows).toHaveLength(2);
       expect(data.rows[0].instanceId).toBe("i2");
       // Verify DB was called with correct SQL-level pagination
-      expect(stats.queryActivityRows).toHaveBeenCalledWith(
+      expect(stats.queryActivityRowsWithCount).toHaveBeenCalledWith(
         expect.objectContaining({ limit: 2, offset: 1 })
       );
     });

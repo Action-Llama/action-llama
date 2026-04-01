@@ -282,8 +282,10 @@ export function registerStatsRoutes(
       const dbLimit = limit - memSliceLen;
 
       let dbRows: any[] = [];
+      let dbCount = 0;
+
       if (dbLimit > 0) {
-        dbRows = statsStore.queryActivityRows({
+        const dbResult = statsStore.queryActivityRowsWithCount({
           limit: dbLimit,
           offset: dbOffset,
           agentName: agentFilter,
@@ -291,6 +293,8 @@ export function registerStatsRoutes(
           dbStatuses: requestedDbStatuses,
           includeDeadLetters,
         });
+        dbRows = dbResult.rows;
+        dbCount = dbResult.total;
 
         // Dedup: remove DB rows that match a currently-running instance
         // (a run may appear as "running" in tracker AND as "completed" in DB if it just finished)
@@ -303,14 +307,15 @@ export function registerStatsRoutes(
         if (runningIds.size > 0) {
           dbRows = dbRows.filter((r) => !r.instanceId || !runningIds.has(r.instanceId));
         }
+      } else {
+        // dbLimit is 0, but we still need the total count
+        dbCount = statsStore.countActivityRows({
+          agentName: agentFilter,
+          triggerType: triggerTypeFilter,
+          dbStatuses: requestedDbStatuses,
+          includeDeadLetters,
+        });
       }
-
-      const dbCount = statsStore.countActivityRows({
-        agentName: agentFilter,
-        triggerType: triggerTypeFilter,
-        dbStatuses: requestedDbStatuses,
-        includeDeadLetters,
-      });
 
       rows = [...memSlice, ...dbRows];
       total = memCount + dbCount;

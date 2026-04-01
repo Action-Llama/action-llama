@@ -415,6 +415,66 @@ export class StatsStore {
   }
 
   /**
+   * Private helper to build shared activity filter logic.
+   * Returns the filter components needed by both queryActivityRows and countActivityRows.
+   * Returns null if the result would be empty (no rows match the filters).
+   */
+  private _buildActivityFilter(opts: {
+    agentName?: string;
+    triggerType?: string;
+    dbStatuses?: string[];
+    includeDeadLetters: boolean;
+  }): {
+    queryRuns: boolean;
+    wantDeadLetters: boolean;
+    runsWhereClause: string;
+    runsParams: unknown[];
+  } | null {
+    const { agentName, triggerType, dbStatuses, includeDeadLetters } = opts;
+
+    // Determine which statuses to filter from runs table
+    const runsStatuses = dbStatuses
+      ? dbStatuses.filter((s) => s !== "dead-letter")
+      : undefined;
+
+    // Should we query runs?
+    const queryRuns = runsStatuses === undefined || runsStatuses.length > 0;
+
+    // Should we UNION dead-letters?
+    // Dead-letters are only webhooks and have no agentName, so skip if agentName filter is set
+    // Skip if triggerType filter is set to a non-webhook type
+    const wantDeadLetters =
+      includeDeadLetters &&
+      (dbStatuses === undefined || dbStatuses.includes("dead-letter")) &&
+      !agentName &&
+      (triggerType === undefined || triggerType === "webhook");
+
+    if (!queryRuns && !wantDeadLetters) {
+      return null; // signals: return empty result
+    }
+
+    // Build the runs sub-query
+    const runsWhere: string[] = [];
+    const runsParams: unknown[] = [];
+    if (agentName) {
+      runsWhere.push("agent_name = ?");
+      runsParams.push(agentName);
+    }
+    if (triggerType) {
+      runsWhere.push("trigger_type = ?");
+      runsParams.push(triggerType);
+    }
+    if (runsStatuses !== undefined && runsStatuses.length > 0) {
+      runsWhere.push(`result IN (${runsStatuses.map(() => "?").join(",")})`);
+      runsParams.push(...runsStatuses);
+    }
+
+    const runsWhereClause = runsWhere.length > 0 ? `WHERE ${runsWhere.join(" AND ")}` : "";
+
+    return { queryRuns, wantDeadLetters, runsWhereClause, runsParams };
+  }
+
+  /**
    * Query activity rows with SQL-level filtering and pagination.
    * Used by the /api/stats/activity endpoint to avoid fetching all rows into memory.
    *
@@ -435,47 +495,14 @@ export class StatsStore {
     dbStatuses?: string[];
     includeDeadLetters: boolean;
   }): TriggerHistoryRow[] {
-    const { limit, offset, agentName, triggerType, dbStatuses, includeDeadLetters } = opts;
+    const { limit, offset } = opts;
     const client = (this.db as any).$client;
 
-    // Determine which statuses to filter from runs table
-    const runsStatuses = dbStatuses
-      ? dbStatuses.filter((s) => s !== "dead-letter")
-      : undefined;
+    const filter = this._buildActivityFilter(opts);
+    if (!filter) return [];
 
-    // Should we query runs?
-    const queryRuns = runsStatuses === undefined || runsStatuses.length > 0;
+    const { queryRuns, wantDeadLetters, runsWhereClause, runsParams } = filter;
 
-    // Should we UNION dead-letters?
-    // Dead-letters are only webhooks and have no agentName, so skip if agentName filter is set
-    // Skip if triggerType filter is set to a non-webhook type
-    const wantDeadLetters =
-      includeDeadLetters &&
-      (dbStatuses === undefined || dbStatuses.includes("dead-letter")) &&
-      !agentName &&
-      (triggerType === undefined || triggerType === "webhook");
-
-    if (!queryRuns && !wantDeadLetters) {
-      return [];
-    }
-
-    // Build the runs sub-query
-    const runsWhere: string[] = [];
-    const runsParams: unknown[] = [];
-    if (agentName) {
-      runsWhere.push("agent_name = ?");
-      runsParams.push(agentName);
-    }
-    if (triggerType) {
-      runsWhere.push("trigger_type = ?");
-      runsParams.push(triggerType);
-    }
-    if (runsStatuses !== undefined && runsStatuses.length > 0) {
-      runsWhere.push(`result IN (${runsStatuses.map(() => "?").join(",")})`);
-      runsParams.push(...runsStatuses);
-    }
-
-    const runsWhereClause = runsWhere.length > 0 ? `WHERE ${runsWhere.join(" AND ")}` : "";
     const runsSelect = `
       SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
              trigger_type AS triggerType, trigger_source AS triggerSource,
@@ -518,40 +545,12 @@ export class StatsStore {
     dbStatuses?: string[];
     includeDeadLetters: boolean;
   }): number {
-    const { agentName, triggerType, dbStatuses, includeDeadLetters } = opts;
     const client = (this.db as any).$client;
 
-    const runsStatuses = dbStatuses
-      ? dbStatuses.filter((s) => s !== "dead-letter")
-      : undefined;
+    const filter = this._buildActivityFilter(opts);
+    if (!filter) return 0;
 
-    const queryRuns = runsStatuses === undefined || runsStatuses.length > 0;
-    const wantDeadLetters =
-      includeDeadLetters &&
-      (dbStatuses === undefined || dbStatuses.includes("dead-letter")) &&
-      !agentName &&
-      (triggerType === undefined || triggerType === "webhook");
-
-    if (!queryRuns && !wantDeadLetters) {
-      return 0;
-    }
-
-    const runsWhere: string[] = [];
-    const runsParams: unknown[] = [];
-    if (agentName) {
-      runsWhere.push("agent_name = ?");
-      runsParams.push(agentName);
-    }
-    if (triggerType) {
-      runsWhere.push("trigger_type = ?");
-      runsParams.push(triggerType);
-    }
-    if (runsStatuses !== undefined && runsStatuses.length > 0) {
-      runsWhere.push(`result IN (${runsStatuses.map(() => "?").join(",")})`);
-      runsParams.push(...runsStatuses);
-    }
-
-    const runsWhereClause = runsWhere.length > 0 ? `WHERE ${runsWhere.join(" AND ")}` : "";
+    const { queryRuns, wantDeadLetters, runsWhereClause, runsParams } = filter;
 
     if (queryRuns && wantDeadLetters) {
       const row = client.prepare(
@@ -570,6 +569,68 @@ export class StatsStore {
       `SELECT COUNT(*) AS count FROM webhook_receipts WHERE status = 'dead-letter'`
     ).get() as any;
     return row?.count ?? 0;
+  }
+
+  /**
+   * Query activity rows with count in a single SQL call using window functions.
+   * More efficient than calling queryActivityRows + countActivityRows separately.
+   */
+  queryActivityRowsWithCount(opts: {
+    limit: number;
+    offset: number;
+    agentName?: string;
+    triggerType?: string;
+    dbStatuses?: string[];
+    includeDeadLetters: boolean;
+  }): { rows: TriggerHistoryRow[]; total: number } {
+    const { limit, offset } = opts;
+    const client = (this.db as any).$client;
+
+    // Fast path: when limit is 0, just return count
+    if (limit === 0) {
+      return { rows: [], total: this.countActivityRows(opts) };
+    }
+
+    const filter = this._buildActivityFilter(opts);
+    if (!filter) return { rows: [], total: 0 };
+
+    const { queryRuns, wantDeadLetters, runsWhereClause, runsParams } = filter;
+
+    // Use a CTE to combine sources, then apply window COUNT and pagination
+    const parts: string[] = [];
+    if (queryRuns) {
+      parts.push(`
+        SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
+               trigger_type AS triggerType, trigger_source AS triggerSource,
+               result, webhook_receipt_id AS webhookReceiptId,
+               NULL AS deadLetterReason, summary
+        FROM runs ${runsWhereClause}`);
+    }
+    if (wantDeadLetters) {
+      parts.push(`
+        SELECT timestamp AS ts, NULL AS instanceId, NULL AS agentName,
+               'webhook' AS triggerType, source AS triggerSource,
+               'dead-letter' AS result, id AS webhookReceiptId,
+               dead_letter_reason AS deadLetterReason, NULL AS summary
+        FROM webhook_receipts WHERE status = 'dead-letter'`);
+    }
+
+    const unionSql = parts.join(" UNION ALL ");
+    const sql = `
+      WITH combined AS (${unionSql})
+      SELECT *, COUNT(*) OVER() AS _total
+      FROM combined
+      ORDER BY ts DESC
+      LIMIT ? OFFSET ?`;
+
+    const params: unknown[] = [...runsParams, limit, offset];
+    const rawRows = client.prepare(sql).all(...params) as any[];
+
+    const total = rawRows.length > 0 ? rawRows[0]._total : 0;
+    // Strip the _total column from each row
+    const rows = rawRows.map(({ _total, ...rest }) => rest) as TriggerHistoryRow[];
+
+    return { rows, total };
   }
 
   countTriggerHistory(since: number, includeDeadLetters: boolean, agentName?: string, triggerType?: string): number {
