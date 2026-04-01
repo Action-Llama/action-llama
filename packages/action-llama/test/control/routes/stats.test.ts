@@ -1012,12 +1012,13 @@ describe("stats routes", () => {
 
     it("enriches webhook rows with triggerSource and eventSummary from receipt details", async () => {
       const stats = mockStatsStore();
-      // Return a webhook row with a webhookReceiptId
+      // Return a webhook row with triggerSource and eventSummary populated from SQL JOIN
       stats.queryActivityRows.mockReturnValue([
         {
           ts: 1000,
           triggerType: "webhook",
-          triggerSource: null,
+          triggerSource: "github",
+          eventSummary: "issues opened",
           agentName: "reporter",
           instanceId: "i-wh",
           result: "completed",
@@ -1026,10 +1027,6 @@ describe("stats routes", () => {
         },
       ]);
       stats.countActivityRows.mockReturnValue(1);
-      // Return details for that receipt with source + eventSummary
-      stats.getWebhookDetailsBatch.mockReturnValue({
-        "receipt-1": { source: "github", eventSummary: "issues opened" },
-      });
       const app = createApp(stats);
 
       const res = await app.request("/api/stats/activity");
@@ -1038,7 +1035,7 @@ describe("stats routes", () => {
 
       const webhookRow = data.rows.find((r: any) => r.instanceId === "i-wh");
       expect(webhookRow).toBeDefined();
-      // triggerSource should be set from d.source
+      // triggerSource should be set from SQL JOIN
       expect(webhookRow.triggerSource).toBe("github");
       // eventSummary should be set because it differs from source
       expect(webhookRow.eventSummary).toBe("issues opened");
@@ -1050,7 +1047,8 @@ describe("stats routes", () => {
         {
           ts: 1000,
           triggerType: "webhook",
-          triggerSource: null,
+          triggerSource: "github",
+          eventSummary: undefined,
           agentName: "reporter",
           instanceId: "i-wh2",
           result: "completed",
@@ -1059,10 +1057,6 @@ describe("stats routes", () => {
         },
       ]);
       stats.countActivityRows.mockReturnValue(1);
-      // eventSummary equals source — should set triggerSource but NOT set eventSummary
-      stats.getWebhookDetailsBatch.mockReturnValue({
-        "receipt-2": { source: "github", eventSummary: "github" },
-      });
       const app = createApp(stats);
 
       const res = await app.request("/api/stats/activity");

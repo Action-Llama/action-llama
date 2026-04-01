@@ -50,6 +50,7 @@ export interface TriggerHistoryRow {
   webhookReceiptId: string | null;
   deadLetterReason: string | null;
   summary?: string | null;
+  eventSummary?: string | null;
 }
 
 export interface CallEdgeRecord {
@@ -463,32 +464,36 @@ export class StatsStore {
     const runsWhere: string[] = [];
     const runsParams: unknown[] = [];
     if (agentName) {
-      runsWhere.push("agent_name = ?");
+      runsWhere.push("r.agent_name = ?");
       runsParams.push(agentName);
     }
     if (triggerType) {
-      runsWhere.push("trigger_type = ?");
+      runsWhere.push("r.trigger_type = ?");
       runsParams.push(triggerType);
     }
     if (runsStatuses !== undefined && runsStatuses.length > 0) {
-      runsWhere.push(`result IN (${runsStatuses.map(() => "?").join(",")})`);
+      runsWhere.push(`r.result IN (${runsStatuses.map(() => "?").join(",")})`);
       runsParams.push(...runsStatuses);
     }
 
     const runsWhereClause = runsWhere.length > 0 ? `WHERE ${runsWhere.join(" AND ")}` : "";
     const runsSelect = `
-      SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
-             trigger_type AS triggerType, trigger_source AS triggerSource,
-             result, webhook_receipt_id AS webhookReceiptId,
-             NULL AS deadLetterReason, summary
-      FROM runs ${runsWhereClause}
+      SELECT r.started_at AS ts, r.instance_id AS instanceId, r.agent_name AS agentName,
+             r.trigger_type AS triggerType, COALESCE(r.trigger_source, wr.source) AS triggerSource,
+             r.result, r.webhook_receipt_id AS webhookReceiptId,
+             NULL AS deadLetterReason, r.summary,
+             CASE WHEN wr.event_summary IS NOT NULL AND wr.event_summary != wr.source THEN wr.event_summary ELSE NULL END AS eventSummary
+      FROM runs r
+      LEFT JOIN webhook_receipts wr ON r.webhook_receipt_id = wr.id
+      ${runsWhereClause}
     `;
 
     const dlSelect = `
       SELECT timestamp AS ts, NULL AS instanceId, NULL AS agentName,
              'webhook' AS triggerType, source AS triggerSource,
              'dead-letter' AS result, id AS webhookReceiptId,
-             dead_letter_reason AS deadLetterReason, NULL AS summary
+             dead_letter_reason AS deadLetterReason, NULL AS summary,
+             CASE WHEN event_summary IS NOT NULL AND event_summary != source THEN event_summary ELSE NULL END AS eventSummary
       FROM webhook_receipts WHERE status = 'dead-letter'
     `;
 
