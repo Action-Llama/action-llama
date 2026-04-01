@@ -1,5 +1,26 @@
 # @action-llama/action-llama
 
+## 0.26.0
+
+### Minor Changes
+
+- [#498](https://github.com/Action-Llama/action-llama/pull/498) [`55521c9`](https://github.com/Action-Llama/action-llama/commit/55521c90b1db14dd02455dc3ff0a2845600b7d5d) Thanks [@asselstine](https://github.com/asselstine)! - Optimize `/api/stats/activity` endpoint with SQL-level pagination instead of fetching all rows into memory. Adds `queryActivityRows` and `countActivityRows` methods to `StatsStore`, pushes filtering and pagination down to SQLite, and adds an index on `runs.result`. Running/pending items still appear at the top of page 1 only. This eliminates the O(n) full-table scan on every activity page load.
+
+- [#494](https://github.com/Action-Llama/action-llama/pull/494) [`bef808f`](https://github.com/Action-Llama/action-llama/commit/bef808f2db5275c8455ffba2c503b4112d7f69ba) Thanks [@asselstine](https://github.com/asselstine)! - `al logs` now accepts a full instance ID as the positional argument (e.g. `al logs e2e-coverage-improver-b80a62dd`), automatically detecting and extracting the agent name and instance suffix. The `-i, --instance` flag has been removed; use the positional instance ID instead.
+
+### Patch Changes
+
+- [`809955b`](https://github.com/Action-Llama/action-llama/commit/809955b11389863e0d2872d3619628395dd9c5c3) Thanks [@asselstine](https://github.com/asselstine)! - Fix instance logs page missing entries older than ~1 hour. Log API now reads across multiple daily log files instead of only the latest, cursor forward-reads correctly span date boundaries, and the frontend `limit` param is fixed to match the backend `lines` param.
+
+- [`9a13d19`](https://github.com/Action-Llama/action-llama/commit/9a13d191531be4d43c8cd2529e68045be78ad81b) Thanks [@asselstine](https://github.com/asselstine)! - Detect when all configured models are rate-limited or overloaded across all retry passes and exit with code 12 instead of silently succeeding with empty output.
+
+- [`7093032`](https://github.com/Action-Llama/action-llama/commit/709303223c84bb01bf7e5812166083cf2a470527) Thanks [@asselstine](https://github.com/asselstine)! - Log summarize endpoint errors now appear in `al logs`. Previously, 500 errors from the log summary route were returned as HTTP responses but never logged via the logger, making them invisible to `al logs`.
+
+- [`b2e994f`](https://github.com/Action-Llama/action-llama/commit/b2e994f7d1f8845bb9aa889e51e5de4b61bb61a1) Thanks [@asselstine](https://github.com/asselstine)! - Improve log output: format debug events richly in `al logs -a` (show event type, role, tool name instead of bare "event"/"tool done"), and filter debug-level entries from the web UI log API by default (configurable via `?level=debug` query param). Add polling fallback to host-user streamLogs for reliability on systems where fs.watch is unreliable.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.26.0
+
 ## 0.25.0
 
 ### Minor Changes

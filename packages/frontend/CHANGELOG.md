@@ -1,5 +1,13 @@
 # @action-llama/frontend
 
+## 0.19.5
+
+### Patch Changes
+
+- [#500](https://github.com/Action-Llama/action-llama/pull/500) [`94c26a6`](https://github.com/Action-Llama/action-llama/commit/94c26a6b4475bf40e17b43abd998badfcf0b7d8c) Thanks [@asselstine](https://github.com/asselstine)! - Replace back-arrow navigation with clickable breadcrumbs on agent and instance pages
+
+- [#501](https://github.com/Action-Llama/action-llama/pull/501) [`5bd6379`](https://github.com/Action-Llama/action-llama/commit/5bd63797e97317819f2855cf2aed0206268b3268) Thanks [@asselstine](https://github.com/asselstine)! - Tighten label/value tables on InstanceTriggerPage, TriggerDetailPage, and WebhookReceiptPage by replacing full-width flex justify-between rows with a two-column grid layout, so labels and values sit close together and are easier to read.
+
 ## 0.19.4
 
 ### Patch Changes
