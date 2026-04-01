@@ -1,5 +1,11 @@
 # @action-llama/frontend
 
+## 0.19.8
+
+### Patch Changes
+
+- [#532](https://github.com/Action-Llama/action-llama/pull/532) [`0acb423`](https://github.com/Action-Llama/action-llama/commit/0acb423ea51d2e0e12b017b00f35dedfecebbcb0) Thanks [@asselstine](https://github.com/asselstine)! - Fix instance logs to load all entries for completed instances. Auto-backfill older log entries as soon as the page loads for completed instances, while keeping the existing cursor-based tail-follow behaviour for running instances. This ensures users see the complete log history instead of just the last 100-200 entries.
+
 ## 0.19.7
 
 ### Patch Changes
