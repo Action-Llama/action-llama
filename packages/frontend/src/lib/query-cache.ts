@@ -1,6 +1,12 @@
 import { subscribeToSignals } from "./signal-bus";
 import type { InvalidationSignal } from "./api";
 
+export interface QuerySnapshot<T = unknown> {
+  data: T | null;
+  error: Error | null;
+  isLoading: boolean;
+}
+
 interface CacheEntry {
   data: unknown;
   error: Error | null;
@@ -13,6 +19,8 @@ interface CacheEntry {
   pollTimer: ReturnType<typeof setInterval> | null;
   signalUnsubscribe: (() => void) | null;
   listeners: Set<() => void>;
+  /** Cached snapshot object for useSyncExternalStore referential stability */
+  lastSnapshot: QuerySnapshot | null;
 }
 
 const cache = new Map<string, CacheEntry>();
@@ -53,6 +61,7 @@ export function registerQuery(key: string, options: RegisterOptions): void {
     pollTimer: null,
     signalUnsubscribe: null,
     listeners: new Set(),
+    lastSnapshot: null,
   };
   cache.set(key, entry);
 
@@ -138,18 +147,17 @@ export function subscribeToQuery(key: string, callback: () => void): () => void 
   return () => { entry.listeners.delete(callback); };
 }
 
-export interface QuerySnapshot<T = unknown> {
-  data: T | null;
-  error: Error | null;
-  isLoading: boolean;
-}
+const EMPTY_SNAPSHOT: QuerySnapshot = { data: null, error: null, isLoading: false };
 
 export function getQuerySnapshot<T>(key: string): QuerySnapshot<T> {
   const entry = cache.get(key);
-  if (!entry) return { data: null, error: null, isLoading: false };
-  return {
-    data: entry.data as T | null,
-    error: entry.error,
-    isLoading: entry.status === "loading" || (entry.status === "idle" && entry.inFlight),
-  };
+  if (!entry) return EMPTY_SNAPSHOT as QuerySnapshot<T>;
+  const isLoading = entry.status === "loading" || (entry.status === "idle" && entry.inFlight);
+  const last = entry.lastSnapshot;
+  if (last && last.data === entry.data && last.error === entry.error && last.isLoading === isLoading) {
+    return last as QuerySnapshot<T>;
+  }
+  const snap: QuerySnapshot<T> = { data: entry.data as T | null, error: entry.error, isLoading };
+  entry.lastSnapshot = snap as QuerySnapshot;
+  return snap;
 }
