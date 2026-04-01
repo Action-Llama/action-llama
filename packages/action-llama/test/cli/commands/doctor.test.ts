@@ -1450,4 +1450,40 @@ describe("doctor", () => {
       expect(output).toContain("docker group");
     });
   });
+
+  describe("host-user sudoers creation failure (Linux)", () => {
+    it("records error when sudo tee fails to write sudoers file", async () => {
+      mockDiscoverAgents.mockReturnValue(["e2e"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "e2e", credentials: [] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({ runtime: { type: "host-user", run_as: "al-agent" } });
+      mockCredentialExists.mockReturnValue(true);
+      mockCollectCredentialRefs.mockReturnValue(new Set());
+
+      mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+        // User EXISTS (no throw)
+        if (cmd === "id" && args[0] === "al-agent") return Buffer.from("uid=999(al-agent)");
+        // sudo -n check fails (no sudo permission configured yet)
+        if (cmd === "sudo" && args[0] === "-n") throw new Error("sudo: a password is required");
+        // sudo tee FAILS (permission denied)
+        if (cmd === "sudo" && args[0] === "tee") throw new Error("tee: permission denied");
+        // getent docker group check
+        if (cmd === "getent" && args[0] === "group") return Buffer.from("docker:x:999:");
+        // id -Gn check — user in docker group
+        if (cmd === "id" && args[0] === "-Gn") return Buffer.from("al-agent docker");
+        throw new Error(`unexpected: ${cmd} ${args.join(" ")}`);
+      });
+
+      let caughtError: Error | undefined;
+      const output = await captureLog(async () => {
+        try {
+          await execute({ project: ".", skipCredentials: true });
+        } catch (err: any) {
+          caughtError = err;
+        }
+      });
+      // The failure should appear in the thrown error or log output
+      const fullOutput = output + (caughtError?.message ?? "");
+      expect(fullOutput).toContain("Failed to configure sudoers");
+    });
+  });
 });
