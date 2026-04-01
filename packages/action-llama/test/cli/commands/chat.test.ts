@@ -9,7 +9,16 @@ import { writeEnvironmentConfig, environmentPath } from "../../../src/shared/env
 const mockRun = vi.fn().mockResolvedValue(undefined);
 let capturedOptions: any;
 vi.mock("@mariozechner/pi-coding-agent", () => {
-  class MockResourceLoader { async reload() {} }
+  class MockResourceLoader {
+    private opts: any;
+    constructor(opts: any) { this.opts = opts; }
+    async reload() {
+      // Call agentsFilesOverride if provided (covers that code path)
+      if (this.opts?.agentsFilesOverride) {
+        this.opts.agentsFilesOverride();
+      }
+    }
+  }
   class MockInteractiveMode {
     constructor(_session: any, options: any) { capturedOptions = options; }
     async run() { return mockRun(); }
@@ -324,4 +333,55 @@ describe("chat", () => {
       vi.useRealTimers();
     }
   }, 10000);
+
+  describe("ensureKeybindings and readKeybindings via HOME override", () => {
+    it("creates keybindings file when HOME points to a directory without .pi/agent/keybindings.json", async () => {
+      const { mkdtempSync, rmSync } = await import("fs");
+      const { tmpdir } = await import("os");
+      const { join } = await import("path");
+
+      // Use a temp HOME dir so keybindings.json doesn't exist
+      const tmpHome = mkdtempSync(join(tmpdir(), "al-chat-home-"));
+      const origHome = process.env.HOME;
+      process.env.HOME = tmpHome;
+
+      try {
+        const dir = makeTmpProject();
+        await execute({ project: dir, agent: "dev" });
+        // After execute, the keybindings file should have been created
+        const { existsSync } = await import("fs");
+        expect(existsSync(join(tmpHome, ".pi", "agent", "keybindings.json"))).toBe(true);
+        // And the file should contain the default keybindings
+        const { readFileSync } = await import("fs");
+        const content = JSON.parse(readFileSync(join(tmpHome, ".pi", "agent", "keybindings.json"), "utf-8"));
+        expect(content.newLine).toBeDefined();
+      } finally {
+        process.env.HOME = origHome;
+        rmSync(tmpHome, { recursive: true, force: true });
+      }
+    });
+
+    it("returns empty keybindings when the file has invalid JSON content", async () => {
+      const { mkdtempSync, rmSync, mkdirSync, writeFileSync } = await import("fs");
+      const { tmpdir } = await import("os");
+      const { join } = await import("path");
+
+      const tmpHome = mkdtempSync(join(tmpdir(), "al-chat-home-"));
+      // Create the keybindings file with invalid JSON
+      mkdirSync(join(tmpHome, ".pi", "agent"), { recursive: true });
+      writeFileSync(join(tmpHome, ".pi", "agent", "keybindings.json"), "{ invalid json }");
+      const origHome = process.env.HOME;
+      process.env.HOME = tmpHome;
+
+      try {
+        const dir = makeTmpProject();
+        // Should succeed even with invalid keybindings (falls back to {})
+        await execute({ project: dir, agent: "dev" });
+        expect(mockRun).toHaveBeenCalled();
+      } finally {
+        process.env.HOME = origHome;
+        rmSync(tmpHome, { recursive: true, force: true });
+      }
+    });
+  });
 });
