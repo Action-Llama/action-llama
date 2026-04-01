@@ -91,6 +91,7 @@ export interface WebhookTrigger {
   assignee?: string;
   author?: string;
   branches?: string[];
+  conclusions?: string[];
   resources?: string[];
   guilds?: string[];     // Discord guild IDs
   channels?: string[];   // Discord channel IDs
