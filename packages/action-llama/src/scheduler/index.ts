@@ -83,7 +83,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   const { gateway, gatewayPort, registerContainer, unregisterContainer, setChatRuntime } = await setupGateway({
     projectPath, globalConfig, state, agentConfigs,
     webhookRegistry, webhookSecrets, webhookConfigs: webhookSources, stateStore, statsStore, events, telemetry,
-    mkLogger, statusTracker, webUI, expose, logger,
+    statusTracker, webUI, expose, logger,
   });
 
   // Register webhook bindings early (before Docker builds) so incoming webhooks are queued
