@@ -1,5 +1,20 @@
 # @action-llama/action-llama
 
+## 0.26.2
+
+### Patch Changes
+
+- [#530](https://github.com/Action-Llama/action-llama/pull/530) [`a0a0dcb`](https://github.com/Action-Llama/action-llama/commit/a0a0dcb1a45c11f0d4779a74d7e7ed38060b735a) Thanks [@asselstine](https://github.com/asselstine)! - Summary column in activity table is now flush left and takes remaining width; summaries default to expanded on desktop
+
+- [#527](https://github.com/Action-Llama/action-llama/pull/527) [`cd9a865`](https://github.com/Action-Llama/action-llama/commit/cd9a86525ea54df867b9b959b93ef179f9a4f4fd) Thanks [@asselstine](https://github.com/asselstine)! - Fix two instance log bugs: (1) older instance logs no longer disappear — backend `readLastEntries` now scans up to 50k lines instead of stopping at `limit*3`, so sparse instance entries are found even when many newer-instance lines follow; (2) the logs panel pre-fetches one older page on load to provide scroll headroom above the initially visible entries.
+
+- [#529](https://github.com/Action-Llama/action-llama/pull/529) [`fb72196`](https://github.com/Action-Llama/action-llama/commit/fb72196b3358c8e7014019aa33520b2b4340769b) Thanks [@asselstine](https://github.com/asselstine)! - Fix `setenv` not working in host-user runtimes where only `/bin/sh` (BusyBox/dash) is available. Rewrote `al-bash-init.sh` using POSIX-only syntax (no bash arrays, no `[[ =~ ]]`, no `printf %q`) so it works under any `/bin/sh`. Also added `sh` compatibility tests to prevent regression. Closes [#525](https://github.com/Action-Llama/action-llama/issues/525).
+
+- [#526](https://github.com/Action-Llama/action-llama/pull/526) [`354c0b1`](https://github.com/Action-Llama/action-llama/commit/354c0b176b915a3c6be0c29a4df250f6113fb94f) Thanks [@asselstine](https://github.com/asselstine)! - Update log summary prompt to produce more specific, structured summaries with 10-word constraints for what was operated on, what was done, and any errors.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.26.2
+
 ## 0.26.1
 
 ### Patch Changes

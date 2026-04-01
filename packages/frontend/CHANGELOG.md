@@ -1,5 +1,11 @@
 # @action-llama/frontend
 
+## 0.19.7
+
+### Patch Changes
+
+- [#527](https://github.com/Action-Llama/action-llama/pull/527) [`cd9a865`](https://github.com/Action-Llama/action-llama/commit/cd9a86525ea54df867b9b959b93ef179f9a4f4fd) Thanks [@asselstine](https://github.com/asselstine)! - Fix two instance log bugs: (1) older instance logs no longer disappear — backend `readLastEntries` now scans up to 50k lines instead of stopping at `limit*3`, so sparse instance entries are found even when many newer-instance lines follow; (2) the logs panel pre-fetches one older page on load to provide scroll headroom above the initially visible entries.
+
 ## 0.19.6
 
 ### Patch Changes
