@@ -348,7 +348,7 @@ export function getActivity(
   triggerType?: string,
   statuses?: string[],
   signal?: AbortSignal,
-): Promise<{ rows: ActivityRow[]; total: number }> {
+): Promise<{ rows: ActivityRow[]; total: number; pendingCount: number }> {
   let url = `/api/stats/activity?limit=${limit}&offset=${offset}`;
   if (agent) url += `&agent=${encodeURIComponent(agent)}`;
   if (triggerType) url += `&triggerType=${encodeURIComponent(triggerType)}`;

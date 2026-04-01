@@ -263,6 +263,7 @@ export function registerStatsRoutes(
 
     const memRows = buildMemRows();
     const memCount = memRows.length;
+    const pendingCount = memRows.filter((r) => r.result === "pending").length;
 
     let rows: any[];
     let total: number;
@@ -334,7 +335,7 @@ export function registerStatsRoutes(
       }
     }
 
-    return c.json({ rows, total, limit, offset });
+    return c.json({ rows, total, pendingCount, limit, offset });
   });
 
   // Single webhook receipt by ID
