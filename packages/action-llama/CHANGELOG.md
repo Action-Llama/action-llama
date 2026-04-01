@@ -1,5 +1,14 @@
 # @action-llama/action-llama
 
+## 0.26.4
+
+### Patch Changes
+
+- [`1529aae`](https://github.com/Action-Llama/action-llama/commit/1529aaea09ccb37a910c3458fe6c0a5e352d2a5b) Thanks [@asselstine](https://github.com/asselstine)! - Fix TDZ crash on instance logs page caused by `loadOlderLogs` being referenced in a `useEffect` dependency array before its `const` declaration.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.26.4
+
 ## 0.26.3
 
 ### Patch Changes
