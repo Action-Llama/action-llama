@@ -1287,4 +1287,64 @@ describe("App TUI", () => {
     // Should render without error; dev agent is shown in idle/waiting state
     expect(output).toContain("dev");
   });
+
+  it("fires the setInterval tick callback when timer advances", async () => {
+    // Use fake timers so we can advance time without waiting 1000ms
+    vi.useFakeTimers();
+    try {
+      const tracker = new StatusTracker();
+      tracker.registerAgent("dev");
+      tracker.setSchedulerInfo({
+        mode: "host",
+        gatewayPort: null,
+        cronJobCount: 1,
+        webhooksActive: false,
+        webhookUrls: [],
+        startedAt: new Date(),
+        paused: false,
+      });
+
+      instance = render(<App statusTracker={tracker} />);
+
+      // Advance past the 1000ms tick interval — exercises `() => setTick((t) => t + 1)`
+      await vi.advanceTimersByTimeAsync(1100);
+
+      // Component should still render correctly after tick state update
+      expect(instance.lastFrame()!).toContain("dev");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("handles getProjectScale error gracefully in loadProjectScale effect", async () => {
+    const { getProjectScale } = await import("../../src/shared/config.js");
+    // Make the first call throw to exercise the catch block (line 411)
+    vi.mocked(getProjectScale).mockImplementationOnce(() => {
+      throw new Error("config read error");
+    });
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.setSchedulerInfo({
+      mode: "host",
+      gatewayPort: null,
+      cronJobCount: 0,
+      webhooksActive: false,
+      webhookUrls: [],
+      startedAt: new Date(),
+      paused: false,
+    });
+
+    instance = render(<App statusTracker={tracker} projectPath="/tmp/project" />);
+    // Wait for the async loadProjectScale effect to complete
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      "Failed to load project scale:",
+      expect.any(Error),
+    );
+
+    consoleSpy.mockRestore();
+  });
 });
