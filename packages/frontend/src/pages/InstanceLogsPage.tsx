@@ -51,6 +51,8 @@ export function InstanceLogsPage() {
 
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasOlderLogs, setHasOlderLogs] = useState(true);
+  const [backfilling, setBackfilling] = useState(false);
+  const backfillRunning = useRef(false);
   const OLDER_BATCH_SIZE = 100;
 
   const [summaryText, setSummaryText] = useState<string | null>(null);
@@ -123,7 +125,7 @@ export function InstanceLogsPage() {
   }, [name, id]);
 
   const loadOlderLogs = useCallback(async () => {
-    if (!name || !id || loadingOlder || !hasOlderLogs || logs.length === 0) return;
+    if (!name || !id || loadingOlder || !hasOlderLogs || logs.length === 0 || backfilling) return;
     setLoadingOlder(true);
     try {
       const oldestTime = logs[0].time;
@@ -156,16 +158,74 @@ export function InstanceLogsPage() {
     } finally {
       setLoadingOlder(false);
     }
-  }, [name, id, loadingOlder, hasOlderLogs, logs]);
+  }, [name, id, loadingOlder, hasOlderLogs, logs, backfilling]);
 
-  // Pre-fetch one older page after the initial logs arrive so there's scroll headroom
-  const didPreload = useRef(false);
+  // Auto-backfill all older logs for completed instances
   useEffect(() => {
-    if (logs.length > 0 && !didPreload.current && hasOlderLogs) {
-      didPreload.current = true;
-      loadOlderLogs();
-    }
-  }, [logs.length, hasOlderLogs, loadOlderLogs]);
+    if (isRunning || !name || !id || !hasOlderLogs || backfillRunning.current) return;
+    if (logs.length === 0) return;
+
+    backfillRunning.current = true;
+    setBackfilling(true);
+
+    let cancelled = false;
+    (async () => {
+      let oldestTime = logs[0].time;
+      try {
+        while (!cancelled) {
+          const params: Record<string, string> = {
+            lines: String(OLDER_BATCH_SIZE),
+            before: String(oldestTime),
+          };
+          const d = await getInstanceLogs(name, id, params);
+          if (cancelled) break;
+
+          if (d.entries.length === 0) {
+            setHasOlderLogs(false);
+            break;
+          }
+
+          const el = logContainerRef.current;
+          const prevScrollHeight = el?.scrollHeight ?? 0;
+          const prevScrollTop = el?.scrollTop ?? 0;
+
+          setLogs((prev) => {
+            const merged = [...d.entries, ...prev];
+            return merged;
+          });
+
+          // Restore scroll position after prepend
+          requestAnimationFrame(() => {
+            if (el) {
+              el.scrollTop = prevScrollTop + (el.scrollHeight - prevScrollHeight);
+            }
+          });
+
+          oldestTime = d.entries[0].time;
+
+          if (d.entries.length < OLDER_BATCH_SIZE) {
+            setHasOlderLogs(false);
+            break;
+          }
+        }
+      } catch {
+        // Silently stop — user can click "↑ Load older logs" to retry
+      } finally {
+        if (!cancelled) {
+          setBackfilling(false);
+          backfillRunning.current = false;
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      setBackfilling(false);
+      backfillRunning.current = false;
+    };
+    // Only depends on isRunning/name/id changing or first logs arriving.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRunning, name, id, logs.length > 0]);
 
   // Detect scroll-away to stop following
   const handleScroll = useCallback(() => {
@@ -175,10 +235,10 @@ export function InstanceLogsPage() {
     setFollowing(atBottom);
 
     // Auto-load older logs when scrolled near top
-    if (el.scrollTop < 100 && hasOlderLogs && !loadingOlder && logs.length > 0) {
+    if (el.scrollTop < 100 && hasOlderLogs && !loadingOlder && !backfilling && logs.length > 0) {
       loadOlderLogs();
     }
-  }, [hasOlderLogs, loadingOlder, logs.length, loadOlderLogs]);
+  }, [hasOlderLogs, loadingOlder, backfilling, logs.length, loadOlderLogs]);
 
   if (!ctx) return null;
 
@@ -307,14 +367,14 @@ export function InstanceLogsPage() {
             onScroll={handleScroll}
             className="min-h-[32rem] max-h-[calc(100vh-16rem)] overflow-y-auto scrollbar-thin bg-slate-950 p-3"
           >
-            {loadingOlder && (
+            {(loadingOlder || backfilling) && (
               <div className="text-xs text-slate-500 text-center py-2">
                 <span className="inline-flex items-center gap-1">
                   <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
-                  Loading older logs…
+                  {backfilling ? "Loading full history…" : "Loading older logs…"}
                 </span>
               </div>
             )}
