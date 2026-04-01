@@ -86,13 +86,13 @@ export function AgentLayout() {
               id="agent-state"
               className={`text-sm ${
                 agent.runningCount > 0
-                  ? "text-green-600 dark:text-green-400"
+                  ? "text-blue-600 dark:text-blue-400"
                   : "text-slate-500 dark:text-slate-400"
               }`}
             >
               <span
                 className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 ${
-                  agent.runningCount > 0 ? "bg-green-500" : "bg-slate-400"
+                  agent.runningCount > 0 ? "bg-blue-500" : "bg-slate-400"
                 }`}
               />
               {agent.runningCount > 0

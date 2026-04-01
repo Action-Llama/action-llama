@@ -104,8 +104,8 @@ export function ResultBadge({ result, deadLetterReason }: { result: string; dead
 export function StateBadge({ state }: { state: string }) {
   const colors: Record<string, { dot: string; text: string }> = {
     running: {
-      dot: "bg-green-500",
-      text: "text-green-600 dark:text-green-400",
+      dot: "bg-blue-500",
+      text: "text-blue-600 dark:text-blue-400",
     },
     building: {
       dot: "bg-yellow-500",

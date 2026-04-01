@@ -14,7 +14,7 @@ import { agentHueStyle } from "../lib/color";
 
 const ROW_STATE_STYLES: Record<string, string> = {
   running:
-    "border-l-2 border-l-green-500 dark:border-l-green-400 bg-green-50/40 dark:bg-green-950/20",
+    "border-l-2 border-l-blue-500 dark:border-l-blue-400 bg-blue-50/40 dark:bg-blue-950/20",
   building:
     "border-l-2 border-l-yellow-500 dark:border-l-yellow-400 bg-yellow-50/40 dark:bg-yellow-950/20",
   error:
@@ -23,7 +23,7 @@ const ROW_STATE_STYLES: Record<string, string> = {
 };
 
 const STATE_DOT_COLORS: Record<string, string> = {
-  running: "bg-green-500",
+  running: "bg-blue-500",
   building: "bg-yellow-500",
   error: "bg-red-500",
   idle: "bg-slate-400",
