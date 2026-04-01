@@ -15,6 +15,13 @@
       "when": 1774906200000,
       "tag": "0001_add_trigger_context",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1775061000000,
+      "tag": "0002_add_result_index",
+      "breakpoints": true
     }
   ]
 }
