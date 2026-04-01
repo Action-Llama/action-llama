@@ -95,3 +95,4 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Webhook form-urlencoded missing payload field — POST with application/x-www-form-urlencoded and no payload field returns 400 (webhook-edge-cases.test.ts)
 - [x] Lock route missing field errors — POST /locks/acquire: missing secret → 400, missing resourceKey → 400; POST /locks/release: missing secret → 400; POST /locks/heartbeat: missing secret → 400 (lock-route-errors.test.ts)
 - [x] Scheduler validation scale=0 bypass — agent with scale=0 and no schedule/webhooks does not trigger ConfigError; validateAgentConfig scale=0 early return (scheduler-validation.test.ts)
+- [x] Hot-reload schedule change — modify schedule in config.toml at runtime; verify rebuildCronJobs stops old cron and creates new one; agent remains functional via manual trigger; removing schedule while keeping webhook works; adding schedule to webhook-only agent works (hot-reload-schedule-change.test.ts)
