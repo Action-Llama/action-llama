@@ -34,7 +34,8 @@
     "./internals/config": "./dist/shared/config.js",
     "./internals/webhook-types": "./dist/webhooks/types.js",
     "./internals/execution": "./dist/execution/execution.js",
-    "./internals/scheduler-events": "./dist/scheduler/events.js"
+    "./internals/scheduler-events": "./dist/scheduler/events.js",
+    "./internals/status-tracker": "./dist/tui/status-tracker.js"
   },
   "files": [
     "dist",

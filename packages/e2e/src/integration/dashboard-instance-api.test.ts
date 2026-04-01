@@ -49,7 +49,7 @@ describe.skipIf(!DOCKER)("integration: dashboard instance detail API", { timeout
       ],
     });
 
-    await harness.start();
+    await harness.start({ webUI: true });
 
     // Trigger the agent and wait for it to complete
     await harness.triggerAgent("instance-detail-agent");
@@ -113,7 +113,7 @@ describe.skipIf(!DOCKER)("integration: dashboard instance detail API", { timeout
       ],
     });
 
-    await harness.start();
+    await harness.start({ webUI: true });
 
     // Trigger the agent manually and wait for it to complete
     await harness.triggerAgent("trigger-detail-agent");
@@ -168,7 +168,7 @@ describe.skipIf(!DOCKER)("integration: dashboard instance detail API", { timeout
       ],
     });
 
-    await harness.start();
+    await harness.start({ webUI: true });
 
     const res = await gatewayFetch(
       harness,
@@ -191,7 +191,7 @@ describe.skipIf(!DOCKER)("integration: dashboard instance detail API", { timeout
       ],
     });
 
-    await harness.start();
+    await harness.start({ webUI: true });
 
     // Fetch with a nonexistent instanceId — should return run: null
     const detailRes = await gatewayFetch(
