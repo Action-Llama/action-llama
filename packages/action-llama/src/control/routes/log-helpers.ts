@@ -5,6 +5,7 @@ import { readdirSync, existsSync } from "fs";
 export const SAFE_AGENT_NAME = /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/;
 export const MAX_LINES = 2000;
 export const DEFAULT_LINES = 200;
+const MAX_SCAN_LINES = 500000;
 
 export interface LogEntry {
   level: number;
@@ -129,19 +130,18 @@ export async function readLastEntries(
   beforeTime?: number,
   instanceFilter?: string,
   grep?: RegExp,
-): Promise<{ entries: LogEntry[]; byteOffset: number }> {
+  startPosition?: number,
+): Promise<{ entries: LogEntry[]; byteOffset: number; scanStoppedAt: number }> {
   try {
     const stat = await fs.stat(filePath);
-    if (stat.size === 0) return { entries: [], byteOffset: 0 };
+    if (stat.size === 0) return { entries: [], byteOffset: 0, scanStoppedAt: 0 };
 
     const fd = await fs.open(filePath, "r");
     const entries: LogEntry[] = [];
-    let position = stat.size;
+    let position = startPosition ?? stat.size;
     const chunkSize = 8192;
     const buffer = Buffer.alloc(chunkSize);
     let remainder = "";
-    // Safety cap to prevent scanning multi-GB files; generous enough for any real agent run
-    const MAX_SCAN_LINES = 50000;
     let rawCount = 0;
 
     try {
@@ -185,9 +185,9 @@ export async function readLastEntries(
       await fd.close();
     }
 
-    return { entries: entries.slice(-limit), byteOffset: stat.size };
+    return { entries: entries.slice(-limit), byteOffset: stat.size, scanStoppedAt: position };
   } catch {
-    return { entries: [], byteOffset: 0 };
+    return { entries: [], byteOffset: 0, scanStoppedAt: 0 };
   }
 }
 
@@ -205,26 +205,37 @@ export async function readLastEntriesMultiFile(
   beforeTime?: number,
   instanceFilter?: string,
   grep?: RegExp,
-): Promise<{ entries: LogEntry[]; latestFile: string | null; byteOffset: number }> {
-  if (files.length === 0) return { entries: [], latestFile: null, byteOffset: 0 };
+): Promise<{ entries: LogEntry[]; latestFile: string | null; byteOffset: number; backCursorDate: string | null; backCursorOffset: number }> {
+  if (files.length === 0) return { entries: [], latestFile: null, byteOffset: 0, backCursorDate: null, backCursorOffset: 0 };
 
   const collected: LogEntry[] = [];
   let latestByteOffset = 0;
   const latestFile = files[files.length - 1];
+  let backDate: string | null = null;
+  let backOffset = 0;
 
   // Iterate from newest to oldest
   for (let i = files.length - 1; i >= 0 && collected.length < limit; i--) {
     const remaining = limit - collected.length;
-    const { entries, byteOffset } = await readLastEntries(
+    const { entries, byteOffset, scanStoppedAt } = await readLastEntries(
       files[i], remaining, afterTime, beforeTime, instanceFilter, grep,
     );
     if (i === files.length - 1) latestByteOffset = byteOffset;
     collected.unshift(...entries);
+    
+    backDate = dateFromLogFile(files[i]);
+    backOffset = scanStoppedAt;
+    
+    // If we reached beginning of oldest file, no more back pages
+    if (i === 0 && scanStoppedAt === 0) {
+      backDate = null;
+      backOffset = 0;
+    }
   }
 
   // Trim to limit (in case older files provided more than needed)
   const trimmed = collected.slice(-limit);
-  return { entries: trimmed, latestFile, byteOffset: latestByteOffset };
+  return { entries: trimmed, latestFile, byteOffset: latestByteOffset, backCursorDate: backDate, backCursorOffset: backOffset };
 }
 
 /** Read entries forward across date boundaries starting from a cursor. */

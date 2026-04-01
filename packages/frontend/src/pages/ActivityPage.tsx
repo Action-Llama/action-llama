@@ -140,13 +140,11 @@ export function ActivityPage() {
 
       {/* Table */}
       <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <div className="overflow-x-auto">
-          <ActivityTable
-            rows={rows}
-            agentNames={agentNames}
-            loading={isLoading && rows.length === 0}
-          />
-        </div>
+        <ActivityTable
+          rows={rows}
+          agentNames={agentNames}
+          loading={isLoading && rows.length === 0}
+        />
 
         {/* Pagination */}
         {totalPages > 1 && (

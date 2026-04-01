@@ -403,7 +403,7 @@ export function getAgentLogs(
   name: string,
   params: Record<string, string>,
   signal?: AbortSignal,
-): Promise<{ entries: LogEntry[]; cursor: string | null; hasMore: boolean }> {
+): Promise<{ entries: LogEntry[]; cursor: string | null; backCursor: string | null; hasMore: boolean }> {
   const qs = new URLSearchParams(params).toString();
   return fetchJSON(
     `/api/logs/agents/${encodeURIComponent(name)}${qs ? `?${qs}` : ""}`,
@@ -416,7 +416,7 @@ export function getInstanceLogs(
   instanceId: string,
   params: Record<string, string>,
   signal?: AbortSignal,
-): Promise<{ entries: LogEntry[]; cursor: string | null; hasMore: boolean }> {
+): Promise<{ entries: LogEntry[]; cursor: string | null; backCursor: string | null; hasMore: boolean }> {
   const qs = new URLSearchParams(params).toString();
   return fetchJSON(
     `/api/logs/agents/${encodeURIComponent(name)}/${encodeURIComponent(instanceId)}${qs ? `?${qs}` : ""}`,

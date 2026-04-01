@@ -321,25 +321,6 @@ export function registerStatsRoutes(
       total = memCount + dbCount;
     }
 
-    // Enrich webhook rows with provider name + event summary from receipts
-    if (statsStore) {
-      const receiptIds = rows
-        .filter((r: any) => r.triggerType === "webhook" && r.webhookReceiptId)
-        .map((r: any) => r.webhookReceiptId as string);
-      if (receiptIds.length > 0) {
-        const details = statsStore.getWebhookDetailsBatch(receiptIds);
-        for (const row of rows) {
-          if (row.webhookReceiptId && details[row.webhookReceiptId]) {
-            const d = details[row.webhookReceiptId];
-            row.triggerSource = d.source;
-            if (d.eventSummary && d.eventSummary !== d.source) {
-              row.eventSummary = d.eventSummary;
-            }
-          }
-        }
-      }
-    }
-
     return c.json({ rows, total, pendingCount, limit, offset });
   });
 
