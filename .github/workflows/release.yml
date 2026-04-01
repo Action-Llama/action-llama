@@ -69,24 +69,27 @@ jobs:
         if: steps.has-changesets.outputs.has_changesets == 'true'
         run: npm run build
 
+      # Dry-run gate: intentionally fails the entire workflow if any package
+      # can't be published. We want to catch registry issues (missing package,
+      # bad token, etc.) before the real publish commits us to a partial release.
       - name: Dry-run publish (all packages)
         if: steps.has-changesets.outputs.has_changesets == 'true'
         run: |
-          npm publish -w packages/action-llama --access public --tag next --dry-run
-          npm publish -w packages/skill --access public --tag next --dry-run
+          npm publish -w packages/action-llama --access public --tag latest --dry-run
+          npm publish -w packages/skill --access public --tag latest --dry-run
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @action-llama/action-llama
         if: steps.has-changesets.outputs.has_changesets == 'true'
-        run: npm publish -w packages/action-llama --access public --tag next
+        run: npm publish -w packages/action-llama --access public --tag latest
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @action-llama/skill
         if: steps.has-changesets.outputs.has_changesets == 'true'
         continue-on-error: true
-        run: npm publish -w packages/skill --access public --tag next
+        run: npm publish -w packages/skill --access public --tag latest
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -100,7 +103,7 @@ jobs:
             echo "- \`@action-llama/skill@${SKILL_VERSION}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- \`@action-llama/action-llama@${{ steps.version.outputs.new_version }}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Published to npm with the \`next\` dist-tag." >> "$GITHUB_STEP_SUMMARY"
+            echo "Published to npm with the \`latest\` dist-tag." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "## No new changes" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"

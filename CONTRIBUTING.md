@@ -75,23 +75,11 @@ Releases use a two-tier model: **daily → `next`**, **manual promote → `lates
 1. Merge PRs to `main` with changesets
 2. Daily at 08:00 UTC, GitHub Actions runs the release workflow
 3. If pending changesets exist, a "release PR" is opened (or updated) with version bump + changelog
-4. When the release PR merges, the package is published to npm under the **`next`** dist-tag
+4. When the release PR merges, the package is published to npm under the **`latest`** dist-tag
 
-Install the latest daily build: `npm install @action-llama/action-llama@next`
+Install: `npm install @action-llama/action-llama`
 
-You can also trigger a daily release manually via the GitHub Actions UI (workflow_dispatch on the Release workflow).
-
-### Promoting to `latest`
-
-When a `next` version is ready for general use:
-
-```bash
-npm run promote                  # promotes current 'next' to 'latest'
-```
-
-Or trigger the "Promote to latest" workflow in GitHub Actions (optionally specifying a version).
-
-Install the stable version: `npm install @action-llama/action-llama`
+You can trigger a release manually via the GitHub Actions UI (workflow_dispatch on the Release workflow).
 
 ## Development
 

@@ -110,9 +110,8 @@ We are pre-1.0 (`0.x.y`), so `minor` = what would be `major` post-1.0. Most chan
 ## Versioning & Releases
 
 - Pre-1.0: `0.MINOR.PATCH`
-- **Daily releases** publish to the `next` dist-tag on npm (not `latest`)
-- The daily workflow (`release.yml`) runs at 08:00 UTC — if changesets exist, it opens a release PR; when merged, it publishes to `next`
-- Users on `npm install @action-llama/action-llama@next` get the latest daily build
+- Releases publish to the `latest` dist-tag on npm
+- The release workflow (`release.yml`) is triggered manually via workflow_dispatch — it versions packages, runs tests, and publishes to `latest`
 
 ## Key Conventions
 

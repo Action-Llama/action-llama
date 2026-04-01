@@ -5,7 +5,7 @@ export async function setupVPS(context: E2ETestContext): Promise<ContainerInfo> 
 
   // Docker and Node.js are already installed via the Dockerfile.
   // Install Action Llama on the VPS so it's available for deployment verification.
-  await context.executeSSHCommand(containerInfo, "npm install -g @action-llama/action-llama@next || true");
+  await context.executeSSHCommand(containerInfo, "npm install -g @action-llama/action-llama@latest || true");
 
   return containerInfo;
 }
