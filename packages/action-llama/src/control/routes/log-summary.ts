@@ -136,7 +136,7 @@ export function registerLogSummaryRoutes(
       {
         role: "system",
         content:
-          "You are a concise technical assistant. Summarize the following agent run logs. In a few words describe: what triggered it, what resource it operated on, and what it did. If there are errors then mention the errors. Keep the summary to 1-3 sentences. Do not include timestamps or log formatting.",
+          "You are a concise technical assistant. Summarize the following agent run logs using this structure: Describe what the agent operated on in less than 10 words. Describe what it did in less than 10 words. If there were errors, describe them in less than 10 words. Output only the summary text — no timestamps, no log formatting, no bullet points or labels.",
       },
       {
         role: "user",
