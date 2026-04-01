@@ -270,7 +270,27 @@ describe("startScheduler", () => {
     expect(cronJobs).toHaveLength(3);
   });
 
+  it("applies per-agent maxWorkQueueSize and logs the configuration", async () => {
+    // Add maxWorkQueueSize to the dev agent's config
+    const devDir = resolve(tmpDir, "agents", "dev");
+    writeAgentConfig(devDir, {
+      name: "dev",
+      credentials: ["github_token"],
+      models: ["sonnet"],
+      schedule: "*/5 * * * *",
+      maxWorkQueueSize: 10,
+    });
 
+    await startScheduler(tmpDir);
+
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: "dev",
+        maxWorkQueueSize: 10,
+      }),
+      "per-agent work queue size configured",
+    );
+  });
 
   it("creates runner pools for each agent", async () => {
     const { runnerPools } = await startScheduler(tmpDir);
@@ -915,6 +935,55 @@ describe("startScheduler", () => {
         "webhook queued"
       );
     });
+
+    it("dispatches webhook to an available runner and logs 'webhook triggering agent'", async () => {
+      let capturedOnTrigger: ((config: any, context: any) => any) | undefined;
+      let capturedAgentConfig: any;
+
+      const fakeWebhookContext = {
+        event: "push",
+        action: "created",
+        source: "github",
+        receiptId: "test-receipt-dispatch",
+        payload: { ref: "refs/heads/main" },
+      };
+
+      mockSetupWebhookRegistry.mockResolvedValue({
+        registry: { bind: vi.fn(), unbind: vi.fn() },
+        secrets: {},
+      });
+
+      // Capture the onTrigger callback
+      mockRegisterWebhookBindings.mockImplementation((args: any) => {
+        capturedOnTrigger = args.onTrigger;
+        capturedAgentConfig = args.agentConfig;
+      });
+
+      // Runners are available (not busy)
+      mockIsRunning = false;
+      await startScheduler(tmpDir);
+      vi.clearAllMocks();
+
+      // Call the trigger — schedulerCtx is set and a runner is free
+      // dispatchOrQueue returns { action: "dispatched" }
+      expect(capturedOnTrigger).toBeDefined();
+      const result = capturedOnTrigger!(capturedAgentConfig, fakeWebhookContext);
+
+      expect(result).toBe(true);
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agent: "dev",
+          event: "push",
+          action: "created",
+        }),
+        "webhook triggering agent",
+      );
+
+      // Flush the fire-and-forget executeRun promise
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(mockRun).toHaveBeenCalledTimes(1);
+    });
+
   });
 
   describe("cron queued with dropped event (line 211)", () => {
