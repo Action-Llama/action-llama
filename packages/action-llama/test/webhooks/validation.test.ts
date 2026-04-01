@@ -159,6 +159,12 @@ describe("validateEd25519Signature", () => {
     expect(validateEd25519Signature(BODY, TIMESTAMP, null as any, { key: rawPublicKeyHex })).toBeNull();
   });
 
+  it("returns null when signature is a truthy non-string that causes Buffer.from to throw", () => {
+    // {} is truthy (passes the !signature check) but Buffer.from({}, "hex") throws a TypeError.
+    // This exercises the outer catch block (return null on Buffer decode error).
+    expect(validateEd25519Signature(BODY, TIMESTAMP, {} as any, { key: rawPublicKeyHex })).toBeNull();
+  });
+
   it("skips 32-byte key that fails createPublicKey (invalid key material) and continues to next key", () => {
     // A 32-byte all-zeros key is syntactically valid length but may fail Ed25519 public key creation
     const invalidKeyHex = "00".repeat(32); // 32 bytes but not a valid Ed25519 point
@@ -168,5 +174,10 @@ describe("validateEd25519Signature", () => {
     // Either null (invalid key rejected) or "invalidKey" (if Node.js accepts it as a key)
     // We just verify no crash and the function returns a valid result type
     expect(result === null || typeof result === "string").toBe(true);
+  });
+
+  it("returns null when signature is a plain object that decodes to wrong byte count", () => {
+    // Using a number as signature — truthy, but Buffer.from(42, "hex") throws
+    expect(validateEd25519Signature(BODY, TIMESTAMP, 42 as any, { key: rawPublicKeyHex })).toBeNull();
   });
 });

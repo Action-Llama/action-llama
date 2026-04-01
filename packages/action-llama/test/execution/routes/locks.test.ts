@@ -547,3 +547,55 @@ describe("POST /locks/acquire — deadlock detection", () => {
     expect(deadlockBody.cycle.length).toBeGreaterThan(0);
   });
 });
+
+describe("POST /locks/acquire — non-deadlock reason rejection", () => {
+  /**
+   * Tests the branch at locks.ts line 60:
+   *   if (result.reason) {
+   *     if (result.deadlock) { ... } else { logger.debug(...) }
+   *
+   * This path is reached when lockStore.acquire() returns a reason
+   * without setting deadlock: true. We use a mock LockStore to simulate
+   * this since the real LockStore only returns a reason with deadlock=true
+   * or without reason (plain conflict).
+   */
+  function setupWithMockAcquire(acquireImpl: (resourceKey: string, holder: string) => any) {
+    const registry = new Map<string, ContainerRegistration>();
+    registry.set("test-secret", {
+      containerName: "al-mock-agent-1234",
+      agentName: "mock-agent",
+      instanceId: "mock-agent-instance",
+    });
+    const mockLockStore = {
+      acquire: acquireImpl,
+      release: () => ({ ok: true }),
+      heartbeat: () => ({ ok: true }),
+      dispose: () => {},
+    };
+    const freshLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const app = new Hono();
+    registerLockRoutes(app, registry, mockLockStore as any, freshLogger as any);
+    return { app, freshLogger };
+  }
+
+  it("returns 409 and calls logger.debug when lockStore returns a non-deadlock reason", async () => {
+    const { app, freshLogger } = setupWithMockAcquire(() => ({
+      ok: false,
+      reason: "resource locked by external system",
+    }));
+
+    const res = await acquire(app, {
+      secret: "test-secret",
+      resourceKey: "github://acme/app/issues/99",
+    });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+    expect(body.reason).toBe("resource locked by external system");
+    expect(body.deadlock).toBeUndefined();
+    expect(freshLogger.debug).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "mock-agent", resourceKey: "github://acme/app/issues/99" }),
+      "lock rejected: resource locked by external system",
+    );
+  });
+});
