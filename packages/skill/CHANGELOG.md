@@ -1,5 +1,11 @@
 # @action-llama/skill
 
+## 0.26.7
+
+### Patch Changes
+
+- [#556](https://github.com/Action-Llama/action-llama/pull/556) [`6c2022f`](https://github.com/Action-Llama/action-llama/commit/6c2022fe996f92ed8cdaaf5e0b35275d495c5451) Thanks [@asselstine](https://github.com/asselstine)! - Fix: Instance logs not showing full history due to backCursor race condition in frontend polling logic. Increased initial log batch size from 100 to 200 to match API default. Added comprehensive test coverage for backward pagination across date boundaries.
+
 ## 0.26.6
 
 ## 0.26.5
