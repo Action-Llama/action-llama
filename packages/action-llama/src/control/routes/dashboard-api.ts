@@ -125,7 +125,7 @@ export function registerDashboardApiRoutes(
   app.get("/api/dashboard/agents/:name/instances/:id", (c) => {
     const instanceId = c.req.param("id");
     const run = statsStore ? statsStore.queryRunByInstanceId(instanceId) : null;
-    const runningInstance = statusTracker.getInstances().find((i) => i.id === instanceId) || null;
+    const runningInstance = statusTracker.getInstances().find((i) => i.id === instanceId && i.status === "running") || null;
 
     let parentEdge: { caller_agent: string; caller_instance: string } | undefined;
     let webhookReceipt: { source: string; eventSummary?: string; deliveryId?: string } | undefined;
