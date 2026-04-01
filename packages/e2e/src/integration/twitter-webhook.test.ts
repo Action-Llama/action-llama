@@ -16,6 +16,9 @@
  *         matchesFilter)
  */
 import { describe, it, expect, afterEach } from "vitest";
+import { mkdirSync, writeFileSync } from "fs";
+import { resolve } from "path";
+import { createHmac } from "crypto";
 import { IntegrationHarness, isDockerAvailable } from "./harness.js";
 
 const DOCKER = isDockerAvailable();
@@ -191,5 +194,85 @@ describe.skipIf(!DOCKER)("integration: Twitter webhook provider", { timeout: 300
     // No x-twitter-webhooks-signature header → 401
     const res = await sendTwitterWebhook(harness, payload);
     expect(res.status).toBe(401);
+  });
+
+  it("GET /webhooks/twitter CRC challenge with configured secret returns HMAC response_token", async () => {
+    // Twitter Account Activity API requires a CRC (challenge-response check) before
+    // activating a webhook subscription. Twitter sends GET /webhooks/twitter?crc_token=<token>
+    // and expects { response_token: "sha256=<hmac-of-token-with-consumer_secret>" }.
+    //
+    // Code path: GET /webhooks/:source → provider.handleCrcChallenge(queryParams, secrets)
+    //   → twitter.ts: createHmac("sha256", secret).update(crcToken).digest("base64")
+    //   → returns { status: 200, body: { response_token: "sha256=..." } }
+    //
+    // This exercises webhooks/providers/twitter.ts handleCrcChallenge() success path.
+    const TEST_CONSUMER_SECRET = "test-crc-consumer-secret-12345";
+
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "twitter-crc-agent",
+          webhooks: [{ source: "twitter", events: ["tweet_create_events"] }],
+          testScript: "#!/bin/sh\nexit 0\n",
+        },
+      ],
+      globalConfig: {
+        webhooks: { twitter: { type: "twitter", allowUnsigned: true } },
+      },
+    });
+
+    // Write the Twitter consumer_secret credential BEFORE start() so it's
+    // picked up by setupWebhookRegistry() during scheduler initialization.
+    const credDir = resolve(harness.credentialDir, "x_twitter_api", "default");
+    mkdirSync(credDir, { recursive: true });
+    writeFileSync(resolve(credDir, "consumer_secret"), TEST_CONSUMER_SECRET + "\n");
+
+    await harness.start();
+
+    const crcToken = "test-crc-token-" + Math.random().toString(36).slice(2);
+
+    // GET /webhooks/twitter?crc_token=<token>
+    const res = await fetch(
+      `http://127.0.0.1:${harness.gatewayPort}/webhooks/twitter?crc_token=${encodeURIComponent(crcToken)}`,
+      { method: "GET" },
+    );
+    expect(res.status).toBe(200);
+
+    const body = await res.json() as { response_token: string };
+    expect(body).toHaveProperty("response_token");
+    expect(typeof body.response_token).toBe("string");
+    // Must start with "sha256="
+    expect(body.response_token.startsWith("sha256=")).toBe(true);
+
+    // Verify the HMAC is correct (sha256 of crcToken with TEST_CONSUMER_SECRET)
+    const expectedHmac = createHmac("sha256", TEST_CONSUMER_SECRET).update(crcToken).digest("base64");
+    expect(body.response_token).toBe(`sha256=${expectedHmac}`);
+  });
+
+  it("GET /webhooks/twitter CRC challenge without crc_token returns 400", async () => {
+    // When crc_token is missing, handleCrcChallenge returns null → 400 "CRC challenge failed".
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "twitter-crc-notoken-agent",
+          webhooks: [{ source: "twitter", events: ["tweet_create_events"] }],
+          testScript: "#!/bin/sh\nexit 0\n",
+        },
+      ],
+      globalConfig: {
+        webhooks: { twitter: { type: "twitter", allowUnsigned: true } },
+      },
+    });
+
+    await harness.start();
+
+    // GET without crc_token param → handleCrcChallenge returns null → 400
+    const res = await fetch(
+      `http://127.0.0.1:${harness.gatewayPort}/webhooks/twitter`,
+      { method: "GET" },
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json() as { error: string };
+    expect(body.error).toBeTruthy();
   });
 });

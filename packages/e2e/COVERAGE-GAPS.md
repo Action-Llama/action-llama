@@ -106,3 +106,4 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Webhook source validation on startup — agent referencing undefined webhook source causes startup failure; properly declared source allows normal startup and manual trigger (webhook-source-validation.test.ts)
 - [x] Trigger scale=0 agent returns 409 — dispatchOrQueue pool.size===0 rejection path; agent exists but has no runners; 409 vs 404 distinction; active agent still works alongside (control.test.ts)
 - [x] al-subagent calls nonexistent agent → 409 (target not found) — call-dispatcher agentConfigs.find() fails; call event emitted with ok:false; caller exits 0 after handling (triggers.test.ts)
+- [x] Twitter CRC challenge GET endpoint — success path returns sha256 HMAC response_token with configured consumer_secret; missing crc_token returns 400 (twitter-webhook.test.ts)
