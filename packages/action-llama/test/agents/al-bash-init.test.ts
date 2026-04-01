@@ -116,7 +116,7 @@ describe.skipIf(!hasBash)("al-bash-init.sh (bash)", () => {
       );
       expect(existsSync(envFile)).toBe(true);
       const content = readFileSync(envFile, "utf-8");
-      expect(content).toContain("export MY_VAR=hello");
+      expect(content).toContain("export MY_VAR='hello'");
     });
 
     it("accumulates variables across multiple calls", () => {
