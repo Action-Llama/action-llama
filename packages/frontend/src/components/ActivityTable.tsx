@@ -77,7 +77,7 @@ export function ActivityTable({
 }: ActivityTableProps) {
   const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
   const [localSummaries, setLocalSummaries] = useState<Map<string, string>>(new Map());
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [mobileExpandedIds, setMobileExpandedIds] = useState<Set<string>>(new Set());
 
   const handleGenerate = async (agentName: string, instanceId: string) => {
@@ -99,7 +99,7 @@ export function ActivityTable({
   };
 
   const toggleExpanded = (instanceId: string) => {
-    setExpandedIds((prev) => {
+    setCollapsedIds((prev) => {
       const next = new Set(prev);
       if (next.has(instanceId)) {
         next.delete(instanceId);
@@ -129,10 +129,10 @@ export function ActivityTable({
           <th className="text-left pl-6 pr-1 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide w-[1%] whitespace-nowrap">
             Time
           </th>
-          <th className="text-left pl-2 pr-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+          <th className="text-left pl-2 pr-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide w-[1%] whitespace-nowrap">
             Instance
           </th>
-          <th className="text-left px-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide hidden md:table-cell">
+          <th className="text-left pl-0 pr-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide hidden md:table-cell w-full">
             Summary
           </th>
         </tr>
@@ -149,7 +149,7 @@ export function ActivityTable({
             : null;
 
           const isLoading = instanceId ? loadingIds.has(instanceId) : false;
-          const isExpanded = instanceId ? expandedIds.has(instanceId) : false;
+          const isExpanded = instanceId ? !collapsedIds.has(instanceId) : true;
           const isMobileExpanded = instanceId ? mobileExpandedIds.has(instanceId) : false;
           const canGenerate = canGenerateSummary(row);
 
@@ -205,7 +205,7 @@ export function ActivityTable({
 
           // Desktop summary cell content
           const desktopSummaryCell = (
-            <td className="px-2 py-2.5 hidden md:table-cell align-top">
+            <td className="pl-0 pr-2 py-2.5 hidden md:table-cell align-top">
               {isLoading ? (
                 <span className="text-xs text-slate-400 dark:text-slate-500 animate-pulse">
                   Generating…
@@ -220,7 +220,7 @@ export function ActivityTable({
                     {isExpanded ? (
                       <span>{effectiveSummary}</span>
                     ) : (
-                      <span className="line-clamp-1 max-w-xs">{effectiveSummary}</span>
+                      <span className="line-clamp-2">{effectiveSummary}</span>
                     )}
                   </button>
                   {canGenerate && (
@@ -268,7 +268,7 @@ export function ActivityTable({
               </td>
 
               {/* Instance — instance ID (large, colored) on top, trigger badge below */}
-              <td className="pl-2 pr-2 py-2.5">
+              <td className="pl-2 pr-2 py-2.5 whitespace-nowrap max-w-[200px]">
                 <div className="flex flex-col gap-0.5">
                   {/* Instance ID or agent name — large, colored, bold */}
                   {agentEl}
