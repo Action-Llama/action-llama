@@ -7,6 +7,7 @@ import { OpenAIProvider } from "../../models/providers/openai.js";
 import { AnthropicProvider } from "../../models/providers/anthropic.js";
 import { CustomProvider } from "../../models/providers/custom.js";
 import type { StatsStore } from "../../stats/store.js";
+import type { Logger } from "../../shared/logger.js";
 import {
   SAFE_AGENT_NAME,
   MAX_LINES,
@@ -35,6 +36,7 @@ export function registerLogSummaryRoutes(
   app: Hono,
   projectPath: string,
   statsStore?: StatsStore,
+  logger?: Logger,
 ): void {
   app.post("/api/logs/agents/:name/:instanceId/summarize", async (c) => {
     const name = c.req.param("name");
@@ -92,13 +94,13 @@ export function registerLogSummaryRoutes(
     try {
       globalConfig = loadGlobalConfig(projectPath);
     } catch (err) {
-      return c.json(
-        { error: `Failed to load project config: ${err instanceof Error ? err.message : String(err)}` },
-        500,
-      );
+      const msg = `Failed to load project config: ${err instanceof Error ? err.message : String(err)}`;
+      logger?.error({ agent: name, err }, msg);
+      return c.json({ error: msg }, 500);
     }
 
     if (!globalConfig.models || Object.keys(globalConfig.models).length === 0) {
+      logger?.error({ agent: name }, "No models configured in project config");
       return c.json({ error: "No models configured in project config" }, 500);
     }
 
@@ -138,10 +140,9 @@ export function registerLogSummaryRoutes(
       const response = await provider.chat(messages, { max_tokens: 300 });
       summary = response.content;
     } catch (err) {
-      return c.json(
-        { error: `Failed to generate summary: ${err instanceof Error ? err.message : String(err)}` },
-        500,
-      );
+      const msg = `Failed to generate summary: ${err instanceof Error ? err.message : String(err)}`;
+      logger?.error({ agent: name, instanceId, err }, msg);
+      return c.json({ error: msg }, 500);
     }
 
     // Cache for completed runs

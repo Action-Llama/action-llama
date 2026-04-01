@@ -103,7 +103,7 @@ describe("registerDashboardRoutes", () => {
     });
 
     expect(registerLogRoutes).toHaveBeenCalledWith(app, "/tmp/project");
-    expect(registerLogSummaryRoutes).toHaveBeenCalledWith(app, "/tmp/project", mockStatsStore);
+    expect(registerLogSummaryRoutes).toHaveBeenCalledWith(app, "/tmp/project", mockStatsStore, mockLogger);
   });
 
   it("does NOT register log routes when projectPath is absent", async () => {

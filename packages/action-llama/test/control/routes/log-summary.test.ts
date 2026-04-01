@@ -61,9 +61,16 @@ authType = "api_key"
   writeFileSync(join(globalConfigDir, "config.toml"), globalConfig);
 }
 
+const mockLogger = {
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+} as any;
+
 function createTestApp(projectPath: string, statsStore?: any) {
   const app = new Hono();
-  registerLogSummaryRoutes(app, projectPath, statsStore);
+  registerLogSummaryRoutes(app, projectPath, statsStore, mockLogger);
   return app;
 }
 
@@ -429,6 +436,81 @@ describe("log summary route", () => {
     expect(res.status).toBe(500);
     const data = await res.json();
     expect(data.error).toMatch(/Failed to generate summary/);
+  });
+
+  it("logs errors via logger on 500 responses", async () => {
+    // Test 1: config load failure logs
+    const lines1 = [
+      pinoLine(30, 1710700000000, "step 1", { instance: "inst-log-err" }),
+    ];
+    writeFileSync(
+      join(logsPath, "missing-agent-2024-03-18.log"),
+      lines1.join("\n") + "\n",
+    );
+
+    const app = createTestApp(tmpDir);
+    await app.request(
+      "/api/logs/agents/missing-agent/inst-log-err/summarize",
+      { method: "POST" },
+    );
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "missing-agent" }),
+      expect.stringContaining("Failed to load agent config"),
+    );
+
+    mockLogger.error.mockClear();
+
+    // Test 2: empty models logs
+    const configModule = await import("../../../src/shared/config.js");
+    vi.mocked(configModule.loadAgentConfig).mockReturnValueOnce({
+      name: "my-agent",
+      models: [],
+    } as any);
+
+    const lines2 = [
+      pinoLine(30, 1710700000000, "running", { instance: "inst-log-err2" }),
+    ];
+    writeFileSync(
+      join(logsPath, "my-agent-2024-03-18.log"),
+      lines2.join("\n") + "\n",
+    );
+
+    await app.request(
+      "/api/logs/agents/my-agent/inst-log-err2/summarize",
+      { method: "POST" },
+    );
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "my-agent" }),
+      "Agent has no configured models",
+    );
+
+    mockLogger.error.mockClear();
+
+    // Test 3: LLM call failure logs
+    createMinimalAgentProject(tmpDir, "my-agent");
+    const lines3 = [
+      pinoLine(30, 1710700000000, "something", { instance: "inst-log-err3" }),
+    ];
+    writeFileSync(
+      join(logsPath, "my-agent-2024-03-19.log"),
+      lines3.join("\n") + "\n",
+    );
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: () => Promise.resolve("Internal Server Error"),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await app.request(
+      "/api/logs/agents/my-agent/inst-log-err3/summarize",
+      { method: "POST" },
+    );
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "my-agent", instanceId: "inst-log-err3" }),
+      expect.stringContaining("Failed to generate summary"),
+    );
   });
 
   it("uses anthropic provider when agent model is configured as anthropic", async () => {

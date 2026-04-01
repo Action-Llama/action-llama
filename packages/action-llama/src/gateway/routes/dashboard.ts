@@ -38,7 +38,7 @@ export async function registerDashboardRoutes(
   // Log API routes (only if projectPath is provided)
   if (projectPath) {
     registerLogRoutes(app, projectPath);
-    registerLogSummaryRoutes(app, projectPath, statsStore);
+    registerLogSummaryRoutes(app, projectPath, statsStore, opts.logger);
   }
 
   // Stats API routes
