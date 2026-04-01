@@ -255,87 +255,91 @@ export function InstanceLogsPage() {
             </button>
           </div>
         </div>
-        <div
-          ref={logContainerRef}
-          onScroll={handleScroll}
-          className="min-h-[32rem] max-h-[calc(100vh-16rem)] overflow-y-auto scrollbar-thin bg-slate-950 p-3"
-        >
-          {loadingOlder && (
-            <div className="text-xs text-slate-500 text-center py-2">
-              <span className="inline-flex items-center gap-1">
-                <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                Loading older logs…
-              </span>
-            </div>
-          )}
-          {!hasOlderLogs && logs.length > 0 && (
-            <div className="text-xs text-slate-600 text-center py-2 border-b border-slate-800 mb-2">
-              — Beginning of logs —
-            </div>
-          )}
-          {hasOlderLogs && !loadingOlder && logs.length > 0 && (
-            <button
-              className="w-full text-xs text-blue-400 hover:text-blue-300 text-center py-2 border-b border-slate-800 mb-2 transition-colors"
-              onClick={loadOlderLogs}
-            >
-              ↑ Load older logs
-            </button>
-          )}
-          {summaryText && (
-            <div className="relative mb-3">
-              <div className="bg-purple-900/90 border border-purple-700 rounded-lg p-4 text-sm text-purple-100">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="text-xs font-medium text-purple-300 mb-1">Summary</div>
-                    <p className="leading-relaxed">{summaryText}</p>
+        <div className="relative">
+          {(summaryText || summaryError) && (
+            <div className="absolute inset-x-0 top-0 z-10 p-3 pointer-events-none">
+              <div className="pointer-events-auto">
+                {summaryText && (
+                  <div className="bg-purple-900/95 border border-purple-700 rounded-lg p-4 text-sm text-purple-100 shadow-lg backdrop-blur-sm">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="text-xs font-medium text-purple-300 mb-1">Summary</div>
+                        <p className="leading-relaxed">{summaryText}</p>
+                      </div>
+                      <button
+                        onClick={() => setSummaryText(null)}
+                        className="text-purple-400 hover:text-purple-200 flex-shrink-0"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
-                  <button
-                    onClick={() => setSummaryText(null)}
-                    className="text-purple-400 hover:text-purple-200 flex-shrink-0"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
+                )}
+                {summaryError && (
+                  <div className="mt-2 bg-red-900/95 border border-red-700 rounded-lg p-3 text-sm text-red-200 flex items-center justify-between shadow-lg backdrop-blur-sm">
+                    <span>{summaryError}</span>
+                    <button
+                      onClick={() => setSummaryError(null)}
+                      className="text-red-400 hover:text-red-200 ml-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
-          {summaryError && (
-            <div className="relative mb-3">
-              <div className="bg-red-900/90 border border-red-700 rounded-lg p-3 text-sm text-red-200 flex items-center justify-between">
-                <span>{summaryError}</span>
-                <button
-                  onClick={() => setSummaryError(null)}
-                  className="text-red-400 hover:text-red-200 ml-2"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          <div
+            ref={logContainerRef}
+            onScroll={handleScroll}
+            className="min-h-[32rem] max-h-[calc(100vh-16rem)] overflow-y-auto scrollbar-thin bg-slate-950 p-3"
+          >
+            {loadingOlder && (
+              <div className="text-xs text-slate-500 text-center py-2">
+                <span className="inline-flex items-center gap-1">
+                  <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
-                </button>
+                  Loading older logs…
+                </span>
               </div>
-            </div>
-          )}
-          {logs.length > 0 ? (
-            logs.map((entry, i) => {
-              const { text, className } = formatLogEntry(entry);
-              return (
-                <div key={i} className="text-xs font-mono leading-5">
-                  <span className="text-slate-600">
-                    {new Date(entry.time).toLocaleTimeString()}
-                  </span>{" "}
-                  <span className={className}>{text}</span>
-                </div>
-              );
-            })
-          ) : (
-            <div className="text-xs text-slate-500 text-center py-4">
-              No log entries
-            </div>
-          )}
+            )}
+            {!hasOlderLogs && logs.length > 0 && (
+              <div className="text-xs text-slate-600 text-center py-2 border-b border-slate-800 mb-2">
+                — Beginning of logs —
+              </div>
+            )}
+            {hasOlderLogs && !loadingOlder && logs.length > 0 && (
+              <button
+                className="w-full text-xs text-blue-400 hover:text-blue-300 text-center py-2 border-b border-slate-800 mb-2 transition-colors"
+                onClick={loadOlderLogs}
+              >
+                ↑ Load older logs
+              </button>
+            )}
+            {logs.length > 0 ? (
+              logs.map((entry, i) => {
+                const { text, className } = formatLogEntry(entry);
+                return (
+                  <div key={i} className="text-xs font-mono leading-5">
+                    <span className="text-slate-600">
+                      {new Date(entry.time).toLocaleTimeString()}
+                    </span>{" "}
+                    <span className={className}>{text}</span>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="text-xs text-slate-500 text-center py-4">
+                No log entries
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
