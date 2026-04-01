@@ -70,11 +70,8 @@ export function ActivityTable({
           <th className="text-left pl-6 pr-1 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide w-[1%] whitespace-nowrap">
             Time
           </th>
-          <th className="text-left pl-2 pr-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide w-[1%] whitespace-nowrap">
-            Trigger
-          </th>
-          <th className="text-left pl-2 pr-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide hidden sm:table-cell">
-            Agent
+          <th className="text-left pl-2 pr-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+            Instance
           </th>
         </tr>
       </thead>
@@ -106,15 +103,15 @@ export function ActivityTable({
             </span>
           );
 
-          // Agent instance ID element (colored, linked)
+          // Agent instance ID element — large, colored, bold (matching dashboard agent row style)
           const agentEl = !isDeadLetter && row.agentName && row.instanceId ? (
             <Link
               to={`/dashboard/agents/${encodeURIComponent(row.agentName)}/instances/${encodeURIComponent(row.instanceId)}`}
-              className="hover:underline"
+              className="font-medium hover:underline truncate block"
             >
               <span
-                className="agent-color-text font-medium font-mono text-xs"
-                style={agentHueStyle(row.agentName, agentNames)}
+                className="agent-color-text truncate"
+                style={{ fontSize: "16px", ...agentHueStyle(row.agentName, agentNames) }}
               >
                 {row.instanceId}
               </span>
@@ -122,11 +119,11 @@ export function ActivityTable({
           ) : !isDeadLetter && row.agentName ? (
             <Link
               to={`/dashboard/agents/${encodeURIComponent(row.agentName)}`}
-              className="hover:underline"
+              className="font-medium hover:underline truncate block"
             >
               <span
-                className="agent-color-text font-medium text-xs"
-                style={agentHueStyle(row.agentName, agentNames)}
+                className="agent-color-text truncate"
+                style={{ fontSize: "16px", ...agentHueStyle(row.agentName, agentNames) }}
               >
                 {row.agentName}
               </span>
@@ -154,25 +151,22 @@ export function ActivityTable({
                 </span>
               </td>
 
-              {/* Trigger — badge with dead-letter reason; on mobile also shows agent below */}
-              <td className="pl-2 pr-2 py-2.5 whitespace-nowrap">
+              {/* Instance — instance ID (large, colored) on top, trigger badge below */}
+              <td className="pl-2 pr-2 py-2.5">
                 <div className="flex flex-col gap-0.5">
-                  {triggerEl}
+                  {/* Instance ID or agent name — large, colored, bold */}
+                  {agentEl}
+                  {/* Trigger badge below */}
+                  <div className="mt-0.5">
+                    {triggerEl}
+                  </div>
+                  {/* Dead letter reason if applicable */}
                   {isDeadLetter && row.deadLetterReason && (
                     <span className="text-xs text-red-500 dark:text-red-400">
                       {row.deadLetterReason.replace(/_/g, " ")}
                     </span>
                   )}
-                  {/* Mobile: show agent instance below trigger */}
-                  {agentEl && (
-                    <span className="sm:hidden">{agentEl}</span>
-                  )}
                 </div>
-              </td>
-
-              {/* Agent — instance ID (hidden on mobile, shown in trigger cell instead) */}
-              <td className="pl-2 pr-2 py-2.5 hidden sm:table-cell align-top">
-                {agentEl ?? <span className="text-slate-400 text-xs">{"\u2014"}</span>}
               </td>
             </tr>
           );
@@ -180,7 +174,7 @@ export function ActivityTable({
         {rows.length === 0 && loading && (
           <tr>
             <td
-              colSpan={3}
+              colSpan={2}
               className="px-4 py-8 text-center text-slate-500 dark:text-slate-400"
             >
               Loading...
@@ -190,7 +184,7 @@ export function ActivityTable({
         {rows.length === 0 && !loading && (
           <tr>
             <td
-              colSpan={3}
+              colSpan={2}
               className="px-4 py-8 text-center text-slate-500 dark:text-slate-400"
             >
               {emptyMessage}
