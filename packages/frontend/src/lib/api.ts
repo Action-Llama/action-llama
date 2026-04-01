@@ -277,36 +277,39 @@ export interface ProjectConfigData {
 
 // --- API functions ---
 
-export function getDashboardStatus(): Promise<DashboardStatus> {
-  return fetchJSON("/api/dashboard/status");
+export function getDashboardStatus(signal?: AbortSignal): Promise<DashboardStatus> {
+  return fetchJSON("/api/dashboard/status", signal ? { signal } : undefined);
 }
 
-export function getAgentDetail(name: string): Promise<AgentDetailData> {
-  return fetchJSON(`/api/dashboard/agents/${encodeURIComponent(name)}`);
+export function getAgentDetail(name: string, signal?: AbortSignal): Promise<AgentDetailData> {
+  return fetchJSON(`/api/dashboard/agents/${encodeURIComponent(name)}`, signal ? { signal } : undefined);
 }
 
-export function getAgentSkill(name: string): Promise<{ body: string; agentConfig: AgentConfig | null }> {
+export function getAgentSkill(name: string, signal?: AbortSignal): Promise<{ body: string; agentConfig: AgentConfig | null }> {
   return fetchJSON(
     `/api/dashboard/agents/${encodeURIComponent(name)}/skill`,
+    signal ? { signal } : undefined,
   );
 }
 
-export function getProjectConfig(): Promise<ProjectConfigData> {
-  return fetchJSON("/api/dashboard/config");
+export function getProjectConfig(signal?: AbortSignal): Promise<ProjectConfigData> {
+  return fetchJSON("/api/dashboard/config", signal ? { signal } : undefined);
 }
 
 export function getAgentRuns(
   name: string,
   page: number,
   limit: number,
+  signal?: AbortSignal,
 ): Promise<{ runs: RunRecord[]; total: number; page: number; limit: number }> {
   return fetchJSON(
     `/api/stats/agents/${encodeURIComponent(name)}/runs?page=${page}&limit=${limit}`,
+    signal ? { signal } : undefined,
   );
 }
 
-export function getWebhookReceipt(receiptId: string): Promise<{ receipt: WebhookReceiptDetail | null }> {
-  return fetchJSON(`/api/stats/webhooks/${encodeURIComponent(receiptId)}`);
+export function getWebhookReceipt(receiptId: string, signal?: AbortSignal): Promise<{ receipt: WebhookReceiptDetail | null }> {
+  return fetchJSON(`/api/stats/webhooks/${encodeURIComponent(receiptId)}`, signal ? { signal } : undefined);
 }
 
 export function replayWebhook(receiptId: string): Promise<{ ok: boolean; matched: number; skipped: number; replayReceiptId?: string }> {
@@ -319,21 +322,23 @@ export function getTriggerHistory(
   includeDeadLetters: boolean,
   agent?: string,
   triggerType?: string,
+  signal?: AbortSignal,
 ): Promise<{ triggers: TriggerHistoryRow[]; total: number }> {
   let url = `/api/stats/triggers?limit=${limit}&offset=${offset}&all=${includeDeadLetters ? "1" : "0"}`;
   if (agent) url += `&agent=${encodeURIComponent(agent)}`;
   if (triggerType) url += `&triggerType=${encodeURIComponent(triggerType)}`;
-  return fetchJSON(url);
+  return fetchJSON(url, signal ? { signal } : undefined);
 }
 
 export function getJobs(
   limit: number,
   offset: number,
   agent?: string,
+  signal?: AbortSignal,
 ): Promise<{ jobs: JobRow[]; total: number; pending: Record<string, number>; totalPending: number }> {
   let url = `/api/stats/jobs?limit=${limit}&offset=${offset}`;
   if (agent) url += `&agent=${encodeURIComponent(agent)}`;
-  return fetchJSON(url);
+  return fetchJSON(url, signal ? { signal } : undefined);
 }
 
 export function getActivity(
@@ -342,24 +347,27 @@ export function getActivity(
   agent?: string,
   triggerType?: string,
   statuses?: string[],
+  signal?: AbortSignal,
 ): Promise<{ rows: ActivityRow[]; total: number }> {
   let url = `/api/stats/activity?limit=${limit}&offset=${offset}`;
   if (agent) url += `&agent=${encodeURIComponent(agent)}`;
   if (triggerType) url += `&triggerType=${encodeURIComponent(triggerType)}`;
   if (statuses && statuses.length > 0) url += `&status=${statuses.map(encodeURIComponent).join(",")}`;
-  return fetchJSON(url);
+  return fetchJSON(url, signal ? { signal } : undefined);
 }
 
-export function getTriggerDetail(instanceId: string): Promise<{ trigger: TriggerDetailData | null }> {
-  return fetchJSON(`/api/dashboard/triggers/${encodeURIComponent(instanceId)}`);
+export function getTriggerDetail(instanceId: string, signal?: AbortSignal): Promise<{ trigger: TriggerDetailData | null }> {
+  return fetchJSON(`/api/dashboard/triggers/${encodeURIComponent(instanceId)}`, signal ? { signal } : undefined);
 }
 
 export function getInstanceDetail(
   name: string,
   instanceId: string,
+  signal?: AbortSignal,
 ): Promise<InstanceDetailData> {
   return fetchJSON(
     `/api/dashboard/agents/${encodeURIComponent(name)}/instances/${encodeURIComponent(instanceId)}`,
+    signal ? { signal } : undefined,
   );
 }
 

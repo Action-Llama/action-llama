@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
-import { useStatusStream } from "../hooks/StatusStreamContext";
-import { useInvalidation } from "../hooks/useInvalidation";
+import { useAgents } from "../hooks/StatusStreamContext";
+import { useQuery } from "../hooks/useQuery";
 import { usePolling } from "../hooks/usePolling";
 import { ActivityTable } from "../components/ActivityTable";
 import {
@@ -48,8 +48,7 @@ function formatLogEntry(entry: LogEntry): {
 
 export function AgentDetailPage() {
   const { name } = useParams<{ name: string }>();
-  const { agents } = useStatusStream();
-  const [activity, setActivity] = useState<ActivityRow[]>([]);
+  const agents = useAgents();
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const cursorRef = useRef<string | null>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
@@ -58,14 +57,14 @@ export function AgentDetailPage() {
   const agentNames = agents.map((a) => a.name);
 
   // Load activity
-  const refetchActivity = useCallback(() => {
-    if (!name) return;
-    getActivity(5, 0, name).then((d) => setActivity(d.rows)).catch(() => {});
-  }, [name]);
-
-  useEffect(() => { refetchActivity(); }, [refetchActivity]);
-
-  useInvalidation("runs", name, refetchActivity);
+  const { data: activityData } = useQuery<{ rows: ActivityRow[]; total: number }>({
+    key: `agent-activity:${name}`,
+    fetcher: (signal) => getActivity(5, 0, name!, undefined, undefined, signal),
+    invalidateOn: ["runs"],
+    invalidateAgent: name,
+    enabled: !!name,
+  });
+  const activity = activityData?.rows ?? [];
 
   // Poll logs
   usePolling(

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
-import { useInvalidation } from "../hooks/useInvalidation";
+import { useQuery } from "../hooks/useQuery";
 import { usePolling } from "../hooks/usePolling";
 import { ResultBadge, TriggerTypeBadge } from "../components/Badge";
 import {
@@ -46,11 +46,7 @@ function formatLogEntry(entry: LogEntry): {
 
 export function InstanceDetailPage() {
   const { name, id } = useParams<{ name: string; id: string }>();
-  const [detail, setDetail] = useState<InstanceDetailData | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [locks, setLocks] = useState<
-    { resourceKey: string; holder?: string; heldSince?: string; agentName?: string }[]
-  >([]);
   const [following, setFollowing] = useState(true);
   const [actionError, setActionError] = useState<string | null>(null);
   const [killing, setKilling] = useState(false);
@@ -59,21 +55,27 @@ export function InstanceDetailPage() {
   const cursorRef = useRef<string | null>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
 
+  // Load detail
+  const { data: detail } = useQuery<InstanceDetailData>({
+    key: `instance-detail:${name}:${id}`,
+    fetcher: (signal) => getInstanceDetail(name!, id!, signal),
+    invalidateOn: ["instance"],
+    invalidateAgent: name,
+    enabled: !!name && !!id,
+  });
+
   const isRunning = detail?.runningInstance != null;
 
-  // Load detail
-  const refetchDetail = useCallback(() => {
-    if (!name || !id) return;
-    getInstanceDetail(name, id)
-      .then(setDetail)
-      .catch(() => {});
-  }, [name, id]);
-
-  useEffect(() => {
-    refetchDetail();
-  }, [refetchDetail]);
-
-  useInvalidation("instance", name, refetchDetail);
+  // Poll locks
+  const { data: locksData } = useQuery<{ locks: { resourceKey: string; holder?: string; heldSince?: string; agentName?: string }[] }>({
+    key: `instance-locks:${id}`,
+    fetcher: (signal) => getLocks(signal),
+    pollIntervalMs: 5000,
+    enabled: isRunning,
+  });
+  const locks = (locksData?.locks ?? []).filter(
+    (l) => l.holder === id || (!l.holder && l.agentName === name),
+  );
 
   // Poll logs (slower when not running)
   usePolling(
@@ -95,20 +97,6 @@ export function InstanceDetailPage() {
     },
     { intervalMs: isRunning ? 3000 : 10000, enabled: !!name && !!id },
     [name, id, isRunning],
-  );
-
-  // Poll locks
-  usePolling(
-    async (signal) => {
-      const d = await getLocks(signal);
-      setLocks(
-        d.locks.filter(
-          (l) => l.holder === id || (!l.holder && l.agentName === name),
-        ),
-      );
-    },
-    { intervalMs: 5000, enabled: isRunning },
-    [isRunning, id, name],
   );
 
   // Scroll follow

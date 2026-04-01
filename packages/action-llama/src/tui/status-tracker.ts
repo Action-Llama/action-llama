@@ -89,23 +89,40 @@ export class StatusTracker extends EventEmitter {
   private maxLogs = 100;
   private _baseImageStatus: string | null = null;
   private instances: Map<string, AgentInstance> = new Map();
-  private pendingInvalidations: InvalidationSignal[] = [];
+  private invalidationVersion = 0;
+  private invalidationLog: Array<{ version: number; signal: InvalidationSignal }> = [];
 
   private invalidate(signal: InvalidationSignal): void {
-    const isDup = this.pendingInvalidations.some(
-      (s) =>
-        s.type === signal.type &&
-        s.agent === signal.agent &&
-        s.instanceId === signal.instanceId,
-    );
-    if (!isDup) {
-      this.pendingInvalidations.push(signal);
+    this.invalidationVersion++;
+    this.invalidationLog.push({ version: this.invalidationVersion, signal });
+  }
+
+  getInvalidationsSince(sinceVersion: number): { signals: InvalidationSignal[]; version: number } {
+    const seen = new Set<string>();
+    const signals: InvalidationSignal[] = [];
+    for (const entry of this.invalidationLog) {
+      if (entry.version <= sinceVersion) continue;
+      const key = `${entry.signal.type}:${entry.signal.agent ?? ""}:${entry.signal.instanceId ?? ""}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        signals.push(entry.signal);
+      }
     }
+    // Prune entries older than 60 seconds of log growth (keep max 1000 entries)
+    if (this.invalidationLog.length > 1000) {
+      this.invalidationLog = this.invalidationLog.slice(-500);
+    }
+    return { signals, version: this.invalidationVersion };
+  }
+
+  getInvalidationVersion(): number {
+    return this.invalidationVersion;
   }
 
   flushInvalidations(): InvalidationSignal[] {
-    const signals = this.pendingInvalidations;
-    this.pendingInvalidations = [];
+    const { signals } = this.getInvalidationsSince(0);
+    this.invalidationLog = [];
+    this.invalidationVersion = 0;
     return signals;
   }
 

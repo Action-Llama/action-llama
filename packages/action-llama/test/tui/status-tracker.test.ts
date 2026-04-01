@@ -360,6 +360,88 @@ describe("StatusTracker", () => {
     expect(runSignals).toHaveLength(1);
   });
 
+  it("getInvalidationsSince returns signals after the given version", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+
+    const v0 = tracker.getInvalidationVersion();
+    tracker.startRun("dev");
+
+    const { signals, version } = tracker.getInvalidationsSince(v0);
+    expect(signals.length).toBeGreaterThan(0);
+    expect(signals).toContainEqual({ type: "runs", agent: "dev" });
+    expect(version).toBeGreaterThan(v0);
+  });
+
+  it("getInvalidationsSince returns empty when no new signals", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.startRun("dev");
+
+    const { version } = tracker.getInvalidationsSince(0);
+    const { signals } = tracker.getInvalidationsSince(version);
+    expect(signals).toHaveLength(0);
+  });
+
+  it("getInvalidationsSince deduplicates signals within the returned batch", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+
+    const v0 = tracker.getInvalidationVersion();
+    // startRun produces runs:dev, triggers, stats:dev
+    // endRun also produces runs:dev, stats:dev
+    tracker.startRun("dev");
+    tracker.endRun("dev", 1000);
+
+    const { signals } = tracker.getInvalidationsSince(v0);
+    const runSignals = signals.filter((s) => s.type === "runs" && s.agent === "dev");
+    expect(runSignals).toHaveLength(1);
+  });
+
+  it("two clients with different cursors see correct subsets", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.registerAgent("reviewer");
+
+    // Client A reads initial state
+    const vA = tracker.getInvalidationVersion();
+
+    tracker.startRun("dev");
+
+    // Client B starts later
+    const vB = tracker.getInvalidationVersion();
+
+    tracker.startRun("reviewer");
+
+    // Client A sees both dev and reviewer signals
+    const resultA = tracker.getInvalidationsSince(vA);
+    const agentsA = resultA.signals.filter(s => s.type === "runs").map(s => s.agent);
+    expect(agentsA).toContain("dev");
+    expect(agentsA).toContain("reviewer");
+
+    // Client B only sees reviewer signals (started after dev's startRun)
+    const resultB = tracker.getInvalidationsSince(vB);
+    const agentsB = resultB.signals.filter(s => s.type === "runs").map(s => s.agent);
+    expect(agentsB).not.toContain("dev");
+    expect(agentsB).toContain("reviewer");
+  });
+
+  it("invalidation log prunes when exceeding 1000 entries", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+
+    // Generate many invalidation signals
+    for (let i = 0; i < 400; i++) {
+      tracker.startRun("dev");
+      tracker.endRun("dev", 100);
+    }
+
+    // This should trigger pruning
+    const { signals } = tracker.getInvalidationsSince(0);
+    // Should still return signals (from the last 500 entries after pruning)
+    expect(signals.length).toBeGreaterThan(0);
+  });
+
   it("enableAgent/disableAgent emit config signals", () => {
     const tracker = new StatusTracker();
     tracker.registerAgent("dev");

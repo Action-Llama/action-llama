@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useInvalidation } from "../hooks/useInvalidation";
-import { useStatusStream } from "../hooks/StatusStreamContext";
+import { useQuery } from "../hooks/useQuery";
+import { useAgents } from "../hooks/StatusStreamContext";
 import { FilterSelect, MultiSelect } from "../components/FilterDropdown";
 import type { MultiSelectOption } from "../components/FilterDropdown";
 import { getActivity } from "../lib/api";
@@ -40,12 +40,25 @@ export function ActivityPage() {
   const triggerTypeFilter = searchParams.get("type") || undefined;
   const statusFilters = parseStatuses(searchParams.get("status"));
 
-  const [rows, setRows] = useState<ActivityRow[]>([]);
-  const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const { agents } = useStatusStream();
+  const agents = useAgents();
   const agentNames = agents.map((a) => a.name);
+
+  const statusesToSend = statusFilters.length === STATUS_OPTIONS.length ? undefined : statusFilters;
+
+  const { data, isLoading } = useQuery<{ rows: ActivityRow[]; total: number }>({
+    key: `activity:${offset}:${agentFilter ?? ""}:${triggerTypeFilter ?? ""}:${statusFilters.join(",")}`,
+    fetcher: (signal) => getActivity(PAGE_SIZE, offset, agentFilter, triggerTypeFilter, statusesToSend, signal),
+    invalidateOn: ["runs", "triggers"],
+  });
+
+  const rows = data?.rows ?? [];
+  const total = data?.total ?? 0;
+
+  // Reset offset when filters change
+  useEffect(() => {
+    setOffset(0);
+  }, [agentFilter, triggerTypeFilter, statusFilters]);
 
   const setFilter = useCallback(
     (key: string, value: string | undefined) => {
@@ -78,34 +91,6 @@ export function ActivityPage() {
     },
     [setSearchParams],
   );
-
-  const load = useCallback(
-    (newOffset: number, isRefetch = false) => {
-      if (!isRefetch) setLoading(true);
-      const statusesToSend =
-        statusFilters.length === STATUS_OPTIONS.length ? undefined : statusFilters;
-      getActivity(PAGE_SIZE, newOffset, agentFilter, triggerTypeFilter, statusesToSend)
-        .then((data) => {
-          setRows(data.rows);
-          setTotal(data.total);
-          setOffset(newOffset);
-        })
-        .catch(() => {})
-        .finally(() => setLoading(false));
-    },
-    [agentFilter, triggerTypeFilter, statusFilters],
-  );
-
-  useEffect(() => {
-    load(0);
-  }, [load]);
-
-  const refetchPage = useCallback(() => {
-    load(offset, true);
-  }, [load, offset]);
-
-  useInvalidation("runs", undefined, refetchPage);
-  useInvalidation("triggers", undefined, refetchPage);
 
   const page = Math.floor(offset / PAGE_SIZE) + 1;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -159,7 +144,7 @@ export function ActivityPage() {
           <ActivityTable
             rows={rows}
             agentNames={agentNames}
-            loading={loading && rows.length === 0}
+            loading={isLoading && rows.length === 0}
           />
         </div>
 
@@ -167,7 +152,7 @@ export function ActivityPage() {
         {totalPages > 1 && (
           <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-200 dark:border-slate-800">
             <button
-              onClick={() => load(Math.max(0, offset - PAGE_SIZE))}
+              onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
               disabled={offset === 0}
               className="px-3 py-1 text-xs rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
             >
@@ -177,7 +162,7 @@ export function ActivityPage() {
               Page {page} of {totalPages} ({total} total)
             </span>
             <button
-              onClick={() => load(offset + PAGE_SIZE)}
+              onClick={() => setOffset(offset + PAGE_SIZE)}
               disabled={offset + PAGE_SIZE >= total}
               className="px-3 py-1 text-xs rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
             >

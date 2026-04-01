@@ -1,7 +1,7 @@
 import { Outlet, Link, useNavigate, useLocation } from "react-router-dom";
 import { useCallback, useEffect, useState } from "react";
 import { logout } from "../lib/api";
-import { StatusStreamProvider, useStatusStream } from "../hooks/StatusStreamContext";
+import { StatusStreamProvider, useConnected } from "../hooks/StatusStreamContext";
 
 function getTheme(): string {
   return localStorage.getItem("al-theme") || "dark";
@@ -15,7 +15,7 @@ function applyTheme(theme: string) {
 function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { connected } = useStatusStream();
+  const connected = useConnected();
   const [theme, setTheme] = useState(getTheme);
 
   useEffect(() => {

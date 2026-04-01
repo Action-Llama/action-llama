@@ -7,30 +7,25 @@ import {
   resumeScheduler,
 } from "../lib/api";
 import type { ProjectConfigData } from "../lib/api";
-import { useStatusStream } from "../hooks/StatusStreamContext";
-import { useInvalidation } from "../hooks/useInvalidation";
+import { useSchedulerInfo } from "../hooks/StatusStreamContext";
+import { useQuery } from "../hooks/useQuery";
 
 export function ProjectConfigPage() {
-  const { schedulerInfo } = useStatusStream();
-  const [config, setConfig] = useState<ProjectConfigData | null>(null);
+  const schedulerInfo = useSchedulerInfo();
+
+  const { data: config } = useQuery<ProjectConfigData>({
+    key: "project-config",
+    fetcher: (signal) => getProjectConfig(signal),
+    invalidateOn: ["config"],
+  });
+
   const [scaleInput, setScaleInput] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
-  const refetchConfig = useCallback(() => {
-    getProjectConfig()
-      .then((d) => {
-        setConfig(d);
-        setScaleInput(String(d.projectScale));
-      })
-      .catch(() => {});
-  }, []);
-
   useEffect(() => {
-    refetchConfig();
-  }, [refetchConfig]);
-
-  useInvalidation("config", undefined, refetchConfig);
+    if (config) setScaleInput(String(config.projectScale));
+  }, [config]);
 
   const handleAction = useCallback(
     async (fn: () => Promise<unknown>, successMsg?: string) => {

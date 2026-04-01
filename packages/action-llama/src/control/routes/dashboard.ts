@@ -35,12 +35,15 @@ export function registerDashboardDataRoutes(
       c.header("X-Accel-Buffering", "no");
       c.header("Connection", "keep-alive");
 
+      let lastVersion = statusTracker.getInvalidationVersion();
+
       const send = () => {
         const agents = statusTracker.getAllAgents();
         const info = statusTracker.getSchedulerInfo();
         const recentLogs = statusTracker.getRecentLogs(20);
         const instances = statusTracker.getInstances();
-        const invalidated = statusTracker.flushInvalidations();
+        const { signals: invalidated, version } = statusTracker.getInvalidationsSince(lastVersion);
+        lastVersion = version;
         const payload: Record<string, unknown> = { agents, schedulerInfo: info, recentLogs, instances };
         if (invalidated.length > 0) {
           payload.invalidated = invalidated;

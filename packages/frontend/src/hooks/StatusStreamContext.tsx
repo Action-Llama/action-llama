@@ -1,23 +1,39 @@
-import { createContext, useContext } from "react";
-import { useStatusStream as useStatusStreamHook } from "./useStatusStream";
+import { useEffect } from "react";
+import {
+  initSSE,
+  getLatestInvalidated,
+  useAgents,
+  useSchedulerInfo,
+  useRecentLogs,
+  useInstances,
+  useConnected,
+} from "../lib/status-store";
+import type { StatusSnapshot } from "../lib/status-store";
+import type { InvalidationSignal } from "../lib/api";
 
-type StatusStreamReturn = ReturnType<typeof useStatusStreamHook>;
+// Re-export selector hooks for convenience
+export { useAgents, useSchedulerInfo, useRecentLogs, useInstances, useConnected };
 
-const StatusStreamContext = createContext<StatusStreamReturn | null>(null);
+// Full status stream return type (backward compat)
+type StatusStreamReturn = StatusSnapshot & { invalidated: InvalidationSignal[] };
 
 export function StatusStreamProvider({ children }: { children: React.ReactNode }) {
-  const value = useStatusStreamHook();
-  return (
-    <StatusStreamContext.Provider value={value}>
-      {children}
-    </StatusStreamContext.Provider>
-  );
+  useEffect(() => {
+    const cleanup = initSSE();
+    return cleanup;
+  }, []);
+  return <>{children}</>;
 }
 
 export function useStatusStream(): StatusStreamReturn {
-  const ctx = useContext(StatusStreamContext);
-  if (!ctx) {
-    throw new Error("useStatusStream must be used within a StatusStreamProvider");
-  }
-  return ctx;
+  const agents = useAgents();
+  const schedulerInfo = useSchedulerInfo();
+  const recentLogs = useRecentLogs();
+  const instances = useInstances();
+  const connected = useConnected();
+  // For backward compat, expose latest invalidated from the store
+  // This will be removed once all pages migrate to useQuery
+  const invalidated = getLatestInvalidated();
+
+  return { agents, schedulerInfo, recentLogs, instances, connected, invalidated };
 }

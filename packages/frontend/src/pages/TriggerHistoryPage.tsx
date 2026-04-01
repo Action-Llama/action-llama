@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useInvalidation } from "../hooks/useInvalidation";
-import { useStatusStream } from "../hooks/StatusStreamContext";
+import { useQuery } from "../hooks/useQuery";
+import { useAgents, useInstances } from "../hooks/StatusStreamContext";
 import { TriggerTypeBadge, ResultBadge } from "../components/Badge";
 import { getTriggerHistory } from "../lib/api";
 import type { TriggerHistoryRow } from "../lib/api";
@@ -15,13 +15,20 @@ export function TriggerHistoryPage() {
   const agentFilter = searchParams.get("agent") || undefined;
   const triggerTypeFilter = searchParams.get("type") || undefined;
 
-  const [triggers, setTriggers] = useState<TriggerHistoryRow[]>([]);
-  const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [showDeadLetters, setShowDeadLetters] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const { agents, instances } = useStatusStream();
+  const agents = useAgents();
+  const instances = useInstances();
   const agentNames = agents.map((a) => a.name);
+
+  const { data, isLoading } = useQuery<{ triggers: TriggerHistoryRow[]; total: number }>({
+    key: `triggers:${offset}:${agentFilter ?? ""}:${triggerTypeFilter ?? ""}:${showDeadLetters}`,
+    fetcher: (signal) => getTriggerHistory(PAGE_SIZE, offset, showDeadLetters, agentFilter, triggerTypeFilter, signal),
+    invalidateOn: ["triggers"],
+  });
+
+  const triggers = data?.triggers ?? [];
+  const total = data?.total ?? 0;
 
   const setFilter = useCallback(
     (key: string, value: string | undefined) => {
@@ -39,30 +46,9 @@ export function TriggerHistoryPage() {
     [setSearchParams],
   );
 
-  const load = useCallback(
-    (newOffset: number, deadLetters: boolean) => {
-      setLoading(true);
-      getTriggerHistory(PAGE_SIZE, newOffset, deadLetters, agentFilter, triggerTypeFilter)
-        .then((data) => {
-          setTriggers(data.triggers);
-          setTotal(data.total);
-          setOffset(newOffset);
-        })
-        .catch(() => {})
-        .finally(() => setLoading(false));
-    },
-    [agentFilter, triggerTypeFilter],
-  );
-
   useEffect(() => {
-    load(0, showDeadLetters);
-  }, [showDeadLetters, load]);
-
-  const refetchPage = useCallback(() => {
-    load(offset, showDeadLetters);
-  }, [load, offset, showDeadLetters]);
-
-  useInvalidation("triggers", undefined, refetchPage);
+    setOffset(0);
+  }, [agentFilter, triggerTypeFilter, showDeadLetters]);
 
   const mergedTriggers = useMemo(() => {
     // Only include running instances on the first page
@@ -234,7 +220,7 @@ export function TriggerHistoryPage() {
                   </td>
                 </tr>
               ))}
-              {mergedTriggers.length === 0 && !loading && (
+              {mergedTriggers.length === 0 && !isLoading && (
                 <tr>
                   <td
                     colSpan={6}
@@ -244,7 +230,7 @@ export function TriggerHistoryPage() {
                   </td>
                 </tr>
               )}
-              {loading && (
+              {isLoading && (
                 <tr>
                   <td
                     colSpan={6}
@@ -262,7 +248,7 @@ export function TriggerHistoryPage() {
         {totalPages > 1 && (
           <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-200 dark:border-slate-800">
             <button
-              onClick={() => load(Math.max(0, offset - PAGE_SIZE), showDeadLetters)}
+              onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
               disabled={offset === 0}
               className="px-3 py-1 text-xs rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
             >
@@ -272,7 +258,7 @@ export function TriggerHistoryPage() {
               Page {page} of {totalPages} ({adjustedTotal} total)
             </span>
             <button
-              onClick={() => load(offset + PAGE_SIZE, showDeadLetters)}
+              onClick={() => setOffset(offset + PAGE_SIZE)}
               disabled={offset + PAGE_SIZE >= adjustedTotal}
               className="px-3 py-1 text-xs rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
             >

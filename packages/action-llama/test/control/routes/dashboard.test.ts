@@ -25,6 +25,8 @@ function mockStatusTracker() {
     getRecentLogs: () => [],
     getInstances: () => [],
     flushInvalidations: () => [],
+    getInvalidationsSince: () => ({ signals: [], version: 0 }),
+    getInvalidationVersion: () => 0,
     on: vi.fn(),
     removeListener: vi.fn(),
   } as any;
@@ -95,7 +97,8 @@ describe("dashboard data routes", () => {
   it("status-stream SSE payload includes invalidated items when available", async () => {
     const tracker = {
       ...mockStatusTracker(),
-      flushInvalidations: () => ["agent-1", "agent-2"],
+      getInvalidationsSince: () => ({ signals: [{ type: "runs", agent: "agent-1" }, { type: "triggers" }], version: 1 }),
+      getInvalidationVersion: () => 0,
     } as any;
     const app = createApp(tracker);
     const res = await app.request("/dashboard/api/status-stream");
@@ -110,7 +113,7 @@ describe("dashboard data routes", () => {
     const dataLine = text.split("\n").find((l) => l.startsWith("data:"));
     expect(dataLine).toBeDefined();
     const payload = JSON.parse(dataLine!.replace("data:", "").trim());
-    expect(payload.invalidated).toEqual(["agent-1", "agent-2"]);
+    expect(payload.invalidated).toEqual([{ type: "runs", agent: "agent-1" }, { type: "triggers" }]);
   });
 
   it("status-stream SSE payload does not include invalidated when empty", async () => {
@@ -748,6 +751,8 @@ describe("dashboard data routes — SSE throttle and cleanup coverage", () => {
       getRecentLogs: () => [],
       getInstances: () => [],
       flushInvalidations: () => [],
+      getInvalidationsSince: () => ({ signals: [], version: 0 }),
+      getInvalidationVersion: () => 0,
       on: vi.fn((event: string, cb: () => void) => {
         if (event === "update") capturedUpdateListener = cb;
       }),

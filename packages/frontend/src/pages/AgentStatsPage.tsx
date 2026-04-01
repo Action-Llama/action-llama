@@ -1,31 +1,20 @@
-import { useEffect, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
-import { useStatusStream } from "../hooks/StatusStreamContext";
-import { useInvalidation } from "../hooks/useInvalidation";
+import { useQuery } from "../hooks/useQuery";
 import { StatCard } from "../components/StatCard";
-import {
-  getAgentDetail,
-} from "../lib/api";
+import { getAgentDetail } from "../lib/api";
 import type { AgentDetailData } from "../lib/api";
 import { fmtDur, fmtCost, fmtTokens } from "../lib/format";
 
 export function AgentStatsPage() {
   const { name } = useParams<{ name: string }>();
-  useStatusStream();
-  const [detail, setDetail] = useState<AgentDetailData | null>(null);
 
-  const refetch = useCallback(() => {
-    if (!name) return;
-    getAgentDetail(name)
-      .then((d) => setDetail(d))
-      .catch(() => {});
-  }, [name]);
-
-  useEffect(() => {
-    refetch();
-  }, [refetch]);
-
-  useInvalidation("stats", name, refetch);
+  const { data: detail } = useQuery<AgentDetailData>({
+    key: `agent-stats:${name}`,
+    fetcher: (signal) => getAgentDetail(name!, signal),
+    invalidateOn: ["stats"],
+    invalidateAgent: name,
+    enabled: !!name,
+  });
 
   if (!name) return null;
 

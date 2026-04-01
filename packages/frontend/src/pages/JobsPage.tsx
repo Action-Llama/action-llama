@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useInvalidation } from "../hooks/useInvalidation";
-import { useStatusStream } from "../hooks/StatusStreamContext";
+import { useQuery } from "../hooks/useQuery";
+import { useAgents, useInstances } from "../hooks/StatusStreamContext";
 import { TriggerTypeBadge, ResultBadge } from "../components/Badge";
 import { getJobs } from "../lib/api";
 import type { JobRow } from "../lib/api";
@@ -14,14 +14,21 @@ export function JobsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const agentFilter = searchParams.get("agent") || undefined;
 
-  const [jobs, setJobs] = useState<JobRow[]>([]);
-  const [total, setTotal] = useState(0);
-  const [pending, setPending] = useState<Record<string, number>>({});
-  const [totalPending, setTotalPending] = useState(0);
   const [offset, setOffset] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const { agents, instances } = useStatusStream();
+  const agents = useAgents();
+  const instances = useInstances();
   const agentNames = agents.map((a) => a.name);
+
+  const { data, isLoading } = useQuery<{ jobs: JobRow[]; total: number; pending: Record<string, number>; totalPending: number }>({
+    key: `jobs:${offset}:${agentFilter ?? ""}`,
+    fetcher: (signal) => getJobs(PAGE_SIZE, offset, agentFilter, signal),
+    invalidateOn: ["runs"],
+  });
+
+  const jobs = data?.jobs ?? [];
+  const total = data?.total ?? 0;
+  const pending = data?.pending ?? {};
+  const totalPending = data?.totalPending ?? 0;
 
   const setFilter = useCallback(
     (key: string, value: string | undefined) => {
@@ -39,32 +46,9 @@ export function JobsPage() {
     [setSearchParams],
   );
 
-  const load = useCallback(
-    (newOffset: number) => {
-      setLoading(true);
-      getJobs(PAGE_SIZE, newOffset, agentFilter)
-        .then((data) => {
-          setJobs(data.jobs);
-          setTotal(data.total);
-          setPending(data.pending);
-          setTotalPending(data.totalPending);
-          setOffset(newOffset);
-        })
-        .catch(() => {})
-        .finally(() => setLoading(false));
-    },
-    [agentFilter],
-  );
-
   useEffect(() => {
-    load(0);
-  }, [load]);
-
-  const refetchPage = useCallback(() => {
-    load(offset);
-  }, [load, offset]);
-
-  useInvalidation("runs", undefined, refetchPage);
+    setOffset(0);
+  }, [agentFilter]);
 
   const mergedJobs = useMemo(() => {
     // Only include running instances on the first page
@@ -214,7 +198,7 @@ export function JobsPage() {
                   </td>
                 </tr>
               ))}
-              {mergedJobs.length === 0 && !loading && (
+              {mergedJobs.length === 0 && !isLoading && (
                 <tr>
                   <td
                     colSpan={4}
@@ -224,7 +208,7 @@ export function JobsPage() {
                   </td>
                 </tr>
               )}
-              {loading && (
+              {isLoading && (
                 <tr>
                   <td
                     colSpan={4}
@@ -242,7 +226,7 @@ export function JobsPage() {
         {totalPages > 1 && (
           <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-200 dark:border-slate-800">
             <button
-              onClick={() => load(Math.max(0, offset - PAGE_SIZE))}
+              onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
               disabled={offset === 0}
               className="px-3 py-1 text-xs rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
             >
@@ -252,7 +236,7 @@ export function JobsPage() {
               Page {page} of {totalPages} ({adjustedTotal} total)
             </span>
             <button
-              onClick={() => load(offset + PAGE_SIZE)}
+              onClick={() => setOffset(offset + PAGE_SIZE)}
               disabled={offset + PAGE_SIZE >= adjustedTotal}
               className="px-3 py-1 text-xs rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
             >
