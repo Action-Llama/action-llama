@@ -1,5 +1,18 @@
 # @action-llama/action-llama
 
+## 0.26.3
+
+### Patch Changes
+
+- [`818c7a3`](https://github.com/Action-Llama/action-llama/commit/818c7a391be86dfb8d4bcfe6b996c3d3315f76f2) Thanks [@asselstine](https://github.com/asselstine)! - Enable source maps in the frontend Vite build for easier debugging.
+
+- [`b50759c`](https://github.com/Action-Llama/action-llama/commit/b50759c0599c4d396ba683d5295bc4e50afb0b5e) Thanks [@asselstine](https://github.com/asselstine)! - Switch frontend source maps to "hidden" mode so `.map` files are generated but not referenced in bundled JS, preventing browsers from auto-fetching them in production.
+
+- [`d9ec81a`](https://github.com/Action-Llama/action-llama/commit/d9ec81a22ec0ba2a3eb086b5e7368223f4547444) Thanks [@asselstine](https://github.com/asselstine)! - Fix "Cannot access variable before initialization" error on agent page by extracting InstanceContext into a dedicated module, preventing bundler module-ordering TDZ issues.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.26.3
+
 ## 0.26.2
 
 ### Patch Changes
