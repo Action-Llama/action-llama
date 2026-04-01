@@ -1102,4 +1102,54 @@ describe("stats routes", () => {
       expect(pendingRows.some((r: any) => r.triggerType === "webhook")).toBe(false);
     });
   });
+
+  describe("GET /api/stats/activity — pendingCount field", () => {
+    it("returns pendingCount=0 when there are no pending items", async () => {
+      const stats = mockStatsStore();
+      stats.queryActivityRows.mockReturnValue([
+        { ts: 1000, triggerType: "schedule", agentName: "reporter", instanceId: "i1", result: "completed" },
+      ]);
+      stats.countActivityRows.mockReturnValue(1);
+
+      const app = createApp(stats);
+      const res = await app.request("/api/stats/activity");
+      const data = await res.json();
+
+      expect(data.pendingCount).toBe(0);
+    });
+
+    it("returns pendingCount matching actual pending queue items so badge and table stay consistent", async () => {
+      const stats = mockStatsStore();
+      stats.queryActivityRows.mockReturnValue([]);
+      stats.countActivityRows.mockReturnValue(0);
+
+      const tracker = mockStatusTracker([], [{ name: "reporter", queuedWebhooks: 2 }]);
+      const controlDeps = {
+        workQueue: {
+          size: vi.fn().mockReturnValue(2),
+          peek: vi.fn().mockReturnValue([
+            { context: { type: "webhook", context: { source: "github" } }, receivedAt: new Date(3000) },
+            { context: { type: "schedule" }, receivedAt: new Date(2000) },
+          ]),
+        },
+      };
+
+      const app = createApp(stats, tracker, controlDeps);
+      const res = await app.request("/api/stats/activity");
+      const data = await res.json();
+
+      expect(data.pendingCount).toBe(2);
+      // Verify badge source matches table rows
+      const pendingRows = data.rows.filter((r: any) => r.result === "pending");
+      expect(pendingRows).toHaveLength(data.pendingCount);
+    });
+
+    it("returns pendingCount=0 when no stats store is provided", async () => {
+      const app = createApp();
+      const res = await app.request("/api/stats/activity");
+      const data = await res.json();
+
+      expect(data.pendingCount).toBe(0);
+    });
+  });
 });

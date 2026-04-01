@@ -48,7 +48,7 @@ export function ActivityPage() {
   const statusFilterKey = statusFilters.join(",");
   const statusesToSend = statusFilters.length === STATUS_OPTIONS.length ? undefined : statusFilters;
 
-  const { data, isLoading } = useQuery<{ rows: ActivityRow[]; total: number }>({
+  const { data, isLoading } = useQuery<{ rows: ActivityRow[]; total: number; pendingCount: number }>({
     key: `activity:${offset}:${agentFilter ?? ""}:${triggerTypeFilter ?? ""}:${statusFilterKey}`,
     fetcher: (signal) => getActivity(PAGE_SIZE, offset, agentFilter, triggerTypeFilter, statusesToSend, signal),
     invalidateOn: ["runs", "triggers"],
@@ -57,6 +57,7 @@ export function ActivityPage() {
 
   const rows = data?.rows ?? [];
   const total = data?.total ?? 0;
+  const pendingCount = data?.pendingCount ?? 0;
 
   // Reset offset when filters change
   useEffect(() => {
@@ -98,10 +99,6 @@ export function ActivityPage() {
   const page = Math.floor(offset / PAGE_SIZE) + 1;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const livePendingCount = agentFilter
-    ? agents.find((a) => a.name === agentFilter)?.queuedWebhooks ?? 0
-    : agents.reduce((sum, a) => sum + (a.queuedWebhooks || 0), 0);
-
   const agentOptions = [
     { value: "", label: "All Agents" },
     ...agents.map((a) => ({ value: a.name, label: a.name })),
@@ -113,9 +110,9 @@ export function ActivityPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-bold text-slate-900 dark:text-white">Activity</h1>
-          {livePendingCount > 0 && (
+          {pendingCount > 0 && (
             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
-              {livePendingCount} pending
+              {pendingCount} pending
             </span>
           )}
         </div>
