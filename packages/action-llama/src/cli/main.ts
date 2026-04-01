@@ -112,7 +112,7 @@ program
 program
   .command("logs")
   .description("View agent log files (defaults to scheduler logs)")
-  .argument("[agent]", "agent name (omit for scheduler logs)", "scheduler")
+  .argument("[agent]", "agent name or instance ID (omit for scheduler logs)", "scheduler")
   .option("-p, --project <dir>", "project directory", ".")
   .option("-n, --lines <N>", "number of log entries to show", "50")
   .option("-f, --follow", "tail mode — watch for new log entries")
@@ -120,7 +120,6 @@ program
   .option("-r, --raw", "show raw JSON log entries instead of conversation view")
   .option("-a, --all", "show all log levels (no filtering)")
   .option("-E, --env <name>", "use named environment")
-  .option("-i, --instance <N>", "instance number (for agents with scale > 1)")
   .option("-g, --grep <pattern>", "filter log lines matching regex pattern (searches full JSON line)")
   .option("--after <time>", "show entries after this time (ISO date or relative: 2h, 7d)")
   .option("--before <time>", "show entries before this time (ISO date or relative: 2h, 7d)")
