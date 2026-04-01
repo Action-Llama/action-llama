@@ -100,3 +100,4 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Global defaultAgentScale config — agents without explicit scale inherit defaultAgentScale; agents with explicit scale override it; runner pool size matches configured default; parallel execution works at default scale (default-agent-scale.test.ts)
 - [x] historyRetentionDays prunes stats on restart — scheduler started, agent run recorded; restart with historyRetentionDays=0 prunes all runs; stats API returns total:0 after restart (history-retention.test.ts)
 - [x] Global local.timeout fallback — no per-agent timeout; global local.timeout=8s kills agent sleeping 30s (result=error); per-agent timeout=8s overrides global local.timeout=120s (global-timeout.test.ts)
+- [x] .env.toml overrides config.toml — defaultAgentScale in .env.toml overrides config.toml value; workQueueSize in .env.toml enforces global queue cap via .env.toml layering (env-toml-override.test.ts)
