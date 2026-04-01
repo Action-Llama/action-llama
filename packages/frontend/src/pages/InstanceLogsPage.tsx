@@ -43,6 +43,7 @@ export function InstanceLogsPage() {
   const [following, setFollowing] = useState(true);
   const [connected, setConnected] = useState(false);
   const cursorRef = useRef<string | null>(null);
+  const backCursorRef = useRef<string | null>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
 
   const name = ctx?.name ?? "";
@@ -90,6 +91,10 @@ export function InstanceLogsPage() {
           setLogs((prev) => [...prev, ...d.entries]);
           if (d.cursor) cursorRef.current = d.cursor;
         }
+        // On first load (no cursor yet), save backCursor for backward pagination
+        if (!cursorRef.current && d.backCursor) {
+          backCursorRef.current = d.backCursor;
+        }
       } catch {
         setConnected(false);
         throw undefined;
@@ -126,12 +131,12 @@ export function InstanceLogsPage() {
 
   const loadOlderLogs = useCallback(async () => {
     if (!name || !id || loadingOlder || !hasOlderLogs || logs.length === 0 || backfilling) return;
+    if (!backCursorRef.current) { setHasOlderLogs(false); return; }
     setLoadingOlder(true);
     try {
-      const oldestTime = logs[0].time;
       const params: Record<string, string> = {
         lines: String(OLDER_BATCH_SIZE),
-        before: String(oldestTime),
+        back_cursor: backCursorRef.current,
       };
       const d = await getInstanceLogs(name, id, params);
       if (d.entries.length > 0) {
@@ -150,7 +155,8 @@ export function InstanceLogsPage() {
           }
         });
       }
-      if (d.entries.length < OLDER_BATCH_SIZE) {
+      backCursorRef.current = d.backCursor;
+      if (!d.backCursor || d.entries.length < OLDER_BATCH_SIZE) {
         setHasOlderLogs(false);
       }
     } catch {
@@ -164,18 +170,18 @@ export function InstanceLogsPage() {
   useEffect(() => {
     if (isRunning || !name || !id || !hasOlderLogs || backfillRunning.current) return;
     if (logs.length === 0) return;
+    if (!backCursorRef.current) { setHasOlderLogs(false); return; }
 
     backfillRunning.current = true;
     setBackfilling(true);
 
     let cancelled = false;
     (async () => {
-      let oldestTime = logs[0].time;
       try {
-        while (!cancelled) {
+        while (!cancelled && backCursorRef.current) {
           const params: Record<string, string> = {
             lines: String(OLDER_BATCH_SIZE),
-            before: String(oldestTime),
+            back_cursor: backCursorRef.current,
           };
           const d = await getInstanceLogs(name, id, params);
           if (cancelled) break;
@@ -189,10 +195,7 @@ export function InstanceLogsPage() {
           const prevScrollHeight = el?.scrollHeight ?? 0;
           const prevScrollTop = el?.scrollTop ?? 0;
 
-          setLogs((prev) => {
-            const merged = [...d.entries, ...prev];
-            return merged;
-          });
+          setLogs((prev) => [...d.entries, ...prev]);
 
           // Restore scroll position after prepend
           requestAnimationFrame(() => {
@@ -201,9 +204,8 @@ export function InstanceLogsPage() {
             }
           });
 
-          oldestTime = d.entries[0].time;
-
-          if (d.entries.length < OLDER_BATCH_SIZE) {
+          backCursorRef.current = d.backCursor;
+          if (!d.backCursor || d.entries.length < OLDER_BATCH_SIZE) {
             setHasOlderLogs(false);
             break;
           }
@@ -316,6 +318,7 @@ export function InstanceLogsPage() {
               onClick={() => {
                 setLogs([]);
                 cursorRef.current = null;
+                backCursorRef.current = null;
                 setHasOlderLogs(true);
               }}
               className="px-2 py-1 text-xs rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
