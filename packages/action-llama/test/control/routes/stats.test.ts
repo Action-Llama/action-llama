@@ -584,6 +584,37 @@ describe("stats routes", () => {
       expect(pending.agentName).toBe("reporter");
     });
 
+    it("builds eventSummary from webhook context event and action when both are present", async () => {
+      const stats = mockStatsStore();
+      stats.queryTriggerHistory.mockReturnValue([]);
+
+      const tracker = mockStatusTracker([], [{ name: "reporter", queuedWebhooks: 1 }]);
+      const controlDeps = {
+        workQueue: {
+          size: vi.fn().mockReturnValue(1),
+          peek: vi.fn().mockReturnValue([
+            {
+              context: {
+                type: "webhook",
+                context: { source: "github", event: "issues", action: "opened" },
+              },
+              receivedAt: new Date(4000),
+            },
+          ]),
+        },
+      };
+
+      const app = createApp(stats, tracker, controlDeps);
+      const res = await app.request("/api/stats/activity");
+      const data = await res.json();
+
+      const pending = data.rows.find((r: any) => r.result === "pending");
+      expect(pending).toBeDefined();
+      expect(pending.triggerType).toBe("webhook");
+      expect(pending.triggerSource).toBe("github");
+      expect(pending.eventSummary).toBe("issues opened");
+    });
+
     it("filters by status=pending returns only pending rows", async () => {
       const stats = mockStatsStore();
       stats.queryTriggerHistory.mockReturnValue([
