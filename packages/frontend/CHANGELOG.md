@@ -1,5 +1,11 @@
 # @action-llama/frontend
 
+## 0.19.3
+
+### Patch Changes
+
+- [#474](https://github.com/Action-Llama/action-llama/pull/474) [`3bb8aff`](https://github.com/Action-Llama/action-llama/commit/3bb8aff566e0b437697bd700a6ed81cf86166086) Thanks [@asselstine](https://github.com/asselstine)! - Fix activity component: show trigger badge for pending rows, display full instance IDs, and make trigger column fit-content width
+
 ## 0.19.2
 
 ### Patch Changes

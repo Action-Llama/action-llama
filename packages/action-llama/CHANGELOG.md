@@ -1,5 +1,20 @@
 # @action-llama/action-llama
 
+## 0.24.0
+
+### Minor Changes
+
+- [#475](https://github.com/Action-Llama/action-llama/pull/475) [`762d026`](https://github.com/Action-Llama/action-llama/commit/762d0266e97f6c5ae6d0b4157ae8f44254e2a414) Thanks [@asselstine](https://github.com/asselstine)! - Add per-agent `maxWorkQueueSize` setting in agent `config.toml`. Overrides the global `workQueueSize` for individual agents, allowing fine-grained control over work queue capacity. Oldest events are dropped to make room for newer ones when the queue is full. Closes [#473](https://github.com/Action-Llama/action-llama/issues/473).
+
+### Patch Changes
+
+- [#474](https://github.com/Action-Llama/action-llama/pull/474) [`3bb8aff`](https://github.com/Action-Llama/action-llama/commit/3bb8aff566e0b437697bd700a6ed81cf86166086) Thanks [@asselstine](https://github.com/asselstine)! - Fix activity component: show trigger badge for pending rows, display full instance IDs, and make trigger column fit-content width
+
+- [`ce60d36`](https://github.com/Action-Llama/action-llama/commit/ce60d36678f30b3fe95f876d4a8c8c572a7b9557) Thanks [@asselstine](https://github.com/asselstine)! - Remove bundled skill content from scaffold — users now install skills separately via `npx skills add Action-Llama/skill`. Scaffold no longer creates AGENTS.md, .mcp.json, or .claude/commands in new projects.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.24.0
+
 ## 0.23.8
 
 ### Patch Changes
