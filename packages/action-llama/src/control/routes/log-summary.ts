@@ -64,9 +64,20 @@ export function registerLogSummaryRoutes(
     // Check cache for completed runs (only for default request)
     const cacheKey = instanceId;
     if (!query.lines && !query.after && !query.before && !query.grep) {
+      // Check in-memory cache first (fast path)
       const cached = summaryCache.get(cacheKey);
       if (cached) {
         return c.json({ summary: cached, cached: true });
+      }
+      // Fall back to DB-persisted summary
+      try {
+        const run = statsStore?.queryRunByInstanceId(instanceId);
+        if (run?.summary) {
+          summaryCache.set(cacheKey, run.summary);
+          return c.json({ summary: run.summary, cached: true });
+        }
+      } catch {
+        // Non-critical — ignore cache errors
       }
     }
 
@@ -125,7 +136,7 @@ export function registerLogSummaryRoutes(
       {
         role: "system",
         content:
-          "You are a concise technical assistant. Summarize the following agent run logs in 2-4 sentences. Focus on what the agent did, whether it succeeded, and any notable errors or outcomes. Do not include timestamps or log formatting in your summary.",
+          "You are a concise technical assistant. Summarize the following agent run logs. In a few words describe: what triggered it, what resource it operated on, and what it did. If there are errors then mention the errors. Keep the summary to 1-3 sentences. Do not include timestamps or log formatting.",
       },
       {
         role: "user",
@@ -145,12 +156,13 @@ export function registerLogSummaryRoutes(
       return c.json({ error: msg }, 500);
     }
 
-    // Cache for completed runs
+    // Persist and cache for completed runs
     if (!query.lines && !query.after && !query.before && !query.grep) {
       try {
         const run = statsStore?.queryRunByInstanceId(instanceId);
         if (run && run.result) {
           summaryCache.set(cacheKey, summary);
+          statsStore?.updateRunSummary(instanceId, summary);
         }
       } catch {
         // Non-critical — ignore cache errors

@@ -211,7 +211,7 @@ describe("log summary route", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
-  it("caches summary for completed runs", async () => {
+  it("caches summary for completed runs and persists to DB", async () => {
     createMinimalAgentProject(tmpDir, "my-agent");
     const instanceId = "inst-completed";
     const lines = [
@@ -235,6 +235,7 @@ describe("log summary route", () => {
         result: "ok",
         agentName: "my-agent",
       }),
+      updateRunSummary: vi.fn(),
     } as any;
 
     const app = createTestApp(tmpDir, statsStore);
@@ -250,6 +251,9 @@ describe("log summary route", () => {
     expect(data1.cached).toBe(false);
     expect(fetchMock).toHaveBeenCalledOnce();
 
+    // Verify summary was persisted to DB
+    expect(statsStore.updateRunSummary).toHaveBeenCalledWith(instanceId, "The agent completed.");
+
     // Second call — should be served from cache
     const res2 = await app.request(
       `/api/logs/agents/my-agent/${instanceId}/summarize`,
@@ -261,6 +265,45 @@ describe("log summary route", () => {
     expect(data2.cached).toBe(true);
     // fetch should not have been called again
     expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("returns DB-persisted summary as cached without calling the LLM", async () => {
+    createMinimalAgentProject(tmpDir, "my-agent");
+    const instanceId = "inst-db-cached";
+    const lines = [
+      pinoLine(30, 1710700000000, "Done", { instance: instanceId }),
+    ];
+    writeFileSync(
+      join(logsPath, "my-agent-2024-03-18.log"),
+      lines.join("\n") + "\n",
+    );
+
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    // statsStore returns a run with a pre-existing summary from DB
+    const statsStore = {
+      queryRunByInstanceId: vi.fn().mockReturnValue({
+        instanceId,
+        result: "completed",
+        agentName: "my-agent",
+        summary: "Pre-existing DB summary.",
+      }),
+      updateRunSummary: vi.fn(),
+    } as any;
+
+    const app = createTestApp(tmpDir, statsStore);
+
+    const res = await app.request(
+      `/api/logs/agents/my-agent/${instanceId}/summarize`,
+      { method: "POST" },
+    );
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.summary).toBe("Pre-existing DB summary.");
+    expect(data.cached).toBe(true);
+    // LLM should NOT have been called
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("does not cache for in-progress runs", async () => {
