@@ -115,3 +115,4 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Chat WebSocket endpoints — browser WS 404/401 rejection paths; container WS 404/4003/auth_ok paths; message bridging browser→container; container disconnect notifies browser (chat-ws.test.ts)
 - [x] Log summary API — POST /api/logs/agents/:name/:instanceId/summarize: 400 for invalid name/id; 200 "No log entries found" when no log file or unknown instanceId; 500 when LLM fails with fake API key (log-summary-api.test.ts)
 - [x] Chat WebSocket message validation — invalid type, invalid JSON, user_message missing text, oversized message (>64KB), valid message when container not connected (chat-ws-validation.test.ts)
+- [x] al-subagent call queued when target runner is busy — two callers simultaneously call scale=1 callee; one dispatches immediately, one queues; both complete successfully via drainQueues after first run ends (subagent-queue.test.ts)
