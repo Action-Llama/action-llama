@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync, writeFileSync, readdirSync } from "fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync, writeFileSync, readdirSync, appendFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -324,6 +324,69 @@ describe("HostUserRuntime", () => {
       expect(lines).toContain("hello from agent");
       handle.stop();
       fakeProc.emit("exit", 0);
+    });
+
+    it("watcher callback delivers new content written after streamLogs setup", async () => {
+      const runId = "al-test-watch-cb-" + Math.random().toString(36).slice(2);
+      const logPath = join(testRunsDir, `${runId}.log`);
+      writeLogFile(runId, "first line\n");
+
+      const lines: string[] = [];
+      const handle = runtime.streamLogs(runId, (line) => lines.push(line));
+
+      expect(lines).toContain("first line");
+
+      // Write new content after watcher is set up — triggers fs.watch callback (line 450)
+      appendFileSync(logPath, "second line\n");
+      await new Promise((r) => setTimeout(r, 150));
+
+      expect(lines).toContain("second line");
+      handle.stop();
+    });
+
+    it("readNewData returns early when size has not grown (size <= offset)", async () => {
+      const runId = "al-test-no-growth-" + Math.random().toString(36).slice(2);
+      const logPath = join(testRunsDir, `${runId}.log`);
+      writeLogFile(runId, "existing\n");
+
+      const lines: string[] = [];
+      const handle = runtime.streamLogs(runId, (line) => lines.push(line));
+
+      // Initial read consumed all content (offset = size).
+      expect(lines).toContain("existing");
+
+      // Write new content to trigger the watcher, which calls readNewData.
+      // Then immediately overwrite with same content so size matches offset. 
+      // Instead: just trigger a second readNewData with no new content by
+      // appending nothing and triggering the watcher.
+      // The watcher fires but size === offset → early return (line 426).
+      appendFileSync(logPath, ""); // no new bytes
+      await new Promise((r) => setTimeout(r, 150));
+
+      // No new lines should have been added (empty append is idempotent)
+      expect(lines.filter(l => l !== "existing")).toHaveLength(0);
+      handle.stop();
+    });
+
+    it("readNewData returns early when stopped is true (line 423)", async () => {
+      const runId = "al-test-stopped-" + Math.random().toString(36).slice(2);
+      const logPath = join(testRunsDir, `${runId}.log`);
+      writeLogFile(runId, "before-stop\n");
+
+      const lines: string[] = [];
+      const handle = runtime.streamLogs(runId, (line) => lines.push(line));
+
+      expect(lines).toContain("before-stop");
+
+      // Stop the handle — sets stopped = true
+      handle.stop();
+
+      // Write more content; if the watcher fires, readNewData checks stopped and returns early
+      appendFileSync(logPath, "after-stop\n");
+      await new Promise((r) => setTimeout(r, 150));
+
+      // after-stop should not appear because readNewData returns early when stopped
+      expect(lines).not.toContain("after-stop");
     });
   });
 
