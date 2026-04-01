@@ -1,11 +1,14 @@
 import { Routes, Route, Navigate, useParams } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { AgentLayout } from "./components/AgentLayout";
+import { InstanceLayout } from "./components/InstanceLayout";
 import { LoginPage } from "./pages/LoginPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { AgentDetailPage } from "./pages/AgentDetailPage";
 import { AgentAdminPage } from "./pages/AgentAdminPage";
-import { InstanceDetailPage } from "./pages/InstanceDetailPage";
+import { InstanceLogsPage } from "./pages/InstanceLogsPage";
+import { InstanceTriggerPage } from "./pages/InstanceTriggerPage";
+import { InstanceTelemetryPage } from "./pages/InstanceTelemetryPage";
 import { ActivityPage } from "./pages/ActivityPage";
 import { TriggerDetailPage } from "./pages/TriggerDetailPage";
 import { ProjectConfigPage } from "./pages/ProjectConfigPage";
@@ -40,10 +43,11 @@ export function App() {
           <Route path="skill" element={<AgentSkillRedirect />} />
           <Route path="triggers" element={<AgentTriggersRedirect />} />
         </Route>
-        <Route
-          path="/dashboard/agents/:name/instances/:id"
-          element={<InstanceDetailPage />}
-        />
+        <Route path="/dashboard/agents/:name/instances/:id" element={<InstanceLayout />}>
+          <Route index element={<InstanceLogsPage />} />
+          <Route path="trigger" element={<InstanceTriggerPage />} />
+          <Route path="telemetry" element={<InstanceTelemetryPage />} />
+        </Route>
         <Route path="/dashboard/triggers" element={<Navigate to="/activity" replace />} />
         <Route path="/activity" element={<ActivityPage />} />
         <Route path="/stats" element={<StatsPage />} />
