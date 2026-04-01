@@ -110,3 +110,4 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Lock release by wrong instance returns 409 — lock-store.ts release() existing.holder !== holder; route maps non-"lock not found" reason to 409 (lock-route-errors.test.ts)
 - [x] Auth middleware browser redirect — Accept: text/html on protected route → 302 to /login; API Accept → 401 JSON; two branches in control/auth.ts (gateway-auth-api.test.ts)
 - [x] Stats/triggers triggerType=schedule filter — cron-fired run recorded with triggerType='schedule'; ?triggerType=schedule filter returns only scheduled runs; ?triggerType=manual returns 0 for schedule-only agent (stats.test.ts)
+- [x] Orphan container recovery on scheduler restart — simulate scheduler crash (shutdownNoKill) while agent is running; verify re-adoption on restart and run completes; verify stale registry cleanup when containers already exited (orphan-recovery.test.ts)

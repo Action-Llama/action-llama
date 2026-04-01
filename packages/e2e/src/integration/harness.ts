@@ -441,4 +441,35 @@ export class IntegrationHarness {
     // Reset credential backend
     resetDefaultBackend();
   }
+
+  /**
+   * Simulates a scheduler crash: stops cron jobs and closes the gateway
+   * WITHOUT killing running containers. Running containers keep going and
+   * become "orphans" that the next scheduler start will need to recover.
+   *
+   * Use this only for testing orphan-recovery scenarios. Does NOT call
+   * resetDefaultBackend() — caller is responsible for restoring credentials
+   * before calling start() again.
+   */
+  async shutdownNoKill(): Promise<void> {
+    if (this._scheduler) {
+      // Stop cron jobs (prevents new triggers while gateway is closing)
+      for (const job of this._scheduler.cronJobs) {
+        job.stop();
+      }
+      // Close gateway — simulates crash, does NOT kill containers
+      if (this._scheduler.gateway) {
+        await this._scheduler.gateway.close();
+      }
+      this._scheduler = null;
+    }
+
+    if (this._events) {
+      this._events.removeAllListeners();
+      this._events = null;
+    }
+
+    // Reset credential backend so start() can re-initialise
+    resetDefaultBackend();
+  }
 }
