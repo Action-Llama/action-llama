@@ -622,4 +622,28 @@ describe("cli/commands/run-agent execute", () => {
       );
     });
   });
+
+  describe("allModelsExhausted exit", () => {
+    it("calls process.exit(12) when all models are exhausted", async () => {
+      mockRunSessionLoop.mockResolvedValue({
+        outputText: "",
+        allModelsExhausted: true,
+      });
+
+      await expect(execute("dev", { project: projectPath })).rejects.toThrow("process.exit(12)");
+      expect(exitSpy).toHaveBeenCalledWith(12);
+    });
+
+    it("does not call process.exit(12) when allModelsExhausted is false", async () => {
+      mockRunSessionLoop.mockResolvedValue({
+        outputText: "done",
+        allModelsExhausted: false,
+      });
+      mockReadSignals.mockReturnValue({});
+
+      await expect(execute("dev", { project: projectPath })).rejects.toThrow("process.exit(0)");
+      expect(exitSpy).toHaveBeenCalledWith(0);
+      expect(exitSpy).not.toHaveBeenCalledWith(12);
+    });
+  });
 });
