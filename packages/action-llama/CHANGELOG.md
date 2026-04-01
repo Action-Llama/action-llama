@@ -1,5 +1,26 @@
 # @action-llama/action-llama
 
+## 0.25.0
+
+### Minor Changes
+
+- [#486](https://github.com/Action-Llama/action-llama/pull/486) [`a751817`](https://github.com/Action-Llama/action-llama/commit/a751817d873d4f1d1dab308742b16afb835aa77a) Thanks [@asselstine](https://github.com/asselstine)! - Add log summarization API endpoint and frontend button. POST `/api/logs/agents/:name/:instanceId/summarize` feeds the last 500 log lines to the agent's first configured model and returns a 2-4 sentence summary. Summaries for completed runs are cached in memory to avoid redundant LLM calls. The instance logs page gains a "Summarize" button that shows the summary as an overlay on the log viewer.
+
+### Patch Changes
+
+- [#489](https://github.com/Action-Llama/action-llama/pull/489) [`38f3a74`](https://github.com/Action-Llama/action-llama/commit/38f3a748159477fd47190b6aefa681501df55c01) Thanks [@asselstine](https://github.com/asselstine)! - Fix dashboard integration tests by creating StatusTracker in harness when webUI is enabled
+
+  The integration harness now creates a StatusTracker instance when `start({ webUI: true })` is called, ensuring dashboard API routes (/api/dashboard/\*) are properly registered by the gateway. The three dashboard integration test files have been updated to pass `{ webUI: true }` to `harness.start()`.
+
+- [#490](https://github.com/Action-Llama/action-llama/pull/490) [`14eca4d`](https://github.com/Action-Llama/action-llama/commit/14eca4d89a8c0962fad894045a669f6874e43afd) Thanks [@asselstine](https://github.com/asselstine)! - Fix dashboard integration tests by passing a StatusTracker to startScheduler when webUI:true in the test harness. Also exposes StatusTracker via internals/status-tracker export path.
+
+- [#482](https://github.com/Action-Llama/action-llama/pull/482) [`344c40f`](https://github.com/Action-Llama/action-llama/commit/344c40f63ee66af02766ba6bb4ab98884333e2ed) Thanks [@asselstine](https://github.com/asselstine)! - Hide kill button when run is complete or errored by filtering the instance detail endpoint to only return running instances
+
+- [#481](https://github.com/Action-Llama/action-llama/pull/481) [`85c986a`](https://github.com/Action-Llama/action-llama/commit/85c986ac4c6243d9428e8836bf8b85dbae53a8a7) Thanks [@asselstine](https://github.com/asselstine)! - Refactor the instance detail page into a tabbed layout (Logs, Trigger, Telemetry) with icons, following the same pattern as the agent page. The Logs tab is the default and gives the log viewer more vertical space. Closes [#478](https://github.com/Action-Llama/action-llama/issues/478).
+
+- Updated dependencies []:
+  - @action-llama/skill@0.25.0
+
 ## 0.24.3
 
 ### Patch Changes

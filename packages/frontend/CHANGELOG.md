@@ -1,5 +1,15 @@
 # @action-llama/frontend
 
+## 0.19.4
+
+### Patch Changes
+
+- [#484](https://github.com/Action-Llama/action-llama/pull/484) [`e59a317`](https://github.com/Action-Llama/action-llama/commit/e59a317e22506c49238b0240695729c6fb0eb9c3) Thanks [@asselstine](https://github.com/asselstine)! - Fix activity rows to match agent index page row style: show instance ID in large, bold, colored text on top, with trigger badge below it
+
+- [#491](https://github.com/Action-Llama/action-llama/pull/491) [`3b05804`](https://github.com/Action-Llama/action-llama/commit/3b05804c6dc3e86edb9a3718396a71dbc4024126) Thanks [@asselstine](https://github.com/asselstine)! - Change running state colour from green to blue across agent index, agent detail, instance detail pages and StateBadge component to be consistent with the activity table.
+
+- [#483](https://github.com/Action-Llama/action-llama/pull/483) [`ff8640e`](https://github.com/Action-Llama/action-llama/commit/ff8640e5594fa2b798709dd567b0f13032faabca) Thanks [@asselstine](https://github.com/asselstine)! - Remove logs section from agent page activity tab
+
 ## 0.19.3
 
 ### Patch Changes
