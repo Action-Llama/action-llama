@@ -763,4 +763,44 @@ describe("webhook command", () => {
     });
 
   });
+
+  describe("NODE_ENV non-test process.exit paths", () => {
+    let exitSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      exitSpy = vi.spyOn(process, "exit").mockImplementation((_code?: any): never => {
+        throw new Error(`process.exit(${_code})`);
+      });
+    });
+
+    afterEach(() => {
+      exitSpy.mockRestore();
+      process.env.NODE_ENV = "test";
+    });
+
+    it("calls process.exit(1) when no source detected and NODE_ENV is not test", async () => {
+      process.env.NODE_ENV = "production";
+
+      const fixture = {
+        headers: { "content-type": "application/json" }, // no recognizable source
+        body: { action: "opened" }
+      };
+      const fixturePath = join(tmpDir, "no-source-prod.json");
+      writeFileSync(fixturePath, JSON.stringify(fixture));
+
+      await expect(
+        execute("replay", fixturePath, { project: projectPath })
+      ).rejects.toThrow("process.exit(1)");
+      expect(exitSpy).toHaveBeenCalledWith(1);
+    });
+
+    it("calls process.exit(1) when an error occurs and NODE_ENV is not test", async () => {
+      process.env.NODE_ENV = "production";
+
+      await expect(
+        execute("replay", "/nonexistent/fixture-prod.json", { project: projectPath })
+      ).rejects.toThrow("process.exit(1)");
+      expect(exitSpy).toHaveBeenCalledWith(1);
+    });
+  });
 });
