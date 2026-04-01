@@ -171,7 +171,7 @@ function toRunningTriggerDetail(inst: {
   id: string;
   agentName: string;
   trigger: string;
-  startedAt: string;
+  startedAt: string | Date;
 }): TriggerDetail {
   const sep = inst.trigger.indexOf(":");
   return {
