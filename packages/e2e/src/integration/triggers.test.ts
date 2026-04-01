@@ -198,4 +198,53 @@ describe.skipIf(!DOCKER)("integration: agent-to-agent triggers", { timeout: 180_
     expect(selfCall).toBeTruthy();
     expect(selfCall!.ok).toBe(false);
   });
+
+  it("al-subagent targeting a nonexistent agent returns exit 1 (dispatcher: target not found)", async () => {
+    // The call dispatcher validates that the target agent exists in agentConfigs.
+    // When the target is not found, it returns { ok: false, reason: "target agent ... not found" }
+    // → POST /calls returns 409 → al-subagent exits with code 1.
+    //
+    // Code path: call-dispatcher.ts → agentConfigs.find() fails → { ok: false, reason: ... }
+    // → calls.ts 409 → call event emitted with ok: false
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "call-missing-caller",
+          schedule: "0 0 31 2 *",
+          testScript: [
+            "#!/bin/sh",
+            // Attempt to call an agent that doesn't exist
+            "set +e",
+            'RESULT=$(echo "call nonexistent" | al-subagent does-not-exist-agent)',
+            "RC=$?",
+            "set -e",
+            // al-subagent exits 1 when it receives 409 (dispatch rejected)
+            'test "$RC" -eq 1 || { echo "expected exit 1 (rejected), got $RC: $RESULT"; exit 1; }',
+            // Response should be ok:false
+            'OK=$(echo "$RESULT" | jq -r .ok)',
+            'test "$OK" = "false" || { echo "expected ok=false: $RESULT"; exit 1; }',
+            'echo "call-missing-caller: nonexistent agent call correctly rejected"',
+            "exit 0",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    await harness.start();
+
+    // Collect call events to verify the dispatch failure
+    const callCollector = harness.events.collect("call");
+
+    await harness.triggerAgent("call-missing-caller");
+    const run = await harness.waitForRunResult("call-missing-caller");
+    expect(run.result).toBe("completed");
+
+    const callEvents = callCollector.stop();
+    // Should have a call event with ok:false for the attempted call
+    const failedCall = callEvents.find(
+      (e) => e.callerAgent === "call-missing-caller" && e.targetAgent === "does-not-exist-agent",
+    );
+    expect(failedCall).toBeTruthy();
+    expect(failedCall!.ok).toBe(false);
+  });
 });
