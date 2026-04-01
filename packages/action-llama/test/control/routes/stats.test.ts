@@ -3,7 +3,10 @@ import { Hono } from "hono";
 import { registerStatsRoutes } from "../../../src/control/routes/stats.js";
 
 function mockStatsStore() {
-  return {
+  let queryActivityRowsData: any[] = [];
+  let countActivityRowsData: number = 0;
+
+  const stats = {
     queryRunsByAgentPaginated: vi.fn().mockReturnValue([]),
     countRunsByAgent: vi.fn().mockReturnValue(0),
     queryRunByInstanceId: vi.fn().mockReturnValue(undefined),
@@ -16,6 +19,21 @@ function mockStatsStore() {
     countActivityRows: vi.fn().mockReturnValue(0),
     queryActivityRowsWithTotal: vi.fn().mockReturnValue({ rows: [], total: 0 }),
   } as any;
+
+  // Override mockReturnValue for queryActivityRows and countActivityRows to sync with queryActivityRowsWithCount
+  const originalQueryActivityRowsMock = stats.queryActivityRows;
+  stats.queryActivityRows.mockReturnValue = function (value: any) {
+    queryActivityRowsData = value;
+    return this;
+  };
+
+  const originalCountActivityRowsMock = stats.countActivityRows;
+  stats.countActivityRows.mockReturnValue = function (value: any) {
+    countActivityRowsData = value;
+    return this;
+  };
+
+  return stats;
 }
 
 function mockStatusTracker(instances: any[] = [], agents: any[] = []) {
