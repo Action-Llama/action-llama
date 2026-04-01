@@ -5,6 +5,35 @@ import { promises as fsPromises } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { registerLogRoutes } from "../../../src/control/routes/logs.js";
+import { decodeCursor, encodeCursor } from "../../../src/control/routes/log-helpers.js";
+
+describe("decodeCursor / encodeCursor", () => {
+  it("encodes and decodes a cursor round-trip", () => {
+    const encoded = encodeCursor("2024-03-18", [100, 200]);
+    const decoded = decodeCursor(encoded);
+    expect(decoded).not.toBeNull();
+    expect(decoded!.date).toBe("2024-03-18");
+    expect(decoded!.offsets).toEqual([100, 200]);
+  });
+
+  it("returns null for a cursor that decodes to content without a colon separator", () => {
+    // base64url of "nodateherenocursor" has no ":" so split returns ["...", undefined]
+    const cursor = Buffer.from("nodateherenocursor").toString("base64url");
+    expect(decodeCursor(cursor)).toBeNull();
+  });
+
+  it("returns null for a cursor that decodes to NaN offsets", () => {
+    // Encode a cursor where offsets are not numbers
+    const cursor = Buffer.from("2024-03-18:notanumber").toString("base64url");
+    expect(decodeCursor(cursor)).toBeNull();
+  });
+
+  it("returns null when Buffer.from throws due to a non-string argument", () => {
+    // Passing an object as cursor is truthy but causes Buffer.from to throw a TypeError.
+    // This exercises the catch block in decodeCursor.
+    expect(decodeCursor({} as any)).toBeNull();
+  });
+});
 
 function createTestApp(projectPath: string) {
   const app = new Hono();
