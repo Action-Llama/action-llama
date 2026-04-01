@@ -1,5 +1,14 @@
 # @action-llama/action-llama
 
+## 0.26.5
+
+### Patch Changes
+
+- [#536](https://github.com/Action-Llama/action-llama/pull/536) [`a8bbbb7`](https://github.com/Action-Llama/action-llama/commit/a8bbbb7d351699028ac7e18b2574c60c426bd9a2) Thanks [@asselstine](https://github.com/asselstine)! - Fix `al logs <instanceid>` returning no entries when gateway is running. The CLI was incorrectly constructing the API path with just the instance suffix instead of the full instance ID, causing the gateway to not match log entries. Closes [#534](https://github.com/Action-Llama/action-llama/issues/534)
+
+- Updated dependencies []:
+  - @action-llama/skill@0.26.5
+
 ## 0.26.4
 
 ### Patch Changes
