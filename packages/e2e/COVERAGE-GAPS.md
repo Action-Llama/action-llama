@@ -104,3 +104,4 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Hot-reload maxWorkQueueSize change — hot-reload config.toml adds maxWorkQueueSize=1; subsequent triggers respect the new cap (trigger #2 dropped); 3 total runs verify initial + 2 post-reload (hot-reload-queue-cap.test.ts)
 - [x] Deprecated config aliases — webhookQueueSize=1 enforces global work queue cap (same as workQueueSize=1); covers scheduler/persistence.ts fallback chain (deprecated-config-aliases.test.ts)
 - [x] Webhook source validation on startup — agent referencing undefined webhook source causes startup failure; properly declared source allows normal startup and manual trigger (webhook-source-validation.test.ts)
+- [x] Trigger scale=0 agent returns 409 — dispatchOrQueue pool.size===0 rejection path; agent exists but has no runners; 409 vs 404 distinction; active agent still works alongside (control.test.ts)

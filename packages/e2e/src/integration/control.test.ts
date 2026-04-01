@@ -208,6 +208,45 @@ describe.skipIf(!DOCKER)("integration: control API", { timeout: 180_000 }, () =>
     expect(res.status).toBe(404);
   });
 
+  it("trigger scale=0 (disabled) agent returns 409", async () => {
+    // An agent with scale=0 has no runners. Triggering it via the control API
+    // should return 409 (not 404) because the agent EXISTS but is disabled.
+    //
+    // Code path: dispatchOrQueue → pool.size === 0 → rejected
+    // → gateway-setup triggerAgent returns string "has no available runners"
+    // → control route returns 409 (message doesn't contain "not found")
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "active-ctrl-agent",
+          schedule: "0 0 31 2 *",
+          testScript: "#!/bin/sh\nexit 0\n",
+        },
+        {
+          name: "zero-scale-ctrl-agent",
+          // scale=0 — bypasses schedule/webhook requirement and disables the agent
+          config: { scale: 0 },
+          testScript: "#!/bin/sh\nexit 0\n",
+        },
+      ],
+    });
+
+    await harness.start();
+
+    // Active agent works normally
+    await harness.triggerAgent("active-ctrl-agent");
+    const run = await harness.waitForRunResult("active-ctrl-agent", 120_000);
+    expect(run.result).toBe("completed");
+
+    // Triggering the scale=0 agent should return 409 (exists but pool.size=0 → rejected)
+    const res = await harness.controlAPI("POST", "/trigger/zero-scale-ctrl-agent");
+    expect(res.status).toBe(409);
+    const body = await res.json() as { error: string };
+    // Error should mention "no available runners" or "disabled"
+    expect(body.error).toBeTruthy();
+    expect(typeof body.error).toBe("string");
+  });
+
   it("trigger with custom prompt body passes prompt to container via PROMPT env var", async () => {
     // The trigger endpoint accepts a JSON body with a `prompt` field.
     // When provided, it is passed to the container as the PROMPT env var
