@@ -546,6 +546,48 @@ describe("logs command", () => {
       expect(output[0]).toContain("final content");
       expect(output[0]).toContain("summary of result");
     });
+
+    it("shows event entry with role field in --all mode", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({
+        level: 20,
+        msg: "event",
+        type: "message_start",
+        role: "assistant",
+      }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", all: true });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("▪ message_start");
+      expect(output[0]).toContain("role=assistant");
+    });
+
+    it("shows event entry with stopReason field in --all mode", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({
+        level: 20,
+        msg: "event",
+        type: "message_delta",
+        stopReason: "end_turn",
+      }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", all: true });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("▪ message_delta");
+      expect(output[0]).toContain("stop=end_turn");
+    });
   });
 
   // ── Additional conversation message types ────────────────────────────────
