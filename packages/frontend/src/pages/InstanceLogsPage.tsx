@@ -49,6 +49,10 @@ export function InstanceLogsPage() {
   const id = ctx?.id ?? "";
   const isRunning = ctx?.isRunning ?? false;
 
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [hasOlderLogs, setHasOlderLogs] = useState(true);
+  const OLDER_BATCH_SIZE = 100;
+
   const [summaryText, setSummaryText] = useState<string | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
@@ -118,13 +122,54 @@ export function InstanceLogsPage() {
     }
   }, [name, id]);
 
+  const loadOlderLogs = useCallback(async () => {
+    if (!name || !id || loadingOlder || !hasOlderLogs || logs.length === 0) return;
+    setLoadingOlder(true);
+    try {
+      const oldestTime = logs[0].time;
+      const params: Record<string, string> = {
+        lines: String(OLDER_BATCH_SIZE),
+        before: String(oldestTime),
+      };
+      const d = await getInstanceLogs(name, id, params);
+      if (d.entries.length > 0) {
+        // Preserve scroll position: measure scrollHeight before prepend
+        const el = logContainerRef.current;
+        const prevScrollHeight = el?.scrollHeight ?? 0;
+        const prevScrollTop = el?.scrollTop ?? 0;
+
+        setLogs((prev) => [...d.entries, ...prev]);
+
+        // After React renders the prepended entries, restore scroll position
+        requestAnimationFrame(() => {
+          if (el) {
+            const newScrollHeight = el.scrollHeight;
+            el.scrollTop = prevScrollTop + (newScrollHeight - prevScrollHeight);
+          }
+        });
+      }
+      if (d.entries.length < OLDER_BATCH_SIZE) {
+        setHasOlderLogs(false);
+      }
+    } catch {
+      // Silently fail — user can retry
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [name, id, loadingOlder, hasOlderLogs, logs]);
+
   // Detect scroll-away to stop following
   const handleScroll = useCallback(() => {
     if (!logContainerRef.current) return;
     const el = logContainerRef.current;
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
     setFollowing(atBottom);
-  }, []);
+
+    // Auto-load older logs when scrolled near top
+    if (el.scrollTop < 100 && hasOlderLogs && !loadingOlder && logs.length > 0) {
+      loadOlderLogs();
+    }
+  }, [hasOlderLogs, loadingOlder, logs.length, loadOlderLogs]);
 
   if (!ctx) return null;
 
@@ -202,6 +247,7 @@ export function InstanceLogsPage() {
               onClick={() => {
                 setLogs([]);
                 cursorRef.current = null;
+                setHasOlderLogs(true);
               }}
               className="px-2 py-1 text-xs rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
             >
@@ -214,6 +260,30 @@ export function InstanceLogsPage() {
           onScroll={handleScroll}
           className="min-h-[32rem] max-h-[calc(100vh-16rem)] overflow-y-auto scrollbar-thin bg-slate-950 p-3"
         >
+          {loadingOlder && (
+            <div className="text-xs text-slate-500 text-center py-2">
+              <span className="inline-flex items-center gap-1">
+                <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Loading older logs…
+              </span>
+            </div>
+          )}
+          {!hasOlderLogs && logs.length > 0 && (
+            <div className="text-xs text-slate-600 text-center py-2 border-b border-slate-800 mb-2">
+              — Beginning of logs —
+            </div>
+          )}
+          {hasOlderLogs && !loadingOlder && logs.length > 0 && (
+            <button
+              className="w-full text-xs text-blue-400 hover:text-blue-300 text-center py-2 border-b border-slate-800 mb-2 transition-colors"
+              onClick={loadOlderLogs}
+            >
+              ↑ Load older logs
+            </button>
+          )}
           {summaryText && (
             <div className="relative mb-3">
               <div className="bg-purple-900/90 border border-purple-700 rounded-lg p-4 text-sm text-purple-100">
