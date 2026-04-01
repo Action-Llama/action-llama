@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { resolveWebhookSource, buildFilterFromTrigger, validateTriggerFields, resolveCredentialInstance, PROVIDER_CREDENTIALS, PROVIDER_TO_CREDENTIAL, PROVIDER_TO_SECRET_FIELD, KNOWN_PROVIDER_TYPES, registerWebhookBindings, setupWebhookRegistry } from "../../src/events/webhook-setup.js";
 import type { WebhookSourceConfig } from "../../src/shared/config.js";
+import type { GitHubWebhookFilter } from "../../src/webhooks/types.js";
 import * as twitterSubscribeMod from "../../src/webhooks/providers/twitter-subscribe.js";
 
 vi.mock("../../src/shared/credentials.js", () => ({
@@ -128,12 +129,30 @@ describe("buildFilterFromTrigger", () => {
     );
     expect(filter).toEqual({ orgs: ["acme", "other-org"] });
   });
+
+  it("maps conclusions for github", () => {
+    const filter = buildFilterFromTrigger(
+      { source: "my-github", events: ["workflow_run"], actions: ["completed"], conclusions: ["failure", "cancelled"] },
+      "github"
+    ) as GitHubWebhookFilter;
+    expect(filter).toBeDefined();
+    expect(filter.conclusions).toEqual(["failure", "cancelled"]);
+  });
 });
 
 describe("validateTriggerFields", () => {
   it("returns no errors for valid github fields", () => {
     const errors = validateTriggerFields(
       { source: "my-github", events: ["issues"], repos: ["acme/app"], org: "acme" },
+      "github",
+      "agent1"
+    );
+    expect(errors).toEqual([]);
+  });
+
+  it("returns no errors for github conclusions field", () => {
+    const errors = validateTriggerFields(
+      { source: "my-github", events: ["workflow_run"], conclusions: ["failure"] },
       "github",
       "agent1"
     );

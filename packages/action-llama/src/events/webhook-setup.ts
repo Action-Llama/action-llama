@@ -94,6 +94,7 @@ export function buildFilterFromTrigger(trigger: WebhookTrigger, providerType: st
     if (trigger.assignee) f.assignee = trigger.assignee;
     if (trigger.author) f.author = trigger.author;
     if (trigger.branches) f.branches = trigger.branches;
+    if (trigger.conclusions) f.conclusions = trigger.conclusions;
     return Object.keys(f).length > 0 ? f : undefined;
   }
   if (providerType === "sentry") {
@@ -148,7 +149,7 @@ export const KNOWN_PROVIDER_TYPES = new Set(["github", "sentry", "linear", "mint
 
 // Valid trigger fields per provider type (filter fields + source)
 const VALID_TRIGGER_FIELDS: Record<string, Set<string>> = {
-  github: new Set(["source", "events", "actions", "repos", "orgs", "org", "labels", "assignee", "author", "branches"]),
+  github: new Set(["source", "events", "actions", "repos", "orgs", "org", "labels", "assignee", "author", "branches", "conclusions"]),
   sentry: new Set(["source", "resources"]),
   linear: new Set(["source", "events", "actions", "organizations", "labels", "assignee", "author"]),
   test: new Set(["source", "events", "actions", "repos"]),
