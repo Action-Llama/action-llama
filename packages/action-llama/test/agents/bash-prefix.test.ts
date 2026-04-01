@@ -70,5 +70,23 @@ describe("bash-prefix", () => {
       expect(pathAfter).toBe(pathBefore);
       expect(mockExistsSync).toHaveBeenCalledOnce();
     });
+
+    it("uses empty string as fallback when PATH is not defined", () => {
+      mockExistsSync.mockImplementation((_path: string) => true);
+
+      // Remove PATH entirely to exercise the `process.env.PATH || ""` fallback branch
+      const savedPath = process.env.PATH;
+      delete process.env.PATH;
+
+      try {
+        ensureBinDir();
+        // After ensureBinDir with no PATH, the result should contain the binDir
+        expect(process.env.PATH).toContain("docker/bin");
+        // The path should start with the binDir followed by a colon and empty string
+        expect(process.env.PATH).toMatch(/docker\/bin:/);
+      } finally {
+        process.env.PATH = savedPath;
+      }
+    });
   });
 });

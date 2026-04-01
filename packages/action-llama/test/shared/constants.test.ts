@@ -1,5 +1,29 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { VERSION, GIT_SHA, imageTags, CONSTANTS } from "../../src/shared/constants.js";
+
+// Hoisted mocks for fs and child_process so we can re-evaluate constants.js in isolation
+const { mockReadFileSync, mockExecFileSync } = vi.hoisted(() => ({
+  mockReadFileSync: vi.fn(),
+  mockExecFileSync: vi.fn(),
+}));
+
+vi.mock("fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("fs")>();
+  // Default: forward all calls to real readFileSync
+  mockReadFileSync.mockImplementation((...args: Parameters<typeof actual.readFileSync>) =>
+    (actual.readFileSync as any)(...args)
+  );
+  return { ...actual, readFileSync: mockReadFileSync };
+});
+
+vi.mock("child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("child_process")>();
+  // Default: forward calls to the real execFileSync
+  mockExecFileSync.mockImplementation((...args: Parameters<typeof actual.execFileSync>) =>
+    actual.execFileSync(...args)
+  );
+  return { ...actual, execFileSync: mockExecFileSync };
+});
 
 describe("VERSION", () => {
   it("is a non-empty string", () => {
@@ -120,5 +144,58 @@ describe("CONSTANTS", () => {
     it("is a number", () => {
       expect(typeof CONSTANTS.CREDS_FILE_MODE).toBe("number");
     });
+  });
+});
+
+describe("getGitSha — build-info.json path", () => {
+  afterEach(() => {
+    vi.resetModules();
+    // Restore default mock implementations
+    mockReadFileSync.mockImplementation(undefined as any);
+    mockExecFileSync.mockImplementation(undefined as any);
+  });
+
+  it("returns gitSha from build-info.json when the file exists and contains a valid gitSha", async () => {
+    const MOCK_GIT_SHA = "abc12345";
+
+    // Mock readFileSync: return real data for package.json, mocked data for build-info.json
+    mockReadFileSync.mockImplementation((...args: any[]) => {
+      const path = String(args[0]);
+      if (path.endsWith("build-info.json")) {
+        return JSON.stringify({ gitSha: MOCK_GIT_SHA });
+      }
+      // Delegate to the real fs for anything else (e.g. package.json)
+      const { readFileSync: realReadFileSync } = require("fs");
+      return realReadFileSync(...args);
+    });
+
+    vi.resetModules();
+    const { GIT_SHA: freshGitSha } = await import("../../src/shared/constants.js");
+    expect(freshGitSha).toBe(MOCK_GIT_SHA);
+  });
+});
+
+describe("CONSTANTS — non-test NODE_ENV", () => {
+  afterEach(() => {
+    vi.resetModules();
+    mockReadFileSync.mockImplementation(undefined as any);
+  });
+
+  it("uses restrictive CREDS_DIR_MODE (0o700) when NODE_ENV is not 'test'", async () => {
+    const savedNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+
+    // Forward readFileSync to the real implementation
+    mockReadFileSync.mockImplementation((...args: any[]) => {
+      const { readFileSync: realReadFileSync } = require("fs");
+      return realReadFileSync(...args);
+    });
+
+    vi.resetModules();
+    const { CONSTANTS: freshConstants } = await import("../../src/shared/constants.js");
+    expect(freshConstants.CREDS_DIR_MODE).toBe(0o700);
+    expect(freshConstants.CREDS_FILE_MODE).toBe(0o400);
+
+    process.env.NODE_ENV = savedNodeEnv;
   });
 });
