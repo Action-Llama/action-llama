@@ -838,4 +838,171 @@ describe("mcp/server.ts — startMcpServer and tool handlers", () => {
       expect(result.content[0].text).toBeTruthy();
     });
   });
+
+  // ─── al_agents edge cases for uncovered branches ─────────────────────────
+
+  describe("al_agents edge cases", () => {
+    it("returns 'No agents found' when project has no agents", async () => {
+      // Create a project directory with no agents
+      const emptyDir = mkdtempSync(join(tmpdir(), "al-mcp-noagents-"));
+      const { writeFileSync, mkdirSync } = await import("fs");
+      const { resolve } = await import("path");
+      const { stringify: stringifyTOML } = await import("smol-toml");
+      writeFileSync(resolve(emptyDir, "config.toml"), stringifyTOML({
+        models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+      }));
+      // Create agents dir but no agents inside
+      mkdirSync(resolve(emptyDir, "agents"), { recursive: true });
+
+      try {
+        registeredTools.clear();
+        await startMcpServer({ projectPath: emptyDir });
+
+        const result = await registeredTools.get("al_agents")!({ name: undefined });
+        expect(result.content[0].text).toBe("No agents found in this project.");
+      } finally {
+        rmSync(emptyDir, { recursive: true, force: true });
+      }
+    });
+
+    it("shows agent description when set in SKILL.md frontmatter", async () => {
+      // Create a project with a detailed agent config
+      const detailedProject = makeTmpProject({
+        agents: [
+          {
+            name: "detailed-agent",
+            description: "A detailed agent description",
+            schedule: "*/10 * * * *",
+            credentials: ["github_token"],
+            webhooks: [{ source: "github", events: ["push"] }],
+          },
+        ],
+      });
+
+      try {
+        registeredTools.clear();
+        await startMcpServer({ projectPath: detailedProject });
+
+        makeGatewayOk({ agents: [] });
+        const result = await registeredTools.get("al_agents")!({ name: "detailed-agent" });
+        const text = result.content[0].text;
+        expect(text).toContain("Description: A detailed agent description");
+        expect(text).toContain("Schedule: */10 * * * *");
+        expect(text).toContain("Credentials: github_token");
+        expect(text).toContain("Webhooks:");
+      } finally {
+        rmSync(detailedProject, { recursive: true, force: true });
+      }
+    });
+
+    it("shows scale and timeout when configured", async () => {
+      const scaledProject = makeTmpProject({
+        agents: [
+          {
+            name: "scaled-agent",
+            scale: 3,
+            timeout: 600,
+          },
+        ],
+      });
+
+      try {
+        registeredTools.clear();
+        await startMcpServer({ projectPath: scaledProject });
+
+        makeGatewayOk({ agents: [] });
+        const result = await registeredTools.get("al_agents")!({ name: "scaled-agent" });
+        const text = result.content[0].text;
+        expect(text).toContain("Scale: 3");
+        expect(text).toContain("Timeout: 600s");
+      } finally {
+        rmSync(scaledProject, { recursive: true, force: true });
+      }
+    });
+
+    it("lists agents with schedule and webhooks in list mode", async () => {
+      // Use the default project which has agents with schedule/webhooks
+      const richProject = makeTmpProject({
+        agents: [
+          {
+            name: "rich-agent",
+            schedule: "0 * * * *",
+            webhooks: [{ source: "github", events: ["issues"] }],
+          },
+        ],
+      });
+
+      try {
+        registeredTools.clear();
+        await startMcpServer({ projectPath: richProject });
+
+        // No live status
+        mockGatewayFetch.mockRejectedValue(new Error("ECONNREFUSED"));
+
+        const result = await registeredTools.get("al_agents")!({ name: undefined });
+        const text = result.content[0].text;
+        expect(text).toContain("rich-agent");
+        expect(text).toContain("schedule:");
+        expect(text).toContain("webhooks:");
+      } finally {
+        rmSync(richProject, { recursive: true, force: true });
+      }
+    });
+
+    it("handles config error for an agent in list mode (shows config error)", async () => {
+      // Create a project with an agent that has broken config
+      const brokenProject = mkdtempSync(join(tmpdir(), "al-mcp-broken-"));
+      const { writeFileSync, mkdirSync } = await import("fs");
+      const { resolve } = await import("path");
+      const { stringify: stringifyTOML } = await import("smol-toml");
+
+      writeFileSync(resolve(brokenProject, "config.toml"), stringifyTOML({
+        models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+      }));
+
+      // Create an agent with a broken config.toml
+      const agentDir = resolve(brokenProject, "agents", "broken-agent");
+      mkdirSync(agentDir, { recursive: true });
+      // SKILL.md must exist for discoverAgents to find it
+      writeFileSync(resolve(agentDir, "SKILL.md"), "---\n---\n# broken agent\n");
+      // Write an invalid config.toml so loadAgentConfig throws
+      writeFileSync(resolve(agentDir, "config.toml"), "models = {{bad toml}");
+
+      try {
+        registeredTools.clear();
+        await startMcpServer({ projectPath: brokenProject });
+
+        mockGatewayFetch.mockRejectedValue(new Error("ECONNREFUSED"));
+
+        const result = await registeredTools.get("al_agents")!({ name: undefined });
+        const text = result.content[0].text;
+        expect(text).toContain("broken-agent");
+        expect(text).toContain("config error");
+      } finally {
+        rmSync(brokenProject, { recursive: true, force: true });
+      }
+    });
+
+    it("shows live state in list mode when gateway provides agent status", async () => {
+      const listProject = makeTmpProject({
+        agents: [{ name: "list-agent" }],
+      });
+
+      try {
+        registeredTools.clear();
+        await startMcpServer({ projectPath: listProject });
+
+        makeGatewayOk({
+          agents: [{ name: "list-agent", state: "running", status: "active" }],
+        });
+
+        const result = await registeredTools.get("al_agents")!({ name: undefined });
+        const text = result.content[0].text;
+        expect(text).toContain("list-agent");
+        expect(text).toContain("state:");
+      } finally {
+        rmSync(listProject, { recursive: true, force: true });
+      }
+    });
+  });
 });
