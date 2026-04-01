@@ -201,4 +201,71 @@ describe.skipIf(!DOCKER)("integration: gateway JSON auth API", { timeout: 180_00
     expect(setCookie).toContain("al_session=");
     expect(setCookie).toContain("Max-Age=0");
   });
+
+  it("unauthenticated request with Accept: text/html redirects to /login", async () => {
+    // The auth middleware has two branches for unauthenticated requests:
+    // 1. API clients (no Accept: text/html) → 401 JSON { error: "Unauthorized" }
+    // 2. Browser requests (Accept: text/html) → redirect to /login
+    //
+    // This test covers the browser redirect path.
+    //
+    // Code path: control/auth.ts authMiddleware() → accept.includes("text/html")
+    //   → c.redirect("/login")
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "auth-redirect-agent",
+          schedule: "0 0 31 2 *",
+          testScript: "#!/bin/sh\nexit 0\n",
+        },
+      ],
+    });
+
+    await harness.start();
+
+    // Make a request to a protected route with browser Accept header but no auth
+    const res = await fetch(`http://127.0.0.1:${harness.gatewayPort}/control/status`, {
+      method: "GET",
+      headers: {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+      redirect: "manual", // Don't follow redirect — we want to verify the 3xx
+    });
+
+    // Should redirect to /login (not return 401 JSON)
+    expect(res.status).toBeGreaterThanOrEqual(301);
+    expect(res.status).toBeLessThanOrEqual(302);
+    const location = res.headers.get("location") || "";
+    expect(location).toContain("/login");
+  });
+
+  it("unauthenticated API request without text/html returns 401 JSON", async () => {
+    // API clients send JSON-only Accept headers → get 401 JSON, not a redirect.
+    // Code path: control/auth.ts authMiddleware() → !accept.includes("text/html")
+    //   → c.json({ error: "Unauthorized" }, 401)
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "auth-401-agent",
+          schedule: "0 0 31 2 *",
+          testScript: "#!/bin/sh\nexit 0\n",
+        },
+      ],
+    });
+
+    await harness.start();
+
+    // No auth header, Accept: application/json → should get 401 JSON
+    const res = await fetch(`http://127.0.0.1:${harness.gatewayPort}/api/stats/triggers`, {
+      method: "GET",
+      headers: {
+        "Accept": "application/json",
+      },
+    });
+
+    expect(res.status).toBe(401);
+    const body = await res.json() as { error: string };
+    expect(body.error).toBeTruthy();
+    expect(typeof body.error).toBe("string");
+  });
 });
