@@ -57,27 +57,16 @@ export function AgentLayout() {
   return (
     <div className="space-y-4">
       {/* Header row */}
+      <div className="space-y-1">
+        <nav className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+          <Link to="/dashboard" className="hover:text-slate-700 dark:hover:text-slate-300 transition-colors">
+            Agents
+          </Link>
+          <span>›</span>
+          <span className="text-slate-900 dark:text-white font-medium">{name}</span>
+        </nav>
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
-          <Link
-            to="/dashboard"
-            className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
-            aria-label="Back to dashboard"
-          >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 19l-7-7 7-7"
-              />
-            </svg>
-          </Link>
           <h1 className="text-xl font-bold text-slate-900 dark:text-white">
             {name}
           </h1>
@@ -175,6 +164,7 @@ export function AgentLayout() {
             )}
           </button>
         </div>
+      </div>
       </div>
 
       {/* Tab bar */}
