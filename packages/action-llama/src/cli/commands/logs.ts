@@ -3,6 +3,16 @@ import { createReadStream, readdirSync, existsSync, statSync } from "fs";
 import { createInterface } from "readline";
 import { logsDir } from "../../shared/paths.js";
 
+/**
+ * Detect if a string looks like an instance ID (agent-name + 8-char hex suffix).
+ * Returns { agent, instanceSuffix } if it matches, or null if it's a plain agent name.
+ */
+function parseInstanceId(value: string): { agent: string; instanceSuffix: string } | null {
+  const match = value.match(/^(.+)-([0-9a-f]{8})$/);
+  if (!match) return null;
+  return { agent: match[1], instanceSuffix: match[2] };
+}
+
 // ── ANSI helpers ──────────────────────────────────────────────────────────────
 
 const RESET = "\x1b[0m";
@@ -437,7 +447,7 @@ async function followFile(filePath: string, lastN: number, fmt: Formatter, showR
 
 export async function execute(
   agent: string,
-  opts: { project: string; lines: string; follow?: boolean; date?: string; raw?: boolean; all?: boolean; env?: string; instance?: string; grep?: string; after?: string; before?: string }
+  opts: { project: string; lines: string; follow?: boolean; date?: string; raw?: boolean; all?: boolean; env?: string; grep?: string; after?: string; before?: string }
 ): Promise<void> {
   const projectPath = resolve(opts.project);
   const fmt: Formatter = opts.raw
@@ -445,10 +455,15 @@ export async function execute(
     : opts.all
       ? (entry) => formatConversationEntry(entry, true)
       : formatConversationEntry;
-  // --instance accepts a full instance ID (e.g. "dev-a1b2c3d4") or just the suffix ("a1b2c3d4")
-  const instanceSuffix = opts.instance
-    ? (opts.instance.startsWith(`${agent}-`) ? opts.instance.slice(agent.length + 1) : opts.instance)
-    : undefined;
+
+  // Auto-detect if the positional agent arg is a full instance ID (e.g. "dev-a1b2c3d4")
+  let resolvedAgent = agent;
+  let instanceSuffix: string | undefined;
+  const parsed = parseInstanceId(agent);
+  if (parsed) {
+    resolvedAgent = parsed.agent;
+    instanceSuffix = parsed.instanceSuffix;
+  }
 
   const n = parseInt(opts.lines, 10);
 
@@ -472,12 +487,12 @@ export async function execute(
 
   // Build API path
   let apiPath: string;
-  if (agent === "scheduler") {
+  if (resolvedAgent === "scheduler") {
     apiPath = "/api/logs/scheduler";
   } else if (instanceSuffix !== undefined) {
-    apiPath = `/api/logs/agents/${encodeURIComponent(agent)}/${instanceSuffix}`;
+    apiPath = `/api/logs/agents/${encodeURIComponent(resolvedAgent)}/${instanceSuffix}`;
   } else {
-    apiPath = `/api/logs/agents/${encodeURIComponent(agent)}`;
+    apiPath = `/api/logs/agents/${encodeURIComponent(resolvedAgent)}`;
   }
 
   try {
@@ -548,7 +563,7 @@ export async function execute(
       const data = await res.json() as { entries: LogEntry[]; cursor: string | null; hasMore: boolean };
       const filtered = applyGrepFilter(data.entries);
       if (filtered.length === 0) {
-        console.log(`No log entries found for "${agent}".`);
+        console.log(`No log entries found for "${resolvedAgent}".`);
       } else {
         formatAndPrintEntries(filtered);
       }
@@ -556,16 +571,16 @@ export async function execute(
   } catch {
     // Gateway not running — fall back to direct file reading
     const dir = logsDir(projectPath);
-    const logFile = findLogFile(dir, agent, opts.date);
+    const logFile = findLogFile(dir, resolvedAgent, opts.date);
 
     if (!logFile) {
       const dateStr = opts.date || "today";
-      console.error(`No log file found for agent "${agent}" (${dateStr}) in ${dir}`);
+      console.error(`No log file found for agent "${resolvedAgent}" (${dateStr}) in ${dir}`);
       process.exit(1);
     }
 
-    // When --instance / --after / --before / --grep are specified, wrap the formatter
-    const instanceFilter = instanceSuffix !== undefined ? `${agent}-${instanceSuffix}` : undefined;
+    // When instance / --after / --before / --grep are specified, wrap the formatter
+    const instanceFilter = instanceSuffix !== undefined ? `${resolvedAgent}-${instanceSuffix}` : undefined;
     const filteredFmt: Formatter = (entry) => {
       if (instanceFilter && entry.instance !== instanceFilter) return null;
       if (afterTs !== undefined && entry.time <= afterTs) return null;

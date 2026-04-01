@@ -777,8 +777,8 @@ describe("logs command", () => {
 
   // ── Instance filtering ────────────────────────────────────────────────────
 
-  describe("instance filtering (--instance)", () => {
-    it("filters to only entries matching the instance suffix", async () => {
+  describe("instance filtering", () => {
+    it("filters to only entries matching the instance suffix via positional instance ID", async () => {
       const date = new Date().toISOString().slice(0, 10);
       const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
       const content = [
@@ -791,14 +791,15 @@ describe("logs command", () => {
       const output: string[] = [];
       const origLog = console.log;
       console.log = (...args: any[]) => output.push(args.join(" "));
-      await execute("dev", { project: tmpDir, lines: "50", instance: "aabbccdd" });
+      // Pass the full instance ID as the positional agent arg
+      await execute("dev-aabbccdd", { project: tmpDir, lines: "50" });
       console.log = origLog;
 
       expect(output).toHaveLength(1);
       expect(output[0]).toContain("echo from instance 1");
     });
 
-    it("accepts full instance ID (with agent prefix)", async () => {
+    it("accepts full instance ID as the positional agent argument", async () => {
       const date = new Date().toISOString().slice(0, 10);
       const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
       const content = [
@@ -810,12 +811,26 @@ describe("logs command", () => {
       const output: string[] = [];
       const origLog = console.log;
       console.log = (...args: any[]) => output.push(args.join(" "));
-      // Pass the full instance ID "dev-aabbccdd" (with agent prefix)
-      await execute("dev", { project: tmpDir, lines: "50", instance: "dev-aabbccdd" });
+      // Pass the full instance ID "dev-aabbccdd" as the positional arg
+      await execute("dev-aabbccdd", { project: tmpDir, lines: "50" });
       console.log = origLog;
 
       expect(output).toHaveLength(1);
       expect(output[0]).toContain("echo target");
+    });
+
+    it("treats agent name without hex suffix as plain agent name", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `my-agent-${date}.log`);
+      writeFileSync(logFile, makePinoLine({ msg: "bash", cmd: "echo hello" }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("my-agent", { project: tmpDir, lines: "50" });
+      console.log = origLog;
+
+      expect(output.some((l) => l.includes("echo hello"))).toBe(true);
     });
   });
 
@@ -1353,13 +1368,14 @@ describe("logs command", () => {
       expect(callArg.path).toContain("/api/logs/scheduler");
     });
 
-    it("uses instance-specific path when instanceSuffix is set", async () => {
+    it("uses instance-specific path when full instance ID is passed as positional arg", async () => {
       mockGatewayFetch.mockResolvedValue({
         ok: true,
         json: async () => ({ entries: [], cursor: null, hasMore: false }),
       } as any);
 
-      await execute("dev", { project: tmpDir, lines: "50", instance: "abc12345" });
+      // Pass the full instance ID as the positional agent arg
+      await execute("dev-abc12345", { project: tmpDir, lines: "50" });
 
       const callArg = mockGatewayFetch.mock.calls[0][0];
       expect(callArg.path).toContain("/api/logs/agents/dev/abc12345");
