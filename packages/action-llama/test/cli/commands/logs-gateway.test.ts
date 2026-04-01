@@ -113,7 +113,7 @@ describe("logs command — gateway path", () => {
       expect(calledPath).toContain("/api/logs/scheduler");
     });
 
-    it("includes instance suffix in API path when full instance ID is passed as positional arg", async () => {
+    it("includes full instance ID in API path when full instance ID is passed as positional arg", async () => {
       let calledPath = "";
       mockGatewayFetch.mockImplementation(async (opts: { path: string }) => {
         calledPath = opts.path;
@@ -127,7 +127,7 @@ describe("logs command — gateway path", () => {
       await execute("dev-a1b2c3d4", { project: tmpDir, lines: "10" });
       console.log = origLog;
 
-      expect(calledPath).toContain("/api/logs/agents/dev/a1b2c3d4");
+      expect(calledPath).toContain("/api/logs/agents/dev/dev-a1b2c3d4");
     });
 
     it("includes run header for run-start entries from gateway", async () => {

@@ -514,7 +514,7 @@ export async function execute(
   if (resolvedAgent === "scheduler") {
     apiPath = "/api/logs/scheduler";
   } else if (instanceSuffix !== undefined) {
-    apiPath = `/api/logs/agents/${encodeURIComponent(resolvedAgent)}/${instanceSuffix}`;
+    apiPath = `/api/logs/agents/${encodeURIComponent(resolvedAgent)}/${encodeURIComponent(agent)}`;
   } else {
     apiPath = `/api/logs/agents/${encodeURIComponent(resolvedAgent)}`;
   }

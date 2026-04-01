@@ -1507,7 +1507,7 @@ describe("logs command", () => {
       await execute("dev-abc12345", { project: tmpDir, lines: "50" });
 
       const callArg = mockGatewayFetch.mock.calls[0][0];
-      expect(callArg.path).toContain("/api/logs/agents/dev/abc12345");
+      expect(callArg.path).toContain("/api/logs/agents/dev/dev-abc12345");
     });
 
     it("falls back to file when gateway returns non-ok status", async () => {
