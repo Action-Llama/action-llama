@@ -1543,6 +1543,46 @@ describe("logs command", () => {
       // Should have processed the new line without errors
       expect(followPromise).toBeDefined(); // followPromise is still pending, no error
     });
+
+    it("skips empty lines appended to log file in follow mode (covers parseLine empty-line branch)", async () => {
+      // This test covers the parseLine `if (!line.trim()) return null` branch
+      // which is only reachable via readNewData (readline-based) in follow mode.
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+
+      // Write initial content
+      const initialLine = makePinoLine({ msg: "initial" }) + "\n";
+      writeFileSync(logFile, initialLine);
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+
+      mockGatewayFetch.mockRejectedValue(new Error("no gateway"));
+
+      // Start follow mode in background
+      const followPromise = execute("dev", { project: tmpDir, lines: "50", follow: true, raw: true });
+
+      // Wait for initial setup
+      await new Promise(r => setTimeout(r, 50));
+
+      // Append: empty lines + a valid line (readNewData via readline will see the empty lines)
+      const newContent = "\n\n" + makePinoLine({ msg: "after-empties", cmd: "echo done" }) + "\n";
+      appendFileSync(logFile, newContent);
+
+      // Advance fake timers to trigger polling
+      await vi.advanceTimersByTimeAsync(2500);
+      await new Promise(r => setTimeout(r, 50));
+
+      console.log = origLog;
+      vi.useRealTimers();
+
+      // The valid line after the empty lines should have been processed
+      expect(output.some((l) => l.includes("after-empties"))).toBe(true);
+      expect(followPromise).toBeDefined();
+    });
   });
 
   describe("follow mode (gateway)", () => {
