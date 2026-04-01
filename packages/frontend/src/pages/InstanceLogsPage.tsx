@@ -97,15 +97,6 @@ export function InstanceLogsPage() {
     [name, id, isRunning],
   );
 
-  // Pre-fetch one older page after the initial logs arrive so there's scroll headroom
-  const didPreload = useRef(false);
-  useEffect(() => {
-    if (logs.length > 0 && !didPreload.current && hasOlderLogs) {
-      didPreload.current = true;
-      loadOlderLogs();
-    }
-  }, [logs.length, hasOlderLogs, loadOlderLogs]);
-
   // Scroll follow
   useEffect(() => {
     if (following && logContainerRef.current) {
@@ -166,6 +157,15 @@ export function InstanceLogsPage() {
       setLoadingOlder(false);
     }
   }, [name, id, loadingOlder, hasOlderLogs, logs]);
+
+  // Pre-fetch one older page after the initial logs arrive so there's scroll headroom
+  const didPreload = useRef(false);
+  useEffect(() => {
+    if (logs.length > 0 && !didPreload.current && hasOlderLogs) {
+      didPreload.current = true;
+      loadOlderLogs();
+    }
+  }, [logs.length, hasOlderLogs, loadOlderLogs]);
 
   // Detect scroll-away to stop following
   const handleScroll = useCallback(() => {
