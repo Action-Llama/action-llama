@@ -1,5 +1,21 @@
 # @action-llama/frontend
 
+## 0.19.6
+
+### Patch Changes
+
+- [#522](https://github.com/Action-Llama/action-llama/pull/522) [`2df5dac`](https://github.com/Action-Llama/action-llama/commit/2df5dace062fc02a41185a38349190541654026a) Thanks [@asselstine](https://github.com/asselstine)! - Breadcrumb no longer shows the current page title, preventing duplicate display with the h1 heading below
+
+- [#506](https://github.com/Action-Llama/action-llama/pull/506) [`29ef738`](https://github.com/Action-Llama/action-llama/commit/29ef738603760fb11ab8f6bced6ed230904812a0) Thanks [@asselstine](https://github.com/asselstine)! - Add backward pagination to instance logs viewer so users can scroll up to load older log entries
+
+- [#517](https://github.com/Action-Llama/action-llama/pull/517) [`ab13c6d`](https://github.com/Action-Llama/action-llama/commit/ab13c6df1da31769e2e6bf22d2b6333489f0e6fe) Thanks [@asselstine](https://github.com/asselstine)! - Move log summary notice to a fixed overlay on top of the log panel so it is always visible regardless of scroll position and must be explicitly closed.
+
+- [#516](https://github.com/Action-Llama/action-llama/pull/516) [`603a586`](https://github.com/Action-Llama/action-llama/commit/603a586d0384c8425749b23268020a20d1a05757) Thanks [@asselstine](https://github.com/asselstine)! - Hide "0 lines" line count indicator in log panel header on mobile viewports
+
+- [#521](https://github.com/Action-Llama/action-llama/pull/521) [`1fc56c8`](https://github.com/Action-Llama/action-llama/commit/1fc56c8e5c6b0847d17be2dc9c63cab2d5cfbbc5) Thanks [@asselstine](https://github.com/asselstine)! - Move status dot and word from beside the agent title to beside "Activity" in the activity panel
+
+- [#505](https://github.com/Action-Llama/action-llama/pull/505) [`8236de6`](https://github.com/Action-Llama/action-llama/commit/8236de6b169139cef7671edd8588e1d90e7fb18d) Thanks [@asselstine](https://github.com/asselstine)! - Replace button-styled "Token Usage" subnav on Stats page with underline tab style matching AgentLayout tabs
+
 ## 0.19.5
 
 ### Patch Changes

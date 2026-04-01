@@ -1,5 +1,22 @@
 # @action-llama/action-llama
 
+## 0.26.1
+
+### Patch Changes
+
+- [#519](https://github.com/Action-Llama/action-llama/pull/519) [`6afe3b2`](https://github.com/Action-Llama/action-llama/commit/6afe3b20ea82fa49eba1493718b47777a284be2a) Thanks [@asselstine](https://github.com/asselstine)! - Add Summary column to Activity table. On desktop, shows an AI-generated summary of each run with generate/regenerate buttons. On mobile, shows a collapsible summary below the trigger badge with a smaller instance ID font. Summaries are now persisted to the SQLite `runs` table so they survive server restarts. Also updates the summary prompt to describe what triggered the run, what resource it operated on, what it did, and any errors. Closes [#513](https://github.com/Action-Llama/action-llama/issues/513).
+
+- [#508](https://github.com/Action-Llama/action-llama/pull/508) [`4e97aa0`](https://github.com/Action-Llama/action-llama/commit/4e97aa0dcde4b439921d268f5ff6d45c55615c4b) Thanks [@asselstine](https://github.com/asselstine)! - Fix Activity page pending badge showing stale count inconsistent with the table.
+
+  The badge now derives its count from the same API response that populates the table (`pendingCount` field from `/api/stats/activity`), instead of the SSE-pushed `queuedWebhooks` value. This eliminates the race condition where the SSE stream and REST API could return different pending counts, causing the badge to say "1 Pending" while no pending row appeared below. Closes [#502](https://github.com/Action-Llama/action-llama/issues/502).
+
+- [#512](https://github.com/Action-Llama/action-llama/pull/512) [`779557b`](https://github.com/Action-Llama/action-llama/commit/779557b0056f9175f3e569aae9db41d78ccde7d6) Thanks [@asselstine](https://github.com/asselstine)! - Add `conclusions` field to GitHub webhook trigger validation and filter building. Previously, using `conclusions` in a GitHub webhook trigger config caused `al doctor` to report it as an unrecognized field. The field is now accepted during validation and correctly mapped when building the webhook filter.
+
+- [#509](https://github.com/Action-Llama/action-llama/pull/509) [`ad0b51c`](https://github.com/Action-Llama/action-llama/commit/ad0b51c5188cce86148b02bfac68ffab3dd96ae2) Thanks [@asselstine](https://github.com/asselstine)! - Add /stats SPA fallback route to fix 404 on page refresh
+
+- Updated dependencies []:
+  - @action-llama/skill@0.26.1
+
 ## 0.26.0
 
 ### Minor Changes
