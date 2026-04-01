@@ -30,6 +30,7 @@ vi.mock("fs", async (importOriginal) => {
 });
 
 // Mock credentials module so prepareCredentials doesn't hit the filesystem
+const mockReadAll = vi.fn().mockResolvedValue({ token: "fake-value" });
 vi.mock("../../src/shared/credentials.js", () => ({
   parseCredentialRef: (ref: string) => {
     const sep = ref.indexOf(":");
@@ -37,7 +38,7 @@ vi.mock("../../src/shared/credentials.js", () => ({
     return { type: ref.slice(0, sep).trim(), instance: ref.slice(sep + 1).trim() };
   },
   getDefaultBackend: () => ({
-    readAll: () => Promise.resolve({ token: "fake-value" }),
+    readAll: (...args: any[]) => mockReadAll(...args),
   }),
 }));
 
@@ -51,6 +52,8 @@ describe("LocalDockerRuntime", () => {
     mockMkdirSync.mockReset();
     mockWriteFileSync.mockReset();
     mockMkdtempSync.mockReset();
+    mockReadAll.mockReset();
+    mockReadAll.mockResolvedValue({ token: "fake-value" });
   });
   it("implements Runtime & ContainerRuntime interface", () => {
     const runtime: Runtime & ContainerRuntime = new LocalDockerRuntime();
@@ -150,6 +153,26 @@ describe("LocalDockerRuntime", () => {
 
     // Verify that chown was attempted but failure was handled gracefully
     expect(mockChownSync).toHaveBeenCalled();
+  });
+
+  it("skips credential when readAll returns null (credential not found in backend)", async () => {
+    mockMkdtempSync.mockReturnValue("/tmp/al-creds-null123");
+    mockMkdirSync.mockReturnValue(undefined);
+    mockChmodSync.mockReturnValue(undefined);
+    mockChownSync.mockReturnValue(undefined);
+
+    // Make readAll return null to simulate a missing credential
+    mockReadAll.mockResolvedValue(null);
+
+    const runtime = new LocalDockerRuntime();
+    const creds = await runtime.prepareCredentials(["github_token"]);
+
+    // The credential is skipped — no files written, bundle is empty for that type
+    expect(creds.strategy).toBe("volume");
+    if (creds.strategy === "volume") {
+      expect(creds.bundle).toEqual({});
+    }
+    expect(mockWriteFileSync).not.toHaveBeenCalled();
   });
 });
 
