@@ -281,5 +281,73 @@ describe.skipIf(!DOCKER)(
       const body = await res.json() as { error: string };
       expect(body.error).toContain("secret");
     });
+
+    it("POST /locks/release for lock held by different instance returns 409", async () => {
+      // When agent B tries to release a lock held by agent A, the lock store
+      // returns { ok: false, reason: "held by <agentA.instanceId>" }.
+      // Since the reason is not "lock not found", the route returns 409.
+      //
+      // Code path: lock-store.ts release() → existing.holder !== holder
+      //   → { ok: false, reason: `held by ${existing.holder}` }
+      //   → locks.ts: status = reason === "lock not found" ? 404 : 409 → 409
+      harness = await IntegrationHarness.create({
+        agents: [
+          {
+            name: "lock-holder-agent",
+            schedule: "0 0 31 2 *",
+            testScript: [
+              "#!/bin/sh",
+              "set -e",
+              WAIT_FOR_GATEWAY,
+              // Acquire the shared lock and hold it for 10 seconds
+              'rlock "test://cross-agent-release/shared-resource"',
+              "sleep 10",
+              'runlock "test://cross-agent-release/shared-resource"',
+              "exit 0",
+            ].join("\n"),
+          },
+          {
+            name: "lock-release-thief-agent",
+            schedule: "0 0 31 2 *",
+            testScript: [
+              "#!/bin/sh",
+              "set -e",
+              WAIT_FOR_GATEWAY,
+              // Wait for holder to acquire the lock
+              "sleep 3",
+              // Try to release the lock using our own secret (different instanceId)
+              'PAYLOAD=$(printf \'{"secret":"%s","resourceKey":"test://cross-agent-release/shared-resource"}\' "$SHUTDOWN_SECRET")',
+              'RESP=$(curl -sf -X POST "$GATEWAY_URL/locks/release" \\',
+              '  -H "Content-Type: application/json" \\',
+              '  -d "$PAYLOAD" \\',
+              "  -w '\\n%{http_code}' 2>&1)",
+              'STATUS_CODE=$(echo "$RESP" | tail -1)',
+              'BODY=$(echo "$RESP" | head -1)',
+              // Should get 409 since the lock is held by a different instance
+              'test "$STATUS_CODE" = "409" || { echo "expected 409 but got $STATUS_CODE: $BODY"; exit 1; }',
+              'REASON=$(echo "$BODY" | jq -r .reason 2>/dev/null)',
+              // reason should be "held by <other instance>" (not "lock not found")
+              'echo "$REASON" | grep -q "held by" || { echo "expected held by in reason, got: $REASON ($BODY)"; exit 1; }',
+              'echo "lock-release-thief-agent: got expected 409 held by different instance OK"',
+              "exit 0",
+            ].join("\n"),
+          },
+        ],
+      });
+
+      await harness.start();
+
+      // Start both agents
+      await harness.triggerAgent("lock-holder-agent");
+      await harness.triggerAgent("lock-release-thief-agent");
+
+      // The thief should complete (exit 0 after verifying 409)
+      const thiefRun = await harness.waitForRunResult("lock-release-thief-agent", 60_000);
+      expect(thiefRun.result).toBe("completed");
+
+      // The holder should also complete eventually
+      const holderRun = await harness.waitForRunResult("lock-holder-agent", 120_000);
+      expect(holderRun.result).toBe("completed");
+    });
   },
 );
