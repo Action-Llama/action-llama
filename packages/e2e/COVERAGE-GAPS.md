@@ -164,3 +164,5 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] validateAgentConfig direct tests without Docker — accepts schedule-only/webhook-only/both/scale=0-bypass; throws for no-triggers/invalid-name/name-ends-with-hyphen/empty-webhooks-array; loadAgentBody malformed-YAML throws ConfigError; valid minimal frontmatter loads body (agent-config-validation.test.ts)
 
 - [x] StatusTracker build lifecycle and token usage without Docker — startBuild/completeBuild state transitions, no-op on unknown agent; endRun with usage sets lastRunUsage; cumulative usage accumulates across runs (addTokenUsage indirectly); setSchedulerInfo+getSchedulerInfo roundtrip; setAgentDescription/setAgentStatusText/setAgentError setters (status-tracker-build.test.ts)
+
+- [x] Execution constants and loadAgentConfig webhooks without Docker — DEFAULT_MAX_RERUNS=10, DEFAULT_MAX_TRIGGER_DEPTH=3; webhooks with source/events/actions preserved; multiple webhook entries; labels filter preserved; webhooks undefined when not configured (execution-constants.test.ts)
