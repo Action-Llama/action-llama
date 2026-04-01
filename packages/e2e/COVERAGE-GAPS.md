@@ -172,3 +172,5 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] StatusTracker invalidation log advanced behaviors without Docker — getInvalidationsSince() deduplication (same type/agent key appears once per window), version cursor continuity (second query with returned version yields only new signals), invalidationLog pruning (> 1000 entries trimmed to 500), flushInvalidations() resets log and version to 0, pre-cursor signals excluded from post-cursor query (status-tracker-invalidation.test.ts)
 
 - [x] loadAgentConfig [runtime] section without Docker — runtime field undefined when absent; host-user type preserved; run_as and groups fields preserved; empty groups array; container type explicit; two agents with different runtime configs in same project (load-agent-runtime-config.test.ts)
+
+- [x] Gateway API key auto-generation in Phase 3 without Docker — gateway_api_key credential is present after Phase 3; key is stable across restarts; per-project key isolation; exercising ensureGatewayApiKey() and loadCredentialField integration (gateway-api-key.test.ts)
