@@ -8,7 +8,7 @@ import {
   createPersistenceStore,
   type PersistenceStore,
 } from "../../src/shared/persistence/index.js";
-import { EventTypes, EventStreamWrapper } from "../../src/shared/persistence/event-store.js";
+import { EventTypes, EventStreamWrapper, createEvent } from "../../src/shared/persistence/event-store.js";
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -663,6 +663,31 @@ describe("EventSourcedWorkQueue", () => {
       expect(queue.size("agent-a")).toBe(1);
       // agent-b should hold 2 items (global max of 100 applies)
       expect(queue.size("agent-b")).toBe(2);
+    });
+  });
+
+  describe("buildQueueState replay edge cases", () => {
+    it("handles WORK_DEQUEUED event for an unknown workId gracefully during initialize()", async () => {
+      // Write a WORK_DEQUEUED event directly to the stream for a workId
+      // that was never preceded by a WORK_QUEUED event.
+      // This exercises QueueState.dequeue(workId) → "not found" → return undefined.
+      const stream = store.events.stream("work-queue-orphan-dequeue-agent");
+      await stream.append(
+        createEvent(EventTypes.WORK_DEQUEUED, {
+          workId: "nonexistent-work-id-xyz",
+          agentName: "orphan-dequeue-agent",
+          dequeuedAt: Date.now(),
+        })
+      );
+
+      // Create a queue and replay via initialize() — should not throw
+      const queue2 = new EventSourcedWorkQueue<string>(store, 100);
+      await expect(queue2.initialize()).resolves.not.toThrow();
+
+      // No items should be in the queue since no WORK_QUEUED event exists
+      expect(queue2.size("orphan-dequeue-agent")).toBe(0);
+
+      queue2.close();
     });
   });
 });
