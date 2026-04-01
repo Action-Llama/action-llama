@@ -190,3 +190,5 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Webhook endpoint error paths without Docker — POST /webhooks/unknown-source → 404 (no registry entry); GET /webhooks/unknown-source CRC challenge → 404; POST /webhooks/test → 404 when no test-source configured; GET /health → { status:'ok' } (sanity); exercises registerGatewayWebhookRoutes unknown source path (webhook-endpoints-noagent.test.ts)
 
 - [x] Auth middleware without Docker — /health unprotected (200 no auth); protected route no auth → 401; wrong Bearer → 401; correct Bearer → 200; exercises applyAuthMiddleware bearer token check in gateway/middleware/auth.ts (auth-middleware-noagent.test.ts)
+
+- [x] Log API ?grep parameter without Docker — grep=pattern filters to matching entries; invalid regex returns 400; grep=nonexistent returns empty; exercises readLastEntriesMultiFile grep RegExp filter + handleLogRequest 400 path (logs-grep-noagent.test.ts)
