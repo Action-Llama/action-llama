@@ -210,7 +210,7 @@ export function InstanceLogsPage() {
             Logs
           </h2>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-slate-500 dark:text-slate-400">
+            <span className="hidden sm:inline text-xs text-slate-500 dark:text-slate-400">
               {logs.length} lines
             </span>
             <span
