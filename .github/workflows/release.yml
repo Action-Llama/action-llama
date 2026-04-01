@@ -69,25 +69,53 @@ jobs:
         if: steps.has-changesets.outputs.has_changesets == 'true'
         run: npm run build
 
+      - name: Check which packages need publishing
+        if: steps.has-changesets.outputs.has_changesets == 'true'
+        id: check-versions
+        run: |
+          AL_VERSION=$(node -p "require('./packages/action-llama/package.json').version")
+          SKILL_VERSION=$(node -p "require('./packages/skill/package.json').version")
+
+          if npm view "@action-llama/action-llama@${AL_VERSION}" version >/dev/null 2>&1; then
+            echo "action_llama_exists=true" >> "$GITHUB_OUTPUT"
+            echo "⚠️  @action-llama/action-llama@${AL_VERSION} already on npm — skipping"
+          else
+            echo "action_llama_exists=false" >> "$GITHUB_OUTPUT"
+            echo "📦 @action-llama/action-llama@${AL_VERSION} will be published"
+          fi
+
+          if npm view "@action-llama/skill@${SKILL_VERSION}" version >/dev/null 2>&1; then
+            echo "skill_exists=true" >> "$GITHUB_OUTPUT"
+            echo "⚠️  @action-llama/skill@${SKILL_VERSION} already on npm — skipping"
+          else
+            echo "skill_exists=false" >> "$GITHUB_OUTPUT"
+            echo "📦 @action-llama/skill@${SKILL_VERSION} will be published"
+          fi
+
       # Dry-run gate: intentionally fails the entire workflow if any package
       # can't be published. We want to catch registry issues (missing package,
       # bad token, etc.) before the real publish commits us to a partial release.
+      # Skips packages whose version is already on npm (idempotent re-runs).
       - name: Dry-run publish (all packages)
-        if: steps.has-changesets.outputs.has_changesets == 'true'
+        if: steps.has-changesets.outputs.has_changesets == 'true' && (steps.check-versions.outputs.action_llama_exists != 'true' || steps.check-versions.outputs.skill_exists != 'true')
         run: |
-          npm publish -w packages/action-llama --access public --tag latest --dry-run
-          npm publish -w packages/skill --access public --tag latest --dry-run
+          if [ "${{ steps.check-versions.outputs.action_llama_exists }}" != "true" ]; then
+            npm publish -w packages/action-llama --access public --tag latest --dry-run
+          fi
+          if [ "${{ steps.check-versions.outputs.skill_exists }}" != "true" ]; then
+            npm publish -w packages/skill --access public --tag latest --dry-run
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @action-llama/action-llama
-        if: steps.has-changesets.outputs.has_changesets == 'true'
+        if: steps.has-changesets.outputs.has_changesets == 'true' && steps.check-versions.outputs.action_llama_exists != 'true'
         run: npm publish -w packages/action-llama --access public --tag latest
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @action-llama/skill
-        if: steps.has-changesets.outputs.has_changesets == 'true'
+        if: steps.has-changesets.outputs.has_changesets == 'true' && steps.check-versions.outputs.skill_exists != 'true'
         continue-on-error: true
         run: npm publish -w packages/skill --access public --tag latest
         env:
