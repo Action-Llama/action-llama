@@ -282,8 +282,9 @@ export function registerStatsRoutes(
       const dbLimit = limit - memSliceLen;
 
       let dbRows: any[] = [];
+      let dbCount = 0;
       if (dbLimit > 0) {
-        dbRows = statsStore.queryActivityRows({
+        const result = statsStore.queryActivityRowsWithTotal({
           limit: dbLimit,
           offset: dbOffset,
           agentName: agentFilter,
@@ -291,6 +292,8 @@ export function registerStatsRoutes(
           dbStatuses: requestedDbStatuses,
           includeDeadLetters,
         });
+        dbRows = result.rows;
+        dbCount = result.total;
 
         // Dedup: remove DB rows that match a currently-running instance
         // (a run may appear as "running" in tracker AND as "completed" in DB if it just finished)
@@ -303,36 +306,21 @@ export function registerStatsRoutes(
         if (runningIds.size > 0) {
           dbRows = dbRows.filter((r) => !r.instanceId || !runningIds.has(r.instanceId));
         }
+      } else {
+        // No DB rows fetched; just get the count
+        const result = statsStore.queryActivityRowsWithTotal({
+          limit: 0,
+          offset: 0,
+          agentName: agentFilter,
+          triggerType: triggerTypeFilter,
+          dbStatuses: requestedDbStatuses,
+          includeDeadLetters,
+        });
+        dbCount = result.total;
       }
-
-      const dbCount = statsStore.countActivityRows({
-        agentName: agentFilter,
-        triggerType: triggerTypeFilter,
-        dbStatuses: requestedDbStatuses,
-        includeDeadLetters,
-      });
 
       rows = [...memSlice, ...dbRows];
       total = memCount + dbCount;
-    }
-
-    // Enrich webhook rows with provider name + event summary from receipts
-    if (statsStore) {
-      const receiptIds = rows
-        .filter((r: any) => r.triggerType === "webhook" && r.webhookReceiptId)
-        .map((r: any) => r.webhookReceiptId as string);
-      if (receiptIds.length > 0) {
-        const details = statsStore.getWebhookDetailsBatch(receiptIds);
-        for (const row of rows) {
-          if (row.webhookReceiptId && details[row.webhookReceiptId]) {
-            const d = details[row.webhookReceiptId];
-            row.triggerSource = d.source;
-            if (d.eventSummary && d.eventSummary !== d.source) {
-              row.eventSummary = d.eventSummary;
-            }
-          }
-        }
-      }
     }
 
     return c.json({ rows, total, pendingCount, limit, offset });

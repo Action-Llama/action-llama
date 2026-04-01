@@ -14,6 +14,7 @@ function mockStatsStore() {
     countTriggerHistory: vi.fn().mockReturnValue(0),
     queryActivityRows: vi.fn().mockReturnValue([]),
     countActivityRows: vi.fn().mockReturnValue(0),
+    queryActivityRowsWithTotal: vi.fn().mockReturnValue({ rows: [], total: 0 }),
   } as any;
 }
 
@@ -520,8 +521,7 @@ describe("stats routes", () => {
       const stats = mockStatsStore();
       const completedRow = { ts: 1000, triggerType: "schedule", agentName: "reporter", instanceId: "i1", result: "completed", webhookReceiptId: null, deadLetterReason: null };
       const deadLetterRow = { ts: 500, triggerType: "webhook", agentName: null, instanceId: null, result: "dead-letter", webhookReceiptId: "r1", deadLetterReason: "no_match" };
-      stats.queryActivityRows.mockReturnValue([completedRow, deadLetterRow]);
-      stats.countActivityRows.mockReturnValue(2);
+      stats.queryActivityRowsWithTotal.mockReturnValue({ rows: [completedRow, deadLetterRow], total: 2 });
       const app = createApp(stats);
 
       const res = await app.request("/api/stats/activity");
@@ -530,17 +530,19 @@ describe("stats routes", () => {
       expect(data.rows).toHaveLength(2);
       expect(data.total).toBe(2);
       // Should always pass includeDeadLetters: true (no status filter)
-      expect(stats.queryActivityRows).toHaveBeenCalledWith(
+      expect(stats.queryActivityRowsWithTotal).toHaveBeenCalledWith(
         expect.objectContaining({ includeDeadLetters: true })
       );
     });
 
     it("merges running instances from statusTracker", async () => {
       const stats = mockStatsStore();
-      stats.queryActivityRows.mockReturnValue([
-        { ts: 500, triggerType: "schedule", agentName: "reporter", instanceId: "i1", result: "completed" },
-      ]);
-      stats.countActivityRows.mockReturnValue(1);
+      stats.queryActivityRowsWithTotal.mockReturnValue({
+        rows: [
+          { ts: 500, triggerType: "schedule", agentName: "reporter", instanceId: "i1", result: "completed" },
+        ],
+        total: 1,
+      });
 
       const tracker = mockStatusTracker([
         { id: "inst-running", agentName: "reporter", status: "running", startedAt: new Date(2000).toISOString(), trigger: "webhook:github" },
@@ -560,7 +562,7 @@ describe("stats routes", () => {
 
     it("merges pending queue items from controlDeps.workQueue.peek", async () => {
       const stats = mockStatsStore();
-      stats.queryActivityRows.mockReturnValue([]);
+      stats.queryActivityRowsWithTotal.mockReturnValue({ rows: [], total: 0 });
 
       const tracker = mockStatusTracker([], [
         { name: "reporter", queuedWebhooks: 1 },
@@ -590,7 +592,7 @@ describe("stats routes", () => {
 
     it("builds eventSummary from webhook context event and action when both are present", async () => {
       const stats = mockStatsStore();
-      stats.queryActivityRows.mockReturnValue([]);
+      stats.queryActivityRowsWithTotal.mockReturnValue({ rows: [], total: 0 });
 
       const tracker = mockStatusTracker([], [{ name: "reporter", queuedWebhooks: 1 }]);
       const controlDeps = {
@@ -621,7 +623,7 @@ describe("stats routes", () => {
 
     it("filters by status=pending returns only pending rows", async () => {
       const stats = mockStatsStore();
-      // queryActivityRows should NOT be called when status=pending (no DB statuses requested)
+      // queryActivityRowsWithTotal should NOT be called when status=pending (no DB statuses requested)
 
       const tracker = mockStatusTracker([], [{ name: "reporter", queuedWebhooks: 1 }]);
       const controlDeps = {
@@ -639,16 +641,18 @@ describe("stats routes", () => {
 
       expect(data.rows.every((r: any) => r.result === "pending")).toBe(true);
       // DB should NOT be queried for pending-only filter
-      expect(stats.queryActivityRows).not.toHaveBeenCalled();
+      expect(stats.queryActivityRowsWithTotal).not.toHaveBeenCalled();
     });
 
     it("filters by status=dead-letter returns only dead letters", async () => {
       const stats = mockStatsStore();
-      // With status=dead-letter, queryActivityRows is called with dbStatuses=['dead-letter']
-      stats.queryActivityRows.mockReturnValue([
-        { ts: 500, triggerType: "webhook", agentName: null, instanceId: null, result: "dead-letter", webhookReceiptId: "r1", deadLetterReason: "no_match" },
-      ]);
-      stats.countActivityRows.mockReturnValue(1);
+      // With status=dead-letter, queryActivityRowsWithTotal is called with dbStatuses=['dead-letter']
+      stats.queryActivityRowsWithTotal.mockReturnValue({
+        rows: [
+          { ts: 500, triggerType: "webhook", agentName: null, instanceId: null, result: "dead-letter", webhookReceiptId: "r1", deadLetterReason: "no_match" },
+        ],
+        total: 1,
+      });
 
       const app = createApp(stats);
 
@@ -657,33 +661,37 @@ describe("stats routes", () => {
 
       expect(data.rows).toHaveLength(1);
       expect(data.rows[0].result).toBe("dead-letter");
-      expect(stats.queryActivityRows).toHaveBeenCalledWith(
+      expect(stats.queryActivityRowsWithTotal).toHaveBeenCalledWith(
         expect.objectContaining({ dbStatuses: ["dead-letter"], includeDeadLetters: true })
       );
     });
 
     it("filters by agent parameter", async () => {
       const stats = mockStatsStore();
-      stats.queryActivityRows.mockReturnValue([
-        { ts: 1000, triggerType: "schedule", agentName: "reporter", instanceId: "i1", result: "completed" },
-      ]);
-      stats.countActivityRows.mockReturnValue(1);
+      stats.queryActivityRowsWithTotal.mockReturnValue({
+        rows: [
+          { ts: 1000, triggerType: "schedule", agentName: "reporter", instanceId: "i1", result: "completed" },
+        ],
+        total: 1,
+      });
 
       const app = createApp(stats);
 
       await app.request("/api/stats/activity?agent=reporter");
-      expect(stats.queryActivityRows).toHaveBeenCalledWith(
+      expect(stats.queryActivityRowsWithTotal).toHaveBeenCalledWith(
         expect.objectContaining({ agentName: "reporter" })
       );
     });
 
     it("sorts rows by status group (pending → running → rest) then ts descending", async () => {
       const stats = mockStatsStore();
-      stats.queryActivityRows.mockReturnValue([
-        { ts: 1000, triggerType: "schedule", agentName: "reporter", instanceId: "i1", result: "completed" },
-        { ts: 300, triggerType: "webhook", agentName: "reporter", instanceId: "i2", result: "error" },
-      ]);
-      stats.countActivityRows.mockReturnValue(2);
+      stats.queryActivityRowsWithTotal.mockReturnValue({
+        rows: [
+          { ts: 1000, triggerType: "schedule", agentName: "reporter", instanceId: "i1", result: "completed" },
+          { ts: 300, triggerType: "webhook", agentName: "reporter", instanceId: "i2", result: "error" },
+        ],
+        total: 2,
+      });
 
       const tracker = mockStatusTracker([
         { id: "r1", agentName: "reporter", status: "running", startedAt: new Date(2000).toISOString(), trigger: "manual" },
@@ -704,11 +712,13 @@ describe("stats routes", () => {
 
     it("sorts pending rows before running, and running before completed/error", async () => {
       const stats = mockStatsStore();
-      stats.queryActivityRows.mockReturnValue([
-        { ts: 5000, triggerType: "schedule", agentName: "reporter", instanceId: "i-completed", result: "completed" },
-        { ts: 1000, triggerType: "webhook", agentName: "reporter", instanceId: "i-error", result: "error" },
-      ]);
-      stats.countActivityRows.mockReturnValue(2);
+      stats.queryActivityRowsWithTotal.mockReturnValue({
+        rows: [
+          { ts: 5000, triggerType: "schedule", agentName: "reporter", instanceId: "i-completed", result: "completed" },
+          { ts: 1000, triggerType: "webhook", agentName: "reporter", instanceId: "i-error", result: "error" },
+        ],
+        total: 2,
+      });
 
       const tracker = mockStatusTracker([
         { id: "i-running", agentName: "reporter", status: "running", startedAt: new Date(3000).toISOString(), trigger: "manual" },
@@ -737,11 +747,13 @@ describe("stats routes", () => {
     it("paginates results with limit and offset", async () => {
       const stats = mockStatsStore();
       // With offset=1, limit=2, no mem rows: DB is queried with offset=1, limit=2
-      stats.queryActivityRows.mockReturnValue([
-        { ts: 2000, result: "completed", triggerType: "schedule", agentName: "a", instanceId: "i2" },
-        { ts: 1000, result: "completed", triggerType: "schedule", agentName: "a", instanceId: "i3" },
-      ]);
-      stats.countActivityRows.mockReturnValue(3);
+      stats.queryActivityRowsWithTotal.mockReturnValue({
+        rows: [
+          { ts: 2000, result: "completed", triggerType: "schedule", agentName: "a", instanceId: "i2" },
+          { ts: 1000, result: "completed", triggerType: "schedule", agentName: "a", instanceId: "i3" },
+        ],
+        total: 3,
+      });
 
       const app = createApp(stats);
 
@@ -752,14 +764,14 @@ describe("stats routes", () => {
       expect(data.rows).toHaveLength(2);
       expect(data.rows[0].instanceId).toBe("i2");
       // Verify DB was called with correct SQL-level pagination
-      expect(stats.queryActivityRows).toHaveBeenCalledWith(
+      expect(stats.queryActivityRowsWithTotal).toHaveBeenCalledWith(
         expect.objectContaining({ limit: 2, offset: 1 })
       );
     });
 
     it("filters out non-running instances from statusTracker in activity endpoint", async () => {
       const stats = mockStatsStore();
-      stats.queryActivityRows.mockReturnValue([]);
+      stats.queryActivityRowsWithTotal.mockReturnValue({ rows: [], total: 0 });
 
       // Provide one running and one non-running instance
       const tracker = mockStatusTracker([
@@ -779,7 +791,7 @@ describe("stats routes", () => {
 
     it("filters workQueue items by agent when agent param is provided", async () => {
       const stats = mockStatsStore();
-      stats.queryActivityRows.mockReturnValue([]);
+      stats.queryActivityRowsWithTotal.mockReturnValue({ rows: [], total: 0 });
 
       const tracker = mockStatusTracker([], [
         { name: "reporter" },
@@ -974,7 +986,7 @@ describe("stats routes", () => {
   describe("GET /api/stats/activity — filter coverage for uncovered paths", () => {
     it("filters running instances by agentName in activity endpoint (L171)", async () => {
       const stats = mockStatsStore();
-      stats.queryActivityRows.mockReturnValue([]);
+      stats.queryActivityRowsWithTotal.mockReturnValue({ rows: [], total: 0 });
 
       // Two instances with different agentNames; filter for "reporter" should exclude "other"
       const tracker = mockStatusTracker([
@@ -993,7 +1005,7 @@ describe("stats routes", () => {
 
     it("filters running instances by triggerType in activity endpoint (L172-175)", async () => {
       const stats = mockStatsStore();
-      stats.queryActivityRows.mockReturnValue([]);
+      stats.queryActivityRowsWithTotal.mockReturnValue({ rows: [], total: 0 });
 
       // Two instances with different trigger types
       const tracker = mockStatusTracker([
@@ -1012,23 +1024,22 @@ describe("stats routes", () => {
 
     it("enriches webhook rows with triggerSource and eventSummary from receipt details", async () => {
       const stats = mockStatsStore();
-      // Return a webhook row with a webhookReceiptId
-      stats.queryActivityRows.mockReturnValue([
-        {
-          ts: 1000,
-          triggerType: "webhook",
-          triggerSource: null,
-          agentName: "reporter",
-          instanceId: "i-wh",
-          result: "completed",
-          webhookReceiptId: "receipt-1",
-          deadLetterReason: null,
-        },
-      ]);
-      stats.countActivityRows.mockReturnValue(1);
-      // Return details for that receipt with source + eventSummary
-      stats.getWebhookDetailsBatch.mockReturnValue({
-        "receipt-1": { source: "github", eventSummary: "issues opened" },
+      // Return a webhook row with enrichment already applied from the database query
+      stats.queryActivityRowsWithTotal.mockReturnValue({
+        rows: [
+          {
+            ts: 1000,
+            triggerType: "webhook",
+            triggerSource: "github",  // enriched from webhook_receipts.source
+            agentName: "reporter",
+            instanceId: "i-wh",
+            result: "completed",
+            webhookReceiptId: "receipt-1",
+            deadLetterReason: null,
+            eventSummary: "issues opened",  // enriched from webhook_receipts.event_summary
+          },
+        ],
+        total: 1,
       });
       const app = createApp(stats);
 
@@ -1038,7 +1049,7 @@ describe("stats routes", () => {
 
       const webhookRow = data.rows.find((r: any) => r.instanceId === "i-wh");
       expect(webhookRow).toBeDefined();
-      // triggerSource should be set from d.source
+      // triggerSource should be set from the database enrichment
       expect(webhookRow.triggerSource).toBe("github");
       // eventSummary should be set because it differs from source
       expect(webhookRow.eventSummary).toBe("issues opened");
@@ -1046,22 +1057,22 @@ describe("stats routes", () => {
 
     it("sets triggerSource but not eventSummary when eventSummary equals source", async () => {
       const stats = mockStatsStore();
-      stats.queryActivityRows.mockReturnValue([
-        {
-          ts: 1000,
-          triggerType: "webhook",
-          triggerSource: null,
-          agentName: "reporter",
-          instanceId: "i-wh2",
-          result: "completed",
-          webhookReceiptId: "receipt-2",
-          deadLetterReason: null,
-        },
-      ]);
-      stats.countActivityRows.mockReturnValue(1);
-      // eventSummary equals source — should set triggerSource but NOT set eventSummary
-      stats.getWebhookDetailsBatch.mockReturnValue({
-        "receipt-2": { source: "github", eventSummary: "github" },
+      // eventSummary equals source — database should NOT set eventSummary in this case
+      stats.queryActivityRowsWithTotal.mockReturnValue({
+        rows: [
+          {
+            ts: 1000,
+            triggerType: "webhook",
+            triggerSource: "github",  // enriched from webhook_receipts.source
+            agentName: "reporter",
+            instanceId: "i-wh2",
+            result: "completed",
+            webhookReceiptId: "receipt-2",
+            deadLetterReason: null,
+            // no eventSummary field since it equals source
+          },
+        ],
+        total: 1,
       });
       const app = createApp(stats);
 
@@ -1106,10 +1117,12 @@ describe("stats routes", () => {
   describe("GET /api/stats/activity — pendingCount field", () => {
     it("returns pendingCount=0 when there are no pending items", async () => {
       const stats = mockStatsStore();
-      stats.queryActivityRows.mockReturnValue([
-        { ts: 1000, triggerType: "schedule", agentName: "reporter", instanceId: "i1", result: "completed" },
-      ]);
-      stats.countActivityRows.mockReturnValue(1);
+      stats.queryActivityRowsWithTotal.mockReturnValue({
+        rows: [
+          { ts: 1000, triggerType: "schedule", agentName: "reporter", instanceId: "i1", result: "completed" },
+        ],
+        total: 1,
+      });
 
       const app = createApp(stats);
       const res = await app.request("/api/stats/activity");
@@ -1120,8 +1133,10 @@ describe("stats routes", () => {
 
     it("returns pendingCount matching actual pending queue items so badge and table stay consistent", async () => {
       const stats = mockStatsStore();
-      stats.queryActivityRows.mockReturnValue([]);
-      stats.countActivityRows.mockReturnValue(0);
+      stats.queryActivityRowsWithTotal.mockReturnValue({
+        rows: [],
+        total: 0,
+      });
 
       const tracker = mockStatusTracker([], [{ name: "reporter", queuedWebhooks: 2 }]);
       const controlDeps = {
