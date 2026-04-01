@@ -82,18 +82,18 @@ export function InstanceLogsPage() {
   usePolling(
     async (signal) => {
       if (!name || !id) return;
-      const params: Record<string, string> = { lines: "100" };
+      const params: Record<string, string> = { lines: "200" };
       if (cursorRef.current) params.cursor = cursorRef.current;
       try {
         const d = await getInstanceLogs(name, id, params, signal);
         setConnected(true);
         if (d.entries.length > 0) {
+          // Save backCursor on first load BEFORE setting cursorRef
+          if (!cursorRef.current && d.backCursor) {
+            backCursorRef.current = d.backCursor;
+          }
           setLogs((prev) => [...prev, ...d.entries]);
           if (d.cursor) cursorRef.current = d.cursor;
-        }
-        // On first load (no cursor yet), save backCursor for backward pagination
-        if (!cursorRef.current && d.backCursor) {
-          backCursorRef.current = d.backCursor;
         }
       } catch {
         setConnected(false);
