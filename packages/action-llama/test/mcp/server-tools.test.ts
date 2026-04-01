@@ -1004,5 +1004,33 @@ describe("mcp/server.ts — startMcpServer and tool handlers", () => {
         rmSync(listProject, { recursive: true, force: true });
       }
     });
+
+    it("shows agent description in list mode when agent has description", async () => {
+      // Create a project with an agent that has a description — covers the
+      // `if (config.description) parts.push(...)` branch in list mode
+      const descProject = makeTmpProject({
+        agents: [
+          {
+            name: "described-agent",
+            description: "This agent handles code reviews",
+          },
+        ],
+      });
+
+      try {
+        registeredTools.clear();
+        await startMcpServer({ projectPath: descProject });
+
+        // No live status — gateway is down
+        mockGatewayFetch.mockRejectedValue(new Error("ECONNREFUSED"));
+
+        const result = await registeredTools.get("al_agents")!({ name: undefined });
+        const text = result.content[0].text;
+        expect(text).toContain("described-agent");
+        expect(text).toContain("This agent handles code reviews");
+      } finally {
+        rmSync(descProject, { recursive: true, force: true });
+      }
+    });
   });
 });
