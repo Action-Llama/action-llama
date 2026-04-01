@@ -1452,7 +1452,14 @@ describe("doctor", () => {
   });
 
   describe("host-user sudoers creation failure (Linux)", () => {
+    const originalPlatform = process.platform;
+
+    afterEach(() => {
+      Object.defineProperty(process, "platform", { value: originalPlatform, writable: true });
+    });
+
     it("records error when sudo tee fails to write sudoers file", async () => {
+      Object.defineProperty(process, "platform", { value: "linux", writable: true });
       mockDiscoverAgents.mockReturnValue(["e2e"]);
       mockLoadAgentConfig.mockReturnValue({ name: "e2e", credentials: [] });
       mockLoadAgentRuntimeConfig.mockReturnValue({ runtime: { type: "host-user", run_as: "al-agent" } });

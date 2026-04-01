@@ -338,7 +338,11 @@ describe("HostUserRuntime", () => {
 
       // Write new content after watcher is set up — triggers fs.watch callback (line 450)
       appendFileSync(logPath, "second line\n");
-      await new Promise((r) => setTimeout(r, 150));
+
+      // fs.watch delivery timing varies by OS; poll briefly instead of a fixed sleep
+      for (let i = 0; i < 20 && !lines.includes("second line"); i++) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
 
       expect(lines).toContain("second line");
       handle.stop();

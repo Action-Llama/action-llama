@@ -440,6 +440,11 @@ describe("log summary route", () => {
 
   it("logs errors via logger on 500 responses", async () => {
     // Test 1: config load failure logs
+    const configModule = await import("../../../src/shared/config.js");
+    vi.mocked(configModule.loadGlobalConfig).mockImplementationOnce(() => {
+      throw new Error("config broken");
+    });
+
     const lines1 = [
       pinoLine(30, 1710700000000, "step 1", { instance: "inst-log-err" }),
     ];
@@ -455,16 +460,14 @@ describe("log summary route", () => {
     );
     expect(mockLogger.error).toHaveBeenCalledWith(
       expect.objectContaining({ agent: "missing-agent" }),
-      expect.stringContaining("Failed to load agent config"),
+      expect.stringContaining("Failed to load project config"),
     );
 
     mockLogger.error.mockClear();
 
     // Test 2: empty models logs
-    const configModule = await import("../../../src/shared/config.js");
-    vi.mocked(configModule.loadAgentConfig).mockReturnValueOnce({
-      name: "my-agent",
-      models: [],
+    vi.mocked(configModule.loadGlobalConfig).mockReturnValueOnce({
+      models: {},
     } as any);
 
     const lines2 = [
@@ -481,7 +484,7 @@ describe("log summary route", () => {
     );
     expect(mockLogger.error).toHaveBeenCalledWith(
       expect.objectContaining({ agent: "my-agent" }),
-      "Agent has no configured models",
+      "No models configured in project config",
     );
 
     mockLogger.error.mockClear();

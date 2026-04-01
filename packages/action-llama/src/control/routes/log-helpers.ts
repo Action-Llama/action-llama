@@ -282,5 +282,10 @@ export function parseQueryParams(query: Record<string, string | undefined>) {
   const before = query.before ? parseInt(query.before, 10) : undefined;
   const grep = query.grep || undefined;
 
-  return { lines, cursor, after: isNaN(after as number) ? undefined : after, before: isNaN(before as number) ? undefined : before, grep };
+  // Minimum log level: trace=10, debug=20, info=30, warn=40, error=50 (default: info)
+  const levelNames: Record<string, number> = { trace: 10, debug: 20, info: 30, warn: 40, error: 50 };
+  const rawLevel = query.level?.toLowerCase();
+  const minLevel = rawLevel ? (levelNames[rawLevel] ?? parseInt(rawLevel, 10)) : 30;
+
+  return { lines, cursor, after: isNaN(after as number) ? undefined : after, before: isNaN(before as number) ? undefined : before, grep, minLevel: isNaN(minLevel) ? 30 : minLevel };
 }

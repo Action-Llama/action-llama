@@ -179,7 +179,7 @@ describe("logs command — gateway path", () => {
       console.log = origLog;
 
       // Both entries should appear in --all mode
-      expect(output.some((l) => l.includes("tool done"))).toBe(true);
+      expect(output.some((l) => l.includes("✓ bash"))).toBe(true);
       expect(output.some((l) => l.includes("Run completed"))).toBe(true);
     });
   });

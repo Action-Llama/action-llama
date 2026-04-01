@@ -440,8 +440,8 @@ describe("logs command", () => {
       // All 4 entries should appear in --all mode (tool done and event are shown too)
       expect(output.length).toBeGreaterThanOrEqual(4);
       expect(output.some((l) => l.includes("echo hi"))).toBe(true);
-      expect(output.some((l) => l.includes("tool done"))).toBe(true);
-      expect(output.some((l) => l.includes("event"))).toBe(true);
+      expect(output.some((l) => l.includes("✓ bash"))).toBe(true);
+      expect(output.some((l) => l.includes("▪ turn_end"))).toBe(true);
       expect(output.some((l) => l.includes("Run completed"))).toBe(true);
     });
 

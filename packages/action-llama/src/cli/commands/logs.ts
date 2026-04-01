@@ -177,6 +177,30 @@ function formatConversationEntry(entry: LogEntry, showAll = false): string | nul
     return `${time}  ${YELLOW}WARN: ${msg}${RESET}`;
   }
 
+  // ── Session events (debug-level, visible with --all) ──
+  if (msg === "event") {
+    const evType = String(entry.type || "unknown");
+    const parts: string[] = [`${time}  ${GRAY}▪ ${evType}${RESET}`];
+    if (entry.role) parts[0] += ` ${DIM}role=${entry.role}${RESET}`;
+    if (entry.stopReason) parts[0] += ` ${DIM}stop=${entry.stopReason}${RESET}`;
+    if (entry.content) {
+      const content = String(entry.content).slice(0, 200);
+      if (content && content !== "[]") parts.push(`          ${GRAY}${content}${RESET}`);
+    }
+    if (entry.turnResult) {
+      const tr = String(entry.turnResult).slice(0, 200);
+      parts.push(`          ${GRAY}${tr}${RESET}`);
+    }
+    return parts.join("\n");
+  }
+
+  // ── Tool done (debug-level, visible with --all) ──
+  if (msg === "tool done") {
+    const tool = String(entry.tool || "unknown");
+    const len = entry.resultLength != null ? ` ${DIM}(${entry.resultLength} chars)${RESET}` : "";
+    return `${time}  ${GRAY}✓ ${tool}${RESET}${len}`;
+  }
+
   // ── Catch-all for other info messages ──
   return `${time}  ${DIM}${msg}${RESET}`;
 }

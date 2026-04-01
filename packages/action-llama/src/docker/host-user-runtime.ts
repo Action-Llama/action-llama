@@ -450,9 +450,13 @@ export class HostUserRuntime implements Runtime {
       watcher = watch(logPath, () => readNewData());
     } catch { /* watch may fail on some filesystems */ }
 
+    // fs.watch can be unreliable on some systems; poll as a fallback
+    const pollInterval = setInterval(readNewData, 500);
+
     return {
       stop: () => {
         stopped = true;
+        clearInterval(pollInterval);
         if (watcher) { watcher.close(); watcher = null; }
         if (lineBuffer.trim()) {
           onLine(lineBuffer);

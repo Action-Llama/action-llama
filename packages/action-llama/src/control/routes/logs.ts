@@ -8,6 +8,7 @@ import {
   encodeCursor,
   decodeCursor,
   parseQueryParams,
+  type LogEntry,
 } from "./log-helpers.js";
 
 async function handleLogRequest(
@@ -16,12 +17,15 @@ async function handleLogRequest(
   query: Record<string, string | undefined>,
   instanceFilter?: string,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
-  const { lines, cursor, after, before, grep } = parseQueryParams(query);
+  const { lines, cursor, after, before, grep, minLevel } = parseQueryParams(query);
   let grepRe: RegExp | undefined;
   if (grep) {
     try { grepRe = new RegExp(grep); }
     catch { return { status: 400, body: { error: "Invalid grep pattern" } }; }
   }
+
+  const filterLevel = (entries: LogEntry[]) =>
+    minLevel > 0 ? entries.filter((e) => e.level >= minLevel) : entries;
 
   if (cursor) {
     const parsed = decodeCursor(cursor);
@@ -34,8 +38,9 @@ async function handleLogRequest(
       projectPath, prefix, parsed.date, parsed.offsets[0] || 0, lines,
       after, before, instanceFilter, grepRe,
     );
+    const filtered = filterLevel(entries);
     const newCursor = encodeCursor(newDate, [newOffset]);
-    return { status: 200, body: { entries, cursor: newCursor, hasMore: entries.length >= lines } };
+    return { status: 200, body: { entries: filtered, cursor: newCursor, hasMore: entries.length >= lines } };
   }
 
   const files = findLogFiles(projectPath, prefix);
@@ -44,9 +49,10 @@ async function handleLogRequest(
   const { entries, latestFile, byteOffset } = await readLastEntriesMultiFile(
     files, lines, after, before, instanceFilter, grepRe,
   );
+  const filtered = filterLevel(entries);
   const date = latestFile ? dateFromLogFile(latestFile) || "" : "";
   const resCursor = encodeCursor(date, [byteOffset]);
-  return { status: 200, body: { entries, cursor: resCursor, hasMore: false } };
+  return { status: 200, body: { entries: filtered, cursor: resCursor, hasMore: false } };
 }
 
 export function registerLogRoutes(app: Hono, projectPath: string): void {
