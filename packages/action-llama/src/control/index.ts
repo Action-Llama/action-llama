@@ -7,4 +7,5 @@ export { registerControlRoutes } from "./routes/control.js";
 export type { ControlRoutesDeps } from "./routes/control.js";
 export { registerDashboardDataRoutes } from "./routes/dashboard.js";
 export { registerLogRoutes } from "./routes/logs.js";
+export { registerLogSummaryRoutes } from "./routes/log-summary.js";
 export { registerStatsRoutes } from "./routes/stats.js";
