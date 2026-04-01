@@ -174,3 +174,5 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] loadAgentConfig [runtime] section without Docker — runtime field undefined when absent; host-user type preserved; run_as and groups fields preserved; empty groups array; container type explicit; two agents with different runtime configs in same project (load-agent-runtime-config.test.ts)
 
 - [x] Gateway API key auto-generation in Phase 3 without Docker — gateway_api_key credential is present after Phase 3; key is stable across restarts; per-project key isolation; exercising ensureGatewayApiKey() and loadCredentialField integration (gateway-api-key.test.ts)
+
+- [x] Log summary API validation paths without Docker — POST /api/logs/agents/:name/:instanceId/summarize returns 400 for invalid agent name (path traversal), 400 for invalid instance ID (special chars), 200 "No log entries found" when agent has no log file, 400 for invalid grep regex; exercises registerLogSummaryRoutes() SAFE_AGENT_NAME check, grep error path, and findLatestLogFile null path via Phase 3 gateway (log-summary-validation.test.ts)
