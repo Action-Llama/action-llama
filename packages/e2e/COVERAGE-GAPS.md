@@ -140,3 +140,5 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Phase 3 gateway starts before Docker check without Docker — setupGateway() starts HTTP server before Phase 4; /health endpoint responds with {status:"ok"} after Phase-4 failure; gateway startup confirmed Docker-independent; tested unconditionally (startup-phase3-gateway.test.ts)
 
 - [x] Config utility functions without Docker — loadSharedFiles() empty/missing/nested/hidden-files; discoverAgents() missing-dir/no-SKILL.md/sorted/hidden-skipped/non-dir; validateAgentName() edge cases (trailing hyphen, leading hyphen, consecutive hyphens, underscore, empty, 64-char boundary); getAgentScale() default/custom/zero; getProjectScale() default/custom — all tested without starting scheduler (config-utils.test.ts)
+
+- [x] Config file operation functions without Docker — loadAgentBody() missing/frontmatter+body/no-frontmatter/empty-body; loadAgentRuntimeConfig() missing/valid/malformed-TOML; updateAgentRuntimeField() creates-new/updates-existing/adds-field/string-field; updateProjectScale() writes-to-existing/creates-new/overwrites — all tested without scheduler (config-file-ops.test.ts)
