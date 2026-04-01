@@ -29,9 +29,9 @@ export function StatsPage() {
         </h1>
       </div>
 
-      {/* Subnav */}
-      <div className="flex items-center gap-2">
-        <span className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white">
+      {/* Tab bar */}
+      <div className="flex gap-6 border-b border-slate-200 dark:border-slate-800">
+        <span className="pb-2 text-sm font-medium text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400">
           Token Usage
         </span>
       </div>
