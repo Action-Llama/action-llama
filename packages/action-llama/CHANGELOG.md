@@ -1,5 +1,14 @@
 # @action-llama/action-llama
 
+## 0.24.1
+
+### Patch Changes
+
+- [`72c6b6a`](https://github.com/Action-Llama/action-llama/commit/72c6b6a54ef3a80e48cbca52c87dac48e8ff5d8e) Thanks [@asselstine](https://github.com/asselstine)! - Switch npm publish dist-tag from `next` to `latest`. All releases now publish directly to `latest`.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.24.1
+
 ## 0.24.0
 
 ### Minor Changes
