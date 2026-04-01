@@ -10,6 +10,17 @@ vi.mock("../../../src/shared/credentials.js", () => ({
   loadCredentialField: vi.fn().mockResolvedValue("test-api-key"),
 }));
 
+// Mock config module with passthrough so loadAgentConfig can be overridden per-test
+vi.mock("../../../src/shared/config.js", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../../../src/shared/config.js")>();
+  return {
+    ...real,
+    loadAgentConfig: vi.fn((...args: Parameters<typeof real.loadAgentConfig>) =>
+      real.loadAgentConfig(...args)
+    ),
+  };
+});
+
 function pinoLine(
   level: number,
   time: number,
@@ -368,6 +379,34 @@ describe("log summary route", () => {
     expect(res.status).toBe(500);
     const data = await res.json();
     expect(data.error).toMatch(/Failed to load agent config/);
+  });
+
+  it("returns 500 with 'Agent has no configured models' when loadAgentConfig returns empty models", async () => {
+    // This test covers the defensive check in log-summary.ts (line 102) where
+    // agentConfig.models is empty. We mock loadAgentConfig to return an empty models array.
+    const configModule = await import("../../../src/shared/config.js");
+    vi.mocked(configModule.loadAgentConfig).mockReturnValueOnce({
+      name: "my-agent",
+      models: [],
+    } as any);
+
+    const instanceId = "inst-empty-models-check";
+    const logLines = [
+      pinoLine(30, 1710700000000, "running", { instance: instanceId }),
+    ];
+    writeFileSync(
+      join(logsPath, "my-agent-2024-03-18.log"),
+      logLines.join("\n") + "\n",
+    );
+
+    const app = createTestApp(tmpDir);
+    const res = await app.request(
+      `/api/logs/agents/my-agent/${instanceId}/summarize`,
+      { method: "POST" },
+    );
+    expect(res.status).toBe(500);
+    const data = await res.json();
+    expect(data.error).toBe("Agent has no configured models");
   });
 
   it("returns 500 when the LLM call fails", async () => {

@@ -1,8 +1,22 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "fs";
 import { resolve, join } from "path";
 import { tmpdir } from "os";
 import { stringify as stringifyTOML } from "smol-toml";
+
+// Hoisted mock ref for existsSync so we can control it in specific tests
+const { mockExistsSync } = vi.hoisted(() => ({
+  mockExistsSync: vi.fn(),
+}));
+
+vi.mock("fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("fs")>();
+  // Default: forward all calls to the real existsSync
+  mockExistsSync.mockImplementation((...args: Parameters<typeof actual.existsSync>) =>
+    actual.existsSync(...args)
+  );
+  return { ...actual, existsSync: mockExistsSync };
+});
 import {
   loadEnvToml,
   loadEnvironmentConfig,
@@ -215,6 +229,13 @@ describe("listEnvironments", () => {
     const envs = listEnvironments();
     // Just verify it returns an array (may or may not have entries depending on state)
     expect(Array.isArray(envs)).toBe(true);
+  });
+
+  it("returns empty array when environments directory does not exist", () => {
+    // Make the next existsSync call return false, simulating a missing environments dir
+    mockExistsSync.mockImplementationOnce(() => false);
+    const result = listEnvironments();
+    expect(result).toEqual([]);
   });
 });
 
