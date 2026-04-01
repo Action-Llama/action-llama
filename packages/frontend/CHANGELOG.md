@@ -1,5 +1,11 @@
 # @action-llama/frontend
 
+## 0.19.9
+
+### Patch Changes
+
+- [#546](https://github.com/Action-Llama/action-llama/pull/546) [`7b1ddf3`](https://github.com/Action-Llama/action-llama/commit/7b1ddf341d2a3aeb1ffd13f6b557e6783d7be1a9) Thanks [@asselstine](https://github.com/asselstine)! - Virtualized the ActivityTable component for better performance with large activity lists. Replaced `<table>` markup with `<div>`-based flexbox layout, extracted memoized ActivityRowItem component, moved per-row UI state into individual row components, and added row virtualization using @tanstack/react-virtual. Only visible rows are now rendered, significantly improving performance when scrolling through many activities. Closes [#538](https://github.com/Action-Llama/action-llama/issues/538).
+
 ## 0.19.8
 
 ### Patch Changes

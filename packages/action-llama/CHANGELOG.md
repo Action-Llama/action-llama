@@ -1,5 +1,39 @@
 # @action-llama/action-llama
 
+## 0.26.6
+
+### Patch Changes
+
+- [#547](https://github.com/Action-Llama/action-llama/pull/547) [`631130d`](https://github.com/Action-Llama/action-llama/commit/631130d5ddfe5d7f58b9cc542a6f2de6aa5b4428) Thanks [@asselstine](https://github.com/asselstine)! - Collapse queryActivityRows/countActivityRows duplication: extract shared filter builder into private \_buildActivityFilter(), add queryActivityRowsWithCount() combining both operations with a window function for improved efficiency (one DB call instead of two)
+
+- [#552](https://github.com/Action-Llama/action-llama/pull/552) [`ce53c7e`](https://github.com/Action-Llama/action-llama/commit/ce53c7e4582a16a345331a50a2085a6fbd6a7f5e) Thanks [@asselstine](https://github.com/asselstine)! - Merge gateway and scheduler log files into a single log so `al logs` shows all system messages. Show error feedback in the dashboard when summary generation fails instead of silently swallowing errors. Closes [#533](https://github.com/Action-Llama/action-llama/issues/533).
+
+- [#548](https://github.com/Action-Llama/action-llama/pull/548) [`3b80ee7`](https://github.com/Action-Llama/action-llama/commit/3b80ee7898b891a21307a0b1c213540c4d81275c) Thanks [@asselstine](https://github.com/asselstine)! - Optimize /api/stats/activity endpoint to fetch rows, total, and enrichment in a single database pass.
+
+  - Replace queryActivityRows + countActivityRows with a new queryActivityRowsWithTotal method that uses COUNT(\*) OVER() and LEFT JOIN for inline webhook enrichment
+  - Remove post-query enrichment loop that called getWebhookDetailsBatch, reducing database round-trips from 2+ to 1
+  - Maintain stable pagination and identical API response shape (closes [#537](https://github.com/Action-Llama/action-llama/issues/537))
+
+- [#554](https://github.com/Action-Llama/action-llama/pull/554) [`bb418ab`](https://github.com/Action-Llama/action-llama/commit/bb418ab8a09dd80913cc0921c0569dc35b3db9a8) Thanks [@asselstine](https://github.com/asselstine)! - Debug and bulletproof API logging pagination with instance filtering.
+
+  - Export MAX_SCAN_LINES from log-helpers.ts to enable testing and mocking in test suites
+  - Add comprehensive tests for instance-filtered log pagination including:
+    - Initial load with instance filter returns correct entries and cursor
+    - Forward pagination with cursor picks up new entries after initial load
+    - Backward pagination with large files and small MAX_SCAN_LINES limits
+    - Backward pagination across multiple daily files with instance filter
+    - Invalid back_cursor returns proper 400 error
+    - Instance filtering works correctly with large interleaved logs
+    - Backward pagination respects instance filter with multiple daily files
+  - Verify API handles edge cases for instance-filtered backward and forward pagination (closes [#550](https://github.com/Action-Llama/action-llama/issues/550))
+
+- [#553](https://github.com/Action-Llama/action-llama/pull/553) [`513c0fc`](https://github.com/Action-Llama/action-llama/commit/513c0fc33a1fbadfbfc53289b402c6ed28d1a1af) Thanks [@asselstine](https://github.com/asselstine)! - Fix webhook and cron setup when agent is re-enabled (scale 0→N transition). Previously, when an agent config had scale=0 and was later changed to scale>0, webhooks and cron jobs were not created. Now handleChangedAgent() properly detects the 0→N and N→0 transitions and sets up or tears down resources accordingly.
+
+- [#544](https://github.com/Action-Llama/action-llama/pull/544) [`1010c56`](https://github.com/Action-Llama/action-llama/commit/1010c565d8349e602c5c4ac4a16d083571a3f575) Thanks [@asselstine](https://github.com/asselstine)! - API: Join webhook_receipts metadata at SQL level instead of post-processing. The /api/stats/activity endpoint now uses a LEFT JOIN in the SQL query to populate triggerSource and eventSummary fields directly, eliminating the need for a separate batch query call. This improves performance on activity requests while maintaining backward-compatible behavior (eventSummary is suppressed when it equals source).
+
+- Updated dependencies []:
+  - @action-llama/skill@0.26.6
+
 ## 0.26.5
 
 ### Patch Changes
