@@ -408,6 +408,26 @@ describe("registerDashboardApiRoutes — extended coverage", () => {
     expect(data.runningInstance.id).toBe("inst-1");
   });
 
+  it("GET /api/dashboard/agents/:name/instances/:id returns null runningInstance for completed instance", async () => {
+    const instances = [{ id: "inst-1", agentName: "test-agent", status: "completed" }];
+    const app = createApp(undefined, undefined, instances);
+
+    const res = await app.request("/api/dashboard/agents/test-agent/instances/inst-1");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.runningInstance).toBeNull();
+  });
+
+  it("GET /api/dashboard/agents/:name/instances/:id returns null runningInstance for errored instance", async () => {
+    const instances = [{ id: "inst-1", agentName: "test-agent", status: "error" }];
+    const app = createApp(undefined, undefined, instances);
+
+    const res = await app.request("/api/dashboard/agents/test-agent/instances/inst-1");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.runningInstance).toBeNull();
+  });
+
   it("GET /api/dashboard/agents/:name/instances/:id includes parent edge for agent-triggered runs", async () => {
     const stats = makeStatsStore();
     stats.queryRunByInstanceId.mockReturnValue({
