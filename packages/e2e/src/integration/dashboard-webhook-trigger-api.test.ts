@@ -51,7 +51,7 @@ describe.skipIf(!DOCKER)(
         },
       });
 
-      await harness.start();
+      await harness.start({ webUI: true });
 
       // Send a webhook to trigger the agent
       const webhookRes = await harness.sendWebhook({
@@ -118,7 +118,7 @@ describe.skipIf(!DOCKER)(
         },
       });
 
-      await harness.start();
+      await harness.start({ webUI: true });
 
       // Trigger via webhook
       const webhookRes = await harness.sendWebhook({
