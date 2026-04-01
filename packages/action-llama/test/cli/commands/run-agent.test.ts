@@ -63,8 +63,14 @@ vi.mock("../../../src/hooks/runner.js", () => ({
 
 vi.mock("@mariozechner/pi-coding-agent", () => ({
   DefaultResourceLoader: class {
-    constructor(_opts: any) {}
-    async reload() {}
+    private opts: any;
+    constructor(opts: any) { this.opts = opts; }
+    async reload() {
+      // Call the agentsFilesOverride to exercise that code path
+      if (this.opts?.agentsFilesOverride) {
+        this.opts.agentsFilesOverride();
+      }
+    }
   },
   SettingsManager: {
     inMemory: vi.fn().mockReturnValue({}),
@@ -457,6 +463,163 @@ describe("cli/commands/run-agent execute", () => {
       mockLoadGlobalConfig.mockReturnValue({});
 
       await expect(execute("dev", { project: projectPath })).rejects.toThrow("process.exit(0)");
+    });
+  });
+
+  describe("gateway health check", () => {
+    it("polls the gateway health endpoint when GATEWAY_URL is set", async () => {
+      process.env.GATEWAY_URL = "http://localhost:19999";
+
+      const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal("fetch", mockFetch);
+
+      try {
+        await expect(execute("dev", { project: projectPath })).rejects.toThrow("process.exit(0)");
+        expect(mockFetch).toHaveBeenCalledWith(
+          "http://localhost:19999/health",
+          expect.objectContaining({ signal: expect.anything() }),
+        );
+      } finally {
+        vi.unstubAllGlobals();
+        delete process.env.GATEWAY_URL;
+      }
+    });
+
+    it("continues after all retries if gateway remains unreachable", async () => {
+      process.env.GATEWAY_URL = "http://localhost:19999";
+
+      const mockFetch = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
+      vi.stubGlobal("fetch", mockFetch);
+
+      // Mock setTimeout to resolve immediately so we don't wait 500ms * 30
+      const origSetTimeout = globalThis.setTimeout;
+      vi.spyOn(globalThis, "setTimeout").mockImplementation((fn: any, _delay?: any, ..._args: any[]) => {
+        if (_delay === 500) {
+          // Immediately call the retry timeout, but only run a few retries
+          fn();
+          return 0 as any;
+        }
+        return origSetTimeout(fn, _delay, ..._args);
+      });
+
+      try {
+        await expect(execute("dev", { project: projectPath })).rejects.toThrow("process.exit(0)");
+      } finally {
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+        delete process.env.GATEWAY_URL;
+        // Re-apply the exit spy since restoreAllMocks cleared it
+        exitSpy = vi.spyOn(process, "exit").mockImplementation((_code?: any): never => {
+          throw new Error(`process.exit(${_code})`);
+        });
+        chdirSpy = vi.spyOn(process, "chdir").mockImplementation(() => {});
+      }
+    });
+  });
+
+  describe("SSH key setup in credentials", () => {
+    it("configures GIT_SSH_COMMAND when git_ssh credential is present with id_rsa", async () => {
+      // Create a creds dir with anthropic key + git_ssh key
+      const dir = mkdtempSync(join(tmpdir(), "al-creds-ssh-"));
+      mkdirSync(join(dir, "anthropic_key", "default"), { recursive: true });
+      writeFileSync(join(dir, "anthropic_key", "default", "token"), "test-anthropic-key");
+      mkdirSync(join(dir, "git_ssh", "default"), { recursive: true });
+      writeFileSync(join(dir, "git_ssh", "default", "id_rsa"), "-----BEGIN RSA PRIVATE KEY-----\nfake-key\n-----END RSA PRIVATE KEY-----");
+      writeFileSync(join(dir, "git_ssh", "default", "username"), "testuser");
+      writeFileSync(join(dir, "git_ssh", "default", "email"), "test@example.com");
+      process.env.AL_CREDENTIALS_PATH = dir;
+      process.env.AL_WORK_DIR = workDir;
+
+      mockLoadAgentConfig.mockReturnValue({
+        ...defaultAgentConfig(),
+        credentials: ["github_token", "git_ssh"],
+      });
+
+      const origGitSsh = process.env.GIT_SSH_COMMAND;
+      const origAuthorName = process.env.GIT_AUTHOR_NAME;
+      const origAuthorEmail = process.env.GIT_AUTHOR_EMAIL;
+
+      try {
+        await expect(execute("dev", { project: projectPath })).rejects.toThrow("process.exit");
+        // SSH command should be configured
+        expect(process.env.GIT_SSH_COMMAND).toContain("ssh -i");
+        expect(process.env.GIT_AUTHOR_NAME).toBe("testuser");
+        expect(process.env.GIT_AUTHOR_EMAIL).toBe("test@example.com");
+      } finally {
+        process.env.GIT_SSH_COMMAND = origGitSsh;
+        process.env.GIT_AUTHOR_NAME = origAuthorName;
+        process.env.GIT_AUTHOR_EMAIL = origAuthorEmail;
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe("loadCredentialsFromPath edge cases", () => {
+    it("skips non-directory entries at the credential type level", async () => {
+      // Create a creds dir with a FILE at the type level (should be skipped)
+      const dir = mkdtempSync(join(tmpdir(), "al-creds-file-"));
+      mkdirSync(join(dir, "anthropic_key", "default"), { recursive: true });
+      writeFileSync(join(dir, "anthropic_key", "default", "token"), "test-key");
+      // Add a regular file (not directory) at the type level
+      writeFileSync(join(dir, "README.txt"), "This is a file, not a dir");
+      process.env.AL_CREDENTIALS_PATH = dir;
+
+      try {
+        // Should succeed (README.txt is skipped)
+        await expect(execute("dev", { project: projectPath })).rejects.toThrow("process.exit(0)");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("skips non-directory entries at the credential instance level", async () => {
+      // Create a creds dir with a FILE at the instance level
+      const dir = mkdtempSync(join(tmpdir(), "al-creds-inst-"));
+      mkdirSync(join(dir, "anthropic_key", "default"), { recursive: true });
+      writeFileSync(join(dir, "anthropic_key", "default", "token"), "test-key");
+      // Add a regular file (not directory) at the instance level
+      writeFileSync(join(dir, "anthropic_key", "some-file.txt"), "not a dir");
+      process.env.AL_CREDENTIALS_PATH = dir;
+
+      try {
+        // Should succeed (some-file.txt is skipped)
+        await expect(execute("dev", { project: projectPath })).rejects.toThrow("process.exit(0)");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe("duplicate provider model handling", () => {
+    it("skips loading key for same provider when already loaded", async () => {
+      // Two models with the same provider — second should be skipped
+      mockLoadAgentConfig.mockReturnValue({
+        ...defaultAgentConfig(),
+        models: [
+          { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" as const },
+          { provider: "anthropic", model: "claude-haiku-3-5-20241022", authType: "api_key" as const },
+        ],
+      });
+
+      await expect(execute("dev", { project: projectPath })).rejects.toThrow("process.exit(0)");
+
+      // Session loop should still be called with the anthropic key
+      const callArgs = mockRunSessionLoop.mock.calls[0][1];
+      expect(callArgs.providerKeys.get("anthropic")).toBe("test-api-key-12345");
+    });
+  });
+
+  describe("agentsFilesOverride callback", () => {
+    it("calls agentsFilesOverride to build SKILL.md content for the session", async () => {
+      mockLoadAgentBody.mockReturnValue("Custom skill content for testing");
+
+      await expect(execute("dev", { project: projectPath })).rejects.toThrow("process.exit(0)");
+
+      // The session loop should receive processedBody via the override
+      expect(mockProcessContextInjection).toHaveBeenCalledWith(
+        "Custom skill content for testing",
+        expect.any(Object),
+      );
     });
   });
 });
