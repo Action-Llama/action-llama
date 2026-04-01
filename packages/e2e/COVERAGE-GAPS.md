@@ -109,3 +109,4 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Twitter CRC challenge GET endpoint — success path returns sha256 HMAC response_token with configured consumer_secret; missing crc_token returns 400 (twitter-webhook.test.ts)
 - [x] Lock release by wrong instance returns 409 — lock-store.ts release() existing.holder !== holder; route maps non-"lock not found" reason to 409 (lock-route-errors.test.ts)
 - [x] Auth middleware browser redirect — Accept: text/html on protected route → 302 to /login; API Accept → 401 JSON; two branches in control/auth.ts (gateway-auth-api.test.ts)
+- [x] Stats/triggers triggerType=schedule filter — cron-fired run recorded with triggerType='schedule'; ?triggerType=schedule filter returns only scheduled runs; ?triggerType=manual returns 0 for schedule-only agent (stats.test.ts)

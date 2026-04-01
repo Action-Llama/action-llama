@@ -154,4 +154,50 @@ describe.skipIf(!DOCKER)("integration: stats API", { timeout: 180_000 }, () => {
     // result should be "error" or similar non-success value
     expect(runRecord.result).not.toBe("completed");
   });
+
+  it("stats/triggers triggerType=schedule filter returns only scheduled runs", async () => {
+    // When an agent fires via its cron schedule (not a manual trigger), the
+    // run is recorded with triggerType='schedule' in the stats store.
+    // The ?triggerType=schedule filter should return only those runs.
+    //
+    // Code path: executeRun() → statsStore.recordRun({ triggerType: 'schedule' })
+    //   → stats.ts: queryTriggerHistory({ triggerType: 'schedule' })
+    harness = await IntegrationHarness.create({
+      agents: [
+        {
+          name: "schedule-stats-agent",
+          // 6-field croner expression: fires every 10 seconds
+          schedule: "*/10 * * * * *",
+          testScript: "#!/bin/sh\necho 'schedule-stats-agent: cron fired'\nexit 0\n",
+        },
+      ],
+    });
+
+    await harness.start();
+
+    // Wait for the cron to fire automatically (allow up to 60s for the first fire)
+    const run = await harness.waitForRunResult("schedule-stats-agent", 60_000);
+    expect(run.result).toBe("completed");
+
+    // Allow a brief delay for stats to be recorded
+    await new Promise((r) => setTimeout(r, 500));
+
+    // Query triggers filtered by triggerType=schedule
+    const res = await statsAPI(harness, "/api/stats/triggers?agent=schedule-stats-agent&triggerType=schedule");
+    expect(res.ok).toBe(true);
+    const body = await res.json() as { triggers: Array<{ triggerType: string; agentName: string }>; total: number };
+    expect(body.total).toBeGreaterThanOrEqual(1);
+
+    // All returned triggers should be schedule-type
+    for (const trigger of body.triggers) {
+      expect(trigger.triggerType).toBe("schedule");
+      expect(trigger.agentName).toBe("schedule-stats-agent");
+    }
+
+    // Manual triggers should NOT appear when filtering by schedule
+    const manualRes = await statsAPI(harness, "/api/stats/triggers?agent=schedule-stats-agent&triggerType=manual");
+    expect(manualRes.ok).toBe(true);
+    const manualBody = await manualRes.json() as { total: number };
+    expect(manualBody.total).toBe(0);
+  });
 });
