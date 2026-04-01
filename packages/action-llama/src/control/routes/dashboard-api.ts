@@ -78,6 +78,113 @@ export function registerAuthApiRoutes(
 }
 
 /**
+ * Immutable DTO for trigger detail response.
+ */
+interface TriggerDetail {
+  instanceId: string;
+  agentName: string;
+  triggerType: string;
+  triggerSource: string | null;
+  triggerContext: string | null;
+  startedAt: number;
+  webhook?: {
+    receiptId: string;
+    source: string;
+    eventSummary: string | null;
+    deliveryId: string | null;
+    timestamp: number;
+    headers: string | null;
+    body: string | null;
+    matchedAgents: number;
+    status: string;
+  };
+  callerAgent?: string;
+  callerInstance?: string;
+  callDepth?: number;
+}
+
+/**
+ * Build trigger detail from a DB run record and optional enrichment data.
+ */
+function toTriggerDetail(
+  run: {
+    instance_id: string;
+    agent_name: string;
+    trigger_type: string;
+    trigger_source: string | null;
+    trigger_context: string | null;
+    started_at: number;
+    webhook_receipt_id?: string | null;
+  },
+  statsStore: StatsStore | undefined,
+): TriggerDetail {
+  const base: TriggerDetail = {
+    instanceId: run.instance_id,
+    agentName: run.agent_name,
+    triggerType: run.trigger_type,
+    triggerSource: run.trigger_source ?? null,
+    triggerContext: run.trigger_context ?? null,
+    startedAt: run.started_at,
+  };
+
+  // Enrich with webhook details if applicable
+  if (run.trigger_type === "webhook" && run.webhook_receipt_id && statsStore) {
+    const receipt = statsStore.getWebhookReceipt(run.webhook_receipt_id);
+    if (receipt) {
+      return {
+        ...base,
+        webhook: {
+          receiptId: receipt.id,
+          source: receipt.source,
+          eventSummary: receipt.eventSummary ?? null,
+          deliveryId: receipt.deliveryId ?? null,
+          timestamp: receipt.timestamp,
+          headers: receipt.headers ?? null,
+          body: receipt.body ?? null,
+          matchedAgents: receipt.matchedAgents,
+          status: receipt.status,
+        },
+      };
+    }
+  }
+
+  // Enrich with agent caller details if applicable
+  if (run.trigger_type === "agent" && statsStore) {
+    const edge = statsStore.queryCallEdgeByTargetInstance(run.instance_id);
+    if (edge) {
+      return {
+        ...base,
+        callerAgent: edge.caller_agent,
+        callerInstance: edge.caller_instance,
+        callDepth: edge.depth,
+      };
+    }
+  }
+
+  return base;
+}
+
+/**
+ * Build trigger detail from a running instance.
+ */
+function toRunningTriggerDetail(inst: {
+  id: string;
+  agentName: string;
+  trigger: string;
+  startedAt: string | Date;
+}): TriggerDetail {
+  const sep = inst.trigger.indexOf(":");
+  return {
+    instanceId: inst.id,
+    agentName: inst.agentName,
+    triggerType: sep > -1 ? inst.trigger.slice(0, sep) : inst.trigger,
+    triggerSource: sep > -1 ? inst.trigger.slice(sep + 1).trim() : null,
+    triggerContext: null,
+    startedAt: new Date(inst.startedAt).getTime(),
+  };
+}
+
+/**
  * Register JSON dashboard API routes for the SPA.
  */
 export function registerDashboardApiRoutes(
@@ -187,59 +294,11 @@ export function registerDashboardApiRoutes(
       const inst = statusTracker.getInstances().find((i) => i.id === instanceId);
       if (!inst) return c.json({ trigger: null }, 404);
 
-      const sep = inst.trigger.indexOf(":");
-      const triggerType = sep > -1 ? inst.trigger.slice(0, sep) : inst.trigger;
-      const triggerSource = sep > -1 ? inst.trigger.slice(sep + 1).trim() : null;
-
-      return c.json({
-        trigger: {
-          instanceId: inst.id,
-          agentName: inst.agentName,
-          triggerType,
-          triggerSource,
-          triggerContext: null,
-          startedAt: new Date(inst.startedAt).getTime(),
-        },
-      });
+      return c.json({ trigger: toRunningTriggerDetail(inst) });
     }
 
-    const result: Record<string, unknown> = {
-      instanceId: run.instance_id,
-      agentName: run.agent_name,
-      triggerType: run.trigger_type,
-      triggerSource: run.trigger_source ?? null,
-      triggerContext: run.trigger_context ?? null,
-      startedAt: run.started_at,
-    };
-
-    // Enrich with type-specific details (statsStore is guaranteed non-null if run exists)
-    if (run.trigger_type === "webhook" && run.webhook_receipt_id && statsStore) {
-      const receipt = statsStore.getWebhookReceipt(run.webhook_receipt_id);
-      if (receipt) {
-        result.webhook = {
-          receiptId: receipt.id,
-          source: receipt.source,
-          eventSummary: receipt.eventSummary ?? null,
-          deliveryId: receipt.deliveryId ?? null,
-          timestamp: receipt.timestamp,
-          headers: receipt.headers ?? null,
-          body: receipt.body ?? null,
-          matchedAgents: receipt.matchedAgents,
-          status: receipt.status,
-        };
-      }
-    }
-
-    if (run.trigger_type === "agent" && statsStore) {
-      const edge = statsStore.queryCallEdgeByTargetInstance(instanceId);
-      if (edge) {
-        result.callerAgent = edge.caller_agent;
-        result.callerInstance = edge.caller_instance;
-        result.callDepth = edge.depth;
-      }
-    }
-
-    return c.json({ trigger: result });
+    const trigger = toTriggerDetail(run, statsStore);
+    return c.json({ trigger });
   });
 
   // Project config
