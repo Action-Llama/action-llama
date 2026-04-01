@@ -166,3 +166,5 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] StatusTracker build lifecycle and token usage without Docker — startBuild/completeBuild state transitions, no-op on unknown agent; endRun with usage sets lastRunUsage; cumulative usage accumulates across runs (addTokenUsage indirectly); setSchedulerInfo+getSchedulerInfo roundtrip; setAgentDescription/setAgentStatusText/setAgentError setters (status-tracker-build.test.ts)
 
 - [x] Execution constants and loadAgentConfig webhooks without Docker — DEFAULT_MAX_RERUNS=10, DEFAULT_MAX_TRIGGER_DEPTH=3; webhooks with source/events/actions preserved; multiple webhook entries; labels filter preserved; webhooks undefined when not configured (execution-constants.test.ts)
+
+- [x] loadGlobalConfig .env.toml merge semantics without Docker — environment field does not appear in config; scalar overrides replace; deep-merge combines nested objects; arrays replaced not merged; projectName set via special path; config works when .env.toml has only projectName (global-config-env-merge.test.ts)
