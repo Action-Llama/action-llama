@@ -10,13 +10,13 @@ vi.mock("../../../src/shared/credentials.js", () => ({
   loadCredentialField: vi.fn().mockResolvedValue("test-api-key"),
 }));
 
-// Mock config module with passthrough so loadAgentConfig can be overridden per-test
+// Mock config module with passthrough so loadGlobalConfig can be overridden per-test
 vi.mock("../../../src/shared/config.js", async (importOriginal) => {
   const real = await importOriginal<typeof import("../../../src/shared/config.js")>();
   return {
     ...real,
-    loadAgentConfig: vi.fn((...args: Parameters<typeof real.loadAgentConfig>) =>
-      real.loadAgentConfig(...args)
+    loadGlobalConfig: vi.fn((...args: Parameters<typeof real.loadGlobalConfig>) =>
+      real.loadGlobalConfig(...args)
     ),
   };
 });
@@ -147,8 +147,13 @@ describe("log summary route", () => {
     expect(data.summary).toMatch(/No log entries/);
   });
 
-  it("returns 500 when agent config cannot be loaded", async () => {
-    // No agent directory created — config will fail to load
+  it("returns 500 when project config cannot be loaded", async () => {
+    // Mock loadGlobalConfig to throw an error simulating a broken config file
+    const configModule = await import("../../../src/shared/config.js");
+    vi.mocked(configModule.loadGlobalConfig).mockImplementationOnce(() => {
+      throw new Error("Error parsing config.toml: unexpected token");
+    });
+
     const lines = [
       pinoLine(30, 1710700000000, "step 1", { instance: "inst-1" }),
     ];
@@ -164,7 +169,7 @@ describe("log summary route", () => {
     );
     expect(res.status).toBe(500);
     const data = await res.json();
-    expect(data.error).toMatch(/Failed to load agent config/);
+    expect(data.error).toMatch(/Failed to load project config/);
   });
 
   it("calls model and returns summary for matching log entries", async () => {
@@ -343,20 +348,9 @@ describe("log summary route", () => {
     expect(data.summary).toBe("Clamped lines summary.");
   });
 
-  it("returns 500 when agent config has no models defined", async () => {
-    // Create a project with agent config that has no models in config.toml
+  it("returns 500 when project config has no models defined", async () => {
+    // Create a project with no models in the global config.toml
     const agentName = "no-models-agent";
-    const agentDir = join(tmpDir, "agents", agentName);
-    mkdirSync(agentDir, { recursive: true });
-    writeFileSync(
-      join(agentDir, "SKILL.md"),
-      `---\ndescription: Agent with no models\n---\n# No Models Agent\n`,
-    );
-    // Agent config.toml has no models field, so loadAgentConfig will throw
-    writeFileSync(
-      join(agentDir, "config.toml"),
-      `# no models field here\n`,
-    );
     writeFileSync(
       join(tmpDir, "config.toml"),
       `# no models defined\n`,
@@ -378,16 +372,15 @@ describe("log summary route", () => {
     );
     expect(res.status).toBe(500);
     const data = await res.json();
-    expect(data.error).toMatch(/Failed to load agent config/);
+    expect(data.error).toBe("No models configured in project config");
   });
 
-  it("returns 500 with 'Agent has no configured models' when loadAgentConfig returns empty models", async () => {
-    // This test covers the defensive check in log-summary.ts (line 102) where
-    // agentConfig.models is empty. We mock loadAgentConfig to return an empty models array.
+  it("returns 500 with 'No models configured in project config' when loadGlobalConfig returns empty models", async () => {
+    // This test covers the defensive check in log-summary.ts where
+    // globalConfig.models is empty. We mock loadGlobalConfig to return an empty models map.
     const configModule = await import("../../../src/shared/config.js");
-    vi.mocked(configModule.loadAgentConfig).mockReturnValueOnce({
-      name: "my-agent",
-      models: [],
+    vi.mocked(configModule.loadGlobalConfig).mockReturnValueOnce({
+      models: {},
     } as any);
 
     const instanceId = "inst-empty-models-check";
@@ -406,7 +399,7 @@ describe("log summary route", () => {
     );
     expect(res.status).toBe(500);
     const data = await res.json();
-    expect(data.error).toBe("Agent has no configured models");
+    expect(data.error).toBe("No models configured in project config");
   });
 
   it("returns 500 when the LLM call fails", async () => {

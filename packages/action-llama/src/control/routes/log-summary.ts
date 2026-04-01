@@ -1,5 +1,5 @@
 import type { Hono } from "hono";
-import { loadAgentConfig } from "../../shared/config.js";
+import { loadGlobalConfig } from "../../shared/config.js";
 import { loadCredentialField } from "../../shared/credentials.js";
 import type { ModelConfig } from "../../shared/config/types.js";
 import type { ModelProvider, ChatMessage } from "../../models/types.js";
@@ -87,22 +87,22 @@ export function registerLogSummaryRoutes(
       return c.json({ summary: "No log entries found for this instance.", cached: false });
     }
 
-    // Resolve agent model config
-    let agentConfig;
+    // Resolve model from project config
+    let globalConfig;
     try {
-      agentConfig = loadAgentConfig(projectPath, name);
+      globalConfig = loadGlobalConfig(projectPath);
     } catch (err) {
       return c.json(
-        { error: `Failed to load agent config: ${err instanceof Error ? err.message : String(err)}` },
+        { error: `Failed to load project config: ${err instanceof Error ? err.message : String(err)}` },
         500,
       );
     }
 
-    if (!agentConfig.models || agentConfig.models.length === 0) {
-      return c.json({ error: "Agent has no configured models" }, 500);
+    if (!globalConfig.models || Object.keys(globalConfig.models).length === 0) {
+      return c.json({ error: "No models configured in project config" }, 500);
     }
 
-    const model = agentConfig.models[0];
+    const model = Object.values(globalConfig.models)[0];
 
     // Resolve API key from credential store
     const credType = `${model.provider}_key`;
