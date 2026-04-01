@@ -364,6 +364,73 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
     }
     ctx.agentImages[agentName] = image;
 
+    // Handle scale 0 → N transition: need to create pool, runners, cron, webhooks
+    // (similar to handleNewAgent but for an existing config entry)
+    if (oldScale === 0 && newScale > 0) {
+      const runners: PoolRunner[] = [];
+      for (let i = 0; i < newScale; i++) {
+        runners.push(ctx.createRunner(newConfig, image));
+      }
+      const pool = new RunnerPool(runners);
+      ctx.runnerPools[agentName] = pool;
+
+      ctx.statusTracker?.updateAgentScale(agentName, newScale);
+
+      // Set up cron
+      if (newConfig.schedule) {
+        const job = new Cron(newConfig.schedule, { timezone: ctx.timezone }, async () => {
+          if (ctx.statusTracker && !ctx.statusTracker.isAgentEnabled(agentName)) return;
+          const runner = pool.getAvailableRunner();
+          if (!runner) {
+            const { dropped } = ctx.schedulerCtx.workQueue.enqueue(agentName, { type: 'schedule' });
+            ctx.logger.info({ agent: agentName }, "all runners busy, scheduled run queued");
+            if (dropped) ctx.logger.warn({ agent: agentName }, "queue full, oldest event dropped");
+            return;
+          }
+          await runWithReruns(runner, newConfig, 0, ctx.schedulerCtx);
+        });
+        ctx.cronJobs.push(job);
+        const nextRun = job.nextRun();
+        if (nextRun) ctx.statusTracker?.setNextRunAt(agentName, nextRun);
+      }
+
+      // Set up webhooks
+      if (ctx.webhookRegistry) {
+        registerWebhookBindings({
+          agentConfig: newConfig,
+          webhookRegistry: ctx.webhookRegistry,
+          webhookSources: ctx.webhookSources,
+          onTrigger: buildWebhookTrigger(pool, ctx),
+          logger: ctx.logger,
+        });
+      }
+
+      ctx.statusTracker?.setAgentState(agentName, "idle");
+      ctx.statusTracker?.addLogLine(agentName, "hot-reloaded (activated from scale=0)");
+      ctx.logger.info({ agent: agentName, scale: newScale }, "hot reload: agent activated from scale=0");
+      return;
+    }
+
+    // Handle scale N → 0 transition: tear down pool, cron, webhooks
+    if (oldScale > 0 && newScale === 0) {
+      const pool = ctx.runnerPools[agentName];
+      if (pool) {
+        pool.killAll();
+        delete ctx.runnerPools[agentName];
+      }
+
+      rebuildCronJobs(agentName);
+      ctx.statusTracker?.setNextRunAt(agentName, null);
+
+      ctx.webhookRegistry?.removeBindingsForAgent(agentName);
+
+      ctx.statusTracker?.updateAgentScale(agentName, 0);
+      ctx.statusTracker?.setAgentState(agentName, "idle");
+      ctx.statusTracker?.addLogLine(agentName, "hot-reloaded (deactivated to scale=0)");
+      ctx.logger.info({ agent: agentName }, "hot reload: agent deactivated (scale=0)");
+      return;
+    }
+
     // Update existing runners with new image, config, and runtime (if changed)
     const pool = ctx.runnerPools[agentName];
     if (pool) {

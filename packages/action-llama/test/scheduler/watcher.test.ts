@@ -1390,4 +1390,176 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
       "hot reload: reverted to container runtime"
     );
   });
+
+  // ── handleChangedAgent: scale 0→N transition ─────────────────────────────
+
+  it("handles changed agent: scale 0→N creates pool, runners, cron, and webhooks", async () => {
+    // Start with an agent config at scale=0 with no pool
+    const disabledConfig = makeAgentConfig("agent-a", { scale: 0, schedule: "0 * * * *" });
+    const ctx = makeContext({
+      agentConfigs: [disabledConfig],
+      runnerPools: {}, // No pool for agent-a since scale=0
+    });
+
+    // Re-enable agent to scale=3
+    const enabledConfig = makeAgentConfig("agent-a", { scale: 3, schedule: "0 * * * *" });
+    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
+    mockedLoadAgentConfig.mockReturnValue(enabledConfig);
+    mockedBuildSingleAgentImage.mockResolvedValue("agent-a:v1");
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    // Pool should now exist with 3 runners
+    expect(ctx.runnerPools["agent-a"]).toBeInstanceOf(RunnerPool);
+    expect(ctx.runnerPools["agent-a"]!.size).toBe(3);
+    expect(ctx.createRunner).toHaveBeenCalledTimes(3);
+
+    // Cron job should be created since schedule exists
+    expect(ctx.cronJobs.length).toBeGreaterThan(0);
+    expect(ctx.statusTracker!.setNextRunAt).toHaveBeenCalled();
+
+    // Webhooks should be registered
+    expect(mockedRegisterWebhookBindings).toHaveBeenCalled();
+
+    // Status should be updated
+    expect(ctx.statusTracker!.updateAgentScale).toHaveBeenCalledWith("agent-a", 3);
+    expect(ctx.statusTracker!.setAgentState).toHaveBeenCalledWith("agent-a", "idle");
+    expect(ctx.statusTracker!.addLogLine).toHaveBeenCalledWith(
+      "agent-a",
+      "hot-reloaded (activated from scale=0)"
+    );
+    expect(ctx.logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "agent-a", scale: 3 }),
+      "hot reload: agent activated from scale=0"
+    );
+  });
+
+  it("handles changed agent: scale 0→N without schedule (no cron)", async () => {
+    const disabledConfig = makeAgentConfig("agent-a", { scale: 0, schedule: undefined });
+    const ctx = makeContext({
+      agentConfigs: [disabledConfig],
+      runnerPools: {},
+    });
+
+    const enabledConfig = makeAgentConfig("agent-a", { scale: 2, schedule: undefined });
+    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
+    mockedLoadAgentConfig.mockReturnValue(enabledConfig);
+    mockedBuildSingleAgentImage.mockResolvedValue("agent-a:v1");
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    // Pool should exist with 2 runners
+    expect(ctx.runnerPools["agent-a"]!.size).toBe(2);
+
+    // No cron job should be created since schedule is undefined
+    expect(ctx.statusTracker!.setNextRunAt).not.toHaveBeenCalled();
+
+    // Webhooks should still be registered if webhookRegistry exists
+    expect(mockedRegisterWebhookBindings).toHaveBeenCalled();
+  });
+
+  it("handles changed agent: scale 0→N with webhooks registers bindings", async () => {
+    const disabledConfig = makeAgentConfig("agent-a", { scale: 0, webhooks: [{ source: "github", trigger: { event: "push" } }] });
+    const ctx = makeContext({
+      agentConfigs: [disabledConfig],
+      runnerPools: {},
+    });
+
+    const enabledConfig = makeAgentConfig("agent-a", { scale: 1, webhooks: [{ source: "github", trigger: { event: "push" } }] });
+    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
+    mockedLoadAgentConfig.mockReturnValue(enabledConfig);
+    mockedBuildSingleAgentImage.mockResolvedValue("agent-a:v1");
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    // Pool should exist
+    expect(ctx.runnerPools["agent-a"]).toBeInstanceOf(RunnerPool);
+
+    // registerWebhookBindings should have been called with the enabled agent
+    expect(mockedRegisterWebhookBindings).toHaveBeenCalled();
+  });
+
+  // ── handleChangedAgent: scale N→0 transition ─────────────────────────────
+
+  it("handles changed agent: scale N→0 tears down pool, cron, and webhooks", async () => {
+    // Start with an enabled agent at scale=2
+    const enabledConfig = makeAgentConfig("agent-a", { scale: 2, schedule: "0 * * * *" });
+    const runner1 = makeMockRunner("agent-a-1");
+    const runner2 = makeMockRunner("agent-a-2");
+    // Mark runners as running so killAll() will call abort()
+    runner1.isRunning = true;
+    runner2.isRunning = true;
+    const pool = new RunnerPool([runner1, runner2]);
+
+    const ctx = makeContext({
+      agentConfigs: [enabledConfig],
+      runnerPools: { "agent-a": pool },
+    });
+
+    // Add a cron job for this agent (simulate existing schedule)
+    const mockCronJob: any = { stop: vi.fn() };
+    ctx.cronJobs.push(mockCronJob);
+
+    // Disable the agent (scale to 0)
+    const disabledConfig = makeAgentConfig("agent-a", { scale: 0, schedule: "0 * * * *" });
+    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
+    mockedLoadAgentConfig.mockReturnValue(disabledConfig);
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    // Pool should be killed and removed
+    expect(runner1.abort).toHaveBeenCalled();
+    expect(runner2.abort).toHaveBeenCalled();
+    expect(ctx.runnerPools["agent-a"]).toBeUndefined();
+
+    // Webhook bindings should be removed
+    expect(ctx.webhookRegistry!.removeBindingsForAgent).toHaveBeenCalledWith("agent-a");
+
+    // Cron job should be rebuilt (stopped)
+    expect(mockCronJob.stop).toHaveBeenCalled();
+
+    // Status should be updated
+    expect(ctx.statusTracker!.updateAgentScale).toHaveBeenCalledWith("agent-a", 0);
+    expect(ctx.statusTracker!.setAgentState).toHaveBeenCalledWith("agent-a", "idle");
+    expect(ctx.statusTracker!.setNextRunAt).toHaveBeenCalledWith("agent-a", null);
+    expect(ctx.statusTracker!.addLogLine).toHaveBeenCalledWith(
+      "agent-a",
+      "hot-reloaded (deactivated to scale=0)"
+    );
+    expect(ctx.logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "agent-a" }),
+      "hot reload: agent deactivated (scale=0)"
+    );
+  });
+
+  it("handles changed agent: scale N→0 without pool (gracefully ignores)", async () => {
+    // Start with config that claims scale=2 but pool is missing (edge case)
+    const enabledConfig = makeAgentConfig("agent-a", { scale: 2 });
+    const ctx = makeContext({
+      agentConfigs: [enabledConfig],
+      runnerPools: {}, // Pool missing
+    });
+
+    const disabledConfig = makeAgentConfig("agent-a", { scale: 0 });
+    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
+    mockedLoadAgentConfig.mockReturnValue(disabledConfig);
+
+    const handle = watchAgents(ctx);
+    // Should not throw
+    await handle._handleAgentChange("agent-a");
+
+    // Pool should still be missing (none to kill)
+    expect(ctx.runnerPools["agent-a"]).toBeUndefined();
+
+    // Status should still be updated
+    expect(ctx.statusTracker!.updateAgentScale).toHaveBeenCalledWith("agent-a", 0);
+    expect(ctx.logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "agent-a" }),
+      "hot reload: agent deactivated (scale=0)"
+    );
+  });
 });
