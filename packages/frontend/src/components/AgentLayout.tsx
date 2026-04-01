@@ -70,30 +70,6 @@ export function AgentLayout() {
           <h1 className="text-xl font-bold text-slate-900 dark:text-white">
             {name}
           </h1>
-          {agent && (
-            <span
-              id="agent-state"
-              className={`text-sm ${
-                agent.runningCount > 0
-                  ? "text-blue-600 dark:text-blue-400"
-                  : "text-slate-500 dark:text-slate-400"
-              }`}
-            >
-              <span
-                className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 ${
-                  agent.runningCount > 0 ? "bg-blue-500" : "bg-slate-400"
-                }`}
-              />
-              {agent.runningCount > 0
-                ? agent.scale > 1
-                  ? `running ${agent.runningCount}/${agent.scale}`
-                  : "running"
-                : "idle"}
-              {agent.scale > 1 && agent.runningCount === 0 && (
-                <span className="text-xs text-slate-400 ml-1">×{agent.scale}</span>
-              )}
-            </span>
-          )}
           {agent && !agent.enabled && (
             <span className="text-xs text-slate-500 italic">(disabled)</span>
           )}

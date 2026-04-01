@@ -30,6 +30,30 @@ export function AgentDetailPage() {
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-medium text-slate-900 dark:text-white">Activity</h2>
+            {agent && (
+              <span
+                id="agent-state"
+                className={`text-sm ${
+                  agent.runningCount > 0
+                    ? "text-blue-600 dark:text-blue-400"
+                    : "text-slate-500 dark:text-slate-400"
+                }`}
+              >
+                <span
+                  className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 ${
+                    agent.runningCount > 0 ? "bg-blue-500" : "bg-slate-400"
+                  }`}
+                />
+                {agent.runningCount > 0
+                  ? agent.scale > 1
+                    ? `running ${agent.runningCount}/${agent.scale}`
+                    : "running"
+                  : "idle"}
+                {agent.scale > 1 && agent.runningCount === 0 && (
+                  <span className="text-xs text-slate-400 ml-1">×{agent.scale}</span>
+                )}
+              </span>
+            )}
             {(agent?.queuedWebhooks ?? 0) > 0 && (
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
                 {agent!.queuedWebhooks} pending
