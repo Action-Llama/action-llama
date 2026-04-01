@@ -78,6 +78,7 @@ const ActivityTableRow = memo(function ActivityTableRow({
   // Per-row state — only this row re-renders when its summary changes
   const [isLoading, setIsLoading] = useState(false);
   const [localSummary, setLocalSummary] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const [mobileExpanded, setMobileExpanded] = useState(false);
 
@@ -97,13 +98,15 @@ const ActivityTableRow = memo(function ActivityTableRow({
   const handleGenerate = async () => {
     if (!row.agentName || !instanceId) return;
     setIsLoading(true);
+    setError(null);
     try {
       const result = await summarizeLogs(row.agentName, instanceId);
       if (result.summary) {
         setLocalSummary(result.summary);
       }
-    } catch {
-      // silently ignore errors
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to generate summary";
+      setError(message);
     } finally {
       setIsLoading(false);
     }
@@ -173,6 +176,10 @@ const ActivityTableRow = memo(function ActivityTableRow({
       {isLoading ? (
         <span className="text-xs text-slate-400 dark:text-slate-500 animate-pulse">
           Generating…
+        </span>
+      ) : error ? (
+        <span className="text-xs text-red-500 dark:text-red-400" title={error}>
+          Failed to generate — {error}
         </span>
       ) : effectiveSummary ? (
         <div className="flex items-start gap-1.5">
@@ -253,6 +260,10 @@ const ActivityTableRow = memo(function ActivityTableRow({
                 <span className="text-xs text-slate-400 dark:text-slate-500 animate-pulse">
                   Generating…
                 </span>
+              ) : error ? (
+                <span className="text-xs text-red-500 dark:text-red-400" title={error}>
+                  Failed to generate
+                </span>
               ) : effectiveSummary ? (
                 <div>
                   <button
@@ -315,6 +326,7 @@ const ActivityRowItem = memo(function ActivityRowItem({ row, agentNames }: Activ
   // Per-row UI state
   const [isLoading, setIsLoading] = useState(false);
   const [localSummary, setLocalSummary] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
 
@@ -328,11 +340,13 @@ const ActivityRowItem = memo(function ActivityRowItem({ row, agentNames }: Activ
   const handleGenerate = useCallback(async () => {
     if (!row.agentName || !instanceId) return;
     setIsLoading(true);
+    setError(null);
     try {
       const result = await summarizeLogs(row.agentName, instanceId);
       if (result.summary) setLocalSummary(result.summary);
-    } catch {
-      // silently ignore
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to generate summary";
+      setError(message);
     } finally {
       setIsLoading(false);
     }
@@ -431,6 +445,10 @@ const ActivityRowItem = memo(function ActivityRowItem({ row, agentNames }: Activ
                 <span className="text-xs text-slate-400 dark:text-slate-500 animate-pulse">
                   Generating…
                 </span>
+              ) : error ? (
+                <span className="text-xs text-red-500 dark:text-red-400" title={error}>
+                  Failed to generate
+                </span>
               ) : effectiveSummary ? (
                 <div>
                   <button
@@ -475,6 +493,10 @@ const ActivityRowItem = memo(function ActivityRowItem({ row, agentNames }: Activ
         {isLoading ? (
           <span className="text-xs text-slate-400 dark:text-slate-500 animate-pulse">
             Generating…
+          </span>
+        ) : error ? (
+          <span className="text-xs text-red-500 dark:text-red-400" title={error}>
+            Failed to generate — {error}
           </span>
         ) : effectiveSummary ? (
           <div className="flex items-start gap-1.5">
