@@ -1183,4 +1183,31 @@ describe("agent config", () => {
     expect(capturedModelNameValidate!("  ")).toBe("Name is required");
     expect(capturedModelNameValidate!("")).toBe("Name is required");
   });
+
+  it("editWebhooks — gracefully handles invalid config.toml (catch branch: globalConfig = {})", async () => {
+    // Create an agent with no webhook triggers
+    createAgentConfig("invalid-cfg-agent", {
+      credentials: [],
+      models: ["sonnet"],
+    });
+
+    // Overwrite project config.toml with invalid TOML to make loadGlobalConfig throw
+    // safeLoadGlobalConfig (used in the main while loop) catches this and returns {}
+    // editWebhooks calls loadGlobalConfig directly → throws → catch → globalConfig = {}
+    writeFileSync(resolve(tmpDir, "config.toml"), "this is not valid TOML {{{{");
+
+    // The agent menu shows, we navigate to webhooks
+    // Since config.toml is invalid, loadGlobalConfig throws → globalConfig = {}
+    // Then sources = undefined → "No webhook sources configured" → confirm(false) → return
+    mockSelect
+      .mockResolvedValueOnce("webhooks")   // main menu: webhooks
+      .mockResolvedValueOnce("done");      // main menu: done (after editWebhooks returns)
+    mockConfirm
+      .mockResolvedValueOnce(false);       // "Would you like to add a webhook source now?" → No
+
+    await configAgent("invalid-cfg-agent", { project: tmpDir });
+
+    // If we got here without throwing, the catch branch was successfully exercised
+    expect(mockSelect).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining("Configure") }));
+  });
 });
