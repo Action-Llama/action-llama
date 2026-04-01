@@ -144,7 +144,7 @@ export function InstanceLayout() {
             </div>
             {run && <ResultBadge result={run.result} />}
             {isRunning && !run && (
-              <span className="text-xs text-green-600 dark:text-green-400 font-medium">
+              <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
                 running
               </span>
             )}
