@@ -260,6 +260,11 @@ export async function execute(agent: string, opts: { project: string }): Promise
 
   if (abortedDueToErrors) process.exit(1);
 
+  if (loopResult.allModelsExhausted) {
+    emitLog("error", "all models exhausted — rate limited across all retries");
+    process.exit(12);
+  }
+
   // Read signals
   const signals = readSignals(signalDir);
 

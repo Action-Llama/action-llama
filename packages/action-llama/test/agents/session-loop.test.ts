@@ -35,7 +35,7 @@ vi.mock("../../src/agents/model-fallback.js", async () => {
     circuitBreaker: new actual.ModelCircuitBreaker(),
     selectAvailableModels: (models: any[], _breaker: any) => models,
     isRateLimitError: (msg: string) =>
-      msg.includes("rate_limit") || msg.includes("429"),
+      msg.includes("rate_limit") || msg.includes("429") || msg.includes("overloaded") || msg.includes("529"),
   };
 });
 
@@ -99,6 +99,7 @@ describe("runSessionLoop", () => {
     expect(mockDispose).toHaveBeenCalled();
     expect(result.outputText).toBe("Hello world");
     expect(result.aborted).toBe(false);
+    expect(result.allModelsExhausted).toBe(false);
     expect(result.unrecoverableErrors).toBe(0);
   });
 
@@ -148,13 +149,15 @@ describe("runSessionLoop", () => {
 
     const runPromise = runSessionLoop("Test", makeOpts({ log: logFn }));
     await vi.runAllTimersAsync();
-    await runPromise;
+    const result = await runPromise;
 
     expect(logFn).toHaveBeenCalledWith(
       "warn",
       "all models exhausted, backing off",
       expect.objectContaining({ pass: 1 }),
     );
+
+    expect(result.allModelsExhausted).toBe(true);
 
     vi.useRealTimers();
   });
@@ -181,6 +184,28 @@ describe("runSessionLoop", () => {
     expect(onUnrecoverableAbort).toHaveBeenCalledTimes(1);
     expect(result.aborted).toBe(true);
     expect(result.unrecoverableErrors).toBe(3);
+  });
+
+  it("returns allModelsExhausted false when aborted due to unrecoverable errors", async () => {
+    const onUnrecoverableAbort = vi.fn();
+    mockPrompt.mockResolvedValue(undefined);
+
+    mockSubscribe.mockImplementation((callback: Function) => {
+      for (let i = 0; i < 3; i++) {
+        callback({
+          type: "tool_execution_end",
+          toolName: "bash",
+          toolCallId: `call-${i}`,
+          result: "permission denied: cannot access repository",
+          isError: true,
+        });
+      }
+    });
+
+    const result = await runSessionLoop("Test", makeOpts({ onUnrecoverableAbort }));
+
+    expect(result.aborted).toBe(true);
+    expect(result.allModelsExhausted).toBe(false);
   });
 
   it("extracts error message from JSON-wrapped tool result content", async () => {

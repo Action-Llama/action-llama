@@ -35,6 +35,7 @@ export interface SessionLoopResult {
   usage?: TokenUsage;
   unrecoverableErrors: number;
   aborted: boolean;
+  allModelsExhausted: boolean;
 }
 
 const MAX_PASSES = 3;
@@ -53,6 +54,7 @@ export async function runSessionLoop(
   let eventCount = 0;
   let unrecoverableErrors = 0;
   let aborted = false;
+  let anyModelSucceeded = false;
   let usage: TokenUsage | undefined;
 
   for (let pass = 0; pass <= MAX_PASSES; pass++) {
@@ -170,6 +172,7 @@ export async function runSessionLoop(
 
         session.dispose();
         modelSucceeded = true;
+        anyModelSucceeded = true;
         break;
       } catch (promptErr: any) {
         const msg = String(promptErr?.message || promptErr || "");
@@ -193,5 +196,10 @@ export async function runSessionLoop(
     }
   }
 
-  return { outputText, usage, unrecoverableErrors, aborted };
+  const allModelsExhausted = !anyModelSucceeded && !aborted;
+  if (allModelsExhausted) {
+    log("error", "all models exhausted across all retry passes — every model was rate-limited or overloaded");
+  }
+
+  return { outputText, usage, unrecoverableErrors, aborted, allModelsExhausted };
 }

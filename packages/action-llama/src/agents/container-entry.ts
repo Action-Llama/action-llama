@@ -6,7 +6,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { ModelCircuitBreaker } from "./model-fallback.js";
 import type { AgentConfig } from "../shared/config.js";
-import { getExitCodeMessage } from "../shared/exit-codes.js";
+import { ExitCode, getExitCodeMessage } from "../shared/exit-codes.js";
 import { ensureSignalDir, readSignals } from "./signals.js";
 import { runHooks } from "../hooks/runner.js";
 import { processContextInjection } from "./context-injection.js";
@@ -268,6 +268,11 @@ export async function handleInvocation(init: AgentInit): Promise<number> {
 
   if (abortedDueToErrors) {
     return 1;
+  }
+
+  if (loopResult.allModelsExhausted) {
+    emitLog("error", "all models exhausted — rate limited across all retries");
+    return ExitCode.RATE_LIMITED;
   }
 
   // Read signal files written by al-rerun, al-status, al-return, al-exit
