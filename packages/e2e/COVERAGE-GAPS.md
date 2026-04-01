@@ -168,3 +168,5 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Execution constants and loadAgentConfig webhooks without Docker — DEFAULT_MAX_RERUNS=10, DEFAULT_MAX_TRIGGER_DEPTH=3; webhooks with source/events/actions preserved; multiple webhook entries; labels filter preserved; webhooks undefined when not configured (execution-constants.test.ts)
 
 - [x] loadGlobalConfig .env.toml merge semantics without Docker — environment field does not appear in config; scalar overrides replace; deep-merge combines nested objects; arrays replaced not merged; projectName set via special path; config works when .env.toml has only projectName (global-config-env-merge.test.ts)
+
+- [x] StatusTracker invalidation log advanced behaviors without Docker — getInvalidationsSince() deduplication (same type/agent key appears once per window), version cursor continuity (second query with returned version yields only new signals), invalidationLog pruning (> 1000 entries trimmed to 500), flushInvalidations() resets log and version to 0, pre-cursor signals excluded from post-cursor query (status-tracker-invalidation.test.ts)
