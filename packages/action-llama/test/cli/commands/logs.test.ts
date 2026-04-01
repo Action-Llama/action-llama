@@ -459,6 +459,93 @@ describe("logs command", () => {
       expect(output).toHaveLength(1);
       expect(output[0]).toContain("▸ bash");
     });
+
+    it("shows event entry with content field in --all mode", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({
+        level: 20,
+        msg: "event",
+        type: "message_delta",
+        content: "partial assistant response text",
+      }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", all: true });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("▪ message_delta");
+      expect(output[0]).toContain("partial assistant response text");
+    });
+
+    it("omits event content when content is empty array '[]'", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({
+        level: 20,
+        msg: "event",
+        type: "content_block_start",
+        content: "[]",
+      }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", all: true });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("▪ content_block_start");
+      // "[]" content should not appear on its own line
+      expect(output[0]).not.toContain("[]");
+    });
+
+    it("shows event entry with turnResult field in --all mode", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({
+        level: 20,
+        msg: "event",
+        type: "turn_complete",
+        turnResult: "completed after 3 tool calls",
+      }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", all: true });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("▪ turn_complete");
+      expect(output[0]).toContain("completed after 3 tool calls");
+    });
+
+    it("shows event with both content and turnResult fields in --all mode", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({
+        level: 20,
+        msg: "event",
+        type: "turn_end",
+        content: "final content",
+        turnResult: "summary of result",
+      }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", all: true });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("▪ turn_end");
+      expect(output[0]).toContain("final content");
+      expect(output[0]).toContain("summary of result");
+    });
   });
 
   // ── Additional conversation message types ────────────────────────────────
