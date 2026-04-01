@@ -141,6 +141,14 @@ describe("registerSpaRoutes", () => {
     expect(text).toBe(INDEX_HTML);
   });
 
+  it("serves /stats with SPA index.html", async () => {
+    const app = buildApp();
+    const res = await app.request("/stats");
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toBe(INDEX_HTML);
+  });
+
   it("serves /chat with SPA index.html", async () => {
     const app = buildApp();
     const res = await app.request("/chat");
