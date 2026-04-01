@@ -458,6 +458,34 @@ describe("SshDockerRuntime", () => {
       // No error, no lines
       expect(lines).toHaveLength(0);
     });
+
+    it("invokes onStderr callback when stderr data arrives from the container", async () => {
+      mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+        cb(null, "al-test-agent-abc12345\n", "");
+      });
+
+      const fakeProc = new EventEmitter();
+      (fakeProc as any).stdout = new EventEmitter();
+      (fakeProc as any).stderr = new EventEmitter();
+      (fakeProc as any).kill = vi.fn();
+      mockSpawn.mockReturnValue(fakeProc);
+
+      const stderrLines: string[] = [];
+      const handle = runtime.followLogs(
+        "test-agent",
+        () => {},
+        (text) => stderrLines.push(text),
+      );
+
+      // Wait for async startFollowing to set up the stderr listener
+      await new Promise((r) => setTimeout(r, 20));
+
+      (fakeProc as any).stderr.emit("data", Buffer.from("  container error  "));
+
+      expect(stderrLines).toEqual(["container error"]);
+
+      handle.stop();
+    });
   });
 
   describe("buildImage", () => {
