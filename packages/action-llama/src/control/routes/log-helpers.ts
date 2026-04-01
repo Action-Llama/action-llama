@@ -140,12 +140,12 @@ export async function readLastEntries(
     const chunkSize = 8192;
     const buffer = Buffer.alloc(chunkSize);
     let remainder = "";
-    // We need more raw lines than limit because of filtering
-    const rawLimit = limit * 3;
+    // Safety cap to prevent scanning multi-GB files; generous enough for any real agent run
+    const MAX_SCAN_LINES = 50000;
     let rawCount = 0;
 
     try {
-      while (rawCount < rawLimit && position > 0) {
+      while (position > 0 && entries.length < limit && rawCount < MAX_SCAN_LINES) {
         const toRead = Math.min(chunkSize, position);
         position -= toRead;
         const { buffer: readBuf } = await fd.read(buffer, 0, toRead, position);

@@ -296,6 +296,45 @@ describe("log API routes", () => {
       expect(data2.entries).toHaveLength(1);
       expect(data2.entries[0].msg).toBe("inst2-new");
     });
+
+    it("returns entries for an older instance when many newer instance entries follow", async () => {
+      // Target instance has 5 entries, followed by 500 entries from a newer instance
+      const lines: string[] = [];
+      for (let i = 0; i < 5; i++) {
+        lines.push(pinoLine(30, 1710700000000 + i * 1000, `target-${i}`, { instance: "dev-old11" }));
+      }
+      for (let i = 0; i < 500; i++) {
+        lines.push(pinoLine(30, 1710700100000 + i * 1000, `other-${i}`, { instance: "dev-new22" }));
+      }
+      writeFileSync(join(logsPath, "dev-2024-03-18.log"), lines.join("\n") + "\n");
+
+      const app = createTestApp(tmpDir);
+      const res = await app.request("/api/logs/agents/dev/dev-old11?lines=10");
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.entries).toHaveLength(5);
+      expect(data.entries[0].msg).toBe("target-0");
+      expect(data.entries[4].msg).toBe("target-4");
+    });
+
+    it("returns older entries for instance when using before parameter with many interleaved entries", async () => {
+      // 5 entries for target instance at the start, then 500 entries for another instance
+      const lines: string[] = [];
+      for (let i = 0; i < 5; i++) {
+        lines.push(pinoLine(30, 1710700000000 + i * 1000, `target-${i}`, { instance: "dev-old11" }));
+      }
+      for (let i = 0; i < 500; i++) {
+        lines.push(pinoLine(30, 1710700100000 + i * 1000, `other-${i}`, { instance: "dev-new22" }));
+      }
+      writeFileSync(join(logsPath, "dev-2024-03-18.log"), lines.join("\n") + "\n");
+
+      const app = createTestApp(tmpDir);
+      // Request older logs before a timestamp after all target entries
+      const res = await app.request("/api/logs/agents/dev/dev-old11?lines=10&before=1710700010000");
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.entries).toHaveLength(5);
+    });
   });
 
   // ── Time range filtering ────────────────────────────────────────────────
