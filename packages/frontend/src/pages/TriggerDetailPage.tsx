@@ -124,12 +124,12 @@ export function TriggerDetailPage() {
         <div className="px-4 py-2.5 border-b border-slate-200 dark:border-slate-800">
           <h2 className="text-sm font-medium text-slate-900 dark:text-white">Overview</h2>
         </div>
-        <div className="divide-y divide-slate-100 dark:divide-slate-800/50">
-          <div className="px-4 py-3 flex items-center justify-between">
+        <div className="divide-y divide-slate-100 dark:divide-slate-800/50 max-w-2xl">
+          <div className="px-4 py-3 grid grid-cols-[8rem_1fr] gap-x-4 items-center">
             <span className="text-xs text-slate-500 dark:text-slate-400">Trigger Type</span>
             <TriggerTypeBadge type={trigger.triggerType} />
           </div>
-          <div className="px-4 py-3 flex items-center justify-between">
+          <div className="px-4 py-3 grid grid-cols-[8rem_1fr] gap-x-4 items-center">
             <span className="text-xs text-slate-500 dark:text-slate-400">Agent</span>
             <Link
               to={`/dashboard/agents/${encodeURIComponent(trigger.agentName)}`}
@@ -140,7 +140,7 @@ export function TriggerDetailPage() {
               </span>
             </Link>
           </div>
-          <div className="px-4 py-3 flex items-center justify-between">
+          <div className="px-4 py-3 grid grid-cols-[8rem_1fr] gap-x-4 items-center">
             <span className="text-xs text-slate-500 dark:text-slate-400">Instance</span>
             <Link
               to={`/dashboard/agents/${encodeURIComponent(trigger.agentName)}/instances/${encodeURIComponent(trigger.instanceId)}`}
@@ -149,14 +149,14 @@ export function TriggerDetailPage() {
               {trigger.instanceId}
             </Link>
           </div>
-          <div className="px-4 py-3 flex items-center justify-between">
+          <div className="px-4 py-3 grid grid-cols-[8rem_1fr] gap-x-4 items-center">
             <span className="text-xs text-slate-500 dark:text-slate-400">Time</span>
             <span className="text-xs text-slate-700 dark:text-slate-300">
               {fmtDateTime(trigger.startedAt)}
             </span>
           </div>
           {trigger.triggerSource && (
-            <div className="px-4 py-3 flex items-center justify-between">
+            <div className="px-4 py-3 grid grid-cols-[8rem_1fr] gap-x-4 items-center">
               <span className="text-xs text-slate-500 dark:text-slate-400">Source</span>
               <span className="text-xs text-slate-700 dark:text-slate-300">{trigger.triggerSource}</span>
             </div>
@@ -170,8 +170,8 @@ export function TriggerDetailPage() {
           <div className="px-4 py-2.5 border-b border-slate-200 dark:border-slate-800">
             <h2 className="text-sm font-medium text-slate-900 dark:text-white">Webhook Details</h2>
           </div>
-          <div className="divide-y divide-slate-100 dark:divide-slate-800/50">
-            <div className="px-4 py-3 flex items-center justify-between">
+          <div className="divide-y divide-slate-100 dark:divide-slate-800/50 max-w-2xl">
+            <div className="px-4 py-3 grid grid-cols-[8rem_1fr] gap-x-4 items-center">
               <span className="text-xs text-slate-500 dark:text-slate-400">Receipt ID</span>
               <Link
                 to={`/dashboard/webhooks/${encodeURIComponent(trigger.webhook.receiptId)}`}
@@ -180,27 +180,27 @@ export function TriggerDetailPage() {
                 {shortId(trigger.webhook.receiptId)}
               </Link>
             </div>
-            <div className="px-4 py-3 flex items-center justify-between">
+            <div className="px-4 py-3 grid grid-cols-[8rem_1fr] gap-x-4 items-center">
               <span className="text-xs text-slate-500 dark:text-slate-400">Source</span>
               <span className="text-xs text-slate-700 dark:text-slate-300">{trigger.webhook.source}</span>
             </div>
             {trigger.webhook.eventSummary && (
-              <div className="px-4 py-3 flex items-center justify-between">
+              <div className="px-4 py-3 grid grid-cols-[8rem_1fr] gap-x-4 items-center">
                 <span className="text-xs text-slate-500 dark:text-slate-400">Event</span>
                 <span className="text-xs text-slate-700 dark:text-slate-300">{trigger.webhook.eventSummary}</span>
               </div>
             )}
             {trigger.webhook.deliveryId && (
-              <div className="px-4 py-3 flex items-center justify-between">
+              <div className="px-4 py-3 grid grid-cols-[8rem_1fr] gap-x-4 items-center">
                 <span className="text-xs text-slate-500 dark:text-slate-400">Delivery ID</span>
                 <span className="font-mono text-xs text-slate-700 dark:text-slate-300">{trigger.webhook.deliveryId}</span>
               </div>
             )}
-            <div className="px-4 py-3 flex items-center justify-between">
+            <div className="px-4 py-3 grid grid-cols-[8rem_1fr] gap-x-4 items-center">
               <span className="text-xs text-slate-500 dark:text-slate-400">Status</span>
               <ResultBadge result={trigger.webhook.status === "processed" ? "completed" : "dead-letter"} />
             </div>
-            <div className="px-4 py-3 flex items-center justify-between">
+            <div className="px-4 py-3 grid grid-cols-[8rem_1fr] gap-x-4 items-center">
               <span className="text-xs text-slate-500 dark:text-slate-400">Matched Agents</span>
               <span className="text-xs text-slate-700 dark:text-slate-300">{trigger.webhook.matchedAgents}</span>
             </div>
@@ -253,10 +253,10 @@ export function TriggerDetailPage() {
           <div className="px-4 py-2.5 border-b border-slate-200 dark:border-slate-800">
             <h2 className="text-sm font-medium text-slate-900 dark:text-white">Agent Trigger Details</h2>
           </div>
-          <div className="divide-y divide-slate-100 dark:divide-slate-800/50">
+          <div className="divide-y divide-slate-100 dark:divide-slate-800/50 max-w-2xl">
             {trigger.callerAgent ? (
               <>
-                <div className="px-4 py-3 flex items-center justify-between">
+                <div className="px-4 py-3 grid grid-cols-[8rem_1fr] gap-x-4 items-center">
                   <span className="text-xs text-slate-500 dark:text-slate-400">Called by</span>
                   <Link
                     to={`/dashboard/agents/${encodeURIComponent(trigger.callerAgent)}`}
@@ -268,7 +268,7 @@ export function TriggerDetailPage() {
                   </Link>
                 </div>
                 {trigger.callerInstance && (
-                  <div className="px-4 py-3 flex items-center justify-between">
+                  <div className="px-4 py-3 grid grid-cols-[8rem_1fr] gap-x-4 items-center">
                     <span className="text-xs text-slate-500 dark:text-slate-400">Caller Instance</span>
                     <Link
                       to={`/dashboard/agents/${encodeURIComponent(trigger.callerAgent)}/instances/${encodeURIComponent(trigger.callerInstance)}`}
@@ -279,7 +279,7 @@ export function TriggerDetailPage() {
                   </div>
                 )}
                 {trigger.callDepth !== undefined && (
-                  <div className="px-4 py-3 flex items-center justify-between">
+                  <div className="px-4 py-3 grid grid-cols-[8rem_1fr] gap-x-4 items-center">
                     <span className="text-xs text-slate-500 dark:text-slate-400">Call Depth</span>
                     <span className="text-xs text-slate-700 dark:text-slate-300">{trigger.callDepth}</span>
                   </div>

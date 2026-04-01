@@ -114,46 +114,46 @@ export function WebhookReceiptPage() {
         </div>
       </div>
 
-      {/* Info cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Info card */}
+      <div className="max-w-2xl">
         <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4">
           <h2 className="text-sm font-medium text-slate-900 dark:text-white mb-3">Receipt Info</h2>
-          <dl className="space-y-2 text-sm">
-            <div className="flex justify-between">
+          <dl className="text-sm">
+            <div className="grid grid-cols-[8rem_1fr] gap-x-4 py-1 items-center">
               <dt className="text-slate-500 dark:text-slate-400">Source</dt>
               <dd className="text-slate-700 dark:text-slate-300">{receipt.source}</dd>
             </div>
             {receipt.eventSummary && (
-              <div className="flex justify-between">
+              <div className="grid grid-cols-[8rem_1fr] gap-x-4 py-1 items-center">
                 <dt className="text-slate-500 dark:text-slate-400">Event</dt>
                 <dd className="text-slate-700 dark:text-slate-300">{receipt.eventSummary}</dd>
               </div>
             )}
             {receipt.deliveryId && (
-              <div className="flex justify-between">
+              <div className="grid grid-cols-[8rem_1fr] gap-x-4 py-1 items-center">
                 <dt className="text-slate-500 dark:text-slate-400">Delivery ID</dt>
                 <dd className="text-slate-700 dark:text-slate-300 font-mono text-xs">{receipt.deliveryId}</dd>
               </div>
             )}
-            <div className="flex justify-between">
+            <div className="grid grid-cols-[8rem_1fr] gap-x-4 py-1 items-center">
               <dt className="text-slate-500 dark:text-slate-400">Timestamp</dt>
               <dd className="text-slate-700 dark:text-slate-300">{fmtDateTime(receipt.timestamp)}</dd>
             </div>
-            <div className="flex justify-between">
+            <div className="grid grid-cols-[8rem_1fr] gap-x-4 py-1 items-center">
               <dt className="text-slate-500 dark:text-slate-400">Status</dt>
               <dd><ResultBadge result={resultForBadge} /></dd>
             </div>
-            <div className="flex justify-between">
+            <div className="grid grid-cols-[8rem_1fr] gap-x-4 py-1 items-center">
               <dt className="text-slate-500 dark:text-slate-400">Matched Agents</dt>
               <dd className="text-slate-700 dark:text-slate-300">{receipt.matchedAgents}</dd>
             </div>
             {receipt.deadLetterReason && (
-              <div className="flex justify-between">
+              <div className="grid grid-cols-[8rem_1fr] gap-x-4 py-1 items-center">
                 <dt className="text-slate-500 dark:text-slate-400">Dead Letter Reason</dt>
                 <dd className="text-red-600 dark:text-red-400 text-xs">{receipt.deadLetterReason}</dd>
               </div>
             )}
-            <div className="flex flex-col gap-1 pt-1 border-t border-slate-200 dark:border-slate-800">
+            <div className="grid grid-cols-[8rem_1fr] gap-x-4 py-1 items-start pt-2 mt-1 border-t border-slate-200 dark:border-slate-800">
               <dt className="text-slate-500 dark:text-slate-400">Receipt ID</dt>
               <dd className="text-slate-700 dark:text-slate-300 font-mono text-xs break-all">{receipt.id}</dd>
             </div>
