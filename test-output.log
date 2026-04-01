@@ -1,0 +1,47 @@
+
+> test:unit
+> vitest run --project unit --config packages/action-llama/vitest.config.ts && npm test -w packages/skill
+
+
+[1m[46m RUN [49m[22m [36mv4.1.1 [39m[90m/tmp/repo[39m
+
+Warning: A vi.mock("../../../src/shared/credentials.js") call in "/tmp/repo/packages/action-llama/test/cli/commands/doctor.test.ts" is not at the top level of the module. Although it appears nested, it will be hoisted and executed before any tests run. Move it to the top level to reflect its actual execution order. This will become an error in a future version.
+See: https://vitest.dev/guide/mocking/modules#how-it-works
+............................................................[90mstdout[2m | packages/action-llama/test/cli/commands/logs.test.ts[2m > [22m[2mlogs command[2m > [22m[2mgateway path (non-follow)[2m > [22m[2muses instance-specific path when full instance ID is passed as positional arg
+[22m[39mNo log entries found for "dev".
+
+.............................................................. [31m❯[39m [30m[42m unit [49m[39m packages/action-llama/test/cli/commands/logs.test.ts [2m([22m[2m79 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 865[2mms[22m[39m
+[31m       [31m×[31m uses instance-specific path when full instance ID is passed as positional arg[39m[32m 14[2mms[22m[39m
+............................................................(node:408) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 SIGINT listeners added to [process]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:408) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 SIGTERM listeners added to [process]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+(node:602) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 exit listeners added to [process]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1303) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 SIGINT listeners added to [process]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1303) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 SIGTERM listeners added to [process]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m [30m[42m unit [49m[39m packages/action-llama/test/cli/commands/logs.test.ts[2m > [22mlogs command[2m > [22mgateway path (non-follow)[2m > [22muses instance-specific path when full instance ID is passed as positional arg
+[31m[1mAssertionError[22m: expected '/api/logs/agents/dev/dev-abc12345?lin…' to contain '/api/logs/agents/dev/abc12345'[39m
+
+Expected: [32m"/api/logs/agents/dev/abc12345"[39m
+Received: [31m"/api/logs/agents/dev/[7mdev-[27mabc12345[7m?lines=50[27m"[39m
+
+[36m [2m❯[22m packages/action-llama/test/cli/commands/logs.test.ts:[2m1510:28[22m[39m
+    [90m1508|[39m
+    [90m1509|[39m       [35mconst[39m callArg [33m=[39m mockGatewayFetch[33m.[39mmock[33m.[39mcalls[[34m0[39m][[34m0[39m][33m;[39m
+    [90m1510|[39m       [34mexpect[39m(callArg[33m.[39mpath)[33m.[39m[34mtoContain[39m([32m"/api/logs/agents/dev/abc12345"[39m)[33m;[39m
+    [90m   |[39m                            [31m^[39m
+    [90m1511|[39m     })[33m;[39m
+    [90m1512|[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m228 passed[39m[22m[90m (229)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m4992 passed[39m[22m[2m | [22m[33m12 skipped[39m[90m (5005)[39m
+[2m   Start at [22m 20:06:10
+[2m   Duration [22m 19.83s[2m (transform 7.76s, setup 0ms, import 20.93s, tests 64.09s, environment 25ms)[22m
+
