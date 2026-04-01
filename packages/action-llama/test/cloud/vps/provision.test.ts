@@ -2076,3 +2076,264 @@ describe("Hetzner provisioning path", () => {
     expect(mockSearch).toHaveBeenCalledTimes(4);
   });
 });
+
+
+describe("provision.ts additional edge cases", () => {
+  beforeEach(() => resetAllMocks());
+
+  it("covers source filter path when search term is provided (opts.source with non-empty term)", async () => {
+    // Ensure the searchWithEsc source function's filter branch (lines 38-39) is covered.
+    // By intercepting the plan search mockSearch and calling opts.source("vc2"), we force the filter logic.
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
+
+    setupCatalogMocks();
+    setupFirewallMocks(true);
+    setupInstanceMocks();
+
+    let filteredChoices: any[] = [];
+
+    mockSearch
+      .mockImplementationOnce(async (opts: any) => {
+        // For plan search: call source with a non-empty term to exercise lines 38-39
+        filteredChoices = opts.source("vc2"); // filter choices by "vc2"
+        return "vc2-1c-1gb"; // return valid plan
+      })
+      .mockResolvedValueOnce("atl")       // region
+      .mockResolvedValueOnce("ssh-key-1"); // SSH key
+
+    setupSshMocks();
+    mockConfirm.mockResolvedValueOnce(true);
+
+    const result = await setupVpsCloud();
+
+    expect(result).not.toBeNull();
+    // The filter was called with "vc2" - results should include plans matching "vc2"
+    expect(filteredChoices.length).toBeGreaterThan(0);
+    // All returned plans should have "vc2" in the name (case-insensitive)
+    expect(filteredChoices.every((c: any) => c.name.toLowerCase().includes("vc2"))).toBe(true);
+  });
+
+  it("covers CF token validate error (empty input returns required message)", async () => {
+    // promptCloudflareHttps prompts for CF token when none stored.
+    // Capture the validate function and test it with empty/valid inputs.
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    mockBackendRead.mockImplementation((type: string) =>
+      type === "cloudflare_api_token" ? Promise.resolve(null) : Promise.resolve("fake-vultr-key")
+    );
+
+    let capturedValidate: ((v: string) => boolean | string) | undefined;
+    // password() is called for the CF token entry — capture its validate option
+    mockPassword.mockImplementationOnce(async (opts: any) => {
+      capturedValidate = opts.validate;
+      return "valid-cf-token";
+    });
+
+    mockVerifyToken.mockResolvedValue(true);
+    mockListAllZones.mockResolvedValue([]); // No zones → promptCloudflareHttps returns null
+
+    setupFullVultrFlow();
+
+    await setupVpsCloud();
+
+    expect(capturedValidate).toBeDefined();
+    expect(capturedValidate!("")).toBe("API token is required");
+    expect(capturedValidate!("   ")).toBe("API token is required");
+    expect(capturedValidate!("valid-token")).toBe(true);
+  });
+
+  it("covers subdomain validate function branches", async () => {
+    // promptCloudflareHttps collects subdomain via input() with a validate function.
+    // We capture the validate function and test all its branches.
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    // Set up CF mocks manually (instead of setupCloudflareMocks) so we can control input() ordering
+    mockBackendRead.mockImplementation((type: string) => {
+      if (type === "cloudflare_origin_cert") return Promise.resolve(null);
+      return Promise.resolve("stored-cf-token");
+    });
+    mockListAllZones.mockResolvedValue([{ id: "zone-1", name: "example.com", status: "active" }]);
+    mockSearch.mockResolvedValueOnce({ id: "zone-1", name: "example.com" }); // zone selection
+
+    // Capture the validate function from the input() call for subdomain
+    let capturedValidate: ((v: string) => boolean | string) | undefined;
+    mockInput.mockImplementationOnce(async (opts: any) => {
+      capturedValidate = opts.validate;
+      return "agents";
+    });
+
+    setupFullVultrFlow();
+
+    await setupVpsCloud();
+
+    expect(capturedValidate).toBeDefined();
+    expect(capturedValidate!("")).toBe("Subdomain is required");
+    expect(capturedValidate!("   ")).toBe("Subdomain is required");
+    expect(capturedValidate!("with spaces")).toBe("Subdomain must not contain spaces");
+    expect(capturedValidate!("agents.example.com")).toBe("Enter only the subdomain part, not the full domain");
+    expect(capturedValidate!("example.com")).toBe("Enter only the subdomain part, not the full domain");
+    expect(capturedValidate!("agents")).toBe(true);
+  });
+
+  it("returns null when Vultr VPS final SSH check fails after polling loop completes", async () => {
+    // Cover lines 521-523: final testConnection after polling loop fails.
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
+
+    setupCatalogMocks();
+    setupFirewallMocks(true);
+    setupInstanceMocks();
+
+    mockSearch
+      .mockResolvedValueOnce("vc2-1c-1gb")
+      .mockResolvedValueOnce("atl")
+      .mockResolvedValueOnce("ssh-key-1");
+
+    // Polling loop: testConnection (echo ok) succeeds, node/docker checks pass → loop breaks.
+    // Final testConnection: fails → return null.
+    let echoOkCallCount = 0;
+    mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: any, cb: Function) => {
+      const command = args[args.length - 1];
+      if (command.includes("echo ok")) {
+        echoOkCallCount++;
+        if (echoOkCallCount === 1) {
+          cb(null, "ok\n", ""); // testConnection in loop: succeeds
+        } else {
+          cb(new Error("Connection refused"), "", ""); // Final testConnection: fails
+        }
+      } else if (command.includes("node --version")) {
+        cb(null, "v22.14.0\n", "");
+      } else {
+        cb(null, "24.0.7\n", ""); // docker info
+      }
+    });
+
+    const result = await setupVpsCloud();
+    expect(result).toBeNull();
+  });
+
+  it("covers Vultr cloud-init waiting log when SSH not ready then node/docker not ready", async () => {
+    // Cover lines 501 (cloud-init not done) and 503 (SSH not ready dot).
+    vi.useFakeTimers();
+    try {
+      mockSelect.mockResolvedValueOnce("vultr");
+      mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
+      mockConfirm.mockResolvedValueOnce(true);  // VPS ready confirmation
+
+      setupCatalogMocks();
+      setupFirewallMocks(true);
+      setupInstanceMocks();
+
+      mockSearch
+        .mockResolvedValueOnce("vc2-1c-1gb")
+        .mockResolvedValueOnce("atl")
+        .mockResolvedValueOnce("ssh-key-1");
+
+      // iteration 1: SSH not ready (dot)
+      // iteration 2: SSH ready, node not ready (cloud-init log)
+      // iteration 3: SSH ready, node ready → break
+      // final testConnection: OK
+      let iterCount = 0;
+      let nodeCallCount = 0;
+      mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: any, cb: Function) => {
+        const command = args[args.length - 1];
+        if (command.includes("echo ok")) {
+          iterCount++;
+          if (iterCount === 1) {
+            cb(new Error("Connection refused"), "", ""); // SSH not ready → process.stdout.write(".")
+          } else {
+            cb(null, "ok\n", ""); // SSH ready on subsequent calls
+          }
+        } else if (command.includes("node --version")) {
+          nodeCallCount++;
+          if (nodeCallCount === 1) {
+            cb({ code: 1 }, "", "command not found"); // node not ready → "Waiting for cloud-init..."
+          } else {
+            cb(null, "v22.14.0\n", "");
+          }
+        } else {
+          cb(null, "24.0.7\n", ""); // docker info
+        }
+      });
+
+      const resultPromise = setupVpsCloud();
+      // Let iteration 1 run, then advance past the 10s sleep for iteration 2, then 10s for iteration 3
+      await vi.advanceTimersByTimeAsync(30_000);
+      const result = await resultPromise;
+
+      expect(result).not.toBeNull();
+      expect(result?.provider).toBe("vps");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("returns result without gatewayUrl on Origin CA certificate creation failure (Vultr)", async () => {
+    // Cover lines 592-594: createOriginCertificate throws → catch block returns result without CF.
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    // Set up CF mocks with cert failure
+    mockBackendRead.mockImplementation((type: string) => {
+      if (type === "cloudflare_origin_cert") return Promise.resolve(null); // No existing cert
+      return Promise.resolve("stored-cf-token");
+    });
+    mockListAllZones.mockResolvedValue([{ id: "zone-1", name: "example.com", status: "active" }]);
+    mockSearch.mockResolvedValueOnce({ id: "zone-1", name: "example.com" }); // zone
+    mockInput.mockResolvedValueOnce("agents"); // subdomain
+
+    // Origin CA cert creation fails
+    mockCreateOriginCertificate.mockRejectedValueOnce(new Error("Cert creation failed"));
+
+    setupFullVultrFlow();
+
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const result = await setupVpsCloud();
+    consoleSpy.mockRestore();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+    // gatewayUrl should be HTTP (not HTTPS) since cert creation failed
+    expect(result?.gatewayUrl).not.toContain("https://");
+  });
+
+  it("covers Hetzner OS image manual selection when ubuntu-22.04 is not available", async () => {
+    // Cover lines 785 (stmts 412-413): when ubuntu-22.04 is not in the image list,
+    // the OS image is selected via searchWithEsc.
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
+
+    // Images without ubuntu-22.04
+    const imagesWithoutUbuntu2204 = [
+      { id: 2, type: "system", status: "available", name: "ubuntu-24.04", description: "Ubuntu 24.04", os_flavor: "ubuntu", os_version: "24.04", architecture: "x86", deprecated: null },
+      { id: 3, type: "system", status: "available", name: "debian-12", description: "Debian 12", os_flavor: "debian", os_version: "12", architecture: "x86", deprecated: null },
+    ];
+    mockHetznerListServerTypes.mockResolvedValue(HETZNER_SERVER_TYPES);
+    mockHetznerListLocations.mockResolvedValue(HETZNER_LOCATIONS);
+    mockHetznerListImages.mockResolvedValue(imagesWithoutUbuntu2204);
+    mockHetznerListSshKeys.mockResolvedValue(HETZNER_SSH_KEYS);
+
+    setupHetznerFirewallMocks(true);
+    setupHetznerServerMocks();
+
+    // step 0: server type, step 1: location, step 2: OS image (manual, no ubuntu-22.04), step 3: SSH key
+    mockSearch
+      .mockResolvedValueOnce("cx22")         // server type
+      .mockResolvedValueOnce("fsn1")         // location
+      .mockResolvedValueOnce("ubuntu-24.04") // OS image (manual selection)
+      .mockResolvedValueOnce("101");          // SSH key
+
+    setupSshMocks();
+    mockConfirm.mockResolvedValueOnce(true);
+
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const result = await setupVpsCloud();
+    consoleSpy.mockRestore();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+  });
+});
