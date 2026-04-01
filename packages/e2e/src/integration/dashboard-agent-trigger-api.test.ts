@@ -76,7 +76,7 @@ describe.skipIf(!DOCKER)(
         ],
       });
 
-      await harness.start();
+      await harness.start({ webUI: true });
 
       // Trigger the caller which will subagent the callee
       await harness.triggerAgent("dashboard-caller");
@@ -154,7 +154,7 @@ describe.skipIf(!DOCKER)(
         ],
       });
 
-      await harness.start();
+      await harness.start({ webUI: true });
 
       await harness.triggerAgent("trigger-caller");
 

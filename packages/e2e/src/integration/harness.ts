@@ -199,7 +199,7 @@ export class IntegrationHarness {
   /**
    * Start the scheduler (triggers real Docker builds, gateway, cron, webhooks).
    *
-   * @param opts.webUI - Enable web UI routes including chat session management (default: false)
+   * @param opts.webUI - Enable web UI routes including chat session management and dashboard API (default: false)
    */
   async start(opts?: { webUI?: boolean }): Promise<void> {
     const { startScheduler } = await import("@action-llama/action-llama/internals/scheduler");
@@ -211,11 +211,20 @@ export class IntegrationHarness {
     const { loadGlobalConfig } = await import("@action-llama/action-llama/internals/config");
     const loadedConfig = loadGlobalConfig(this.projectPath);
 
+    // Create a StatusTracker when webUI is enabled so dashboard routes are registered.
+    // gateway/index.ts only registers /api/dashboard/* when both webUI and statusTracker
+    // are provided, so we must supply one when tests need those endpoints.
+    let statusTracker: import("@action-llama/action-llama/internals/status-tracker").StatusTracker | undefined;
+    if (opts?.webUI) {
+      const { StatusTracker } = await import("@action-llama/action-llama/internals/status-tracker");
+      statusTracker = new StatusTracker();
+    }
+
     this._scheduler = await startScheduler(
       this.projectPath,
       loadedConfig,
-      undefined,            // no status tracker
-      opts?.webUI ?? false, // web UI (enables chat routes when true)
+      statusTracker,        // status tracker (required for dashboard routes when webUI is true)
+      opts?.webUI ?? false, // web UI (enables chat routes and dashboard API when true)
       true,                 // expose — bind to 0.0.0.0 so Docker containers can reach gateway via host-gateway
     );
 
