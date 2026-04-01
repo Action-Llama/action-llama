@@ -1,5 +1,14 @@
 # @action-llama/action-llama
 
+## 0.24.3
+
+### Patch Changes
+
+- [`ebff4d6`](https://github.com/Action-Llama/action-llama/commit/ebff4d6e82dfc6d23bcd5c612c7d2bfb9b54c280) Thanks [@asselstine](https://github.com/asselstine)! - Fix infinite re-render loop (React error [#185](https://github.com/Action-Llama/action-llama/issues/185)) on the Activity page by ensuring `getQuerySnapshot` returns referentially stable objects for `useSyncExternalStore`.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.24.3
+
 ## 0.24.2
 
 ### Patch Changes
