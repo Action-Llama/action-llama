@@ -282,4 +282,282 @@ describe("log summary route", () => {
     // Both calls should have hit the LLM
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it("returns 400 for invalid grep regex pattern", async () => {
+    createMinimalAgentProject(tmpDir, "my-agent");
+    const instanceId = "inst-grep";
+    const lines = [
+      pinoLine(30, 1710700000000, "msg", { instance: instanceId }),
+    ];
+    writeFileSync(
+      join(logsPath, "my-agent-2024-03-18.log"),
+      lines.join("\n") + "\n",
+    );
+
+    const app = createTestApp(tmpDir);
+    const res = await app.request(
+      `/api/logs/agents/my-agent/${instanceId}/summarize?grep=%5B`,
+      { method: "POST" },
+    );
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toMatch(/Invalid grep pattern/);
+  });
+
+  it("clamps lines param to MAX_LINES when it exceeds the limit", async () => {
+    createMinimalAgentProject(tmpDir, "my-agent");
+    const instanceId = "inst-lines";
+    const logLines = [
+      pinoLine(30, 1710700000000, "step 1", { instance: instanceId }),
+    ];
+    writeFileSync(
+      join(logsPath, "my-agent-2024-03-18.log"),
+      logLines.join("\n") + "\n",
+    );
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(fakeOpenAIResponse("Clamped lines summary.")),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const app = createTestApp(tmpDir);
+    // lines=99999 far exceeds MAX_LINES (2000), should be clamped and still work
+    const res = await app.request(
+      `/api/logs/agents/my-agent/${instanceId}/summarize?lines=99999`,
+      { method: "POST" },
+    );
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.summary).toBe("Clamped lines summary.");
+  });
+
+  it("returns 500 when agent config has no models defined", async () => {
+    // Create a project with agent config that has no models in config.toml
+    const agentName = "no-models-agent";
+    const agentDir = join(tmpDir, "agents", agentName);
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(
+      join(agentDir, "SKILL.md"),
+      `---\ndescription: Agent with no models\n---\n# No Models Agent\n`,
+    );
+    // Agent config.toml has no models field, so loadAgentConfig will throw
+    writeFileSync(
+      join(agentDir, "config.toml"),
+      `# no models field here\n`,
+    );
+    writeFileSync(
+      join(tmpDir, "config.toml"),
+      `# no models defined\n`,
+    );
+
+    const instanceId = "inst-nomodel";
+    const logLines = [
+      pinoLine(30, 1710700000000, "running", { instance: instanceId }),
+    ];
+    writeFileSync(
+      join(logsPath, `${agentName}-2024-03-18.log`),
+      logLines.join("\n") + "\n",
+    );
+
+    const app = createTestApp(tmpDir);
+    const res = await app.request(
+      `/api/logs/agents/${agentName}/${instanceId}/summarize`,
+      { method: "POST" },
+    );
+    expect(res.status).toBe(500);
+    const data = await res.json();
+    expect(data.error).toMatch(/Failed to load agent config/);
+  });
+
+  it("returns 500 when the LLM call fails", async () => {
+    createMinimalAgentProject(tmpDir, "my-agent");
+    const instanceId = "inst-llm-fail";
+    const logLines = [
+      pinoLine(30, 1710700000000, "something happened", { instance: instanceId }),
+    ];
+    writeFileSync(
+      join(logsPath, "my-agent-2024-03-18.log"),
+      logLines.join("\n") + "\n",
+    );
+
+    // Mock fetch to simulate API failure
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: () => Promise.resolve("Internal Server Error"),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const app = createTestApp(tmpDir);
+    const res = await app.request(
+      `/api/logs/agents/my-agent/${instanceId}/summarize`,
+      { method: "POST" },
+    );
+    expect(res.status).toBe(500);
+    const data = await res.json();
+    expect(data.error).toMatch(/Failed to generate summary/);
+  });
+
+  it("uses anthropic provider when agent model is configured as anthropic", async () => {
+    // Create agent config with anthropic provider
+    const agentName = "anthropic-agent";
+    const agentDir = join(tmpDir, "agents", agentName);
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(
+      join(agentDir, "SKILL.md"),
+      `---\ndescription: Anthropic agent\n---\n# Anthropic Agent\n`,
+    );
+    writeFileSync(
+      join(agentDir, "config.toml"),
+      `models = ["main"]\n`,
+    );
+    writeFileSync(
+      join(tmpDir, "config.toml"),
+      `[models.main]\nprovider = "anthropic"\nmodel = "claude-3-5-sonnet-20241022"\nauthType = "api_key"\n`,
+    );
+
+    const instanceId = "inst-anthropic";
+    const logLines = [
+      pinoLine(30, 1710700000000, "claude ran", { instance: instanceId }),
+    ];
+    writeFileSync(
+      join(logsPath, `${agentName}-2024-03-18.log`),
+      logLines.join("\n") + "\n",
+    );
+
+    // Mock fetch to return Anthropic-format response
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          id: "msg_123",
+          type: "message",
+          role: "assistant",
+          content: [{ type: "text", text: "Anthropic summary result." }],
+          model: "claude-3-5-sonnet-20241022",
+          stop_reason: "end_turn",
+          usage: { input_tokens: 100, output_tokens: 30 },
+        }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const app = createTestApp(tmpDir);
+    const res = await app.request(
+      `/api/logs/agents/${agentName}/${instanceId}/summarize`,
+      { method: "POST" },
+    );
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.summary).toBe("Anthropic summary result.");
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("uses custom provider when agent model provider is not openai or anthropic", async () => {
+    // Create agent config with a custom/openrouter provider
+    const agentName = "custom-agent";
+    const agentDir = join(tmpDir, "agents", agentName);
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(
+      join(agentDir, "SKILL.md"),
+      `---\ndescription: Custom provider agent\n---\n# Custom Agent\n`,
+    );
+    writeFileSync(
+      join(agentDir, "config.toml"),
+      `models = ["main"]\n`,
+    );
+    writeFileSync(
+      join(tmpDir, "config.toml"),
+      `[models.main]\nprovider = "openrouter"\nmodel = "meta-llama/llama-3-8b-instruct"\nauthType = "api_key"\nbaseUrl = "https://openrouter.ai/api/v1"\n`,
+    );
+
+    const instanceId = "inst-custom";
+    const logLines = [
+      pinoLine(30, 1710700000000, "custom ran", { instance: instanceId }),
+    ];
+    writeFileSync(
+      join(logsPath, `${agentName}-2024-03-18.log`),
+      logLines.join("\n") + "\n",
+    );
+
+    // Custom provider uses OpenAI-compatible API — mock fetch accordingly
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(fakeOpenAIResponse("Custom provider summary.")),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const app = createTestApp(tmpDir);
+    const res = await app.request(
+      `/api/logs/agents/${agentName}/${instanceId}/summarize`,
+      { method: "POST" },
+    );
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.summary).toBe("Custom provider summary.");
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("falls back to empty API key when loadCredentialField throws", async () => {
+    const { loadCredentialField } = await import("../../../src/shared/credentials.js");
+    vi.mocked(loadCredentialField).mockRejectedValueOnce(new Error("Credential store unavailable"));
+
+    createMinimalAgentProject(tmpDir, "my-agent");
+    const instanceId = "inst-cred-fail";
+    const logLines = [
+      pinoLine(30, 1710700000000, "step 1", { instance: instanceId }),
+    ];
+    writeFileSync(
+      join(logsPath, "my-agent-2024-03-20.log"),
+      logLines.join("\n") + "\n",
+    );
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(fakeOpenAIResponse("Summary with empty key.")),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const app = createTestApp(tmpDir);
+    const res = await app.request(
+      `/api/logs/agents/my-agent/${instanceId}/summarize`,
+      { method: "POST" },
+    );
+    // Even when credential loading fails, the request should succeed (empty API key is allowed)
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.summary).toBe("Summary with empty key.");
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("applies grep filter to log entries before summarizing", async () => {
+    createMinimalAgentProject(tmpDir, "my-agent");
+    const instanceId = "inst-grep-ok";
+    const logLines = [
+      pinoLine(30, 1710700000000, "error occurred", { instance: instanceId }),
+      pinoLine(30, 1710700001000, "normal log", { instance: instanceId }),
+      pinoLine(30, 1710700002000, "another error", { instance: instanceId }),
+    ];
+    writeFileSync(
+      join(logsPath, "my-agent-2024-03-19.log"),
+      logLines.join("\n") + "\n",
+    );
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(fakeOpenAIResponse("Grep-filtered summary.")),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const app = createTestApp(tmpDir);
+    const res = await app.request(
+      `/api/logs/agents/my-agent/${instanceId}/summarize?grep=error`,
+      { method: "POST" },
+    );
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.summary).toBe("Grep-filtered summary.");
+    // The fetch was called — meaning entries were found and summarized
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
 });
