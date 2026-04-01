@@ -82,7 +82,6 @@ export function InstanceLayout() {
             {name}
           </Link>
           <span>›</span>
-          <span className="text-slate-900 dark:text-white font-medium font-mono">{id}</span>
         </nav>
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
