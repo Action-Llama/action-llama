@@ -116,7 +116,7 @@ function makeContext(overrides: Partial<HotReloadContext> = {}): HotReloadContex
       maxReruns: 3,
       maxTriggerDepth: 5,
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
-      workQueue: { enqueue: vi.fn(() => ({ dropped: false })), size: vi.fn(() => 0), clearAll: vi.fn() } as any,
+      workQueue: { enqueue: vi.fn(() => ({ dropped: false })), size: vi.fn(() => 0), clearAll: vi.fn(), setAgentMaxSize: vi.fn() } as any,
       shuttingDown: false,
       skills: { locking: true },
       useBakedImages: true,
@@ -357,6 +357,20 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     expect(ctx.statusTracker!.addLogLine).toHaveBeenCalledWith("agent-b", "hot-reloaded (new)");
   });
 
+  it("configures per-agent work queue size when new agent has maxWorkQueueSize set", async () => {
+    const ctx = makeContext({ agentConfigs: [], runnerPools: {} });
+
+    const newConfig = makeAgentConfig("agent-b", { maxWorkQueueSize: 50 });
+    mockedDiscoverAgents.mockReturnValue(["agent-b"]);
+    mockedLoadAgentConfig.mockReturnValue(newConfig);
+    mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-b");
+
+    expect(ctx.schedulerCtx.workQueue.setAgentMaxSize).toHaveBeenCalledWith("agent-b", 50);
+  });
+
   it("handles removed agent: tears down pool, cron, webhooks", async () => {
     const runner = makeMockRunner("agent-a");
     runner.isRunning = true;
@@ -457,6 +471,18 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     // New cron job should have been created (schedule changed from "0 * * * *" to "*/10 * * * *")
     expect(ctx.cronJobs.length).toBeGreaterThan(0);
     expect(ctx.statusTracker!.setNextRunAt).toHaveBeenCalled();
+  });
+
+  it("updates per-agent work queue size when existing agent config changes to add maxWorkQueueSize", async () => {
+    const ctx = makeContext();
+    const updatedConfig = makeAgentConfig("agent-a", { maxWorkQueueSize: 25 });
+    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
+    mockedLoadAgentConfig.mockReturnValue(updatedConfig);
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    expect(ctx.schedulerCtx.workQueue.setAgentMaxSize).toHaveBeenCalledWith("agent-a", 25);
   });
 
   it("hot reload scale change uses updateAgentScale (not registerAgent) to preserve running state", async () => {
