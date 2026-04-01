@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "../hooks/useQuery";
 import { useAgents } from "../hooks/StatusStreamContext";
@@ -38,18 +38,21 @@ export function ActivityPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const agentFilter = searchParams.get("agent") || undefined;
   const triggerTypeFilter = searchParams.get("type") || undefined;
-  const statusFilters = parseStatuses(searchParams.get("status"));
+  const statusParam = searchParams.get("status");
+  const statusFilters = useMemo(() => parseStatuses(statusParam), [statusParam]);
 
   const [offset, setOffset] = useState(0);
   const agents = useAgents();
   const agentNames = agents.map((a) => a.name);
 
+  const statusFilterKey = statusFilters.join(",");
   const statusesToSend = statusFilters.length === STATUS_OPTIONS.length ? undefined : statusFilters;
 
   const { data, isLoading } = useQuery<{ rows: ActivityRow[]; total: number }>({
-    key: `activity:${offset}:${agentFilter ?? ""}:${triggerTypeFilter ?? ""}:${statusFilters.join(",")}`,
+    key: `activity:${offset}:${agentFilter ?? ""}:${triggerTypeFilter ?? ""}:${statusFilterKey}`,
     fetcher: (signal) => getActivity(PAGE_SIZE, offset, agentFilter, triggerTypeFilter, statusesToSend, signal),
     invalidateOn: ["runs", "triggers"],
+    keyChangeDebounceMs: 150,
   });
 
   const rows = data?.rows ?? [];
@@ -58,7 +61,7 @@ export function ActivityPage() {
   // Reset offset when filters change
   useEffect(() => {
     setOffset(0);
-  }, [agentFilter, triggerTypeFilter, statusFilters]);
+  }, [agentFilter, triggerTypeFilter, statusFilterKey]);
 
   const setFilter = useCallback(
     (key: string, value: string | undefined) => {

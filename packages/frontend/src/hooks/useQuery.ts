@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useCallback, useSyncExternalStore } from "react";
 import {
   registerQuery,
   unregisterQuery,
@@ -17,6 +17,8 @@ export interface UseQueryOptions<T> {
   pollIntervalMs?: number;
   debounceMs?: number;
   enabled?: boolean;
+  /** Debounce key changes to coalesce rapid filter updates (ms). First load is always immediate. */
+  keyChangeDebounceMs?: number;
 }
 
 export interface UseQueryResult<T> {
@@ -35,6 +37,7 @@ export function useQuery<T>(options: UseQueryOptions<T>): UseQueryResult<T> {
     pollIntervalMs,
     debounceMs,
     enabled = true,
+    keyChangeDebounceMs,
   } = options;
 
   // Keep fetcher ref stable (user may pass inline arrow)
@@ -46,11 +49,29 @@ export function useQuery<T>(options: UseQueryOptions<T>): UseQueryResult<T> {
     [],
   );
 
+  // Debounce key changes: first load is immediate, subsequent changes are debounced.
+  // During debounce, the old query stays active so stale data remains visible.
+  const activeKeyRef = useRef(key);
+  const [activeKey, setActiveKey] = useState(key);
+
+  useEffect(() => {
+    if (key === activeKeyRef.current) return;
+    activeKeyRef.current = key;
+
+    if (!keyChangeDebounceMs) {
+      setActiveKey(key);
+      return;
+    }
+
+    const t = setTimeout(() => setActiveKey(key), keyChangeDebounceMs);
+    return () => clearTimeout(t);
+  }, [key, keyChangeDebounceMs]);
+
   // Serialize invalidateOn to a stable string for dependency comparison
   const invalidateOnKey = invalidateOn?.join(",");
 
   useEffect(() => {
-    registerQuery(key, {
+    registerQuery(activeKey, {
       fetcher: stableFetcher,
       invalidateOn,
       invalidateAgent,
@@ -58,23 +79,23 @@ export function useQuery<T>(options: UseQueryOptions<T>): UseQueryResult<T> {
       debounceMs,
       enabled,
     });
-    return () => unregisterQuery(key);
+    return () => unregisterQuery(activeKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, stableFetcher, invalidateOnKey, invalidateAgent, pollIntervalMs, debounceMs, enabled]);
+  }, [activeKey, stableFetcher, invalidateOnKey, invalidateAgent, pollIntervalMs, debounceMs, enabled]);
 
   const sub = useCallback(
-    (cb: () => void) => subscribeToQuery(key, cb),
-    [key],
+    (cb: () => void) => subscribeToQuery(activeKey, cb),
+    [activeKey],
   );
 
   const getSnap = useCallback(
-    () => getQuerySnapshot<T>(key),
-    [key],
+    () => getQuerySnapshot<T>(activeKey),
+    [activeKey],
   );
 
   const snap = useSyncExternalStore(sub, getSnap);
 
-  const refetch = useCallback(() => fetchQuery(key), [key]);
+  const refetch = useCallback(() => fetchQuery(activeKey), [activeKey]);
 
   return {
     data: snap.data,
