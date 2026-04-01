@@ -1,5 +1,20 @@
 # @action-llama/action-llama
 
+## 0.24.2
+
+### Patch Changes
+
+- [`823295e`](https://github.com/Action-Llama/action-llama/commit/823295ed093eddb4a58255fc7da25352d984c867) Thanks [@asselstine](https://github.com/asselstine)! - Fix dashboard 529 errors and glitchiness by centralizing SSE, invalidation, and data fetching into a unified query layer.
+
+  **Server-side:** Replace destructive `flushInvalidations()` with version-cursored invalidation log so multiple SSE clients (browser tabs) each receive all signals.
+
+  **Frontend:** Replace per-component `useInvalidation`/`usePolling`/manual `load()` patterns with a centralized `useQuery` hook backed by a query cache and signal bus. This eliminates double-fetches (ActivityPage's dual invalidation hooks), adds in-flight request guards, and replaces native EventSource auto-reconnect with exponential backoff to prevent 529 storms under load.
+
+- [`31aa837`](https://github.com/Action-Llama/action-llama/commit/31aa83706ca1a9e7d35536e77dbcfda9f0341299) Thanks [@asselstine](https://github.com/asselstine)! - Fix activity page filter changes causing request storms. Memoize status filters to prevent reset-offset effect from firing on every SSE-driven render, and add key-change debouncing to useQuery so rapid checkbox toggles coalesce into a single fetch.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.24.2
+
 ## 0.24.1
 
 ### Patch Changes
