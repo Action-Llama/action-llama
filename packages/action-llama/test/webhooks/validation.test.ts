@@ -180,4 +180,17 @@ describe("validateEd25519Signature", () => {
     // Using a number as signature — truthy, but Buffer.from(42, "hex") throws
     expect(validateEd25519Signature(BODY, TIMESTAMP, 42 as any, { key: rawPublicKeyHex })).toBeNull();
   });
+
+  it("catches Buffer.from(null) TypeError in inner loop and continues to next key", () => {
+    // When publicKeyHex is null, Buffer.from(null, "hex") throws a TypeError.
+    // The inner try/catch catches it and executes `continue` (line 92), moving to the
+    // next entry. With a valid second key, the signature check proceeds normally.
+    const sig = signPayload(BODY, TIMESTAMP);
+    const secrets = {
+      nullKey: null as any, // triggers Buffer.from(null, "hex") → TypeError → catch → continue
+      goodKey: rawPublicKeyHex,
+    };
+    // The null key is skipped; the good key matches → returns "goodKey"
+    expect(validateEd25519Signature(BODY, TIMESTAMP, sig, secrets)).toBe("goodKey");
+  });
 });
