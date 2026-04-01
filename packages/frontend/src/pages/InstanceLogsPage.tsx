@@ -75,7 +75,7 @@ export function InstanceLogsPage() {
   usePolling(
     async (signal) => {
       if (!name || !id) return;
-      const params: Record<string, string> = { limit: "100" };
+      const params: Record<string, string> = { lines: "100" };
       if (cursorRef.current) params.cursor = cursorRef.current;
       try {
         const d = await getInstanceLogs(name, id, params, signal);

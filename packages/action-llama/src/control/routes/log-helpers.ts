@@ -1,6 +1,6 @@
 import { promises as fs } from "fs";
 import { resolve } from "path";
-import { readdirSync } from "fs";
+import { readdirSync, existsSync } from "fs";
 
 export const SAFE_AGENT_NAME = /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/;
 export const MAX_LINES = 2000;
@@ -191,10 +191,89 @@ export async function readLastEntries(
   }
 }
 
+/** Construct the path for a specific date's log file. Returns null if file doesn't exist. */
+export function logFileForDate(projectPath: string, prefix: string, date: string): string | null {
+  const filePath = resolve(logsDir(projectPath), `${prefix}-${date}.log`);
+  return existsSync(filePath) ? filePath : null;
+}
+
+/** Read last N entries across multiple daily log files (newest first). */
+export async function readLastEntriesMultiFile(
+  files: string[],
+  limit: number,
+  afterTime?: number,
+  beforeTime?: number,
+  instanceFilter?: string,
+  grep?: RegExp,
+): Promise<{ entries: LogEntry[]; latestFile: string | null; byteOffset: number }> {
+  if (files.length === 0) return { entries: [], latestFile: null, byteOffset: 0 };
+
+  const collected: LogEntry[] = [];
+  let latestByteOffset = 0;
+  const latestFile = files[files.length - 1];
+
+  // Iterate from newest to oldest
+  for (let i = files.length - 1; i >= 0 && collected.length < limit; i--) {
+    const remaining = limit - collected.length;
+    const { entries, byteOffset } = await readLastEntries(
+      files[i], remaining, afterTime, beforeTime, instanceFilter, grep,
+    );
+    if (i === files.length - 1) latestByteOffset = byteOffset;
+    collected.unshift(...entries);
+  }
+
+  // Trim to limit (in case older files provided more than needed)
+  const trimmed = collected.slice(-limit);
+  return { entries: trimmed, latestFile, byteOffset: latestByteOffset };
+}
+
+/** Read entries forward across date boundaries starting from a cursor. */
+export async function readEntriesForwardMultiFile(
+  projectPath: string,
+  prefix: string,
+  cursorDate: string,
+  cursorOffset: number,
+  limit: number,
+  afterTime?: number,
+  beforeTime?: number,
+  instanceFilter?: string,
+  grep?: RegExp,
+): Promise<{ entries: LogEntry[]; newDate: string; newOffset: number }> {
+  const allFiles = findLogFiles(projectPath, prefix);
+  if (allFiles.length === 0) return { entries: [], newDate: cursorDate, newOffset: cursorOffset };
+
+  // Find the index of the cursor's date file (or the first file after it)
+  let startIdx = allFiles.findIndex((f) => {
+    const d = dateFromLogFile(f);
+    return d !== null && d >= cursorDate;
+  });
+  if (startIdx === -1) startIdx = allFiles.length; // all files are older than cursor
+
+  const collected: LogEntry[] = [];
+  let finalDate = cursorDate;
+  let finalOffset = cursorOffset;
+
+  for (let i = startIdx; i < allFiles.length && collected.length < limit; i++) {
+    const fileDate = dateFromLogFile(allFiles[i]);
+    const isCursorFile = fileDate === cursorDate;
+    const offset = isCursorFile ? cursorOffset : 0;
+    const remaining = limit - collected.length;
+
+    const { entries, newOffset } = await readEntriesForward(
+      allFiles[i], offset, remaining, afterTime, beforeTime, instanceFilter, grep,
+    );
+    collected.push(...entries);
+    finalDate = fileDate || cursorDate;
+    finalOffset = newOffset;
+  }
+
+  return { entries: collected.slice(0, limit), newDate: finalDate, newOffset: finalOffset };
+}
+
 // ── Query parsing ─────────────────────────────────────────────────────────────
 
 export function parseQueryParams(query: Record<string, string | undefined>) {
-  let lines = parseInt(query.lines || "", 10);
+  let lines = parseInt(query.lines || query.limit || "", 10);
   if (isNaN(lines) || lines < 1) lines = DEFAULT_LINES;
   if (lines > MAX_LINES) lines = MAX_LINES;
 

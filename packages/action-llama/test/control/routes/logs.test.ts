@@ -5,7 +5,7 @@ import { promises as fsPromises } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { registerLogRoutes } from "../../../src/control/routes/logs.js";
-import { decodeCursor, encodeCursor } from "../../../src/control/routes/log-helpers.js";
+import { decodeCursor, encodeCursor, logFileForDate, parseQueryParams } from "../../../src/control/routes/log-helpers.js";
 
 describe("decodeCursor / encodeCursor", () => {
   it("encodes and decodes a cursor round-trip", () => {
@@ -924,6 +924,130 @@ describe("log API routes", () => {
       } finally {
         statSpy.mockRestore();
       }
+    });
+  });
+
+  // ── Multi-file reading ───────────────────────────────────────────────────
+
+  describe("multi-file log reading", () => {
+    it("initial load reads across two daily files when latest file has fewer than lines entries", async () => {
+      // Yesterday's file has 5 entries, today's has 2 — requesting 5 should span both
+      const yesterday = [
+        pinoLine(30, 1710600001000, "old-1"),
+        pinoLine(30, 1710600002000, "old-2"),
+        pinoLine(30, 1710600003000, "old-3"),
+        pinoLine(30, 1710600004000, "old-4"),
+        pinoLine(30, 1710600005000, "old-5"),
+      ];
+      const today = [
+        pinoLine(30, 1710700001000, "new-1"),
+        pinoLine(30, 1710700002000, "new-2"),
+      ];
+      writeFileSync(join(logsPath, "scheduler-2024-03-17.log"), yesterday.join("\n") + "\n");
+      writeFileSync(join(logsPath, "scheduler-2024-03-18.log"), today.join("\n") + "\n");
+
+      const app = createTestApp(tmpDir);
+      const res = await app.request("/api/logs/scheduler?lines=5");
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.entries).toHaveLength(5);
+      // Should include entries from both files, newest at end
+      expect(data.entries[0].msg).toBe("old-3");
+      expect(data.entries[4].msg).toBe("new-2");
+    });
+
+    it("instance filter finds entries from yesterday when today has none for that instance", async () => {
+      const yesterday = [
+        pinoLine(30, 1710600001000, "inst1-old", { instance: "dev-aa11bb22" }),
+        pinoLine(30, 1710600002000, "inst2-old", { instance: "dev-cc33dd44" }),
+      ];
+      const today = [
+        pinoLine(30, 1710700001000, "inst2-today", { instance: "dev-cc33dd44" }),
+      ];
+      writeFileSync(join(logsPath, "dev-2024-03-17.log"), yesterday.join("\n") + "\n");
+      writeFileSync(join(logsPath, "dev-2024-03-18.log"), today.join("\n") + "\n");
+
+      const app = createTestApp(tmpDir);
+      const res = await app.request("/api/logs/agents/dev/dev-aa11bb22?lines=10");
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.entries).toHaveLength(1);
+      expect(data.entries[0].msg).toBe("inst1-old");
+    });
+
+    it("cursor forward-read across date boundary reads old file remainder + new file start", async () => {
+      const yesterday = [
+        pinoLine(30, 1710600001000, "old-1"),
+        pinoLine(30, 1710600002000, "old-2"),
+        pinoLine(30, 1710600003000, "old-3"),
+      ];
+      writeFileSync(join(logsPath, "scheduler-2024-03-17.log"), yesterday.join("\n") + "\n");
+
+      const app = createTestApp(tmpDir);
+
+      // Initial fetch from yesterday's file
+      const res1 = await app.request("/api/logs/scheduler?lines=2");
+      const data1 = await res1.json();
+      expect(data1.entries).toHaveLength(2);
+      const cursor = data1.cursor;
+
+      // Now a new day's file appears with new entries
+      const today = [
+        pinoLine(30, 1710700001000, "new-1"),
+        pinoLine(30, 1710700002000, "new-2"),
+      ];
+      writeFileSync(join(logsPath, "scheduler-2024-03-18.log"), today.join("\n") + "\n");
+
+      // Cursor forward-read should pick up new file entries
+      const res2 = await app.request(`/api/logs/scheduler?cursor=${encodeURIComponent(cursor)}`);
+      const data2 = await res2.json();
+      expect(data2.entries.length).toBeGreaterThanOrEqual(2);
+      expect(data2.entries.some((e: any) => e.msg === "new-1")).toBe(true);
+      expect(data2.entries.some((e: any) => e.msg === "new-2")).toBe(true);
+    });
+
+    it("limit query param works as alias for lines", async () => {
+      const lines = [];
+      for (let i = 0; i < 10; i++) {
+        lines.push(pinoLine(30, 1710700000000 + i * 1000, `msg-${i}`));
+      }
+      writeFileSync(join(logsPath, "scheduler-2024-03-18.log"), lines.join("\n") + "\n");
+
+      const app = createTestApp(tmpDir);
+      const res = await app.request("/api/logs/scheduler?limit=3");
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.entries).toHaveLength(3);
+    });
+  });
+
+  // ── logFileForDate helper ─────────────────────────────────────────────────
+
+  describe("logFileForDate", () => {
+    it("returns path when file exists", () => {
+      writeFileSync(join(logsPath, "scheduler-2024-03-18.log"), "");
+      const result = logFileForDate(tmpDir, "scheduler", "2024-03-18");
+      expect(result).not.toBeNull();
+      expect(result).toContain("scheduler-2024-03-18.log");
+    });
+
+    it("returns null when file does not exist", () => {
+      const result = logFileForDate(tmpDir, "scheduler", "2024-03-19");
+      expect(result).toBeNull();
+    });
+  });
+
+  // ── parseQueryParams limit alias ──────────────────────────────────────────
+
+  describe("parseQueryParams limit alias", () => {
+    it("accepts limit as alias for lines", () => {
+      const result = parseQueryParams({ limit: "50" });
+      expect(result.lines).toBe(50);
+    });
+
+    it("prefers lines over limit when both provided", () => {
+      const result = parseQueryParams({ lines: "30", limit: "50" });
+      expect(result.lines).toBe(30);
     });
   });
 });
