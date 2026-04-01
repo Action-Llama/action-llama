@@ -1,7 +1,7 @@
 import { useContext, useEffect, useState, useCallback, useRef } from "react";
 import { useQuery } from "../hooks/useQuery";
 import { usePolling } from "../hooks/usePolling";
-import { getInstanceLogs, getLocks } from "../lib/api";
+import { getInstanceLogs, getLocks, summarizeLogs } from "../lib/api";
 import type { LogEntry } from "../lib/api";
 import { InstanceContext } from "../components/InstanceLayout";
 
@@ -49,6 +49,10 @@ export function InstanceLogsPage() {
   const id = ctx?.id ?? "";
   const isRunning = ctx?.isRunning ?? false;
 
+  const [summaryText, setSummaryText] = useState<string | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+
   // Poll locks
   const { data: locksData } = useQuery<{
     locks: {
@@ -95,6 +99,24 @@ export function InstanceLogsPage() {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
   }, [logs, following]);
+
+  const handleSummarize = useCallback(async () => {
+    if (!name || !id) return;
+    setSummaryLoading(true);
+    setSummaryError(null);
+    try {
+      const result = await summarizeLogs(name, id);
+      if (result.error) {
+        setSummaryError(result.error);
+      } else {
+        setSummaryText(result.summary);
+      }
+    } catch (err) {
+      setSummaryError(err instanceof Error ? err.message : "Failed to summarize");
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, [name, id]);
 
   // Detect scroll-away to stop following
   const handleScroll = useCallback(() => {
@@ -152,6 +174,21 @@ export function InstanceLogsPage() {
               {connected ? "Connected" : "Disconnected"}
             </span>
             <button
+              onClick={handleSummarize}
+              disabled={summaryLoading || logs.length === 0}
+              className="px-2 py-1 text-xs rounded bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+            >
+              {summaryLoading ? (
+                <span className="flex items-center gap-1">
+                  <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Summarizing…
+                </span>
+              ) : "Summarize"}
+            </button>
+            <button
               onClick={() => setFollowing((f) => !f)}
               className={`px-2 py-1 text-xs rounded transition-colors ${
                 following
@@ -177,6 +214,41 @@ export function InstanceLogsPage() {
           onScroll={handleScroll}
           className="min-h-[32rem] max-h-[calc(100vh-16rem)] overflow-y-auto scrollbar-thin bg-slate-950 p-3"
         >
+          {summaryText && (
+            <div className="relative mb-3">
+              <div className="bg-purple-900/90 border border-purple-700 rounded-lg p-4 text-sm text-purple-100">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="text-xs font-medium text-purple-300 mb-1">Summary</div>
+                    <p className="leading-relaxed">{summaryText}</p>
+                  </div>
+                  <button
+                    onClick={() => setSummaryText(null)}
+                    className="text-purple-400 hover:text-purple-200 flex-shrink-0"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          {summaryError && (
+            <div className="relative mb-3">
+              <div className="bg-red-900/90 border border-red-700 rounded-lg p-3 text-sm text-red-200 flex items-center justify-between">
+                <span>{summaryError}</span>
+                <button
+                  onClick={() => setSummaryError(null)}
+                  className="text-red-400 hover:text-red-200 ml-2"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          )}
           {logs.length > 0 ? (
             logs.map((entry, i) => {
               const { text, className } = formatLogEntry(entry);

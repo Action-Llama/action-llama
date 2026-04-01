@@ -478,3 +478,17 @@ export async function login(key: string): Promise<boolean> {
 export async function logout(): Promise<void> {
   await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
 }
+
+export function summarizeLogs(
+  name: string,
+  instanceId: string,
+  signal?: AbortSignal,
+): Promise<{ summary: string; cached?: boolean; error?: string }> {
+  return fetchJSON(
+    `/api/logs/agents/${encodeURIComponent(name)}/${encodeURIComponent(instanceId)}/summarize`,
+    {
+      method: "POST",
+      signal,
+    },
+  );
+}

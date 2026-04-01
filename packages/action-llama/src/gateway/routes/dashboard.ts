@@ -2,6 +2,7 @@ import type { Hono } from "hono";
 import { registerDashboardDataRoutes } from "../../control/routes/dashboard.js";
 import { registerDashboardApiRoutes } from "../../control/routes/dashboard-api.js";
 import { registerLogRoutes } from "../../control/routes/logs.js";
+import { registerLogSummaryRoutes } from "../../control/routes/log-summary.js";
 import { registerStatsRoutes } from "../../control/routes/stats.js";
 import type { StatusTracker } from "../../tui/status-tracker.js";
 import type { ApiKeySource } from "../../control/auth.js";
@@ -37,6 +38,7 @@ export async function registerDashboardRoutes(
   // Log API routes (only if projectPath is provided)
   if (projectPath) {
     registerLogRoutes(app, projectPath);
+    registerLogSummaryRoutes(app, projectPath, statsStore);
   }
 
   // Stats API routes
