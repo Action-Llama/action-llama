@@ -102,3 +102,4 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Global local.timeout fallback — no per-agent timeout; global local.timeout=8s kills agent sleeping 30s (result=error); per-agent timeout=8s overrides global local.timeout=120s (global-timeout.test.ts)
 - [x] .env.toml overrides config.toml — defaultAgentScale in .env.toml overrides config.toml value; workQueueSize in .env.toml enforces global queue cap via .env.toml layering (env-toml-override.test.ts)
 - [x] Hot-reload maxWorkQueueSize change — hot-reload config.toml adds maxWorkQueueSize=1; subsequent triggers respect the new cap (trigger #2 dropped); 3 total runs verify initial + 2 post-reload (hot-reload-queue-cap.test.ts)
+- [x] Deprecated config aliases — webhookQueueSize=1 enforces global work queue cap (same as workQueueSize=1); covers scheduler/persistence.ts fallback chain (deprecated-config-aliases.test.ts)
