@@ -620,4 +620,49 @@ describe("EventSourcedWorkQueue", () => {
       appendSpy.mockRestore();
     });
   });
+
+  describe("setAgentMaxSize", () => {
+    it("sets a per-agent max queue size that overrides the global max", async () => {
+      // Global max is 100, but we set agent-a's max to 2
+      queue.setAgentMaxSize("agent-a", 2);
+
+      queue.enqueue("agent-a", "item-1");
+      await flushAsync();
+      queue.enqueue("agent-a", "item-2");
+      await flushAsync();
+
+      // Queue is at its per-agent limit of 2
+      expect(queue.size("agent-a")).toBe(2);
+
+      // Third enqueue should evict the oldest (item-1)
+      queue.enqueue("agent-a", "item-3");
+      await flushAsync();
+
+      expect(queue.size("agent-a")).toBe(2);
+      const first = queue.dequeue("agent-a");
+      const second = queue.dequeue("agent-a");
+      expect(first?.context).toBe("item-2");
+      expect(second?.context).toBe("item-3");
+    });
+
+    it("per-agent max does not affect other agents", async () => {
+      // Set a very small max for agent-a only
+      queue.setAgentMaxSize("agent-a", 1);
+
+      queue.enqueue("agent-a", "a-item-1");
+      await flushAsync();
+      queue.enqueue("agent-a", "a-item-2");
+      await flushAsync();
+
+      queue.enqueue("agent-b", "b-item-1");
+      await flushAsync();
+      queue.enqueue("agent-b", "b-item-2");
+      await flushAsync();
+
+      // agent-a should only hold 1 item (per-agent max)
+      expect(queue.size("agent-a")).toBe(1);
+      // agent-b should hold 2 items (global max of 100 applies)
+      expect(queue.size("agent-b")).toBe(2);
+    });
+  });
 });

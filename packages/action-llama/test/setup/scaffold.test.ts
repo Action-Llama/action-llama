@@ -4,7 +4,7 @@ import { join, resolve } from "path";
 import { tmpdir } from "os";
 import { parse as parseTOML } from "smol-toml";
 import { parseFrontmatter } from "../../src/shared/frontmatter.js";
-import { scaffoldProject } from "../../src/setup/scaffold.js";
+import { scaffoldProject, resolvePackageRoot } from "../../src/setup/scaffold.js";
 import type { ScaffoldAgent } from "../../src/setup/scaffold.js";
 import type { GlobalConfig } from "../../src/shared/config.js";
 import { VERSION } from "../../src/shared/constants.js";
@@ -246,5 +246,19 @@ describe("scaffoldProject", () => {
     expect(content).toContain("description: My custom agent description");
     expect(content).toContain("license: MIT");
     expect(content).toContain("compatibility: claude-3");
+  });
+});
+
+describe("resolvePackageRoot", () => {
+  it("returns a non-empty string path", () => {
+    const root = resolvePackageRoot();
+    expect(typeof root).toBe("string");
+    expect(root.length).toBeGreaterThan(0);
+  });
+
+  it("returns the packages/action-llama root directory (contains package.json)", () => {
+    const root = resolvePackageRoot();
+    // The resolved path should be the package root where package.json lives
+    expect(existsSync(resolve(root, "package.json"))).toBe(true);
   });
 });
