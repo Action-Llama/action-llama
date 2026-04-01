@@ -748,4 +748,281 @@ describe("StatsStore", () => {
     expect(result).toEqual({});
     store.close();
   });
+
+  // --- updateRunSummary tests ---
+
+  describe("updateRunSummary", () => {
+    it("updates the summary field for an existing run", () => {
+      const store = createStore();
+      store.recordRun(makeRun({ instanceId: "sum-run-1", agentName: "reporter" }));
+      store.updateRunSummary("sum-run-1", "Agent completed the task successfully.");
+
+      const row = store.queryRunByInstanceId("sum-run-1");
+      expect(row).toBeDefined();
+      expect(row.summary).toBe("Agent completed the task successfully.");
+      store.close();
+    });
+
+    it("does not affect other runs when updating summary", () => {
+      const store = createStore();
+      store.recordRun(makeRun({ instanceId: "sum-run-a", agentName: "reporter" }));
+      store.recordRun(makeRun({ instanceId: "sum-run-b", agentName: "reporter" }));
+      store.updateRunSummary("sum-run-a", "Summary for A");
+
+      const rowA = store.queryRunByInstanceId("sum-run-a");
+      const rowB = store.queryRunByInstanceId("sum-run-b");
+      expect(rowA.summary).toBe("Summary for A");
+      expect(rowB.summary).toBeNull();
+      store.close();
+    });
+
+    it("overwrites a previously set summary", () => {
+      const store = createStore();
+      store.recordRun(makeRun({ instanceId: "sum-run-2", agentName: "reporter" }));
+      store.updateRunSummary("sum-run-2", "First summary");
+      store.updateRunSummary("sum-run-2", "Updated summary");
+
+      const row = store.queryRunByInstanceId("sum-run-2");
+      expect(row.summary).toBe("Updated summary");
+      store.close();
+    });
+  });
+
+  // --- queryActivityRows tests ---
+
+  describe("queryActivityRows", () => {
+    it("returns all runs when no filters are applied", () => {
+      const store = createStore();
+      const now = Date.now();
+      store.recordRun(makeRun({ agentName: "reporter", startedAt: now - 2000, triggerType: "schedule" }));
+      store.recordRun(makeRun({ agentName: "reviewer", startedAt: now - 1000, triggerType: "webhook" }));
+
+      const rows = store.queryActivityRows({ limit: 10, offset: 0, includeDeadLetters: false });
+      expect(rows).toHaveLength(2);
+      store.close();
+    });
+
+    it("returns runs and dead-letters when includeDeadLetters is true", () => {
+      const store = createStore();
+      const now = Date.now();
+      store.recordRun(makeRun({ agentName: "reporter", startedAt: now - 2000 }));
+      store.recordWebhookReceipt(makeReceipt({ id: "dl-act-1", timestamp: now - 1000, status: "dead-letter", deadLetterReason: "no_match" }));
+
+      const rows = store.queryActivityRows({ limit: 10, offset: 0, includeDeadLetters: true });
+      expect(rows).toHaveLength(2);
+      const dlRow = rows.find(r => r.result === "dead-letter");
+      expect(dlRow).toBeDefined();
+      expect(dlRow!.deadLetterReason).toBe("no_match");
+      store.close();
+    });
+
+    it("excludes dead-letters when includeDeadLetters is false", () => {
+      const store = createStore();
+      const now = Date.now();
+      store.recordRun(makeRun({ agentName: "reporter", startedAt: now - 2000 }));
+      store.recordWebhookReceipt(makeReceipt({ id: "dl-act-2", timestamp: now - 1000, status: "dead-letter", deadLetterReason: "no_match" }));
+
+      const rows = store.queryActivityRows({ limit: 10, offset: 0, includeDeadLetters: false });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].agentName).toBe("reporter");
+      store.close();
+    });
+
+    it("filters by agentName", () => {
+      const store = createStore();
+      const now = Date.now();
+      store.recordRun(makeRun({ agentName: "reporter", startedAt: now - 2000 }));
+      store.recordRun(makeRun({ agentName: "reviewer", startedAt: now - 1000 }));
+
+      const rows = store.queryActivityRows({ limit: 10, offset: 0, includeDeadLetters: false, agentName: "reporter" });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].agentName).toBe("reporter");
+      store.close();
+    });
+
+    it("filters by triggerType", () => {
+      const store = createStore();
+      const now = Date.now();
+      store.recordRun(makeRun({ agentName: "reporter", startedAt: now - 2000, triggerType: "schedule" }));
+      store.recordRun(makeRun({ agentName: "reviewer", startedAt: now - 1000, triggerType: "webhook" }));
+
+      const rows = store.queryActivityRows({ limit: 10, offset: 0, includeDeadLetters: false, triggerType: "schedule" });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].triggerType).toBe("schedule");
+      store.close();
+    });
+
+    it("filters by dbStatuses", () => {
+      const store = createStore();
+      const now = Date.now();
+      store.recordRun(makeRun({ agentName: "reporter", startedAt: now - 2000, result: "completed" }));
+      store.recordRun(makeRun({ agentName: "reviewer", startedAt: now - 1000, result: "error" }));
+
+      const rows = store.queryActivityRows({ limit: 10, offset: 0, includeDeadLetters: false, dbStatuses: ["completed"] });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].result).toBe("completed");
+      store.close();
+    });
+
+    it("returns empty array when dbStatuses is empty array and includeDeadLetters false", () => {
+      const store = createStore();
+      store.recordRun(makeRun({ agentName: "reporter", startedAt: Date.now() }));
+
+      const rows = store.queryActivityRows({ limit: 10, offset: 0, includeDeadLetters: false, dbStatuses: [] });
+      expect(rows).toHaveLength(0);
+      store.close();
+    });
+
+    it("returns only dead-letters when dbStatuses contains only dead-letter", () => {
+      const store = createStore();
+      const now = Date.now();
+      store.recordRun(makeRun({ agentName: "reporter", startedAt: now - 2000 }));
+      store.recordWebhookReceipt(makeReceipt({ id: "dl-only-1", timestamp: now - 1000, status: "dead-letter", deadLetterReason: "parse_error" }));
+
+      const rows = store.queryActivityRows({ limit: 10, offset: 0, includeDeadLetters: true, dbStatuses: ["dead-letter"] });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].result).toBe("dead-letter");
+      store.close();
+    });
+
+    it("respects limit and offset for pagination", () => {
+      const store = createStore();
+      const now = Date.now();
+      for (let i = 0; i < 5; i++) {
+        store.recordRun(makeRun({ agentName: "reporter", startedAt: now - i * 1000, instanceId: `act-run-${i}` }));
+      }
+
+      const page1 = store.queryActivityRows({ limit: 2, offset: 0, includeDeadLetters: false });
+      expect(page1).toHaveLength(2);
+
+      const page2 = store.queryActivityRows({ limit: 2, offset: 2, includeDeadLetters: false });
+      expect(page2).toHaveLength(2);
+      // Pages should not overlap
+      expect(page1[0].instanceId).not.toBe(page2[0].instanceId);
+      store.close();
+    });
+
+    it("includes dead-letters when triggerType is webhook", () => {
+      const store = createStore();
+      const now = Date.now();
+      store.recordRun(makeRun({ agentName: "reporter", startedAt: now - 2000, triggerType: "webhook" }));
+      store.recordWebhookReceipt(makeReceipt({ id: "dl-wh-act-1", timestamp: now - 1000, status: "dead-letter" }));
+
+      const rows = store.queryActivityRows({ limit: 10, offset: 0, includeDeadLetters: true, triggerType: "webhook" });
+      expect(rows).toHaveLength(2);
+      store.close();
+    });
+
+    it("does not include dead-letters when agentName filter is set", () => {
+      const store = createStore();
+      const now = Date.now();
+      store.recordRun(makeRun({ agentName: "reporter", startedAt: now - 2000 }));
+      store.recordWebhookReceipt(makeReceipt({ id: "dl-agent-1", timestamp: now - 1000, status: "dead-letter" }));
+
+      // Even with includeDeadLetters=true, agentName filter should exclude dead-letters
+      const rows = store.queryActivityRows({ limit: 10, offset: 0, includeDeadLetters: true, agentName: "reporter" });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].agentName).toBe("reporter");
+      store.close();
+    });
+  });
+
+  // --- countActivityRows tests ---
+
+  describe("countActivityRows", () => {
+    it("returns 0 when no data exists", () => {
+      const store = createStore();
+      const count = store.countActivityRows({ includeDeadLetters: false });
+      expect(count).toBe(0);
+      store.close();
+    });
+
+    it("counts all runs when no filters applied", () => {
+      const store = createStore();
+      const now = Date.now();
+      store.recordRun(makeRun({ agentName: "reporter", startedAt: now }));
+      store.recordRun(makeRun({ agentName: "reviewer", startedAt: now }));
+
+      expect(store.countActivityRows({ includeDeadLetters: false })).toBe(2);
+      store.close();
+    });
+
+    it("includes dead-letters in count when requested", () => {
+      const store = createStore();
+      const now = Date.now();
+      store.recordRun(makeRun({ agentName: "reporter", startedAt: now }));
+      store.recordWebhookReceipt(makeReceipt({ id: "dl-cnt-1", timestamp: now, status: "dead-letter" }));
+
+      expect(store.countActivityRows({ includeDeadLetters: true })).toBe(2);
+      expect(store.countActivityRows({ includeDeadLetters: false })).toBe(1);
+      store.close();
+    });
+
+    it("filters count by agentName", () => {
+      const store = createStore();
+      const now = Date.now();
+      store.recordRun(makeRun({ agentName: "reporter", startedAt: now }));
+      store.recordRun(makeRun({ agentName: "reporter", startedAt: now }));
+      store.recordRun(makeRun({ agentName: "reviewer", startedAt: now }));
+
+      expect(store.countActivityRows({ includeDeadLetters: false, agentName: "reporter" })).toBe(2);
+      expect(store.countActivityRows({ includeDeadLetters: false, agentName: "reviewer" })).toBe(1);
+      store.close();
+    });
+
+    it("filters count by triggerType", () => {
+      const store = createStore();
+      const now = Date.now();
+      store.recordRun(makeRun({ agentName: "reporter", startedAt: now, triggerType: "schedule" }));
+      store.recordRun(makeRun({ agentName: "reporter", startedAt: now, triggerType: "webhook" }));
+
+      expect(store.countActivityRows({ includeDeadLetters: false, triggerType: "schedule" })).toBe(1);
+      expect(store.countActivityRows({ includeDeadLetters: false, triggerType: "webhook" })).toBe(1);
+      store.close();
+    });
+
+    it("filters count by dbStatuses", () => {
+      const store = createStore();
+      const now = Date.now();
+      store.recordRun(makeRun({ agentName: "reporter", startedAt: now, result: "completed" }));
+      store.recordRun(makeRun({ agentName: "reviewer", startedAt: now, result: "error" }));
+
+      expect(store.countActivityRows({ includeDeadLetters: false, dbStatuses: ["completed"] })).toBe(1);
+      expect(store.countActivityRows({ includeDeadLetters: false, dbStatuses: ["error"] })).toBe(1);
+      expect(store.countActivityRows({ includeDeadLetters: false, dbStatuses: ["completed", "error"] })).toBe(2);
+      store.close();
+    });
+
+    it("returns 0 when dbStatuses is empty and includeDeadLetters false", () => {
+      const store = createStore();
+      store.recordRun(makeRun({ agentName: "reporter", startedAt: Date.now() }));
+
+      expect(store.countActivityRows({ includeDeadLetters: false, dbStatuses: [] })).toBe(0);
+      store.close();
+    });
+
+    it("counts only dead-letters when dbStatuses contains only dead-letter", () => {
+      const store = createStore();
+      const now = Date.now();
+      store.recordRun(makeRun({ agentName: "reporter", startedAt: now }));
+      store.recordWebhookReceipt(makeReceipt({ id: "dl-cnt-only-1", timestamp: now, status: "dead-letter" }));
+      store.recordWebhookReceipt(makeReceipt({ id: "dl-cnt-only-2", timestamp: now, status: "dead-letter" }));
+
+      const count = store.countActivityRows({ includeDeadLetters: true, dbStatuses: ["dead-letter"] });
+      expect(count).toBe(2);
+      store.close();
+    });
+
+    it("counts both runs and dead-letters when queryRuns and wantDeadLetters", () => {
+      const store = createStore();
+      const now = Date.now();
+      store.recordRun(makeRun({ agentName: "reporter", startedAt: now, result: "completed" }));
+      store.recordRun(makeRun({ agentName: "reporter", startedAt: now, result: "error" }));
+      store.recordWebhookReceipt(makeReceipt({ id: "dl-cnt-both-1", timestamp: now, status: "dead-letter" }));
+
+      const count = store.countActivityRows({ includeDeadLetters: true });
+      expect(count).toBe(3);
+      store.close();
+    });
+  });
 });
