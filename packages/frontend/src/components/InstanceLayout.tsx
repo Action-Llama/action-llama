@@ -72,27 +72,20 @@ export function InstanceLayout() {
     <InstanceContext.Provider value={contextValue}>
       <div className="space-y-4">
         {/* Header row */}
+        <div className="space-y-1">
+        <nav className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+          <Link to="/dashboard" className="hover:text-slate-700 dark:hover:text-slate-300 transition-colors">
+            Agents
+          </Link>
+          <span>›</span>
+          <Link to={`/dashboard/agents/${encodeURIComponent(name)}`} className="hover:text-slate-700 dark:hover:text-slate-300 transition-colors">
+            {name}
+          </Link>
+          <span>›</span>
+          <span className="text-slate-900 dark:text-white font-medium font-mono">{id}</span>
+        </nav>
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
-            <Link
-              to={`/dashboard/agents/${encodeURIComponent(name)}`}
-              className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
-              aria-label="Back to agent page"
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 19l-7-7 7-7"
-                />
-              </svg>
-            </Link>
             <div>
               <div className="flex items-center gap-1.5">
                 <h1 className="text-xl font-bold text-slate-900 dark:text-white font-mono break-all">
@@ -138,9 +131,6 @@ export function InstanceLayout() {
                   )}
                 </button>
               </div>
-              <div className="text-xs text-slate-500 dark:text-slate-400">
-                {name}
-              </div>
             </div>
             {run && <ResultBadge result={run.result} />}
             {isRunning && !run && (
@@ -183,6 +173,7 @@ export function InstanceLayout() {
               )}
             </button>
           )}
+        </div>
         </div>
 
         {/* Tab bar */}
