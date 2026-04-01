@@ -1,18 +1,11 @@
-import React, { useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useParams, Link, Outlet, useLocation } from "react-router-dom";
 import { useQuery } from "../hooks/useQuery";
 import { ResultBadge } from "./Badge";
 import { getInstanceDetail, killInstance } from "../lib/api";
 import type { InstanceDetailData } from "../lib/api";
-
-export interface InstanceContextValue {
-  detail: InstanceDetailData | null;
-  name: string;
-  id: string;
-  isRunning: boolean;
-}
-
-export const InstanceContext = React.createContext<InstanceContextValue | null>(null);
+import { InstanceContext } from "../hooks/InstanceContext";
+import type { InstanceContextValue } from "../hooks/InstanceContext";
 
 export function InstanceLayout() {
   const { name, id } = useParams<{ name: string; id: string }>();

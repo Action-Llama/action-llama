@@ -1,7 +1,7 @@
 import { useContext } from "react";
 import { ResultBadge } from "../components/Badge";
 import { fmtDur, fmtCost, fmtTokens, fmtDateTime } from "../lib/format";
-import { InstanceContext } from "../components/InstanceLayout";
+import { InstanceContext } from "../hooks/InstanceContext";
 
 export function InstanceTelemetryPage() {
   const ctx = useContext(InstanceContext);

@@ -7,7 +7,7 @@ import { fmtDateTime, shortId } from "../lib/format";
 import { agentHueStyle } from "../lib/color";
 import { decodeBody } from "../lib/decode-body";
 import { useStatusStream } from "../hooks/StatusStreamContext";
-import { InstanceContext } from "../components/InstanceLayout";
+import { InstanceContext } from "../hooks/InstanceContext";
 
 function prettyJson(raw: string | null | undefined): string {
   if (!raw) return "\u2014";

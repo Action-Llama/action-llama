@@ -3,7 +3,7 @@ import { useQuery } from "../hooks/useQuery";
 import { usePolling } from "../hooks/usePolling";
 import { getInstanceLogs, getLocks, summarizeLogs } from "../lib/api";
 import type { LogEntry } from "../lib/api";
-import { InstanceContext } from "../components/InstanceLayout";
+import { InstanceContext } from "../hooks/InstanceContext";
 
 function formatLogEntry(entry: LogEntry): {
   text: string;
