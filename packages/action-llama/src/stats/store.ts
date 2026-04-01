@@ -49,6 +49,7 @@ export interface TriggerHistoryRow {
   result: string;
   webhookReceiptId: string | null;
   deadLetterReason: string | null;
+  summary?: string | null;
 }
 
 export interface CallEdgeRecord {
@@ -179,6 +180,12 @@ export class StatsStore {
     return (this.db as any).$client
       .prepare("SELECT * FROM runs WHERE instance_id = ? LIMIT 1")
       .get(instanceId) as any;
+  }
+
+  updateRunSummary(instanceId: string, summary: string): void {
+    (this.db as any).$client
+      .prepare("UPDATE runs SET summary = ? WHERE instance_id = ?")
+      .run(summary, instanceId);
   }
 
   queryCallEdgeByTargetInstance(targetInstance: string): { caller_agent: string; caller_instance: string; target_agent: string; target_instance: string; depth: number; started_at: number; duration_ms: number | null; status: string } | undefined {
@@ -473,7 +480,7 @@ export class StatsStore {
       SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
              trigger_type AS triggerType, trigger_source AS triggerSource,
              result, webhook_receipt_id AS webhookReceiptId,
-             NULL AS deadLetterReason
+             NULL AS deadLetterReason, summary
       FROM runs ${runsWhereClause}
     `;
 
@@ -481,7 +488,7 @@ export class StatsStore {
       SELECT timestamp AS ts, NULL AS instanceId, NULL AS agentName,
              'webhook' AS triggerType, source AS triggerSource,
              'dead-letter' AS result, id AS webhookReceiptId,
-             dead_letter_reason AS deadLetterReason
+             dead_letter_reason AS deadLetterReason, NULL AS summary
       FROM webhook_receipts WHERE status = 'dead-letter'
     `;
 

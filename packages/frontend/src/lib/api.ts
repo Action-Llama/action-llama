@@ -158,6 +158,8 @@ export interface ActivityRow {
   result: string;
   webhookReceiptId?: string | null;
   deadLetterReason?: string | null;
+  /** AI-generated summary of the run, if available */
+  summary?: string | null;
 }
 
 export interface TriggerDetailData {
