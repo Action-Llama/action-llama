@@ -143,122 +143,186 @@ export function registerStatsRoutes(
   app.get("/api/stats/activity", (c) => {
     const limit = Math.min(100, Math.max(1, parseInt(c.req.query("limit") || "50", 10) || 50));
     const offset = Math.max(0, parseInt(c.req.query("offset") || "0", 10) || 0);
-    const since = parseInt(c.req.query("since") || "0", 10) || 0;
     const agentFilter = c.req.query("agent") || undefined;
     const triggerTypeFilter = c.req.query("triggerType") || undefined;
     const statusFilter = c.req.query("status") || "all";
 
-    // Base rows from runs table (include dead letters)
-    const rows: any[] = statsStore
-      ? statsStore.queryTriggerHistory({
-          since,
-          limit: 10000, // fetch all then filter/paginate after merge
-          offset: 0,
-          includeDeadLetters: true,
-          agentName: agentFilter,
-          triggerType: triggerTypeFilter,
-        })
-      : [];
+    // Parse status filter into mem statuses (running/pending) and DB statuses (completed/error/etc)
+    const MEM_STATUSES = new Set(["running", "pending"]);
+    const DB_STATUSES = new Set(["completed", "error", "rerun", "dead-letter"]);
 
-    // Merge running instances (avoid duplicates)
-    let allRows: any[] = [...rows];
-    if (statusTracker) {
-      const runningInRows = new Set(rows.map((r: any) => r.instanceId).filter(Boolean));
-      const running = statusTracker
-        .getInstances()
-        .filter((inst) => {
-          if (inst.status !== "running") return false;
-          if (agentFilter && inst.agentName !== agentFilter) return false;
-          if (triggerTypeFilter) {
-            const sep = inst.trigger.indexOf(":");
-            const type = sep > -1 ? inst.trigger.slice(0, sep) : inst.trigger;
-            if (type !== triggerTypeFilter) return false;
-          }
-          return !runningInRows.has(inst.id);
-        })
-        .map((inst) => {
-          const sep = inst.trigger.indexOf(":");
-          return {
-            ts: new Date(inst.startedAt).getTime(),
-            triggerType: sep > -1 ? inst.trigger.slice(0, sep) : inst.trigger,
-            triggerSource: sep > -1 ? inst.trigger.slice(sep + 1).trim() : null,
-            agentName: inst.agentName,
-            instanceId: inst.id,
-            result: "running",
-            webhookReceiptId: null,
-            deadLetterReason: null,
-          };
-        });
-      allRows = [...running, ...allRows];
+    let requestedMemStatuses: string[] | undefined; // undefined = no filter on mem
+    let requestedDbStatuses: string[] | undefined;  // undefined = no filter on db
+
+    if (statusFilter && statusFilter !== "all") {
+      const requested = statusFilter.split(",").map((s: string) => s.trim()).filter(Boolean);
+      requestedMemStatuses = requested.filter((s) => MEM_STATUSES.has(s));
+      requestedDbStatuses = requested.filter((s) => DB_STATUSES.has(s));
     }
 
-    // Merge pending queue items
-    if (controlDeps?.workQueue) {
-      const agents = statusTracker ? statusTracker.getAllAgents() : [];
-      const agentsToCheck = agentFilter
-        ? agents.filter((a) => a.name === agentFilter)
-        : agents;
-      for (const agent of agentsToCheck) {
-        const items = controlDeps.workQueue!.peek(agent.name);
-        for (const item of items) {
-          const ctx = item.context as any;
-          let triggerType = "manual";
-          let triggerSource: string | null = null;
-          let eventSummary: string | null = null;
-          if (ctx && typeof ctx === "object") {
-            if (ctx.type === "webhook") {
-              triggerType = "webhook";
-              triggerSource = ctx.context?.source ?? null;
-              const wctx = ctx.context;
-              if (wctx?.event) {
-                const parts = [wctx.event];
-                if (wctx.action) parts.push(wctx.action);
-                eventSummary = parts.join(" ");
-              }
-            } else if (ctx.type === "schedule") {
-              triggerType = "schedule";
-            } else if (ctx.type === "agent-trigger" || ctx.type === "agent") {
-              triggerType = "agent";
-              triggerSource = ctx.sourceAgent ?? null;
-            } else if (ctx.type === "manual") {
-              triggerType = "manual";
-            } else if (ctx.type) {
-              triggerType = ctx.type;
+    const includeRunning = requestedMemStatuses === undefined || requestedMemStatuses.includes("running");
+    const includePending = requestedMemStatuses === undefined || requestedMemStatuses.includes("pending");
+    const includeDb = requestedDbStatuses === undefined || requestedDbStatuses.length > 0;
+    const includeDeadLetters = requestedDbStatuses === undefined || requestedDbStatuses.includes("dead-letter");
+
+    // Build in-memory rows (running + pending) applying filters
+    const buildMemRows = (): any[] => {
+      const memRows: any[] = [];
+
+      // Collect running instances
+      if (includeRunning && statusTracker) {
+        const running = statusTracker
+          .getInstances()
+          .filter((inst) => {
+            if (inst.status !== "running") return false;
+            if (agentFilter && inst.agentName !== agentFilter) return false;
+            if (triggerTypeFilter) {
+              const sep = inst.trigger.indexOf(":");
+              const type = sep > -1 ? inst.trigger.slice(0, sep) : inst.trigger;
+              if (type !== triggerTypeFilter) return false;
             }
-          }
-          if (triggerTypeFilter && triggerType !== triggerTypeFilter) continue;
-          allRows.push({
-            ts: item.receivedAt.getTime(),
-            triggerType,
-            triggerSource,
-            eventSummary,
-            agentName: agent.name,
-            instanceId: null,
-            result: "pending",
-            webhookReceiptId: null,
-            deadLetterReason: null,
+            return true;
+          })
+          .map((inst) => {
+            const sep = inst.trigger.indexOf(":");
+            return {
+              ts: new Date(inst.startedAt).getTime(),
+              triggerType: sep > -1 ? inst.trigger.slice(0, sep) : inst.trigger,
+              triggerSource: sep > -1 ? inst.trigger.slice(sep + 1).trim() : null,
+              agentName: inst.agentName,
+              instanceId: inst.id,
+              result: "running",
+              webhookReceiptId: null,
+              deadLetterReason: null,
+            };
           });
+        memRows.push(...running);
+      }
+
+      // Collect pending queue items
+      if (includePending && controlDeps?.workQueue) {
+        const agents = statusTracker ? statusTracker.getAllAgents() : [];
+        const agentsToCheck = agentFilter
+          ? agents.filter((a) => a.name === agentFilter)
+          : agents;
+        for (const agent of agentsToCheck) {
+          const items = controlDeps.workQueue!.peek(agent.name);
+          for (const item of items) {
+            const ctx = item.context as any;
+            let triggerType = "manual";
+            let triggerSource: string | null = null;
+            let eventSummary: string | null = null;
+            if (ctx && typeof ctx === "object") {
+              if (ctx.type === "webhook") {
+                triggerType = "webhook";
+                triggerSource = ctx.context?.source ?? null;
+                const wctx = ctx.context;
+                if (wctx?.event) {
+                  const parts = [wctx.event];
+                  if (wctx.action) parts.push(wctx.action);
+                  eventSummary = parts.join(" ");
+                }
+              } else if (ctx.type === "schedule") {
+                triggerType = "schedule";
+              } else if (ctx.type === "agent-trigger" || ctx.type === "agent") {
+                triggerType = "agent";
+                triggerSource = ctx.sourceAgent ?? null;
+              } else if (ctx.type === "manual") {
+                triggerType = "manual";
+              } else if (ctx.type) {
+                triggerType = ctx.type;
+              }
+            }
+            if (triggerTypeFilter && triggerType !== triggerTypeFilter) continue;
+            memRows.push({
+              ts: item.receivedAt.getTime(),
+              triggerType,
+              triggerSource,
+              eventSummary,
+              agentName: agent.name,
+              instanceId: null,
+              result: "pending",
+              webhookReceiptId: null,
+              deadLetterReason: null,
+            });
+          }
         }
       }
-    }
 
-    // Sort rows by status group (pending → running → rest), then by ts descending within each group
-    const statusPriority: Record<string, number> = { pending: 0, running: 1 };
-    allRows.sort((a, b) => {
-      const pa = statusPriority[a.result] ?? 2;
-      const pb = statusPriority[b.result] ?? 2;
-      if (pa !== pb) return pa - pb;
-      return b.ts - a.ts;
-    });
+      // Sort: pending first, then running, then by ts descending within each group
+      const statusPriority: Record<string, number> = { pending: 0, running: 1 };
+      memRows.sort((a, b) => {
+        const pa = statusPriority[a.result] ?? 2;
+        const pb = statusPriority[b.result] ?? 2;
+        if (pa !== pb) return pa - pb;
+        return b.ts - a.ts;
+      });
+
+      return memRows;
+    };
+
+    const memRows = buildMemRows();
+    const memCount = memRows.length;
+
+    let rows: any[];
+    let total: number;
+
+    if (!includeDb || !statsStore) {
+      // Only mem rows — no DB query needed
+      rows = memRows.slice(offset, offset + limit);
+      total = memCount;
+    } else {
+      // Determine which portion of mem rows to include on this page
+      const memSlice = memRows.slice(offset, offset + limit);
+      const memSliceLen = memSlice.length;
+
+      // DB pagination: adjust offset to account for mem rows that precede DB rows
+      const dbOffset = Math.max(0, offset - memCount);
+      const dbLimit = limit - memSliceLen;
+
+      let dbRows: any[] = [];
+      if (dbLimit > 0) {
+        dbRows = statsStore.queryActivityRows({
+          limit: dbLimit,
+          offset: dbOffset,
+          agentName: agentFilter,
+          triggerType: triggerTypeFilter,
+          dbStatuses: requestedDbStatuses,
+          includeDeadLetters,
+        });
+
+        // Dedup: remove DB rows that match a currently-running instance
+        // (a run may appear as "running" in tracker AND as "completed" in DB if it just finished)
+        const runningIds = new Set(
+          memRows
+            .filter((r) => r.result === "running")
+            .map((r) => r.instanceId)
+            .filter(Boolean)
+        );
+        if (runningIds.size > 0) {
+          dbRows = dbRows.filter((r) => !r.instanceId || !runningIds.has(r.instanceId));
+        }
+      }
+
+      const dbCount = statsStore.countActivityRows({
+        agentName: agentFilter,
+        triggerType: triggerTypeFilter,
+        dbStatuses: requestedDbStatuses,
+        includeDeadLetters,
+      });
+
+      rows = [...memSlice, ...dbRows];
+      total = memCount + dbCount;
+    }
 
     // Enrich webhook rows with provider name + event summary from receipts
     if (statsStore) {
-      const receiptIds = allRows
+      const receiptIds = rows
         .filter((r: any) => r.triggerType === "webhook" && r.webhookReceiptId)
         .map((r: any) => r.webhookReceiptId as string);
       if (receiptIds.length > 0) {
         const details = statsStore.getWebhookDetailsBatch(receiptIds);
-        for (const row of allRows) {
+        for (const row of rows) {
           if (row.webhookReceiptId && details[row.webhookReceiptId]) {
             const d = details[row.webhookReceiptId];
             row.triggerSource = d.source;
@@ -270,17 +334,7 @@ export function registerStatsRoutes(
       }
     }
 
-    // Apply status filter (supports comma-separated values, e.g. "pending,running,completed")
-    let filtered = allRows;
-    if (statusFilter && statusFilter !== "all") {
-      const statuses = new Set(statusFilter.split(",").map((s: string) => s.trim()));
-      filtered = allRows.filter((r) => statuses.has(r.result));
-    }
-
-    const total = filtered.length;
-    const paginated = filtered.slice(offset, offset + limit);
-
-    return c.json({ rows: paginated, total, limit, offset });
+    return c.json({ rows, total, limit, offset });
   });
 
   // Single webhook receipt by ID

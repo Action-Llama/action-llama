@@ -72,6 +72,7 @@ export const runsTable = sqliteTable(
   (t) => [
     index("idx_runs_agent").on(t.agentName, t.startedAt),
     index("idx_runs_started").on(t.startedAt),
+    index("idx_runs_result").on(t.result, t.startedAt),
   ]
 );
 

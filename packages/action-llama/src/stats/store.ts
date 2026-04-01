@@ -407,6 +407,164 @@ export class StatsStore {
     `).all(since, limit, offset) as TriggerHistoryRow[];
   }
 
+  /**
+   * Query activity rows with SQL-level filtering and pagination.
+   * Used by the /api/stats/activity endpoint to avoid fetching all rows into memory.
+   *
+   * @param opts.limit       Maximum rows to return
+   * @param opts.offset      Row offset for pagination
+   * @param opts.agentName   Optional: filter by agent name (excludes dead-letters if set)
+   * @param opts.triggerType Optional: filter by trigger type
+   * @param opts.dbStatuses  Optional: if provided, only return rows with these result values.
+   *                         'dead-letter' is handled separately via includeDeadLetters.
+   *                         If the array is empty (after excluding 'dead-letter'), no runs rows are returned.
+   * @param opts.includeDeadLetters  Include dead-letter rows from webhook_receipts
+   */
+  queryActivityRows(opts: {
+    limit: number;
+    offset: number;
+    agentName?: string;
+    triggerType?: string;
+    dbStatuses?: string[];
+    includeDeadLetters: boolean;
+  }): TriggerHistoryRow[] {
+    const { limit, offset, agentName, triggerType, dbStatuses, includeDeadLetters } = opts;
+    const client = (this.db as any).$client;
+
+    // Determine which statuses to filter from runs table
+    const runsStatuses = dbStatuses
+      ? dbStatuses.filter((s) => s !== "dead-letter")
+      : undefined;
+
+    // Should we query runs?
+    const queryRuns = runsStatuses === undefined || runsStatuses.length > 0;
+
+    // Should we UNION dead-letters?
+    // Dead-letters are only webhooks and have no agentName, so skip if agentName filter is set
+    // Skip if triggerType filter is set to a non-webhook type
+    const wantDeadLetters =
+      includeDeadLetters &&
+      (dbStatuses === undefined || dbStatuses.includes("dead-letter")) &&
+      !agentName &&
+      (triggerType === undefined || triggerType === "webhook");
+
+    if (!queryRuns && !wantDeadLetters) {
+      return [];
+    }
+
+    // Build the runs sub-query
+    const runsWhere: string[] = [];
+    const runsParams: unknown[] = [];
+    if (agentName) {
+      runsWhere.push("agent_name = ?");
+      runsParams.push(agentName);
+    }
+    if (triggerType) {
+      runsWhere.push("trigger_type = ?");
+      runsParams.push(triggerType);
+    }
+    if (runsStatuses !== undefined && runsStatuses.length > 0) {
+      runsWhere.push(`result IN (${runsStatuses.map(() => "?").join(",")})`);
+      runsParams.push(...runsStatuses);
+    }
+
+    const runsWhereClause = runsWhere.length > 0 ? `WHERE ${runsWhere.join(" AND ")}` : "";
+    const runsSelect = `
+      SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
+             trigger_type AS triggerType, trigger_source AS triggerSource,
+             result, webhook_receipt_id AS webhookReceiptId,
+             NULL AS deadLetterReason
+      FROM runs ${runsWhereClause}
+    `;
+
+    const dlSelect = `
+      SELECT timestamp AS ts, NULL AS instanceId, NULL AS agentName,
+             'webhook' AS triggerType, source AS triggerSource,
+             'dead-letter' AS result, id AS webhookReceiptId,
+             dead_letter_reason AS deadLetterReason
+      FROM webhook_receipts WHERE status = 'dead-letter'
+    `;
+
+    let sql: string;
+    const params: unknown[] = [...runsParams];
+
+    if (queryRuns && wantDeadLetters) {
+      sql = `${runsSelect} UNION ALL ${dlSelect} ORDER BY ts DESC LIMIT ? OFFSET ?`;
+    } else if (queryRuns) {
+      sql = `${runsSelect} ORDER BY ts DESC LIMIT ? OFFSET ?`;
+    } else {
+      // wantDeadLetters only
+      sql = `${dlSelect} ORDER BY ts DESC LIMIT ? OFFSET ?`;
+    }
+
+    params.push(limit, offset);
+    return client.prepare(sql).all(...params) as TriggerHistoryRow[];
+  }
+
+  /**
+   * Count activity rows with SQL-level filtering.
+   * Mirrors queryActivityRows but returns only a count.
+   */
+  countActivityRows(opts: {
+    agentName?: string;
+    triggerType?: string;
+    dbStatuses?: string[];
+    includeDeadLetters: boolean;
+  }): number {
+    const { agentName, triggerType, dbStatuses, includeDeadLetters } = opts;
+    const client = (this.db as any).$client;
+
+    const runsStatuses = dbStatuses
+      ? dbStatuses.filter((s) => s !== "dead-letter")
+      : undefined;
+
+    const queryRuns = runsStatuses === undefined || runsStatuses.length > 0;
+    const wantDeadLetters =
+      includeDeadLetters &&
+      (dbStatuses === undefined || dbStatuses.includes("dead-letter")) &&
+      !agentName &&
+      (triggerType === undefined || triggerType === "webhook");
+
+    if (!queryRuns && !wantDeadLetters) {
+      return 0;
+    }
+
+    const runsWhere: string[] = [];
+    const runsParams: unknown[] = [];
+    if (agentName) {
+      runsWhere.push("agent_name = ?");
+      runsParams.push(agentName);
+    }
+    if (triggerType) {
+      runsWhere.push("trigger_type = ?");
+      runsParams.push(triggerType);
+    }
+    if (runsStatuses !== undefined && runsStatuses.length > 0) {
+      runsWhere.push(`result IN (${runsStatuses.map(() => "?").join(",")})`);
+      runsParams.push(...runsStatuses);
+    }
+
+    const runsWhereClause = runsWhere.length > 0 ? `WHERE ${runsWhere.join(" AND ")}` : "";
+
+    if (queryRuns && wantDeadLetters) {
+      const row = client.prepare(
+        `SELECT (SELECT COUNT(*) FROM runs ${runsWhereClause}) + (SELECT COUNT(*) FROM webhook_receipts WHERE status = 'dead-letter') AS count`
+      ).get(...runsParams) as any;
+      return row?.count ?? 0;
+    }
+    if (queryRuns) {
+      const row = client.prepare(
+        `SELECT COUNT(*) AS count FROM runs ${runsWhereClause}`
+      ).get(...runsParams) as any;
+      return row?.count ?? 0;
+    }
+    // wantDeadLetters only
+    const row = client.prepare(
+      `SELECT COUNT(*) AS count FROM webhook_receipts WHERE status = 'dead-letter'`
+    ).get() as any;
+    return row?.count ?? 0;
+  }
+
   countTriggerHistory(since: number, includeDeadLetters: boolean, agentName?: string, triggerType?: string): number {
     const client = (this.db as any).$client;
     if (agentName && triggerType) {
