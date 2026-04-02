@@ -1482,6 +1482,140 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     expect(mockedRegisterWebhookBindings).toHaveBeenCalled();
   });
 
+  // ── handleChangedAgent: scale 0→N cron callback paths ──────────────────────
+
+  it("handleChangedAgent scale 0→N cron callback returns early when agent is disabled", async () => {
+    const disabledConfig = makeAgentConfig("agent-a", { scale: 0, schedule: "0 * * * *" });
+    const ctx = makeContext({
+      agentConfigs: [disabledConfig],
+      runnerPools: {},
+    });
+
+    (ctx.statusTracker as any).isAgentEnabled = vi.fn(() => false);
+
+    const idleRunner = makeMockRunner("agent-a");
+    ctx.createRunner = vi.fn(() => idleRunner);
+
+    const enabledConfig = makeAgentConfig("agent-a", { scale: 1, schedule: "0 * * * *" });
+    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
+    mockedLoadAgentConfig.mockReturnValue(enabledConfig);
+    mockedBuildSingleAgentImage.mockResolvedValue("agent-a:v1");
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    const cronJob = ctx.cronJobs.find((j: any) => j._callback) as any;
+    expect(cronJob).toBeDefined();
+
+    const { runWithReruns: mockedRunWithReruns } = await import("../../src/execution/execution.js");
+
+    await cronJob.fire();
+
+    // runWithReruns should NOT have been called — agent is disabled
+    expect(mockedRunWithReruns).not.toHaveBeenCalled();
+    expect(ctx.schedulerCtx.workQueue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("handleChangedAgent scale 0→N cron callback queues work when all runners are busy", async () => {
+    const disabledConfig = makeAgentConfig("agent-a", { scale: 0, schedule: "0 * * * *" });
+    const ctx = makeContext({
+      agentConfigs: [disabledConfig],
+      runnerPools: {},
+    });
+
+    const busyRunner = makeMockRunner("agent-a");
+    busyRunner.isRunning = true;
+    ctx.createRunner = vi.fn(() => busyRunner);
+
+    const enabledConfig = makeAgentConfig("agent-a", { scale: 1, schedule: "0 * * * *" });
+    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
+    mockedLoadAgentConfig.mockReturnValue(enabledConfig);
+    mockedBuildSingleAgentImage.mockResolvedValue("agent-a:v1");
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    const cronJob = ctx.cronJobs.find((j: any) => j._callback) as any;
+    expect(cronJob).toBeDefined();
+
+    await cronJob.fire();
+
+    expect(ctx.schedulerCtx.workQueue.enqueue).toHaveBeenCalledWith(
+      "agent-a",
+      expect.objectContaining({ type: "schedule" })
+    );
+    expect(ctx.logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "agent-a" }),
+      "all runners busy, scheduled run queued"
+    );
+  });
+
+  it("handleChangedAgent scale 0→N cron callback logs warn when queue is full (dropped=true)", async () => {
+    const disabledConfig = makeAgentConfig("agent-a", { scale: 0, schedule: "0 * * * *" });
+    const ctx = makeContext({
+      agentConfigs: [disabledConfig],
+      runnerPools: {},
+    });
+
+    (ctx.schedulerCtx.workQueue.enqueue as any).mockReturnValue({ dropped: true });
+
+    const busyRunner = makeMockRunner("agent-a");
+    busyRunner.isRunning = true;
+    ctx.createRunner = vi.fn(() => busyRunner);
+
+    const enabledConfig = makeAgentConfig("agent-a", { scale: 1, schedule: "0 * * * *" });
+    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
+    mockedLoadAgentConfig.mockReturnValue(enabledConfig);
+    mockedBuildSingleAgentImage.mockResolvedValue("agent-a:v1");
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    const cronJob = ctx.cronJobs.find((j: any) => j._callback) as any;
+    expect(cronJob).toBeDefined();
+
+    await cronJob.fire();
+
+    expect(ctx.logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "agent-a" }),
+      "queue full, oldest event dropped"
+    );
+  });
+
+  it("handleChangedAgent scale 0→N cron callback calls runWithReruns when runner is available", async () => {
+    const disabledConfig = makeAgentConfig("agent-a", { scale: 0, schedule: "0 * * * *" });
+    const ctx = makeContext({
+      agentConfigs: [disabledConfig],
+      runnerPools: {},
+    });
+
+    const idleRunner = makeMockRunner("agent-a");
+    // isRunning is false by default — runner is available
+    ctx.createRunner = vi.fn(() => idleRunner);
+
+    const enabledConfig = makeAgentConfig("agent-a", { scale: 1, schedule: "0 * * * *" });
+    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
+    mockedLoadAgentConfig.mockReturnValue(enabledConfig);
+    mockedBuildSingleAgentImage.mockResolvedValue("agent-a:v1");
+
+    const handle = watchAgents(ctx);
+    await handle._handleAgentChange("agent-a");
+
+    const cronJob = ctx.cronJobs.find((j: any) => j._callback) as any;
+    expect(cronJob).toBeDefined();
+
+    const { runWithReruns: mockedRunWithReruns } = await import("../../src/execution/execution.js");
+
+    await cronJob.fire();
+
+    expect(mockedRunWithReruns).toHaveBeenCalledWith(
+      idleRunner,
+      enabledConfig,
+      0,
+      ctx.schedulerCtx
+    );
+  });
+
   // ── handleChangedAgent: scale N→0 transition ─────────────────────────────
 
   it("handles changed agent: scale N→0 tears down pool, cron, and webhooks", async () => {
