@@ -148,9 +148,16 @@ export function registerLogSummaryRoutes(
       }
     }
 
-    // Build prompt
+    // Build prompt — include all fields so the model sees content, tools, commands, etc.
     const logText = entries
-      .map((e) => `[${new Date(e.time).toISOString()}] ${e.msg}`)
+      .map((e) => {
+        const { level, time, instance, ...rest } = e;
+        const ts = new Date(time).toISOString();
+        // If there are extra fields beyond msg, include them
+        const extra = Object.keys(rest).filter((k) => k !== "msg");
+        if (extra.length === 0) return `[${ts}] ${e.msg}`;
+        return `[${ts}] ${JSON.stringify(rest)}`;
+      })
       .join("\n");
 
     const messages: ChatMessage[] = customPrompt
