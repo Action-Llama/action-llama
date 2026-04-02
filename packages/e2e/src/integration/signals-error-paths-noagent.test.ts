@@ -11,6 +11,8 @@
  *   1. Invalid JSON body → 400
  *   2. Missing `secret` field → 400
  *   3. Valid JSON with a secret (but no container registered) → 403
+ *   4. POST /signals/status: present secret but missing `text` field → 400
+ *      (this check happens after secret validation but before registry lookup)
  *
  * These complement the Docker-required tests in signals-error-paths.test.ts,
  * providing coverage in environments without Docker.
@@ -19,6 +21,7 @@
  *   - execution/routes/signals.ts: JSON parse error → 400
  *   - execution/routes/signals.ts: missing secret → 400
  *   - execution/routes/signals.ts: invalid secret → 403 (empty registry)
+ *   - execution/routes/signals.ts: POST /signals/status missing text → 400
  *   - For /signals/rerun, /signals/status, /signals/trigger, /signals/return
  */
 
@@ -142,6 +145,18 @@ describe(
 
       const res = await signalPost("/signals/status", { secret: "bad-secret", text: "hello" });
       expect(res.status).toBe(403);
+    });
+
+    it("POST /signals/status with present secret but missing text returns 400", async () => {
+      await startHarness();
+      if (!gatewayAccessible) return;
+
+      // The text validation check happens BEFORE containerRegistry.get(secret),
+      // so a valid-looking secret with no text field returns 400, not 403.
+      const res = await signalPost("/signals/status", { secret: "any-secret-value" });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toMatch(/text/i);
     });
 
     // ── /signals/trigger ────────────────────────────────────────────────────
