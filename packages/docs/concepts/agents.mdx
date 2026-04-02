@@ -1,0 +1,140 @@
+---
+title: "Agents"
+description: "What agents are, how they work, and the full runtime lifecycle"
+---
+
+An agent is a directory inside your project that contains instructions and configuration for an autonomous LLM session. Each run is self-contained: the agent wakes up (on a schedule or webhook), executes its task, and shuts down.
+
+## Skills vs Agents
+
+A **skill** is a portable artifact — a `SKILL.md` file (and optionally a `Dockerfile`) that defines what an agent does. Skills can be shared, published, and installed from git repos.
+
+An **agent** is a skill instantiated in your project with local runtime configuration. When you run `al add` to install a skill, it becomes an agent with its own `config.toml` for project-specific settings like credentials, schedule, and model.
+
+## Agent Structure
+
+An agent is a directory with at least two files:
+
+```
+agents/<name>/
+├── SKILL.md        # Portable metadata + instructions (the skill)
+├── config.toml     # Project-local runtime config
+└── Dockerfile      # Optional — custom container image
+```
+
+- **`SKILL.md`** contains portable metadata (name, description, license, compatibility) in its YAML frontmatter, and the agent's instructions in its markdown body.
+- **`config.toml`** contains project-specific runtime configuration: credentials, models, schedule, webhooks, hooks, params, scale, and timeout.
+- **`Dockerfile`** is optional. Defines custom container dependencies. May be provided by the skill author or customized per-project.
+
+The directory name becomes the agent name. No registration is needed — the scheduler discovers agents by scanning for directories that contain a `SKILL.md`.
+
+## How Context is Assembled
+
+At runtime, the agent's LLM session receives two inputs:
+
+### System prompt
+
+The markdown body of `SKILL.md`, prepended with a **preamble** that teaches the agent its [language skills](#language-skills).
+
+### User prompt
+
+Assembled from several blocks:
+
+1. **`<agent-config>`** — JSON of the `params` field from `config.toml`
+2. **`<credential-context>`** — describes which environment variables and tools are available (e.g. `GITHUB_TOKEN`, `git`, `gh`, SSH config)
+3. **`<environment>`** — filesystem constraints and working directory info
+4. **Trigger context** (one of):
+   - *Scheduled run:* "You are running on a schedule. Check for new work and act on anything you find."
+   - *Manual run:* "You have been triggered manually. Check for new work and act on anything you find."
+   - *Webhook:* `<webhook-trigger>` block with the full event payload (source, event, action, repo, etc.)
+   - *Subagent call:* `<skill-subagent>` block with the caller agent name and context
+
+Your `SKILL.md` instructions should reference `<agent-config>` for parameter values and handle both scheduled and webhook triggers if the agent uses both.
+
+## Language Skills
+
+Before the `SKILL.md` instructions run, the agent receives a preamble that teaches it a set of **language skills** — shorthand operations the skill can reference naturally. The preamble explains the underlying mechanics (curl commands, env vars) so agent authors never need to think about them.
+
+| Category | Skills | Description |
+|----------|--------|-------------|
+| **Signals** | `al-rerun`, `al-status`, `al-return`, `al-exit` | Shell commands for signaling the scheduler |
+| **Calls** | `al-subagent`, `al-subagent-check`, `al-subagent-wait` | Agent-to-agent calls with return values |
+| **Locks** | `LOCK(...)`, `UNLOCK(...)`, `HEARTBEAT(...)` | Resource locking for parallel coordination |
+| **Credentials** | `GITHUB_TOKEN`, `gh`, `git`, etc. | Credential access and tool usage |
+
+Agent authors write the shorthand naturally (e.g. `LOCK("github issue acme/app#42")`). The agent learns what it means from the preamble.
+
+See [Agent Commands](/reference/agent-commands) for the complete command reference.
+
+## Runtime Lifecycle
+
+Each agent run is an isolated, short-lived process. By default agents run in Docker containers, but agents can also be configured to run on the host machine under a separate OS user (see [Runtime](/reference/agent-config#runtime)). Here's the full sequence from trigger to exit:
+
+1. **Trigger fires** — a cron tick, webhook event, manual `al run`, or `al-subagent` from another agent.
+2. **Work is queued** — if all runners for the target agent are busy, the trigger is placed in a SQLite-backed work queue until a runner becomes available.
+3. **Process launches** — a fresh container (or host-user process) starts with credentials and config passed via environment variables and volume mounts (or temp directories).
+4. **Credentials are loaded** — the entry point reads credential files from the credentials path (`/credentials/` in containers, or the `AL_CREDENTIALS_PATH` temp directory in host-user mode). Key credentials are injected as env vars the LLM can use directly: `GITHUB_TOKEN`, `GH_TOKEN`, `SENTRY_AUTH_TOKEN`, `GIT_SSH_COMMAND`, git author identity, etc.
+5. **Hooks run** — if `hooks.pre` steps are defined in `config.toml`, they execute sequentially (clone repos, fetch data, run shell commands) to stage context before the LLM starts. See [Dynamic Context](/guides/dynamic-context).
+6. **LLM session starts** — the model receives the `SKILL.md` instructions as system prompt and the assembled user prompt.
+7. **Agent runs autonomously** — the LLM executes tools (bash, file I/O, API calls) until it finishes or hits an error. Rate-limited API calls are retried automatically (up to 5 attempts with exponential backoff).
+8. **Error detection** — the runtime watches for repeated auth/permission failures (e.g. "bad credentials", "permission denied"). After 3 such errors, it aborts early.
+9. **Signals are processed** — the agent uses `al-rerun`, `al-status`, `al-return`, and `al-exit` commands to write signal files. The scheduler reads them after the session ends.
+10. **Process exits** — exit code 0 (success), 1 (error), or 124 (timeout). Any held locks are released automatically. The scheduler logs the result and the container is removed (or the working directory is cleaned up in host-user mode).
+
+## Timeout
+
+Each agent process has a self-termination timer controlled by `timeout` in the agent's `config.toml` (falls back to `local.timeout` in project `config.toml`, then 900 seconds). If the timer fires, the process exits with code 124. This is a hard kill — there is no graceful shutdown.
+
+See [Agent Config — Timeout](/reference/agent-config#timeout) for configuration.
+
+## Reruns
+
+When a scheduled agent runs `al-rerun`, the scheduler immediately re-runs it. This continues until the agent completes without `al-rerun` (no more work), hits an error, or reaches the `maxReruns` limit (default: 10, configurable in `config.toml`). This lets an agent drain its work queue without waiting for the next cron tick.
+
+Webhook-triggered and agent-called runs do not re-run — they respond to a single event.
+
+## Work Queue
+
+When a trigger fires (webhook event or agent call) but all runner instances for the target agent are busy, the event is placed in a **work queue** instead of being dropped. Items are dequeued and executed as runners become available.
+
+The queue is backed by SQLite (`.al/work-queue.db`), so pending items survive scheduler restarts. Each agent has its own queue. If the queue is full, the oldest items are dropped.
+
+You can see queue depth per agent in `al stat` output (the `queue` column).
+
+| Setting | Location | Default | Description |
+|---------|----------|---------|-------------|
+| `workQueueSize` | `config.toml` | `100` | Maximum queued work items per agent |
+
+## Container Filesystem
+
+When running in the default container runtime:
+
+| Path | Mode | Contents |
+|------|------|----------|
+| `/app` | read-only | Action Llama application + node_modules |
+| `/credentials` | read-only | Mounted credential files (`/<type>/<instance>/<field>`) |
+| `/tmp` | read-write (tmpfs, 2GB) | Agent working directory — repos, scratch files, SSH keys |
+| `/workspace` | read-write (2GB) | Persistent workspace |
+| `/home/node` | read-write (64MB) | Home directory |
+
+The root filesystem is read-only. All agent work should happen in `/tmp`.
+
+### Host-User Filesystem
+
+When running in [host-user mode](/reference/agent-config#runtime), the agent runs directly on the host:
+
+| Path | Contents |
+|------|----------|
+| `/tmp/al-runs/<instance-id>/` | Working directory (chowned to agent user) |
+| `AL_CREDENTIALS_PATH` (temp dir) | Staged credential files (`/<type>/<instance>/<field>`) |
+
+The agent has access to the host filesystem but runs as a separate OS user, so it cannot access other users' files or credentials.
+
+## See Also
+
+- [Getting Started](/first-steps/getting-started) — create your first agent
+- [Agent Commands](/reference/agent-commands) — signals, calls, and lock commands
+- [Agent Config Reference](/reference/agent-config) — SKILL.md and config.toml fields
+- [Agent Docs](/reference/agent-docs) — SKILL.md, AGENTS.md, CLAUDE.md
+- [Credentials](/reference/credentials) — credential types and storage
+- [Web Dashboard](/reference/web-dashboard) — monitoring agents in your browser

@@ -1,0 +1,505 @@
+---
+title: "CLI Commands"
+description: "Complete reference for all Action Llama CLI commands"
+---
+
+## `al new <name>`
+
+Creates a new Action Llama project. Runs interactive setup to configure credentials and LLM defaults.
+
+```bash
+npx @action-llama/action-llama new my-project
+```
+
+Creates:
+- `my-project/package.json` — with `@action-llama/action-llama` dependency
+- `my-project/.gitignore`
+- `my-project/.workspace/` — runtime state directory
+- Credential files in `~/.action-llama/credentials/`
+
+## `al doctor`
+
+Checks all agent credentials and interactively prompts for any that are missing. Discovers agents in the project, collects their credential requirements (plus any webhook secret credentials), and ensures each one exists on disk. Also generates a gateway API key if one doesn't exist yet (used for dashboard and CLI authentication).
+
+Additionally validates:
+- Webhook trigger field configurations (misspelled fields, wrong types)
+- Host-user runtime setup (OS user existence, sudoers configuration). On Linux, auto-creates users and sudoers rules. On macOS, prints manual setup instructions.
+
+```bash
+al doctor
+al doctor -E production
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment name — pushes credentials to server and reconciles IAM |
+| `--strict` | Treat unknown config fields as errors instead of warnings |
+
+## `al run <agent>`
+
+Manually triggers a single agent run. The agent runs once and the process exits when it completes. Useful for testing, debugging, or one-off runs without starting the full scheduler.
+
+```bash
+al run dev
+al run reviewer -p ./my-project
+al run dev -E production
+al run dev --headless
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment name |
+| `-H, --headless` | Non-interactive mode (no TUI, no credential prompts) |
+
+## `al start`
+
+Starts the scheduler. Runs all agents on their configured schedules and listens for webhooks.
+
+```bash
+al start
+al start -w                   # Enable web dashboard
+al start -e                   # VPS deployment: expose gateway publicly
+al start --port 3000          # Custom gateway port
+al start -H                   # Headless (no TUI)
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment name |
+| `-w, --web-ui` | Enable web dashboard (see [Web Dashboard](/reference/web-dashboard)) |
+| `-e, --expose` | Bind gateway to `0.0.0.0` (public) while keeping local-mode features |
+| `-H, --headless` | Non-interactive mode (no TUI, no credential prompts) |
+| `--port <number>` | Gateway port (overrides `[gateway].port` in config) |
+
+## `al stop`
+
+Stops the scheduler and clears all pending agent work queues. Sends a stop signal to the gateway. In-flight runs continue until they finish, but no new runs will start.
+
+```bash
+al stop
+al stop -E production
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment name |
+
+## `al stat`
+
+Shows status of all discovered agents in the project. Displays each agent's schedule, credentials, webhook configuration, and queue depth.
+
+```bash
+al stat
+al stat -E production
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment name |
+
+## `al logs [agent]`
+
+View log files for a specific agent, or scheduler logs if no agent is specified.
+
+```bash
+al logs                       # Scheduler logs
+al logs dev
+al logs dev -n 100            # Show last 100 entries
+al logs dev -f                # Follow/tail mode
+al logs dev -d 2025-01-15    # Specific date
+al logs dev -r                # Raw JSON log output
+al logs dev -i abc123         # Specific instance
+al logs dev -E production     # Remote agent logs
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment name |
+| `-n, --lines <N>` | Number of log entries (default: 50) |
+| `-f, --follow` | Tail mode — watch for new entries |
+| `-d, --date <YYYY-MM-DD>` | View a specific date's log file |
+| `-r, --raw` | Raw JSON log output (no formatting) |
+| `-i, --instance <id>` | Filter to a specific instance ID |
+
+### Troubleshooting logs
+
+```bash
+al logs                       # Scheduler logs
+al logs <agent>               # Agent logs
+al logs <agent> -f            # Follow mode
+al logs <agent> -d 2025-01-15 # Specific date
+al env logs production -f     # Server system logs via SSH
+```
+
+## `al stats [agent]`
+
+Show historical run statistics from the local SQLite stats database. Without an agent name, shows a global summary across all agents. With an agent name, shows detailed per-run history.
+
+```bash
+al stats                      # Global summary (last 7 days)
+al stats dev                  # Per-run detail for dev agent
+al stats --since 24h          # Last 24 hours only
+al stats dev -n 50            # Last 50 runs for dev agent
+al stats --calls              # Agent-to-agent call graph summary
+al stats --json               # JSON output
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-s, --since <duration>` | Time window: e.g. `24h`, `7d`, `30d` (default: `7d`) |
+| `-n <N>` | Number of recent runs to show (default: 20) |
+| `--json` | Output as JSON |
+| `--calls` | Show agent-to-agent call graph summary instead of run history |
+
+## `al pause [name]`
+
+Pause the scheduler or a single agent. Without a name, pauses the entire scheduler — all cron jobs stop firing. With a name, pauses that agent — its cron job stops firing and webhook events are ignored. In-flight runs continue until they finish. Requires the gateway.
+
+```bash
+al pause                              # Pause the scheduler
+al pause dev                          # Pause a single agent
+al pause dev -E production
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment name |
+
+## `al resume [name]`
+
+Resume the scheduler or a single agent. Without a name, resumes the entire scheduler. With a name, resumes that agent — its cron job resumes firing and webhooks are accepted again.
+
+```bash
+al resume                             # Resume the scheduler
+al resume dev                         # Resume a single agent
+al resume dev -E production
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment name |
+
+## `al kill <target>`
+
+Kill an agent (all running instances) or a single instance by ID. Tries the target as an agent name first; if not found, falls back to instance ID. This does **not** pause the agent — if it has a schedule, a new run will start at the next cron tick. To fully stop an agent, pause it first, then kill.
+
+```bash
+al kill dev                           # Kill all instances of an agent
+al kill my-agent-abc123               # Kill a single instance by ID
+al kill dev -E production
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment name |
+
+## `al chat [agent]`
+
+Open an interactive console. Without an agent name, opens the project-level console for creating and managing agents. With an agent name, opens an interactive session scoped to that agent's environment — credentials are loaded and injected as environment variables (e.g. `GITHUB_TOKEN`, `GIT_SSH_COMMAND`), and the working directory is set to the agent's directory.
+
+```bash
+al chat                # project-level console
+al chat dev            # interactive session with dev agent's credentials
+```
+
+| Option | Description |
+|--------|-------------|
+| `[agent]` | Agent name — loads its credentials and environment |
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
+When running in agent mode, the command probes the gateway and warns if it is not reachable:
+
+```
+Warning: No gateway detected at http://localhost:8080. Resource locks, agent calls, and signals are unavailable.
+Start the scheduler with `al start` to enable these features.
+```
+
+The agent's SKILL.md is loaded as reference context but is **not** auto-executed — you drive the session interactively.
+
+## `al push [agent]`
+
+Deploy your project to a server over SSH. Requires a `[server]` section in your environment file. See [VPS Deployment](/concepts/vps-deployment) for how it works under the hood.
+
+```bash
+al push -E production                    # Full project push
+al push dev -E production                # Push only the dev agent (hot-reloaded)
+al push --dry-run -E production          # Preview what would be synced
+al push --creds-only -E production       # Sync only credentials
+```
+
+Without an agent name, pushes the entire project and can restart the remote service. With an agent name, pushes only that agent's files and credentials — the running scheduler detects the change and hot-reloads the agent without a full restart.
+
+| Option | Description |
+|--------|-------------|
+| `[agent]` | Agent name — push only this agent (hot-reloaded, no restart) |
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment with `[server]` config |
+| `--dry-run` | Show what would be synced without making changes |
+| `--no-creds` | Skip credential sync |
+| `--creds-only` | Sync only credentials (skip project files) |
+| `--files-only` | Sync only project files (skip credentials) |
+| `-a, --all` | Sync project files, credentials, and restart service |
+| `--force-install` | Force `npm install` even if dependencies appear unchanged |
+
+## Environment Commands
+
+### `al env init <name>`
+
+Create a new environment configuration file at `~/.action-llama/environments/<name>.toml`.
+
+```bash
+al env init production --type server
+```
+
+| Option | Description |
+|--------|-------------|
+| `--type <type>` | Environment type: `server` |
+
+### `al env list`
+
+List all configured environments.
+
+```bash
+al env list
+```
+
+### `al env show <name>`
+
+Display the contents of an environment configuration file.
+
+```bash
+al env show production
+```
+
+### `al env set [name]`
+
+Bind the current project to an environment by writing the environment name to `.env.toml`. Omit the name to unbind.
+
+```bash
+al env set production        # Bind project to "production"
+al env set                   # Unbind project from any environment
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
+### `al env check <name>`
+
+Verify that an environment is provisioned and configured correctly. Checks SSH connectivity, Docker availability, and server readiness.
+
+```bash
+al env check production
+```
+
+### `al env prov [name]`
+
+Provision a new VPS and save it as an environment. Supports Vultr and Hetzner. If the name is omitted, you'll be prompted for one. See [Deploying to a VPS](/guides/deploying-to-vps) for a walkthrough.
+
+```bash
+al env prov production
+```
+
+### `al env deprov <name>`
+
+Tear down a provisioned environment. Stops containers, cleans up remote credentials, optionally deletes DNS records, and optionally deletes the VPS instance if it was provisioned via `al env prov`.
+
+```bash
+al env deprov staging
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
+### `al env logs [name]`
+
+View server system logs (systemd journal) via SSH. If the name is omitted, uses the project's bound environment.
+
+```bash
+al env logs production
+al env logs production -n 200     # Last 200 lines
+al env logs production -f          # Follow mode
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-n, --lines <N>` | Number of log lines (default: 50) |
+| `-f, --follow` | Tail mode — watch for new entries |
+
+## Credential Commands
+
+### `al creds ls`
+
+Lists all stored credentials grouped by type, showing field names but not values.
+
+```bash
+al creds ls
+```
+
+### `al creds add <ref>`
+
+Add or update a credential. Runs the interactive prompter with validation for the credential type.
+
+```bash
+al creds add github_token              # default instance
+al creds add github_webhook_secret:myapp
+al creds add git_ssh:prod
+```
+
+The `<ref>` format is `type` or `type:instance`. If no instance is specified, defaults to `default`. If the credential already exists, you'll be prompted to update it.
+
+### `al creds rm <ref>`
+
+Remove a credential from disk.
+
+```bash
+al creds rm github_token               # default instance
+al creds rm github_webhook_secret:myapp
+```
+
+### `al creds types`
+
+Browse available credential types interactively. Presents a searchable list of all built-in credential types. On selection, shows the credential's fields, environment variables, and agent context, then offers to add it immediately.
+
+```bash
+al creds types
+```
+
+## Agent Commands
+
+### `al agent new`
+
+Interactive wizard to create a new agent from a template. Prompts for agent type (dev, reviewer, devops, or custom), agent name, and then runs `al agent config` to configure the new agent.
+
+```bash
+al agent new
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
+### `al agent config <name>`
+
+Interactively configure an existing agent. Opens a menu to edit each section of the agent's `config.toml`: credentials, model, schedule, webhooks, and params. Saves changes to `agents/<name>/config.toml` and runs `al doctor` on completion to validate the configuration.
+
+```bash
+al agent config dev
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
+## Skill Management
+
+### `al add <repo>`
+
+Install a skill from a git repository. Clones the repo, discovers `SKILL.md` files (at the root or under `skills/*/`), copies the skill into `agents/<name>/`, creates a `config.toml` with a `source` field pointing back to the repo, and runs `al config` for interactive setup.
+
+Accepts GitHub shorthand (`author/repo`) or a full git URL.
+
+```bash
+al add acme/dev-skills
+al add acme/dev-skills --skill reviewer
+al add https://github.com/acme/dev-skills.git
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-s, --skill <name>` | Skill name (if the repo contains multiple skills) |
+
+### `al config <name>`
+
+Shortcut for `al agent config <name>`. Interactively configure an agent's runtime settings in `config.toml`.
+
+```bash
+al config dev
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
+### `al update [agent]`
+
+Update installed skills from their source repos. For each agent with a `source` field in its `config.toml`, clones the source repo, compares the upstream `SKILL.md` with the local copy, and prompts to accept changes. Only updates `SKILL.md` — `config.toml` is never touched.
+
+```bash
+al update              # Check all agents
+al update dev          # Check only the dev agent
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
+## Webhook Commands
+
+### `al webhook replay <fixture>`
+
+Load a webhook fixture file (JSON) and test which agents would match. Useful for debugging webhook configurations without sending real webhooks. The fixture file must have `headers` and `body` properties.
+
+```bash
+al webhook replay test/fixtures/github-issue.json
+al webhook replay payload.json --source my-github
+al webhook replay payload.json --run              # Interactively run a matched agent
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-r, --run` | Interactively run a matched agent after simulation |
+| `-s, --source <name>` | Webhook source name from `config.toml` (auto-detected from headers if omitted) |
+
+## MCP Commands
+
+### `al mcp serve`
+
+Starts the MCP stdio server for Claude Code integration. Claude Code spawns this as a subprocess — you don't typically run it directly. See [Claude Integration](/integrations/claude) for setup and usage.
+
+```bash
+al mcp serve
+al mcp serve -p ./my-project
+al mcp serve -E production
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment name |
+
+### `al mcp init`
+
+Writes or updates `.mcp.json` in the project root so Claude Code auto-discovers the MCP server.
+
+```bash
+al mcp init
+al mcp init -p ./my-project
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+
+## Global Options
+
+These options are available on most commands:
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project <dir>` | Project directory (default: `.`) |
+| `-E, --env <name>` | Environment name (also `AL_ENV` env var or `environment` field in `.env.toml`) |

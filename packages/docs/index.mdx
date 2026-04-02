@@ -1,0 +1,46 @@
+---
+title: "Action Llama"
+description: "Deploy agentic workflows to your favourite VPS"
+---
+
+Open source and MIT Licensed.
+
+Use Claude, OpenAI, or other models to:
+
+- **Automate your dev workflow**: agents handle issues, PRs, monitoring
+- **Automate communications**: have an agent create a summary of product changes for the last week and tweet it out
+
+You're **progamming with prompts**: any process can be automated using an agent.
+
+<CardGroup cols={2}>
+  <Card title="First Steps" icon="rocket" href="/first-steps/getting-started">
+    Zero to running agent in minutes
+  </Card>
+  <Card title="Guides" icon="book" href="/guides/deploying-to-vps">
+    Deploy, scale, optimize, and orchestrate
+  </Card>
+  <Card title="Concepts" icon="lightbulb" href="/concepts/agents">
+    Understand agents, scheduling, and locks
+  </Card>
+  <Card title="Reference" icon="terminal" href="/reference/cli-commands">
+    Every CLI flag, config field, and command
+  </Card>
+</CardGroup>
+
+## Key features
+
+- **Docker isolation** — each run gets its own container with only the credentials it needs
+- **Git-native** — define agents in a git repo, add custom ones, share them across teams
+- **BYOM** — bring your own model (Anthropic, OpenAI, Groq, Google Gemini, xAI, Mistral, OpenRouter, or any custom provider)
+- **Deploy anywhere** — run locally for development, `al push` to a VPS for production
+- **Webhook + cron** — react to GitHub issues, Sentry alerts, Linear tickets, or poll on a schedule
+- **Multi-agent** — agents can call other agents with `al-subagent` and collect results with `al-subagent-wait`
+- **Resource locks** — coordinate parallel instances with automatic deadlock detection
+- **Web dashboard** — live agent status and streaming logs in your browser
+
+## Philosophy
+
+- **Agents are infrastructure**: they should be versioned, repeatable, and deployable. Agents work together, so they should be bundled together.
+- **Stateless by default**: state is easy to add to a stateless system. Dynamic agent context strategies can be added if desired.
+- **Bring your own models**: there are many models out there, each appropriate to a different task. You should be able to use any of them.
+- **Minimize the harness and lean on the model**: models are improving constantly, that's why this framework lets you program with prompts. The harness should focus on orchestration only.

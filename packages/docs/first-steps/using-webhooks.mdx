@@ -1,0 +1,110 @@
+---
+title: "Using Webhooks"
+description: "Tutorial: set up a GitHub Issues webhook to trigger an agent end-to-end"
+---
+
+This tutorial walks you through setting up a GitHub webhook so that labeling an issue triggers an agent run. By the end, you'll have an agent that responds to GitHub events in real time.
+
+## What you'll build
+
+An agent that triggers when a GitHub issue is labeled `"agent"`. The agent runs, processes the issue, and you see the result in your terminal.
+
+## Prerequisites
+
+- An Action Llama project with an agent (see [Getting Started](/first-steps/getting-started))
+- A GitHub repo you control
+- A GitHub Personal Access Token (the agent already has one if you ran `al doctor`)
+
+## 1. Add a webhook source to `config.toml`
+
+Define a named webhook source in your project's `config.toml`:
+
+```toml
+[webhooks.my-github]
+type = "github"
+credential = "MyGithubWebhookSecret"
+```
+
+## 2. Add the credential
+
+```bash
+npx al doctor
+```
+
+It will prompt you for any missing credentials.
+
+For the webhook, enter a random secret string (e.g. generate one with `openssl rand -hex 20`). Save this value — you'll need it when configuring GitHub.
+
+## 3. Add a webhook trigger to your agent
+
+In your agent's `config.toml`, add a webhook trigger:
+
+```toml
+# agents/<name>/config.toml
+[[webhooks]]
+source = "my-github"
+events = ["issues"]
+actions = ["labeled"]
+labels = ["agent"]
+```
+
+This tells the agent to trigger when an issue in any repo is labeled with `"agent"`. You can also filter by repo:
+
+```toml
+[[webhooks]]
+source = "my-github"
+repos = ["your-org/your-repo"]
+events = ["issues"]
+actions = ["labeled"]
+labels = ["agent"]
+```
+
+## 4. Start ngrok for local development
+
+Your local machine isn't reachable from the internet, so GitHub can't deliver webhooks directly. Use ngrok to create a tunnel:
+
+```bash
+ngrok http 8080
+```
+
+Copy the HTTPS URL (e.g. `https://abc123.ngrok-free.app`).
+
+## 5. Configure the GitHub webhook
+
+In your GitHub repo:
+
+1. Go to **Settings > Webhooks > Add webhook**
+2. **Payload URL:** `https://abc123.ngrok-free.app/webhooks/github` (your ngrok URL + `/webhooks/github`)
+3. **Content type:** `application/json`
+4. **Secret:** paste the same secret you used in step 2
+5. **Events:** select "Let me select individual events" and check **Issues**
+6. Click **Add webhook**
+
+## 6. Start the scheduler
+
+```bash
+npx al start
+```
+
+## 7. Test it
+
+Go to your GitHub repo, open (or create) an issue, and add the label `"agent"`.
+
+In your terminal, you should see the agent pick up the webhook event and start running. Check the logs:
+
+```bash
+npx al logs dev
+```
+
+## How it works
+
+1. GitHub sends a POST request to your ngrok URL when the issue is labeled
+2. The gateway receives it at `/webhooks/github`, verifies the HMAC signature against your secret
+3. The event is matched against your agent's webhook filters (`events: issues`, `actions: labeled`, `labels: agent`)
+4. The agent is triggered with the full webhook payload injected into its prompt as a `<webhook-trigger>` block
+
+## Next steps
+
+- [Deploying to a VPS](/guides/deploying-to-vps) — deploy to avoid needing ngrok
+- [Webhooks Reference](/reference/webhooks) — all providers and filter fields
+- [Scaling Agents](/guides/scaling-agents) — handle high webhook volume with parallel instances

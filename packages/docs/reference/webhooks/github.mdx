@@ -1,0 +1,56 @@
+---
+title: "GitHub Webhooks"
+description: "Filter fields, setup, and examples for GitHub webhook triggers"
+---
+
+GitHub webhooks let agents respond to repository events like issues, pull requests, and pushes.
+
+## Filter Fields (all optional)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repos` | string[] | Only trigger for these repos |
+| `orgs` | string[] | Only trigger for these organizations |
+| `org` | string | Only trigger for this organization (singular form) |
+| `events` | string[] | GitHub event types (issues, pull_request, push, etc.) |
+| `actions` | string[] | Event actions (opened, labeled, closed, etc.) |
+| `labels` | string[] | Only when issue/PR has these labels |
+| `assignee` | string | Only when assigned to this user |
+| `author` | string | Only for this author |
+| `branches` | string[] | Only for these branches |
+| `conclusions` | string[] | Only for workflow_run events with these conclusions (success, failure, cancelled, skipped, timed_out, action_required) |
+
+## Setup
+
+1. In your GitHub repo, go to **Settings > Webhooks > Add webhook**
+2. Set the payload URL to your Action Llama gateway (e.g. `https://your-server:8080/webhooks/github`)
+3. Set content type to `application/json`
+4. Set the secret to match the `github_webhook_secret` credential instance referenced by the webhook source in `config.toml`
+5. Select the events you want to receive
+
+## Using ngrok for Local Development
+
+```bash
+ngrok http 8080
+```
+
+Use the ngrok URL as your webhook payload URL in GitHub. See [Using Webhooks](/first-steps/using-webhooks) for a full tutorial.
+
+## Example Configuration
+
+```toml
+# In project config.toml
+[webhooks.my-github]
+type = "github"
+credential = "MyOrg"
+```
+
+```toml
+# In agents/<name>/config.toml
+[[webhooks]]
+source = "my-github"
+repos = ["acme/app"]
+events = ["issues"]
+actions = ["labeled"]
+labels = ["agent"]
+```

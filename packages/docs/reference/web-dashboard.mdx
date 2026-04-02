@@ -1,0 +1,86 @@
+---
+title: "Web Dashboard"
+description: "Live web dashboard for monitoring agent status, streaming logs, and triggering runs"
+---
+
+Action Llama includes an optional web-based dashboard for monitoring agents in your browser. It provides a live view of agent statuses and streaming logs — similar to the terminal TUI, but accessible from any browser.
+
+## Enabling the Dashboard
+
+Pass `-w` or `--web-ui` to `al start`:
+
+```bash
+al start -w
+```
+
+The dashboard URL is shown in the TUI header and in headless log output once the scheduler starts:
+
+```
+Dashboard: http://localhost:8080/dashboard
+```
+
+The port is controlled by the `[gateway].port` setting in `config.toml` (default: `8080`).
+
+## Authentication
+
+The dashboard is protected by the gateway API key. Navigate to `http://localhost:8080/dashboard` and you'll be redirected to a login page where you paste your API key. On success, an `al_session` cookie is set (HttpOnly, SameSite=Strict) so all subsequent requests — including SSE streams — are authenticated automatically.
+
+A **Logout** link is available in the dashboard header.
+
+See [Gateway API — Authentication](/reference/gateway-api#authentication) for details on key management and protected routes.
+
+## Dashboard Pages
+
+### Main Page — `/dashboard`
+
+Displays a live overview of all agents:
+
+| Column | Description |
+|--------|-------------|
+| Agent | Agent name (click to view logs) |
+| State | Current state: idle, running, building, or error |
+| Status | Latest status text or error message |
+| Last Run | Timestamp of the most recent run |
+| Duration | How long the last run took |
+| Next Run | When the next scheduled run will happen |
+| Actions | **Run** (trigger an immediate run) and **Enable/Disable** (toggle the agent) |
+
+The header also includes:
+
+- **Pause/Resume** button — pauses or resumes the scheduler (all cron jobs)
+- **Logout** link — clears the session cookie and redirects to the login page
+
+Below the table, a **Recent Activity** section shows the last 20 log lines across all agents.
+
+All data updates in real time via Server-Sent Events (SSE) — no manual refresh needed.
+
+### Trigger History — `/dashboard/triggers`
+
+Displays a paginated table of all trigger events — cron, webhook, and agent-call triggers — with the outcome of each. Includes a toggle to show dead-letter webhook receipts (payloads that arrived but did not match any agent or failed validation).
+
+Features:
+- **Pagination** — browse through historical triggers
+- **Dead-letter toggle** — show webhook payloads that were received but not dispatched
+- **Replay** — re-dispatch a stored webhook payload to matching agents
+
+The same data is available via the [Trigger History API](/reference/gateway-api#trigger-history).
+
+### Agent Logs — `/dashboard/agents/<name>/logs`
+
+Displays a live-streaming log view for a single agent. Logs follow automatically by default (new entries scroll into view as they arrive).
+
+Features:
+- **Follow mode** — enabled by default, auto-scrolls to the latest log entry. Scrolling up pauses follow; scrolling back to the bottom re-enables it.
+- **Clear** — clears the log display (does not delete log files).
+- **Connection status** — shows whether the SSE connection is active.
+- **Log levels** — color-coded: green for INFO, yellow for WARN, red for ERROR.
+
+On initial load, the last 100 log entries from the agent's log file are displayed, then new entries stream in as they are written.
+
+## How It Works
+
+The dashboard is served by the same [gateway](/reference/gateway-api) that handles webhooks and container communication. When `--web-ui` is enabled, the gateway starts even if Docker and webhooks are not configured.
+
+Dashboard actions (Run, Enable/Disable, Pause/Resume) call the [control API](/reference/gateway-api#control-api) endpoints. Live updates are delivered via [SSE streams](/reference/gateway-api#sse-streams).
+
+No additional dependencies or frontend build steps are required. The dashboard is rendered as plain HTML with inline CSS and JavaScript.

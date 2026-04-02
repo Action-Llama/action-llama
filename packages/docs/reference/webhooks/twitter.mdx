@@ -1,0 +1,58 @@
+---
+title: "Twitter Webhooks"
+description: "Filter fields, setup, and examples for X (Twitter) webhook triggers"
+---
+
+X (Twitter) webhooks let agents respond to account activity events like tweets, likes, follows, and direct messages via the Account Activity API.
+
+## Filter Fields (all optional)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `events` | string[] | Twitter event types: `tweet_create_events`, `tweet_delete_events`, `favorite_events`, `follow_events`, `unfollow_events`, `block_events`, `unblock_events`, `mute_events`, `unmute_events`, `direct_message_events`, `direct_message_indicate_typing_events`, `direct_message_mark_read_events` |
+| `users` | string[] | Only trigger for these subscribed user IDs (`for_user_id` values) |
+
+## Setup
+
+1. In the X Developer Portal, create or open your app
+2. Under **Keys and tokens**, note your **Consumer Key** and **Consumer Secret**
+3. Generate an **Access Token** and **Access Token Secret** for your bot user account
+4. Run `al doctor` — it will prompt for all four values plus your **Bearer Token**
+5. Register your webhook URL with the Account Activity API: `https://your-server:8080/webhooks/twitter`
+6. The gateway handles the CRC challenge-response handshake automatically using the Consumer Secret
+7. On startup, the gateway automatically subscribes your bot user if Access Token credentials are configured
+
+## Credentials
+
+The `x_twitter_api` credential has five fields:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `consumer_key` | Yes | OAuth 1.0a Consumer Key |
+| `consumer_secret` | Yes | OAuth 1.0a Consumer Secret (used for CRC and HMAC validation) |
+| `bearer_token` | Yes | App-Only Bearer Token (used for API v2 validation) |
+| `access_token` | No | OAuth 1.0a Access Token for the bot user (enables auto-subscribe) |
+| `access_token_secret` | No | OAuth 1.0a Access Token Secret for the bot user (enables auto-subscribe) |
+
+When `access_token` and `access_token_secret` are provided, the gateway will automatically check the webhook registration status and subscribe the bot user to the Account Activity API on startup.
+
+## CRC Challenge
+
+The Twitter provider automatically handles CRC (Challenge-Response Check) validation. When Twitter sends a GET request with a `crc_token` query parameter, the gateway responds with the correct HMAC-SHA256 response token. No manual setup is needed.
+
+## Example Configuration
+
+```toml
+# In project config.toml
+[webhooks.my-twitter]
+type = "twitter"
+credential = "MyXApp"
+```
+
+```toml
+# In agents/<name>/config.toml
+[[webhooks]]
+source = "my-twitter"
+events = ["tweet_create_events", "favorite_events", "direct_message_events"]
+users = ["123456789"]
+```
