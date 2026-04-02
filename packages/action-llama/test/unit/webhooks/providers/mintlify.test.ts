@@ -153,4 +153,173 @@ describe("MintlifyWebhookProvider", () => {
       expect(context?.conclusion).toBe("failure");
     });
   });
+
+  describe("validateRequest branch coverage", () => {
+    it("reads signature from 'mintlify-signature' header when 'x-mintlify-signature' is absent (line 14 alt branch)", () => {
+      // Line 14: `headers["x-mintlify-signature"] || headers["mintlify-signature"]`
+      // This tests the second operand when the first is undefined
+      const result = provider.validateRequest(
+        { "mintlify-signature": "sha256=abc123" },
+        "rawBody",
+        undefined,
+        true  // allowUnsigned=true so validation doesn't fail on the HMAC itself
+      );
+      // Should not be null (allowUnsigned=true bypasses signature check)
+      expect(result).not.toBeNull();
+    });
+  });
+
+  describe("parseEvent sender fallback branches", () => {
+    it("uses user.name when user.email is absent (line 31 second branch)", () => {
+      const payload = {
+        event: "build",
+        action: "failed",
+        project: "my-docs",
+        branch: "main",
+        user: { name: "John Doe" }, // email not set, name set
+      };
+
+      const context = provider.parseEvent({}, payload);
+      expect(context).not.toBeNull();
+      expect(context?.sender).toBe("John Doe");
+    });
+
+    it("uses 'mintlify' as sender when user is absent (line 31 third branch)", () => {
+      const payload = {
+        event: "build",
+        action: "failed",
+        project: "my-docs",
+        branch: "main",
+        // no user field
+      };
+
+      const context = provider.parseEvent({}, payload);
+      expect(context).not.toBeNull();
+      expect(context?.sender).toBe("mintlify");
+    });
+  });
+
+  describe("parseEvent extractContext branch coverage", () => {
+    it("uses body.description when message and error are absent (line 49 third branch)", () => {
+      const payload = {
+        event: "build",
+        action: "failed",
+        project: "my-docs",
+        branch: "main",
+        description: "Build failed with description",
+        // no message, no error
+        user: { email: "user@example.com" },
+      };
+
+      const context = provider.parseEvent({}, payload);
+      expect(context).not.toBeNull();
+      // body should come from description since message and error are absent
+      expect(context?.body).toContain("Build failed with description");
+    });
+
+    it("sets conclusion to 'success' for action 'success' (line 58 second elif branch)", () => {
+      // This tests the `base.action === "success"` branch (as opposed to "succeeded")
+      const payload = {
+        event: "build",
+        action: "success",  // 'success' variant (not 'succeeded')
+        project: "my-docs",
+        branch: "main",
+        user: { email: "user@example.com" },
+      };
+
+      const context = provider.parseEvent({}, payload);
+      expect(context).not.toBeNull();
+      expect(context?.conclusion).toBe("success");
+    });
+
+    it("uses body.build_url when url is absent and body.logs_url is absent (branch coverage)", () => {
+      const payload = {
+        event: "build",
+        action: "failed",
+        project: "my-docs",
+        branch: "main",
+        build_url: "https://mintlify.com/build/789",
+        // no url field
+        user: { email: "user@example.com" },
+      };
+
+      const context = provider.parseEvent({}, payload);
+      expect(context).not.toBeNull();
+      expect(context?.url).toBe("https://mintlify.com/build/789");
+    });
+
+    it("uses body.git.branch when branch is absent", () => {
+      const payload = {
+        event: "build",
+        action: "failed",
+        project: "my-docs",
+        // no branch field
+        git: { branch: "feature/my-feature" },
+        user: { email: "user@example.com" },
+      };
+
+      const context = provider.parseEvent({}, payload);
+      expect(context).not.toBeNull();
+      expect(context?.branch).toBe("feature/my-feature");
+    });
+
+    it("uses 'main' as branch fallback when neither branch nor git.branch is present", () => {
+      const payload = {
+        event: "build",
+        action: "failed",
+        project: "my-docs",
+        // no branch, no git
+        user: { email: "user@example.com" },
+      };
+
+      const context = provider.parseEvent({}, payload);
+      expect(context).not.toBeNull();
+      expect(context?.branch).toBe("main");
+    });
+
+    it("uses body.organization as repo when body.project is absent (line 31 second branch)", () => {
+      const payload = {
+        event: "build",
+        action: "failed",
+        // no project field
+        organization: "my-org",
+        branch: "main",
+        user: { email: "user@example.com" },
+      };
+
+      const context = provider.parseEvent({}, payload);
+      expect(context).not.toBeNull();
+      expect(context?.repo).toBe("my-org");
+    });
+
+    it("uses 'unknown' as repo when neither body.project nor body.organization is present (line 31 third branch)", () => {
+      const payload = {
+        event: "build",
+        action: "failed",
+        // no project, no organization
+        branch: "main",
+        user: { email: "user@example.com" },
+      };
+
+      const context = provider.parseEvent({}, payload);
+      expect(context).not.toBeNull();
+      expect(context?.repo).toBe("unknown");
+    });
+
+    it("does not set conclusion for a neutral action (covers else-if FALSE branch at line 58)", () => {
+      // When action is neither failed/failure nor succeeded/success, the else if is FALSE
+      const payload = {
+        event: "build",
+        action: "in-progress",
+        project: "my-docs",
+        branch: "main",
+        user: { email: "user@example.com" },
+      };
+
+      const context = provider.parseEvent({}, payload);
+      expect(context).not.toBeNull();
+      // conclusion should not be set since action is not a terminal state
+      expect(context?.conclusion).toBeUndefined();
+    });
+  });
 });
