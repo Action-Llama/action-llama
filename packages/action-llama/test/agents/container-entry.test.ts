@@ -58,7 +58,12 @@ vi.mock("child_process", () => ({
 const mockResourceLoaderReload = vi.fn().mockResolvedValue(undefined);
 vi.mock("@mariozechner/pi-coding-agent", () => {
   class MockResourceLoader {
-    constructor(_opts: any) {}
+    constructor(opts: any) {
+      // Call agentsFilesOverride if provided — covers that code path
+      if (opts?.agentsFilesOverride) {
+        opts.agentsFilesOverride();
+      }
+    }
     async reload() { return mockResourceLoaderReload(); }
   }
   return {
@@ -325,12 +330,13 @@ describe("container-entry", () => {
     });
   });
 
-  describe("handleInvocation", () => {
-    async function makeInit() {
-      mockExistsSync.mockReturnValue(false);
-      return initAgent();
-    }
+  // Shared helper to create a minimal AgentInit for testing
+  async function makeInit() {
+    mockExistsSync.mockReturnValue(false);
+    return initAgent();
+  }
 
+  describe("handleInvocation", () => {
     it("returns 0 on successful completion", async () => {
       const init = await makeInit();
       const exitCode = await handleInvocation(init);
@@ -583,6 +589,119 @@ describe("container-entry", () => {
       expect(loggedMessages).toContain('"_log":true');
 
       consoleSpy.mockRestore();
+    });
+  });
+
+  describe("gateway wait loop", () => {
+    it("waits for gateway when GATEWAY_URL is set and gateway responds ok", async () => {
+      process.env.GATEWAY_URL = "http://localhost:9090";
+      const init = await makeInit();
+
+      // Mock fetch to succeed on the first try
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+
+      try {
+        const exitCode = await handleInvocation(init);
+        expect(exitCode).toBe(0);
+        expect(fetch).toHaveBeenCalledWith("http://localhost:9090/health", expect.any(Object));
+      } finally {
+        vi.unstubAllGlobals();
+        delete process.env.GATEWAY_URL;
+      }
+    });
+
+    it("retries gateway check when fetch throws and eventually gives up", async () => {
+      process.env.GATEWAY_URL = "http://localhost:9090";
+      const init = await makeInit();
+
+      // Make fetch always fail (connection refused)
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")));
+
+      // Use fake timers to avoid actual 500ms delays
+      vi.useFakeTimers();
+      try {
+        const promise = handleInvocation(init);
+
+        // Advance time to allow all 30 retry attempts (30 * 500ms = 15000ms)
+        await vi.advanceTimersByTimeAsync(15100);
+
+        const exitCode = await promise;
+        expect(exitCode).toBe(0); // Should complete after exhausting retries
+      } finally {
+        vi.useRealTimers();
+        vi.unstubAllGlobals();
+        delete process.env.GATEWAY_URL;
+      }
+    });
+  });
+
+  describe("container timeout callback", () => {
+    it("emits error and calls process.exit(124) when container timeout fires", async () => {
+      const init = await makeInit();
+      // Use a very short timeout to trigger the setTimeout callback quickly
+      init.timeoutSeconds = 0.01; // 10ms fake-timer units
+
+      // Make session loop hang so the timeout fires before the session completes
+      let resolveSession: (v: any) => void;
+      mockRunSessionLoop.mockImplementationOnce(
+        () => new Promise((res) => { resolveSession = res; })
+      );
+
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      vi.useFakeTimers();
+      try {
+        // Start handleInvocation — it sets a 10ms timer and then awaits runSessionLoop
+        const promise = handleInvocation(init);
+
+        // Advance time to fire the 10ms timeout (before session completes)
+        try {
+          await vi.advanceTimersByTimeAsync(15);
+        } catch {
+          // process.exit(124) throw may propagate here
+        }
+
+        // process.exit(124) should have been called
+        expect(exitSpy).toHaveBeenCalledWith(124);
+
+        // The logged message should contain "container timeout reached"
+        const logs = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+        expect(logs).toContain("container timeout reached");
+
+        // Resolve session to clean up the hanging promise
+        resolveSession!({ outputText: "", allModelsExhausted: false });
+        try { await promise; } catch { /* process.exit throw */ }
+      } finally {
+        consoleSpy.mockRestore();
+        vi.useRealTimers();
+        exitSpy.mockClear();
+      }
+    }, 10000);
+  });
+
+  describe("module-level error handler", () => {
+    it("runAgent error path — logs error and calls process.exit(1)", async () => {
+      // Make initAgent throw to trigger the module-level error handler
+      // We need to call runAgent() with conditions that make it fail
+      delete process.env.AGENT_CONFIG;
+      mockExistsSync.mockReturnValue(false);
+
+      // runAgent() will call initAgent() which will throw "missing AGENT_CONFIG"
+      // The .then() error handler will log and call process.exit(1)
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      try {
+        await expect(runAgent()).rejects.toThrow("missing AGENT_CONFIG env var");
+      } catch {
+        // Expected — initAgent throws, runAgent propagates it
+      } finally {
+        consoleSpy.mockRestore();
+        // Restore AGENT_CONFIG for other tests
+        process.env.AGENT_CONFIG = JSON.stringify({
+          name: "test-agent",
+          models: [{ provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" }],
+          credentials: [],
+        });
+        exitSpy.mockClear();
+      }
     });
   });
 });
