@@ -484,12 +484,14 @@ export async function logout(): Promise<void> {
 export function summarizeLogs(
   name: string,
   instanceId: string,
+  prompt?: string,
   signal?: AbortSignal,
 ): Promise<{ summary: string; cached?: boolean; error?: string }> {
   return fetchJSON(
     `/api/logs/agents/${encodeURIComponent(name)}/${encodeURIComponent(instanceId)}/summarize`,
     {
       method: "POST",
+      ...(prompt ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt }) } : {}),
       signal,
     },
   );
