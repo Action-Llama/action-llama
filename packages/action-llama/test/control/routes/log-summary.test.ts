@@ -10,6 +10,15 @@ vi.mock("../../../src/shared/credentials.js", () => ({
   loadCredentialField: vi.fn().mockResolvedValue("test-api-key"),
 }));
 
+// Mock AuthStorage from @mariozechner/pi-coding-agent
+vi.mock("@mariozechner/pi-coding-agent", () => ({
+  AuthStorage: {
+    create: vi.fn(() => ({
+      getApiKey: vi.fn().mockResolvedValue("pi-auth-api-key"),
+    })),
+  },
+}));
+
 // Mock config module with passthrough so loadGlobalConfig can be overridden per-test
 vi.mock("../../../src/shared/config.js", async (importOriginal) => {
   const real = await importOriginal<typeof import("../../../src/shared/config.js")>();
@@ -719,5 +728,181 @@ describe("log summary route", () => {
     expect(data.summary).toBe("Grep-filtered summary.");
     // The fetch was called — meaning entries were found and summarized
     expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("uses custom prompt from POST body when provided", async () => {
+    createMinimalAgentProject(tmpDir, "my-agent");
+    const instanceId = "inst-custom-prompt";
+    const logLines = [
+      pinoLine(30, 1710700000000, "Agent did something", { instance: instanceId }),
+    ];
+    writeFileSync(
+      join(logsPath, "my-agent-2024-03-18.log"),
+      logLines.join("\n") + "\n",
+    );
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(fakeOpenAIResponse("Custom prompt response.")),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const app = createTestApp(tmpDir);
+    const res = await app.request(
+      `/api/logs/agents/my-agent/${instanceId}/summarize`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: "What errors occurred?" }),
+      },
+    );
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.summary).toBe("Custom prompt response.");
+    expect(data.cached).toBe(false);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("uses AuthStorage (pi_auth) to resolve API key when model authType is pi_auth", async () => {
+    // Create agent config with pi_auth provider
+    const agentName = "pi-auth-agent";
+    const agentDir = join(tmpDir, "agents", agentName);
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(
+      join(agentDir, "SKILL.md"),
+      `---\ndescription: pi_auth agent\n---\n# pi_auth Agent\n`,
+    );
+    writeFileSync(
+      join(agentDir, "config.toml"),
+      `models = ["main"]\n`,
+    );
+    writeFileSync(
+      join(tmpDir, "config.toml"),
+      `[models.main]\nprovider = "anthropic"\nmodel = "claude-3-5-sonnet-20241022"\nauthType = "pi_auth"\n`,
+    );
+
+    const instanceId = "inst-pi-auth";
+    const logLines = [
+      pinoLine(30, 1710700000000, "pi auth ran", { instance: instanceId }),
+    ];
+    writeFileSync(
+      join(logsPath, `${agentName}-2024-03-18.log`),
+      logLines.join("\n") + "\n",
+    );
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          id: "msg_pi_auth",
+          type: "message",
+          role: "assistant",
+          content: [{ type: "text", text: "pi_auth summary." }],
+          model: "claude-3-5-sonnet-20241022",
+          stop_reason: "end_turn",
+          usage: { input_tokens: 100, output_tokens: 30 },
+        }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const app = createTestApp(tmpDir);
+    const res = await app.request(
+      `/api/logs/agents/${agentName}/${instanceId}/summarize`,
+      { method: "POST" },
+    );
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.summary).toBe("pi_auth summary.");
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("falls back to empty key when AuthStorage throws for pi_auth model", async () => {
+    const { AuthStorage } = await import("@mariozechner/pi-coding-agent");
+    vi.mocked(AuthStorage.create).mockImplementationOnce(() => ({
+      getApiKey: vi.fn().mockRejectedValue(new Error("AuthStorage unavailable")),
+    }));
+
+    const agentName = "pi-auth-fail-agent";
+    const agentDir = join(tmpDir, "agents", agentName);
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(join(agentDir, "SKILL.md"), `---\ndescription: pi_auth fail\n---\n`);
+    writeFileSync(join(agentDir, "config.toml"), `models = ["main"]\n`);
+    writeFileSync(
+      join(tmpDir, "config.toml"),
+      `[models.main]\nprovider = "anthropic"\nmodel = "claude-3-sonnet"\nauthType = "pi_auth"\n`,
+    );
+
+    const instanceId = "inst-pi-auth-fail";
+    const logLines = [pinoLine(30, 1710700000000, "step", { instance: instanceId })];
+    writeFileSync(
+      join(logsPath, `${agentName}-2024-03-18.log`),
+      logLines.join("\n") + "\n",
+    );
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          id: "msg_fallback",
+          type: "message",
+          role: "assistant",
+          content: [{ type: "text", text: "Fallback summary." }],
+          model: "claude-3-sonnet",
+          stop_reason: "end_turn",
+          usage: { input_tokens: 100, output_tokens: 20 },
+        }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const app = createTestApp(tmpDir);
+    const res = await app.request(
+      `/api/logs/agents/${agentName}/${instanceId}/summarize`,
+      { method: "POST" },
+    );
+    // Should still succeed with empty API key
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.summary).toBe("Fallback summary.");
+  });
+
+  it("includes extra log fields as JSON in log text when entry has fields beyond msg/level/time/instance", async () => {
+    createMinimalAgentProject(tmpDir, "my-agent");
+    const instanceId = "inst-extra-fields";
+    // Log entry has extra field 'err' beyond msg/level/time/instance
+    const logLines = [
+      JSON.stringify({
+        level: 50,
+        time: 1710700000000,
+        msg: "Something failed",
+        instance: instanceId,
+        err: { message: "ENOENT: no such file" },
+        tool: "bash",
+      }),
+    ];
+    writeFileSync(
+      join(logsPath, "my-agent-2024-03-18.log"),
+      logLines.join("\n") + "\n",
+    );
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(fakeOpenAIResponse("Error summary with details.")),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const app = createTestApp(tmpDir);
+    const res = await app.request(
+      `/api/logs/agents/my-agent/${instanceId}/summarize`,
+      { method: "POST" },
+    );
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.summary).toBe("Error summary with details.");
+    // Verify that fetch was called with a prompt containing the JSON-formatted log entry
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const fetchBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    // The log text should include the JSON representation with extra fields
+    const logContent = JSON.stringify(fetchBody);
+    expect(logContent).toContain("ENOENT");
   });
 });
