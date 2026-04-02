@@ -1038,4 +1038,31 @@ describe("ContainerAgentRunner", () => {
       expect(registerContainer).not.toHaveBeenCalled();
     });
   });
+
+  describe("_runInternalContainer catch block — containerName cleanup", () => {
+    it("calls runtime.remove with the containerName when an error is thrown after launch succeeds", async () => {
+      // Make runtime.launch succeed and getTaskUrl throw so the catch block
+      // in _runInternalContainer is entered while containerName is still set.
+      const launchError = new Error("getTaskUrl exploded");
+      const errorRuntime = createMockRuntime({
+        launch: vi.fn().mockResolvedValue("container-launch-ok"),
+        getTaskUrl: vi.fn().mockImplementation(() => {
+          throw launchError;
+        }),
+        remove: vi.fn().mockResolvedValue(undefined),
+      });
+
+      const runner = new ContainerAgentRunner(
+        errorRuntime, globalConfig, agentConfig, mockLogger,
+        vi.fn(), vi.fn(), "", "/tmp", "test-image:latest",
+      );
+
+      const result = await runner.run("test prompt");
+
+      // The run should fail (the error was caught and recorded)
+      expect(result.result).toBe("error");
+      // runtime.remove must have been called with the containerName from launch
+      expect(errorRuntime.remove).toHaveBeenCalledWith("container-launch-ok");
+    });
+  });
 });
