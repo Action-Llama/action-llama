@@ -124,7 +124,17 @@ describe("runChatTUI", () => {
     const output = instance.lastFrame() ?? "";
     expect(output).toContain("Hello from agent");
 
-    // Send done signal
+    // Send a second chunk — appended to existing streaming message (line 45 branch)
+    transport._triggerMessage({ type: "assistant_message", text: " more text", done: false });
+    await new Promise((r) => setTimeout(r, 50));
+    const output2 = instance.lastFrame() ?? "";
+    expect(output2).toContain("Hello from agent more text");
+
+    // Send done signal — finalizes the streaming message (line 36 branch)
+    transport._triggerMessage({ type: "assistant_message", text: "", done: true });
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Send another done with no streaming message (line 38 branch — returns prev unchanged)
     transport._triggerMessage({ type: "assistant_message", text: "", done: true });
     await new Promise((r) => setTimeout(r, 50));
 
@@ -234,6 +244,130 @@ describe("runChatTUI", () => {
 
     const output = instance.lastFrame() ?? "";
     expect(output).toContain("ERROR");
+
+    instance.unmount();
+    resolverRef.resolve?.();
+    await runPromise;
+  });
+
+  it("handles Ctrl+D to shutdown when not streaming", async () => {
+    const transport = makeMockTransport();
+    const runPromise = runChatTUI(transport, "ctrl-d-agent");
+
+    const instance = renderTL(capturedRef.element!);
+
+    // Ctrl+D = character code \x04
+    instance.stdin.write("\x04");
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(transport.send).toHaveBeenCalledWith({ type: "shutdown" });
+    expect(transport.close).toHaveBeenCalled();
+
+    instance.unmount();
+    resolverRef.resolve?.();
+    await runPromise;
+  });
+
+  it("handles Ctrl+C to cancel when streaming", async () => {
+    const transport = makeMockTransport();
+    const runPromise = runChatTUI(transport, "ctrl-c-agent");
+
+    const instance = renderTL(capturedRef.element!);
+
+    // First make it streaming by sending a streaming message
+    transport._triggerMessage({ type: "assistant_message", text: "streaming...", done: false });
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Ctrl+C = \x03
+    instance.stdin.write("\x03");
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(transport.send).toHaveBeenCalledWith({ type: "cancel" });
+
+    instance.unmount();
+    resolverRef.resolve?.();
+    await runPromise;
+  });
+
+  it("handles Ctrl+C to shutdown when not streaming", async () => {
+    const transport = makeMockTransport();
+    const runPromise = runChatTUI(transport, "ctrl-c-notstream-agent");
+
+    const instance = renderTL(capturedRef.element!);
+
+    // Ctrl+C when not streaming → shutdown
+    instance.stdin.write("\x03");
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(transport.send).toHaveBeenCalledWith({ type: "shutdown" });
+
+    instance.unmount();
+    resolverRef.resolve?.();
+    await runPromise;
+  });
+
+  it("handles regular character input (typing)", async () => {
+    const transport = makeMockTransport();
+    const runPromise = runChatTUI(transport, "type-agent");
+
+    const instance = renderTL(capturedRef.element!);
+
+    // Type some characters
+    instance.stdin.write("h");
+    instance.stdin.write("i");
+    await new Promise((r) => setTimeout(r, 50));
+
+    const output = instance.lastFrame() ?? "";
+    expect(output).toContain("hi");
+
+    instance.unmount();
+    resolverRef.resolve?.();
+    await runPromise;
+  });
+
+  it("handles backspace to delete last character", async () => {
+    const transport = makeMockTransport();
+    const runPromise = runChatTUI(transport, "backspace-agent");
+
+    const instance = renderTL(capturedRef.element!);
+
+    instance.stdin.write("h");
+    instance.stdin.write("i");
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Backspace
+    instance.stdin.write("\x7f");
+    await new Promise((r) => setTimeout(r, 50));
+
+    const output = instance.lastFrame() ?? "";
+    // After deleting "i", only "h" should remain
+    expect(output).not.toContain("hi");
+
+    instance.unmount();
+    resolverRef.resolve?.();
+    await runPromise;
+  });
+
+  it("handles Enter to submit message when input is not empty and not streaming", async () => {
+    const transport = makeMockTransport();
+    const runPromise = runChatTUI(transport, "enter-agent");
+
+    const instance = renderTL(capturedRef.element!);
+
+    // Type some text
+    instance.stdin.write("h");
+    instance.stdin.write("e");
+    instance.stdin.write("l");
+    instance.stdin.write("l");
+    instance.stdin.write("o");
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Press Enter to submit
+    instance.stdin.write("\r");
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Should have sent the message
+    expect(transport.send).toHaveBeenCalledWith({ type: "user_message", text: "hello" });
 
     instance.unmount();
     resolverRef.resolve?.();
