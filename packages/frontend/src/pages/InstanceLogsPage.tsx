@@ -156,7 +156,7 @@ export function InstanceLogsPage() {
         });
       }
       backCursorRef.current = d.backCursor;
-      if (!d.backCursor || d.entries.length < OLDER_BATCH_SIZE) {
+      if (!d.backCursor) {
         setHasOlderLogs(false);
       }
     } catch {
@@ -205,7 +205,7 @@ export function InstanceLogsPage() {
           });
 
           backCursorRef.current = d.backCursor;
-          if (!d.backCursor || d.entries.length < OLDER_BATCH_SIZE) {
+          if (!d.backCursor) {
             setHasOlderLogs(false);
             break;
           }

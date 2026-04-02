@@ -101,9 +101,13 @@ export async function readEntriesForward(
       const text = buf.toString("utf-8");
       const lines = text.split("\n");
       const entries: LogEntry[] = [];
+      let bytesConsumed = 0;
 
       for (const line of lines) {
         if (entries.length >= limit) break;
+        // Track bytes consumed: line length + 1 for the \n delimiter
+        // (last line may not have \n, but we still advance past it)
+        bytesConsumed += Buffer.byteLength(line, "utf-8") + 1;
         const entry = parseLine(line);
         if (!entry) continue;
         if (afterTime && entry.time <= afterTime) continue;
@@ -113,7 +117,13 @@ export async function readEntriesForward(
         entries.push(entry);
       }
 
-      return { entries, newOffset: stat.size };
+      // If we processed all lines (didn't hit limit), advance to end of file.
+      // Otherwise, advance only past the lines we actually processed.
+      const newOffset = entries.length < limit
+        ? stat.size
+        : Math.min(byteOffset + bytesConsumed, stat.size);
+
+      return { entries, newOffset };
     } finally {
       await fd.close();
     }
