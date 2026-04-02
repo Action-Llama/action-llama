@@ -293,6 +293,7 @@ interface ActivityTableProps {
   agentNames: string[];
   loading?: boolean;
   emptyMessage?: string;
+  headerRight?: React.ReactNode;
 }
 
 export function ActivityTable({
@@ -300,6 +301,7 @@ export function ActivityTable({
   agentNames,
   loading = false,
   emptyMessage = "No activity found",
+  headerRight,
 }: ActivityTableProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -336,7 +338,10 @@ export function ActivityTable({
                 Instance
               </th>
               <th className="pl-0 pr-2 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide text-left hidden md:table-cell w-full">
-                Summary
+                <div className="flex items-center justify-between">
+                  <span>Summary</span>
+                  {headerRight}
+                </div>
               </th>
             </tr>
           </thead>

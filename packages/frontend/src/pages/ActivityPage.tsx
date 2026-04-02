@@ -96,8 +96,6 @@ export function ActivityPage() {
     [setSearchParams],
   );
 
-  const page = Math.floor(offset / PAGE_SIZE) + 1;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const agentOptions = [
     { value: "", label: "All Agents" },
@@ -144,30 +142,33 @@ export function ActivityPage() {
           rows={rows}
           agentNames={agentNames}
           loading={isLoading && rows.length === 0}
+          headerRight={total > 0 ? (
+            <div className="flex items-center gap-2 font-normal normal-case tracking-normal">
+              <span className="text-sm text-slate-500 dark:text-slate-400 tabular-nums">
+                {offset + 1}–{Math.min(offset + PAGE_SIZE, total)} of {total.toLocaleString()}
+              </span>
+              <div className="flex items-center">
+                <button
+                  onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+                  disabled={offset === 0}
+                  className="p-1 rounded text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:hover:text-slate-400 dark:disabled:hover:text-slate-500 transition-colors"
+                  aria-label="Previous page"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
+                </button>
+                <button
+                  onClick={() => setOffset(offset + PAGE_SIZE)}
+                  disabled={offset + PAGE_SIZE >= total}
+                  className="p-1 rounded text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:hover:text-slate-400 dark:disabled:hover:text-slate-500 transition-colors"
+                  aria-label="Next page"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
+                </button>
+              </div>
+            </div>
+          ) : undefined}
         />
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-200 dark:border-slate-800">
-            <button
-              onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-              disabled={offset === 0}
-              className="px-3 py-1 text-xs rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
-            >
-              Previous
-            </button>
-            <span className="text-xs text-slate-500 dark:text-slate-400">
-              Page {page} of {totalPages} ({total} total)
-            </span>
-            <button
-              onClick={() => setOffset(offset + PAGE_SIZE)}
-              disabled={offset + PAGE_SIZE >= total}
-              className="px-3 py-1 text-xs rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
-            >
-              Next
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );
