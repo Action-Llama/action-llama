@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { attachPlainLogger } from "../../src/tui/plain-logger.js";
 import { StatusTracker } from "../../src/tui/status-tracker.js";
 import type { SchedulerInfo } from "../../src/tui/status-tracker.js";
+import type { TokenUsage } from "../../src/shared/usage.js";
 
 function makeSchedulerInfo(overrides: Partial<SchedulerInfo> = {}): SchedulerInfo {
   return {
@@ -86,6 +87,29 @@ describe("attachPlainLogger", () => {
       const baseCalls = calls.filter((c) => c.includes("base image:"));
       expect(baseCalls).toHaveLength(0);
     });
+
+    it("does not log when base image status transitions back to null (line 13 FALSE branch)", () => {
+      const tracker = new StatusTracker();
+      attachPlainLogger(tracker);
+
+      // First set a non-null status (lastBaseImageStatus becomes "building")
+      tracker.setBaseImageStatus("building");
+
+      const beforeCount = consoleSpy.mock.calls.filter((c) =>
+        (c[0] as string).includes("base image:")
+      ).length;
+      expect(beforeCount).toBe(1);
+
+      // Now set back to null: baseStatus !== lastBaseImageStatus (null !== "building"),
+      // but !baseStatus is true, so the if(baseStatus) body is skipped (FALSE branch of line 13)
+      tracker.setBaseImageStatus(null);
+
+      const afterCount = consoleSpy.mock.calls.filter((c) =>
+        (c[0] as string).includes("base image:")
+      ).length;
+      // No additional "base image:" log should appear
+      expect(afterCount).toBe(1);
+    });
   });
 
   describe("agent state transitions", () => {
@@ -124,6 +148,35 @@ describe("attachPlainLogger", () => {
       const calls = consoleSpy.mock.calls.map((c) => c[0] as string);
       const relevant = calls.find((c) => c.includes("dev") && c.includes("running"));
       expect(relevant).toBeDefined();
+    });
+
+    it("logs running state without parenthetical reason when runReason is not set (line 34 FALSE branch)", () => {
+      const tracker = new StatusTracker();
+      attachPlainLogger(tracker);
+      tracker.registerAgent("dev");
+
+      // startRun without a reason → runReason is null → FALSE branch of `agent.runReason ?`
+      tracker.startRun("dev");
+
+      const calls = consoleSpy.mock.calls.map((c) => c[0] as string);
+      const relevant = calls.find((c) => c.includes("dev") && c.includes("running"));
+      expect(relevant).toBeDefined();
+      // Should not contain parenthetical reason
+      expect(relevant).not.toMatch(/running \(/);
+    });
+
+    it("logs running state with parenthetical reason when runReason is set", () => {
+      const tracker = new StatusTracker();
+      attachPlainLogger(tracker);
+      tracker.registerAgent("dev");
+
+      // startRun with a reason → runReason is set → TRUE branch of `agent.runReason ?`
+      tracker.startRun("dev", "schedule");
+
+      const calls = consoleSpy.mock.calls.map((c) => c[0] as string);
+      const relevant = calls.find((c) => c.includes("dev") && c.includes("running"));
+      expect(relevant).toBeDefined();
+      expect(relevant).toMatch(/running \(schedule\)/);
     });
 
     it("logs when an agent enters the 'error' state", () => {
@@ -324,6 +377,120 @@ describe("attachPlainLogger", () => {
       ).length;
 
       expect(count2).toBe(count1);
+    });
+  });
+
+  describe("agent state with token usage", () => {
+    const sampleUsage: TokenUsage = {
+      inputTokens: 50,
+      outputTokens: 50,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      totalTokens: 100,
+      cost: 0.005,
+      turnCount: 1,
+    };
+
+    it("includes token usage in completion log when lastRunUsage is set (line 44 TRUE branch)", () => {
+      const tracker = new StatusTracker();
+      attachPlainLogger(tracker);
+      tracker.registerAgent("dev");
+
+      // endRun with usage sets lastRunUsage and transitions agent to idle
+      tracker.startRun("dev");
+      tracker.endRun("dev", 3000, undefined, sampleUsage);
+
+      const calls = consoleSpy.mock.calls.map((c) => c[0] as string);
+      // Should contain token count and cost in the completion log
+      const relevant = calls.find((c) => c.includes("dev") && c.includes("tokens"));
+      expect(relevant).toBeDefined();
+      expect(relevant).toMatch(/100 tokens/);
+      expect(relevant).toMatch(/\$0\.0050/);
+    });
+
+    it("stateKey reflects lastRunUsage when present (covers stateKey TRUE branch)", () => {
+      const tracker = new StatusTracker();
+      attachPlainLogger(tracker);
+      tracker.registerAgent("agent-usage");
+
+      // First run with usage — triggers stateKey with non-null lastRunUsage
+      tracker.startRun("agent-usage");
+      tracker.endRun("agent-usage", 2000, undefined, sampleUsage);
+
+      // Second run with different usage — stateKey changes, triggers a new log
+      const usage2: TokenUsage = { ...sampleUsage, totalTokens: 200, cost: 0.01 };
+      tracker.startRun("agent-usage");
+      tracker.endRun("agent-usage", 4000, undefined, usage2);
+
+      const calls = consoleSpy.mock.calls.map((c) => c[0] as string);
+      // Both runs should produce "completed" logs
+      const completedCalls = calls.filter((c) => c.includes("agent-usage") && c.includes("completed"));
+      expect(completedCalls.length).toBeGreaterThanOrEqual(1);
+      // The second run should have logged 200 tokens
+      const secondRun = completedCalls.find((c) => c.includes("200 tokens"));
+      expect(secondRun).toBeDefined();
+    });
+  });
+
+  describe("scheduler info branch coverage", () => {
+    it("omits runtime from log when scheduler info has no runtime", () => {
+      const tracker = new StatusTracker();
+      attachPlainLogger(tracker);
+
+      // runtime is undefined — covers line 78 FALSE branch
+      tracker.setSchedulerInfo(
+        makeSchedulerInfo({ runtime: undefined, webhookUrls: [], dashboardUrl: undefined })
+      );
+
+      const calls = consoleSpy.mock.calls.map((c) => c[0] as string);
+      const schedulerLog = calls.find((c) => c.includes("scheduler started"));
+      expect(schedulerLog).toBeDefined();
+      // Should NOT contain "runtime="
+      expect(schedulerLog).not.toMatch(/runtime=/);
+    });
+
+    it("omits gateway port from log when gatewayPort is null", () => {
+      const tracker = new StatusTracker();
+      attachPlainLogger(tracker);
+
+      // gatewayPort is null — covers line 79 FALSE branch
+      tracker.setSchedulerInfo(
+        makeSchedulerInfo({ gatewayPort: null, webhookUrls: [], dashboardUrl: undefined })
+      );
+
+      const calls = consoleSpy.mock.calls.map((c) => c[0] as string);
+      const schedulerLog = calls.find((c) => c.includes("scheduler started"));
+      expect(schedulerLog).toBeDefined();
+      // Should NOT contain "gateway="
+      expect(schedulerLog).not.toMatch(/gateway=/);
+    });
+
+    it("omits webhooks=active from log when webhooksActive is false", () => {
+      const tracker = new StatusTracker();
+      attachPlainLogger(tracker);
+
+      // webhooksActive is false — covers line 81 FALSE branch
+      tracker.setSchedulerInfo(
+        makeSchedulerInfo({ webhooksActive: false, webhookUrls: [], dashboardUrl: undefined })
+      );
+
+      const calls = consoleSpy.mock.calls.map((c) => c[0] as string);
+      const schedulerLog = calls.find((c) => c.includes("scheduler started"));
+      expect(schedulerLog).toBeDefined();
+      // Should NOT contain "webhooks=active"
+      expect(schedulerLog).not.toMatch(/webhooks=active/);
+    });
+
+    it("does not log scheduler info when schedulerInfo is null (onSchedulerInfo early return)", () => {
+      const tracker = new StatusTracker();
+      attachPlainLogger(tracker);
+
+      // Emit an update without setting scheduler info — info is null, so early return
+      tracker.emit("update");
+
+      const calls = consoleSpy.mock.calls.map((c) => c[0] as string);
+      const schedulerLog = calls.find((c) => c.includes("scheduler started"));
+      expect(schedulerLog).toBeUndefined();
     });
   });
 });
