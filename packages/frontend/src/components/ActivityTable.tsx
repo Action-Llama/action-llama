@@ -192,7 +192,7 @@ const ActivityRowItem = memo(function ActivityRowItem({ row, agentNames }: Activ
             </span>
           )}
           {canGenerate && (
-            <div className="md:hidden mt-1">
+            <div className="md:hidden mt-1 whitespace-normal">
               {isLoading ? (
                 <span className="text-xs text-slate-400 dark:text-slate-500 animate-pulse">
                   Generating…
