@@ -4,10 +4,6 @@ import { loadGlobalConfig } from "../../shared/config.js";
 import { startScheduler } from "../../scheduler/index.js";
 import { StatusTracker } from "../../tui/status-tracker.js";
 import { execute as runDoctor } from "./doctor.js";
-import { resolveEnvironmentName, loadEnvironmentConfig } from "../../shared/environment.js";
-import { validateServerConfig } from "../../shared/server.js";
-import { sshOptionsFromConfig, sshExec } from "../../remote/ssh.js";
-import { gatewayFetch } from "../gateway-client.js";
 import { credentialExists } from "../../shared/credentials.js";
 import { ConfigError } from "../../shared/errors.js";
 
@@ -24,17 +20,6 @@ export async function execute(opts: { project: string; env?: string; headless?: 
       `"${projectPath}" looks like an agent directory, not a project directory. ` +
       `Run 'al start' from the project root (the parent directory).`
     );
-  }
-
-  // If the environment has a [server] section, start the remote service instead
-  const envName = resolveEnvironmentName(opts.env, projectPath);
-  if (envName) {
-    const envConfig = loadEnvironmentConfig(envName);
-    if (envConfig.server) {
-      const serverConfig = validateServerConfig(envConfig.server);
-      await startRemoteService(projectPath, envName, serverConfig);
-      return;
-    }
   }
 
   // Security validation: require API key for exposed services
@@ -125,55 +110,3 @@ export async function execute(opts: { project: string; env?: string; headless?: 
   await new Promise(() => {});
 }
 
-async function startRemoteService(
-  projectPath: string,
-  envName: string,
-  serverConfig: import("../../shared/server.js").ServerConfig,
-): Promise<void> {
-  const sshOpts = sshOptionsFromConfig(serverConfig);
-
-  // Check if already running via gateway health
-  try {
-    const resp = await gatewayFetch({ project: projectPath, path: "/health", env: envName });
-    if (resp.ok) {
-      console.log(`Service is already running on ${serverConfig.host}.`);
-      return;
-    }
-  } catch {
-    // Not reachable — proceed with starting
-  }
-
-  // SSH to start the systemd service
-  console.log(`Starting service on ${serverConfig.host}...`);
-  try {
-    await sshExec(sshOpts, "sudo systemctl start action-llama");
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      `Failed to start service on ${serverConfig.host}: ${msg}\n` +
-      `Make sure the service is installed — run 'al push --env ${envName}' first.`
-    );
-  }
-
-  // Poll /health until it responds or we time out
-  const deadline = Date.now() + 30_000;
-  let healthy = false;
-  while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 2_000));
-    try {
-      const resp = await gatewayFetch({ project: projectPath, path: "/health", env: envName });
-      if (resp.ok) {
-        healthy = true;
-        break;
-      }
-    } catch {
-      // Not up yet
-    }
-  }
-
-  if (healthy) {
-    console.log(`Service started on ${serverConfig.host}.`);
-  } else {
-    console.warn(`Service start command succeeded but health check did not respond within 30s. Check with 'al status --env ${envName}'.`);
-  }
-}
