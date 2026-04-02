@@ -110,5 +110,23 @@ describe(
       );
       expect(res.status).toBe(200);
     });
+
+    it("protected route with Accept: text/html and no auth redirects to /login (302)", async () => {
+      await startHarness();
+      if (!gatewayAccessible) return;
+
+      // Browser-style request: Accept: text/html → redirect to /login on 401
+      const res = await fetch(
+        `http://127.0.0.1:${harness.gatewayPort}/api/stats/activity`,
+        {
+          headers: { Accept: "text/html,application/xhtml+xml,*/*" },
+          redirect: "manual", // Don't follow redirect — we want the 302/301
+          signal: AbortSignal.timeout(3_000),
+        },
+      );
+      // Should redirect to /login (3xx) rather than returning 401 JSON
+      expect(res.status).toBeGreaterThanOrEqual(301);
+      expect(res.status).toBeLessThanOrEqual(302);
+    });
   },
 );
