@@ -1,0 +1,49 @@
+
+> test:unit
+> vitest run --project unit --config packages/action-llama/vitest.config.ts && npm test -w packages/skill
+
+
+[1m[46m RUN [49m[22m [36mv4.1.1 [39m[90m/tmp/repo[39m
+
+Warning: A vi.mock("../../../src/shared/credentials.js") call in "/tmp/repo/packages/action-llama/test/cli/commands/doctor.test.ts" is not at the top level of the module. Although it appears nested, it will be hoisted and executed before any tests run. Move it to the top level to reflect its actual execution order. This will become an error in a future version.
+See: https://vitest.dev/guide/mocking/modules#how-it-works
+......................................................................................................................................................................................(node:455) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 SIGINT listeners added to [process]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:455) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 SIGTERM listeners added to [process]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+ [31m❯[39m [30m[42m unit [49m[39m packages/action-llama/test/events/webhook-setup.test.ts [2m([22m[2m69 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 114[2mms[22m[39m
+[31m     [31m×[31m does not contain unknown provider types[39m[32m 14[2mms[22m[39m
+(node:590) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 exit listeners added to [process]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+(Use `node --trace-warnings ...` to show where the warning was created)
+[09:34:13] [32mINFO[39m (webhook-simulator): [36mwebhook provider registered[39m
+    [35msource[39m: "github"
+(node:1340) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 SIGINT listeners added to [process]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1340) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 SIGTERM listeners added to [process]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m [30m[42m unit [49m[39m packages/action-llama/test/events/webhook-setup.test.ts[2m > [22mKNOWN_PROVIDER_TYPES[2m > [22mdoes not contain unknown provider types
+[31m[1mAssertionError[22m: expected true to be false // Object.is equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- false[39m
+[31m+ true[39m
+
+[36m [2m❯[22m packages/action-llama/test/events/webhook-setup.test.ts:[2m277:47[22m[39m
+    [90m275|[39m   [34mit[39m([32m"does not contain unknown provider types"[39m[33m,[39m () [33m=>[39m {
+    [90m276|[39m     [34mexpect[39m([33mKNOWN_PROVIDER_TYPES[39m[33m.[39m[34mhas[39m([32m"unknown"[39m))[33m.[39m[34mtoBe[39m([35mfalse[39m)[33m;[39m
+    [90m277|[39m     [34mexpect[39m([33mKNOWN_PROVIDER_TYPES[39m[33m.[39m[34mhas[39m([32m"slack"[39m))[33m.[39m[34mtoBe[39m([35mfalse[39m)[33m;[39m
+    [90m   |[39m                                               [31m^[39m
+    [90m278|[39m   })[33m;[39m
+    [90m279|[39m })[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m230 passed[39m[22m[90m (231)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m5069 passed[39m[22m[2m | [22m[33m12 skipped[39m[90m (5082)[39m
+[2m   Start at [22m 09:34:09
+[2m   Duration [22m 34.60s[2m (transform 12.53s, setup 0ms, import 57.27s, tests 89.87s, environment 56ms)[22m
+
