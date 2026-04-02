@@ -1106,4 +1106,101 @@ describe("pushToServer — healthCheck failure paths", () => {
     // sshExecSafe catches the error and returns combined stdout+stderr
     expect(logs.some((l) => l.includes("status output from stdout") || l.includes("additional stderr"))).toBe(true);
   });
+
+  it("computes delay and sleeps between poll iterations when service is still starting", async () => {
+    // Make curl always fail (health check never passes)
+    mockSshExec.mockImplementation(async (_ssh: any, cmd: string) => {
+      if (cmd.includes("curl -sf")) throw new Error("connection refused");
+      return "";
+    });
+
+    // First two is-active calls return "activating" (loop continues with delay),
+    // third call returns "failed" so the loop breaks.
+    let isActiveCallCount = 0;
+    mockExecFilePromisified.mockImplementation(async (_cmd: string, args: string[]) => {
+      const command = Array.isArray(args) ? args[args.length - 1] : "";
+      if (command.includes("systemctl is-active")) {
+        isActiveCallCount++;
+        if (isActiveCallCount <= 2) {
+          return { stdout: "activating\n", stderr: "" };
+        }
+        return { stdout: "failed\n", stderr: "" };
+      }
+      return { stdout: "", stderr: "" };
+    });
+
+    // Use fake timers to skip the setTimeout delays in the polling loop
+    vi.useFakeTimers();
+
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: any[]) => logs.push(args.join(" "));
+
+    const pushPromise = pushToServer({
+      projectPath: "/tmp/project",
+      serverConfig: { host: "h" },
+      globalConfig: {},
+      envName: "my-server",
+    });
+
+    // Advance fake timers several times to allow the polling loop to progress.
+    // Each poll iteration that continues (not failed/inactive) waits for a setTimeout.
+    // We advance by 5000ms per step, which exceeds the max HEALTH_CHECK_INTERVALS_MS (3000ms).
+    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(5000);
+
+    vi.useRealTimers();
+    console.log = origLog;
+
+    await pushPromise;
+
+    // The loop ran multiple iterations before service failed
+    expect(isActiveCallCount).toBeGreaterThanOrEqual(3);
+    expect(logs.some((l) => l.includes("Service failed to start"))).toBe(true);
+  }, 15_000);
+
+  it("logs health check timeout message when service never starts within timeout", async () => {
+    // Make curl always fail so health check never passes
+    mockSshExec.mockImplementation(async (_ssh: any, cmd: string) => {
+      if (cmd.includes("curl -sf")) throw new Error("connection refused");
+      return "";
+    });
+
+    // systemctl is-active always returns "activating" — service never fails, never succeeds
+    mockExecFilePromisified.mockImplementation(async (_cmd: string, args: string[]) => {
+      const command = Array.isArray(args) ? args[args.length - 1] : "";
+      if (command.includes("systemctl is-active")) {
+        return { stdout: "activating\n", stderr: "" };
+      }
+      return { stdout: "", stderr: "" };
+    });
+
+    // Use fake timers to control Date.now() and skip the setTimeout delays
+    vi.useFakeTimers();
+
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: any[]) => logs.push(args.join(" "));
+
+    const pushPromise = pushToServer({
+      projectPath: "/tmp/project",
+      serverConfig: { host: "h" },
+      globalConfig: {},
+      envName: "my-server",
+    });
+
+    // Advance past TIMEOUT_MS (180,000ms) in one large jump.
+    // This simultaneously advances Date.now() past the timeout AND fires any pending setTimeouts,
+    // causing the while loop to exit via the timeout condition.
+    await vi.advanceTimersByTimeAsync(200_000);
+
+    vi.useRealTimers();
+    console.log = origLog;
+
+    await pushPromise;
+
+    // The timeout path should produce the "timed out" message (line 558)
+    expect(logs.some((l) => l.includes("Health check timed out"))).toBe(true);
+  }, 15_000);
 });
