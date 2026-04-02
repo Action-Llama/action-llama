@@ -1,5 +1,20 @@
 # @action-llama/action-llama
 
+## 0.26.9
+
+### Patch Changes
+
+- [`4d38e7d`](https://github.com/Action-Llama/action-llama/commit/4d38e7dec0d58c363ed344cc39d8218f7a3136ed) Thanks [@asselstine](https://github.com/asselstine)! - Move activity pagination controls into the table header row with Gmail-style "1–50 of 3,098 < >" format.
+
+- [`8553030`](https://github.com/Action-Llama/action-llama/commit/85530305093d3234f0309227e38e04f932293500) Thanks [@asselstine](https://github.com/asselstine)! - Fix activity table summary text not wrapping on mobile.
+
+- [`c5876cc`](https://github.com/Action-Llama/action-llama/commit/c5876ccb3f3f6391afe15130ee1ca81aa1bcb14e) Thanks [@asselstine](https://github.com/asselstine)! - Fix log summaries only including short message labels (e.g. "assistant", "token-usage") instead of full log content. Entries with extra fields like assistant text, bash commands, tool results, and errors are now serialized as JSON so the model can see the actual content.
+
+- [`511d622`](https://github.com/Action-Llama/action-llama/commit/511d622a01b95d5d592851e8a8ea798ab2b04a9e) Thanks [@asselstine](https://github.com/asselstine)! - Make `al start` always run locally regardless of environment. Previously it would attempt to start a remote service via SSH when the active environment had a `[server]` section, blocking local development.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.26.9
+
 ## 0.26.8
 
 ### Patch Changes
