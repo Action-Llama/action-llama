@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
 import { makeTmpProject, makeAgentConfig, captureLog } from "../../helpers.js";
@@ -644,6 +644,80 @@ describe("cli/commands/run-agent execute", () => {
       await expect(execute("dev", { project: projectPath })).rejects.toThrow("process.exit(0)");
       expect(exitSpy).toHaveBeenCalledWith(0);
       expect(exitSpy).not.toHaveBeenCalledWith(12);
+    });
+  });
+
+  describe("loadCredentialsFromPath statSync error handling", () => {
+    it("skips credential type entry when statSync throws (broken symlink at type level)", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "al-creds-symlink-type-"));
+      // Add a valid credential
+      mkdirSync(join(dir, "anthropic_key", "default"), { recursive: true });
+      writeFileSync(join(dir, "anthropic_key", "default", "token"), "test-key");
+      // Add a broken symlink at the type level (statSync will throw)
+      symlinkSync("/nonexistent/path/target-type", join(dir, "broken-type-symlink"));
+      process.env.AL_CREDENTIALS_PATH = dir;
+
+      try {
+        // Should succeed — broken symlink is skipped via catch { continue; }
+        await expect(execute("dev", { project: projectPath })).rejects.toThrow("process.exit(0)");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("skips credential instance entry when statSync throws (broken symlink at instance level)", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "al-creds-symlink-inst-"));
+      // Add a valid credential
+      mkdirSync(join(dir, "anthropic_key", "default"), { recursive: true });
+      writeFileSync(join(dir, "anthropic_key", "default", "token"), "test-key");
+      // Add a broken symlink at the instance level
+      symlinkSync("/nonexistent/path/target-inst", join(dir, "anthropic_key", "broken-inst-symlink"));
+      process.env.AL_CREDENTIALS_PATH = dir;
+
+      try {
+        // Should succeed — broken symlink is skipped via catch { continue; }
+        await expect(execute("dev", { project: projectPath })).rejects.toThrow("process.exit(0)");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe("agent timeout self-termination", () => {
+    it("emits error and calls process.exit(124) when timeout fires before session completes", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+
+      // Set a very short timeout on the agent config
+      mockLoadAgentConfig.mockReturnValue({
+        ...defaultAgentConfig(),
+        timeout: 0.001, // 1ms in seconds
+      });
+
+      // Make the session loop never resolve (so timeout fires first)
+      mockRunSessionLoop.mockReturnValue(new Promise(() => {}));
+
+      const logs: string[] = [];
+      const origConsoleLog = console.log;
+      console.log = (...args: any[]) => logs.push(args.join(" "));
+
+      // Start execute in background — don't await yet
+      execute("dev", { project: projectPath }).catch(() => {});
+
+      // Advance fake timers past the 1ms timeout — the timer callback fires,
+      // calls process.exit(124) which throws from the spy; catch it here.
+      try {
+        await vi.advanceTimersByTimeAsync(10);
+      } catch {
+        // expected: process.exit throws inside the timer callback
+      }
+
+      console.log = origConsoleLog;
+      vi.useRealTimers();
+
+      // process.exit(124) should have been called
+      expect(exitSpy).toHaveBeenCalledWith(124);
+      // Error log should have been emitted
+      expect(logs.some(l => l.includes("agent timeout reached"))).toBe(true);
     });
   });
 });
