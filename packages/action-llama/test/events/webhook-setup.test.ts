@@ -267,14 +267,13 @@ describe("PROVIDER_TO_SECRET_FIELD", () => {
 
 describe("KNOWN_PROVIDER_TYPES", () => {
   it("contains all expected provider types", () => {
-    for (const t of ["github", "sentry", "linear", "mintlify", "discord", "twitter", "test"]) {
+    for (const t of ["github", "sentry", "linear", "mintlify", "discord", "slack", "twitter", "test"]) {
       expect(KNOWN_PROVIDER_TYPES.has(t)).toBe(true);
     }
   });
 
   it("does not contain unknown provider types", () => {
     expect(KNOWN_PROVIDER_TYPES.has("unknown")).toBe(false);
-    expect(KNOWN_PROVIDER_TYPES.has("slack")).toBe(false);
   });
 });
 
