@@ -31,8 +31,10 @@ const { mockExistsSync, mockReadFileSync, mockRmSync } = vi.hoisted(() => {
 });
 
 // Mock process.exit before the module is imported (the module calls runAgent().then(..., process.exit))
+// Use a no-op implementation instead of throwing to avoid unhandled promise rejections
+// from the module-level runAgent().then(...) chain.
 const exitSpy = vi.spyOn(process, "exit").mockImplementation((_code?: any): never => {
-  throw new Error(`process.exit(${_code})`);
+  return undefined as never;
 });
 
 // ─── fs mocks ────────────────────────────────────────────────────────────────
