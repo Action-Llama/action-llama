@@ -5,7 +5,7 @@ import { promises as fsPromises } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { registerLogRoutes } from "../../../src/control/routes/logs.js";
-import { decodeCursor, encodeCursor, logFileForDate, parseQueryParams } from "../../../src/control/routes/log-helpers.js";
+import { decodeCursor, encodeCursor, logFileForDate, parseQueryParams, findLatestLogFile, readLastEntriesMultiFile, readEntriesForwardMultiFile } from "../../../src/control/routes/log-helpers.js";
 
 describe("decodeCursor / encodeCursor", () => {
   it("encodes and decodes a cursor round-trip", () => {
@@ -1420,5 +1420,95 @@ describe("log API routes", () => {
       // The important thing is that instance filtering works across files
       expect(foundEntriesFromOlderDate || data1.backCursor === null).toBe(true);
     });
+  });
+});
+
+// ── Direct unit tests for log-helpers utility functions ───────────────────────
+
+describe("findLatestLogFile", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-log-helpers-test-"));
+    mkdirSync(join(tmpDir, ".al", "logs"), { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns the last log file (alphabetically) when log files exist", () => {
+    const logsPath = join(tmpDir, ".al", "logs");
+    writeFileSync(join(logsPath, "my-agent-2024-03-17.log"), "line1\n");
+    writeFileSync(join(logsPath, "my-agent-2024-03-18.log"), "line2\n");
+    writeFileSync(join(logsPath, "my-agent-2024-03-19.log"), "line3\n");
+
+    const latest = findLatestLogFile(tmpDir, "my-agent");
+    expect(latest).not.toBeNull();
+    expect(latest).toContain("my-agent-2024-03-19.log");
+  });
+
+  it("returns null when no log files exist for the given prefix", () => {
+    const result = findLatestLogFile(tmpDir, "nonexistent-agent");
+    expect(result).toBeNull();
+  });
+});
+
+describe("readLastEntriesMultiFile", () => {
+  it("returns empty result immediately when files array is empty", async () => {
+    const result = await readLastEntriesMultiFile([], 100);
+    expect(result.entries).toEqual([]);
+    expect(result.latestFile).toBeNull();
+    expect(result.byteOffset).toBe(0);
+    expect(result.backCursorDate).toBeNull();
+    expect(result.backCursorOffset).toBe(0);
+  });
+});
+
+describe("readEntriesForwardMultiFile", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-fwd-multifile-test-"));
+    mkdirSync(join(tmpDir, ".al", "logs"), { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns empty result when no log files exist for the prefix", async () => {
+    const result = await readEntriesForwardMultiFile(
+      tmpDir,
+      "no-such-agent",
+      "2024-03-18",
+      0,
+      100,
+    );
+    expect(result.entries).toEqual([]);
+    expect(result.newDate).toBe("2024-03-18");
+    expect(result.newOffset).toBe(0);
+  });
+
+  it("sets startIdx to allFiles.length when cursorDate is newer than all log files", async () => {
+    // Create a log file for an older date than the cursor date
+    const logsPath = join(tmpDir, ".al", "logs");
+    writeFileSync(
+      join(logsPath, "my-agent-2024-03-10.log"),
+      JSON.stringify({ level: 30, time: 1710000000000, msg: "old entry" }) + "\n",
+    );
+
+    // cursorDate is newer than the only existing file (2024-03-10 < 2024-03-18)
+    const result = await readEntriesForwardMultiFile(
+      tmpDir,
+      "my-agent",
+      "2024-03-18",
+      0,
+      100,
+    );
+    // No files match the cursor date or newer, so no entries returned
+    expect(result.entries).toEqual([]);
+    expect(result.newDate).toBe("2024-03-18");
+    expect(result.newOffset).toBe(0);
   });
 });
