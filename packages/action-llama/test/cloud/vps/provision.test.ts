@@ -2509,4 +2509,42 @@ describe("provision.ts additional edge cases", () => {
     expect(result).not.toBeNull();
     expect(result?.provider).toBe("vps");
   });
+
+  it("covers Vultr API key validate function truthy branch (line 232)", async () => {
+    // Covers provision.ts line 232 col 31: `true` in `v.trim() ? true : "API key is required"`.
+    // This is the truthy branch of the Vultr API key validate function.
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
+    mockBackendRead.mockResolvedValue(null);   // No Vultr API key stored
+
+    // Capture the validate function from the password() call for Vultr API key
+    let capturedValidate: ((v: string) => boolean | string) | undefined;
+    mockPassword.mockImplementationOnce(async (opts: any) => {
+      capturedValidate = opts.validate;
+      return "valid-vultr-key";
+    });
+
+    setupCatalogMocks();
+    setupFirewallMocks(true);
+    setupInstanceMocks();
+
+    mockSearch
+      .mockResolvedValueOnce("vc2-1c-1gb")
+      .mockResolvedValueOnce("atl")
+      .mockResolvedValueOnce("ssh-key-1");
+
+    setupSshMocks();
+    mockConfirm.mockResolvedValueOnce(true); // VPS ready
+
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await setupVpsCloud();
+    consoleSpy.mockRestore();
+
+    // Test the captured validate function: truthy branch returns true
+    expect(capturedValidate).toBeDefined();
+    expect(capturedValidate!("valid-vultr-key")).toBe(true);
+    // Also test the falsy branch to verify both branches
+    expect(capturedValidate!("")).toBe("API key is required");
+    expect(capturedValidate!("   ")).toBe("API key is required");
+  });
 });
