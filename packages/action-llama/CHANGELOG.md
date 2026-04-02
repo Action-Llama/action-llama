@@ -1,5 +1,16 @@
 # @action-llama/action-llama
 
+## 0.26.8
+
+### Patch Changes
+
+- [`b6c5fc9`](https://github.com/Action-Llama/action-llama/commit/b6c5fc9f9cd13a87442754da86dab81b2a9bebb6) Thanks [@asselstine](https://github.com/asselstine)! - Fix instance logs not showing full history: stop backfill only when server indicates no more data (not based on batch size), and fix forward cursor to track actual bytes consumed so entries aren't skipped between polls.
+
+- [`ff37d00`](https://github.com/Action-Llama/action-llama/commit/ff37d002262d57ecac57b15fa1a170c9f9e6a905) Thanks [@asselstine](https://github.com/asselstine)! - Add summarize modal with custom prompt support. Clicking "Summarize" on activity rows or instance logs now opens a modal where you can edit the prompt sent to the model. Also fixes log summary searching only the latest daily log file (now searches all files) and resolves API key auth for pi_auth models.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.26.8
+
 ## 0.26.7
 
 ### Patch Changes

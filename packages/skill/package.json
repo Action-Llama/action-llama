@@ -1,6 +1,6 @@
 {
   "name": "@action-llama/skill",
-  "version": "0.26.7",
+  "version": "0.26.8",
   "description": "Action Llama plugin for AI coding tools — skills, MCP config, and reference docs for creating, running, and debugging LLM agents.",
   "type": "module",
   "license": "MIT",
