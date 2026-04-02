@@ -1837,4 +1837,87 @@ describe("logs command", () => {
     });
   });
 
+  // ── Additional coverage tests ────────────────────────────────────────────
+
+  describe("run header in readNewData (showRunHeaders branch)", () => {
+    it("prints run header when a 'Starting' message is appended in follow mode (conversation format)", async () => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+
+      // Write initial content so readLastN has something to read
+      writeFileSync(logFile, makePinoLine({ msg: "initial entry" }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+
+      mockGatewayFetch.mockRejectedValue(new Error("no gateway"));
+
+      // Start follow without --raw and without --all → uses formatConversationEntry → showRunHeaders=true
+      const followPromise = execute("dev", { project: tmpDir, lines: "50", follow: true });
+
+      // Wait for async setup
+      await new Promise(r => setTimeout(r, 50));
+
+      // Append a "Starting <agent> run" message — matches formatRunHeader pattern
+      const startLine = makePinoLine({ msg: "Starting dev run", name: "dev", instance: "dev-abc123" }) + "\n";
+      appendFileSync(logFile, startLine);
+
+      // Advance fake timer to trigger the poll (2000ms interval)
+      await vi.advanceTimersByTimeAsync(2500);
+      await new Promise(r => setTimeout(r, 50));
+
+      console.log = origLog;
+      vi.useRealTimers();
+
+      // The run header should have been printed (contains the agent name formatted in the header)
+      expect(output.some((l) => l.includes("dev"))).toBe(true);
+    });
+  });
+
+  describe("SIGINT handler in followFile (cleanup path)", () => {
+    it("calls cleanup and exits when SIGINT is received during follow mode", async () => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({ msg: "initial" }) + "\n");
+
+      mockGatewayFetch.mockRejectedValue(new Error("no gateway"));
+
+      const origExit = process.exit;
+      let exitCode: number | undefined;
+      process.exit = ((code?: number) => {
+        exitCode = code;
+        throw new Error("EXIT");
+      }) as any;
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+
+      // Start follow mode — registers SIGINT handler
+      const followPromise = execute("dev", { project: tmpDir, lines: "50", follow: true });
+
+      // Wait for setup
+      await new Promise(r => setTimeout(r, 50));
+
+      // Trigger SIGINT — fires the cleanup handler
+      try {
+        process.emit("SIGINT");
+      } catch {
+        // Expected EXIT thrown from process.exit mock
+      }
+
+      console.log = origLog;
+      process.exit = origExit;
+      vi.useRealTimers();
+
+      // Verify process.exit(0) was called
+      expect(exitCode).toBe(0);
+    });
+  });
+
 });
