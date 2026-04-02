@@ -392,6 +392,36 @@ describe("HostUserRuntime", () => {
       handle.stop();
     });
 
+    it("readNewData poll fires and hits size <= offset early return with fake timers", async () => {
+      // Covers host-user-runtime.ts line 426 (size <= offset early return) via fake timer.
+      // With fake timers, we advance 500ms to trigger the poll WITHOUT appending new content.
+      // Since the file hasn't grown, size === offset and the early return is hit.
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+
+      try {
+        const runId = "al-test-fake-timer-size-" + Math.random().toString(36).slice(2);
+        writeLogFile(runId, "content\n");
+
+        const lines: string[] = [];
+        const handle = runtime.streamLogs(runId, (line) => lines.push(line));
+
+        // Initial read consumed all content (offset = file size)
+        expect(lines).toContain("content");
+
+        // Advance fake timer by 600ms to trigger the poll interval (500ms)
+        // File hasn't changed, so size === offset → early return at line 426
+        await vi.advanceTimersByTimeAsync(600);
+
+        // No new lines should have been added
+        expect(lines).toHaveLength(1);
+        expect(lines[0]).toContain("content");
+
+        handle.stop();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("readNewData returns early when stopped is true (line 423)", async () => {
       const runId = "al-test-stopped-" + Math.random().toString(36).slice(2);
       const logPath = join(testRunsDir, `${runId}.log`);
