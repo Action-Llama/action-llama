@@ -310,6 +310,36 @@ describe("runChatMode", () => {
     }
   });
 
+  it("idle timeout triggers process.exit after 15 minutes of inactivity", async () => {
+    vi.useFakeTimers();
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((_code?: any): never => {
+      throw new Error(`process.exit(${_code})`);
+    });
+
+    try {
+      const runPromise = runChatMode(makeAgentInit());
+
+      // Let WS open
+      await vi.advanceTimersByTimeAsync(1);
+      const ws = mockWsInstances[0];
+
+      // Advance past idle timeout (15 minutes = 900_000ms)
+      // The idle check runs every 60_000ms, so advance past the threshold
+      await expect(
+        vi.advanceTimersByTimeAsync(960_001)
+      ).rejects.toThrow("process.exit(0)");
+
+      expect(exitSpy).toHaveBeenCalledWith(0);
+
+      // Cleanup the hanging promise
+      ws.emit("close");
+      await runPromise.catch(() => {});
+    } finally {
+      exitSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it("session subscribe callback forwards outbound messages to WS", async () => {
     const { mapAgentEvent } = await import("../../src/chat/event-mapper.js");
     // Make mapAgentEvent return an assistant message
