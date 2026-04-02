@@ -282,4 +282,64 @@ describe("runChatMode", () => {
     ws.emit("close");
     await runPromise;
   });
+
+  it("heartbeat sends message to WS when open", async () => {
+    vi.useFakeTimers();
+    try {
+      const runPromise = runChatMode(makeAgentInit());
+
+      // Advance just 1ms so the WS setTimeout(0) fires and WS becomes OPEN
+      await vi.advanceTimersByTimeAsync(1);
+      const ws = mockWsInstances[0];
+      expect(ws).toBeDefined();
+      expect(ws.readyState).toBe(1); // OPEN
+
+      // Advance past heartbeat interval (30_000ms) but less than idle timeout (60_000ms)
+      await vi.advanceTimersByTimeAsync(30_001);
+
+      const sentMessages = ws.send.mock.calls.map((c: any[]) => {
+        try { return JSON.parse(c[0]); } catch { return null; }
+      });
+      const heartbeatMsg = sentMessages.find((m: any) => m?.type === "heartbeat");
+      expect(heartbeatMsg).toBeDefined();
+
+      ws.emit("close");
+      await runPromise;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("session subscribe callback forwards outbound messages to WS", async () => {
+    const { mapAgentEvent } = await import("../../src/chat/event-mapper.js");
+    // Make mapAgentEvent return an assistant message
+    vi.mocked(mapAgentEvent).mockReturnValueOnce([
+      { type: "assistant_message", text: "Hello!", done: true } as any,
+    ]);
+
+    let capturedSubscribeCallback: ((event: any) => void) | null = null;
+    mockSessionSubscribe.mockImplementation((cb: (event: any) => void) => {
+      capturedSubscribeCallback = cb;
+    });
+
+    const runPromise = runChatMode(makeAgentInit());
+    await new Promise((r) => setTimeout(r, 20));
+
+    const ws = mockWsInstances[0];
+
+    // Trigger the session subscribe callback
+    capturedSubscribeCallback?.({ type: "some-event" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    // WS should have received the forwarded message
+    const sentMessages = ws.send.mock.calls.map((c: any[]) => {
+      try { return JSON.parse(c[0]); } catch { return null; }
+    });
+    const assistantMsg = sentMessages.find((m: any) => m?.type === "assistant_message");
+    expect(assistantMsg).toBeDefined();
+    expect(assistantMsg?.text).toBe("Hello!");
+
+    ws.emit("close");
+    await runPromise;
+  });
 });
