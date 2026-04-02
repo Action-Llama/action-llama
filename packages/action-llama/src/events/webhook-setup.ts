@@ -15,9 +15,10 @@ import { SentryWebhookProvider } from "../webhooks/providers/sentry.js";
 import { LinearWebhookProvider } from "../webhooks/providers/linear.js";
 import { MintlifyWebhookProvider } from "../webhooks/providers/mintlify.js";
 import { DiscordWebhookProvider } from "../webhooks/providers/discord.js";
+import { SlackWebhookProvider } from "../webhooks/providers/slack.js";
 import { TwitterWebhookProvider } from "../webhooks/providers/twitter.js";
 import { TestWebhookProvider } from "../webhooks/providers/test.js";
-import type { WebhookFilter, WebhookTrigger, GitHubWebhookFilter, SentryWebhookFilter, LinearWebhookFilter, MintlifyWebhookFilter, DiscordWebhookFilter, TwitterWebhookFilter } from "../webhooks/types.js";
+import type { WebhookFilter, WebhookTrigger, GitHubWebhookFilter, SentryWebhookFilter, LinearWebhookFilter, MintlifyWebhookFilter, DiscordWebhookFilter, SlackWebhookFilter, TwitterWebhookFilter } from "../webhooks/types.js";
 import type { TestWebhookFilter } from "../webhooks/providers/test.js";
 import { twitterAutoSubscribe } from "../webhooks/providers/twitter-subscribe.js";
 
@@ -38,6 +39,7 @@ export const PROVIDER_CREDENTIALS: Record<string, { type: string; secretField: s
   linear: [{ type: "linear_webhook_secret", secretField: "secret" }],
   mintlify: [{ type: "mintlify_webhook_secret", secretField: "secret" }],
   discord: [{ type: "discord_bot", secretField: "public_key" }],
+  slack: [{ type: "slack_signing_secret", secretField: "secret" }],
   twitter: [
     { type: "x_twitter_api", secretField: "consumer_secret" },
     { type: "x_twitter_user_oauth1", secretField: "access_token" },
@@ -135,6 +137,13 @@ export function buildFilterFromTrigger(trigger: WebhookTrigger, providerType: st
     if (trigger.events) f.events = trigger.events;
     return Object.keys(f).length > 0 ? f : undefined;
   }
+  if (providerType === "slack") {
+    const f: SlackWebhookFilter = {};
+    if (trigger.events) f.events = trigger.events;
+    if (trigger.channels) f.channels = trigger.channels;
+    if (trigger.team_ids) f.team_ids = trigger.team_ids;
+    return Object.keys(f).length > 0 ? f : undefined;
+  }
   if (providerType === "twitter") {
     const f: TwitterWebhookFilter = {};
     if (trigger.events) f.events = trigger.events;
@@ -145,7 +154,7 @@ export function buildFilterFromTrigger(trigger: WebhookTrigger, providerType: st
 }
 
 /** Known webhook provider types (used by doctor for validation) */
-export const KNOWN_PROVIDER_TYPES = new Set(["github", "sentry", "linear", "mintlify", "discord", "twitter", "test"]);
+export const KNOWN_PROVIDER_TYPES = new Set(["github", "sentry", "linear", "mintlify", "discord", "slack", "twitter", "test"]);
 
 // Valid trigger fields per provider type (filter fields + source)
 const VALID_TRIGGER_FIELDS: Record<string, Set<string>> = {
@@ -155,6 +164,7 @@ const VALID_TRIGGER_FIELDS: Record<string, Set<string>> = {
   test: new Set(["source", "events", "actions", "repos"]),
   mintlify: new Set(["source", "events", "actions", "repos", "branches"]),
   discord: new Set(["source", "events", "guilds", "channels", "commands"]),
+  slack: new Set(["source", "events", "channels", "team_ids"]),
   twitter: new Set(["source", "events", "repos"]),
 };
 
@@ -233,6 +243,7 @@ export async function setupWebhookRegistry(
   registry.registerProvider(new LinearWebhookProvider());
   registry.registerProvider(new MintlifyWebhookProvider());
   registry.registerProvider(new DiscordWebhookProvider());
+  registry.registerProvider(new SlackWebhookProvider());
   registry.registerProvider(new TestWebhookProvider());
   registry.registerProvider(new TwitterWebhookProvider());
 
