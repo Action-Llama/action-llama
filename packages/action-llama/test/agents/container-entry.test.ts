@@ -427,12 +427,22 @@ describe("container-entry", () => {
       });
       const init = await makeInit();
 
-      mockRunHooks.mockResolvedValueOnce(undefined); // pre-hook (none here actually)
+      // There's only ONE call to runHooks (for the post hook, since there are no pre hooks)
+      // Make that call reject with an error to test the catch block
       mockRunHooks.mockRejectedValueOnce(new Error("post hook failed"));
 
-      // Should not throw
-      const exitCode = await handleInvocation(init);
-      expect(exitCode).toBe(0);
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      try {
+        // Should not throw — post-hook failure is caught and logged
+        const exitCode = await handleInvocation(init);
+        expect(exitCode).toBe(0);
+
+        // Verify the error was logged
+        const logs = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+        expect(logs).toContain("post hook failed");
+      } finally {
+        consoleSpy.mockRestore();
+      }
     });
 
     it("runs test-script.sh when it exists instead of LLM", async () => {
