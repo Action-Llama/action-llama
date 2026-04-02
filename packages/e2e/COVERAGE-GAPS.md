@@ -192,3 +192,5 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] Auth middleware without Docker — /health unprotected (200 no auth); protected route no auth → 401; wrong Bearer → 401; correct Bearer → 200; exercises applyAuthMiddleware bearer token check in gateway/middleware/auth.ts (auth-middleware-noagent.test.ts)
 
 - [x] Log API ?grep parameter without Docker — grep=pattern filters to matching entries; invalid regex returns 400; grep=nonexistent returns empty; exercises readLastEntriesMultiFile grep RegExp filter + handleLogRequest 400 path (logs-grep-noagent.test.ts)
+
+- [x] POST /control/pause and /control/resume without Docker — pause returns {success:true, message:"Scheduler paused"}; resume returns {success:true, message:"Scheduler resumed"}; idempotent double-pause works; roundtrip pause+resume works; 401 without auth; exercises control/routes/control.ts pause/resume paths + scheduler/gateway-setup.ts pauseScheduler()/resumeScheduler() functions (control-pause-resume-noagent.test.ts)
