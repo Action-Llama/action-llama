@@ -12,6 +12,11 @@ vi.mock("child_process", () => ({
   execFileSync: (...args: any[]) => mockExecFileSync(...args),
 }));
 
+// Hoisted mock for readAll so individual tests can override it
+const { mockReadAll } = vi.hoisted(() => ({
+  mockReadAll: vi.fn().mockResolvedValue({ token: "test-token-value" }),
+}));
+
 // Mock credentials
 vi.mock("../../src/shared/credentials.js", () => ({
   parseCredentialRef: (ref: string) => {
@@ -20,7 +25,7 @@ vi.mock("../../src/shared/credentials.js", () => ({
     return { type: ref.slice(0, sep), instance: ref.slice(sep + 1) };
   },
   getDefaultBackend: () => ({
-    readAll: vi.fn().mockResolvedValue({ token: "test-token-value" }),
+    readAll: mockReadAll,
   }),
 }));
 
@@ -51,6 +56,8 @@ describe("HostUserRuntime", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Restore the default readAll behavior after vi.clearAllMocks() resets it
+    mockReadAll.mockResolvedValue({ token: "test-token-value" });
     // Create a fresh temp directory for each test so we never conflict with a
     // pre-existing /tmp/al-runs that may be owned by a different user (e.g. root).
     testRunsDir = mkdtempSync(join(tmpdir(), "al-runs-test-"));
@@ -94,6 +101,19 @@ describe("HostUserRuntime", () => {
       // Cleanup
       runtime.cleanupCredentials(creds);
       expect(existsSync(creds.stagingDir)).toBe(false);
+    });
+
+    it("skips credentials when readAll returns null (if (!fields) continue path)", async () => {
+      // Make readAll return null to simulate a missing credential
+      mockReadAll.mockResolvedValueOnce(null);
+
+      const creds = await runtime.prepareCredentials(["missing_cred"]);
+      expect(creds.strategy).toBe("host-user");
+      // No files staged since readAll returned null for the credential
+      expect(Object.keys(creds.bundle)).toHaveLength(0);
+      expect(readdirSync(creds.stagingDir)).toHaveLength(0);
+
+      runtime.cleanupCredentials(creds);
     });
 
     it("only stages requested credentials", async () => {

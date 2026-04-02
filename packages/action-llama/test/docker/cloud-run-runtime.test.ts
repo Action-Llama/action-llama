@@ -808,6 +808,46 @@ describe("CloudRunRuntime", () => {
       await vi.advanceTimersByTimeAsync(10000);
       expect(vi.mocked(listJobs).mock.calls.length).toBe(callsBefore);
     });
+
+    it("skips jobs that do not match the agent name prefix", async () => {
+      vi.useFakeTimers();
+      // Two jobs: one matching "al-myagent-" prefix, one not matching
+      vi.mocked(listJobs).mockResolvedValue([
+        {
+          name: "projects/p/locations/r/jobs/al-myagent-abc",
+          uid: "u1",
+          createTime: "2026-01-01T00:00:00Z",
+          updateTime: "2026-01-01T00:00:00Z",
+          template: { template: { containers: [] } },
+        },
+        {
+          name: "projects/p/locations/r/jobs/other-service-xyz",
+          uid: "u2",
+          createTime: "2026-01-01T00:00:00Z",
+          updateTime: "2026-01-01T00:00:00Z",
+          template: { template: { containers: [] } },
+        },
+      ]);
+      vi.mocked(listLogEntries).mockResolvedValue({
+        entries: [{ timestamp: "2026-01-01T00:00:01Z" }],
+      } as any);
+      vi.mocked(extractLogText).mockReturnValue("matched line");
+      vi.mocked(buildJobLogFilter).mockReturnValue("test-filter");
+
+      const runtime = makeRuntime();
+      const lines: string[] = [];
+      const handle = runtime.followLogs("myagent", (line) => lines.push(line));
+
+      // Only advance enough for one poll (just past 3000ms)
+      await vi.advanceTimersByTimeAsync(3100);
+      handle.stop();
+
+      // buildJobLogFilter should not be called with the non-matching job's id
+      const filterCalls = vi.mocked(buildJobLogFilter).mock.calls;
+      const calledJobIds = filterCalls.map(args => args[1]);
+      expect(calledJobIds).not.toContain("other-service-xyz");
+      expect(lines).toContain("matched line");
+    });
   });
 
   describe("buildImage", () => {
