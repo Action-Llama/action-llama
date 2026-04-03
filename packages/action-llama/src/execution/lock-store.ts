@@ -198,20 +198,16 @@ export class LockStore {
   /**
    * Validate that the resource key is a valid URI.
    * 
-   * Accepts common URI schemes: https://, http://, file://, github://, and any scheme
-   * matching the pattern /^[a-z][a-z0-9+.-]*:/ 
+   * Accepts any valid URI according to the WHATWG URL standard.
+   * All valid URIs must have a scheme matching the pattern [a-z][a-z0-9+.-]*:
    * 
    * @param resourceKey The resource key to validate
    * @returns Object with ok: true if valid, or ok: false with error message
    */
   private validateResourceKey(resourceKey: string): { ok: boolean; error?: string } {
     try {
-      const url = new URL(resourceKey);
-      // Check for valid URI scheme pattern: starts with letter, followed by letters/digits/+/./-, then :
-      const validSchemePattern = /^[a-z][a-z0-9+.-]*$/;
-      if (!validSchemePattern.test(url.protocol.slice(0, -1))) {
-        return { ok: false, error: `Invalid URI scheme '${url.protocol}'. URI schemes must match pattern [a-z][a-z0-9+.-]*:` };
-      }
+      new URL(resourceKey);
+      // If new URL() succeeds, the URI is valid according to WHATWG spec
       return { ok: true };
     } catch (error) {
       return { ok: false, error: `Invalid URI format: ${error instanceof Error ? error.message : 'unknown error'}` };
