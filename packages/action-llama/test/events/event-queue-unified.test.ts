@@ -689,5 +689,62 @@ describe("EventSourcedWorkQueue", () => {
 
       queue2.close();
     });
+
+    it("dequeues the oldest item when WORK_DEQUEUED has no workId and queue has items", async () => {
+      // Write a WORK_QUEUED event without a workId so that buildQueueState calls
+      // QueueState.enqueue(item, undefined) — exercising the id-generation branch
+      // (id || `work-${Date.now()}-...`).
+      const stream = store.events.stream("work-queue-noworkid-dequeue-agent");
+      await stream.append(
+        createEvent(EventTypes.WORK_QUEUED, {
+          // workId intentionally omitted — event.data.workId is undefined
+          agentName: "noworkid-dequeue-agent",
+          context: "payload-oldest",
+          receivedAt: Date.now(),
+        })
+      );
+
+      // Write a WORK_DEQUEUED event also without a workId so that buildQueueState
+      // calls QueueState.dequeue(undefined) — exercising the "get oldest item" path
+      // (lines 321-324 of event-queue-unified.ts).
+      await stream.append(
+        createEvent(EventTypes.WORK_DEQUEUED, {
+          // workId intentionally omitted — event.data.workId is undefined
+          agentName: "noworkid-dequeue-agent",
+          dequeuedAt: Date.now(),
+        })
+      );
+
+      // Replay via initialize() — should dequeue the item via the oldest-item fallback
+      const queue2 = new EventSourcedWorkQueue<string>(store, 100);
+      await expect(queue2.initialize()).resolves.not.toThrow();
+
+      // The item should have been dequeued (oldest-item fallback removed it)
+      expect(queue2.size("noworkid-dequeue-agent")).toBe(0);
+
+      queue2.close();
+    });
+
+    it("returns undefined when WORK_DEQUEUED has no workId and queue is empty", async () => {
+      // Write a WORK_DEQUEUED event without a workId when no items are in the
+      // queue — exercising the `return undefined` branch at line 327
+      // (QueueState.dequeue with no workId and empty state).
+      const stream = store.events.stream("work-queue-empty-noworkid-agent");
+      await stream.append(
+        createEvent(EventTypes.WORK_DEQUEUED, {
+          // workId intentionally omitted — event.data.workId is undefined
+          agentName: "empty-noworkid-agent",
+          dequeuedAt: Date.now(),
+        })
+      );
+
+      const queue2 = new EventSourcedWorkQueue<string>(store, 100);
+      await expect(queue2.initialize()).resolves.not.toThrow();
+
+      // No items were ever added; dequeue on empty queue returned undefined safely
+      expect(queue2.size("empty-noworkid-agent")).toBe(0);
+
+      queue2.close();
+    });
   });
 });
