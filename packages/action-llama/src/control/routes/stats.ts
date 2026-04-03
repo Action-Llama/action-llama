@@ -308,15 +308,12 @@ export function registerStatsRoutes(
         }
       } else {
         // No DB rows fetched; just get the count
-        const result = statsStore.queryActivityRowsWithTotal({
-          limit: 0,
-          offset: 0,
+        dbCount = statsStore.countActivityRows({
           agentName: agentFilter,
           triggerType: triggerTypeFilter,
           dbStatuses: requestedDbStatuses,
           includeDeadLetters,
         });
-        dbCount = result.total;
       }
 
       rows = [...memSlice, ...dbRows];
