@@ -953,6 +953,77 @@ describe("promptCloudflareHttps paths", () => {
     expect(mockVerifyToken).toHaveBeenCalledWith("new-cf-token");
     expect(mockWriteCredentialField).toHaveBeenCalledWith("cloudflare_api_token", "default", "api_token", "new-cf-token");
   });
+
+  it("keypress handler calls ac.abort() when escape key is pressed during zone search", async () => {
+    // This test covers the onKeypress handler body (provision.ts lines 26-28):
+    //   if (key?.name === "escape") ac.abort();
+    // We do this by using a signal-aware search mock: when the AbortController is aborted
+    // (because the keypress handler fires with {name: "escape"}), the mock rejects with
+    // AbortPromptError, which searchWithEsc catches and returns null.
+    const { AbortPromptError } = await import("@inquirer/core");
+
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+    mockBackendRead.mockResolvedValue("stored-cf-token");
+    mockListAllZones.mockResolvedValue([
+      { id: "zone-1", name: "example.com", status: "active" },
+    ]);
+
+    // Zone search returns a pending promise that rejects only when the abort signal fires.
+    // This simulates the real inquirer `search` respecting the signal.
+    mockSearch.mockImplementationOnce(({ signal }: { signal?: AbortSignal }) => {
+      return new Promise<never>((_, reject) => {
+        if (signal) {
+          signal.addEventListener("abort", () => {
+            reject(new AbortPromptError());
+          });
+        }
+      });
+    });
+
+    // Set up the rest of the Vultr flow for after promptCloudflareHttps returns null.
+    setupFullVultrFlow();
+
+    // Start the provisioning flow but do not await yet — we need to emit the escape key
+    // after the onKeypress listener has been registered by searchWithEsc.
+    const resultPromise = setupVpsCloud();
+
+    // Yield to the microtask queue several times so that the async flow advances far
+    // enough that searchWithEsc has registered its keypress listener and is awaiting search().
+    for (let i = 0; i < 20; i++) {
+      await Promise.resolve();
+    }
+
+    // Emit an escape keypress on stdin. The onKeypress handler fires synchronously,
+    // calling ac.abort() which aborts the AbortController signal, causing the signal-aware
+    // search mock to reject with AbortPromptError.
+    process.stdin.emit("keypress", null, { name: "escape" });
+
+    // Allow the rejection to propagate through the promise chain.
+    for (let i = 0; i < 20; i++) {
+      await Promise.resolve();
+    }
+
+    const result = await resultPromise;
+    expect(result?.provider).toBe("vps");
+  });
+
+  it("propagates non-AbortPromptError thrown from zone search (searchWithEsc re-throws)", async () => {
+    // This test covers the `throw err` branch in searchWithEsc (provision.ts catch block)
+    // which fires when `search()` rejects with an error that is NOT an AbortPromptError.
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+    mockBackendRead.mockResolvedValue("stored-cf-token");
+    mockListAllZones.mockResolvedValue([
+      { id: "zone-1", name: "example.com", status: "active" },
+    ]);
+    // The zone search (searchWithEsc) throws a generic error — not an AbortPromptError.
+    // searchWithEsc must re-throw it (the `throw err` branch), which propagates through
+    // promptCloudflareHttps and all the way out of setupVpsCloud.
+    mockSearch.mockRejectedValueOnce(new Error("Unexpected search failure"));
+
+    await expect(setupVpsCloud()).rejects.toThrow("Unexpected search failure");
+  });
 });
 
 /**
