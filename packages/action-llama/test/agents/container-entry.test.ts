@@ -715,5 +715,43 @@ describe("container-entry", () => {
         exitSpy.mockClear();
       }
     });
+
+    it("module-level rejection handler logs error and calls process.exit(1) when runAgent rejects", async () => {
+      // Covers container-entry.ts lines 330-331: the (err) => { emitLog(...); process.exit(1); }
+      // rejection callback in the module-level runAgent().then(success, failure).
+      //
+      // The module-level call fires when the module is re-imported. We reset the module
+      // registry and re-import while initAgent() is set to throw (AGENT_CONFIG absent).
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      exitSpy.mockClear();
+
+      // Remove AGENT_CONFIG so initAgent() throws "missing AGENT_CONFIG env var",
+      // causing the module-level runAgent() to reject, which fires the error handler.
+      const savedConfig = process.env.AGENT_CONFIG;
+      delete process.env.AGENT_CONFIG;
+
+      try {
+        vi.resetModules();
+        // Re-importing the module triggers the module-level runAgent().then(success, failure).
+        // runAgent() calls initAgent() which throws, so the failure callback fires.
+        await import("../../src/agents/container-entry.js");
+
+        // Give the async rejection handler time to execute.
+        await new Promise((r) => setTimeout(r, 50));
+
+        // The failure callback calls emitLog() (which calls console.log with JSON) and process.exit(1).
+        const logCalls = consoleSpy.mock.calls.map((c) => c[0]);
+        const errorLogCall = logCalls.find(
+          (c) => typeof c === "string" && c.includes("container entry error")
+        );
+        expect(errorLogCall).toBeDefined();
+        expect(exitSpy).toHaveBeenCalledWith(1);
+      } finally {
+        if (savedConfig !== undefined) process.env.AGENT_CONFIG = savedConfig;
+        consoleSpy.mockRestore();
+        exitSpy.mockClear();
+        vi.resetModules();
+      }
+    });
   });
 });
