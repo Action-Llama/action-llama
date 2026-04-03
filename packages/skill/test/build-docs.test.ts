@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
@@ -260,6 +260,99 @@ describe("DOC_MAPPING covers all docs", () => {
         const filePath = resolve(docsDir, `${page}.mdx`);
         expect(existsSync(filePath), `${page}.mdx should exist (mapped to ${output})`).toBe(true);
       }
+    }
+  });
+});
+
+describe("CLI entry point", () => {
+  // These tests exercise the top-level `if (process.argv[1] === ...)` block
+  // by resetting the module registry and re-importing with a matching argv[1].
+
+  it("calls process.exit(1) and logs error when docs.json not found in docsDir", async () => {
+    const originalArgv = process.argv.slice();
+    // Spy on process.exit so it throws instead of terminating the test runner.
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((_code?: any): never => {
+      throw new Error(`process.exit(${_code})`);
+    });
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      // Point argv[1] at the build-docs module path so the CLI condition is true.
+      process.argv[1] = resolve(__dirname, "../src/build-docs.ts");
+      // Point argv[2] at a directory that definitely has no docs.json.
+      process.argv[2] = "/tmp/no-docs-json-" + Math.random().toString(36).slice(2);
+      process.argv.length = 3;
+
+      vi.resetModules();
+      // Re-importing the module re-executes its top-level code (including the CLI block).
+      await expect(import("../src/build-docs.js")).rejects.toThrow("process.exit(1)");
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("docs.json not found")
+      );
+      expect(exitSpy).toHaveBeenCalledWith(1);
+    } finally {
+      process.argv.splice(0, process.argv.length, ...originalArgv);
+      exitSpy.mockRestore();
+      consoleSpy.mockRestore();
+      vi.resetModules();
+    }
+  });
+
+  it("builds all output files and logs success when docsDir is valid", async () => {
+    const originalArgv = process.argv.slice();
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    let tmpDocsDir: string = "";
+    let tmpOutputDir: string = "";
+
+    try {
+      tmpDocsDir = mkdtempSync(join(tmpdir(), "al-cli-docs-"));
+      tmpOutputDir = mkdtempSync(join(tmpdir(), "al-cli-out-"));
+
+      // Create docs.json (required for the existsSync check)
+      writeFileSync(join(tmpDocsDir, "docs.json"), JSON.stringify({}));
+
+      // Create all required MDX files from DOC_MAPPING
+      const allPages = new Set<string>();
+      for (const pages of Object.values(DOC_MAPPING)) {
+        for (const page of pages) allPages.add(page);
+      }
+      for (const page of allPages) {
+        const parts = page.split("/");
+        const dir = resolve(tmpDocsDir, ...parts.slice(0, -1));
+        mkdirSync(dir, { recursive: true });
+        const title = parts[parts.length - 1].replace(/-/g, " ");
+        writeFileSync(
+          resolve(tmpDocsDir, `${page}.mdx`),
+          `---\ntitle: "${title}"\n---\n\nContent for ${page}.\n`
+        );
+      }
+
+      // Point argv at the CLI module and our temp dirs
+      process.argv[1] = resolve(__dirname, "../src/build-docs.ts");
+      process.argv[2] = tmpDocsDir;
+      process.argv[3] = tmpOutputDir;
+      process.argv.length = 4;
+
+      vi.resetModules();
+      await import("../src/build-docs.js");
+
+      // Verify that output files were created
+      for (const filename of Object.keys(DOC_MAPPING)) {
+        expect(existsSync(resolve(tmpOutputDir, filename))).toBe(true);
+      }
+
+      // Verify the success log was emitted
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("skill files from")
+      );
+    } finally {
+      process.argv.splice(0, process.argv.length, ...originalArgv);
+      consoleSpy.mockRestore();
+      vi.resetModules();
+      if (tmpDocsDir) rmSync(tmpDocsDir, { recursive: true, force: true });
+      if (tmpOutputDir) rmSync(tmpOutputDir, { recursive: true, force: true });
     }
   });
 });
