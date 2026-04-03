@@ -161,3 +161,67 @@ describe("integration: dispatchTriggers() (no Docker required)", { timeout: 10_0
     expect(warnArgs[1]).toMatch(/depth limit/);
   });
 });
+
+// ── drainQueues ────────────────────────────────────────────────────────────
+// Import drainQueues separately
+
+const { drainQueues } = await import(
+  /* @vite-ignore */
+  "/tmp/repo/packages/action-llama/dist/execution/execution.js"
+);
+
+describe("integration: drainQueues() early-exit paths (no Docker required)", { timeout: 10_000 }, () => {
+  it("returns early when ctx.shuttingDown is true", async () => {
+    const ctx = makeMinimalCtx({ shuttingDown: true });
+    // Should not throw and not call workQueue.dequeue
+    await expect(drainQueues(ctx)).resolves.not.toThrow();
+    expect(ctx.workQueue.size).not.toHaveBeenCalled();
+  });
+
+  it("returns early when scheduler is paused via statusTracker", async () => {
+    const ctx = makeMinimalCtx({
+      shuttingDown: false,
+      statusTracker: { isPaused: () => true },
+      agentConfigs: [{ name: "some-agent", credentials: [], models: [] }],
+    });
+    await expect(drainQueues(ctx)).resolves.not.toThrow();
+    expect(ctx.workQueue.size).not.toHaveBeenCalled();
+  });
+
+  it("skips agent when it is disabled via isAgentEnabled", async () => {
+    const ctx = makeMinimalCtx({
+      shuttingDown: false,
+      agentConfigs: [{ name: "disabled-agent", credentials: [], models: [] }],
+      isAgentEnabled: (_name: string) => false, // All disabled
+    });
+    await expect(drainQueues(ctx)).resolves.not.toThrow();
+    // workQueue.size should not have been called for the disabled agent
+    expect(ctx.workQueue.size).not.toHaveBeenCalled();
+  });
+
+  it("skips agent when it has no runner pool", async () => {
+    const ctx = makeMinimalCtx({
+      shuttingDown: false,
+      agentConfigs: [{ name: "no-pool-agent", credentials: [], models: [] }],
+      runnerPools: {}, // No pool for this agent
+      isAgentEnabled: () => true,
+    });
+    // workQueue.size IS called for no-pool agent to check queue size
+    await expect(drainQueues(ctx)).resolves.not.toThrow();
+  });
+
+  it("skips agent when its work queue is empty", async () => {
+    const ctx = makeMinimalCtx({
+      shuttingDown: false,
+      agentConfigs: [{ name: "empty-queue-agent", credentials: [], models: [] }],
+      runnerPools: { "empty-queue-agent": { getAllAvailableRunners: () => [] } },
+      workQueue: {
+        size: vi.fn(() => 0), // Empty queue
+        dequeue: vi.fn(() => undefined),
+      } as any,
+      isAgentEnabled: () => true,
+    });
+    await expect(drainQueues(ctx)).resolves.not.toThrow();
+    expect(ctx.workQueue.size).toHaveBeenCalledWith("empty-queue-agent");
+  });
+});
