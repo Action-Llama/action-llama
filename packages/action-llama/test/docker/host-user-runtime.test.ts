@@ -442,6 +442,45 @@ describe("HostUserRuntime", () => {
       // after-stop should not appear because readNewData returns early when stopped
       expect(lines).not.toContain("after-stop");
     });
+
+    it("readNewData poll interval fires after stop, hitting the stopped===true early return", async () => {
+      // Covers host-user-runtime.ts line 423 (the `return` branch when stopped===true).
+      // Strategy: use fake timers but prevent clearInterval from actually stopping the fake timer,
+      // so that advancing time fires readNewData AFTER stopped has been set to true.
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+
+      try {
+        const runId = "al-test-stopped-early-return-" + Math.random().toString(36).slice(2);
+        writeLogFile(runId, "existing\n");
+
+        const lines: string[] = [];
+
+        // Suppress clearInterval so the polling interval keeps firing even after stop().
+        // This ensures readNewData is called when stopped===true.
+        const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval").mockImplementation(() => {});
+
+        const handle = runtime.streamLogs(runId, (line) => lines.push(line));
+
+        // Verify initial content was read.
+        expect(lines).toContain("existing");
+        const linesAfterInit = lines.length;
+
+        // stop() sets stopped=true and calls clearInterval (now a no-op due to spy).
+        handle.stop();
+
+        // Advance fake time past the 500ms poll interval. Because clearInterval was suppressed,
+        // the interval still fires and readNewData is invoked with stopped===true, hitting the
+        // `if (stopped) return;` early return branch (statement 169 in coverage).
+        await vi.advanceTimersByTimeAsync(600);
+
+        // No additional lines should have been added (early return prevents processing).
+        expect(lines).toHaveLength(linesAfterInit);
+
+        clearIntervalSpy.mockRestore();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   // ── waitForExit ─────────────────────────────────────────────────────────
