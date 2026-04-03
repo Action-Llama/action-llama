@@ -247,6 +247,8 @@ export function dispatchTriggers(
         }
         return drainQueues(ctx);
       })
+      // Defensive: executeRun() wraps all errors, and drainQueues() doesn't throw.
+      // This catch is unlikely to trigger, but remains for safety if those functions change.
       .catch((err) => {
         if (callEdgeId != null && ctx.statsStore) {
           try {
@@ -297,6 +299,8 @@ function fireQueuedItem(
     const prompt = makeWebhookPrompt(agentConfig, work.context, ctx);
     executeRun(runner, prompt, { type: 'webhook', source: work.context.source, receiptId: work.context.receiptId }, agentConfig.name, 0, ctx, instanceLifecycle)
       .then(() => drainQueues(ctx))
+      // Defensive: executeRun() wraps all errors, and drainQueues() doesn't throw.
+      // This catch is unlikely to trigger, but remains for safety if those functions change.
       .catch((err) => ctx.logger.error({ err, agent: agentConfig.name }, "queued webhook failed"));
 
   } else if (work.type === 'agent-trigger') {
@@ -318,6 +322,8 @@ function fireQueuedItem(
         }
         return drainQueues(ctx);
       })
+      // Defensive: executeRun() wraps all errors, and drainQueues() doesn't throw.
+      // This catch is unlikely to trigger, but remains for safety if those functions change.
       .catch((err) => {
         if (work.callId) ctx.callStore?.fail(work.callId, err?.message || "unknown error");
         ctx.logger.error({ err, agent: agentConfig.name }, "queued trigger failed");
@@ -327,11 +333,15 @@ function fireQueuedItem(
     ctx.logger.info({ agent: agentConfig.name, ageMs }, "draining queued scheduled run");
     // runWithReruns already calls drainQueues on completion and handles instance lifecycle
     runWithReruns(runner, agentConfig, 0, ctx, 'schedule')
+      // Defensive: runWithReruns() doesn't throw. This catch is unlikely to trigger,
+      // but remains for safety if the function is modified to propagate errors.
       .catch((err) => ctx.logger.error({ err, agent: agentConfig.name }, "queued scheduled run failed"));
 
   } else if (work.type === 'manual') {
     ctx.logger.info({ agent: agentConfig.name, ageMs }, "draining queued manual trigger");
     runWithReruns(runner, agentConfig, 0, ctx, 'manual', work.prompt)
+      // Defensive: runWithReruns() doesn't throw. This catch is unlikely to trigger,
+      // but remains for safety if the function is modified to propagate errors.
       .catch((err) => ctx.logger.error({ err, agent: agentConfig.name }, "queued manual trigger failed"));
   }
 }

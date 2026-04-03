@@ -116,6 +116,9 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
             const prompt = makeWebhookPrompt(config, context, state.schedulerCtx);
             executeRun(result.runner, prompt, { type: 'webhook', source: context.source, receiptId: context.receiptId }, config.name, 0, state.schedulerCtx)
               .then(() => drainQueues(state.schedulerCtx!))
+              // Defensive: executeRun() wraps all runner errors in try/catch, so rejection is unlikely.
+              // However, we keep this catch for safety in case drainQueues() or internal handler code
+              // propagates errors in the future.
               .catch((err) => logger.error({ err, agent: config.name }, "webhook run failed"));
             return true;
           }
