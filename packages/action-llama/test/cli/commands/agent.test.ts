@@ -1047,6 +1047,40 @@ describe("agent config", () => {
     expect(projectToml.webhooks?.["my-github"].credential).toBe("project-b");
   });
 
+  it("pickOrAddCredentialInstance — __add__ with existing instances: validate callback rejects empty names", async () => {
+    // instances.length > 0 → input prompt with validate is shown for new instance name
+    vi.mocked(listCredentialInstances).mockResolvedValueOnce(["default"]);
+
+    createAgentConfig("cred-validate-agent", { credentials: [], models: ["sonnet"] });
+
+    let capturedValidate: ((v: string) => any) | undefined;
+
+    mockSelect
+      .mockResolvedValueOnce("webhooks")    // menu: webhooks
+      .mockResolvedValueOnce("github")      // provider type
+      .mockResolvedValueOnce("__add__")     // pickOrAddCredentialInstance: add new
+      .mockResolvedValueOnce("done");       // menu: done
+    mockConfirm
+      .mockResolvedValueOnce(true);         // "Would you like to add a webhook source now?"
+    mockInput
+      .mockResolvedValueOnce("my-github-cred")  // source name
+      .mockImplementationOnce((opts: any) => {  // credential instance name (instances.length > 0)
+        capturedValidate = opts.validate;
+        return Promise.resolve("my-instance");
+      });
+
+    await configAgent("cred-validate-agent", { project: tmpDir });
+
+    // The validate function should be defined and behave correctly
+    expect(capturedValidate).toBeTypeOf("function");
+    // Non-empty string → valid
+    expect(capturedValidate!("my-project")).toBe(true);
+    expect(capturedValidate!("  valid  ")).toBe(true);
+    // Empty or whitespace-only → error message
+    expect(capturedValidate!("")).toBe("Name is required");
+    expect(capturedValidate!("   ")).toBe("Name is required");
+  });
+
   it("pickOrAddCredentialInstance — __add__ with non-empty promptCredential result writes credential fields", async () => {
     vi.mocked(listCredentialInstances).mockResolvedValueOnce([]);
     vi.mocked(promptCredential).mockResolvedValueOnce({ values: { secret: "test-secret" }, skipped: false } as any);
