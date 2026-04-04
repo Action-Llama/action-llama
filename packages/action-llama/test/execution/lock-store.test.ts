@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { LockStore } from "../../src/execution/lock-store.js";
+import type { LockEntry } from "../../src/execution/lock-store.js";
 import type { StateStore } from "../../src/shared/state-store.js";
 
 // Minimal in-memory StateStore for testing persistence without SQLite.
@@ -733,6 +734,88 @@ describe("LockStore — orphan lock cleanup", () => {
       // Verify by acquiring the lock with a new agent (confirms the old lock was swept)
       const newResult = store.acquire("github://acme/app/issues/20", "agent-c");
       expect(newResult).toEqual({ ok: true });
+
+      store.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("LockStore — init with expired entries", () => {
+  it("skips expired lock entries when hydrating from backing store", async () => {
+    // Create a StateStore that returns an already-expired lock entry
+    const expiredEntry: LockEntry = {
+      resourceKey: "file:///res-expired",
+      holder: "agent-x",
+      heldSince: Date.now() - 10000,
+      expiresAt: Date.now() - 1, // expired 1ms ago
+    };
+    const customStore: StateStore = {
+      async get<T>(_ns: string, _key: string): Promise<T | null> { return null; },
+      async set<T>(_ns: string, _key: string, _value: T, _opts?: { ttl?: number }): Promise<void> {},
+      async delete(_ns: string, _key: string): Promise<void> {},
+      async deleteAll(_ns: string): Promise<void> {},
+      async list<T>(ns: string): Promise<Array<{ key: string; value: T }>> {
+        if (ns === "locks") {
+          return [{ key: expiredEntry.resourceKey, value: expiredEntry as unknown as T }];
+        }
+        return [];
+      },
+      async close(): Promise<void> {},
+    };
+
+    const store = new LockStore(300, 9999, customStore);
+    await store.init();
+
+    // The expired entry should NOT be hydrated — lock list must be empty
+    const locks = store.list();
+    expect(locks).toHaveLength(0);
+
+    // The resource key must be freely acquirable since the expired entry was skipped
+    const result = store.acquire("file:///res-expired", "agent-y");
+    expect(result).toEqual({ ok: true });
+
+    store.dispose();
+  });
+});
+
+describe("LockStore — sweep waitingFor edge cases", () => {
+  it("does not remove waitingFor entry when holder still holds other locks", () => {
+    vi.useFakeTimers();
+    try {
+      // Short TTL (1s) for the first lock, long TTL (100s) for the second.
+      // Short sweep interval (0.1s) so we can trigger the sweep with fake timers.
+      const store = new LockStore(1, 0.1);
+
+      // agent-a acquires two locks: res-short (1s TTL) and res-long (100s TTL)
+      store.acquire("file:///res-short", "agent-a");       // default TTL: 1s
+      store.acquire("file:///res-long", "agent-a", 100);   // custom TTL: 100s
+
+      // agent-b holds res-blocked; agent-a tries to acquire it and fails
+      store.acquire("file:///res-blocked", "agent-b");
+      const conflictResult = store.acquire("file:///res-blocked", "agent-a");
+      expect(conflictResult.ok).toBe(false);
+      expect(conflictResult.holder).toBe("agent-b");
+      // agent-a is now in waitingFor (tried to get res-blocked but failed)
+
+      // Advance past the 1s TTL of res-short (and res-blocked held by agent-b).
+      // The sweep fires at 0.1s intervals; after 1.2s both 1s-TTL locks expire.
+      vi.advanceTimersByTime(1200);
+
+      // After sweep:
+      //   - res-short (agent-a's) expired and was removed from locks + holderLocks
+      //   - res-blocked (agent-b's) also expired (same TTL)
+      //   - res-long (agent-a's) is still valid (100s TTL)
+      //   - agent-a is still in holderLocks (due to res-long)
+      //   - agent-a is still in waitingFor (pointed at the now-expired res-blocked)
+      //   → sweep checks: !holderLocks.has("agent-a") = false (agent-a still holds res-long)
+      //   → waitingFor entry for agent-a is NOT deleted (FALSE branch covered)
+
+      // Verify agent-a still holds res-long
+      const remaining = store.list("agent-a");
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0].resourceKey).toBe("file:///res-long");
 
       store.dispose();
     } finally {

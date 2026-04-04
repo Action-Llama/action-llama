@@ -210,6 +210,22 @@ vi.mock("../../src/shared/logger.js", () => ({
   createFileOnlyLogger: () => mockLogger(),
 }));
 
+// Spy on executeRun so specific tests can make it reject to test the .catch path.
+// vi.hoisted() ensures the spy is created before vi.mock factories run (vitest hoisting).
+const { executeRunSpy, realExecuteRunRef } = vi.hoisted(() => ({
+  executeRunSpy: vi.fn(),
+  realExecuteRunRef: { fn: null as ((...args: unknown[]) => unknown) | null },
+}));
+vi.mock("../../src/execution/execution.js", async (importOriginal) => {
+  const actual = await importOriginal() as Record<string, unknown>;
+  realExecuteRunRef.fn = actual["executeRun"] as (...args: unknown[]) => unknown;
+  executeRunSpy.mockImplementation((...args: unknown[]) => realExecuteRunRef.fn!(...args));
+  return {
+    ...actual,
+    executeRun: (...args: unknown[]) => executeRunSpy(...args),
+  };
+});
+
 import { startScheduler } from "../../src/scheduler/index.js";
 
 function writeAgentConfig(dir: string, config: Record<string, unknown>) {
@@ -811,6 +827,10 @@ describe("startScheduler", () => {
 
     beforeEach(() => {
       vi.clearAllMocks();
+      // Re-establish the real executeRun implementation after clearAllMocks
+      if (realExecuteRunRef.fn) {
+        executeRunSpy.mockImplementation((...args: unknown[]) => realExecuteRunRef.fn!(...args));
+      }
       cronCallbacks.length = 0;
       mockIsRunning = false;
       tmpDir = mkdtempSync(join(tmpdir(), "al-sched-webhooks-"));
@@ -989,6 +1009,55 @@ describe("startScheduler", () => {
       // Flush the fire-and-forget executeRun promise
       await new Promise((resolve) => setTimeout(resolve, 50));
       expect(mockRun).toHaveBeenCalledTimes(1);
+    });
+
+    it("logs error via logger.error when executeRun rejects (webhook run failed path)", async () => {
+      let capturedOnTrigger: ((config: any, context: any) => any) | undefined;
+      let capturedAgentConfig: any;
+
+      const fakeWebhookContext = {
+        event: "push",
+        action: "created",
+        source: "github",
+        receiptId: "test-receipt-run-failed",
+        payload: { ref: "refs/heads/main" },
+      };
+
+      mockSetupWebhookRegistry.mockResolvedValue({
+        registry: { bind: vi.fn(), unbind: vi.fn() },
+        secrets: {},
+      });
+
+      mockRegisterWebhookBindings.mockImplementation((args: any) => {
+        capturedOnTrigger = args.onTrigger;
+        capturedAgentConfig = args.agentConfig;
+      });
+
+      // Runners are available (not busy)
+      mockIsRunning = false;
+      await startScheduler(tmpDir);
+      vi.clearAllMocks();
+
+      // Re-establish spy implementation after clearAllMocks
+      if (realExecuteRunRef.fn) {
+        executeRunSpy.mockImplementation((...args: unknown[]) => realExecuteRunRef.fn!(...args));
+      }
+
+      // Make executeRun reject for this one call to exercise the .catch handler
+      executeRunSpy.mockRejectedValueOnce(new Error("container crashed unexpectedly"));
+
+      expect(capturedOnTrigger).toBeDefined();
+      const result = capturedOnTrigger!(capturedAgentConfig, fakeWebhookContext);
+      expect(result).toBe(true);
+
+      // Flush the fire-and-forget promise chain so the .catch callback fires
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // The .catch handler at scheduler/index.ts line 119 should call logger.error
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        expect.objectContaining({ agent: "dev" }),
+        "webhook run failed",
+      );
     });
 
   });
