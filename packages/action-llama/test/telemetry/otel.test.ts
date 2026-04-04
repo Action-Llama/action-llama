@@ -139,6 +139,55 @@ describe("OTelProvider", () => {
       expect(mockTraceGetTracerFn.mock.calls[0][0]).toBe("action-llama");
     });
 
+    it("uses npm_package_version env var when set", async () => {
+      vi.spyOn(console, "log").mockImplementation(() => {});
+      const origVersion = process.env.npm_package_version;
+      process.env.npm_package_version = "1.2.3";
+
+      provider = new OTelProvider({ enabled: true, provider: "otel" });
+      await provider.init();
+
+      expect(mockSdkStart).toHaveBeenCalledOnce();
+
+      if (origVersion === undefined) {
+        delete process.env.npm_package_version;
+      } else {
+        process.env.npm_package_version = origVersion;
+      }
+    });
+
+    it("falls back to 'development' when NODE_ENV is unset", async () => {
+      vi.spyOn(console, "log").mockImplementation(() => {});
+      const origNodeEnv = process.env.NODE_ENV;
+      delete process.env.NODE_ENV;
+
+      provider = new OTelProvider({ enabled: true, provider: "otel" });
+      await provider.init();
+
+      expect(mockSdkStart).toHaveBeenCalledOnce();
+
+      process.env.NODE_ENV = origNodeEnv;
+    });
+
+    it("uses empty headers object when endpoint is set but headers is not provided", async () => {
+      vi.spyOn(console, "log").mockImplementation(() => {});
+
+      provider = new OTelProvider({
+        enabled: true,
+        provider: "otel",
+        endpoint: "http://collector:4317",
+        // no headers field
+      });
+
+      await provider.init();
+
+      expect(mockOTLPExporterArgs).toHaveBeenCalledOnce();
+      expect(mockOTLPExporterArgs).toHaveBeenCalledWith({
+        url: "http://collector:4317",
+        headers: {},
+      });
+    });
+
     it("warns and rethrows when SDK start fails", async () => {
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
       mockSdkStart.mockRejectedValue(new Error("SDK start failed"));
