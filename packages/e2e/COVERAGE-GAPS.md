@@ -349,3 +349,5 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] control/routes/control.ts agent enable/disable/pause/resume/kill success and 404 paths without Docker — enable+returns-true→200/false→404; disable+true→200/false→404; pause+true→200+message-contains-paused/false→404; resume+true→200+message-contains-resumed/false→404; killAgent+killed-count→200/null→404 (control-agent-ops-direct.test.ts)
 
 - [x] control/routes/control.ts scale update endpoints without Docker — project/scale scale=0→400/scale=-1→400/success→200/false→500; agents/:name/scale scale=0→400/success→200+message/false→404+message-has-agent-name (control-scale-ops-direct.test.ts)
+
+- [x] control/routes/control.ts kill instance and stop success/not-found paths without Docker — POST /control/kill/:instanceId killInstance-true→200+message/false→404+message; POST /control/stop stopScheduler-provided→200+success; GET /control/instances no-statusTracker→503; GET /control/status no-statusTracker→503 (control-instance-kill-direct.test.ts)
