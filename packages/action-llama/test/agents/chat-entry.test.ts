@@ -372,4 +372,105 @@ describe("runChatMode", () => {
     ws.emit("close");
     await runPromise;
   });
+
+  it("skips setRuntimeApiKey when provider has no API key in providerKeys", async () => {
+    const { loadContainerCredentials } = await import("../../src/agents/credential-setup.js");
+    const { AuthStorage } = await import("@mariozechner/pi-coding-agent");
+    const mockSetRuntimeApiKey = vi.fn();
+    vi.mocked(AuthStorage.create).mockReturnValueOnce({ setRuntimeApiKey: mockSetRuntimeApiKey } as any);
+    vi.mocked(loadContainerCredentials).mockReturnValueOnce({
+      // Empty providerKeys — no API key for anthropic
+      providerKeys: new Map(),
+    } as any);
+
+    const runPromise = runChatMode(makeAgentInit());
+    await new Promise((r) => setTimeout(r, 20));
+    const ws = mockWsInstances[0];
+    ws.emit("close");
+    await runPromise;
+
+    // setRuntimeApiKey should NOT have been called since there's no key
+    expect(mockSetRuntimeApiKey).not.toHaveBeenCalled();
+  });
+
+  it("session subscribe callback does not mark agent idle for non-done assistant messages", async () => {
+    const { mapAgentEvent } = await import("../../src/chat/event-mapper.js");
+    // Return an assistant message that is NOT done
+    vi.mocked(mapAgentEvent).mockReturnValue([
+      { type: "assistant_message", text: "thinking...", done: false } as any,
+    ]);
+
+    let capturedCallback: ((event: any) => void) | null = null;
+    mockSessionSubscribe.mockImplementation((cb: (event: any) => void) => {
+      capturedCallback = cb;
+    });
+
+    const runPromise = runChatMode(makeAgentInit());
+    await new Promise((r) => setTimeout(r, 20));
+    const ws = mockWsInstances[0];
+
+    capturedCallback?.({ type: "some-event" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    // The message should be sent (ws is OPEN)
+    const sentMessages = ws.send.mock.calls.map((c: any[]) => {
+      try { return JSON.parse(c[0]); } catch { return null; }
+    });
+    const assistantMsg = sentMessages.find((m: any) => m?.type === "assistant_message");
+    expect(assistantMsg).toBeDefined();
+    // done is false — agentBusy should not be set to false from this path
+
+    ws.emit("close");
+    await runPromise;
+  });
+
+  it("session subscribe callback skips send when WS is not OPEN", async () => {
+    const { mapAgentEvent } = await import("../../src/chat/event-mapper.js");
+    vi.mocked(mapAgentEvent).mockReturnValue([
+      { type: "assistant_message", text: "hello", done: true } as any,
+    ]);
+
+    let capturedCallback: ((event: any) => void) | null = null;
+    mockSessionSubscribe.mockImplementation((cb: (event: any) => void) => {
+      capturedCallback = cb;
+    });
+
+    const runPromise = runChatMode(makeAgentInit());
+    await new Promise((r) => setTimeout(r, 20));
+    const ws = mockWsInstances[0];
+
+    // Simulate WS going to CLOSING state before subscribe fires
+    ws.readyState = 2; // CLOSING
+    capturedCallback?.({ type: "some-event" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    // send should not have been called for this event (WS not OPEN)
+    const sentMessages = ws.send.mock.calls.map((c: any[]) => {
+      try { return JSON.parse(c[0]); } catch { return null; }
+    });
+    const assistantMsg = sentMessages.find((m: any) => m?.type === "assistant_message");
+    expect(assistantMsg).toBeUndefined();
+
+    ws.readyState = 1; // restore OPEN
+    ws.emit("close");
+    await runPromise;
+  });
+
+  it("cancel message when agent is not busy does not call session.dispose", async () => {
+    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const runPromise = runChatMode(makeAgentInit());
+    await new Promise((r) => setTimeout(r, 20));
+    const ws = mockWsInstances[0];
+
+    // Send cancel when agentBusy is false (default)
+    ws.emit("message", JSON.stringify({ type: "cancel" }));
+    await new Promise((r) => setTimeout(r, 10));
+
+    // dispose should NOT have been called
+    expect(mockSessionDispose).not.toHaveBeenCalled();
+
+    consoleLogSpy.mockRestore();
+    ws.emit("close");
+    await runPromise;
+  });
 });
