@@ -319,3 +319,5 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] docker/local-runtime.ts parseBuildKitLine() without Docker — empty/whitespace → undefined; step line "#N [M/T] desc" → "Step M/T: desc"; multi-digit numbers; ERROR line "#N ERROR msg" → "Error: msg"; BuildKit DONE/sha256/CACHED noise → undefined; ANSI escape codes stripped; multiple ANSI codes; empty after stripping → undefined; plain text passthrough; npm/compiler errors returned as-is (docker-buildkit-parser.test.ts)
 
 - [x] docker/runtime.ts isContainerRuntime() and docker/network.ts NETWORK_NAME without Docker — false for missing buildImage; false for missing pushImage; false when both absent; true when both present; true with extra methods; boolean type; NETWORK_NAME non-empty string; starts with al-; stable value (docker-runtime-typeguard.test.ts)
+
+- [x] agents/bash-prefix.ts ensureBinDir() without Docker — no throw; void return; PATH defined after call; PATH non-empty; calling twice no error; idempotent (PATH length stable after second call); works with empty PATH; BASH_COMMAND_PREFIX non-empty string; contains al-bash-init.sh (bash-prefix-ensure-bin-dir.test.ts)
