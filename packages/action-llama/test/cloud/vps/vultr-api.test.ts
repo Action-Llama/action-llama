@@ -63,6 +63,18 @@ describe("Vultr API client", () => {
     expect(plans[0].vcpu_count).toBe(2);
   });
 
+  it("listPlans with type filter appends query parameter", async () => {
+    mockFetch.mockResolvedValueOnce(mockResponse({
+      plans: [{ id: "vc2-2c-4gb", vcpu_count: 2, ram: 4096, disk: 80, bandwidth: 3, monthly_cost: 24, type: "vc2", locations: ["ewr"] }],
+    }));
+
+    const plans = await listPlans(API_KEY, "vc2");
+    expect(plans).toHaveLength(1);
+
+    const [url] = mockFetch.mock.calls[0];
+    expect(url).toContain("?type=vc2");
+  });
+
   it("listOsImages returns OS array", async () => {
     mockFetch.mockResolvedValueOnce(mockResponse({
       os: [{ id: 2284, name: "Ubuntu 24.04 LTS x64", arch: "x64", family: "ubuntu" }],
