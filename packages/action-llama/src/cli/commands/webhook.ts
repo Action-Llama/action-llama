@@ -73,7 +73,7 @@ export async function execute(command: string, fixturePath: string, opts: Webhoo
     displayResults(result, source, fixture);
     
     // Handle interactive run option
-    if (opts.run && result.ok && result.bindings.some(b => b.matched)) {
+    if (opts.run && result.ok) {
       await handleInteractiveRun(result, opts.project);
     }
     
