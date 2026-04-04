@@ -351,3 +351,5 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] control/routes/control.ts scale update endpoints without Docker — project/scale scale=0→400/scale=-1→400/success→200/false→500; agents/:name/scale scale=0→400/success→200+message/false→404+message-has-agent-name (control-scale-ops-direct.test.ts)
 
 - [x] control/routes/control.ts kill instance and stop success/not-found paths without Docker — POST /control/kill/:instanceId killInstance-true→200+message/false→404+message; POST /control/stop stopScheduler-provided→200+success; GET /control/instances no-statusTracker→503; GET /control/status no-statusTracker→503 (control-instance-kill-direct.test.ts)
+
+- [x] scheduler/validation.ts validateAndDiscover() Phase 1 failure paths without Docker — pi_auth authType→ConfigError with agent name; active agent no triggers→ConfigError; mixed valid/invalid agents→ConfigError; scale=0 bypasses no-trigger requirement (no-op assertion); missing credential reference→CredentialError — all tested without scheduler reaching Phase 4 (startup-pi-auth-validation.test.ts)
