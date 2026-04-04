@@ -324,5 +324,40 @@ describe("Hetzner Cloud API client", () => {
 
       await expect(getServer(API_KEY, 9999)).rejects.toThrow(/servers\/9999 failed/);
     });
+
+    it("falls back to 'HTTP <status>' when error body has no error.message", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: () => Promise.resolve({}),
+      });
+
+      await expect(listLocations(API_KEY)).rejects.toThrow(/HTTP 500/);
+    });
+  });
+
+  describe("hetznerListAll edge cases", () => {
+    it("uses empty array when response key is missing from data", async () => {
+      // Response has no 'locations' key
+      mockFetch.mockResolvedValueOnce(mockResponse({
+        meta: { pagination: { page: 1, last_page: 1 } },
+      }));
+
+      const result = await listLocations(API_KEY);
+      expect(result).toEqual([]);
+    });
+
+    it("uses page as last_page fallback when meta is missing", async () => {
+      const location = {
+        id: 1, name: "fsn1", description: "D", country: "DE", city: "F",
+        latitude: 1, longitude: 2, network_zone: "eu",
+      };
+      // Response has no meta pagination info
+      mockFetch.mockResolvedValueOnce(mockResponse({ locations: [location] }));
+
+      const result = await listLocations(API_KEY);
+      expect(result).toHaveLength(1);
+      expect(result[0].name).toBe("fsn1");
+    });
   });
 });
