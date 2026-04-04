@@ -345,3 +345,5 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] control/routes/stats.ts GET /api/stats/triggers running instance merge without Docker — running instances merged on offset=0; triggerTypeFilter filters running instances; agentFilter applied to running instances; offset>0 skips merge (stats-triggers-direct.test.ts)
 
 - [x] control/routes/stats.ts GET /api/stats/activity DB deduplication without Docker — running+completed same instanceId deduplicated (mem takes priority); combined DB+mem rows in response; total=memCount+dbCount; status=completed excludes running from mem rows; DB rows deduped via runningIds set (stats-activity-db-dedup.test.ts)
+
+- [x] control/routes/control.ts agent enable/disable/pause/resume/kill success and 404 paths without Docker — enable+returns-true→200/false→404; disable+true→200/false→404; pause+true→200+message-contains-paused/false→404; resume+true→200+message-contains-resumed/false→404; killAgent+killed-count→200/null→404 (control-agent-ops-direct.test.ts)
