@@ -303,3 +303,5 @@ agent reads this file and works top-down. Mark items `[x]` when a test exists.
 - [x] telemetry/providers/otel.ts without Docker — otelExtension metadata (name/type/version/description/requiredCredentials/providesCredentialTypes); otel_api_key optional; provider defined; init() no-op; shutdown() no-throw; OTelProvider constructor+shutdown-when-not-initialized (telemetry-otel-extension.test.ts)
 
 - [x] extensions/loader.ts loadBuiltinExtensions() and getGlobalRegistry() without Docker — getGlobalRegistry() returns same ExtensionRegistry instance; loadBuiltinExtensions() resolves with/without credentialChecker/modelProviders; after load: webhook(test/github)/model(openai/anthropic)/runtime(local)/credential(file) all accessible; getAllWebhookExtensions+list return non-empty arrays (extension-loader.test.ts)
+
+- [x] cli/commands kill/stop/pause/resume ECONNREFUSED paths without Docker — all four commands throw when gateway port not listening; kill exercises agent-level+fallback-to-instance paths; pause/resume exercise global+per-agent path variants; all throw Error instances (cli-gateway-commands.test.ts)
