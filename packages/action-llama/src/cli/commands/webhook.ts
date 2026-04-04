@@ -285,11 +285,6 @@ function displayFilterDetails(details: any): void {
 async function handleInteractiveRun(result: DryRunResult, projectPath: string): Promise<void> {
   const matchedAgents = result.bindings.filter(b => b.matched);
   
-  if (matchedAgents.length === 0) {
-    console.log("\n⚠️ No matched agents to run");
-    return;
-  }
-  
   console.log(`\n🚀 Interactive Run Mode`);
   console.log(`Found ${matchedAgents.length} matched agent(s):`);
   
