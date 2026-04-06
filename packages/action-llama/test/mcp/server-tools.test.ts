@@ -1032,5 +1032,75 @@ describe("mcp/server.ts — startMcpServer and tool handlers", () => {
         rmSync(descProject, { recursive: true, force: true });
       }
     });
+
+    it("omits Running instances line when live.running is undefined for specific agent", async () => {
+      // Covers the false branch of `if (live.running !== undefined)` in al_agents
+      // when gateway status exists but has no running count
+      makeGatewayOk({
+        agents: [{ name: "dev", state: "running" }], // no running field
+      });
+
+      const result = await registeredTools.get("al_agents")!({ name: "dev" });
+      const text = result.content[0].text;
+      expect(text).toContain("Live state: running");
+      expect(text).not.toContain("Running instances:");
+    });
+  });
+
+  // ─── al_resume default message with undefined name ───────────────────────
+
+  describe("al_resume — default message fallback with scheduler-level resume", () => {
+    it("uses 'Resumed scheduler.' default when name is undefined and response has no message", async () => {
+      // Covers `name || "scheduler"` branch where name is undefined and no message field
+      makeGatewayOk({});
+      const result = await registeredTools.get("al_resume")!({ name: undefined });
+      expect(result.content[0].text).toBe("Resumed scheduler.");
+    });
+  });
+
+  // ─── al_kill instance fallback with no message ───────────────────────────
+
+  describe("al_kill — instance-level kill with default message", () => {
+    it("uses default message when instance kill succeeds but response has no message field", async () => {
+      // Covers `instResult.data.message || `Killed instance ${target}.`` false branch
+      // First call: agent-level 404
+      const res404 = makeJsonResponse({ error: "Agent not found" }, 404);
+      mockGatewayFetch.mockResolvedValueOnce(res404);
+      mockGatewayJson.mockImplementationOnce(async (r: Response) => JSON.parse(await r.text()));
+
+      // Second call: instance-level success with no message
+      makeGatewayOk({});
+
+      const result = await registeredTools.get("al_kill")!({ target: "inst-abc" });
+      expect(result.content[0].text).toBe("Killed instance inst-abc.");
+    });
+  });
+
+  // ─── agent-skill resource with empty SKILL.md body ───────────────────────
+
+  describe("agent-skill resource — empty SKILL.md body", () => {
+    it("returns '(empty SKILL.md)' when agent SKILL.md has no body", async () => {
+      // Covers `body || "(empty SKILL.md)"` false branch in agent-skill resource handler
+      const { mkdirSync: _mkdirSync, writeFileSync: _writeFileSync } = await import("fs");
+      const { resolve: _resolve } = await import("path");
+      const emptyBodyProject = makeTmpProject({ agents: [{ name: "empty-body-agent" }] });
+
+      try {
+        // Overwrite SKILL.md with frontmatter-only (empty body)
+        const skillPath = _resolve(emptyBodyProject, "agents", "empty-body-agent", "SKILL.md");
+        _writeFileSync(skillPath, "---\nname: empty-body-agent\n---\n");
+
+        // Re-register with the empty-body project
+        registeredTools.clear();
+        registeredResources.clear();
+        await startMcpServer({ projectPath: emptyBodyProject });
+
+        const uri = new URL("al://agents/empty-body-agent/skill");
+        const result = await registeredResources.get("agent-skill")!(uri, { name: "empty-body-agent" });
+        expect(result.contents[0].text).toBe("(empty SKILL.md)");
+      } finally {
+        rmSync(emptyBodyProject, { recursive: true, force: true });
+      }
+    });
   });
 });
