@@ -854,5 +854,55 @@ describe("webhook command", () => {
 
       spyDryRun.mockRestore();
     });
+
+    it("the triggerFn in each binding is a no-op predicate that returns true", async () => {
+      // The `execute` function creates `triggerFn = () => true` for each binding.
+      // That arrow function body is only counted as covered when invoked.
+      // We capture the binding via a spy on addBinding and then call trigger() directly.
+      const { WebhookRegistry } = await import("../../../src/webhooks/registry.js");
+
+      const capturedBindings: any[] = [];
+      const spyAddBinding = vi.spyOn(WebhookRegistry.prototype, "addBinding").mockImplementation(
+        (binding: any) => { capturedBindings.push(binding); }
+      );
+      const spyDryRun2 = vi.spyOn(WebhookRegistry.prototype, "dryRunDispatch").mockReturnValueOnce({
+        ok: true,
+        context: {
+          source: "test",
+          event: "test",
+          repo: "test/repo",
+          sender: "tester",
+          timestamp: new Date().toISOString(),
+        },
+        validationResult: "test",
+        bindings: [],
+      });
+
+      // Create an agent with a webhook trigger so loadAgentBindings creates a binding
+      createAgent("trigger-fn-agent", {
+        models: ["sonnet"],
+        webhooks: [{ source: "test", events: ["test"] }],
+      });
+      writeFileSync(join(projectPath, "config.toml"), stringifyTOML({
+        models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+        webhooks: { test: { type: "test" } },
+      }));
+
+      const fixture = {
+        headers: { "x-test-event": "test" },
+        body: { source: "test", event: "test", repo: "test/repo", sender: "tester" },
+      };
+      const fixturePath = join(tmpDir, "trigger-fn-fixture.json");
+      writeFileSync(fixturePath, JSON.stringify(fixture));
+
+      await execute("replay", fixturePath, { project: projectPath, source: "test" });
+
+      // The binding's trigger function should have been captured and should return true
+      expect(capturedBindings).toHaveLength(1);
+      expect(capturedBindings[0].trigger()).toBe(true);
+
+      spyAddBinding.mockRestore();
+      spyDryRun2.mockRestore();
+    });
   });
 });
