@@ -604,6 +604,30 @@ describe("LockStore — URI validation", () => {
       expect(result.reason).toContain("Invalid URI format");
     });
   });
+
+  describe("URL constructor mock edge cases", () => {
+    it("rejects URIs whose scheme fails the custom regex (mocked URL)", () => {
+      // new URL() in Node.js already validates RFC-compliant schemes, so a protocol
+      // that passes the URL constructor but fails the stricter custom regex
+      // (e.g. contains uppercase or underscores) cannot occur naturally.
+      // We mock the URL constructor to return an object with such a protocol to
+      // exercise the "Invalid URI scheme" return path (line 213 of validateResourceKey).
+      const originalURL = globalThis.URL;
+      vi.stubGlobal("URL", class {
+        protocol = "INVALID_SCHEME:";
+        constructor(_url: string) { /* always succeeds */ }
+      });
+
+      try {
+        const result = store.acquire("any://resource", "agent-a");
+        expect(result.ok).toBe(false);
+        expect((result as any).reason).toContain("Invalid URI scheme");
+        expect((result as any).reason).toContain("INVALID_SCHEME:");
+      } finally {
+        vi.stubGlobal("URL", originalURL);
+      }
+    });
+  });
 });
 
 describe("LockStore — orphan lock cleanup", () => {
