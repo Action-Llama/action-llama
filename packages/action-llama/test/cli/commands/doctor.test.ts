@@ -30,6 +30,7 @@ vi.mock("../../../src/credentials/prompter.js", () => ({
 const mockCredentialExists = vi.fn();
 const mockWriteCredentialFields = vi.fn();
 const mockListCredentialInstances = vi.fn();
+const mockLoadCredentialFields = vi.fn();
 vi.mock("../../../src/shared/credentials.js", () => ({
   parseCredentialRef: (ref: string) => {
     const sep = ref.indexOf(":");
@@ -40,7 +41,7 @@ vi.mock("../../../src/shared/credentials.js", () => ({
   listCredentialInstances: (...args: any[]) => mockListCredentialInstances(...args),
   writeCredentialFields: (...args: any[]) => mockWriteCredentialFields(...args),
   loadCredentialField: () => undefined,
-  loadCredentialFields: () => undefined,
+  loadCredentialFields: (...args: any[]) => mockLoadCredentialFields(...args),
   writeCredentialField: () => {},
   backendLoadField: () => Promise.resolve(undefined),
   backendLoadFields: () => Promise.resolve(undefined),
@@ -157,6 +158,7 @@ describe("doctor", () => {
     mockEnsureGatewayApiKey.mockResolvedValue({ key: "test-key", generated: false });
     mockCredentialExists.mockReturnValue(false);
     mockListCredentialInstances.mockReturnValue([]);
+    mockLoadCredentialFields.mockReturnValue(undefined);
     mockConfirm.mockResolvedValue(false);
     mockValidateTriggerFields.mockReturnValue([]);
     mockValidateGlobalConfig.mockReturnValue({ errors: [], warnings: [] });
@@ -1135,6 +1137,50 @@ describe("doctor", () => {
 
       // Reset the mock to use our new implementation
       vi.resetModules();
+    });
+
+    it("covers def.fields.filter branch when existing fields are present but optional field is missing", async () => {
+      // Set loadCredentialFields to return existing fields (truthy) so the filter branch executes
+      mockLoadCredentialFields.mockReturnValue({ token: "existing-token" });
+      // Credential definition has one required field (token) and one optional field (email)
+      mockResolveCredential.mockReturnValue({
+        id: "github_token",
+        label: "GitHub Token",
+        fields: [{ name: "token" }, { name: "email", optional: true }],
+      });
+      mockDiscoverAgents.mockReturnValue(["dev"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["github_token"] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({});
+      // Credential exists so we enter the loadCredentialFields branch
+      mockCredentialExists.mockReturnValue(true);
+      // Prompter returns a value for the missing optional field
+      mockPromptCredential.mockResolvedValue({ values: { email: "user@example.com" } });
+
+      const output = await captureLog(() => execute({ project: "." }));
+      // The prompter should have been called because missingOptional.length > 0
+      expect(mockPromptCredential).toHaveBeenCalled();
+      // The optional field value should be written
+      expect(mockWriteCredentialFields).toHaveBeenCalledWith("github_token", "default", { email: "user@example.com" });
+    });
+
+    it("shows [ok] when credential exists and has no optional fields (filter returns empty)", async () => {
+      // Set loadCredentialFields to return existing fields (truthy) so the filter branch executes
+      mockLoadCredentialFields.mockReturnValue({ token: "existing-token" });
+      // Credential definition has only a required field — filter will return [] since no optional fields
+      mockResolveCredential.mockReturnValue({
+        id: "github_token",
+        label: "GitHub Token",
+        fields: [{ name: "token" }],
+      });
+      mockDiscoverAgents.mockReturnValue(["dev"]);
+      mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: ["github_token"] });
+      mockLoadAgentRuntimeConfig.mockReturnValue({});
+      mockCredentialExists.mockReturnValue(true);
+
+      const output = await captureLog(() => execute({ project: "." }));
+      // missingOptional.length === 0 (no optional fields), so prompter should NOT be called
+      expect(mockPromptCredential).not.toHaveBeenCalled();
+      expect(output).toContain("[ok] GitHub Token");
     });
   });
 
