@@ -1081,3 +1081,83 @@ describe("dispatchTriggers — executeRun rejection catch block", () => {
     );
   });
 });
+
+describe("runWithReruns — statusTracker.createInstance returns null", () => {
+  it("proceeds with undefined lifecycle when statusTracker.createInstance returns null (initial run)", async () => {
+    const runner = makeRunner({
+      run: vi.fn().mockResolvedValue({ result: "completed", triggers: [] }),
+    });
+    const config = makeAgentConfig("a");
+    // statusTracker has createInstance but it returns null (agent not registered)
+    const statusTracker = {
+      createInstance: vi.fn().mockReturnValue(null),
+      isPaused: vi.fn().mockReturnValue(false),
+      setQueuedWebhooks: vi.fn(),
+    };
+    const ctx = makeCtx({
+      agentConfigs: [config],
+      runnerPools: { a: new RunnerPool([runner]) },
+      statusTracker: statusTracker as any,
+    });
+
+    await runWithReruns(runner, config, 0, ctx);
+
+    // Should have called createInstance and handled null gracefully
+    expect(statusTracker.createInstance).toHaveBeenCalledWith(
+      runner.instanceId, "a", "schedule"
+    );
+    expect(runner.run).toHaveBeenCalledOnce();
+  });
+
+  it("proceeds with undefined lifecycle when statusTracker.createInstance returns null during rerun", async () => {
+    const runner = makeRunner({
+      run: vi.fn()
+        .mockResolvedValueOnce({ result: "rerun", triggers: [] })
+        .mockResolvedValueOnce({ result: "completed", triggers: [] }),
+    });
+    const config = makeAgentConfig("a");
+    const statusTracker = {
+      createInstance: vi.fn().mockReturnValue(null),
+      isPaused: vi.fn().mockReturnValue(false),
+      setQueuedWebhooks: vi.fn(),
+    };
+    const ctx = makeCtx({
+      agentConfigs: [config],
+      runnerPools: { a: new RunnerPool([runner]) },
+      statusTracker: statusTracker as any,
+    });
+
+    await runWithReruns(runner, config, 0, ctx);
+
+    // createInstance called twice: initial run + one rerun
+    expect(statusTracker.createInstance).toHaveBeenCalledTimes(2);
+    // First call: triggerLabel = "schedule"
+    expect(statusTracker.createInstance).toHaveBeenNthCalledWith(1, runner.instanceId, "a", "schedule");
+    // Second call (rerun): triggerLabel:rerun-N
+    expect(statusTracker.createInstance).toHaveBeenNthCalledWith(2, runner.instanceId, "a", "schedule:rerun-1");
+    expect(runner.run).toHaveBeenCalledTimes(2);
+  });
+
+  it("proceeds with real lifecycle when statusTracker.createInstance returns a lifecycle", async () => {
+    const runner = makeRunner({
+      run: vi.fn().mockResolvedValue({ result: "completed", triggers: [] }),
+    });
+    const config = makeAgentConfig("a");
+    const fakeLifecycle = { start: vi.fn(), complete: vi.fn(), fail: vi.fn() };
+    const statusTracker = {
+      createInstance: vi.fn().mockReturnValue(fakeLifecycle),
+      isPaused: vi.fn().mockReturnValue(false),
+      setQueuedWebhooks: vi.fn(),
+    };
+    const ctx = makeCtx({
+      agentConfigs: [config],
+      runnerPools: { a: new RunnerPool([runner]) },
+      statusTracker: statusTracker as any,
+    });
+
+    await runWithReruns(runner, config, 0, ctx);
+
+    expect(statusTracker.createInstance).toHaveBeenCalledOnce();
+    expect(fakeLifecycle.complete).toHaveBeenCalledOnce();
+  });
+});
