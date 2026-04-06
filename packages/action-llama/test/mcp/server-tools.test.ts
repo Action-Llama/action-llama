@@ -1058,6 +1058,98 @@ describe("mcp/server.ts — startMcpServer and tool handlers", () => {
     });
   });
 
+  // ─── al_pause default message with undefined name ────────────────────────
+
+  describe("al_pause — default message fallback with scheduler-level pause", () => {
+    it("uses 'Paused scheduler.' default when name is undefined and response has no message", async () => {
+      // Covers `name || "scheduler"` branch in al_pause where name is undefined and no message
+      makeGatewayOk({});
+      const result = await registeredTools.get("al_pause")!({ name: undefined });
+      expect(result.content[0].text).toBe("Paused scheduler.");
+    });
+  });
+
+  // ─── al_agents list mode with webhooks ───────────────────────────────────
+
+  describe("al_agents — list mode with agent having webhooks", () => {
+    it("shows webhook info in list when agent has webhooks configured", async () => {
+      // Covers `if (config.webhooks?.length)` TRUE branch in al_agents list mode
+      const webhookProject = makeTmpProject({
+        agents: [
+          {
+            name: "webhook-agent",
+            webhooks: [{ source: "github", events: ["push", "pull_request"] }] as any,
+          },
+        ],
+      });
+
+      try {
+        registeredTools.clear();
+        registeredResources.clear();
+        await startMcpServer({ projectPath: webhookProject });
+
+        // Gateway fails so no live data (liveMap is empty → `if (live)` false branch)
+        mockGatewayFetch.mockRejectedValue(new Error("ECONNREFUSED"));
+
+        const result = await registeredTools.get("al_agents")!({ name: undefined });
+        const text = result.content[0].text;
+        expect(text).toContain("webhook-agent");
+        expect(text).toContain("webhooks:");
+        expect(text).toContain("github");
+      } finally {
+        rmSync(webhookProject, { recursive: true, force: true });
+      }
+    });
+
+    it("shows webhook info with empty events array in list mode", async () => {
+      // Covers `(w.events || []).join(",")` branch where events is empty/undefined
+      const webhookNoEventsProject = makeTmpProject({
+        agents: [
+          {
+            name: "webhook-noevents-agent",
+            webhooks: [{ source: "github" }] as any,
+          },
+        ],
+      });
+
+      try {
+        registeredTools.clear();
+        registeredResources.clear();
+        await startMcpServer({ projectPath: webhookNoEventsProject });
+
+        mockGatewayFetch.mockRejectedValue(new Error("ECONNREFUSED"));
+
+        const result = await registeredTools.get("al_agents")!({ name: undefined });
+        const text = result.content[0].text;
+        expect(text).toContain("webhook-noevents-agent");
+        expect(text).toContain("webhooks:");
+        expect(text).toContain("github:");
+      } finally {
+        rmSync(webhookNoEventsProject, { recursive: true, force: true });
+      }
+    });
+  });
+
+  // ─── al_logs no entries when data is not an array ────────────────────────
+
+  describe("al_logs — no entries path when data is not an array", () => {
+    it("returns '(no log entries)' when result.data has no entries field and is not an array", async () => {
+      // Covers `!Array.isArray(entries)` TRUE branch: result.data has no 'entries' key
+      // and result.data itself is also not an array (e.g., a plain object like {})
+      // So: result.data.entries = undefined, result.data is {}, entries = {} (not an array)
+      const res = makeJsonResponse({}, 200);
+      mockGatewayFetch.mockResolvedValueOnce(res);
+      mockGatewayJson.mockImplementationOnce(async (r: Response) => JSON.parse(await r.text()));
+
+      const result = await registeredTools.get("al_logs")!({
+        name: "dev",
+        lines: 10,
+        raw: false,
+      });
+      expect(result.content[0].text).toBe("(no log entries)");
+    });
+  });
+
   // ─── al_kill instance fallback with no message ───────────────────────────
 
   describe("al_kill — instance-level kill with default message", () => {
