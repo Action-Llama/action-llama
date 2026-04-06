@@ -4,7 +4,7 @@ import { join, resolve } from "path";
 import { tmpdir } from "os";
 import { parse as parseTOML } from "smol-toml";
 import { parseFrontmatter } from "../../src/shared/frontmatter.js";
-import { scaffoldProject, resolvePackageRoot } from "../../src/setup/scaffold.js";
+import { scaffoldProject, resolvePackageRoot, scaffoldAgent } from "../../src/setup/scaffold.js";
 import type { ScaffoldAgent } from "../../src/setup/scaffold.js";
 import type { GlobalConfig } from "../../src/shared/config.js";
 import { VERSION } from "../../src/shared/constants.js";
@@ -347,7 +347,34 @@ describe("scaffoldProject", () => {
     expect(content).not.toContain("params");
     expect(content).not.toContain("scale");
   });
+
+  it("creates agent config.toml with completely empty content when all runtime fields are undefined", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
+    const projDir = resolve(tmpDir, "my-project");
+    // Provide an agent config where ALL runtime fields (including credentials) are undefined.
+    // This covers the `Object.keys(runtimeConfig).length > 0 ? ... : ""` FALSE branch
+    // and the `if (v !== undefined) runtimeConfig[k] = v` FALSE branch in scaffoldAgent.
+    const agentAllUndefined: ScaffoldAgent[] = [
+      {
+        name: "all-undefined",
+        config: {
+          name: "all-undefined",
+          credentials: undefined as any, // bypass type — forces false branch of v !== undefined
+          models: [],
+          // all other optional fields omitted (undefined)
+        },
+      },
+    ];
+    scaffoldProject(projDir, makeGlobalConfig(), agentAllUndefined);
+
+    const configPath = resolve(projDir, "agents", "all-undefined", "config.toml");
+    expect(existsSync(configPath)).toBe(true);
+    const content = readFileSync(configPath, "utf-8");
+    // File should be empty (no runtime fields to write)
+    expect(content).toBe("");
+  });
 });
+
 
 describe("resolvePackageRoot", () => {
   it("returns a non-empty string path", () => {
