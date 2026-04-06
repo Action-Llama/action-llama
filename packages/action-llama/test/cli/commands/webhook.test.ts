@@ -803,4 +803,56 @@ describe("webhook command", () => {
       expect(exitSpy).toHaveBeenCalledWith(1);
     });
   });
+
+  describe("displayFilterDetails edge cases via mocked registry", () => {
+    it("skips filter detail output when filterDetails is an empty object (early-return path)", async () => {
+      // This exercises the `if (entries.length === 0) return;` branch in displayFilterDetails,
+      // which is normally unreachable because getFilterDetails always includes {type, source}.
+      // We mock dryRunDispatch to inject a binding with filterDetails: {}.
+      const { WebhookRegistry } = await import("../../../src/webhooks/registry.js");
+      const spyDryRun = vi.spyOn(WebhookRegistry.prototype, "dryRunDispatch").mockReturnValueOnce({
+        ok: true,
+        context: {
+          source: "test",
+          event: "test",
+          repo: "test/repo",
+          sender: "tester",
+          timestamp: new Date().toISOString(),
+        },
+        validationResult: "test",
+        bindings: [
+          {
+            agentName: "empty-filter-agent",
+            matched: false,
+            reasons: ["Filter conditions not met"],
+            filterDetails: {} as any, // empty — exercises the early return
+          },
+        ],
+      });
+
+      mkdirSync(resolve(projectPath, "agents"), { recursive: true });
+      writeFileSync(join(projectPath, "config.toml"), stringifyTOML({
+        models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+        webhooks: { test: { type: "test" } },
+      }));
+
+      const fixture = {
+        headers: { "x-test-event": "test" },
+        body: { source: "test", event: "test", repo: "test/repo", sender: "tester" },
+      };
+      const fixturePath = join(tmpDir, "empty-filter-fixture.json");
+      writeFileSync(fixturePath, JSON.stringify(fixture));
+
+      await execute("replay", fixturePath, { project: projectPath, source: "test" });
+
+      const allOutput = mockConsoleLog.mock.calls.map((c: any[]) => c[0]).join("\n");
+      // The empty filterDetails should NOT produce "Filter details:" output
+      expect(allOutput).toContain("🔍 Webhook Simulation Results");
+      expect(allOutput).not.toContain("Filter details:");
+      // The agent should appear in unmatched section
+      expect(allOutput).toContain("empty-filter-agent");
+
+      spyDryRun.mockRestore();
+    });
+  });
 });
