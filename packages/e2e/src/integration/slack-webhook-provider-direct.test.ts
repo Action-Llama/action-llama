@@ -319,3 +319,67 @@ describe("integration: SlackWebhookProvider (no Docker required)", { timeout: 10
     });
   });
 });
+
+// ── Additional parseEvent() branches (sender/channel fallbacks) ───────────────
+
+describe("slack-webhook-provider-direct: additional parseEvent() branches", { timeout: 10_000 }, () => {
+  const providerExtra = new SlackWebhookProvider();
+
+  function makeBody(event: Record<string, unknown>, extra: Record<string, unknown> = {}) {
+    return {
+      type: "event_callback",
+      team_id: "T0001",
+      event,
+      ...extra,
+    };
+  }
+
+  it("parses message event with bot_id (no user) → sender is bot_id", () => {
+    const body = makeBody({ type: "message", text: "hello from bot", bot_id: "B12345" });
+    const ctx = providerExtra.parseEvent({}, body);
+    expect(ctx).not.toBeNull();
+    expect(ctx!.sender).toBe("B12345");
+  });
+
+  it("parses message event with neither user nor bot_id → sender is 'unknown'", () => {
+    const body = makeBody({ type: "message", text: "anonymous message" });
+    const ctx = providerExtra.parseEvent({}, body);
+    expect(ctx).not.toBeNull();
+    expect(ctx!.sender).toBe("unknown");
+  });
+
+  it("parses message event without channel → comment is undefined", () => {
+    const body = makeBody({ type: "message", text: "no channel", user: "U9999" });
+    const ctx = providerExtra.parseEvent({}, body);
+    expect(ctx).not.toBeNull();
+    expect(ctx!.comment).toBeUndefined();
+  });
+
+  it("parses app_mention event without channel → comment is undefined", () => {
+    const body = makeBody({ type: "app_mention", text: "@bot hi", user: "U8888" });
+    const ctx = providerExtra.parseEvent({}, body);
+    expect(ctx).not.toBeNull();
+    expect(ctx!.comment).toBeUndefined();
+  });
+
+  it("parses reaction_removed event → ctx has reaction as title", () => {
+    const body = makeBody({ type: "reaction_removed", user: "U0001", reaction: "thumbsdown", item: { type: "message", channel: "C0001" } });
+    const ctx = providerExtra.parseEvent({}, body);
+    expect(ctx).not.toBeNull();
+    expect(ctx!.title).toBe("thumbsdown");
+  });
+
+  it("parses reaction_added event without item.channel → comment uses empty string", () => {
+    const body = makeBody({ type: "reaction_added", user: "U0001", reaction: "wave", item: { type: "message" } });
+    const ctx = providerExtra.parseEvent({}, body);
+    expect(ctx).not.toBeNull();
+    expect(ctx!.comment).toBe("message:");
+  });
+
+  it("parses reaction_added without item → comment is undefined", () => {
+    const body = makeBody({ type: "reaction_added", user: "U0001", reaction: "fire" });
+    const ctx = providerExtra.parseEvent({}, body);
+    expect(ctx).not.toBeNull();
+    expect(ctx!.comment).toBeUndefined();
+  });
+});
