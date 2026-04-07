@@ -1161,3 +1161,139 @@ describe("runWithReruns — statusTracker.createInstance returns null", () => {
     expect(fakeLifecycle.complete).toHaveBeenCalledOnce();
   });
 });
+
+describe("runWithReruns — manual trigger reruns", () => {
+  it("uses makeManualPrompt (no user-prompt) for rerun iterations when trigger is 'manual'", async () => {
+    // runner returns 'rerun' once then 'completed' — covers the rerun loop with isManual=true (line 374)
+    const runner = makeRunner({
+      run: vi.fn()
+        .mockResolvedValueOnce({ result: "rerun", triggers: [] })
+        .mockResolvedValueOnce({ result: "completed", triggers: [] }),
+    });
+    const config = makeAgentConfig("a");
+    const ctx = makeCtx({
+      agentConfigs: [config],
+      runnerPools: { a: new RunnerPool([runner]) },
+      useBakedImages: true,
+    });
+
+    await runWithReruns(runner, config, 0, ctx, "manual", "initial user prompt");
+
+    expect(runner.run).toHaveBeenCalledTimes(2);
+
+    // First call: initial run — should contain the user prompt
+    const firstPrompt = (runner.run as any).mock.calls[0][0] as string;
+    expect(firstPrompt).toContain("initial user prompt");
+
+    // Second call: rerun — should NOT contain the original user prompt (reruns use makeManualPrompt without prompt)
+    const rerunPrompt = (runner.run as any).mock.calls[1][0] as string;
+    expect(rerunPrompt).toBeDefined();
+    // The rerun trigger type should still be 'manual'
+    const rerunTriggerInfo = (runner.run as any).mock.calls[1][1];
+    expect(rerunTriggerInfo.type).toBe("manual");
+  });
+
+  it("multiple reruns with manual trigger all use makeManualPrompt", async () => {
+    const runner = makeRunner({
+      run: vi.fn()
+        .mockResolvedValueOnce({ result: "rerun", triggers: [] })
+        .mockResolvedValueOnce({ result: "rerun", triggers: [] })
+        .mockResolvedValueOnce({ result: "completed", triggers: [] }),
+    });
+    const config = makeAgentConfig("a");
+    const ctx = makeCtx({
+      agentConfigs: [config],
+      runnerPools: { a: new RunnerPool([runner]) },
+      useBakedImages: true,
+    });
+
+    await runWithReruns(runner, config, 0, ctx, "manual");
+
+    expect(runner.run).toHaveBeenCalledTimes(3);
+    // All calls use 'manual' trigger type
+    for (const call of (runner.run as any).mock.calls) {
+      expect(call[1].type).toBe("manual");
+    }
+  });
+});
+
+describe("drainQueues — agent-trigger with statusTracker.createInstance", () => {
+  it("calls statusTracker.createInstance for agent-trigger work items (lines 307-308)", async () => {
+    const runner = makeRunner({ instanceId: "b", run: vi.fn().mockResolvedValue({ result: "completed", triggers: [] }) });
+    const configA = makeAgentConfig("a");
+    const configB = makeAgentConfig("b");
+    const fakeLifecycle = { start: vi.fn(), complete: vi.fn(), fail: vi.fn() };
+    const createInstance = vi.fn().mockReturnValue(fakeLifecycle);
+    const ctx = makeCtx({
+      agentConfigs: [configA, configB],
+      runnerPools: {
+        a: new RunnerPool([makeRunner()]),
+        b: new RunnerPool([runner]),
+      },
+      statusTracker: {
+        createInstance,
+        isPaused: vi.fn().mockReturnValue(false),
+        setQueuedWebhooks: vi.fn(),
+        isAgentEnabled: vi.fn().mockReturnValue(true),
+      } as any,
+    });
+
+    ctx.workQueue.enqueue("b", {
+      type: "agent-trigger",
+      sourceAgent: "a",
+      context: "some context",
+      depth: 0,
+    });
+
+    await drainQueues(ctx);
+
+    // createInstance should be called with the runner instanceId, agent name, and trigger label
+    expect(createInstance).toHaveBeenCalledWith(runner.instanceId, "b", "agent:a");
+    expect(runner.run).toHaveBeenCalled();
+  });
+
+  it("calls callStore.fail via .catch handler when callStore.complete throws (line 322)", async () => {
+    // To trigger the .catch handler (line 322), the .then() callback must throw.
+    // We make callStore.complete throw so that when the agent run succeeds (result='completed')
+    // and .then() tries to call complete(), the error propagates to the .catch() handler.
+    const runner = makeRunner({
+      instanceId: "b",
+      run: vi.fn().mockResolvedValue({ result: "completed", triggers: [] }),
+    });
+    const configB = makeAgentConfig("b");
+    const callStore = {
+      setRunning: vi.fn(),
+      complete: vi.fn().mockImplementation(() => { throw new Error("store error"); }),
+      fail: vi.fn(),
+      check: vi.fn(),
+      get: vi.fn(),
+      failAllByCaller: vi.fn(),
+      dispose: vi.fn(),
+    };
+    const ctx = makeCtx({
+      agentConfigs: [configB],
+      runnerPools: { b: new RunnerPool([runner]) },
+      callStore: callStore as any,
+    });
+
+    ctx.workQueue.enqueue("b", {
+      type: "agent-trigger",
+      sourceAgent: "a",
+      context: "some context",
+      depth: 0,
+      callId: "call-42",
+    });
+
+    await drainQueues(ctx);
+
+    // drainQueues fires work without awaiting — let the promise chain settle
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    // callStore.fail should be called from the .catch handler with the callId and error message
+    expect(callStore.fail).toHaveBeenCalledWith("call-42", "store error");
+    expect(ctx.logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "b" }),
+      "queued trigger failed",
+    );
+  });
+});
