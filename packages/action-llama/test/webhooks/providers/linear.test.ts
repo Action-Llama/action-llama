@@ -323,3 +323,93 @@ describe("LinearWebhookProvider", () => {
     });
   });
 });
+
+// Additional branch coverage tests
+describe("LinearWebhookProvider — uncovered branches", () => {
+  const provider = new LinearWebhookProvider({
+    secrets: {},
+    allowUnsigned: true,
+  });
+
+  it("Comment event: falls back to issue.url when data.url is missing", () => {
+    const body = {
+      action: "create",
+      type: "Comment",
+      organizationId: "org-123",
+      data: {
+        id: "comment-789",
+        body: "A comment without a direct URL",
+        // no data.url — forces line 80 false branch: uses issue.url
+        issue: {
+          number: 42,
+          title: "Issue without comment URL",
+          url: "https://linear.app/org/issue/42",
+          creator: { email: "user@example.com" },
+          labels: [{ name: "bug" }],
+        },
+      },
+    };
+    const ctx = provider.parseEvent({}, body);
+    expect(ctx).not.toBeNull();
+    expect(ctx!.url).toBe("https://linear.app/org/issue/42");
+  });
+
+  it("Comment event: uses empty array when issue.labels is absent", () => {
+    const body = {
+      action: "create",
+      type: "Comment",
+      organizationId: "org-123",
+      data: {
+        id: "comment-999",
+        body: "A comment on an issue with no labels",
+        url: "https://linear.app/org/issue/99#comment-999",
+        issue: {
+          number: 99,
+          title: "Unlabeled issue",
+          url: "https://linear.app/org/issue/99",
+          // no labels field — forces line 83: issue.labels?.map(...) || []
+        },
+      },
+    };
+    const ctx = provider.parseEvent({}, body);
+    expect(ctx).not.toBeNull();
+    expect(ctx!.labels).toEqual([]);
+  });
+
+  it("default case: returns generic context for unknown event type (e.g. Project)", () => {
+    const body = {
+      action: "create",
+      type: "Project",
+      organizationId: "org-123",
+      data: {
+        id: "project-1",
+        title: "New Project",
+        url: "https://linear.app/org/project/1",
+      },
+    };
+    const ctx = provider.parseEvent({}, body);
+    expect(ctx).not.toBeNull();
+    // Default case: title comes from data.title
+    expect(ctx!.title).toBe("New Project");
+    expect(ctx!.url).toBe("https://linear.app/org/project/1");
+    expect(ctx!.event).toBe("project");
+  });
+
+  it("default case: uses body.action as title fallback when data.title is absent", () => {
+    const body = {
+      action: "update",
+      type: "Cycle",
+      organizationId: "org-123",
+      data: {
+        id: "cycle-2",
+        // no title — uses body.action as fallback
+        url: "https://linear.app/org/cycle/2",
+      },
+    };
+    const ctx = provider.parseEvent({}, body);
+    expect(ctx).not.toBeNull();
+    // Default case: title falls back to body.action
+    expect(ctx!.title).toBe("update");
+  });
+
+});
