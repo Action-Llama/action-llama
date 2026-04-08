@@ -101,7 +101,7 @@ export function resolveHarnessEnv(
   }
 
   if (anthropicModel.authType === "oauth_token" || token.startsWith("sk-ant-oat")) {
-    env.CLAUDE_CODE_AUTH_TOKEN = token;
+    env.ANTHROPIC_AUTH_TOKEN = token;
   } else {
     env.ANTHROPIC_API_KEY = token;
   }
