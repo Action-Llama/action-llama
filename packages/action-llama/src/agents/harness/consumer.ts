@@ -13,6 +13,7 @@ export interface ConsumeResult {
   unrecoverableErrors: number;
   aborted: boolean;
   allModelsExhausted: boolean;
+  errorMessage?: string;
 }
 
 function extractToolErrorText(result: string): string {
@@ -53,6 +54,7 @@ export async function consumeHarness(
   let unrecoverableErrors = 0;
   let aborted = false;
   let allModelsExhausted = false;
+  let errorMessage: string | undefined;
 
   try {
     for await (const event of events) {
@@ -64,6 +66,9 @@ export async function consumeHarness(
             }
             currentTurnText = "";
             break;
+          }
+          if (event.message === "event" && event.data?.type === "turn_end" && typeof event.data.errorMessage === "string") {
+            errorMessage = event.data.errorMessage;
           }
           log(event.level, event.message, event.data);
           break;
@@ -139,5 +144,6 @@ export async function consumeHarness(
     unrecoverableErrors,
     aborted,
     allModelsExhausted,
+    errorMessage,
   };
 }

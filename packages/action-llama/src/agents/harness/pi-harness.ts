@@ -15,6 +15,7 @@ import { sessionStatsToUsage } from "../../shared/usage.js";
 import { ModelCircuitBreaker, selectAvailableModels, isRateLimitError } from "../model-fallback.js";
 import { BASH_COMMAND_PREFIX } from "../bash-prefix.js";
 import type { AgentHarness, HarnessEvent, HarnessRunOpts } from "./types.js";
+import { extractTurnEndError } from "../turn-end-error.js";
 
 export interface PiHarnessOpts {
   models: ModelConfig[];
@@ -92,6 +93,8 @@ export class PiHarness implements AgentHarness {
             }
             if (event.type === "turn_end") {
               extra.turnResult = JSON.stringify(event).slice(0, 500);
+              const errorMessage = extractTurnEndError(event);
+              if (errorMessage) extra.errorMessage = errorMessage;
             }
             eventQueue.push({ type: "log", level: "debug", message: "event", data: extra });
           }

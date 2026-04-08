@@ -16,6 +16,7 @@ export class ContainerAgentRunner {
   private _returnValue: string | undefined = undefined;
   private _tokenUsage: TokenUsage | undefined = undefined;
   private _containerName: string | undefined = undefined;
+  private _runError: string | undefined = undefined;
   private runtime: Runtime;
   private globalConfig: GlobalConfig;
   private agentConfig: AgentConfig;
@@ -122,6 +123,10 @@ export class ContainerAgentRunner {
         const cmdPrefix = data.cmd ? `$ ${String(data.cmd).slice(0, 80)} — ` : "";
         this.statusTracker?.setAgentError(this.agentConfig.name, `${cmdPrefix}${errorMsg.slice(0, 200)}`);
       }
+      if (level === "error" && msg === "run failed" && data.error) {
+        this._runError = String(data.error).slice(0, 200);
+        this.statusTracker?.setAgentError(this.agentConfig.name, this._runError);
+      }
       // Detect return value from signal-result logs
       if (msg === "signal-result" && data.type === "return" && data.value) {
         this._returnValue = data.value;
@@ -197,7 +202,7 @@ export class ContainerAgentRunner {
         } else {
           this.logger.error({ exitCode, elapsed: `${elapsed}s` }, `${logPrefix ?? "container"} exited with error`);
         }
-        runError = `Container exited with code ${exitCode}`;
+        runError = this._runError ?? `Container exited with code ${exitCode}`;
         runResult = "error";
       } else {
         runResult = "completed";
@@ -271,6 +276,7 @@ export class ContainerAgentRunner {
     this._aborting = false;
     this._returnValue = undefined;
     this._tokenUsage = undefined;
+    this._runError = undefined;
     this.instanceId = instanceId;
     this._containerName = containerName;
     this.logger = this.baseLogger.child({ instance: this.instanceId });
@@ -304,7 +310,13 @@ export class ContainerAgentRunner {
     this.statusTracker?.endRun(this.agentConfig.name, elapsed, runError, this._tokenUsage);
     this._running = false;
 
-    return { result: runResult, triggers: [], returnValue: this._returnValue, usage: this._tokenUsage };
+    return {
+      result: runResult,
+      triggers: [],
+      returnValue: this._returnValue,
+      usage: this._tokenUsage,
+      exitReason: runError,
+    };
   }
 
   async run(prompt: string, triggerInfo?: { type: 'schedule' | 'manual' | 'webhook' | 'agent'; source?: string }, instanceId?: string): Promise<RunOutcome> {
@@ -353,6 +365,7 @@ export class ContainerAgentRunner {
   private async _runInternalContainer(prompt: string, triggerInfo?: { type: 'schedule' | 'manual' | 'webhook' | 'agent'; source?: string }, parentSpan?: any): Promise<RunOutcome> {
     this._returnValue = undefined;
     this._tokenUsage = undefined;
+    this._runError = undefined;
     const runReason = triggerInfo
       ? (triggerInfo.source
         ? (triggerInfo.type === 'agent' ? `triggered by ${triggerInfo.source}` : `${triggerInfo.type} (${triggerInfo.source})`)
@@ -474,6 +487,12 @@ export class ContainerAgentRunner {
       this.statusTracker?.endRun(this.agentConfig.name, elapsed, runError, this._tokenUsage);
       this._running = false;
     }
-    return { result: runResult, triggers: [], returnValue: this._returnValue, usage: this._tokenUsage };
+    return {
+      result: runResult,
+      triggers: [],
+      returnValue: this._returnValue,
+      usage: this._tokenUsage,
+      exitReason: runError,
+    };
   }
 }

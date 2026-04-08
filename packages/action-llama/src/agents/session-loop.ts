@@ -17,6 +17,7 @@ import { sessionStatsToUsage } from "../shared/usage.js";
 import { ModelCircuitBreaker, selectAvailableModels, isRateLimitError } from "./model-fallback.js";
 import { isUnrecoverableError, UNRECOVERABLE_THRESHOLD } from "../shared/errors.js";
 import { BASH_COMMAND_PREFIX } from "./bash-prefix.js";
+import { extractTurnEndError } from "./turn-end-error.js";
 
 export interface SessionLoopOpts {
   models: ModelConfig[];
@@ -97,6 +98,8 @@ export async function runSessionLoop(
           }
           if (event.type === "turn_end") {
             extra.turnResult = JSON.stringify(event).slice(0, 500);
+            const errorMessage = extractTurnEndError(event);
+            if (errorMessage) extra.errorMessage = errorMessage;
           }
           log("debug", "event", extra);
         }

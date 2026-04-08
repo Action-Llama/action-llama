@@ -384,6 +384,19 @@ describe("container-entry", () => {
       expect(exitCode).toBe(1);
     });
 
+    it("returns 1 when the harness reports a provider error from turn_end", async () => {
+      const init = await makeInit();
+      mockConsumeHarness.mockResolvedValueOnce({
+        outputText: "",
+        aborted: false,
+        allModelsExhausted: false,
+        errorMessage: "OpenAI provider error: model overloaded",
+      });
+
+      const exitCode = await handleInvocation(init);
+      expect(exitCode).toBe(1);
+    });
+
     it("returns custom exit code when signal file contains exitCode", async () => {
       const init = await makeInit();
       mockReadSignals.mockReturnValueOnce({

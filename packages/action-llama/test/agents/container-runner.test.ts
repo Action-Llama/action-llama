@@ -50,7 +50,7 @@ describe("ContainerAgentRunner", () => {
     runtime = createMockRuntime();
   });
 
-  function createRunner(opts?: { runtime?: Runtime }) {
+  function createRunner(opts?: { runtime?: Runtime; statusTracker?: any }) {
     return new ContainerAgentRunner(
       opts?.runtime ?? runtime,
       globalConfig,
@@ -61,6 +61,7 @@ describe("ContainerAgentRunner", () => {
       "",      // gatewayUrl
       "/tmp",  // projectPath
       "test-image:latest",
+      opts?.statusTracker,
     );
   }
 
@@ -236,6 +237,55 @@ describe("ContainerAgentRunner", () => {
       const runner = createRunner({ runtime: errorExitRuntime });
       const result = await runner.run("test prompt");
       expect(result.result).toBe("error");
+    });
+
+    it("prefers the reported provider error over the generic container exit code", async () => {
+      const mockStatusTracker = {
+        startRun: vi.fn(),
+        endRun: vi.fn(),
+        registerInstance: vi.fn(),
+        completeInstance: vi.fn(),
+        setAgentError: vi.fn(),
+        setTaskUrl: vi.fn(),
+        addLogLine: vi.fn(),
+      };
+
+      let capturedOnLine: ((line: string) => void) | undefined;
+      const errorExitRuntime = createMockRuntime({
+        waitForExit: vi.fn().mockResolvedValue(1),
+        streamLogs: vi.fn().mockImplementation((_name: string, onLine: (line: string) => void) => {
+          capturedOnLine = onLine;
+          return { stop: vi.fn() };
+        }),
+      });
+
+      const runner = createRunner({ runtime: errorExitRuntime, statusTracker: mockStatusTracker });
+      const runPromise = runner.run("test prompt");
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      capturedOnLine?.(JSON.stringify({
+        _log: true,
+        level: "error",
+        msg: "run failed",
+        error: "OpenAI provider error: model overloaded",
+        ts: Date.now(),
+      }));
+
+      const result = await runPromise;
+      expect(result.result).toBe("error");
+      expect(result.exitReason).toBe("OpenAI provider error: model overloaded");
+      expect(mockStatusTracker.setAgentError).toHaveBeenCalledWith(
+        "test-agent",
+        "OpenAI provider error: model overloaded",
+      );
+      expect(mockStatusTracker.endRun).toHaveBeenCalledWith(
+        "test-agent",
+        expect.any(Number),
+        "OpenAI provider error: model overloaded",
+        undefined,
+      );
     });
 
     it("returns 'completed' result when container exits with code 0", async () => {

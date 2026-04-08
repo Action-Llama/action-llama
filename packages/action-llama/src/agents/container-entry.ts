@@ -285,6 +285,11 @@ export async function handleInvocation(init: AgentInit): Promise<number> {
     return 1;
   }
 
+  if (loopResult.errorMessage) {
+    emitLog("error", "run failed", { error: loopResult.errorMessage });
+    return 1;
+  }
+
   // Read signal files written by al-rerun, al-status, al-return, al-exit
   const signals = readSignals(signalDir);
 
