@@ -243,6 +243,7 @@ export async function setupWebhookRegistry(
   registry.registerProvider(new LinearWebhookProvider());
   registry.registerProvider(new MintlifyWebhookProvider());
   registry.registerProvider(new DiscordWebhookProvider());
+  registry.registerProvider(new SlackWebhookProvider());
   registry.registerProvider(new TestWebhookProvider());
   registry.registerProvider(new SlackWebhookProvider());
   registry.registerProvider(new TwitterWebhookProvider());
