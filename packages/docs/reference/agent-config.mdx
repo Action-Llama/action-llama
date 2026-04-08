@@ -65,6 +65,10 @@ source = "acme/dev-skills"
 # First in list is primary; rest are fallbacks tried on rate limits
 models = ["sonnet", "haiku"]
 
+# Optional: override the project default harness for this agent
+[harness]
+type = "claude"              # "pi" (default) or "claude"
+
 # Required: credential types the agent needs at runtime
 # Use "type" for default instance, "type:instance" for named instance
 credentials = ["github_token", "git_ssh", "sentry_token"]
@@ -139,6 +143,7 @@ run_as = "al-agent"           # OS user to run as (default: "al-agent")
 |-------|------|----------|-------------|
 | `source` | string | No | Git URL or GitHub shorthand for `al update`. Set automatically by `al add`. |
 | `models` | string[] | Yes | Named model references from `config.toml [models.*]`. First is primary; rest are fallbacks tried automatically on rate limits. |
+| `harness` | table | No | Harness override for this agent. Falls back to project `[harness]`, then defaults to `pi`. |
 | `credentials` | string[] | Yes | Credential refs: `"type"` for default instance, `"type:instance"` for named instance. See [Credentials](/reference/credentials). |
 | `schedule` | string | No* | Cron expression for polling |
 | `scale` | number | No | Number of concurrent runs allowed (default: 1). Set to `0` to disable the agent. Use lock skills in your actions to coordinate instances. See [Resource Locks](/concepts/resource-locks). |
@@ -150,6 +155,28 @@ run_as = "al-agent"           # OS user to run as (default: "al-agent")
 | `runtime` | table | No | Runtime mode configuration. See [Runtime](#runtime). |
 
 *At least one of `schedule` or `webhooks` is required (unless `scale = 0`).
+
+## Harness
+
+The optional `[harness]` table selects which harness runs this agent.
+
+```toml
+[harness]
+type = "claude"
+```
+
+### Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `type` | string | Inherits project `[harness]` or `"pi"` | `"pi"` or `"claude"` |
+
+### Notes
+
+- `pi` is the default harness and supports the full model fallback chain.
+- `claude` runs the agent through the Claude CLI harness and uses the agent's primary model only.
+- Per-agent `[harness]` overrides the project-level `[harness]`.
+- The `claude` harness is intended for Anthropic Claude models.
 
 ## Scale
 

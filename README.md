@@ -8,7 +8,7 @@ Deploy agent workflows to the cloud.
 - [**Documentation**](https://docs.actionllama.org)
 - [**actionllama.org**](https://actionllama.org)
 
-Built on [pi.dev](https://github.com/badlogic/pi-mono) as the agent harness.
+Supports swappable agent harnesses. The default harness is [pi.dev](https://github.com/badlogic/pi-mono), and agents can also run through the Claude CLI harness.
 
 ## How to get started
 
@@ -147,7 +147,7 @@ npm test
 2. Starts a **gateway** HTTP server if webhooks or Docker mode are enabled (health check, webhook receiver, shutdown kill switch)
 3. Creates a **runner** per agent — either `AgentRunner` (host mode) or `ContainerAgentRunner` (Docker mode)
 4. Wires up **cron jobs** and/or **webhook bindings** to trigger each runner
-5. On trigger, the runner builds a prompt (injecting `<agent-config>` and optionally `<webhook-trigger>` blocks), starts a [pi-coding-agent](https://github.com/badlogic/pi-mono) session, and streams output to the logger
+5. On trigger, the runner builds a prompt (injecting `<agent-config>` and optionally `<webhook-trigger>` blocks), starts the configured agent harness, and streams output to the logger
 
 ### Source layout
 

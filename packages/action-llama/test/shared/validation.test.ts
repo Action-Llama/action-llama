@@ -100,6 +100,20 @@ describe("validation", () => {
   });
 
   describe("detectGlobalConfigUnknownFields", () => {
+    it("accepts harness config", () => {
+      const raw = {
+        harness: {
+          type: "claude",
+        },
+        models: {
+          sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514" },
+        },
+      };
+
+      const unknownFields = detectGlobalConfigUnknownFields(raw);
+      expect(unknownFields).toEqual([]);
+    });
+
     it("accepts named model sub-keys", () => {
       const raw = {
         models: {
@@ -192,6 +206,7 @@ describe("validation", () => {
         source: "github",
         credentials: ["anthropic_key"],
         models: ["sonnet"],
+        harness: { type: "claude" },
         schedule: "0 * * * *",
         webhooks: [],
         hooks: { pre: ["echo hello"], post: ["echo done"] },
@@ -208,6 +223,7 @@ describe("validation", () => {
       const raw = {
         credentials: ["anthropic_key"],
         models: ["sonnet"],
+        harness: { type: "pi" },
         schedule: "0 * * * *",
       };
 

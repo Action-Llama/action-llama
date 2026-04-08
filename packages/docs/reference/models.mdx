@@ -3,7 +3,7 @@ title: "Models"
 description: "Supported LLM providers, model IDs, and configuration"
 ---
 
-Action Llama supports 8 LLM providers. Define named models in `config.toml` under `[models.<name>]`, then reference them by name in each agent's `config.toml`. Agents list models in priority order — the first is the primary, the rest are fallbacks tried automatically on rate limits.
+Action Llama supports 8 LLM providers. Define named models in `config.toml` under `[models.<name>]`, then reference them by name in each agent's `config.toml`. Agents list models in priority order — the first is the primary, the rest are fallbacks tried automatically on rate limits when using the default `pi` harness.
 
 ## `[models.<name>]` Fields
 
@@ -44,7 +44,11 @@ authType = "api_key"
 | `oauth_token` | `sk-ant-oat-...` | OAuth token from `claude setup-token` |
 | `pi_auth` | _(none)_ | Uses existing pi auth credentials (`~/.pi/agent/auth.json`). No credential file needed. |
 
-**Note:** `pi_auth` is not supported in Docker mode. Switch to `api_key` or `oauth_token` for containerized runs.
+**Notes:**
+
+- `pi_auth` is only available with the `pi` harness.
+- `pi_auth` is not supported in Docker mode. Switch to `api_key` or `oauth_token` for containerized runs.
+- When using the `claude` harness, Action Llama passes Anthropic credentials to Claude CLI as `ANTHROPIC_API_KEY` or `CLAUDE_CODE_AUTH_TOKEN` depending on the configured auth type.
 
 **Thinking level:** Anthropic is the only provider that supports `thinkingLevel`. Valid values:
 
@@ -161,7 +165,7 @@ Model IDs use the `provider/model` format. See OpenRouter's model list for all a
 
 ### Custom
 
-For any provider not listed above. The model ID and API routing are handled by the underlying pi.dev agent harness.
+For any provider not listed above. The model ID and API routing are handled by the `pi` harness.
 
 ```toml
 [models.my-model]
@@ -185,7 +189,7 @@ agents/devops/config.toml   → models = ["groq-llama"]
 
 ## Model Fallback
 
-Agents can list multiple models to create a fallback chain. When the primary model is rate-limited or unavailable, Action Llama automatically tries the next model in the list:
+Agents can list multiple models to create a fallback chain. When the primary model is rate-limited or unavailable, Action Llama automatically tries the next model in the list when using the `pi` harness:
 
 ```toml
 # agents/<name>/config.toml
@@ -195,6 +199,8 @@ models = ["sonnet", "haiku", "gpt4o"]
 Fallback switching is instant — there is no delay when moving to the next model. Exponential backoff only kicks in after all models in the chain have been exhausted.
 
 A circuit breaker tracks model availability in memory. When a model returns a rate limit or overload error, it is marked unavailable for 60 seconds. After the cooldown expires, the model is retried.
+
+The `claude` harness does not currently use the fallback chain. It runs the agent's primary model directly via Claude CLI.
 
 ## Credential Setup
 

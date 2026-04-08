@@ -25,6 +25,10 @@ provider = "openai"
 model = "gpt-4o"
 authType = "api_key"
 
+# Default harness for all agents unless overridden per-agent
+[harness]
+type = "pi"                  # "pi" (default) or "claude"
+
 # Local Docker container settings
 [local]
 image = "al-agent:latest"   # Base image name (default: "al-agent:latest")
@@ -71,6 +75,21 @@ samplingRate = 0.5
 | `resourceLockTimeout` | number | `1800` | Default lock TTL in seconds. Locks expire automatically after this duration unless refreshed via heartbeat. See [Resource Locks](/concepts/resource-locks). |
 | `historyRetentionDays` | number | `14` | Number of days to retain run history and webhook receipts in the local SQLite stats database. Older entries are pruned automatically. |
 
+### `[harness]` — Default Agent Harness
+
+Selects the default harness used to execute agents. This can be overridden per-agent in `agents/<name>/config.toml`.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `type` | string | `"pi"` | Harness type: `"pi"` or `"claude"` |
+
+```toml
+[harness]
+type = "claude"
+```
+
+Use `pi` for the default multi-provider runtime with model fallback chains. Use `claude` to run the agent through the Claude CLI harness instead. The `claude` harness uses the agent's primary model only, so any additional models listed for fallback are ignored.
+
 ### `[models.<name>]` — Named Models
 
 Define models once in `config.toml`, then reference them by name in each agent's `SKILL.md` frontmatter. Agents list model names in priority order — the first is the primary model, and the rest are fallbacks tried automatically when the primary is rate-limited or unavailable.
@@ -108,6 +127,8 @@ models = ["sonnet", "haiku"]
 ```
 
 See [Models](/reference/models) for all supported providers, model IDs, auth types, and thinking levels.
+
+When using the `claude` harness, configure the agent's primary model as an Anthropic Claude model. The Claude CLI harness runs that first model directly rather than using the full fallback chain.
 
 ### `[local]` — Docker Container Settings
 

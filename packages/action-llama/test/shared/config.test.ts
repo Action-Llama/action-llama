@@ -13,7 +13,7 @@ function writeModelsConfig(dir: string, models: Record<string, unknown>, extra?:
 }
 
 /** Helper to write SKILL.md (portable fields only) and per-agent config.toml (runtime fields). */
-function writeSkillMd(dir: string, agentName: string, opts: { models: string[]; credentials?: string[]; schedule?: string; hooks?: unknown; description?: string; params?: unknown; scale?: number; timeout?: number; maxWorkQueueSize?: number }) {
+function writeSkillMd(dir: string, agentName: string, opts: { models: string[]; credentials?: string[]; schedule?: string; hooks?: unknown; description?: string; params?: unknown; scale?: number; timeout?: number; maxWorkQueueSize?: number; harness?: unknown }) {
   const agentDir = resolve(dir, "agents", agentName);
   mkdirSync(agentDir, { recursive: true });
 
@@ -27,6 +27,7 @@ function writeSkillMd(dir: string, agentName: string, opts: { models: string[]; 
   // Write per-agent config.toml
   const runtime: Record<string, unknown> = { models: opts.models };
   if (opts.credentials?.length) runtime.credentials = opts.credentials;
+  if (opts.harness) runtime.harness = opts.harness;
   if (opts.schedule) runtime.schedule = opts.schedule;
   if (opts.hooks) runtime.hooks = opts.hooks;
   if (opts.params) runtime.params = opts.params;
@@ -65,6 +66,14 @@ describe("loadGlobalConfig", () => {
     writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML(config));
     const loaded = loadGlobalConfig(tmpDir);
     expect(loaded.local?.enabled).toBe(false);
+  });
+
+  it("loads global harness config", () => {
+    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
+      harness: { type: "claude" },
+    }));
+    const loaded = loadGlobalConfig(tmpDir);
+    expect(loaded.harness).toEqual({ type: "claude" });
   });
 
   it("ignores config.json", () => {
@@ -163,6 +172,29 @@ describe("loadAgentConfig", () => {
     });
     const loaded = loadAgentConfig(tmpDir, "no-hooks");
     expect(loaded.hooks).toBeUndefined();
+  });
+
+  it("inherits harness from global config", () => {
+    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL }, { harness: { type: "claude" } });
+    writeSkillMd(tmpDir, "dev", {
+      models: ["sonnet"],
+      credentials: ["github_token"],
+    });
+
+    const loaded = loadAgentConfig(tmpDir, "dev");
+    expect(loaded.harness).toEqual({ type: "claude" });
+  });
+
+  it("lets agent config override the global harness", () => {
+    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL }, { harness: { type: "pi" } });
+    writeSkillMd(tmpDir, "dev", {
+      models: ["sonnet"],
+      credentials: ["github_token"],
+      harness: { type: "claude" },
+    });
+
+    const loaded = loadAgentConfig(tmpDir, "dev");
+    expect(loaded.harness).toEqual({ type: "claude" });
   });
 
   it("throws when agent SKILL.md is missing", () => {

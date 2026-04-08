@@ -38,12 +38,17 @@ const MODEL_CONFIG_SCHEMA: ConfigSchema = {
 const GLOBAL_CONFIG_SCHEMA: ConfigSchema = {
   required: new Set(),
   optional: new Set([
-    "models", "local", "gateway", "webhooks", "telemetry",
+    "models", "harness", "local", "gateway", "webhooks", "telemetry",
     "projectName", "maxReruns", "maxCallDepth", "maxTriggerDepth",
     "webhookQueueSize", "workQueueSize", "resourceLockTimeout", "scale",
     "defaultAgentScale", "historyRetentionDays"
   ]),
   nested: {
+    harness: {
+      required: new Set(),
+      optional: new Set(["type"]),
+      nested: {}
+    },
     local: {
       required: new Set(),
       optional: new Set(["enabled", "image", "memory", "cpus", "timeout"]),
@@ -65,10 +70,15 @@ const GLOBAL_CONFIG_SCHEMA: ConfigSchema = {
 const AGENT_CONFIG_SCHEMA: ConfigSchema = {
   required: new Set(["name", "credentials", "models"]),
   optional: new Set([
-    "description", "schedule", "webhooks", "hooks", "params",
+    "description", "harness", "schedule", "webhooks", "hooks", "params",
     "license", "compatibility"
   ]),
   nested: {
+    harness: {
+      required: new Set(),
+      optional: new Set(["type"]),
+      nested: {}
+    },
     hooks: {
       required: new Set(),
       optional: new Set(["pre", "post"]),
@@ -93,10 +103,15 @@ const AGENT_FRONTMATTER_SCHEMA: ConfigSchema = {
 const AGENT_RUNTIME_CONFIG_SCHEMA: ConfigSchema = {
   required: new Set(),
   optional: new Set([
-    "source", "credentials", "models", "schedule", "webhooks",
+    "source", "credentials", "models", "harness", "schedule", "webhooks",
     "hooks", "params", "scale", "timeout", "maxWorkQueueSize", "runtime"
   ]),
   nested: {
+    harness: {
+      required: new Set(),
+      optional: new Set(["type"]),
+      nested: {}
+    },
     hooks: {
       required: new Set(),
       optional: new Set(["pre", "post"]),

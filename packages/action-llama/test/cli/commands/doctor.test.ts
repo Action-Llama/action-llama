@@ -194,6 +194,43 @@ describe("doctor", () => {
     );
   });
 
+  it("accepts harness in global config without reporting unknown fields", async () => {
+    mockDiscoverAgents.mockReturnValue(["dev"]);
+    mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: [] });
+    mockLoadAgentRuntimeConfig.mockReturnValue({
+      models: ["sonnet"],
+      harness: { type: "claude" },
+    });
+    mockLoadGlobalConfig.mockReturnValue({
+      harness: { type: "claude" },
+      models: {
+        sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" },
+      },
+    });
+    mockCollectCredentialRefs.mockReturnValue(new Set());
+    mockExistsSync.mockImplementation((p: string) => {
+      const value = String(p);
+      if (value.endsWith("agents/dev/SKILL.md")) return true;
+      if (value.endsWith("config.toml")) return true;
+      return false;
+    });
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (String(p).includes("agents/dev/config.toml")) {
+        return 'models = ["sonnet"]\n[harness]\ntype = "claude"\n';
+      }
+      if (String(p).endsWith("agents/dev/SKILL.md")) {
+        return "---\nname: dev\n---\n";
+      }
+      return '[harness]\ntype = "claude"\n[models.sonnet]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-20250514"\nauthType = "api_key"\n';
+    });
+
+    await expect(execute({ project: ".", checkOnly: true, skipCredentials: true })).resolves.not.toThrow();
+    expect(mockDetectGlobalConfigUnknownFields).toHaveBeenCalled();
+    expect(mockDetectAgentRuntimeConfigUnknownFields).toHaveBeenCalled();
+    expect(mockDetectGlobalConfigUnknownFields).not.toHaveReturnedWith(["harness"]);
+    expect(mockDetectAgentRuntimeConfigUnknownFields).not.toHaveReturnedWith(["harness"]);
+  });
+
   it("reports pi_auth model type as container-mode validation error", async () => {
     mockDiscoverAgents.mockReturnValue(["dev"]);
     mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: [] });
