@@ -258,7 +258,7 @@ export class StatusTracker extends EventEmitter {
     this.emit("update");
   }
 
-  setAgentStatusText(name: string, text: string): void {
+  setAgentStatusText(name: string, text: string | null): void {
     const agent = this.agents.get(name);
     if (!agent) return;
     agent.statusText = text;

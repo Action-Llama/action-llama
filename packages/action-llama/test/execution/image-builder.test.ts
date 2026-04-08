@@ -475,10 +475,10 @@ describe("buildAllImages", () => {
       cleanup: vi.fn(),
     } as unknown as Runtime & ContainerRuntime;
 
-    const statusTextCalls: Array<[string, string]> = [];
+    const statusTextCalls: Array<[string, string | null]> = [];
     const mockStatusTracker = {
       setAgentState: vi.fn(),
-      setAgentStatusText: vi.fn((name: string, msg: string) => statusTextCalls.push([name, msg])),
+      setAgentStatusText: vi.fn((name: string, msg: string | null) => statusTextCalls.push([name, msg])),
       setBaseImageStatus: vi.fn(),
       setProjectBaseStatus: vi.fn(),
     } as any;
@@ -498,6 +498,112 @@ describe("buildAllImages", () => {
     const agentProgressCalls = statusTextCalls.filter(([name]) => name === "worker");
     expect(agentProgressCalls.some(([, msg]) => msg === "Building layers...")).toBe(true);
     expect(outerProgressCalls.some(([label, msg]) => label === "worker" && msg === "Building layers...")).toBe(true);
+  });
+
+  it("marks all agents as building during shared base image builds and clears the status afterward", async () => {
+    const { imageExists } = await import("../../src/docker/image.js");
+    vi.mocked(imageExists).mockReturnValue(false);
+
+    const agentConfigs: AgentConfig[] = ["alpha", "beta"].map((name) => {
+      const agentDir = resolve(tmpDir, "agents", name);
+      mkdirSync(agentDir, { recursive: true });
+      writeFileSync(resolve(agentDir, "SKILL.md"), `# ${name}`);
+      return {
+        name,
+        credentials: [],
+        models: [{ provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" }],
+        schedule: "*/5 * * * *",
+      };
+    });
+
+    const mockStatusTracker = {
+      setAgentState: vi.fn(),
+      setAgentStatusText: vi.fn(),
+      setBaseImageStatus: vi.fn(),
+    } as any;
+
+    const runtimeWithSharedBaseProgress: Runtime & ContainerRuntime = {
+      buildImage: vi.fn(async (opts: BuildImageOpts) => {
+        if (!opts.tag.includes("alpha") && !opts.tag.includes("beta")) {
+          opts.onProgress?.("Building base image");
+        }
+        return opts.tag;
+      }),
+      launchContainer: vi.fn(),
+      kill: vi.fn(),
+      listRunning: vi.fn().mockResolvedValue([]),
+      cleanup: vi.fn(),
+    } as unknown as Runtime & ContainerRuntime;
+
+    await buildAllImages({
+      projectPath: tmpDir,
+      globalConfig: {},
+      activeAgentConfigs: agentConfigs,
+      runtime: runtimeWithSharedBaseProgress,
+      statusTracker: mockStatusTracker,
+      logger: makeLogger(),
+    });
+
+    for (const { name } of agentConfigs) {
+      expect(mockStatusTracker.setAgentState).toHaveBeenCalledWith(name, "building");
+      expect(mockStatusTracker.setAgentStatusText).toHaveBeenCalledWith(name, "Building base image");
+      expect(mockStatusTracker.setAgentState).toHaveBeenCalledWith(name, "idle");
+      expect(mockStatusTracker.setAgentStatusText).toHaveBeenCalledWith(name, null);
+    }
+  });
+
+  it("marks all agents as building during project base image builds and clears the status afterward", async () => {
+    const { imageExists } = await import("../../src/docker/image.js");
+    vi.mocked(imageExists).mockReturnValue(true);
+
+    writeFileSync(resolve(tmpDir, "Dockerfile"), "FROM ubuntu:22.04\nRUN apt-get update\n");
+
+    const agentConfigs: AgentConfig[] = ["alpha", "beta"].map((name) => {
+      const agentDir = resolve(tmpDir, "agents", name);
+      mkdirSync(agentDir, { recursive: true });
+      writeFileSync(resolve(agentDir, "SKILL.md"), `# ${name}`);
+      return {
+        name,
+        credentials: [],
+        models: [{ provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" }],
+        schedule: "*/5 * * * *",
+      };
+    });
+
+    const mockStatusTracker = {
+      setAgentState: vi.fn(),
+      setAgentStatusText: vi.fn(),
+      setBaseImageStatus: vi.fn(),
+    } as any;
+
+    const runtimeWithProjectBaseProgress: Runtime & ContainerRuntime = {
+      buildImage: vi.fn(async (opts: BuildImageOpts) => {
+        if (!opts.tag.includes("alpha") && !opts.tag.includes("beta")) {
+          opts.onProgress?.("Building project base image");
+        }
+        return opts.tag;
+      }),
+      launchContainer: vi.fn(),
+      kill: vi.fn(),
+      listRunning: vi.fn().mockResolvedValue([]),
+      cleanup: vi.fn(),
+    } as unknown as Runtime & ContainerRuntime;
+
+    await buildAllImages({
+      projectPath: tmpDir,
+      globalConfig: {},
+      activeAgentConfigs: agentConfigs,
+      runtime: runtimeWithProjectBaseProgress,
+      statusTracker: mockStatusTracker,
+      logger: makeLogger(),
+    });
+
+    for (const { name } of agentConfigs) {
+      expect(mockStatusTracker.setAgentState).toHaveBeenCalledWith(name, "building");
+      expect(mockStatusTracker.setAgentStatusText).toHaveBeenCalledWith(name, "Building project base image");
+      expect(mockStatusTracker.setAgentState).toHaveBeenCalledWith(name, "idle");
+      expect(mockStatusTracker.setAgentStatusText).toHaveBeenCalledWith(name, null);
+    }
   });
 
   it("includes test-script.sh in extraFiles when it exists in the agent directory", async () => {
