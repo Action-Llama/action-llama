@@ -110,6 +110,19 @@ describe("chat", () => {
     expect(capturedOptions.initialMessage).toContain("What would you like to do");
   });
 
+  it("agent summary uses 'webhook-only' when agent has no schedule", async () => {
+    // Covers line 324: `schedule=${config.schedule || "webhook-only"}` FALSE branch
+    // When an agent has no schedule, "webhook-only" is shown in the summary.
+    const dir = makeTmpProject({
+      agents: [{ name: "webhook-agent", schedule: undefined }],
+    });
+    await execute({ project: dir });
+
+    expect(mockRun).toHaveBeenCalled();
+    // The initial message should show the agent summary with webhook-only
+    expect(capturedOptions.initialMessage).toContain("webhook-only");
+  });
+
   it("skips credential loading when project model uses pi_auth authType", async () => {
     // Covers line 368: `if (modelConfig.authType !== "pi_auth")` FALSE branch
     // When a pi_auth model is used in project chat, credential loading is skipped entirely.
