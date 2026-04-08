@@ -1,5 +1,14 @@
 # @action-llama/action-llama
 
+## 0.26.14
+
+### Patch Changes
+
+- [`edbf8d1`](https://github.com/Action-Llama/action-llama/commit/edbf8d1f1db66e0afc26f11220b2a3b7bd4fe9f5) Thanks [@asselstine](https://github.com/asselstine)! - Fix Claude CLI harness launches to include `--verbose` when using `--output-format stream-json`, restoring Claude-backed agent runs in dev containers and covering the CLI invocation with a dedicated harness test.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.26.14
+
 ## 0.26.13
 
 ### Patch Changes
