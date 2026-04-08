@@ -1,5 +1,14 @@
 # @action-llama/action-llama
 
+## 0.26.16
+
+### Patch Changes
+
+- [`4971f23`](https://github.com/Action-Llama/action-llama/commit/4971f235a01bf06cf5334923086983afc5fd970a) Thanks [@asselstine](https://github.com/asselstine)! - Preserve harness model request failures as explicit run errors so container runs report the underlying error message instead of only an exit code.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.26.16
+
 ## 0.26.15
 
 ### Patch Changes
