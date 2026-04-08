@@ -129,23 +129,37 @@ export function registerLogSummaryRoutes(
 
     const model = Object.values(globalConfig.models)[0];
 
-    // Resolve API key — use AuthStorage for pi_auth (OAuth), credential store for api_key
+    // Resolve API key using the same AuthStorage pipeline agents use.
+    // AuthStorage.getApiKey() checks: runtime overrides → auth.json API keys →
+    // OAuth tokens (with auto-refresh) → env vars → fallback resolver.
     let apiKey: string;
-    if (model.authType === "pi_auth") {
+    const authStorage = AuthStorage.create();
+    if (model.authType !== "pi_auth") {
       try {
-        const authStorage = AuthStorage.create();
-        apiKey = await authStorage.getApiKey(model.provider) ?? "";
-      } catch {
-        apiKey = "";
-      }
-    } else {
-      const credType = `${model.provider}_key`;
-      try {
+        const credType = `${model.provider}_key`;
         const key = await loadCredentialField(credType, "default", "token");
-        apiKey = key ?? "";
-      } catch {
-        apiKey = "";
+        if (key) {
+          authStorage.setRuntimeApiKey(model.provider, key);
+        }
+      } catch (err) {
+        // Credential store error is non-fatal — AuthStorage.getApiKey() may
+        // still resolve via auth.json, env vars, or other fallback sources.
+        logger?.warn({ agent: name, provider: model.provider, err },
+          `Credential store read failed for ${model.provider}_key, falling back to other sources`);
       }
+    }
+    try {
+      apiKey = await authStorage.getApiKey(model.provider) ?? "";
+    } catch (err) {
+      const msg = `Failed to resolve API key for provider "${model.provider}": ${err instanceof Error ? err.message : String(err)}`;
+      logger?.error({ agent: name, provider: model.provider, authType: model.authType, err }, msg);
+      return c.json({ error: msg }, 500);
+    }
+
+    if (!apiKey) {
+      const msg = `No API key found for provider "${model.provider}" (authType: ${model.authType}). Run "al doctor" to configure credentials.`;
+      logger?.error({ agent: name, provider: model.provider, authType: model.authType }, msg);
+      return c.json({ error: msg }, 500);
     }
 
     // Build prompt — include all fields so the model sees content, tools, commands, etc.

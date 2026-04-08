@@ -667,7 +667,7 @@ describe("log summary route", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
-  it("falls back to empty API key when loadCredentialField throws", async () => {
+  it("returns 500 with clear error when no API key can be resolved", async () => {
     const { loadCredentialField } = await import("../../../src/shared/credentials.js");
     vi.mocked(loadCredentialField).mockRejectedValueOnce(new Error("Credential store unavailable"));
 
@@ -681,22 +681,16 @@ describe("log summary route", () => {
       logLines.join("\n") + "\n",
     );
 
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve(fakeOpenAIResponse("Summary with empty key.")),
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
     const app = createTestApp(tmpDir);
     const res = await app.request(
       `/api/logs/agents/my-agent/${instanceId}/summarize`,
       { method: "POST" },
     );
-    // Even when credential loading fails, the request should succeed (empty API key is allowed)
-    expect(res.status).toBe(200);
+    // When no credential source can provide a key, return 500 with actionable message
+    expect(res.status).toBe(500);
     const data = await res.json();
-    expect(data.summary).toBe("Summary with empty key.");
-    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(data.error).toMatch(/No API key found/);
+    expect(data.error).toMatch(/al doctor/);
   });
 
   it("applies grep filter to log entries before summarizing", async () => {
