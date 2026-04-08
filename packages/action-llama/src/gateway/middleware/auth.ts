@@ -8,7 +8,7 @@ import type { SessionStore } from "../../control/session-store.js";
  * the auth API endpoints (login/logout/check).
  *
  * The SessionStore is passed in (created once in stores.ts) and shared
- * between the auth middleware, chat auth, and chat WebSocket handler.
+ * across the auth middleware and auth API endpoints.
  */
 export function applyAuthMiddleware(
   app: Hono,
@@ -18,7 +18,7 @@ export function applyAuthMiddleware(
 ): void {
   const auth = authMiddleware(apiKey, sessionStore);
 
-  // Protected route patterns — includes chat auth, unified here to avoid duplication
+  // Protected route patterns
   app.use("/control/*", auth);
   app.use("/dashboard/api/*", auth);
   app.use("/locks/status", auth);
@@ -27,7 +27,6 @@ export function applyAuthMiddleware(
   app.use("/api/dashboard/*", auth);
   app.use("/api/auth/check", auth);
   app.use("/api/webhooks/*", auth);
-  app.use("/api/chat/*", auth);
 
   // JSON auth endpoints for the SPA (login is unprotected, check is protected)
   registerAuthApiRoutes(app, apiKey, sessionStore, hostname);

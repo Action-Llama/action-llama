@@ -48,10 +48,10 @@ export function resolveFrontendDist(): string | null {
 /**
  * Register all frontend SPA serving routes:
  * - /assets/* — Vite-built assets with long-term caching headers
- * - SPA fallback routes for /login, /dashboard, /triggers, /chat
+ * - SPA fallback routes for /login, /dashboard, /triggers
  *
  * Reads index.html once and reuses it for all SPA routes, eliminating
- * the previous duplication where it was read separately for dashboard and chat.
+ * the previous duplication where it was read separately for multiple routes.
  */
 export function registerSpaRoutes(app: Hono, frontendDist: string, logger: Logger): void {
   const indexHtml = readFileSync(resolve(frontendDist, "index.html"), "utf-8");
@@ -81,6 +81,4 @@ export function registerSpaRoutes(app: Hono, frontendDist: string, logger: Logge
   app.get("/triggers", (c) => c.html(indexHtml));
   app.get("/jobs", (c) => c.html(indexHtml));
   app.get("/stats", (c) => c.html(indexHtml));
-  app.get("/chat", (c) => c.html(indexHtml));
-  app.get("/chat/*", (c) => c.html(indexHtml));
 }

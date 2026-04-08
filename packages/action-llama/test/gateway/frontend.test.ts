@@ -149,22 +149,6 @@ describe("registerSpaRoutes", () => {
     expect(text).toBe(INDEX_HTML);
   });
 
-  it("serves /chat with SPA index.html", async () => {
-    const app = buildApp();
-    const res = await app.request("/chat");
-    expect(res.status).toBe(200);
-    const text = await res.text();
-    expect(text).toBe(INDEX_HTML);
-  });
-
-  it("serves /chat/subpath with SPA index.html", async () => {
-    const app = buildApp();
-    const res = await app.request("/chat/room/123");
-    expect(res.status).toBe(200);
-    const text = await res.text();
-    expect(text).toBe(INDEX_HTML);
-  });
-
   it("serves /assets/* with correct content type and cache headers", async () => {
     const app = buildApp();
     // For the assets route, readFileSync will be called again to serve the file

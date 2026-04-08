@@ -80,7 +80,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   // === Phase 3: Create ingress (gateway + webhook bindings) ===
 
   // Start gateway early (before Docker builds) so users can see build status
-  const { gateway, gatewayPort, registerContainer, unregisterContainer, setChatRuntime } = await setupGateway({
+  const { gateway, gatewayPort, registerContainer, unregisterContainer } = await setupGateway({
     projectPath, globalConfig, state, agentConfigs,
     webhookRegistry, webhookSecrets, webhookConfigs: webhookSources, stateStore, statsStore, events, telemetry,
     statusTracker, webUI, expose, logger,
@@ -159,9 +159,6 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     baseImage = buildResult.baseImage;
     Object.assign(agentImages, buildResult.agentImages);
   }
-
-  // Wire up chat container launcher now that runtime + images are available
-  setChatRuntime(runtime, agentImages);
 
   // Create runner pools
   const { runnerPools, createRunner, actualScales } = await createRunnerPools({

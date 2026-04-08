@@ -15,12 +15,9 @@ import { registerSystemRoutes } from "./routes/system.js";
 import { registerExecutionRoutes } from "./routes/execution.js";
 import { registerGatewayWebhookRoutes } from "./routes/webhooks.js";
 import { registerDashboardRoutes } from "./routes/dashboard.js";
-import { registerChatRoutes, attachChatWebSocketToServer } from "./routes/chat.js";
 import { resolveFrontendDist, registerSpaRoutes } from "./frontend.js";
 import type { CallDispatcher } from "../execution/routes/calls.js";
 import type { ContainerRegistration } from "../execution/types.js";
-import type { ChatWebSocketState } from "../chat/ws-handler.js";
-import type { ChatSessionManager } from "../chat/session-manager.js";
 
 export async function startGateway(opts: GatewayOptions): Promise<GatewayServer> {
   const app = new Hono();
@@ -98,19 +95,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     opts.logger.warn("Log API routes disabled — gateway API key required for security.");
   }
 
-  // 8. Chat routes (requires webUI + apiKey)
-  let chatSessionManager: ChatSessionManager | undefined;
-  if (opts.webUI && opts.apiKey) {
-    const chatSetup = registerChatRoutes(app, {
-      maxChatSessions: opts.maxChatSessions,
-      launchChatContainer: opts.launchChatContainer,
-      stopChatContainer: opts.stopChatContainer,
-      logger: opts.logger,
-    });
-    chatSessionManager = chatSetup.chatSessionManager;
-  }
-
-  // 9. Frontend SPA serving (resolve once, serve everywhere)
+  // 8. Frontend SPA serving (resolve once, serve everywhere)
   const frontendDist = opts.frontendDistPath ?? resolveFrontendDist();
   if (frontendDist && opts.webUI && opts.apiKey) {
     registerSpaRoutes(app, frontendDist, opts.logger);
@@ -118,7 +103,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     opts.logger.warn("@action-llama/frontend not found — dashboard UI will not be served. API routes are still available.");
   }
 
-  // 10. Start HTTP server
+  // 9. Start HTTP server
   const server = serve({
     fetch: app.fetch,
     port: opts.port,
@@ -128,17 +113,6 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
   await new Promise<void>((resolve) => {
     server.on("listening", resolve);
   });
-
-  // 11. Attach chat WebSocket to the raw HTTP server (needs live server)
-  let chatWsState: ChatWebSocketState | undefined;
-  if (chatSessionManager && opts.apiKey) {
-    chatWsState = attachChatWebSocketToServer(server, {
-      chatSessionManager,
-      apiKey: opts.apiKey,
-      sessionStore,
-      logger: opts.logger,
-    });
-  }
 
   opts.logger.info({ port: opts.port }, "Gateway server listening");
 
@@ -174,9 +148,6 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
 
   const close = () =>
     new Promise<void>((resolve) => {
-      if (chatWsState) {
-        clearInterval(chatWsState.cleanupInterval);
-      }
       lockStore.dispose();
       callStore.dispose();
       server.closeAllConnections();
@@ -192,7 +163,5 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     callStore,
     setCallDispatcher,
     close,
-    chatSessionManager,
-    chatWebSocketState: chatWsState,
   };
 }

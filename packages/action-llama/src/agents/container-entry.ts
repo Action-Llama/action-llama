@@ -4,7 +4,6 @@ import {
   DefaultResourceLoader,
   SettingsManager,
 } from "@mariozechner/pi-coding-agent";
-import { ModelCircuitBreaker } from "./model-fallback.js";
 import type { AgentConfig } from "../shared/config.js";
 import { ExitCode, getExitCodeMessage } from "../shared/exit-codes.js";
 import { ensureSignalDir, readSignals } from "./signals.js";
@@ -13,8 +12,8 @@ import { processContextInjection } from "./context-injection.js";
 import { parseFrontmatter } from "../shared/frontmatter.js";
 import { initTelemetry } from "../telemetry/index.js";
 import type { TelemetryConfig } from "../telemetry/types.js";
-import { loadContainerCredentials } from "./credential-setup.js";
-import { runSessionLoop } from "./session-loop.js";
+import { loadContainerCredentials, resolveHarnessEnv } from "./credential-setup.js";
+import { consumeHarness, createHarness } from "./harness/index.js";
 
 // Structured log line — written to stdout, parsed by ContainerAgentRunner on the host
 function emitLog(level: string, msg: string, data?: Record<string, any>) {
@@ -235,21 +234,27 @@ export async function handleInvocation(init: AgentInit): Promise<number> {
     fullPrompt = envPrompt;
   }
 
-  // Fresh circuit breaker per container — each run tries from the top
-  const containerBreaker = new ModelCircuitBreaker();
-
-  // Run the shared model-fallback + session loop
-  let abortedDueToErrors = false;
-  const loopResult = await runSessionLoop(fullPrompt, {
-    models: agentConfig.models,
-    circuitBreaker: containerBreaker,
-    cwd,
+  const harness = createHarness(agentConfig, {
     resourceLoader,
     settingsManager,
     providerKeys,
+  });
+
+  let abortedDueToErrors = false;
+  const loopResult = await consumeHarness(
+    harness,
+    harness.run(fullPrompt, {
+      cwd,
+      env: {
+        ...resolveHarnessEnv(agentConfig, providerKeys),
+        BASH_ENV: "/app/bin/al-bash-init.sh",
+      },
+    }),
+    {
     log: emitLog,
     onUnrecoverableAbort: () => { abortedDueToErrors = true; },
-  });
+    },
+  );
   const { outputText } = loopResult;
 
   clearTimeout(timer);
@@ -314,13 +319,6 @@ export async function handleInvocation(init: AgentInit): Promise<number> {
  */
 export async function runAgent(): Promise<number> {
   const init = await initAgent();
-
-  // Chat mode: branch to interactive chat entrypoint
-  if (process.env.AL_CHAT_MODE === "1") {
-    const { runChatMode } = await import("./chat-entry.js");
-    return runChatMode(init);
-  }
-
   return handleInvocation(init);
 }
 

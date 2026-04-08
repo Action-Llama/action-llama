@@ -14,7 +14,6 @@ import { TriggerDetailPage } from "./pages/TriggerDetailPage";
 import { ProjectConfigPage } from "./pages/ProjectConfigPage";
 import { AgentStatsPage } from "./pages/AgentStatsPage";
 import { StatsPage } from "./pages/StatsPage";
-import { ChatPage } from "./pages/ChatPage";
 import { WebhookReceiptPage } from "./pages/WebhookReceiptPage";
 
 function AgentTriggersRedirect() {
@@ -31,8 +30,6 @@ export function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-      {/* Chat page is full-screen, outside Layout */}
-      <Route path="/chat/:agent" element={<ChatPage />} />
       <Route element={<Layout />}>
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/dashboard/agents/:name" element={<AgentLayout />}>

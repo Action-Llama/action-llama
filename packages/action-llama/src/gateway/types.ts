@@ -14,9 +14,6 @@ import type { ControlRoutesDeps } from "../control/routes/control.js";
 import type { ApiKeySource } from "../control/auth.js";
 import type { SchedulerEventBus } from "../scheduler/events.js";
 import type { StatsStore } from "../stats/store.js";
-import type { ChatSessionManager } from "../chat/session-manager.js";
-import type { ChatWebSocketState } from "../chat/ws-handler.js";
-import type { LaunchChatCallback, StopChatCallback } from "../chat/routes.js";
 
 export type { ContainerRegistration } from "../execution/types.js";
 
@@ -47,12 +44,6 @@ export interface GatewayOptions {
   events?: SchedulerEventBus;
   /** Optional stats store for dashboard aggregate stats. */
   statsStore?: StatsStore;
-  /** Max concurrent chat sessions (default: 5). */
-  maxChatSessions?: number;
-  /** Callback to launch a chat container for a session. */
-  launchChatContainer?: LaunchChatCallback;
-  /** Callback to stop a chat container for a session. */
-  stopChatContainer?: StopChatCallback;
 }
 
 export interface GatewayServer {
@@ -64,6 +55,4 @@ export interface GatewayServer {
   callStore: CallStore;
   setCallDispatcher: (dispatcher: CallDispatcher) => void;
   close: () => Promise<void>;
-  chatSessionManager?: ChatSessionManager;
-  chatWebSocketState?: ChatWebSocketState;
 }

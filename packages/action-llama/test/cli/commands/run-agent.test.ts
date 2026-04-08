@@ -41,19 +41,20 @@ vi.mock("../../../src/agents/signals.js", () => ({
   readSignals: (...args: any[]) => mockReadSignals(...args),
 }));
 
-const mockModelCircuitBreaker = vi.fn();
-vi.mock("../../../src/agents/model-fallback.js", () => ({
-  ModelCircuitBreaker: function () { return mockModelCircuitBreaker(); },
-}));
-
 const mockGetExitCodeMessage = vi.fn().mockReturnValue("signal exit reason");
 vi.mock("../../../src/shared/exit-codes.js", () => ({
   getExitCodeMessage: (...args: any[]) => mockGetExitCodeMessage(...args),
 }));
 
-const mockRunSessionLoop = vi.fn().mockResolvedValue({ outputText: "done" });
-vi.mock("../../../src/agents/session-loop.js", () => ({
-  runSessionLoop: (...args: any[]) => mockRunSessionLoop(...args),
+const mockHarnessRun = vi.fn().mockReturnValue((async function* () {})());
+const mockCreateHarness = vi.fn().mockReturnValue({
+  run: (...args: any[]) => mockHarnessRun(...args),
+  dispose: vi.fn(),
+});
+const mockConsumeHarness = vi.fn().mockResolvedValue({ outputText: "done" });
+vi.mock("../../../src/agents/harness/index.js", () => ({
+  createHarness: (...args: any[]) => mockCreateHarness(...args),
+  consumeHarness: (...args: any[]) => mockConsumeHarness(...args),
 }));
 
 const mockRunHooks = vi.fn().mockResolvedValue(undefined);
@@ -141,9 +142,9 @@ describe("cli/commands/run-agent execute", () => {
 
     // Set up default mocks
     mockLoadAgentConfig.mockReturnValue(defaultAgentConfig());
-    mockRunSessionLoop.mockResolvedValue({ outputText: "session output" });
+    mockHarnessRun.mockReturnValue((async function* () {})());
+    mockConsumeHarness.mockResolvedValue({ outputText: "session output" });
     mockReadSignals.mockReturnValue({});
-    mockModelCircuitBreaker.mockReturnValue({});
   });
 
   afterEach(() => {
@@ -200,18 +201,14 @@ describe("cli/commands/run-agent execute", () => {
       expect(mockLoadGlobalConfig).toHaveBeenCalledWith(expect.stringContaining(projectPath));
     });
 
-    it("calls runSessionLoop with the built prompt", async () => {
+    it("calls the harness with the built prompt", async () => {
       mockBuildPromptSkeleton.mockReturnValue("system prompt skeleton");
 
       await expect(execute("dev", { project: projectPath })).rejects.toThrow("process.exit");
 
-      expect(mockRunSessionLoop).toHaveBeenCalledWith(
+      expect(mockHarnessRun).toHaveBeenCalledWith(
         "system prompt skeleton",
-        expect.objectContaining({
-          models: expect.arrayContaining([
-            expect.objectContaining({ provider: "anthropic" }),
-          ]),
-        }),
+        expect.objectContaining({ cwd: expect.any(String) }),
       );
     });
 
@@ -221,7 +218,7 @@ describe("cli/commands/run-agent execute", () => {
 
       await expect(execute("dev", { project: projectPath })).rejects.toThrow("process.exit");
 
-      expect(mockRunSessionLoop).toHaveBeenCalledWith(
+      expect(mockHarnessRun).toHaveBeenCalledWith(
         "skeleton\n\nDo the thing",
         expect.anything(),
       );
@@ -255,11 +252,11 @@ describe("cli/commands/run-agent execute", () => {
       );
     });
 
-    it("passes providerKeys from credentials to runSessionLoop", async () => {
+    it("passes providerKeys from credentials to createHarness", async () => {
       await expect(execute("dev", { project: projectPath })).rejects.toThrow("process.exit");
 
-      expect(mockRunSessionLoop).toHaveBeenCalledWith(
-        expect.any(String),
+      expect(mockCreateHarness).toHaveBeenCalledWith(
+        expect.any(Object),
         expect.objectContaining({
           providerKeys: expect.any(Map),
         }),
@@ -328,8 +325,8 @@ describe("cli/commands/run-agent execute", () => {
 
   describe("abort due to errors", () => {
     it("calls process.exit(1) when session loop aborts due to errors", async () => {
-      mockRunSessionLoop.mockImplementation(
-        async (_prompt: string, opts: any) => {
+      mockConsumeHarness.mockImplementation(
+        async (_harness: any, _events: any, opts: any) => {
           opts.onUnrecoverableAbort();
           return { outputText: "" };
         },
@@ -416,7 +413,7 @@ describe("cli/commands/run-agent execute", () => {
       await expect(execute("dev", { project: projectPath })).rejects.toThrow("process.exit");
 
       // The session loop should be called with a map containing the api key
-      const callArgs = mockRunSessionLoop.mock.calls[0][1];
+      const callArgs = mockCreateHarness.mock.calls[0][1];
       expect(callArgs.providerKeys.get("anthropic")).toBe("test-api-key-12345");
     });
 
@@ -603,8 +600,7 @@ describe("cli/commands/run-agent execute", () => {
 
       await expect(execute("dev", { project: projectPath })).rejects.toThrow("process.exit(0)");
 
-      // Session loop should still be called with the anthropic key
-      const callArgs = mockRunSessionLoop.mock.calls[0][1];
+      const callArgs = mockCreateHarness.mock.calls[0][1];
       expect(callArgs.providerKeys.get("anthropic")).toBe("test-api-key-12345");
     });
   });
@@ -625,7 +621,7 @@ describe("cli/commands/run-agent execute", () => {
 
   describe("allModelsExhausted exit", () => {
     it("calls process.exit(12) when all models are exhausted", async () => {
-      mockRunSessionLoop.mockResolvedValue({
+      mockConsumeHarness.mockResolvedValue({
         outputText: "",
         allModelsExhausted: true,
       });
@@ -635,7 +631,7 @@ describe("cli/commands/run-agent execute", () => {
     });
 
     it("does not call process.exit(12) when allModelsExhausted is false", async () => {
-      mockRunSessionLoop.mockResolvedValue({
+      mockConsumeHarness.mockResolvedValue({
         outputText: "done",
         allModelsExhausted: false,
       });
@@ -693,8 +689,8 @@ describe("cli/commands/run-agent execute", () => {
         timeout: 0.001, // 1ms in seconds
       });
 
-      // Make the session loop never resolve (so timeout fires first)
-      mockRunSessionLoop.mockReturnValue(new Promise(() => {}));
+      // Make harness consumption never resolve (so timeout fires first)
+      mockConsumeHarness.mockReturnValue(new Promise(() => {}));
 
       const logs: string[] = [];
       const origConsoleLog = console.log;

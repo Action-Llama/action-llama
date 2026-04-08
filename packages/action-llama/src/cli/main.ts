@@ -187,17 +187,6 @@ program
   }));
 
 program
-  .command("chat")
-  .description("Open an interactive console (optionally scoped to an agent's environment)")
-  .argument("[agent]", "agent name — loads its credentials and environment")
-  .option("-p, --project <dir>", "project directory", ".")
-  .option("-E, --env <name>", "use named environment to load credentials")
-  .action(withCommand(async (agent: string | undefined, opts) => {
-    const { execute } = await import("./commands/chat.js");
-    await execute({ ...opts, agent });
-  }));
-
-program
   .command("push")
   .description("Deploy project to a self-hosted server via SSH")
   .argument("[agent]", "agent name — push only this agent (hot-reloaded, no restart)")

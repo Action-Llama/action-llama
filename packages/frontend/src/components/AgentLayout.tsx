@@ -91,7 +91,6 @@ export function AgentLayout() {
               }
             }}
             onRunWithPrompt={() => setShowRunModal(true)}
-            onChat={() => navigate(`/chat/${encodeURIComponent(name!)}`)}
           />
           <button
             id="agent-kill-btn"

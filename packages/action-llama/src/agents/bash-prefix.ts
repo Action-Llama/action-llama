@@ -5,7 +5,7 @@
  * persisted environment variables. The script must be on PATH:
  *  - Docker agents: baked into `/app/bin/` via Dockerfile COPY
  *  - Host-user scheduled agents: copied to temp bin dir via installSignalCommands()
- *  - Host-user run/chat: added to PATH via ensureBinDir()
+ *  - Host-user runs: added to PATH via ensureBinDir()
  */
 import { dirname, resolve } from "path";
 import { existsSync } from "fs";
@@ -16,7 +16,7 @@ export const BASH_COMMAND_PREFIX = ". al-bash-init.sh";
 /**
  * Ensure the docker/bin directory (which contains al-bash-init.sh and other
  * agent shell scripts) is on PATH. Call this before creating an agent session
- * in contexts that don't use installSignalCommands() (e.g. chat mode).
+ * in contexts that don't use installSignalCommands().
  *
  * No-op if the directory is already on PATH or doesn't exist.
  */

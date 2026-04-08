@@ -2,7 +2,6 @@
  * Tests for gateway routes that were previously uncovered:
  * - /assets/* static file serving (success + 404)
  * - /login SPA route
- * - /chat and /chat/* SPA routes
  * - Log routes warn when projectPath set but no apiKey
  * - controlDeps routes registration
  * - unregisterContainer releases locks/calls (logging paths)
@@ -188,49 +187,6 @@ describe("Gateway /triggers SPA route", () => {
     const html = await res.text();
     expect(html).toContain('<div id="root">');
     expect(res.headers.get("content-type")).toContain("text/html");
-  });
-});
-
-// ── /chat and /chat/* SPA routes ──────────────────────────────────────────────
-
-describe("Gateway /chat SPA routes", () => {
-  let gateway: any;
-  let frontendDist: string;
-  const logger = makeLogger();
-  const TEST_API_KEY = "test-key-chat-789";
-
-  beforeAll(async () => {
-    frontendDist = createMockFrontendDist();
-    gateway = await startGateway({
-      port: 0,
-      logger,
-      apiKey: TEST_API_KEY,
-      webUI: true,
-      statusTracker: mockStatusTracker(),
-      frontendDistPath: frontendDist,
-    });
-  });
-
-  afterAll(async () => {
-    await gateway.close();
-    rmSync(frontendDist, { recursive: true, force: true });
-  });
-
-  it("serves index.html at /chat", async () => {
-    const addr = gateway.server.address() as any;
-    // /api/chat/* requires auth, but /chat SPA route does not need auth
-    const res = await fetch(`http://localhost:${addr.port}/chat`);
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    expect(html).toContain('<div id="root">');
-  });
-
-  it("serves index.html at /chat/* paths", async () => {
-    const addr = gateway.server.address() as any;
-    const res = await fetch(`http://localhost:${addr.port}/chat/session-123`);
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    expect(html).toContain('<div id="root">');
   });
 });
 

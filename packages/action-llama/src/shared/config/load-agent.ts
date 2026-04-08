@@ -6,6 +6,13 @@ import { parseFrontmatter } from "../frontmatter.js";
 import type { AgentConfig, AgentRuntimeConfig, ModelConfig } from "./types.js";
 import { loadGlobalConfig } from "./load-project.js";
 
+function assertValidHarnessType(type: unknown, source: string): void {
+  if (type === undefined) return;
+  if (type !== "pi" && type !== "claude") {
+    throw new ConfigError(`${source} harness.type must be "pi" or "claude".`);
+  }
+}
+
 /**
  * Load the raw per-agent runtime config from `agents/<name>/config.toml`.
  */
@@ -49,6 +56,7 @@ export function loadAgentConfig(projectPath: string, agentName: string): AgentCo
 
   // Read runtime config from per-agent config.toml
   const runtime = loadAgentRuntimeConfig(projectPath, agentName);
+  assertValidHarnessType(runtime.harness?.type, `${resolve(projectPath, "agents", agentName, "config.toml")}`);
 
   const parsed: Record<string, unknown> = {
     name: agentName,
@@ -58,6 +66,7 @@ export function loadAgentConfig(projectPath: string, agentName: string): AgentCo
     compatibility: data.compatibility,
     // Runtime fields from config.toml
     credentials: runtime.credentials,
+    harness: runtime.harness,
     schedule: runtime.schedule,
     webhooks: runtime.webhooks,
     hooks: runtime.hooks,
@@ -96,6 +105,7 @@ export function loadAgentConfig(projectPath: string, agentName: string): AgentCo
   }
 
   parsed.models = resolvedModels;
+  parsed.harness = runtime.harness ?? global.harness ?? { type: "pi" };
 
   // Apply defaultAgentScale as fallback when no explicit per-agent scale is set
   if (parsed.scale === undefined && global.defaultAgentScale !== undefined) {

@@ -3,12 +3,13 @@ FROM public.ecr.aws/docker/library/node:20-alpine
 ARG GIT_SHA=unknown
 ARG VERSION=unknown
 
-RUN apk add --no-cache git curl jq ca-certificates openssh-client
+RUN apk add --no-cache git bash curl jq ca-certificates openssh-client
 
 # Copy application
 WORKDIR /app
 COPY package.json ./
 RUN --mount=type=cache,target=/root/.npm npm install --omit=dev --omit=optional
+RUN --mount=type=cache,target=/root/.npm npm install -g @anthropic-ai/claude-code
 COPY dist/ ./dist/
 
 # Bake shell scripts into image so container-entry doesn't write them at runtime

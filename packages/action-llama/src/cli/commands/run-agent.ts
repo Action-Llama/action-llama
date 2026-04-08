@@ -18,6 +18,7 @@ import type { AgentConfig } from "../../shared/config.js";
 import { parseCredentialRef } from "../../shared/credentials.js";
 import { builtinCredentials } from "../../credentials/builtins/index.js";
 import { buildPromptSkeleton, type PromptSkills } from "../../agents/prompt.js";
+import { resolveHarnessEnv } from "../../agents/credential-setup.js";
 
 function emitLog(level: string, msg: string, data?: Record<string, any>) {
   console.log(JSON.stringify({ _log: true, level, msg, ...data, ts: Date.now() }));
@@ -203,9 +204,8 @@ export async function execute(agent: string, opts: { project: string }): Promise
     SettingsManager,
   } = await import("@mariozechner/pi-coding-agent");
   const { ensureSignalDir, readSignals } = await import("../../agents/signals.js");
-  const { ModelCircuitBreaker } = await import("../../agents/model-fallback.js");
   const { getExitCodeMessage } = await import("../../shared/exit-codes.js");
-  const { runSessionLoop } = await import("../../agents/session-loop.js");
+  const { consumeHarness, createHarness } = await import("../../agents/harness/index.js");
 
   // Signal directory
   const signalDir = resolve(workDir || "/tmp", "signals");
@@ -227,20 +227,27 @@ export async function execute(agent: string, opts: { project: string }): Promise
     retry: { enabled: true, maxRetries: 2 },
   });
 
-  // Model fallback loop (shared with container-entry.ts via session-loop.ts)
-  const containerBreaker = new ModelCircuitBreaker();
-  let abortedDueToErrors = false;
-
-  const loopResult = await runSessionLoop(fullPrompt, {
-    models: agentConfig.models,
-    circuitBreaker: containerBreaker,
-    cwd,
+  const harness = createHarness(agentConfig, {
     resourceLoader,
     settingsManager,
     providerKeys,
+  });
+  let abortedDueToErrors = false;
+
+  const loopResult = await consumeHarness(
+    harness,
+    harness.run(fullPrompt, {
+      cwd,
+      env: {
+        ...resolveHarnessEnv(agentConfig, providerKeys),
+        BASH_ENV: resolve(binDir, "al-bash-init.sh"),
+      },
+    }),
+    {
     log: emitLog,
     onUnrecoverableAbort: () => { abortedDueToErrors = true; },
-  });
+    },
+  );
   const { outputText } = loopResult;
 
   clearTimeout(timer);

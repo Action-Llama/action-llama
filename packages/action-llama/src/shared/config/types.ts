@@ -9,6 +9,12 @@ export interface ModelConfig {
   authType: "api_key" | "oauth_token" | "pi_auth";
 }
 
+export type HarnessType = "pi" | "claude";
+
+export interface HarnessConfig {
+  type: HarnessType;
+}
+
 export interface LocalConfig {
   enabled: boolean;        // Docker isolation (default true)
   image?: string;          // Base Docker image (default: CONSTANTS.DEFAULT_IMAGE)
@@ -53,7 +59,6 @@ export type CloudConfig = VpsConfig | CloudRunConfig;
 export interface GatewayConfig {
   port?: number;
   url?: string;
-  maxChatSessions?: number;
 }
 
 export interface WebhookSourceConfig {
@@ -75,6 +80,7 @@ export interface TelemetryConfig {
 
 export interface GlobalConfig {
   models?: Record<string, ModelConfig>;
+  harness?: HarnessConfig;
   local?: LocalConfig;
   gateway?: GatewayConfig;
   webhooks?: Record<string, WebhookSourceConfig>;
@@ -121,6 +127,7 @@ export interface AgentRuntimeConfig {
   source?: string;          // Install origin for `al update` (e.g. "author/repo")
   credentials?: string[];
   models?: string[];        // Named model references (resolved against [models.*])
+  harness?: HarnessConfig;
   schedule?: string;
   webhooks?: WebhookTrigger[];
   hooks?: AgentHooks;
@@ -140,6 +147,7 @@ export interface AgentConfig {
   description?: string;
   credentials: string[];
   models: ModelConfig[];
+  harness?: HarnessConfig;
   schedule?: string;
   webhooks?: WebhookTrigger[];
   hooks?: AgentHooks;

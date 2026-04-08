@@ -37,21 +37,6 @@ vi.mock("../../src/shared/logger.js", () => ({
   }),
 }));
 
-// Mock chat container launcher
-const { mockChatContainerLauncherCtor } = vi.hoisted(() => ({
-  mockChatContainerLauncherCtor: vi.fn(),
-}));
-
-vi.mock("../../src/chat/container-launcher.js", () => ({
-  ChatContainerLauncher: class MockChatContainerLauncher {
-    launchChatContainer = vi.fn().mockResolvedValue(undefined);
-    stopChatContainer = vi.fn().mockResolvedValue(undefined);
-    constructor(...args: any[]) {
-      mockChatContainerLauncherCtor(...args);
-    }
-  },
-}));
-
 // Mock execution
 vi.mock("../../src/execution/execution.js", () => ({
   runWithReruns: vi.fn().mockResolvedValue(undefined),
@@ -92,8 +77,6 @@ function makeGatewayResult(overrides?: Record<string, any>) {
     callStore: { failAllByCaller: vi.fn(), dispose: vi.fn() },
     setCallDispatcher: vi.fn(),
     close: vi.fn().mockResolvedValue(undefined),
-    chatSessionManager: undefined,
-    chatWebSocketState: undefined,
     ...overrides,
   };
 }
@@ -144,7 +127,7 @@ describe("setupGateway", () => {
   });
 
   describe("basic setup", () => {
-    it("returns gateway, gatewayPort, registerContainer, unregisterContainer, setChatRuntime", async () => {
+    it("returns gateway, gatewayPort, registerContainer, and unregisterContainer", async () => {
       const gatewayResult = makeGatewayResult();
       const state = makeSchedulerState();
       const opts = makeBaseOpts(state, gatewayResult);
@@ -155,8 +138,6 @@ describe("setupGateway", () => {
       expect(result).toHaveProperty("gatewayPort", 8080);
       expect(result).toHaveProperty("registerContainer");
       expect(result).toHaveProperty("unregisterContainer");
-      expect(result).toHaveProperty("setChatRuntime");
-      expect(typeof result.setChatRuntime).toBe("function");
     });
 
     it("uses globalConfig gateway port when set", async () => {
@@ -223,17 +204,6 @@ describe("setupGateway", () => {
       expect(logger.warn).not.toHaveBeenCalled();
     });
 
-    it("wires stopContainer callback on chatWebSocketState when present", async () => {
-      const chatWebSocketState = { stopContainer: undefined as any };
-      const gatewayResult = makeGatewayResult({ chatWebSocketState });
-      const state = makeSchedulerState();
-      const opts = makeBaseOpts(state, gatewayResult);
-
-      await setupGateway(opts);
-
-      expect(chatWebSocketState.stopContainer).toBeDefined();
-      expect(typeof chatWebSocketState.stopContainer).toBe("function");
-    });
   });
 
   describe("controlDeps.killInstance", () => {
@@ -587,133 +557,6 @@ describe("setupGateway", () => {
       const count = controlDeps.workQueue.size("dev");
       expect(count).toBe(7);
       expect(mockWorkQueue.size).toHaveBeenCalledWith("dev");
-    });
-  });
-
-  describe("launchChatContainer and stopChatContainer closures", () => {
-    it("launchChatContainer throws when chatLauncher is not set (before setChatRuntime)", async () => {
-      const gatewayResult = makeGatewayResult({ chatSessionManager: { getSessions: vi.fn() } });
-      const state = makeSchedulerState();
-      const opts = makeBaseOpts(state, gatewayResult);
-
-      await setupGateway(opts);
-
-      // Extract the closures passed to startGateway (chatLauncher is null at this point)
-      const { launchChatContainer } = mockStartGateway.mock.calls[0][0];
-
-      await expect(launchChatContainer("dev", "session-123")).rejects.toThrow(
-        "Chat is not available yet — agent images are still building"
-      );
-    });
-
-    it("launchChatContainer delegates to chatLauncher after setChatRuntime is called", async () => {
-      const chatSessionManager = { getSessions: vi.fn() };
-      const gatewayResult = makeGatewayResult({ chatSessionManager });
-      const state = makeSchedulerState();
-      const opts = makeBaseOpts(state, gatewayResult);
-
-      const { setChatRuntime } = await setupGateway(opts);
-
-      // Initialize chatLauncher by calling setChatRuntime
-      const runtime = { launch: vi.fn() } as any;
-      setChatRuntime(runtime, { dev: "dev-image:latest" });
-
-      const { launchChatContainer } = mockStartGateway.mock.calls[0][0];
-      // Should not throw when chatLauncher is set
-      await expect(launchChatContainer("dev", "session-456")).resolves.toBeUndefined();
-    });
-
-    it("stopChatContainer returns early when chatLauncher is not set", async () => {
-      const gatewayResult = makeGatewayResult({ chatSessionManager: { getSessions: vi.fn() } });
-      const state = makeSchedulerState();
-      const opts = makeBaseOpts(state, gatewayResult);
-
-      await setupGateway(opts);
-
-      const { stopChatContainer } = mockStartGateway.mock.calls[0][0];
-      // Should not throw or call anything
-      await expect(stopChatContainer("session-789")).resolves.toBeUndefined();
-    });
-
-    it("stopChatContainer delegates to chatLauncher after setChatRuntime is called", async () => {
-      const chatSessionManager = { getSessions: vi.fn() };
-      const gatewayResult = makeGatewayResult({ chatSessionManager });
-      const state = makeSchedulerState();
-      const opts = makeBaseOpts(state, gatewayResult);
-
-      const { setChatRuntime } = await setupGateway(opts);
-      const runtime = { launch: vi.fn() } as any;
-      setChatRuntime(runtime, { dev: "dev-image:latest" });
-
-      const { stopChatContainer } = mockStartGateway.mock.calls[0][0];
-      await stopChatContainer("session-abc");
-
-      // The mock instance's stopChatContainer should have been called
-      // (verified by the mock returning resolved value)
-      // Just verify it doesn't throw
-      expect(true).toBe(true);
-    });
-  });
-
-  describe("setChatRuntime", () => {
-    it("does nothing when chatSessionManager is absent", async () => {
-      const gatewayResult = makeGatewayResult({ chatSessionManager: undefined });
-      const state = makeSchedulerState();
-      const opts = makeBaseOpts(state, gatewayResult);
-
-      const { setChatRuntime } = await setupGateway(opts);
-
-      const runtime = {} as any;
-      const agentImages = { dev: "dev-image:latest" };
-
-      // Should not throw
-      expect(() => setChatRuntime(runtime, agentImages)).not.toThrow();
-      expect(mockChatContainerLauncherCtor).not.toHaveBeenCalled();
-    });
-
-    it("creates ChatContainerLauncher when chatSessionManager is present", async () => {
-      const chatSessionManager = { getSessions: vi.fn() };
-      const gatewayResult = makeGatewayResult({ chatSessionManager });
-      const state = makeSchedulerState();
-      const opts = makeBaseOpts(state, gatewayResult);
-
-      const { setChatRuntime } = await setupGateway(opts);
-
-      const runtime = { launch: vi.fn() } as any;
-      const agentImages = { dev: "dev-image:latest" };
-      setChatRuntime(runtime, agentImages);
-
-      // Constructor was called with the right args
-      expect(mockChatContainerLauncherCtor).toHaveBeenCalledOnce();
-      const [ctorArg] = mockChatContainerLauncherCtor.mock.calls[0];
-      expect(ctorArg).toMatchObject({
-        runtime,
-        agentConfigs: expect.any(Array),
-        sessionManager: chatSessionManager,
-      });
-    });
-
-    it("images map provides live access to agentImages values", async () => {
-      const chatSessionManager = { getSessions: vi.fn() };
-      const gatewayResult = makeGatewayResult({ chatSessionManager });
-      const state = makeSchedulerState();
-      const opts = makeBaseOpts(state, gatewayResult);
-
-      const { setChatRuntime } = await setupGateway(opts);
-
-      const runtime = {} as any;
-      const agentImages: Record<string, string> = { dev: "dev-image:v1" };
-      setChatRuntime(runtime, agentImages);
-
-      const [ctorArg] = mockChatContainerLauncherCtor.mock.calls[0];
-      const images = ctorArg.images as Map<string, string>;
-      // Initial value
-      expect(images.get("dev")).toBe("dev-image:v1");
-      // Live — changes to agentImages are visible through the proxy
-      agentImages["dev"] = "dev-image:v2";
-      expect(images.get("dev")).toBe("dev-image:v2");
-      expect(images.has("dev")).toBe(true);
-      expect(images.has("nonexistent")).toBe(false);
     });
   });
 

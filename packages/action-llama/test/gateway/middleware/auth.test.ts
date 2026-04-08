@@ -39,7 +39,6 @@ describe("applyAuthMiddleware — protected routes return 401 without auth", () 
     app.get("/api/stats/agents", (c) => c.json({ agents: [] }));
     app.get("/api/dashboard/status", (c) => c.json({ status: "ok" }));
     app.get("/api/webhooks/receipts", (c) => c.json({ receipts: [] }));
-    app.get("/api/chat/sessions", (c) => c.json({ sessions: [] }));
   });
 
   it("protects /control/* — returns 401 without Authorization header", async () => {
@@ -76,11 +75,6 @@ describe("applyAuthMiddleware — protected routes return 401 without auth", () 
 
   it("protects /api/webhooks/* — returns 401 without auth", async () => {
     const res = await app.request("/api/webhooks/receipts");
-    expect(res.status).toBe(401);
-  });
-
-  it("protects /api/chat/* — returns 401 without auth", async () => {
-    const res = await app.request("/api/chat/sessions");
     expect(res.status).toBe(401);
   });
 

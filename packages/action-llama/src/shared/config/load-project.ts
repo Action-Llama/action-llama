@@ -10,6 +10,13 @@ import {
 } from "../environment.js";
 import type { GlobalConfig } from "./types.js";
 
+function assertValidHarnessType(type: unknown, source: string): void {
+  if (type === undefined) return;
+  if (type !== "pi" && type !== "claude") {
+    throw new ConfigError(`${source} harness.type must be "pi" or "claude".`);
+  }
+}
+
 /**
  * Load the raw project config.toml without environment merging.
  * Used internally and by tests that need the raw project config.
@@ -79,6 +86,8 @@ export function loadGlobalConfig(projectPath: string, envName?: string): GlobalC
       throw new ConfigError("defaultAgentScale must be a non-negative integer.");
     }
   }
+
+  assertValidHarnessType(config.harness?.type, "config.toml");
 
   return config;
 }

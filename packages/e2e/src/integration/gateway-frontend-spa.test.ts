@@ -3,7 +3,7 @@
  *
  * registerSpaRoutes() serves the Vite-built React SPA:
  *   - /assets/* — static asset files with long-term cache headers
- *   - SPA fallback routes (/login, /dashboard, /activity, /triggers, /jobs, /stats, /chat, /chat/*)
+ *   - SPA fallback routes (/login, /dashboard, /activity, /triggers, /jobs, /stats)
  *     all return index.html for client-side routing
  *
  * Tests construct a minimal fake frontend dist directory and register the routes
@@ -17,8 +17,6 @@
  *   - gateway/frontend.ts: registerSpaRoutes() — /triggers returns index.html
  *   - gateway/frontend.ts: registerSpaRoutes() — /jobs returns index.html
  *   - gateway/frontend.ts: registerSpaRoutes() — /stats returns index.html
- *   - gateway/frontend.ts: registerSpaRoutes() — /chat returns index.html
- *   - gateway/frontend.ts: registerSpaRoutes() — /chat/* returns index.html
  *   - gateway/frontend.ts: registerSpaRoutes() — /assets/:file returns file with correct MIME type
  *   - gateway/frontend.ts: registerSpaRoutes() — /assets/:file .js → text/javascript charset=utf-8
  *   - gateway/frontend.ts: registerSpaRoutes() — /assets/:file .css → text/css charset=utf-8
@@ -136,22 +134,6 @@ describe("integration: gateway/frontend.ts registerSpaRoutes() (no Docker requir
   it("GET /stats returns index.html", async () => {
     const { app } = makeApp();
     const res = await app.request("/stats");
-    expect(res.status).toBe(200);
-    const body = await res.text();
-    expect(body).toContain("Test SPA");
-  });
-
-  it("GET /chat returns index.html", async () => {
-    const { app } = makeApp();
-    const res = await app.request("/chat");
-    expect(res.status).toBe(200);
-    const body = await res.text();
-    expect(body).toContain("Test SPA");
-  });
-
-  it("GET /chat/* (subpath) returns index.html", async () => {
-    const { app } = makeApp();
-    const res = await app.request("/chat/session-abc");
     expect(res.status).toBe(200);
     const body = await res.text();
     expect(body).toContain("Test SPA");

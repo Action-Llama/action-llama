@@ -19,7 +19,6 @@ const { mockExistsSync, mockReadFileSync, mockRmSync } = vi.hoisted(() => {
   });
   process.env.PROMPT = "Do the task.";
   delete process.env.GATEWAY_URL;
-  delete process.env.AL_CHAT_MODE;
   delete process.env.OTEL_TRACE_PARENT;
   delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
 
@@ -85,20 +84,20 @@ vi.mock("../../src/agents/signals.js", () => ({
   readSignals: (...args: any[]) => mockReadSignals(...args),
 }));
 
-// ─── model-fallback mock ─────────────────────────────────────────────────────
+// ─── harness mock ────────────────────────────────────────────────────────────
 
-vi.mock("../../src/agents/model-fallback.js", () => ({
-  ModelCircuitBreaker: class MockModelCircuitBreaker {},
-}));
-
-// ─── session-loop mock ───────────────────────────────────────────────────────
-
-const mockRunSessionLoop = vi.fn().mockResolvedValue({
+const mockHarnessRun = vi.fn().mockReturnValue((async function* () {})());
+const mockCreateHarness = vi.fn().mockReturnValue({
+  run: (...args: any[]) => mockHarnessRun(...args),
+  dispose: vi.fn(),
+});
+const mockConsumeHarness = vi.fn().mockResolvedValue({
   outputText: "done",
   allModelsExhausted: false,
 });
-vi.mock("../../src/agents/session-loop.js", () => ({
-  runSessionLoop: (...args: any[]) => mockRunSessionLoop(...args),
+vi.mock("../../src/agents/harness/index.js", () => ({
+  createHarness: (...args: any[]) => mockCreateHarness(...args),
+  consumeHarness: (...args: any[]) => mockConsumeHarness(...args),
 }));
 
 // ─── credential-setup mock ───────────────────────────────────────────────────
@@ -106,6 +105,7 @@ vi.mock("../../src/agents/session-loop.js", () => ({
 const mockLoadContainerCredentials = vi.fn().mockReturnValue({ providerKeys: new Map() });
 vi.mock("../../src/agents/credential-setup.js", () => ({
   loadContainerCredentials: (...args: any[]) => mockLoadContainerCredentials(...args),
+  resolveHarnessEnv: vi.fn(() => ({})),
 }));
 
 // ─── hooks/runner mock ───────────────────────────────────────────────────────
@@ -177,10 +177,11 @@ describe("container-entry", () => {
     // Reset mocks to their default implementations
     mockExistsSync.mockReturnValue(false);
     mockReadSignals.mockReturnValue({ rerun: false, exitCode: undefined, returnValue: undefined });
-    mockRunSessionLoop.mockResolvedValue({
+    mockConsumeHarness.mockResolvedValue({
       outputText: "done",
       allModelsExhausted: false,
     });
+    mockHarnessRun.mockReturnValue((async function* () {})());
     mockLoadContainerCredentials.mockReturnValue({ providerKeys: new Map() });
     mockProcessContextInjection.mockImplementation((body: string) => body);
 
@@ -192,7 +193,6 @@ describe("container-entry", () => {
     });
     process.env.PROMPT = "Do the task.";
     delete process.env.GATEWAY_URL;
-    delete process.env.AL_CHAT_MODE;
     delete process.env.OTEL_TRACE_PARENT;
     delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
     delete process.env.TIMEOUT_SECONDS;
@@ -347,7 +347,7 @@ describe("container-entry", () => {
 
     it("returns ExitCode.RATE_LIMITED when all models exhausted", async () => {
       const init = await makeInit();
-      mockRunSessionLoop.mockResolvedValueOnce({
+      mockConsumeHarness.mockResolvedValueOnce({
         outputText: "",
         allModelsExhausted: true,
       });
@@ -361,7 +361,7 @@ describe("container-entry", () => {
     it("returns 1 when session was aborted due to errors", async () => {
       const init = await makeInit();
       // The onUnrecoverableAbort callback sets abortedDueToErrors=true
-      mockRunSessionLoop.mockImplementationOnce((_prompt: string, opts: any) => {
+      mockConsumeHarness.mockImplementationOnce((_harness: any, _events: any, opts: any) => {
         opts.onUnrecoverableAbort?.();
         return Promise.resolve({ outputText: "", allModelsExhausted: false });
       });
@@ -485,9 +485,9 @@ describe("container-entry", () => {
 
       // Should use static prompt as-is (dynamicSuffix is empty)
       expect(exitCode).toBe(0);
-      expect(mockRunSessionLoop).toHaveBeenCalledWith(
+      expect(mockHarnessRun).toHaveBeenCalledWith(
         "Static prompt content",
-        expect.any(Object)
+        expect.objectContaining({ cwd: "/app/static" }),
       );
     });
 
@@ -508,9 +508,9 @@ describe("container-entry", () => {
 
       await handleInvocation(init);
 
-      expect(mockRunSessionLoop).toHaveBeenCalledWith(
+      expect(mockHarnessRun).toHaveBeenCalledWith(
         "Static skeleton\n\nDynamic suffix",
-        expect.any(Object)
+        expect.objectContaining({ cwd: "/app/static" }),
       );
     });
 
@@ -564,26 +564,6 @@ describe("container-entry", () => {
       expect(exitCode).toBe(0);
     });
 
-    it("delegates to runChatMode when AL_CHAT_MODE=1", async () => {
-      process.env.AL_CHAT_MODE = "1";
-      mockExistsSync.mockReturnValue(false);
-
-      // Mock chat-entry.js to avoid actual chat startup
-      // We need to dynamically mock this since it's imported inside runAgent()
-      // with a dynamic import
-      const chatEntryMock = { runChatMode: vi.fn().mockResolvedValue(0) };
-      vi.doMock("../../src/agents/chat-entry.js", () => chatEntryMock);
-
-      try {
-        // The dynamic import inside runAgent() will use the mock
-        const exitCode = await runAgent();
-        // Either 0 (if mock is used) or some value from the actual implementation
-        expect(typeof exitCode).toBe("number");
-      } finally {
-        vi.doUnmock("../../src/agents/chat-entry.js");
-        delete process.env.AL_CHAT_MODE;
-      }
-    });
   });
 
   describe("emitLog (via side effects)", () => {
@@ -655,7 +635,7 @@ describe("container-entry", () => {
 
       // Make session loop hang so the timeout fires before the session completes
       let resolveSession: (v: any) => void;
-      mockRunSessionLoop.mockImplementationOnce(
+      mockConsumeHarness.mockImplementationOnce(
         () => new Promise((res) => { resolveSession = res; })
       );
 

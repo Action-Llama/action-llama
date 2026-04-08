@@ -20,16 +20,12 @@ import type { SchedulerState } from "./state.js";
 import { runWithReruns } from "../execution/execution.js";
 import { dispatchOrQueue } from "../execution/dispatch-policy.js";
 import { randomBytes } from "node:crypto";
-import type { Runtime } from "../docker/runtime.js";
-import { ChatContainerLauncher } from "../chat/container-launcher.js";
 
 export interface GatewaySetupResult {
   gateway: GatewayServer;
   gatewayPort: number;
   registerContainer: (secret: string, reg: any) => Promise<void>;
   unregisterContainer: (secret: string) => Promise<void>;
-  /** Wire up the chat container launcher after runtime + images are available. */
-  setChatRuntime: (runtime: Runtime, agentImages: Record<string, string>) => void;
 }
 
 export async function setupGateway(opts: {
@@ -66,20 +62,6 @@ export async function setupGateway(opts: {
 
   const { startGateway } = await import("../gateway/index.js");
   const gatewayPort = globalConfig.gateway?.port || 8080;
-  const gatewayUrl = globalConfig.gateway?.url || `http://localhost:${gatewayPort}`;
-
-  // Chat launcher — created lazily after gateway starts (needs chatSessionManager)
-  let chatLauncher: ChatContainerLauncher | undefined;
-
-  const launchChatContainer = async (agentName: string, sessionId: string) => {
-    if (!chatLauncher) throw new Error("Chat is not available yet — agent images are still building");
-    await chatLauncher.launchChatContainer(agentName, sessionId);
-  };
-
-  const stopChatContainer = async (sessionId: string) => {
-    if (!chatLauncher) return;
-    await chatLauncher.stopChatContainer(sessionId);
-  };
 
   const gateway = await startGateway({
     port: gatewayPort,
@@ -100,9 +82,6 @@ export async function setupGateway(opts: {
     statsStore,
     events,
     skipStatusEndpoint: expose,
-    maxChatSessions: globalConfig.gateway?.maxChatSessions,
-    launchChatContainer,
-    stopChatContainer,
     controlDeps: {
       statusTracker,
       logger,
@@ -225,36 +204,10 @@ export async function setupGateway(opts: {
     },
   });
 
-  // Wire the stopContainer callback on the WS state for idle cleanup
-  if (gateway.chatWebSocketState) {
-    gateway.chatWebSocketState.stopContainer = stopChatContainer;
-  }
-
   logger.info({ port: gatewayPort }, "Gateway started early to show build progress");
 
   const registerContainer = gateway.registerContainer;
   const unregisterContainer = gateway.unregisterContainer;
 
-  const setChatRuntime = (runtime: Runtime, agentImages: Record<string, string>) => {
-    if (!gateway.chatSessionManager) return;
-    // Wrap the Record in a Map that delegates to the live reference so
-    // hot-reloaded images are always visible to the chat launcher.
-    const liveImages: Map<string, string> = {
-      get: (key: string) => agentImages[key],
-      has: (key: string) => key in agentImages,
-    } as Map<string, string>;
-    chatLauncher = new ChatContainerLauncher({
-      runtime,
-      globalConfig,
-      agentConfigs,
-      gatewayUrl,
-      logger,
-      sessionManager: gateway.chatSessionManager,
-      images: liveImages,
-      registerContainer,
-      unregisterContainer,
-    });
-  };
-
-  return { gateway, gatewayPort, registerContainer, unregisterContainer, setChatRuntime };
+  return { gateway, gatewayPort, registerContainer, unregisterContainer };
 }

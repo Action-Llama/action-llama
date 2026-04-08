@@ -4,10 +4,9 @@ interface RunDropdownProps {
   disabled?: boolean;
   onQuickRun: () => void;
   onRunWithPrompt: () => void;
-  onChat: () => void;
 }
 
-export function RunDropdown({ disabled, onQuickRun, onRunWithPrompt, onChat }: RunDropdownProps) {
+export function RunDropdown({ disabled, onQuickRun, onRunWithPrompt }: RunDropdownProps) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -51,12 +50,6 @@ export function RunDropdown({ disabled, onQuickRun, onRunWithPrompt, onChat }: R
             className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
           >
             Run with Prompt
-          </button>
-          <button
-            onClick={() => { setOpen(false); onChat(); }}
-            className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
-          >
-            Chat
           </button>
         </div>
       )}
