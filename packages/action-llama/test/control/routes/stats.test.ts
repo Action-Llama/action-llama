@@ -6,6 +6,9 @@ function mockStatsStore() {
   let queryActivityRowsData: any[] = [];
   let countActivityRowsData: number = 0;
 
+  const countActivityRowsMock = vi.fn().mockReturnValue(0);
+  const queryActivityRowsMock = vi.fn().mockReturnValue([]);
+
   const stats = {
     queryRunsByAgentPaginated: vi.fn().mockReturnValue([]),
     countRunsByAgent: vi.fn().mockReturnValue(0),
@@ -15,23 +18,10 @@ function mockStatsStore() {
     getWebhookDetailsBatch: vi.fn().mockReturnValue({}),
     queryTriggerHistory: vi.fn().mockReturnValue([]),
     countTriggerHistory: vi.fn().mockReturnValue(0),
-    queryActivityRows: vi.fn().mockReturnValue([]),
-    countActivityRows: vi.fn().mockReturnValue(0),
+    queryActivityRows: queryActivityRowsMock,
+    countActivityRows: countActivityRowsMock,
     queryActivityRowsWithTotal: vi.fn().mockReturnValue({ rows: [], total: 0 }),
   } as any;
-
-  // Override mockReturnValue for queryActivityRows and countActivityRows to sync with queryActivityRowsWithCount
-  const originalQueryActivityRowsMock = stats.queryActivityRows;
-  stats.queryActivityRows.mockReturnValue = function (value: any) {
-    queryActivityRowsData = value;
-    return this;
-  };
-
-  const originalCountActivityRowsMock = stats.countActivityRows;
-  stats.countActivityRows.mockReturnValue = function (value: any) {
-    countActivityRowsData = value;
-    return this;
-  };
 
   return stats;
 }
@@ -1187,7 +1177,7 @@ describe("stats routes", () => {
   });
 
   describe("GET /api/stats/activity — dbLimit=0 path (page filled by memory rows)", () => {
-    it("falls into else branch and calls queryActivityRowsWithTotal(limit=0) to get total when page is all memory rows", async () => {
+    it("falls into else branch and calls countActivityRows to get total when page is all memory rows", async () => {
       // Set up 3 running instances so they fill the in-memory rows
       const instances = [
         { id: "run-1", agentName: "reporter", status: "running", trigger: "schedule", startedAt: new Date(3000).toISOString() },
@@ -1197,23 +1187,21 @@ describe("stats routes", () => {
       const tracker = mockStatusTracker(instances, [{ name: "reporter" }]);
 
       const stats = mockStatsStore();
-      // queryActivityRowsWithTotal will be called with limit=0 to get total count
-      stats.queryActivityRowsWithTotal.mockReturnValue({ rows: [], total: 10 });
+      // countActivityRows will be called to get total count (instead of queryActivityRowsWithTotal with limit=0)
+      stats.countActivityRows.mockReturnValue(10);
 
       const app = createApp(stats, tracker);
 
       // Request limit=2: memRows has 3 items, memSlice = first 2, dbLimit = 2-2 = 0
-      // → else branch: queryActivityRowsWithTotal({ limit: 0, offset: 0, ... })
+      // → else branch: countActivityRows() is called instead of queryActivityRowsWithTotal({ limit: 0, ... })
       const res = await app.request("/api/stats/activity?limit=2&offset=0&status=running,completed,error");
       expect(res.status).toBe(200);
       const data = await res.json();
 
       // The page should contain only 2 rows (from memory)
       expect(data.rows).toHaveLength(2);
-      // queryActivityRowsWithTotal was called with limit=0 to get the count
-      expect(stats.queryActivityRowsWithTotal).toHaveBeenCalledWith(
-        expect.objectContaining({ limit: 0, offset: 0 })
-      );
+      // countActivityRows was called to get the count
+      expect(stats.countActivityRows).toHaveBeenCalled();
       // total = memCount + dbCount = 3 + 10 = 13
       expect(data.total).toBe(13);
     });
