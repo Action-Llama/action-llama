@@ -904,5 +904,56 @@ describe("webhook command", () => {
       spyAddBinding.mockRestore();
       spyDryRun2.mockRestore();
     });
+
+    it("handleInteractiveRun shows 'no matched agents' when bindings.filter returns empty despite some returning true", async () => {
+      // handleInteractiveRun is only called when result.bindings.some(b => b.matched) is true,
+      // but the function also checks matchedAgents.length === 0 after filtering.
+      // In normal use these two can't diverge, but we use a Proxy to make them diverge
+      // and exercise the defensive early-return branch (lines 289-290 of webhook.ts).
+      const { WebhookRegistry } = await import("../../../src/webhooks/registry.js");
+
+      // Create a Proxy array where `some` returns true (triggers the call to handleInteractiveRun)
+      // but `filter` returns [] (triggers the matchedAgents.length === 0 branch inside).
+      const trickBindings = new Proxy([] as any[], {
+        get(target: any[], prop: string | symbol, receiver: any) {
+          if (prop === "some") return () => true;
+          if (prop === "filter") return () => [];
+          return Reflect.get(target, prop, receiver);
+        },
+      });
+
+      const spyTrick = vi.spyOn(WebhookRegistry.prototype, "dryRunDispatch").mockReturnValueOnce({
+        ok: true,
+        context: {
+          source: "test",
+          event: "test",
+          repo: "test/repo",
+          sender: "tester",
+          timestamp: new Date().toISOString(),
+        },
+        validationResult: "test",
+        bindings: trickBindings,
+      });
+
+      mkdirSync(resolve(projectPath, "agents"), { recursive: true });
+      writeFileSync(join(projectPath, "config.toml"), stringifyTOML({
+        models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+        webhooks: { test: { type: "test" } },
+      }));
+
+      const fixture = {
+        headers: { "x-test-event": "test" },
+        body: { source: "test", event: "test", repo: "test/repo", sender: "tester" },
+      };
+      const fixturePath = join(tmpDir, "trick-bindings-fixture.json");
+      writeFileSync(fixturePath, JSON.stringify(fixture));
+
+      await execute("replay", fixturePath, { project: projectPath, source: "test", run: true });
+
+      // The empty matchedAgents branch logs the "No matched agents to run" warning
+      expect(mockConsoleLog).toHaveBeenCalledWith("\n⚠️ No matched agents to run");
+
+      spyTrick.mockRestore();
+    });
   });
 });
