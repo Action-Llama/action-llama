@@ -1728,6 +1728,7 @@ describe("logs command", () => {
       expect(output.some((l) => l.includes("after-empties"))).toBe(true);
       expect(followPromise).toBeDefined();
     });
+
   });
 
   describe("follow mode (gateway)", () => {

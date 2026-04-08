@@ -3,6 +3,8 @@ import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { SqliteStateStore } from "../../src/shared/state-store-sqlite.js";
+import { createDb } from "../../src/db/connection.js";
+import { applyMigrations } from "../../src/db/migrate.js";
 
 describe("SqliteStateStore", () => {
   const dirs: string[] = [];
@@ -141,5 +143,40 @@ describe("SqliteStateStore", () => {
 
     vi.useRealTimers();
     await store.close();
+  });
+
+  it("accepts a shared AppDb connection and does not close it on close()", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "al-state-shared-"));
+    dirs.push(dir);
+
+    const db = createDb(join(dir, "shared.db"));
+    applyMigrations(db);
+
+    const closeSpy = vi.spyOn((db as any).$client, "close");
+
+    const store = new SqliteStateStore(db);
+    await store.set("ns", "k", "v");
+    expect(await store.get("ns", "k")).toBe("v");
+
+    // Closing a store with a shared db must NOT close the underlying db
+    await store.close();
+    expect(closeSpy).not.toHaveBeenCalled();
+
+    closeSpy.mockRestore();
+    (db as any).$client.close();
+  });
+
+  it("does not call unref when timer has no unref method", () => {
+    const origSetInterval = globalThis.setInterval;
+    // Return a timer without an unref property
+    const fakeTimer = {} as any;
+    vi.spyOn(globalThis, "setInterval" as any).mockReturnValueOnce(fakeTimer);
+
+    // Should not throw even though fakeTimer.unref is undefined
+    const store = new SqliteStateStore(":memory:");
+    expect(store).toBeDefined();
+    store.close();
+
+    vi.restoreAllMocks();
   });
 });

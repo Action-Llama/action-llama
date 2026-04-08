@@ -73,7 +73,7 @@ export async function execute(command: string, fixturePath: string, opts: Webhoo
     displayResults(result, source, fixture);
     
     // Handle interactive run option
-    if (opts.run && result.ok && result.bindings.some(b => b.matched)) {
+    if (opts.run && result.ok) {
       await handleInteractiveRun(result, opts.project);
     }
     
@@ -284,11 +284,6 @@ function displayFilterDetails(details: any): void {
 
 async function handleInteractiveRun(result: DryRunResult, projectPath: string): Promise<void> {
   const matchedAgents = result.bindings.filter(b => b.matched);
-  
-  if (matchedAgents.length === 0) {
-    console.log("\n⚠️ No matched agents to run");
-    return;
-  }
   
   console.log(`\n🚀 Interactive Run Mode`);
   console.log(`Found ${matchedAgents.length} matched agent(s):`);

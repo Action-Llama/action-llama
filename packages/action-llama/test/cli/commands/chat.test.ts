@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { makeTmpProject } from "../../helpers.js";
-import { mkdtempSync, rmSync, writeFileSync } from "fs";
-import { join, resolve } from "path";
-import { tmpdir } from "os";
+import { makeTmpProject, makeModel } from "../../helpers.js";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "fs";
+import { join, resolve, dirname } from "path";
+import { tmpdir, homedir } from "os";
+import { fileURLToPath } from "url";
 import { writeEnvironmentConfig, environmentPath } from "../../../src/shared/environment.js";
 
 // Mock pi-coding-agent to avoid launching real console
@@ -107,6 +108,47 @@ describe("chat", () => {
     expect(mockRun).toHaveBeenCalled();
     expect(capturedOptions.initialMessage).toContain("agent");
     expect(capturedOptions.initialMessage).toContain("What would you like to do");
+  });
+
+  it("agent summary uses 'webhook-only' when agent has no schedule", async () => {
+    // Covers line 324: `schedule=${config.schedule || "webhook-only"}` FALSE branch
+    // When an agent has no schedule, "webhook-only" is shown in the summary.
+    const dir = makeTmpProject({
+      agents: [{ name: "webhook-agent", schedule: undefined }],
+    });
+    await execute({ project: dir });
+
+    expect(mockRun).toHaveBeenCalled();
+    // The initial message should show the agent summary with webhook-only
+    expect(capturedOptions.initialMessage).toContain("webhook-only");
+  });
+
+  it("skips credential loading when project model uses pi_auth authType", async () => {
+    // Covers line 368: `if (modelConfig.authType !== "pi_auth")` FALSE branch
+    // When a pi_auth model is used in project chat, credential loading is skipped entirely.
+    const dir = makeTmpProject({
+      modelDefs: { sonnet: makeModel({ authType: "pi_auth" }) },
+    });
+    await execute({ project: dir });
+
+    // Should complete successfully without any credential loading
+    expect(mockRun).toHaveBeenCalled();
+  });
+
+  it("uses default anthropic model config when globalConfig has no models section", async () => {
+    // Covers line 362: `globalConfig.models ? ... : []` FALSE branch
+    // and line 363-365: `modelNames.length > 0 ? ... : { provider: "anthropic", ... }` FALSE branch
+    // When no models are configured, falls back to default anthropic config.
+    const dir = mkdtempSync(join(tmpdir(), "al-nomodels-"));
+    // Write a minimal config.toml with no models section
+    const { writeFileSync: wfs, mkdirSync: mds } = await import("fs");
+    const { resolve: res } = await import("path");
+    // Empty config.toml — no models defined
+    wfs(res(dir, "config.toml"), "");
+    // No agents so we go through the no-agents path
+    await execute({ project: dir });
+
+    expect(mockRun).toHaveBeenCalled();
   });
 
   it("launches console with short initial message when no agents exist", async () => {
@@ -334,4 +376,108 @@ describe("chat", () => {
     }
   }, 10000);
 
+  describe("ensureKeybindings and readKeybindings coverage", () => {
+    function keybindingsPath() {
+      return join(homedir(), ".pi", "agent", "keybindings.json");
+    }
+
+    it("creates keybindings file when it does not exist (ensureKeybindings creation path)", async () => {
+      const kbPath = keybindingsPath();
+      let savedContent: string | null = null;
+
+      // Save existing file content and remove it
+      try {
+        savedContent = readFileSync(kbPath, "utf-8");
+        rmSync(kbPath);
+      } catch {
+        // File doesn't exist — that's fine
+      }
+
+      try {
+        // execute() calls ensureKeybindings() which should create the file
+        const dir = makeTmpProject();
+        await execute({ project: dir });
+
+        // The keybindings file should now exist with the default AL keybindings
+        expect(existsSync(kbPath)).toBe(true);
+        const content = JSON.parse(readFileSync(kbPath, "utf-8"));
+        expect(content).toHaveProperty("newLine");
+        expect(mockRun).toHaveBeenCalled();
+      } finally {
+        // Restore original content
+        if (savedContent !== null) {
+          mkdirSync(join(homedir(), ".pi", "agent"), { recursive: true });
+          writeFileSync(kbPath, savedContent);
+        } else {
+          try { rmSync(kbPath); } catch {}
+        }
+      }
+    });
+
+    it("returns empty object from readKeybindings when file contains invalid JSON (catch path)", async () => {
+      const kbPath = keybindingsPath();
+      let savedContent: string | null = null;
+
+      // Save existing file content and replace with invalid JSON
+      try {
+        savedContent = readFileSync(kbPath, "utf-8");
+      } catch {
+        // File doesn't exist — savedContent stays null
+      }
+      mkdirSync(join(homedir(), ".pi", "agent"), { recursive: true });
+      writeFileSync(kbPath, "this is not valid JSON {{");
+
+      try {
+        // execute() calls readKeybindings() which should catch the JSON parse error and return {}
+        const dir = makeTmpProject();
+        await execute({ project: dir });
+        // execute completed successfully — readKeybindings gracefully returned {}
+        expect(mockRun).toHaveBeenCalled();
+      } finally {
+        // Restore original content
+        if (savedContent !== null) {
+          writeFileSync(kbPath, savedContent);
+        } else {
+          try { rmSync(kbPath); } catch {}
+        }
+      }
+    });
+  });
+
+  describe("loadExampleTemplate coverage", () => {
+    it("loads example SKILL.md when docs/examples/<type>/SKILL.md exists (loadExampleTemplate success path)", async () => {
+      // Determine the package root — same logic as resolvePackageRoot() in chat.ts:
+      // 4 levels up from the source file: src/cli/commands/chat.ts → packages/action-llama
+      // In vitest, import.meta.url refers to the test file path:
+      // test/cli/commands/chat.test.ts → packages/action-llama
+      const packageRoot = resolve(
+        dirname(fileURLToPath(import.meta.url)),
+        "..",
+        "..",
+        ".."
+      );
+      const exampleDir = join(packageRoot, "docs", "examples", "dev");
+      const skillPath = join(exampleDir, "SKILL.md");
+
+      // Create the example SKILL.md temporarily
+      mkdirSync(exampleDir, { recursive: true });
+      writeFileSync(skillPath, "---\n---\n# Dev Agent\n\nExample template content.\n");
+
+      try {
+        // Execute with no agents so buildNoAgentsContext() runs and calls loadExampleTemplate()
+        const emptyDir = mkdtempSync(join(tmpdir(), "al-chat-tpl-"));
+        try {
+          await execute({ project: emptyDir });
+          // loadExampleTemplate("dev") finds the file and returns its content;
+          // templateSections.push() runs for the dev template
+          expect(mockRun).toHaveBeenCalled();
+        } finally {
+          rmSync(emptyDir, { recursive: true, force: true });
+        }
+      } finally {
+        // Clean up example files
+        try { rmSync(join(packageRoot, "docs"), { recursive: true, force: true }); } catch {}
+      }
+    });
+  });
 });

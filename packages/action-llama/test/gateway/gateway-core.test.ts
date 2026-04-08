@@ -210,3 +210,68 @@ describe("Gateway — projectPath + apiKey without webUI (log+stats routes only)
     expect(body.status).toBe("ok");
   });
 });
+
+describe("Gateway — callDispatcherProvider lambda (gateway/index.ts line 57)", () => {
+  let gateway: any;
+  const logger = makeLogger();
+  let port: number;
+  let containerSecret: string;
+
+  beforeAll(async () => {
+    gateway = await startGateway({
+      port: 0,
+      logger,
+    });
+    port = (gateway.server.address() as any).port;
+
+    // Register a container so the /calls route can look it up by secret
+    containerSecret = "test-dispatcher-secret-" + Date.now();
+    await gateway.registerContainer(containerSecret, {
+      agentName: "test-agent",
+      instanceId: "test-instance-" + Date.now(),
+    });
+  });
+
+  afterAll(async () => {
+    await gateway.close();
+  });
+
+  it("invokes callDispatcherProvider() when POST /calls is called and returns 503 when dispatcher is not set", async () => {
+    // The callDispatcherProvider lambda (() => callDispatcher) in gateway/index.ts
+    // is called by the /calls route handler when it needs to dispatch a call.
+    // When callDispatcher is undefined (not yet set), the route returns 503.
+    const res = await fetch(`http://localhost:${port}/calls`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        secret: containerSecret,
+        targetAgent: "other-agent",
+        context: "test context payload",
+      }),
+    });
+    // callDispatcher is undefined → route returns 503 with reason
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+    expect(body.reason).toBe("call dispatcher not ready");
+  });
+
+  it("invokes callDispatcherProvider() and uses the dispatcher after setCallDispatcher is called", async () => {
+    // Set a mock dispatcher
+    const mockDispatcher = vi.fn().mockReturnValue({ ok: true });
+    gateway.setCallDispatcher(mockDispatcher);
+
+    const res = await fetch(`http://localhost:${port}/calls`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        secret: containerSecret,
+        targetAgent: "other-agent",
+        context: "dispatched context",
+      }),
+    });
+    // Dispatcher was called — result depends on what it returns
+    expect(res.status).toBe(200);
+    expect(mockDispatcher).toHaveBeenCalledOnce();
+  });
+});

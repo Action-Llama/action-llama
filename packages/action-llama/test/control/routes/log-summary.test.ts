@@ -667,9 +667,15 @@ describe("log summary route", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
-  it("falls back to empty API key when loadCredentialField throws", async () => {
+  it("returns 500 with clear error when no API key can be resolved", async () => {
     const { loadCredentialField } = await import("../../../src/shared/credentials.js");
     vi.mocked(loadCredentialField).mockRejectedValueOnce(new Error("Credential store unavailable"));
+
+    // Also ensure AuthStorage returns no key so both sources fail
+    const { AuthStorage } = await import("@mariozechner/pi-coding-agent");
+    vi.mocked(AuthStorage.create).mockReturnValueOnce({
+      getApiKey: vi.fn().mockResolvedValue(null),
+    } as any);
 
     createMinimalAgentProject(tmpDir, "my-agent");
     const instanceId = "inst-cred-fail";
@@ -681,22 +687,16 @@ describe("log summary route", () => {
       logLines.join("\n") + "\n",
     );
 
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve(fakeOpenAIResponse("Summary with empty key.")),
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
     const app = createTestApp(tmpDir);
     const res = await app.request(
       `/api/logs/agents/my-agent/${instanceId}/summarize`,
       { method: "POST" },
     );
-    // Even when credential loading fails, the request should succeed (empty API key is allowed)
-    expect(res.status).toBe(200);
+    // When no credential source can provide a key, return 500 with actionable message
+    expect(res.status).toBe(500);
     const data = await res.json();
-    expect(data.summary).toBe("Summary with empty key.");
-    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(data.error).toMatch(/No API key found/);
+    expect(data.error).toMatch(/al doctor/);
   });
 
   it("applies grep filter to log entries before summarizing", async () => {
@@ -816,7 +816,7 @@ describe("log summary route", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
-  it("falls back to empty key when AuthStorage throws for pi_auth model", async () => {
+  it("returns 500 when AuthStorage throws for pi_auth model", async () => {
     const { AuthStorage } = await import("@mariozechner/pi-coding-agent");
     vi.mocked(AuthStorage.create).mockImplementationOnce(() => ({
       getApiKey: vi.fn().mockRejectedValue(new Error("AuthStorage unavailable")),
@@ -839,30 +839,16 @@ describe("log summary route", () => {
       logLines.join("\n") + "\n",
     );
 
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          id: "msg_fallback",
-          type: "message",
-          role: "assistant",
-          content: [{ type: "text", text: "Fallback summary." }],
-          model: "claude-3-sonnet",
-          stop_reason: "end_turn",
-          usage: { input_tokens: 100, output_tokens: 20 },
-        }),
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
     const app = createTestApp(tmpDir);
     const res = await app.request(
       `/api/logs/agents/${agentName}/${instanceId}/summarize`,
       { method: "POST" },
     );
-    // Should still succeed with empty API key
-    expect(res.status).toBe(200);
+    // AuthStorage.getApiKey() failure returns 500
+    expect(res.status).toBe(500);
     const data = await res.json();
-    expect(data.summary).toBe("Fallback summary.");
+    expect(data.error).toMatch(/Failed to resolve API key/);
+    expect(data.error).toMatch(/AuthStorage unavailable/);
   });
 
   it("includes extra log fields as JSON in log text when entry has fields beyond msg/level/time/instance", async () => {

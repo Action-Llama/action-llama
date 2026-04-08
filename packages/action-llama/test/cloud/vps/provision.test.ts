@@ -953,6 +953,77 @@ describe("promptCloudflareHttps paths", () => {
     expect(mockVerifyToken).toHaveBeenCalledWith("new-cf-token");
     expect(mockWriteCredentialField).toHaveBeenCalledWith("cloudflare_api_token", "default", "api_token", "new-cf-token");
   });
+
+  it("keypress handler calls ac.abort() when escape key is pressed during zone search", async () => {
+    // This test covers the onKeypress handler body (provision.ts lines 26-28):
+    //   if (key?.name === "escape") ac.abort();
+    // We do this by using a signal-aware search mock: when the AbortController is aborted
+    // (because the keypress handler fires with {name: "escape"}), the mock rejects with
+    // AbortPromptError, which searchWithEsc catches and returns null.
+    const { AbortPromptError } = await import("@inquirer/core");
+
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+    mockBackendRead.mockResolvedValue("stored-cf-token");
+    mockListAllZones.mockResolvedValue([
+      { id: "zone-1", name: "example.com", status: "active" },
+    ]);
+
+    // Zone search returns a pending promise that rejects only when the abort signal fires.
+    // This simulates the real inquirer `search` respecting the signal.
+    mockSearch.mockImplementationOnce(({ signal }: { signal?: AbortSignal }) => {
+      return new Promise<never>((_, reject) => {
+        if (signal) {
+          signal.addEventListener("abort", () => {
+            reject(new AbortPromptError());
+          });
+        }
+      });
+    });
+
+    // Set up the rest of the Vultr flow for after promptCloudflareHttps returns null.
+    setupFullVultrFlow();
+
+    // Start the provisioning flow but do not await yet — we need to emit the escape key
+    // after the onKeypress listener has been registered by searchWithEsc.
+    const resultPromise = setupVpsCloud();
+
+    // Yield to the microtask queue several times so that the async flow advances far
+    // enough that searchWithEsc has registered its keypress listener and is awaiting search().
+    for (let i = 0; i < 20; i++) {
+      await Promise.resolve();
+    }
+
+    // Emit an escape keypress on stdin. The onKeypress handler fires synchronously,
+    // calling ac.abort() which aborts the AbortController signal, causing the signal-aware
+    // search mock to reject with AbortPromptError.
+    process.stdin.emit("keypress", null, { name: "escape" });
+
+    // Allow the rejection to propagate through the promise chain.
+    for (let i = 0; i < 20; i++) {
+      await Promise.resolve();
+    }
+
+    const result = await resultPromise;
+    expect(result?.provider).toBe("vps");
+  });
+
+  it("propagates non-AbortPromptError thrown from zone search (searchWithEsc re-throws)", async () => {
+    // This test covers the `throw err` branch in searchWithEsc (provision.ts catch block)
+    // which fires when `search()` rejects with an error that is NOT an AbortPromptError.
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+    mockBackendRead.mockResolvedValue("stored-cf-token");
+    mockListAllZones.mockResolvedValue([
+      { id: "zone-1", name: "example.com", status: "active" },
+    ]);
+    // The zone search (searchWithEsc) throws a generic error — not an AbortPromptError.
+    // searchWithEsc must re-throw it (the `throw err` branch), which propagates through
+    // promptCloudflareHttps and all the way out of setupVpsCloud.
+    mockSearch.mockRejectedValueOnce(new Error("Unexpected search failure"));
+
+    await expect(setupVpsCloud()).rejects.toThrow("Unexpected search failure");
+  });
 });
 
 /**
@@ -2335,5 +2406,216 @@ describe("provision.ts additional edge cases", () => {
 
     expect(result).not.toBeNull();
     expect(result?.provider).toBe("vps");
+  });
+
+  it("logs nginx health check warning when curl returns non-zero exit code (Vultr HTTPS)", async () => {
+    // Covers provision.ts lines 633-634: the else branch when sshExec curl returns non-zero.
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    setupCloudflareMocks();
+    setupCatalogMocks();
+    setupFirewallMocks(true);
+    setupInstanceMocks();
+
+    mockSearch
+      .mockResolvedValueOnce("vc2-1c-1gb")  // plan
+      .mockResolvedValueOnce("atl")          // region
+      .mockResolvedValueOnce("ssh-key-1");   // existing Vultr key
+
+    // Custom SSH mock: curl health check returns non-zero exit code
+    mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: any, cb: Function) => {
+      const command = args[args.length - 1];
+      if (command.includes("echo ok")) {
+        cb(null, "ok\n", "");
+      } else if (command.includes("node --version")) {
+        cb(null, "v22.14.0\n", "");
+      } else if (command.includes("curl")) {
+        cb({ code: 7 }, "", "curl: (7) Failed to connect"); // non-zero exit
+      } else {
+        cb(null, "24.0.7\n", "");
+      }
+    });
+
+    mockConfirm.mockResolvedValueOnce(true); // VPS ready
+
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const result = await setupVpsCloud();
+    consoleSpy.mockRestore();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+    // gatewayUrl is still set to https even when curl health check returns non-zero
+    expect(result?.gatewayUrl).toBe("https://agents.example.com");
+  });
+
+  it("logs error and continues when Cloudflare HTTPS sshExec throws unexpectedly (Vultr)", async () => {
+    // Covers provision.ts lines 638-640: the outer catch block when sshExec rejects.
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(true); // Accept HTTPS
+
+    setupCloudflareMocks();
+    setupCatalogMocks();
+    setupFirewallMocks(true);
+    setupInstanceMocks();
+
+    mockSearch
+      .mockResolvedValueOnce("vc2-1c-1gb")  // plan
+      .mockResolvedValueOnce("atl")          // region
+      .mockResolvedValueOnce("ssh-key-1");   // existing Vultr key
+
+    // Custom SSH mock: curl throws (error without 'code' property → sshExec rejects)
+    mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: any, cb: Function) => {
+      const command = args[args.length - 1];
+      if (command.includes("echo ok")) {
+        cb(null, "ok\n", "");
+      } else if (command.includes("node --version")) {
+        cb(null, "v22.14.0\n", "");
+      } else if (command.includes("curl")) {
+        // Error without 'code' property causes sshExec to reject
+        cb(new Error("SSH connection lost"), "", "");
+      } else {
+        cb(null, "24.0.7\n", "");
+      }
+    });
+
+    mockConfirm.mockResolvedValueOnce(true); // VPS ready
+
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const result = await setupVpsCloud();
+    consoleSpy.mockRestore();
+
+    // VPS is still returned, just without HTTPS gatewayUrl
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+    // gatewayUrl falls back to http since HTTPS setup encountered an error
+    expect(result?.gatewayUrl).not.toContain("https://");
+  });
+
+  it("covers Hetzner API key validate function truthy branch (line 656)", async () => {
+    // Covers provision.ts line 656 col 31: `true` in `v.trim() ? true : "API key is required"`.
+    // This is the truthy branch of the Hetzner API key validate function.
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
+
+    // Return null for hetzner_api_key so the prompt appears
+    mockBackendRead.mockImplementation((type: string) =>
+      type === "hetzner_api_key" ? Promise.resolve(null) : Promise.resolve(null)
+    );
+
+    // Capture the validate function from the password() call for Hetzner API key
+    let capturedValidate: ((v: string) => boolean | string) | undefined;
+    mockPassword.mockImplementationOnce(async (opts: any) => {
+      capturedValidate = opts.validate;
+      return "valid-hetzner-key";
+    });
+
+    // Set up Hetzner catalog with the entered key
+    mockHetznerListServerTypes.mockResolvedValue(HETZNER_SERVER_TYPES);
+    mockHetznerListLocations.mockResolvedValue(HETZNER_LOCATIONS);
+    mockHetznerListImages.mockResolvedValue(HETZNER_IMAGES);
+    mockHetznerListSshKeys.mockResolvedValue(HETZNER_SSH_KEYS);
+
+    setupHetznerFirewallMocks(true);
+    setupHetznerServerMocks();
+
+    mockSearch
+      .mockResolvedValueOnce("cx22")
+      .mockResolvedValueOnce("fsn1")
+      .mockResolvedValueOnce("101");
+
+    setupSshMocks();
+    mockConfirm.mockResolvedValueOnce(true);
+
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await setupVpsCloud();
+    consoleSpy.mockRestore();
+
+    // Test the captured validate function: truthy branch returns true
+    expect(capturedValidate).toBeDefined();
+    expect(capturedValidate!("valid-key")).toBe(true);
+    // Also test the falsy branch for completeness
+    expect(capturedValidate!("")).toBe("API key is required");
+    expect(capturedValidate!("   ")).toBe("API key is required");
+  });
+
+  it("goes back (step--) when OS image selection returns null via ESC (Hetzner, no ubuntu-22.04)", async () => {
+    // Covers provision.ts line 785: `if (result === null) { step--; continue; }` in Hetzner provisioning.
+    // This path is hit when ubuntu-22.04 is not available and the user presses ESC on OS image selection.
+    mockSelect.mockResolvedValueOnce("hetzner");
+    mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
+
+    // Images without ubuntu-22.04
+    const imagesWithoutUbuntu2204 = [
+      { id: 2, type: "system", status: "available", name: "ubuntu-24.04", description: "Ubuntu 24.04",
+        os_flavor: "ubuntu", os_version: "24.04", architecture: "x86", deprecated: null },
+      { id: 3, type: "system", status: "available", name: "debian-12", description: "Debian 12",
+        os_flavor: "debian", os_version: "12", architecture: "x86", deprecated: null },
+    ];
+    mockHetznerListServerTypes.mockResolvedValue(HETZNER_SERVER_TYPES);
+    mockHetznerListLocations.mockResolvedValue(HETZNER_LOCATIONS);
+    mockHetznerListImages.mockResolvedValue(imagesWithoutUbuntu2204);
+    mockHetznerListSshKeys.mockResolvedValue(HETZNER_SSH_KEYS);
+
+    setupHetznerFirewallMocks(true);
+    setupHetznerServerMocks();
+
+    // Step sequence: server type → location → OS image (ESC pressed → step--) → server type again →
+    //   location → OS image (valid selection) → SSH key
+    mockSearch
+      .mockResolvedValueOnce("cx22")         // step 0: server type (first pass)
+      .mockResolvedValueOnce("fsn1")         // step 1: location (first pass)
+      .mockResolvedValueOnce(null)           // step 2: OS image → ESC → step-- (back to step 1)
+      .mockResolvedValueOnce("fsn1")         // step 1: location (second pass)
+      .mockResolvedValueOnce("ubuntu-24.04") // step 2: OS image (second pass, valid selection)
+      .mockResolvedValueOnce("101");          // step 3: SSH key
+
+    setupSshMocks();
+    mockConfirm.mockResolvedValueOnce(true); // VPS ready
+
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const result = await setupVpsCloud();
+    consoleSpy.mockRestore();
+
+    expect(result).not.toBeNull();
+    expect(result?.provider).toBe("vps");
+  });
+
+  it("covers Vultr API key validate function truthy branch (line 232)", async () => {
+    // Covers provision.ts line 232 col 31: `true` in `v.trim() ? true : "API key is required"`.
+    // This is the truthy branch of the Vultr API key validate function.
+    mockSelect.mockResolvedValueOnce("vultr");
+    mockConfirm.mockResolvedValueOnce(false); // Decline HTTPS
+    mockBackendRead.mockResolvedValue(null);   // No Vultr API key stored
+
+    // Capture the validate function from the password() call for Vultr API key
+    let capturedValidate: ((v: string) => boolean | string) | undefined;
+    mockPassword.mockImplementationOnce(async (opts: any) => {
+      capturedValidate = opts.validate;
+      return "valid-vultr-key";
+    });
+
+    setupCatalogMocks();
+    setupFirewallMocks(true);
+    setupInstanceMocks();
+
+    mockSearch
+      .mockResolvedValueOnce("vc2-1c-1gb")
+      .mockResolvedValueOnce("atl")
+      .mockResolvedValueOnce("ssh-key-1");
+
+    setupSshMocks();
+    mockConfirm.mockResolvedValueOnce(true); // VPS ready
+
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await setupVpsCloud();
+    consoleSpy.mockRestore();
+
+    // Test the captured validate function: truthy branch returns true
+    expect(capturedValidate).toBeDefined();
+    expect(capturedValidate!("valid-vultr-key")).toBe(true);
+    // Also test the falsy branch to verify both branches
+    expect(capturedValidate!("")).toBe("API key is required");
+    expect(capturedValidate!("   ")).toBe("API key is required");
   });
 });

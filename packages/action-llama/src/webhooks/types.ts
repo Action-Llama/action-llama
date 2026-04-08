@@ -94,8 +94,9 @@ export interface WebhookTrigger {
   conclusions?: string[];
   resources?: string[];
   guilds?: string[];     // Discord guild IDs
-  channels?: string[];   // Discord channel IDs
+  channels?: string[];   // Discord/Slack channel IDs
   commands?: string[];   // Discord slash command names
+  team_ids?: string[];   // Slack workspace/team IDs
 }
 
 // --- Provider interface ---

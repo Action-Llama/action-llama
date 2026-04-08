@@ -192,6 +192,115 @@ describe("MemoryBackend — transactionBegin snapshots events", () => {
   });
 });
 
+// ─── nested transactions ──────────────────────────────────────────────────────
+
+describe("MemoryBackend — nested transactions", () => {
+  it("does not take a snapshot when transactionDepth > 1 (nested begin)", async () => {
+    const { MemoryBackend } = await import("../../../src/shared/persistence/backends/memory.js");
+    const backend = new MemoryBackend();
+    await backend.init();
+
+    // Begin outer transaction (depth = 1, snapshot taken)
+    await backend.transactionBegin();
+    await backend.kvSet("ns", "key", "outer");
+
+    // Begin nested transaction (depth = 2, snapshot NOT taken again)
+    await backend.transactionBegin();
+    await backend.kvSet("ns", "key2", "inner");
+
+    // Commit inner (depth goes to 1 — not 0, so stack is NOT popped)
+    await backend.transactionCommit();
+
+    // Commit outer (depth goes to 0 — stack IS popped)
+    await backend.transactionCommit();
+
+    // Both keys should persist
+    expect(await backend.kvGet("ns", "key")).toBe("outer");
+    expect(await backend.kvGet("ns", "key2")).toBe("inner");
+
+    await backend.close();
+  });
+
+  it("does not restore state for nested rollback (depth > 0 after decrement)", async () => {
+    const { MemoryBackend } = await import("../../../src/shared/persistence/backends/memory.js");
+    const backend = new MemoryBackend();
+    await backend.init();
+
+    // Outer transaction
+    await backend.transactionBegin();
+    await backend.kvSet("ns", "k1", "v1");
+
+    // Inner (nested) transaction
+    await backend.transactionBegin();
+    await backend.kvSet("ns", "k2", "v2");
+
+    // Rolling back inner doesn't restore — only outer rollback does
+    await backend.transactionRollback(); // depth 2 → 1, nothing restored
+    // k2 is still there because the stack only restores on depth 0
+    expect(await backend.kvGet("ns", "k2")).toBe("v2");
+
+    // Now rollback outer — restores to pre-transaction state
+    await backend.transactionRollback(); // depth 1 → 0, restores
+    expect(await backend.kvGet("ns", "k1")).toBeNull();
+    expect(await backend.kvGet("ns", "k2")).toBeNull();
+
+    await backend.close();
+  });
+});
+
+// ─── close without init ───────────────────────────────────────────────────────
+
+describe("MemoryBackend — close without init", () => {
+  it("does not throw when close() is called before init()", async () => {
+    // Directly import MemoryBackend to test without init()
+    const { MemoryBackend } = await import("../../../src/shared/persistence/backends/memory.js");
+    const backend = new MemoryBackend();
+
+    // close() without init() — sweepTimer is undefined, should not throw
+    await expect(backend.close()).resolves.not.toThrow();
+  });
+});
+
+// ─── sweep() with no expired entries ─────────────────────────────────────────
+
+describe("MemoryBackend — sweep() with no expired entries", () => {
+  it("does not log when no entries are cleaned", async () => {
+    vi.useFakeTimers();
+    const consoleSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+
+    const store = await createPersistenceStore({ type: "memory" });
+
+    // Set a live key (no TTL)
+    await store.kv.set("ns", "live", "value");
+
+    // Advance timers to trigger sweep — nothing should expire
+    vi.advanceTimersByTime(60_001);
+
+    // console.debug should NOT have been called (cleaned = 0)
+    expect(consoleSpy).not.toHaveBeenCalled();
+
+    consoleSpy.mockRestore();
+    vi.useRealTimers();
+    await store.close();
+  });
+});
+
+// ─── init() with timer lacking unref ─────────────────────────────────────────
+
+describe("MemoryBackend — timer without unref", () => {
+  it("does not throw when setInterval returns a timer without unref", async () => {
+    const fakeTimer = {} as any; // no unref property
+    vi.spyOn(globalThis, "setInterval" as any).mockReturnValueOnce(fakeTimer);
+
+    const { MemoryBackend } = await import("../../../src/shared/persistence/backends/memory.js");
+    const backend = new MemoryBackend();
+    await expect(backend.init()).resolves.not.toThrow();
+
+    vi.restoreAllMocks();
+    await backend.close();
+  });
+});
+
 // ─── sweep() via fake timers ──────────────────────────────────────────────────
 
 describe("MemoryBackend — sweep() via timer", () => {

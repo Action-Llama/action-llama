@@ -590,5 +590,34 @@ describe("WebhookRegistry", () => {
       const result = registry.dryRunDispatch("github", {}, "{}");
       expect(result.bindings[0].filterDetails?.resource).toBe(true);
     });
+
+    it("filterDetails.resource is true when context.action includes resource (event does not)", () => {
+      // Covers line 327: `context.event?.includes(resource) || context.action?.includes(resource)`
+      // FALSE || TRUE path — event doesn't include resource but action does
+      registry.registerProvider(makeProviderWithContext({ event: "other_event", action: "issue_alert" }));
+      registry.addBinding({
+        agentName: "dev",
+        type: "github",
+        source: "MyOrg",
+        filter: { resources: ["issue_alert"] } as any,
+        trigger: vi.fn(),
+      });
+      const result = registry.dryRunDispatch("github", {}, "{}");
+      expect(result.bindings[0].filterDetails?.resource).toBe(true);
+    });
+
+    it("filterDetails.resource is false when neither context.event nor context.action includes resource", () => {
+      // Covers FALSE || FALSE path — neither event nor action includes resource
+      registry.registerProvider(makeProviderWithContext({ event: "push", action: "created" }));
+      registry.addBinding({
+        agentName: "dev",
+        type: "github",
+        source: "MyOrg",
+        filter: { resources: ["issue_alert"] } as any,
+        trigger: vi.fn(),
+      });
+      const result = registry.dryRunDispatch("github", {}, "{}");
+      expect(result.bindings[0].filterDetails?.resource).toBe(false);
+    });
   });
 });

@@ -1032,5 +1032,167 @@ describe("mcp/server.ts — startMcpServer and tool handlers", () => {
         rmSync(descProject, { recursive: true, force: true });
       }
     });
+
+    it("omits Running instances line when live.running is undefined for specific agent", async () => {
+      // Covers the false branch of `if (live.running !== undefined)` in al_agents
+      // when gateway status exists but has no running count
+      makeGatewayOk({
+        agents: [{ name: "dev", state: "running" }], // no running field
+      });
+
+      const result = await registeredTools.get("al_agents")!({ name: "dev" });
+      const text = result.content[0].text;
+      expect(text).toContain("Live state: running");
+      expect(text).not.toContain("Running instances:");
+    });
+  });
+
+  // ─── al_resume default message with undefined name ───────────────────────
+
+  describe("al_resume — default message fallback with scheduler-level resume", () => {
+    it("uses 'Resumed scheduler.' default when name is undefined and response has no message", async () => {
+      // Covers `name || "scheduler"` branch where name is undefined and no message field
+      makeGatewayOk({});
+      const result = await registeredTools.get("al_resume")!({ name: undefined });
+      expect(result.content[0].text).toBe("Resumed scheduler.");
+    });
+  });
+
+  // ─── al_pause default message with undefined name ────────────────────────
+
+  describe("al_pause — default message fallback with scheduler-level pause", () => {
+    it("uses 'Paused scheduler.' default when name is undefined and response has no message", async () => {
+      // Covers `name || "scheduler"` branch in al_pause where name is undefined and no message
+      makeGatewayOk({});
+      const result = await registeredTools.get("al_pause")!({ name: undefined });
+      expect(result.content[0].text).toBe("Paused scheduler.");
+    });
+  });
+
+  // ─── al_agents list mode with webhooks ───────────────────────────────────
+
+  describe("al_agents — list mode with agent having webhooks", () => {
+    it("shows webhook info in list when agent has webhooks configured", async () => {
+      // Covers `if (config.webhooks?.length)` TRUE branch in al_agents list mode
+      const webhookProject = makeTmpProject({
+        agents: [
+          {
+            name: "webhook-agent",
+            webhooks: [{ source: "github", events: ["push", "pull_request"] }] as any,
+          },
+        ],
+      });
+
+      try {
+        registeredTools.clear();
+        registeredResources.clear();
+        await startMcpServer({ projectPath: webhookProject });
+
+        // Gateway fails so no live data (liveMap is empty → `if (live)` false branch)
+        mockGatewayFetch.mockRejectedValue(new Error("ECONNREFUSED"));
+
+        const result = await registeredTools.get("al_agents")!({ name: undefined });
+        const text = result.content[0].text;
+        expect(text).toContain("webhook-agent");
+        expect(text).toContain("webhooks:");
+        expect(text).toContain("github");
+      } finally {
+        rmSync(webhookProject, { recursive: true, force: true });
+      }
+    });
+
+    it("shows webhook info with empty events array in list mode", async () => {
+      // Covers `(w.events || []).join(",")` branch where events is empty/undefined
+      const webhookNoEventsProject = makeTmpProject({
+        agents: [
+          {
+            name: "webhook-noevents-agent",
+            webhooks: [{ source: "github" }] as any,
+          },
+        ],
+      });
+
+      try {
+        registeredTools.clear();
+        registeredResources.clear();
+        await startMcpServer({ projectPath: webhookNoEventsProject });
+
+        mockGatewayFetch.mockRejectedValue(new Error("ECONNREFUSED"));
+
+        const result = await registeredTools.get("al_agents")!({ name: undefined });
+        const text = result.content[0].text;
+        expect(text).toContain("webhook-noevents-agent");
+        expect(text).toContain("webhooks:");
+        expect(text).toContain("github:");
+      } finally {
+        rmSync(webhookNoEventsProject, { recursive: true, force: true });
+      }
+    });
+  });
+
+  // ─── al_logs no entries when data is not an array ────────────────────────
+
+  describe("al_logs — no entries path when data is not an array", () => {
+    it("returns '(no log entries)' when result.data has no entries field and is not an array", async () => {
+      // Covers `!Array.isArray(entries)` TRUE branch: result.data has no 'entries' key
+      // and result.data itself is also not an array (e.g., a plain object like {})
+      // So: result.data.entries = undefined, result.data is {}, entries = {} (not an array)
+      const res = makeJsonResponse({}, 200);
+      mockGatewayFetch.mockResolvedValueOnce(res);
+      mockGatewayJson.mockImplementationOnce(async (r: Response) => JSON.parse(await r.text()));
+
+      const result = await registeredTools.get("al_logs")!({
+        name: "dev",
+        lines: 10,
+        raw: false,
+      });
+      expect(result.content[0].text).toBe("(no log entries)");
+    });
+  });
+
+  // ─── al_kill instance fallback with no message ───────────────────────────
+
+  describe("al_kill — instance-level kill with default message", () => {
+    it("uses default message when instance kill succeeds but response has no message field", async () => {
+      // Covers `instResult.data.message || `Killed instance ${target}.`` false branch
+      // First call: agent-level 404
+      const res404 = makeJsonResponse({ error: "Agent not found" }, 404);
+      mockGatewayFetch.mockResolvedValueOnce(res404);
+      mockGatewayJson.mockImplementationOnce(async (r: Response) => JSON.parse(await r.text()));
+
+      // Second call: instance-level success with no message
+      makeGatewayOk({});
+
+      const result = await registeredTools.get("al_kill")!({ target: "inst-abc" });
+      expect(result.content[0].text).toBe("Killed instance inst-abc.");
+    });
+  });
+
+  // ─── agent-skill resource with empty SKILL.md body ───────────────────────
+
+  describe("agent-skill resource — empty SKILL.md body", () => {
+    it("returns '(empty SKILL.md)' when agent SKILL.md has no body", async () => {
+      // Covers `body || "(empty SKILL.md)"` false branch in agent-skill resource handler
+      const { mkdirSync: _mkdirSync, writeFileSync: _writeFileSync } = await import("fs");
+      const { resolve: _resolve } = await import("path");
+      const emptyBodyProject = makeTmpProject({ agents: [{ name: "empty-body-agent" }] });
+
+      try {
+        // Overwrite SKILL.md with frontmatter-only (empty body)
+        const skillPath = _resolve(emptyBodyProject, "agents", "empty-body-agent", "SKILL.md");
+        _writeFileSync(skillPath, "---\nname: empty-body-agent\n---\n");
+
+        // Re-register with the empty-body project
+        registeredTools.clear();
+        registeredResources.clear();
+        await startMcpServer({ projectPath: emptyBodyProject });
+
+        const uri = new URL("al://agents/empty-body-agent/skill");
+        const result = await registeredResources.get("agent-skill")!(uri, { name: "empty-body-agent" });
+        expect(result.contents[0].text).toBe("(empty SKILL.md)");
+      } finally {
+        rmSync(emptyBodyProject, { recursive: true, force: true });
+      }
+    });
   });
 });

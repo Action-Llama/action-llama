@@ -18,7 +18,7 @@ import { DiscordWebhookProvider } from "../webhooks/providers/discord.js";
 import { TwitterWebhookProvider } from "../webhooks/providers/twitter.js";
 import { TestWebhookProvider } from "../webhooks/providers/test.js";
 import { SlackWebhookProvider } from "../webhooks/providers/slack.js";
-import type { WebhookFilter, WebhookTrigger, GitHubWebhookFilter, SentryWebhookFilter, LinearWebhookFilter, MintlifyWebhookFilter, DiscordWebhookFilter, SlackWebhookFilter, TwitterWebhookFilter } from "../webhooks/types.js";
+import type { WebhookFilter, WebhookTrigger, GitHubWebhookFilter, SentryWebhookFilter, LinearWebhookFilter, MintlifyWebhookFilter, DiscordWebhookFilter, TwitterWebhookFilter, SlackWebhookFilter } from "../webhooks/types.js";
 import type { TestWebhookFilter } from "../webhooks/providers/test.js";
 import { twitterAutoSubscribe } from "../webhooks/providers/twitter-subscribe.js";
 
@@ -141,7 +141,7 @@ export function buildFilterFromTrigger(trigger: WebhookTrigger, providerType: st
     const f: SlackWebhookFilter = {};
     if (trigger.events) f.events = trigger.events;
     if (trigger.channels) f.channels = trigger.channels;
-    if (trigger.repos) f.team_ids = trigger.repos; // Map repos to team_ids for Slack
+    if (trigger.team_ids) f.team_ids = trigger.team_ids;
     return Object.keys(f).length > 0 ? f : undefined;
   }
   if (providerType === "twitter") {
@@ -245,6 +245,7 @@ export async function setupWebhookRegistry(
   registry.registerProvider(new DiscordWebhookProvider());
   registry.registerProvider(new SlackWebhookProvider());
   registry.registerProvider(new TestWebhookProvider());
+  registry.registerProvider(new SlackWebhookProvider());
   registry.registerProvider(new TwitterWebhookProvider());
 
   // Load secrets for each provider type referenced by webhook sources

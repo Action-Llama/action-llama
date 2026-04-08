@@ -179,6 +179,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
       }
       lockStore.dispose();
       callStore.dispose();
+      server.closeAllConnections();
       server.close(() => resolve());
     });
 

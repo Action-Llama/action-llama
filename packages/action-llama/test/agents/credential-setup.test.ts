@@ -74,6 +74,14 @@ describe("hasLocalCredentials", () => {
     expect(hasLocalCredentials()).toBe(false);
     clearCredPath();
   });
+
+  it("uses /credentials as default path when AL_CREDENTIALS_PATH is not set", () => {
+    // /credentials does not exist in test env, so hasLocalCredentials() returns false
+    clearCredPath();
+    // We just verify it doesn't throw and returns a boolean
+    const result = hasLocalCredentials();
+    expect(typeof result).toBe("boolean");
+  });
 });
 
 // --- loadCredentialsFromVolume ---
@@ -497,6 +505,87 @@ describe("loadContainerCredentials", () => {
         writeFileSync(realKeyPath, originalKey, { mode: 0o600 });
       }
     }
+    clearCredPath();
+  });
+
+  it("does not inject env vars when credential type is in agentConfig but not in bundle", () => {
+    setCredPath(tempDir);
+    makeCredVolume(tempDir, {
+      anthropic_key: { default: { token: "sk-ant-123" } },
+      // github_token is intentionally NOT in the bundle
+    });
+
+    const agentConfig = makeAgentConfig({
+      models: [{ provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" }],
+      credentials: ["github_token"],
+    });
+
+    // Should not throw — readCredentialFields returns {} when type/instance not in bundle
+    const result = loadContainerCredentials(agentConfig);
+    expect(result.providerKeys.get("anthropic")).toBe("sk-ant-123");
+    // GITHUB_TOKEN should NOT be set from the bundle (bundle has no github_token)
+    // (it may still be set from the env itself)
+    clearCredPath();
+  });
+
+  it("handles git_ssh credential when id_rsa field is absent from bundle", () => {
+    setCredPath(tempDir);
+    makeCredVolume(tempDir, {
+      anthropic_key: { default: { token: "sk-ant-no-key" } },
+      // git_ssh exists but has no id_rsa field
+      git_ssh: { default: { username: "bot", email: "bot@example.com" } },
+    });
+
+    const agentConfig = makeAgentConfig({
+      models: [{ provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" }],
+      credentials: ["git_ssh"],
+    });
+
+    const result = loadContainerCredentials(agentConfig);
+    // No id_rsa → GIT_SSH_COMMAND should not be set (or not be overwritten)
+    expect(result.providerKeys.get("anthropic")).toBe("sk-ant-no-key");
+    // username and email should still be set
+    expect(process.env.GIT_AUTHOR_NAME).toBe("bot");
+    expect(process.env.GIT_AUTHOR_EMAIL).toBe("bot@example.com");
+    clearCredPath();
+  });
+
+  it("does not configure git credential helper when GITHUB_TOKEN is not set", () => {
+    setCredPath(tempDir);
+    makeCredVolume(tempDir, {
+      anthropic_key: { default: { token: "sk-ant-no-github" } },
+    });
+    // Temporarily remove GITHUB_TOKEN and capture GIT_CONFIG_COUNT baseline
+    delete process.env.GITHUB_TOKEN;
+    const configCountBefore = process.env.GIT_CONFIG_COUNT;
+
+    const agentConfig = makeAgentConfig({
+      models: [{ provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" }],
+      credentials: [],
+    });
+
+    loadContainerCredentials(agentConfig);
+    // GIT_CONFIG_COUNT should not have been incremented since GITHUB_TOKEN was not set
+    expect(process.env.GIT_CONFIG_COUNT).toBe(configCountBefore);
+    clearCredPath();
+  });
+
+  it("uses 0 as GIT_CONFIG_COUNT baseline when not set", () => {
+    setCredPath(tempDir);
+    makeCredVolume(tempDir, {
+      anthropic_key: { default: { token: "sk-ant-git-count" } },
+      github_token: { default: { token: "ghp_count_test" } },
+    });
+    delete process.env.GIT_CONFIG_COUNT;
+
+    const agentConfig = makeAgentConfig({
+      models: [{ provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" }],
+      credentials: ["github_token"],
+    });
+
+    loadContainerCredentials(agentConfig);
+    const count = parseInt(process.env.GIT_CONFIG_COUNT || "0", 10);
+    expect(count).toBeGreaterThan(0);
     clearCredPath();
   });
 

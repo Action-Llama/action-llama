@@ -123,6 +123,25 @@ describe("DiscordWebhookProvider", () => {
       expect(provider.parseEvent({}, { type: 99 })).toBeNull();
     });
 
+    it("returns base context with title=event for type that passes name lookup but hits default switch branch", () => {
+      // INTERACTION_TYPE_NAMES uses numeric keys stored as strings in JS objects.
+      // Passing the string "2" means INTERACTION_TYPE_NAMES["2"] === "application_command" (truthy),
+      // so the early `if (!event) return null` guard passes.
+      // However, JavaScript switch uses strict (===) comparison, so `switch("2") { case 2: }` does NOT match,
+      // causing execution to fall through to the default branch (lines 106-109 of discord.ts).
+      const body = {
+        type: "2" as any, // string "2", not number 2
+        guild_id: "guild-123",
+        channel_id: "ch-1",
+        member: { user: { username: "tester" } },
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.source).toBe("discord");
+      expect(ctx!.event).toBe("application_command");
+      expect(ctx!.title).toBe("application_command");
+    });
+
     it("parses APPLICATION_COMMAND (type 2)", () => {
       const body = {
         type: 2,

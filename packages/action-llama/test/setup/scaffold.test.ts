@@ -4,7 +4,7 @@ import { join, resolve } from "path";
 import { tmpdir } from "os";
 import { parse as parseTOML } from "smol-toml";
 import { parseFrontmatter } from "../../src/shared/frontmatter.js";
-import { scaffoldProject, resolvePackageRoot } from "../../src/setup/scaffold.js";
+import { scaffoldProject, resolvePackageRoot, scaffoldAgent } from "../../src/setup/scaffold.js";
 import type { ScaffoldAgent } from "../../src/setup/scaffold.js";
 import type { GlobalConfig } from "../../src/shared/config.js";
 import { VERSION } from "../../src/shared/constants.js";
@@ -247,7 +247,134 @@ describe("scaffoldProject", () => {
     expect(content).toContain("license: MIT");
     expect(content).toContain("compatibility: claude-3");
   });
+
+  it("does not overwrite existing SKILL.md when scaffoldAgent is called again", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
+    const projDir = resolve(tmpDir, "my-project");
+    mkdirSync(resolve(projDir, "agents", "dev"), { recursive: true });
+    const skillPath = resolve(projDir, "agents", "dev", "SKILL.md");
+    const originalContent = "# Original SKILL.md Content\n";
+    writeFileSync(skillPath, originalContent);
+
+    scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
+
+    const content = readFileSync(skillPath, "utf-8");
+    expect(content).toBe(originalContent);
+  });
+
+  it("does not overwrite existing config.toml when scaffoldAgent is called again", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
+    const projDir = resolve(tmpDir, "my-project");
+    mkdirSync(resolve(projDir, "agents", "dev"), { recursive: true });
+    const configPath = resolve(projDir, "agents", "dev", "config.toml");
+    const originalContent = "schedule = \"*/30 * * * *\"\n";
+    writeFileSync(configPath, originalContent);
+
+    scaffoldProject(projDir, makeGlobalConfig(), makeAgents());
+
+    const content = readFileSync(configPath, "utf-8");
+    expect(content).toBe(originalContent);
+  });
+
+  it("does not overwrite existing package.json when scaffoldProject is called again", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
+    const projDir = resolve(tmpDir, "my-project");
+    mkdirSync(projDir, { recursive: true });
+    const pkgPath = resolve(projDir, "package.json");
+    const originalPkg = { name: "existing-project", version: "2.0.0", private: true };
+    writeFileSync(pkgPath, JSON.stringify(originalPkg, null, 2) + "\n");
+
+    scaffoldProject(projDir, makeGlobalConfig(), []);
+
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+    expect(pkg.name).toBe("existing-project");
+    expect(pkg.version).toBe("2.0.0");
+  });
+
+  it("does not overwrite existing .gitignore when scaffoldProject is called again", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
+    const projDir = resolve(tmpDir, "my-project");
+    scaffoldProject(projDir, makeGlobalConfig(), [], "first-project");
+
+    const gitignorePath = resolve(projDir, ".gitignore");
+    const customContent = "# my custom gitignore\ndist/\n";
+    writeFileSync(gitignorePath, customContent);
+
+    scaffoldProject(projDir, makeGlobalConfig(), []);
+
+    const content = readFileSync(gitignorePath, "utf-8");
+    expect(content).toBe(customContent);
+  });
+
+  it("does not overwrite existing .env.toml when scaffoldProject is called again with projectName", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
+    const projDir = resolve(tmpDir, "my-project");
+    mkdirSync(projDir, { recursive: true });
+    const envTomlPath = resolve(projDir, ".env.toml");
+    const originalContent = `projectName = "original-name"\n`;
+    writeFileSync(envTomlPath, originalContent);
+
+    scaffoldProject(projDir, makeGlobalConfig(), [], "new-name");
+
+    const content = readFileSync(envTomlPath, "utf-8");
+    expect(content).toBe(originalContent);
+  });
+
+  it("creates agent config.toml with empty content when no runtime fields are set", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
+    const projDir = resolve(tmpDir, "my-project");
+    // Use an agent config that has no runtime fields beyond the stripped ones (name, models, description, license, compatibility)
+    // credentials is a runtime field so we still get a line; we just verify no crash occurs
+    // and the file contains only the expected runtime values
+    const agentWithUndefinedOptionals: ScaffoldAgent[] = [
+      {
+        name: "minimal",
+        config: {
+          name: "minimal",
+          credentials: [],
+          models: [],
+          // schedule, webhooks, hooks, params, scale, timeout all omitted (undefined)
+        },
+      },
+    ];
+    scaffoldProject(projDir, makeGlobalConfig(), agentWithUndefinedOptionals);
+
+    const configPath = resolve(projDir, "agents", "minimal", "config.toml");
+    expect(existsSync(configPath)).toBe(true);
+    const content = readFileSync(configPath, "utf-8");
+    // Only credentials (empty array) should appear — no schedule, params, etc.
+    expect(content).not.toContain("schedule");
+    expect(content).not.toContain("params");
+    expect(content).not.toContain("scale");
+  });
+
+  it("creates agent config.toml with completely empty content when all runtime fields are undefined", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "al-scaffold-"));
+    const projDir = resolve(tmpDir, "my-project");
+    // Provide an agent config where ALL runtime fields (including credentials) are undefined.
+    // This covers the `Object.keys(runtimeConfig).length > 0 ? ... : ""` FALSE branch
+    // and the `if (v !== undefined) runtimeConfig[k] = v` FALSE branch in scaffoldAgent.
+    const agentAllUndefined: ScaffoldAgent[] = [
+      {
+        name: "all-undefined",
+        config: {
+          name: "all-undefined",
+          credentials: undefined as any, // bypass type — forces false branch of v !== undefined
+          models: [],
+          // all other optional fields omitted (undefined)
+        },
+      },
+    ];
+    scaffoldProject(projDir, makeGlobalConfig(), agentAllUndefined);
+
+    const configPath = resolve(projDir, "agents", "all-undefined", "config.toml");
+    expect(existsSync(configPath)).toBe(true);
+    const content = readFileSync(configPath, "utf-8");
+    // File should be empty (no runtime fields to write)
+    expect(content).toBe("");
+  });
 });
+
 
 describe("resolvePackageRoot", () => {
   it("returns a non-empty string path", () => {
