@@ -198,6 +198,7 @@ export class LockStore {
   /**
    * Validate that the resource key is a valid URI.
    * 
+   * Accepts any valid URI according to the WHATWG URL standard.
    * The WHATWG URL constructor enforces that URI schemes match the pattern [a-z][a-z0-9+.-]*
    * (must start with a letter and can only contain letters, digits, +, ., and -).
    * Any URI with an invalid scheme will throw during `new URL()` parsing.
@@ -208,6 +209,7 @@ export class LockStore {
   private validateResourceKey(resourceKey: string): { ok: boolean; error?: string } {
     try {
       new URL(resourceKey);
+      // If new URL() succeeds, the URI is valid according to WHATWG spec
       return { ok: true };
     } catch (error) {
       return { ok: false, error: `Invalid URI format: ${error instanceof Error ? error.message : 'unknown error'}` };
