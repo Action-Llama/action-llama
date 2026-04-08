@@ -329,33 +329,28 @@ describe("webhook command", () => {
       // Create agent with webhook that won't match
       createAgent("nonmatching-agent", {
         models: ["sonnet"],
-        webhooks: [{ source: "github", events: ["push"] }], // only push events
+        webhooks: [{ source: "test", events: ["push"] }], // only push events
       });
       writeFileSync(join(projectPath, "config.toml"), stringifyTOML({
         models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
-        webhooks: { github: { type: "github" } }
+        webhooks: { test: { type: "test" } }
       }));
 
       const fixture = {
-        headers: { "x-github-event": "issues" }, // issues event, not push
+        headers: { "x-test-event": "issues" }, // issues event, not push
         body: {
-          action: "opened",
+          event: "issues",
           repository: { full_name: "owner/repo" },
-          issue: {
-            number: 5, title: "Bug",
-            html_url: "https://github.com/owner/repo/issues/5",
-            user: { login: "author" }, labels: []
-          },
           sender: { login: "sender" }
         }
       };
       const fixturePath = join(tmpDir, "no-match-fixture.json");
       writeFileSync(fixturePath, JSON.stringify(fixture));
 
-      await execute("replay", fixturePath, { project: projectPath, source: "github", run: true });
+      await execute("replay", fixturePath, { project: projectPath, source: "test", run: true });
 
       // When --run is specified but no matched agents, shows a warning
-      expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining("Webhook Simulation Results"));
+      expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining("⚠️ No matched agents to run"));
     });
 
     it("detects linear source from x-linear-signature header", async () => {
