@@ -1,5 +1,11 @@
 # @action-llama/skill
 
+## 0.26.11
+
+### Patch Changes
+
+- [#567](https://github.com/Action-Llama/action-llama/pull/567) [`bca5315`](https://github.com/Action-Llama/action-llama/commit/bca53154d83a945f93fcdd3aae541d95274ab1e9) Thanks [@asselstine](https://github.com/asselstine)! - Fix integration test suite hanging with 160+ test files by closing all keep-alive connections before server shutdown
+
 ## 0.26.10
 
 ## 0.26.9

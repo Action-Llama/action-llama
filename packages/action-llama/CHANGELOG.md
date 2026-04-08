@@ -1,5 +1,28 @@
 # @action-llama/action-llama
 
+## 0.26.11
+
+### Patch Changes
+
+- [`4018e2b`](https://github.com/Action-Llama/action-llama/commit/4018e2bf1a6a6d61d93b61f51468a9b9b50d0eda) Thanks [@asselstine](https://github.com/asselstine)! - Action Llama can now run agents through the Claude CLI via `[harness].type = "claude"` while keeping `pi` as the default harness. This change also removes `al chat` and the web chat UI/API, simplifying the gateway and frontend to scheduled, webhook, and manual run flows only.
+
+- [#578](https://github.com/Action-Llama/action-llama/pull/578) [`c1b338b`](https://github.com/Action-Llama/action-llama/commit/c1b338b5a7f231b3ce7e8a93beeeba72754ad5f7) Thanks [@asselstine](https://github.com/asselstine)! - Document defensive error handlers in scheduler webhook dispatch and execution paths. The `.catch()` handlers are unlikely to trigger since `executeRun()` and `drainQueues()` wrap all errors internally, but they remain for defensive programming and safety if those functions are modified to propagate errors in the future. Closes [#574](https://github.com/Action-Llama/action-llama/issues/574)
+
+- [#570](https://github.com/Action-Llama/action-llama/pull/570) [`3783a0d`](https://github.com/Action-Llama/action-llama/commit/3783a0d67d3ad0947e716a463577cf23180b6ccd) Thanks [@asselstine](https://github.com/asselstine)! - fix: use countActivityRows instead of queryActivityRowsWithTotal(limit=0) to get accurate activity count
+
+  When the /api/stats/activity endpoint's page was filled entirely by in-memory rows (running/pending agents), the code would call queryActivityRowsWithTotal with limit=0. SQLite returns an empty result set for LIMIT 0, so the window function COUNT(\*) OVER() could not be accessed, causing total to always be 0.
+
+  The fix uses the existing countActivityRows() method which correctly counts all activity rows without the LIMIT 0 issue.
+
+- [#576](https://github.com/Action-Llama/action-llama/pull/576) [`8598502`](https://github.com/Action-Llama/action-llama/commit/8598502ad9b90bfbbbf6036947ccd6b17218ed2c) Thanks [@asselstine](https://github.com/asselstine)! - Remove unreachable null-check guards in App.tsx handlers. The `handleProjectScaleUpdate` and `handleAgentScaleUpdate` handlers are only passed to child components that are rendered when `projectPath` is truthy, making the null-check throw statements dead code with zero coverage. Closes [#575](https://github.com/Action-Llama/action-llama/issues/575)
+
+- [#567](https://github.com/Action-Llama/action-llama/pull/567) [`bca5315`](https://github.com/Action-Llama/action-llama/commit/bca53154d83a945f93fcdd3aae541d95274ab1e9) Thanks [@asselstine](https://github.com/asselstine)! - Fix integration test suite hanging with 160+ test files by closing all keep-alive connections before server shutdown
+
+- [#568](https://github.com/Action-Llama/action-llama/pull/568) [`0dd0cf0`](https://github.com/Action-Llama/action-llama/commit/0dd0cf0243c4bd729c2e3bc1916ba44709682101) Thanks [@asselstine](https://github.com/asselstine)! - Fix: Call server.closeAllConnections() before server.close() to force-close keep-alive connections, preventing integration test suite hangs with 160+ test files
+
+- Updated dependencies [[`bca5315`](https://github.com/Action-Llama/action-llama/commit/bca53154d83a945f93fcdd3aae541d95274ab1e9)]:
+  - @action-llama/skill@0.26.11
+
 ## 0.26.10
 
 ### Patch Changes
