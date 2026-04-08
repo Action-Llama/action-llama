@@ -1,5 +1,14 @@
 # @action-llama/action-llama
 
+## 0.26.12
+
+### Patch Changes
+
+- [`094a91f`](https://github.com/Action-Llama/action-llama/commit/094a91fe818748d45f73238683b2613ee6c738d9) Thanks [@asselstine](https://github.com/asselstine)! - Document the new `harness` configuration and fix `al doctor`/strict validation so project and agent `harness` settings are accepted instead of being reported as unknown fields.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.26.12
+
 ## 0.26.11
 
 ### Patch Changes
