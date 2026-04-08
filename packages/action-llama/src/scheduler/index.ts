@@ -236,7 +236,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // Handle agent enable/disable events
   if (statusTracker) {
-    setupEnableDisableHandlers({ statusTracker, agentCronJobs, logger });
+    setupEnableDisableHandlers({ statusTracker, agentCronJobs, workQueue, logger });
   }
 
   // === Phase 7: Start background services (queue drain + watcher + shutdown) ===

@@ -86,9 +86,10 @@ export function setupCronJobs(opts: {
 export function setupEnableDisableHandlers(opts: {
   statusTracker: StatusTracker;
   agentCronJobs: Map<string, Cron>;
+  workQueue?: { clear(agentName: string): void; size(agentName: string): number };
   logger: Logger;
 }): void {
-  const { statusTracker, agentCronJobs, logger } = opts;
+  const { statusTracker, agentCronJobs, workQueue, logger } = opts;
 
   statusTracker.on("agent-enabled", (agentName: string) => {
     const job = agentCronJobs.get(agentName);
@@ -108,6 +109,16 @@ export function setupEnableDisableHandlers(opts: {
       job.pause();
       statusTracker.setNextRunAt(agentName, null);
       logger.info({ agent: agentName }, "agent disabled, cron job paused");
+    }
+
+    // Clear queued work — disabled agents should not accumulate pending items
+    if (workQueue) {
+      const cleared = workQueue.size(agentName);
+      if (cleared > 0) {
+        workQueue.clear(agentName);
+        statusTracker.setQueuedWebhooks(agentName, 0);
+        logger.info({ agent: agentName, cleared }, "agent disabled, work queue cleared");
+      }
     }
   });
 }

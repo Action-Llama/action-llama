@@ -30,6 +30,7 @@ function makeStatusTracker(overrides: Partial<{
     isPaused: vi.fn().mockReturnValue(false),
     isAgentEnabled: vi.fn().mockReturnValue(true),
     setNextRunAt: vi.fn(),
+    setQueuedWebhooks: vi.fn(),
     on: emitter.on.bind(emitter),
     emit: emitter.emit.bind(emitter),
     ...overrides,
@@ -285,5 +286,51 @@ describe("setupEnableDisableHandlers", () => {
     // Should not throw
     statusTracker.emit("agent-disabled", "unknown-agent");
     expect(statusTracker.setNextRunAt).not.toHaveBeenCalled();
+  });
+
+  it("clears work queue when agent-disabled event fires", () => {
+    const statusTracker = makeStatusTracker();
+    const logger = makeLogger();
+    const agentCronJobs = new Map<string, any>();
+    const workQueue = { clear: vi.fn(), size: vi.fn().mockReturnValue(3) };
+
+    setupEnableDisableHandlers({ statusTracker, agentCronJobs, workQueue, logger });
+
+    statusTracker.emit("agent-disabled", "my-agent");
+
+    expect(workQueue.size).toHaveBeenCalledWith("my-agent");
+    expect(workQueue.clear).toHaveBeenCalledWith("my-agent");
+    expect(statusTracker.setQueuedWebhooks).toHaveBeenCalledWith("my-agent", 0);
+    expect(logger.info).toHaveBeenCalledWith(
+      { agent: "my-agent", cleared: 3 },
+      "agent disabled, work queue cleared"
+    );
+  });
+
+  it("does not clear work queue when queue is already empty", () => {
+    const statusTracker = makeStatusTracker();
+    const logger = makeLogger();
+    const agentCronJobs = new Map<string, any>();
+    const workQueue = { clear: vi.fn(), size: vi.fn().mockReturnValue(0) };
+
+    setupEnableDisableHandlers({ statusTracker, agentCronJobs, workQueue, logger });
+
+    statusTracker.emit("agent-disabled", "my-agent");
+
+    expect(workQueue.clear).not.toHaveBeenCalled();
+  });
+
+  it("works without workQueue parameter", () => {
+    const statusTracker = makeStatusTracker();
+    const logger = makeLogger();
+    const pauseSpy = vi.fn();
+    const mockJob = { resume: vi.fn(), pause: pauseSpy, nextRun: vi.fn() };
+    const agentCronJobs = new Map([["my-agent", mockJob as any]]);
+
+    // No workQueue — should not throw
+    setupEnableDisableHandlers({ statusTracker, agentCronJobs, logger });
+
+    statusTracker.emit("agent-disabled", "my-agent");
+    expect(pauseSpy).toHaveBeenCalledOnce();
   });
 });

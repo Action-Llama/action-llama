@@ -207,7 +207,9 @@ export function dispatchTriggers(
     });
 
     if (result.action === "rejected") {
-      if (result.reason === "agent is disabled (scale=0)") {
+      if (result.reason === "agent is disabled") {
+        ctx.logger.info({ source: sourceAgent, target: agent }, "target agent is disabled, trigger dropped");
+      } else if (result.reason === "agent is disabled (scale=0)") {
         ctx.logger.info({ source: sourceAgent, target: agent }, "target disabled (scale=0), skipping");
       } else {
         ctx.logger.info({ source: sourceAgent, target: agent, reason: result.reason }, "trigger skipped");
@@ -216,11 +218,7 @@ export function dispatchTriggers(
     }
     if (result.action === "queued") {
       ctx.statusTracker?.setQueuedWebhooks(agent, ctx.workQueue.size(agent));
-      if (result.cause === "agent-disabled") {
-        ctx.logger.info({ source: sourceAgent, target: agent }, "target agent is paused, trigger queued");
-      } else {
-        ctx.logger.info({ source: sourceAgent, target: agent }, "all runners busy, trigger queued");
-      }
+      ctx.logger.info({ source: sourceAgent, target: agent }, "all runners busy, trigger queued");
       continue;
     }
     // result.action === "dispatched"

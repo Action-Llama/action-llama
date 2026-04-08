@@ -17,7 +17,7 @@ import type { WorkQueue } from "../shared/work-queue.js";
  */
 export type DispatchResult =
   | { action: "dispatched"; runner: PoolRunner }
-  | { action: "queued"; dropped: boolean; cause: "agent-disabled" | "pool-unavailable" | "all-busy" }
+  | { action: "queued"; dropped: boolean; cause: "pool-unavailable" | "all-busy" }
   | { action: "rejected"; reason: string };
 
 export interface DispatchOptions {
@@ -35,8 +35,8 @@ export interface DispatchOptions {
  *
  * Given an agent name and a work item, decides whether to:
  * 1. Dispatch immediately (runner available)
- * 2. Queue for later (runner busy, agent paused, pool not ready)
- * 3. Reject outright (scheduler paused, pool empty/missing with queueWhenBusy=false)
+ * 2. Queue for later (runner busy, pool not ready)
+ * 3. Reject outright (scheduler paused, agent disabled, pool empty/missing with queueWhenBusy=false)
  *
  * Callers remain responsible for prompt building and executeRun/runWithReruns
  * since those vary by trigger type.
@@ -60,10 +60,9 @@ export function dispatchOrQueue<T>(
     return { action: "rejected", reason: "scheduler is paused" };
   }
 
-  // 2. Agent disabled — queue for when it is re-enabled
+  // 2. Agent disabled — reject (queue is cleared on disable, no new work accepted)
   if (isAgentEnabled && !isAgentEnabled(agentName)) {
-    const { dropped } = workQueue.enqueue(agentName, workItem);
-    return { action: "queued", dropped: !!dropped, cause: "agent-disabled" };
+    return { action: "rejected", reason: "agent is disabled" };
   }
 
   // 3. Pool not available (not yet created, or scale = 0 check below)
