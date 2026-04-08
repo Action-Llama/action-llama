@@ -1,5 +1,20 @@
 # @action-llama/action-llama
 
+## 0.27.0
+
+### Minor Changes
+
+- [`29a7530`](https://github.com/Action-Llama/action-llama/commit/29a75300341d9898262b80121cab01adf5544002) Thanks [@asselstine](https://github.com/asselstine)! - Replace shell-init-based environment persistence with an explicit `al-export` command. Agents now persist values with `al-export NAME value` and must source `. "$(al-export -f)"` in later shell commands instead of relying on implicit `setenv`/`BASH_ENV` behavior.
+
+### Patch Changes
+
+- [`300232c`](https://github.com/Action-Llama/action-llama/commit/300232c60f8638545b188732cb90bc2f6879ca7e) Thanks [@asselstine](https://github.com/asselstine)! - Preserve richer agent conversation events in run logs so the default log view shows assistant replies, tool calls, tool results, and raw provider event details without needing a separate conversation record.
+
+- [`7aeee71`](https://github.com/Action-Llama/action-llama/commit/7aeee7175307352b3886d2c89986bfc4fe80c912) Thanks [@asselstine](https://github.com/asselstine)! - Surface agent runtime errors in the dashboard so container stderr and failed runs show the latest error message in the web UI instead of only in backend logs.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.27.0
+
 ## 0.26.16
 
 ### Patch Changes
