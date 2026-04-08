@@ -10,13 +10,27 @@ function formatLogEntry(entry: LogEntry): {
   className: string;
 } {
   const msg = entry.msg || "";
-  if (entry.text && (msg.includes("assistant") || msg.includes("response"))) {
+  if (entry.text && (msg.includes("assistant") || msg.includes("response") || msg === "conversation.message")) {
     return {
-      text: `${msg}: ${entry.text}`,
+      text: entry.text,
       className: "text-white font-bold",
     };
   }
-  if (entry.cmd || msg.includes("bash") || msg.includes("command")) {
+  if (msg === "conversation.tool_result") {
+    const result = String(entry.resultText || entry.result || "");
+    const prefix = entry.tool ? `${entry.tool} result` : "tool result";
+    if (entry.isError) {
+      return {
+        text: `${prefix}${entry.cmd ? `\n$ ${entry.cmd}` : ""}${result ? `\n${result}` : ""}`,
+        className: "text-red-400 whitespace-pre-wrap",
+      };
+    }
+    return {
+      text: `${prefix}${entry.cmd ? `\n$ ${entry.cmd}` : ""}${result ? `\n${result}` : ""}`,
+      className: "text-slate-300 whitespace-pre-wrap",
+    };
+  }
+  if (entry.cmd || msg.includes("bash") || msg.includes("command") || (msg === "conversation.tool_call" && entry.tool === "bash")) {
     return {
       text: entry.cmd ? `$ ${entry.cmd}` : msg,
       className: "text-cyan-400",
@@ -26,6 +40,12 @@ function formatLogEntry(entry: LogEntry): {
     return {
       text: entry.tool ? `[tool] ${entry.tool}: ${entry.result ?? ""}` : msg,
       className: "text-blue-400",
+    };
+  }
+  if (msg === "conversation.event") {
+    return {
+      text: `${entry.eventType || "event"}${entry.role ? ` role=${entry.role}` : ""}${entry.stopReason ? ` stop=${entry.stopReason}` : ""}`,
+      className: "text-slate-500",
     };
   }
   if (entry.level >= 50 || entry.err) {

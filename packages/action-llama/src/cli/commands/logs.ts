@@ -83,7 +83,7 @@ function formatConversationEntry(entry: LogEntry, showAll = false): string | nul
   if (!showAll) {
     // Skip debug-level noise (except tool errors which are level 50)
     if (entry.level <= 20 && !SKIP_MESSAGES.has(msg)) {
-      // Show debug tool starts for non-bash tools
+      // Show debug tool starts for non-bash tools and conversation events only in --all
       if (msg === "tool start") {
         const tool = String(entry.tool || "unknown");
         return `${time}  ${BLUE}▸ ${tool}${RESET}`;
@@ -96,7 +96,7 @@ function formatConversationEntry(entry: LogEntry, showAll = false): string | nul
   }
 
   // ── Assistant text output ──
-  if (msg === "assistant") {
+  if (msg === "assistant" || msg === "conversation.message") {
     const text = String(entry.text || "");
     if (!text) return null;
     // Indent multi-line text under the timestamp
@@ -108,15 +108,29 @@ function formatConversationEntry(entry: LogEntry, showAll = false): string | nul
   }
 
   // ── Bash command ──
-  if (msg === "bash") {
+  if (msg === "bash" || (msg === "conversation.tool_call" && entry.tool === "bash")) {
     const cmd = String(entry.cmd || "");
     return `${time}  ${instanceTag}${CYAN}$ ${cmd}${RESET}`;
   }
 
   // ── Tool start (non-bash, logged at info level in some paths) ──
-  if (msg === "tool start") {
+  if (msg === "tool start" || msg === "conversation.tool_call") {
     const tool = String(entry.tool || "unknown");
     return `${time}  ${BLUE}▸ ${tool}${RESET}`;
+  }
+
+  // ── Tool result ──
+  if (msg === "conversation.tool_result") {
+    const tool = String(entry.tool || "unknown");
+    const cmd = entry.cmd ? `\n          ${DIM}$ ${String(entry.cmd)}${RESET}` : "";
+    const text = String(entry.resultText || entry.result || "");
+    const rendered = text
+      ? `\n          ${DIM}${text.split("\n").join(`\n          `)}${RESET}`
+      : "";
+    if (entry.isError) {
+      return `${time}  ${instanceTag}${RED}✗ ${tool} failed${RESET}${cmd}${rendered}`;
+    }
+    return `${time}  ${instanceTag}${GRAY}↳ ${tool} result${RESET}${cmd}${rendered}`;
   }
 
   // ── Tool error ──
@@ -182,8 +196,8 @@ function formatConversationEntry(entry: LogEntry, showAll = false): string | nul
   }
 
   // ── Session events (debug-level, visible with --all) ──
-  if (msg === "event") {
-    const evType = String(entry.type || "unknown");
+  if (msg === "event" || msg === "conversation.event") {
+    const evType = String(entry.eventType || entry.type || "unknown");
     const parts: string[] = [`${time}  ${GRAY}▪ ${evType}${RESET}`];
     if (entry.role) parts[0] += ` ${DIM}role=${entry.role}${RESET}`;
     if (entry.stopReason) parts[0] += ` ${DIM}stop=${entry.stopReason}${RESET}`;
@@ -194,6 +208,9 @@ function formatConversationEntry(entry: LogEntry, showAll = false): string | nul
     if (entry.turnResult) {
       const tr = String(entry.turnResult).slice(0, 200);
       parts.push(`          ${GRAY}${tr}${RESET}`);
+    }
+    if (entry.raw) {
+      parts.push(`          ${GRAY}${JSON.stringify(entry.raw).slice(0, 500)}${RESET}`);
     }
     return parts.join("\n");
   }

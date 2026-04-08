@@ -671,6 +671,29 @@ describe("ContainerAgentRunner", () => {
         expect.stringContaining("$ npm test"),
       );
     });
+
+    it("surfaces conversation tool result errors to status tracker", async () => {
+      const mockStatusTracker = makeMockStatusTracker();
+      const { runner, getCapturedOnLine } = createRunnerWithLogCapture({ statusTracker: mockStatusTracker });
+
+      const runPromise = runner.run("test prompt");
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+
+      const onLine = getCapturedOnLine();
+      if (onLine) {
+        onLine(JSON.stringify({
+          _log: true, level: "error", msg: "conversation.tool_result",
+          tool: "bash", cmd: "npm test", resultText: "permission denied", isError: true,
+          ts: Date.now(),
+        }));
+      }
+      await runPromise;
+
+      expect(mockStatusTracker.setAgentError).toHaveBeenCalledWith(
+        "test-agent",
+        expect.stringContaining("permission denied"),
+      );
+    });
   });
 
   // ── forwardLogLine: token-usage ──────────────────────────────────────────

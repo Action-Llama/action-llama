@@ -389,10 +389,18 @@ export interface LogEntry {
   time: number;
   msg: string;
   instance?: string;
+  kind?: string;
+  role?: string;
   text?: string;
+  stopReason?: string;
   cmd?: string;
   tool?: string;
+  toolCallId?: string;
   result?: string;
+  resultText?: string;
+  isError?: boolean;
+  eventType?: string;
+  raw?: unknown;
   container?: string;
   name?: string;
   err?: unknown;

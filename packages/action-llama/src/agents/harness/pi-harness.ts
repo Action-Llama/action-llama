@@ -85,7 +85,7 @@ export class PiHarness implements AgentHarness {
 
           // Non-update events → debug log
           if (event.type !== "message_update") {
-            const extra: Record<string, any> = { type: event.type, eventCount };
+            const extra: Record<string, any> = { eventType: event.type, eventCount, raw: event };
             if (event.type === "message_start" || event.type === "message_end") {
               extra.role = event.role || event.message?.role;
               extra.content = JSON.stringify(event.content || event.message?.content || []).slice(0, 500);
@@ -96,7 +96,7 @@ export class PiHarness implements AgentHarness {
               const errorMessage = extractTurnEndError(event);
               if (errorMessage) extra.errorMessage = errorMessage;
             }
-            eventQueue.push({ type: "log", level: "debug", message: "event", data: extra });
+            eventQueue.push({ type: "log", level: "debug", message: "conversation.event", data: extra });
           }
 
           // Error events
@@ -111,13 +111,7 @@ export class PiHarness implements AgentHarness {
 
           // Text deltas
           if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
-            eventQueue.push({ type: "text_delta", delta: event.assistantMessageEvent.delta });
-          }
-
-          // Accumulated text log on message_end
-          if (event.type === "message_end") {
-            // The consumer tracks accumulated text per turn
-            eventQueue.push({ type: "log", level: "info", message: "message_end" });
+            eventQueue.push({ type: "text_delta", delta: event.assistantMessageEvent.delta, raw: event });
           }
 
           // Tool execution events
@@ -131,6 +125,7 @@ export class PiHarness implements AgentHarness {
               toolName: event.toolName,
               toolCallId: event.toolCallId,
               command: cmd || undefined,
+              raw: event,
             });
           }
 
@@ -145,6 +140,7 @@ export class PiHarness implements AgentHarness {
               toolCallId: event.toolCallId,
               result: resultStr,
               isError: !!event.isError,
+              raw: event,
             });
           }
         });

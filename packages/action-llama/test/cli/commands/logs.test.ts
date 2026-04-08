@@ -378,6 +378,31 @@ describe("logs command", () => {
       expect(output[5]).toContain("Done! Created the report.");
       expect(output[6]).toContain("Run completed");
     });
+
+    it("shows conversation tool results in the default log view", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({
+        msg: "conversation.tool_result",
+        tool: "bash",
+        cmd: "grep foo file.txt",
+        resultText: "file.txt:1:foo",
+        isError: false,
+      }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+
+      await execute("dev", { project: tmpDir, lines: "50" });
+
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("bash result");
+      expect(output[0]).toContain("grep foo file.txt");
+      expect(output[0]).toContain("file.txt:1:foo");
+    });
   });
 
   // ── Shared behavior ──────────────────────────────────────────────────────
@@ -501,6 +526,28 @@ describe("logs command", () => {
       expect(output).toHaveLength(1);
       expect(output[0]).toContain("▪ message_delta");
       expect(output[0]).toContain("partial assistant response text");
+    });
+
+    it("shows raw conversation event payloads in --all mode", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({
+        level: 20,
+        msg: "conversation.event",
+        eventType: "message_end",
+        role: "assistant",
+        raw: { type: "message_end", message: { role: "assistant" } },
+      }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+      await execute("dev", { project: tmpDir, lines: "50", all: true });
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("▪ message_end");
+      expect(output[0]).toContain("\"type\":\"message_end\"");
     });
 
     it("omits event content when content is empty array '[]'", async () => {

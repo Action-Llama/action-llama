@@ -118,11 +118,14 @@ export class ContainerAgentRunner {
       } else {
         logFn(msg);
       }
-      // Surface tool errors to status tracker for TUI display
-      if (level === "error" && msg === "tool error" && data.result) {
-        let errorMsg = String(data.result);
+      // Surface tool errors to status tracker for TUI/dashboard display
+      if (
+        level === "error" &&
+        ((msg === "tool error" && data.result) || (msg === "conversation.tool_result" && data.isError))
+      ) {
+        let errorMsg = String(data.resultText ?? data.result ?? "");
         try {
-          const inner = JSON.parse(data.result);
+          const inner = JSON.parse(String(data.result ?? ""));
           if (inner?.content?.[0]?.text) {
             errorMsg = inner.content[0].text;
           }

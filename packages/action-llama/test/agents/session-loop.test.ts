@@ -233,7 +233,7 @@ describe("runSessionLoop", () => {
     expect(result.unrecoverableErrors).toBe(3);
   });
 
-  it("emits bash command logs for tool_execution_start events", async () => {
+  it("emits conversation tool call logs for tool_execution_start events", async () => {
     const logFn = vi.fn();
     mockPrompt.mockResolvedValue(undefined);
     mockSubscribe.mockImplementation((callback: Function) => {
@@ -254,7 +254,11 @@ describe("runSessionLoop", () => {
 
     await runSessionLoop("Test", makeOpts({ log: logFn }));
 
-    expect(logFn).toHaveBeenCalledWith("info", "bash", { cmd: "gh issue list" });
+    expect(logFn).toHaveBeenCalledWith(
+      "info",
+      "conversation.tool_call",
+      expect.objectContaining({ tool: "bash", cmd: "gh issue list" }),
+    );
   });
 
   it("passes providerKeys correctly without error", async () => {
@@ -381,18 +385,18 @@ describe("runSessionLoop", () => {
     // message_start should have been logged as debug
 
     expect(log).toHaveBeenCalledWith(
-      "debug", "event",
-      expect.objectContaining({ type: "message_start", role: "assistant" })
+      "debug", "conversation.event",
+      expect.objectContaining({ eventType: "message_start", role: "assistant" })
     );
     // message_end should have been logged as debug
     expect(log).toHaveBeenCalledWith(
-      "debug", "event",
-      expect.objectContaining({ type: "message_end", stopReason: "end_turn" })
+      "debug", "conversation.event",
+      expect.objectContaining({ eventType: "message_end", stopReason: "end_turn" })
     );
     // turn_end should have been logged as debug
     expect(log).toHaveBeenCalledWith(
-      "debug", "event",
-      expect.objectContaining({ type: "turn_end", turnResult: expect.any(String) })
+      "debug", "conversation.event",
+      expect.objectContaining({ eventType: "turn_end", turnResult: expect.any(String) })
     );
     // error event should have been logged
     expect(log).toHaveBeenCalledWith(
@@ -420,11 +424,14 @@ describe("runSessionLoop", () => {
 
     await runSessionLoop("Test prompt", makeOpts({ log }));
 
-    // Should log "assistant" info with the accumulated text
-    expect(log).toHaveBeenCalledWith("info", "assistant", { text: "Hello from assistant" });
+    expect(log).toHaveBeenCalledWith(
+      "info",
+      "conversation.message",
+      expect.objectContaining({ text: "Hello from assistant", role: "assistant" }),
+    );
   });
 
-  it("logs non-bash tool start as debug tool start", async () => {
+  it("logs non-bash tool start as conversation tool call", async () => {
     const log = vi.fn();
     mockPrompt.mockResolvedValue(undefined);
     mockSubscribe.mockImplementation((callback: Function) => {
@@ -445,7 +452,10 @@ describe("runSessionLoop", () => {
 
     await runSessionLoop("Test", makeOpts({ log }));
 
-    // Should log as debug "tool start" (not "bash")
-    expect(log).toHaveBeenCalledWith("debug", "tool start", { tool: "web_search" });
+    expect(log).toHaveBeenCalledWith(
+      "info",
+      "conversation.tool_call",
+      expect.objectContaining({ tool: "web_search", toolCallId: "call-search" }),
+    );
   });
 });

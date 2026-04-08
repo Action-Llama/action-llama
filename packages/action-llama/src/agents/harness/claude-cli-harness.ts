@@ -172,7 +172,17 @@ export class ClaudeCliHarness implements AgentHarness {
         }
 
         if (parsed.message?.stop_reason && parsed.message?.stop_reason !== "tool_use") {
-          pushEvent({ type: "log", level: "info", message: "message_end" });
+          pushEvent({
+            type: "log",
+            level: "debug",
+            message: "conversation.event",
+            data: {
+              eventType: "message_end",
+              role: parsed.message?.role || "assistant",
+              stopReason: parsed.message?.stop_reason,
+              raw: parsed,
+            },
+          });
         }
         return;
       }
@@ -194,6 +204,7 @@ export class ClaudeCliHarness implements AgentHarness {
             toolCallId: String(block.tool_use_id || "tool"),
             result,
             isError: !!block.is_error,
+            raw: parsed,
           });
         }
       }

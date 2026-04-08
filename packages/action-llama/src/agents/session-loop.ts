@@ -43,6 +43,16 @@ const MAX_PASSES = 3;
 const DEFAULT_BACKOFF_MS = 30_000;
 const MAX_BACKOFF_MS = 300_000;
 
+function extractToolResultText(result: string): string {
+  try {
+    const parsed = JSON.parse(result);
+    if (parsed?.content?.[0]?.text) return String(parsed.content[0].text);
+  } catch {
+    // Fall back to raw result.
+  }
+  return result;
+}
+
 export async function runSessionLoop(
   prompt: string,
   opts: SessionLoopOpts,
@@ -90,7 +100,7 @@ export async function runSessionLoop(
       session.subscribe((event) => {
         eventCount++;
         if (event.type !== "message_update") {
-          const extra: Record<string, any> = { type: event.type, eventCount };
+          const extra: Record<string, any> = { eventType: event.type, eventCount, raw: event };
           if (event.type === "message_start" || event.type === "message_end") {
             extra.role = (event as any).role || (event as any).message?.role;
             extra.content = JSON.stringify((event as any).content || (event as any).message?.content || []).slice(0, 500);
@@ -101,7 +111,7 @@ export async function runSessionLoop(
             const errorMessage = extractTurnEndError(event);
             if (errorMessage) extra.errorMessage = errorMessage;
           }
-          log("debug", "event", extra);
+          log("debug", "conversation.event", extra);
         }
         if ((event as any).type === "error") {
           log("error", "session error", { error: String((event as any).error || (event as any).message || JSON.stringify(event)) });
@@ -113,18 +123,26 @@ export async function runSessionLoop(
         }
         if (event.type === "message_end") {
           if (currentTurnText.trim()) {
-            log("info", "assistant", { text: currentTurnText.trim() });
+            log("info", "conversation.message", {
+              kind: "conversation",
+              role: (event as any).role || (event as any).message?.role || "assistant",
+              stopReason: (event as any).stopReason || (event as any).stop_reason,
+              text: currentTurnText.trim(),
+              raw: event,
+            });
           }
           currentTurnText = "";
         }
         if (event.type === "tool_execution_start") {
           const cmd = String(event.args?.command || "");
-          if (event.toolName === "bash") {
-            pendingCmds.set(event.toolCallId, cmd);
-            log("info", "bash", { cmd: cmd.slice(0, 200) });
-          } else {
-            log("debug", "tool start", { tool: event.toolName });
-          }
+          pendingCmds.set(event.toolCallId, cmd);
+          log("info", "conversation.tool_call", {
+            kind: "conversation",
+            tool: event.toolName,
+            toolCallId: event.toolCallId,
+            cmd,
+            raw: event,
+          });
         }
         if (event.type === "tool_execution_end") {
           const resultStr = typeof event.result === "string"
@@ -132,15 +150,21 @@ export async function runSessionLoop(
             : JSON.stringify(event.result);
           const originCmd = pendingCmds.get(event.toolCallId);
           pendingCmds.delete(event.toolCallId);
+          const resultText = extractToolResultText(resultStr);
+
+          log(event.isError ? "error" : "info", "conversation.tool_result", {
+            kind: "conversation",
+            tool: event.toolName,
+            toolCallId: event.toolCallId,
+            cmd: originCmd,
+            result: resultStr,
+            resultText,
+            isError: event.isError,
+            raw: event,
+          });
 
           if (event.isError) {
-            log("error", "tool error", { tool: event.toolName, cmd: originCmd?.slice(0, 200), result: resultStr.slice(0, 1000) });
-            let errorMsg = resultStr;
-            try {
-              const parsed = JSON.parse(resultStr);
-              if (parsed?.content?.[0]?.text) errorMsg = parsed.content[0].text;
-            } catch { /* use raw string */ }
-            if (isUnrecoverableError(errorMsg)) {
+            if (isUnrecoverableError(resultText)) {
               unrecoverableErrors++;
               if (unrecoverableErrors >= UNRECOVERABLE_THRESHOLD) {
                 log("error", "Aborting: repeated auth/permission failures — check credentials");
@@ -149,8 +173,6 @@ export async function runSessionLoop(
                 session.dispose();
               }
             }
-          } else {
-            log("debug", "tool done", { tool: event.toolName, resultLength: resultStr.length });
           }
         }
       });

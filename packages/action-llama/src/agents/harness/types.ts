@@ -30,6 +30,7 @@ export interface HarnessLogEvent {
 export interface HarnessTextDeltaEvent {
   type: "text_delta";
   delta: string;
+  raw?: unknown;
 }
 
 export interface HarnessToolStartEvent {
@@ -38,6 +39,7 @@ export interface HarnessToolStartEvent {
   toolCallId: string;
   /** For bash tools, the command being run */
   command?: string;
+  raw?: unknown;
 }
 
 export interface HarnessToolEndEvent {
@@ -46,6 +48,7 @@ export interface HarnessToolEndEvent {
   toolCallId: string;
   result: string;
   isError: boolean;
+  raw?: unknown;
 }
 
 export interface HarnessUsageEvent {
