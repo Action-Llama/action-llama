@@ -72,6 +72,7 @@ export class ClaudeCliHarness implements AgentHarness {
     const args = [
       "-p",
       prompt,
+      "--verbose",
       "--output-format",
       "stream-json",
       "--include-partial-messages",
