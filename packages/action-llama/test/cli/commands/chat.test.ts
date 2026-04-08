@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { makeTmpProject } from "../../helpers.js";
+import { makeTmpProject, makeModel } from "../../helpers.js";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "fs";
 import { join, resolve, dirname } from "path";
 import { tmpdir, homedir } from "os";
@@ -108,6 +108,34 @@ describe("chat", () => {
     expect(mockRun).toHaveBeenCalled();
     expect(capturedOptions.initialMessage).toContain("agent");
     expect(capturedOptions.initialMessage).toContain("What would you like to do");
+  });
+
+  it("skips credential loading when project model uses pi_auth authType", async () => {
+    // Covers line 368: `if (modelConfig.authType !== "pi_auth")` FALSE branch
+    // When a pi_auth model is used in project chat, credential loading is skipped entirely.
+    const dir = makeTmpProject({
+      modelDefs: { sonnet: makeModel({ authType: "pi_auth" }) },
+    });
+    await execute({ project: dir });
+
+    // Should complete successfully without any credential loading
+    expect(mockRun).toHaveBeenCalled();
+  });
+
+  it("uses default anthropic model config when globalConfig has no models section", async () => {
+    // Covers line 362: `globalConfig.models ? ... : []` FALSE branch
+    // and line 363-365: `modelNames.length > 0 ? ... : { provider: "anthropic", ... }` FALSE branch
+    // When no models are configured, falls back to default anthropic config.
+    const dir = mkdtempSync(join(tmpdir(), "al-nomodels-"));
+    // Write a minimal config.toml with no models section
+    const { writeFileSync: wfs, mkdirSync: mds } = await import("fs");
+    const { resolve: res } = await import("path");
+    // Empty config.toml — no models defined
+    wfs(res(dir, "config.toml"), "");
+    // No agents so we go through the no-agents path
+    await execute({ project: dir });
+
+    expect(mockRun).toHaveBeenCalled();
   });
 
   it("launches console with short initial message when no agents exist", async () => {
