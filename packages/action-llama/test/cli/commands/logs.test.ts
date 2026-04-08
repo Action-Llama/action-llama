@@ -248,6 +248,28 @@ describe("logs command", () => {
       expect(output[0]).toContain("permission denied");
     });
 
+    it("shows warning text details when present", async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
+      writeFileSync(logFile, makePinoLine({
+        level: 40,
+        msg: "claude stderr",
+        text: "Error: not authenticated",
+      }) + "\n");
+
+      const output: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => output.push(args.join(" "));
+
+      await execute("dev", { project: tmpDir, lines: "50" });
+
+      console.log = origLog;
+
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain("WARN: claude stderr");
+      expect(output[0]).toContain("Error: not authenticated");
+    });
+
     it("shows run completed in green", async () => {
       const date = new Date().toISOString().slice(0, 10);
       const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);

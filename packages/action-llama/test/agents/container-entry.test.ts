@@ -93,6 +93,7 @@ const mockCreateHarness = vi.fn().mockReturnValue({
 });
 const mockConsumeHarness = vi.fn().mockResolvedValue({
   outputText: "done",
+  aborted: false,
   allModelsExhausted: false,
 });
 vi.mock("../../src/agents/harness/index.js", () => ({
@@ -179,6 +180,7 @@ describe("container-entry", () => {
     mockReadSignals.mockReturnValue({ rerun: false, exitCode: undefined, returnValue: undefined });
     mockConsumeHarness.mockResolvedValue({
       outputText: "done",
+      aborted: false,
       allModelsExhausted: false,
     });
     mockHarnessRun.mockReturnValue((async function* () {})());
@@ -363,7 +365,19 @@ describe("container-entry", () => {
       // The onUnrecoverableAbort callback sets abortedDueToErrors=true
       mockConsumeHarness.mockImplementationOnce((_harness: any, _events: any, opts: any) => {
         opts.onUnrecoverableAbort?.();
-        return Promise.resolve({ outputText: "", allModelsExhausted: false });
+        return Promise.resolve({ outputText: "", aborted: false, allModelsExhausted: false });
+      });
+
+      const exitCode = await handleInvocation(init);
+      expect(exitCode).toBe(1);
+    });
+
+    it("returns 1 when the harness reports an aborted session", async () => {
+      const init = await makeInit();
+      mockConsumeHarness.mockResolvedValueOnce({
+        outputText: "",
+        aborted: true,
+        allModelsExhausted: false,
       });
 
       const exitCode = await handleInvocation(init);

@@ -174,7 +174,11 @@ function formatConversationEntry(entry: LogEntry, showAll = false): string | nul
   }
 
   if (entry.level >= 40) {
-    return `${time}  ${YELLOW}WARN: ${msg}${RESET}`;
+    const { level: _l, time: _t, msg: _m, name: _n, instance: _in, pid: _p, hostname: _h, ...extras } = entry;
+    const warnText = entry.text ? `\n          ${DIM}${String(entry.text).slice(0, 300)}${RESET}` : "";
+    const warnError = entry.error ? `\n          ${DIM}${String(entry.error).slice(0, 300)}${RESET}` : "";
+    const extraStr = Object.keys(extras).length > 0 ? `\n          ${DIM}${JSON.stringify(extras).slice(0, 300)}${RESET}` : "";
+    return `${time}  ${YELLOW}WARN: ${msg}${RESET}${warnText}${warnError}${extraStr}`;
   }
 
   // ── Session events (debug-level, visible with --all) ──

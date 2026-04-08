@@ -280,6 +280,11 @@ export async function handleInvocation(init: AgentInit): Promise<number> {
     return ExitCode.RATE_LIMITED;
   }
 
+  if (loopResult.aborted) {
+    emitLog("error", "agent session aborted");
+    return 1;
+  }
+
   // Read signal files written by al-rerun, al-status, al-return, al-exit
   const signals = readSignals(signalDir);
 
