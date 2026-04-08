@@ -365,6 +365,88 @@ describe("Chat WebSocket handler", () => {
     });
   });
 
+  describe("callable apiKey authentication", () => {
+    it("accepts connection when apiKey is a callable function returning the correct key", async () => {
+      // Covers line 269: `typeof apiKey === "function" ? await apiKey() : apiKey` TRUE branch
+      const callableApiKey = vi.fn().mockResolvedValue(TEST_API_KEY);
+
+      const server3 = createServer();
+      const mgr3 = new ChatSessionManager(5);
+      const wsState3 = attachChatWebSocket(server3, mgr3, callableApiKey, undefined, logger as any);
+      await new Promise<void>((resolve) => server3.listen(0, "127.0.0.1", resolve));
+      const port3 = (server3.address() as any).port;
+
+      try {
+        const session = mgr3.createSession("test-agent");
+        const ws = new WebSocket(`ws://127.0.0.1:${port3}/chat/ws/${session.sessionId}`, {
+          headers: { Authorization: `Bearer ${TEST_API_KEY}` },
+        });
+
+        await waitForOpen(ws);
+        expect(ws.readyState).toBe(WebSocket.OPEN);
+        expect(callableApiKey).toHaveBeenCalled();
+        ws.close();
+      } finally {
+        clearInterval(wsState3.cleanupInterval);
+        await new Promise<void>((resolve) => server3.close(() => resolve()));
+      }
+    });
+
+    it("rejects connection when callable apiKey returns undefined (currentKey undefined skips auth)", async () => {
+      // Covers line 269 TRUE branch + line 273 FALSE branch (currentKey === undefined skips Bearer check)
+      const callableApiKey = vi.fn().mockResolvedValue(undefined);
+
+      const server4 = createServer();
+      const mgr4 = new ChatSessionManager(5);
+      const wsState4 = attachChatWebSocket(server4, mgr4, callableApiKey, undefined, logger as any);
+      await new Promise<void>((resolve) => server4.listen(0, "127.0.0.1", resolve));
+      const port4 = (server4.address() as any).port;
+
+      try {
+        const session = mgr4.createSession("test-agent");
+        // Even with a valid-looking Bearer token, if currentKey is undefined the connection is rejected
+        const ws = new WebSocket(`ws://127.0.0.1:${port4}/chat/ws/${session.sessionId}`, {
+          headers: { Authorization: `Bearer ${TEST_API_KEY}` },
+        });
+
+        await waitForCloseOrError(ws);
+        expect(ws.readyState).not.toBe(WebSocket.OPEN);
+        expect(callableApiKey).toHaveBeenCalled();
+      } finally {
+        clearInterval(wsState4.cleanupInterval);
+        await new Promise<void>((resolve) => server4.close(() => resolve()));
+      }
+    });
+
+    it("rejects cookie auth when session store is set but getSession returns null", async () => {
+      // Covers line 284 FALSE branch: `if (session) return true` — session is null
+      const sessionStore = {
+        getSession: vi.fn().mockResolvedValue(null), // null → session not found
+      } as any;
+
+      const server5 = createServer();
+      const mgr5 = new ChatSessionManager(5);
+      const wsState5 = attachChatWebSocket(server5, mgr5, TEST_API_KEY, sessionStore, logger as any);
+      await new Promise<void>((resolve) => server5.listen(0, "127.0.0.1", resolve));
+      const port5 = (server5.address() as any).port;
+
+      try {
+        const session = mgr5.createSession("test-agent");
+        // Cookie with session token that doesn't exist in the session store
+        const ws = new WebSocket(`ws://127.0.0.1:${port5}/chat/ws/${session.sessionId}`, {
+          headers: { Cookie: "al_session=nonexistent-token" },
+        });
+
+        await waitForCloseOrError(ws);
+        expect(ws.readyState).not.toBe(WebSocket.OPEN);
+        expect(sessionStore.getSession).toHaveBeenCalledWith("nonexistent-token");
+      } finally {
+        clearInterval(wsState5.cleanupInterval);
+        await new Promise<void>((resolve) => server5.close(() => resolve()));
+      }
+    });
+  });
+
   describe("shutdownSession via idle cleanup", () => {
     it("calls stopContainer when idle session is cleaned up", async () => {
       // Create a new session manager and server so we can use fake timers
