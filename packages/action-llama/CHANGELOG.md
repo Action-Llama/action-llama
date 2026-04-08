@@ -1,5 +1,14 @@
 # @action-llama/action-llama
 
+## 0.26.15
+
+### Patch Changes
+
+- [`9ea03dd`](https://github.com/Action-Llama/action-llama/commit/9ea03dd49d478f149030452f7dcadb7074c73b8b) Thanks [@asselstine](https://github.com/asselstine)! - Fix Claude harness OAuth token injection by passing Anthropic OAuth credentials through `ANTHROPIC_AUTH_TOKEN` instead of `ANTHROPIC_API_KEY`-style auth, and cover the mapping with targeted credential setup tests.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.26.15
+
 ## 0.26.14
 
 ### Patch Changes
