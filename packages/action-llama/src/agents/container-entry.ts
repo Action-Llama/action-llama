@@ -256,6 +256,21 @@ export async function handleInvocation(init: AgentInit): Promise<number> {
   );
   const { outputText } = loopResult;
 
+  // Emit a structured session summary so the host can see why the model stopped.
+  // This is the key diagnostic log — it surfaces the stop reason, last tool states,
+  // and whether the session was productive, all at info level.
+  emitLog("info", "session ended", {
+    stopReason: loopResult.lastStopReason,
+    turnCount: loopResult.usage?.turnCount,
+    outputLength: outputText.length,
+    aborted: loopResult.aborted,
+    allModelsExhausted: loopResult.allModelsExhausted,
+    hasError: !!loopResult.errorMessage,
+    errorMessage: loopResult.errorMessage,
+    lastTools: loopResult.lastToolResults,
+    orphanedTools: loopResult.orphanedToolCalls?.length > 0 ? loopResult.orphanedToolCalls : undefined,
+  });
+
   clearTimeout(timer);
 
   // Run post hooks after LLM session, before container exits

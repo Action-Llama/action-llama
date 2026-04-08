@@ -14,6 +14,12 @@ export interface ConsumeResult {
   aborted: boolean;
   allModelsExhausted: boolean;
   errorMessage?: string;
+  /** The stop_reason from the final message_end event (e.g. "end_turn", "max_tokens"). */
+  lastStopReason?: string;
+  /** The last few tool calls with their error status, for terminal-state diagnostics. */
+  lastToolResults: Array<{ tool: string; cmd?: string; isError: boolean }>;
+  /** Tool calls that started but never completed — session ended mid-execution. */
+  orphanedToolCalls: Array<{ tool: string; cmd?: string }>;
 }
 
 function extractToolErrorText(result: string): string {
@@ -64,6 +70,9 @@ export async function consumeHarness(
   let aborted = false;
   let allModelsExhausted = false;
   let errorMessage: string | undefined;
+  let lastStopReason: string | undefined;
+  const lastToolResults: Array<{ tool: string; cmd?: string; isError: boolean }> = [];
+  const activeToolCalls = new Map<string, { tool: string; cmd?: string }>();
 
   try {
     for await (const event of events) {
@@ -73,6 +82,9 @@ export async function consumeHarness(
           const eventType = eventData?.eventType ?? eventData?.type;
           const isConversationEvent = event.message === "conversation.event" || event.message === "event";
           if (isConversationEvent && eventType === "message_end") {
+            if (eventData?.stopReason) {
+              lastStopReason = String(eventData.stopReason);
+            }
             if (currentTurnText.trim()) {
               log("info", "conversation.message", {
                 kind: "conversation",
@@ -99,6 +111,7 @@ export async function consumeHarness(
           if (event.command) {
             pendingCmds.set(event.toolCallId, event.command);
           }
+          activeToolCalls.set(event.toolCallId, { tool: event.toolName, cmd: event.command });
           log("info", "conversation.tool_call", {
             kind: "conversation",
             tool: event.toolName,
@@ -123,6 +136,10 @@ export async function consumeHarness(
             isError: event.isError,
             raw: toSerializable(event.raw),
           });
+
+          activeToolCalls.delete(event.toolCallId);
+          lastToolResults.push({ tool: event.toolName, cmd: originCmd, isError: event.isError });
+          if (lastToolResults.length > 3) lastToolResults.shift();
 
           if (event.isError) {
             if (isUnrecoverableError(resultText)) {
@@ -168,5 +185,8 @@ export async function consumeHarness(
     aborted,
     allModelsExhausted,
     errorMessage,
+    lastStopReason,
+    lastToolResults,
+    orphanedToolCalls: Array.from(activeToolCalls.values()),
   };
 }

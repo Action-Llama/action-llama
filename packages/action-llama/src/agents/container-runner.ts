@@ -137,6 +137,23 @@ export class ContainerAgentRunner {
         this._runError = String(data.error).slice(0, 200);
         this.statusTracker?.setAgentError(this.agentConfig.name, this._runError);
       }
+      // Surface session-ended summary to TUI so the stop reason is visible
+      if (msg === "session ended") {
+        const stop = data.stopReason ? `stop=${data.stopReason}` : "stop=unknown";
+        const turns = data.turnCount != null ? `, ${data.turnCount} turns` : "";
+        const lastTools = Array.isArray(data.lastTools)
+          ? data.lastTools.map((t: any) => `${t.isError ? "✗" : "✓"} ${t.tool}${t.cmd ? `(${String(t.cmd).slice(0, 30)})` : ""}`).join("  ")
+          : "";
+        const orphanedTools = Array.isArray(data.orphanedTools)
+          ? data.orphanedTools.map((t: any) => `⚠ ${t.tool}${t.cmd ? `(${String(t.cmd).slice(0, 30)})` : ""}`).join("  ")
+          : "";
+        const errSuffix = data.errorMessage ? ` — ${String(data.errorMessage).slice(0, 100)}` : "";
+        const abortSuffix = data.aborted ? " (aborted)" : data.allModelsExhausted ? " (all models exhausted)" : "";
+        let summary = `session ended: ${stop}${turns}${abortSuffix}${errSuffix}`;
+        if (lastTools) summary += `\n  last tools: ${lastTools}`;
+        if (orphanedTools) summary += `\n  orphaned (never finished): ${orphanedTools}`;
+        this.statusTracker?.addLogLine(this.agentConfig.name, summary);
+      }
       // Detect return value from signal-result logs
       if (msg === "signal-result" && data.type === "return" && data.value) {
         this._returnValue = data.value;
@@ -221,7 +238,23 @@ export class ContainerAgentRunner {
         runResult = "completed";
         this.logger.info({ exitCode, elapsed: `${elapsed}s` }, `${logPrefix ?? "container"} finished`);
       }
-      this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} ${runResult} (${elapsed}s)`);
+      const turnInfo = this._tokenUsage?.turnCount != null ? `, ${this._tokenUsage.turnCount} turns` : "";
+      const costInfo = this._tokenUsage?.cost != null ? `, $${this._tokenUsage.cost.toFixed(4)}` : "";
+      const errInfo = runError ? ` — ${runError.slice(0, 100)}` : "";
+      this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} ${runResult} (${elapsed}s${turnInfo}${costInfo})${errInfo}`);
+
+      // Structured run outcome — visible in `al logs` at info level.
+      // Aggregates exit code, result, token usage, and error into one line.
+      this.logger.info({
+        result: runResult,
+        exitCode,
+        elapsed: `${elapsed}s`,
+        hasReturnValue: !!this._returnValue,
+        turnCount: this._tokenUsage?.turnCount,
+        totalTokens: this._tokenUsage?.totalTokens,
+        cost: this._tokenUsage?.cost,
+        error: runError,
+      }, "run outcome");
     } catch (err: any) {
       this.logger.error({ err }, `${this.agentConfig.name} container monitoring failed`);
       runError = String(err?.message || err).slice(0, 200);

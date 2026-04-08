@@ -75,6 +75,12 @@ function formatTime(ts: number): string {
   return d.toLocaleTimeString("en-US", { hour12: false });
 }
 
+/** Extract all data fields from a log entry, excluding pino/internal metadata. */
+function entryDataFields(entry: LogEntry): Record<string, unknown> {
+  const { level: _l, time: _t, msg: _m, name: _n, instance: _i, pid: _p, hostname: _h, kind: _k, raw: _r, ...rest } = entry;
+  return rest;
+}
+
 function formatConversationEntry(entry: LogEntry, showAll = false): string | null {
   const time = `${DIM}${formatTime(entry.time)}${RESET}`;
   const instanceTag = entry.instance ? `${MAGENTA}[${entry.instance}]${RESET} ` : "";
@@ -99,9 +105,10 @@ function formatConversationEntry(entry: LogEntry, showAll = false): string | nul
   if (msg === "assistant" || msg === "conversation.message") {
     const text = String(entry.text || "");
     if (!text) return null;
+    const stopTag = entry.stopReason ? ` ${DIM}[stop=${entry.stopReason}]${RESET}` : "";
     // Indent multi-line text under the timestamp
     const lines = text.split("\n");
-    const first = `${time}  ${instanceTag}${WHITE}${BOLD}${lines[0]}${RESET}`;
+    const first = `${time}  ${instanceTag}${WHITE}${BOLD}${lines[0]}${RESET}${stopTag}`;
     if (lines.length === 1) return first;
     const rest = lines.slice(1).map((l) => `          ${WHITE}${l}${RESET}`).join("\n");
     return `${first}\n${rest}`;
@@ -147,30 +154,197 @@ function formatConversationEntry(entry: LogEntry, showAll = false): string | nul
     return `${time}  ${instanceTag}${MAGENTA}${BOLD}${msg}${RESET}${container}`;
   }
 
-  if (msg === "run completed" || msg === "run completed, rerun requested") {
-    const suffix = msg.includes("rerun") ? ` ${YELLOW}(rerun requested)${RESET}` : "";
-    return `${time}  ${GREEN}${BOLD}Run completed${RESET}${suffix}`;
+  // ── Prompt returned (model finished its turn loop) ──
+  if (msg === "prompt returned") {
+    const events = entry.eventCount != null ? `${entry.eventCount} events` : "";
+    return `${time}  ${instanceTag}${DIM}Prompt returned${RESET}${events ? ` ${DIM}(${events})${RESET}` : ""}`;
   }
 
+  // ── Token usage ──
+  if (msg === "token-usage") {
+    const input = entry.inputTokens ?? 0;
+    const output = entry.outputTokens ?? 0;
+    const cacheRead = entry.cacheReadTokens ?? 0;
+    const total = entry.totalTokens ?? 0;
+    const cost = entry.cost != null ? `$${Number(entry.cost).toFixed(4)}` : "";
+    const turns = entry.turnCount != null ? `${entry.turnCount} turns` : "";
+    const parts = [
+      `${CYAN}${total} tokens${RESET}`,
+      `${DIM}in=${input} out=${output}${cacheRead ? ` cache=${cacheRead}` : ""}${RESET}`,
+    ];
+    if (turns) parts.push(`${DIM}${turns}${RESET}`);
+    if (cost) parts.push(`${BOLD}${cost}${RESET}`);
+    return `${time}  ${instanceTag}${parts.join("  ")}`;
+  }
+
+  // ── Session ended summary (from container — why the model stopped) ──
+  if (msg === "session ended") {
+    const stop = entry.stopReason ? String(entry.stopReason) : "unknown";
+    const turns = entry.turnCount != null ? `${entry.turnCount} turns` : "";
+    const output = entry.outputLength != null ? `${entry.outputLength} chars output` : "";
+    const stopColor = stop === "end_turn" ? GREEN : stop === "max_tokens" ? YELLOW : RED;
+    const parts: string[] = [`${time}  ${instanceTag}${BOLD}Session ended${RESET} ${stopColor}stop=${stop}${RESET}`];
+    const meta: string[] = [];
+    if (turns) meta.push(turns);
+    if (output) meta.push(output);
+    if (meta.length > 0) parts[0] += ` ${DIM}(${meta.join(", ")})${RESET}`;
+    if (entry.aborted) parts[0] += ` ${RED}(aborted)${RESET}`;
+    if (entry.allModelsExhausted) parts[0] += ` ${RED}(all models exhausted)${RESET}`;
+    if (entry.hasError) parts[0] += ` ${RED}(has error)${RESET}`;
+    if (entry.errorMessage) parts.push(`          ${RED}error: ${String(entry.errorMessage).slice(0, 300)}${RESET}`);
+    // Show last tool results for quick diagnosis of why the model stopped
+    const lastTools = entry.lastTools as Array<{ tool: string; cmd?: string; isError: boolean }> | undefined;
+    if (lastTools && lastTools.length > 0) {
+      const toolSummary = lastTools.map((t) => {
+        const icon = t.isError ? `${RED}✗${RESET}` : `${GREEN}✓${RESET}`;
+        const label = t.cmd ? `${t.tool}(${String(t.cmd).slice(0, 60)})` : t.tool;
+        return `${icon} ${label}`;
+      }).join("  ");
+      parts.push(`          ${DIM}last tools:${RESET} ${toolSummary}`);
+    }
+    // Show orphaned tool calls (started but never completed)
+    const orphanedTools = entry.orphanedTools as Array<{ tool: string; cmd?: string }> | undefined;
+    if (orphanedTools && orphanedTools.length > 0) {
+      const orphanSummary = orphanedTools.map((t) => {
+        const label = t.cmd ? `${t.tool}(${String(t.cmd).slice(0, 60)})` : t.tool;
+        return `${YELLOW}⚠${RESET} ${label}`;
+      }).join("  ");
+      parts.push(`          ${RED}orphaned (started, never finished):${RESET} ${orphanSummary}`);
+    }
+    return parts.join("\n");
+  }
+
+  // ── Run outcome (host-side summary — final verdict) ──
+  if (msg === "run outcome") {
+    const result = String(entry.result || "unknown");
+    const resultColor = result === "completed" ? GREEN : result === "rerun" ? YELLOW : RED;
+    const exitCode = entry.exitCode != null ? `exit=${entry.exitCode}` : "";
+    const elapsed = entry.elapsed ? `${entry.elapsed}` : "";
+    const turns = entry.turnCount != null ? `${entry.turnCount} turns` : "";
+    const tokens = entry.totalTokens != null ? `${entry.totalTokens} tokens` : "";
+    const cost = entry.cost != null ? `$${Number(entry.cost).toFixed(4)}` : "";
+    const meta = [exitCode, elapsed, turns, tokens, cost].filter(Boolean).join(", ");
+    const errStr = entry.error ? `\n          ${RED}${String(entry.error).slice(0, 300)}${RESET}` : "";
+    return `${time}  ${instanceTag}${resultColor}${BOLD}▶ Run ${result}${RESET}${meta ? ` ${DIM}(${meta})${RESET}` : ""}${errStr}`;
+  }
+
+  // ── Run completed (container-side — before signals) ──
+  if (msg === "run completed" || msg === "run completed, rerun requested") {
+    const outputLen = entry.outputLength != null ? ` ${DIM}(${entry.outputLength} chars)${RESET}` : "";
+    const suffix = msg.includes("rerun") ? ` ${YELLOW}(rerun requested)${RESET}` : "";
+    return `${time}  ${instanceTag}${GREEN}${BOLD}Run completed${RESET}${outputLen}${suffix}`;
+  }
+
+  // ── Container lifecycle (host-side) ──
   if (msg === "container launched") {
     const container = entry.container ? ` ${DIM}${entry.container}${RESET}` : "";
-    return `${time}  ${DIM}Container launched${container}${RESET}`;
+    return `${time}  ${instanceTag}${DIM}Container launched${container}${RESET}`;
   }
 
-  if (msg === "container finished" || msg === "container finished (rerun requested)") {
+  if (msg.includes("container") && msg.includes("finished")) {
+    const exitCode = entry.exitCode != null ? `exit=${entry.exitCode}` : "";
+    const elapsed = entry.elapsed ? `${entry.elapsed}` : "";
+    const meta = [exitCode, elapsed].filter(Boolean).join(", ");
+    const rerun = msg.includes("rerun") ? ` ${YELLOW}(rerun requested)${RESET}` : "";
+    return `${time}  ${instanceTag}${DIM}Container finished${meta ? ` (${meta})` : ""}${RESET}${rerun}`;
+  }
+
+  if (msg.includes("container") && msg.includes("exited with error")) {
+    const exitCode = entry.exitCode != null ? ` exit=${entry.exitCode}` : "";
     const elapsed = entry.elapsed ? ` ${DIM}(${entry.elapsed})${RESET}` : "";
-    return `${time}  ${DIM}Container finished${elapsed}${RESET}`;
+    return `${time}  ${instanceTag}${RED}${BOLD}Container exited with error${exitCode}${RESET}${elapsed}`;
+  }
+
+  if (msg.includes("container") && msg.includes("killed")) {
+    const exitCode = entry.exitCode != null ? ` exit=${entry.exitCode}` : "";
+    const elapsed = entry.elapsed ? ` ${DIM}(${entry.elapsed})${RESET}` : "";
+    return `${time}  ${instanceTag}${YELLOW}${BOLD}Container killed (abort)${exitCode}${RESET}${elapsed}`;
   }
 
   // ── Container/session setup messages ──
   if (msg === "container starting") {
     const agentName = String(entry.agentName || "");
     const modelId = entry.modelId ? ` ${DIM}model=${entry.modelId}${RESET}` : "";
-    return `${time}  ${MAGENTA}${BOLD}Container starting: ${agentName}${RESET}${modelId}`;
+    return `${time}  ${instanceTag}${MAGENTA}${BOLD}Container starting: ${agentName}${RESET}${modelId}`;
   }
 
-  if (msg === "creating agent session" || msg === "session created, sending prompt") {
-    return `${time}  ${DIM}${msg}${RESET}`;
+  if (msg === "creating agent session") {
+    const model = entry.model ? ` ${DIM}model=${entry.model}${RESET}` : "";
+    const thinking = entry.thinking ? ` ${DIM}thinking=${entry.thinking}${RESET}` : "";
+    return `${time}  ${instanceTag}${DIM}creating agent session${RESET}${model}${thinking}`;
+  }
+
+  if (msg === "session created, sending prompt") {
+    return `${time}  ${instanceTag}${DIM}${msg}${RESET}`;
+  }
+
+  // ── Rate limiting / model fallback ──
+  if (msg === "rate limited, trying next model") {
+    const provider = entry.provider ? String(entry.provider) : "";
+    const model = entry.model ? String(entry.model) : "";
+    return `${time}  ${instanceTag}${YELLOW}Rate limited${RESET} ${DIM}${provider}/${model} — trying next model${RESET}`;
+  }
+
+  if (msg.includes("all models exhausted")) {
+    return `${time}  ${instanceTag}${RED}${BOLD}All models exhausted${RESET} ${DIM}— every model was rate-limited or overloaded${RESET}`;
+  }
+
+  if (msg.includes("backing off")) {
+    const pass = entry.pass != null ? `pass ${entry.pass}` : "";
+    const delay = entry.delayMs != null ? `${(Number(entry.delayMs) / 1000).toFixed(0)}s` : "";
+    return `${time}  ${instanceTag}${YELLOW}Backing off${RESET} ${DIM}${[pass, delay].filter(Boolean).join(", ")}${RESET}`;
+  }
+
+  // ── Abort / unrecoverable errors ──
+  if (msg.startsWith("Aborting:")) {
+    return `${time}  ${instanceTag}${RED}${BOLD}${msg}${RESET}`;
+  }
+
+  if (msg === "agent session aborted" || msg === "container timeout reached, self-terminating") {
+    const timeout = entry.timeoutSeconds != null ? ` ${DIM}(${entry.timeoutSeconds}s limit)${RESET}` : "";
+    return `${time}  ${instanceTag}${RED}${BOLD}${msg}${RESET}${timeout}`;
+  }
+
+  // ── Signal results ──
+  if (msg === "signal-result") {
+    const sigType = entry.type ? String(entry.type) : "unknown";
+    if (sigType === "return") {
+      const val = entry.value ? ` ${DIM}${String(entry.value).slice(0, 200)}${RESET}` : "";
+      return `${time}  ${instanceTag}${GREEN}↩ return${RESET}${val}`;
+    }
+    if (sigType === "rerun") {
+      return `${time}  ${instanceTag}${YELLOW}↻ rerun requested${RESET}`;
+    }
+    if (sigType === "exit") {
+      const code = entry.exitCode != null ? ` code=${entry.exitCode}` : "";
+      const reason = entry.reason ? ` ${DIM}${entry.reason}${RESET}` : "";
+      return `${time}  ${instanceTag}${RED}⏹ exit signal${code}${RESET}${reason}`;
+    }
+    return `${time}  ${instanceTag}${DIM}signal: ${sigType}${RESET}`;
+  }
+
+  // ── Agent terminated with exit signal ──
+  if (msg === "agent terminated with exit signal") {
+    const code = entry.exitCode != null ? ` exit=${entry.exitCode}` : "";
+    const reason = entry.reason ? ` ${DIM}(${entry.reason})${RESET}` : "";
+    return `${time}  ${instanceTag}${RED}${BOLD}Agent terminated${code}${RESET}${reason}`;
+  }
+
+  // ── Hook execution ──
+  if (msg === "hook started" || msg === "hook completed" || msg === "hook failed") {
+    const hook = entry.hook ? String(entry.hook) : "";
+    const phase = entry.phase ? String(entry.phase) : "";
+    if (msg === "hook failed") {
+      const err = entry.error ? ` ${DIM}${String(entry.error).slice(0, 200)}${RESET}` : "";
+      return `${time}  ${instanceTag}${RED}✗ ${phase} hook failed: ${hook}${RESET}${err}`;
+    }
+    return `${time}  ${instanceTag}${DIM}${phase} hook ${msg.split(" ")[1]}: ${hook}${RESET}`;
+  }
+
+  // ── Run failed (container-side error) ──
+  if (msg === "run failed") {
+    const err = entry.error ? String(entry.error) : "unknown error";
+    return `${time}  ${instanceTag}${RED}${BOLD}Run failed${RESET}\n          ${RED}${err.slice(0, 300)}${RESET}`;
   }
 
   // ── Errors and warnings ──
@@ -178,27 +352,27 @@ function formatConversationEntry(entry: LogEntry, showAll = false): string | nul
     // Show error details from any common key: pino's `err`, container's `error`/`stack`, or generic extras
     const errMsg = entry.error ?? entry.err;
     const stack = entry.stack;
-    const { level: _l, time: _t, msg: _m, name: _n, instance: _in, pid: _p, hostname: _h, err: _e, error: _er, stack: _s, ...extras } = entry;
+    const { level: _l, time: _t, msg: _m, name: _n, instance: _in, pid: _p, hostname: _h, err: _e, error: _er, stack: _s, kind: _k, raw: _r, ...extras } = entry;
     const parts: string[] = [];
     if (errMsg) parts.push(String(errMsg));
     if (stack) parts.push(`${DIM}${String(stack)}${RESET}`);
-    if (Object.keys(extras).length > 0) parts.push(`${DIM}${JSON.stringify(extras).slice(0, 300)}${RESET}`);
+    if (Object.keys(extras).length > 0) parts.push(`${DIM}${JSON.stringify(extras).slice(0, 500)}${RESET}`);
     const detail = parts.length > 0 ? `\n          ${parts.join("\n          ")}` : "";
-    return `${time}  ${RED}${BOLD}ERROR: ${msg}${RESET}${detail}`;
+    return `${time}  ${instanceTag}${RED}${BOLD}ERROR: ${msg}${RESET}${detail}`;
   }
 
   if (entry.level >= 40) {
-    const { level: _l, time: _t, msg: _m, name: _n, instance: _in, pid: _p, hostname: _h, ...extras } = entry;
+    const { level: _l, time: _t, msg: _m, name: _n, instance: _in, pid: _p, hostname: _h, kind: _k, raw: _r, ...extras } = entry;
     const warnText = entry.text ? `\n          ${DIM}${String(entry.text).slice(0, 300)}${RESET}` : "";
     const warnError = entry.error ? `\n          ${DIM}${String(entry.error).slice(0, 300)}${RESET}` : "";
     const extraStr = Object.keys(extras).length > 0 ? `\n          ${DIM}${JSON.stringify(extras).slice(0, 300)}${RESET}` : "";
-    return `${time}  ${YELLOW}WARN: ${msg}${RESET}${warnText}${warnError}${extraStr}`;
+    return `${time}  ${instanceTag}${YELLOW}WARN: ${msg}${RESET}${warnText}${warnError}${extraStr}`;
   }
 
   // ── Session events (debug-level, visible with --all) ──
   if (msg === "event" || msg === "conversation.event") {
     const evType = String(entry.eventType || entry.type || "unknown");
-    const parts: string[] = [`${time}  ${GRAY}▪ ${evType}${RESET}`];
+    const parts: string[] = [`${time}  ${instanceTag}${GRAY}▪ ${evType}${RESET}`];
     if (entry.role) parts[0] += ` ${DIM}role=${entry.role}${RESET}`;
     if (entry.stopReason) parts[0] += ` ${DIM}stop=${entry.stopReason}${RESET}`;
     if (entry.content) {
@@ -222,8 +396,10 @@ function formatConversationEntry(entry: LogEntry, showAll = false): string | nul
     return `${time}  ${GRAY}✓ ${tool}${RESET}${len}`;
   }
 
-  // ── Catch-all for other info messages ──
-  return `${time}  ${DIM}${msg}${RESET}`;
+  // ── Catch-all: show the message AND any data fields so nothing is ever hidden ──
+  const data = entryDataFields(entry);
+  const dataStr = Object.keys(data).length > 0 ? ` ${DIM}${JSON.stringify(data).slice(0, 400)}${RESET}` : "";
+  return `${time}  ${instanceTag}${DIM}${msg}${RESET}${dataStr}`;
 }
 
 // ── Run header ───────────────────────────────────────────────────────────────

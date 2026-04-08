@@ -77,6 +77,9 @@ export class PiHarness implements AgentHarness {
         let eventCount = 0;
         const pendingCmds = new Map<string, string>();
 
+        let lastStopReason: string | undefined;
+        let pendingToolStarts = 0;
+
         session.subscribe((event: any) => {
           eventCount++;
 
@@ -86,7 +89,37 @@ export class PiHarness implements AgentHarness {
             if (event.type === "message_start" || event.type === "message_end") {
               extra.role = event.role || event.message?.role;
               extra.content = JSON.stringify(event.content || event.message?.content || []).slice(0, 500);
-              extra.stopReason = event.stopReason || event.stop_reason;
+              // Pi library doesn't expose stopReason on message_end events directly.
+              // Try multiple paths: direct field, nested in message, or from the API response.
+              const sr = event.stopReason || event.stop_reason
+                || event.message?.stopReason || event.message?.stop_reason
+                || event.message?.stop_reason;
+              if (sr) {
+                extra.stopReason = sr;
+                lastStopReason = String(sr);
+              }
+            }
+            // agent_end fires when the entire prompt() call completes.
+            // This is our best signal that the model stopped.
+            if (event.type === "agent_end") {
+              // If we have pending tool starts without matching ends, the session
+              // ended with orphaned tool calls — the model returned end_turn mid-execution.
+              if (pendingToolStarts > 0) {
+                extra.orphanedToolCalls = pendingToolStarts;
+              }
+              // Infer stop reason: if the pi library doesn't surface it,
+              // we can at least distinguish "end_turn" (no pending tools) from
+              // "interrupted" (orphaned tools).
+              if (!lastStopReason) {
+                lastStopReason = pendingToolStarts > 0 ? "end_turn (orphaned tools)" : "end_turn";
+              }
+              // Emit as a synthetic message_end so the consumer captures lastStopReason
+              eventQueue.push({
+                type: "log",
+                level: "debug",
+                message: "conversation.event",
+                data: { eventType: "message_end", stopReason: lastStopReason, role: "assistant", inferred: true },
+              });
             }
             if (event.type === "turn_end") {
               extra.turnResult = JSON.stringify(event).slice(0, 500);
@@ -113,6 +146,7 @@ export class PiHarness implements AgentHarness {
 
           // Tool execution events
           if (event.type === "tool_execution_start") {
+            pendingToolStarts++;
             const cmd = String(event.args?.command || "");
             if (event.toolName === "bash") {
               pendingCmds.set(event.toolCallId, cmd);
@@ -127,6 +161,7 @@ export class PiHarness implements AgentHarness {
           }
 
           if (event.type === "tool_execution_end") {
+            pendingToolStarts = Math.max(0, pendingToolStarts - 1);
             const resultStr = typeof event.result === "string"
               ? event.result
               : JSON.stringify(event.result);

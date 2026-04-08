@@ -36,6 +36,12 @@ export interface SessionLoopResult {
   unrecoverableErrors: number;
   aborted: boolean;
   allModelsExhausted: boolean;
+  /** The stop_reason from the final message_end event (e.g. "end_turn", "max_tokens"). */
+  lastStopReason?: string;
+  /** The last few tool calls with their error status, for terminal-state diagnostics. */
+  lastToolResults: Array<{ tool: string; cmd?: string; isError: boolean }>;
+  /** Tool calls that started but never completed — session ended mid-execution. */
+  orphanedToolCalls: Array<{ tool: string; cmd?: string }>;
 }
 
 const MAX_PASSES = 3;
@@ -66,6 +72,9 @@ export async function runSessionLoop(
   let aborted = false;
   let anyModelSucceeded = false;
   let usage: TokenUsage | undefined;
+  let lastStopReason: string | undefined;
+  const lastToolResults: Array<{ tool: string; cmd?: string; isError: boolean }> = [];
+  const activeToolCalls = new Map<string, { tool: string; cmd?: string }>();
 
   for (let pass = 0; pass <= MAX_PASSES; pass++) {
     const availableModels = selectAvailableModels(models, circuitBreaker);
@@ -119,11 +128,13 @@ export async function runSessionLoop(
           currentTurnText += delta;
         }
         if (event.type === "message_end") {
+          const sr = (event as any).stopReason || (event as any).stop_reason;
+          if (sr) lastStopReason = String(sr);
           if (currentTurnText.trim()) {
             log("info", "conversation.message", {
               kind: "conversation",
               role: (event as any).role || (event as any).message?.role || "assistant",
-              stopReason: (event as any).stopReason || (event as any).stop_reason,
+              stopReason: sr,
               text: currentTurnText.trim(),
               raw: event,
             });
@@ -133,6 +144,7 @@ export async function runSessionLoop(
         if (event.type === "tool_execution_start") {
           const cmd = String(event.args?.command || "");
           pendingCmds.set(event.toolCallId, cmd);
+          activeToolCalls.set(event.toolCallId, { tool: event.toolName, cmd });
           log("info", "conversation.tool_call", {
             kind: "conversation",
             tool: event.toolName,
@@ -159,6 +171,10 @@ export async function runSessionLoop(
             isError: event.isError,
             raw: event,
           });
+
+          activeToolCalls.delete(event.toolCallId);
+          lastToolResults.push({ tool: event.toolName, cmd: originCmd, isError: event.isError });
+          if (lastToolResults.length > 3) lastToolResults.shift();
 
           if (event.isError) {
             if (isUnrecoverableError(resultText)) {
@@ -223,5 +239,5 @@ export async function runSessionLoop(
     log("error", "all models exhausted across all retry passes — every model was rate-limited or overloaded");
   }
 
-  return { outputText, usage, unrecoverableErrors, aborted, allModelsExhausted };
+  return { outputText, usage, unrecoverableErrors, aborted, allModelsExhausted, lastStopReason, lastToolResults, orphanedToolCalls: Array.from(activeToolCalls.values()) };
 }

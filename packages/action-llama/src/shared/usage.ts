@@ -73,8 +73,11 @@ export function sessionStatsToUsage(stats: any): TokenUsage {
     stats.usageMetrics?.cost ??       // Usage metrics object
     0;
 
-  // Turn count should be consistent across providers
-  const turnCount = stats.turnCount ?? 0;
+  // Turn count: pi-coding-agent uses assistantMessages, others may use turnCount
+  const turnCount =
+    stats.assistantMessages ??          // pi-coding-agent SessionStats
+    stats.turnCount ??                  // Direct property
+    0;
 
   return {
     inputTokens,
