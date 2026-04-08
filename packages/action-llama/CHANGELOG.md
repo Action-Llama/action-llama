@@ -1,5 +1,14 @@
 # @action-llama/action-llama
 
+## 0.26.13
+
+### Patch Changes
+
+- [`cdd3984`](https://github.com/Action-Llama/action-llama/commit/cdd398454f9fa4ebf9549a1e00a975b899f35d0f) Thanks [@asselstine](https://github.com/asselstine)! - Fix Claude harness runs so aborted Claude CLI sessions return a non-zero container exit instead of being logged as completed, and show Claude stderr details in the default `al logs` output.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.26.13
+
 ## 0.26.12
 
 ### Patch Changes
