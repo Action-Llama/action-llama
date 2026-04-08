@@ -1,5 +1,18 @@
 # @action-llama/action-llama
 
+## 0.27.1
+
+### Patch Changes
+
+- [#588](https://github.com/Action-Llama/action-llama/pull/588) [`813f8a0`](https://github.com/Action-Llama/action-llama/commit/813f8a0723f818bfbdd76a3cb6ff906b0f1fc242) Thanks [@asselstine](https://github.com/asselstine)! - When shared base images are building during startup, agents now report a `building` status in the TUI and dashboard instead of appearing idle. Closes [#585](https://github.com/Action-Llama/action-llama/issues/585).
+
+- [#587](https://github.com/Action-Llama/action-llama/pull/587) [`d8e0c94`](https://github.com/Action-Llama/action-llama/commit/d8e0c94affefc367b565e30ba3bff3cd745bbda7) Thanks [@asselstine](https://github.com/asselstine)! - The agents index no longer shows per-agent action buttons, and the enable/disable toggle is now available from the agent page.
+
+- [`57aac15`](https://github.com/Action-Llama/action-llama/commit/57aac155d54306070029a0256c3eba677ec5ea4c) Thanks [@asselstine](https://github.com/asselstine)! - Surface richer agent session diagnostics: stop reason, last tool calls, orphaned tools, and token usage are now tracked end-to-end from the harness through the container to `al logs` output. The logs command formats session-ended summaries, run outcomes, rate-limit events, signals, and hook results with structured detail instead of raw JSON.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.27.1
+
 ## 0.27.0
 
 ### Minor Changes
