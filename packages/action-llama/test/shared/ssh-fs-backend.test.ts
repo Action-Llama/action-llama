@@ -51,6 +51,15 @@ describe("SshFilesystemBackend", () => {
       const value = await backend.read("github_token", "default", "token");
       expect(value).toBeUndefined();
     });
+
+    it("returns undefined when ssh succeeds but stdout is empty (empty file)", async () => {
+      mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+        cb(null, "   \n", "");
+      });
+
+      const value = await backend.read("github_token", "default", "token");
+      expect(value).toBeUndefined();
+    });
   });
 
   describe("write", () => {
@@ -120,6 +129,32 @@ describe("SshFilesystemBackend", () => {
       const entries = await backend.list();
       expect(entries).toEqual([]);
     });
+
+    it("returns empty array when stdout is empty but exitCode is 0", async () => {
+      mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+        cb(null, "", "");
+      });
+
+      const entries = await backend.list();
+      expect(entries).toEqual([]);
+    });
+
+    it("skips lines that do not have exactly 3 path parts", async () => {
+      mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+        cb(
+          null,
+          // valid entry
+          "~/.action-llama/credentials/github_token/default/token\n" +
+          // malformed entry (only 2 parts after stripping base)
+          "~/.action-llama/credentials/github_token/default\n",
+          "",
+        );
+      });
+
+      const entries = await backend.list();
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toEqual({ type: "github_token", instance: "default", field: "token" });
+    });
   });
 
   describe("readAll", () => {
@@ -148,6 +183,23 @@ describe("SshFilesystemBackend", () => {
       });
 
       const fields = await backend.readAll("github_token", "missing");
+      expect(fields).toBeUndefined();
+    });
+
+    it("returns undefined when all field reads return undefined (empty files)", async () => {
+      let callCount = 0;
+      mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+        callCount++;
+        if (callCount === 1) {
+          // ls succeeds, returns one field name
+          cb(null, "token\n", "");
+        } else {
+          // cat returns empty stdout (exitCode 0 but empty output)
+          cb(null, "", "");
+        }
+      });
+
+      const fields = await backend.readAll("github_token", "default");
       expect(fields).toBeUndefined();
     });
   });

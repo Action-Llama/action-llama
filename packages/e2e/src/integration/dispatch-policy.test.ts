@@ -8,7 +8,7 @@
  *
  * The function has 7 distinct code paths based on:
  *   1. isPaused() → rejected ("scheduler is paused")
- *   2. isAgentEnabled() returns false → queued (cause: "agent-disabled")
+ *   2. isAgentEnabled() returns false → rejected ("agent is disabled")
  *   3. pool undefined + queueWhenBusy=true → queued (cause: "pool-unavailable")
  *   4. pool undefined + queueWhenBusy=false → rejected ("runner pool not available")
  *   5. pool.size === 0 → rejected ("agent is disabled (scale=0)")
@@ -92,7 +92,7 @@ describe("integration: dispatchOrQueue (no Docker required)", () => {
 
   // ── isAgentEnabled guard ───────────────────────────────────────────────────
 
-  it("returns queued with cause='agent-disabled' when isAgentEnabled returns false", () => {
+  it("returns rejected when isAgentEnabled returns false", () => {
     const queue = makeWorkQueue();
     const result = dispatchOrQueue(
       "disabled-agent",
@@ -103,9 +103,9 @@ describe("integration: dispatchOrQueue (no Docker required)", () => {
         isAgentEnabled: (_name: string) => false,
       },
     );
-    expect(result.action).toBe("queued");
-    expect(result.cause).toBe("agent-disabled");
-    expect(queue.items.length).toBe(1);
+    expect(result.action).toBe("rejected");
+    expect(result.reason).toBe("agent is disabled");
+    expect(queue.items.length).toBe(0);
   });
 
   it("proceeds past isAgentEnabled when it returns true", () => {

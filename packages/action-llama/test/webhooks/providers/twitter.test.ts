@@ -576,6 +576,180 @@ describe("TwitterWebhookProvider", () => {
       expect(ctx).not.toBeNull();
       expect(ctx!.timestamp).toBeDefined();
     });
+
+    it("follow_events: uses base.timestamp when created_timestamp is missing", () => {
+      const body = {
+        for_user_id: "123456",
+        follow_events: [
+          {
+            // no created_timestamp — forces the false branch at line 143
+            type: "follow",
+            source: { screen_name: "alice", id: "111" },
+            target: { screen_name: "bob", id: "222" },
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      // Should use base.timestamp (set in parseEvent from Date.now())
+      expect(ctx!.timestamp).toBeDefined();
+      expect(ctx!.title).toContain("followed");
+    });
+
+    it("unfollow_events: uses base.timestamp when created_timestamp is missing", () => {
+      const body = {
+        for_user_id: "123456",
+        unfollow_events: [
+          {
+            // no created_timestamp — forces the false branch at line 154
+            type: "unfollow",
+            source: { screen_name: "alice", id: "111" },
+            target: { screen_name: "bob", id: "222" },
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.timestamp).toBeDefined();
+      expect(ctx!.title).toContain("unfollowed");
+    });
+
+    it("block_events: uses 'unknown' as sender when source has neither screen_name nor id", () => {
+      const body = {
+        for_user_id: "123456",
+        block_events: [
+          {
+            created_timestamp: "1742000000000",
+            type: "block",
+            source: {},   // no screen_name, no id — forces ?? "unknown" at line 165
+            target: { screen_name: "bob" },
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.sender).toBe("unknown");
+    });
+
+    it("mute_events: uses 'unknown' as sender when source has neither screen_name nor id", () => {
+      const body = {
+        for_user_id: "123456",
+        mute_events: [
+          {
+            created_timestamp: "1742000000000",
+            type: "mute",
+            source: {},   // no screen_name, no id — forces ?? "unknown" at line 178
+            target: { screen_name: "bob" },
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.sender).toBe("unknown");
+    });
+
+    it("tweet_delete_events: uses 'unknown' when user_id, status.id, and timestamp_ms are all missing", () => {
+      const body = {
+        for_user_id: "123456",
+        tweet_delete_events: [
+          {
+            // no user_id → sender = "unknown"
+            // no status → status?.id = undefined → "unknown"
+            // no timestamp_ms → base.timestamp fallback
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.sender).toBe("unknown");
+      expect(ctx!.title).toContain("unknown");
+      expect(ctx!.timestamp).toBeDefined();
+    });
+
+    it("favorite_events: uses 'unknown' sender when user has no screen_name or id_str", () => {
+      const body = {
+        for_user_id: "123456",
+        favorite_events: [
+          {
+            // no user → user?.screen_name and user?.id_str both undefined → "unknown"
+            // no favorited_status → url is undefined (false branch)
+            // no created_at → base.timestamp fallback
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.sender).toBe("unknown");
+      expect(ctx!.timestamp).toBeDefined();
+      // url should be undefined (favorited_status?.user?.screen_name is falsy)
+      expect(ctx!.url).toBeUndefined();
+    });
+
+    it("follow_events: uses 'unknown' as sender and 'unknown' in title when source has neither screen_name nor id", () => {
+      const body = {
+        for_user_id: "123456",
+        follow_events: [
+          {
+            created_timestamp: "1742000000000",
+            source: {},   // no screen_name, no id → sender "unknown", title "unknown"
+            target: {},   // no screen_name → target "unknown" in title
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.sender).toBe("unknown");
+      expect(ctx!.title).toContain("unknown");
+    });
+
+    it("unfollow_events: uses 'unknown' as sender when source has neither screen_name nor id", () => {
+      const body = {
+        for_user_id: "123456",
+        unfollow_events: [
+          {
+            created_timestamp: "1742000000000",
+            source: {},   // no screen_name, no id → sender "unknown"
+            target: { screen_name: "bob" },
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.sender).toBe("unknown");
+    });
+
+    it("unfollow_events: uses 'unknown' in title for target when target has no screen_name", () => {
+      const body = {
+        for_user_id: "123456",
+        unfollow_events: [
+          {
+            created_timestamp: "1742000000000",
+            source: { screen_name: "alice" },
+            target: {},  // no screen_name → title has "unknown"
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      expect(ctx!.title).toContain("unfollowed @unknown");
+    });
+
+    it("uses 'unknown' as forUserId when body has no for_user_id field", () => {
+      const body = {
+        // no for_user_id — forces ?? "unknown" at line 55
+        tweet_create_events: [
+          {
+            id_str: "111",
+            text: "hello",
+            user: { screen_name: "alice", id_str: "789" },
+          },
+        ],
+      };
+      const ctx = provider.parseEvent({}, body);
+      expect(ctx).not.toBeNull();
+      // forUserId is placed in repo field on the base context
+      expect(ctx!.repo).toBe("unknown");
+    });
   });
 
   describe("matchesFilter", () => {

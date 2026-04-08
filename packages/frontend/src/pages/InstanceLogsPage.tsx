@@ -4,7 +4,6 @@ import { usePolling } from "../hooks/usePolling";
 import { getInstanceLogs, getLocks, summarizeLogs } from "../lib/api";
 import type { LogEntry } from "../lib/api";
 import { InstanceContext } from "../hooks/InstanceContext";
-import { SummarizeModal } from "../components/SummarizeModal";
 
 function formatLogEntry(entry: LogEntry): {
   text: string;
@@ -60,7 +59,6 @@ export function InstanceLogsPage() {
   const [summaryText, setSummaryText] = useState<string | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
-  const [showSummarizeModal, setShowSummarizeModal] = useState(false);
 
   // Poll locks
   const { data: locksData } = useQuery<{
@@ -113,12 +111,12 @@ export function InstanceLogsPage() {
     }
   }, [logs, following]);
 
-  const handleSummarize = useCallback(async (prompt: string) => {
+  const handleSummarize = useCallback(async () => {
     if (!name || !id) return;
     setSummaryLoading(true);
     setSummaryError(null);
     try {
-      const result = await summarizeLogs(name, id, prompt);
+      const result = await summarizeLogs(name, id);
       if (result.error) {
         setSummaryError(result.error);
       } else {
@@ -276,13 +274,6 @@ export function InstanceLogsPage() {
         </div>
       )}
 
-      {showSummarizeModal && (
-        <SummarizeModal
-          onClose={() => setShowSummarizeModal(false)}
-          onSubmit={handleSummarize}
-        />
-      )}
-
       {/* Log Viewer */}
       <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-200 dark:border-slate-800">
@@ -299,7 +290,7 @@ export function InstanceLogsPage() {
               {connected ? "Connected" : "Disconnected"}
             </span>
             <button
-              onClick={() => setShowSummarizeModal(true)}
+              onClick={handleSummarize}
               disabled={summaryLoading || logs.length === 0}
               className="px-2 py-1 text-xs rounded bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
             >

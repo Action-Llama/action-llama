@@ -93,7 +93,7 @@ describe("dispatchOrQueue", () => {
     expect(result.action).toBe("dispatched");
   });
 
-  it("queues when isAgentEnabled returns false", () => {
+  it("rejects when isAgentEnabled returns false", () => {
     const runner = makeRunner();
     const pool = makePool(runner);
     const workQueue = new MemoryWorkQueue<TestItem>(10);
@@ -101,12 +101,11 @@ describe("dispatchOrQueue", () => {
 
     const result = dispatchOrQueue("agent-a", { id: "1" }, { pool, workQueue, isAgentEnabled });
 
-    expect(result.action).toBe("queued");
-    if (result.action === "queued") {
-      expect(result.dropped).toBe(false);
-      expect(result.cause).toBe("agent-disabled");
+    expect(result.action).toBe("rejected");
+    if (result.action === "rejected") {
+      expect(result.reason).toBe("agent is disabled");
     }
-    expect(workQueue.size("agent-a")).toBe(1);
+    expect(workQueue.size("agent-a")).toBe(0);
   });
 
   it("dispatches when isAgentEnabled returns true", () => {

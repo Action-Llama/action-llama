@@ -189,6 +189,120 @@ describe("SlackWebhookProvider", () => {
       });
     });
 
+    it("uses bot_id as sender when user is not present", () => {
+      const body = {
+        type: "event_callback",
+        team_id: "T123",
+        event: {
+          type: "message",
+          bot_id: "B123",  // no user, but bot_id — forces line 62 else-if branch
+          text: "Bot message",
+          channel: "C789",
+        },
+      };
+      const result = provider.parseEvent({}, body);
+      expect(result).not.toBeNull();
+      expect(result!.sender).toBe("B123");
+    });
+
+    it("uses 'unknown' as sender when both user and bot_id are absent", () => {
+      const body = {
+        type: "event_callback",
+        team_id: "T123",
+        event: {
+          type: "message",
+          // no user, no bot_id → "unknown"
+          text: "Anonymous message",
+          channel: "C789",
+        },
+      };
+      const result = provider.parseEvent({}, body);
+      expect(result).not.toBeNull();
+      expect(result!.sender).toBe("unknown");
+    });
+
+    it("message event: comment is undefined when channel is absent", () => {
+      const body = {
+        type: "event_callback",
+        team_id: "T123",
+        event: {
+          type: "message",
+          user: "U456",
+          text: "Message without channel",
+          // no channel — forces line 77 false branch: comment = undefined
+        },
+      };
+      const result = provider.parseEvent({}, body);
+      expect(result).not.toBeNull();
+      expect(result!.comment).toBeUndefined();
+    });
+
+    it("app_mention event: comment is undefined when channel is absent", () => {
+      const body = {
+        type: "event_callback",
+        team_id: "T123",
+        event: {
+          type: "app_mention",
+          user: "U456",
+          text: "<@BOTID> hello without channel",
+          // no channel — forces line 84 false branch
+        },
+      };
+      const result = provider.parseEvent({}, body);
+      expect(result).not.toBeNull();
+      expect(result!.comment).toBeUndefined();
+    });
+
+    it("parses reaction_removed event callback", () => {
+      const body = {
+        type: "event_callback",
+        team_id: "T123",
+        event: {
+          type: "reaction_removed",
+          user: "U456",
+          reaction: "thumbsup",
+          item: { type: "message", channel: "C789" },
+        },
+      };
+      const result = provider.parseEvent({}, body);
+      expect(result).not.toBeNull();
+      expect(result!.event).toBe("reaction_removed");
+      expect(result!.title).toBe("thumbsup");
+      expect(result!.comment).toBe("message:C789");
+    });
+
+    it("reaction_added event: comment is undefined when item is absent", () => {
+      const body = {
+        type: "event_callback",
+        team_id: "T123",
+        event: {
+          type: "reaction_added",
+          user: "U456",
+          reaction: "wave",
+          // no item — forces line 92 false branch: comment = undefined
+        },
+      };
+      const result = provider.parseEvent({}, body);
+      expect(result).not.toBeNull();
+      expect(result!.comment).toBeUndefined();
+    });
+
+    it("reaction_added event: comment uses empty string when item has no channel", () => {
+      const body = {
+        type: "event_callback",
+        team_id: "T123",
+        event: {
+          type: "reaction_added",
+          user: "U456",
+          reaction: "wave",
+          item: { type: "file" },  // no channel — forces line 92: channel || ""
+        },
+      };
+      const result = provider.parseEvent({}, body);
+      expect(result).not.toBeNull();
+      expect(result!.comment).toBe("file:");
+    });
+
     it("returns null for url_verification type", () => {
       const body = {
         type: "url_verification",

@@ -329,33 +329,28 @@ describe("webhook command", () => {
       // Create agent with webhook that won't match
       createAgent("nonmatching-agent", {
         models: ["sonnet"],
-        webhooks: [{ source: "github", events: ["push"] }], // only push events
+        webhooks: [{ source: "test", events: ["push"] }], // only push events
       });
       writeFileSync(join(projectPath, "config.toml"), stringifyTOML({
         models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
-        webhooks: { github: { type: "github" } }
+        webhooks: { test: { type: "test" } }
       }));
 
       const fixture = {
-        headers: { "x-github-event": "issues" }, // issues event, not push
+        headers: { "x-test-event": "issues" }, // issues event, not push
         body: {
-          action: "opened",
+          event: "issues",
           repository: { full_name: "owner/repo" },
-          issue: {
-            number: 5, title: "Bug",
-            html_url: "https://github.com/owner/repo/issues/5",
-            user: { login: "author" }, labels: []
-          },
           sender: { login: "sender" }
         }
       };
       const fixturePath = join(tmpDir, "no-match-fixture.json");
       writeFileSync(fixturePath, JSON.stringify(fixture));
 
-      await execute("replay", fixturePath, { project: projectPath, source: "github", run: true });
+      await execute("replay", fixturePath, { project: projectPath, source: "test", run: true });
 
       // When --run is specified but no matched agents, shows a warning
-      expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining("Webhook Simulation Results"));
+      expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining("⚠️ No matched agents to run"));
     });
 
     it("detects linear source from x-linear-signature header", async () => {
@@ -801,6 +796,159 @@ describe("webhook command", () => {
         execute("replay", "/nonexistent/fixture-prod.json", { project: projectPath })
       ).rejects.toThrow("process.exit(1)");
       expect(exitSpy).toHaveBeenCalledWith(1);
+    });
+  });
+
+  describe("displayFilterDetails edge cases via mocked registry", () => {
+    it("skips filter detail output when filterDetails is an empty object (early-return path)", async () => {
+      // This exercises the `if (entries.length === 0) return;` branch in displayFilterDetails,
+      // which is normally unreachable because getFilterDetails always includes {type, source}.
+      // We mock dryRunDispatch to inject a binding with filterDetails: {}.
+      const { WebhookRegistry } = await import("../../../src/webhooks/registry.js");
+      const spyDryRun = vi.spyOn(WebhookRegistry.prototype, "dryRunDispatch").mockReturnValueOnce({
+        ok: true,
+        context: {
+          source: "test",
+          event: "test",
+          repo: "test/repo",
+          sender: "tester",
+          timestamp: new Date().toISOString(),
+        },
+        validationResult: "test",
+        bindings: [
+          {
+            agentName: "empty-filter-agent",
+            matched: false,
+            reasons: ["Filter conditions not met"],
+            filterDetails: {} as any, // empty — exercises the early return
+          },
+        ],
+      });
+
+      mkdirSync(resolve(projectPath, "agents"), { recursive: true });
+      writeFileSync(join(projectPath, "config.toml"), stringifyTOML({
+        models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+        webhooks: { test: { type: "test" } },
+      }));
+
+      const fixture = {
+        headers: { "x-test-event": "test" },
+        body: { source: "test", event: "test", repo: "test/repo", sender: "tester" },
+      };
+      const fixturePath = join(tmpDir, "empty-filter-fixture.json");
+      writeFileSync(fixturePath, JSON.stringify(fixture));
+
+      await execute("replay", fixturePath, { project: projectPath, source: "test" });
+
+      const allOutput = mockConsoleLog.mock.calls.map((c: any[]) => c[0]).join("\n");
+      // The empty filterDetails should NOT produce "Filter details:" output
+      expect(allOutput).toContain("🔍 Webhook Simulation Results");
+      expect(allOutput).not.toContain("Filter details:");
+      // The agent should appear in unmatched section
+      expect(allOutput).toContain("empty-filter-agent");
+
+      spyDryRun.mockRestore();
+    });
+
+    it("the triggerFn in each binding is a no-op predicate that returns true", async () => {
+      // The `execute` function creates `triggerFn = () => true` for each binding.
+      // That arrow function body is only counted as covered when invoked.
+      // We capture the binding via a spy on addBinding and then call trigger() directly.
+      const { WebhookRegistry } = await import("../../../src/webhooks/registry.js");
+
+      const capturedBindings: any[] = [];
+      const spyAddBinding = vi.spyOn(WebhookRegistry.prototype, "addBinding").mockImplementation(
+        (binding: any) => { capturedBindings.push(binding); }
+      );
+      const spyDryRun2 = vi.spyOn(WebhookRegistry.prototype, "dryRunDispatch").mockReturnValueOnce({
+        ok: true,
+        context: {
+          source: "test",
+          event: "test",
+          repo: "test/repo",
+          sender: "tester",
+          timestamp: new Date().toISOString(),
+        },
+        validationResult: "test",
+        bindings: [],
+      });
+
+      // Create an agent with a webhook trigger so loadAgentBindings creates a binding
+      createAgent("trigger-fn-agent", {
+        models: ["sonnet"],
+        webhooks: [{ source: "test", events: ["test"] }],
+      });
+      writeFileSync(join(projectPath, "config.toml"), stringifyTOML({
+        models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+        webhooks: { test: { type: "test" } },
+      }));
+
+      const fixture = {
+        headers: { "x-test-event": "test" },
+        body: { source: "test", event: "test", repo: "test/repo", sender: "tester" },
+      };
+      const fixturePath = join(tmpDir, "trigger-fn-fixture.json");
+      writeFileSync(fixturePath, JSON.stringify(fixture));
+
+      await execute("replay", fixturePath, { project: projectPath, source: "test" });
+
+      // The binding's trigger function should have been captured and should return true
+      expect(capturedBindings).toHaveLength(1);
+      expect(capturedBindings[0].trigger()).toBe(true);
+
+      spyAddBinding.mockRestore();
+      spyDryRun2.mockRestore();
+    });
+
+    it("handleInteractiveRun shows 'no matched agents' when bindings.filter returns empty despite some returning true", async () => {
+      // handleInteractiveRun is only called when result.bindings.some(b => b.matched) is true,
+      // but the function also checks matchedAgents.length === 0 after filtering.
+      // In normal use these two can't diverge, but we use a Proxy to make them diverge
+      // and exercise the defensive early-return branch (lines 289-290 of webhook.ts).
+      const { WebhookRegistry } = await import("../../../src/webhooks/registry.js");
+
+      // Create a Proxy array where `some` returns true (triggers the call to handleInteractiveRun)
+      // but `filter` returns [] (triggers the matchedAgents.length === 0 branch inside).
+      const trickBindings = new Proxy([] as any[], {
+        get(target: any[], prop: string | symbol, receiver: any) {
+          if (prop === "some") return () => true;
+          if (prop === "filter") return () => [];
+          return Reflect.get(target, prop, receiver);
+        },
+      });
+
+      const spyTrick = vi.spyOn(WebhookRegistry.prototype, "dryRunDispatch").mockReturnValueOnce({
+        ok: true,
+        context: {
+          source: "test",
+          event: "test",
+          repo: "test/repo",
+          sender: "tester",
+          timestamp: new Date().toISOString(),
+        },
+        validationResult: "test",
+        bindings: trickBindings,
+      });
+
+      mkdirSync(resolve(projectPath, "agents"), { recursive: true });
+      writeFileSync(join(projectPath, "config.toml"), stringifyTOML({
+        models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
+        webhooks: { test: { type: "test" } },
+      }));
+
+      const fixture = {
+        headers: { "x-test-event": "test" },
+        body: { source: "test", event: "test", repo: "test/repo", sender: "tester" },
+      };
+      const fixturePath = join(tmpDir, "trick-bindings-fixture.json");
+      writeFileSync(fixturePath, JSON.stringify(fixture));
+
+      await execute("replay", fixturePath, { project: projectPath, source: "test", run: true });
+
+      // The empty matchedAgents branch logs the "No matched agents to run" warning
+      expect(mockConsoleLog).toHaveBeenCalledWith("\n⚠️ No matched agents to run");
+
+      spyTrick.mockRestore();
     });
   });
 });

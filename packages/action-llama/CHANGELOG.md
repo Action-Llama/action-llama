@@ -1,5 +1,18 @@
 # @action-llama/action-llama
 
+## 0.26.10
+
+### Patch Changes
+
+- [`e4ffd78`](https://github.com/Action-Llama/action-llama/commit/e4ffd7808541413d670783c17b07d7e6fe5b9baf) Thanks [@asselstine](https://github.com/asselstine)! - Disabled agents now reject new work and have their work queue cleared on disable, instead of silently accumulating queued items.
+
+- [`5fabbb9`](https://github.com/Action-Llama/action-llama/commit/5fabbb9dcafd3cf142c681202d99d1495316f0ae) Thanks [@asselstine](https://github.com/asselstine)! - Summarize button now sends the default prompt immediately instead of opening a modal dialog.
+
+- [`18c3f5f`](https://github.com/Action-Llama/action-llama/commit/18c3f5ff4db2eb83c4f99245daab663d6e5b9679) Thanks [@asselstine](https://github.com/asselstine)! - Fix log summarize endpoint using wrong credential resolution path, causing 401 errors. The endpoint now uses the same AuthStorage pipeline as agent runners, checking all credential sources (runtime overrides, auth.json, OAuth with auto-refresh, env vars) instead of only one based on authType. Empty API keys now return a 500 with an actionable error message instead of silently hitting Anthropic.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.26.10
+
 ## 0.26.9
 
 ### Patch Changes

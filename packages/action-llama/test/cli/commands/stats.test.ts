@@ -321,3 +321,242 @@ describe("stats formatting — formatTokens", () => {
     expect(output).toContain("2.0M");
   });
 });
+
+describe("stats execute — edge cases for call graph and per-agent views", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockExistsSync.mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    expect(mockClose).toHaveBeenCalledOnce();
+  });
+
+  it("shows em dash for avgDurationMs null in call graph table (em dash path)", async () => {
+    mockQueryCallGraph.mockReturnValue([
+      {
+        callerAgent: "orchestrator",
+        targetAgent: "dev",
+        count: 3,
+        avgDepth: null,       // null → avgDepth ?? 0 path
+        avgDurationMs: null,  // null → em dash path
+      },
+    ]);
+
+    const output = await captureLog(() => execute({ ...BASE_OPTS, calls: true }));
+    expect(output).toContain("orchestrator");
+    // avgDurationMs null → em dash
+    expect(output).toContain("—");
+    // avgDepth null → ?? 0 → shows "0"
+    expect(output).toContain("0");
+  });
+
+  it("outputs null summary in JSON when per-agent summary not found (summaries[0] || null path)", async () => {
+    // JSON mode with empty summaries → summaries[0] is undefined → || null path
+    mockQueryAgentSummary.mockReturnValue([]);
+    mockQueryRuns.mockReturnValue([{ instance_id: "inst-1", trigger_type: "cron", result: "ok", duration_ms: 100, total_tokens: 50, cost_usd: 0.001, started_at: 1234567890 }]);
+
+    const output = await captureLog(() => execute({ ...BASE_OPTS, agent: "missing-agent", json: true }));
+    const parsed = JSON.parse(output);
+    expect(parsed).toHaveProperty("summary");
+    expect(parsed.summary).toBeNull();
+    expect(parsed).toHaveProperty("runs");
+  });
+
+  it("shows agent summary without run table when runs list is empty (runs.length === 0 path)", async () => {
+    // Agent has summary but no runs returned for the time window
+    mockQueryAgentSummary.mockReturnValue([
+      {
+        agentName: "dev",
+        totalRuns: 1,
+        okRuns: 1,
+        errorRuns: 0,
+        avgDurationMs: 5000,
+        totalTokens: 100,
+        totalCost: 0.001,
+        avgPreHookMs: null,
+        avgPostHookMs: null,
+      },
+    ]);
+    mockQueryRuns.mockReturnValue([]);  // empty runs list
+
+    const output = await captureLog(() => execute({ ...BASE_OPTS, agent: "dev" }));
+    // Summary line should appear
+    expect(output).toContain("dev");
+    expect(output).toContain("1 runs");
+    // Run table headers should NOT appear (runs.length === 0)
+    expect(output).not.toContain("INSTANCE");
+    expect(output).not.toContain("TRIGGER");
+  });
+});
+
+describe("stats execute — per-agent run table instance_id truncation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockExistsSync.mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    expect(mockClose).toHaveBeenCalledOnce();
+  });
+
+  it("truncates instance_id longer than 18 characters with ellipsis prefix", async () => {
+    mockQueryAgentSummary.mockReturnValue([
+      {
+        agentName: "dev",
+        totalRuns: 1,
+        okRuns: 1,
+        errorRuns: 0,
+        avgDurationMs: 5000,
+        totalTokens: 100,
+        totalCost: 0.001,
+        avgPreHookMs: null,
+        avgPostHookMs: null,
+      },
+    ]);
+    // instance_id that is exactly 19 chars — triggers the > 18 truncation branch
+    const longInstanceId = "inst-very-long-12345"; // 20 chars
+    mockQueryRuns.mockReturnValue([
+      {
+        instance_id: longInstanceId,
+        trigger_type: "cron",
+        result: "ok",
+        duration_ms: 5000,
+        total_tokens: 100,
+        cost_usd: 0.001,
+        started_at: new Date("2025-06-01T12:00:00Z").getTime(),
+      },
+    ]);
+
+    const output = await captureLog(() => execute({ ...BASE_OPTS, agent: "dev" }));
+    // Should show truncated form: "..." + last 15 chars
+    expect(output).toContain("...");
+    // The last 15 chars of "inst-very-long-12345" = "very-long-12345"
+    expect(output).toContain("very-long-12345");
+    // Full instance_id should NOT appear
+    expect(output).not.toContain("inst-very-long-12345");
+  });
+
+  it("does not truncate instance_id of exactly 18 characters", async () => {
+    mockQueryAgentSummary.mockReturnValue([
+      {
+        agentName: "dev",
+        totalRuns: 1,
+        okRuns: 1,
+        errorRuns: 0,
+        avgDurationMs: 5000,
+        totalTokens: 100,
+        totalCost: 0.001,
+        avgPreHookMs: null,
+        avgPostHookMs: null,
+      },
+    ]);
+    const exactInstance = "inst-exactly-18chr"; // 18 chars exactly
+    mockQueryRuns.mockReturnValue([
+      {
+        instance_id: exactInstance,
+        trigger_type: "cron",
+        result: "ok",
+        duration_ms: 5000,
+        total_tokens: 100,
+        cost_usd: 0.001,
+        started_at: new Date("2025-06-01T12:00:00Z").getTime(),
+      },
+    ]);
+
+    const output = await captureLog(() => execute({ ...BASE_OPTS, agent: "dev" }));
+    // Should show full instance_id without truncation
+    expect(output).toContain("inst-exactly-18chr");
+  });
+});
+
+describe("stats execute — global summary avgPreHookMs/avgPostHookMs non-null", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockExistsSync.mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    expect(mockClose).toHaveBeenCalledOnce();
+  });
+
+  it("shows formatted duration for avgPreHookMs when non-null", async () => {
+    mockQueryGlobalSummary.mockReturnValue({ totalRuns: 1, okRuns: 1, errorRuns: 0, totalTokens: 100, totalCost: 0.01 });
+    mockQueryAgentSummary.mockReturnValue([
+      {
+        agentName: "dev",
+        totalRuns: 1,
+        okRuns: 1,
+        errorRuns: 0,
+        avgDurationMs: 30000,
+        totalTokens: 100,
+        totalCost: 0.01,
+        avgPreHookMs: 2500,   // non-null → should show "2s" or "2500ms" formatted
+        avgPostHookMs: null,
+      },
+    ]);
+
+    const output = await captureLog(() => execute(BASE_OPTS));
+    // avgPreHookMs=2500ms → formatDuration(2500) = "3s" (rounded)
+    expect(output).toContain("AVG PRE");
+    // em dash should not appear for pre (it's non-null)
+    // The output line should contain a formatted duration for pre
+    // and "—" for post (null)
+    const lines = output.split("\n");
+    const dataLine = lines.find(l => l.includes("dev"));
+    expect(dataLine).toBeDefined();
+    // The post hook should show em dash
+    expect(dataLine).toContain("—");
+  });
+
+  it("shows formatted duration for avgPostHookMs when non-null", async () => {
+    mockQueryGlobalSummary.mockReturnValue({ totalRuns: 1, okRuns: 1, errorRuns: 0, totalTokens: 100, totalCost: 0.01 });
+    mockQueryAgentSummary.mockReturnValue([
+      {
+        agentName: "dev",
+        totalRuns: 1,
+        okRuns: 1,
+        errorRuns: 0,
+        avgDurationMs: 30000,
+        totalTokens: 100,
+        totalCost: 0.01,
+        avgPreHookMs: null,
+        avgPostHookMs: 5000,  // non-null → should show "5s" formatted
+      },
+    ]);
+
+    const output = await captureLog(() => execute(BASE_OPTS));
+    expect(output).toContain("AVG POST");
+    const lines = output.split("\n");
+    const dataLine = lines.find(l => l.includes("dev"));
+    expect(dataLine).toBeDefined();
+    // pre is null → em dash; post is non-null → formatted duration
+    expect(dataLine).toContain("—");
+  });
+
+  it("shows formatted durations for both avgPreHookMs and avgPostHookMs when both non-null", async () => {
+    mockQueryGlobalSummary.mockReturnValue({ totalRuns: 2, okRuns: 2, errorRuns: 0, totalTokens: 200, totalCost: 0.02 });
+    mockQueryAgentSummary.mockReturnValue([
+      {
+        agentName: "dev",
+        totalRuns: 2,
+        okRuns: 2,
+        errorRuns: 0,
+        avgDurationMs: 60000,
+        totalTokens: 200,
+        totalCost: 0.02,
+        avgPreHookMs: 1000,   // non-null → "1s"
+        avgPostHookMs: 2000,  // non-null → "2s"
+      },
+    ]);
+
+    const output = await captureLog(() => execute(BASE_OPTS));
+    const lines = output.split("\n");
+    const dataLine = lines.find(l => l.includes("dev"));
+    expect(dataLine).toBeDefined();
+    // Neither should show em dash (both are non-null)
+    // Two formatted durations should appear (1s and 2s)
+    expect(output).toContain("1s");
+    expect(output).toContain("2s");
+  });
+});

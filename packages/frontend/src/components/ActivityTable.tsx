@@ -2,7 +2,6 @@ import { useState, useRef, useCallback, memo } from "react";
 import { Link } from "react-router-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { TriggerBadge } from "./Badge";
-import { SummarizeModal } from "./SummarizeModal";
 import type { ActivityRow } from "../lib/api";
 import { summarizeLogs } from "../lib/api";
 import { fmtSmartTime } from "../lib/format";
@@ -77,7 +76,6 @@ const ActivityRowItem = memo(function ActivityRowItem({ row, agentNames }: Activ
   const [error, setError] = useState<string | null>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
-  const [showModal, setShowModal] = useState(false);
 
   const instanceId = row.instanceId ?? "";
   const isDeadLetter = row.result === "dead-letter";
@@ -86,12 +84,12 @@ const ActivityRowItem = memo(function ActivityRowItem({ row, agentNames }: Activ
   const canGenerate = canGenerateSummary(row);
   const isExpanded = !isCollapsed;
 
-  const handleSummarize = useCallback(async (prompt: string) => {
+  const handleSummarize = useCallback(async () => {
     if (!row.agentName || !instanceId) return;
     setIsLoading(true);
     setError(null);
     try {
-      const result = await summarizeLogs(row.agentName, instanceId, prompt);
+      const result = await summarizeLogs(row.agentName, instanceId);
       if (result.summary) setLocalSummary(result.summary);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to generate summary";
@@ -100,8 +98,6 @@ const ActivityRowItem = memo(function ActivityRowItem({ row, agentNames }: Activ
       setIsLoading(false);
     }
   }, [row.agentName, instanceId]);
-
-  const openModal = useCallback(() => setShowModal(true), []);
   const toggleExpanded = useCallback(() => setIsCollapsed((prev) => !prev), []);
   const toggleMobileExpanded = useCallback(() => setIsMobileExpanded((prev) => !prev), []);
 
@@ -161,12 +157,6 @@ const ActivityRowItem = memo(function ActivityRowItem({ row, agentNames }: Activ
         ROW_STATUS_STYLES[row.result] ?? ""
       }`}
     >
-      {showModal && (
-        <SummarizeModal
-          onClose={() => setShowModal(false)}
-          onSubmit={handleSummarize}
-        />
-      )}
       {/* Time cell */}
       <td
         className="pl-4 pr-3 py-2.5 text-slate-600 dark:text-slate-400 text-xs whitespace-nowrap align-top"
@@ -219,7 +209,7 @@ const ActivityRowItem = memo(function ActivityRowItem({ row, agentNames }: Activ
                   </button>
                   {isMobileExpanded && (
                     <button
-                      onClick={openModal}
+                      onClick={handleSummarize}
                       className="ml-2 text-xs text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 transition-colors"
                       title="Re-summarize"
                     >
@@ -229,7 +219,7 @@ const ActivityRowItem = memo(function ActivityRowItem({ row, agentNames }: Activ
                 </div>
               ) : (
                 <button
-                  onClick={openModal}
+                  onClick={handleSummarize}
                   className="text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
                 >
                   Summarize
@@ -265,7 +255,7 @@ const ActivityRowItem = memo(function ActivityRowItem({ row, agentNames }: Activ
             </button>
             {canGenerate && (
               <button
-                onClick={openModal}
+                onClick={handleSummarize}
                 className="shrink-0 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 transition-colors"
                 title="Re-summarize"
               >
@@ -275,7 +265,7 @@ const ActivityRowItem = memo(function ActivityRowItem({ row, agentNames }: Activ
           </div>
         ) : canGenerate ? (
           <button
-            onClick={openModal}
+            onClick={handleSummarize}
             className="text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
           >
             Summarize

@@ -33,7 +33,7 @@
  *     without throwing when Bearer token fetch fails (network error catch path)
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 
 // ── 1. GCP Logging API ────────────────────────────────────────────────────────
 
@@ -154,15 +154,68 @@ describe("integration: CloudflareApiError (no Docker required)", () => {
 });
 
 describe("integration: verifyToken (Cloudflare) — no Docker required", () => {
-  it("returns false when the token is invalid (network call fails)", async () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns false when the token is invalid (network error on both paths)", async () => {
     // verifyToken() calls cfFetch twice (user token path + account token path),
-    // both catch exceptions and return false. With a bogus token, both
-    // fetch() calls to api.cloudflare.com will either fail (ECONNREFUSED in
-    // offline environments) or return a non-ok HTTP response. Either way,
-    // verifyToken() catches and returns false.
+    // both catch exceptions and return false. Mock fetch to reject immediately
+    // to simulate ECONNREFUSED — avoids real network calls that may hang in
+    // network-restricted environments (see GitHub issue: verifyToken hangs in
+    // offline environments where connections don't fail with ECONNREFUSED).
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(
+      Object.assign(new Error("connect ECONNREFUSED 104.16.0.0:443"), { code: "ECONNREFUSED" })
+    );
     const result = await verifyToken("definitely-not-a-real-token-abc123");
     expect(result).toBe(false);
-  }, 30_000);
+  });
+
+  it("returns false when first path succeeds with non-active status and second path fails", async () => {
+    // verifyToken() first tries /user/tokens/verify.
+    // If it succeeds but returns status !== "active", it falls through.
+    // Then it tries /zones?per_page=1, which throws → catch returns false.
+    let callCount = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) {
+        // First call: /user/tokens/verify returns 200 with status="inactive"
+        return {
+          ok: true,
+          json: async () => ({ result: { status: "inactive" } }),
+          text: async () => '{"result":{"status":"inactive"}}',
+        } as unknown as Response;
+      }
+      // Second call: /zones?per_page=1 fails with non-ok response
+      return {
+        ok: false,
+        status: 401,
+        text: async () => "Unauthorized",
+      } as unknown as Response;
+    });
+    const result = await verifyToken("inactive-token");
+    expect(result).toBe(false);
+    expect(callCount).toBe(2);
+  });
+
+  it("returns false when both paths fail with HTTP errors", async () => {
+    // verifyToken() first tries /user/tokens/verify (non-ok → throws → caught).
+    // Then tries /zones?per_page=1 (non-ok → throws → caught → returns false).
+    let callCount = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      callCount++;
+      // Both calls return HTTP 401 — cfFetch throws for each, verifyToken catches
+      return {
+        ok: false,
+        status: 401,
+        text: async () => "Unauthorized",
+      } as unknown as Response;
+    });
+    const result = await verifyToken("bad-token");
+    expect(result).toBe(false);
+    // Both paths were attempted
+    expect(callCount).toBe(2);
+  });
 });
 
 describe("integration: twitterAutoSubscribe — no Docker required", () => {
