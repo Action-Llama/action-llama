@@ -35,7 +35,7 @@ Filesystem: The root filesystem is read-only. `/tmp` is the only writable direct
 Use `/tmp` for cloning repos, writing scratch files, and any other disk I/O.
 Your working directory is `/app/static` which contains your agent files.
 
-Environment variables: Use `setenv NAME value` to persist variables across bash commands.
+Environment variables: Plain `export` does not persist across bash commands. Use `al-export NAME value`, then start later commands with `. "$(al-export -f)"`.
 See the agent commands reference for details.
 </environment>
 
@@ -94,13 +94,13 @@ See [Credentials Reference](/reference/credentials) for all credential types and
 <environment>
 Filesystem: The root filesystem is read-only. `/tmp` is the only writable directory.
 ...
-Environment variables: Use `setenv NAME value` to persist variables across bash commands.
+Environment variables: Plain `export` does not persist across bash commands. Use `al-export NAME value`, then start later commands with `. "$(al-export -f)"`.
 </environment>
 ```
 
-Describes the filesystem constraints. In Docker mode, the agent learns that `/tmp` is writable and the root filesystem is read-only. In [host-user mode](/reference/agent-config#runtime), the agent's working directory is `/tmp/al-runs/<instance-id>/`. The `setenv` command persists environment variables in both modes.
+Describes the filesystem constraints. In Docker mode, the agent learns that `/tmp` is writable and the root filesystem is read-only. In [host-user mode](/reference/agent-config#runtime), the agent's working directory is `/tmp/al-runs/<instance-id>/`. The `al-export` command persists environment variables in both modes.
 
-See [Environment Commands](/reference/agent-commands#environment-commands) for `setenv` details, and [Container Filesystem](/concepts/agents#container-filesystem) for the full mount table.
+See [Environment Commands](/reference/agent-commands#environment-commands) for `al-export` details, and [Container Filesystem](/concepts/agents#container-filesystem) for the full mount table.
 
 ## Trigger Context
 

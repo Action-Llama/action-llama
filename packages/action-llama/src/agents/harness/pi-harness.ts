@@ -13,7 +13,6 @@ import type { ModelConfig } from "../../shared/config.js";
 import type { TokenUsage } from "../../shared/usage.js";
 import { sessionStatsToUsage } from "../../shared/usage.js";
 import { ModelCircuitBreaker, selectAvailableModels, isRateLimitError } from "../model-fallback.js";
-import { BASH_COMMAND_PREFIX } from "../bash-prefix.js";
 import type { AgentHarness, HarnessEvent, HarnessRunOpts } from "./types.js";
 import { extractTurnEndError } from "../turn-end-error.js";
 
@@ -66,9 +65,7 @@ export class PiHarness implements AgentHarness {
           thinkingLevel: modelConfig.thinkingLevel,
           authStorage,
           resourceLoader,
-          tools: createCodingTools(cwd, {
-            bash: { commandPrefix: BASH_COMMAND_PREFIX },
-          }),
+          tools: createCodingTools(cwd, {}),
           sessionManager: SessionManager.inMemory(),
           settingsManager,
         });

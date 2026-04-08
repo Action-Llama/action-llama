@@ -89,7 +89,6 @@ export class ClaudeCliHarness implements AgentHarness {
     const env = {
       ...process.env,
       ...runOpts.env,
-      BASH_ENV: runOpts.env?.BASH_ENV || process.env.BASH_ENV || "/app/bin/al-bash-init.sh",
     };
 
     const child = spawnImpl("claude", args, {

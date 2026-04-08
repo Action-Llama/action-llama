@@ -13,13 +13,13 @@
  *      - Methods delegate to StatusTracker when provided (via mock)
  *      - isAgentEnabled() delegates to StatusTracker when provided
  *
- * 2. agents/bash-prefix.ts — BASH_COMMAND_PREFIX constant
+ * 2. agents/bash-prefix.ts — ensureBinDir helper
  *    Has ZERO existing test coverage. The exported constant is straightforward
  *    to verify.
  *
  * Covers:
  *   - agents/status-reporter.ts: AgentStatusReporter all methods (null + delegate paths)
- *   - agents/bash-prefix.ts: BASH_COMMAND_PREFIX exported constant
+ *   - agents/bash-prefix.ts: module loads without shell prefix state
  */
 
 import { describe, it, expect } from "vitest";
@@ -27,11 +27,6 @@ import { describe, it, expect } from "vitest";
 const { AgentStatusReporter } = await import(
   /* @vite-ignore */
   "/tmp/repo/packages/action-llama/dist/agents/status-reporter.js"
-);
-
-const { BASH_COMMAND_PREFIX } = await import(
-  /* @vite-ignore */
-  "/tmp/repo/packages/action-llama/dist/agents/bash-prefix.js"
 );
 
 // ── AgentStatusReporter ───────────────────────────────────────────────────────
@@ -156,22 +151,5 @@ describe("integration: AgentStatusReporter (no Docker required)", () => {
       reporter.setNextRunAt("test-agent", date);
       expect(tracker.calls.setNextRunAt[0]).toEqual(["test-agent", date]);
     });
-  });
-});
-
-// ── BASH_COMMAND_PREFIX ───────────────────────────────────────────────────────
-
-describe("integration: BASH_COMMAND_PREFIX (no Docker required)", () => {
-  it("is a non-empty string", () => {
-    expect(typeof BASH_COMMAND_PREFIX).toBe("string");
-    expect(BASH_COMMAND_PREFIX.length).toBeGreaterThan(0);
-  });
-
-  it("sources the bash init script (starts with '. ')", () => {
-    expect(BASH_COMMAND_PREFIX.startsWith(". ")).toBe(true);
-  });
-
-  it("references al-bash-init.sh", () => {
-    expect(BASH_COMMAND_PREFIX).toContain("al-bash-init.sh");
   });
 });

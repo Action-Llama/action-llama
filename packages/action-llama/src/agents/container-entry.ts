@@ -247,7 +247,6 @@ export async function handleInvocation(init: AgentInit): Promise<number> {
       cwd,
       env: {
         ...resolveHarnessEnv(agentConfig, providerKeys),
-        BASH_ENV: "/app/bin/al-bash-init.sh",
       },
     }),
     {

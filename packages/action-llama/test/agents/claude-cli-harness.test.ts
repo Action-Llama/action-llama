@@ -70,7 +70,6 @@ describe("ClaudeCliHarness", () => {
         cwd: "/tmp/project",
         env: expect.objectContaining({
           TEST_ENV: "1",
-          BASH_ENV: "/app/bin/al-bash-init.sh",
         }),
       }),
     );

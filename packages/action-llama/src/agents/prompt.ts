@@ -173,7 +173,8 @@ function buildEnvironmentContext(options?: { hostUser?: boolean }): string {
       "**Filesystem:** The filesystem is writable. Your working directory is your current CWD.",
       "Clone repos and write files directly in the current directory.",
       "",
-      "**Environment variables:** Use `setenv NAME value` to persist variables across bash commands.",
+      "**Environment variables:** Plain `export` does not persist across bash commands.",
+      "Persist values with `al-export NAME value`. Before each later command that needs them, start with `. \"$(al-export -f)\"`.",
       "</environment>",
     ].join("\n");
   }
@@ -184,7 +185,8 @@ function buildEnvironmentContext(options?: { hostUser?: boolean }): string {
     "Your working directory is `/app/static` which contains your agent files (SKILL.md, agent-config.json).",
     "All write operations (git clone, file creation, etc.) must target `/tmp`.",
     "",
-    "**Environment variables:** Use `setenv NAME value` to persist variables across bash commands.",
+    "**Environment variables:** Plain `export` does not persist across bash commands.",
+    "Persist values with `al-export NAME value`. Before each later command that needs them, start with `. \"$(al-export -f)\"`.",
     "</environment>",
   ].join("\n");
 }

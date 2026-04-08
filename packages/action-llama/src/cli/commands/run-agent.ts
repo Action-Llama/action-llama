@@ -132,7 +132,7 @@ export async function execute(agent: string, opts: { project: string }): Promise
     process.env.HOME = workDir;
   }
 
-  // Scope the setenv persistence file to this agent instance.
+  // Scope the legacy shell export file to this agent instance.
   // In Docker, /tmp/env.sh is fine because each container is isolated.
   // In host-user mode, all instances share /tmp, so we must scope per-run.
   const envFile = resolve(workDir || "/tmp", ".env.sh");
@@ -144,7 +144,6 @@ export async function execute(agent: string, opts: { project: string }): Promise
   if (existsSync(binDir)) {
     process.env.PATH = `${binDir}:${process.env.PATH || ""}`;
   }
-
   emitLog("info", "host-user agent starting", { agent, workDir, credPath });
 
   // Load agent config from project
@@ -240,7 +239,6 @@ export async function execute(agent: string, opts: { project: string }): Promise
       cwd,
       env: {
         ...resolveHarnessEnv(agentConfig, providerKeys),
-        BASH_ENV: resolve(binDir, "al-bash-init.sh"),
       },
     }),
     {

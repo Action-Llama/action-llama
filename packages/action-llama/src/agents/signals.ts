@@ -93,11 +93,11 @@ echo '{"ok":true}'
   writeFileSync(join(binDir, "al-return"), alReturn, { mode: 0o755 });
   writeFileSync(join(binDir, "al-exit"), alExit, { mode: 0o755 });
 
-  // Copy al-bash-init.sh from docker/bin/ (included in the npm package).
+  // Copy environment helper scripts from docker/bin/ (included in the npm package).
   const thisDir = dirname(fileURLToPath(import.meta.url));
   const packageRoot = join(thisDir, "..", "..");
-  const bashInitSrc = join(packageRoot, "docker", "bin", "al-bash-init.sh");
-  writeFileSync(join(binDir, "al-bash-init.sh"), readFileSync(bashInitSrc), { mode: 0o755 });
+  const exportSrc = join(packageRoot, "docker", "bin", "al-export");
+  writeFileSync(join(binDir, "al-export"), readFileSync(exportSrc), { mode: 0o755 });
 }
 
 /**

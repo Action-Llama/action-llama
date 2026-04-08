@@ -1,22 +1,15 @@
 /**
- * Bash command prefix injected before every agent shell command.
- *
- * Sources `al-bash-init.sh` which defines the `setenv` helper and restores
- * persisted environment variables. The script must be on PATH:
- *  - Docker agents: baked into `/app/bin/` via Dockerfile COPY
- *  - Host-user scheduled agents: copied to temp bin dir via installSignalCommands()
- *  - Host-user runs: added to PATH via ensureBinDir()
+ * Ensure the packaged docker/bin directory is on PATH so shell helpers like
+ * `al-export` are available in chat and local harness flows.
  */
 import { dirname, resolve } from "path";
 import { existsSync } from "fs";
 import { fileURLToPath } from "url";
 
-export const BASH_COMMAND_PREFIX = ". al-bash-init.sh";
-
 /**
- * Ensure the docker/bin directory (which contains al-bash-init.sh and other
- * agent shell scripts) is on PATH. Call this before creating an agent session
- * in contexts that don't use installSignalCommands().
+ * Ensure the docker/bin directory (which contains al-export and other agent
+ * shell scripts) is on PATH. Call this before creating an agent session in
+ * contexts that don't use installSignalCommands().
  *
  * No-op if the directory is already on PATH or doesn't exist.
  */

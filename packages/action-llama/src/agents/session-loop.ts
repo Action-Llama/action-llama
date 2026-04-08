@@ -16,7 +16,6 @@ import type { TokenUsage } from "../shared/usage.js";
 import { sessionStatsToUsage } from "../shared/usage.js";
 import { ModelCircuitBreaker, selectAvailableModels, isRateLimitError } from "./model-fallback.js";
 import { isUnrecoverableError, UNRECOVERABLE_THRESHOLD } from "../shared/errors.js";
-import { BASH_COMMAND_PREFIX } from "./bash-prefix.js";
 import { extractTurnEndError } from "./turn-end-error.js";
 
 export interface SessionLoopOpts {
@@ -84,18 +83,16 @@ export async function runSessionLoop(
         authStorage.setRuntimeApiKey(modelConfig.provider, providerKey);
       }
 
-      const { session } = await createAgentSession({
-        cwd,
-        model: llmModel,
-        thinkingLevel: modelThinking,
-        authStorage,
-        resourceLoader,
-        tools: createCodingTools(cwd, {
-          bash: { commandPrefix: BASH_COMMAND_PREFIX },
-        }),
-        sessionManager: SessionManager.inMemory(),
-        settingsManager,
-      });
+        const { session } = await createAgentSession({
+          cwd,
+          model: llmModel,
+          thinkingLevel: modelThinking,
+          authStorage,
+          resourceLoader,
+          tools: createCodingTools(cwd, {}),
+          sessionManager: SessionManager.inMemory(),
+          settingsManager,
+        });
 
       session.subscribe((event) => {
         eventCount++;

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { ensureBinDir, BASH_COMMAND_PREFIX } from "../../src/agents/bash-prefix.js";
+import { ensureBinDir } from "../../src/agents/bash-prefix.js";
 
 // Controllable mock for existsSync — defaults to the real implementation
 const mockExistsSync = vi.fn();
@@ -12,12 +12,6 @@ vi.mock("fs", async (importOriginal) => {
 });
 
 describe("bash-prefix", () => {
-  describe("BASH_COMMAND_PREFIX", () => {
-    it("exports the expected bash command prefix", () => {
-      expect(BASH_COMMAND_PREFIX).toBe(". al-bash-init.sh");
-    });
-  });
-
   describe("ensureBinDir", () => {
     const originalPath = process.env.PATH;
 

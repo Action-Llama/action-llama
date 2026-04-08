@@ -39,10 +39,6 @@ vi.mock("../../src/agents/model-fallback.js", async () => {
   };
 });
 
-vi.mock("../../src/agents/bash-prefix.js", () => ({
-  BASH_COMMAND_PREFIX: "",
-}));
-
 import { runSessionLoop } from "../../src/agents/session-loop.js";
 import { ModelCircuitBreaker } from "../../src/agents/model-fallback.js";
 import type { ModelConfig } from "../../src/shared/config.js";

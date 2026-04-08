@@ -7,30 +7,38 @@ Agents running in Docker containers have access to shell commands for persisting
 
 ## Environment Commands
 
-### `setenv`
+### `al-export`
 
-Persist an environment variable across bash commands. Each bash command the agent runs starts in a fresh shell, so variables set with `export` are lost between commands. `setenv` makes them stick.
+Persist environment variables across bash commands. Each bash command the agent runs starts in a fresh shell, so variables set with plain `export` are lost between commands.
 
 ```bash
-setenv <NAME> <value>
+al-export <NAME> <value>
+al-export -f
 ```
 
-**First bash command — set variables:**
+**First bash command — persist variables:**
 
 ```bash
-setenv REPO "acme/app"
-setenv ISSUE_NUMBER 42
+al-export REPO "acme/app"
+al-export ISSUE_NUMBER 42
 ```
 
-**Later bash command — variables are still available:**
+**Later bash command — source the export file, then use the variables:**
 
 ```bash
-gh issue view $ISSUE_NUMBER --repo $REPO
+. "$(al-export -f)"
+gh issue view "$ISSUE_NUMBER" --repo "$REPO"
 ```
 
 ### How it works
 
-`setenv` writes each variable to `/tmp/env.sh`, which is automatically sourced at the start of every bash command. The variable is also exported immediately in the current shell, so it's available right away in the same command.
+`al-export` appends `export NAME='value'` lines to an export file. `al-export -f` prints that file path. To use the persisted variables in a fresh shell, source the file with:
+
+```bash
+. "$(al-export -f)"
+```
+
+Use `.` instead of `source` for POSIX shell compatibility.
 
 ## Signal Commands
 

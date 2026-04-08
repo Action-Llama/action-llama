@@ -1,7 +1,7 @@
 /**
  * Integration tests: agents/bash-prefix.ts ensureBinDir() — no Docker required.
  *
- * ensureBinDir() ensures the docker/bin directory (containing al-bash-init.sh
+ * ensureBinDir() ensures the docker/bin directory (containing al-export
  * and other agent shell scripts) is on PATH. It's called before creating agent
  * sessions in contexts that don't use installSignalCommands() (e.g. chat mode).
  *
@@ -29,7 +29,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 
-const { ensureBinDir, BASH_COMMAND_PREFIX } = await import(
+const { ensureBinDir } = await import(
   /* @vite-ignore */
   "/tmp/repo/packages/action-llama/dist/agents/bash-prefix.js"
 );
@@ -104,15 +104,5 @@ describe(
       expect(process.env.PATH).toBeDefined();
     });
 
-    // ── BASH_COMMAND_PREFIX constant (also from bash-prefix.ts) ──────────────
-
-    it("BASH_COMMAND_PREFIX is a non-empty string", () => {
-      expect(typeof BASH_COMMAND_PREFIX).toBe("string");
-      expect(BASH_COMMAND_PREFIX.length).toBeGreaterThan(0);
-    });
-
-    it("BASH_COMMAND_PREFIX references al-bash-init.sh", () => {
-      expect(BASH_COMMAND_PREFIX).toContain("al-bash-init.sh");
-    });
   },
 );

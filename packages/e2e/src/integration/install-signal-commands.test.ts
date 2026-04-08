@@ -3,7 +3,7 @@
  *
  * installSignalCommands() installs shell-based signal scripts used by host-mode
  * agent runners. It creates al-rerun, al-status, al-return, al-exit in binDir
- * and copies al-bash-init.sh from the package's docker/bin/ directory.
+ * and copies environment helper scripts from the package's docker/bin/ directory.
  *
  * Test scenarios (no Docker required):
  *   1. installSignalCommands: creates binDir if it does not exist
@@ -12,7 +12,7 @@
  *   4. installSignalCommands: creates al-status in binDir
  *   5. installSignalCommands: creates al-return in binDir
  *   6. installSignalCommands: creates al-exit in binDir
- *   7. installSignalCommands: copies al-bash-init.sh to binDir
+ *   7. installSignalCommands: copies al-export to binDir
  *   8. installSignalCommands: al-rerun is executable (mode includes 0o755)
  *   9. installSignalCommands: al-status script checks for empty argument
  *  10. installSignalCommands: al-rerun starts with #!/bin/sh shebang
@@ -25,12 +25,12 @@
  *  17. installSignalCommands: al-return writes to $AL_SIGNAL_DIR/return
  *  18. installSignalCommands: works with nested binDir path (recursive mkdir)
  *  19. installSignalCommands: two separate calls produce independent directories
- *  20. installSignalCommands: al-bash-init.sh content matches original source
+ *  20. installSignalCommands: al-export is executable
  *
  * Covers:
  *   - agents/signals.ts: installSignalCommands() — all file writes
  *   - agents/signals.ts: installSignalCommands() — binDir/signalDir creation
- *   - agents/signals.ts: installSignalCommands() — al-bash-init.sh copy path
+ *   - agents/signals.ts: installSignalCommands() — helper script copy paths
  */
 
 import { describe, it, expect, afterEach } from "vitest";
@@ -126,12 +126,12 @@ describe(
       expect(existsSync(join(binDir, "al-exit"))).toBe(true);
     });
 
-    it("copies al-bash-init.sh to binDir", () => {
+    it("copies al-export to binDir", () => {
       const base = makeTempDir();
       dirsToCleanup.push(base);
       const binDir = join(base, "bin");
       installSignalCommands(binDir, join(base, "signals"));
-      expect(existsSync(join(binDir, "al-bash-init.sh"))).toBe(true);
+      expect(existsSync(join(binDir, "al-export"))).toBe(true);
     });
 
     // ── Script content: shebangs ──────────────────────────────────────────────
@@ -268,36 +268,13 @@ describe(
       expect(mode & 0o100).toBeGreaterThan(0);
     });
 
-    it("al-bash-init.sh is executable (owner has execute bit)", () => {
+    it("al-export is executable (owner has execute bit)", () => {
       const base = makeTempDir();
       dirsToCleanup.push(base);
       const binDir = join(base, "bin");
       installSignalCommands(binDir, join(base, "signals"));
-      const mode = statSync(join(binDir, "al-bash-init.sh")).mode;
+      const mode = statSync(join(binDir, "al-export")).mode;
       expect(mode & 0o100).toBeGreaterThan(0);
-    });
-
-    // ── al-bash-init.sh content ───────────────────────────────────────────────
-
-    it("al-bash-init.sh content matches the original source file", () => {
-      const base = makeTempDir();
-      dirsToCleanup.push(base);
-      const binDir = join(base, "bin");
-      installSignalCommands(binDir, join(base, "signals"));
-      const installed = readFileSync(join(binDir, "al-bash-init.sh"));
-      const source = readFileSync(
-        "/tmp/repo/packages/action-llama/docker/bin/al-bash-init.sh"
-      );
-      expect(installed).toEqual(source);
-    });
-
-    it("al-bash-init.sh is non-empty after installation", () => {
-      const base = makeTempDir();
-      dirsToCleanup.push(base);
-      const binDir = join(base, "bin");
-      installSignalCommands(binDir, join(base, "signals"));
-      const content = readFileSync(join(binDir, "al-bash-init.sh"), "utf-8");
-      expect(content.length).toBeGreaterThan(0);
     });
 
     // ── Independence ──────────────────────────────────────────────────────────
@@ -310,7 +287,7 @@ describe(
       const binDir2 = join(base2, "bin");
       installSignalCommands(binDir1, join(base1, "signals"));
       installSignalCommands(binDir2, join(base2, "signals"));
-      for (const script of ["al-rerun", "al-status", "al-return", "al-exit", "al-bash-init.sh"]) {
+      for (const script of ["al-rerun", "al-status", "al-return", "al-exit", "al-export"]) {
         expect(existsSync(join(binDir1, script))).toBe(true);
         expect(existsSync(join(binDir2, script))).toBe(true);
       }
