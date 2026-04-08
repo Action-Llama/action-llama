@@ -1,3 +1,4 @@
+---
 "@action-llama/action-llama": patch
 ---
 
