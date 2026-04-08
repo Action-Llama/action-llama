@@ -606,12 +606,10 @@ describe("LockStore — URI validation", () => {
   });
 
   describe("URL constructor mock edge cases", () => {
-    it("rejects URIs whose scheme fails the custom regex (mocked URL)", () => {
-      // new URL() in Node.js already validates RFC-compliant schemes, so a protocol
-      // that passes the URL constructor but fails the stricter custom regex
-      // (e.g. contains uppercase or underscores) cannot occur naturally.
-      // We mock the URL constructor to return an object with such a protocol to
-      // exercise the "Invalid URI scheme" return path (line 213 of validateResourceKey).
+    it("accepts URIs when the mocked URL constructor succeeds", () => {
+      // Validation now relies solely on WHATWG URL parsing. If the constructor
+      // succeeds, the resource key is treated as valid even if a mocked protocol
+      // string would not satisfy a stricter custom scheme regex.
       const originalURL = globalThis.URL;
       vi.stubGlobal("URL", class {
         protocol = "INVALID_SCHEME:";
@@ -620,9 +618,7 @@ describe("LockStore — URI validation", () => {
 
       try {
         const result = store.acquire("any://resource", "agent-a");
-        expect(result.ok).toBe(false);
-        expect((result as any).reason).toContain("Invalid URI scheme");
-        expect((result as any).reason).toContain("INVALID_SCHEME:");
+        expect(result).toEqual({ ok: true });
       } finally {
         vi.stubGlobal("URL", originalURL);
       }

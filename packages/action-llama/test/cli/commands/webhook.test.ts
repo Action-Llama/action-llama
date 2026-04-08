@@ -349,8 +349,10 @@ describe("webhook command", () => {
 
       await execute("replay", fixturePath, { project: projectPath, source: "test", run: true });
 
-      // When --run is specified but no matched agents, shows a warning
-      expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining("⚠️ No matched agents to run"));
+      // When --run is specified but no agents match, interactive mode still runs
+      // and reports that zero agents matched.
+      expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining("🚀 Interactive Run Mode"));
+      expect(mockConsoleLog).toHaveBeenCalledWith("Found 0 matched agent(s):");
     });
 
     it("detects linear source from x-linear-signature header", async () => {
@@ -945,8 +947,9 @@ describe("webhook command", () => {
 
       await execute("replay", fixturePath, { project: projectPath, source: "test", run: true });
 
-      // The empty matchedAgents branch logs the "No matched agents to run" warning
-      expect(mockConsoleLog).toHaveBeenCalledWith("\n⚠️ No matched agents to run");
+      // The empty matchedAgents branch reports zero matches in interactive mode.
+      expect(mockConsoleLog).toHaveBeenCalledWith("\n🚀 Interactive Run Mode");
+      expect(mockConsoleLog).toHaveBeenCalledWith("Found 0 matched agent(s):");
 
       spyTrick.mockRestore();
     });
