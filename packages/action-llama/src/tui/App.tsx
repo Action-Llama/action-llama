@@ -416,16 +416,14 @@ export default function App({ statusTracker, projectPath }: { statusTracker: Sta
   }, [projectPath]);
 
   const handleProjectScaleUpdate = async (scale: number) => {
-    if (!projectPath) throw new Error("Project path not available");
     const { updateProjectScale } = await import("../shared/config.js");
-    updateProjectScale(projectPath, scale);
+    updateProjectScale(projectPath!, scale);
     setProjectScale(scale);
   };
 
   const handleAgentScaleUpdate = async (agentName: string, scale: number) => {
-    if (!projectPath) throw new Error("Project path not available");
     const { updateAgentRuntimeField } = await import("../shared/config.js");
-    updateAgentRuntimeField(projectPath, agentName, "scale", scale);
+    updateAgentRuntimeField(projectPath!, agentName, "scale", scale);
     statusTracker.updateAgentScale(agentName, scale);
   };
 
