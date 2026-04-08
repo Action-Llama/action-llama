@@ -216,6 +216,36 @@ describe("App TUI", () => {
     expect(output).not.toContain("cron job");
   });
 
+  it("renders all agents as building during the shared base image phase", () => {
+    const tracker = new StatusTracker();
+    tracker.registerAgent("dev");
+    tracker.registerAgent("reviewer");
+    tracker.setSchedulerInfo({
+      mode: "docker",
+      gatewayPort: null,
+      cronJobCount: 0,
+      webhooksActive: false,
+      webhookUrls: [],
+      startedAt: new Date(),
+      paused: false,
+      initializing: true,
+    });
+
+    tracker.setBaseImageStatus("Building base image");
+    tracker.setAgentState("dev", "building");
+    tracker.setAgentState("reviewer", "building");
+    tracker.setAgentStatusText("dev", "Building base image");
+    tracker.setAgentStatusText("reviewer", "Building base image");
+
+    instance = render(<App statusTracker={tracker} />);
+    const output = instance.lastFrame()!;
+
+    expect(output).toContain("dev");
+    expect(output).toContain("reviewer");
+    expect(output).toContain("Building base image");
+    expect(output).not.toContain("Waiting to build");
+  });
+
   it("renders initializing view with base image status", () => {
     const tracker = new StatusTracker();
     tracker.registerAgent("dev");

@@ -63,8 +63,16 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
   let baseImage = globalConfig.local?.image || CONSTANTS.DEFAULT_IMAGE;
   logger.info({ image: baseImage }, "Building base image (this may take a few minutes on first run)...");
 
+  const setSharedBuildProgress = (msg: string | null) => {
+    for (const agentConfig of activeAgentConfigs) {
+      statusTracker?.setAgentState(agentConfig.name, msg ? "building" : "idle");
+      statusTracker?.setAgentStatusText(agentConfig.name, msg);
+    }
+  };
+
   const setBaseImageProgress = (msg: string) => {
     statusTracker?.setBaseImageStatus(msg);
+    setSharedBuildProgress(msg);
     onProgress?.("base", msg);
   };
 
@@ -91,6 +99,7 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
     logger.info("Building project base image...");
     const setProjectBaseProgress = (msg: string) => {
       statusTracker?.setBaseImageStatus(msg);
+      setSharedBuildProgress(msg);
       onProgress?.("project-base", msg);
     };
 
@@ -137,9 +146,7 @@ export async function buildAllImages(opts: ImageBuildOpts): Promise<ImageBuildRe
   await Promise.all(buildPromises);
 
   // Reset all agents back to idle after builds complete
-  for (const ac of activeAgentConfigs) {
-    statusTracker?.setAgentState(ac.name, "idle");
-  }
+  setSharedBuildProgress(null);
 
   logger.info("Docker infrastructure ready");
 

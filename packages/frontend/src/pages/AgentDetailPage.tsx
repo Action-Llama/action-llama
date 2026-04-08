@@ -23,6 +23,34 @@ export function AgentDetailPage() {
 
   if (!name) return null;
 
+  const stateClasses = agent?.state === "running"
+    ? {
+        text: "text-blue-600 dark:text-blue-400",
+        dot: "bg-blue-500",
+      }
+    : agent?.state === "building"
+      ? {
+          text: "text-amber-600 dark:text-amber-400",
+          dot: "bg-amber-500",
+        }
+      : agent?.state === "error"
+        ? {
+            text: "text-red-600 dark:text-red-400",
+            dot: "bg-red-500",
+          }
+        : {
+            text: "text-slate-500 dark:text-slate-400",
+            dot: "bg-slate-400",
+          };
+
+  const stateLabel = !agent
+    ? null
+    : agent.state === "running"
+      ? agent.scale > 1
+        ? `running ${agent.runningCount}/${agent.scale}`
+        : "running"
+      : agent.state;
+
   return (
     <div className="space-y-6">
       {/* Activity */}
@@ -31,28 +59,20 @@ export function AgentDetailPage() {
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-medium text-slate-900 dark:text-white">Activity</h2>
             {agent && (
-              <span
-                id="agent-state"
-                className={`text-sm ${
-                  agent.runningCount > 0
-                    ? "text-blue-600 dark:text-blue-400"
-                    : "text-slate-500 dark:text-slate-400"
-                }`}
-              >
-                <span
-                  className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 ${
-                    agent.runningCount > 0 ? "bg-blue-500" : "bg-slate-400"
-                  }`}
-                />
-                {agent.runningCount > 0
-                  ? agent.scale > 1
-                    ? `running ${agent.runningCount}/${agent.scale}`
-                    : "running"
-                  : "idle"}
-                {agent.scale > 1 && agent.runningCount === 0 && (
-                  <span className="text-xs text-slate-400 ml-1">×{agent.scale}</span>
+              <div className="flex flex-col">
+                <span id="agent-state" className={`text-sm ${stateClasses.text}`}>
+                  <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 ${stateClasses.dot}`} />
+                  {stateLabel}
+                  {agent.state === "idle" && agent.scale > 1 && (
+                    <span className="text-xs text-slate-400 ml-1">×{agent.scale}</span>
+                  )}
+                </span>
+                {agent.statusText && (
+                  <span className="text-xs text-slate-500 dark:text-slate-400" title={agent.statusText}>
+                    {agent.statusText}
+                  </span>
                 )}
-              </span>
+              </div>
             )}
             {(agent?.queuedWebhooks ?? 0) > 0 && (
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
