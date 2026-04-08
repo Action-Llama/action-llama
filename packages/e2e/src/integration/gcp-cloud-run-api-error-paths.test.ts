@@ -28,6 +28,8 @@
  *   - cloud/gcp/cloud-run-api.ts: listExecutions() error path
  *   - cloud/gcp/cloud-run-api.ts: listJobs() error path
  *   - cloud/gcp/cloud-run-api.ts: gcpFetch() auth failure propagation
+ *   - cloud/gcp/cloud-run-api.ts: pollExecutionUntilDone() timeout path (timeoutMs=0)
+ *   - cloud/gcp/cloud-run-api.ts: pollExecutionUntilDone() error path (auth failure)
  */
 
 import { describe, it, expect, beforeAll } from "vitest";
@@ -46,6 +48,7 @@ const {
   getExecution,
   listExecutions,
   listJobs,
+  pollExecutionUntilDone,
 } = await import(
   /* @vite-ignore */
   "/tmp/repo/packages/action-llama/dist/cloud/gcp/cloud-run-api.js"
@@ -195,6 +198,54 @@ describe(
       let caught: unknown;
       try {
         await listJobs(auth, FAKE_PROJECT, FAKE_REGION);
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(Error);
+    });
+
+    // ── pollExecutionUntilDone ──────────────────────────────────────────────
+
+    it("pollExecutionUntilDone() throws immediately when timeoutMs=0 (deadline already passed)", async () => {
+      // With timeoutMs=0, the while condition is false immediately → throws timeout error
+      await expect(
+        pollExecutionUntilDone(auth, FAKE_PROJECT, FAKE_REGION, "fake-execution-001", 0)
+      ).rejects.toThrow(/timed out/i);
+    });
+
+    it("pollExecutionUntilDone() timeout error message includes execution name", async () => {
+      let caught: Error | undefined;
+      try {
+        await pollExecutionUntilDone(auth, FAKE_PROJECT, FAKE_REGION, "my-special-execution", 0);
+      } catch (e) {
+        caught = e as Error;
+      }
+      expect(caught).toBeDefined();
+      expect(caught!.message).toContain("my-special-execution");
+    });
+
+    it("pollExecutionUntilDone() timeout error message includes timeoutMs", async () => {
+      let caught: Error | undefined;
+      try {
+        await pollExecutionUntilDone(auth, FAKE_PROJECT, FAKE_REGION, "my-execution", 0);
+      } catch (e) {
+        caught = e as Error;
+      }
+      expect(caught).toBeDefined();
+      expect(caught!.message).toContain("0ms");
+    });
+
+    it("pollExecutionUntilDone() throws when auth fails (timeoutMs=30000)", async () => {
+      // With invalid auth, getExecution() throws before the deadline check
+      await expect(
+        pollExecutionUntilDone(auth, FAKE_PROJECT, FAKE_REGION, "fake-exec", 30_000)
+      ).rejects.toThrow();
+    });
+
+    it("pollExecutionUntilDone() thrown error is an Error instance when auth fails", async () => {
+      let caught: unknown;
+      try {
+        await pollExecutionUntilDone(auth, FAKE_PROJECT, FAKE_REGION, "fake-exec", 30_000);
       } catch (e) {
         caught = e;
       }
