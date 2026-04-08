@@ -86,6 +86,13 @@ export class ContainerAgentRunner {
     }
   }
 
+  private surfaceStderr(text: string): void {
+    const surfaced = text.replace(/\s+/g, " ").trim().slice(0, 200);
+    if (!surfaced) return;
+    this.statusTracker?.addLogLine(this.agentConfig.name, `stderr: ${surfaced}`);
+    this.statusTracker?.setAgentError(this.agentConfig.name, surfaced);
+  }
+
   private forwardLogLine(line: string): void {
     if (!line.trim()) return;
 
@@ -181,7 +188,10 @@ export class ContainerAgentRunner {
       logStream = this.runtime.streamLogs(
         containerName,
         (line) => this.forwardLogLine(line),
-        (text) => this.logger.warn({ stderr: text.slice(0, 500) }, "container stderr"),
+        (text) => {
+          this.logger.warn({ stderr: text.slice(0, 500) }, "container stderr");
+          this.surfaceStderr(text);
+        },
       );
 
       const startTime = Date.now();

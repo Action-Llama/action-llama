@@ -275,6 +275,14 @@ export function DashboardPage() {
                         {agent.description}
                       </div>
                     )}
+                    {agent.lastError && (
+                      <div
+                        className="mt-1 text-xs text-red-600 dark:text-red-400 truncate"
+                        title={agent.lastError}
+                      >
+                        {agent.lastError}
+                      </div>
+                    )}
                   </td>
                   <td className="hidden lg:table-cell px-4 py-2.5 text-xs text-slate-500 dark:text-slate-400 min-w-0 max-w-[300px] truncate">
                     {agent.description ?? "\u2014"}

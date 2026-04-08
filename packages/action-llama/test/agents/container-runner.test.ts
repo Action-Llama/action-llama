@@ -748,6 +748,52 @@ describe("ContainerAgentRunner", () => {
         "container stderr",
       );
     });
+
+    it("surfaces container stderr output to the status tracker", async () => {
+      let capturedStderr: ((text: string) => void) | undefined;
+      const childLogger = makeMockLogger();
+      const parentLogger = { ...mockLogger, child: vi.fn().mockReturnValue(childLogger) };
+      const mockStatusTracker = {
+        startRun: vi.fn(),
+        endRun: vi.fn(),
+        registerInstance: vi.fn(),
+        unregisterInstance: vi.fn(),
+        completeInstance: vi.fn(),
+        addLogLine: vi.fn(),
+        setAgentError: vi.fn(),
+        setTaskUrl: vi.fn(),
+        isAgentEnabled: vi.fn().mockReturnValue(true),
+        isPaused: vi.fn().mockReturnValue(false),
+      };
+
+      const captureRuntime = createMockRuntime({
+        streamLogs: vi.fn().mockImplementation(
+          (_name: string, _onLine: (line: string) => void, onStderr: (text: string) => void) => {
+            capturedStderr = onStderr;
+            return { stop: vi.fn() };
+          }
+        ),
+      });
+      const runner = new ContainerAgentRunner(
+        captureRuntime, globalConfig, agentConfig, parentLogger as any,
+        vi.fn(), vi.fn(), "", "/tmp", "test-image:latest", mockStatusTracker as any,
+      );
+
+      const runPromise = runner.run("test prompt");
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+
+      capturedStderr?.("Error: something went wrong on stderr");
+      await runPromise;
+
+      expect(mockStatusTracker.addLogLine).toHaveBeenCalledWith(
+        "test-agent",
+        expect.stringContaining("stderr: Error: something went wrong on stderr"),
+      );
+      expect(mockStatusTracker.setAgentError).toHaveBeenCalledWith(
+        "test-agent",
+        "Error: something went wrong on stderr",
+      );
+    });
   });
 
   // ── _aborting + non-zero exit code ───────────────────────────────────────
