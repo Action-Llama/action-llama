@@ -171,7 +171,7 @@ export function registerLogSummaryRoutes(
         const { level, time, instance, ...rest } = e;
         const ts = new Date(time).toISOString();
 
-        // Redact tool-result payload text — keep metadata only
+        // Redact tool-result payload text — keep metadata + brief excerpt
         if (rest.msg === "conversation.tool_result") {
           const sanitized: Record<string, unknown> = {
             msg: rest.msg,
@@ -179,6 +179,11 @@ export function registerLogSummaryRoutes(
             ...(rest.cmd != null && { cmd: rest.cmd }),
             ...(rest.isError != null && { isError: rest.isError }),
           };
+          // Preserve a short excerpt so the summarizer can identify specific resources
+          const raw = rest.result ?? rest.resultText;
+          if (typeof raw === "string" && raw.length > 0) {
+            sanitized.excerpt = raw.length > 150 ? raw.slice(0, 150) + "…" : raw;
+          }
           return `[${ts}] ${JSON.stringify(sanitized)}`;
         }
 
@@ -210,7 +215,7 @@ export function registerLogSummaryRoutes(
           {
             role: "system",
             content:
-              "You are a concise technical assistant. Summarize the following agent run logs using this structure: Describe what the agent operated on in less than 10 words. Describe what it did in less than 10 words. If there were errors, describe them in less than 10 words. Output only the summary text — no timestamps, no log formatting, no bullet points or labels.",
+              "You are a concise technical assistant. Summarize the following agent run logs using this structure: Identify the specific resource(s) the agent worked on — include identifiers like numbers, names, or titles when visible in the logs (e.g. \"issue #42\", \"user jdoe\", \"file config.toml\"). Keep under 10 words. Describe what it did in less than 10 words. If there were errors, describe them in less than 10 words. Output only the summary text — no timestamps, no log formatting, no bullet points or labels.",
           },
           {
             role: "user",

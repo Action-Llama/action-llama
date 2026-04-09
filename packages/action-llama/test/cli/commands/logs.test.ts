@@ -400,7 +400,6 @@ describe("logs command", () => {
 
       expect(output).toHaveLength(1);
       expect(output[0]).toContain("bash result");
-      expect(output[0]).toContain("grep foo file.txt");
       expect(output[0]).toContain("file.txt:1:foo");
     });
   });

@@ -851,12 +851,14 @@ describe("log summary route", () => {
     expect(data.error).toMatch(/AuthStorage unavailable/);
   });
 
-  it("redacts tool-result payload text from summarizer prompt while preserving metadata", async () => {
+  it("truncates tool-result payload to short excerpt while preserving metadata", async () => {
     createMinimalAgentProject(tmpDir, "my-agent");
     const instanceId = "inst-redact-tool";
+    // Pad result so the marker is beyond the 150-char excerpt cutoff
+    const padding = "x".repeat(160);
     const logLines = [
       pinoLine(30, 1710700000000, "Agent started", { instance: instanceId }),
-      // conversation.tool_result with large output that should be redacted
+      // conversation.tool_result with large output — only first 150 chars kept as excerpt
       JSON.stringify({
         level: 30,
         time: 1710700001000,
@@ -866,10 +868,10 @@ describe("log summary route", () => {
         cmd: "cat /etc/hosts",
         isError: false,
         toolCallId: "call_123",
-        resultText: "127.0.0.1 localhost\n::1 localhost\nSECRET_VERBOSE_OUTPUT_MARKER",
-        result: "127.0.0.1 localhost\n::1 localhost\nSECRET_VERBOSE_OUTPUT_MARKER",
+        resultText: `${padding}SECRET_VERBOSE_OUTPUT_MARKER`,
+        result: `${padding}SECRET_VERBOSE_OUTPUT_MARKER`,
       }),
-      // A tool-result with an error
+      // A tool-result with an error — also padded past 150 chars
       JSON.stringify({
         level: 50,
         time: 1710700002000,
@@ -878,8 +880,8 @@ describe("log summary route", () => {
         tool: "bash",
         cmd: "rm -rf /tmp/bad",
         isError: true,
-        resultText: "Permission denied: LONG_ERROR_PAYLOAD_MARKER",
-        result: "Permission denied: LONG_ERROR_PAYLOAD_MARKER",
+        resultText: `${padding}LONG_ERROR_PAYLOAD_MARKER`,
+        result: `${padding}LONG_ERROR_PAYLOAD_MARKER`,
       }),
       pinoLine(30, 1710700003000, "Agent finished", { instance: instanceId }),
     ];
@@ -904,7 +906,6 @@ describe("log summary route", () => {
 
     // Inspect the prompt sent to the LLM
     const fetchBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-    const promptText = JSON.stringify(fetchBody);
 
     // Extract the user message content for cleaner assertions
     const userMessage = fetchBody.messages.find((m: any) => m.role === "user");
@@ -918,13 +919,15 @@ describe("log summary route", () => {
     expect(logContent).toContain('"isError":true');
     expect(logContent).toContain('"isError":false');
 
-    // Payload text should NOT be present
+    // Excerpt field should be present (truncated with ellipsis)
+    expect(logContent).toContain('"excerpt"');
+    expect(logContent).toContain("…");
+
+    // Tail-end markers should NOT be present (beyond 150-char cutoff)
     expect(logContent).not.toContain("SECRET_VERBOSE_OUTPUT_MARKER");
     expect(logContent).not.toContain("LONG_ERROR_PAYLOAD_MARKER");
-    expect(logContent).not.toContain("127.0.0.1 localhost");
-    expect(logContent).not.toContain("Permission denied");
 
-    // resultText and result fields should not appear
+    // Full result and resultText fields should not appear as field names
     expect(logContent).not.toContain("resultText");
     expect(logContent).not.toContain('"result"');
   });
