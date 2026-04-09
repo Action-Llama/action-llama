@@ -1,5 +1,6 @@
 import { readFileSync, existsSync, rmSync } from "fs";
 import { spawnSync } from "child_process";
+import { setMaxListeners } from "node:events";
 import {
   DefaultResourceLoader,
   SettingsManager,
@@ -14,6 +15,14 @@ import { initTelemetry } from "../telemetry/index.js";
 import type { TelemetryConfig } from "../telemetry/types.js";
 import { loadContainerCredentials, resolveHarnessEnv } from "./credential-setup.js";
 import { consumeHarness, createHarness } from "./harness/index.js";
+
+// The pi library creates AbortSignals shared across parallel tool/API calls,
+// which accumulate >10 abort listeners and trigger a benign Node.js warning.
+// Patch AbortController to raise the limit on every new signal.
+const _OrigAC = globalThis.AbortController;
+globalThis.AbortController = class extends _OrigAC {
+  constructor() { super(); setMaxListeners(20, this.signal); }
+} as typeof AbortController;
 
 // Structured log line — written to stdout, parsed by ContainerAgentRunner on the host
 function emitLog(level: string, msg: string, data?: Record<string, any>) {

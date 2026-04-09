@@ -12,6 +12,7 @@
 import { existsSync, readFileSync, readdirSync, statSync, mkdirSync, writeFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+import { setMaxListeners } from "node:events";
 import { loadAgentConfig, loadAgentBody, loadGlobalConfig } from "../../shared/config.js";
 import { DEFAULT_AGENT_TIMEOUT } from "../../shared/constants.js";
 import type { AgentConfig } from "../../shared/config.js";
@@ -19,6 +20,14 @@ import { parseCredentialRef } from "../../shared/credentials.js";
 import { builtinCredentials } from "../../credentials/builtins/index.js";
 import { buildPromptSkeleton, type PromptSkills } from "../../agents/prompt.js";
 import { resolveHarnessEnv } from "../../agents/credential-setup.js";
+
+// The pi library creates AbortSignals shared across parallel tool/API calls,
+// which accumulate >10 abort listeners and trigger a benign Node.js warning.
+// Patch AbortController to raise the limit on every new signal.
+const _OrigAC = globalThis.AbortController;
+globalThis.AbortController = class extends _OrigAC {
+  constructor() { super(); setMaxListeners(20, this.signal); }
+} as typeof AbortController;
 
 function emitLog(level: string, msg: string, data?: Record<string, any>) {
   console.log(JSON.stringify({ _log: true, level, msg, ...data, ts: Date.now() }));
