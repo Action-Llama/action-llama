@@ -55,17 +55,19 @@ export class CustomProvider implements ModelProvider {
       headers["Authorization"] = `Bearer ${this.apiKey}`;
     }
 
-    const body = {
+    const maxTokens = options?.max_tokens ?? this.config.maxTokens;
+
+    const body: Record<string, unknown> = {
       model: options?.model || this.getDefaultModel(),
       messages: messages.map(msg => ({
         role: msg.role,
         content: msg.content
       })),
       temperature: options?.temperature ?? this.config.temperature ?? 0.7,
-      max_tokens: options?.max_tokens ?? this.config.maxTokens,
       top_p: options?.top_p,
       stop: options?.stop,
-      stream: false
+      stream: false,
+      ...(maxTokens != null && { max_completion_tokens: maxTokens }),
     };
 
     const response = await fetch(url, {
