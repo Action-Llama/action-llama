@@ -9,7 +9,7 @@ concurrency:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       id-token: write
@@ -25,7 +25,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
           registry-url: "https://registry.npmjs.org"
 
       - name: Check for changesets
@@ -38,8 +38,15 @@ jobs:
             echo "No changesets found — skipping release."
           fi
 
-      - run: npm ci
+      - uses: actions/cache@v4
         if: steps.has-changesets.outputs.has_changesets == 'true'
+        id: node-modules-cache
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('.node-version', '.nvmrc', '.github/workflows/release.yml') }}-${{ hashFiles('package-lock.json') }}
+
+      - run: npm ci
+        if: steps.has-changesets.outputs.has_changesets == 'true' && steps.node-modules-cache.outputs.cache-hit != 'true'
       - run: npm run build
         if: steps.has-changesets.outputs.has_changesets == 'true'
       - run: npm test
