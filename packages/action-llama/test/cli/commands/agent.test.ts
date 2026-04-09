@@ -4,7 +4,6 @@ import { join, resolve } from "path";
 import { tmpdir } from "os";
 import { stringify as stringifyYAML } from "yaml";
 import { stringify as stringifyTOML, parse as parseTOML } from "smol-toml";
-import { parseFrontmatter } from "../../../src/shared/frontmatter.js";
 
 // Mock inquirer prompts
 const mockSelect = vi.fn();
@@ -19,36 +18,6 @@ vi.mock("@inquirer/prompts", () => ({
   confirm: (...args: any[]) => mockConfirm(...args),
   search: vi.fn(),
 }));
-
-// Mock resolvePackageRoot to point to a temp dir with example templates
-let mockPackageRoot: string;
-vi.mock("../../../src/setup/scaffold.js", async (importOriginal) => {
-  const orig = await importOriginal() as any;
-  const { existsSync: exists, readFileSync: readFile, writeFileSync: writeFile, mkdirSync: mkdir } = await import("fs");
-  const { resolve: resolvePath } = await import("path");
-  const { stringify: toTOML } = await import("smol-toml");
-  return {
-    ...orig,
-    resolvePackageRoot: () => mockPackageRoot,
-    // Wrap scaffoldAgent to ensure per-agent config.toml has models reference
-    // (scaffoldAgent writes config.toml from agent.config runtime fields,
-    // but loadAgentConfig requires models; in production `al new` writes them separately).
-    scaffoldAgent: (projectPath: string, agent: any) => {
-      orig.scaffoldAgent(projectPath, agent);
-      const agentDir = resolvePath(projectPath, "agents", agent.name);
-      const configPath = resolvePath(agentDir, "config.toml");
-      if (exists(configPath)) {
-        const content = readFile(configPath, "utf-8");
-        if (!content.includes("models")) {
-          writeFile(configPath, content + '\nmodels = ["sonnet"]\n');
-        }
-      } else {
-        mkdir(agentDir, { recursive: true });
-        writeFile(configPath, toTOML({ models: ["sonnet"] }) + "\n");
-      }
-    },
-  };
-});
 
 // Mock doctor to avoid real execution
 const mockDoctorExecute = vi.fn().mockResolvedValue(undefined);
@@ -83,132 +52,9 @@ vi.mock("../../../src/credentials/prompter.js", () => ({
   promptCredential: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { newAgent, configAgent } from "../../../src/cli/commands/agent.js";
+import { configAgent } from "../../../src/cli/commands/agent.js";
 import { listCredentialInstances, writeCredentialFields } from "../../../src/shared/credentials.js";
 import { promptCredential } from "../../../src/credentials/prompter.js";
-
-describe("agent new", () => {
-  let tmpDir: string;
-  let consoleSpy: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    tmpDir = mkdtempSync(join(tmpdir(), "al-agent-new-"));
-    mockPackageRoot = mkdtempSync(join(tmpdir(), "al-pkg-"));
-    consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-
-    // Create agents dir
-    mkdirSync(resolve(tmpDir, "agents"), { recursive: true });
-    // Write config.toml with model definitions so loadAgentConfig can resolve model names
-    writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
-      models: { sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" } },
-    }));
-  });
-
-  afterEach(() => {
-    consoleSpy.mockRestore();
-    rmSync(tmpDir, { recursive: true, force: true });
-    rmSync(mockPackageRoot, { recursive: true, force: true });
-  });
-
-  it("creates agent from example template (dev)", async () => {
-    // Set up example template with SKILL.md (portable) and config.toml (runtime)
-    const exampleDir = resolve(mockPackageRoot, "docs", "examples", "dev");
-    mkdirSync(exampleDir, { recursive: true });
-    writeFileSync(resolve(exampleDir, "SKILL.md"), '---\n---\n\n# Dev Agent\n');
-    writeFileSync(resolve(exampleDir, "config.toml"), stringifyTOML({
-      credentials: ["github_token"],
-      models: ["sonnet"],
-    }) + "\n");
-
-    // Mock: select type=dev, input name=my-dev, then "done" in config menu
-    mockSelect
-      .mockResolvedValueOnce("dev")      // agent type
-      .mockResolvedValueOnce("done");    // config menu: done
-    mockInput.mockResolvedValueOnce("my-dev"); // agent name
-
-    await newAgent({ project: tmpDir });
-
-    const agentDir = resolve(tmpDir, "agents", "my-dev");
-    expect(existsSync(resolve(agentDir, "SKILL.md"))).toBe(true);
-    expect(readFileSync(resolve(agentDir, "SKILL.md"), "utf-8")).toContain("# Dev Agent");
-    // Runtime config (credentials, models) lives in config.toml now
-    expect(existsSync(resolve(agentDir, "config.toml"))).toBe(true);
-    const agentToml = parseTOML(readFileSync(resolve(agentDir, "config.toml"), "utf-8")) as any;
-    expect(agentToml.credentials).toContain("github_token");
-  });
-
-  it("creates custom agent with scaffoldAgent", async () => {
-    mockSelect
-      .mockResolvedValueOnce("custom")   // agent type
-      .mockResolvedValueOnce("done");    // config menu: done
-    mockInput.mockResolvedValueOnce("my-custom"); // agent name
-
-    await newAgent({ project: tmpDir });
-
-    const agentDir = resolve(tmpDir, "agents", "my-custom");
-    expect(existsSync(resolve(agentDir, "SKILL.md"))).toBe(true);
-  });
-
-  it("throws when example template is missing SKILL.md", async () => {
-    // Create example dir WITHOUT SKILL.md
-    const exampleDir = resolve(mockPackageRoot, "docs", "examples", "reviewer");
-    mkdirSync(exampleDir, { recursive: true });
-    // No SKILL.md in the directory
-
-    mockSelect
-      .mockResolvedValueOnce("reviewer")   // agent type
-      .mockResolvedValueOnce("done");      // (won't be reached)
-    mockInput.mockResolvedValueOnce("my-reviewer");
-
-    await expect(newAgent({ project: tmpDir })).rejects.toThrow(
-      'Example template "reviewer" is missing SKILL.md'
-    );
-  });
-
-  it("creates agent from example template without config.toml (no copy)", async () => {
-    // Template has SKILL.md but no config.toml
-    const exampleDir = resolve(mockPackageRoot, "docs", "examples", "devops");
-    mkdirSync(exampleDir, { recursive: true });
-    writeFileSync(resolve(exampleDir, "SKILL.md"), "---\n---\n\n# DevOps Agent\n");
-    // Deliberately NO config.toml in example dir
-
-    mockSelect
-      .mockResolvedValueOnce("devops")     // agent type
-      .mockResolvedValueOnce("done");      // config menu: done
-    mockInput.mockResolvedValueOnce("my-devops");
-
-    await newAgent({ project: tmpDir });
-
-    const agentDir = resolve(tmpDir, "agents", "my-devops");
-    expect(existsSync(resolve(agentDir, "SKILL.md"))).toBe(true);
-    // config.toml should still be created by configAgent (done saves it)
-    // But no template config.toml was copied
-    const agentToml = parseTOML(readFileSync(resolve(agentDir, "config.toml"), "utf-8")) as any;
-    // models array should be empty or undefined (no template config was copied)
-    expect(agentToml.models).toBeDefined();
-  });
-
-  it("rejects invalid agent names via validate callback", async () => {
-    mockSelect.mockResolvedValueOnce("custom");
-    // Simulate: first call invokes validate, let's test the validate function
-    mockInput.mockImplementationOnce(async (opts: any) => {
-      // Test validation rejects "default"
-      const result = opts.validate("default");
-      expect(result).toContain("reserved");
-      // Test validation rejects existing
-      mkdirSync(resolve(tmpDir, "agents", "existing"), { recursive: true });
-      const result2 = opts.validate("existing");
-      expect(result2).toContain("already exists");
-      // Test validation accepts valid name
-      expect(opts.validate("good-name")).toBe(true);
-      return "good-name";
-    });
-    mockSelect.mockResolvedValueOnce("done"); // config menu
-
-    await newAgent({ project: tmpDir });
-  });
-});
 
 describe("agent config", () => {
   let tmpDir: string;

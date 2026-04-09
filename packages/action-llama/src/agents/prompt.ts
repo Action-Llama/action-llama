@@ -211,7 +211,7 @@ function buildSkillsBlock(skills?: PromptSkills): string {
 export function buildPromptSkeleton(agentConfig: AgentConfig, skills?: PromptSkills): string {
   const configBlock = buildConfigBlock(agentConfig);
   const hostUser = skills?.hostUser;
-  const credentialBlock = buildCredentialContext(agentConfig.credentials, { hostUser });
+  const credentialBlock = buildCredentialContext(agentConfig.credentials ?? [], { hostUser });
   const environmentBlock = buildEnvironmentContext({ hostUser });
   const skillsBlock = buildSkillsBlock(skills);
   return `<agent-config>\n${configBlock}\n</agent-config>\n\n${credentialBlock}\n\n${environmentBlock}${skillsBlock}`;

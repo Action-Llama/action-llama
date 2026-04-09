@@ -330,6 +330,7 @@ program
   .argument("<repo>", "git URL or GitHub shorthand (author/repo)")
   .option("-p, --project <dir>", "project directory", ".")
   .option("-a, --agent <name>", "agent name (if repo contains multiple)")
+  .option("--no-config", "skip interactive configuration after install")
   .action(withCommand(async (repo: string, opts) => {
     const { execute } = await import("./commands/add.js");
     await execute(repo, opts);
@@ -360,15 +361,6 @@ program
 const agentCmd = program
   .command("agent")
   .description("Agent management");
-
-agentCmd
-  .command("new")
-  .description("Create a new agent from a template")
-  .option("-p, --project <dir>", "project directory", ".")
-  .action(withCommand(async (opts) => {
-    const { newAgent } = await import("./commands/agent.js");
-    await newAgent(opts);
-  }));
 
 agentCmd
   .command("config")

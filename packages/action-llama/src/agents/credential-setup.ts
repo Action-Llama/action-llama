@@ -113,7 +113,7 @@ export function loadContainerCredentials(agentConfig: AgentConfig): LoadedCreden
   }
 
   // Generic credential → env var injection from credential definitions
-  for (const credRef of agentConfig.credentials) {
+  for (const credRef of agentConfig.credentials ?? []) {
     const { type, instance } = parseCredentialRef(credRef);
     const def = builtinCredentials[type];
     if (!def?.envVars) continue;
@@ -141,7 +141,7 @@ export function loadContainerCredentials(agentConfig: AgentConfig): LoadedCreden
   }
 
   // Set up SSH key for git push/clone if git_ssh credential is available
-  const gitSshRef = agentConfig.credentials.find((ref) => parseCredentialRef(ref).type === "git_ssh");
+  const gitSshRef = (agentConfig.credentials ?? []).find((ref) => parseCredentialRef(ref).type === "git_ssh");
   if (gitSshRef) {
     const { instance } = parseCredentialRef(gitSshRef);
     const sshKey = readCredentialField(bundle, "git_ssh", instance, "id_rsa");

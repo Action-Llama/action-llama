@@ -7,6 +7,8 @@ export interface ModelConfig {
   model: string;
   thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
   authType: "api_key" | "oauth_token" | "pi_auth";
+  /** Custom base URL for OpenAI-compatible endpoints (e.g. local LLMs, mock servers). */
+  baseUrl?: string;
 }
 
 export type HarnessType = "pi";

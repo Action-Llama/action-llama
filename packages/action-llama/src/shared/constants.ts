@@ -67,8 +67,8 @@ export const CONSTANTS = {
   /** Docker network name */
   NETWORK_NAME: "al-net",
 
-  /** Default base Docker image (primary tag — git SHA for immutability) */
-  DEFAULT_IMAGE: `al-agent:${GIT_SHA}`,
+  /** Default base Docker image for agent containers (stock image, no build required). */
+  DEFAULT_IMAGE: "node:20-alpine",
 
   /** Project-level base image (extends DEFAULT_IMAGE with user customizations) */
   PROJECT_BASE_IMAGE: `al-project-base:${GIT_SHA}`,

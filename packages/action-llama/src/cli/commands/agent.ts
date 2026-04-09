@@ -1,96 +1,24 @@
-import { existsSync, mkdirSync, copyFileSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import { resolve } from "path";
 import { select, input, checkbox, confirm } from "@inquirer/prompts";
 import { parse as parseTOML, stringify as stringifyTOML } from "smol-toml";
 import {
-  validateAgentName,
   loadAgentRuntimeConfig,
   loadGlobalConfig,
 } from "../../shared/config.js";
-import type { AgentConfig, AgentRuntimeConfig, ModelConfig } from "../../shared/config.js";
+import type { AgentConfig, ModelConfig } from "../../shared/config.js";
 import type { WebhookTrigger } from "../../webhooks/types.js";
-import { scaffoldAgent } from "../../setup/scaffold.js";
-import { resolvePackageRoot } from "../../setup/scaffold.js";
 import { listBuiltinCredentialIds, getBuiltinCredential, resolveCredential } from "../../credentials/registry.js";
 import { listCredentialInstances, writeCredentialFields } from "../../shared/credentials.js";
 import { promptCredential } from "../../credentials/prompter.js";
 import { WEBHOOK_SECRET_TYPES } from "../../shared/credential-refs.js";
-
-const EXAMPLE_TYPES = ["dev", "reviewer", "devops"] as const;
-
-export async function newAgent(opts: { project: string }): Promise<void> {
-  const projectPath = resolve(opts.project);
-
-  const agentType = await select({
-    message: "Agent type:",
-    choices: [
-      { name: "dev — issue solver, writes code", value: "dev" },
-      { name: "reviewer — PR reviewer", value: "reviewer" },
-      { name: "devops — infra and ops tasks", value: "devops" },
-      { name: "custom — blank agent", value: "custom" },
-    ],
-  });
-
-  const name = await input({
-    message: "Agent name:",
-    validate: (value) => {
-      try {
-        validateAgentName(value);
-      } catch (err: any) {
-        return err.message;
-      }
-      const agentDir = resolve(projectPath, "agents", value);
-      if (existsSync(agentDir)) {
-        return `Agent "${value}" already exists at ${agentDir}`;
-      }
-      return true;
-    },
-  });
-
-  const agentDir = resolve(projectPath, "agents", name);
-
-  if (EXAMPLE_TYPES.includes(agentType as any)) {
-    // Copy example template
-    const exampleDir = resolve(resolvePackageRoot(), "docs", "examples", agentType);
-    mkdirSync(agentDir, { recursive: true });
-
-    const skillSrc = resolve(exampleDir, "SKILL.md");
-    if (existsSync(skillSrc)) {
-      copyFileSync(skillSrc, resolve(agentDir, "SKILL.md"));
-    } else {
-      throw new Error(`Example template "${agentType}" is missing SKILL.md at ${exampleDir}`);
-    }
-
-    // Copy config.toml if it exists in the example, otherwise create empty
-    const configSrc = resolve(exampleDir, "config.toml");
-    if (existsSync(configSrc)) {
-      copyFileSync(configSrc, resolve(agentDir, "config.toml"));
-    }
-
-    console.log(`Created agent "${name}" from ${agentType} template.`);
-  } else {
-    // Custom: use scaffoldAgent with minimal config
-    scaffoldAgent(projectPath, {
-      name,
-      config: {
-        name,
-        credentials: [],
-        models: [],
-      },
-    });
-    console.log(`Created agent "${name}" (custom).`);
-  }
-
-  // Run interactive config
-  await configAgent(name, opts);
-}
 
 export async function configAgent(name: string, opts: { project: string }): Promise<void> {
   const projectPath = resolve(opts.project);
   const agentDir = resolve(projectPath, "agents", name);
 
   if (!existsSync(resolve(agentDir, "SKILL.md"))) {
-    throw new Error(`Agent "${name}" not found. Run 'al agent new' first.`);
+    throw new Error(`Agent "${name}" not found. Run 'al add' first.`);
   }
 
   // Load raw config — never throws on unresolved model references

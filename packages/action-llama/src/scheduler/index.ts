@@ -42,7 +42,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     ? await setupWebhookRegistry(globalConfig, logger)
     : { registry: undefined, secrets: {} };
 
-  const baseImage = CONSTANTS.DEFAULT_IMAGE;
+  const baseImage = globalConfig.local?.image ?? CONSTANTS.DEFAULT_IMAGE;
 
   // Register agents early so the TUI shows them during startup
   for (const agentConfig of agentConfigs) {

@@ -104,22 +104,34 @@ function normalizeRepo(repo: string): string {
 
 export async function execute(
   repo: string,
-  opts: { agent?: string; project: string },
+  opts: { agent?: string; project: string; config?: boolean },
 ): Promise<void> {
   const projectPath = resolve(opts.project);
   const agentsDir = resolve(projectPath, "agents");
 
-  // 1. Clone to temp dir
-  const tmpDir = mkdtempSync(resolve(tmpdir(), "al-add-"));
-  try {
+  // 1. Resolve source — local directory or git clone
+  const resolvedPath = resolve(repo);
+  const isLocalDir = existsSync(resolvedPath) && statSync(resolvedPath).isDirectory();
+
+  let sourcePath: string;
+  let tmpDir: string | null = null;
+
+  if (isLocalDir) {
+    sourcePath = resolvedPath;
+    console.log(`Using local directory ${sourcePath}...`);
+  } else {
+    tmpDir = mkdtempSync(resolve(tmpdir(), "al-add-"));
     const gitUrl = normalizeRepo(repo);
     console.log(`Fetching ${gitUrl}...`);
     execFileSync("git", ["clone", "--depth", "1", "--single-branch", gitUrl, tmpDir], {
       stdio: "pipe",
     });
+    sourcePath = tmpDir;
+  }
 
+  try {
     // 2. Discover skills
-    const skills = discoverSkills(tmpDir);
+    const skills = discoverSkills(sourcePath);
     if (skills.length === 0) {
       throw new Error(`No SKILL.md files found in ${repo}.`);
     }
@@ -201,13 +213,13 @@ export async function execute(
       } catch {
         configObj = {};
       }
-      configObj.source = repo;
+      configObj.source = isLocalDir ? resolvedPath : repo;
       const { writeFileSync } = await import("fs");
       writeFileSync(resolve(destDir, "config.toml"), stringifyTOML(configObj) + "\n");
     } else {
       // Create minimal config.toml with just source
       const { writeFileSync } = await import("fs");
-      writeFileSync(resolve(destDir, "config.toml"), stringifyTOML({ source: repo }) + "\n");
+      writeFileSync(resolve(destDir, "config.toml"), stringifyTOML({ source: isLocalDir ? resolvedPath : repo }) + "\n");
     }
 
     if (skill.dockerfilePath) {
@@ -217,9 +229,13 @@ export async function execute(
     console.log(`Installed skill "${skill.name}" as agent "${agentName}".`);
 
     // 6. Run al config for interactive gap-filling
-    const { configAgent } = await import("./agent.js");
-    await configAgent(agentName, { project: opts.project });
+    if (opts.config !== false) {
+      const { configAgent } = await import("./agent.js");
+      await configAgent(agentName, { project: opts.project });
+    }
   } finally {
-    rmSync(tmpDir, { recursive: true, force: true });
+    if (tmpDir) {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
   }
 }

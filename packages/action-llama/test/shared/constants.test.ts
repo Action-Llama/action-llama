@@ -72,8 +72,8 @@ describe("CONSTANTS", () => {
       expect(CONSTANTS.NETWORK_NAME).toBe("al-net");
     });
 
-    it("DEFAULT_IMAGE includes GIT_SHA", () => {
-      expect(CONSTANTS.DEFAULT_IMAGE).toBe(`al-agent:${GIT_SHA}`);
+    it("DEFAULT_IMAGE is node:20-alpine", () => {
+      expect(CONSTANTS.DEFAULT_IMAGE).toBe("node:20-alpine");
     });
 
     it("PROJECT_BASE_IMAGE includes GIT_SHA", () => {

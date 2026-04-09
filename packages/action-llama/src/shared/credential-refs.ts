@@ -36,7 +36,7 @@ export function collectCredentialRefs(projectPath: string, globalConfig: GlobalC
 
   for (const name of agents) {
     const config = loadAgentConfig(projectPath, name);
-    for (const ref of config.credentials) {
+    for (const ref of config.credentials ?? []) {
       credentialRefs.add(ref);
     }
     // Add provider credentials for all models in the chain

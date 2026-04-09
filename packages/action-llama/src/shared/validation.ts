@@ -31,7 +31,7 @@ export interface ConfigSchema {
 // Schema for individual model config (used inside named model sub-keys)
 const MODEL_CONFIG_SCHEMA: ConfigSchema = {
   required: new Set(),
-  optional: new Set(["provider", "model", "thinkingLevel", "authType"]),
+  optional: new Set(["provider", "model", "thinkingLevel", "authType", "baseUrl"]),
   nested: {}
 };
 

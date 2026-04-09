@@ -43,7 +43,7 @@ export async function validateAndDiscover(
   const activeAgentConfigs = agentConfigs.filter((a) => (a.scale ?? 1) > 0);
 
   // Validate credentials exist for each active agent
-  const allCredentials = new Set(activeAgentConfigs.flatMap((a) => a.credentials));
+  const allCredentials = new Set(activeAgentConfigs.flatMap((a) => a.credentials ?? []));
   for (const credRef of allCredentials) {
     await requireCredentialRef(credRef);
   }

@@ -24,6 +24,7 @@ import {
   SessionManager,
   SettingsManager,
   DefaultResourceLoader,
+  ModelRegistry,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentConfig, GlobalConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
@@ -401,6 +402,9 @@ export class TransportAgentRunner implements PoolRunner {
     const containerName = `al-${this.agentConfig.name}-${runId}`;
     const memory = this.globalConfig.local?.memory || "4g";
 
+    // Ensure the base image is available locally
+    this.ensureImageAvailable(this.baseImage);
+
     const args = [
       "run", "-d",
       "--name", containerName,
@@ -428,12 +432,35 @@ export class TransportAgentRunner implements PoolRunner {
   }
 
   /**
+   * Ensure a Docker image is available locally. If not, attempt to pull it.
+   */
+  private ensureImageAvailable(image: string): void {
+    try {
+      execFileSync("docker", ["image", "inspect", image], {
+        timeout: 10_000,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+    } catch {
+      // Image not found locally — try to pull
+      this.logger.info({ image }, "image not found locally, pulling...");
+      try {
+        execFileSync("docker", ["pull", image], {
+          timeout: 120_000,
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+      } catch (pullErr: any) {
+        throw new Error(`Base image "${image}" not found and pull failed: ${pullErr.message}`);
+      }
+    }
+  }
+
+  /**
    * Stage credentials onto the runtime via the transport.
    * Returns a map of provider → API key for Pi session auth.
    */
   private async stageCredentials(transport: Transport): Promise<Map<string, string>> {
     const providerKeys = new Map<string, string>();
-    const credRefs = [...new Set(this.agentConfig.credentials)];
+    const credRefs = [...new Set(this.agentConfig.credentials ?? [])];
 
     // Add provider keys for all configured models
     for (const mc of this.agentConfig.models) {
@@ -446,6 +473,14 @@ export class TransportAgentRunner implements PoolRunner {
 
     if (credRefs.length === 0) return providerKeys;
 
+    // For host-user runtime, stage credentials to a temp dir (not /credentials which is root-only).
+    // For container runtimes, /credentials is inside the container filesystem.
+    const runtimeType = this.agentConfig.runtime?.type ?? "container";
+    const isHostUser = runtimeType === "host-user";
+    const credBase = isHostUser
+      ? `/tmp/al-creds-${randomBytes(4).toString("hex")}`
+      : "/credentials";
+
     const backend = getDefaultBackend();
     const credFiles = new Map<string, Buffer>();
 
@@ -456,7 +491,7 @@ export class TransportAgentRunner implements PoolRunner {
 
       for (const [field, value] of Object.entries(fields)) {
         // Stage credential file on the runtime
-        const remotePath = `/credentials/${type}/${instance}/${field}`;
+        const remotePath = `${credBase}/${type}/${instance}/${field}`;
         credFiles.set(remotePath, Buffer.from(value + "\n", "utf-8"));
 
         // Extract provider API keys for Pi session auth
@@ -472,10 +507,10 @@ export class TransportAgentRunner implements PoolRunner {
     // Batch write all credential files
     if (credFiles.size > 0) {
       // Clean and recreate credential directory for a fresh state
-      await transport.exec("rm -rf /credentials 2>/dev/null; mkdir -p /credentials");
+      await transport.exec(`rm -rf ${credBase} 2>/dev/null; mkdir -p ${credBase}`);
       await transport.writeFiles(credFiles);
-      await transport.exec("find /credentials -type f -exec chmod 400 {} +");
-      this.logger.info({ count: credFiles.size }, "credentials staged via transport");
+      await transport.exec(`find ${credBase} -type f -exec chmod 400 {} +`);
+      this.logger.info({ count: credFiles.size, credBase }, "credentials staged via transport");
     }
 
     return providerKeys;
@@ -535,22 +570,55 @@ export class TransportAgentRunner implements PoolRunner {
           return { result: "error", error: "Aborted" };
         }
 
-        const llmModel = getModel(modelConfig.provider as any, modelConfig.model as any);
-
-        this.logger.info({
-          model: modelConfig.model,
-          thinking: modelConfig.thinkingLevel,
-        }, "creating Pi session with transport tools");
-
         const authStorage = AuthStorage.create();
         const providerKey = providerKeys.get(modelConfig.provider);
         if (providerKey) {
           authStorage.setRuntimeApiKey(modelConfig.provider, providerKey);
         }
 
+        // Resolve model — either from built-in registry or custom provider with baseUrl
+        let llmModel;
+        let customModelRegistry: ModelRegistry | undefined;
+        if (modelConfig.baseUrl) {
+          // Create a model registry with the custom provider registered
+          customModelRegistry = ModelRegistry.inMemory(authStorage);
+          const providerName = `custom_${modelConfig.provider}`;
+          // Register API key under custom provider name too
+          if (providerKey) {
+            authStorage.setRuntimeApiKey(providerName, providerKey);
+          }
+          customModelRegistry.registerProvider(providerName, {
+            baseUrl: modelConfig.baseUrl,
+            apiKey: providerKey || "dummy-key",
+            models: [{
+              id: modelConfig.model,
+              name: modelConfig.model,
+              api: "openai-completions" as any,
+              reasoning: false,
+              input: ["text" as const],
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+              contextWindow: 128000,
+              maxTokens: 16384,
+            }],
+          });
+          llmModel = customModelRegistry.find(providerName, modelConfig.model);
+          if (!llmModel) {
+            throw new Error(`Failed to register custom model ${modelConfig.provider}/${modelConfig.model} at ${modelConfig.baseUrl}`);
+          }
+        } else {
+          llmModel = getModel(modelConfig.provider as any, modelConfig.model as any);
+        }
+
+        this.logger.info({
+          model: modelConfig.model,
+          thinking: modelConfig.thinkingLevel,
+          baseUrl: modelConfig.baseUrl,
+        }, "creating Pi session with transport tools");
+
         const { session } = await createAgentSession({
           cwd: CONTAINER_CWD,
           model: llmModel,
+          modelRegistry: customModelRegistry,
           thinkingLevel: modelConfig.thinkingLevel,
           authStorage,
           resourceLoader,
@@ -566,7 +634,22 @@ export class TransportAgentRunner implements PoolRunner {
         this.subscribeToEvents(session);
 
         try {
+          const state = session.state;
+          this.logger.debug({
+            promptLength: prompt.length,
+            model: state?.model ? { id: state.model.id, provider: state.model.provider, api: state.model.api, baseUrl: state.model.baseUrl } : "NO MODEL",
+            toolCount: state?.tools?.length ?? 0,
+          }, "about to call session.prompt()");
+
           await session.prompt(prompt);
+
+          const allMessages = session.state?.messages ?? [];
+          const lastMsg = allMessages[allMessages.length - 1] as any;
+          if (lastMsg?.stopReason === "error") {
+            this.logger.error({
+              errorMessage: lastMsg?.errorMessage ?? session.state?.errorMessage,
+            }, "session.prompt() completed with error");
+          }
 
           this.circuitBreaker.recordSuccess(modelConfig.provider, modelConfig.model);
 
@@ -628,6 +711,9 @@ export class TransportAgentRunner implements PoolRunner {
    */
   private subscribeToEvents(session: any): void {
     session.subscribe((event: any) => {
+      // Log all event types at debug level
+      this.logger.debug({ eventType: event.type }, "session event");
+
       if (event.type === "tool_execution_start") {
         const cmd = String(event.args?.command || "");
         this.logger.debug({
