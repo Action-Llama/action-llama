@@ -917,7 +917,6 @@ describe("log summary route", () => {
     expect(logContent).toContain("rm -rf /tmp/bad");
     expect(logContent).toContain('"isError":true');
     expect(logContent).toContain('"isError":false');
-    expect(logContent).toContain('"resultHidden":true');
 
     // Payload text should NOT be present
     expect(logContent).not.toContain("SECRET_VERBOSE_OUTPUT_MARKER");

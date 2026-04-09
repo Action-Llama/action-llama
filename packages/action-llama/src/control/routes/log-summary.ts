@@ -162,8 +162,10 @@ export function registerLogSummaryRoutes(
       return c.json({ error: msg }, 500);
     }
 
-    // Build prompt — include all fields so the model sees content, tools, commands, etc.
-    // but redact verbose tool-result payloads to keep the prompt focused.
+    // Build prompt — include metadata fields so the model sees tools, commands, errors,
+    // and message text, but strip verbose/raw payloads to keep the prompt small.
+    const STRIP_KEYS = new Set(["raw", "result", "resultText", "content", "turnResult"]);
+
     const logText = entries
       .map((e) => {
         const { level, time, instance, ...rest } = e;
@@ -176,16 +178,24 @@ export function registerLogSummaryRoutes(
             ...(rest.tool != null && { tool: rest.tool }),
             ...(rest.cmd != null && { cmd: rest.cmd }),
             ...(rest.isError != null && { isError: rest.isError }),
-            ...(rest.toolCallId != null && { toolCallId: rest.toolCallId }),
-            resultHidden: true,
           };
           return `[${ts}] ${JSON.stringify(sanitized)}`;
         }
 
-        // If there are extra fields beyond msg, include them
-        const extra = Object.keys(rest).filter((k) => k !== "msg");
+        // Strip verbose fields from all other entries
+        const slim: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(rest)) {
+          if (!STRIP_KEYS.has(k) && v != null) slim[k] = v;
+        }
+
+        // Truncate long text fields (e.g. conversation.message text)
+        if (typeof slim.text === "string" && (slim.text as string).length > 500) {
+          slim.text = (slim.text as string).slice(0, 500) + "…";
+        }
+
+        const extra = Object.keys(slim).filter((k) => k !== "msg");
         if (extra.length === 0) return `[${ts}] ${e.msg}`;
-        return `[${ts}] ${JSON.stringify(rest)}`;
+        return `[${ts}] ${JSON.stringify(slim)}`;
       })
       .join("\n");
 
