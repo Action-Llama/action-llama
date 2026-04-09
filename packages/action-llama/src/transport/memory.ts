@@ -28,6 +28,10 @@ export class MemoryTransport implements Transport {
   /** Whether close() has been called. */
   closed = false;
 
+  async connect(): Promise<void> {
+    this.closed = false;
+  }
+
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
     if (this.closed) throw new Error("Transport is closed");
     this.execLog.push(command);

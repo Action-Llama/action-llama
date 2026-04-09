@@ -12,6 +12,8 @@ import type { LockStore } from "../execution/lock-store.js";
 import type { CallStore } from "../execution/call-store.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import type { Logger } from "../shared/logger.js";
+import type { WaitFilter } from "../execution/waiting-registry.js";
+import { DEFAULT_WAIT_TIMEOUT } from "../shared/constants.js";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -37,6 +39,13 @@ export interface SchedulerToolsOpts {
   depth: number;
   /** Callback invoked when the agent calls return_value. */
   onReturnValue: (value: string) => void;
+  /**
+   * Callback invoked when the agent calls wait_for_trigger.
+   * Returns a promise that resolves with the trigger payload when matched.
+   */
+  onWait?: (filter: import("../execution/waiting-registry.js").WaitFilter, timeoutMs: number) => Promise<any>;
+  /** Default wait timeout in seconds (from agent/global config). */
+  defaultWaitTimeout?: number;
 }
 
 // ── Tool definitions ──────────────────────────────────────────
@@ -46,7 +55,7 @@ function textResult(text: string) {
 }
 
 export function createSchedulerTools(opts: SchedulerToolsOpts): ToolDefinition[] {
-  return [
+  const tools = [
     createAcquireLockTool(opts),
     createReleaseLockTool(opts),
     createCallAgentTool(opts),
@@ -54,6 +63,12 @@ export function createSchedulerTools(opts: SchedulerToolsOpts): ToolDefinition[]
     createSetStatusTool(opts),
     createReturnValueTool(opts),
   ];
+
+  if (opts.onWait) {
+    tools.push(createWaitTool(opts));
+  }
+
+  return tools;
 }
 
 // ── acquire_lock ──────────────────────────────────────────────
@@ -228,6 +243,99 @@ function createReturnValueTool(opts: SchedulerToolsOpts) {
       opts.onReturnValue(params.value);
       opts.logger.info("return value set");
       return textResult(`Return value set. It will be visible to the calling agent via check_call.`);
+    },
+  });
+}
+
+// ── wait_for_trigger ──────────────────────────────────────────
+
+/**
+ * Parse a human-readable duration string to milliseconds.
+ * Supports: "30s", "5m", "2h", "1h30m".
+ */
+function parseDuration(duration: string): number | null {
+  const parts = duration.match(/(\d+)\s*(s|m|h)/g);
+  if (!parts) return null;
+  let totalMs = 0;
+  for (const part of parts) {
+    const match = part.match(/(\d+)\s*(s|m|h)/);
+    if (!match) return null;
+    const value = parseInt(match[1], 10);
+    switch (match[2]) {
+      case "s": totalMs += value * 1000; break;
+      case "m": totalMs += value * 60_000; break;
+      case "h": totalMs += value * 3_600_000; break;
+    }
+  }
+  return totalMs > 0 ? totalMs : null;
+}
+
+const WaitForTriggerParams = Type.Object({
+  type: Type.Union([Type.Literal("webhook"), Type.Literal("agent_trigger")], {
+    description: "The type of trigger to wait for",
+  }),
+  source: Type.Optional(Type.String({ description: "Webhook source name to match (e.g. 'github')" })),
+  event: Type.Optional(Type.String({ description: "Event type to match (e.g. 'pull_request')" })),
+  match: Type.Optional(Type.Record(Type.String(), Type.String(), {
+    description: "Dot-path equality predicates on the trigger payload (e.g. {\"action\": \"closed\", \"pull_request.merged\": \"true\"})",
+  })),
+  source_agent: Type.Optional(Type.String({ description: "For agent_trigger: only match triggers from this agent" })),
+  timeout: Type.Optional(Type.String({ description: "How long to wait before timing out (e.g. '30m', '2h'). Defaults to agent/project config." })),
+});
+
+function createWaitTool(opts: SchedulerToolsOpts) {
+  return defineTool({
+    name: "wait_for_trigger",
+    label: "Wait for Trigger",
+    description: "Suspend this agent and wait for a specific trigger (webhook event or agent trigger) before resuming. The agent's container is paused while waiting to save resources. When the trigger arrives, the agent resumes with the trigger payload.",
+    promptSnippet: "wait_for_trigger — suspend and wait for a webhook or agent trigger",
+    promptGuidelines: [
+      "Use this to build multi-step workflows. For example: process a PR opened event, then wait for it to merge.",
+      "The agent is suspended while waiting — no resources are consumed. You will resume exactly where you left off.",
+      "The timeout defaults to 30 minutes. Use the timeout parameter for longer waits.",
+    ],
+    parameters: WaitForTriggerParams,
+    async execute(_toolCallId, params) {
+      if (!opts.onWait) {
+        return textResult("Error: wait_for_trigger is not available in this context.");
+      }
+
+      // Build the filter
+      let filter: WaitFilter;
+      if (params.type === "webhook") {
+        filter = {
+          type: "webhook",
+          source: params.source,
+          event: params.event,
+          match: params.match,
+        };
+      } else {
+        filter = {
+          type: "agent-trigger",
+          sourceAgent: params.source_agent,
+        };
+      }
+
+      // Parse timeout
+      const defaultTimeoutMs = (opts.defaultWaitTimeout ?? DEFAULT_WAIT_TIMEOUT) * 1000;
+      const timeoutMs = params.timeout ? (parseDuration(params.timeout) ?? defaultTimeoutMs) : defaultTimeoutMs;
+
+      opts.logger.info({ filter, timeoutMs }, "agent requesting wait_for_trigger");
+      opts.statusTracker?.setAgentStatusText(opts.agentName, `waiting for ${params.type}${params.event ? `: ${params.event}` : ""}`);
+
+      try {
+        const payload = await opts.onWait(filter, timeoutMs);
+
+        opts.logger.info("wait_for_trigger resolved with trigger payload");
+        opts.statusTracker?.setAgentStatusText(opts.agentName, null);
+
+        const payloadStr = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+        return textResult(`Trigger received. Payload:\n\n${payloadStr}`);
+      } catch (err: any) {
+        opts.logger.warn({ err: err.message }, "wait_for_trigger failed");
+        opts.statusTracker?.setAgentStatusText(opts.agentName, null);
+        return textResult(`Wait failed: ${err.message}`);
+      }
     },
   });
 }

@@ -37,7 +37,7 @@ export function buildTriggerLabels(config: AgentConfig): string[] {
 export interface AgentStatus {
   name: string;
   description?: string;
-  state: "idle" | "running" | "building" | "error";
+  state: "idle" | "running" | "waiting" | "building" | "error";
   enabled: boolean;
   statusText: string | null;
   lastError: string | null;
@@ -47,6 +47,7 @@ export interface AgentStatus {
   queuedWebhooks: number;
   scale: number;        // total runner pool size
   runningCount: number; // how many runners are currently active
+  waitingCount: number; // how many instances are waiting for triggers
   taskUrl: string | null; // link to cloud task/execution (ECS or Cloud Run console)
   runReason: string | null; // why the agent is running (e.g. "schedule", "webhook", "rerun 2/10")
   lastRunUsage: TokenUsage | null;
@@ -153,6 +154,7 @@ export class StatusTracker extends EventEmitter {
       queuedWebhooks: 0,
       scale,
       runningCount: 0,
+      waitingCount: 0,
       taskUrl: null,
       runReason: null,
       lastRunUsage: null,
@@ -175,7 +177,7 @@ export class StatusTracker extends EventEmitter {
     this.emit("update");
   }
 
-  setAgentState(name: string, state: "idle" | "running" | "building" | "error"): void {
+  setAgentState(name: string, state: "idle" | "running" | "waiting" | "building" | "error"): void {
     const agent = this.agents.get(name);
     if (!agent) return;
     
@@ -378,11 +380,56 @@ export class StatusTracker extends EventEmitter {
   }
 
   /**
+   * Mark an instance as waiting for a trigger
+   */
+  setInstanceWaiting(id: string): void {
+    const inst = this.instances.get(id);
+    if (!inst) return;
+    inst.status = "waiting";
+
+    const agent = this.agents.get(inst.agentName);
+    if (agent) {
+      agent.runningCount = Math.max(agent.runningCount - 1, 0);
+      agent.waitingCount += 1;
+      if (agent.runningCount === 0 && agent.waitingCount > 0) {
+        agent.state = "waiting";
+      }
+    }
+    this.invalidate({ type: "instance", agent: inst.agentName, instanceId: id });
+    this.emit("update");
+  }
+
+  /**
+   * Resume a waiting instance
+   */
+  resumeInstance(id: string): void {
+    const inst = this.instances.get(id);
+    if (!inst) return;
+    inst.status = "running";
+
+    const agent = this.agents.get(inst.agentName);
+    if (agent) {
+      agent.waitingCount = Math.max(agent.waitingCount - 1, 0);
+      agent.runningCount += 1;
+      agent.state = "running";
+    }
+    this.invalidate({ type: "instance", agent: inst.agentName, instanceId: id });
+    this.emit("update");
+  }
+
+  /**
    * Update an instance's status (e.g. running -> completed)
    */
   completeInstance(id: string, status: 'completed' | 'error' | 'killed'): void {
     const inst = this.instances.get(id);
     if (!inst) return;
+    // If instance was waiting, decrement waitingCount instead of runningCount
+    if (inst.status === "waiting") {
+      const agent = this.agents.get(inst.agentName);
+      if (agent) {
+        agent.waitingCount = Math.max(agent.waitingCount - 1, 0);
+      }
+    }
     inst.status = status;
     this.invalidate({ type: "instance", agent: inst.agentName, instanceId: id });
     this.invalidate({ type: "runs", agent: inst.agentName });

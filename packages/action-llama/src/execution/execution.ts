@@ -13,6 +13,7 @@ import type { CallStore } from "./call-store.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import type { StatsStore } from "../stats/index.js";
 import type { InstanceLifecycle } from "./lifecycle/instance-lifecycle.js";
+import type { WaitingRegistry } from "./waiting-registry.js";
 
 export const DEFAULT_MAX_RERUNS = 10;
 export const DEFAULT_MAX_TRIGGER_DEPTH = 3;
@@ -52,6 +53,8 @@ export interface SchedulerContext {
   statsStore?: StatsStore;
   /** Returns true if the scheduler is paused. */
   isPaused?: () => boolean;
+  /** Optional waiting registry for wait/resume support. */
+  waitingRegistry?: WaitingRegistry;
 }
 
 // Prompt helpers: build full prompts for each trigger type.
@@ -174,6 +177,17 @@ export function dispatchTriggers(
       ctx.logger.warn({ source: sourceAgent, target: agent }, "trigger target not found, skipping");
       continue;
     }
+
+    // Check waiting registry first — resume a suspended instance if possible
+    if (ctx.waitingRegistry) {
+      const waitingInstance = ctx.waitingRegistry.matchAgentTrigger(agent, sourceAgent);
+      if (waitingInstance) {
+        ctx.logger.info({ source: sourceAgent, target: agent, instanceId: waitingInstance.instanceId }, "resuming waiting instance via agent trigger");
+        waitingInstance.resolve?.({ type: "agent-trigger", sourceAgent, context });
+        continue;
+      }
+    }
+
     const pool = ctx.runnerPools[agent];
 
     // Record call edge

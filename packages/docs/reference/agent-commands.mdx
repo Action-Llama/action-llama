@@ -168,6 +168,90 @@ echo "$RESULTS" | jq ".\"$TEST_ID\".returnValue"
 - The called agent receives a `<skill-subagent>` block with the caller name and context
 - To return a value, the called agent uses `al-return`
 
+## Wait Command
+
+The `wait_for_trigger` tool lets an agent suspend mid-conversation and wait for a specific trigger before resuming. While waiting, the container is paused and the runner slot is released.
+
+### `wait_for_trigger`
+
+Suspend and wait for a webhook event or agent trigger. This is a scheduler tool (not a shell command) — the agent calls it like any other tool.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `type` | `"webhook"` or `"agent_trigger"` | Yes | Type of trigger to wait for |
+| `source` | string | No | Webhook source name to match (e.g. `"github"`) |
+| `event` | string | No | Event type to match (e.g. `"pull_request"`) |
+| `match` | object | No | Dot-path equality predicates on the trigger payload |
+| `source_agent` | string | No | For `agent_trigger`: only match triggers from this agent |
+| `timeout` | string | No | How long to wait (e.g. `"30m"`, `"2h"`). Defaults to agent/project config. |
+
+**Example — wait for a PR to merge:**
+
+The agent processes a `pull_request.opened` webhook, reviews the PR, then waits for it to merge:
+
+```
+wait_for_trigger(
+  type: "webhook",
+  source: "github",
+  event: "pull_request",
+  match: { "action": "closed", "repo": "acme/app" }
+)
+```
+
+**Example — wait for another agent:**
+
+```
+wait_for_trigger(
+  type: "agent_trigger",
+  source_agent: "deployer"
+)
+```
+
+**Response (on trigger match):**
+
+```
+Trigger received. Payload:
+
+{
+  "source": "github",
+  "event": "pull_request",
+  "action": "closed",
+  "repo": "acme/app",
+  ...
+}
+```
+
+**Response (on timeout):**
+
+```
+Wait failed: Wait timeout expired
+```
+
+### Wait rules
+
+- Multiple `wait_for_trigger` calls per session are allowed (sequential waits)
+- While waiting, the agent's container is paused and the runner slot is released
+- If no matching trigger arrives before the timeout, the tool returns an error message (the agent can handle this gracefully)
+- The agent resumes with the full trigger payload as the tool result
+- Environment variables are **not** preserved across wait/resume — use files for persistent state
+- Wait is allowed during agent-to-agent calls
+
+### Example in SKILL.md
+
+```markdown
+## Workflow
+
+1. When a PR is opened, review the code and leave comments
+2. Use `wait_for_trigger` to wait for the PR to be merged:
+   - type: webhook, source: github, event: pull_request, match: action=closed
+3. When the PR merges, run the deployment pipeline
+4. Use `set_status` to update the dashboard with deployment progress
+```
+
+See [Agents — Wait & Resume](/concepts/agents#wait--resume) for architecture details.
+
 ## Lock Commands
 
 Resource locks prevent multiple agent instances from working on the same resource. Lock keys use URI format (e.g. `github://acme/app/issues/42`).

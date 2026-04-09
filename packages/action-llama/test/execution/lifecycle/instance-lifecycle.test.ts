@@ -154,7 +154,7 @@ describe("InstanceLifecycle", () => {
 
     it("should throw error when calling fail() on non-running instance", () => {
       expect(() => instance.fail("error")).toThrow(
-        "Cannot fail instance in state 'queued'. Must be 'running'."
+        "Cannot fail instance in state 'queued'. Must be 'running' or 'waiting'."
       );
     });
 

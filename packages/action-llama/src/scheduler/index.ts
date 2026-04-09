@@ -1,3 +1,4 @@
+import { WaitingRegistry } from "../execution/waiting-registry.js";
 import { loadGlobalConfig } from "../shared/config.js";
 import type { GlobalConfig } from "../shared/config.js";
 import { createLogger, createFileOnlyLogger } from "../shared/logger.js";
@@ -81,6 +82,9 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     statusTracker, webUI, expose, logger,
   });
 
+  // Create waiting registry for wait/resume support
+  const waitingRegistry = new WaitingRegistry();
+
   // Register webhook bindings early so incoming webhooks are queued
   if (webhookRegistry) {
     for (const agentConfig of activeAgentConfigs) {
@@ -90,6 +94,14 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
         webhookRegistry,
         webhookSources,
         onTrigger: (config, context) => {
+          // Check waiting registry first — resume a suspended instance if possible
+          const waitingInstance = waitingRegistry.matchWebhook(config.name, context);
+          if (waitingInstance) {
+            logger.info({ agent: config.name, event: context.event, instanceId: waitingInstance.instanceId }, "resuming waiting instance via webhook");
+            waitingInstance.resolve?.(context);
+            return true;
+          }
+
           if (!state.schedulerCtx) {
             const { dropped } = workQueue.enqueue(config.name, { type: 'webhook', context });
             statusTracker?.setQueuedWebhooks(config.name, workQueue.size(config.name));
@@ -223,7 +235,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   const { runnerPools, createRunner, actualScales } = await createRunnerPools({
     globalConfig, agentConfigs,
     baseImage: effectiveBaseImage, statusTracker, mkLogger, projectPath, logger,
-    schedulerToolsDeps,
+    schedulerToolsDeps, waitingRegistry,
   });
 
   // Sync status tracker with actual pool sizes
@@ -238,6 +250,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     shuttingDown: false, skills: { locking: true }, events, callStore, statusTracker, statsStore,
     isAgentEnabled: statusTracker ? (name: string) => statusTracker.isAgentEnabled(name) : undefined,
     isPaused: statusTracker ? () => statusTracker.isPaused() : undefined,
+    waitingRegistry,
   };
 
   // Populate late-binding state

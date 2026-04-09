@@ -111,6 +111,7 @@ When the scheduler receives a stop signal (`al stop` or SIGTERM):
 | `maxCallDepth` | `config.toml` | `3` | Max depth for agent call chains |
 | `workQueueSize` | `config.toml` | `100` | Max queued items per agent |
 | `scale` | `config.toml` | _(unlimited)_ | Project-wide max concurrent runners |
+| `defaultWaitTimeout` | `config.toml` | `1800` | Default timeout for `wait_for_trigger` (seconds) |
 | `scale` | `SKILL.md` frontmatter | `1` | Per-agent concurrent runner limit |
 | `gateway.port` | `config.toml` | `8080` | Gateway HTTP port |
 

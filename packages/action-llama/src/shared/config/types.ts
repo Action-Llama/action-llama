@@ -102,6 +102,8 @@ export interface GlobalConfig {
   defaultAgentScale?: number;
   // How many days to keep trigger history and webhook receipts (default: 14)
   historyRetentionDays?: number;
+  // Default wait timeout for wait_for_trigger tool in seconds (default: 1800)
+  defaultWaitTimeout?: number;
 }
 
 // --- Per-agent runtime config (lives at <project>/agents/<name>/config.toml) ---
@@ -163,6 +165,7 @@ export interface AgentConfig {
   scale?: number; // Number of concurrent runs allowed (default: 1)
   timeout?: number; // Max runtime in seconds (falls back to global local.timeout, then 900)
   maxWorkQueueSize?: number; // Max queued work items (falls back to global workQueueSize)
+  waitTimeout?: number; // Max wait timeout for wait_for_trigger in seconds (falls back to global defaultWaitTimeout)
   license?: string;
   compatibility?: string;
   runtime?: AgentRuntimeType;

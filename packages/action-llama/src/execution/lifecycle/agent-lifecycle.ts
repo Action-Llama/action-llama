@@ -9,6 +9,7 @@ import type { InstanceLifecycle } from "./instance-lifecycle.js";
 export interface AgentInfo {
   name: string;
   runningInstanceCount: number;
+  waitingInstanceCount: number;
   totalInstanceCount: number;
   lastRunAt: Date | null;
   lastBuildAt: Date | null;
@@ -60,6 +61,7 @@ export class AgentLifecycle extends BaseStateMachine<AgentState> {
     this.info = {
       name: agentName,
       runningInstanceCount: 0,
+      waitingInstanceCount: 0,
       totalInstanceCount: 0,
       lastRunAt: null,
       lastBuildAt: null,
@@ -169,6 +171,14 @@ export class AgentLifecycle extends BaseStateMachine<AgentState> {
     instance.on("instance:kill", () => {
       this._handleInstanceEnd(instance, "killed");
     });
+
+    instance.on("instance:wait", () => {
+      this._handleInstanceWait(instance);
+    });
+
+    instance.on("instance:resume", () => {
+      this._handleInstanceResume(instance);
+    });
   }
 
   /**
@@ -183,9 +193,12 @@ export class AgentLifecycle extends BaseStateMachine<AgentState> {
     instance.removeAllListeners();
     this.instances.delete(instanceId);
 
-    // Update running count if it was running
+    // Update counts if it was running or waiting
     if (instance.isRunning()) {
       this.info.runningInstanceCount = Math.max(0, this.info.runningInstanceCount - 1);
+      this._updateStateFromInstanceCount();
+    } else if (instance.isWaiting()) {
+      this.info.waitingInstanceCount = Math.max(0, this.info.waitingInstanceCount - 1);
       this._updateStateFromInstanceCount();
     }
 
@@ -285,11 +298,16 @@ export class AgentLifecycle extends BaseStateMachine<AgentState> {
   }
 
   private _handleInstanceEnd(instance: InstanceLifecycle, reason: 'completed' | 'error' | 'killed'): void {
-    this.info.runningInstanceCount = Math.max(0, this.info.runningInstanceCount - 1);
+    // A waiting instance that ends needs waitingCount decremented, not runningCount
+    if (instance.isWaiting?.() || (reason === 'killed' && this.info.waitingInstanceCount > 0 && this.info.runningInstanceCount === 0)) {
+      this.info.waitingInstanceCount = Math.max(0, this.info.waitingInstanceCount - 1);
+    } else {
+      this.info.runningInstanceCount = Math.max(0, this.info.runningInstanceCount - 1);
+    }
 
     // Only transition states if not in error or building state
-    if (this.currentState === "running") {
-      const targetState = this.info.runningInstanceCount > 0 ? "running" : "idle";
+    if (this.currentState === "running" || this.currentState === "waiting") {
+      const targetState = this._computeAgentState();
 
       this.transition<AgentInstanceEndEvent>(
         targetState,
@@ -315,13 +333,65 @@ export class AgentLifecycle extends BaseStateMachine<AgentState> {
     }
   }
 
+  private _handleInstanceWait(_instance: InstanceLifecycle): void {
+    this.info.runningInstanceCount = Math.max(0, this.info.runningInstanceCount - 1);
+    this.info.waitingInstanceCount++;
+
+    if (this.currentState === "running") {
+      const targetState = this._computeAgentState();
+      if (targetState !== this.currentState) {
+        this.transition<AgentTransitionEvent>(
+          targetState,
+          "agent:instance-wait",
+          { agentName: this.info.name }
+        );
+      } else {
+        this.emit("agent:instance-wait", {
+          agentName: this.info.name,
+          fromState: this.currentState,
+          toState: this.currentState,
+          timestamp: new Date(),
+        });
+      }
+    }
+  }
+
+  private _handleInstanceResume(_instance: InstanceLifecycle): void {
+    this.info.waitingInstanceCount = Math.max(0, this.info.waitingInstanceCount - 1);
+    this.info.runningInstanceCount++;
+
+    if (this.currentState === "waiting") {
+      this.transition<AgentTransitionEvent>(
+        "running",
+        "agent:instance-resume",
+        { agentName: this.info.name }
+      );
+    } else {
+      this.emit("agent:instance-resume", {
+        agentName: this.info.name,
+        fromState: this.currentState,
+        toState: this.currentState,
+        timestamp: new Date(),
+      });
+    }
+  }
+
+  /**
+   * Compute the appropriate agent state from instance counts.
+   */
+  private _computeAgentState(): AgentState {
+    if (this.info.runningInstanceCount > 0) return "running";
+    if (this.info.waitingInstanceCount > 0) return "waiting";
+    return "idle";
+  }
+
   private _updateStateFromInstanceCount(): void {
     // Only update if we're not in building or error state
     if (this.currentState === "building" || this.currentState === "error") {
       return;
     }
 
-    const targetState = this.info.runningInstanceCount > 0 ? "running" : "idle";
+    const targetState = this._computeAgentState();
     if (targetState !== this.currentState) {
       this.forceTransition<AgentTransitionEvent>(
         targetState,

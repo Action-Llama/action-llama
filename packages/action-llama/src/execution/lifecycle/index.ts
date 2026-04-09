@@ -1,10 +1,10 @@
 import { EventEmitter } from "events";
 
 // Instance states for individual agent runs
-export type InstanceState = "queued" | "running" | "completed" | "error" | "killed";
+export type InstanceState = "queued" | "running" | "waiting" | "completed" | "error" | "killed";
 
 // Agent states for agent type-level state
-export type AgentState = "idle" | "running" | "building" | "error";
+export type AgentState = "idle" | "running" | "waiting" | "building" | "error";
 
 // Base event types for state machine transitions
 export interface StateTransitionEvent<T extends string> {
@@ -27,7 +27,8 @@ export interface AgentTransitionEvent extends StateTransitionEvent<AgentState> {
 // Validation for valid state transitions
 const VALID_INSTANCE_TRANSITIONS: Record<InstanceState, InstanceState[]> = {
   queued: ["running", "killed"], // can start running or be killed while queued
-  running: ["completed", "error", "killed"], // can complete, error, or be killed
+  running: ["waiting", "completed", "error", "killed"], // can wait, complete, error, or be killed
+  waiting: ["running", "error", "killed"], // can resume, timeout (error), or be killed
   completed: [], // terminal state
   error: [], // terminal state
   killed: [], // terminal state
@@ -35,7 +36,8 @@ const VALID_INSTANCE_TRANSITIONS: Record<InstanceState, InstanceState[]> = {
 
 const VALID_AGENT_TRANSITIONS: Record<AgentState, AgentState[]> = {
   idle: ["running", "building", "error"], // can start running, start building, or error
-  running: ["idle", "running", "error"], // can return to idle, stay running (multiple instances), or error
+  running: ["idle", "running", "waiting", "error"], // can return to idle, stay running, wait, or error
+  waiting: ["idle", "running", "waiting", "error"], // can resume, timeout, or be killed
   building: ["idle", "running", "error"], // build can complete (idle/running) or fail (error)
   error: ["idle", "building", "running"], // can recover to any other state
 };

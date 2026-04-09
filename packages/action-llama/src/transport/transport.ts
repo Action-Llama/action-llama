@@ -37,6 +37,9 @@ export interface ExecOptions {
  *  2. A file transfer mechanism for reading/writing files (readFiles/writeFiles)
  */
 export interface Transport {
+  /** Open / reconnect the transport session. */
+  connect(): Promise<void>;
+
   /**
    * Execute a command in the persistent shell session.
    * Shell state (cwd, env vars) persists across calls.

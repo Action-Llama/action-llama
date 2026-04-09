@@ -115,9 +115,10 @@ function InitializingView({ info, agents, baseImageStatus, tick }: { info: Sched
 }
 
 function AgentRow({ agent, isSelected }: { agent: AgentStatus; isSelected: boolean }) {
-  const stateColor = agent.state === "running" ? "green" : agent.state === "building" ? "yellow" : agent.state === "error" ? "red" : "white";
+  const stateColor = agent.state === "running" ? "green" : agent.state === "waiting" ? "cyan" : agent.state === "building" ? "yellow" : agent.state === "error" ? "red" : "white";
   const stateLabel = agent.state === "running"
     ? agent.scale > 1 ? `Running ${agent.runningCount}/${agent.scale}` : "Running"
+    : agent.state === "waiting" ? (agent.waitingCount > 1 ? `Waiting (${agent.waitingCount})` : "Waiting")
     : agent.state === "building" ? "Building"
     : agent.state === "error" ? "Error"
     : agent.scale > 1 ? `Idle (×${agent.scale})` : "Idle";

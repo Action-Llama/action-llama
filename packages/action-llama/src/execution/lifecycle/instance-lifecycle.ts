@@ -27,6 +27,14 @@ export interface InstanceErrorEvent extends InstanceTransitionEvent {
   durationMs: number;
 }
 
+export interface InstanceWaitEvent extends InstanceTransitionEvent {
+  filter: Record<string, unknown>;
+}
+
+export interface InstanceResumeEvent extends InstanceTransitionEvent {
+  triggerPayload?: unknown;
+}
+
 export interface InstanceKillEvent extends InstanceTransitionEvent {
   reason?: string;
   durationMs?: number;
@@ -38,9 +46,13 @@ export interface InstanceKillEvent extends InstanceTransitionEvent {
  * State transitions:
  * - queued → running (via start())
  * - queued → killed (via kill())
+ * - running → waiting (via wait())
  * - running → completed (via complete())
  * - running → error (via fail())
  * - running → killed (via kill())
+ * - waiting → running (via resume())
+ * - waiting → error (timeout)
+ * - waiting → killed (via kill())
  */
 export class InstanceLifecycle extends BaseStateMachine<InstanceState> {
   private info: InstanceInfo;
@@ -131,12 +143,52 @@ export class InstanceLifecycle extends BaseStateMachine<InstanceState> {
   }
 
   /**
+   * Transition from running to waiting (agent called wait_for_trigger)
+   * @param filter The wait filter describing what trigger to wait for
+   */
+  wait(filter: Record<string, unknown>): void {
+    if (this.currentState !== "running") {
+      throw new Error(`Cannot wait in state '${this.currentState}'. Must be 'running'.`);
+    }
+
+    this.transition<InstanceWaitEvent>(
+      "waiting",
+      "instance:wait",
+      {
+        instanceId: this.info.instanceId,
+        agentName: this.info.agentName,
+        filter,
+      }
+    );
+  }
+
+  /**
+   * Transition from waiting back to running (trigger matched)
+   * @param triggerPayload The payload from the matched trigger
+   */
+  resume(triggerPayload?: unknown): void {
+    if (this.currentState !== "waiting") {
+      throw new Error(`Cannot resume instance in state '${this.currentState}'. Must be 'waiting'.`);
+    }
+
+    this.transition<InstanceResumeEvent>(
+      "running",
+      "instance:resume",
+      {
+        instanceId: this.info.instanceId,
+        agentName: this.info.agentName,
+        triggerPayload,
+      }
+    );
+  }
+
+  /**
    * Transition from running to error
    * @param error Error message or reason for failure
    */
   fail(error: string): void {
-    if (this.currentState !== "running") {
-      throw new Error(`Cannot fail instance in state '${this.currentState}'. Must be 'running'.`);
+    if (this.currentState !== "running" && this.currentState !== "waiting") {
+      throw new Error(`Cannot fail instance in state '${this.currentState}'. Must be 'running' or 'waiting'.`);
     }
 
     this.info.endedAt = new Date();
@@ -160,7 +212,7 @@ export class InstanceLifecycle extends BaseStateMachine<InstanceState> {
    * @param reason Optional reason for killing
    */
   kill(reason?: string): void {
-    const validKillStates: InstanceState[] = ["queued", "running"];
+    const validKillStates: InstanceState[] = ["queued", "running", "waiting"];
     if (!validKillStates.includes(this.currentState)) {
       throw new Error(
         `Cannot kill instance in terminal state '${this.currentState}'. ` +
@@ -200,6 +252,13 @@ export class InstanceLifecycle extends BaseStateMachine<InstanceState> {
    */
   isRunning(): boolean {
     return this.currentState === "running";
+  }
+
+  /**
+   * Check if the instance is waiting for a trigger
+   */
+  isWaiting(): boolean {
+    return this.currentState === "waiting";
   }
 
   /**

@@ -41,7 +41,7 @@ export function zeroTokenUsage(): TokenUsage {
 export interface AgentStatus {
   name: string;
   description?: string;
-  state: "idle" | "running" | "building" | "error";
+  state: "idle" | "running" | "waiting" | "building" | "error";
   enabled: boolean;
   statusText: string | null;
   lastError: string | null;
@@ -51,6 +51,7 @@ export interface AgentStatus {
   queuedWebhooks: number;
   scale: number;        // total runner pool size
   runningCount: number; // how many runners are currently active
+  waitingCount: number; // how many instances are waiting for triggers
   taskUrl: string | null; // link to cloud task/execution (ECS or Cloud Run console)
   runReason: string | null; // why the agent is running (e.g. "schedule", "webhook", "rerun 2/10")
   lastRunUsage: TokenUsage | null;

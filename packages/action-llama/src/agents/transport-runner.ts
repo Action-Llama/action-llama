@@ -47,6 +47,8 @@ import { withSpan } from "../telemetry/index.js";
 import { SpanKind } from "@opentelemetry/api";
 import type { SchedulerToolsOpts } from "./scheduler-tools.js";
 import { createSchedulerTools } from "./scheduler-tools.js";
+import type { WaitFilter, WaitingRegistry, WaitingInstance } from "../execution/waiting-registry.js";
+import { DEFAULT_WAIT_TIMEOUT } from "../shared/constants.js";
 
 const MAX_MODEL_PASSES = 3;
 const DEFAULT_BACKOFF_MS = 30_000;
@@ -67,10 +69,15 @@ export interface TransportAgentRunnerOpts {
   providerKeys?: Map<string, string>;
   /** Scheduler tools dependencies. When provided, agents get lock/call/status tools. */
   schedulerToolsDeps?: Omit<SchedulerToolsOpts, "agentName" | "instanceId" | "depth" | "onReturnValue">;
+  /** Waiting registry for suspend/resume support. */
+  waitingRegistry?: WaitingRegistry;
+  /** Callback when instance transitions to/from waiting state. */
+  onWaitStateChange?: (instanceId: string, state: "waiting" | "resumed") => void;
 }
 
 export class TransportAgentRunner implements PoolRunner {
   private _running = false;
+  private _suspended = false;
   private _aborting = false;
   private _transport: Transport | null = null;
   private _containerName: string | null = null;
@@ -90,6 +97,8 @@ export class TransportAgentRunner implements PoolRunner {
   private projectPath: string;
   private providerKeys: Map<string, string>;
   private schedulerToolsDeps?: Omit<SchedulerToolsOpts, "agentName" | "instanceId" | "depth" | "onReturnValue">;
+  private waitingRegistry?: WaitingRegistry;
+  private onWaitStateChange?: (instanceId: string, state: "waiting" | "resumed") => void;
 
   constructor(opts: TransportAgentRunnerOpts) {
     this.globalConfig = opts.globalConfig;
@@ -102,6 +111,8 @@ export class TransportAgentRunner implements PoolRunner {
     this.projectPath = opts.projectPath;
     this.providerKeys = opts.providerKeys ?? new Map();
     this.schedulerToolsDeps = opts.schedulerToolsDeps;
+    this.waitingRegistry = opts.waitingRegistry;
+    this.onWaitStateChange = opts.onWaitStateChange;
     this.instanceId = opts.agentConfig.name;
   }
 
@@ -113,6 +124,10 @@ export class TransportAgentRunner implements PoolRunner {
     this.agentConfig = config;
   }
 
+  get isSuspended(): boolean {
+    return this._suspended;
+  }
+
   abort(): void {
     this._aborting = true;
     this.logger.info("Transport agent runner abort requested");
@@ -122,8 +137,16 @@ export class TransportAgentRunner implements PoolRunner {
       try { this._session.dispose(); } catch { /* best effort */ }
     }
 
-    // Kill the container (only applies to container runtime)
+    // Unpause container first if suspended, then kill
     if (this._containerName) {
+      if (this._suspended) {
+        try {
+          execFileSync("docker", ["unpause", this._containerName], {
+            timeout: 10_000,
+            stdio: ["pipe", "pipe", "pipe"],
+          });
+        } catch { /* container may not be paused */ }
+      }
       try {
         execFileSync("docker", ["kill", this._containerName], {
           timeout: 10_000,
@@ -340,6 +363,98 @@ export class TransportAgentRunner implements PoolRunner {
       usage: tokenUsage,
       exitReason: runError,
     };
+  }
+
+  /**
+   * Handle a wait_for_trigger call from the agent.
+   * Suspends the container, registers in the waiting registry, and returns
+   * a promise that resolves when a matching trigger arrives.
+   */
+  private async _handleWait(filter: WaitFilter, timeoutMs: number, transport: Transport): Promise<any> {
+    if (!this.waitingRegistry) {
+      throw new Error("Waiting registry not available");
+    }
+
+    const runtimeType = this.agentConfig.runtime?.type ?? "container";
+    const deadline = Date.now() + timeoutMs;
+
+    // Disconnect transport and pause container
+    await transport.close();
+    this._suspended = true;
+
+    if (runtimeType === "container" && this._containerName) {
+      try {
+        execFileSync("docker", ["pause", this._containerName], {
+          timeout: 10_000,
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+        this.logger.info({ container: this._containerName }, "container paused for wait");
+      } catch (err: any) {
+        this.logger.warn({ err: err.message }, "failed to pause container");
+      }
+    }
+
+    // Notify status tracker
+    this.statusTracker?.setInstanceWaiting(this.instanceId);
+    this.onWaitStateChange?.(this.instanceId, "waiting");
+
+    return new Promise<any>((resolve, reject) => {
+      const entry: WaitingInstance = {
+        instanceId: this.instanceId,
+        agentName: this.agentConfig.name,
+        filter,
+        deadline,
+        registeredAt: Date.now(),
+        runId: this._containerName ?? this.instanceId,
+        runtimeType,
+        cwd: CONTAINER_CWD,
+        resolve: async (payload: any) => {
+          // Resume: unpause container, reconnect transport
+          try {
+            await this._resumeFromWait(transport);
+            resolve(payload);
+          } catch (err) {
+            reject(err);
+          }
+        },
+        reject: (err: Error) => {
+          // Timeout or kill — still need to clean up
+          this._suspended = false;
+          this.onWaitStateChange?.(this.instanceId, "resumed");
+          reject(err);
+        },
+      };
+
+      this.waitingRegistry!.register(entry);
+      this.logger.info({ filter, deadline: new Date(deadline).toISOString() }, "instance registered for wait");
+    });
+  }
+
+  /**
+   * Resume from a suspended wait state: unpause container and reconnect transport.
+   */
+  private async _resumeFromWait(transport: Transport): Promise<void> {
+    const runtimeType = this.agentConfig.runtime?.type ?? "container";
+
+    if (runtimeType === "container" && this._containerName) {
+      try {
+        execFileSync("docker", ["unpause", this._containerName], {
+          timeout: 10_000,
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+        this.logger.info({ container: this._containerName }, "container unpaused after wait");
+      } catch (err: any) {
+        this.logger.warn({ err: err.message }, "failed to unpause container");
+      }
+    }
+
+    // Reconnect the transport
+    await transport.connect();
+    this._suspended = false;
+
+    this.statusTracker?.resumeInstance(this.instanceId);
+    this.onWaitStateChange?.(this.instanceId, "resumed");
+    this.logger.info("transport reconnected after wait resume");
   }
 
   /**
@@ -560,7 +675,7 @@ export class TransportAgentRunner implements PoolRunner {
     // Create transport-backed tools
     const tools = createTransportTools(transport, CONTAINER_CWD);
 
-    // Create scheduler tools (locks, calls, status, return) if deps provided
+    // Create scheduler tools (locks, calls, status, return, wait) if deps provided
     let capturedReturnValue: string | undefined;
     const customTools = this.schedulerToolsDeps
       ? createSchedulerTools({
@@ -569,6 +684,8 @@ export class TransportAgentRunner implements PoolRunner {
           instanceId: this.instanceId,
           depth: this.depth,
           onReturnValue: (value) => { capturedReturnValue = value; },
+          onWait: this.waitingRegistry ? (filter, timeoutMs) => this._handleWait(filter, timeoutMs, transport) : undefined,
+          defaultWaitTimeout: this.agentConfig.waitTimeout ?? this.globalConfig.defaultWaitTimeout,
         })
       : undefined;
 

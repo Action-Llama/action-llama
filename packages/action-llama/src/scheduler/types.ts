@@ -18,7 +18,7 @@ import type { InstanceLifecycle } from "../execution/lifecycle/instance-lifecycl
 export interface AgentInstance {
   id: string;
   agentName: string;
-  status: 'running' | 'completed' | 'error' | 'killed';
+  status: 'running' | 'waiting' | 'completed' | 'error' | 'killed';
   startedAt: Date;
   trigger: string;
   runner?: any; // Reference to the actual runner instance

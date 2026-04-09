@@ -45,6 +45,9 @@ export function imageTags(name: string): [primary: string, ...aliases: string[]]
 /** Default agent container timeout in seconds (1 hour). */
 export const DEFAULT_AGENT_TIMEOUT = 3600;
 
+/** Default wait timeout in seconds (30 minutes). */
+export const DEFAULT_WAIT_TIMEOUT = 1800;
+
 export const CONSTANTS = {
   /** Default prefix for secret names across all providers */
   DEFAULT_SECRET_PREFIX: "action-llama",

@@ -14,6 +14,7 @@ import { enforceProjectScaleCap } from "../scheduler/policies/index.js";
 import { TransportAgentRunner, type TransportAgentRunnerOpts } from "../agents/transport-runner.js";
 import { ModelCircuitBreaker } from "../agents/model-fallback.js";
 import type { SchedulerToolsOpts } from "../agents/scheduler-tools.js";
+import type { WaitingRegistry } from "./waiting-registry.js";
 
 export interface RunnerSetupResult {
   runnerPools: Record<string, RunnerPool>;
@@ -32,13 +33,15 @@ export interface RunnerSetupOpts {
   logger: Logger;
   /** Scheduler tools dependencies for lock/call/status tools. */
   schedulerToolsDeps?: Omit<SchedulerToolsOpts, "agentName" | "instanceId" | "depth" | "onReturnValue">;
+  /** Waiting registry for wait/resume support. */
+  waitingRegistry?: WaitingRegistry;
 }
 
 export async function createRunnerPools(opts: RunnerSetupOpts): Promise<RunnerSetupResult> {
   const {
     globalConfig, agentConfigs,
     baseImage, statusTracker, mkLogger, projectPath, logger,
-    schedulerToolsDeps,
+    schedulerToolsDeps, waitingRegistry,
   } = opts;
 
   const circuitBreaker = new ModelCircuitBreaker();
@@ -53,6 +56,7 @@ export async function createRunnerPools(opts: RunnerSetupOpts): Promise<RunnerSe
       baseImage,
       projectPath,
       schedulerToolsDeps,
+      waitingRegistry,
     });
   };
 

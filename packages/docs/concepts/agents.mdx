@@ -59,6 +59,7 @@ Before the `SKILL.md` instructions run, the agent receives a preamble that teach
 |----------|--------|-------------|
 | **Signals** | `al-rerun`, `al-status`, `al-return`, `al-exit` | Shell commands for signaling the scheduler |
 | **Calls** | `al-subagent`, `al-subagent-check`, `al-subagent-wait` | Agent-to-agent calls with return values |
+| **Wait** | `wait_for_trigger` | Suspend and resume on a future webhook or agent trigger |
 | **Locks** | `LOCK(...)`, `UNLOCK(...)`, `HEARTBEAT(...)` | Resource locking for parallel coordination |
 | **Credentials** | `GITHUB_TOKEN`, `gh`, `git`, etc. | Credential access and tool usage |
 
@@ -77,9 +78,10 @@ Each agent run is an isolated, short-lived process. By default agents run in Doc
 5. **Hooks run** — if `hooks.pre` steps are defined in `config.toml`, they execute sequentially (clone repos, fetch data, run shell commands) to stage context before the LLM starts. See [Dynamic Context](/guides/dynamic-context).
 6. **LLM session starts** — the model receives the `SKILL.md` instructions as system prompt and the assembled user prompt.
 7. **Agent runs autonomously** — the LLM executes tools (bash, file I/O, API calls) until it finishes or hits an error. Rate-limited API calls are retried automatically (up to 5 attempts with exponential backoff).
-8. **Error detection** — the runtime watches for repeated auth/permission failures (e.g. "bad credentials", "permission denied"). After 3 such errors, it aborts early.
-9. **Signals are processed** — the agent uses `al-rerun`, `al-status`, `al-return`, and `al-exit` commands to write signal files. The scheduler reads them after the session ends.
-10. **Process exits** — exit code 0 (success), 1 (error), or 124 (timeout). Any held locks are released automatically. The scheduler logs the result and the container is removed (or the working directory is cleaned up in host-user mode).
+8. **Wait (optional)** — the agent may call `wait_for_trigger` to suspend mid-conversation and wait for a specific webhook event or agent trigger. While waiting, the container is paused (`docker pause`) and the runner slot is released. When the matching trigger arrives, the container resumes and the agent continues where it left off. See [Wait & Resume](#wait--resume).
+9. **Error detection** — the runtime watches for repeated auth/permission failures (e.g. "bad credentials", "permission denied"). After 3 such errors, it aborts early.
+10. **Signals are processed** — the agent uses `al-rerun`, `al-status`, `al-return`, and `al-exit` commands to write signal files. The scheduler reads them after the session ends.
+11. **Process exits** — exit code 0 (success), 1 (error), or 124 (timeout). Any held locks are released automatically. The scheduler logs the result and the container is removed (or the working directory is cleaned up in host-user mode).
 
 ## Timeout
 
@@ -104,6 +106,42 @@ You can see queue depth per agent in `al stat` output (the `queue` column).
 | Setting | Location | Default | Description |
 |---------|----------|---------|-------------|
 | `workQueueSize` | `config.toml` | `100` | Maximum queued work items per agent |
+
+## Wait & Resume
+
+Agents can suspend mid-conversation and wait for a future trigger using the `wait_for_trigger` tool. This enables multi-step workflows like: process a PR opened event, then wait for it to merge, then deploy.
+
+### How it works
+
+1. The agent calls `wait_for_trigger` with a filter (webhook source/event/match predicates, or agent trigger source).
+2. The transport is disconnected and the container is paused (`docker pause`).
+3. The runner slot is released back to the pool, so other work can use it.
+4. When a matching trigger arrives, the container is unpaused, the transport reconnects, and the agent resumes where it left off with the trigger payload.
+
+### Timeout
+
+Waiting instances have a timeout (default: 30 minutes). If no matching trigger arrives before the deadline, the wait fails with a timeout error and the agent can handle it. The timeout is configurable:
+
+| Setting | Location | Default | Description |
+|---------|----------|---------|-------------|
+| `defaultWaitTimeout` | `config.toml` | `1800` | Project-wide default wait timeout in seconds |
+| `waitTimeout` | `agents/<name>/config.toml` | _(project default)_ | Per-agent wait timeout in seconds |
+| `timeout` parameter | `wait_for_trigger` tool call | _(agent default)_ | Per-call timeout (e.g. `"2h"`, `"30m"`) |
+
+### Agent state
+
+While an agent is waiting, its state in the TUI and dashboard shows as **Waiting** (cyan). The state transitions are:
+
+- `running → waiting` — when `wait_for_trigger` is called
+- `waiting → running` — when a matching trigger arrives
+- `waiting → error` — when the timeout expires
+- `waiting → killed` — when the user kills the instance
+
+### Limitations
+
+- Environment variables set during the run are **not** preserved across wait/resume (the shell session is terminated and recreated).
+- The working directory (`cwd`) is restored on resume.
+- Wait is only supported for `webhook` and `agent-trigger` types. Schedule and manual triggers cannot be waited on.
 
 ## Container Filesystem
 
