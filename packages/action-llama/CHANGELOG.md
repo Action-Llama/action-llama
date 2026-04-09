@@ -1,5 +1,22 @@
 # @action-llama/action-llama
 
+## 0.27.5
+
+### Patch Changes
+
+- [`9e53998`](https://github.com/Action-Llama/action-llama/commit/9e53998b6f21b536153b5864d798057950a4aeb4) Thanks [@asselstine](https://github.com/asselstine)! - Improve summarizer to identify specific resources (e.g. "issue [#42](https://github.com/Action-Llama/action-llama/issues/42)", "file config.toml") by preserving a 150-char excerpt from tool results and updating the prompt to request concrete identifiers.
+
+- [`487271f`](https://github.com/Action-Llama/action-llama/commit/487271f1351c1a96ee3a4d58954ac4f2fd822889) Thanks [@asselstine](https://github.com/asselstine)! - Remove duplicate command display in tool result log lines. The tool call line already shows the command, so repeating it in the result line was redundant. Applies to both CLI (`al logs`) and the web dashboard.
+
+- [`1b24ace`](https://github.com/Action-Llama/action-llama/commit/1b24ace3fbf7cb4062e5d12365909ab77f6fb936) Thanks [@asselstine](https://github.com/asselstine)! - Strip verbose fields (`raw`, `result`, `resultText`, `content`, `turnResult`) from log entries before building the summarizer prompt. Long message text is truncated to 500 chars. Fixes context-too-large errors when summarizing agent runs.
+
+- [`a3dca9a`](https://github.com/Action-Llama/action-llama/commit/a3dca9a8aa4acad678d0e5ccaa928a74e7597636) Thanks [@asselstine](https://github.com/asselstine)! - Surface error details when the API returns `stop_reason="error"`. Previously the session-ended log only showed `stopReason: "error"` with no detail; now it extracts and includes the error message from the API response.
+
+- [`5eba0c2`](https://github.com/Action-Llama/action-llama/commit/5eba0c2cf85c123bc32799aacba40e697c8a9ade) Thanks [@asselstine](https://github.com/asselstine)! - Use `max_completion_tokens` instead of `max_tokens` in OpenAI and custom providers, and omit the field when no limit is set.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.27.5
+
 ## 0.27.4
 
 ### Patch Changes
