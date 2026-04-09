@@ -80,35 +80,6 @@ export interface LoadedCredentials {
   providerKeys: Map<string, string>;
 }
 
-export function resolveHarnessEnv(
-  agentConfig: AgentConfig,
-  providerKeys: Map<string, string>,
-): Record<string, string> {
-  const env: Record<string, string> = {};
-
-  if ((agentConfig.harness?.type || "pi") !== "claude") {
-    return env;
-  }
-
-  const anthropicModel = agentConfig.models.find((model) => model.provider === "anthropic");
-  if (!anthropicModel) {
-    return env;
-  }
-
-  const token = providerKeys.get("anthropic");
-  if (!token) {
-    return env;
-  }
-
-  if (anthropicModel.authType === "oauth_token" || token.startsWith("sk-ant-oat")) {
-    env.ANTHROPIC_AUTH_TOKEN = token;
-  } else {
-    env.ANTHROPIC_API_KEY = token;
-  }
-
-  return env;
-}
-
 /**
  * Load credentials from volume or env vars, resolve provider API keys,
  * inject env vars for git, SSH, and other credential types.

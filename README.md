@@ -8,7 +8,7 @@ Deploy agent workflows to the cloud.
 - [**Documentation**](https://docs.actionllama.org)
 - [**actionllama.org**](https://actionllama.org)
 
-Supports swappable agent harnesses. The default harness is [pi.dev](https://github.com/badlogic/pi-mono), and agents can also run through the Claude CLI harness.
+Supports swappable agent harnesses. The default harness is [pi.dev](https://github.com/badlogic/pi-mono).
 
 ## How to get started
 

@@ -70,10 +70,10 @@ describe("loadGlobalConfig", () => {
 
   it("loads global harness config", () => {
     writeFileSync(resolve(tmpDir, "config.toml"), stringifyTOML({
-      harness: { type: "claude" },
+      harness: { type: "pi" },
     }));
     const loaded = loadGlobalConfig(tmpDir);
-    expect(loaded.harness).toEqual({ type: "claude" });
+    expect(loaded.harness).toEqual({ type: "pi" });
   });
 
   it("ignores config.json", () => {
@@ -175,26 +175,14 @@ describe("loadAgentConfig", () => {
   });
 
   it("inherits harness from global config", () => {
-    writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL }, { harness: { type: "claude" } });
-    writeSkillMd(tmpDir, "dev", {
-      models: ["sonnet"],
-      credentials: ["github_token"],
-    });
-
-    const loaded = loadAgentConfig(tmpDir, "dev");
-    expect(loaded.harness).toEqual({ type: "claude" });
-  });
-
-  it("lets agent config override the global harness", () => {
     writeModelsConfig(tmpDir, { sonnet: SONNET_MODEL }, { harness: { type: "pi" } });
     writeSkillMd(tmpDir, "dev", {
       models: ["sonnet"],
       credentials: ["github_token"],
-      harness: { type: "claude" },
     });
 
     const loaded = loadAgentConfig(tmpDir, "dev");
-    expect(loaded.harness).toEqual({ type: "claude" });
+    expect(loaded.harness).toEqual({ type: "pi" });
   });
 
   it("throws when agent SKILL.md is missing", () => {

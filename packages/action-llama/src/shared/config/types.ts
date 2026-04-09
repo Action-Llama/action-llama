@@ -9,7 +9,7 @@ export interface ModelConfig {
   authType: "api_key" | "oauth_token" | "pi_auth";
 }
 
-export type HarnessType = "pi" | "claude";
+export type HarnessType = "pi";
 
 export interface HarnessConfig {
   type: HarnessType;

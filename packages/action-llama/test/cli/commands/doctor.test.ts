@@ -199,10 +199,10 @@ describe("doctor", () => {
     mockLoadAgentConfig.mockReturnValue({ name: "dev", credentials: [] });
     mockLoadAgentRuntimeConfig.mockReturnValue({
       models: ["sonnet"],
-      harness: { type: "claude" },
+      harness: { type: "pi" },
     });
     mockLoadGlobalConfig.mockReturnValue({
-      harness: { type: "claude" },
+      harness: { type: "pi" },
       models: {
         sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" },
       },
@@ -216,12 +216,12 @@ describe("doctor", () => {
     });
     mockReadFileSync.mockImplementation((p: string) => {
       if (String(p).includes("agents/dev/config.toml")) {
-        return 'models = ["sonnet"]\n[harness]\ntype = "claude"\n';
+        return 'models = ["sonnet"]\n[harness]\ntype = "pi"\n';
       }
       if (String(p).endsWith("agents/dev/SKILL.md")) {
         return "---\nname: dev\n---\n";
       }
-      return '[harness]\ntype = "claude"\n[models.sonnet]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-20250514"\nauthType = "api_key"\n';
+      return '[harness]\ntype = "pi"\n[models.sonnet]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-20250514"\nauthType = "api_key"\n';
     });
 
     await expect(execute({ project: ".", checkOnly: true, skipCredentials: true })).resolves.not.toThrow();

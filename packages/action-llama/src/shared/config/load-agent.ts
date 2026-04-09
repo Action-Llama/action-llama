@@ -8,8 +8,8 @@ import { loadGlobalConfig } from "./load-project.js";
 
 function assertValidHarnessType(type: unknown, source: string): void {
   if (type === undefined) return;
-  if (type !== "pi" && type !== "claude") {
-    throw new ConfigError(`${source} harness.type must be "pi" or "claude".`);
+  if (type !== "pi") {
+    throw new ConfigError(`${source} harness.type must be "pi".`);
   }
 }
 

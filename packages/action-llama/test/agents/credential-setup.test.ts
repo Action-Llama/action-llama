@@ -8,7 +8,6 @@ import {
   hasEnvCredentials,
   loadCredentialsFromEnv,
   loadContainerCredentials,
-  resolveHarnessEnv,
 } from "../../src/agents/credential-setup.js";
 import { makeAgentConfig } from "../helpers.js";
 
@@ -611,37 +610,3 @@ describe("loadContainerCredentials", () => {
   });
 });
 
-describe("resolveHarnessEnv", () => {
-  it("uses ANTHROPIC_API_KEY for Claude harness api_key auth", () => {
-    const agentConfig = makeAgentConfig({
-      harness: { type: "claude" },
-      models: [{ provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" }],
-    });
-
-    const env = resolveHarnessEnv(agentConfig, new Map([["anthropic", "sk-ant-api-test"]]));
-
-    expect(env).toEqual({ ANTHROPIC_API_KEY: "sk-ant-api-test" });
-  });
-
-  it("uses ANTHROPIC_AUTH_TOKEN for Claude harness oauth_token auth", () => {
-    const agentConfig = makeAgentConfig({
-      harness: { type: "claude" },
-      models: [{ provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "oauth_token" }],
-    });
-
-    const env = resolveHarnessEnv(agentConfig, new Map([["anthropic", "sk-ant-oat-test"]]));
-
-    expect(env).toEqual({ ANTHROPIC_AUTH_TOKEN: "sk-ant-oat-test" });
-  });
-
-  it("infers ANTHROPIC_AUTH_TOKEN from an oauth-shaped token even if authType is api_key", () => {
-    const agentConfig = makeAgentConfig({
-      harness: { type: "claude" },
-      models: [{ provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" }],
-    });
-
-    const env = resolveHarnessEnv(agentConfig, new Map([["anthropic", "sk-ant-oat-inferred"]]));
-
-    expect(env).toEqual({ ANTHROPIC_AUTH_TOKEN: "sk-ant-oat-inferred" });
-  });
-});
