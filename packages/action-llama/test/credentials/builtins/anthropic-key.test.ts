@@ -14,10 +14,10 @@ vi.mock("../../../src/setup/validators.js", () => ({
 
 vi.mock("@mariozechner/pi-coding-agent", () => {
   const mockGetAvailable = vi.fn().mockResolvedValue([{ provider: "anthropic" }]);
-  function MockModelRegistry(_authStorage: any) {
-    return { getAvailable: mockGetAvailable };
-  }
-  MockModelRegistry.__mockGetAvailable = mockGetAvailable;
+  const MockModelRegistry = {
+    create: vi.fn().mockReturnValue({ getAvailable: mockGetAvailable }),
+    __mockGetAvailable: mockGetAvailable,
+  };
   return {
     AuthStorage: {
       create: vi.fn().mockReturnValue({}),
@@ -245,9 +245,9 @@ describe("anthropic_key credential", () => {
         // Temporarily override getAvailable to return no Anthropic providers
         const mockRegistry = (piCodingAgent as any).ModelRegistry;
         const origImpl = mockRegistry;
-        function NoAnthropicRegistry(_authStorage: any) {
-          return { getAvailable: vi.fn().mockResolvedValue([{ provider: "openai" }]) };
-        }
+        const NoAnthropicRegistry = {
+          create: vi.fn().mockReturnValue({ getAvailable: vi.fn().mockResolvedValue([{ provider: "openai" }]) }),
+        };
         // Replace the factory temporarily
         Object.defineProperty(piCodingAgent, "ModelRegistry", { value: NoAnthropicRegistry, configurable: true, writable: true });
 

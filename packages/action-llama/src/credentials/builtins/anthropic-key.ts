@@ -38,7 +38,7 @@ const anthropicKey: CredentialDefinition = {
     if (authMethod === "pi_auth") {
       const { AuthStorage, ModelRegistry } = await import("@mariozechner/pi-coding-agent");
       const authStorage = AuthStorage.create();
-      const registry = new ModelRegistry(authStorage);
+      const registry = ModelRegistry.create(authStorage);
       const available = await registry.getAvailable();
       const hasAnthropic = available.some((m: any) => m.provider === "anthropic");
       if (!hasAnthropic) {
