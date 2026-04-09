@@ -1,5 +1,14 @@
 # @action-llama/action-llama
 
+## 0.27.4
+
+### Patch Changes
+
+- [`3dc539a`](https://github.com/Action-Llama/action-llama/commit/3dc539adca32a7dfe75b8f37409436300ca2c5bd) Thanks [@asselstine](https://github.com/asselstine)! - Hide verbose command output in the instance log viewer and redact tool-result payload text from log summaries. Command metadata (tool name, command string, error status) is preserved so the UI and summarizer still convey what happened without exposing raw output.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.27.4
+
 ## 0.27.3
 
 ### Patch Changes
