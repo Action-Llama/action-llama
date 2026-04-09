@@ -88,6 +88,10 @@ export async function consumeHarness(
             if (eventData?.stopReason) {
               lastStopReason = String(eventData.stopReason);
             }
+            // Capture error details from stop_reason="error" messages
+            if (typeof eventData?.errorMessage === "string") {
+              errorMessage = eventData.errorMessage;
+            }
             if (currentTurnText.trim()) {
               log("info", "conversation.message", {
                 kind: "conversation",

@@ -171,16 +171,35 @@ export class ClaudeCliHarness implements AgentHarness {
         }
 
         if (parsed.message?.stop_reason && parsed.message?.stop_reason !== "tool_use") {
+          const data: Record<string, any> = {
+            eventType: "message_end",
+            role: parsed.message?.role || "assistant",
+            stopReason: parsed.message?.stop_reason,
+            raw: parsed,
+          };
+          // When the API returns stop_reason="error", extract error details
+          // so they surface in the session-ended log.
+          if (parsed.message.stop_reason === "error") {
+            const content = parsed.message.content;
+            const errDetail = parsed.message.error || parsed.error;
+            const parts: string[] = [];
+            if (errDetail) {
+              parts.push(typeof errDetail === "string" ? errDetail : (errDetail.message || JSON.stringify(errDetail)));
+            }
+            if (Array.isArray(content)) {
+              for (const block of content) {
+                if (block.type === "text" && block.text) parts.push(String(block.text).slice(0, 500));
+              }
+            }
+            if (parts.length > 0) {
+              data.errorMessage = parts.join(" — ").slice(0, 500);
+            }
+          }
           pushEvent({
             type: "log",
             level: "debug",
             message: "conversation.event",
-            data: {
-              eventType: "message_end",
-              role: parsed.message?.role || "assistant",
-              stopReason: parsed.message?.stop_reason,
-              raw: parsed,
-            },
+            data,
           });
         }
         return;

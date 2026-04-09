@@ -98,6 +98,24 @@ export class PiHarness implements AgentHarness {
                 extra.stopReason = sr;
                 lastStopReason = String(sr);
               }
+              // When the API returns stop_reason="error", extract error details
+              // from the message content so they surface in the session-ended log.
+              if (String(sr) === "error") {
+                const content = event.content || event.message?.content;
+                const errDetail = event.error || event.message?.error;
+                const parts: string[] = [];
+                if (errDetail) {
+                  parts.push(typeof errDetail === "string" ? errDetail : (errDetail.message || JSON.stringify(errDetail)));
+                }
+                if (Array.isArray(content)) {
+                  for (const block of content) {
+                    if (block.type === "text" && block.text) parts.push(String(block.text).slice(0, 500));
+                  }
+                }
+                if (parts.length > 0) {
+                  extra.errorMessage = parts.join(" — ").slice(0, 500);
+                }
+              }
             }
             // agent_end fires when the entire prompt() call completes.
             // This is our best signal that the model stopped.
