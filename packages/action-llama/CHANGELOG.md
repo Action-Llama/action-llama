@@ -1,5 +1,14 @@
 # @action-llama/action-llama
 
+## 0.27.3
+
+### Patch Changes
+
+- [`97b6d03`](https://github.com/Action-Llama/action-llama/commit/97b6d035db22d17f68ffb6d6fdf485e04c46ee2a) Thanks [@asselstine](https://github.com/asselstine)! - Update CI release workflow to use Node 24.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.27.3
+
 ## 0.27.2
 
 ### Patch Changes
