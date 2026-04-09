@@ -6,7 +6,99 @@ import path from "path";
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { Client as SSHClient, utils as ssh2Utils } from "ssh2";
-import { assertDockerAvailable, isDockerAvailable } from "./docker-utils.js";
+
+
+/** Resolve the repo root from this file's location (packages/e2e/src → root). */
+function getRepoRoot(): string {
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = dirname(__filename);
+  return path.resolve(__dirname, "../../..");
+}
+
+/**
+ * Build a Docker image if it doesn't already exist in the daemon.
+ * Called once from global-setup; subsequent calls from test suites are no-ops.
+ */
+export async function buildImageIfNeeded(imageName: string, contextPath: string): Promise<void> {
+  const docker = new Docker();
+  const fullTag = `${imageName}:latest`;
+
+  // Check if image already exists — skip the expensive tar + build
+  try {
+    await docker.getImage(fullTag).inspect();
+    return; // image exists, nothing to do
+  } catch {
+    // image doesn't exist, build it
+  }
+
+  const repoRoot = getRepoRoot();
+  const normalizedContextPath = contextPath.replace(/^\.\//, "");
+  const dockerfilePath = path.join("packages/e2e", normalizedContextPath, "Dockerfile");
+
+  const absoluteDockerfilePath = path.join(repoRoot, dockerfilePath);
+  try {
+    await fs.access(absoluteDockerfilePath);
+  } catch {
+    throw new Error(`Dockerfile not found: ${absoluteDockerfilePath}`);
+  }
+
+  // Verify required build artifacts exist for local image
+  if (imageName === "action-llama-local") {
+    const requiredPaths = [
+      'packages/action-llama/dist',
+      'packages/action-llama/drizzle',
+      'packages/action-llama/package.json',
+      'packages/shared/dist',
+      'packages/shared/package.json'
+    ];
+
+    for (const requiredPath of requiredPaths) {
+      const absolutePath = path.join(repoRoot, requiredPath);
+      try {
+        await fs.access(absolutePath);
+      } catch {
+        throw new Error(`Required build artifact not found: ${requiredPath}. Run 'npm run build' first.`);
+      }
+    }
+  }
+
+  console.log(`Building Docker image ${fullTag} from ${dockerfilePath}...`);
+
+  const tarStream = tar.pack(repoRoot);
+  const stream = await docker.buildImage(
+    tarStream,
+    {
+      t: fullTag,
+      dockerfile: dockerfilePath,
+    }
+  );
+
+  return new Promise<void>((resolve, reject) => {
+    docker.modem.followProgress(stream, (err, output) => {
+      let buildError: string | undefined;
+      if (output) {
+        output.forEach((event: any) => {
+          if (event.stream) {
+            console.log(`[${imageName}] ${event.stream.trim()}`);
+          }
+          if (event.error) {
+            console.error(`[${imageName}] Docker build error:`, event.error);
+            buildError = event.error;
+          }
+        });
+      }
+      if (err) {
+        console.error(`[${imageName}] Docker build failed:`, err);
+        reject(err);
+      } else if (buildError) {
+        reject(new Error(`Docker build failed for ${imageName}: ${buildError}`));
+      } else {
+        console.log(`[${imageName}] Docker image built successfully`);
+        resolve();
+      }
+    });
+  });
+}
 
 export interface ContainerInfo {
   id: string;
@@ -22,29 +114,39 @@ export class E2ETestContext {
   private docker: Docker;
   private containers: ContainerInfo[] = [];
   private runId: string;
-  private sshKeyPair: { publicKey: string; privateKey: string };
+  private _sshKeyPair: { publicKey: string; privateKey: string } | undefined;
   private tempDir: string;
 
   constructor() {
     this.docker = new Docker();
     this.runId = randomUUID().substring(0, 8);
-    this.sshKeyPair = this.generateSSHKeyPair();
     this.tempDir = `/tmp/e2e-${this.runId}`;
   }
 
-  async setup() {
-    // Check if Docker is available
-    await assertDockerAvailable();
+  /** Lazily generate SSH key pair — only needed for VPS/SSH tests. */
+  private get sshKeyPair(): { publicKey: string; privateKey: string } {
+    if (!this._sshKeyPair) {
+      this._sshKeyPair = this.generateSSHKeyPair();
+    }
+    return this._sshKeyPair;
+  }
 
-    // Create temp directory for test artifacts
+  async setup() {
+    // No-op — kept for backward compatibility with tests that call it directly.
+    // Temp dir and SSH keys are created lazily when needed.
+  }
+
+  /** Write SSH keys to disk — called lazily before first SSH use. */
+  private async ensureSSHKeysOnDisk() {
+    const keyPath = path.join(this.tempDir, "id_rsa");
+    try {
+      await fs.access(keyPath);
+      return; // already written
+    } catch {
+      // not yet written
+    }
     await fs.mkdir(this.tempDir, { recursive: true });
-    
-    // Write SSH keys to temp directory
-    await fs.writeFile(
-      path.join(this.tempDir, "id_rsa"),
-      this.sshKeyPair.privateKey,
-      { mode: 0o600 }
-    );
+    await fs.writeFile(keyPath, this.sshKeyPair.privateKey, { mode: 0o600 });
     await fs.writeFile(
       path.join(this.tempDir, "id_rsa.pub"),
       this.sshKeyPair.publicKey
@@ -56,7 +158,7 @@ export class E2ETestContext {
     for (const containerInfo of this.containers) {
       try {
         const container = this.docker.getContainer(containerInfo.id);
-        await container.stop({ t: 10 });
+        await container.stop({ t: 2 });
         await container.remove({ force: true });
       } catch (error: any) {
         console.warn(`Failed to cleanup container ${containerInfo.name}:`, error.message);
@@ -86,21 +188,10 @@ export class E2ETestContext {
   }
 
   private async verifyNetworkExists(): Promise<void> {
-    // Add network verification before creating containers
     const networks = await this.docker.listNetworks();
-    const e2eNetwork = networks.find(n => n.Name === 'action-llama-e2e');
-    if (!e2eNetwork) {
+    if (!networks.some(n => n.Name === 'action-llama-e2e')) {
       throw new Error('E2E test network not found. Ensure global setup has run.');
     }
-    
-    // Verify network is properly configured
-    const network = await this.docker.getNetwork(e2eNetwork.Id).inspect();
-    console.log('E2E Network details:', {
-      id: network.Id,
-      name: network.Name,
-      driver: network.Driver,
-      ipam: network.IPAM
-    });
   }
 
   async createLocalActionLlamaContainer(opts?: {
@@ -180,7 +271,10 @@ export class E2ETestContext {
   async createVPSContainer(): Promise<ContainerInfo> {
     // Verify network exists before proceeding
     await this.verifyNetworkExists();
-    
+
+    // Ensure SSH keys are generated and written to disk
+    await this.ensureSSHKeysOnDisk();
+
     // Build the VPS container with SSH and Docker
     await this.buildImage("action-llama-vps", "docker/vps");
     
@@ -265,28 +359,35 @@ export class E2ETestContext {
 
   async executeInContainer(containerInfo: ContainerInfo, cmd: string[]): Promise<string> {
     const container = this.docker.getContainer(containerInfo.id);
-    
+
     const exec = await container.exec({
       Cmd: cmd,
       AttachStdout: true,
       AttachStderr: true,
     });
-    
+
     const stream = await exec.start({ hijack: true, stdin: false });
-    
+
     return new Promise((resolve, reject) => {
       let output = "";
       let error = "";
-      
-      stream.on("data", (data: Buffer) => {
-        const str = data.toString();
-        if (data[0] === 1) {
-          output += str.slice(8); // Remove Docker stream header
-        } else if (data[0] === 2) {
-          error += str.slice(8);
-        }
+
+      // Use Docker's demuxStream to correctly parse the multiplexed stdout/stderr
+      // frames. The raw stream uses an 8-byte header per frame (stream type +
+      // payload length) that can span multiple data events or be split across them.
+      const { PassThrough } = require("stream");
+      const stdoutStream = new PassThrough();
+      const stderrStream = new PassThrough();
+
+      stdoutStream.on("data", (chunk: Buffer) => {
+        output += chunk.toString();
       });
-      
+      stderrStream.on("data", (chunk: Buffer) => {
+        error += chunk.toString();
+      });
+
+      this.docker.modem.demuxStream(stream, stdoutStream, stderrStream);
+
       stream.on("end", () => {
         if (error) {
           reject(new Error(error));
@@ -348,80 +449,7 @@ export class E2ETestContext {
   }
 
   private async buildImage(imageName: string, contextPath: string) {
-    // Use ES module equivalent of __dirname to get the absolute path to the harness.ts file
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = dirname(__filename);
-    // Navigate from packages/e2e/src to repo root (3 levels up)
-    const repoRoot = path.resolve(__dirname, "../../..");
-    
-    // Use repo root as build context, but specify dockerfile location
-    const normalizedContextPath = contextPath.replace(/^\.\//, "");
-    const dockerfilePath = path.join("packages/e2e", normalizedContextPath, "Dockerfile");
-    
-    // Verify the dockerfile exists before building
-    const absoluteDockerfilePath = path.join(repoRoot, dockerfilePath);
-    try {
-      await fs.access(absoluteDockerfilePath);
-    } catch (error) {
-      throw new Error(`Dockerfile not found: ${absoluteDockerfilePath}`);
-    }
-    
-    // Verify required build artifacts exist for local image
-    if (imageName === "action-llama-local") {
-      const requiredPaths = [
-        'packages/action-llama/dist',
-        'packages/action-llama/drizzle',
-        'packages/action-llama/package.json',
-        'packages/shared/dist',
-        'packages/shared/package.json'
-      ];
-      
-      for (const requiredPath of requiredPaths) {
-        const absolutePath = path.join(repoRoot, requiredPath);
-        try {
-          await fs.access(absolutePath);
-        } catch (error) {
-          throw new Error(`Required build artifact not found: ${requiredPath}. Run 'npm run build' first.`);
-        }
-      }
-    }
-    
-    console.log(`Building Docker image ${imageName}:latest from ${dockerfilePath}...`);
-    
-    const tarStream = tar.pack(repoRoot);
-    const stream = await this.docker.buildImage(
-      tarStream,
-      { 
-        t: `${imageName}:latest`,
-        dockerfile: dockerfilePath  // Relative to repoRoot
-      }
-    );
-    
-    return new Promise<void>((resolve, reject) => {
-      this.docker.modem.followProgress(stream, (err, output) => {
-        let buildError: string | undefined;
-        if (output) {
-          output.forEach((event: any) => {
-            if (event.stream) {
-              console.log(`[${imageName}] ${event.stream.trim()}`);
-            }
-            if (event.error) {
-              console.error(`[${imageName}] Docker build error:`, event.error);
-              buildError = event.error;
-            }
-          });
-        }
-        if (err) {
-          console.error(`[${imageName}] Docker build failed:`, err);
-          reject(err);
-        } else if (buildError) {
-          reject(new Error(`Docker build failed for ${imageName}: ${buildError}`));
-        } else {
-          console.log(`[${imageName}] Docker image built successfully`);
-          resolve();
-        }
-      });
-    });
+    await buildImageIfNeeded(imageName, contextPath);
   }
 
   private async waitForSSH(containerInfo: ContainerInfo, maxAttempts = 60): Promise<void> {

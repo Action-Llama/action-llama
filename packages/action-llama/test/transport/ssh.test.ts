@@ -129,11 +129,10 @@ describe("SshTransport", () => {
     });
 
     it("throws on timeout if shell doesn't respond", async () => {
-      // Don't auto-respond — let it timeout
-      const transport = new SshTransport({ host: "10.0.0.1" });
-      // Use a very short timeout by patching the constant — or just expect the timeout error
+      // Don't auto-respond — let it timeout with a short connectTimeoutMs
+      const transport = new SshTransport({ host: "10.0.0.1", connectTimeoutMs: 50 });
       await expect(transport.connect()).rejects.toThrow("Timed out");
-    }, 20_000);
+    });
   });
 
   describe("exec()", () => {

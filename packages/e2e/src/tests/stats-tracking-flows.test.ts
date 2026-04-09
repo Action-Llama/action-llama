@@ -18,7 +18,8 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { E2ETestContext, type ContainerInfo } from "../harness.js";
-import { setupLocalActionLlama, getSchedulerLogs } from "../containers/local.js";
+import { setupLocalActionLlama, getSchedulerLogs, waitForGateway } from "../containers/local.js";
+import { poll } from "../poll.js";
 
 const GATEWAY_PORT = 8585;
 const API_KEY = "stats-tracking-e2e-key-11111";
@@ -54,22 +55,7 @@ EOF`,
     `cd /home/testuser/test-project && nohup al start --headless --web-ui > /tmp/scheduler.log 2>&1 & echo $! > /tmp/scheduler.pid`,
   ]);
 
-  for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 1000));
-    try {
-      const health = await context.executeInContainer(container, [
-        "curl",
-        "-sf",
-        `http://localhost:${GATEWAY_PORT}/health`,
-      ]);
-      if (health.includes("ok")) return;
-    } catch {
-      // not ready yet
-    }
-  }
-
-  const logs = await getSchedulerLogs(context, container);
-  throw new Error(`Gateway did not become healthy within 30s.\nLogs: ${logs}`);
+  await waitForGateway(context, container, GATEWAY_PORT);
 }
 
 /** Stop the scheduler process. */
@@ -201,7 +187,7 @@ EOF`,
     const res = await curl(
       context,
       container,
-      `http://localhost:${GATEWAY_PORT}/api/stats/agents/stats-agent/runs?page=1&limit=10`,
+      `'http://localhost:${GATEWAY_PORT}/api/stats/agents/stats-agent/runs?page=1&limit=10'`,
     );
     const body = JSON.parse(res);
 
@@ -267,21 +253,21 @@ EOF`,
     // stats-agent only listens for "opened" → no agents matched
     expect(body.matched).toBe(0);
 
-    // Give the stats store a moment to commit the dead-letter receipt
-    await new Promise((r) => setTimeout(r, 500));
-
-    // Query trigger history with all=1 to include dead-letters
-    const histRes = await curl(
-      context,
-      container,
-      `'http://localhost:${GATEWAY_PORT}/api/stats/triggers?limit=50&offset=0&all=1'`,
-    );
-    const hist = JSON.parse(histRes);
+    // Poll until the dead-letter appears in trigger history
+    const hist = await poll(async () => {
+      const histRes = await curl(
+        context,
+        container,
+        `'http://localhost:${GATEWAY_PORT}/api/stats/triggers?limit=50&offset=0&all=1'`,
+      );
+      const h = JSON.parse(histRes);
+      const dls = h.triggers?.filter((t: { result: string }) => t.result === "dead-letter") ?? [];
+      return dls.length > 0 ? h : null;
+    }, { timeoutMs: 5_000, label: "dead-letter to appear in trigger history" });
 
     expect(Array.isArray(hist.triggers)).toBe(true);
     expect(hist.total).toBeGreaterThan(0);
 
-    // There must be at least one dead-letter entry
     const deadLetters = hist.triggers.filter(
       (t: { result: string }) => t.result === "dead-letter",
     );
@@ -309,7 +295,16 @@ EOF`,
     expect(dispatch.ok).toBe(true);
     expect(dispatch.matched).toBe(0);
 
-    await new Promise((r) => setTimeout(r, 500));
+    // Poll until the new dead-letter appears
+    await poll(async () => {
+      const res = await curl(
+        context,
+        container,
+        `'http://localhost:${GATEWAY_PORT}/api/stats/triggers?limit=10&offset=0&all=1'`,
+      );
+      const h = JSON.parse(res);
+      return h.triggers?.some((t: any) => t.result === "dead-letter" && t.webhookReceiptId) || false;
+    }, { timeoutMs: 5_000, label: "new dead-letter receipt to appear" });
 
     // Retrieve the trigger history to get the receipt ID
     const histRes = await curl(
@@ -376,25 +371,33 @@ EOF`,
       sender: "counter-tester",
     });
 
-    await new Promise((r) => setTimeout(r, 500));
+    const after = await poll(async () => {
+      const res = JSON.parse(
+        await curl(
+          context,
+          container,
+          `'http://localhost:${GATEWAY_PORT}/api/stats/triggers?limit=50&offset=0&all=1'`,
+        ),
+      );
+      return res.total > countBefore ? res : null;
+    }, { timeoutMs: 5_000, label: "trigger count to increase" });
 
-    const after = JSON.parse(
-      await curl(
-        context,
-        container,
-        `'http://localhost:${GATEWAY_PORT}/api/stats/triggers?limit=50&offset=0&all=1'`,
-      ),
-    );
-
-    // Total should have increased by at least 1
     expect(after.total).toBeGreaterThan(countBefore);
   });
 
   // -- Log API Endpoints ----------------------------------------------------
 
   it("GET /api/logs/scheduler returns entries with cursor after scheduler starts", async () => {
-    // Wait briefly to ensure the scheduler has written some log entries
-    await new Promise((r) => setTimeout(r, 2000));
+    // Poll until the scheduler has written log entries
+    await poll(async () => {
+      const r = await curl(
+        context,
+        container,
+        `http://localhost:${GATEWAY_PORT}/api/logs/scheduler?lines=50`,
+      );
+      const b = JSON.parse(r);
+      return b.entries?.length > 0 || false;
+    }, { timeoutMs: 10_000, label: "scheduler log entries to appear" });
 
     const res = await curl(
       context,

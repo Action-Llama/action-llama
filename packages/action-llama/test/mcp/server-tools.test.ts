@@ -32,7 +32,13 @@ vi.mock("@modelcontextprotocol/sdk/server/mcp.js", () => ({
 }));
 
 vi.mock("@modelcontextprotocol/sdk/server/stdio.js", () => ({
-  StdioServerTransport: class MockStdioServerTransport {},
+  StdioServerTransport: class MockStdioServerTransport {
+    // startMcpServer awaits transport.onclose — fire it immediately so tests
+    // don't hang.
+    set onclose(fn: (() => void) | undefined) {
+      if (fn) queueMicrotask(fn);
+    }
+  },
 }));
 
 // ─── Mock gatewayFetch / gatewayJson ────────────────────────────────────────

@@ -12,7 +12,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { chromium, type Browser } from "playwright";
 import { E2ETestContext, type ContainerInfo } from "../harness.js";
-import { createTestAgent, getSchedulerLogs } from "../containers/local.js";
+import { createTestAgent, getSchedulerLogs, waitForGateway } from "../containers/local.js";
 import { existsSync } from "fs";
 import { execSync } from "child_process";
 
@@ -76,20 +76,7 @@ EOF`,
     `cd /home/testuser/test-project && nohup al start --headless --web-ui --expose > /tmp/scheduler.log 2>&1 & echo $! > /tmp/scheduler.pid`,
   ]);
 
-  for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 1000));
-    try {
-      const health = await context.executeInContainer(container, [
-        "curl", "-sf", `http://localhost:${GATEWAY_PORT}/health`,
-      ]);
-      if (health.includes("ok")) return;
-    } catch {
-      // not ready yet
-    }
-  }
-
-  const logs = await getSchedulerLogs(context, container);
-  throw new Error(`Gateway did not become healthy within 30s.\nLogs: ${logs}`);
+  await waitForGateway(context, container, GATEWAY_PORT);
 }
 
 async function stopGateway(
@@ -325,8 +312,11 @@ EOF`,
 
       await page.goto(`${baseURL}/dashboard/agents/echo-agent/instances/${instanceId}`);
 
-      // Wait for log entries to load
-      await page.waitForSelector(".font-mono", { timeout: 15000 });
+      // Wait for log entries to load (wait for actual log content, not just the page frame)
+      await page.waitForFunction(
+        () => document.body.textContent?.includes("echo hello-world-cmd-visible"),
+        { timeout: 15000 },
+      );
 
       // The command text should be visible
       const pageContent = await page.content();

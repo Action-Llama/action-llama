@@ -12,7 +12,8 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { E2ETestContext, type ContainerInfo } from "../harness.js";
-import { setupLocalActionLlama, getSchedulerLogs } from "../containers/local.js";
+import { setupLocalActionLlama, getSchedulerLogs, waitForGateway, waitForAgentReady } from "../containers/local.js";
+import { poll } from "../poll.js";
 
 const GATEWAY_PORT = 8383;
 const API_KEY = "concurrent-scaling-e2e-api-key-54321";
@@ -55,23 +56,7 @@ EOF`,
     `cd /home/testuser/test-project && nohup al start --headless --web-ui > /tmp/scheduler.log 2>&1 & echo $! > /tmp/scheduler.pid`,
   ]);
 
-  // Poll health endpoint until the gateway is ready (max 30s)
-  for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 1000));
-    try {
-      const health = await context.executeInContainer(container, [
-        "curl",
-        "-sf",
-        `http://localhost:${GATEWAY_PORT}/health`,
-      ]);
-      if (health.includes("ok")) return;
-    } catch {
-      // not ready yet
-    }
-  }
-
-  const logs = await getSchedulerLogs(context, container);
-  throw new Error(`Gateway did not become healthy within 30s.\nLogs: ${logs}`);
+  await waitForGateway(context, container, GATEWAY_PORT);
 }
 
 /** Stop the scheduler process. */
@@ -178,25 +163,7 @@ EOF`,
     // Wait for scale-agent to become idle (image built) before running tests.
     // This prevents race conditions where webhooks arrive before the runner pool
     // is set up (which happens after image build completes).
-    for (let i = 0; i < 60; i++) {
-      await new Promise((r) => setTimeout(r, 1000));
-      try {
-        const res = await curl(
-          context,
-          container,
-          `http://localhost:${GATEWAY_PORT}/api/dashboard/status`,
-        );
-        const body = JSON.parse(res);
-        const agent = body.agents?.find(
-          (a: { name: string }) => a.name === "scale-agent",
-        );
-        if (agent && (agent.state === "idle" || agent.state === "error")) {
-          break; // Image built, agent ready
-        }
-      } catch {
-        // not ready yet
-      }
-    }
+    await waitForAgentReady(context, container, GATEWAY_PORT, "scale-agent", COOKIE_JAR);
   }, 300000);
 
   afterAll(async () => {
@@ -264,10 +231,20 @@ EOF`,
   });
 
   it("trigger history records both dispatched webhook events", async () => {
-    // Wait briefly for the stats store to commit both trigger receipts
-    await new Promise((r) => setTimeout(r, 1000));
+    // Poll until both trigger receipts are committed
+    await poll(async () => {
+      const res = await curl(
+        context,
+        container,
+        `'http://localhost:${GATEWAY_PORT}/api/stats/triggers?limit=50&offset=0&all=1'`,
+      );
+      const s = JSON.parse(res);
+      const agentTriggers = s.triggers?.filter(
+        (t: { agentName?: string }) => t.agentName === "scale-agent",
+      ) ?? [];
+      return agentTriggers.length >= 2 || false;
+    }, { timeoutMs: 5_000, label: "both trigger receipts to appear" });
 
-    // Query all triggers (all=1 to include dead-letters too)
     const statsRes = await curl(
       context,
       container,

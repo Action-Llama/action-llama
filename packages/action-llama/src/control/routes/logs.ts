@@ -26,8 +26,10 @@ async function handleLogRequest(
     catch { return { status: 400, body: { error: "Invalid grep pattern" } }; }
   }
 
-  const filterLevel = (entries: LogEntry[]) =>
-    minLevel > 0 ? entries.filter((e) => e.level >= minLevel) : entries;
+  // Level filtering is applied during reading so that requesting N entries
+  // always returns up to N entries that match the level filter (rather than
+  // reading N entries and then discarding some).
+  const effectiveLevel = minLevel > 0 ? minLevel : undefined;
 
   // Handle backward cursor pagination
   if (backCursorParam) {
@@ -39,7 +41,7 @@ async function handleLogRequest(
 
     // Find the file for the cursor's date
     const cursorFileIdx = allFiles.findIndex(f => dateFromLogFile(f) === parsed.date);
-    
+
     // Read backward from cursor position, spanning multiple files if needed
     const collected: LogEntry[] = [];
     let newBackDate: string | null = null;
@@ -50,7 +52,7 @@ async function handleLogRequest(
       const remaining = lines - collected.length;
       const startPos = (i === startIdx) ? parsed.offsets[0] : undefined;
       const { entries, scanStoppedAt } = await readLastEntries(
-        allFiles[i], remaining, undefined, undefined, instanceFilter, grepRe, startPos,
+        allFiles[i], remaining, undefined, undefined, instanceFilter, grepRe, startPos, effectiveLevel,
       );
       collected.unshift(...entries);
       newBackDate = dateFromLogFile(allFiles[i]);
@@ -61,9 +63,8 @@ async function handleLogRequest(
       }
     }
 
-    const filtered = filterLevel(collected.slice(-lines));
     const newBackCursor = newBackDate ? encodeCursor(newBackDate, [newBackOffset]) : null;
-    return { status: 200, body: { entries: filtered, cursor: null, backCursor: newBackCursor, hasMore: false } };
+    return { status: 200, body: { entries: collected.slice(-lines), cursor: null, backCursor: newBackCursor, hasMore: false } };
   }
 
   if (cursor) {
@@ -75,24 +76,22 @@ async function handleLogRequest(
 
     const { entries, newDate, newOffset } = await readEntriesForwardMultiFile(
       projectPath, prefix, parsed.date, parsed.offsets[0] || 0, lines,
-      after, before, instanceFilter, grepRe,
+      after, before, instanceFilter, grepRe, effectiveLevel,
     );
-    const filtered = filterLevel(entries);
     const newCursor = encodeCursor(newDate, [newOffset]);
-    return { status: 200, body: { entries: filtered, cursor: newCursor, backCursor: null, hasMore: entries.length >= lines } };
+    return { status: 200, body: { entries, cursor: newCursor, backCursor: null, hasMore: entries.length >= lines } };
   }
 
   const files = findLogFiles(projectPath, prefix);
   if (files.length === 0) return { status: 200, body: { entries: [], cursor: null, backCursor: null, hasMore: false } };
 
   const { entries, latestFile, byteOffset, backCursorDate, backCursorOffset } = await readLastEntriesMultiFile(
-    files, lines, after, before, instanceFilter, grepRe,
+    files, lines, after, before, instanceFilter, grepRe, effectiveLevel,
   );
-  const filtered = filterLevel(entries);
   const date = latestFile ? dateFromLogFile(latestFile) || "" : "";
   const resCursor = encodeCursor(date, [byteOffset]);
   const backCursor = backCursorDate ? encodeCursor(backCursorDate, [backCursorOffset]) : null;
-  return { status: 200, body: { entries: filtered, cursor: resCursor, backCursor, hasMore: false } };
+  return { status: 200, body: { entries, cursor: resCursor, backCursor, hasMore: false } };
 }
 
 export function registerLogRoutes(app: Hono, projectPath: string): void {

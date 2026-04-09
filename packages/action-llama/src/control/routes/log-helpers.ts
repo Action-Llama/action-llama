@@ -89,6 +89,7 @@ export async function readEntriesForward(
   beforeTime?: number,
   instanceFilter?: string,
   grep?: RegExp,
+  minLevel?: number,
 ): Promise<{ entries: LogEntry[]; newOffset: number }> {
   try {
     const stat = await fs.stat(filePath);
@@ -114,6 +115,7 @@ export async function readEntriesForward(
         if (beforeTime && entry.time >= beforeTime) continue;
         if (instanceFilter && entry.instance !== instanceFilter) continue;
         if (grep && !grep.test(JSON.stringify(entry))) continue;
+        if (minLevel && entry.level < minLevel) continue;
         entries.push(entry);
       }
 
@@ -141,6 +143,7 @@ export async function readLastEntries(
   instanceFilter?: string,
   grep?: RegExp,
   startPosition?: number,
+  minLevel?: number,
 ): Promise<{ entries: LogEntry[]; byteOffset: number; scanStoppedAt: number }> {
   try {
     const stat = await fs.stat(filePath);
@@ -174,6 +177,7 @@ export async function readLastEntries(
           if (beforeTime && entry.time >= beforeTime) continue;
           if (instanceFilter && entry.instance !== instanceFilter) continue;
           if (grep && !grep.test(JSON.stringify(entry))) continue;
+          if (minLevel && entry.level < minLevel) continue;
           entries.unshift(entry);
           if (entries.length > limit) entries.shift();
         }
@@ -184,7 +188,8 @@ export async function readLastEntries(
         if (entry) {
           const inRange = (!afterTime || entry.time > afterTime) && (!beforeTime || entry.time < beforeTime)
             && (!instanceFilter || entry.instance === instanceFilter)
-            && (!grep || grep.test(JSON.stringify(entry)));
+            && (!grep || grep.test(JSON.stringify(entry)))
+            && (!minLevel || entry.level >= minLevel);
           if (inRange) {
             entries.unshift(entry);
             if (entries.length > limit) entries.shift();
@@ -215,6 +220,7 @@ export async function readLastEntriesMultiFile(
   beforeTime?: number,
   instanceFilter?: string,
   grep?: RegExp,
+  minLevel?: number,
 ): Promise<{ entries: LogEntry[]; latestFile: string | null; byteOffset: number; backCursorDate: string | null; backCursorOffset: number }> {
   if (files.length === 0) return { entries: [], latestFile: null, byteOffset: 0, backCursorDate: null, backCursorOffset: 0 };
 
@@ -228,7 +234,7 @@ export async function readLastEntriesMultiFile(
   for (let i = files.length - 1; i >= 0 && collected.length < limit; i--) {
     const remaining = limit - collected.length;
     const { entries, byteOffset, scanStoppedAt } = await readLastEntries(
-      files[i], remaining, afterTime, beforeTime, instanceFilter, grep,
+      files[i], remaining, afterTime, beforeTime, instanceFilter, grep, undefined, minLevel,
     );
     if (i === files.length - 1) latestByteOffset = byteOffset;
     collected.unshift(...entries);
@@ -259,6 +265,7 @@ export async function readEntriesForwardMultiFile(
   beforeTime?: number,
   instanceFilter?: string,
   grep?: RegExp,
+  minLevel?: number,
 ): Promise<{ entries: LogEntry[]; newDate: string; newOffset: number }> {
   const allFiles = findLogFiles(projectPath, prefix);
   if (allFiles.length === 0) return { entries: [], newDate: cursorDate, newOffset: cursorOffset };
@@ -281,7 +288,7 @@ export async function readEntriesForwardMultiFile(
     const remaining = limit - collected.length;
 
     const { entries, newOffset } = await readEntriesForward(
-      allFiles[i], offset, remaining, afterTime, beforeTime, instanceFilter, grep,
+      allFiles[i], offset, remaining, afterTime, beforeTime, instanceFilter, grep, minLevel,
     );
     collected.push(...entries);
     finalDate = fileDate || cursorDate;

@@ -18,7 +18,8 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { E2ETestContext, type ContainerInfo } from "../harness.js";
-import { setupLocalActionLlama, getSchedulerLogs } from "../containers/local.js";
+import { setupLocalActionLlama, getSchedulerLogs, waitForGateway } from "../containers/local.js";
+import { poll } from "../poll.js";
 
 const GATEWAY_PORT = 8181;
 const API_KEY = "webhook-e2e-api-key-99999";
@@ -62,23 +63,7 @@ EOF`,
     `cd /home/testuser/test-project && nohup al start --headless --web-ui > /tmp/scheduler.log 2>&1 & echo $! > /tmp/scheduler.pid`,
   ]);
 
-  // Poll health endpoint until the gateway is ready (max 30s)
-  for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 1000));
-    try {
-      const health = await context.executeInContainer(container, [
-        "curl",
-        "-sf",
-        `http://localhost:${GATEWAY_PORT}/health`,
-      ]);
-      if (health.includes("ok")) return;
-    } catch {
-      // not ready yet
-    }
-  }
-
-  const logs = await getSchedulerLogs(context, container);
-  throw new Error(`Gateway did not become healthy within 30s.\nLogs: ${logs}`);
+  await waitForGateway(context, container, GATEWAY_PORT);
 }
 
 /** Stop the scheduler process. */
@@ -276,10 +261,18 @@ EOF`,
     expect(dispatch.ok).toBe(true);
     expect(dispatch.matched).toBe(0);
 
-    // Give the stats store a moment to commit the dead-letter receipt
-    await new Promise((r) => setTimeout(r, 500));
+    // Poll until the dead-letter entry appears in trigger history
+    await poll(async () => {
+      const statsRes = await curl(
+        context,
+        container,
+        `'http://localhost:${GATEWAY_PORT}/api/stats/triggers?limit=50&offset=0&all=1'`,
+      );
+      const stats = JSON.parse(statsRes);
+      const deadLetters = stats.triggers?.filter((t: any) => t.result === "dead-letter") ?? [];
+      return deadLetters.length > 0 ? stats : null;
+    }, { timeoutMs: 5_000, label: "dead-letter to appear in trigger history" });
 
-    // Query the trigger history with all=1 to include dead-letter entries
     const statsRes = await curl(
       context,
       container,
@@ -290,9 +283,7 @@ EOF`,
     expect(stats).toHaveProperty("triggers");
     expect(stats).toHaveProperty("total");
     expect(Array.isArray(stats.triggers)).toBe(true);
-    // Dead-letter entry from our unmatched "labeled" webhook should appear
     expect(stats.total).toBeGreaterThan(0);
-    // Verify there's at least one dead-letter entry
     const deadLetters = stats.triggers.filter((t: any) => t.result === "dead-letter");
     expect(deadLetters.length).toBeGreaterThan(0);
   });
@@ -324,16 +315,18 @@ EOF`,
       `curl -s -X POST -H 'Content-Type: application/json' -d '${payload.replace(/'/g, "'\\''")}' http://localhost:${GATEWAY_PORT}/webhooks/test 2>/dev/null`,
     ]);
 
-    await new Promise((r) => setTimeout(r, 500));
+    // Poll until the total increases
+    const after = await poll(async () => {
+      const res = JSON.parse(
+        await curl(
+          context,
+          container,
+          `'http://localhost:${GATEWAY_PORT}/api/stats/triggers?limit=50&offset=0&all=1'`,
+        ),
+      );
+      return res.total > countBefore ? res : null;
+    }, { timeoutMs: 5_000, label: "trigger count to increase" });
 
-    const after = JSON.parse(
-      await curl(
-        context,
-        container,
-        `'http://localhost:${GATEWAY_PORT}/api/stats/triggers?limit=50&offset=0&all=1'`,
-      ),
-    );
-    // Count should have increased by at least 1 (new dead-letter)
     expect(after.total).toBeGreaterThan(countBefore);
   });
 });
@@ -429,24 +422,7 @@ EOF`,
       `cd /home/testuser/test-project && nohup al start --headless --web-ui > /tmp/filter-scheduler.log 2>&1 & echo $! > /tmp/filter-scheduler.pid`,
     ]);
 
-    // Poll until healthy
-    for (let i = 0; i < 30; i++) {
-      await new Promise((r) => setTimeout(r, 1000));
-      try {
-        const health = await filterCtx.executeInContainer(filterContainer, [
-          "curl",
-          "-sf",
-          `http://localhost:${FILTER_PORT}/health`,
-        ]);
-        if (health.includes("ok")) break;
-      } catch {
-        // not ready yet
-      }
-      if (i === 29) {
-        const logs = await getSchedulerLogs(filterCtx, filterContainer);
-        throw new Error(`Filter gateway did not become healthy within 30s.\nLogs: ${logs}`);
-      }
-    }
+    await waitForGateway(filterCtx, filterContainer, FILTER_PORT, { logFile: "/tmp/filter-scheduler.log" });
 
     // Login
     await filterCtx.executeInContainer(filterContainer, [
@@ -560,10 +536,15 @@ EOF`,
       `curl -s -X POST -H 'Content-Type: application/json' -d '${payload.replace(/'/g, "'\\''")}' http://localhost:${FILTER_PORT}/webhooks/test 2>/dev/null`,
     ]);
 
-    // Brief pause for stats store commit
-    await new Promise((r) => setTimeout(r, 500));
+    // Poll until the dead-letter appears
+    await poll(async () => {
+      const res = await filterCurl(
+        `'http://localhost:${FILTER_PORT}/api/stats/triggers?limit=50&offset=0&all=1'`,
+      );
+      const stats = JSON.parse(res);
+      return stats.triggers?.some((t: any) => t.result === "dead-letter") || false;
+    }, { timeoutMs: 5_000, label: "dead-letter to appear in filter trigger history" });
 
-    // Verify it appears in trigger history as a dead-letter
     const statsRes = await filterCurl(
       `'http://localhost:${FILTER_PORT}/api/stats/triggers?limit=50&offset=0&all=1'`,
     );
@@ -669,27 +650,7 @@ EOF`,
       `cd /home/testuser/test-project && nohup al start --headless --web-ui > /tmp/dedup-scheduler.log 2>&1 & echo $! > /tmp/dedup-scheduler.pid`,
     ]);
 
-    // Poll until the health endpoint responds
-    for (let i = 0; i < 30; i++) {
-      await new Promise((r) => setTimeout(r, 1000));
-      try {
-        const health = await dedupCtx.executeInContainer(dedupContainer, [
-          "curl",
-          "-sf",
-          `http://localhost:${DEDUP_PORT}/health`,
-        ]);
-        if (health.includes("ok")) break;
-      } catch {
-        // not ready yet
-      }
-      if (i === 29) {
-        const logs = await dedupCtx.executeInContainer(dedupContainer, [
-          "cat",
-          "/tmp/dedup-scheduler.log",
-        ]).catch(() => "no logs");
-        throw new Error(`Dedup gateway did not become healthy within 30s.\nLogs: ${logs}`);
-      }
-    }
+    await waitForGateway(dedupCtx, dedupContainer, DEDUP_PORT, { logFile: "/tmp/dedup-scheduler.log" });
 
     // Login for authenticated API calls
     await dedupCtx.executeInContainer(dedupContainer, [

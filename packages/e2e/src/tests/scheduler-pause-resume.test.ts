@@ -14,7 +14,8 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { E2ETestContext, type ContainerInfo } from "../harness.js";
-import { setupLocalActionLlama, getSchedulerLogs } from "../containers/local.js";
+import { setupLocalActionLlama, getSchedulerLogs, waitForGateway, waitForAgentReady } from "../containers/local.js";
+import { poll } from "../poll.js";
 
 const GATEWAY_PORT = 8484;
 const API_KEY = "scheduler-pause-e2e-key-77777";
@@ -49,23 +50,7 @@ EOF`,
     `cd /home/testuser/test-project && nohup al start --headless --web-ui > /tmp/scheduler.log 2>&1 & echo $! > /tmp/scheduler.pid`,
   ]);
 
-  // Poll until healthy (max 30s)
-  for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 1000));
-    try {
-      const health = await context.executeInContainer(container, [
-        "curl",
-        "-sf",
-        `http://localhost:${GATEWAY_PORT}/health`,
-      ]);
-      if (health.includes("ok")) return;
-    } catch {
-      // not ready yet
-    }
-  }
-
-  const logs = await getSchedulerLogs(context, container);
-  throw new Error(`Gateway did not become healthy within 30s.\nLogs: ${logs}`);
+  await waitForGateway(context, container, GATEWAY_PORT);
 }
 
 async function stopGateway(
@@ -160,25 +145,7 @@ EOF`,
 
     // Wait for the agent to become idle (image built) before running tests.
     // This ensures the runner pool is set up and webhooks can be dispatched.
-    for (let i = 0; i < 60; i++) {
-      await new Promise((r) => setTimeout(r, 1000));
-      try {
-        const res = await curl(
-          context,
-          container,
-          `http://localhost:${GATEWAY_PORT}/api/dashboard/status`,
-        );
-        const body = JSON.parse(res);
-        const agent = body.agents?.find(
-          (a: { name: string }) => a.name === "pause-test-agent",
-        );
-        if (agent && (agent.state === "idle" || agent.state === "error")) {
-          break;
-        }
-      } catch {
-        // not ready yet
-      }
-    }
+    await waitForAgentReady(context, container, GATEWAY_PORT, "pause-test-agent", COOKIE_JAR);
   }, 300000);
 
   afterAll(async () => {
@@ -321,8 +288,16 @@ EOF`,
   // -- Dead-letter verification ----------------------------------------------
 
   it("skipped-while-paused webhook appears in trigger history as dead-letter", async () => {
-    // Give the stats store a moment to commit the dead-letter receipt
-    await new Promise((r) => setTimeout(r, 500));
+    // Poll until the dead-letter appears
+    await poll(async () => {
+      const res = await curl(
+        context,
+        container,
+        `'http://localhost:${GATEWAY_PORT}/api/stats/triggers?limit=50&offset=0&all=1'`,
+      );
+      const s = JSON.parse(res);
+      return s.triggers?.some((t: any) => t.result === "dead-letter") || false;
+    }, { timeoutMs: 5_000, label: "dead-letter to appear after paused dispatch" });
 
     const statsRes = await curl(
       context,

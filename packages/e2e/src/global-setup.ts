@@ -1,6 +1,7 @@
 import Docker from "dockerode";
 import { execSync } from "child_process";
 import { assertDockerAvailable, isDockerAvailable } from "./docker-utils.js";
+import { buildImageIfNeeded } from "./harness.js";
 
 export async function setup() {
   // Ensure Playwright Chromium browser is installed before running browser tests
@@ -10,7 +11,7 @@ export async function setup() {
   await assertDockerAvailable();
 
   const docker = new Docker();
-  
+
   // Create dedicated network for e2e tests
   try {
     await docker.createNetwork({
@@ -30,6 +31,11 @@ export async function setup() {
       throw error;
     }
   }
+
+  // Pre-build Docker images once for the entire test session.
+  // Individual test suites will skip the build since the image already exists.
+  await buildImageIfNeeded("action-llama-local", "docker/local");
+  await buildImageIfNeeded("action-llama-vps", "docker/vps");
 }
 
 export async function teardown() {

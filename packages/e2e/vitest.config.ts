@@ -10,12 +10,10 @@ export default defineConfig({
           testTimeout: 600000, // 10 minutes per test
           hookTimeout: 300000, // 5 minutes for setup/teardown
           pool: "forks", // Isolate container tests
-          poolOptions: {
-            forks: {
-              singleFork: true, // Run all test files in a single fork process
-            },
-          },
+          maxWorkers: 1, // Run all test files in a single fork process (replaces singleFork)
+          isolate: false,
           fileParallelism: false, // Prevent parallel test file execution — Docker builds conflict
+          sequence: { groupOrder: 1 },
           setupFiles: ["./src/setup.ts"],
           globalSetup: ["./src/global-setup.ts"],
           include: ["src/tests/**/*.test.ts"],
@@ -27,6 +25,7 @@ export default defineConfig({
           name: "integration",
           testTimeout: 1_800_000,
           pool: "forks",
+          sequence: { groupOrder: 2 },
           include: ["src/integration/**/*.test.ts"],
         },
       },

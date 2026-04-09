@@ -6,7 +6,7 @@ import type { ChildProcess } from "child_process";
 
 /** Create a mock ChildProcess that simulates a Docker shell session. */
 function createMockShell() {
-  const stdin = { write: vi.fn(), end: vi.fn() };
+  const stdin = { write: vi.fn(), end: vi.fn(), on: vi.fn() };
   const stdout = new EventEmitter();
   const stderr = new EventEmitter();
   const proc = new EventEmitter() as EventEmitter & {
@@ -41,6 +41,7 @@ const mockWriteFileSync = vi.fn();
 const mockReadFileSync = vi.fn(() => Buffer.from("file content"));
 const mockRmSync = vi.fn();
 const mockMkdirSync = vi.fn();
+const mockReaddirSync = vi.fn(() => ["app"]);
 
 vi.mock("fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("fs")>();
@@ -51,6 +52,7 @@ vi.mock("fs", async (importOriginal) => {
     readFileSync: (...args: any[]) => mockReadFileSync(...args),
     rmSync: (...args: any[]) => mockRmSync(...args),
     mkdirSync: (...args: any[]) => mockMkdirSync(...args),
+    readdirSync: (...args: any[]) => mockReaddirSync(...args),
   };
 });
 

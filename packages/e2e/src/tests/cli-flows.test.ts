@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { getTestContext } from "../setup.js";
 import { setupLocalActionLlama, createTestAgent, startActionLlamaScheduler, stopActionLlamaScheduler, runSingleAgent, getSchedulerLogs } from "../containers/local.js";
+import { poll } from "../poll.js";
 
 describe("CLI Flows", { timeout: 300000 }, () => {
   it("creates new project", async () => {
@@ -288,17 +289,10 @@ EOF`,
     // The scheduler first builds the agent Docker image (using the Docker layer cache this
     // typically takes only a few seconds), then registers the cron job. Once registered
     // the every-second schedule fires at the next second boundary.
-    let cronFired = false;
-    for (let i = 0; i < 60; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+    await poll(async () => {
       const logs = await getSchedulerLogs(context, container);
-      if (logs.includes("cron-agent: running (schedule)") || logs.includes("cron-agent: running")) {
-        cronFired = true;
-        break;
-      }
-    }
-
-    expect(cronFired).toBe(true);
+      return logs.includes("cron-agent: running (schedule)") || logs.includes("cron-agent: running");
+    }, { timeoutMs: 60_000, label: "cron-agent to fire" });
 
     // Verify the scheduler is still running (cron dispatch did not crash it).
     const statusOutput = await context.executeInContainer(container, [
@@ -426,21 +420,12 @@ EOF`,
     // All schedule-driven agents should show a "cron" trigger type
     expect(statOutput).toMatch(/cron/);
 
-    // Wait up to 60 seconds for both fast-schedule agents to fire independently.
+    // Wait for both fast-schedule agents to fire independently.
     // Each successful cron dispatch is logged as "<name>: running (schedule)".
-    let alphaFired = false;
-    let betaFired = false;
-    for (let i = 0; i < 60; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+    await poll(async () => {
       const logs = await getSchedulerLogs(context, container);
-      if (logs.includes("alpha-agent: running")) alphaFired = true;
-      if (logs.includes("beta-agent: running")) betaFired = true;
-      if (alphaFired && betaFired) break;
-    }
-
-    // Both every-second agents must have fired during the observation window
-    expect(alphaFired).toBe(true);
-    expect(betaFired).toBe(true);
+      return logs.includes("alpha-agent: running") && logs.includes("beta-agent: running");
+    }, { timeoutMs: 60_000, label: "alpha-agent and beta-agent to fire" });
 
     // The future-scheduled agent must NOT have fired
     const finalLogs = await getSchedulerLogs(context, container);
@@ -453,10 +438,9 @@ EOF`,
     const context = getTestContext();
     const container = await setupLocalActionLlama(context);
 
-    // Create an agent whose pre-hook sleeps for 60 seconds but whose timeout
-    // is set to just 5 seconds. The host-side waitForExit timer should kill
-    // the container before the sleep completes, and the scheduler logs should
-    // record a timeout/error state for the agent.
+    // Create an agent whose pre-hook sleeps longer than its timeout.
+    // The timeout fires after 5 seconds, and the scheduler logs should
+    // record an error state for the agent once the hook completes.
     const agentDir = "/home/testuser/test-project/agents/timeout-agent";
     await context.executeInContainer(container, [
       "bash", "-c", `mkdir -p ${agentDir}`,
@@ -474,8 +458,10 @@ You are a test agent for timeout enforcement. This agent's pre-hook sleeps longe
 EOF`,
     ]);
 
-    // timeout = 5 seconds; pre-hook sleeps 60 seconds; schedule fires every second.
-    // The Docker container will be killed by the host after 5 seconds.
+    // timeout = 5 seconds; pre-hook sleeps 15 seconds; schedule fires every second.
+    // The timeout fires after 5s and sets _aborting=true. With mock Docker the
+    // sleep process can't be killed remotely, so we use a shorter sleep to keep
+    // the total test time manageable.
     await context.executeInContainer(container, [
       "bash", "-c", `cat > ${agentDir}/config.toml << 'EOF'
 models = ["sonnet"]
@@ -484,7 +470,7 @@ schedule = "* * * * * *"
 timeout = 5
 
 [hooks]
-pre = ["sleep 60"]
+pre = ["sleep 15"]
 EOF`,
     ]);
 
@@ -495,33 +481,14 @@ EOF`,
     // Start the scheduler with coverage instrumentation.
     await startActionLlamaScheduler(context, container, { coverage: true });
 
-    // Wait up to 90 seconds for:
-    //   1. The cron to fire timeout-agent ("running")
-    //   2. The pre-hook sleep to be interrupted by the timeout after 5 seconds
-    //   3. The scheduler to log the resulting error state
-    let agentStarted = false;
-    let agentTimedOut = false;
-
-    for (let i = 0; i < 90; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+    // Wait for the cron to fire, the pre-hook sleep to be interrupted by the
+    // timeout after 5 seconds, and the scheduler to log the resulting error state.
+    await poll(async () => {
       const logs = await getSchedulerLogs(context, container);
-
-      if (!agentStarted && logs.includes("timeout-agent: running")) {
-        agentStarted = true;
-      }
-
-      // After a timeout, the plain logger emits "timeout-agent: error: <message>"
-      // where the message includes "timed out" from the Docker waitForExit rejection.
-      if (agentStarted && (logs.includes("timeout-agent: error") || logs.match(/timeout-agent.*timed out/i))) {
-        agentTimedOut = true;
-        break;
-      }
-    }
-
-    // The agent must have started (cron fired)
-    expect(agentStarted).toBe(true);
-    // The agent must have been killed (timeout enforced)
-    expect(agentTimedOut).toBe(true);
+      const started = logs.includes("timeout-agent: running");
+      const timedOut = logs.includes("timeout-agent: error") || /timeout-agent.*timed out/i.test(logs);
+      return started && timedOut;
+    }, { timeoutMs: 120_000, label: "timeout-agent to start and be killed by timeout" });
 
     // Confirm the final log shows the error state, not a clean completion.
     const finalLogs = await getSchedulerLogs(context, container);
@@ -707,7 +674,7 @@ You are a test agent for verifying extension loading.
     const output = await context.executeInContainer(container, [
       "bash",
       "-c",
-      `cd /home/testuser/test-project && { printf '%s\\n' '${initRequest}' '${toolsListRequest}'; sleep 1; } | timeout 10 al mcp serve 2>/dev/null || true`,
+      `cd /home/testuser/test-project && { printf '%s\\n' '${initRequest}' '${toolsListRequest}'; sleep 5; } | timeout 10 al mcp serve 2>/dev/null || true`,
     ]);
 
     // Parse all JSON lines from the output

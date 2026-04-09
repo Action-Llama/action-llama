@@ -14,7 +14,8 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { E2ETestContext, type ContainerInfo } from "../harness.js";
-import { setupLocalActionLlama, createTestAgent, getSchedulerLogs } from "../containers/local.js";
+import { setupLocalActionLlama, createTestAgent, getSchedulerLogs, waitForGateway } from "../containers/local.js";
+import { poll } from "../poll.js";
 
 const GATEWAY_PORT = 8787;
 const API_KEY = "log-streaming-e2e-key-77777";
@@ -47,22 +48,7 @@ EOF`,
     `cd /home/testuser/test-project && nohup al start --headless --web-ui > /tmp/scheduler.log 2>&1 & echo $! > /tmp/scheduler.pid`,
   ]);
 
-  for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 1000));
-    try {
-      const health = await context.executeInContainer(container, [
-        "curl",
-        "-sf",
-        `http://localhost:${GATEWAY_PORT}/health`,
-      ]);
-      if (health.includes("ok")) return;
-    } catch {
-      // not ready yet
-    }
-  }
-
-  const logs = await getSchedulerLogs(context, container);
-  throw new Error(`Gateway did not become healthy within 30s.\nLogs: ${logs}`);
+  await waitForGateway(context, container, GATEWAY_PORT);
 }
 
 /** Stop the scheduler process. */
@@ -116,8 +102,16 @@ describe("Log Streaming", { timeout: 300000 }, () => {
     await startGateway(context, container);
     await login(context, container);
 
-    // Allow the scheduler a moment to write several log entries
-    await new Promise((r) => setTimeout(r, 3000));
+    // Wait until the scheduler has written at least one log entry
+    await poll(async () => {
+      const res = await context.executeInContainer(container, [
+        "bash",
+        "-c",
+        `curl -sf -b ${COOKIE_JAR} "http://localhost:${GATEWAY_PORT}/api/logs/scheduler?lines=1" 2>/dev/null || echo '{}'`,
+      ]);
+      const data = JSON.parse(res);
+      return Array.isArray(data.entries) && data.entries.length > 0;
+    }, { timeoutMs: 30_000, label: "scheduler log entries to appear" });
   }, 300000);
 
   afterAll(async () => {

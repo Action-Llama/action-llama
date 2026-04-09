@@ -1,29 +1,25 @@
 import { E2ETestContext, ContainerInfo } from "../harness.js";
+import { poll } from "../poll.js";
 import path from "path";
 
 export async function setupLocalActionLlama(context: E2ETestContext): Promise<ContainerInfo> {
   const containerInfo = await context.createLocalActionLlamaContainer();
-  
-  // Initialize a test project inside the container
-  // Note: Since al new is interactive, we need to create the project structure manually for e2e tests
+
+  // Initialize test project, config, and mock credentials in a single exec
   await context.executeInContainer(containerInfo, [
-    "mkdir", "-p", "/home/testuser/test-project"
-  ]);
-  
-  // Create a minimal project configuration
-  await context.executeInContainer(containerInfo, [
-    "bash", "-c", `cat > /home/testuser/test-project/config.toml << 'EOF'
+    "bash", "-c", `
+mkdir -p /home/testuser/test-project \
+         ~/.action-llama/credentials/github_token/default \
+         ~/.action-llama/credentials/anthropic_key/default
+
+cat > /home/testuser/test-project/config.toml << 'TOML'
 [models.sonnet]
 provider = "anthropic"
 model = "claude-3-5-sonnet-20241022"
 authType = "api_key"
-EOF`
-  ]);
+TOML
 
-  // Create package.json (required by al push for npm install on VPS)
-  // Use "next" dist-tag so the VPS installs the same version we're testing
-  await context.executeInContainer(containerInfo, [
-    "bash", "-c", `cat > /home/testuser/test-project/package.json << 'EOF'
+cat > /home/testuser/test-project/package.json << 'JSON'
 {
   "name": "test-project",
   "private": true,
@@ -32,26 +28,13 @@ EOF`
     "@action-llama/action-llama": "next"
   }
 }
-EOF`
-  ]);
-  
-  // Set up mock credentials for testing
-  await context.executeInContainer(containerInfo, [
-    "bash", "-c", "mkdir -p ~/.action-llama/credentials/github_token/default"
+JSON
+
+echo -n 'mock-token' > ~/.action-llama/credentials/github_token/default/token
+echo -n 'mock-key' > ~/.action-llama/credentials/anthropic_key/default/token
+`
   ]);
 
-  await context.executeInContainer(containerInfo, [
-    "bash", "-c", "echo 'mock-token' > ~/.action-llama/credentials/github_token/default/token"
-  ]);
-
-  await context.executeInContainer(containerInfo, [
-    "bash", "-c", "mkdir -p ~/.action-llama/credentials/anthropic_key/default"
-  ]);
-
-  await context.executeInContainer(containerInfo, [
-    "bash", "-c", "echo 'mock-key' > ~/.action-llama/credentials/anthropic_key/default/token"
-  ]);
-  
   return containerInfo;
 }
 
@@ -61,47 +44,31 @@ export async function createTestAgent(
   agentName: string,
   skill: string
 ): Promise<void> {
-  // Agents live under <project>/agents/<name>/
   const agentDir = `/home/testuser/test-project/agents/${agentName}`;
 
-  await context.executeInContainer(containerInfo, [
-    "bash", "-c", `mkdir -p ${agentDir}`
-  ]);
-
-  // Write SKILL.md with portable fields only (runtime fields are in config.toml)
   const skillContent = `---
 description: "E2E test agent"
 ---
 
 ${skill}`;
 
+  // Create agent directory, write SKILL.md + config.toml, and fix ownership in one exec
   await context.executeInContainer(containerInfo, [
-    "bash", "-c", `cat > ${agentDir}/SKILL.md << 'EOF'
-${skillContent}
-EOF`
-  ]);
+    "bash", "-c", `
+mkdir -p ${agentDir}
 
-  // Write per-agent config.toml with runtime fields (models, credentials, schedule)
-  await context.executeInContainer(containerInfo, [
-    "bash", "-c", `cat > ${agentDir}/config.toml << 'EOF'
+cat > ${agentDir}/SKILL.md << 'EOF'
+${skillContent}
+EOF
+
+cat > ${agentDir}/config.toml << 'EOF'
 models = ["sonnet"]
 credentials = ["github_token", "anthropic_key"]
 schedule = "0 */6 * * *"
-EOF`
-  ]);
+EOF
 
-  // Verify the agent was created properly
-  const agentFiles = await context.executeInContainer(containerInfo, [
-    "ls", "-la", agentDir
-  ]);
-
-  if (!agentFiles.includes("SKILL.md")) {
-    throw new Error(`Failed to create agent ${agentName}: SKILL.md not found`);
-  }
-
-  // Ensure correct ownership and permissions
-  await context.executeInContainer(containerInfo, [
-    "bash", "-c", `chown -R testuser:testuser ${agentDir}`
+chown -R testuser:testuser ${agentDir}
+`
   ]);
 }
 
@@ -110,98 +77,57 @@ export async function startActionLlamaScheduler(
   containerInfo: ContainerInfo,
   opts?: { coverage?: boolean }
 ): Promise<void> {
-  // Ensure we're in the correct directory and verify project structure
-  const projectCheck = await context.executeInContainer(containerInfo, [
-    "bash", "-c", "cd /home/testuser/test-project && ls -la"
-  ]);
-  
-  if (!projectCheck.includes("config.toml")) {
-    throw new Error("Project configuration not found before starting scheduler");
-  }
-
-  // Create default test agent if none exist (agents live under agents/ subdir)
   const projectPath = "/home/testuser/test-project";
-  const agentExists = await context.executeInContainer(containerInfo, [
-    "bash", "-c", `test -d ${projectPath}/agents && ls ${projectPath}/agents/ 2>/dev/null | head -1 | grep -q . && echo "exists" || echo "missing"`
-  ]);
 
-  if (agentExists.includes("missing")) {
-    await context.executeInContainer(containerInfo, [
-      "bash", "-c", `mkdir -p ${projectPath}/agents/test-agent`
-    ]);
-
-    const defaultSkill = `---
-description: "Default test agent for E2E testing"
----
-
-# Default Test Agent
-
-You are a default test agent created for E2E testing. You help verify that the Action Llama scheduler can find and manage agents properly.`;
-
-    await context.executeInContainer(containerInfo, [
-      "bash", "-c", `cat > ${projectPath}/agents/test-agent/SKILL.md << 'EOF'
-${defaultSkill}
-EOF`
-    ]);
-
-    // Write per-agent config.toml with runtime fields
-    await context.executeInContainer(containerInfo, [
-      "bash", "-c", `cat > ${projectPath}/agents/test-agent/config.toml << 'EOF'
-models = ["sonnet"]
-credentials = ["github_token", "anthropic_key"]
-schedule = "0 */6 * * *"
-EOF`
-    ]);
-
-    await context.executeInContainer(containerInfo, [
-      "bash", "-c", `chown -R testuser:testuser ${projectPath}/agents`
-    ]);
-  }
-
-  // Start the scheduler in the background with --headless to avoid TUI/raw mode
-  // When coverage is enabled (AL_COVERAGE=1 or opts.coverage), wrap with c8
+  // Verify project exists, create default agent if needed, and start scheduler — all in one exec
   const enableCoverage = opts?.coverage || process.env.AL_COVERAGE === "1";
   const alCmd = enableCoverage
     ? "c8 --reporter=json --reporter=text --report-dir=/tmp/coverage al start --headless"
     : "al start --headless";
 
   await context.executeInContainer(containerInfo, [
-    "bash", "-c", `cd /home/testuser/test-project && nohup ${alCmd} > /tmp/scheduler.log 2>&1 & echo $! > /tmp/scheduler.pid`
+    "bash", "-c", `
+cd ${projectPath} || exit 1
+test -f config.toml || { echo "config.toml missing" >&2; exit 1; }
+
+# Create default test agent if none exist
+if ! ls agents/ 2>/dev/null | grep -q .; then
+  mkdir -p agents/test-agent
+  cat > agents/test-agent/SKILL.md << 'EOF'
+---
+description: "Default test agent for E2E testing"
+---
+
+# Default Test Agent
+
+You are a default test agent created for E2E testing.
+EOF
+  cat > agents/test-agent/config.toml << 'EOF'
+models = ["sonnet"]
+credentials = ["github_token", "anthropic_key"]
+schedule = "0 */6 * * *"
+EOF
+  chown -R testuser:testuser agents
+fi
+
+nohup ${alCmd} > /tmp/scheduler.log 2>&1 & echo $! > /tmp/scheduler.pid
+`
   ]);
-  
-  // Wait for scheduler to start and verify it's running
-  let attempts = 0;
-  const maxAttempts = 10;
-  
-  while (attempts < maxAttempts) {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    try {
-      // Check if the scheduler process is still running
-      const pidCheck = await context.executeInContainer(containerInfo, [
-        "bash", "-c", "if [ -f /tmp/scheduler.pid ]; then ps -p $(cat /tmp/scheduler.pid) > /dev/null 2>&1 && echo 'running' || echo 'not running'; else echo 'no pid file'; fi"
+
+  // Wait for scheduler to start — check PID is alive and gateway health endpoint responds.
+  // Using curl is much faster than `al stat` (avoids full Node.js startup per poll iteration).
+  try {
+    await poll(async () => {
+      const check = await context.executeInContainer(containerInfo, [
+        "bash", "-c",
+        `[ -f /tmp/scheduler.pid ] && kill -0 $(cat /tmp/scheduler.pid) 2>/dev/null && curl -sf http://localhost:8080/health >/dev/null 2>&1 && echo ok || echo fail`,
       ]);
-
-      if (pidCheck.includes("running")) {
-        // Additional verification that scheduler is responding
-        const statusCheck = await context.executeInContainer(containerInfo, [
-          "bash", "-c", "cd /home/testuser/test-project && al stat 2>&1 || echo 'stat failed'"
-        ]);
-
-        if (!statusCheck.includes("stat failed")) {
-          return; // Scheduler is running properly
-        }
-      }
-    } catch {
-      // Continue trying
-    }
-    
-    attempts++;
+      return check.includes("ok");
+    }, { timeoutMs: 30_000, initialDelayMs: 200, label: "scheduler to start" });
+  } catch {
+    const logs = await getSchedulerLogs(context, containerInfo);
+    throw new Error(`Scheduler failed to start properly. Logs: ${logs}`);
   }
-  
-  // If we get here, the scheduler didn't start properly
-  const logs = await getSchedulerLogs(context, containerInfo);
-  throw new Error(`Scheduler failed to start properly after ${maxAttempts} attempts. Logs: ${logs}`);
 }
 
 export async function stopActionLlamaScheduler(
@@ -209,27 +135,20 @@ export async function stopActionLlamaScheduler(
   containerInfo: ContainerInfo
 ): Promise<void> {
   try {
-    // Send SIGTERM for graceful shutdown (allows c8 to write coverage reports)
+    // Send SIGTERM and wait for exit in a single script with short poll intervals.
+    // SIGTERM allows c8 to write coverage reports before the process exits.
     await context.executeInContainer(containerInfo, [
-      "bash", "-c", "if [ -f /tmp/scheduler.pid ]; then kill $(cat /tmp/scheduler.pid); fi"
-    ]);
-
-    // Wait for the process to exit (up to 15 seconds)
-    for (let i = 0; i < 15; i++) {
-      try {
-        const check = await context.executeInContainer(containerInfo, [
-          "bash", "-c", "if [ -f /tmp/scheduler.pid ]; then ps -p $(cat /tmp/scheduler.pid) > /dev/null 2>&1 && echo 'running' || echo 'stopped'; else echo 'stopped'; fi"
-        ]);
-        if (check.includes("stopped")) break;
-      } catch {
-        break;
-      }
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-
-    // Clean up pid file
-    await context.executeInContainer(containerInfo, [
-      "bash", "-c", "rm -f /tmp/scheduler.pid"
+      "bash", "-c", `
+if [ -f /tmp/scheduler.pid ]; then
+  pid=$(cat /tmp/scheduler.pid)
+  kill "$pid" 2>/dev/null
+  for i in $(seq 1 30); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.5
+  done
+  rm -f /tmp/scheduler.pid
+fi
+`
     ]);
   } catch {
     // Process might already be dead
@@ -278,47 +197,64 @@ export async function getSchedulerLogs(
   }
 }
 
+/**
+ * Poll the gateway health endpoint until it returns "ok".
+ * Uses exponential backoff. Throws with scheduler logs on timeout.
+ */
+export async function waitForGateway(
+  context: E2ETestContext,
+  container: ContainerInfo,
+  port: number,
+  opts?: { timeoutMs?: number; logFile?: string },
+): Promise<void> {
+  const logFile = opts?.logFile ?? "/tmp/scheduler.log";
+  try {
+    await poll(async () => {
+      const health = await context.executeInContainer(container, [
+        "curl", "-sf", `http://localhost:${port}/health`,
+      ]);
+      return health.includes("ok");
+    }, { timeoutMs: opts?.timeoutMs ?? 30_000, label: `gateway health on port ${port}` });
+  } catch {
+    let logs: string;
+    try {
+      logs = await context.executeInContainer(container, ["cat", logFile]);
+    } catch {
+      logs = "No scheduler logs available";
+    }
+    throw new Error(`Gateway did not become healthy.\nLogs: ${logs}`);
+  }
+}
+
+/**
+ * Poll the dashboard status API until a specific agent reaches "idle" or "error" state.
+ * Used after starting the gateway to wait for image builds to complete.
+ */
+export async function waitForAgentReady(
+  context: E2ETestContext,
+  container: ContainerInfo,
+  port: number,
+  agentName: string,
+  cookieJar: string,
+  opts?: { timeoutMs?: number },
+): Promise<void> {
+  await poll(async () => {
+    const res = await context.executeInContainer(container, [
+      "bash", "-c",
+      `curl -sf -b ${cookieJar} -c ${cookieJar} http://localhost:${port}/api/dashboard/status`,
+    ]);
+    const body = JSON.parse(res);
+    const agent = body.agents?.find((a: { name: string }) => a.name === agentName);
+    return agent && (agent.state === "idle" || agent.state === "error");
+  }, { timeoutMs: opts?.timeoutMs ?? 60_000, label: `agent "${agentName}" to become ready` });
+}
+
 export async function runSingleAgent(
   context: E2ETestContext,
   containerInfo: ContainerInfo,
   agentName: string
 ): Promise<string> {
-  // First verify the agent exists and the project structure is correct
-  try {
-    const projectContents = await context.executeInContainer(containerInfo, [
-      "bash", "-c", "cd /home/testuser/test-project && find . -name 'SKILL.md' -o -name 'config.toml'"
-    ]);
-    
-    if (!projectContents.includes(`agents/${agentName}/SKILL.md`)) {
-      throw new Error(`Agent ${agentName} not found in project. Found files: ${projectContents}`);
-    }
-    
-    // Check if AL can see the agent
-    const alStatus = await context.executeInContainer(containerInfo, [
-      "bash", "-c", `cd /home/testuser/test-project && al stat || echo "al stat failed"`
-    ]);
-    
-    // Run the agent with explicit error handling
-    return await context.executeInContainer(containerInfo, [
-      "bash", "-c", `cd /home/testuser/test-project && al run ${agentName} 2>&1`
-    ]);
-  } catch (error: any) {
-    // Provide better error context for debugging
-    let debugInfo = "";
-    try {
-      const workingDir = await context.executeInContainer(containerInfo, [
-        "bash", "-c", "pwd && ls -la /home/testuser/test-project"
-      ]);
-      debugInfo += `Working directory: ${workingDir}\n`;
-      
-      const alVersion = await context.executeInContainer(containerInfo, [
-        "bash", "-c", "al --version || echo 'al not found'"
-      ]);
-      debugInfo += `AL version: ${alVersion}\n`;
-    } catch {
-      debugInfo = "Could not gather debug info";
-    }
-    
-    throw new Error(`Failed to run agent ${agentName}: ${error.message}\nDebug info: ${debugInfo}`);
-  }
+  return await context.executeInContainer(containerInfo, [
+    "bash", "-c", `cd /home/testuser/test-project && al run ${agentName} 2>&1`
+  ]);
 }

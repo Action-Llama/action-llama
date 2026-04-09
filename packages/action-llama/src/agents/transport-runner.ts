@@ -207,6 +207,14 @@ export class TransportAgentRunner implements PoolRunner {
     this.logger.info(`Starting ${this.agentConfig.name} transport run`);
     this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} started (${runReason ?? "manual"})`);
 
+    // ── Timeout — kill the entire run if it exceeds the configured limit ──
+    const timeoutSeconds = this.agentConfig.timeout ?? this.globalConfig.local?.timeout ?? DEFAULT_AGENT_TIMEOUT;
+    const timeoutTimer = setTimeout(() => {
+      this.logger.error({ timeoutSeconds }, "agent timeout reached, aborting");
+      this.abort();
+    }, timeoutSeconds * 1000);
+    timeoutTimer.unref();
+
     try {
       // ── 1–2. Provision runtime & connect transport ──────────
       const transport = await this.createTransport();
@@ -243,9 +251,7 @@ export class TransportAgentRunner implements PoolRunner {
       // For now, we skip it since the commands won't have access to the runtime
 
       // ── 6. Create Pi session with transport tools ────────────
-      const timeout = this.agentConfig.timeout ?? this.globalConfig.local?.timeout ?? DEFAULT_AGENT_TIMEOUT;
-
-      const result = await this.runPiSession(prompt, skillBody, transport, providerKeys, timeout);
+      const result = await this.runPiSession(prompt, skillBody, transport, providerKeys);
       runResult = result.result;
       returnValue = result.returnValue;
       tokenUsage = result.usage;
@@ -266,6 +272,8 @@ export class TransportAgentRunner implements PoolRunner {
       this.logger.error({ err }, `${this.agentConfig.name} transport run failed`);
       runError = String(err?.message || err).slice(0, 200);
     } finally {
+      clearTimeout(timeoutTimer);
+
       // ── 8. Cleanup ───────────────────────────────────────────
       if (this._transport) {
         try { await this._transport.close(); } catch { /* best effort */ }
@@ -463,10 +471,10 @@ export class TransportAgentRunner implements PoolRunner {
 
     // Batch write all credential files
     if (credFiles.size > 0) {
-      // Create credential directories first
-      await transport.exec("mkdir -p /credentials");
+      // Clean and recreate credential directory for a fresh state
+      await transport.exec("rm -rf /credentials 2>/dev/null; mkdir -p /credentials");
       await transport.writeFiles(credFiles);
-      await transport.exec("chmod -R 400 /credentials");
+      await transport.exec("find /credentials -type f -exec chmod 400 {} +");
       this.logger.info({ count: credFiles.size }, "credentials staged via transport");
     }
 
@@ -481,7 +489,6 @@ export class TransportAgentRunner implements PoolRunner {
     skillBody: string,
     transport: Transport,
     providerKeys: Map<string, string>,
-    timeoutSeconds: number,
   ): Promise<{ result: RunResult; returnValue?: string; usage?: TokenUsage; error?: string }> {
     const models = this.agentConfig.models;
 
@@ -517,113 +524,102 @@ export class TransportAgentRunner implements PoolRunner {
         })
       : undefined;
 
-    // Timeout — kill the session if it runs too long
-    const timeoutTimer = setTimeout(() => {
-      this.logger.error({ timeoutSeconds }, "session timeout reached, aborting");
-      this.abort();
-    }, timeoutSeconds * 1000);
-    timeoutTimer.unref();
-
     let anyModelSucceeded = false;
 
-    try {
-      for (let pass = 0; pass <= MAX_MODEL_PASSES; pass++) {
-        const availableModels = selectAvailableModels(models, this.circuitBreaker);
-        let modelSucceeded = false;
+    for (let pass = 0; pass <= MAX_MODEL_PASSES; pass++) {
+      const availableModels = selectAvailableModels(models, this.circuitBreaker);
+      let modelSucceeded = false;
 
-        for (const modelConfig of availableModels) {
-          if (this._aborting) {
-            return { result: "error", error: "Aborted" };
-          }
+      for (const modelConfig of availableModels) {
+        if (this._aborting) {
+          return { result: "error", error: "Aborted" };
+        }
 
-          const llmModel = getModel(modelConfig.provider as any, modelConfig.model as any);
+        const llmModel = getModel(modelConfig.provider as any, modelConfig.model as any);
+
+        this.logger.info({
+          model: modelConfig.model,
+          thinking: modelConfig.thinkingLevel,
+        }, "creating Pi session with transport tools");
+
+        const authStorage = AuthStorage.create();
+        const providerKey = providerKeys.get(modelConfig.provider);
+        if (providerKey) {
+          authStorage.setRuntimeApiKey(modelConfig.provider, providerKey);
+        }
+
+        const { session } = await createAgentSession({
+          cwd: CONTAINER_CWD,
+          model: llmModel,
+          thinkingLevel: modelConfig.thinkingLevel,
+          authStorage,
+          resourceLoader,
+          tools,
+          customTools,
+          sessionManager: SessionManager.inMemory(),
+          settingsManager,
+        });
+
+        this._session = session;
+
+        // Subscribe to events for logging and status tracking
+        this.subscribeToEvents(session);
+
+        try {
+          await session.prompt(prompt);
+
+          this.circuitBreaker.recordSuccess(modelConfig.provider, modelConfig.model);
+
+          // Get usage stats
+          const sessionStats = session.getSessionStats();
+          const usage: TokenUsage = sessionStatsToUsage(sessionStats);
 
           this.logger.info({
-            model: modelConfig.model,
-            thinking: modelConfig.thinkingLevel,
-          }, "creating Pi session with transport tools");
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            turnCount: usage.turnCount,
+            cost: usage.cost,
+          }, "session completed");
 
-          const authStorage = AuthStorage.create();
-          const providerKey = providerKeys.get(modelConfig.provider);
-          if (providerKey) {
-            authStorage.setRuntimeApiKey(modelConfig.provider, providerKey);
-          }
+          session.dispose();
+          this._session = null;
+          modelSucceeded = true;
+          anyModelSucceeded = true;
 
-          const { session } = await createAgentSession({
-            cwd: CONTAINER_CWD,
-            model: llmModel,
-            thinkingLevel: modelConfig.thinkingLevel,
-            authStorage,
-            resourceLoader,
-            tools,
-            customTools,
-            sessionManager: SessionManager.inMemory(),
-            settingsManager,
-          });
-
-          this._session = session;
-
-          // Subscribe to events for logging and status tracking
-          this.subscribeToEvents(session);
-
-          try {
-            await session.prompt(prompt);
-
-            this.circuitBreaker.recordSuccess(modelConfig.provider, modelConfig.model);
-
-            // Get usage stats
-            const sessionStats = session.getSessionStats();
-            const usage: TokenUsage = sessionStatsToUsage(sessionStats);
-
-            this.logger.info({
-              inputTokens: usage.inputTokens,
-              outputTokens: usage.outputTokens,
-              turnCount: usage.turnCount,
-              cost: usage.cost,
-            }, "session completed");
-
+          return { result: "completed", usage, returnValue: capturedReturnValue };
+        } catch (promptErr: any) {
+          const msg = String(promptErr?.message || promptErr || "");
+          if (isRateLimitError(msg)) {
+            this.circuitBreaker.recordFailure(modelConfig.provider, modelConfig.model);
+            this.logger.warn({
+              provider: modelConfig.provider,
+              model: modelConfig.model,
+            }, "rate limited, trying next model");
             session.dispose();
             this._session = null;
-            modelSucceeded = true;
-            anyModelSucceeded = true;
-
-            return { result: "completed", usage, returnValue: capturedReturnValue };
-          } catch (promptErr: any) {
-            const msg = String(promptErr?.message || promptErr || "");
-            if (isRateLimitError(msg)) {
-              this.circuitBreaker.recordFailure(modelConfig.provider, modelConfig.model);
-              this.logger.warn({
-                provider: modelConfig.provider,
-                model: modelConfig.model,
-              }, "rate limited, trying next model");
-              session.dispose();
-              this._session = null;
-              continue;
-            }
-            session.dispose();
-            this._session = null;
-            return { result: "error", error: msg };
+            continue;
           }
-        }
-
-        if (modelSucceeded) break;
-
-        if (pass < MAX_MODEL_PASSES) {
-          const delayMs = Math.min(DEFAULT_BACKOFF_MS * Math.pow(2, pass), MAX_BACKOFF_MS);
-          this.logger.warn({ pass: pass + 1, delayMs }, "all models exhausted, backing off");
-          await new Promise((r) => setTimeout(r, delayMs));
+          session.dispose();
+          this._session = null;
+          return { result: "error", error: msg };
         }
       }
 
-      if (!anyModelSucceeded) {
-        this.logger.error("all models exhausted across all retry passes");
-        return { result: "error", error: "All models exhausted — rate limited across all retries" };
-      }
+      if (modelSucceeded) break;
 
-      return { result: "completed" };
-    } finally {
-      clearTimeout(timeoutTimer);
+      if (pass < MAX_MODEL_PASSES) {
+        const delayMs = Math.min(DEFAULT_BACKOFF_MS * Math.pow(2, pass), MAX_BACKOFF_MS);
+        this.logger.warn({ pass: pass + 1, delayMs }, "all models exhausted, backing off");
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
     }
+
+    if (!anyModelSucceeded) {
+      this.logger.error("all models exhausted across all retry passes");
+      return { result: "error", error: "All models exhausted — rate limited across all retries" };
+    }
+
+    return { result: "completed" };
   }
 
   /**

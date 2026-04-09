@@ -9,7 +9,7 @@
 
 import { spawn, execFileSync, type ChildProcess } from "child_process";
 import { randomBytes } from "crypto";
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync } from "fs";
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync, mkdirSync } from "fs";
 import { join, dirname, basename } from "path";
 import { tmpdir } from "os";
 import type { Transport, ExecResult, ExecOptions } from "./transport.js";
@@ -39,6 +39,7 @@ export class DockerExecTransport implements Transport {
   private ready = false;
   private buffer = "";
   private user?: string;
+  private _closed = false;
 
   constructor(private opts: DockerExecTransportOpts) {
     this.container = opts.container;
@@ -56,6 +57,10 @@ export class DockerExecTransport implements Transport {
     this.shell = spawn("docker", args, {
       stdio: ["pipe", "pipe", "pipe"],
     });
+
+    // Absorb EPIPE on stdin — the spawned process may exit before we write to it
+    // (e.g. container not found, Docker daemon unreachable, or mocked Docker).
+    this.shell.stdin!.on("error", () => {});
 
     this.shell.stdout!.on("data", (chunk: Buffer) => {
       this.buffer += chunk.toString();
@@ -90,6 +95,12 @@ export class DockerExecTransport implements Transport {
       }, timeoutMs);
 
       const check = () => {
+        if (this._closed) {
+          clearTimeout(timer);
+          clearInterval(poll);
+          reject(new Error("Transport closed"));
+          return;
+        }
         const idx = this.buffer.indexOf(delimiter);
         if (idx === -1) return;
 
@@ -140,7 +151,7 @@ export class DockerExecTransport implements Transport {
     };
     if (options?.signal) {
       if (options.signal.aborted) {
-        this.shell.stderr!.removeListener("data", stderrHandler);
+        this.shell?.stderr?.removeListener("data", stderrHandler);
         return { stdout: "", stderr: "Aborted", exitCode: 130 };
       }
       options.signal.addEventListener("abort", onAbort, { once: true });
@@ -184,7 +195,7 @@ export class DockerExecTransport implements Transport {
       }
       throw err;
     } finally {
-      this.shell.stderr!.removeListener("data", stderrHandler);
+      this.shell?.stderr?.removeListener("data", stderrHandler);
       if (options?.signal) {
         options.signal.removeEventListener("abort", onAbort);
       }
@@ -309,9 +320,14 @@ export class DockerExecTransport implements Transport {
         writeFileSync(localPath, content);
       }
 
-      // Create tar preserving absolute paths
+      // Create tar preserving absolute paths.
+      // List top-level entries explicitly (not ".") to avoid a "." entry in the
+      // tar that maps to "/" on extract and fails with permission errors when
+      // the container user is non-root.
       const tarPath = join(tmpDir, "batch.tar");
-      execFileSync("tar", ["cf", tarPath, "-P", "-C", join(tmpDir, "payload"), "."], {
+      const payloadDir = join(tmpDir, "payload");
+      const topEntries = readdirSync(payloadDir);
+      execFileSync("tar", ["cf", tarPath, "-P", "-C", payloadDir, ...topEntries], {
         timeout: 30_000,
       });
 
@@ -335,6 +351,7 @@ export class DockerExecTransport implements Transport {
   }
 
   async close(): Promise<void> {
+    this._closed = true;
     if (this.shell) {
       this.ready = false;
       try {

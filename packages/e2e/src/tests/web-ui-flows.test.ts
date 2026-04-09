@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { E2ETestContext, type ContainerInfo } from "../harness.js";
-import { setupLocalActionLlama, createTestAgent, getSchedulerLogs } from "../containers/local.js";
+import { setupLocalActionLlama, createTestAgent, getSchedulerLogs, waitForGateway } from "../containers/local.js";
 
 const GATEWAY_PORT = 8080;
 const API_KEY = "test-e2e-api-key-12345";
@@ -39,23 +39,7 @@ EOF`,
     `cd /home/testuser/test-project && nohup al start --headless --web-ui > /tmp/scheduler.log 2>&1 & echo $! > /tmp/scheduler.pid`,
   ]);
 
-  // Poll health endpoint until the gateway is ready (max 30s)
-  for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 1000));
-    try {
-      const health = await context.executeInContainer(container, [
-        "curl",
-        "-sf",
-        `http://localhost:${GATEWAY_PORT}/health`,
-      ]);
-      if (health.includes("ok")) return;
-    } catch {
-      // not ready yet
-    }
-  }
-
-  const logs = await getSchedulerLogs(context, container);
-  throw new Error(`Gateway did not become healthy within 30s.\nLogs: ${logs}`);
+  await waitForGateway(context, container, GATEWAY_PORT);
 }
 
 /** Stop the scheduler process. */
@@ -331,7 +315,7 @@ describe("Web UI Flows", { timeout: 300000 }, () => {
     const res = await curl(
       context,
       container,
-      `http://localhost:${GATEWAY_PORT}/api/stats/triggers?limit=10\\&offset=0\\&all=0`,
+      `'http://localhost:${GATEWAY_PORT}/api/stats/triggers?limit=10&offset=0&all=0'`,
     );
     const body = JSON.parse(res);
 

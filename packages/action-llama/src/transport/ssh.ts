@@ -33,6 +33,8 @@ export interface SshTransportOpts {
   cwd?: string;
   /** Additional SSH options (e.g. StrictHostKeyChecking). */
   sshOptions?: Record<string, string>;
+  /** Timeout for the initial shell ready probe (ms). Default: 15000. */
+  connectTimeoutMs?: number;
 }
 
 export class SshTransport implements Transport {
@@ -90,7 +92,7 @@ export class SshTransport implements Transport {
     // Wait for shell to be ready
     const readyDelim = makeDelimiter();
     this.shell.stdin!.write(`echo "${readyDelim} $?"\n`);
-    await this.waitForDelimiter(readyDelim, SHELL_READY_TIMEOUT_MS);
+    await this.waitForDelimiter(readyDelim, this.opts.connectTimeoutMs ?? SHELL_READY_TIMEOUT_MS);
     this.ready = true;
 
     // Set initial cwd if specified

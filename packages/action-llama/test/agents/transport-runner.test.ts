@@ -224,7 +224,7 @@ describe("TransportAgentRunner", () => {
     await runner.run("Test prompt");
 
     // Should have created credential directories and written files
-    expect(mockExec).toHaveBeenCalledWith("mkdir -p /credentials");
+    expect(mockExec).toHaveBeenCalledWith("rm -rf /credentials 2>/dev/null; mkdir -p /credentials");
     expect(mockWriteFiles).toHaveBeenCalled();
   });
 

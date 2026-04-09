@@ -430,4 +430,16 @@ export async function startMcpServer(opts: {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
+
+  // Keep the process alive until the transport closes (stdin EOF + pending
+  // responses flushed).  Without this, Node exits immediately after connect()
+  // resolves and in-flight responses (e.g. tools/list) may be lost.
+  await new Promise<void>((resolve) => {
+    transport.onclose = () => resolve();
+    // Also resolve when stdin ends, in case the SDK doesn't fire onclose.
+    process.stdin.on("end", () => {
+      // Give a short grace period for any pending writes to flush.
+      setTimeout(resolve, 200);
+    });
+  });
 }

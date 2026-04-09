@@ -1,6 +1,5 @@
-import { beforeEach, afterEach } from "vitest";
+import { afterEach } from "vitest";
 import { E2ETestContext } from "./harness.js";
-import { promises as fs } from "fs";
 import path from "path";
 
 let testContext: E2ETestContext | undefined;
@@ -9,15 +8,12 @@ let testIndex = 0;
 /** Host directory where coverage reports are collected across all tests. */
 const coverageDir = process.env.AL_COVERAGE_DIR || "/tmp/e2e-coverage";
 
-beforeEach(async () => {
-  testContext = new E2ETestContext();
-  await testContext.setup();
-});
+// Context is created lazily via getTestContext() — only tests that need it
+// (cli-flows, deployment-flows) pay the setup cost. Tests using beforeAll
+// with their own context skip this entirely.
 
 afterEach(async () => {
   if (testContext) {
-    // When coverage mode is enabled, extract coverage from all containers
-    // before they are destroyed by cleanup()
     if (process.env.AL_COVERAGE === "1") {
       const { extractCoverageFromContainer } = await import("./containers/local.js");
       for (const container of testContext.getContainers()) {
@@ -33,7 +29,7 @@ afterEach(async () => {
 
 export function getTestContext(): E2ETestContext {
   if (!testContext) {
-    throw new Error("Test context not initialized");
+    testContext = new E2ETestContext();
   }
   return testContext;
 }
