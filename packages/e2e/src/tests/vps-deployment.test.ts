@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { existsSync, writeFileSync, readFileSync } from "fs";
+import { writeFileSync, readFileSync } from "fs";
 import { resolve } from "path";
 import { MockLLMServer } from "../helpers/mock-llm-server.js";
 import { createTestProject, type TestProject } from "../helpers/project-factory.js";
@@ -51,9 +51,9 @@ describe("VPS deployment", { timeout: 600_000 }, () => {
     const envConfig = [
       "[server]",
       `host = "${vps.sshHost}"`,
-      `sshUser = "root"`,
-      `sshPort = ${vps.sshPort}`,
-      `sshKeyPath = "${resolve(context.tempDir, "id_rsa")}"`,
+      `user = "root"`,
+      `port = ${vps.sshPort}`,
+      `keyPath = "${resolve(context.tempDir, "id_rsa")}"`,
       `basePath = "/opt/action-llama"`,
     ].join("\n");
 
@@ -81,10 +81,10 @@ describe("VPS deployment", { timeout: 600_000 }, () => {
     expect(result.exitCode).toBe(0);
 
     // Verify files exist on VPS
-    const checkAgents = await context.executeSSHCommand(vps, "ls /opt/action-llama/agents/");
+    const checkAgents = await context.executeSSHCommand(vps, "ls /opt/action-llama/project/agents/");
     expect(checkAgents).toContain("deploy-agent");
 
-    const checkConfig = await context.executeSSHCommand(vps, "cat /opt/action-llama/config.toml");
+    const checkConfig = await context.executeSSHCommand(vps, "cat /opt/action-llama/project/config.toml");
     expect(checkConfig).toContain("mock");
   });
 
@@ -110,7 +110,7 @@ describe("VPS deployment", { timeout: 600_000 }, () => {
     // Verify updated content on VPS
     const skillOnVps = await context.executeSSHCommand(
       vps,
-      "cat /opt/action-llama/agents/deploy-agent/SKILL.md",
+      "cat /opt/action-llama/project/agents/deploy-agent/SKILL.md",
     );
     expect(skillOnVps).toContain("Updated for deployment test");
   });

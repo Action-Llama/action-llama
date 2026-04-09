@@ -62,7 +62,7 @@ describe("container runtime", { timeout: 300_000 }, () => {
     });
 
     // Write gateway API key credential
-    project.writeCredential("gateway_api_key", "default", "api_key", API_KEY);
+    project.writeCredential("gateway_api_key", "default", "key", API_KEY);
 
     // Start scheduler
     scheduler = alSpawn(

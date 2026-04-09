@@ -35,7 +35,7 @@ describe("web-ui", { timeout: 300_000 }, () => {
       timeout: 60,
     });
 
-    project.writeCredential("gateway_api_key", "default", "api_key", API_KEY);
+    project.writeCredential("gateway_api_key", "default", "key", API_KEY);
 
     scheduler = alSpawn(
       ["start", "--headless", "--web-ui", "--port", String(SCHEDULER_PORT)],
