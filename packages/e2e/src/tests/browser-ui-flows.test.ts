@@ -10,7 +10,7 @@
  * browser on the host against the Docker container's exposed gateway port.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { chromium, type Browser, type Page } from "playwright";
+import { chromium, type Browser } from "playwright";
 import { E2ETestContext, type ContainerInfo } from "../harness.js";
 import { createTestAgent, getSchedulerLogs } from "../containers/local.js";
 import { existsSync } from "fs";
@@ -238,7 +238,7 @@ EOF`,
     }
   });
 
-  it("agent detail page loads via client-side navigation", async () => {
+  it("dashboard hides row actions and agent page header exposes the toggle", async () => {
     const page = await browser.newPage();
     try {
       await page.goto(`${baseURL}/login`);
@@ -247,17 +247,29 @@ EOF`,
       await page.click('button[type="submit"]');
       await page.waitForURL("**/dashboard", { timeout: 10000 });
 
-      // Wait for agent link to appear in the table, then click through
       const agentLink = page.locator('a[href="/dashboard/agents/echo-agent"]');
       await agentLink.first().waitFor({ state: "visible", timeout: 15000 });
+
+      const dashboardTable = page.locator("table").first();
+      expect(await dashboardTable.getByRole("columnheader", { name: "Actions" }).count()).toBe(0);
+      expect(await dashboardTable.getByRole("button", { name: "Run" }).count()).toBe(0);
+      expect(await dashboardTable.getByRole("button", { name: "Kill" }).count()).toBe(0);
+      expect(await dashboardTable.getByRole("button", { name: /Enable|Disable/ }).count()).toBe(0);
+
       await agentLink.first().click();
       await page.waitForURL("**/dashboard/agents/echo-agent", { timeout: 10000 });
-
-      // Wait for the agent detail page heading to update
       await page.waitForFunction(
         () => document.querySelector("h1")?.textContent?.includes("echo-agent"),
         { timeout: 10000 },
       );
+
+      await page.waitForSelector("#agent-toggle-btn", { timeout: 10000 });
+      const toggleText = (await page.locator("#agent-toggle-btn").textContent())?.trim();
+      expect(toggleText).toBe("Disable");
+
+      await page.click('a[href="/dashboard/agents/echo-agent/settings"]');
+      await page.waitForURL("**/dashboard/agents/echo-agent/settings", { timeout: 10000 });
+      expect(await page.locator("#toggle-btn").count()).toBe(0);
     } finally {
       await page.close();
     }

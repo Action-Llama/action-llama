@@ -5,8 +5,6 @@ import {
   getAgentSkill,
   getAgentDetail,
   updateAgentScale,
-  enableAgent,
-  disableAgent,
 } from "../lib/api";
 import type { AgentConfig, AgentDetailData } from "../lib/api";
 
@@ -17,7 +15,7 @@ function escapeHtml(text: string): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
+    .replace(/\"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
 
@@ -178,7 +176,6 @@ export function AgentAdminPage() {
 
   const agent = agents.find((a) => a.name === name) ?? detail?.agent ?? null;
 
-  // Load detail (for scale)
   const refetchDetail = useCallback(() => {
     if (!name) return;
     getAgentDetail(name)
@@ -193,12 +190,10 @@ export function AgentAdminPage() {
     refetchDetail();
   }, [refetchDetail]);
 
-  // Sync scale input when agent updates via SSE
   useEffect(() => {
     if (agent) setScaleInput(String(agent.scale));
   }, [agent?.scale]);
 
-  // Load skill
   useEffect(() => {
     if (!name) return;
     getAgentSkill(name)
@@ -237,13 +232,11 @@ export function AgentAdminPage() {
         </div>
       )}
 
-      {/* Controls */}
       <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
         <div className="px-4 py-2.5 border-b border-slate-200 dark:border-slate-800">
           <h2 className="text-sm font-medium text-slate-900 dark:text-white">Controls</h2>
         </div>
         <div className="p-4 flex items-center gap-4 flex-wrap">
-          {/* Scale */}
           <div className="flex items-center gap-1">
             <span className="text-xs text-slate-500 dark:text-slate-400">Scale:</span>
             <input
@@ -262,28 +255,9 @@ export function AgentAdminPage() {
               Set
             </button>
           </div>
-          {/* Enable / Disable */}
-          {agent && (
-            <button
-              id="toggle-btn"
-              onClick={() =>
-                handleAction(() =>
-                  agent.enabled ? disableAgent(name) : enableAgent(name),
-                )
-              }
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                agent.enabled
-                  ? "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600"
-                  : "bg-blue-600 hover:bg-blue-700 text-white"
-              }`}
-            >
-              {agent.enabled ? "Disable" : "Enable"}
-            </button>
-          )}
         </div>
       </div>
 
-      {/* Configuration (from skill) */}
       {agentConfig && (
         <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
           <div className="px-4 py-2.5 border-b border-slate-200 dark:border-slate-800">
@@ -408,7 +382,6 @@ export function AgentAdminPage() {
         </div>
       )}
 
-      {/* Skill body */}
       {error ? (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-sm text-red-700 dark:text-red-400">
           {error}
