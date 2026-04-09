@@ -52,7 +52,6 @@ function makeCtx(overrides: Partial<SchedulerContext> = {}): SchedulerContext {
     logger: makeLogger(),
     workQueue: new MemoryWorkQueue<WorkItem>(20),
     shuttingDown: false,
-    useBakedImages: true,
     ...overrides,
   };
 }
@@ -552,49 +551,29 @@ describe("runWithReruns", () => {
 });
 
 describe("makeManualPrompt", () => {
-  it("returns user prompt suffix when baked and prompt given", () => {
+  it("returns full prompt with user prompt when given", () => {
     const config = makeAgentConfig("a");
-    const ctx = makeCtx({ useBakedImages: true });
-    const result = makeManualPrompt(config, ctx, "test task");
-    expect(result).toContain("<user-prompt>");
-    expect(result).toContain("test task");
-    // Should NOT contain full skeleton when baked
-    expect(result).not.toContain("<agent-config>");
-  });
-
-  it("returns manual suffix when baked and no prompt", () => {
-    const config = makeAgentConfig("a");
-    const ctx = makeCtx({ useBakedImages: true });
-    const result = makeManualPrompt(config, ctx);
-    expect(result).toContain("triggered manually");
-    expect(result).not.toContain("<user-prompt>");
-  });
-
-  it("returns full prompt when not baked", () => {
-    const config = makeAgentConfig("a");
-    const ctx = makeCtx({ useBakedImages: false });
+    const ctx = makeCtx();
     const result = makeManualPrompt(config, ctx, "deploy");
     expect(result).toContain("<agent-config>");
     expect(result).toContain("<user-prompt>");
     expect(result).toContain("deploy");
   });
+
+  it("returns full prompt without user prompt section when no prompt", () => {
+    const config = makeAgentConfig("a");
+    const ctx = makeCtx();
+    const result = makeManualPrompt(config, ctx);
+    expect(result).toContain("<agent-config>");
+  });
 });
 
 describe("makeScheduledPrompt", () => {
-  it("returns scheduled suffix when useBakedImages is true", () => {
+  it("returns full scheduled prompt", () => {
     const config = makeAgentConfig("a");
-    const ctx = makeCtx({ useBakedImages: true });
-    const result = makeScheduledPrompt(config, ctx);
-    expect(result).toContain("schedule");
-    expect(result).not.toContain("<agent-config>");
-  });
-
-  it("returns full prompt when useBakedImages is false", () => {
-    const config = makeAgentConfig("a");
-    const ctx = makeCtx({ useBakedImages: false });
+    const ctx = makeCtx();
     const result = makeScheduledPrompt(config, ctx);
     expect(result).toContain("<agent-config>");
-    expect(result).not.toContain("<user-prompt>");
   });
 });
 
@@ -602,22 +581,16 @@ describe("makeWebhookPrompt", () => {
   const webhookCtx: WebhookContext = {
     event: "push",
     action: "opened",
-    payload: { ref: "main" },
-    headers: {},
+    body: "ref: main",
     source: "github",
+    repo: "test/repo",
+    sender: "test-user",
+    timestamp: new Date().toISOString(),
   };
 
-  it("returns webhook suffix when useBakedImages is true", () => {
+  it("returns full webhook prompt with event details", () => {
     const config = makeAgentConfig("a");
-    const ctx = makeCtx({ useBakedImages: true });
-    const result = makeWebhookPrompt(config, webhookCtx, ctx);
-    expect(result).toContain("push");
-    expect(result).not.toContain("<agent-config>");
-  });
-
-  it("returns full webhook prompt when useBakedImages is false", () => {
-    const config = makeAgentConfig("a");
-    const ctx = makeCtx({ useBakedImages: false });
+    const ctx = makeCtx();
     const result = makeWebhookPrompt(config, webhookCtx, ctx);
     expect(result).toContain("<agent-config>");
     expect(result).toContain("push");
@@ -625,18 +598,9 @@ describe("makeWebhookPrompt", () => {
 });
 
 describe("makeTriggeredPrompt", () => {
-  it("returns called suffix when useBakedImages is true", () => {
+  it("returns full triggered prompt with source agent and context", () => {
     const config = makeAgentConfig("b");
-    const ctx = makeCtx({ useBakedImages: true });
-    const result = makeTriggeredPrompt(config, "agent-a", "deploy context", ctx);
-    expect(result).toContain("agent-a");
-    expect(result).toContain("deploy context");
-    expect(result).not.toContain("<agent-config>");
-  });
-
-  it("returns full triggered prompt when useBakedImages is false", () => {
-    const config = makeAgentConfig("b");
-    const ctx = makeCtx({ useBakedImages: false });
+    const ctx = makeCtx();
     const result = makeTriggeredPrompt(config, "agent-a", "deploy context", ctx);
     expect(result).toContain("<agent-config>");
     expect(result).toContain("agent-a");
@@ -984,7 +948,7 @@ describe("drainQueues — schedule work item", () => {
     });
     const webhookCtx: WorkItem = {
       type: "webhook",
-      context: { event: "push", payload: {}, receiptId: "r1", headers: {} },
+      context: { event: "push", receiptId: "r1", source: "github", repo: "test/repo", sender: "test", timestamp: new Date().toISOString() },
     };
     ctx.workQueue.enqueue("a", webhookCtx);
 
@@ -1174,8 +1138,7 @@ describe("runWithReruns — manual trigger reruns", () => {
     const ctx = makeCtx({
       agentConfigs: [config],
       runnerPools: { a: new RunnerPool([runner]) },
-      useBakedImages: true,
-    });
+      });
 
     await runWithReruns(runner, config, 0, ctx, "manual", "initial user prompt");
 
@@ -1204,8 +1167,7 @@ describe("runWithReruns — manual trigger reruns", () => {
     const ctx = makeCtx({
       agentConfigs: [config],
       runnerPools: { a: new RunnerPool([runner]) },
-      useBakedImages: true,
-    });
+      });
 
     await runWithReruns(runner, config, 0, ctx, "manual");
 

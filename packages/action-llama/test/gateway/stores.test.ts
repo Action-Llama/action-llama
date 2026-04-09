@@ -5,18 +5,16 @@ describe("createGatewayStores", () => {
   it("creates all stores without a persistent state store", async () => {
     const stores = await createGatewayStores({ lockTimeout: 30_000 });
 
-    expect(stores.containerRegistry).toBeDefined();
     expect(stores.lockStore).toBeDefined();
     expect(stores.callStore).toBeDefined();
     expect(stores.sessionStore).toBeUndefined();
   });
 
-  it("isHolderAlive callback evicts orphaned locks from dead holders", async () => {
+  it("lock store supports basic acquire/release workflow", async () => {
     const stores = await createGatewayStores({ lockTimeout: 30_000 });
 
-    // holderA is NOT registered in containerRegistry (simulates dead container)
-    const holderA = "dead-container-instance-id";
-    const holderB = "live-container-instance-id";
+    const holderA = "instance-a";
+    const holderB = "instance-b";
     const resource = "github://test/repo/issues/1";
     const lockStore = stores.lockStore;
 
@@ -24,11 +22,17 @@ describe("createGatewayStores", () => {
     const acquireA = lockStore.acquire(resource, holderA);
     expect(acquireA.ok).toBe(true);
 
-    // Step 2: holderB tries to acquire the same resource
-    // Since holderA is NOT in containerRegistry, isHolderAlive(holderA) returns false
-    // The lock should be evicted and holderB should succeed
+    // Step 2: holderB tries to acquire the same resource (should fail)
     const acquireB = lockStore.acquire(resource, holderB);
-    expect(acquireB.ok).toBe(true);
+    expect(acquireB.ok).toBe(false);
+
+    // Step 3: holderA releases the lock
+    const released = lockStore.release(resource, holderA);
+    expect(released.ok).toBe(true);
+
+    // Step 4: holderB can now acquire the lock
+    const acquireB2 = lockStore.acquire(resource, holderB);
+    expect(acquireB2.ok).toBe(true);
   });
 
   it("creates sessionStore when stateStore is provided", async () => {

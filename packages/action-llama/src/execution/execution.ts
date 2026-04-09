@@ -1,6 +1,5 @@
 import {
   buildScheduledPrompt, buildWebhookPrompt, buildCalledPrompt, buildManualPrompt,
-  buildScheduledSuffix, buildWebhookSuffix, buildCalledSuffix, buildManualSuffix, buildUserPromptSuffix,
   type PromptSkills,
 } from "../agents/prompt.js";
 import type { WorkQueue, QueuedWorkItem } from "../shared/work-queue.js";
@@ -39,7 +38,6 @@ export interface SchedulerContext {
   workQueue: WorkQueue<WorkItem>;
   shuttingDown: boolean;
   skills?: PromptSkills;
-  useBakedImages: boolean;
   /** Optional hook called after every agent run completes. Used for test instrumentation. */
   onRunComplete?: (event: RunCompleteEvent) => void;
   /** Optional event bus for lifecycle instrumentation (used by integration tests). */
@@ -56,25 +54,21 @@ export interface SchedulerContext {
   isPaused?: () => boolean;
 }
 
-// Prompt helpers: when images have baked-in static files, only pass the dynamic suffix.
-// Otherwise, pass the full prompt (for non-Docker or legacy images).
+// Prompt helpers: build full prompts for each trigger type.
 export function makeScheduledPrompt(agentConfig: AgentConfig, ctx: SchedulerContext): string {
-  return ctx.useBakedImages ? buildScheduledSuffix() : buildScheduledPrompt(agentConfig, ctx.skills);
+  return buildScheduledPrompt(agentConfig, ctx.skills);
 }
 
 export function makeWebhookPrompt(agentConfig: AgentConfig, context: WebhookContext, ctx: SchedulerContext): string {
-  return ctx.useBakedImages ? buildWebhookSuffix(context) : buildWebhookPrompt(agentConfig, context, ctx.skills);
+  return buildWebhookPrompt(agentConfig, context, ctx.skills);
 }
 
 export function makeManualPrompt(agentConfig: AgentConfig, ctx: SchedulerContext, prompt?: string): string {
-  if (ctx.useBakedImages) {
-    return prompt ? buildUserPromptSuffix(prompt) : buildManualSuffix();
-  }
   return buildManualPrompt(agentConfig, ctx.skills, prompt);
 }
 
 export function makeTriggeredPrompt(agentConfig: AgentConfig, sourceAgent: string, context: string, ctx: SchedulerContext): string {
-  return ctx.useBakedImages ? buildCalledSuffix(sourceAgent, context) : buildCalledPrompt(agentConfig, sourceAgent, context, ctx.skills);
+  return buildCalledPrompt(agentConfig, sourceAgent, context, ctx.skills);
 }
 
 /** Run a single agent and dispatch any resulting triggers. */

@@ -4,9 +4,8 @@
  * - /login SPA route
  * - Log routes warn when projectPath set but no apiKey
  * - controlDeps routes registration
- * - unregisterContainer releases locks/calls (logging paths)
  */
-import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -248,93 +247,6 @@ describe("Gateway controlDeps routes", () => {
     // Control routes require auth, so 401 confirms the route was registered
     const res = await fetch(`http://localhost:${addr.port}/control/instances`);
     expect(res.status).toBe(401);
-  });
-});
-
-// ── unregisterContainer releases locks and logs ──────────────────────────────
-
-describe("Gateway unregisterContainer releases locks and fails calls", () => {
-  let gateway: any;
-  const logger = makeLogger();
-
-  beforeEach(async () => {
-    logger.info = vi.fn();
-    logger.warn = vi.fn();
-    logger.error = vi.fn();
-    logger.debug = vi.fn();
-
-    gateway = await startGateway({
-      port: 0,
-      logger,
-    });
-  });
-
-  afterEach(async () => {
-    await gateway.close();
-  });
-
-  it("logs 'released locks on container cleanup' when locks are released", async () => {
-    const secret = "test-secret-locks-" + Date.now();
-    const instanceId = "test-instance-locks-" + Date.now();
-    const reg = {
-      agentName: "test-agent",
-      instanceId,
-      agentDir: "/tmp/test",
-    } as any;
-
-    // Register the container
-    await gateway.registerContainer(secret, reg);
-
-    // Acquire a lock held by this instance
-    const lockResult = gateway.lockStore.acquire("resource://test/lock-1", instanceId, 60);
-    expect(lockResult.ok).toBe(true);
-
-    // Now unregister — should release the lock and log it
-    await gateway.unregisterContainer(secret);
-
-    expect(logger.info).toHaveBeenCalledWith(
-      expect.objectContaining({
-        agent: "test-agent",
-        instance: instanceId,
-        released: 1,
-      }),
-      "released locks on container cleanup"
-    );
-  });
-
-  it("logs 'failed pending calls on container cleanup' when calls exist", async () => {
-    const secret = "test-secret-calls-" + Date.now();
-    const instanceId = "test-instance-calls-" + Date.now();
-    const reg = {
-      agentName: "test-agent-calls",
-      instanceId,
-      agentDir: "/tmp/test",
-    } as any;
-
-    // Register the container
-    await gateway.registerContainer(secret, reg);
-
-    // Create a pending call from this instance in the callStore
-    // The callStore.failAllByCaller(instanceId) should return > 0 if there are pending calls
-    gateway.callStore.create({
-      callerAgent: "test-agent-calls",
-      callerInstanceId: instanceId,
-      targetAgent: "target-agent",
-      context: "test context",
-      depth: 0,
-    });
-
-    // Unregister — should fail the call and log it
-    await gateway.unregisterContainer(secret);
-
-    expect(logger.info).toHaveBeenCalledWith(
-      expect.objectContaining({
-        agent: "test-agent-calls",
-        instance: instanceId,
-        failedCalls: 1,
-      }),
-      "failed pending calls on container cleanup"
-    );
   });
 });
 

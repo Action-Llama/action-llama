@@ -1,0 +1,686 @@
+/**
+ * TransportAgentRunner — runs Pi sessions in the scheduler process,
+ * driving a remote runtime via a Transport.
+ *
+ * Replaces ContainerAgentRunner for the centralized architecture where:
+ *  - The scheduler is the "brain" (LLM session, tool orchestration)
+ *  - The runtime is the "body" (filesystem, shell, credentials)
+ *  - The transport connects them (DockerExecTransport, SshTransport, etc.)
+ *
+ * Key differences from ContainerAgentRunner:
+ *  - Pi session runs in-process (not inside the container)
+ *  - Events are captured directly (no JSON log parsing)
+ *  - Credentials staged via transport (no volume mounts needed)
+ *  - No gateway registration (direct access to scheduler services)
+ *  - No signal files (scheduler tools handle reruns, returns, etc.)
+ */
+
+import { randomBytes } from "crypto";
+import { execFileSync } from "child_process";
+import { getModel } from "@mariozechner/pi-ai";
+import {
+  AuthStorage,
+  createAgentSession,
+  SessionManager,
+  SettingsManager,
+  DefaultResourceLoader,
+} from "@mariozechner/pi-coding-agent";
+import type { AgentConfig, GlobalConfig } from "../shared/config.js";
+import type { Logger } from "../shared/logger.js";
+import type { StatusTracker } from "../tui/status-tracker.js";
+import type { TokenUsage } from "../shared/usage.js";
+import { sessionStatsToUsage } from "../shared/usage.js";
+import type { RunResult, RunOutcome } from "./types.js";
+import type { PoolRunner } from "../execution/runner-pool.js";
+import { DEFAULT_AGENT_TIMEOUT } from "../shared/constants.js";
+import { ModelCircuitBreaker, selectAvailableModels, isRateLimitError } from "./model-fallback.js";
+import { DockerExecTransport } from "../transport/docker-exec.js";
+import { SshTransport } from "../transport/ssh.js";
+import { HostUserTransport } from "../transport/host-user.js";
+import { createTransportTools } from "../transport/operations.js";
+import type { Transport } from "../transport/transport.js";
+import { writeFile } from "../transport/transport.js";
+import { parseCredentialRef, getDefaultBackend } from "../shared/credentials.js";
+import { parseFrontmatter } from "../shared/frontmatter.js";
+import { withSpan } from "../telemetry/index.js";
+import { SpanKind } from "@opentelemetry/api";
+import type { SchedulerToolsOpts } from "./scheduler-tools.js";
+import { createSchedulerTools } from "./scheduler-tools.js";
+
+const MAX_MODEL_PASSES = 3;
+const DEFAULT_BACKOFF_MS = 30_000;
+const MAX_BACKOFF_MS = 300_000;
+const CONTAINER_CWD = "/workspace";
+
+export interface TransportAgentRunnerOpts {
+  globalConfig: GlobalConfig;
+  agentConfig: AgentConfig;
+  logger: Logger;
+  circuitBreaker: ModelCircuitBreaker;
+  statusTracker?: StatusTracker;
+  /** Base Docker image to use for provisioning containers. */
+  baseImage: string;
+  /** Project path on the host, for reading SKILL.md and config. */
+  projectPath: string;
+  /** Provider API keys (provider name → key). */
+  providerKeys?: Map<string, string>;
+  /** Scheduler tools dependencies. When provided, agents get lock/call/status tools. */
+  schedulerToolsDeps?: Omit<SchedulerToolsOpts, "agentName" | "instanceId" | "depth" | "onReturnValue">;
+}
+
+export class TransportAgentRunner implements PoolRunner {
+  private _running = false;
+  private _aborting = false;
+  private _transport: Transport | null = null;
+  private _containerName: string | null = null;
+  private _session: any = null;
+
+  public instanceId: string;
+  /** Trigger depth for subagent call tracking. Set by the scheduler before run(). */
+  public depth = 0;
+
+  private globalConfig: GlobalConfig;
+  private agentConfig: AgentConfig;
+  private baseLogger: Logger;
+  private logger: Logger;
+  private circuitBreaker: ModelCircuitBreaker;
+  private statusTracker?: StatusTracker;
+  private baseImage: string;
+  private projectPath: string;
+  private providerKeys: Map<string, string>;
+  private schedulerToolsDeps?: Omit<SchedulerToolsOpts, "agentName" | "instanceId" | "depth" | "onReturnValue">;
+
+  constructor(opts: TransportAgentRunnerOpts) {
+    this.globalConfig = opts.globalConfig;
+    this.agentConfig = opts.agentConfig;
+    this.baseLogger = opts.logger;
+    this.logger = opts.logger;
+    this.circuitBreaker = opts.circuitBreaker;
+    this.statusTracker = opts.statusTracker;
+    this.baseImage = opts.baseImage;
+    this.projectPath = opts.projectPath;
+    this.providerKeys = opts.providerKeys ?? new Map();
+    this.schedulerToolsDeps = opts.schedulerToolsDeps;
+    this.instanceId = opts.agentConfig.name;
+  }
+
+  get isRunning(): boolean {
+    return this._running;
+  }
+
+  setAgentConfig(config: AgentConfig): void {
+    this.agentConfig = config;
+  }
+
+  abort(): void {
+    this._aborting = true;
+    this.logger.info("Transport agent runner abort requested");
+
+    // Dispose the Pi session to stop the LLM loop
+    if (this._session) {
+      try { this._session.dispose(); } catch { /* best effort */ }
+    }
+
+    // Kill the container (only applies to container runtime)
+    if (this._containerName) {
+      try {
+        execFileSync("docker", ["kill", this._containerName], {
+          timeout: 10_000,
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+      } catch { /* container may already be dead */ }
+    }
+
+    // Close the transport
+    if (this._transport) {
+      this._transport.close().catch(() => {});
+    }
+  }
+
+  async run(
+    prompt: string,
+    triggerInfo?: { type: 'schedule' | 'manual' | 'webhook' | 'agent'; source?: string },
+    instanceId?: string,
+  ): Promise<RunOutcome> {
+    if (this._running) {
+      this.logger.warn(`${this.agentConfig.name} is already running, skipping`);
+      return { result: "error", triggers: [] };
+    }
+
+    this._running = true;
+    this._aborting = false;
+    this.instanceId = instanceId ?? `${this.agentConfig.name}-${randomBytes(4).toString("hex")}`;
+    this.logger = this.baseLogger.child({ instance: this.instanceId });
+
+    try {
+      return await withSpan(
+        "transport_agent.run",
+        async (span) => {
+          span.setAttributes({
+            "agent.name": this.agentConfig.name,
+            "agent.run_id": this.instanceId,
+            "agent.trigger_type": triggerInfo?.type || "manual",
+            "agent.trigger_source": triggerInfo?.source || "",
+            "agent.model_provider": this.agentConfig.models[0]?.provider,
+            "agent.model_name": this.agentConfig.models[0]?.model,
+            "execution.environment": "transport",
+          });
+
+          return this.runInternal(prompt, triggerInfo, span);
+        },
+        {},
+        SpanKind.INTERNAL,
+      );
+    } catch (err: any) {
+      this._running = false;
+      this.logger.error({ err }, "transport run setup failed");
+      return { result: "error", triggers: [] };
+    }
+  }
+
+  private async runInternal(
+    prompt: string,
+    triggerInfo?: { type: 'schedule' | 'manual' | 'webhook' | 'agent'; source?: string },
+    parentSpan?: any,
+  ): Promise<RunOutcome> {
+    const runStartTime = Date.now();
+    let runResult: RunResult = "error";
+    let runError: string | undefined;
+    let returnValue: string | undefined;
+    let tokenUsage: TokenUsage | undefined;
+
+    // Surface run start in TUI
+    const runReason = triggerInfo
+      ? (triggerInfo.source
+        ? (triggerInfo.type === 'agent' ? `triggered by ${triggerInfo.source}` : `${triggerInfo.type} (${triggerInfo.source})`)
+        : triggerInfo.type)
+      : undefined;
+    this.statusTracker?.startRun(this.agentConfig.name, runReason);
+    this.statusTracker?.registerInstance({
+      id: this.instanceId,
+      agentName: this.agentConfig.name,
+      status: "running",
+      startedAt: new Date(),
+      trigger: triggerInfo?.source ? `${triggerInfo.type}:${triggerInfo.source}` : (triggerInfo?.type ?? "manual"),
+    });
+
+    this.logger.info(`Starting ${this.agentConfig.name} transport run`);
+    this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} started (${runReason ?? "manual"})`);
+
+    try {
+      // ── 1–2. Provision runtime & connect transport ──────────
+      const transport = await this.createTransport();
+      this._transport = transport;
+
+      // ── 3. Stage credentials ─────────────────────────────────
+      const providerKeys = await this.stageCredentials(transport);
+      // Merge with pre-configured provider keys
+      for (const [k, v] of this.providerKeys) {
+        if (!providerKeys.has(k)) providerKeys.set(k, v);
+      }
+
+      // ── 4. Run hooks.pre ─────────────────────────────────────
+      if (this.agentConfig.hooks?.pre && this.agentConfig.hooks.pre.length > 0) {
+        for (const hook of this.agentConfig.hooks.pre) {
+          this.logger.info({ hook }, "running pre hook via transport");
+          await transport.exec(hook);
+        }
+      }
+
+      // ── 5. Build SKILL.md and prompt ─────────────────────────
+      // Read SKILL.md from the project directory on the host
+      const { readFileSync, existsSync } = await import("fs");
+      const { join } = await import("path");
+      const skillPath = join(this.projectPath, "agents", this.agentConfig.name, "SKILL.md");
+      let skillBody = "";
+      if (existsSync(skillPath)) {
+        const { body } = parseFrontmatter(readFileSync(skillPath, "utf-8"));
+        skillBody = body;
+      }
+
+      // Process context injection (runs commands on the transport)
+      // TODO: In the future, context injection should execute on the transport
+      // For now, we skip it since the commands won't have access to the runtime
+
+      // ── 6. Create Pi session with transport tools ────────────
+      const timeout = this.agentConfig.timeout ?? this.globalConfig.local?.timeout ?? DEFAULT_AGENT_TIMEOUT;
+
+      const result = await this.runPiSession(prompt, skillBody, transport, providerKeys, timeout);
+      runResult = result.result;
+      returnValue = result.returnValue;
+      tokenUsage = result.usage;
+      runError = result.error;
+
+      // ── 7. Run hooks.post ────────────────────────────────────
+      if (this.agentConfig.hooks?.post && this.agentConfig.hooks.post.length > 0) {
+        for (const hook of this.agentConfig.hooks.post) {
+          this.logger.info({ hook }, "running post hook via transport");
+          try {
+            await transport.exec(hook);
+          } catch (err: any) {
+            this.logger.error({ err }, "post hook failed");
+          }
+        }
+      }
+    } catch (err: any) {
+      this.logger.error({ err }, `${this.agentConfig.name} transport run failed`);
+      runError = String(err?.message || err).slice(0, 200);
+    } finally {
+      // ── 8. Cleanup ───────────────────────────────────────────
+      if (this._transport) {
+        try { await this._transport.close(); } catch { /* best effort */ }
+        this._transport = null;
+      }
+      if (this._containerName) {
+        try {
+          execFileSync("docker", ["rm", "-f", this._containerName], {
+            timeout: 10_000,
+            stdio: ["pipe", "pipe", "pipe"],
+          });
+        } catch { /* best effort */ }
+        this._containerName = null;
+      }
+
+      const elapsed = Date.now() - runStartTime;
+      const instanceStatus = this._aborting ? "killed" as const : runError ? "error" as const : "completed" as const;
+      this.statusTracker?.completeInstance(this.instanceId, instanceStatus);
+      this.statusTracker?.endRun(this.agentConfig.name, elapsed, runError, tokenUsage);
+
+      const elapsedStr = (elapsed / 1000).toFixed(1);
+      const turnInfo = tokenUsage?.turnCount != null ? `, ${tokenUsage.turnCount} turns` : "";
+      const costInfo = tokenUsage?.cost != null ? `, $${tokenUsage.cost.toFixed(4)}` : "";
+      const errInfo = runError ? ` — ${runError.slice(0, 100)}` : "";
+      this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} ${runResult} (${elapsedStr}s${turnInfo}${costInfo})${errInfo}`);
+
+      this.logger.info({
+        result: runResult,
+        elapsed: `${elapsedStr}s`,
+        hasReturnValue: !!returnValue,
+        turnCount: tokenUsage?.turnCount,
+        totalTokens: tokenUsage?.totalTokens,
+        cost: tokenUsage?.cost,
+        error: runError,
+      }, "run outcome");
+
+      if (parentSpan) {
+        parentSpan.setAttributes({
+          "execution.result": runResult,
+          "execution.has_return_value": !!returnValue,
+        });
+        if (tokenUsage) {
+          parentSpan.setAttributes({
+            "llm.token.input": tokenUsage.inputTokens,
+            "llm.token.output": tokenUsage.outputTokens,
+            "llm.token.total": tokenUsage.totalTokens,
+            "llm.cost.total": tokenUsage.cost,
+            "llm.turns": tokenUsage.turnCount,
+          });
+        }
+        if (runResult === "error") {
+          parentSpan.recordException(new Error(`Transport execution failed: ${runError || "Unknown error"}`));
+        }
+      }
+
+      this._running = false;
+    }
+
+    return {
+      result: runResult,
+      triggers: [],
+      returnValue,
+      usage: tokenUsage,
+      exitReason: runError,
+    };
+  }
+
+  /**
+   * Create and connect the appropriate transport based on the agent's runtime config.
+   */
+  private async createTransport(): Promise<Transport> {
+    const runtimeType = this.agentConfig.runtime?.type ?? "container";
+
+    switch (runtimeType) {
+      case "ssh": {
+        const rt = this.agentConfig.runtime!;
+        if (!rt.host) throw new Error("SSH runtime requires 'host' in [runtime] config");
+        const transport = new SshTransport({
+          host: rt.host,
+          port: rt.port,
+          user: rt.user,
+          keyPath: rt.key_path,
+          cwd: rt.cwd,
+          sshOptions: rt.ssh_options,
+        });
+        await transport.connect();
+        this.logger.info({ host: rt.host, user: rt.user }, "SSH transport connected");
+        return transport;
+      }
+
+      case "host-user": {
+        const rt = this.agentConfig.runtime ?? {};
+        const user = rt.run_as ?? "al-agent";
+        const transport = new HostUserTransport({
+          user,
+          groups: rt.groups,
+          cwd: rt.cwd,
+        });
+        await transport.connect();
+        this.logger.info({ user }, "Host-user transport connected");
+        return transport;
+      }
+
+      case "container":
+      default: {
+        const containerName = await this.provisionContainer();
+        this._containerName = containerName;
+        const transport = new DockerExecTransport({
+          container: containerName,
+          cwd: CONTAINER_CWD,
+        });
+        await transport.connect();
+        this.logger.info({ container: containerName }, "Docker transport connected");
+        return transport;
+      }
+    }
+  }
+
+  /**
+   * Provision a Docker container that stays alive for the transport to connect to.
+   * Returns the container name.
+   */
+  private async provisionContainer(): Promise<string> {
+    const runId = randomBytes(4).toString("hex");
+    const containerName = `al-${this.agentConfig.name}-${runId}`;
+    const memory = this.globalConfig.local?.memory || "4g";
+
+    const args = [
+      "run", "-d",
+      "--name", containerName,
+      "--tmpfs", "/workspace:rw,exec,nosuid",
+      "--tmpfs", "/tmp:rw,exec,nosuid",
+      "--cap-drop", "ALL",
+      "--security-opt", "no-new-privileges:true",
+      "--memory", memory,
+    ];
+
+    if (this.globalConfig.local?.cpus) {
+      args.push("--cpus", String(this.globalConfig.local.cpus));
+    }
+
+    // Keep the container alive with tail -f /dev/null
+    args.push(this.baseImage, "tail", "-f", "/dev/null");
+
+    execFileSync("docker", args, {
+      timeout: 30_000,
+      encoding: "utf-8",
+    });
+
+    this.logger.info({ container: containerName }, "container provisioned");
+    return containerName;
+  }
+
+  /**
+   * Stage credentials onto the runtime via the transport.
+   * Returns a map of provider → API key for Pi session auth.
+   */
+  private async stageCredentials(transport: Transport): Promise<Map<string, string>> {
+    const providerKeys = new Map<string, string>();
+    const credRefs = [...new Set(this.agentConfig.credentials)];
+
+    // Add provider keys for all configured models
+    for (const mc of this.agentConfig.models) {
+      if (mc.authType === "pi_auth") continue;
+      const providerKey = `${mc.provider}_key`;
+      if (!credRefs.some((r) => r === providerKey || r.startsWith(`${providerKey}:`))) {
+        credRefs.push(providerKey);
+      }
+    }
+
+    if (credRefs.length === 0) return providerKeys;
+
+    const backend = getDefaultBackend();
+    const credFiles = new Map<string, Buffer>();
+
+    for (const credRef of credRefs) {
+      const { type, instance } = parseCredentialRef(credRef);
+      const fields = await backend.readAll(type, instance);
+      if (!fields) continue;
+
+      for (const [field, value] of Object.entries(fields)) {
+        // Stage credential file on the runtime
+        const remotePath = `/credentials/${type}/${instance}/${field}`;
+        credFiles.set(remotePath, Buffer.from(value + "\n", "utf-8"));
+
+        // Extract provider API keys for Pi session auth
+        if (field === "api_key" || field === "token") {
+          if (type.endsWith("_key")) {
+            const provider = type.replace(/_key$/, "");
+            providerKeys.set(provider, value);
+          }
+        }
+      }
+    }
+
+    // Batch write all credential files
+    if (credFiles.size > 0) {
+      // Create credential directories first
+      await transport.exec("mkdir -p /credentials");
+      await transport.writeFiles(credFiles);
+      await transport.exec("chmod -R 400 /credentials");
+      this.logger.info({ count: credFiles.size }, "credentials staged via transport");
+    }
+
+    return providerKeys;
+  }
+
+  /**
+   * Run the Pi session in-process with transport-backed tools.
+   */
+  private async runPiSession(
+    prompt: string,
+    skillBody: string,
+    transport: Transport,
+    providerKeys: Map<string, string>,
+    timeoutSeconds: number,
+  ): Promise<{ result: RunResult; returnValue?: string; usage?: TokenUsage; error?: string }> {
+    const models = this.agentConfig.models;
+
+    // Create resource loader with the skill body
+    const agentsContent = skillBody || `# ${this.agentConfig.name} Agent\n\nCustom agent.\n`;
+    const resourceLoader = new DefaultResourceLoader({
+      noExtensions: true,
+      agentsFilesOverride: () => ({
+        agentsFiles: [
+          { path: "/tmp/SKILL.md", content: agentsContent },
+        ],
+      }),
+    });
+    await resourceLoader.reload();
+
+    const settingsManager = SettingsManager.inMemory({
+      compaction: { enabled: true },
+      retry: { enabled: true, maxRetries: 2 },
+    });
+
+    // Create transport-backed tools
+    const tools = createTransportTools(transport, CONTAINER_CWD);
+
+    // Create scheduler tools (locks, calls, status, return) if deps provided
+    let capturedReturnValue: string | undefined;
+    const customTools = this.schedulerToolsDeps
+      ? createSchedulerTools({
+          ...this.schedulerToolsDeps,
+          agentName: this.agentConfig.name,
+          instanceId: this.instanceId,
+          depth: this.depth,
+          onReturnValue: (value) => { capturedReturnValue = value; },
+        })
+      : undefined;
+
+    // Timeout — kill the session if it runs too long
+    const timeoutTimer = setTimeout(() => {
+      this.logger.error({ timeoutSeconds }, "session timeout reached, aborting");
+      this.abort();
+    }, timeoutSeconds * 1000);
+    timeoutTimer.unref();
+
+    let anyModelSucceeded = false;
+
+    try {
+      for (let pass = 0; pass <= MAX_MODEL_PASSES; pass++) {
+        const availableModels = selectAvailableModels(models, this.circuitBreaker);
+        let modelSucceeded = false;
+
+        for (const modelConfig of availableModels) {
+          if (this._aborting) {
+            return { result: "error", error: "Aborted" };
+          }
+
+          const llmModel = getModel(modelConfig.provider as any, modelConfig.model as any);
+
+          this.logger.info({
+            model: modelConfig.model,
+            thinking: modelConfig.thinkingLevel,
+          }, "creating Pi session with transport tools");
+
+          const authStorage = AuthStorage.create();
+          const providerKey = providerKeys.get(modelConfig.provider);
+          if (providerKey) {
+            authStorage.setRuntimeApiKey(modelConfig.provider, providerKey);
+          }
+
+          const { session } = await createAgentSession({
+            cwd: CONTAINER_CWD,
+            model: llmModel,
+            thinkingLevel: modelConfig.thinkingLevel,
+            authStorage,
+            resourceLoader,
+            tools,
+            customTools,
+            sessionManager: SessionManager.inMemory(),
+            settingsManager,
+          });
+
+          this._session = session;
+
+          // Subscribe to events for logging and status tracking
+          this.subscribeToEvents(session);
+
+          try {
+            await session.prompt(prompt);
+
+            this.circuitBreaker.recordSuccess(modelConfig.provider, modelConfig.model);
+
+            // Get usage stats
+            const sessionStats = session.getSessionStats();
+            const usage: TokenUsage = sessionStatsToUsage(sessionStats);
+
+            this.logger.info({
+              inputTokens: usage.inputTokens,
+              outputTokens: usage.outputTokens,
+              turnCount: usage.turnCount,
+              cost: usage.cost,
+            }, "session completed");
+
+            session.dispose();
+            this._session = null;
+            modelSucceeded = true;
+            anyModelSucceeded = true;
+
+            return { result: "completed", usage, returnValue: capturedReturnValue };
+          } catch (promptErr: any) {
+            const msg = String(promptErr?.message || promptErr || "");
+            if (isRateLimitError(msg)) {
+              this.circuitBreaker.recordFailure(modelConfig.provider, modelConfig.model);
+              this.logger.warn({
+                provider: modelConfig.provider,
+                model: modelConfig.model,
+              }, "rate limited, trying next model");
+              session.dispose();
+              this._session = null;
+              continue;
+            }
+            session.dispose();
+            this._session = null;
+            return { result: "error", error: msg };
+          }
+        }
+
+        if (modelSucceeded) break;
+
+        if (pass < MAX_MODEL_PASSES) {
+          const delayMs = Math.min(DEFAULT_BACKOFF_MS * Math.pow(2, pass), MAX_BACKOFF_MS);
+          this.logger.warn({ pass: pass + 1, delayMs }, "all models exhausted, backing off");
+          await new Promise((r) => setTimeout(r, delayMs));
+        }
+      }
+
+      if (!anyModelSucceeded) {
+        this.logger.error("all models exhausted across all retry passes");
+        return { result: "error", error: "All models exhausted — rate limited across all retries" };
+      }
+
+      return { result: "completed" };
+    } finally {
+      clearTimeout(timeoutTimer);
+    }
+  }
+
+  /**
+   * Subscribe to Pi session events and forward them to the logger and status tracker.
+   * Since the session runs in-process, we get direct access to events.
+   */
+  private subscribeToEvents(session: any): void {
+    session.subscribe((event: any) => {
+      if (event.type === "tool_execution_start") {
+        const cmd = String(event.args?.command || "");
+        this.logger.debug({
+          toolName: event.toolName,
+          toolCallId: event.toolCallId,
+          command: cmd || undefined,
+        }, "tool started");
+      }
+
+      if (event.type === "tool_execution_end") {
+        const resultStr = typeof event.result === "string"
+          ? event.result
+          : JSON.stringify(event.result);
+
+        if (event.isError) {
+          const cmdPrefix = event.args?.command ? `$ ${String(event.args.command).slice(0, 80)} — ` : "";
+          this.statusTracker?.setAgentError(this.agentConfig.name, `${cmdPrefix}${resultStr.slice(0, 200)}`);
+        }
+
+        this.logger.debug({
+          toolName: event.toolName,
+          toolCallId: event.toolCallId,
+          isError: !!event.isError,
+          resultLength: resultStr.length,
+        }, "tool ended");
+      }
+
+      if (event.type === "error") {
+        const err = (event as any).error;
+        const errorMsg = err?.errorMessage
+          || (typeof err === "string" ? err : null)
+          || JSON.stringify(event);
+        this.logger.error({ error: errorMsg }, "session error");
+        this.statusTracker?.setAgentError(this.agentConfig.name, String(errorMsg).slice(0, 200));
+      }
+
+      // Context usage tracking
+      if (event.type === "turn_end") {
+        try {
+          const ctx = session.getContextUsage?.();
+          if (ctx && ctx.percent != null) {
+            this.logger.info({
+              contextPercent: Math.round(ctx.percent * 10) / 10,
+              contextWindow: ctx.contextWindow,
+              contextTokens: ctx.tokens,
+            }, "context-usage");
+          }
+        } catch { /* context usage not available */ }
+      }
+    });
+  }
+}

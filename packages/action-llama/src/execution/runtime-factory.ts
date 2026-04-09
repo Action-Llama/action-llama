@@ -1,18 +1,14 @@
 /**
  * Runtime factory.
  *
- * Creates a Runtime using the extension system and builds agent images.
+ * Creates a Runtime using the extension system.
  * Supports per-agent runtime overrides (e.g. host-user mode).
  */
 
 import type { GlobalConfig, AgentConfig } from "../shared/config.js";
 import type { Runtime } from "../docker/runtime.js";
-import { isContainerRuntime } from "../docker/runtime.js";
-import type { StatusTracker } from "../tui/status-tracker.js";
 import type { Logger } from "../shared/logger.js";
 import { AgentError } from "../shared/errors.js";
-import { buildAllImages } from "./image-builder.js";
-import type { PromptSkills } from "../agents/prompt.js";
 import { globalRegistry } from "../extensions/registry.js";
 import { HostUserRuntime } from "../docker/host-user-runtime.js";
 
@@ -85,30 +81,4 @@ export async function createContainerRuntime(
   }
 
   return { runtime, agentRuntimeOverrides };
-}
-
-export async function buildAgentImages(opts: {
-  projectPath: string;
-  globalConfig: GlobalConfig;
-  activeAgentConfigs: AgentConfig[];
-  runtime: Runtime;
-  statusTracker?: StatusTracker;
-  logger: Logger;
-  skills: PromptSkills;
-}): Promise<{ baseImage: string; agentImages: Record<string, string> }> {
-  if (!isContainerRuntime(opts.runtime)) {
-    throw new AgentError("Cannot build images: runtime does not support container operations");
-  }
-
-  const buildResult = await buildAllImages({
-    projectPath: opts.projectPath,
-    globalConfig: opts.globalConfig,
-    activeAgentConfigs: opts.activeAgentConfigs,
-    runtime: opts.runtime,
-    statusTracker: opts.statusTracker,
-    logger: opts.logger,
-    skills: opts.skills,
-  });
-
-  return { baseImage: buildResult.baseImage, agentImages: buildResult.agentImages };
 }

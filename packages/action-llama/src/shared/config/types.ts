@@ -114,9 +114,15 @@ export interface AgentHooks {
  * Controls how the agent process is launched.
  */
 export interface AgentRuntimeType {
-  type?: "container" | "host-user";  // default: "container"
+  type?: "container" | "host-user" | "ssh";  // default: "container"
   run_as?: string;                   // OS user for host-user mode (default: "al-agent")
   groups?: string[];                 // Additional OS groups for host-user mode (e.g. ["docker"])
+  host?: string;                     // SSH hostname or IP (ssh mode)
+  port?: number;                     // SSH port (ssh mode, default: 22)
+  user?: string;                     // SSH user (ssh mode)
+  key_path?: string;                 // Path to SSH private key (ssh mode)
+  cwd?: string;                      // Working directory on the remote (ssh/host-user mode)
+  ssh_options?: Record<string, string>; // Additional SSH options (ssh mode)
 }
 
 /**

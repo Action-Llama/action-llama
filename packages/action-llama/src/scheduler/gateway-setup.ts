@@ -24,8 +24,6 @@ import { randomBytes } from "node:crypto";
 export interface GatewaySetupResult {
   gateway: GatewayServer;
   gatewayPort: number;
-  registerContainer: (secret: string, reg: any) => Promise<void>;
-  unregisterContainer: (secret: string) => Promise<void>;
 }
 
 export async function setupGateway(opts: {
@@ -67,7 +65,6 @@ export async function setupGateway(opts: {
     port: gatewayPort,
     hostname: expose ? "0.0.0.0" : "127.0.0.1",
     logger,
-    killContainer: undefined,
     webhookRegistry,
     webhookSecrets,
     webhookConfigs,
@@ -75,13 +72,10 @@ export async function setupGateway(opts: {
     projectPath,
     webUI,
     lockTimeout: globalConfig.resourceLockTimeout,
-    // Pass a provider so the key is re-read from disk on every auth check,
-    // enabling hot-reload of rotated credentials without restarting the scheduler.
     apiKey: loadGatewayApiKey,
     stateStore,
     statsStore,
     events,
-    skipStatusEndpoint: expose,
     controlDeps: {
       statusTracker,
       logger,
@@ -116,10 +110,8 @@ export async function setupGateway(opts: {
         const config = agentConfigs.find((a) => a.name === name);
         if (!config) return `Agent "${name}" not found`;
 
-        // Global pause check — must run before scheduler-readiness check
         if (statusTracker?.isPaused()) return "Scheduler is paused";
 
-        // Early exit: if scheduler context is not ready, queue directly
         if (!state.schedulerCtx) {
           if (!state.workQueue) return "Scheduler is not ready";
           const { dropped } = state.workQueue.enqueue(name, { type: 'manual', prompt });
@@ -149,7 +141,6 @@ export async function setupGateway(opts: {
           logger.info({ agent: name, hasPrompt: !!prompt, instanceId, queued: true }, "manual trigger queued (all runners busy)");
           return { instanceId };
         }
-        // rejected (scale=0 or pool disabled)
         return `Agent "${name}" has no available runners (all busy)`;
       },
       enableAgent: async (name: string) => {
@@ -204,10 +195,7 @@ export async function setupGateway(opts: {
     },
   });
 
-  logger.info({ port: gatewayPort }, "Gateway started early to show build progress");
+  logger.info({ port: gatewayPort }, "Gateway started");
 
-  const registerContainer = gateway.registerContainer;
-  const unregisterContainer = gateway.unregisterContainer;
-
-  return { gateway, gatewayPort, registerContainer, unregisterContainer };
+  return { gateway, gatewayPort };
 }

@@ -2,7 +2,7 @@
  * Hot reload watcher for `al start`.
  *
  * Watches the `agents/` directory for changes and automatically reloads
- * agent configs, rebuilds images, and updates runners/cron/webhooks.
+ * agent configs and updates runners/cron/webhooks.
  */
 
 import { watch, type FSWatcher } from "fs";
@@ -10,17 +10,12 @@ import { resolve } from "path";
 import { Cron } from "croner";
 import { loadAgentConfig, discoverAgents, validateAgentConfig } from "../shared/config.js";
 import type { GlobalConfig, AgentConfig } from "../shared/config.js";
-import type { Runtime } from "../docker/runtime.js";
-import { isContainerRuntime } from "../docker/runtime.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import { buildTriggerLabels } from "../tui/status-tracker.js";
 import type { Logger } from "../shared/logger.js";
-import type { PromptSkills } from "../agents/prompt.js";
 import type { WebhookRegistry } from "../webhooks/registry.js";
 import type { WebhookSourceConfig } from "../shared/config.js";
 import { RunnerPool, type PoolRunner } from "../execution/runner-pool.js";
-import { buildSingleAgentImage } from "../execution/image-builder.js";
-import { createAgentRuntimeOverride } from "../execution/runtime-factory.js";
 import { registerWebhookBindings } from "../events/webhook-setup.js";
 import type { SchedulerContext } from "../execution/execution.js";
 import { runWithReruns, makeWebhookPrompt, executeRun, drainQueues } from "../execution/execution.js";
@@ -54,21 +49,17 @@ export const DEBOUNCE_MS = 500;
 export interface HotReloadContext {
   projectPath: string;
   globalConfig: GlobalConfig;
-  runtime: Runtime;
-  agentRuntimeOverrides: Record<string, Runtime>;
   runnerPools: Record<string, RunnerPool>;
   agentConfigs: AgentConfig[];
-  agentImages: Record<string, string>;
   cronJobs: Cron[];
   schedulerCtx: SchedulerContext;
   webhookRegistry?: WebhookRegistry;
   webhookSources: Record<string, WebhookSourceConfig>;
   statusTracker?: StatusTracker;
   logger: Logger;
-  skills?: PromptSkills;
   timezone: string;
   baseImage: string;
-  createRunner: (agentConfig: AgentConfig, image: string) => PoolRunner;
+  createRunner: (agentConfig: AgentConfig) => PoolRunner;
 }
 
 /**
@@ -146,7 +137,6 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
       } else if (currentNames.has(agentName) && knownNames.has(agentName)) {
         await handleChangedAgent(agentName);
       }
-      // else: unknown file in agents/ that isn't a valid agent dir — ignore
     } catch (err: any) {
       ctx.logger.error({ err, agent: agentName }, "hot reload failed");
       ctx.statusTracker?.setAgentError(agentName, `Hot reload error: ${String(err?.message || err).slice(0, 200)}`);
@@ -154,7 +144,6 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
       rebuilding.delete(agentName);
       if (pendingRebuild.has(agentName)) {
         pendingRebuild.delete(agentName);
-        // Re-trigger after current build completes
         handleAgentChange(agentName);
       }
     }
@@ -188,31 +177,10 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
       return;
     }
 
-    // Build image (only for container-based runtimes)
-    const agentRuntime = ctx.agentRuntimeOverrides[agentName] || ctx.runtime;
-    let image = ctx.baseImage;
-    if (isContainerRuntime(agentRuntime)) {
-      ctx.statusTracker?.setAgentState(agentName, "building");
-      ctx.statusTracker?.setAgentStatusText(agentName, "Building (new agent)");
-
-      image = await buildSingleAgentImage({
-        agentConfig,
-        projectPath: ctx.projectPath,
-        globalConfig: ctx.globalConfig,
-        runtime: agentRuntime,
-        baseImage: ctx.baseImage,
-        statusTracker: ctx.statusTracker,
-        logger: ctx.logger,
-        skills: ctx.skills,
-      });
-    }
-
-    ctx.agentImages[agentName] = image;
-
     // Create runners
     const runners: PoolRunner[] = [];
     for (let i = 0; i < scale; i++) {
-      runners.push(ctx.createRunner(agentConfig, image));
+      runners.push(ctx.createRunner(agentConfig));
     }
     const pool = new RunnerPool(runners);
     ctx.runnerPools[agentName] = pool;
@@ -255,41 +223,22 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
   async function handleRemovedAgent(agentName: string) {
     ctx.logger.info({ agent: agentName }, "hot reload: agent removed");
 
-    // Kill running containers
     const pool = ctx.runnerPools[agentName];
     if (pool) {
       pool.killAll();
       delete ctx.runnerPools[agentName];
     }
 
-    // Stop cron jobs for this agent
     const agentConfig = ctx.agentConfigs.find(a => a.name === agentName);
     if (agentConfig?.schedule) {
-      // Find and stop the cron job(s) for this agent
-      const newCronJobs: Cron[] = [];
-      for (const job of ctx.cronJobs) {
-        // Cron jobs don't have agent name metadata, so we need to stop all
-        // and re-create those that remain. But we can identify by checking
-        // the schedule pattern — since multiple agents could share a schedule,
-        // we stop all and rebuild below.
-        newCronJobs.push(job);
-      }
-      // Actually, we can't easily identify which cron belongs to which agent.
-      // Rebuild the cron job list from remaining agents.
       rebuildCronJobs(agentName);
     }
 
-    // Remove webhook bindings
     ctx.webhookRegistry?.removeBindingsForAgent(agentName);
 
-    // Remove from config list
     ctx.agentConfigs = ctx.agentConfigs.filter(a => a.name !== agentName);
     ctx.schedulerCtx.agentConfigs = ctx.agentConfigs;
 
-    // Clean up images record
-    delete ctx.agentImages[agentName];
-
-    // Unregister from TUI
     ctx.statusTracker?.unregisterAgent(agentName);
     ctx.statusTracker?.addLogLine("scheduler", `${agentName} removed (hot reload)`);
     ctx.logger.info({ agent: agentName }, "hot reload: agent teardown complete");
@@ -320,63 +269,20 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
     }
     ctx.schedulerCtx.agentConfigs = ctx.agentConfigs;
 
-    // Update description in status tracker (may have changed in SKILL.md frontmatter)
     ctx.statusTracker?.setAgentDescription(agentName, newConfig.description);
     ctx.statusTracker?.setAgentTriggers(agentName, buildTriggerLabels(newConfig));
 
-    // Detect runtime config changes and update the agentRuntimeOverrides if needed.
-    // This ensures that when [runtime] settings change (e.g. groups = ["docker"] is added),
-    // subsequent agent launches use the updated HostUserRuntime with the new configuration.
-    const oldRuntimeConfig = JSON.stringify(oldConfig?.runtime ?? null);
-    const newRuntimeConfig = JSON.stringify(newConfig.runtime ?? null);
-    if (oldRuntimeConfig !== newRuntimeConfig) {
-      const newOverride = createAgentRuntimeOverride(newConfig);
-      if (newOverride) {
-        ctx.agentRuntimeOverrides[agentName] = newOverride;
-        ctx.logger.info(
-          { agent: agentName, runAs: newConfig.runtime?.run_as ?? "al-agent", groups: newConfig.runtime?.groups ?? [] },
-          "hot reload: updated host-user runtime config",
-        );
-      } else {
-        // Reverted to container runtime — remove the host-user override
-        delete ctx.agentRuntimeOverrides[agentName];
-        ctx.logger.info({ agent: agentName }, "hot reload: reverted to container runtime");
-      }
-    }
-
-    // Rebuild image (only for container-based runtimes)
-    const agentRuntime = ctx.agentRuntimeOverrides[agentName] || ctx.runtime;
-    let image = ctx.agentImages[agentName] || ctx.baseImage;
-    if (isContainerRuntime(agentRuntime)) {
-      ctx.statusTracker?.setAgentState(agentName, "building");
-      ctx.statusTracker?.setAgentStatusText(agentName, "Rebuilding (config changed)");
-
-      image = await buildSingleAgentImage({
-        agentConfig: newConfig,
-        projectPath: ctx.projectPath,
-        globalConfig: ctx.globalConfig,
-        runtime: agentRuntime,
-        baseImage: ctx.baseImage,
-        statusTracker: ctx.statusTracker,
-        logger: ctx.logger,
-        skills: ctx.skills,
-      });
-    }
-    ctx.agentImages[agentName] = image;
-
-    // Handle scale 0 → N transition: need to create pool, runners, cron, webhooks
-    // (similar to handleNewAgent but for an existing config entry)
+    // Handle scale 0 → N transition
     if (oldScale === 0 && newScale > 0) {
       const runners: PoolRunner[] = [];
       for (let i = 0; i < newScale; i++) {
-        runners.push(ctx.createRunner(newConfig, image));
+        runners.push(ctx.createRunner(newConfig));
       }
       const pool = new RunnerPool(runners);
       ctx.runnerPools[agentName] = pool;
 
       ctx.statusTracker?.updateAgentScale(agentName, newScale);
 
-      // Set up cron
       if (newConfig.schedule) {
         const job = new Cron(newConfig.schedule, { timezone: ctx.timezone }, async () => {
           if (ctx.statusTracker && !ctx.statusTracker.isAgentEnabled(agentName)) return;
@@ -394,7 +300,6 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
         if (nextRun) ctx.statusTracker?.setNextRunAt(agentName, nextRun);
       }
 
-      // Set up webhooks
       if (ctx.webhookRegistry) {
         registerWebhookBindings({
           agentConfig: newConfig,
@@ -411,7 +316,7 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
       return;
     }
 
-    // Handle scale N → 0 transition: tear down pool, cron, webhooks
+    // Handle scale N → 0 transition
     if (oldScale > 0 && newScale === 0) {
       const pool = ctx.runnerPools[agentName];
       if (pool) {
@@ -421,7 +326,6 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
 
       rebuildCronJobs(agentName);
       ctx.statusTracker?.setNextRunAt(agentName, null);
-
       ctx.webhookRegistry?.removeBindingsForAgent(agentName);
 
       ctx.statusTracker?.updateAgentScale(agentName, 0);
@@ -431,30 +335,19 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
       return;
     }
 
-    // Update existing runners with new image, config, and runtime (if changed)
+    // Update existing runners with new config
     const pool = ctx.runnerPools[agentName];
     if (pool) {
       for (const runner of pool.allRunners) {
-        if ('setImage' in runner && typeof (runner as any).setImage === 'function') {
-          (runner as any).setImage(image);
-        }
         if ('setAgentConfig' in runner && typeof (runner as any).setAgentConfig === 'function') {
           (runner as any).setAgentConfig(newConfig);
-        }
-        // Propagate runtime changes to existing runners so in-flight and future
-        // launches within the same runner instance use the updated runtime config.
-        if (oldRuntimeConfig !== newRuntimeConfig) {
-          const updatedRuntime = ctx.agentRuntimeOverrides[agentName] || ctx.runtime;
-          if ('setRuntime' in runner && typeof (runner as any).setRuntime === 'function') {
-            (runner as any).setRuntime(updatedRuntime);
-          }
         }
       }
 
       // Handle scale changes
       if (newScale > oldScale) {
         for (let i = oldScale; i < newScale; i++) {
-          pool.addRunner(ctx.createRunner(newConfig, image));
+          pool.addRunner(ctx.createRunner(newConfig));
         }
         ctx.statusTracker?.updateAgentScale(agentName, newScale);
       } else if (newScale < oldScale) {
@@ -487,7 +380,6 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
       }
     }
 
-    // Apply per-agent work queue size override if changed
     if (newConfig.maxWorkQueueSize !== undefined) {
       ctx.schedulerCtx.workQueue.setAgentMaxSize(agentName, newConfig.maxWorkQueueSize);
     }
@@ -507,9 +399,6 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
       }
     }
 
-    // Only transition to idle if no runners are currently active. This avoids
-    // overriding the "running" state when instances are still in-flight after
-    // a hot reload.
     const currentAgent = ctx.statusTracker?.getAllAgents?.().find(a => a.name === agentName);
     if (!currentAgent || currentAgent.runningCount === 0) {
       ctx.statusTracker?.setAgentState(agentName, "idle");
@@ -519,13 +408,11 @@ export function watchAgents(ctx: HotReloadContext): WatcherHandle {
   }
 
   function rebuildCronJobs(removedAgentName: string) {
-    // Stop all existing cron jobs
     for (const job of ctx.cronJobs) {
       job.stop();
     }
     ctx.cronJobs.length = 0;
 
-    // Rebuild from current configs (excluding the removed agent)
     for (const agentConfig of ctx.agentConfigs) {
       if (agentConfig.name === removedAgentName) continue;
       if (!agentConfig.schedule) continue;

@@ -10,40 +10,27 @@ vi.mock("child_process", () => ({
   execFileSync: vi.fn((_cmd: string, _args: string[]) => ""),
 }));
 
-// Mock Docker/container related modules
-vi.mock("../../src/execution/image-builder.js", () => ({
-  buildAllImages: vi.fn().mockResolvedValue({
-    baseImage: "test-base-image",
-    agentImages: {
-      dev: "test-dev-image",
-      reviewer: "test-reviewer-image", 
-      devops: "test-devops-image"
-    }
-  })
+// Mock TransportAgentRunner (the runner used by createRunnerPools)
+let mockRunnerInstanceCounter = 0;
+vi.mock("../../src/agents/transport-runner.js", () => ({
+  TransportAgentRunner: vi.fn().mockImplementation(function (this: any, opts: any) {
+    this.instanceId = `${opts.agentConfig.name}-${mockRunnerInstanceCounter++}`;
+    Object.defineProperty(this, "isRunning", { get: () => mockIsRunning });
+    this.run = mockRun;
+    this.abort = vi.fn();
+    this.setAgentConfig = vi.fn();
+  }),
 }));
 
-vi.mock("../../src/docker/local-runtime.js", () => ({
-  LocalDockerRuntime: class MockLocalDockerRuntime {
-    needsGateway = true;
-    async isAgentRunning() { return false; }
-    async listRunningAgents() { return []; }
-    async launch() { return "mock-container"; }
-    streamLogs() { return { stop: () => {} }; }
-    async waitForExit() { return 0; }
-    async kill() {}
-    async remove() {}
-    async prepareCredentials() { return { strategy: "volume" as const, stagingDir: "/tmp/mock", bundle: {} }; }
-    cleanupCredentials() {}
-    async fetchLogs() { return []; }
-    followLogs() { return { stop: () => {} }; }
-    getTaskUrl() { return null; }
-    async buildImage() { return "mock-image"; }
-    async pushImage(img: string) { return img; }
-  }
-}));
-
-vi.mock("../../src/docker/network.js", () => ({
-  ensureNetwork: vi.fn()
+// Mock ModelCircuitBreaker (imported by runner-setup.ts)
+vi.mock("../../src/agents/model-fallback.js", () => ({
+  ModelCircuitBreaker: vi.fn().mockImplementation(function (this: any) {
+    this.recordSuccess = vi.fn();
+    this.recordFailure = vi.fn();
+    this.isOpen = vi.fn().mockReturnValue(false);
+  }),
+  selectAvailableModels: vi.fn().mockImplementation((models: any[]) => models),
+  isRateLimitError: vi.fn().mockReturnValue(false),
 }));
 
 // Mock credentials
@@ -68,22 +55,9 @@ vi.mock("../../src/shared/credentials.js", () => ({
   resetDefaultBackend: () => {},
 }));
 
-// Mock AgentRunner
+// Mock runner state
 const mockRun = vi.fn().mockResolvedValue({ result: "completed", triggers: [] });
 let mockIsRunning = false;
-vi.mock("../../src/agents/runner.js", () => ({
-  AgentRunner: class {
-    get isRunning() { return mockIsRunning; }
-    run = mockRun;
-  },
-}));
-
-vi.mock("../../src/agents/container-runner.js", () => ({
-  ContainerAgentRunner: class MockContainerAgentRunner {
-    run = mockRun;
-    get isRunning() { return mockIsRunning; }
-  }
-}));
 
 // Mock croner — capture the callbacks
 const mockCronStop = vi.fn();
@@ -106,11 +80,8 @@ vi.mock("croner", () => ({
 vi.mock("../../src/gateway/index.js", () => ({
   startGateway: vi.fn().mockResolvedValue({
     server: {},
-    registerContainer: vi.fn(),
-    unregisterContainer: vi.fn(),
     lockStore: { releaseAll: vi.fn(), dispose: vi.fn() },
     callStore: { failAllByCaller: vi.fn(), dispose: vi.fn() },
-    setCallDispatcher: vi.fn(),
     close: vi.fn().mockResolvedValue(undefined),
   }),
 }));
@@ -140,33 +111,6 @@ vi.mock("../../src/extensions/loader.js", () => ({
   getGlobalRegistry: () => ({}),
 }));
 
-// Mock execution/runtime-factory.js to avoid needing extensions registered in global registry
-vi.mock("../../src/execution/runtime-factory.js", () => ({
-  createContainerRuntime: vi.fn().mockResolvedValue({
-    runtime: {
-      needsGateway: true,
-      isAgentRunning: async () => false,
-      listRunningAgents: async () => [],
-      launch: async () => "mock-container",
-      kill: async () => {},
-      remove: async () => {},
-      fetchLogs: async () => [],
-      followLogs: () => ({ stop: () => {} }),
-      getTaskUrl: () => null,
-      buildImage: async () => "mock-image",
-      pushImage: async (img: string) => img,
-      streamLogs: () => ({ stop: () => {} }),
-      waitForExit: async () => 0,
-      prepareCredentials: async () => ({ strategy: "volume", stagingDir: "/tmp/mock", bundle: {} }),
-      cleanupCredentials: () => {},
-    },
-    agentRuntimeOverrides: {},
-  }),
-  buildAgentImages: vi.fn().mockResolvedValue({
-    baseImage: "test-base-image",
-    agentImages: {},
-  }),
-}));
 
 // Mock telemetry
 const mockTelemetryInit = vi.fn().mockResolvedValue(undefined);
@@ -273,6 +217,7 @@ describe("startScheduler", () => {
     vi.clearAllMocks();
     cronCallbacks.length = 0;
     mockIsRunning = false;
+    mockRunnerInstanceCounter = 0;
     tmpDir = mkdtempSync(join(tmpdir(), "al-sched-"));
     setupProject(tmpDir);
   });
@@ -456,6 +401,7 @@ describe("startScheduler", () => {
       vi.clearAllMocks();
       cronCallbacks.length = 0;
       mockIsRunning = false;
+      mockRunnerInstanceCounter = 0;
       tmpDir = mkdtempSync(join(tmpdir(), "al-sched-scale-"));
       setupScaleProject(tmpDir);
     });
@@ -518,6 +464,7 @@ describe("startScheduler", () => {
       vi.clearAllMocks();
       cronCallbacks.length = 0;
       mockIsRunning = false;
+      mockRunnerInstanceCounter = 0;
       tmpDir = mkdtempSync(join(tmpdir(), "al-sched-disabled-"));
       setupDisabledProject(tmpDir);
     });
@@ -635,6 +582,7 @@ describe("startScheduler", () => {
       vi.clearAllMocks();
       cronCallbacks.length = 0;
       mockIsRunning = false;
+      mockRunnerInstanceCounter = 0;
       tmpDir = mkdtempSync(join(tmpdir(), "al-sched-timeout-"));
       setupTimeoutProject(tmpDir);
     });
@@ -686,6 +634,7 @@ describe("startScheduler", () => {
       vi.clearAllMocks();
       cronCallbacks.length = 0;
       mockIsRunning = false;
+      mockRunnerInstanceCounter = 0;
       tmpDir = mkdtempSync(join(tmpdir(), "al-sched-telemetry-"));
       setupTelemetryProject(tmpDir);
     });
@@ -721,6 +670,7 @@ describe("startScheduler", () => {
       vi.clearAllMocks();
       cronCallbacks.length = 0;
       mockIsRunning = false;
+      mockRunnerInstanceCounter = 0;
       tmpDir = mkdtempSync(join(tmpdir(), "al-sched-ext-"));
       setupProject(tmpDir);
     });
@@ -770,6 +720,7 @@ describe("startScheduler", () => {
       vi.clearAllMocks();
       cronCallbacks.length = 0;
       mockIsRunning = false;
+      mockRunnerInstanceCounter = 0;
       tmpDir = mkdtempSync(join(tmpdir(), "al-sched-scale-sync-"));
       setupScaleProject2(tmpDir);
     });
@@ -802,7 +753,7 @@ describe("startScheduler", () => {
     });
   });
 
-  describe("early webhook binding (before image builds)", () => {
+  describe("early webhook binding (before runner pools are ready)", () => {
     function setupWebhookProject(dir: string) {
       const globalConfig = {
         models: {
@@ -833,34 +784,9 @@ describe("startScheduler", () => {
       }
       cronCallbacks.length = 0;
       mockIsRunning = false;
+      mockRunnerInstanceCounter = 0;
       tmpDir = mkdtempSync(join(tmpdir(), "al-sched-webhooks-"));
       setupWebhookProject(tmpDir);
-    });
-
-    it("registers webhook bindings before buildAgentImages", async () => {
-      // Track call order by recording invocation indices
-      const callOrder: string[] = [];
-      const { buildAgentImages } = await import("../../src/execution/runtime-factory.js");
-      (buildAgentImages as any).mockImplementation(async (...args: any[]) => {
-        callOrder.push("buildAgentImages");
-        return { baseImage: "test-base-image", agentImages: { dev: "test-dev-image" } };
-      });
-      mockSetupWebhookRegistry.mockResolvedValue({
-        registry: { bind: vi.fn(), unbind: vi.fn() },
-        secrets: {},
-      });
-      mockRegisterWebhookBindings.mockImplementation(() => {
-        callOrder.push("registerWebhookBindings");
-      });
-
-      await startScheduler(tmpDir);
-
-      expect(mockRegisterWebhookBindings).toHaveBeenCalled();
-      expect(callOrder).toContain("registerWebhookBindings");
-      expect(callOrder).toContain("buildAgentImages");
-      const bindIdx = callOrder.indexOf("registerWebhookBindings");
-      const buildIdx = callOrder.indexOf("buildAgentImages");
-      expect(bindIdx).toBeLessThan(buildIdx);
     });
 
     it("skips registerWebhookBindings for agents without webhooks configured", async () => {
@@ -911,17 +837,17 @@ describe("startScheduler", () => {
 
       await startScheduler(tmpDir);
 
-      // The "webhook queued (agents building)" log should have been emitted
+      // The "webhook queued (starting up)" log should have been emitted
       expect(mockLoggerInfo).toHaveBeenCalledWith(
         expect.objectContaining({
           agent: "dev",
           event: "push",
         }),
-        "webhook queued (agents building)"
+        "webhook queued (starting up)"
       );
     });
 
-    it("queues webhook when dispatched after build but all runners are busy", async () => {
+    it("queues webhook when dispatched after startup but all runners are busy", async () => {
       let capturedOnTrigger: ((config: any, context: any) => any) | undefined;
       let capturedAgentConfig: any;
 
@@ -1087,6 +1013,7 @@ describe("startScheduler", () => {
       vi.clearAllMocks();
       cronCallbacks.length = 0;
       mockIsRunning = false;
+      mockRunnerInstanceCounter = 0;
       tmpDir = mkdtempSync(join(tmpdir(), "al-sched-smallq-"));
       setupSmallQueueProject(tmpDir);
     });
@@ -1154,6 +1081,7 @@ describe("startScheduler", () => {
       vi.clearAllMocks();
       cronCallbacks.length = 0;
       mockIsRunning = false;
+      mockRunnerInstanceCounter = 0;
       smallQueueTmpDir = mkdtempSync(join(tmpdir(), "al-sched-wq-overflow-"));
       setupSmallQueueWebhookProject(smallQueueTmpDir);
     });
@@ -1162,7 +1090,7 @@ describe("startScheduler", () => {
       rmSync(smallQueueTmpDir, { recursive: true, force: true });
     });
 
-    it("warns when webhook queue overflows during 'agents building' phase (line 103)", async () => {
+    it("warns when webhook queue overflows during startup phase", async () => {
       const fakeContext = {
         event: "push",
         action: "created",
@@ -1175,7 +1103,7 @@ describe("startScheduler", () => {
         secrets: {},
       });
 
-      // Call onTrigger TWICE before schedulerCtx is set (agents still building).
+      // Call onTrigger TWICE before schedulerCtx is set (still starting up).
       // First call fills queue to capacity (size = 1). Second call overflows and drops
       // the oldest item, exercising the `if (dropped) logger.warn(...)` branch.
       mockRegisterWebhookBindings.mockImplementation((args: any) => {
@@ -1192,7 +1120,7 @@ describe("startScheduler", () => {
       );
     });
 
-    it("warns when webhook queue overflows after build with all runners busy (line 125)", async () => {
+    it("warns when webhook queue overflows after startup with all runners busy", async () => {
       let capturedOnTrigger: ((config: any, context: any) => any) | undefined;
       let capturedAgentConfig: any;
 

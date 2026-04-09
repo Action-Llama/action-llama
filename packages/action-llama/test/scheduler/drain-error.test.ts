@@ -29,33 +29,6 @@ vi.mock("child_process", () => ({
   execFileSync: vi.fn(() => ""),
 }));
 
-vi.mock("../../src/execution/image-builder.js", () => ({
-  buildAllImages: vi.fn().mockResolvedValue({
-    baseImage: "test-base",
-    agentImages: { dev: "test-dev-image" },
-  }),
-}));
-
-vi.mock("../../src/docker/local-runtime.js", () => ({
-  LocalDockerRuntime: class {
-    needsGateway = true;
-    async isAgentRunning() { return false; }
-    async listRunningAgents() { return []; }
-    async launch() { return "mock-container"; }
-    streamLogs() { return { stop: () => {} }; }
-    async waitForExit() { return 0; }
-    async kill() {}
-    async remove() {}
-    async prepareCredentials() { return { strategy: "volume" as const, stagingDir: "/tmp/mock", bundle: {} }; }
-    cleanupCredentials() {}
-    async fetchLogs() { return []; }
-    followLogs() { return { stop: () => {} }; }
-    getTaskUrl() { return null; }
-    async buildImage() { return "mock-image"; }
-    async pushImage(img: string) { return img; }
-  },
-}));
-
 vi.mock("../../src/docker/network.js", () => ({
   ensureNetwork: vi.fn(),
 }));
@@ -79,22 +52,6 @@ vi.mock("../../src/shared/credentials.js", () => ({
   getDefaultBackend: () => {},
   setDefaultBackend: () => {},
   resetDefaultBackend: () => {},
-}));
-
-vi.mock("../../src/agents/runner.js", () => ({
-  AgentRunner: class {
-    instanceId = "mock-instance-id";
-    get isRunning() { return mockIsRunning; }
-    run = mockRun;
-  },
-}));
-
-vi.mock("../../src/agents/container-runner.js", () => ({
-  ContainerAgentRunner: class {
-    instanceId = "mock-instance-id";
-    get isRunning() { return mockIsRunning; }
-    run = mockRun;
-  },
 }));
 
 const mockCronStop = vi.fn();
@@ -167,6 +124,27 @@ vi.mock("../../src/execution/runtime-factory.js", () => ({
     agentImages: {},
   }),
 }));
+
+vi.mock("../../src/execution/runner-setup.js", async (importOriginal) => {
+  const { RunnerPool } = await import("../../src/execution/runner-pool.js") as any;
+  return {
+    createRunnerPools: vi.fn().mockImplementation(({ agentConfigs }: any) => {
+      const runnerPools: Record<string, any> = {};
+      const actualScales: Record<string, number> = {};
+      const createRunner = () => ({
+        instanceId: "mock-instance-id",
+        get isRunning() { return mockIsRunning; },
+        run: mockRun,
+      });
+      for (const agentConfig of agentConfigs) {
+        const runner = createRunner();
+        runnerPools[agentConfig.name] = new RunnerPool([runner]);
+        actualScales[agentConfig.name] = 1;
+      }
+      return Promise.resolve({ runnerPools, createRunner, actualScales });
+    }),
+  };
+});
 
 vi.mock("../../src/telemetry/index.js", () => ({
   initTelemetry: vi.fn().mockReturnValue({

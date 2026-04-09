@@ -16,10 +16,6 @@ vi.mock("../../src/shared/config.js", () => ({
   validateAgentConfig: vi.fn(),
 }));
 
-vi.mock("../../src/execution/image-builder.js", () => ({
-  buildSingleAgentImage: vi.fn(async () => "test-image:latest"),
-}));
-
 vi.mock("../../src/events/webhook-setup.js", () => ({
   resolveWebhookSource: vi.fn(() => ({ type: "github", credential: "default" })),
   buildFilterFromTrigger: vi.fn(() => undefined),
@@ -48,19 +44,8 @@ vi.mock("../../src/execution/execution.js", () => ({
   drainQueues: vi.fn(async () => {}),
 }));
 
-const { mockHostUserRuntime, mockCreateAgentRuntimeOverride } = vi.hoisted(() => {
-  const inst = { type: "mock-host-user-runtime" } as any;
-  const fn = vi.fn((_config: any) => inst);
-  return { mockHostUserRuntime: inst, mockCreateAgentRuntimeOverride: fn };
-});
-
-vi.mock("../../src/execution/runtime-factory.js", () => ({
-  createAgentRuntimeOverride: mockCreateAgentRuntimeOverride,
-}));
-
 import { watch } from "fs";
 import { discoverAgents, loadAgentConfig, validateAgentConfig } from "../../src/shared/config.js";
-import { buildSingleAgentImage } from "../../src/execution/image-builder.js";
 import { registerWebhookBindings } from "../../src/events/webhook-setup.js";
 import { executeRun, makeWebhookPrompt } from "../../src/execution/execution.js";
 import { watchAgents, type HotReloadContext } from "../../src/scheduler/watcher.js";
@@ -70,7 +55,6 @@ const mockedWatch = vi.mocked(watch);
 const mockedDiscoverAgents = vi.mocked(discoverAgents);
 const mockedLoadAgentConfig = vi.mocked(loadAgentConfig);
 const mockedValidateAgentConfig = vi.mocked(validateAgentConfig);
-const mockedBuildSingleAgentImage = vi.mocked(buildSingleAgentImage);
 const mockedRegisterWebhookBindings = vi.mocked(registerWebhookBindings);
 const mockedExecuteRun = vi.mocked(executeRun);
 
@@ -92,7 +76,6 @@ function makeMockRunner(instanceId: string) {
     instanceId,
     run: vi.fn(async () => ({ result: "completed", triggers: [] })),
     abort: vi.fn(),
-    setImage: vi.fn(),
     setAgentConfig: vi.fn(),
   };
 }
@@ -102,13 +85,10 @@ function makeContext(overrides: Partial<HotReloadContext> = {}): HotReloadContex
   return {
     projectPath: "/test/project",
     globalConfig: { local: {} } as any,
-    runtime: { buildImage: vi.fn(async () => "img:latest"), pushImage: vi.fn(async (img: string) => img) } as any,
-    agentRuntimeOverrides: {},
     runnerPools: overrides.runnerPools ?? {
       "agent-a": new RunnerPool([makeMockRunner("agent-a")]),
     },
     agentConfigs,
-    agentImages: { "agent-a": "agent-a:latest" },
     cronJobs: [],
     schedulerCtx: {
       runnerPools: overrides.runnerPools ?? {},
@@ -119,7 +99,6 @@ function makeContext(overrides: Partial<HotReloadContext> = {}): HotReloadContex
       workQueue: { enqueue: vi.fn(() => ({ dropped: false })), size: vi.fn(() => 0), clearAll: vi.fn(), setAgentMaxSize: vi.fn() } as any,
       shuttingDown: false,
       skills: { locking: true },
-      useBakedImages: true,
     },
     webhookRegistry: {
       addBinding: vi.fn(),
@@ -141,10 +120,9 @@ function makeContext(overrides: Partial<HotReloadContext> = {}): HotReloadContex
       getAllAgents: vi.fn(() => []),
     } as any,
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
-    skills: { locking: true },
     timezone: "UTC",
     baseImage: "al-agent:latest",
-    createRunner: vi.fn((_config, _image) => makeMockRunner(_config.name)),
+    createRunner: vi.fn((_config) => makeMockRunner(_config.name)),
     ...overrides,
   };
 }
@@ -282,7 +260,7 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     vi.restoreAllMocks();
   });
 
-  it("handles changed agent: updates image and config on runners", async () => {
+  it("handles changed agent: updates config on runners", async () => {
     const runner = makeMockRunner("agent-a");
     const pool = new RunnerPool([runner]);
     const ctx = makeContext({ runnerPools: { "agent-a": pool } });
@@ -290,53 +268,13 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     const updatedConfig = makeAgentConfig("agent-a", { schedule: "*/5 * * * *" });
     mockedDiscoverAgents.mockReturnValue(["agent-a"]);
     mockedLoadAgentConfig.mockReturnValue(updatedConfig);
-    mockedBuildSingleAgentImage.mockResolvedValue("agent-a:v2");
 
     const handle = watchAgents(ctx);
     await handle._handleAgentChange("agent-a");
 
-    expect(runner.setImage).toHaveBeenCalledWith("agent-a:v2");
     expect(runner.setAgentConfig).toHaveBeenCalledWith(updatedConfig);
-    expect(ctx.statusTracker!.setAgentState).toHaveBeenCalledWith("agent-a", "building");
     expect(ctx.statusTracker!.setAgentState).toHaveBeenCalledWith("agent-a", "idle");
     expect(ctx.statusTracker!.addLogLine).toHaveBeenCalledWith("agent-a", "hot-reloaded");
-  });
-
-  it("handles changed agent: updates agentRuntimeOverrides and runner runtime when runtime config changes", async () => {
-    const runner = {
-      ...makeMockRunner("agent-a"),
-      setRuntime: vi.fn(),
-    };
-    const pool = new RunnerPool([runner]);
-    // Start with a host-user agent that has no docker group
-    const oldConfig = makeAgentConfig("agent-a", {
-      runtime: { type: "host-user", run_as: "al-agent", groups: [] },
-    });
-    const ctx = makeContext({
-      agentConfigs: [oldConfig],
-      runnerPools: { "agent-a": pool },
-      agentRuntimeOverrides: { "agent-a": { type: "old-host-user-runtime" } as any },
-    });
-
-    // New config adds docker group
-    const updatedConfig = makeAgentConfig("agent-a", {
-      runtime: { type: "host-user", run_as: "al-agent", groups: ["docker"] },
-    });
-    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
-    mockedLoadAgentConfig.mockReturnValue(updatedConfig);
-
-    // Make createAgentRuntimeOverride return the mock runtime for the new config
-    mockCreateAgentRuntimeOverride.mockReturnValue(mockHostUserRuntime);
-
-    const handle = watchAgents(ctx);
-    await handle._handleAgentChange("agent-a");
-
-    // createAgentRuntimeOverride should have been called with the new config
-    expect(mockCreateAgentRuntimeOverride).toHaveBeenCalledWith(updatedConfig);
-    // agentRuntimeOverrides should be updated with the new runtime
-    expect(ctx.agentRuntimeOverrides["agent-a"]).toBe(mockHostUserRuntime);
-    // Existing runner should have its runtime updated via setRuntime
-    expect(runner.setRuntime).toHaveBeenCalledWith(mockHostUserRuntime);
   });
 
   it("handles new agent: creates runners and pool", async () => {
@@ -345,12 +283,11 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     const newConfig = makeAgentConfig("agent-b");
     mockedDiscoverAgents.mockReturnValue(["agent-b"]);
     mockedLoadAgentConfig.mockReturnValue(newConfig);
-    mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
 
     const handle = watchAgents(ctx);
     await handle._handleAgentChange("agent-b");
 
-    expect(ctx.createRunner).toHaveBeenCalledWith(newConfig, "agent-b:v1");
+    expect(ctx.createRunner).toHaveBeenCalledWith(newConfig);
     expect(ctx.runnerPools["agent-b"]).toBeInstanceOf(RunnerPool);
     expect(ctx.agentConfigs).toContain(newConfig);
     expect(ctx.statusTracker!.registerAgent).toHaveBeenCalledWith("agent-b", 1, undefined);
@@ -363,7 +300,6 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     const newConfig = makeAgentConfig("agent-b", { maxWorkQueueSize: 50 });
     mockedDiscoverAgents.mockReturnValue(["agent-b"]);
     mockedLoadAgentConfig.mockReturnValue(newConfig);
-    mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
 
     const handle = watchAgents(ctx);
     await handle._handleAgentChange("agent-b");
@@ -403,22 +339,6 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     expect(ctx.statusTracker!.setAgentError).toHaveBeenCalledWith(
       "agent-a",
       expect.stringContaining("Invalid config"),
-    );
-    expect(mockedBuildSingleAgentImage).not.toHaveBeenCalled();
-  });
-
-  it("handles build failure on reload: sets error, does not crash", async () => {
-    const ctx = makeContext();
-    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
-    mockedLoadAgentConfig.mockReturnValue(makeAgentConfig("agent-a"));
-    mockedBuildSingleAgentImage.mockRejectedValue(new Error("Docker build failed"));
-
-    const handle = watchAgents(ctx);
-    await handle._handleAgentChange("agent-a");
-
-    expect(ctx.statusTracker!.setAgentError).toHaveBeenCalledWith(
-      "agent-a",
-      expect.stringContaining("Hot reload error"),
     );
   });
 
@@ -557,9 +477,6 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
       ([_name, state]: [string, string]) => state === "idle"
     );
     expect(idleCalls).toHaveLength(0);
-
-    // But building state should have been set
-    expect(statusTracker.setAgentState).toHaveBeenCalledWith("agent-a", "building");
   });
 
   it("handles new agent with invalid config: logs error and registers with scale 0", async () => {
@@ -581,7 +498,6 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
       "agent-b",
       expect.stringContaining("Invalid config")
     );
-    expect(mockedBuildSingleAgentImage).not.toHaveBeenCalled();
   });
 
   it("handles new agent with scale=0: registers as disabled without creating runners", async () => {
@@ -596,7 +512,6 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     expect(ctx.agentConfigs).toContain(disabledConfig);
     expect(ctx.runnerPools["agent-b"]).toBeUndefined();
     expect(ctx.createRunner).not.toHaveBeenCalled();
-    expect(mockedBuildSingleAgentImage).not.toHaveBeenCalled();
     expect(ctx.logger.info).toHaveBeenCalledWith(
       expect.objectContaining({ agent: "agent-b" }),
       "hot reload: agent registered (scale=0, disabled)"
@@ -625,36 +540,48 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
   });
 
   it("pendingRebuild: queues a second change while first is running", async () => {
-    let resolveFirst: () => void;
-    const firstBuildStarted = new Promise<void>((resolve) => {
-      mockedBuildSingleAgentImage.mockImplementationOnce(async () => {
-        resolveFirst?.();
-        // Hang indefinitely until test resolves
-        return new Promise<string>((r) => setTimeout(() => r("agent-a:v1"), 50));
-      });
+    let resolveFirst!: () => void;
+    const firstLoadBlocking = new Promise<void>((resolve) => {
+      resolveFirst = resolve;
     });
 
-    // Second build should be quick
-    mockedBuildSingleAgentImage.mockResolvedValue("agent-a:v2");
+    // Make loadAgentConfig block on first call to simulate slow reload
+    let callCount = 0;
+    mockedLoadAgentConfig.mockImplementation((_proj: any, _name: any) => {
+      callCount++;
+      if (callCount === 1) {
+        // Return a config, but we use the blocking promise in discoverAgents
+      }
+      return makeAgentConfig("agent-a");
+    });
+
+    // Make discoverAgents block on first call
+    let discoverCallCount = 0;
+    mockedDiscoverAgents.mockImplementation((() => {
+      discoverCallCount++;
+      if (discoverCallCount === 1) {
+        // We need the first handleAgentChange to take time
+        // Using setTimeout to resolve after second call is queued
+        setTimeout(() => resolveFirst(), 10);
+      }
+      return ["agent-a"];
+    }) as any);
 
     const ctx = makeContext();
-    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
-    mockedLoadAgentConfig.mockReturnValue(makeAgentConfig("agent-a"));
 
     const handle = watchAgents(ctx);
 
-    // Start first change (will hang in buildSingleAgentImage)
+    // Start first change
     const firstChange = handle._handleAgentChange("agent-a");
 
-    // Wait for build to start, then immediately trigger second change
-    // (it should be added to pendingRebuild since first is still running)
+    // Immediately trigger second change (should be added to pendingRebuild)
     const secondChange = handle._handleAgentChange("agent-a");
 
     // Both should complete
     await Promise.all([firstChange, secondChange]);
 
-    // buildSingleAgentImage was called at least twice (once for each reload)
-    expect(mockedBuildSingleAgentImage).toHaveBeenCalledTimes(2);
+    // discoverAgents was called at least twice (once for each reload)
+    expect(discoverCallCount).toBeGreaterThanOrEqual(2);
   });
 
   describe("buildWebhookTrigger", () => {
@@ -683,7 +610,7 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
       const newConfig = makeAgentConfig("agent-b");
       mockedDiscoverAgents.mockReturnValue(["agent-b"]);
       mockedLoadAgentConfig.mockReturnValue(newConfig);
-      mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
+
 
       // Override createRunner to use our pool
       ctx.createRunner = vi.fn(() => runner);
@@ -720,7 +647,7 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
 
       mockedDiscoverAgents.mockReturnValue(["agent-b"]);
       mockedLoadAgentConfig.mockReturnValue(newConfig);
-      mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
+
 
       const handle2 = watchAgents(ctx2);
       await handle2._handleAgentChange("agent-b");
@@ -743,7 +670,7 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
       const newConfig = makeAgentConfig("agent-b");
       mockedDiscoverAgents.mockReturnValue(["agent-b"]);
       mockedLoadAgentConfig.mockReturnValue(newConfig);
-      mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
+
 
       const handle = watchAgents(ctx);
       await handle._handleAgentChange("agent-b");
@@ -764,7 +691,7 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
       const newConfig = makeAgentConfig("agent-b");
       mockedDiscoverAgents.mockReturnValue(["agent-b"]);
       mockedLoadAgentConfig.mockReturnValue(newConfig);
-      mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
+
 
       const handle = watchAgents(ctx);
       await handle._handleAgentChange("agent-b");
@@ -789,7 +716,7 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
       const newConfig = makeAgentConfig("agent-b");
       mockedDiscoverAgents.mockReturnValue(["agent-b"]);
       mockedLoadAgentConfig.mockReturnValue(newConfig);
-      mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
+
 
       // Create runner already running so getAvailableRunner returns null
       const busyRunner = makeMockRunner("agent-b");
@@ -823,7 +750,7 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
       const newConfig = makeAgentConfig("agent-b");
       mockedDiscoverAgents.mockReturnValue(["agent-b"]);
       mockedLoadAgentConfig.mockReturnValue(newConfig);
-      mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
+
 
       const busyRunner = makeMockRunner("agent-b");
       busyRunner.isRunning = true;
@@ -854,7 +781,7 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
       const newConfig = makeAgentConfig("agent-b");
       mockedDiscoverAgents.mockReturnValue(["agent-b"]);
       mockedLoadAgentConfig.mockReturnValue(newConfig);
-      mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
+
 
       const idleRunner = makeMockRunner("agent-b");
       ctx.createRunner = vi.fn(() => idleRunner);
@@ -935,7 +862,7 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     const newConfig = makeAgentConfig("agent-b", { schedule: "0 * * * *" });
     mockedDiscoverAgents.mockReturnValue(["agent-b"]);
     mockedLoadAgentConfig.mockReturnValue(newConfig);
-    mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
+
 
     const handle = watchAgents(ctx);
     await handle._handleAgentChange("agent-b");
@@ -998,7 +925,7 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     const newConfig = makeAgentConfig("agent-b", { schedule: "0 * * * *" });
     mockedDiscoverAgents.mockReturnValue(["agent-b"]);
     mockedLoadAgentConfig.mockReturnValue(newConfig);
-    mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
+
 
     const handle = watchAgents(ctx);
     await handle._handleAgentChange("agent-b");
@@ -1029,7 +956,7 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     const newConfig = makeAgentConfig("agent-b", { schedule: "0 * * * *" });
     mockedDiscoverAgents.mockReturnValue(["agent-b"]);
     mockedLoadAgentConfig.mockReturnValue(newConfig);
-    mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
+
 
     const handle = watchAgents(ctx);
     await handle._handleAgentChange("agent-b");
@@ -1055,7 +982,7 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     const newConfig = makeAgentConfig("agent-b", { schedule: "0 * * * *" });
     mockedDiscoverAgents.mockReturnValue(["agent-b"]);
     mockedLoadAgentConfig.mockReturnValue(newConfig);
-    mockedBuildSingleAgentImage.mockResolvedValue("agent-b:v1");
+
 
     const handle = watchAgents(ctx);
     await handle._handleAgentChange("agent-b");
@@ -1354,43 +1281,6 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     expect(cronJobForA).toBeUndefined();
   });
 
-  // ── handleUpdatedAgent: revert to container runtime (lines 335-336) ────────
-
-  it("updated agent: reverts agentRuntimeOverrides to container runtime when new config has no host-user runtime", async () => {
-    const runner = {
-      ...makeMockRunner("agent-a"),
-      setRuntime: vi.fn(),
-    };
-    const pool = new RunnerPool([runner]);
-    // Old config has host-user runtime
-    const oldConfig = makeAgentConfig("agent-a", {
-      runtime: { type: "host-user", run_as: "al-agent", groups: [] },
-    });
-    const ctx = makeContext({
-      agentConfigs: [oldConfig],
-      runnerPools: { "agent-a": pool },
-      agentRuntimeOverrides: { "agent-a": { type: "host-user-runtime" } as any },
-    });
-
-    // New config has NO host-user runtime (reverted to container runtime)
-    const updatedConfig = makeAgentConfig("agent-a", { schedule: "*/5 * * * *" });
-    mockedDiscoverAgents.mockReturnValue(["agent-a"]);
-    mockedLoadAgentConfig.mockReturnValue(updatedConfig);
-
-    // createAgentRuntimeOverride returns null for the new config (no host-user runtime)
-    mockCreateAgentRuntimeOverride.mockReturnValueOnce(null);
-
-    const handle = watchAgents(ctx);
-    await handle._handleAgentChange("agent-a");
-
-    // agentRuntimeOverrides should have the key removed
-    expect(ctx.agentRuntimeOverrides["agent-a"]).toBeUndefined();
-    expect(ctx.logger.info).toHaveBeenCalledWith(
-      expect.objectContaining({ agent: "agent-a" }),
-      "hot reload: reverted to container runtime"
-    );
-  });
-
   // ── handleChangedAgent: scale 0→N transition ─────────────────────────────
 
   it("handles changed agent: scale 0→N creates pool, runners, cron, and webhooks", async () => {
@@ -1405,7 +1295,7 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     const enabledConfig = makeAgentConfig("agent-a", { scale: 3, schedule: "0 * * * *" });
     mockedDiscoverAgents.mockReturnValue(["agent-a"]);
     mockedLoadAgentConfig.mockReturnValue(enabledConfig);
-    mockedBuildSingleAgentImage.mockResolvedValue("agent-a:v1");
+
 
     const handle = watchAgents(ctx);
     await handle._handleAgentChange("agent-a");
@@ -1445,7 +1335,7 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     const enabledConfig = makeAgentConfig("agent-a", { scale: 2, schedule: undefined });
     mockedDiscoverAgents.mockReturnValue(["agent-a"]);
     mockedLoadAgentConfig.mockReturnValue(enabledConfig);
-    mockedBuildSingleAgentImage.mockResolvedValue("agent-a:v1");
+
 
     const handle = watchAgents(ctx);
     await handle._handleAgentChange("agent-a");
@@ -1470,7 +1360,7 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     const enabledConfig = makeAgentConfig("agent-a", { scale: 1, webhooks: [{ source: "github", trigger: { event: "push" } }] });
     mockedDiscoverAgents.mockReturnValue(["agent-a"]);
     mockedLoadAgentConfig.mockReturnValue(enabledConfig);
-    mockedBuildSingleAgentImage.mockResolvedValue("agent-a:v1");
+
 
     const handle = watchAgents(ctx);
     await handle._handleAgentChange("agent-a");
@@ -1499,7 +1389,7 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     const enabledConfig = makeAgentConfig("agent-a", { scale: 1, schedule: "0 * * * *" });
     mockedDiscoverAgents.mockReturnValue(["agent-a"]);
     mockedLoadAgentConfig.mockReturnValue(enabledConfig);
-    mockedBuildSingleAgentImage.mockResolvedValue("agent-a:v1");
+
 
     const handle = watchAgents(ctx);
     await handle._handleAgentChange("agent-a");
@@ -1530,7 +1420,7 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     const enabledConfig = makeAgentConfig("agent-a", { scale: 1, schedule: "0 * * * *" });
     mockedDiscoverAgents.mockReturnValue(["agent-a"]);
     mockedLoadAgentConfig.mockReturnValue(enabledConfig);
-    mockedBuildSingleAgentImage.mockResolvedValue("agent-a:v1");
+
 
     const handle = watchAgents(ctx);
     await handle._handleAgentChange("agent-a");
@@ -1566,7 +1456,7 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     const enabledConfig = makeAgentConfig("agent-a", { scale: 1, schedule: "0 * * * *" });
     mockedDiscoverAgents.mockReturnValue(["agent-a"]);
     mockedLoadAgentConfig.mockReturnValue(enabledConfig);
-    mockedBuildSingleAgentImage.mockResolvedValue("agent-a:v1");
+
 
     const handle = watchAgents(ctx);
     await handle._handleAgentChange("agent-a");
@@ -1596,7 +1486,7 @@ describe("watchAgents handler (via _handleAgentChange)", () => {
     const enabledConfig = makeAgentConfig("agent-a", { scale: 1, schedule: "0 * * * *" });
     mockedDiscoverAgents.mockReturnValue(["agent-a"]);
     mockedLoadAgentConfig.mockReturnValue(enabledConfig);
-    mockedBuildSingleAgentImage.mockResolvedValue("agent-a:v1");
+
 
     const handle = watchAgents(ctx);
     await handle._handleAgentChange("agent-a");

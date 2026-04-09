@@ -52,7 +52,6 @@ vi.mock("../../src/shared/config.js", () => ({
 }));
 
 import { setupGateway } from "../../src/scheduler/gateway-setup.js";
-import { createLogger } from "../../src/shared/logger.js";
 
 // --- Helpers ---
 
@@ -67,15 +66,10 @@ function makeLogger() {
 }
 
 function makeGatewayResult(overrides?: Record<string, any>) {
-  const registerContainer = vi.fn().mockResolvedValue(undefined);
-  const unregisterContainer = vi.fn().mockResolvedValue(undefined);
   return {
     server: {},
-    registerContainer,
-    unregisterContainer,
     lockStore: { releaseAll: vi.fn(), dispose: vi.fn() },
     callStore: { failAllByCaller: vi.fn(), dispose: vi.fn() },
-    setCallDispatcher: vi.fn(),
     close: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
@@ -114,9 +108,8 @@ function makeBaseOpts(state: any, gatewayResult: any) {
     agentConfigs: [makeAgentConfig("dev"), makeAgentConfig("reviewer")],
     webhookSecrets: {},
     events: makeEvents(),
-    mkLogger: createLogger as any,
     logger: makeLogger(),
-  };
+  } as any;
 }
 
 describe("setupGateway", () => {
@@ -127,7 +120,7 @@ describe("setupGateway", () => {
   });
 
   describe("basic setup", () => {
-    it("returns gateway, gatewayPort, registerContainer, and unregisterContainer", async () => {
+    it("returns gateway and gatewayPort", async () => {
       const gatewayResult = makeGatewayResult();
       const state = makeSchedulerState();
       const opts = makeBaseOpts(state, gatewayResult);
@@ -136,8 +129,6 @@ describe("setupGateway", () => {
 
       expect(result).toHaveProperty("gateway");
       expect(result).toHaveProperty("gatewayPort", 8080);
-      expect(result).toHaveProperty("registerContainer");
-      expect(result).toHaveProperty("unregisterContainer");
     });
 
     it("uses globalConfig gateway port when set", async () => {

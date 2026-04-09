@@ -1,17 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 
-// Mock GCP auth module for cloudRunDockerExtension.init tests
-vi.mock("../../src/cloud/gcp/auth.js", () => ({
-  GcpAuth: class MockGcpAuth {
-    constructor(public key: any) {}
-    async getAccessToken() { return "mock-token"; }
-  },
-  parseServiceAccountKey: (json: string) => JSON.parse(json),
-}));
 import {
   localDockerExtension,
   sshDockerExtension,
-  cloudRunDockerExtension,
 } from "../../../src/docker/providers/index.js";
 
 describe("localDockerExtension", () => {
@@ -168,65 +159,3 @@ describe("sshDockerExtension", () => {
   });
 });
 
-describe("cloudRunDockerExtension", () => {
-  describe("metadata", () => {
-    it("has name 'cloud-run'", () => {
-      expect(cloudRunDockerExtension.metadata.name).toBe("cloud-run");
-    });
-
-    it("has version '1.0.0'", () => {
-      expect(cloudRunDockerExtension.metadata.version).toBe("1.0.0");
-    });
-
-    it("has type 'runtime'", () => {
-      expect(cloudRunDockerExtension.metadata.type).toBe("runtime");
-    });
-
-    it("requires gcp_service_account credential", () => {
-      const types = cloudRunDockerExtension.metadata.requiredCredentials!.map((c) => c.type);
-      expect(types).toContain("gcp_service_account");
-    });
-
-    it("has a non-empty description", () => {
-      expect(typeof cloudRunDockerExtension.metadata.description).toBe("string");
-      expect(cloudRunDockerExtension.metadata.description.length).toBeGreaterThan(0);
-    });
-  });
-
-  describe("init", () => {
-    it("resolves without error when no config is provided", async () => {
-      await expect(cloudRunDockerExtension.init()).resolves.toBeUndefined();
-    });
-
-    it("initializes provider when all required config is provided", async () => {
-      const keyJson = JSON.stringify({
-        type: "service_account",
-        project_id: "my-project",
-        private_key_id: "key-id",
-        private_key: "-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----\n",
-        client_email: "sa@my-project.iam.gserviceaccount.com",
-        client_id: "123",
-        auth_uri: "https://accounts.google.com/o/oauth2/auth",
-        token_uri: "https://oauth2.googleapis.com/token",
-      });
-
-      await cloudRunDockerExtension.init({
-        keyJson,
-        project: "my-project",
-        region: "us-central1",
-        artifactRegistry: "my-repo",
-        serviceAccount: "sa@my-project.iam.gserviceaccount.com",
-      });
-
-      // Provider should now be set (not null)
-      expect(cloudRunDockerExtension.provider).toBeDefined();
-      expect(cloudRunDockerExtension.provider).not.toBeNull();
-    });
-  });
-
-  describe("shutdown", () => {
-    it("resolves without error", async () => {
-      await expect(cloudRunDockerExtension.shutdown()).resolves.toBeUndefined();
-    });
-  });
-});

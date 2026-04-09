@@ -25,15 +25,7 @@ vi.mock("../../src/docker/host-user-runtime.js", () => ({
   },
 }));
 
-// image-builder mock (for buildAgentImages tests)
-vi.mock("../../src/execution/image-builder.js", () => ({
-  buildAllImages: vi.fn().mockResolvedValue({
-    baseImage: "test-base:latest",
-    agentImages: { "dev": "test-agent-dev:latest" },
-  }),
-}));
-
-import { createContainerRuntime, buildAgentImages } from "../../src/execution/runtime-factory.js";
+import { createContainerRuntime } from "../../src/execution/runtime-factory.js";
 import { globalRegistry } from "../../src/extensions/registry.js";
 import type { AgentConfig } from "../../src/shared/config.js";
 import type { Runtime } from "../../src/docker/runtime.js";
@@ -50,19 +42,6 @@ function makeAgentConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     schedule: "0 * * * *",
     ...overrides,
   };
-}
-
-/** A minimal runtime that supports container operations */
-function makeContainerRuntime(): Runtime & { buildImage: any; pushImage: any } {
-  return {
-    buildImage: vi.fn().mockResolvedValue("img:latest"),
-    pushImage: vi.fn().mockResolvedValue("registry/img:latest"),
-  } as any;
-}
-
-/** A minimal runtime that does NOT support container operations */
-function makeNonContainerRuntime(): Runtime {
-  return {} as any;
 }
 
 describe("createContainerRuntime", () => {
@@ -201,50 +180,3 @@ describe("createContainerRuntime", () => {
   });
 });
 
-describe("buildAgentImages", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("throws AgentError when the runtime does not support container operations", async () => {
-    const nonContainerRuntime = makeNonContainerRuntime();
-
-    await expect(
-      buildAgentImages({
-        projectPath: "/tmp/fake",
-        globalConfig: {} as any,
-        activeAgentConfigs: [makeAgentConfig()],
-        runtime: nonContainerRuntime,
-        logger: makeLogger(),
-        skills: {} as any,
-      })
-    ).rejects.toThrow(AgentError);
-
-    await expect(
-      buildAgentImages({
-        projectPath: "/tmp/fake",
-        globalConfig: {} as any,
-        activeAgentConfigs: [makeAgentConfig()],
-        runtime: nonContainerRuntime,
-        logger: makeLogger(),
-        skills: {} as any,
-      })
-    ).rejects.toThrow(/Cannot build images/);
-  });
-
-  it("returns base and agent images when runtime supports container operations", async () => {
-    const containerRuntime = makeContainerRuntime();
-
-    const result = await buildAgentImages({
-      projectPath: "/tmp/fake",
-      globalConfig: {} as any,
-      activeAgentConfigs: [makeAgentConfig()],
-      runtime: containerRuntime,
-      logger: makeLogger(),
-      skills: {} as any,
-    });
-
-    expect(result.baseImage).toBe("test-base:latest");
-    expect(result.agentImages).toEqual({ dev: "test-agent-dev:latest" });
-  });
-});
