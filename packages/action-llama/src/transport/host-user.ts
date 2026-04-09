@@ -46,7 +46,7 @@ export class HostUserTransport implements Transport {
 
   /** Start the persistent shell as the target user. Must be called before exec(). */
   async connect(): Promise<void> {
-    const args = ["-u", this.opts.user, "--", "bash", "--norc", "--noprofile"];
+    const args = ["-u", this.opts.user, "--", "sh"];
 
     // If groups are specified, use sg or newgrp — but sudo -u is simpler
     // Groups are set via the user's OS group membership, not per-command

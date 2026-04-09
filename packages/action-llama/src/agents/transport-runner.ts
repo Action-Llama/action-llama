@@ -402,8 +402,20 @@ export class TransportAgentRunner implements PoolRunner {
     const containerName = `al-${this.agentConfig.name}-${runId}`;
     const memory = this.globalConfig.local?.memory || "4g";
 
-    // Ensure the base image is available locally
-    this.ensureImageAvailable(this.baseImage);
+    // Build agent-specific image if a Dockerfile exists, otherwise use base
+    const { ensureAgentImage } = await import("../docker/image.js");
+    const image = await ensureAgentImage(
+      this.agentConfig.name,
+      this.projectPath,
+      this.baseImage,
+      (msg) => {
+        this.logger.info(msg);
+        this.statusTracker?.addLogLine(this.agentConfig.name, msg);
+      },
+    );
+
+    // Ensure the image is available locally
+    this.ensureImageAvailable(image);
 
     const args = [
       "run", "-d",
@@ -420,7 +432,7 @@ export class TransportAgentRunner implements PoolRunner {
     }
 
     // Keep the container alive with tail -f /dev/null
-    args.push(this.baseImage, "tail", "-f", "/dev/null");
+    args.push(image, "tail", "-f", "/dev/null");
 
     execFileSync("docker", args, {
       timeout: 30_000,

@@ -75,7 +75,7 @@ describe("SshTransport", () => {
         "ssh",
         expect.arrayContaining([
           "-tt", "-p", "2222", "-i", "/keys/id_rsa",
-          "deploy@10.0.0.1", "bash", "--norc", "--noprofile",
+          "deploy@10.0.0.1", "sh",
         ]),
         expect.any(Object),
       );

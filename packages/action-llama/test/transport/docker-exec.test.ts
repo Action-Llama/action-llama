@@ -120,7 +120,7 @@ describe("DockerExecTransport", () => {
       const { spawn } = await import("child_process");
       expect(spawn).toHaveBeenCalledWith(
         "docker",
-        ["exec", "-i", "my-container", "bash", "--norc", "--noprofile"],
+        ["exec", "-i", "my-container", "sh"],
         expect.any(Object),
       );
     });
@@ -134,7 +134,7 @@ describe("DockerExecTransport", () => {
       const { spawn } = await import("child_process");
       expect(spawn).toHaveBeenCalledWith(
         "docker",
-        ["exec", "-i", "-u", "agent", "c1", "bash", "--norc", "--noprofile"],
+        ["exec", "-i", "-u", "agent", "c1", "sh"],
         expect.any(Object),
       );
     });

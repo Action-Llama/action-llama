@@ -138,6 +138,18 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     process.exit(1);
   }
 
+  // Build project base image if a customized Dockerfile exists
+  const { ensureProjectBaseImage } = await import("../docker/image.js");
+  const effectiveBaseImage = await ensureProjectBaseImage(
+    projectPath,
+    baseImage,
+    (msg) => {
+      statusTracker?.setBaseImageStatus(msg);
+      logger.info(msg);
+    },
+  );
+  statusTracker?.setBaseImageStatus(null);
+
   // Create scheduler tools dependencies (lock/call stores from the gateway)
   const lockStore = gateway.lockStore;
   const callStore = gateway.callStore;
@@ -210,7 +222,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   // Create runner pools with transport-backed runners
   const { runnerPools, createRunner, actualScales } = await createRunnerPools({
     globalConfig, agentConfigs,
-    baseImage, statusTracker, mkLogger, projectPath, logger,
+    baseImage: effectiveBaseImage, statusTracker, mkLogger, projectPath, logger,
     schedulerToolsDeps,
   });
 
@@ -287,7 +299,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     runnerPools, agentConfigs,
     cronJobs, schedulerCtx,
     webhookRegistry, webhookSources, statusTracker,
-    logger, timezone, baseImage, createRunner,
+    logger, timezone, baseImage: effectiveBaseImage, createRunner,
   });
   logger.info("Watching agents/ for changes (hot reload enabled)");
 

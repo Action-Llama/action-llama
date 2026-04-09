@@ -111,7 +111,7 @@ describe("HostUserTransport", () => {
 
       expect(spawn).toHaveBeenCalledWith(
         "sudo",
-        ["-u", "al-agent", "--", "bash", "--norc", "--noprofile"],
+        ["-u", "al-agent", "--", "sh"],
         expect.any(Object),
       );
     });

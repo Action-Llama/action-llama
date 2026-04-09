@@ -3,7 +3,7 @@
  * via `docker exec -i`, maintaining a persistent shell session.
  *
  * Shell state (cwd, env vars) persists across exec() calls because all commands
- * run in the same bash process. File I/O uses `docker cp` for efficient batch
+ * run in the same sh process. File I/O uses `docker cp` for efficient batch
  * transfers without framing issues.
  */
 
@@ -52,7 +52,7 @@ export class DockerExecTransport implements Transport {
     if (this.user) {
       args.push("-u", this.user);
     }
-    args.push(this.container, "bash", "--norc", "--noprofile");
+    args.push(this.container, "sh");
 
     this.shell = spawn("docker", args, {
       stdio: ["pipe", "pipe", "pipe"],
@@ -221,7 +221,7 @@ export class DockerExecTransport implements Transport {
       const pathArgs = paths.map(p => shellQuote(p)).join(" ");
       execFileSync("docker", [
         "exec", this.container,
-        "bash", "-c", `tar cf ${remoteTar} --ignore-failed-read -P ${pathArgs} 2>/dev/null; true`,
+        "sh", "-c", `tar cf ${remoteTar} --ignore-failed-read -P ${pathArgs} 2>/dev/null; true`,
       ], {
         timeout: 30_000,
         stdio: ["pipe", "pipe", "pipe"],
@@ -340,7 +340,7 @@ export class DockerExecTransport implements Transport {
       // Extract on container and clean up
       execFileSync("docker", [
         "exec", this.container,
-        "bash", "-c", `tar xf ${remoteTar} -P -C / && rm -f ${remoteTar}`,
+        "sh", "-c", `tar xf ${remoteTar} -P -C / && rm -f ${remoteTar}`,
       ], {
         timeout: 30_000,
         stdio: ["pipe", "pipe", "pipe"],

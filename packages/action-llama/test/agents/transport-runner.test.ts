@@ -71,6 +71,13 @@ vi.mock("../../src/transport/operations.js", () => ({
   createTransportTools: vi.fn(() => []),
 }));
 
+// Mock image building — return the baseImage unchanged (no Docker needed for unit tests)
+vi.mock("../../src/docker/image.js", () => ({
+  ensureAgentImage: vi.fn(async (_name: string, _path: string, baseImage: string) => baseImage),
+  ensureProjectBaseImage: vi.fn(async (_path: string, baseImage: string) => baseImage),
+  imageExists: vi.fn(() => true),
+}));
+
 // Mock credentials
 vi.mock("../../src/shared/credentials.js", () => ({
   parseCredentialRef: (ref: string) => {

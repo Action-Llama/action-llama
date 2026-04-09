@@ -74,7 +74,7 @@ export class SshTransport implements Transport {
     args.push(target);
 
     // Launch interactive shell
-    args.push("bash", "--norc", "--noprofile");
+    args.push("sh");
 
     this.shell = spawn("ssh", args, {
       stdio: ["pipe", "pipe", "pipe"],

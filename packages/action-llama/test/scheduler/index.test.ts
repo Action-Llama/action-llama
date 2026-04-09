@@ -123,6 +123,13 @@ vi.mock("../../src/telemetry/index.js", () => ({
   initTelemetry: (...args: any[]) => mockInitTelemetry(...args),
 }));
 
+// Mock image building (no Docker needed for unit tests)
+vi.mock("../../src/docker/image.js", () => ({
+  ensureProjectBaseImage: vi.fn(async (_path: string, baseImage: string) => baseImage),
+  ensureAgentImage: vi.fn(async (_name: string, _path: string, baseImage: string) => baseImage),
+  imageExists: vi.fn(() => true),
+}));
+
 // Mock webhook-setup (track call order for early binding test)
 const mockRegisterWebhookBindings = vi.fn();
 const mockSetupWebhookRegistry = vi.fn().mockResolvedValue({ registry: undefined, secrets: {} });
@@ -515,6 +522,7 @@ describe("startScheduler", () => {
         setAgentDescription: vi.fn(),
         getAllAgents: vi.fn().mockReturnValue([]),
         unregisterAgent: vi.fn(),
+        setBaseImageStatus: vi.fn(),
       } as any;
     }
 
@@ -739,6 +747,7 @@ describe("startScheduler", () => {
         disableAgent: vi.fn(),
         getAgentScale: vi.fn().mockReturnValue(1), // returns 1, but actual is 3
         updateAgentScale: vi.fn(),
+        setBaseImageStatus: vi.fn(),
       } as any;
 
       await startScheduler(tmpDir, undefined, tracker);
