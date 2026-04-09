@@ -1,5 +1,18 @@
 # @action-llama/action-llama
 
+## 0.27.2
+
+### Patch Changes
+
+- [`a22a1b1`](https://github.com/Action-Llama/action-llama/commit/a22a1b1acca563ee549e0897967a684842f0bcbe) Thanks [@asselstine](https://github.com/asselstine)! - Fix ModelRegistry usage to use static `create()` factory method instead of private constructor, matching upstream pi-coding-agent API change.
+
+- [#591](https://github.com/Action-Llama/action-llama/pull/591) [`fbb37b0`](https://github.com/Action-Llama/action-llama/commit/fbb37b0c953d1bef3c65e6a881ef29df0e5aa3e0) Thanks [@asselstine](https://github.com/asselstine)! - Removed agent action controls from the dashboard list and moved the enable/disable toggle into the shared agent page header. This keeps the agents index read-only while making the toggle available across agent tabs. Closes [#589](https://github.com/Action-Llama/action-llama/issues/589).
+
+- [`8513473`](https://github.com/Action-Llama/action-llama/commit/85134737c069b76cf1a294def872eaccae4cc915) Thanks [@asselstine](https://github.com/asselstine)! - Fix MaxListenersExceededWarning for AbortSignal during agent execution. The pi library shares AbortSignals across parallel tool/API calls, which accumulated >10 listeners. Patched AbortController at agent entry points to raise the limit to 20.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.27.2
+
 ## 0.27.1
 
 ### Patch Changes
