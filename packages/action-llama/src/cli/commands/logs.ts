@@ -129,15 +129,14 @@ function formatConversationEntry(entry: LogEntry, showAll = false): string | nul
   // ── Tool result ──
   if (msg === "conversation.tool_result") {
     const tool = String(entry.tool || "unknown");
-    const cmd = entry.cmd ? `\n          ${DIM}$ ${String(entry.cmd)}${RESET}` : "";
     const text = String(entry.resultText || entry.result || "");
     const rendered = text
       ? `\n          ${DIM}${text.split("\n").join(`\n          `)}${RESET}`
       : "";
     if (entry.isError) {
-      return `${time}  ${instanceTag}${RED}✗ ${tool} failed${RESET}${cmd}${rendered}`;
+      return `${time}  ${instanceTag}${RED}✗ ${tool} failed${RESET}${rendered}`;
     }
-    return `${time}  ${instanceTag}${GRAY}↳ ${tool} result${RESET}${cmd}${rendered}`;
+    return `${time}  ${instanceTag}${GRAY}↳ ${tool} result${RESET}${rendered}`;
   }
 
   // ── Tool error ──
