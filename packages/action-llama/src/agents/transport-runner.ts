@@ -422,6 +422,7 @@ export class TransportAgentRunner implements PoolRunner {
       "--name", containerName,
       "--tmpfs", "/workspace:rw,exec,nosuid",
       "--tmpfs", "/tmp:rw,exec,nosuid",
+      "--tmpfs", "/credentials:rw,nosuid,nodev,noexec",
       "--cap-drop", "ALL",
       "--security-opt", "no-new-privileges:true",
       "--memory", memory,

@@ -307,7 +307,7 @@ describe("DockerExecTransport", () => {
       expect(mockExecFileSync).not.toHaveBeenCalled();
     });
 
-    it("uses docker cp for single file", async () => {
+    it("writes files via base64 through the shell", async () => {
       const transport = new DockerExecTransport({ container: "c1" });
       autoRespondToDelimiters(mockShell);
       await transport.connect();
@@ -317,28 +317,13 @@ describe("DockerExecTransport", () => {
 
       await transport.writeFiles(files);
 
-      // Should ensure parent directory exists
-      expect(mockExecFileSync).toHaveBeenCalledWith(
-        "docker",
-        ["exec", "c1", "mkdir", "-p", "/app"],
-        expect.any(Object),
-      );
-
-      // Should docker cp the file
-      expect(mockExecFileSync).toHaveBeenCalledWith(
-        "docker",
-        ["cp", expect.stringContaining("output.txt"), "c1:/app/output.txt"],
-        expect.any(Object),
-      );
-
-      // Should have written the content locally first
-      expect(mockWriteFileSync).toHaveBeenCalledWith(
-        expect.stringContaining("output.txt"),
-        Buffer.from("result"),
-      );
+      // Should have sent mkdir and base64 write commands through the shell
+      const writes = mockShell.stdin.write.mock.calls.map((c: any) => c[0]);
+      expect(writes.some((w: string) => w.includes("mkdir -p"))).toBe(true);
+      expect(writes.some((w: string) => w.includes("base64 -d"))).toBe(true);
     });
 
-    it("uses tar for multiple files", async () => {
+    it("writes multiple files via base64 through the shell", async () => {
       const transport = new DockerExecTransport({ container: "c1" });
       autoRespondToDelimiters(mockShell);
       await transport.connect();
@@ -349,23 +334,10 @@ describe("DockerExecTransport", () => {
 
       await transport.writeFiles(files);
 
-      // Should create a local tar
-      const tarCall = mockExecFileSync.mock.calls.find(
-        (c: any[]) => c[0] === "tar" && c[1]?.[0] === "cf",
-      );
-      expect(tarCall).toBeDefined();
-
-      // Should docker cp the tar to container
-      const cpCall = mockExecFileSync.mock.calls.find(
-        (c: any[]) => c[0] === "docker" && c[1]?.[0] === "cp" && c[1]?.[1]?.includes("batch.tar"),
-      );
-      expect(cpCall).toBeDefined();
-
-      // Should extract on container
-      const extractCall = mockExecFileSync.mock.calls.find(
-        (c: any[]) => c[0] === "docker" && c[1]?.[0] === "exec" && c[1]?.some((a: string) => a.includes("tar xf")),
-      );
-      expect(extractCall).toBeDefined();
+      // Should have sent base64 commands for each file
+      const writes = mockShell.stdin.write.mock.calls.map((c: any) => c[0]);
+      const b64Writes = writes.filter((w: string) => w.includes("base64 -d"));
+      expect(b64Writes.length).toBeGreaterThanOrEqual(2);
     });
   });
 

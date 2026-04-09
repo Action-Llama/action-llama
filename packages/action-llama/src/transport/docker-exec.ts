@@ -3,14 +3,14 @@
  * via `docker exec -i`, maintaining a persistent shell session.
  *
  * Shell state (cwd, env vars) persists across exec() calls because all commands
- * run in the same sh process. File I/O uses `docker cp` for efficient batch
- * transfers without framing issues.
+ * run in the same sh process. File reads use `docker cp`; file writes use
+ * base64 over the shell to ensure correct ownership in --cap-drop ALL containers.
  */
 
 import { spawn, execFileSync, type ChildProcess } from "child_process";
 import { randomBytes } from "crypto";
-import { mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync, mkdirSync } from "fs";
-import { join, dirname, basename } from "path";
+import { mkdtempSync, readFileSync, rmSync } from "fs";
+import { join, dirname } from "path";
 import { tmpdir } from "os";
 import type { Transport, ExecResult, ExecOptions } from "./transport.js";
 
@@ -207,64 +207,14 @@ export class DockerExecTransport implements Transport {
     const result = new Map<string, Buffer>();
     if (paths.length === 0) return result;
 
-    if (paths.length === 1) {
-      return this.readSingleFile(paths[0]);
-    }
-
-    // Batch read: tar on the container → docker cp the tar → extract locally
-    const tmpDir = mkdtempSync(join(tmpdir(), "al-read-"));
-    try {
-      const tarName = `al-batch-${randomBytes(4).toString("hex")}.tar`;
-      const remoteTar = `/tmp/${tarName}`;
-
-      // Create tar on container (ignoring missing files, using absolute paths)
-      const pathArgs = paths.map(p => shellQuote(p)).join(" ");
-      execFileSync("docker", [
-        "exec", this.container,
-        "sh", "-c", `tar cf ${remoteTar} --ignore-failed-read -P ${pathArgs} 2>/dev/null; true`,
-      ], {
-        timeout: 30_000,
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-
-      // Copy tar to local
-      execFileSync("docker", ["cp", `${this.container}:${remoteTar}`, join(tmpDir, "batch.tar")], {
-        timeout: 30_000,
-      });
-
-      // Clean up tar on container
-      execFileSync("docker", ["exec", this.container, "rm", "-f", remoteTar], {
-        timeout: 5_000,
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-
-      // Extract locally (with -P to preserve absolute paths)
-      execFileSync("tar", ["xf", join(tmpDir, "batch.tar"), "-P", "-C", tmpDir], {
-        timeout: 30_000,
-      });
-
-      // Read extracted files — tar with -P preserves the full path under tmpDir
-      for (const path of paths) {
-        const localPath = join(tmpDir, path);
-        try {
-          result.set(path, readFileSync(localPath));
-        } catch {
-          // File wasn't in the tar (didn't exist on container)
-        }
+    for (const path of paths) {
+      try {
+        const single = await this.readSingleFile(path);
+        const content = single.get(path);
+        if (content) result.set(path, content);
+      } catch {
+        // Skip missing files
       }
-    } catch {
-      // Fallback: read files one by one
-      for (const path of paths) {
-        try {
-          const single = await this.readSingleFile(path);
-          const content = single.get(path);
-          if (content) result.set(path, content);
-        } catch {
-          // Skip missing files
-        }
-      }
-    } finally {
-      rmSync(tmpDir, { recursive: true, force: true });
     }
 
     return result;
@@ -290,63 +240,20 @@ export class DockerExecTransport implements Transport {
   async writeFiles(files: Map<string, Buffer>): Promise<void> {
     if (files.size === 0) return;
 
-    const tmpDir = mkdtempSync(join(tmpdir(), "al-write-"));
-
-    try {
-      if (files.size === 1) {
-        const [[path, content]] = [...files.entries()];
-
-        // Ensure parent directory exists on container
-        const dir = dirname(path);
-        if (dir !== "/" && dir !== ".") {
-          execFileSync("docker", ["exec", this.container, "mkdir", "-p", dir], {
-            timeout: 10_000,
-            stdio: ["pipe", "pipe", "pipe"],
-          });
-        }
-
-        const localPath = join(tmpDir, basename(path));
-        writeFileSync(localPath, content);
-        execFileSync("docker", ["cp", localPath, `${this.container}:${path}`], {
-          timeout: 30_000,
-        });
-        return;
+    // Write files via the persistent shell using base64, like SshTransport.
+    // This ensures files are created as the container user (not root), avoiding
+    // ownership issues with docker cp and --cap-drop ALL containers.
+    for (const [path, content] of files) {
+      const dir = dirname(path);
+      if (dir !== "/" && dir !== ".") {
+        await this.exec(`mkdir -p ${shellQuote(dir)}`);
       }
 
-      // Batch write: create a tar locally → docker cp to container → extract
-      for (const [path, content] of files) {
-        const localPath = join(tmpDir, "payload", path);
-        mkdirSync(dirname(localPath), { recursive: true });
-        writeFileSync(localPath, content);
-      }
-
-      // Create tar preserving absolute paths.
-      // List top-level entries explicitly (not ".") to avoid a "." entry in the
-      // tar that maps to "/" on extract and fails with permission errors when
-      // the container user is non-root.
-      const tarPath = join(tmpDir, "batch.tar");
-      const payloadDir = join(tmpDir, "payload");
-      const topEntries = readdirSync(payloadDir);
-      execFileSync("tar", ["cf", tarPath, "-P", "-C", payloadDir, ...topEntries], {
-        timeout: 30_000,
-      });
-
-      // Copy tar to container
-      const remoteTar = `/tmp/al-batch-${randomBytes(4).toString("hex")}.tar`;
-      execFileSync("docker", ["cp", tarPath, `${this.container}:${remoteTar}`], {
-        timeout: 30_000,
-      });
-
-      // Extract on container and clean up
-      execFileSync("docker", [
-        "exec", this.container,
-        "sh", "-c", `tar xf ${remoteTar} -P -C / && rm -f ${remoteTar}`,
-      ], {
-        timeout: 30_000,
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-    } finally {
-      rmSync(tmpDir, { recursive: true, force: true });
+      const b64 = content.toString("base64");
+      await this.exec(
+        `echo '${b64}' | base64 -d > ${shellQuote(path)}`,
+        { timeout: 30_000 },
+      );
     }
   }
 
