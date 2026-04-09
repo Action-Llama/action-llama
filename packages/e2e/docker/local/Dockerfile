@@ -37,8 +37,8 @@ ENV AL_DISABLE_ANALYTICS=1
 # Create a non-root user for testing
 RUN addgroup -g 1001 -S testuser && \
     adduser -S testuser -u 1001 -G testuser && \
-    mkdir -p /workspace /credentials && \
-    chown testuser:testuser /workspace /credentials
+    mkdir -p /credentials && \
+    chown testuser:testuser /credentials
 
 USER testuser
 WORKDIR /home/testuser

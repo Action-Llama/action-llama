@@ -214,7 +214,7 @@ export class LocalDockerRuntime implements Runtime, ContainerRuntime {
           "-f", dockerfilePath,
           contextPath,
         ], {
-          stdio: ["pipe", "pipe", "pipe"],
+          stdio: ["pipe", "ignore", "pipe"],
           env: { ...process.env, DOCKER_BUILDKIT: "1" },
         });
 

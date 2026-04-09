@@ -53,7 +53,7 @@ import { DEFAULT_WAIT_TIMEOUT } from "../shared/constants.js";
 const MAX_MODEL_PASSES = 3;
 const DEFAULT_BACKOFF_MS = 30_000;
 const MAX_BACKOFF_MS = 300_000;
-const CONTAINER_CWD = "/workspace";
+const CONTAINER_CWD = "/tmp";
 
 export interface TransportAgentRunnerOpts {
   globalConfig: GlobalConfig;
@@ -535,7 +535,6 @@ export class TransportAgentRunner implements PoolRunner {
     const args = [
       "run", "-d",
       "--name", containerName,
-      "--tmpfs", "/workspace:rw,exec,nosuid",
       "--tmpfs", "/tmp:rw,exec,nosuid",
       "--tmpfs", "/credentials:rw,nosuid,nodev,noexec",
       "--cap-drop", "ALL",
@@ -860,7 +859,13 @@ export class TransportAgentRunner implements PoolRunner {
 
         if (event.isError) {
           const cmdPrefix = event.args?.command ? `$ ${String(event.args.command).slice(0, 80)} — ` : "";
-          this.statusTracker?.setAgentError(this.agentConfig.name, `${cmdPrefix}${resultStr.slice(0, 200)}`);
+          const errorSummary = `${cmdPrefix}${resultStr.slice(0, 200)}`;
+          this.statusTracker?.setAgentError(this.agentConfig.name, errorSummary);
+          this.logger.warn({
+            toolName: event.toolName,
+            toolCallId: event.toolCallId,
+            error: errorSummary,
+          }, "tool error");
         }
 
         this.logger.debug({

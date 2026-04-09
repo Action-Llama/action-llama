@@ -197,7 +197,7 @@ export class SshDockerRuntime implements Runtime, ContainerRuntime {
       ];
 
       const ssh = spawn("ssh", sshArgs, {
-        stdio: ["pipe", "pipe", "pipe"],
+        stdio: ["pipe", "ignore", "pipe"],
       });
 
       tar.stdout.pipe(ssh.stdin);

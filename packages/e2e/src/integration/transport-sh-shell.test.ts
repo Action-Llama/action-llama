@@ -36,7 +36,7 @@ describe.skipIf(!DOCKER)("integration: transport sh shell compatibility", { time
     containerName = `al-test-sh-${Date.now()}`;
     execFileSync("docker", [
       "run", "-d", "--name", containerName,
-      "--tmpfs", "/workspace:rw,exec,nosuid",
+      "--tmpfs", "/tmp:rw,exec,nosuid",
       "node:20-alpine", "tail", "-f", "/dev/null",
     ], { timeout: 30_000 });
 
@@ -54,7 +54,7 @@ describe.skipIf(!DOCKER)("integration: transport sh shell compatibility", { time
     // Connect via transport (uses sh, not bash)
     const transport = new DockerExecTransport({
       container: containerName,
-      cwd: "/workspace",
+      cwd: "/tmp",
     });
 
     await transport.connect();
@@ -74,21 +74,21 @@ describe.skipIf(!DOCKER)("integration: transport sh shell compatibility", { time
     expect(envResult.stdout).toBe("test123");
 
     // Test working directory persistence
-    await transport.exec("mkdir -p /workspace/subdir");
-    await transport.exec("cd /workspace/subdir");
+    await transport.exec("mkdir -p /tmp/subdir");
+    await transport.exec("cd /tmp/subdir");
     const pwdResult = await transport.exec("pwd");
-    expect(pwdResult.stdout).toContain("/workspace/subdir");
+    expect(pwdResult.stdout).toContain("/tmp/subdir");
 
     // Test file I/O via transport
     const files = new Map<string, Buffer>();
-    files.set("/workspace/test-file.txt", Buffer.from("hello from transport"));
+    files.set("/tmp/test-file.txt", Buffer.from("hello from transport"));
     await transport.writeFiles(files);
 
-    const readResult = await transport.exec("cat /workspace/test-file.txt");
+    const readResult = await transport.exec("cat /tmp/test-file.txt");
     expect(readResult.stdout).toBe("hello from transport");
 
-    const readFiles = await transport.readFiles(["/workspace/test-file.txt"]);
-    expect(readFiles.get("/workspace/test-file.txt")?.toString()).toBe("hello from transport");
+    const readFiles = await transport.readFiles(["/tmp/test-file.txt"]);
+    expect(readFiles.get("/tmp/test-file.txt")?.toString()).toBe("hello from transport");
 
     await transport.close();
   });
