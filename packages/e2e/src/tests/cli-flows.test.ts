@@ -702,12 +702,12 @@ You are a test agent for verifying extension loading.
       params: {},
     });
 
-    const messages = `${initRequest}\n${toolsListRequest}`;
-
+    // Keep stdin open briefly after writing both requests so the stdio transport
+    // has time to flush the tools/list response before the pipe closes.
     const output = await context.executeInContainer(container, [
       "bash",
       "-c",
-      `cd /home/testuser/test-project && printf '%s\\n' '${initRequest}' '${toolsListRequest}' | timeout 10 al mcp serve 2>/dev/null || true`,
+      `cd /home/testuser/test-project && { printf '%s\\n' '${initRequest}' '${toolsListRequest}'; sleep 1; } | timeout 10 al mcp serve 2>/dev/null || true`,
     ]);
 
     // Parse all JSON lines from the output
