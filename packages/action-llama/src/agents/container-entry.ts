@@ -272,6 +272,7 @@ export async function handleInvocation(init: AgentInit): Promise<number> {
     stopReason: loopResult.lastStopReason,
     turnCount: loopResult.usage?.turnCount,
     outputLength: outputText.length,
+    contextPercent: loopResult.contextPercent,
     aborted: loopResult.aborted,
     allModelsExhausted: loopResult.allModelsExhausted,
     hasError: !!loopResult.errorMessage,

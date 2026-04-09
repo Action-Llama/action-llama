@@ -275,6 +275,63 @@ EOF`,
     }
   });
 
+  it("instance logs page shows command text but hides raw tool output", async () => {
+    const page = await browser.newPage();
+    try {
+      // Write a synthetic log file with a tool_result entry
+      const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      const instanceId = "inst-browser-redact-test";
+      const logDir = "/home/testuser/test-project/.al/logs";
+      const logFile = `${logDir}/echo-agent-${today}.log`;
+      const toolResultEntry = JSON.stringify({
+        level: 30,
+        time: Date.now(),
+        msg: "conversation.tool_result",
+        instance: instanceId,
+        tool: "bash",
+        cmd: "echo hello-world-cmd-visible",
+        isError: false,
+        resultText: "UNIQUE_RAW_OUTPUT_SHOULD_NOT_APPEAR_IN_UI_12345",
+        result: "UNIQUE_RAW_OUTPUT_SHOULD_NOT_APPEAR_IN_UI_12345",
+      });
+      const startEntry = JSON.stringify({
+        level: 30,
+        time: Date.now() - 1000,
+        msg: "Agent started",
+        instance: instanceId,
+      });
+
+      await context.executeInContainer(container, [
+        "bash", "-c",
+        `mkdir -p ${logDir} && echo '${startEntry}' >> ${logFile} && echo '${toolResultEntry}' >> ${logFile}`,
+      ]);
+
+      // Log in and navigate to instance logs
+      await page.goto(`${baseURL}/login`);
+      await page.waitForSelector("input#key", { timeout: 10000 });
+      await page.fill("input#key", API_KEY);
+      await page.click('button[type="submit"]');
+      await page.waitForURL("**/dashboard", { timeout: 10000 });
+
+      await page.goto(`${baseURL}/dashboard/agents/echo-agent/instances/${instanceId}`);
+
+      // Wait for log entries to load
+      await page.waitForSelector(".font-mono", { timeout: 15000 });
+
+      // The command text should be visible
+      const pageContent = await page.content();
+      expect(pageContent).toContain("echo hello-world-cmd-visible");
+
+      // The hidden status line should be visible
+      expect(pageContent).toContain("bash result hidden");
+
+      // The raw output should NOT be visible
+      expect(pageContent).not.toContain("UNIQUE_RAW_OUTPUT_SHOULD_NOT_APPEAR_IN_UI_12345");
+    } finally {
+      await page.close();
+    }
+  });
+
   it("agent detail page loads via direct URL (SPA history fallback)", async () => {
     const page = await browser.newPage();
     try {

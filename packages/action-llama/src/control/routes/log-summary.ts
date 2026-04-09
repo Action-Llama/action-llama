@@ -163,10 +163,25 @@ export function registerLogSummaryRoutes(
     }
 
     // Build prompt — include all fields so the model sees content, tools, commands, etc.
+    // but redact verbose tool-result payloads to keep the prompt focused.
     const logText = entries
       .map((e) => {
         const { level, time, instance, ...rest } = e;
         const ts = new Date(time).toISOString();
+
+        // Redact tool-result payload text — keep metadata only
+        if (rest.msg === "conversation.tool_result") {
+          const sanitized: Record<string, unknown> = {
+            msg: rest.msg,
+            ...(rest.tool != null && { tool: rest.tool }),
+            ...(rest.cmd != null && { cmd: rest.cmd }),
+            ...(rest.isError != null && { isError: rest.isError }),
+            ...(rest.toolCallId != null && { toolCallId: rest.toolCallId }),
+            resultHidden: true,
+          };
+          return `[${ts}] ${JSON.stringify(sanitized)}`;
+        }
+
         // If there are extra fields beyond msg, include them
         const extra = Object.keys(rest).filter((k) => k !== "msg");
         if (extra.length === 0) return `[${ts}] ${e.msg}`;

@@ -14,6 +14,8 @@ export interface ConsumeResult {
   aborted: boolean;
   allModelsExhausted: boolean;
   errorMessage?: string;
+  /** Final context window usage as a percentage (0-100). */
+  contextPercent?: number;
   /** The stop_reason from the final message_end event (e.g. "end_turn", "max_tokens"). */
   lastStopReason?: string;
   /** The last few tool calls with their error status, for terminal-state diagnostics. */
@@ -71,6 +73,7 @@ export async function consumeHarness(
   let allModelsExhausted = false;
   let errorMessage: string | undefined;
   let lastStopReason: string | undefined;
+  let lastContextPercent: number | undefined;
   const lastToolResults: Array<{ tool: string; cmd?: string; isError: boolean }> = [];
   const activeToolCalls = new Map<string, { tool: string; cmd?: string }>();
 
@@ -98,6 +101,9 @@ export async function consumeHarness(
           }
           if (isConversationEvent && eventType === "turn_end" && typeof eventData?.errorMessage === "string") {
             errorMessage = eventData.errorMessage;
+          }
+          if (event.message === "context-usage" && event.data?.contextPercent != null) {
+            lastContextPercent = event.data.contextPercent as number;
           }
           log(event.level, event.message, event.data);
           break;
@@ -185,6 +191,7 @@ export async function consumeHarness(
     aborted,
     allModelsExhausted,
     errorMessage,
+    contextPercent: lastContextPercent,
     lastStopReason,
     lastToolResults,
     orphanedToolCalls: Array.from(activeToolCalls.values()),

@@ -851,6 +851,85 @@ describe("log summary route", () => {
     expect(data.error).toMatch(/AuthStorage unavailable/);
   });
 
+  it("redacts tool-result payload text from summarizer prompt while preserving metadata", async () => {
+    createMinimalAgentProject(tmpDir, "my-agent");
+    const instanceId = "inst-redact-tool";
+    const logLines = [
+      pinoLine(30, 1710700000000, "Agent started", { instance: instanceId }),
+      // conversation.tool_result with large output that should be redacted
+      JSON.stringify({
+        level: 30,
+        time: 1710700001000,
+        msg: "conversation.tool_result",
+        instance: instanceId,
+        tool: "bash",
+        cmd: "cat /etc/hosts",
+        isError: false,
+        toolCallId: "call_123",
+        resultText: "127.0.0.1 localhost\n::1 localhost\nSECRET_VERBOSE_OUTPUT_MARKER",
+        result: "127.0.0.1 localhost\n::1 localhost\nSECRET_VERBOSE_OUTPUT_MARKER",
+      }),
+      // A tool-result with an error
+      JSON.stringify({
+        level: 50,
+        time: 1710700002000,
+        msg: "conversation.tool_result",
+        instance: instanceId,
+        tool: "bash",
+        cmd: "rm -rf /tmp/bad",
+        isError: true,
+        resultText: "Permission denied: LONG_ERROR_PAYLOAD_MARKER",
+        result: "Permission denied: LONG_ERROR_PAYLOAD_MARKER",
+      }),
+      pinoLine(30, 1710700003000, "Agent finished", { instance: instanceId }),
+    ];
+    writeFileSync(
+      join(logsPath, "my-agent-2024-03-18.log"),
+      logLines.join("\n") + "\n",
+    );
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(fakeOpenAIResponse("Redacted summary.")),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const app = createTestApp(tmpDir);
+    const res = await app.request(
+      `/api/logs/agents/my-agent/${instanceId}/summarize`,
+      { method: "POST" },
+    );
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledOnce();
+
+    // Inspect the prompt sent to the LLM
+    const fetchBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const promptText = JSON.stringify(fetchBody);
+
+    // Extract the user message content for cleaner assertions
+    const userMessage = fetchBody.messages.find((m: any) => m.role === "user");
+    const logContent = userMessage.content;
+
+    // Metadata should be present
+    expect(logContent).toContain("conversation.tool_result");
+    expect(logContent).toContain('"tool":"bash"');
+    expect(logContent).toContain("cat /etc/hosts");
+    expect(logContent).toContain("rm -rf /tmp/bad");
+    expect(logContent).toContain('"isError":true');
+    expect(logContent).toContain('"isError":false');
+    expect(logContent).toContain('"resultHidden":true');
+
+    // Payload text should NOT be present
+    expect(logContent).not.toContain("SECRET_VERBOSE_OUTPUT_MARKER");
+    expect(logContent).not.toContain("LONG_ERROR_PAYLOAD_MARKER");
+    expect(logContent).not.toContain("127.0.0.1 localhost");
+    expect(logContent).not.toContain("Permission denied");
+
+    // resultText and result fields should not appear
+    expect(logContent).not.toContain("resultText");
+    expect(logContent).not.toContain('"result"');
+  });
+
   it("includes extra log fields as JSON in log text when entry has fields beyond msg/level/time/instance", async () => {
     createMinimalAgentProject(tmpDir, "my-agent");
     const instanceId = "inst-extra-fields";

@@ -17,16 +17,16 @@ function formatLogEntry(entry: LogEntry): {
     };
   }
   if (msg === "conversation.tool_result") {
-    const result = String(entry.resultText || entry.result || "");
-    const prefix = entry.tool ? `${entry.tool} result` : "tool result";
+    const prefix = entry.tool ? `${entry.tool}` : "tool";
+    const statusLine = entry.isError ? `${prefix} error output hidden` : `${prefix} result hidden`;
     if (entry.isError) {
       return {
-        text: `${prefix}${entry.cmd ? `\n$ ${entry.cmd}` : ""}${result ? `\n${result}` : ""}`,
+        text: `${entry.cmd ? `$ ${entry.cmd}\n` : ""}${statusLine}`,
         className: "text-red-400 whitespace-pre-wrap",
       };
     }
     return {
-      text: `${prefix}${entry.cmd ? `\n$ ${entry.cmd}` : ""}${result ? `\n${result}` : ""}`,
+      text: `${entry.cmd ? `$ ${entry.cmd}\n` : ""}${statusLine}`,
       className: "text-slate-300 whitespace-pre-wrap",
     };
   }

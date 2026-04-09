@@ -127,15 +127,39 @@ export class PiHarness implements AgentHarness {
               if (errorMessage) extra.errorMessage = errorMessage;
             }
             eventQueue.push({ type: "log", level: "debug", message: "conversation.event", data: extra });
+
+            // Emit context-usage at each turn_end using getContextUsage() (most reliable source)
+            if (event.type === "turn_end") {
+              try {
+                const ctx = session.getContextUsage?.();
+                if (ctx && ctx.percent != null) {
+                  eventQueue.push({
+                    type: "log",
+                    level: "info",
+                    message: "context-usage",
+                    data: {
+                      contextPercent: Math.round(ctx.percent * 10) / 10,
+                      contextWindow: ctx.contextWindow,
+                      contextTokens: ctx.tokens,
+                    },
+                  });
+                }
+              } catch { /* context usage not available yet */ }
+            }
           }
 
-          // Error events
+          // Error events — extract errorMessage from the AssistantMessage if available
           if (event.type === "error") {
+            const err = (event as any).error;
+            const errorMsg = err?.errorMessage
+              || (typeof err === "string" ? err : null)
+              || (event as any).message
+              || JSON.stringify(event);
             eventQueue.push({
               type: "log",
               level: "error",
               message: "session error",
-              data: { error: String(event.error || event.message || JSON.stringify(event)) },
+              data: { error: String(errorMsg), stopReason: err?.stopReason },
             });
           }
 

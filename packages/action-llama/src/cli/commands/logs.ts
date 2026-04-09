@@ -177,6 +177,16 @@ function formatConversationEntry(entry: LogEntry, showAll = false): string | nul
     return `${time}  ${instanceTag}${parts.join("  ")}`;
   }
 
+  // ── Context usage (per-turn context window consumption) ──
+  if (msg === "context-usage") {
+    const pct = entry.contextPercent != null ? Number(entry.contextPercent).toFixed(1) : "?";
+    const window = entry.contextWindow ?? 0;
+    const tokens = entry.contextTokens ?? 0;
+    const pctNum = Number(pct);
+    const pctColor = pctNum > 80 ? RED : pctNum > 50 ? YELLOW : GREEN;
+    return `${time}  ${instanceTag}${pctColor}${BOLD}${pct}% context${RESET} ${DIM}(${tokens.toLocaleString()}/${window.toLocaleString()} tokens)${RESET}`;
+  }
+
   // ── Session ended summary (from container — why the model stopped) ──
   if (msg === "session ended") {
     const stop = entry.stopReason ? String(entry.stopReason) : "unknown";
@@ -188,6 +198,11 @@ function formatConversationEntry(entry: LogEntry, showAll = false): string | nul
     if (turns) meta.push(turns);
     if (output) meta.push(output);
     if (meta.length > 0) parts[0] += ` ${DIM}(${meta.join(", ")})${RESET}`;
+    if (entry.contextPercent != null) {
+      const pct = Number(entry.contextPercent).toFixed(1);
+      const pctColor = Number(pct) > 80 ? RED : Number(pct) > 50 ? YELLOW : GREEN;
+      parts[0] += ` ${pctColor}ctx=${pct}%${RESET}`;
+    }
     if (entry.aborted) parts[0] += ` ${RED}(aborted)${RESET}`;
     if (entry.allModelsExhausted) parts[0] += ` ${RED}(all models exhausted)${RESET}`;
     if (entry.hasError) parts[0] += ` ${RED}(has error)${RESET}`;

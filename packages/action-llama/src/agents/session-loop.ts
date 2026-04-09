@@ -118,14 +118,35 @@ export async function runSessionLoop(
             if (errorMessage) extra.errorMessage = errorMessage;
           }
           log("debug", "conversation.event", extra);
+
+          // Emit context-usage at each turn_end using getContextUsage() (most reliable source)
+          if (event.type === "turn_end") {
+            try {
+              const ctx = (session as any).getContextUsage?.();
+              if (ctx && ctx.percent != null) {
+                log("info", "context-usage", {
+                  contextPercent: Math.round(ctx.percent * 10) / 10,
+                  contextWindow: ctx.contextWindow,
+                  contextTokens: ctx.tokens,
+                });
+              }
+            } catch { /* context usage not available yet */ }
+          }
         }
         if ((event as any).type === "error") {
-          log("error", "session error", { error: String((event as any).error || (event as any).message || JSON.stringify(event)) });
+          const err = (event as any).error;
+          const errorMsg = err?.errorMessage
+            || (typeof err === "string" ? err : null)
+            || (event as any).message
+            || JSON.stringify(event);
+          log("error", "session error", { error: String(errorMsg), stopReason: err?.stopReason });
         }
-        if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
-          const delta = event.assistantMessageEvent.delta;
-          outputText += delta;
-          currentTurnText += delta;
+        if (event.type === "message_update") {
+          if (event.assistantMessageEvent?.type === "text_delta") {
+            const delta = event.assistantMessageEvent.delta;
+            outputText += delta;
+            currentTurnText += delta;
+          }
         }
         if (event.type === "message_end") {
           const sr = (event as any).stopReason || (event as any).stop_reason;
@@ -140,6 +161,7 @@ export async function runSessionLoop(
             });
           }
           currentTurnText = "";
+
         }
         if (event.type === "tool_execution_start") {
           const cmd = String(event.args?.command || "");
