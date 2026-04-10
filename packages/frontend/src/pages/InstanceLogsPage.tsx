@@ -4,8 +4,8 @@ import { usePolling } from "../hooks/usePolling";
 import { getInstanceLogs, getLocks, summarizeLogs } from "../lib/api";
 import type { LogEntry } from "../lib/api";
 import { InstanceContext } from "../hooks/InstanceContext";
-import { formatLogEntry as formatShared } from "@action-llama/shared/log-format";
-import type { LogPrefix } from "@action-llama/shared/log-format";
+import { formatLogEntry as formatShared } from "../lib/log-format";
+import type { LogPrefix } from "../lib/log-format";
 
 const PREFIX_STYLES: Record<LogPrefix, string> = {
   tool: "text-cyan-400",

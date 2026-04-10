@@ -2,8 +2,8 @@ import { resolve } from "path";
 import { createReadStream, readdirSync, existsSync, statSync } from "fs";
 import { createInterface } from "readline";
 import { logsDir } from "../../shared/paths.js";
-import { formatLogEntry as formatShared } from "@action-llama/shared/log-format";
-import type { LogEntry as SharedLogEntry, FormattedLogLine, LogPrefix } from "@action-llama/shared/log-format";
+import { formatLogEntry as formatShared } from "../../shared/log-format.js";
+import type { LogEntry as SharedLogEntry, FormattedLogLine, LogPrefix } from "../../shared/log-format.js";
 
 /**
  * Detect if a string looks like an instance ID (agent-name + 8-char hex suffix).
