@@ -76,14 +76,14 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // === Phase 3: Create ingress (gateway + webhook bindings) ===
 
+  // Create waiting registry for wait/resume support (before gateway so kill handlers can use it)
+  const waitingRegistry = new WaitingRegistry();
+
   const { gateway, gatewayPort } = await setupGateway({
     projectPath, globalConfig, state, agentConfigs,
     webhookRegistry, webhookSecrets, webhookConfigs: webhookSources, stateStore, statsStore, events, telemetry,
-    statusTracker, webUI, expose, logger,
+    waitingRegistry, statusTracker, webUI, expose, logger,
   });
-
-  // Create waiting registry for wait/resume support
-  const waitingRegistry = new WaitingRegistry();
 
   // Register webhook bindings early so incoming webhooks are queued
   if (webhookRegistry) {

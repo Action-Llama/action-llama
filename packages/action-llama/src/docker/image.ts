@@ -8,10 +8,19 @@
  */
 
 import { execFileSync } from "child_process";
+import { createHash } from "crypto";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { LocalDockerRuntime } from "./local-runtime.js";
 import { CONSTANTS } from "../shared/constants.js";
+
+/**
+ * Short hash of file content, used to invalidate cached images when
+ * Dockerfile content changes without a new git commit.
+ */
+function contentHash(content: string): string {
+  return createHash("sha256").update(content).digest("hex").slice(0, 8);
+}
 
 /**
  * Check if a Docker image exists locally.
@@ -62,9 +71,9 @@ export async function ensureProjectBaseImage(
     return baseImage;
   }
 
-  const tag = CONSTANTS.PROJECT_BASE_IMAGE;
+  const tag = `${CONSTANTS.PROJECT_BASE_IMAGE}-${contentHash(content)}`;
 
-  // Skip build if image already exists with the correct tag (same git SHA)
+  // Skip build if image already exists with the correct tag (same git SHA + content hash)
   if (imageExists(tag)) {
     onProgress?.(`Project base image already built: ${tag}`);
     return tag;
@@ -104,9 +113,10 @@ export async function ensureAgentImage(
     return baseImage;
   }
 
-  const tag = CONSTANTS.agentImage(agentName);
+  const content = readFileSync(dockerfilePath, "utf-8");
+  const tag = `${CONSTANTS.agentImage(agentName)}-${contentHash(content)}`;
 
-  // Skip build if image already exists with the correct tag (same git SHA)
+  // Skip build if image already exists with the correct tag (same git SHA + content hash)
   if (imageExists(tag)) {
     onProgress?.(`Agent image already built: ${tag}`);
     return tag;

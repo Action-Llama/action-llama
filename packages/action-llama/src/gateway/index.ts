@@ -40,6 +40,17 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     controlDeps: opts.controlDeps,
   });
 
+  // 4b. Lock status endpoint (consumed by CLI `al stat` and dashboard)
+  app.get("/locks/status", (c) => {
+    const locks = lockStore.list().map((entry) => ({
+      resourceKey: entry.resourceKey,
+      agentName: entry.holder.replace(/-[a-f0-9]+$/, ""),
+      holder: entry.holder,
+      heldSince: entry.heldSince,
+    }));
+    return c.json({ locks });
+  });
+
   // 5. Register webhook routes
   if (opts.webhookRegistry) {
     registerGatewayWebhookRoutes(app, {

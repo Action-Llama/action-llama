@@ -15,7 +15,7 @@ function formatTriggerShort(config: AgentConfig): string {
 
 /** Print the unified agents summary table. */
 function printAgentsTable(
-  rows: Array<{ config: AgentConfig; status: string; instanceCount: number; paused: boolean; queueSize: number }>,
+  rows: Array<{ config: AgentConfig; status: string; instanceCount: number; waitingCount: number; paused: boolean; queueSize: number }>,
 ): void {
   const cols = { agent: 16, trigger: 16, status: 12, instances: 12, queue: 8 };
   console.log(
@@ -27,10 +27,13 @@ function printAgentsTable(
   );
   console.log("-".repeat(cols.agent + cols.trigger + cols.status + cols.instances + cols.queue));
 
-  for (const { config, status, instanceCount, paused, queueSize } of rows) {
+  for (const { config, status, instanceCount, waitingCount, paused, queueSize } of rows) {
     const trigger = formatTriggerShort(config);
     const statusStr = paused ? "PAUSED" : status;
-    const instanceStr = instanceCount > 0 ? `${instanceCount} running` : "0";
+    const parts: string[] = [];
+    if (instanceCount > 0) parts.push(`${instanceCount} running`);
+    if (waitingCount > 0) parts.push(`${waitingCount} waiting`);
+    const instanceStr = parts.length > 0 ? parts.join(", ") : "0";
 
     console.log(
       config.name.padEnd(cols.agent) +
@@ -65,7 +68,7 @@ function printAgentConfig(config: AgentConfig): void {
 function printLocalInstances(instances: AgentInstance[]): void {
   if (instances.length === 0) return;
 
-  console.log("Running Instances:");
+  console.log("Instances:");
   const cols = { agent: 16, instance: 24, status: 12, trigger: 20, started: 20 };
   console.log(
     "AGENT".padEnd(cols.agent) +
@@ -159,9 +162,12 @@ export async function execute(opts: { project: string; env?: string; agent?: str
   }
 
   const instanceCounts = new Map<string, number>();
+  const waitingCounts = new Map<string, number>();
   for (const inst of instances) {
     if (inst.status === 'running') {
       instanceCounts.set(inst.agentName, (instanceCounts.get(inst.agentName) || 0) + 1);
+    } else if (inst.status === 'waiting') {
+      waitingCounts.set(inst.agentName, (waitingCounts.get(inst.agentName) || 0) + 1);
     }
   }
 
@@ -170,14 +176,16 @@ export async function execute(opts: { project: string; env?: string; agent?: str
     const config = loadAgentConfig(projectPath, name);
     const agentStatus = agentStatuses.find(a => a.name === name);
     const count = instanceCounts.get(name) || 0;
+    const waiting = waitingCounts.get(name) || 0;
     const paused = agentStatus ? !agentStatus.enabled : false;
     if (config.description) {
       console.log(`  ${name}: ${config.description}`);
     }
     return {
       config,
-      status: count > 0 ? "Running" : "Idle",
+      status: count > 0 ? "Running" : waiting > 0 ? "Waiting" : "Idle",
       instanceCount: count,
+      waitingCount: waiting,
       paused,
       queueSize: queueSizes[name] || 0,
     };

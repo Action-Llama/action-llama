@@ -306,7 +306,7 @@ describe("status with running instances from gateway", () => {
     fetchSpy.mockResolvedValueOnce({ ok: false }); // /locks/status
 
     const output = await captureLog(() => execute({ project: tmpDir }));
-    expect(output).toContain("Running Instances:");
+    expect(output).toContain("Instances:");
     expect(output).toContain("INSTANCE ID");
     expect(output).toContain("dev");
     expect(output).toContain("running");
@@ -359,7 +359,7 @@ describe("status with running instances from gateway", () => {
 
     const output = await captureLog(() => execute({ project: tmpDir, agent: "dev" }));
     expect(output).toContain("Agent: dev");
-    expect(output).toContain("Running Instances:");
+    expect(output).toContain("Instances:");
     expect(output).toContain("dev");
     expect(output).toContain("running");
   });

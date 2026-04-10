@@ -56,7 +56,7 @@ function ctrlPost<T = { success: boolean; message?: string }>(
 export interface AgentStatus {
   name: string;
   description?: string;
-  state: "idle" | "running" | "building" | "error";
+  state: "idle" | "running" | "waiting" | "building" | "error";
   enabled: boolean;
   statusText: string | null;
   lastError: string | null;
@@ -66,6 +66,7 @@ export interface AgentStatus {
   queuedWebhooks: number;
   scale: number;
   runningCount: number;
+  waitingCount: number;
   taskUrl: string | null;
   runReason: string | null;
   lastRunUsage: TokenUsage | null;

@@ -48,6 +48,8 @@ export class DockerExecTransport implements Transport {
 
   /** Start the persistent shell session. Must be called before exec(). */
   async connect(): Promise<void> {
+    this._closed = false;
+    this.buffer = "";
     const args = ["exec", "-i"];
     if (this.user) {
       args.push("-u", this.user);

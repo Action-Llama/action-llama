@@ -17,9 +17,11 @@ import type { Logger } from "../shared/logger.js";
 import { ensureGatewayApiKey, loadGatewayApiKey } from "../control/api-key.js";
 import type { SchedulerEventBus } from "./events.js";
 import type { SchedulerState } from "./state.js";
+import type { WaitingRegistry } from "../execution/waiting-registry.js";
 import { runWithReruns } from "../execution/execution.js";
 import { dispatchOrQueue } from "../execution/dispatch-policy.js";
 import { randomBytes } from "node:crypto";
+import { execFileSync } from "node:child_process";
 
 export interface GatewaySetupResult {
   gateway: GatewayServer;
@@ -38,6 +40,7 @@ export async function setupGateway(opts: {
   statsStore?: StatsStore;
   events: SchedulerEventBus;
   telemetry?: any;
+  waitingRegistry?: WaitingRegistry;
   statusTracker?: StatusTracker;
   webUI?: boolean;
   expose?: boolean;
@@ -46,7 +49,7 @@ export async function setupGateway(opts: {
   const {
     projectPath, globalConfig, state, agentConfigs,
     webhookRegistry, webhookSecrets, webhookConfigs, stateStore, statsStore, events, telemetry,
-    statusTracker, webUI, expose, logger,
+    waitingRegistry, statusTracker, webUI, expose, logger,
   } = opts;
 
   // Ensure gateway API key exists (fallback generation if doctor wasn't run)
@@ -83,12 +86,39 @@ export async function setupGateway(opts: {
         for (const pool of Object.values(state.runnerPools)) {
           if (pool.killInstance(instanceId)) return true;
         }
+        // Check waiting registry for suspended instances
+        if (waitingRegistry) {
+          const entry = waitingRegistry.remove(instanceId);
+          if (entry) {
+            entry.reject?.(new Error("Killed by user"));
+            if (entry.runtimeType === "container" && entry.runId) {
+              try { execFileSync("docker", ["unpause", entry.runId], { stdio: "pipe", timeout: 5000 }); } catch {}
+              try { execFileSync("docker", ["kill", entry.runId], { stdio: "pipe", timeout: 5000 }); } catch {}
+            }
+            statusTracker?.completeInstance(instanceId, 'killed');
+            return true;
+          }
+        }
         return false;
       },
       killAgent: async (name: string) => {
         const pool = state.runnerPools[name];
-        if (!pool) return null;
-        const killed = pool.killAll();
+        if (!pool && (!waitingRegistry || waitingRegistry.getByAgent(name).length === 0)) return null;
+        let killed = pool ? pool.killAll() : 0;
+        // Also kill waiting instances for this agent
+        if (waitingRegistry) {
+          const waitingInstances = waitingRegistry.getByAgent(name);
+          for (const entry of waitingInstances) {
+            waitingRegistry.remove(entry.instanceId);
+            entry.reject?.(new Error("Killed by user"));
+            if (entry.runtimeType === "container" && entry.runId) {
+              try { execFileSync("docker", ["unpause", entry.runId], { stdio: "pipe", timeout: 5000 }); } catch {}
+              try { execFileSync("docker", ["kill", entry.runId], { stdio: "pipe", timeout: 5000 }); } catch {}
+            }
+            statusTracker?.completeInstance(entry.instanceId, 'killed');
+            killed++;
+          }
+        }
         logger.info({ agent: name, killed }, "kill all instances requested via control API");
         return { killed };
       },
