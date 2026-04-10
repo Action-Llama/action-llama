@@ -57,21 +57,21 @@ Before the `SKILL.md` instructions run, the agent receives a preamble that teach
 
 | Category | Skills | Description |
 |----------|--------|-------------|
-| **Signals** | `al-rerun`, `al-status`, `al-return`, `al-exit` | Shell commands for signaling the scheduler |
-| **Calls** | `al-subagent`, `al-subagent-check`, `al-subagent-wait` | Agent-to-agent calls with return values |
+| **Signals** | `set_status`, `return_value` | Tools for reporting status and returning values to the scheduler |
+| **Calls** | `call_agent`, `check_call` | Agent-to-agent calls with return values |
 | **Wait** | `wait_for_trigger` | Suspend and resume on a future webhook or agent trigger |
 | **Locks** | `LOCK(...)`, `UNLOCK(...)`, `HEARTBEAT(...)` | Resource locking for parallel coordination |
 | **Credentials** | `GITHUB_TOKEN`, `gh`, `git`, etc. | Credential access and tool usage |
 
 Agent authors write the shorthand naturally (e.g. `LOCK("github issue acme/app#42")`). The agent learns what it means from the preamble.
 
-See [Agent Commands](/reference/agent-commands) for the complete command reference.
+See [Agent Tools](/reference/agent-tools) for the complete tool reference.
 
 ## Runtime Lifecycle
 
 Each agent run is an isolated, short-lived process. By default agents run in Docker containers, but agents can also be configured to run on the host machine under a separate OS user (see [Runtime](/reference/agent-config#runtime)). Here's the full sequence from trigger to exit:
 
-1. **Trigger fires** — a cron tick, webhook event, manual `al run`, or `al-subagent` from another agent.
+1. **Trigger fires** — a cron tick, webhook event, manual `al run`, or `call_agent` from another agent.
 2. **Work is queued** — if all runners for the target agent are busy, the trigger is placed in a SQLite-backed work queue until a runner becomes available.
 3. **Process launches** — a fresh container (or host-user process) starts with credentials and config passed via environment variables and volume mounts (or temp directories).
 4. **Credentials are loaded** — the entry point reads credential files from the credentials path (`/credentials/` in containers, or the `AL_CREDENTIALS_PATH` temp directory in host-user mode). Key credentials are injected as env vars the LLM can use directly: `GITHUB_TOKEN`, `GH_TOKEN`, `SENTRY_AUTH_TOKEN`, `GIT_SSH_COMMAND`, git author identity, etc.
@@ -80,7 +80,7 @@ Each agent run is an isolated, short-lived process. By default agents run in Doc
 7. **Agent runs autonomously** — the LLM executes tools (bash, file I/O, API calls) until it finishes or hits an error. Rate-limited API calls are retried automatically (up to 5 attempts with exponential backoff).
 8. **Wait (optional)** — the agent may call `wait_for_trigger` to suspend mid-conversation and wait for a specific webhook event or agent trigger. While waiting, the container is paused (`docker pause`) and the runner slot is released. When the matching trigger arrives, the container resumes and the agent continues where it left off. See [Wait & Resume](#wait--resume).
 9. **Error detection** — the runtime watches for repeated auth/permission failures (e.g. "bad credentials", "permission denied"). After 3 such errors, it aborts early.
-10. **Signals are processed** — the agent uses `al-rerun`, `al-status`, `al-return`, and `al-exit` commands to write signal files. The scheduler reads them after the session ends.
+10. **Signals are processed** — the agent uses the `set_status` and `return_value` tools to communicate with the scheduler during the session.
 11. **Process exits** — exit code 0 (success), 1 (error), or 124 (timeout). Any held locks are released automatically. The scheduler logs the result and the container is removed (or the working directory is cleaned up in host-user mode).
 
 ## Timeout
@@ -91,7 +91,7 @@ See [Agent Config — Timeout](/reference/agent-config#timeout) for configuratio
 
 ## Reruns
 
-When a scheduled agent runs `al-rerun`, the scheduler immediately re-runs it. This continues until the agent completes without `al-rerun` (no more work), hits an error, or reaches the `maxReruns` limit (default: 10, configurable in `config.toml`). This lets an agent drain its work queue without waiting for the next cron tick.
+The scheduler automatically handles reruns for scheduled agents. When a scheduled run completes successfully and more work may be available, the scheduler can re-run the agent immediately. This continues until the agent completes with no remaining work, hits an error, or reaches the `maxReruns` limit (default: 10, configurable in `config.toml`). This lets agents drain their work queue without waiting for the next cron tick.
 
 Webhook-triggered and agent-called runs do not re-run — they respond to a single event.
 
@@ -170,7 +170,7 @@ The agent has access to the host filesystem but runs as a separate OS user, so i
 ## See Also
 
 - [Getting Started](/first-steps/getting-started) — create your first agent
-- [Agent Commands](/reference/agent-commands) — signals, calls, and lock commands
+- [Agent Tools](/reference/agent-tools) — transport and scheduler tools
 - [Agent Config Reference](/reference/agent-config) — SKILL.md and config.toml fields
 - [Agent Docs](/reference/agent-docs) — SKILL.md, AGENTS.md, CLAUDE.md
 - [Credentials](/reference/credentials) — credential types and storage

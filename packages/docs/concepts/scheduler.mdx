@@ -75,9 +75,9 @@ When a webhook event or agent call arrives but all runners are busy, the event i
 
 ## Reruns
 
-When a scheduled agent calls `al-rerun`, the scheduler immediately starts a new run. This continues until:
+The scheduler automatically handles reruns for scheduled agents. When a scheduled run completes successfully, the scheduler can immediately start a new run. This continues until:
 
-- The agent completes without calling `al-rerun` (no more work)
+- The agent completes with no remaining work
 - The agent hits an error
 - The `maxReruns` limit is reached (default: 10)
 
@@ -85,7 +85,7 @@ This lets agents drain their work queue efficiently without waiting for the next
 
 ## Agent Calls
 
-Agents can call other agents via `al-subagent`. The scheduler routes the call to the target agent's runner pool:
+Agents can call other agents via the `call_agent` tool. The scheduler routes the call to the target agent's runner pool:
 
 - If a runner is available, the called agent starts immediately
 - If all runners are busy, the call is queued in the work queue
@@ -125,7 +125,7 @@ When the scheduler receives a stop signal (`al stop` or SIGTERM):
 
 ### Agent keeps re-running
 
-An agent that calls `al-rerun` will re-run immediately, up to `maxReruns` (default: 10). If it's re-running more than expected, check the agent's `SKILL.md` — it may be calling `al-rerun` even when there's no remaining work.
+The scheduler automatically re-runs scheduled agents up to `maxReruns` times (default: 10). If an agent is re-running more than expected, check whether it is completing successfully each time — the scheduler will keep re-running it as long as the run succeeds.
 
 ```toml
 # config.toml — lower the limit if needed

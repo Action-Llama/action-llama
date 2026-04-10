@@ -69,7 +69,7 @@ samplingRate = 0.5
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `maxReruns` | number | `10` | Maximum consecutive reruns when an agent requests a rerun via `al-rerun` before stopping |
+| `maxReruns` | number | `10` | Maximum consecutive reruns before stopping |
 | `maxCallDepth` | number | `3` | Maximum depth for agent-to-agent call chains (A calls B calls C = depth 2) |
 | `workQueueSize` | number | `100` | Maximum queued work items (webhook events + agent calls) per agent when all runners are busy. Can be overridden per-agent with `maxWorkQueueSize` in the agent's `config.toml`. |
 | `scale` | number | _(unlimited)_ | Project-wide cap on total concurrent runners across all agents |

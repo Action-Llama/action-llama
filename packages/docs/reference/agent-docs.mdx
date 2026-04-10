@@ -15,7 +15,7 @@ The portable part of an agent. YAML frontmatter at the top contains portable met
 
 ### How it's used
 
-The scheduler reads `SKILL.md` and sends the markdown body as the system prompt. Runtime configuration is loaded from `config.toml`. A preamble is prepended that teaches the agent its [language skills](/reference/agent-commands) (signals, calls, locks, credentials). The LLM then receives a user-message prompt with:
+The scheduler reads `SKILL.md` and sends the markdown body as the system prompt. Runtime configuration is loaded from `config.toml`. A preamble is prepended that teaches the agent behavioral guidelines for its [available tools](/reference/agent-tools) (locks, calls, status). The LLM then receives a user-message prompt with:
 
 1. **`<skill-config>`** — JSON of the `params` table from the agent's `config.toml`
 2. **`<credential-context>`** — describes available environment variables and tools
@@ -28,7 +28,7 @@ The scheduler reads `SKILL.md` and sends the markdown body as the system prompt.
 - **Be specific about workflow.** Numbered steps are better than vague descriptions.
 - **Reference `<skill-config>` for parameter values.** Don't hardcode repo names or labels — put them in `params` and reference them.
 - **Handle both trigger types** if the agent uses both schedule and webhooks.
-- **Use signal commands** like `al-rerun` for backlog draining and `al-status` for TUI updates.
+- **Use the `set_status` tool** to report progress updates to the TUI.
 - **Keep it concise.** The system prompt consumes tokens every run. Avoid lengthy explanations of things the LLM already knows.
 
 ### Example
@@ -48,7 +48,6 @@ Your configuration is in the `<skill-config>` block at the start of your prompt.
 3. **Implement** — Clone the repo, create a branch, make changes, run tests.
 4. **Open a PR** — Push and open a PR linking to the issue.
 5. **Unlock** — UNLOCK("github issue owner/repo#N").
-6. **Continue** — If you completed work and there may be more issues, run `al-rerun`.
 
 ## Rules
 
@@ -66,7 +65,7 @@ Your `SKILL.md` should handle different trigger types if the agent uses both:
 
 - **Webhook trigger**: The `<webhook-trigger>` block contains the full event payload. Work on the specific issue/PR from the event.
 - **Scheduled trigger**: Search for open work matching your configured filters.
-- **Subagent call**: The `<skill-subagent>` block contains context from the calling agent. Do what was requested and use `al-return` to send back results.
+- **Subagent call**: The `<skill-subagent>` block contains context from the calling agent. Do what was requested and use the `return_value` tool to send back results.
 ```
 
 ## AGENTS.md

@@ -82,7 +82,7 @@ describe("prompt-builders-full: makeScheduledPrompt (useBakedImages=false)", { t
   it("includes locking skill block when skills.locking is true", () => {
     const prompt = makeScheduledPrompt(makeAgent(), makeFullCtx({ locking: true }));
     expect(prompt).toContain("<skill-lock>");
-    expect(prompt).toContain("rlock");
+    expect(prompt).toContain("acquire_lock");
   });
 
   it("does not include lock skill block when skills.locking is false", () => {

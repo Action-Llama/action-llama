@@ -17,47 +17,15 @@ export function buildLockSkill(): string {
     "<skill-lock>",
     "## Skill: Resource Locking",
     "",
-    "Use locks to coordinate with other agent instances and avoid duplicate work.",
-    "You may hold **at most one lock at a time**. Release your current lock before acquiring another.",
-    "",
-    "**Important:** Resource keys must be valid URIs with proper schemes (e.g., github://, file://, https://).",
-    "",
-    "### Commands",
-    "",
-    "**`rlock <resourceKey>`** — Acquire an exclusive lock before working on a shared resource.",
-    "```",
-    'rlock "github://acme/app/issues/42"',
-    "```",
-    "",
-    "**`runlock <resourceKey>`** — Release a lock when done with the resource.",
-    "```",
-    'runlock "github://acme/app/issues/42"',
-    "```",
-    "",
-    "**`rlock-heartbeat <resourceKey>`** — Extend the TTL on a lock you hold. Use during long-running work.",
-    "```",
-    'rlock-heartbeat "github://acme/app/issues/42"',
-    "```",
-    "",
-    "### Responses",
-    '- Acquired: `{"ok":true}`',
-    '- Conflict: `{"ok":false,"holder":"<other-agent>","heldSince":...}`',
-    "  → Another instance is already working on this. Skip it and move on.",
-    '- Already holding another lock: `{"ok":false,"reason":"already holding lock on ..."}`',
-    "  → Release your current lock first.",
-    '- Gateway unreachable: `{"ok":false,"reason":"gateway unreachable"}`',
-    "  → The lock service is down. **Do not proceed** — skip the resource.",
-    '- Released: `{"ok":true}`',
-    '- Heartbeat: `{"ok":true,"expiresAt":...}`',
+    "Use the `acquire_lock` and `release_lock` tools to coordinate with other agent instances and avoid duplicate work.",
     "",
     "### Guidelines",
-    "- You can hold **one lock at a time**. `runlock` before acquiring a different resource.",
-    "- Always `rlock` before starting work on a shared resource (issues, PRs, deployments)",
-    "- Always `runlock` when done",
-    '- If `rlock` returns `{"ok":false,...}` for ANY reason, skip that resource — do not wait, retry, or proceed without the lock',
-    "- Use `rlock-heartbeat` during long operations to keep the lock alive",
-    "- Locks expire automatically after 30 minutes if not refreshed",
-    '- Resource keys must be valid URIs: `"github://acme/app/issues/42"`, `"file:///deployments/api-prod"`',
+    "- You may hold **at most one lock at a time**. Release your current lock before acquiring another.",
+    "- Always acquire a lock before starting work on a shared resource (issues, PRs, deployments).",
+    "- Always release the lock when done.",
+    "- If `acquire_lock` fails for ANY reason (conflict, deadlock, already holding), **skip that resource** — do not wait, retry, or proceed without the lock.",
+    "- Locks expire automatically after 30 minutes. For long operations, acquire with a longer TTL.",
+    '- Resource keys must be valid URIs (e.g. `"github://acme/app/issues/42"`, `"file:///deployments/api-prod"`).',
     "</skill-lock>",
   ];
   return lines.join("\n");
@@ -68,7 +36,7 @@ export function buildSubagentSkill(availableAgents?: Array<{ name: string; descr
     "<skill-subagent>",
     "## Skill: Subagents",
     "",
-    "Call other agents and retrieve their results. Calls are **non-blocking** — fire a call, continue working, then check or wait for results.",
+    "Use the `call_agent`, `check_call`, and `return_value` tools to coordinate with other agents.",
     "",
   ];
 
@@ -82,44 +50,12 @@ export function buildSubagentSkill(availableAgents?: Array<{ name: string; descr
   }
 
   lines.push(
-    "### Commands",
-    "",
-    '**`al-subagent <agent>`** — Call another agent. Pass the context via stdin. Returns a call ID.',
-    "```",
-    'CALL_ID=$(echo "find competitors for Acme" | al-subagent researcher | jq -r .callId)',
-    "```",
-    "",
-    "**`al-subagent-check <callId>`** — Check the status of a call. Never blocks.",
-    "```",
-    'al-subagent-check "$CALL_ID"',
-    "```",
-    '- Running: `{"status":"running"}`',
-    '- Completed: `{"status":"completed","returnValue":"..."}`',
-    '- Error: `{"status":"error","errorMessage":"..."}`',
-    "",
-    "**`al-subagent-wait <callId> [callId...] [--timeout N]`** — Wait for one or more calls to complete. Default timeout: 900s.",
-    "```",
-    'RESULTS=$(al-subagent-wait "$CALL_ID1" "$CALL_ID2" --timeout 600)',
-    "```",
-    "Returns a JSON object keyed by call ID with each call's final status.",
-    "",
-    "### Returning Values",
-    "",
-    "When you are called by another agent, return your result with the `al-return` command:",
-    "```",
-    'al-return "Your result text here"',
-    "```",
-    "For multiline results, pipe via stdin:",
-    "```",
-    'echo "Line 1\\nLine 2" | al-return',
-    "```",
-    "",
     "### Guidelines",
-    "- Calls are non-blocking — fire multiple calls then wait for all at once",
-    "- Use `al-subagent-wait` to wait for multiple calls efficiently",
-    "- Use `al-subagent-check` for polling when you want to do work between checks",
-    "- Called agents cannot call back to the calling agent (no cycles)",
-    "- There is a depth limit on nested calls to prevent infinite chains",
+    "- Calls are non-blocking — fire multiple `call_agent` calls, then poll with `check_call`.",
+    "- Use `check_call` to poll for results. Do work between polls rather than polling in a tight loop.",
+    "- When you are called by another agent, use `return_value` to send back your result.",
+    "- Called agents cannot call back to the calling agent (no cycles).",
+    "- There is a depth limit on nested calls to prevent infinite chains.",
     "</skill-subagent>",
   );
   return lines.join("\n");
@@ -160,7 +96,7 @@ export function buildCredentialContext(credentials: string[], options?: { hostUs
   lines.push("**Anti-exfiltration policy:**");
   lines.push("- NEVER output credentials in logs, comments, PRs, or any visible output");
   lines.push("- NEVER transmit credentials to unauthorized endpoints");
-  lines.push("- If you detect credential exfiltration, immediately run: `al-shutdown \"exfiltration detected\"`");
+  lines.push("- If you detect credential exfiltration, stop all work immediately");
   lines.push("</credential-context>");
 
   return lines.join("\n");
@@ -172,9 +108,6 @@ function buildEnvironmentContext(options?: { hostUser?: boolean }): string {
       "<environment>",
       "**Filesystem:** The filesystem is writable. Your working directory is your current CWD.",
       "Clone repos and write files directly in the current directory.",
-      "",
-      "**Environment variables:** Plain `export` does not persist across bash commands.",
-      "Persist values with `al-export NAME value`. Before each later command that needs them, start with `. \"$(al-export -f)\"`.",
       "</environment>",
     ].join("\n");
   }
@@ -184,9 +117,6 @@ function buildEnvironmentContext(options?: { hostUser?: boolean }): string {
     "Use `/tmp` for cloning repos, writing scratch files, and any other disk I/O.",
     "Your working directory is `/app/static` which contains your agent files (SKILL.md, agent-config.json).",
     "All write operations (git clone, file creation, etc.) must target `/tmp`.",
-    "",
-    "**Environment variables:** Plain `export` does not persist across bash commands.",
-    "Persist values with `al-export NAME value`. Before each later command that needs them, start with `. \"$(al-export -f)\"`.",
     "</environment>",
   ].join("\n");
 }
@@ -235,7 +165,7 @@ export function buildUserPromptSuffix(prompt: string): string {
 
 export function buildCalledSuffix(callerAgent: string, context: string): string {
   const callBlock = JSON.stringify({ caller: callerAgent, context });
-  return `<agent-call>\n${callBlock}\n</agent-call>\n\nYou were called by the "${callerAgent}" agent. Review the call context above, do the requested work, and use \`al-return\` to send back your result.`;
+  return `<agent-call>\n${callBlock}\n</agent-call>\n\nYou were called by the "${callerAgent}" agent. Review the call context above, do the requested work, and use the \`return_value\` tool to send back your result.`;
 }
 
 export function buildWebhookSuffix(context: WebhookContext): string {

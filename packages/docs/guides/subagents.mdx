@@ -1,6 +1,6 @@
 ---
 title: "Subagents"
-description: "How one agent calls another — fire, wait, and collect results"
+description: "How one agent calls another — fire, poll, and collect results"
 ---
 
 Agents can call other agents to delegate work and collect results. This enables multi-agent workflows like planner → developer → reviewer pipelines.
@@ -9,83 +9,45 @@ Agents can call other agents to delegate work and collect results. This enables 
 
 A planner agent triages an issue and creates an implementation plan. It calls a dev agent to implement it, then calls a reviewer agent to review the PR.
 
-## `al-subagent`: Fire a call
+## `call_agent`: Fire a call
 
-Pass context to another agent via stdin:
+Use the `call_agent` tool to dispatch a task to another agent:
 
-```bash
-echo "Implement the fix for issue #42 on acme/app" | al-subagent dev
+```
+call_agent(target_agent: "dev", context: "Implement the fix for issue #42 on acme/app")
 ```
 
-**Response:**
+The call is non-blocking — the calling agent continues working immediately. The tool returns a `call_id` for polling.
 
-```json
-{"ok": true, "callId": "abc123"}
+## `check_call`: Poll for results
+
+Use the `check_call` tool to check if a call has finished:
+
+```
+check_call(call_id: "abc123")
 ```
 
-The call is non-blocking — the calling agent continues working immediately.
+Possible statuses: `pending`, `running`, `completed` (with return value), `error`.
 
-## `al-subagent-check`: Non-blocking status
+## `return_value`: Send back a result
 
-Check if a call has finished without waiting:
+The called agent uses `return_value` to send a value back to the caller:
 
-```bash
-al-subagent-check abc123
+```
+return_value(value: "PR #17 opened. Ready for review.")
 ```
 
-**Response:**
-
-```json
-{"status": "pending"}
-{"status": "running"}
-{"status": "completed", "returnValue": "PR #17 opened."}
-{"status": "error", "error": "timeout"}
-```
-
-## `al-subagent-wait`: Block until done
-
-Wait for one or more calls to complete:
-
-```bash
-al-subagent-wait abc123 --timeout 600
-al-subagent-wait abc123 def456 --timeout 300
-```
-
-**Response:**
-
-```json
-{
-  "abc123": {"status": "completed", "returnValue": "PR #17 opened."},
-  "def456": {"status": "completed", "returnValue": "All tests pass."}
-}
-```
-
-Default timeout: 900 seconds. Polls every 5 seconds.
-
-## `al-return`: Send back a result
-
-The called agent uses `al-return` to send a value back to the caller:
-
-```bash
-al-return "PR #17 opened. Ready for review."
-```
+The calling agent sees this value when it polls with `check_call`.
 
 ## Multi-call Pattern
 
-Fire several calls, continue working, then collect all results:
+Fire several calls, continue working, then poll for results:
 
-```bash
-# Fire calls
-DEV_ID=$(echo "Implement fix for #42" | al-subagent dev | jq -r .callId)
-REVIEW_ID=$(echo "Review PR #17" | al-subagent reviewer | jq -r .callId)
+1. Call multiple agents with `call_agent` — each returns a `call_id`
+2. Do other work while they run
+3. Poll each `call_id` with `check_call` until all complete
 
-# ... do other work while they run ...
-
-# Collect results
-RESULTS=$(al-subagent-wait "$DEV_ID" "$REVIEW_ID" --timeout 600)
-echo "$RESULTS" | jq ".\"$DEV_ID\".returnValue"
-echo "$RESULTS" | jq ".\"$REVIEW_ID\".returnValue"
-```
+Do work between polls rather than polling in a tight loop.
 
 ## Complete Example: SKILL.md
 
@@ -103,18 +65,9 @@ create an implementation plan, and delegate to other agents.
 2. Assess the issue — is it clear enough for development?
 3. If not, comment asking for clarification and stop
 4. Write an implementation plan as a comment on the issue
-5. Call the dev agent:
-   ```
-   echo "Implement the plan in comment #N on issue #M in owner/repo" | al-subagent dev
-   ```
-6. Wait for dev to finish:
-   ```
-   RESULT=$(al-subagent-wait "$CALL_ID" --timeout 1800)
-   ```
-7. If dev succeeded, call the reviewer:
-   ```
-   echo "Review PR #P on owner/repo" | al-subagent reviewer
-   ```
+5. Use `call_agent` to call the dev agent with the implementation context
+6. Poll with `check_call` until the dev agent completes
+7. If dev succeeded, use `call_agent` to call the reviewer agent
 8. Comment on the issue with the final status
 ```
 
@@ -124,25 +77,24 @@ create an implementation plan, and delegate to other agents.
 - **Call depth limit** — chains like A → B → C are allowed up to `maxCallDepth` (default: 3)
 - **Queuing** — if all runners for the target agent are busy, the call is queued (up to `workQueueSize`, default: 100)
 - **No reruns** — called agents do not re-run. They respond to the single call.
-- **Gateway required** — call commands require the gateway. They return errors if `GATEWAY_URL` is not set.
 
 ## What the Called Agent Sees
 
-The called agent receives a `<skill-subagent>` block in its prompt with:
+The called agent receives an `<agent-call>` block in its prompt with:
 
 - The name of the calling agent
-- The context string passed via stdin
+- The context string passed via `call_agent`
 
 The called agent's `SKILL.md` should handle this trigger type:
 
 ```markdown
 ## Trigger handling
 
-- **Agent call**: The `<skill-subagent>` block contains context from the calling agent.
-  Do what was requested and use `al-return` to send back results.
+- **Agent call**: The `<agent-call>` block contains context from the calling agent.
+  Do what was requested and use `return_value` to send back results.
 ```
 
 ## Next steps
 
-- [Agent Commands](/reference/agent-commands) — full call command syntax and responses
+- [Agent Tools](/reference/agent-tools) — full tool reference
 - [Agents (concepts)](/concepts/agents) — runtime lifecycle and trigger types

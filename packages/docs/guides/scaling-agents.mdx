@@ -29,22 +29,21 @@ With multiple instances, two agents might try to work on the same issue. Add a [
 
 1. List open issues labeled "agent" in repos from `<agent-config>`
 2. For each issue:
-   - rlock "github://owner/repo/issues/123"
+   - LOCK("github://owner/repo/issues/123")
    - If the lock fails, skip this issue — another instance is handling it
    - Clone the repo, create a branch, implement the fix
    - Open a PR and link it to the issue
-   - runlock "github://owner/repo/issues/123"
-3. If you completed work and there may be more issues, run `al-rerun`
+   - UNLOCK("github://owner/repo/issues/123")
 ```
 
 ### How lock commands work
 
-When the agent runs `rlock "github://owner/repo/issues/123"`:
+When the agent calls `acquire_lock` with resource `"github://owner/repo/issues/123"`:
 
 - **Lock acquired:** `{"ok": true}` — proceed with work
 - **Already held:** `{"ok": false, "holder": "dev-abc123", ...}` — skip this resource
 
-When done: `runlock "github://owner/repo/issues/123"` releases the lock.
+When done: `release_lock` with the same resource releases the lock.
 
 If the agent crashes or times out, locks are [auto-released](/concepts/resource-locks#auto-release-on-exit).
 
@@ -125,4 +124,4 @@ triggerLabel = "agent"
 ## Next steps
 
 - [Resource Locks (concepts)](/concepts/resource-locks) — TTL, heartbeat, deadlock detection
-- [Agent Commands — Locks](/reference/agent-commands#lock-commands) — full command syntax and responses
+- [Agent Tools — Locking](/reference/agent-tools#locking) — lock tool reference and guidelines

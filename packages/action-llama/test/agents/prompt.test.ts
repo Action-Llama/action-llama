@@ -38,7 +38,7 @@ describe("buildCredentialContext", () => {
     const result = buildCredentialContext(["github_token"]);
     expect(result).toContain("Anti-exfiltration");
     expect(result).toContain("NEVER output credentials");
-    expect(result).toContain("al-shutdown");
+    expect(result).toContain("stop all work immediately");
   });
 });
 
@@ -150,33 +150,25 @@ describe("buildLockSkill", () => {
     expect(result).toContain("</skill-lock>");
   });
 
-  it("documents rlock and runlock commands", () => {
+  it("references acquire_lock and release_lock tools", () => {
     const result = buildLockSkill();
-    expect(result).toContain("rlock");
-    expect(result).toContain("runlock");
-  });
-
-  it("includes command usage examples", () => {
-    const result = buildLockSkill();
-    expect(result).toContain('rlock "github://acme/app/issues/42"');
-    expect(result).toContain('runlock "github://acme/app/issues/42"');
-  });
-
-  it("documents conflict response", () => {
-    const result = buildLockSkill();
-    expect(result).toContain("ok");
-    expect(result).toContain("holder");
-  });
-
-  it("documents rlock-heartbeat command", () => {
-    const result = buildLockSkill();
-    expect(result).toContain("rlock-heartbeat");
-    expect(result).toContain('rlock-heartbeat "github://acme/app/issues/42"');
+    expect(result).toContain("acquire_lock");
+    expect(result).toContain("release_lock");
   });
 
   it("documents one-lock-at-a-time constraint", () => {
     const result = buildLockSkill();
-    expect(result).toContain("one lock at a time");
+    expect(result).toContain("at most one lock at a time");
+  });
+
+  it("documents URI requirement for resource keys", () => {
+    const result = buildLockSkill();
+    expect(result).toContain("valid URIs");
+  });
+
+  it("instructs to skip resource on lock failure", () => {
+    const result = buildLockSkill();
+    expect(result).toContain("skip that resource");
   });
 });
 
@@ -187,16 +179,11 @@ describe("buildSubagentSkill", () => {
     expect(result).toContain("</skill-subagent>");
   });
 
-  it("documents al-subagent, al-subagent-check, and al-subagent-wait commands", () => {
+  it("references call_agent, check_call, and return_value tools", () => {
     const result = buildSubagentSkill();
-    expect(result).toContain("al-subagent");
-    expect(result).toContain("al-subagent-check");
-    expect(result).toContain("al-subagent-wait");
-  });
-
-  it("documents al-return command", () => {
-    const result = buildSubagentSkill();
-    expect(result).toContain("al-return");
+    expect(result).toContain("call_agent");
+    expect(result).toContain("check_call");
+    expect(result).toContain("return_value");
   });
 
   it("documents non-blocking nature", () => {
@@ -224,7 +211,7 @@ describe("prompt skills integration", () => {
   it("includes lock skill in scheduled prompt when enabled", () => {
     const result = buildScheduledPrompt(agentConfig, { locking: true });
     expect(result).toContain("<skill-lock>");
-    expect(result).toContain("rlock");
+    expect(result).toContain("acquire_lock");
   });
 
   it("does not include lock skill when not enabled", () => {
@@ -257,7 +244,7 @@ describe("prompt skills integration", () => {
   it("includes subagent skill in scheduled prompt when enabled", () => {
     const result = buildScheduledPrompt(agentConfig, { subagents: true });
     expect(result).toContain("<skill-subagent>");
-    expect(result).toContain("al-subagent");
+    expect(result).toContain("call_agent");
   });
 
   it("does not include subagent skill when not enabled", () => {

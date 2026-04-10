@@ -1,0 +1,164 @@
+---
+title: "Agent Tools"
+description: "Tools available to agents at runtime — transport tools for interacting with the environment, and scheduler tools for coordination"
+---
+
+Agents running in Action Llama have access to two categories of tools: **transport tools** for interacting with the environment (files, shell), and **scheduler tools** for coordinating with other agents and the system.
+
+These tools are provided directly to the LLM as callable tools — agents use them like any other tool call, not as shell commands.
+
+## Transport Tools
+
+Transport tools let the agent interact with its execution environment — reading and writing files, running shell commands, and searching code.
+
+| Tool | Description |
+|------|-------------|
+| `bash` | Run a shell command and get the output |
+| `read` | Read a file's contents |
+| `write` | Write content to a file |
+| `edit` | Make targeted edits to a file |
+| `grep` | Search file contents with regex patterns |
+| `find` | Find files matching a pattern |
+| `ls` | List directory contents |
+
+These tools operate on the agent's execution environment — either a Docker container or a host-user directory, depending on the runtime mode.
+
+### Filesystem constraints
+
+- **Docker mode:** The root filesystem is read-only. `/tmp` is the only writable directory. The working directory is `/app/static` which contains the agent's `SKILL.md` and config.
+- **Host-user mode:** The filesystem is writable. The working directory is the current CWD.
+
+## Scheduler Tools
+
+Scheduler tools let agents coordinate with each other and with the system. They are in-process tool calls — no HTTP or shell commands involved.
+
+### `acquire_lock`
+
+Acquire a distributed lock on a resource.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `resource_key` | string | Yes | URI identifying the resource (e.g. `lock://repo/branch-name`) |
+| `ttl_seconds` | number | No | Lock TTL in seconds (default: 1800) |
+
+Returns whether the lock was acquired. If another agent holds the lock, returns the holder's identity.
+
+### `release_lock`
+
+Release a distributed lock that you previously acquired.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `resource_key` | string | Yes | URI identifying the resource to unlock |
+
+### `call_agent`
+
+Call another agent to perform a task. Returns a `call_id` for polling.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `target_agent` | string | Yes | Name of the agent to call |
+| `context` | string | Yes | Context/instructions to pass to the target agent |
+
+The target agent runs asynchronously. Use `check_call` to poll for its result.
+
+### `check_call`
+
+Check the status of a previous `call_agent`. Returns the status (`pending`, `running`, `completed`, `error`) and the return value if completed.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `call_id` | string | Yes | The call_id returned by a previous `call_agent` |
+
+### `set_status`
+
+Update your status text shown in the terminal dashboard and web UI.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `text` | string | Yes | Short status text (e.g. "reviewing PR #42") |
+
+### `return_value`
+
+Return a value to the agent that called you. Only useful when this agent was invoked via `call_agent` by another agent.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `value` | string | Yes | The value to return to the calling agent |
+
+### `wait_for_trigger`
+
+Suspend this agent and wait for a specific trigger (webhook event or agent trigger) before resuming. While waiting, the container is paused and the runner slot is released.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `type` | `"webhook"` or `"agent_trigger"` | Yes | Type of trigger to wait for |
+| `source` | string | No | Webhook source name to match (e.g. `"github"`) |
+| `event` | string | No | Event type to match (e.g. `"pull_request"`) |
+| `match` | object | No | Dot-path equality predicates on the trigger payload |
+| `source_agent` | string | No | For `agent_trigger`: only match triggers from this agent |
+| `timeout` | string | No | How long to wait (e.g. `"30m"`, `"2h"`). Defaults to agent/project config. |
+
+**Example — wait for a PR to merge:**
+
+```
+wait_for_trigger(
+  type: "webhook",
+  source: "github",
+  event: "pull_request",
+  match: { "action": "closed", "repo": "acme/app" }
+)
+```
+
+**Example — wait for another agent:**
+
+```
+wait_for_trigger(
+  type: "agent_trigger",
+  source_agent: "deployer"
+)
+```
+
+### Wait rules
+
+- Multiple `wait_for_trigger` calls per session are allowed (sequential waits)
+- While waiting, the agent's container is paused and the runner slot is released
+- If no matching trigger arrives before the timeout, the tool returns an error message (the agent can handle this gracefully)
+- The agent resumes with the full trigger payload as the tool result
+- Environment variables are **not** preserved across wait/resume — use files for persistent state
+- Wait is allowed during agent-to-agent calls
+
+## Guidelines
+
+### Locking
+
+- You may hold **at most one lock at a time**. Release your current lock before acquiring another.
+- Always acquire a lock before starting work on a shared resource (issues, PRs, deployments).
+- Always release the lock when done.
+- If `acquire_lock` fails for ANY reason (conflict, deadlock, already holding), **skip that resource** — do not wait, retry, or proceed without the lock.
+- Locks expire automatically after 30 minutes. For long operations, acquire with a longer TTL.
+- Resource keys must be valid URIs (e.g. `"github://acme/app/issues/42"`, `"file:///deployments/api-prod"`).
+
+### Subagent calls
+
+- Calls are non-blocking — fire multiple `call_agent` calls, then poll with `check_call`.
+- Do work between polls rather than polling in a tight loop.
+- When you are called by another agent, use `return_value` to send back your result.
+- Called agents cannot call back to the calling agent (no cycles).
+- Call chains are allowed (A calls B, B calls C) up to `maxCallDepth` (default: 3).
+
+### Call rules
+
+- An agent cannot call itself (self-calls are rejected)
+- If all runners for the target agent are busy, the call is queued (up to `workQueueSize`, default: 100)
+- Called runs do not re-run — they respond to the single call
+
+## Auto-release on Exit
+
+When an agent session ends — whether it finishes successfully, hits an error, or times out — all of its locks are released automatically by the scheduler. You don't need to worry about cleanup in error paths.
+
+## See Also
+
+- [Resource Locks](/concepts/resource-locks) — how the locking system works
+- [Subagents Guide](/guides/subagents) — patterns for agent-to-agent workflows
+- [Agents — Wait & Resume](/concepts/agents#wait--resume) — architecture details for wait_for_trigger

@@ -2,7 +2,7 @@
  * Integration tests: execution/call-dispatcher.ts wireCallDispatcher() — no Docker required.
  *
  * wireCallDispatcher() installs a call dispatcher on the gateway that handles
- * incoming al-subagent calls. It validates the call entry before delegating to
+ * incoming call_agent requests. It validates the call entry before delegating to
  * dispatchOrQueue(). All validation branches can be exercised without Docker by
  * constructing minimal mocks for GatewayServer, SchedulerContext, and StatusTracker.
  *

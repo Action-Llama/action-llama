@@ -100,9 +100,9 @@ describe(
 
     // ── buildSkillsBlock() subagents=true branch ──────────────────────────────
 
-    it("subagents=true includes al-subagent skill block in skeleton", () => {
+    it("subagents=true includes call_agent skill block in skeleton", () => {
       const result = buildPromptSkeleton(agentConfig, { subagents: true });
-      expect(result).toContain("al-subagent");
+      expect(result).toContain("call_agent");
     });
 
     it("subagents=true with availableAgents lists agent names in skeleton", () => {
@@ -119,7 +119,7 @@ describe(
 
     it("subagents=true with no available agents omits agent list but includes skill block", () => {
       const result = buildPromptSkeleton(agentConfig, { subagents: true });
-      expect(result).toContain("al-subagent");
+      expect(result).toContain("call_agent");
       // No agent list header when availableAgents is not provided
       expect(result).not.toContain("Available Agents:");
     });
@@ -129,16 +129,16 @@ describe(
     it("locking=true AND subagents=true → both skill blocks present", () => {
       const result = buildPromptSkeleton(agentConfig, { locking: true, subagents: true });
       // Locking skill
-      expect(result).toContain("rlock");
+      expect(result).toContain("acquire_lock");
       // Subagent skill
-      expect(result).toContain("al-subagent");
+      expect(result).toContain("call_agent");
     });
 
     it("locking=true AND subagents=true → skill blocks appear after environment block", () => {
       const result = buildPromptSkeleton(agentConfig, { locking: true, subagents: true });
       const envIdx = result.indexOf("<environment>");
-      const lockIdx = result.indexOf("rlock");
-      const agentIdx = result.indexOf("al-subagent");
+      const lockIdx = result.indexOf("acquire_lock");
+      const agentIdx = result.indexOf("call_agent");
       expect(envIdx).toBeGreaterThan(-1);
       expect(lockIdx).toBeGreaterThan(envIdx);
       expect(agentIdx).toBeGreaterThan(envIdx);
@@ -146,8 +146,8 @@ describe(
 
     it("no skills → no skill blocks in skeleton", () => {
       const result = buildPromptSkeleton(agentConfig);
-      expect(result).not.toContain("rlock");
-      expect(result).not.toContain("al-subagent");
+      expect(result).not.toContain("acquire_lock");
+      expect(result).not.toContain("call_agent");
     });
 
     // ── buildPromptSkeleton with hostUser + subagents ─────────────────────────
@@ -161,7 +161,7 @@ describe(
       // hostUser environment
       expect(result).toContain("Your working directory is your current CWD");
       // subagent skill
-      expect(result).toContain("al-subagent");
+      expect(result).toContain("call_agent");
       expect(result).toContain("helper");
     });
 

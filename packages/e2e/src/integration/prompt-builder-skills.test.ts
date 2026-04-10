@@ -5,8 +5,8 @@
  * are injected into agent prompts. They are pure functions (no I/O) and can be
  * tested without Docker or a running scheduler.
  *
- * buildLockSkill() — Returns the <skill-lock> block containing documentation
- * about the rlock/runlock/rlock-heartbeat commands.
+ * buildLockSkill() — Returns the <skill-lock> block containing guidelines
+ * for using the acquire_lock and release_lock tools.
  *
  * buildSubagentSkill(availableAgents?) — Returns the <skill-subagent> block.
  * When availableAgents is provided, lists each agent's name and description.
@@ -14,20 +14,19 @@
  *
  * Test scenarios (no Docker required):
  *   1. buildLockSkill() returns a string containing <skill-lock> tags
- *   2. buildLockSkill() contains rlock command documentation
- *   3. buildLockSkill() contains runlock command documentation
- *   4. buildLockSkill() contains rlock-heartbeat command documentation
- *   5. buildLockSkill() is always the same string (idempotent)
- *   6. buildSubagentSkill() without agents returns <skill-subagent> block
- *   7. buildSubagentSkill() without agents does NOT include agent list
- *   8. buildSubagentSkill() with agents lists each agent's name
- *   9. buildSubagentSkill() with agents lists each agent's description
- *   10. buildSubagentSkill() with single agent contains agent block
- *   11. buildSubagentSkill() with multiple agents contains all names
- *   12. buildSubagentSkill() with empty array behaves same as undefined
- *   13. buildSubagentSkill() returns al-subagent command documentation
- *   14. buildSubagentSkill() returns al-subagent-check command documentation
- *   15. buildSubagentSkill() includes <skill-subagent> and </skill-subagent> tags
+ *   2. buildLockSkill() references acquire_lock tool
+ *   3. buildLockSkill() references release_lock tool
+ *   4. buildLockSkill() is always the same string (idempotent)
+ *   5. buildSubagentSkill() without agents returns <skill-subagent> block
+ *   6. buildSubagentSkill() without agents does NOT include agent list
+ *   7. buildSubagentSkill() with agents lists each agent's name
+ *   8. buildSubagentSkill() with agents lists each agent's description
+ *   9. buildSubagentSkill() with single agent contains agent block
+ *   10. buildSubagentSkill() with multiple agents contains all names
+ *   11. buildSubagentSkill() with empty array behaves same as undefined
+ *   12. buildSubagentSkill() references call_agent tool
+ *   13. buildSubagentSkill() references check_call tool
+ *   14. buildSubagentSkill() includes <skill-subagent> and </skill-subagent> tags
  *
  * Covers:
  *   - agents/prompt.ts: buildLockSkill() — all content branches
@@ -63,16 +62,12 @@ describe(
         expect(buildLockSkill()).toContain("</skill-lock>");
       });
 
-      it("contains rlock command", () => {
-        expect(buildLockSkill()).toContain("rlock");
+      it("references acquire_lock tool", () => {
+        expect(buildLockSkill()).toContain("acquire_lock");
       });
 
-      it("contains runlock command", () => {
-        expect(buildLockSkill()).toContain("runlock");
-      });
-
-      it("contains rlock-heartbeat command", () => {
-        expect(buildLockSkill()).toContain("rlock-heartbeat");
+      it("references release_lock tool", () => {
+        expect(buildLockSkill()).toContain("release_lock");
       });
 
       it("contains 'Resource Locking' heading", () => {
@@ -116,12 +111,12 @@ describe(
         expect(buildSubagentSkill()).toContain("</skill-subagent>");
       });
 
-      it("contains al-subagent command", () => {
-        expect(buildSubagentSkill()).toContain("al-subagent");
+      it("references call_agent tool", () => {
+        expect(buildSubagentSkill()).toContain("call_agent");
       });
 
-      it("contains al-subagent-check command", () => {
-        expect(buildSubagentSkill()).toContain("al-subagent-check");
+      it("references check_call tool", () => {
+        expect(buildSubagentSkill()).toContain("check_call");
       });
 
       it("does NOT contain 'Available Agents' heading when no agents", () => {

@@ -86,64 +86,6 @@ describe.skipIf(!DOCKER)("integration: webhooks", { timeout: 180_000 }, () => {
     expect((await res2.json()).matched).toBeGreaterThanOrEqual(1);
   });
 
-  it("webhook-triggered agent can use al-subagent to trigger another agent", async () => {
-    harness = await IntegrationHarness.create({
-      agents: [
-        {
-          name: "webhook-caller",
-          webhooks: [{ source: "test-hook" }],
-          testScript: [
-            "#!/bin/sh",
-            // al-subagent — verify exit 0 + ok=true
-            "set +e",
-            'RESULT=$(echo "triggering responder" | al-subagent responder)',
-            "RC=$?",
-            "set -e",
-            'test "$RC" -eq 0 || { echo "al-subagent exit=$RC: $RESULT"; exit 1; }',
-            'OK=$(echo "$RESULT" | jq -r .ok)',
-            'test "$OK" = "true" || { echo "al-subagent ok=$OK: $RESULT"; exit 1; }',
-            "exit 0",
-          ].join("\n"),
-        },
-        {
-          name: "responder",
-          schedule: "0 0 31 2 *", // needs schedule or webhook to be valid
-          testScript: [
-            "#!/bin/sh",
-            'echo "responder received call"',
-            "exit 0",
-          ].join("\n"),
-        },
-      ],
-      globalConfig: {
-        webhooks: { "test-hook": { type: "test" } },
-      },
-    });
-
-    await harness.start();
-
-    // Manually trigger the responder agent since there are no more automatic initial runs
-    await harness.triggerAgent("responder");
-    
-    // Wait for responder's manual run
-    await harness.waitForRunResult("responder");
-
-    // Fire webhook
-    await harness.sendWebhook({
-      event: "test",
-      repo: "acme/app",
-      sender: "tester",
-    });
-
-    // Wait for webhook-caller's run (triggered by webhook)
-    const callerRun = await harness.waitForRunResult("webhook-caller");
-    expect(callerRun.result).toBe("completed");
-
-    // Wait for responder's triggered run (triggered by webhook-caller via al-subagent)
-    const responderRun = await harness.waitForRunResult("responder");
-    expect(responderRun.result).toBe("completed");
-  });
-
   it("GET /webhooks/:source returns 404 when source does not support CRC challenge", async () => {
     // The GET /webhooks/:source route handles CRC challenge-response handshakes
     // (only supported by the Twitter provider). For all other webhook sources

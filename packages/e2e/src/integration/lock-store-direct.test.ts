@@ -2,7 +2,7 @@
  * Integration tests: execution/lock-store.ts LockStore — no Docker required.
  *
  * LockStore is an in-memory lock manager used by the scheduler to coordinate
- * resource access between running agent containers (via rlock/runlock/rlock-heartbeat).
+ * resource access between running agent instances (via acquire_lock/release_lock tools).
  * It maintains a wait-for graph for deadlock detection.
  *
  * The class has been tested only indirectly through Docker-based tests

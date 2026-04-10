@@ -34,9 +34,6 @@ Anti-exfiltration policy:
 Filesystem: The root filesystem is read-only. `/tmp` is the only writable directory.
 Use `/tmp` for cloning repos, writing scratch files, and any other disk I/O.
 Your working directory is `/app/static` which contains your agent files.
-
-Environment variables: Plain `export` does not persist across bash commands. Use `al-export NAME value`, then start later commands with `. "$(al-export -f)"`.
-See the agent commands reference for details.
 </environment>
 
 <webhook-trigger>
@@ -94,13 +91,12 @@ See [Credentials Reference](/reference/credentials) for all credential types and
 <environment>
 Filesystem: The root filesystem is read-only. `/tmp` is the only writable directory.
 ...
-Environment variables: Plain `export` does not persist across bash commands. Use `al-export NAME value`, then start later commands with `. "$(al-export -f)"`.
 </environment>
 ```
 
-Describes the filesystem constraints. In Docker mode, the agent learns that `/tmp` is writable and the root filesystem is read-only. In [host-user mode](/reference/agent-config#runtime), the agent's working directory is `/tmp/al-runs/<instance-id>/`. The `al-export` command persists environment variables in both modes.
+Describes the filesystem constraints. In Docker mode, the agent learns that `/tmp` is writable and the root filesystem is read-only. In [host-user mode](/reference/agent-config#runtime), the agent's working directory is its CWD.
 
-See [Environment Commands](/reference/agent-commands#environment-commands) for `al-export` details, and [Container Filesystem](/concepts/agents#container-filesystem) for the full mount table.
+See [Container Filesystem](/concepts/agents#container-filesystem) for the full mount table.
 
 ## Trigger Context
 
@@ -152,14 +148,14 @@ You have been given a specific task. Complete the task described above.
 </agent-call>
 
 You were called by the "orchestrator" agent. Review the call context above,
-do the requested work, and use `al-return` to send back your result.
+do the requested work, and use the `return_value` tool to send back your result.
 ```
 
 Contains the calling agent's name and the context string it passed. See the [Subagents Guide](/guides/subagents) for details on agent-to-agent calls.
 
 ## Skills
 
-If your agent enables [skills](/reference/agent-config#skills) like `lock` or `subagent`, additional instruction blocks are injected between the `<environment>` block and the trigger context. These teach the agent the commands it can use — `rlock`/`runlock` for [resource locks](/concepts/resource-locks), or `al-subagent`/`al-subagent-wait` for [subagent calls](/guides/subagents).
+If your agent enables [skills](/reference/agent-config#skills) like `lock` or `subagent`, additional guideline blocks are injected between the `<environment>` block and the trigger context. These teach the agent behavioral rules for using the scheduler tools — `acquire_lock`/`release_lock` for [resource locks](/concepts/resource-locks), or `call_agent`/`check_call` for [subagent calls](/guides/subagents).
 
 Skill blocks only appear when explicitly enabled in your `SKILL.md` frontmatter.
 
