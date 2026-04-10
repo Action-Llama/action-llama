@@ -47,9 +47,7 @@ export async function buildImageIfNeeded(imageName: string, contextPath: string)
     const requiredPaths = [
       'packages/action-llama/dist',
       'packages/action-llama/drizzle',
-      'packages/action-llama/package.json',
-      'packages/shared/dist',
-      'packages/shared/package.json'
+      'packages/action-llama/package.json'
     ];
 
     for (const requiredPath of requiredPaths) {

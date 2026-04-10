@@ -10,8 +10,6 @@ WORKDIR /app
 COPY packages/action-llama/dist ./action-llama/dist
 COPY packages/action-llama/drizzle ./action-llama/drizzle
 COPY packages/action-llama/package.json ./action-llama/
-COPY packages/shared/dist ./shared/dist
-COPY packages/shared/package.json ./shared/
 
 # Install action-llama globally, plus c8 for optional coverage instrumentation
 RUN cd action-llama && npm pack && npm install -g *.tgz c8
