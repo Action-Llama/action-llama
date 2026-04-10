@@ -1,5 +1,14 @@
 # @action-llama/action-llama
 
+## 0.29.1
+
+### Patch Changes
+
+- [`20a1e0c`](https://github.com/Action-Llama/action-llama/commit/20a1e0c5ba47f1398d656bd283dce7804ab2a7c1) Thanks [@asselstine](https://github.com/asselstine)! - Remove `@action-llama/shared` workspace package — shared code (log-format) is now inlined into consuming packages, fixing npm install failures for published builds.
+
+- Updated dependencies []:
+  - @action-llama/skill@0.29.1
+
 ## 0.29.0
 
 ### Minor Changes
