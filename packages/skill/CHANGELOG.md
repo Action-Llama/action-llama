@@ -1,5 +1,11 @@
 # @action-llama/skill
 
+## 0.28.0
+
+### Patch Changes
+
+- [#593](https://github.com/Action-Llama/action-llama/pull/593) [`55136b8`](https://github.com/Action-Llama/action-llama/commit/55136b8804f6b70dd762d9c75714d8220acb3dd1) Thanks [@asselstine](https://github.com/asselstine)! - Fix the skill package build so it runs on Node 20 without the `--experimental-strip-types` flag. `npm run build` now invokes a plain JavaScript build-docs script, which keeps the repo build working on the declared Node engine.
+
 ## 0.27.5
 
 ## 0.27.4

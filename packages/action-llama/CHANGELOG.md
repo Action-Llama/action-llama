@@ -1,5 +1,52 @@
 # @action-llama/action-llama
 
+## 0.28.0
+
+### Minor Changes
+
+- [`95748cd`](https://github.com/Action-Llama/action-llama/commit/95748cd0a7af3a34471bd4fd470145a5c129f64c) Thanks [@asselstine](https://github.com/asselstine)! - Centralize agent sessions into the scheduler process with pluggable transport layer.
+
+  LLM sessions now run in-process in the scheduler ("brain"), while commands execute on runtimes ("body") via a Transport abstraction. This replaces the previous architecture where the Claude CLI harness ran inside Docker containers and communicated with the scheduler over HTTP.
+
+  **New transport types:**
+
+  - `container` (default) — Docker container via `docker exec`
+  - `ssh` — remote VM via persistent SSH connection
+  - `host-user` — local OS user via `sudo -u`
+
+  Configure per-agent in `agents/<name>/config.toml`:
+
+  ```toml
+  [runtime]
+  type = "ssh"
+  host = "10.0.0.5"
+  user = "deploy"
+  key_path = "~/.ssh/id_rsa"
+  ```
+
+  **Breaking changes:**
+
+  - Removed Claude CLI harness support (Pi is now the only harness)
+  - Removed container registration/unregistration HTTP routes
+  - Removed `useBakedImages` from scheduler context
+  - Removed `_run-agent` hidden CLI command
+
+### Patch Changes
+
+- [`c17e528`](https://github.com/Action-Llama/action-llama/commit/c17e528cdfceeddac21161ca3b1b81d525032013) Thanks [@asselstine](https://github.com/asselstine)! - Accept both `key` and legacy `apiKey` fields on the dashboard login API. This keeps existing Web UI and automation clients working when authenticating against `/api/auth/login`.
+
+- [`8c002f4`](https://github.com/Action-Llama/action-llama/commit/8c002f45353a57f3cbbf61afdc00f5b391f85fd3) Thanks [@asselstine](https://github.com/asselstine)! - Fix transport runner failing to call LLM for custom baseUrl models and multiple null-guard crashes.
+
+  - Fix custom model registration using wrong Pi SDK API type (`openai-chatcompletions` → `openai-completions`), which caused sessions to silently complete without calling the LLM
+  - Fix `credentials is not iterable` crashes when agent config has no credentials defined (null guards in credential-setup, prompt, transport-runner, credential-refs, scheduler validation)
+  - Fix `--no-config` flag for `al add` (Commander.js sets `config: false`, not `noConfig: true`)
+  - Fix host-user runtime staging credentials to `/credentials/` (root filesystem) instead of a temp directory
+  - Add `baseUrl` to allowed model config fields in validation schema
+  - Add error logging when Pi SDK session completes with `stopReason: "error"`
+
+- Updated dependencies [[`55136b8`](https://github.com/Action-Llama/action-llama/commit/55136b8804f6b70dd762d9c75714d8220acb3dd1)]:
+  - @action-llama/skill@0.28.0
+
 ## 0.27.5
 
 ### Patch Changes
