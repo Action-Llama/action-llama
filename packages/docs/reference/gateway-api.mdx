@@ -29,6 +29,7 @@ The following routes require authentication:
 
 - `/dashboard` and `/dashboard/*` — all dashboard pages and SSE streams
 - `/control/*` — scheduler and agent control endpoints
+- `/sessions/*` — session listing and WebSocket attach
 - `/locks/status` — active lock information
 
 Health checks (`/health`), webhook endpoints (`/webhooks/*`), and container management routes are **not** protected.
@@ -58,6 +59,80 @@ All control endpoints use `POST` and require authentication.
 | `POST /control/agents/<name>/pause` | Pause an agent (alias for disable) |
 | `POST /control/agents/<name>/resume` | Resume an agent (alias for enable) |
 | `POST /control/agents/<name>/kill` | Kill all running instances of an agent |
+
+## Session API
+
+The session API exposes active agent sessions and a WebSocket endpoint for attaching to a running session in real time.
+
+### REST endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /sessions` | List all active sessions (status `running` or `waiting`). Returns `{ sessions: AgentSession[] }`. |
+| `GET /sessions/:id` | Fetch a single session by ID. Returns `{ session: AgentSession }` or `404`. |
+
+**`AgentSession` fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique session identifier |
+| `agentName` | string | Name of the agent |
+| `status` | `running` \| `waiting` | Current lifecycle state |
+| `startedAt` | string (ISO 8601) | When the session started |
+| `trigger` | string | What triggered this session (e.g. `schedule`, `webhook:github`, `manual`) |
+
+### WebSocket attach
+
+Upgrade a connection to `GET /sessions/:id/attach` to attach to a running session. The server streams JSONL events over the WebSocket and accepts command messages from the client.
+
+**Upgrading:**
+
+```bash
+# Using websocat (example)
+websocat -H "Authorization: Bearer <key>" \
+  ws://localhost:8080/sessions/dev-3a1b2c4d/attach
+```
+
+Authentication uses the same `Authorization: Bearer <key>` header as the HTTP API. Connections without a valid key are rejected with `401`.
+
+**On connect**, send a `get_state` command to receive the full session transcript:
+
+```json
+{"type":"get_state"}
+```
+
+The server responds with a `state_snapshot` event containing the current Pi session state (messages, model, status).
+
+**Client → server commands (JSONL):**
+
+| Command | Description |
+|---------|-------------|
+| `{"type":"get_state"}` | Request the current session state snapshot |
+| `{"type":"steer","message":"..."}` | Inject a steer message into the agent's current turn |
+| `{"type":"abort"}` | Cancel the current turn and end the session |
+
+**Server → client events (JSONL):**
+
+The server forwards all Pi session events as JSONL, one event per line. Key event types:
+
+| Event type | Description |
+|------------|-------------|
+| `state_snapshot` | Full session state (sent in response to `get_state`) |
+| `message_update` | Streaming token-by-token assistant output |
+| `turn_end` | A turn completed |
+| `tool_execution_start` | Tool call started |
+| `tool_execution_end` | Tool call completed (includes `isError`) |
+| `agent_end` | Session reached terminal state — connection closes after this |
+| `error` | An error occurred in the session |
+
+**Disconnect behaviour:**
+
+- When the session completes normally, the server sends a final `agent_end` event and closes the connection.
+- If the session is in a `waiting` state, the WebSocket stays open and sends a state update. The client remains attached.
+- Detaching (closing the client socket) does not affect the running session.
+- Multiple clients can attach to the same session simultaneously; all receive the same event stream.
+
+<Info>The Pi extension (`pi -e @action-llama/action-llama/extension`) uses this protocol to power the `/sessions` and `/attach` commands. See the [Pi integration](/integrations/pi) for the user-facing interface.</Info>
 
 ## Status API
 

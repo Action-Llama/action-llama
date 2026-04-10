@@ -1,0 +1,105 @@
+---
+title: "Pi"
+description: "Use the Action Llama Pi extension to list and attach to running agent sessions from inside Pi"
+---
+
+The Action Llama Pi extension adds two commands to Pi — `/sessions` and `/attach` — that let you observe and steer running agent sessions in real time without leaving your editor.
+
+## Setup
+
+Load the extension when starting Pi:
+
+```bash
+pi -e @action-llama/action-llama/extension
+```
+
+The extension reads your project's `config.toml` for the gateway port and the API key from `~/.action-llama/credentials/gateway_api_key/default/key`. Run `al doctor` first if you haven't set up credentials yet.
+
+<Info>The scheduler must be running (`al start`) for the session commands to work. The extension requires the gateway to be reachable at the configured port (default: `8080`).</Info>
+
+### Gateway URL override
+
+If the gateway is running on a non-standard port or host, pass `--gateway` when starting Pi:
+
+```bash
+pi -e @action-llama/action-llama/extension --gateway http://localhost:9090
+```
+
+## Commands
+
+### `/sessions` — list and attach
+
+Lists all active sessions (running and waiting) and opens an interactive picker.
+
+```
+/sessions
+```
+
+The picker shows each session's agent name, status, trigger source, and ID. Selecting a session immediately opens the attach view.
+
+### `/attach <id>` — attach directly
+
+Attach directly to a session by ID, skipping the picker:
+
+```
+/attach dev-3a1b2c4d
+```
+
+Session IDs appear in `al stat`, the web dashboard, and in the `/sessions` picker.
+
+## Attach view
+
+Once attached, Pi enters a full-screen view that takes over the terminal:
+
+```
+────────────────────────────────────────────────────
+ Attached: dev-3a1b2c4d   Enter=steer  Esc=detach  Ctrl+C=abort
+────────────────────────────────────────────────────
+  ─── Session transcript ───
+  User: Triggered by schedule
+  Agent: Checking open PRs on github.com/org/repo...
+  [bash] gh pr list --state open --json number,title
+  [bash] gh pr view 42 --json reviews,statusCheckRollup
+  Agent: PR #42 is approved and all checks pass. Merging...
+  ─── Live ───
+  [bash] gh pr merge 42 --squash --auto
+  >
+────────────────────────────────────────────────────
+  >
+```
+
+The view shows the full session transcript on connect, then streams live events as they arrive.
+
+### Keyboard controls
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Send a steer message to the agent mid-turn |
+| `Escape` | Detach and return to Pi (session continues running) |
+| `Ctrl+C` | Send an abort signal and detach |
+
+### Steering
+
+Typing into the input line and pressing Enter injects a message into the agent's current turn. This works like sending a steer to the underlying Pi session — the agent sees it as in-context guidance and can act on it immediately.
+
+<Note>Steer is only effective while the agent is actively in a turn. If the session is waiting for a trigger or between turns, the message is still delivered but the agent will act on it when it next runs.</Note>
+
+### Abort
+
+`Ctrl+C` sends an abort signal that cancels the current turn. The session ends and the attach view closes automatically. This is equivalent to `al kill <id>`.
+
+### Detach
+
+`Escape` closes the attach view without affecting the session. The agent continues running normally. You can re-attach at any time with `/attach <id>`.
+
+### Auto-exit
+
+The attach view closes automatically when:
+- The session reaches a terminal state (completed, error, killed)
+- The WebSocket connection is dropped
+
+## See Also
+
+- [Claude](/integrations/claude) — Claude Code MCP integration
+- [Gateway API](/reference/gateway-api) — Session API endpoints and WebSocket attach protocol
+- [CLI Commands](/reference/cli-commands) — `al start`, `al stat`, `al kill`

@@ -45,6 +45,7 @@ export const DOC_MAPPING: Record<string, string[]> = {
     "guides/custom-dockerfiles",
     "reference/gateway-api",
     "reference/web-dashboard",
+    "integrations/pi",
   ],
   "debugging.md": [
     "reference/agent-tools",

@@ -55,7 +55,8 @@
           {
             "group": "Integrations",
             "pages": [
-              "integrations/claude"
+              "integrations/claude",
+              "integrations/pi"
             ]
           },
           {
