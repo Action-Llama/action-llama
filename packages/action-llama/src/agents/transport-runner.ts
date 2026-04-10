@@ -331,6 +331,8 @@ export class TransportAgentRunner implements PoolRunner {
         elapsed: `${elapsedStr}s`,
         hasReturnValue: !!returnValue,
         turnCount: tokenUsage?.turnCount,
+        inputTokens: tokenUsage?.inputTokens,
+        outputTokens: tokenUsage?.outputTokens,
         totalTokens: tokenUsage?.totalTokens,
         cost: tokenUsage?.cost,
         error: runError,
@@ -785,16 +787,9 @@ export class TransportAgentRunner implements PoolRunner {
 
           this.circuitBreaker.recordSuccess(modelConfig.provider, modelConfig.model);
 
-          // Get usage stats
+          // Get usage stats (logged later in "run outcome")
           const sessionStats = session.getSessionStats();
           const usage: TokenUsage = sessionStatsToUsage(sessionStats);
-
-          this.logger.info({
-            inputTokens: usage.inputTokens,
-            outputTokens: usage.outputTokens,
-            turnCount: usage.turnCount,
-            cost: usage.cost,
-          }, "session completed");
 
           session.dispose();
           this._session = null;
@@ -855,27 +850,28 @@ export class TransportAgentRunner implements PoolRunner {
 
       if (event.type === "tool_execution_end") {
         const toolName = String(event.toolName || "unknown");
-        const resultStr = typeof event.result === "string"
-          ? event.result
-          : JSON.stringify(event.result);
+        const resultText = this.extractToolResultText(event.result);
 
         if (event.isError) {
-          const errorSummary = resultStr.slice(0, 200);
+          const errorSummary = resultText.slice(0, 200);
           this.statusTracker?.setAgentError(this.agentConfig.name, errorSummary);
           this.logger.warn({ toolName, error: errorSummary }, "[error]");
-        } else {
-          this.logger.info({ toolName, summary: resultStr.slice(0, 200) }, "[result]");
+        } else if (resultText) {
+          this.logger.info({ toolName, summary: resultText.slice(0, 200) }, "[result]");
         }
       }
 
-      if (event.type === "text") {
-        const text = String(event.text ?? event.content ?? "");
-        if (text) this._turnTextBuffer += text;
-      }
-
-      if (event.type === "thinking") {
-        const text = String(event.text ?? event.content ?? "");
-        if (text) this._turnThinkingBuffer += text;
+      // Pi SDK emits thinking/text as message_update events with assistantMessageEvent
+      if (event.type === "message_update" && event.assistantMessageEvent) {
+        const ame = event.assistantMessageEvent;
+        if (ame.type === "thinking_delta") {
+          const delta = String(ame.delta ?? "");
+          if (delta) this._turnThinkingBuffer += delta;
+        }
+        if (ame.type === "text_delta") {
+          const delta = String(ame.delta ?? ame.content ?? "");
+          if (delta) this._turnTextBuffer += delta;
+        }
       }
 
       if (event.type === "turn_end") {
@@ -893,14 +889,36 @@ export class TransportAgentRunner implements PoolRunner {
     });
   }
 
+  /**
+   * Extract human-readable text from a tool result, unwrapping the Pi SDK content array format.
+   * Returns empty string for empty/trivial results.
+   */
+  private extractToolResultText(result: unknown): string {
+    if (result == null) return "";
+    if (typeof result === "string") return result.trim();
+
+    // Pi SDK wraps results as { content: [{ type: "text", text: "..." }] }
+    const obj = result as any;
+    if (obj.content && Array.isArray(obj.content)) {
+      const texts = obj.content
+        .filter((c: any) => c.type === "text" && c.text)
+        .map((c: any) => String(c.text).trim())
+        .filter(Boolean);
+      return texts.join("\n");
+    }
+
+    const str = JSON.stringify(result);
+    return str === "{}" || str === "[]" ? "" : str;
+  }
+
   /** Flush accumulated text/thinking buffers to the logger. */
   private flushTurnBuffers(): void {
     if (this._turnThinkingBuffer) {
-      this.logger.info({ text: this._turnThinkingBuffer.slice(0, 500) }, "[thinking]");
+      this.logger.info({ text: this._turnThinkingBuffer.slice(0, 2000) }, "[thinking]");
       this._turnThinkingBuffer = "";
     }
     if (this._turnTextBuffer) {
-      this.logger.info({ text: this._turnTextBuffer.slice(0, 500) }, "[text]");
+      this.logger.info({ text: this._turnTextBuffer.slice(0, 2000) }, "[text]");
       this._turnTextBuffer = "";
     }
   }

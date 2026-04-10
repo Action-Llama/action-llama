@@ -105,9 +105,12 @@ export function formatLogEntry(entry: LogEntry, showDebug = false): FormattedLog
   if (msg === "run outcome") {
     const result = str(entry.result);
     const elapsed = str(entry.elapsed);
+    const tokens = entry.inputTokens != null && entry.outputTokens != null
+      ? `${Number(entry.inputTokens) + Number(entry.outputTokens)} tokens`
+      : entry.totalTokens != null ? `${entry.totalTokens} tokens` : "";
     const turns = entry.turnCount != null ? `${entry.turnCount} turns` : "";
     const cost = entry.cost != null ? `$${Number(entry.cost).toFixed(4)}` : "";
-    const meta = [elapsed, turns, cost].filter(Boolean).join(", ");
+    const meta = [elapsed, tokens, turns, cost].filter(Boolean).join(", ");
     const errStr = entry.error ? ` — ${str(entry.error).slice(0, 300)}` : "";
     return {
       timestamp: entry.time,
