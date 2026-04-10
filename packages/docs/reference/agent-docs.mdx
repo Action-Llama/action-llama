@@ -44,10 +44,10 @@ Your configuration is in the `<skill-config>` block at the start of your prompt.
 ## Workflow
 
 1. **Find work** — If triggered by webhook, work on the issue from the trigger. If scheduled, search for open issues labeled with the label from `<skill-config>`.triggerLabel.
-2. **Lock the issue** — LOCK("github issue owner/repo#N"). If locked, skip it.
+2. **Lock the issue** — `acquire_lock` with resource `"github://owner/repo/issues/N"`. If locked, skip it.
 3. **Implement** — Clone the repo, create a branch, make changes, run tests.
 4. **Open a PR** — Push and open a PR linking to the issue.
-5. **Unlock** — UNLOCK("github issue owner/repo#N").
+5. **Unlock** — `release_lock` with the same resource.
 
 ## Rules
 

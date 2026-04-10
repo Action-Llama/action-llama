@@ -29,11 +29,11 @@ With multiple instances, two agents might try to work on the same issue. Add a [
 
 1. List open issues labeled "agent" in repos from `<agent-config>`
 2. For each issue:
-   - LOCK("github://owner/repo/issues/123")
+   - `acquire_lock` with resource `"github://owner/repo/issues/123"`
    - If the lock fails, skip this issue — another instance is handling it
    - Clone the repo, create a branch, implement the fix
    - Open a PR and link it to the issue
-   - UNLOCK("github://owner/repo/issues/123")
+   - `release_lock` with resource `"github://owner/repo/issues/123"`
 ```
 
 ### How lock commands work

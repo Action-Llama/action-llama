@@ -60,10 +60,10 @@ Before the `SKILL.md` instructions run, the agent receives a preamble that teach
 | **Signals** | `set_status`, `return_value` | Tools for reporting status and returning values to the scheduler |
 | **Calls** | `call_agent`, `check_call` | Agent-to-agent calls with return values |
 | **Wait** | `wait_for_trigger` | Suspend and resume on a future webhook or agent trigger |
-| **Locks** | `LOCK(...)`, `UNLOCK(...)`, `HEARTBEAT(...)` | Resource locking for parallel coordination |
+| **Locks** | `acquire_lock`, `release_lock` | Resource locking for parallel coordination |
 | **Credentials** | `GITHUB_TOKEN`, `gh`, `git`, etc. | Credential access and tool usage |
 
-Agent authors write the shorthand naturally (e.g. `LOCK("github issue acme/app#42")`). The agent learns what it means from the preamble.
+Agent authors reference the tools naturally in their `SKILL.md` (e.g. `acquire_lock` with a resource URI). The agent learns what the tools do from the preamble.
 
 See [Agent Tools](/reference/agent-tools) for the complete tool reference.
 

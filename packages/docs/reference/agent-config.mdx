@@ -78,7 +78,7 @@ credentials = ["github_token", "git_ssh", "sentry_token"]
 schedule = "*/5 * * * *"
 
 # Optional: number of concurrent runs allowed (default: 1)
-# When scale > 1, use LOCK/UNLOCK in your actions to coordinate
+# When scale > 1, use acquire_lock/release_lock in your actions to coordinate
 scale = 2
 
 # Optional: max runtime in seconds (default: falls back to [local].timeout, then 900)
@@ -149,7 +149,7 @@ run_as = "al-agent"           # OS user to run as (default: "al-agent")
 | `harness` | table | No | Harness override for this agent. Falls back to project `[harness]`, then defaults to `pi`. |
 | `credentials` | string[] | Yes | Credential refs: `"type"` for default instance, `"type:instance"` for named instance. See [Credentials](/reference/credentials). |
 | `schedule` | string | No* | Cron expression for polling |
-| `scale` | number | No | Number of concurrent runs allowed (default: 1). Set to `0` to disable the agent. Use lock skills in your actions to coordinate instances. See [Resource Locks](/concepts/resource-locks). |
+| `scale` | number | No | Number of concurrent runs allowed (default: 1). Set to `0` to disable the agent. Use `acquire_lock`/`release_lock` in your actions to coordinate instances. See [Resource Locks](/concepts/resource-locks). |
 | `timeout` | number | No | Max runtime in seconds. Falls back to `[local].timeout` in project config, then `900`. See [Timeout](#timeout). |
 | `maxWorkQueueSize` | number | No | Maximum queued work items when all runners are busy. Falls back to global `workQueueSize` (default: 20). Oldest events are dropped to make room for newer ones. |
 | `waitTimeout` | number | No | Maximum wait timeout for `wait_for_trigger` in seconds. Falls back to global `defaultWaitTimeout` (default: 1800 / 30 minutes). See [Wait & Resume](/concepts/agents#wait--resume). |
