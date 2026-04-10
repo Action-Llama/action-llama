@@ -39,7 +39,8 @@
               "guides/shared-context",
               "guides/scaling-agents",
               "guides/subagents",
-              "guides/custom-dockerfiles"
+              "guides/custom-dockerfiles",
+              "guides/pi-extension"
             ]
           },
           {

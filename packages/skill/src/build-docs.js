@@ -45,6 +45,8 @@ export const DOC_MAPPING = {
     "guides/custom-dockerfiles",
     "reference/gateway-api",
     "reference/web-dashboard",
+    "guides/pi-extension",
+    "integrations/pi",
   ],
   "debugging.md": [
     "reference/agent-tools",

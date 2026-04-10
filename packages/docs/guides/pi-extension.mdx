@@ -1,0 +1,119 @@
+---
+title: "Using Pi with Action Llama"
+description: "Install the Action Llama Pi extension to monitor and steer running agent sessions from inside your editor"
+---
+
+The Action Llama Pi extension lets you watch agent sessions in real time and send mid-turn guidance — without leaving your Pi editor. It connects to the gateway's session attach protocol and gives you a live view of what the agent is doing.
+
+## Prerequisites
+
+- `pi` installed (`npm install -g @mariozechner/pi-coding-agent`)
+- An Action Llama project with `al start` running
+- Credentials set up (`al doctor`)
+
+## Installing the extension
+
+The extension ships inside `@action-llama/action-llama`, which is already installed locally in your project. To load it, pass `-e` when starting Pi from your project directory:
+
+```bash
+cd my-project
+pi -e @action-llama/action-llama/extension
+```
+
+That's it — no separate install step. Pi loads the extension at startup and registers the `/sessions` and `/attach` commands.
+
+<Tip>Add this to a shell alias or a project script so you don't have to type the flag every time:
+
+```bash
+alias pi-al='pi -e @action-llama/action-llama/extension'
+```
+</Tip>
+
+## Discovering sessions
+
+Once Pi is open with the extension loaded, run:
+
+```
+/sessions
+```
+
+This calls `GET /sessions` on the gateway and shows all active sessions — agents that are currently running or waiting for a trigger:
+
+```
+ Select a session to attach:
+ ❯ dev  [running]   schedule   dev-3a1b2c4d
+   reviewer  [running]   webhook:github   reviewer-9f2e1a3b
+   notifier  [waiting]   webhook:linear   notifier-c4d5e6f7
+```
+
+Select any entry to open the attach view for that session.
+
+## Attaching directly
+
+If you know the session ID (from `al stat` or the web dashboard), attach directly:
+
+```
+/attach dev-3a1b2c4d
+```
+
+## The attach view
+
+Attaching opens a full-screen view inside Pi:
+
+```
+────────────────────────────────────────────────────────────
+ Attached: dev-3a1b2c4d   Enter=steer  Esc=detach  Ctrl+C=abort
+────────────────────────────────────────────────────────────
+  ─── Session transcript ───
+  User: Triggered by schedule
+  Agent: Checking for open issues labeled "needs-fix"...
+  [bash] gh issue list --label needs-fix --state open --json number,title
+  Agent: Found 3 issues. Starting with #88...
+  ─── Live ───
+  [bash] git checkout -b fix/issue-88
+  >
+────────────────────────────────────────────────────────────
+  >
+```
+
+The transcript section shows everything that happened before you attached. The live section streams new events as they arrive.
+
+## Steering the agent
+
+Type a message and press `Enter` to send it to the agent mid-turn:
+
+```
+> Focus on issue #88 only — skip the others for now
+```
+
+The agent receives this as in-context guidance and can act on it without interrupting the current tool call. Use steering to:
+
+- Narrow scope when the agent is about to do more than you want
+- Add context the agent didn't have when it started
+- Correct course after seeing an early result
+
+<Note>Steering works best early in a turn — before the agent has made major decisions. If the agent is deep into a long task, consider aborting and re-triggering with a more specific prompt.</Note>
+
+## Aborting a session
+
+Press `Ctrl+C` to send an abort signal. The current turn is cancelled and the attach view closes. This is equivalent to running `al kill <id>` from the terminal.
+
+## Detaching without stopping
+
+Press `Escape` to close the attach view and return to Pi. The agent keeps running. You can re-attach later with `/attach <id>`.
+
+## Non-default gateway port
+
+If your project runs the gateway on a non-default port, pass `--gateway` when starting Pi:
+
+```bash
+pi -e @action-llama/action-llama/extension --gateway http://localhost:9090
+```
+
+This also works for attaching to a remote scheduler over an SSH tunnel or forwarded port.
+
+## Next steps
+
+- [Pi reference](/integrations/pi) — full command and attach view reference
+- [Gateway API](/reference/gateway-api) — session endpoints and WebSocket protocol
+- [CLI Commands](/reference/cli-commands) — `al stat`, `al kill`, `al logs`
