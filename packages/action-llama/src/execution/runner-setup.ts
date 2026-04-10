@@ -15,6 +15,7 @@ import { TransportAgentRunner, type TransportAgentRunnerOpts } from "../agents/t
 import { ModelCircuitBreaker } from "../agents/model-fallback.js";
 import type { SchedulerToolsOpts } from "../agents/scheduler-tools.js";
 import type { WaitingRegistry } from "./waiting-registry.js";
+import type { PromptSkills } from "../agents/prompt.js";
 
 export interface RunnerSetupResult {
   runnerPools: Record<string, RunnerPool>;
@@ -35,13 +36,15 @@ export interface RunnerSetupOpts {
   schedulerToolsDeps?: Omit<SchedulerToolsOpts, "agentName" | "instanceId" | "depth" | "onReturnValue">;
   /** Waiting registry for wait/resume support. */
   waitingRegistry?: WaitingRegistry;
+  /** Prompt skills to include in the system prompt (locking, subagents, etc.). */
+  skills?: PromptSkills;
 }
 
 export async function createRunnerPools(opts: RunnerSetupOpts): Promise<RunnerSetupResult> {
   const {
     globalConfig, agentConfigs,
     baseImage, statusTracker, mkLogger, projectPath, logger,
-    schedulerToolsDeps, waitingRegistry,
+    schedulerToolsDeps, waitingRegistry, skills,
   } = opts;
 
   const circuitBreaker = new ModelCircuitBreaker();
@@ -57,6 +60,7 @@ export async function createRunnerPools(opts: RunnerSetupOpts): Promise<RunnerSe
       projectPath,
       schedulerToolsDeps,
       waitingRegistry,
+      skills,
     });
   };
 

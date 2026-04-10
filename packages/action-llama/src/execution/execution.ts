@@ -1,5 +1,6 @@
 import {
-  buildScheduledPrompt, buildWebhookPrompt, buildCalledPrompt, buildManualPrompt,
+  buildScheduledSuffix, buildWebhookSuffix, buildCalledSuffix, buildManualSuffix,
+  buildUserPromptSuffix,
   type PromptSkills,
 } from "../agents/prompt.js";
 import type { WorkQueue, QueuedWorkItem } from "../shared/work-queue.js";
@@ -57,21 +58,24 @@ export interface SchedulerContext {
   waitingRegistry?: WaitingRegistry;
 }
 
-// Prompt helpers: build full prompts for each trigger type.
-export function makeScheduledPrompt(agentConfig: AgentConfig, ctx: SchedulerContext): string {
-  return buildScheduledPrompt(agentConfig, ctx.skills);
+// Prompt helpers: build trigger-specific suffixes only.
+// The stable skeleton (agent-config, credentials, environment, skills) is now in
+// the Pi session system prompt — set by TransportAgentRunner via buildAgentSystemPrompt().
+// These functions return only the dynamic trigger context for the user message.
+export function makeScheduledPrompt(_agentConfig: AgentConfig, _ctx: SchedulerContext): string {
+  return buildScheduledSuffix();
 }
 
-export function makeWebhookPrompt(agentConfig: AgentConfig, context: WebhookContext, ctx: SchedulerContext): string {
-  return buildWebhookPrompt(agentConfig, context, ctx.skills);
+export function makeWebhookPrompt(_agentConfig: AgentConfig, context: WebhookContext, _ctx: SchedulerContext): string {
+  return buildWebhookSuffix(context);
 }
 
-export function makeManualPrompt(agentConfig: AgentConfig, ctx: SchedulerContext, prompt?: string): string {
-  return buildManualPrompt(agentConfig, ctx.skills, prompt);
+export function makeManualPrompt(_agentConfig: AgentConfig, _ctx: SchedulerContext, prompt?: string): string {
+  return prompt ? buildUserPromptSuffix(prompt) : buildManualSuffix();
 }
 
-export function makeTriggeredPrompt(agentConfig: AgentConfig, sourceAgent: string, context: string, ctx: SchedulerContext): string {
-  return buildCalledPrompt(agentConfig, sourceAgent, context, ctx.skills);
+export function makeTriggeredPrompt(_agentConfig: AgentConfig, sourceAgent: string, context: string, _ctx: SchedulerContext): string {
+  return buildCalledSuffix(sourceAgent, context);
 }
 
 /** Run a single agent and dispatch any resulting triggers. */

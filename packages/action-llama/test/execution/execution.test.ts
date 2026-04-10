@@ -551,29 +551,32 @@ describe("runWithReruns", () => {
 });
 
 describe("makeManualPrompt", () => {
-  it("returns full prompt with user prompt when given", () => {
+  it("returns trigger suffix with user prompt when given", () => {
     const config = makeAgentConfig("a");
     const ctx = makeCtx();
     const result = makeManualPrompt(config, ctx, "deploy");
-    expect(result).toContain("<agent-config>");
     expect(result).toContain("<user-prompt>");
     expect(result).toContain("deploy");
+    // Skeleton is now in system prompt, not here
+    expect(result).not.toContain("<agent-config>");
   });
 
-  it("returns full prompt without user prompt section when no prompt", () => {
+  it("returns manual suffix when no prompt given", () => {
     const config = makeAgentConfig("a");
     const ctx = makeCtx();
     const result = makeManualPrompt(config, ctx);
-    expect(result).toContain("<agent-config>");
+    expect(result).toContain("triggered manually");
+    expect(result).not.toContain("<agent-config>");
   });
 });
 
 describe("makeScheduledPrompt", () => {
-  it("returns full scheduled prompt", () => {
+  it("returns scheduled suffix only", () => {
     const config = makeAgentConfig("a");
     const ctx = makeCtx();
     const result = makeScheduledPrompt(config, ctx);
-    expect(result).toContain("<agent-config>");
+    expect(result).toContain("running on a schedule");
+    expect(result).not.toContain("<agent-config>");
   });
 });
 
@@ -588,23 +591,25 @@ describe("makeWebhookPrompt", () => {
     timestamp: new Date().toISOString(),
   };
 
-  it("returns full webhook prompt with event details", () => {
+  it("returns webhook suffix with event details", () => {
     const config = makeAgentConfig("a");
     const ctx = makeCtx();
     const result = makeWebhookPrompt(config, webhookCtx, ctx);
-    expect(result).toContain("<agent-config>");
+    expect(result).toContain("<webhook-trigger>");
     expect(result).toContain("push");
+    expect(result).not.toContain("<agent-config>");
   });
 });
 
 describe("makeTriggeredPrompt", () => {
-  it("returns full triggered prompt with source agent and context", () => {
+  it("returns called suffix with source agent and context", () => {
     const config = makeAgentConfig("b");
     const ctx = makeCtx();
     const result = makeTriggeredPrompt(config, "agent-a", "deploy context", ctx);
-    expect(result).toContain("<agent-config>");
+    expect(result).toContain("<agent-call>");
     expect(result).toContain("agent-a");
     expect(result).toContain("deploy context");
+    expect(result).not.toContain("<agent-config>");
   });
 });
 

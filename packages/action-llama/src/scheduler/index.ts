@@ -236,6 +236,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     globalConfig, agentConfigs,
     baseImage: effectiveBaseImage, statusTracker, mkLogger, projectPath, logger,
     schedulerToolsDeps, waitingRegistry,
+    skills: { locking: true },
   });
 
   // Sync status tracker with actual pool sizes

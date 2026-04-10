@@ -134,6 +134,19 @@ function buildSkillsBlock(skills?: PromptSkills): string {
 }
 
 /**
+ * Build a minimal system prompt for the Pi session, replacing Pi's default boilerplate.
+ * Contains a concise preamble followed by the full prompt skeleton (config, credentials,
+ * environment, skills). Designed to be passed as `systemPrompt` to DefaultResourceLoader
+ * so it becomes the Pi session's system message — stable across turns and cacheable by
+ * providers that support automatic prefix caching (e.g. OpenAI).
+ */
+export function buildAgentSystemPrompt(agentConfig: AgentConfig, skills?: PromptSkills): string {
+  const preamble = "You are an autonomous coding agent. You help accomplish tasks by reading files, executing commands, editing code, and writing new files. Be concise. Show file paths clearly when working with files.";
+  const skeleton = buildPromptSkeleton(agentConfig, skills);
+  return `${preamble}\n\n${skeleton}`;
+}
+
+/**
  * Build the static portion of the prompt that is identical across all trigger types.
  * Contains agent config params, credential context, and skill blocks.
  * This can be baked into the Docker image at build time.

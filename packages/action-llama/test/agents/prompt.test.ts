@@ -3,7 +3,7 @@ import {
   buildScheduledPrompt, buildWebhookPrompt, buildManualPrompt, buildCalledPrompt,
   buildCredentialContext, buildLockSkill, buildSubagentSkill, buildPromptSkeleton,
   buildScheduledSuffix, buildManualSuffix, buildCalledSuffix, buildWebhookSuffix,
-  buildUserPromptSuffix,
+  buildUserPromptSuffix, buildAgentSystemPrompt,
 } from "../../src/agents/prompt.js";
 import type { AgentConfig } from "../../src/shared/config.js";
 import type { WebhookContext } from "../../src/webhooks/types.js";
@@ -397,5 +397,48 @@ describe("buildManualPrompt with user prompt", () => {
     expect(result).toContain("<agent-config>");
     expect(result).toContain("<credential-context>");
     expect(result).toContain("deploy to staging");
+  });
+});
+
+describe("buildAgentSystemPrompt", () => {
+  it("contains a concise preamble", () => {
+    const result = buildAgentSystemPrompt(agentConfig);
+    expect(result).toContain("autonomous coding agent");
+    expect(result).toContain("Be concise");
+  });
+
+  it("contains the full skeleton (agent-config, credentials, environment)", () => {
+    const result = buildAgentSystemPrompt(agentConfig);
+    expect(result).toContain("<agent-config>");
+    expect(result).toContain("</agent-config>");
+    expect(result).toContain("<credential-context>");
+    expect(result).toContain("</credential-context>");
+    expect(result).toContain("<environment>");
+    expect(result).toContain("</environment>");
+  });
+
+  it("includes skills when provided", () => {
+    const result = buildAgentSystemPrompt(agentConfig, { locking: true });
+    expect(result).toContain("<skill-lock>");
+    expect(result).toContain("acquire_lock");
+  });
+
+  it("does not contain Pi-specific boilerplate", () => {
+    const result = buildAgentSystemPrompt(agentConfig);
+    expect(result).not.toContain("pi, a coding agent harness");
+    expect(result).not.toContain("Pi documentation");
+  });
+
+  it("does not contain trigger-specific text", () => {
+    const result = buildAgentSystemPrompt(agentConfig);
+    expect(result).not.toContain("running on a schedule");
+    expect(result).not.toContain("triggered manually");
+    expect(result).not.toContain("<webhook-trigger>");
+  });
+
+  it("respects hostUser skill flag for environment context", () => {
+    const result = buildAgentSystemPrompt(agentConfig, { hostUser: true });
+    expect(result).toContain("writable");
+    expect(result).not.toContain("/app/static");
   });
 });

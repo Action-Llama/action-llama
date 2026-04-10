@@ -43,6 +43,7 @@ import type { Transport } from "../transport/transport.js";
 import { writeFile } from "../transport/transport.js";
 import { parseCredentialRef, getDefaultBackend } from "../shared/credentials.js";
 import { parseFrontmatter } from "../shared/frontmatter.js";
+import { buildAgentSystemPrompt, type PromptSkills } from "./prompt.js";
 import { withSpan } from "../telemetry/index.js";
 import { SpanKind } from "@opentelemetry/api";
 import type { SchedulerToolsOpts } from "./scheduler-tools.js";
@@ -73,6 +74,8 @@ export interface TransportAgentRunnerOpts {
   waitingRegistry?: WaitingRegistry;
   /** Callback when instance transitions to/from waiting state. */
   onWaitStateChange?: (instanceId: string, state: "waiting" | "resumed") => void;
+  /** Prompt skills to include in the system prompt (locking, subagents, etc.). */
+  skills?: PromptSkills;
 }
 
 export class TransportAgentRunner implements PoolRunner {
@@ -101,6 +104,7 @@ export class TransportAgentRunner implements PoolRunner {
   private schedulerToolsDeps?: Omit<SchedulerToolsOpts, "agentName" | "instanceId" | "depth" | "onReturnValue">;
   private waitingRegistry?: WaitingRegistry;
   private onWaitStateChange?: (instanceId: string, state: "waiting" | "resumed") => void;
+  private skills?: PromptSkills;
 
   constructor(opts: TransportAgentRunnerOpts) {
     this.globalConfig = opts.globalConfig;
@@ -115,6 +119,7 @@ export class TransportAgentRunner implements PoolRunner {
     this.schedulerToolsDeps = opts.schedulerToolsDeps;
     this.waitingRegistry = opts.waitingRegistry;
     this.onWaitStateChange = opts.onWaitStateChange;
+    this.skills = opts.skills;
     this.instanceId = opts.agentConfig.name;
   }
 
@@ -658,10 +663,18 @@ export class TransportAgentRunner implements PoolRunner {
   ): Promise<{ result: RunResult; returnValue?: string; usage?: TokenUsage; error?: string }> {
     const models = this.agentConfig.models;
 
-    // Create resource loader with the skill body
+    // Build a minimal system prompt that replaces Pi's default boilerplate.
+    // Includes agent config, credentials, environment, and skill blocks — stable
+    // across turns and cacheable by providers with automatic prefix caching.
+    const hostUser = this.agentConfig.runtime?.type === "host-user";
+    const effectiveSkills: PromptSkills = { ...this.skills, hostUser };
+    const systemPrompt = buildAgentSystemPrompt(this.agentConfig, effectiveSkills);
+
+    // Create resource loader with the skill body and custom system prompt
     const agentsContent = skillBody || `# ${this.agentConfig.name} Agent\n\nCustom agent.\n`;
     const resourceLoader = new DefaultResourceLoader({
       noExtensions: true,
+      systemPrompt,
       agentsFilesOverride: () => ({
         agentsFiles: [
           { path: "/tmp/SKILL.md", content: agentsContent },
@@ -779,13 +792,7 @@ export class TransportAgentRunner implements PoolRunner {
 
           const allMessages = session.state?.messages ?? [];
           const lastMsg = allMessages[allMessages.length - 1] as any;
-          if (lastMsg?.stopReason === "error") {
-            this.logger.error({
-              errorMessage: lastMsg?.errorMessage ?? session.state?.errorMessage,
-            }, "session.prompt() completed with error");
-          }
-
-          this.circuitBreaker.recordSuccess(modelConfig.provider, modelConfig.model);
+          const sessionErrorMessage = lastMsg?.errorMessage ?? session.state?.errorMessage;
 
           // Get usage stats (logged later in "run outcome")
           const sessionStats = session.getSessionStats();
@@ -793,6 +800,14 @@ export class TransportAgentRunner implements PoolRunner {
 
           session.dispose();
           this._session = null;
+
+          if (lastMsg?.stopReason === "error") {
+            const errorMsg = String(sessionErrorMessage ?? "unknown session error");
+            this.logger.error("session.prompt() completed with error: %s", errorMsg);
+            return { result: "error", error: errorMsg, usage };
+          }
+
+          this.circuitBreaker.recordSuccess(modelConfig.provider, modelConfig.model);
           modelSucceeded = true;
           anyModelSucceeded = true;
 
