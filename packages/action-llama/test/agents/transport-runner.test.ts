@@ -54,7 +54,7 @@ const mockWriteFiles = vi.fn(async () => {});
 const mockClose = vi.fn(async () => {});
 const mockConnect = vi.fn(async () => {});
 
-vi.mock("../../src/transport/docker-exec.js", () => ({
+vi.mock("@action-llama/pi-remote", () => ({
   DockerExecTransport: vi.fn().mockImplementation(function () {
     return {
       connect: mockConnect,
@@ -64,11 +64,26 @@ vi.mock("../../src/transport/docker-exec.js", () => ({
       close: mockClose,
     };
   }),
-}));
-
-// Mock transport operations
-vi.mock("../../src/transport/operations.js", () => ({
-  createTransportTools: vi.fn(() => []),
+  SshTransport: vi.fn().mockImplementation(function () {
+    return {
+      connect: mockConnect,
+      exec: mockExec,
+      readFiles: mockReadFiles,
+      writeFiles: mockWriteFiles,
+      close: mockClose,
+    };
+  }),
+  HostUserTransport: vi.fn().mockImplementation(function () {
+    return {
+      connect: mockConnect,
+      exec: mockExec,
+      readFiles: mockReadFiles,
+      writeFiles: mockWriteFiles,
+      close: mockClose,
+    };
+  }),
+  createPiRemoteFactory: vi.fn(() => []),
+  writeFile: vi.fn(),
 }));
 
 // Mock image building — return the baseImage unchanged (no Docker needed for unit tests)

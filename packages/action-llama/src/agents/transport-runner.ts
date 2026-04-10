@@ -35,12 +35,14 @@ import type { RunResult, RunOutcome } from "./types.js";
 import type { PoolRunner } from "../execution/runner-pool.js";
 import { DEFAULT_AGENT_TIMEOUT } from "../shared/constants.js";
 import { ModelCircuitBreaker, selectAvailableModels, isRateLimitError } from "./model-fallback.js";
-import { DockerExecTransport } from "../transport/docker-exec.js";
-import { SshTransport } from "../transport/ssh.js";
-import { HostUserTransport } from "../transport/host-user.js";
-import { createTransportTools } from "../transport/operations.js";
-import type { Transport } from "../transport/transport.js";
-import { writeFile } from "../transport/transport.js";
+import {
+  DockerExecTransport,
+  SshTransport,
+  HostUserTransport,
+  createPiRemoteFactory,
+  writeFile,
+} from "@action-llama/pi-remote";
+import type { Transport } from "@action-llama/pi-remote";
 import { parseCredentialRef, getDefaultBackend } from "../shared/credentials.js";
 import { parseFrontmatter } from "../shared/frontmatter.js";
 import { buildAgentSystemPrompt, type PromptSkills } from "./prompt.js";
@@ -688,8 +690,8 @@ export class TransportAgentRunner implements PoolRunner {
       retry: { enabled: true, maxRetries: 2 },
     });
 
-    // Create transport-backed tools
-    const tools = createTransportTools(transport, CONTAINER_CWD);
+    // Create transport-backed tools via pi-remote factory
+    const tools = createPiRemoteFactory(transport, CONTAINER_CWD);
 
     // Create scheduler tools (locks, calls, status, return, wait) if deps provided
     let capturedReturnValue: string | undefined;

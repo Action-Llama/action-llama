@@ -1,9 +1,13 @@
-export type { Transport, ExecResult, ExecOptions } from "./transport.js";
-export { readFile, writeFile } from "./transport.js";
-export { DockerExecTransport, type DockerExecTransportOpts } from "./docker-exec.js";
-export { SshTransport, type SshTransportOpts } from "./ssh.js";
-export { HostUserTransport, type HostUserTransportOpts } from "./host-user.js";
-export { MemoryTransport } from "./memory.js";
+// Re-export everything from @action-llama/pi-remote
+export type { Transport, ExecResult, ExecOptions } from "@action-llama/pi-remote";
+export { readFile, writeFile } from "@action-llama/pi-remote";
+export type { DockerExecTransportOpts } from "@action-llama/pi-remote";
+export { DockerExecTransport } from "@action-llama/pi-remote";
+export type { SshTransportOpts } from "@action-llama/pi-remote";
+export { SshTransport } from "@action-llama/pi-remote";
+export type { HostUserTransportOpts } from "@action-llama/pi-remote";
+export { HostUserTransport } from "@action-llama/pi-remote";
+export { MemoryTransport } from "@action-llama/pi-remote";
 export {
   createTransportTools,
   createTransportBashOps,
@@ -13,4 +17,4 @@ export {
   createTransportGrepOps,
   createTransportFindOps,
   createTransportLsOps,
-} from "./operations.js";
+} from "@action-llama/pi-remote";

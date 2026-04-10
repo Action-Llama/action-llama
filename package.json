@@ -5,10 +5,10 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "npm run build -w packages/skill && npm run build -w packages/frontend && npm run build -w packages/action-llama",
+    "build": "npm run build -w packages/skill && npm run build -w packages/pi-remote && npm run build -w packages/frontend && npm run build -w packages/action-llama",
     "clean": "npm run clean -w packages/action-llama",
-    "test": "vitest run --project unit --config packages/action-llama/vitest.config.ts && npm test -w packages/skill",
-    "test:unit": "vitest run --project unit --config packages/action-llama/vitest.config.ts && npm test -w packages/skill",
+    "test": "vitest run --project unit --config packages/action-llama/vitest.config.ts && npm test -w packages/pi-remote && npm test -w packages/skill",
+    "test:unit": "vitest run --project unit --config packages/action-llama/vitest.config.ts && npm test -w packages/pi-remote && npm test -w packages/skill",
     "test:integration": "npm test -w packages/e2e -- --project integration",
     "test:watch": "vitest --project unit --config packages/action-llama/vitest.config.ts",
     "test:coverage": "vitest run --coverage --config packages/action-llama/vitest.config.ts",

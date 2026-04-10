@@ -58,6 +58,7 @@
     "test:playwright": "npx playwright test --config playwright.config.ts"
   },
   "dependencies": {
+    "@action-llama/pi-remote": "*",
     "@action-llama/skill": "*",
     "@hono/node-server": "^1.19.11",
     "@inquirer/prompts": "^7",

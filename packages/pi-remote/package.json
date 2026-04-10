@@ -1,0 +1,35 @@
+{
+  "name": "@action-llama/pi-remote",
+  "version": "0.29.1",
+  "private": true,
+  "description": "Pi extension for remote execution via Docker, SSH, or host-user transports.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Action-Llama/action-llama.git",
+    "directory": "packages/pi-remote"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./transport": {
+      "types": "./dist/transport/index.d.ts",
+      "default": "./dist/transport/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run --config vitest.config.ts",
+    "clean": "rm -rf dist",
+    "prebuild": "npm run clean"
+  },
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": "^0.66.1"
+  }
+}
