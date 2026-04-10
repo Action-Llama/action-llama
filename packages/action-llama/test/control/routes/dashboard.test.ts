@@ -204,6 +204,20 @@ describe("dashboard JSON API routes", () => {
     expect(cookie).toContain("HttpOnly");
   });
 
+  it("POST /api/auth/login also accepts apiKey for backward compatibility", async () => {
+    const app = createApp();
+    const res = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: API_KEY }),
+    });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+    const cookie = res.headers.get("Set-Cookie") || "";
+    expect(cookie).toContain("al_session=");
+  });
+
   it("POST /api/auth/login returns 401 with wrong key", async () => {
     const app = createApp();
     const res = await app.request("/api/auth/login", {

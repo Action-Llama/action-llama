@@ -33,8 +33,8 @@ export function registerAuthApiRoutes(
     if (!currentKey) {
       return c.json({ success: true });
     }
-    const body = await c.req.json<{ key?: string }>();
-    const key = body.key ?? "";
+    const body = await c.req.json<{ key?: string; apiKey?: string }>();
+    const key = body.key ?? body.apiKey ?? "";
     if (safeCompare(key, currentKey)) {
       let sessionValue: string;
       if (sessionStore) {
