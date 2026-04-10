@@ -47,7 +47,7 @@ export const DOC_MAPPING = {
     "reference/web-dashboard",
   ],
   "debugging.md": [
-    "reference/agent-commands",
+    "reference/agent-tools",
     "concepts/runtime-context",
     "concepts/resource-locks",
     "guides/dynamic-context",
