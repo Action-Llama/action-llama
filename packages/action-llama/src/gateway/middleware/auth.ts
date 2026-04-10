@@ -20,6 +20,7 @@ export function applyAuthMiddleware(
 
   // Protected route patterns
   app.use("/control/*", auth);
+  app.use("/sessions/*", auth);
   app.use("/dashboard/api/*", auth);
   app.use("/locks/status", auth);
   app.use("/api/logs/*", auth);

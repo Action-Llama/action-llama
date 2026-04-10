@@ -129,6 +129,11 @@ export class TransportAgentRunner implements PoolRunner {
     return this._running;
   }
 
+  /** The underlying Pi session, if one is currently active. Used by SessionAttachManager. */
+  get piSession(): any {
+    return this._session;
+  }
+
   setAgentConfig(config: AgentConfig): void {
     this.agentConfig = config;
   }
@@ -235,6 +240,7 @@ export class TransportAgentRunner implements PoolRunner {
       status: "running",
       startedAt: new Date(),
       trigger: triggerInfo?.source ? `${triggerInfo.type}:${triggerInfo.source}` : (triggerInfo?.type ?? "manual"),
+      runner: this,
     });
 
     this.logger.info(`Starting ${this.agentConfig.name} transport run`);

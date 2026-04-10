@@ -10,6 +10,7 @@ import type { ControlRoutesDeps } from "../control/routes/control.js";
 import type { ApiKeySource } from "../control/auth.js";
 import type { SchedulerEventBus } from "../scheduler/events.js";
 import type { StatsStore } from "../stats/store.js";
+import type { SessionAttachManager } from "../execution/attach/index.js";
 
 export interface GatewayOptions {
   port: number;
@@ -32,6 +33,8 @@ export interface GatewayOptions {
   events?: SchedulerEventBus;
   /** Optional stats store for dashboard aggregate stats. */
   statsStore?: StatsStore;
+  /** Optional attach manager for WebSocket session attach support. */
+  attachManager?: SessionAttachManager;
 }
 
 export interface GatewayServer {

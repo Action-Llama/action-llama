@@ -14,6 +14,7 @@ export interface WebhookEvent {
 }
 
 import type { SessionLifecycle } from "../execution/lifecycle/session-lifecycle.js";
+import type { PoolRunner } from "../execution/runner-pool.js";
 
 export interface AgentSession {
   id: string;
@@ -21,6 +22,6 @@ export interface AgentSession {
   status: 'running' | 'waiting' | 'completed' | 'error' | 'killed';
   startedAt: Date;
   trigger: string;
-  runner?: any; // Reference to the actual runner instance
-  lifecycle?: SessionLifecycle; // Lifecycle state machine for this instance
+  runner?: PoolRunner;
+  lifecycle?: SessionLifecycle;
 }

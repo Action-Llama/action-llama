@@ -14,6 +14,7 @@ import type { StatusTracker } from "../tui/status-tracker.js";
 import type { StateStore } from "../shared/state-store.js";
 import type { StatsStore } from "../stats/store.js";
 import type { Logger } from "../shared/logger.js";
+import type { SessionAttachManager } from "../execution/attach/index.js";
 import { ensureGatewayApiKey, loadGatewayApiKey } from "../control/api-key.js";
 import type { SchedulerEventBus } from "./events.js";
 import type { SchedulerState } from "./state.js";
@@ -42,6 +43,7 @@ export async function setupGateway(opts: {
   telemetry?: any;
   waitingRegistry?: WaitingRegistry;
   statusTracker?: StatusTracker;
+  attachManager?: SessionAttachManager;
   webUI?: boolean;
   expose?: boolean;
   logger: Logger;
@@ -49,7 +51,7 @@ export async function setupGateway(opts: {
   const {
     projectPath, globalConfig, state, agentConfigs,
     webhookRegistry, webhookSecrets, webhookConfigs, stateStore, statsStore, events, telemetry,
-    waitingRegistry, statusTracker, webUI, expose, logger,
+    waitingRegistry, statusTracker, attachManager, webUI, expose, logger,
   } = opts;
 
   // Ensure gateway API key exists (fallback generation if doctor wasn't run)
@@ -79,6 +81,7 @@ export async function setupGateway(opts: {
     stateStore,
     statsStore,
     events,
+    attachManager,
     controlDeps: {
       statusTracker,
       logger,

@@ -42,6 +42,8 @@ export interface SchedulerContext {
   skills?: PromptSkills;
   /** Optional hook called after every agent run completes. Used for test instrumentation. */
   onRunComplete?: (event: RunCompleteEvent) => void;
+  /** Optional hook called when a session reaches a terminal state (completed/error/killed). */
+  onSessionTerminal?: (sessionId: string) => void;
   /** Optional event bus for lifecycle instrumentation (used by integration tests). */
   events?: SchedulerEventBus;
   /** Optional call store for updating call_agent lifecycle status. */
@@ -159,6 +161,7 @@ export async function executeRun(
   }
 
   ctx.onRunComplete?.({ agentName, result: outcome.result, triggerType: triggerInfo.type });
+  ctx.onSessionTerminal?.(runner.sessionId);
   return { result: outcome.result, triggers, returnValue: outcome.returnValue };
 }
 

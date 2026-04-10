@@ -39,7 +39,8 @@
     "./internals/docker-exec-transport": "./dist/transport/docker-exec.js",
     "./internals/docker-image": "./dist/docker/image.js",
     "./internals/constants": "./dist/shared/constants.js",
-    "./internals/waiting-registry": "./dist/execution/waiting-registry.js"
+    "./internals/waiting-registry": "./dist/execution/waiting-registry.js",
+    "./extension": "./dist/pi-extension.js"
   },
   "files": [
     "dist",

@@ -79,10 +79,14 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   // Create waiting registry for wait/resume support (before gateway so kill handlers can use it)
   const waitingRegistry = new WaitingRegistry();
 
+  // Create attach manager for WebSocket session attach support
+  const { SessionAttachManager } = await import("../execution/attach/index.js");
+  const attachManager = statusTracker ? new SessionAttachManager(statusTracker) : undefined;
+
   const { gateway, gatewayPort } = await setupGateway({
     projectPath, globalConfig, state, agentConfigs,
     webhookRegistry, webhookSecrets, webhookConfigs: webhookSources, stateStore, statsStore, events, telemetry,
-    waitingRegistry, statusTracker, webUI, expose, logger,
+    waitingRegistry, statusTracker, attachManager, webUI, expose, logger,
   });
 
   // Register webhook bindings early so incoming webhooks are queued
@@ -252,6 +256,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     isAgentEnabled: statusTracker ? (name: string) => statusTracker.isAgentEnabled(name) : undefined,
     isPaused: statusTracker ? () => statusTracker.isPaused() : undefined,
     waitingRegistry,
+    onSessionTerminal: attachManager ? (sessionId: string) => attachManager.notifyTerminal(sessionId) : undefined,
   };
 
   // Populate late-binding state

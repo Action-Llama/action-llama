@@ -15,6 +15,8 @@ import { registerSystemRoutes } from "./routes/system.js";
 import { registerGatewayWebhookRoutes } from "./routes/webhooks.js";
 import { registerDashboardRoutes } from "./routes/dashboard.js";
 import { resolveFrontendDist, registerSpaRoutes } from "./frontend.js";
+import { registerSessionRoutes } from "../control/routes/sessions.js";
+import { applyAttachUpgradeHandler } from "./attach-upgrade.js";
 
 export async function startGateway(opts: GatewayOptions): Promise<GatewayServer> {
   const app = new Hono();
@@ -39,6 +41,11 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     logger: opts.logger,
     controlDeps: opts.controlDeps,
   });
+
+  // 4c. Session REST routes (GET /sessions, GET /sessions/:id)
+  if (opts.statusTracker) {
+    registerSessionRoutes(app, { statusTracker: opts.statusTracker });
+  }
 
   // 4b. Lock status endpoint (consumed by CLI `al stat` and dashboard)
   app.get("/locks/status", (c) => {
@@ -105,6 +112,11 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
   await new Promise<void>((resolve) => {
     server.on("listening", resolve);
   });
+
+  // Wire WebSocket attach handler (must be after server is listening)
+  if (opts.attachManager && opts.apiKey) {
+    applyAttachUpgradeHandler(server, opts.attachManager, opts.apiKey, opts.logger);
+  }
 
   opts.logger.info({ port: opts.port }, "Gateway server listening");
 
