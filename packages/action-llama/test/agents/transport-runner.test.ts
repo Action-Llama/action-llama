@@ -147,6 +147,7 @@ vi.mock("../../src/agents/model-fallback.js", () => ({
 
 // Import after mocks
 const { TransportAgentRunner } = await import("../../src/agents/transport-runner.js");
+const { DefaultResourceLoader } = await import("@mariozechner/pi-coding-agent");
 
 // ── Test helpers ───────────────────────────────────────────────
 
@@ -430,5 +431,39 @@ describe("TransportAgentRunner", () => {
     expect(id1).not.toBe(id2);
     expect(id1).toMatch(/^test-agent-/);
     expect(id2).toMatch(/^test-agent-/);
+  });
+
+  it("constructs DefaultResourceLoader with project path as cwd", async () => {
+    const runner = new TransportAgentRunner({
+      globalConfig: makeGlobalConfig(),
+      agentConfig: makeAgentConfig(),
+      logger: makeLogger(),
+      circuitBreaker: { recordSuccess: vi.fn(), recordFailure: vi.fn() } as any,
+      baseImage: "al-base:latest",
+      projectPath: "/my/project",
+    });
+
+    await runner.run("Test prompt");
+
+    expect(DefaultResourceLoader).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: "/my/project" }),
+    );
+  });
+
+  it("appends al system prompt rather than replacing it", async () => {
+    const runner = new TransportAgentRunner({
+      globalConfig: makeGlobalConfig(),
+      agentConfig: makeAgentConfig(),
+      logger: makeLogger(),
+      circuitBreaker: { recordSuccess: vi.fn(), recordFailure: vi.fn() } as any,
+      baseImage: "al-base:latest",
+      projectPath: "/project",
+    });
+
+    await runner.run("Test prompt");
+
+    const call = vi.mocked(DefaultResourceLoader).mock.calls[0][0] as any;
+    expect(call.appendSystemPrompt).toBeDefined();
+    expect(call.systemPrompt).toBeUndefined();
   });
 });

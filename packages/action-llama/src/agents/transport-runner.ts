@@ -665,18 +665,19 @@ export class TransportAgentRunner implements PoolRunner {
   ): Promise<{ result: RunResult; returnValue?: string; usage?: TokenUsage; error?: string }> {
     const models = this.agentConfig.models;
 
-    // Build a minimal system prompt that replaces Pi's default boilerplate.
-    // Includes agent config, credentials, environment, and skill blocks — stable
-    // across turns and cacheable by providers with automatic prefix caching.
+    // Build the Action Llama overlay: agent config, credentials, environment, and skill blocks.
+    // This appends to whatever system prompt project .pi provides (or Pi's default if none).
     const hostUser = this.agentConfig.runtime?.type === "host-user";
     const effectiveSkills: PromptSkills = { ...this.skills, hostUser };
-    const systemPrompt = buildAgentSystemPrompt(this.agentConfig, effectiveSkills);
+    const appendSystemPrompt = buildAgentSystemPrompt(this.agentConfig, effectiveSkills);
 
-    // Create resource loader with the skill body and custom system prompt
+    // Create resource loader rooted at the project directory so .pi/ resources
+    // (extensions, skills, prompts, themes, system.md) are discovered automatically.
+    // The al overlay is appended on top of whatever project .pi provides.
     const agentsContent = skillBody || `# ${this.agentConfig.name} Agent\n\nCustom agent.\n`;
     const resourceLoader = new DefaultResourceLoader({
-      noExtensions: true,
-      systemPrompt,
+      cwd: this.projectPath,
+      appendSystemPrompt,
       agentsFilesOverride: () => ({
         agentsFiles: [
           { path: "/tmp/SKILL.md", content: agentsContent },
