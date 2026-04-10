@@ -1,5 +1,34 @@
 # @action-llama/action-llama
 
+## 0.29.0
+
+### Minor Changes
+
+- [`89a3205`](https://github.com/Action-Llama/action-llama/commit/89a32051cd0905afecb166add935130eee70140e) Thanks [@asselstine](https://github.com/asselstine)! - Replace agent shell commands with Pi tools. The old shell commands (`al-export`, `al-rerun`, `al-status`, `al-return`, `al-exit`, `al-shutdown`, `al-subagent`, `al-subagent-check`, `al-subagent-wait`, `rlock`, `runlock`, `rlock-heartbeat`) have been removed. Agents now use scheduler tools (`acquire_lock`, `release_lock`, `call_agent`, `check_call`, `set_status`, `return_value`, `wait_for_trigger`) provided directly as LLM tool calls. The `docker/bin/` directory and all gateway routes that serviced shell commands have been removed.
+
+### Patch Changes
+
+- [`4f10f58`](https://github.com/Action-Llama/action-llama/commit/4f10f580e7a74fc918560c9fdab7b9b825905bea) Thanks [@asselstine](https://github.com/asselstine)! - Fix Docker transport failing on Alpine/BusyBox containers by replacing tar-based batch file I/O with per-file `docker cp`. BusyBox tar lacks GNU flags (`-P`, `--ignore-failed-read`) that the batch path relied on.
+
+- [`9bc04f9`](https://github.com/Action-Llama/action-llama/commit/9bc04f980c7d577b23be9327103ef892bc59c4e0) Thanks [@asselstine](https://github.com/asselstine)! - Fix agent run logging: capture thinking/reasoning output from Pi SDK events, unwrap tool result JSON wrappers and suppress empty results, remove duplicate "session completed" line in favor of the more informative "run outcome" line.
+
+- [`b339c11`](https://github.com/Action-Llama/action-llama/commit/b339c113b9e705ca516e1bd090fac59ef2277798) Thanks [@asselstine](https://github.com/asselstine)! - Fix container agents hanging on startup: use `/tmp` as working directory instead of nonexistent `/workspace`, drain stdout in Docker build to prevent pipe deadlock, and log tool errors at warn level so they appear in `al logs`.
+
+- [`07c14a0`](https://github.com/Action-Llama/action-llama/commit/07c14a06ddae1535a33d950757cc84b32d3a5050) Thanks [@asselstine](https://github.com/asselstine)! - Fix docs references to use actual tool names (`acquire_lock`/`release_lock`) instead of stale `LOCK(...)`/`UNLOCK(...)`/`HEARTBEAT(...)` shorthand.
+
+- [`83646e9`](https://github.com/Action-Llama/action-llama/commit/83646e92ea2de84cbee1e0783b11c6f33b40e167) Thanks [@asselstine](https://github.com/asselstine)! - Fix transport runner shell compatibility and add Docker image build pipeline.
+
+  - Switch all transports (Docker exec, SSH, host-user) from `bash` to POSIX `sh` so containers without bash (e.g. Alpine) work correctly — fixes "Timed out waiting for shell response" errors.
+  - Build project-level and agent-specific Docker images before provisioning containers, so custom packages from Dockerfiles (github-cli, ripgrep, etc.) are available at runtime.
+  - Add image caching: skip rebuilds when the git-SHA-tagged image already exists.
+
+- [`800b97f`](https://github.com/Action-Llama/action-llama/commit/800b97fd1907aea5f096a3280d1d0e23511a6534) Thanks [@asselstine](https://github.com/asselstine)! - Extend dashboard session lifetime from 24 hours to 30 days and set Max-Age on the session cookie so it persists across browser restarts on mobile.
+
+- [`ec81982`](https://github.com/Action-Llama/action-llama/commit/ec819827da462995dd3bebf045e1e569bdb45f9f) Thanks [@asselstine](https://github.com/asselstine)! - Add `wait_for_trigger` tool that lets agents suspend mid-conversation and resume when a matching webhook or agent trigger arrives. Containers are paused while waiting to save resources. Configurable via `waitTimeout` (per-agent) and `defaultWaitTimeout` (project-wide).
+
+- Updated dependencies []:
+  - @action-llama/skill@0.29.0
+
 ## 0.28.0
 
 ### Minor Changes
