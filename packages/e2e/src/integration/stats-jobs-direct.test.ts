@@ -75,11 +75,11 @@ describe(
       const tracker = new StatusTracker();
       tracker.registerAgent("my-agent", 1);
 
-      const instanceId = randomUUID();
+      const sessionId = randomUUID();
       const now = Date.now();
 
-      tracker.registerInstance({
-        id: instanceId,
+      tracker.registerSession({
+        id: sessionId,
         agentName: "my-agent",
         status: "running",
         startedAt: new Date(now),
@@ -91,11 +91,11 @@ describe(
       expect(res.status).toBe(200);
 
       const body = await res.json() as {
-        jobs: Array<{ instanceId: string; result: string; agentName: string }>;
+        jobs: Array<{ sessionId: string; result: string; agentName: string }>;
         total: number;
       };
       // Running instance should appear in jobs list
-      const runningJob = body.jobs.find((j) => j.instanceId === instanceId);
+      const runningJob = body.jobs.find((j) => j.sessionId === sessionId);
       expect(runningJob).toBeDefined();
       expect(runningJob!.result).toBe("running");
       expect(runningJob!.agentName).toBe("my-agent");
@@ -108,12 +108,12 @@ describe(
       tracker.registerAgent("dup-agent", 1);
       const store = makeTmpStore();
 
-      const instanceId = randomUUID();
+      const sessionId = randomUUID();
       const now = Date.now();
 
       // Register the same instance both in the DB and as running in tracker
       store.recordRun({
-        instanceId,
+        sessionId,
         agentName: "dup-agent",
         triggerType: "manual",
         result: "running",
@@ -121,8 +121,8 @@ describe(
         durationMs: 0,
       });
 
-      tracker.registerInstance({
-        id: instanceId,
+      tracker.registerSession({
+        id: sessionId,
         agentName: "dup-agent",
         status: "running",
         startedAt: new Date(now),
@@ -133,9 +133,9 @@ describe(
       const res = await app.request("/api/stats/jobs");
       expect(res.status).toBe(200);
 
-      const body = await res.json() as { jobs: Array<{ instanceId: string }> };
+      const body = await res.json() as { jobs: Array<{ sessionId: string }> };
       // The instance should appear only once (deduplication)
-      const matching = body.jobs.filter((j) => j.instanceId === instanceId);
+      const matching = body.jobs.filter((j) => j.sessionId === sessionId);
       expect(matching).toHaveLength(1);
     });
 
@@ -149,14 +149,14 @@ describe(
       const instA = randomUUID();
       const instB = randomUUID();
 
-      tracker.registerInstance({
+      tracker.registerSession({
         id: instA,
         agentName: "agent-a",
         status: "running",
         startedAt: new Date(),
         trigger: "manual",
       });
-      tracker.registerInstance({
+      tracker.registerSession({
         id: instB,
         agentName: "agent-b",
         status: "running",
@@ -169,11 +169,11 @@ describe(
       const res = await app.request("/api/stats/jobs?agent=agent-a");
       expect(res.status).toBe(200);
 
-      const body = await res.json() as { jobs: Array<{ instanceId: string; agentName: string }> };
+      const body = await res.json() as { jobs: Array<{ sessionId: string; agentName: string }> };
       // Only agent-a instance should be in the jobs list
       expect(body.jobs.every((j) => j.agentName === "agent-a")).toBe(true);
       // agent-b instance should NOT be present
-      expect(body.jobs.find((j) => j.instanceId === instB)).toBeUndefined();
+      expect(body.jobs.find((j) => j.sessionId === instB)).toBeUndefined();
     });
 
     // ── offset > 0 skips running instance merge ───────────────────────────────
@@ -182,9 +182,9 @@ describe(
       const tracker = new StatusTracker();
       tracker.registerAgent("offset-agent", 1);
 
-      const instanceId = randomUUID();
-      tracker.registerInstance({
-        id: instanceId,
+      const sessionId = randomUUID();
+      tracker.registerSession({
+        id: sessionId,
         agentName: "offset-agent",
         status: "running",
         startedAt: new Date(),
@@ -196,9 +196,9 @@ describe(
       const res = await app.request("/api/stats/jobs?offset=50");
       expect(res.status).toBe(200);
 
-      const body = await res.json() as { jobs: Array<{ instanceId: string }> };
+      const body = await res.json() as { jobs: Array<{ sessionId: string }> };
       // Running instance should NOT be in the list for page 2
-      expect(body.jobs.find((j) => j.instanceId === instanceId)).toBeUndefined();
+      expect(body.jobs.find((j) => j.sessionId === sessionId)).toBeUndefined();
     });
 
     // ── pending counts from statusTracker ─────────────────────────────────────
@@ -249,9 +249,9 @@ describe(
       const tracker = new StatusTracker();
       tracker.registerAgent("wh-agent", 1);
 
-      const instanceId = randomUUID();
-      tracker.registerInstance({
-        id: instanceId,
+      const sessionId = randomUUID();
+      tracker.registerSession({
+        id: sessionId,
         agentName: "wh-agent",
         status: "running",
         startedAt: new Date(),
@@ -263,9 +263,9 @@ describe(
       expect(res.status).toBe(200);
 
       const body = await res.json() as {
-        jobs: Array<{ instanceId: string; triggerType: string; triggerSource: string | null }>;
+        jobs: Array<{ sessionId: string; triggerType: string; triggerSource: string | null }>;
       };
-      const job = body.jobs.find((j) => j.instanceId === instanceId);
+      const job = body.jobs.find((j) => j.sessionId === sessionId);
       expect(job).toBeDefined();
       expect(job!.triggerType).toBe("webhook");
       expect(job!.triggerSource).toBe("github");

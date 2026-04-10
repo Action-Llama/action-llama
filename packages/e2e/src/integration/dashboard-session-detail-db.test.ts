@@ -1,5 +1,5 @@
 /**
- * Integration tests: control/routes/dashboard-api.ts GET /api/dashboard/agents/:name/instances/:id
+ * Integration tests: control/routes/dashboard-api.ts GET /api/dashboard/agents/:name/sessions/:id
  * with a populated StatsStore — no Docker required.
  *
  * The endpoint assembles a response from the DB run record plus optional
@@ -14,16 +14,16 @@
  *   4. Run found, trigger_type=webhook, receipt found → webhookReceipt with source/summary
  *   5. Run found, trigger_type=webhook, receipt not found → webhookReceipt undefined
  *   6. Run found, instance also running in tracker → runningInstance populated
- *   7. instanceId not in DB, not running → run:null, runningInstance:null
+ *   7. sessionId not in DB, not running → run:null, runningInstance:null
  *
  * Covers:
- *   - control/routes/dashboard-api.ts: GET /api/dashboard/agents/:name/instances/:id — manual run in DB
+ *   - control/routes/dashboard-api.ts: GET /api/dashboard/agents/:name/sessions/:id — manual run in DB
  *   - control/routes/dashboard-api.ts: instances/:id — agent trigger + call edge → parentEdge
  *   - control/routes/dashboard-api.ts: instances/:id — agent trigger + no call edge → no parentEdge
  *   - control/routes/dashboard-api.ts: instances/:id — webhook trigger + receipt → webhookReceipt
  *   - control/routes/dashboard-api.ts: instances/:id — webhook trigger + no receipt → no webhookReceipt
  *   - control/routes/dashboard-api.ts: instances/:id — run found + instance running → runningInstance
- *   - control/routes/dashboard-api.ts: instances/:id — unknown instanceId → run:null runningInstance:null
+ *   - control/routes/dashboard-api.ts: instances/:id — unknown sessionId → run:null runningInstance:null
  */
 
 import { describe, it, expect } from "vitest";
@@ -77,18 +77,18 @@ function makeApp(
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe(
-  "integration: GET /api/dashboard/agents/:name/instances/:id with DB — no Docker required",
+  "integration: GET /api/dashboard/agents/:name/sessions/:id with DB — no Docker required",
   { timeout: 20_000 },
   () => {
-    // ── unknown instanceId ─────────────────────────────────────────────────
+    // ── unknown sessionId ─────────────────────────────────────────────────
 
-    it("returns run:null and runningInstance:null for unknown instanceId", async () => {
+    it("returns run:null and runningInstance:null for unknown sessionId", async () => {
       const tracker = makeTracker("my-agent");
       const store = makeTmpStore();
       const app = makeApp(tracker, store);
 
       const res = await app.request(
-        `/api/dashboard/agents/my-agent/instances/${randomUUID()}`,
+        `/api/dashboard/agents/my-agent/sessions/${randomUUID()}`,
       );
       expect(res.status).toBe(200);
       const body = await res.json() as {
@@ -97,7 +97,7 @@ describe(
         parentEdge: unknown;
         webhookReceipt: unknown;
       };
-      // queryRunByInstanceId returns undefined when not found; JSON serializes as null or omits key
+      // queryRunBySessionId returns undefined when not found; JSON serializes as null or omits key
       expect(body.run == null).toBe(true); // null or undefined
       // runningInstance is explicitly set to null (|| null) in the route
       expect(body.runningInstance).toBeNull();
@@ -110,10 +110,10 @@ describe(
     it("returns run populated and no enrichment for manual trigger", async () => {
       const tracker = makeTracker("my-agent");
       const store = makeTmpStore();
-      const instanceId = randomUUID();
+      const sessionId = randomUUID();
 
       store.recordRun({
-        instanceId,
+        sessionId,
         agentName: "my-agent",
         triggerType: "manual",
         result: "completed",
@@ -123,7 +123,7 @@ describe(
 
       const app = makeApp(tracker, store);
       const res = await app.request(
-        `/api/dashboard/agents/my-agent/instances/${instanceId}`,
+        `/api/dashboard/agents/my-agent/sessions/${sessionId}`,
       );
       expect(res.status).toBe(200);
       const body = await res.json() as { run: Record<string, unknown>; parentEdge: unknown; webhookReceipt: unknown };
@@ -139,22 +139,22 @@ describe(
     it("populates parentEdge when trigger_type=agent and call edge exists", async () => {
       const tracker = makeTracker("callee");
       const store = makeTmpStore();
-      const targetInstanceId = randomUUID();
-      const callerInstanceId = randomUUID();
+      const targetSessionId = randomUUID();
+      const callerSessionId = randomUUID();
       const now = Date.now();
 
       store.recordCallEdge({
         callerAgent: "caller-agent",
-        callerInstance: callerInstanceId,
+        callerSession: callerSessionId,
         targetAgent: "callee",
-        targetInstance: targetInstanceId,
+        targetSession: targetSessionId,
         depth: 1,
         startedAt: now,
         status: "completed",
       });
 
       store.recordRun({
-        instanceId: targetInstanceId,
+        sessionId: targetSessionId,
         agentName: "callee",
         triggerType: "agent",
         triggerSource: "caller-agent",
@@ -165,14 +165,14 @@ describe(
 
       const app = makeApp(tracker, store);
       const res = await app.request(
-        `/api/dashboard/agents/callee/instances/${targetInstanceId}`,
+        `/api/dashboard/agents/callee/sessions/${targetSessionId}`,
       );
       expect(res.status).toBe(200);
       const body = await res.json() as { run: unknown; parentEdge: Record<string, unknown> | undefined };
       expect(body.run).not.toBeNull();
       expect(body.parentEdge).toBeDefined();
       expect(body.parentEdge!.caller_agent).toBe("caller-agent");
-      expect(body.parentEdge!.caller_instance).toBe(callerInstanceId);
+      expect(body.parentEdge!.caller_instance).toBe(callerSessionId);
     });
 
     // ── agent trigger + no call edge → no parentEdge ──────────────────────────
@@ -180,10 +180,10 @@ describe(
     it("parentEdge is undefined when trigger_type=agent but no call edge found", async () => {
       const tracker = makeTracker("orphan-callee");
       const store = makeTmpStore();
-      const instanceId = randomUUID();
+      const sessionId = randomUUID();
 
       store.recordRun({
-        instanceId,
+        sessionId,
         agentName: "orphan-callee",
         triggerType: "agent",
         triggerSource: "ghost-caller",
@@ -194,7 +194,7 @@ describe(
 
       const app = makeApp(tracker, store);
       const res = await app.request(
-        `/api/dashboard/agents/orphan-callee/instances/${instanceId}`,
+        `/api/dashboard/agents/orphan-callee/sessions/${sessionId}`,
       );
       expect(res.status).toBe(200);
       const body = await res.json() as { run: unknown; parentEdge: undefined };
@@ -207,7 +207,7 @@ describe(
     it("populates webhookReceipt when trigger_type=webhook and receipt found", async () => {
       const tracker = makeTracker("webhook-agent");
       const store = makeTmpStore();
-      const instanceId = randomUUID();
+      const sessionId = randomUUID();
       const receiptId = randomUUID();
       const now = Date.now();
 
@@ -222,7 +222,7 @@ describe(
       });
 
       store.recordRun({
-        instanceId,
+        sessionId,
         agentName: "webhook-agent",
         triggerType: "webhook",
         triggerSource: "github",
@@ -234,7 +234,7 @@ describe(
 
       const app = makeApp(tracker, store);
       const res = await app.request(
-        `/api/dashboard/agents/webhook-agent/instances/${instanceId}`,
+        `/api/dashboard/agents/webhook-agent/sessions/${sessionId}`,
       );
       expect(res.status).toBe(200);
       const body = await res.json() as {
@@ -253,10 +253,10 @@ describe(
     it("webhookReceipt is undefined when receipt not found in DB", async () => {
       const tracker = makeTracker("webhook-no-receipt");
       const store = makeTmpStore();
-      const instanceId = randomUUID();
+      const sessionId = randomUUID();
 
       store.recordRun({
-        instanceId,
+        sessionId,
         agentName: "webhook-no-receipt",
         triggerType: "webhook",
         triggerSource: "github",
@@ -268,7 +268,7 @@ describe(
 
       const app = makeApp(tracker, store);
       const res = await app.request(
-        `/api/dashboard/agents/webhook-no-receipt/instances/${instanceId}`,
+        `/api/dashboard/agents/webhook-no-receipt/sessions/${sessionId}`,
       );
       expect(res.status).toBe(200);
       const body = await res.json() as { run: unknown; webhookReceipt: undefined };
@@ -281,12 +281,12 @@ describe(
     it("populates runningInstance when instance is both in DB and currently running", async () => {
       const tracker = makeTracker("running-agent");
       const store = makeTmpStore();
-      const instanceId = randomUUID();
+      const sessionId = randomUUID();
       const now = Date.now();
 
       // Add to DB
       store.recordRun({
-        instanceId,
+        sessionId,
         agentName: "running-agent",
         triggerType: "manual",
         result: "running",
@@ -295,8 +295,8 @@ describe(
       });
 
       // Also mark as running in the tracker
-      tracker.registerInstance({
-        id: instanceId,
+      tracker.registerSession({
+        id: sessionId,
         agentName: "running-agent",
         status: "running",
         startedAt: new Date(now),
@@ -305,7 +305,7 @@ describe(
 
       const app = makeApp(tracker, store);
       const res = await app.request(
-        `/api/dashboard/agents/running-agent/instances/${instanceId}`,
+        `/api/dashboard/agents/running-agent/sessions/${sessionId}`,
       );
       expect(res.status).toBe(200);
       const body = await res.json() as {
@@ -314,7 +314,7 @@ describe(
       };
       expect(body.run).not.toBeNull();
       expect(body.runningInstance).not.toBeNull();
-      expect(body.runningInstance!.id).toBe(instanceId);
+      expect(body.runningInstance!.id).toBe(sessionId);
       expect(body.runningInstance!.agentName).toBe("running-agent");
     });
   },

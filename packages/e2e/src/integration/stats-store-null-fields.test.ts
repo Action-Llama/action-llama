@@ -218,9 +218,9 @@ describe("integration: stats/store.ts close() with external AppDb (ownDb=false) 
   it("StatsStore constructed with AppDb can record and query runs before close()", () => {
     const { store } = makeExternalDbStore();
 
-    const instanceId = randomUUID();
+    const sessionId = randomUUID();
     store.recordRun({
-      instanceId,
+      sessionId,
       agentName: "external-db-agent",
       triggerType: "schedule",
       result: "completed",
@@ -230,7 +230,7 @@ describe("integration: stats/store.ts close() with external AppDb (ownDb=false) 
 
     const runs = store.queryRuns({ agent: "external-db-agent" });
     expect(runs).toHaveLength(1);
-    expect(runs[0].instance_id).toBe(instanceId);
+    expect(runs[0].instance_id).toBe(sessionId);
 
     store.close(); // no-op
   });
@@ -243,8 +243,8 @@ describe("integration: stats/store.ts close() with external AppDb (ownDb=false) 
 
     const id1 = randomUUID();
     const id2 = randomUUID();
-    store1.recordRun({ instanceId: id1, agentName: "agent1", triggerType: "schedule", result: "completed", startedAt: Date.now(), durationMs: 100 });
-    store2.recordRun({ instanceId: id2, agentName: "agent2", triggerType: "manual", result: "completed", startedAt: Date.now(), durationMs: 200 });
+    store1.recordRun({ sessionId: id1, agentName: "agent1", triggerType: "schedule", result: "completed", startedAt: Date.now(), durationMs: 100 });
+    store2.recordRun({ sessionId: id2, agentName: "agent2", triggerType: "manual", result: "completed", startedAt: Date.now(), durationMs: 200 });
 
     // Both records visible through either store
     const all1 = store1.queryRuns({ since: 0 });

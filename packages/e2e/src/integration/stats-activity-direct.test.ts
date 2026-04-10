@@ -71,11 +71,11 @@ describe(
 
     it("running instances appear in activity rows", async () => {
       const tracker = makeTracker("run-agent");
-      const instanceId = randomUUID();
+      const sessionId = randomUUID();
       const now = Date.now();
 
-      tracker.registerInstance({
-        id: instanceId,
+      tracker.registerSession({
+        id: sessionId,
         agentName: "run-agent",
         status: "running",
         startedAt: new Date(now),
@@ -86,8 +86,8 @@ describe(
       const res = await app.request("/api/stats/activity");
       expect(res.status).toBe(200);
 
-      const body = await res.json() as { rows: Array<{ instanceId: string; result: string }> };
-      const row = body.rows.find((r) => r.instanceId === instanceId);
+      const body = await res.json() as { rows: Array<{ sessionId: string; result: string }> };
+      const row = body.rows.find((r) => r.sessionId === sessionId);
       expect(row).toBeDefined();
       expect(row!.result).toBe("running");
     });
@@ -96,10 +96,10 @@ describe(
 
     it("running instance 'webhook:test' splits into triggerType/triggerSource", async () => {
       const tracker = makeTracker("wh-agent");
-      const instanceId = randomUUID();
+      const sessionId = randomUUID();
 
-      tracker.registerInstance({
-        id: instanceId,
+      tracker.registerSession({
+        id: sessionId,
         agentName: "wh-agent",
         status: "running",
         startedAt: new Date(),
@@ -110,8 +110,8 @@ describe(
       const res = await app.request("/api/stats/activity");
       expect(res.status).toBe(200);
 
-      const body = await res.json() as { rows: Array<{ instanceId: string; triggerType: string; triggerSource: string | null }> };
-      const row = body.rows.find((r) => r.instanceId === instanceId);
+      const body = await res.json() as { rows: Array<{ sessionId: string; triggerType: string; triggerSource: string | null }> };
+      const row = body.rows.find((r) => r.sessionId === sessionId);
       expect(row).toBeDefined();
       expect(row!.triggerType).toBe("webhook");
       expect(row!.triggerSource).toBe("test-source");
@@ -162,10 +162,10 @@ describe(
 
     it("?status=running returns running rows only, no pending", async () => {
       const tracker = makeTracker("status-agent");
-      const instanceId = randomUUID();
+      const sessionId = randomUUID();
 
-      tracker.registerInstance({
-        id: instanceId,
+      tracker.registerSession({
+        id: sessionId,
         agentName: "status-agent",
         status: "running",
         startedAt: new Date(),
@@ -191,10 +191,10 @@ describe(
 
     it("?status=pending returns pending rows only, no running", async () => {
       const tracker = makeTracker("pending-only-agent");
-      const instanceId = randomUUID();
+      const sessionId = randomUUID();
 
-      tracker.registerInstance({
-        id: instanceId,
+      tracker.registerSession({
+        id: sessionId,
         agentName: "pending-only-agent",
         status: "running",
         startedAt: new Date(),
@@ -209,11 +209,11 @@ describe(
       const res = await app.request("/api/stats/activity?status=pending");
       expect(res.status).toBe(200);
 
-      const body = await res.json() as { rows: Array<{ result: string; instanceId: string | null }> };
+      const body = await res.json() as { rows: Array<{ result: string; sessionId: string | null }> };
       // Should only have pending rows
       expect(body.rows.every((r) => r.result === "pending")).toBe(true);
       // Running instance should NOT be included
-      expect(body.rows.find((r) => r.instanceId === instanceId)).toBeUndefined();
+      expect(body.rows.find((r) => r.sessionId === sessionId)).toBeUndefined();
     });
 
     // ── triggerTypeFilter applied to running instances ─────────────────────────
@@ -225,14 +225,14 @@ describe(
       const manualId = randomUUID();
       const webhookId = randomUUID();
 
-      tracker.registerInstance({
+      tracker.registerSession({
         id: manualId,
         agentName: "filter-agent",
         status: "running",
         startedAt: new Date(),
         trigger: "manual",
       });
-      tracker.registerInstance({
+      tracker.registerSession({
         id: webhookId,
         agentName: "filter-agent",
         status: "running",
@@ -244,21 +244,21 @@ describe(
       const res = await app.request("/api/stats/activity?triggerType=manual");
       expect(res.status).toBe(200);
 
-      const body = await res.json() as { rows: Array<{ instanceId: string }> };
+      const body = await res.json() as { rows: Array<{ sessionId: string }> };
       // Only manual trigger instance
-      expect(body.rows.find((r) => r.instanceId === manualId)).toBeDefined();
+      expect(body.rows.find((r) => r.sessionId === manualId)).toBeDefined();
       // Webhook instance excluded
-      expect(body.rows.find((r) => r.instanceId === webhookId)).toBeUndefined();
+      expect(body.rows.find((r) => r.sessionId === webhookId)).toBeUndefined();
     });
 
     // ── sort: pending before running ──────────────────────────────────────────
 
     it("pending rows appear before running rows in activity", async () => {
       const tracker = makeTracker("sort-agent");
-      const instanceId = randomUUID();
+      const sessionId = randomUUID();
 
-      tracker.registerInstance({
-        id: instanceId,
+      tracker.registerSession({
+        id: sessionId,
         agentName: "sort-agent",
         status: "running",
         startedAt: new Date(Date.now() - 1000), // running started 1 second ago

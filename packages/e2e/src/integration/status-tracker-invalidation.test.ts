@@ -47,10 +47,10 @@ describe("status-tracker-invalidation: getInvalidationsSince advanced behaviors"
     // The returned version must be at the current invalidation watermark
     expect(version).toBe(tracker.getInvalidationVersion());
 
-    // Deduplication: each distinct (type, agent, instanceId) key appears once
+    // Deduplication: each distinct (type, agent, sessionId) key appears once
     const seen = new Set<string>();
     for (const sig of signals) {
-      const key = `${sig.type}:${sig.agent ?? ""}:${sig.instanceId ?? ""}`;
+      const key = `${sig.type}:${sig.agent ?? ""}:${sig.sessionId ?? ""}`;
       expect(seen.has(key), `Duplicate signal key: ${key}`).toBe(false);
       seen.add(key);
     }
@@ -83,8 +83,8 @@ describe("status-tracker-invalidation: getInvalidationsSince advanced behaviors"
     // No signal should be present in both first.signals and second.signals
     // (they cover non-overlapping version ranges)
     // This is enforced by the cursor: first query covered v0→v1, second covers v1→now
-    const firstKeys = new Set(first.signals.map((s) => `${s.type}:${s.agent ?? ""}:${s.instanceId ?? ""}`));
-    const secondKeys = new Set(second.signals.map((s) => `${s.type}:${s.agent ?? ""}:${s.instanceId ?? ""}`));
+    const firstKeys = new Set(first.signals.map((s) => `${s.type}:${s.agent ?? ""}:${s.sessionId ?? ""}`));
+    const secondKeys = new Set(second.signals.map((s) => `${s.type}:${s.agent ?? ""}:${s.sessionId ?? ""}`));
     // It is valid for the same key to appear in both windows when distinct events
     // of the same type fire, but each window should be independently non-empty
     expect(firstKeys.size).toBeGreaterThan(0);
@@ -128,7 +128,7 @@ describe("status-tracker-invalidation: getInvalidationsSince advanced behaviors"
     // signals should be deduplicated — no duplicate keys
     const seen = new Set<string>();
     for (const sig of signals) {
-      const key = `${sig.type}:${sig.agent ?? ""}:${sig.instanceId ?? ""}`;
+      const key = `${sig.type}:${sig.agent ?? ""}:${sig.sessionId ?? ""}`;
       expect(seen.has(key), `Duplicate after prune: ${key}`).toBe(false);
       seen.add(key);
     }

@@ -20,7 +20,7 @@ function setup(overrides?: Partial<ControlRoutesDeps>) {
 
   const deps: ControlRoutesDeps = {
     statusTracker,
-    killInstance: vi.fn(async () => false),
+    killSession: vi.fn(async () => false),
     killAgent: vi.fn(async () => null),
     pauseScheduler: vi.fn(async () => {}),
     resumeScheduler: vi.fn(async () => {}),
@@ -91,7 +91,7 @@ describe("POST /control/agents/:name/kill", () => {
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.killed).toBe(2);
-    expect(body.message).toContain("2 instance(s)");
+    expect(body.message).toContain("2 session(s)");
   });
 
   it("returns 200 with killed=0 when agent exists but nothing running", async () => {
@@ -178,18 +178,18 @@ describe("POST /control/stop", () => {
 
 describe("POST /control/trigger/:name", () => {
   it("triggers agent without prompt when no body", async () => {
-    const triggerAgent = vi.fn(async () => ({ instanceId: "agent-a-abc123" }));
+    const triggerAgent = vi.fn(async () => ({ sessionId: "agent-a-abc123" }));
     const { app } = setup({ triggerAgent });
     const res = await app.request("/control/trigger/agent-a", { method: "POST" });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
-    expect(body.instanceId).toBe("agent-a-abc123");
+    expect(body.sessionId).toBe("agent-a-abc123");
     expect(triggerAgent).toHaveBeenCalledWith("agent-a", undefined);
   });
 
   it("passes prompt from JSON body to triggerAgent", async () => {
-    const triggerAgent = vi.fn(async () => ({ instanceId: "agent-a-abc123" }));
+    const triggerAgent = vi.fn(async () => ({ sessionId: "agent-a-abc123" }));
     const { app } = setup({ triggerAgent });
     const res = await app.request("/control/trigger/agent-a", {
       method: "POST",
@@ -198,12 +198,12 @@ describe("POST /control/trigger/:name", () => {
     });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.instanceId).toBe("agent-a-abc123");
+    expect(body.sessionId).toBe("agent-a-abc123");
     expect(triggerAgent).toHaveBeenCalledWith("agent-a", "review PR #42");
   });
 
   it("ignores empty/whitespace prompt", async () => {
-    const triggerAgent = vi.fn(async () => ({ instanceId: "agent-a-abc123" }));
+    const triggerAgent = vi.fn(async () => ({ sessionId: "agent-a-abc123" }));
     const { app } = setup({ triggerAgent });
     const res = await app.request("/control/trigger/agent-a", {
       method: "POST",
@@ -212,7 +212,7 @@ describe("POST /control/trigger/:name", () => {
     });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.instanceId).toBe("agent-a-abc123");
+    expect(body.sessionId).toBe("agent-a-abc123");
     expect(triggerAgent).toHaveBeenCalledWith("agent-a", undefined);
   });
 });
@@ -237,46 +237,46 @@ describe("POST /control/resume (scheduler)", () => {
   });
 });
 
-describe("GET /control/instances", () => {
+describe("GET /control/sessions", () => {
   it("returns instances list when statusTracker is available", async () => {
     const { app } = setup();
-    const res = await app.request("/control/instances");
+    const res = await app.request("/control/sessions");
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(Array.isArray(body.instances)).toBe(true);
+    expect(Array.isArray(body.sessions)).toBe(true);
   });
 
   it("returns 503 when statusTracker is not available", async () => {
     const { app } = setup({ statusTracker: undefined });
-    const res = await app.request("/control/instances");
+    const res = await app.request("/control/sessions");
     expect(res.status).toBe(503);
     const body = await res.json();
     expect(body.error).toContain("Status tracker not available");
   });
 });
 
-describe("POST /control/kill/:instanceId", () => {
+describe("POST /control/kill/:sessionId", () => {
   it("kills instance and returns 200 on success", async () => {
-    const killInstance = vi.fn(async () => true);
-    const { app } = setup({ killInstance });
+    const killSession = vi.fn(async () => true);
+    const { app } = setup({ killSession });
     const res = await app.request("/control/kill/inst-abc123", { method: "POST" });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.message).toContain("inst-abc123");
-    expect(killInstance).toHaveBeenCalledWith("inst-abc123");
+    expect(killSession).toHaveBeenCalledWith("inst-abc123");
   });
 
   it("returns 404 when instance is not found", async () => {
-    const { app } = setup({ killInstance: vi.fn(async () => false) });
+    const { app } = setup({ killSession: vi.fn(async () => false) });
     const res = await app.request("/control/kill/nonexistent", { method: "POST" });
     expect(res.status).toBe(404);
     const body = await res.json();
     expect(body.error).toContain("not found");
   });
 
-  it("returns 500 when killInstance throws", async () => {
-    const { app } = setup({ killInstance: vi.fn(async () => { throw new Error("kill failed"); }) });
+  it("returns 500 when killSession throws", async () => {
+    const { app } = setup({ killSession: vi.fn(async () => { throw new Error("kill failed"); }) });
     const res = await app.request("/control/kill/inst-err", { method: "POST" });
     expect(res.status).toBe(500);
     const body = await res.json();
@@ -531,11 +531,11 @@ describe("POST /control/resume error handler", () => {
   });
 });
 
-// ── triggerAgent success with no instanceId ───────────────────────────────────
+// ── triggerAgent success with no sessionId ───────────────────────────────────
 
 describe("POST /control/trigger/:name — non-string non-object result", () => {
-  it("returns 200 when triggerAgent returns an object without instanceId", async () => {
-    // triggerAgent returns a generic object (not { instanceId } and not a string)
+  it("returns 200 when triggerAgent returns an object without sessionId", async () => {
+    // triggerAgent returns a generic object (not { sessionId } and not a string)
     const { app } = setup({
       triggerAgent: vi.fn(async () => ({ queued: true }) as any),
     });

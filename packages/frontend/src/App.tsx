@@ -1,14 +1,14 @@
 import { Routes, Route, Navigate, useParams } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { AgentLayout } from "./components/AgentLayout";
-import { InstanceLayout } from "./components/InstanceLayout";
+import { SessionLayout } from "./components/SessionLayout";
 import { LoginPage } from "./pages/LoginPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { AgentDetailPage } from "./pages/AgentDetailPage";
 import { AgentAdminPage } from "./pages/AgentAdminPage";
-import { InstanceLogsPage } from "./pages/InstanceLogsPage";
-import { InstanceTriggerPage } from "./pages/InstanceTriggerPage";
-import { InstanceTelemetryPage } from "./pages/InstanceTelemetryPage";
+import { SessionLogsPage } from "./pages/SessionLogsPage";
+import { SessionTriggerPage } from "./pages/SessionTriggerPage";
+import { SessionTelemetryPage } from "./pages/SessionTelemetryPage";
 import { ActivityPage } from "./pages/ActivityPage";
 import { TriggerDetailPage } from "./pages/TriggerDetailPage";
 import { ProjectConfigPage } from "./pages/ProjectConfigPage";
@@ -40,17 +40,17 @@ export function App() {
           <Route path="skill" element={<AgentSkillRedirect />} />
           <Route path="triggers" element={<AgentTriggersRedirect />} />
         </Route>
-        <Route path="/dashboard/agents/:name/instances/:id" element={<InstanceLayout />}>
-          <Route index element={<InstanceLogsPage />} />
-          <Route path="trigger" element={<InstanceTriggerPage />} />
-          <Route path="telemetry" element={<InstanceTelemetryPage />} />
+        <Route path="/dashboard/agents/:name/sessions/:id" element={<SessionLayout />}>
+          <Route index element={<SessionLogsPage />} />
+          <Route path="trigger" element={<SessionTriggerPage />} />
+          <Route path="telemetry" element={<SessionTelemetryPage />} />
         </Route>
         <Route path="/dashboard/triggers" element={<Navigate to="/activity" replace />} />
         <Route path="/activity" element={<ActivityPage />} />
         <Route path="/stats" element={<StatsPage />} />
         <Route path="/triggers" element={<Navigate to="/activity" replace />} />
         <Route path="/jobs" element={<Navigate to="/activity" replace />} />
-        <Route path="/dashboard/triggers/:instanceId" element={<TriggerDetailPage />} />
+        <Route path="/dashboard/triggers/:sessionId" element={<TriggerDetailPage />} />
         <Route path="/dashboard/webhooks/:receiptId" element={<WebhookReceiptPage />} />
         <Route path="/dashboard/config" element={<ProjectConfigPage />} />
       </Route>

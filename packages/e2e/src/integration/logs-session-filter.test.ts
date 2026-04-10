@@ -1,21 +1,21 @@
 /**
  * Integration tests: per-instance log filtering — no Docker required.
  *
- * The GET /api/logs/agents/:name/:instanceId endpoint filters log entries by
+ * The GET /api/logs/agents/:name/:sessionId endpoint filters log entries by
  * the `instance` field in pino log lines. Container runners add this field via
- * `logger.child({ instance: instanceId })`. This test verifies the filtering
+ * `logger.child({ instance: sessionId })`. This test verifies the filtering
  * works correctly by creating log files with mixed instance entries.
  *
  * Test scenarios:
  *   1. Instance filter returns only entries matching the specified instance
  *   2. Instance filter excludes entries from other instances
  *   3. Entries without an instance field are excluded when filtering
- *   4. GET /api/logs/agents/:name (no instanceId) returns ALL entries
+ *   4. GET /api/logs/agents/:name (no sessionId) returns ALL entries
  *
  * Covers:
- *   - control/routes/logs.ts: GET /api/logs/agents/:name/:instanceId
- *   - control/routes/log-helpers.ts: readLastEntries instanceFilter matching
- *   - control/routes/log-helpers.ts: readLastEntriesMultiFile with instanceFilter
+ *   - control/routes/logs.ts: GET /api/logs/agents/:name/:sessionId
+ *   - control/routes/log-helpers.ts: readLastEntries sessionFilter matching
+ *   - control/routes/log-helpers.ts: readLastEntriesMultiFile with sessionFilter
  */
 
 import { describe, it, expect, afterEach } from "vitest";
@@ -77,7 +77,7 @@ describe(
 
       // Write log file with entries from two different instances + untagged entries
       // The instance field in pino logs uses the FULL instance ID (agent-name + hex suffix)
-      // The :instanceId URL param must also be the FULL instance ID for matching to work.
+      // The :sessionId URL param must also be the FULL instance ID for matching to work.
       const logsPath = resolve(harness.projectPath, ".al", "logs");
       mkdirSync(logsPath, { recursive: true });
       writeFileSync(
@@ -107,7 +107,7 @@ describe(
       }
     }
 
-    it("GET /api/logs/agents/:name/:instanceId returns only entries for that instance", async () => {
+    it("GET /api/logs/agents/:name/:sessionId returns only entries for that instance", async () => {
       await startHarness();
       if (!gatewayAccessible) return;
 
@@ -128,7 +128,7 @@ describe(
       expect(msgs).not.toContain("no-instance-entry");
     });
 
-    it("GET /api/logs/agents/:name/:instanceId for B returns only B entries", async () => {
+    it("GET /api/logs/agents/:name/:sessionId for B returns only B entries", async () => {
       await startHarness();
       if (!gatewayAccessible) return;
 
@@ -148,7 +148,7 @@ describe(
       expect(msgs).not.toContain("no-instance-entry");
     });
 
-    it("GET /api/logs/agents/:name (no instanceId) returns ALL entries including untagged", async () => {
+    it("GET /api/logs/agents/:name (no sessionId) returns ALL entries including untagged", async () => {
       await startHarness();
       if (!gatewayAccessible) return;
 
@@ -166,7 +166,7 @@ describe(
       expect(msgs).toContain("inst-b-entry-2");
     });
 
-    it("GET /api/logs/agents/:name/:instanceId for unknown instance returns empty entries", async () => {
+    it("GET /api/logs/agents/:name/:sessionId for unknown instance returns empty entries", async () => {
       await startHarness();
       if (!gatewayAccessible) return;
 

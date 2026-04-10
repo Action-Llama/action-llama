@@ -231,18 +231,18 @@ describe("host-user runtime", { timeout: 300_000 }, () => {
 
     // Wait for the agent to start running
     const deadline = Date.now() + 15_000;
-    let instanceId: string | undefined;
+    let sessionId: string | undefined;
     while (Date.now() < deadline) {
       const status = await controlRequest("GET", "/control/status", SCHEDULER_PORT, API_KEY);
       const instances = status.data?.instances ?? [];
       if (instances.length > 0) {
-        instanceId = instances[0].id;
+        sessionId = instances[0].id;
         break;
       }
       await new Promise((r) => setTimeout(r, 200));
     }
 
-    expect(instanceId).toBeDefined();
+    expect(sessionId).toBeDefined();
 
     // Kill the agent
     const killResult = await controlRequest(

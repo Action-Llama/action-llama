@@ -51,7 +51,7 @@ export function registerStatsRoutes(
     let mergedTriggers = triggers;
     let mergedTotal = total;
     if (statusTracker && offset === 0) {
-      const running = statusTracker.getInstances()
+      const running = statusTracker.getSessions()
         .filter((inst) => {
           if (inst.status !== "running") return false;
           if (agentFilter && inst.agentName !== agentFilter) return false;
@@ -69,7 +69,7 @@ export function registerStatsRoutes(
             triggerType: sep > -1 ? inst.trigger.slice(0, sep) : inst.trigger,
             triggerSource: sep > -1 ? inst.trigger.slice(sep + 1).trim() : null,
             agentName: inst.agentName,
-            instanceId: inst.id,
+            sessionId: inst.id,
             result: "running",
             webhookReceiptId: null,
             deadLetterReason: null,
@@ -95,11 +95,11 @@ export function registerStatsRoutes(
       : [];
     const total = statsStore ? statsStore.countTriggerHistory(since, false, agentFilter) : 0;
 
-    // Running instances (only on first page)
+    // Running sessions (only on first page)
     let mergedJobs = runs;
     let mergedTotal = total;
     if (statusTracker && offset === 0) {
-      const running = statusTracker.getInstances()
+      const running = statusTracker.getSessions()
         .filter((inst) => {
           if (inst.status !== "running") return false;
           if (agentFilter && inst.agentName !== agentFilter) return false;
@@ -112,14 +112,14 @@ export function registerStatsRoutes(
             triggerType: sep > -1 ? inst.trigger.slice(0, sep) : inst.trigger,
             triggerSource: sep > -1 ? inst.trigger.slice(sep + 1).trim() : null,
             agentName: inst.agentName,
-            instanceId: inst.id,
+            sessionId: inst.id,
             result: "running",
             webhookReceiptId: null,
             deadLetterReason: null,
           };
         });
-      const runningIds = new Set(runs.map((r: any) => r.instanceId));
-      const uniqueRunning = running.filter((r) => !runningIds.has(r.instanceId));
+      const runningIds = new Set(runs.map((r: any) => r.sessionId));
+      const uniqueRunning = running.filter((r) => !runningIds.has(r.sessionId));
       mergedJobs = [...uniqueRunning, ...runs].sort((a: any, b: any) => b.ts - a.ts);
       mergedTotal = total + uniqueRunning.length;
     }
@@ -169,10 +169,10 @@ export function registerStatsRoutes(
     const buildMemRows = (): any[] => {
       const memRows: any[] = [];
 
-      // Collect running instances
+      // Collect running sessions
       if (includeRunning && statusTracker) {
         const running = statusTracker
-          .getInstances()
+          .getSessions()
           .filter((inst) => {
             if (inst.status !== "running") return false;
             if (agentFilter && inst.agentName !== agentFilter) return false;
@@ -190,7 +190,7 @@ export function registerStatsRoutes(
               triggerType: sep > -1 ? inst.trigger.slice(0, sep) : inst.trigger,
               triggerSource: sep > -1 ? inst.trigger.slice(sep + 1).trim() : null,
               agentName: inst.agentName,
-              instanceId: inst.id,
+              sessionId: inst.id,
               result: "running",
               webhookReceiptId: null,
               deadLetterReason: null,
@@ -240,7 +240,7 @@ export function registerStatsRoutes(
               triggerSource,
               eventSummary,
               agentName: agent.name,
-              instanceId: null,
+              sessionId: null,
               result: "pending",
               webhookReceiptId: null,
               deadLetterReason: null,
@@ -300,11 +300,11 @@ export function registerStatsRoutes(
         const runningIds = new Set(
           memRows
             .filter((r) => r.result === "running")
-            .map((r) => r.instanceId)
+            .map((r) => r.sessionId)
             .filter(Boolean)
         );
         if (runningIds.size > 0) {
-          dbRows = dbRows.filter((r) => !r.instanceId || !runningIds.has(r.instanceId));
+          dbRows = dbRows.filter((r) => !r.sessionId || !runningIds.has(r.sessionId));
         }
       } else {
         // No DB rows fetched; just get the count
@@ -338,15 +338,15 @@ export function registerStatsRoutes(
     return c.json({ receipt });
   });
 
-  // Single run by instance ID
-  app.get("/api/stats/agents/:name/runs/:instanceId", (c) => {
-    const instanceId = c.req.param("instanceId");
+  // Single run by session ID
+  app.get("/api/stats/agents/:name/runs/:sessionId", (c) => {
+    const sessionId = c.req.param("sessionId");
 
     if (!statsStore) {
       return c.json({ run: null });
     }
 
-    const run = statsStore.queryRunByInstanceId(instanceId);
+    const run = statsStore.queryRunBySessionId(sessionId);
     return c.json({ run: run || null });
   });
 }

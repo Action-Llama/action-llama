@@ -70,10 +70,10 @@ function makeAgentConfig(name: string, overrides: Record<string, any> = {}) {
   } as any;
 }
 
-function makeMockRunner(instanceId: string) {
+function makeMockRunner(sessionId: string) {
   return {
     isRunning: false,
-    instanceId,
+    sessionId,
     run: vi.fn(async () => ({ result: "completed", triggers: [] })),
     abort: vi.fn(),
     setAgentConfig: vi.fn(),

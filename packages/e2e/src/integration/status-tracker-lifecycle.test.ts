@@ -3,12 +3,12 @@
  *
  * Tests the run lifecycle methods (startRun, endRun, completeRun), log
  * accumulation (addLogLine/getRecentLogs), base image status, and the
- * completeInstance method. No Docker or scheduler startup needed.
+ * completeSession method. No Docker or scheduler startup needed.
  *
  * Covers:
  *   - tui/status-tracker.ts: startRun(), endRun() (success/error/concurrent),
  *     completeRun() (success/error), addLogLine() / getRecentLogs(),
- *     setBaseImageStatus() / getBaseImageStatus(), completeInstance(),
+ *     setBaseImageStatus() / getBaseImageStatus(), completeSession(),
  *     setQueuedWebhooks(), setNextRunAt(), flushInvalidations()
  */
 
@@ -174,11 +174,11 @@ describe("status-tracker-lifecycle: base image and misc", { timeout: 10_000 }, (
     expect(tracker.getInvalidationVersion()).toBe(0);
   });
 
-  it("completeInstance updates instance status", () => {
+  it("completeSession updates instance status", () => {
     const tracker = new StatusTracker();
     tracker.registerAgent("inst-agent", 1);
 
-    tracker.registerInstance({
+    tracker.registerSession({
       id: "inst-abc",
       agentName: "inst-agent",
       startedAt: new Date(),
@@ -186,9 +186,9 @@ describe("status-tracker-lifecycle: base image and misc", { timeout: 10_000 }, (
       trigger: "schedule",
     });
 
-    tracker.completeInstance("inst-abc", "completed");
+    tracker.completeSession("inst-abc", "completed");
 
-    const instances = tracker.getInstances();
+    const instances = tracker.getSessions();
     expect(instances.find((i) => i.id === "inst-abc")?.status).toBe("completed");
   });
 });

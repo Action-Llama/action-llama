@@ -7,19 +7,19 @@
  *
  *   1. GET /api/dashboard/agents/:name/skill — no projectPath → 404 { body: "" }
  *   2. GET /api/dashboard/agents/:name — no statsStore → null summary, 0 totalHistorical
- *   3. GET /api/dashboard/agents/:name/instances/:id — no statsStore → run=null
- *   4. GET /api/dashboard/triggers/:instanceId — running instance in tracker → 200
+ *   3. GET /api/dashboard/agents/:name/sessions/:id — no statsStore → run=null
+ *   4. GET /api/dashboard/triggers/:sessionId — running instance in tracker → 200
  *      (toRunningTriggerDetail() path — trigger type/source split on ":" separator)
- *   5. GET /api/dashboard/triggers/:instanceId — instance with "manual" trigger → triggerType=manual
- *   6. GET /api/dashboard/triggers/:instanceId — instance with "webhook:test" trigger → type+source split
+ *   5. GET /api/dashboard/triggers/:sessionId — instance with "manual" trigger → triggerType=manual
+ *   6. GET /api/dashboard/triggers/:sessionId — instance with "webhook:test" trigger → type+source split
  *   7. GET /api/dashboard/status — agents/schedulerInfo/recentLogs returned
  *   8. GET /api/dashboard/config — without projectPath → default projectScale
  *
  * Covers:
  *   - control/routes/dashboard-api.ts: GET /api/dashboard/agents/:name/skill no projectPath → 404
  *   - control/routes/dashboard-api.ts: GET /api/dashboard/agents/:name without statsStore → null summary
- *   - control/routes/dashboard-api.ts: GET /api/dashboard/agents/:name/instances/:id without statsStore
- *   - control/routes/dashboard-api.ts: GET /api/dashboard/triggers/:instanceId running instance → 200
+ *   - control/routes/dashboard-api.ts: GET /api/dashboard/agents/:name/sessions/:id without statsStore
+ *   - control/routes/dashboard-api.ts: GET /api/dashboard/triggers/:sessionId running instance → 200
  *   - control/routes/dashboard-api.ts: toRunningTriggerDetail() trigger type+source split on ":"
  *   - control/routes/dashboard-api.ts: toRunningTriggerDetail() plain trigger (no ":")
  *   - control/routes/dashboard-api.ts: GET /api/dashboard/status basic response shape
@@ -109,15 +109,15 @@ describe("integration: control/routes/dashboard-api.ts direct tests (no Docker r
     expect(Array.isArray(body.runningInstances)).toBe(true);
   });
 
-  // ── GET /api/dashboard/agents/:name/instances/:id — without statsStore ───
+  // ── GET /api/dashboard/agents/:name/sessions/:id — without statsStore ───
 
-  it("GET /api/dashboard/agents/:name/instances/:id returns run:null without statsStore", async () => {
+  it("GET /api/dashboard/agents/:name/sessions/:id returns run:null without statsStore", async () => {
     const tracker = makeTracker("instance-agent");
     const app = makeApp(tracker, undefined, undefined);  // no statsStore
 
-    const instanceId = randomUUID();
+    const sessionId = randomUUID();
     const res = await app.request(
-      `/api/dashboard/agents/instance-agent/instances/${instanceId}`,
+      `/api/dashboard/agents/instance-agent/sessions/${sessionId}`,
     );
     expect(res.status).toBe(200);
     const body = await res.json() as { run: unknown; runningInstance: unknown };
@@ -125,27 +125,27 @@ describe("integration: control/routes/dashboard-api.ts direct tests (no Docker r
     expect(body.runningInstance).toBeNull();
   });
 
-  // ── GET /api/dashboard/triggers/:instanceId — running instance path ───────
+  // ── GET /api/dashboard/triggers/:sessionId — running instance path ───────
 
   it("returns 200 with trigger detail when instance is running in StatusTracker", async () => {
     const tracker = makeTracker("trigger-agent");
     const app = makeApp(tracker, undefined, undefined);
 
     // Register a running instance directly in the tracker
-    const instanceId = randomUUID();
-    tracker.registerInstance({
-      id: instanceId,
+    const sessionId = randomUUID();
+    tracker.registerSession({
+      id: sessionId,
       agentName: "trigger-agent",
       status: "running",
       startedAt: new Date(),
       trigger: "manual",
     });
 
-    const res = await app.request(`/api/dashboard/triggers/${instanceId}`);
+    const res = await app.request(`/api/dashboard/triggers/${sessionId}`);
     expect(res.status).toBe(200);
-    const body = await res.json() as { trigger: { instanceId: string; triggerType: string; triggerSource: null } };
+    const body = await res.json() as { trigger: { sessionId: string; triggerType: string; triggerSource: null } };
     expect(body.trigger).toBeDefined();
-    expect(body.trigger.instanceId).toBe(instanceId);
+    expect(body.trigger.sessionId).toBe(sessionId);
     expect(body.trigger.triggerType).toBe("manual");
     expect(body.trigger.triggerSource).toBeNull();
     expect(body.trigger.triggerContext).toBeNull();
@@ -155,17 +155,17 @@ describe("integration: control/routes/dashboard-api.ts direct tests (no Docker r
     const tracker = makeTracker("webhook-trigger-agent");
     const app = makeApp(tracker, undefined, undefined);
 
-    const instanceId = randomUUID();
+    const sessionId = randomUUID();
     // Register with "webhook:test-source" trigger string
-    tracker.registerInstance({
-      id: instanceId,
+    tracker.registerSession({
+      id: sessionId,
       agentName: "webhook-trigger-agent",
       status: "running",
       startedAt: new Date(),
       trigger: "webhook:test-source",
     });
 
-    const res = await app.request(`/api/dashboard/triggers/${instanceId}`);
+    const res = await app.request(`/api/dashboard/triggers/${sessionId}`);
     expect(res.status).toBe(200);
     const body = await res.json() as { trigger: { triggerType: string; triggerSource: string | null } };
     expect(body.trigger.triggerType).toBe("webhook");
@@ -176,16 +176,16 @@ describe("integration: control/routes/dashboard-api.ts direct tests (no Docker r
     const tracker = makeTracker("plain-trigger-agent");
     const app = makeApp(tracker, undefined, undefined);
 
-    const instanceId = randomUUID();
-    tracker.registerInstance({
-      id: instanceId,
+    const sessionId = randomUUID();
+    tracker.registerSession({
+      id: sessionId,
       agentName: "plain-trigger-agent",
       status: "running",
       startedAt: new Date(),
       trigger: "schedule",
     });
 
-    const res = await app.request(`/api/dashboard/triggers/${instanceId}`);
+    const res = await app.request(`/api/dashboard/triggers/${sessionId}`);
     expect(res.status).toBe(200);
     const body = await res.json() as { trigger: { triggerType: string; triggerSource: string | null } };
     expect(body.trigger.triggerType).toBe("schedule");

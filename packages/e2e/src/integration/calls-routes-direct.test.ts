@@ -67,20 +67,20 @@ async function makeRegistryWithContainer(): Promise<{
   registry: InstanceType<typeof ContainerRegistry>;
   secret: string;
   agentName: string;
-  instanceId: string;
+  sessionId: string;
 }> {
   const registry = new ContainerRegistry(); // no StateStore → in-memory only
   const secret = "test-secret-" + randomUUID();
   const agentName = "test-caller-agent";
-  const instanceId = "instance-" + randomUUID().slice(0, 8);
+  const sessionId = "instance-" + randomUUID().slice(0, 8);
 
   await registry.register(secret, {
     containerName: "test-container",
     agentName,
-    instanceId,
+    sessionId,
   });
 
-  return { registry, secret, agentName, instanceId };
+  return { registry, secret, agentName, sessionId };
 }
 
 describe("integration: execution/routes/calls.ts direct tests (no Docker required)", { timeout: 20_000 }, () => {
@@ -228,16 +228,16 @@ describe("integration: execution/routes/calls.ts direct tests (no Docker require
 
   // ── GET /calls/:callId — known callId → 200 ──────────────────────────────
 
-  it("returns 200 with call state for a known callId (matching callerInstanceId)", async () => {
-    const { registry, secret, agentName, instanceId } = await makeRegistryWithContainer();
+  it("returns 200 with call state for a known callId (matching callerSessionId)", async () => {
+    const { registry, secret, agentName, sessionId } = await makeRegistryWithContainer();
     const callStore = new CallStore();
     const app = new Hono();
     const logger = makeLogger();
 
-    // Create a call in the store with the same callerInstanceId as the registered container
+    // Create a call in the store with the same callerSessionId as the registered container
     const call = callStore.create({
       callerAgent: agentName,
-      callerInstanceId: instanceId,  // must match the registered container's instanceId
+      callerSessionId: sessionId,  // must match the registered container's sessionId
       targetAgent: "target-agent",
       context: "do something",
       depth: 1,

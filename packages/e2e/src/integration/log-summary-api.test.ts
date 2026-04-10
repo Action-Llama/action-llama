@@ -1,5 +1,5 @@
 /**
- * Integration test: POST /api/logs/agents/:name/:instanceId/summarize
+ * Integration test: POST /api/logs/agents/:name/:sessionId/summarize
  *
  * The log summarization endpoint reads agent run logs and calls an LLM to
  * produce a short natural-language summary. It is registered by
@@ -9,9 +9,9 @@
  *   1. Invalid agent name → 400 (safety regex blocks traversal)
  *   2. Invalid instance ID → 400
  *   3. Agent exists, has no log file yet → 200 with "No log entries found"
- *   4. Agent ran, known instanceId, logs exist → LLM call fails with fake
+ *   4. Agent ran, known sessionId, logs exist → LLM call fails with fake
  *      key → 500 with { error: "Failed to generate summary: ..." }
- *   5. Agent ran, unknown instanceId → no matching log entries →
+ *   5. Agent ran, unknown sessionId → no matching log entries →
  *      200 with "No log entries found"
  *
  * Covers: control/routes/log-summary.ts — all major branches except LLM
@@ -37,12 +37,12 @@ describe.skipIf(!DOCKER)(
     function summarize(
       h: IntegrationHarness,
       agentName: string,
-      instanceId: string,
+      sessionId: string,
       query?: Record<string, string>,
     ): Promise<Response> {
       const params = query ? "?" + new URLSearchParams(query).toString() : "";
       return fetch(
-        `http://127.0.0.1:${h.gatewayPort}/api/logs/agents/${agentName}/${instanceId}/summarize${params}`,
+        `http://127.0.0.1:${h.gatewayPort}/api/logs/agents/${agentName}/${sessionId}/summarize${params}`,
         {
           method: "POST",
           headers: { Authorization: `Bearer ${h.apiKey}` },
@@ -120,13 +120,13 @@ describe.skipIf(!DOCKER)(
       );
       await harness.triggerAgent("summary-llm-agent");
       const runEndEvent = await runEndPromise;
-      const instanceId = runEndEvent.instanceId;
+      const sessionId = runEndEvent.sessionId;
 
       // Wait a bit for log flush
       await new Promise((r) => setTimeout(r, 500));
 
       // Now call summarize — log file exists, entries exist, but LLM fails (fake key)
-      const res = await summarize(harness, "summary-llm-agent", instanceId);
+      const res = await summarize(harness, "summary-llm-agent", sessionId);
 
       // Should be 500 because the fake API key is rejected by the LLM provider
       expect(res.status).toBe(500);
@@ -134,7 +134,7 @@ describe.skipIf(!DOCKER)(
       expect(body.error).toMatch(/failed to generate summary/i);
     });
 
-    it("returns 200 with 'No log entries found' for unknown instanceId even when log file exists", async () => {
+    it("returns 200 with 'No log entries found' for unknown sessionId even when log file exists", async () => {
       harness = await IntegrationHarness.create({
         agents: [
           {
@@ -153,7 +153,7 @@ describe.skipIf(!DOCKER)(
       // Wait for log flush
       await new Promise((r) => setTimeout(r, 500));
 
-      // Request summary for an instanceId that doesn't exist in the log file
+      // Request summary for an sessionId that doesn't exist in the log file
       const res = await summarize(
         harness,
         "summary-unknown-inst-agent",

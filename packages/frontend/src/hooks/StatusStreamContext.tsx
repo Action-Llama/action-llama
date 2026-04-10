@@ -5,14 +5,14 @@ import {
   useAgents,
   useSchedulerInfo,
   useRecentLogs,
-  useInstances,
+  useSessions,
   useConnected,
 } from "../lib/status-store";
 import type { StatusSnapshot } from "../lib/status-store";
 import type { InvalidationSignal } from "../lib/api";
 
 // Re-export selector hooks for convenience
-export { useAgents, useSchedulerInfo, useRecentLogs, useInstances, useConnected };
+export { useAgents, useSchedulerInfo, useRecentLogs, useSessions, useConnected };
 
 // Full status stream return type (backward compat)
 type StatusStreamReturn = StatusSnapshot & { invalidated: InvalidationSignal[] };
@@ -29,11 +29,11 @@ export function useStatusStream(): StatusStreamReturn {
   const agents = useAgents();
   const schedulerInfo = useSchedulerInfo();
   const recentLogs = useRecentLogs();
-  const instances = useInstances();
+  const sessions = useSessions();
   const connected = useConnected();
   // For backward compat, expose latest invalidated from the store
   // This will be removed once all pages migrate to useQuery
   const invalidated = getLatestInvalidated();
 
-  return { agents, schedulerInfo, recentLogs, instances, connected, invalidated };
+  return { agents, schedulerInfo, recentLogs, sessions, connected, invalidated };
 }

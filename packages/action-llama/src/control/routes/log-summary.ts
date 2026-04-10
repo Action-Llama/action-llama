@@ -39,12 +39,12 @@ export function registerLogSummaryRoutes(
   statsStore?: StatsStore,
   logger?: Logger,
 ): void {
-  app.post("/api/logs/agents/:name/:instanceId/summarize", async (c) => {
+  app.post("/api/logs/agents/:name/:sessionId/summarize", async (c) => {
     const name = c.req.param("name");
-    const instanceId = c.req.param("instanceId");
+    const sessionId = c.req.param("sessionId");
 
     if (!SAFE_AGENT_NAME.test(name)) return c.json({ error: "Invalid agent name" }, 400);
-    if (!SAFE_AGENT_NAME.test(instanceId)) return c.json({ error: "Invalid instance ID" }, 400);
+    if (!SAFE_AGENT_NAME.test(sessionId)) return c.json({ error: "Invalid session ID" }, 400);
 
     // Parse optional custom prompt from POST body
     let customPrompt: string | undefined;
@@ -74,7 +74,7 @@ export function registerLogSummaryRoutes(
     }
 
     // Check cache for completed runs (only for default request, skip when custom prompt)
-    const cacheKey = instanceId;
+    const cacheKey = sessionId;
     if (!customPrompt && !query.lines && !query.after && !query.before && !query.grep) {
       // Check in-memory cache first (fast path)
       const cached = summaryCache.get(cacheKey);
@@ -83,7 +83,7 @@ export function registerLogSummaryRoutes(
       }
       // Fall back to DB-persisted summary
       try {
-        const run = statsStore?.queryRunByInstanceId(instanceId);
+        const run = statsStore?.queryRunBySessionId(sessionId);
         if (run?.summary) {
           summaryCache.set(cacheKey, run.summary);
           return c.json({ summary: run.summary, cached: true });
@@ -96,7 +96,7 @@ export function registerLogSummaryRoutes(
     // Read log entries across all daily log files
     const files = findLogFiles(projectPath, name);
     if (files.length === 0) {
-      return c.json({ summary: "No log entries found for this instance.", cached: false });
+      return c.json({ summary: "No log entries found for this session.", cached: false });
     }
 
     const { entries } = await readLastEntriesMultiFile(
@@ -104,12 +104,12 @@ export function registerLogSummaryRoutes(
       lines,
       isNaN(after as number) ? undefined : after,
       isNaN(before as number) ? undefined : before,
-      instanceId,
+      sessionId,
       grepRe,
     );
 
     if (entries.length === 0) {
-      return c.json({ summary: "No log entries found for this instance.", cached: false });
+      return c.json({ summary: "No log entries found for this session.", cached: false });
     }
 
     // Resolve model from project config
@@ -231,17 +231,17 @@ export function registerLogSummaryRoutes(
       summary = response.content;
     } catch (err) {
       const msg = `Failed to generate summary: ${err instanceof Error ? err.message : String(err)}`;
-      logger?.error({ agent: name, instanceId, err }, msg);
+      logger?.error({ agent: name, sessionId, err }, msg);
       return c.json({ error: msg }, 500);
     }
 
     // Persist and cache for completed runs (skip when custom prompt)
     if (!customPrompt && !query.lines && !query.after && !query.before && !query.grep) {
       try {
-        const run = statsStore?.queryRunByInstanceId(instanceId);
+        const run = statsStore?.queryRunBySessionId(sessionId);
         if (run && run.result) {
           summaryCache.set(cacheKey, summary);
-          statsStore?.updateRunSummary(instanceId, summary);
+          statsStore?.updateRunSummary(sessionId, summary);
         }
       } catch {
         // Non-critical — ignore cache errors

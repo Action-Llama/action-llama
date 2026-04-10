@@ -39,7 +39,7 @@ function createMockPersistence() {
 
 function makeRun(overrides: Partial<RunRecord> = {}): RunRecord {
   return {
-    instanceId: `run-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    sessionId: `run-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     agentName: "dev",
     triggerType: "schedule",
     result: "completed",
@@ -59,9 +59,9 @@ function makeRun(overrides: Partial<RunRecord> = {}): RunRecord {
 function makeCallEdge(overrides: Partial<CallEdgeRecord> = {}): CallEdgeRecord {
   return {
     callerAgent: "orchestrator",
-    callerInstance: `inst-caller-${Date.now()}`,
+    callerSession: `inst-caller-${Date.now()}`,
     targetAgent: "worker",
-    targetInstance: `inst-worker-${Date.now()}`,
+    targetSession: `inst-worker-${Date.now()}`,
     depth: 1,
     startedAt: Date.now(),
     ...overrides,
@@ -230,7 +230,7 @@ describe("StatsStoreAdapter – query methods", () => {
 
   describe("queryRunsByAgentPaginated", () => {
     it("returns rows from sql query for a given agent", async () => {
-      const rows = [{ instanceId: "run-1", agentName: "dev" }];
+      const rows = [{ sessionId: "run-1", agentName: "dev" }];
       sqlMock.mockResolvedValueOnce(rows);
 
       const result = await mockAdapter.queryRunsByAgentPaginated("dev", 10, 0);
@@ -268,24 +268,24 @@ describe("StatsStoreAdapter – query methods", () => {
     });
   });
 
-  describe("queryRunByInstanceId", () => {
+  describe("queryRunBySessionId", () => {
     it("returns the first result row", async () => {
-      const row = { instanceId: "inst-123", agentName: "dev" };
+      const row = { sessionId: "inst-123", agentName: "dev" };
       sqlMock.mockResolvedValueOnce([row]);
-      const result = await mockAdapter.queryRunByInstanceId("inst-123");
+      const result = await mockAdapter.queryRunBySessionId("inst-123");
       expect(result).toEqual(row);
     });
 
     it("returns undefined when no rows found", async () => {
       sqlMock.mockResolvedValueOnce([]);
-      const result = await mockAdapter.queryRunByInstanceId("nonexistent");
+      const result = await mockAdapter.queryRunBySessionId("nonexistent");
       expect(result).toBeUndefined();
     });
   });
 
   describe("queryRuns", () => {
     it("queries without agent filter when no agent provided", async () => {
-      const rows = [{ instanceId: "r1" }, { instanceId: "r2" }];
+      const rows = [{ sessionId: "r1" }, { sessionId: "r2" }];
       sqlMock.mockResolvedValueOnce(rows);
       const result = await mockAdapter.queryRuns({});
       expect(result).toEqual(rows);
@@ -296,7 +296,7 @@ describe("StatsStoreAdapter – query methods", () => {
     });
 
     it("queries with agent filter when agent is provided", async () => {
-      const rows = [{ instanceId: "r1", agentName: "dev" }];
+      const rows = [{ sessionId: "r1", agentName: "dev" }];
       sqlMock.mockResolvedValueOnce(rows);
       const result = await mockAdapter.queryRuns({ agent: "dev", limit: 50 });
       expect(result).toEqual(rows);

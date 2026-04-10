@@ -22,7 +22,7 @@ import type { WebhookContext } from "../../src/webhooks/types.js";
 
 function makeRunner(overrides: Partial<PoolRunner> = {}): PoolRunner {
   return {
-    instanceId: overrides.instanceId ?? "test-agent",
+    sessionId: overrides.sessionId ?? "test-agent",
     isRunning: overrides.isRunning ?? false,
     run: overrides.run ?? vi.fn().mockResolvedValue({ result: "completed", triggers: [] }),
   };
@@ -65,7 +65,7 @@ describe("executeRun", () => {
       agentConfigs: [makeAgentConfig("a"), makeAgentConfig("b")],
       runnerPools: {
         a: new RunnerPool([runner]),
-        b: new RunnerPool([makeRunner({ instanceId: "b" })]),
+        b: new RunnerPool([makeRunner({ sessionId: "b" })]),
       },
     });
 
@@ -138,7 +138,7 @@ describe("dispatchTriggers", () => {
   });
 
   it("queues when all runners are busy", () => {
-    const busyRunner = makeRunner({ instanceId: "b", isRunning: true });
+    const busyRunner = makeRunner({ sessionId: "b", isRunning: true });
     const ctx = makeCtx({
       agentConfigs: [makeAgentConfig("a"), makeAgentConfig("b")],
       runnerPools: {
@@ -155,7 +155,7 @@ describe("dispatchTriggers", () => {
   });
 
   it("fires trigger when runner is available", () => {
-    const targetRunner = makeRunner({ instanceId: "b" });
+    const targetRunner = makeRunner({ sessionId: "b" });
     const ctx = makeCtx({
       agentConfigs: [makeAgentConfig("a"), makeAgentConfig("b")],
       runnerPools: {
@@ -172,7 +172,7 @@ describe("dispatchTriggers", () => {
   });
 
   it("rejects trigger for disabled target agent", () => {
-    const targetRunner = makeRunner({ instanceId: "b" });
+    const targetRunner = makeRunner({ sessionId: "b" });
     const ctx = makeCtx({
       agentConfigs: [makeAgentConfig("a"), makeAgentConfig("b")],
       runnerPools: {
@@ -193,7 +193,7 @@ describe("dispatchTriggers", () => {
 
 describe("drainQueues", () => {
   it("processes queued webhooks", async () => {
-    const runner = makeRunner({ instanceId: "a" });
+    const runner = makeRunner({ sessionId: "a" });
     const config = makeAgentConfig("a");
     const ctx = makeCtx({
       agentConfigs: [config],
@@ -210,7 +210,7 @@ describe("drainQueues", () => {
   });
 
   it("processes queued triggers", async () => {
-    const runner = makeRunner({ instanceId: "b" });
+    const runner = makeRunner({ sessionId: "b" });
     const configA = makeAgentConfig("a");
     const configB = makeAgentConfig("b");
     const ctx = makeCtx({
@@ -233,7 +233,7 @@ describe("drainQueues", () => {
   });
 
   it("skips triggers that exceed depth limit", async () => {
-    const runner = makeRunner({ instanceId: "b" });
+    const runner = makeRunner({ sessionId: "b" });
     const ctx = makeCtx({
       maxTriggerDepth: 2,
       agentConfigs: [makeAgentConfig("a"), makeAgentConfig("b")],
@@ -256,7 +256,7 @@ describe("drainQueues", () => {
   });
 
   it("stops when scheduler is paused", async () => {
-    const runner = makeRunner({ instanceId: "a" });
+    const runner = makeRunner({ sessionId: "a" });
     const ctx = makeCtx({
       agentConfigs: [makeAgentConfig("a")],
       runnerPools: { a: new RunnerPool([runner]) },
@@ -275,7 +275,7 @@ describe("drainQueues", () => {
   });
 
   it("stops when shuttingDown is true", async () => {
-    const runner = makeRunner({ instanceId: "a" });
+    const runner = makeRunner({ sessionId: "a" });
     const ctx = makeCtx({
       agentConfigs: [makeAgentConfig("a")],
       runnerPools: { a: new RunnerPool([runner]) },
@@ -292,7 +292,7 @@ describe("drainQueues", () => {
   });
 
   it("stops when queue is empty", async () => {
-    const runner = makeRunner({ instanceId: "a" });
+    const runner = makeRunner({ sessionId: "a" });
     const ctx = makeCtx({
       agentConfigs: [makeAgentConfig("a")],
       runnerPools: { a: new RunnerPool([runner]) },
@@ -304,8 +304,8 @@ describe("drainQueues", () => {
 
   it("breaks when dequeue returns undefined before all runners are exhausted (more runners than items)", async () => {
     // Two runners but only one queued item — the second runner iteration should break
-    const runner1 = makeRunner({ instanceId: "a-1" });
-    const runner2 = makeRunner({ instanceId: "a-2" });
+    const runner1 = makeRunner({ sessionId: "a-1" });
+    const runner2 = makeRunner({ sessionId: "a-2" });
     const config = makeAgentConfig("a");
     const ctx = makeCtx({
       agentConfigs: [config],
@@ -326,7 +326,7 @@ describe("drainQueues", () => {
   });
 
   it("skips queued work for disabled agents", async () => {
-    const runner = makeRunner({ instanceId: "a" });
+    const runner = makeRunner({ sessionId: "a" });
     const config = makeAgentConfig("a");
     const ctx = makeCtx({
       agentConfigs: [config],
@@ -341,7 +341,7 @@ describe("drainQueues", () => {
   });
 
   it("drains queued manual trigger", async () => {
-    const runner = makeRunner({ instanceId: "a" });
+    const runner = makeRunner({ sessionId: "a" });
     const config = makeAgentConfig("a");
     const ctx = makeCtx({
       agentConfigs: [config],
@@ -357,7 +357,7 @@ describe("drainQueues", () => {
   });
 
   it("drains queued manual trigger without prompt", async () => {
-    const runner = makeRunner({ instanceId: "a" });
+    const runner = makeRunner({ sessionId: "a" });
     const config = makeAgentConfig("a");
     const ctx = makeCtx({
       agentConfigs: [config],
@@ -613,7 +613,7 @@ describe("makeTriggeredPrompt", () => {
   });
 });
 
-describe("executeRun — instanceLifecycle", () => {
+describe("executeRun — sessionLifecycle", () => {
   it("calls lifecycle.complete() on successful run", async () => {
     const runner = makeRunner({
       run: vi.fn().mockResolvedValue({ result: "completed", triggers: [] }),
@@ -730,8 +730,8 @@ describe("executeRun — onRunComplete and returnValue", () => {
 });
 
 describe("dispatchTriggers — statsStore call edge recording", () => {
-  it("records call edge in statsStore when callerInstanceId is provided", async () => {
-    const targetRunner = makeRunner({ instanceId: "b-runner" });
+  it("records call edge in statsStore when callerSessionId is provided", async () => {
+    const targetRunner = makeRunner({ sessionId: "b-runner" });
     const statsStore = {
       recordRun: vi.fn(),
       recordCallEdge: vi.fn().mockReturnValue(42),
@@ -751,14 +751,14 @@ describe("dispatchTriggers — statsStore call edge recording", () => {
     expect(statsStore.recordCallEdge).toHaveBeenCalledOnce();
     const edge = statsStore.recordCallEdge.mock.calls[0][0];
     expect(edge.callerAgent).toBe("a");
-    expect(edge.callerInstance).toBe("caller-instance-1");
+    expect(edge.callerSession).toBe("caller-instance-1");
     expect(edge.targetAgent).toBe("b");
     expect(edge.depth).toBe(1);
     expect(edge.status).toBe("pending");
   });
 
-  it("does not record call edge when callerInstanceId is not provided", () => {
-    const targetRunner = makeRunner({ instanceId: "b-runner" });
+  it("does not record call edge when callerSessionId is not provided", () => {
+    const targetRunner = makeRunner({ sessionId: "b-runner" });
     const statsStore = {
       recordRun: vi.fn(),
       recordCallEdge: vi.fn().mockReturnValue(1),
@@ -779,7 +779,7 @@ describe("dispatchTriggers — statsStore call edge recording", () => {
   });
 
   it("does not throw when statsStore.recordCallEdge throws", () => {
-    const targetRunner = makeRunner({ instanceId: "b-runner" });
+    const targetRunner = makeRunner({ sessionId: "b-runner" });
     const statsStore = {
       recordRun: vi.fn(),
       recordCallEdge: vi.fn().mockImplementation(() => { throw new Error("db error"); }),
@@ -804,7 +804,7 @@ describe("dispatchTriggers — statsStore call edge recording", () => {
 
 describe("drainQueues — agent-trigger with callId", () => {
   it("calls callStore.complete when trigger run completes successfully", async () => {
-    const runner = makeRunner({ instanceId: "b" });
+    const runner = makeRunner({ sessionId: "b" });
     const callStore = { setRunning: vi.fn(), complete: vi.fn(), fail: vi.fn() };
     const configA = makeAgentConfig("a");
     const configB = makeAgentConfig("b");
@@ -834,7 +834,7 @@ describe("drainQueues — agent-trigger with callId", () => {
 
   it("calls callStore.fail when trigger run fails", async () => {
     const runner = makeRunner({
-      instanceId: "b",
+      sessionId: "b",
       run: vi.fn().mockResolvedValue({ result: "error", triggers: [], exitCode: 1 }),
     });
     const callStore = { setRunning: vi.fn(), complete: vi.fn(), fail: vi.fn() };
@@ -866,7 +866,7 @@ describe("drainQueues — agent-trigger with callId", () => {
 
 describe("dispatchTriggers — rejected reason other than scale=0", () => {
   it("logs 'trigger skipped' info message for non-scale-0 rejected reasons", () => {
-    const runner = makeRunner({ instanceId: "a" });
+    const runner = makeRunner({ sessionId: "a" });
     const ctx = makeCtx({
       agentConfigs: [makeAgentConfig("a"), makeAgentConfig("b")],
       runnerPools: {
@@ -889,7 +889,7 @@ describe("dispatchTriggers — rejected reason other than scale=0", () => {
 
 describe("drainQueues — schedule work item", () => {
   it("drains queued schedule-type items", async () => {
-    const runner = makeRunner({ instanceId: "a" });
+    const runner = makeRunner({ sessionId: "a" });
     const config = makeAgentConfig("a");
     const ctx = makeCtx({
       agentConfigs: [config],
@@ -905,7 +905,7 @@ describe("drainQueues — schedule work item", () => {
   });
 
   it("logs error when queued scheduled run throws (via onRunComplete)", async () => {
-    const runner = makeRunner({ instanceId: "a" });
+    const runner = makeRunner({ sessionId: "a" });
     const config = makeAgentConfig("a");
     // Make executeRun throw by providing an onRunComplete that throws
     const ctx = makeCtx({
@@ -925,7 +925,7 @@ describe("drainQueues — schedule work item", () => {
   });
 
   it("logs error when queued manual trigger run throws (via onRunComplete)", async () => {
-    const runner = makeRunner({ instanceId: "a" });
+    const runner = makeRunner({ sessionId: "a" });
     const config = makeAgentConfig("a");
     const ctx = makeCtx({
       agentConfigs: [config],
@@ -944,7 +944,7 @@ describe("drainQueues — schedule work item", () => {
   });
 
   it("logs error when queued webhook run throws (via onRunComplete)", async () => {
-    const runner = makeRunner({ instanceId: "a" });
+    const runner = makeRunner({ sessionId: "a" });
     const config = makeAgentConfig("a");
     const ctx = makeCtx({
       agentConfigs: [config],
@@ -967,8 +967,8 @@ describe("drainQueues — schedule work item", () => {
   });
 
   it("logs error when queued agent-trigger run throws (via onRunComplete, with callId)", async () => {
-    const runnerA = makeRunner({ instanceId: "a" });
-    const runnerB = makeRunner({ instanceId: "b" });
+    const runnerA = makeRunner({ sessionId: "a" });
+    const runnerB = makeRunner({ sessionId: "b" });
     const callStore = { setRunning: vi.fn(), complete: vi.fn(), fail: vi.fn() };
     const configA = makeAgentConfig("a");
     const configB = makeAgentConfig("b");
@@ -1004,8 +1004,8 @@ describe("drainQueues — schedule work item", () => {
 
 describe("dispatchTriggers — executeRun rejection catch block", () => {
   it("logs error when executeRun rejects during triggered dispatch (via onRunComplete)", async () => {
-    const runnerA = makeRunner({ instanceId: "a" });
-    const runnerB = makeRunner({ instanceId: "b" });
+    const runnerA = makeRunner({ sessionId: "a" });
+    const runnerB = makeRunner({ sessionId: "b" });
 
     const statsStore = {
       recordCallEdge: vi.fn().mockReturnValue(42),
@@ -1051,15 +1051,15 @@ describe("dispatchTriggers — executeRun rejection catch block", () => {
   });
 });
 
-describe("runWithReruns — statusTracker.createInstance returns null", () => {
-  it("proceeds with undefined lifecycle when statusTracker.createInstance returns null (initial run)", async () => {
+describe("runWithReruns — statusTracker.createSession returns null", () => {
+  it("proceeds with undefined lifecycle when statusTracker.createSession returns null (initial run)", async () => {
     const runner = makeRunner({
       run: vi.fn().mockResolvedValue({ result: "completed", triggers: [] }),
     });
     const config = makeAgentConfig("a");
-    // statusTracker has createInstance but it returns null (agent not registered)
+    // statusTracker has createSession but it returns null (agent not registered)
     const statusTracker = {
-      createInstance: vi.fn().mockReturnValue(null),
+      createSession: vi.fn().mockReturnValue(null),
       isPaused: vi.fn().mockReturnValue(false),
       setQueuedWebhooks: vi.fn(),
     };
@@ -1071,14 +1071,14 @@ describe("runWithReruns — statusTracker.createInstance returns null", () => {
 
     await runWithReruns(runner, config, 0, ctx);
 
-    // Should have called createInstance and handled null gracefully
-    expect(statusTracker.createInstance).toHaveBeenCalledWith(
-      runner.instanceId, "a", "schedule"
+    // Should have called createSession and handled null gracefully
+    expect(statusTracker.createSession).toHaveBeenCalledWith(
+      runner.sessionId, "a", "schedule"
     );
     expect(runner.run).toHaveBeenCalledOnce();
   });
 
-  it("proceeds with undefined lifecycle when statusTracker.createInstance returns null during rerun", async () => {
+  it("proceeds with undefined lifecycle when statusTracker.createSession returns null during rerun", async () => {
     const runner = makeRunner({
       run: vi.fn()
         .mockResolvedValueOnce({ result: "rerun", triggers: [] })
@@ -1086,7 +1086,7 @@ describe("runWithReruns — statusTracker.createInstance returns null", () => {
     });
     const config = makeAgentConfig("a");
     const statusTracker = {
-      createInstance: vi.fn().mockReturnValue(null),
+      createSession: vi.fn().mockReturnValue(null),
       isPaused: vi.fn().mockReturnValue(false),
       setQueuedWebhooks: vi.fn(),
     };
@@ -1098,23 +1098,23 @@ describe("runWithReruns — statusTracker.createInstance returns null", () => {
 
     await runWithReruns(runner, config, 0, ctx);
 
-    // createInstance called twice: initial run + one rerun
-    expect(statusTracker.createInstance).toHaveBeenCalledTimes(2);
+    // createSession called twice: initial run + one rerun
+    expect(statusTracker.createSession).toHaveBeenCalledTimes(2);
     // First call: triggerLabel = "schedule"
-    expect(statusTracker.createInstance).toHaveBeenNthCalledWith(1, runner.instanceId, "a", "schedule");
+    expect(statusTracker.createSession).toHaveBeenNthCalledWith(1, runner.sessionId, "a", "schedule");
     // Second call (rerun): triggerLabel:rerun-N
-    expect(statusTracker.createInstance).toHaveBeenNthCalledWith(2, runner.instanceId, "a", "schedule:rerun-1");
+    expect(statusTracker.createSession).toHaveBeenNthCalledWith(2, runner.sessionId, "a", "schedule:rerun-1");
     expect(runner.run).toHaveBeenCalledTimes(2);
   });
 
-  it("proceeds with real lifecycle when statusTracker.createInstance returns a lifecycle", async () => {
+  it("proceeds with real lifecycle when statusTracker.createSession returns a lifecycle", async () => {
     const runner = makeRunner({
       run: vi.fn().mockResolvedValue({ result: "completed", triggers: [] }),
     });
     const config = makeAgentConfig("a");
     const fakeLifecycle = { start: vi.fn(), complete: vi.fn(), fail: vi.fn() };
     const statusTracker = {
-      createInstance: vi.fn().mockReturnValue(fakeLifecycle),
+      createSession: vi.fn().mockReturnValue(fakeLifecycle),
       isPaused: vi.fn().mockReturnValue(false),
       setQueuedWebhooks: vi.fn(),
     };
@@ -1126,7 +1126,7 @@ describe("runWithReruns — statusTracker.createInstance returns null", () => {
 
     await runWithReruns(runner, config, 0, ctx);
 
-    expect(statusTracker.createInstance).toHaveBeenCalledOnce();
+    expect(statusTracker.createSession).toHaveBeenCalledOnce();
     expect(fakeLifecycle.complete).toHaveBeenCalledOnce();
   });
 });
@@ -1184,13 +1184,13 @@ describe("runWithReruns — manual trigger reruns", () => {
   });
 });
 
-describe("drainQueues — agent-trigger with statusTracker.createInstance", () => {
-  it("calls statusTracker.createInstance for agent-trigger work items (lines 307-308)", async () => {
-    const runner = makeRunner({ instanceId: "b", run: vi.fn().mockResolvedValue({ result: "completed", triggers: [] }) });
+describe("drainQueues — agent-trigger with statusTracker.createSession", () => {
+  it("calls statusTracker.createSession for agent-trigger work items (lines 307-308)", async () => {
+    const runner = makeRunner({ sessionId: "b", run: vi.fn().mockResolvedValue({ result: "completed", triggers: [] }) });
     const configA = makeAgentConfig("a");
     const configB = makeAgentConfig("b");
     const fakeLifecycle = { start: vi.fn(), complete: vi.fn(), fail: vi.fn() };
-    const createInstance = vi.fn().mockReturnValue(fakeLifecycle);
+    const createSession = vi.fn().mockReturnValue(fakeLifecycle);
     const ctx = makeCtx({
       agentConfigs: [configA, configB],
       runnerPools: {
@@ -1198,7 +1198,7 @@ describe("drainQueues — agent-trigger with statusTracker.createInstance", () =
         b: new RunnerPool([runner]),
       },
       statusTracker: {
-        createInstance,
+        createSession,
         isPaused: vi.fn().mockReturnValue(false),
         setQueuedWebhooks: vi.fn(),
         isAgentEnabled: vi.fn().mockReturnValue(true),
@@ -1214,8 +1214,8 @@ describe("drainQueues — agent-trigger with statusTracker.createInstance", () =
 
     await drainQueues(ctx);
 
-    // createInstance should be called with the runner instanceId, agent name, and trigger label
-    expect(createInstance).toHaveBeenCalledWith(runner.instanceId, "b", "agent:a");
+    // createSession should be called with the runner sessionId, agent name, and trigger label
+    expect(createSession).toHaveBeenCalledWith(runner.sessionId, "b", "agent:a");
     expect(runner.run).toHaveBeenCalled();
   });
 
@@ -1224,7 +1224,7 @@ describe("drainQueues — agent-trigger with statusTracker.createInstance", () =
     // We make callStore.complete throw so that when the agent run succeeds (result='completed')
     // and .then() tries to call complete(), the error propagates to the .catch() handler.
     const runner = makeRunner({
-      instanceId: "b",
+      sessionId: "b",
       run: vi.fn().mockResolvedValue({ result: "completed", triggers: [] }),
     });
     const configB = makeAgentConfig("b");

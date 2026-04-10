@@ -11,10 +11,10 @@ vi.mock("child_process", () => ({
 }));
 
 // Mock TransportAgentRunner (the runner used by createRunnerPools)
-let mockRunnerInstanceCounter = 0;
+let mockRunnerSessionCounter = 0;
 vi.mock("../../src/agents/transport-runner.js", () => ({
   TransportAgentRunner: vi.fn().mockImplementation(function (this: any, opts: any) {
-    this.instanceId = `${opts.agentConfig.name}-${mockRunnerInstanceCounter++}`;
+    this.sessionId = `${opts.agentConfig.name}-${mockRunnerSessionCounter++}`;
     Object.defineProperty(this, "isRunning", { get: () => mockIsRunning });
     this.run = mockRun;
     this.abort = vi.fn();
@@ -224,7 +224,7 @@ describe("startScheduler", () => {
     vi.clearAllMocks();
     cronCallbacks.length = 0;
     mockIsRunning = false;
-    mockRunnerInstanceCounter = 0;
+    mockRunnerSessionCounter = 0;
     tmpDir = mkdtempSync(join(tmpdir(), "al-sched-"));
     setupProject(tmpDir);
   });
@@ -408,7 +408,7 @@ describe("startScheduler", () => {
       vi.clearAllMocks();
       cronCallbacks.length = 0;
       mockIsRunning = false;
-      mockRunnerInstanceCounter = 0;
+      mockRunnerSessionCounter = 0;
       tmpDir = mkdtempSync(join(tmpdir(), "al-sched-scale-"));
       setupScaleProject(tmpDir);
     });
@@ -471,7 +471,7 @@ describe("startScheduler", () => {
       vi.clearAllMocks();
       cronCallbacks.length = 0;
       mockIsRunning = false;
-      mockRunnerInstanceCounter = 0;
+      mockRunnerSessionCounter = 0;
       tmpDir = mkdtempSync(join(tmpdir(), "al-sched-disabled-"));
       setupDisabledProject(tmpDir);
     });
@@ -590,7 +590,7 @@ describe("startScheduler", () => {
       vi.clearAllMocks();
       cronCallbacks.length = 0;
       mockIsRunning = false;
-      mockRunnerInstanceCounter = 0;
+      mockRunnerSessionCounter = 0;
       tmpDir = mkdtempSync(join(tmpdir(), "al-sched-timeout-"));
       setupTimeoutProject(tmpDir);
     });
@@ -642,7 +642,7 @@ describe("startScheduler", () => {
       vi.clearAllMocks();
       cronCallbacks.length = 0;
       mockIsRunning = false;
-      mockRunnerInstanceCounter = 0;
+      mockRunnerSessionCounter = 0;
       tmpDir = mkdtempSync(join(tmpdir(), "al-sched-telemetry-"));
       setupTelemetryProject(tmpDir);
     });
@@ -678,7 +678,7 @@ describe("startScheduler", () => {
       vi.clearAllMocks();
       cronCallbacks.length = 0;
       mockIsRunning = false;
-      mockRunnerInstanceCounter = 0;
+      mockRunnerSessionCounter = 0;
       tmpDir = mkdtempSync(join(tmpdir(), "al-sched-ext-"));
       setupProject(tmpDir);
     });
@@ -728,7 +728,7 @@ describe("startScheduler", () => {
       vi.clearAllMocks();
       cronCallbacks.length = 0;
       mockIsRunning = false;
-      mockRunnerInstanceCounter = 0;
+      mockRunnerSessionCounter = 0;
       tmpDir = mkdtempSync(join(tmpdir(), "al-sched-scale-sync-"));
       setupScaleProject2(tmpDir);
     });
@@ -793,7 +793,7 @@ describe("startScheduler", () => {
       }
       cronCallbacks.length = 0;
       mockIsRunning = false;
-      mockRunnerInstanceCounter = 0;
+      mockRunnerSessionCounter = 0;
       tmpDir = mkdtempSync(join(tmpdir(), "al-sched-webhooks-"));
       setupWebhookProject(tmpDir);
     });
@@ -1022,7 +1022,7 @@ describe("startScheduler", () => {
       vi.clearAllMocks();
       cronCallbacks.length = 0;
       mockIsRunning = false;
-      mockRunnerInstanceCounter = 0;
+      mockRunnerSessionCounter = 0;
       tmpDir = mkdtempSync(join(tmpdir(), "al-sched-smallq-"));
       setupSmallQueueProject(tmpDir);
     });
@@ -1090,7 +1090,7 @@ describe("startScheduler", () => {
       vi.clearAllMocks();
       cronCallbacks.length = 0;
       mockIsRunning = false;
-      mockRunnerInstanceCounter = 0;
+      mockRunnerSessionCounter = 0;
       smallQueueTmpDir = mkdtempSync(join(tmpdir(), "al-sched-wq-overflow-"));
       setupSmallQueueWebhookProject(smallQueueTmpDir);
     });

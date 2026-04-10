@@ -82,7 +82,7 @@ export function registerAuthApiRoutes(
  * Immutable DTO for trigger detail response.
  */
 interface TriggerDetail {
-  instanceId: string;
+  sessionId: string;
   agentName: string;
   triggerType: string;
   triggerSource: string | null;
@@ -100,7 +100,7 @@ interface TriggerDetail {
     status: string;
   };
   callerAgent?: string;
-  callerInstance?: string;
+  callerSession?: string;
   callDepth?: number;
 }
 
@@ -109,7 +109,7 @@ interface TriggerDetail {
  */
 function toTriggerDetail(
   run: {
-    instance_id: string;
+    session_id: string;
     agent_name: string;
     trigger_type: string;
     trigger_source: string | null;
@@ -120,7 +120,7 @@ function toTriggerDetail(
   statsStore: StatsStore | undefined,
 ): TriggerDetail {
   const base: TriggerDetail = {
-    instanceId: run.instance_id,
+    sessionId: run.session_id,
     agentName: run.agent_name,
     triggerType: run.trigger_type,
     triggerSource: run.trigger_source ?? null,
@@ -151,12 +151,12 @@ function toTriggerDetail(
 
   // Enrich with agent caller details if applicable
   if (run.trigger_type === "agent" && statsStore) {
-    const edge = statsStore.queryCallEdgeByTargetInstance(run.instance_id);
+    const edge = statsStore.queryCallEdgeByTargetSession(run.session_id);
     if (edge) {
       return {
         ...base,
         callerAgent: edge.caller_agent,
-        callerInstance: edge.caller_instance,
+        callerSession: edge.caller_session,
         callDepth: edge.depth,
       };
     }
@@ -176,7 +176,7 @@ function toRunningTriggerDetail(inst: {
 }): TriggerDetail {
   const sep = inst.trigger.indexOf(":");
   return {
-    instanceId: inst.id,
+    sessionId: inst.id,
     agentName: inst.agentName,
     triggerType: sep > -1 ? inst.trigger.slice(0, sep) : inst.trigger,
     triggerSource: sep > -1 ? inst.trigger.slice(sep + 1).trim() : null,
@@ -208,7 +208,7 @@ export function registerDashboardApiRoutes(
     const agents = statusTracker.getAllAgents();
     const agent = agents.find((a) => a.name === name) || null;
     const summary = statsStore ? (statsStore.queryAgentSummary({ agent: name })[0] || null) : null;
-    const instances = statusTracker.getInstances().filter((i) => i.agentName === name && i.status === "running");
+    const sessions = statusTracker.getSessions().filter((i) => i.agentName === name && i.status === "running");
     const totalHistorical = statsStore ? statsStore.countRunsByAgent(name) : 0;
 
     let agentConfig = null;
@@ -224,25 +224,25 @@ export function registerDashboardApiRoutes(
       agent,
       agentConfig,
       summary,
-      runningInstances: instances,
+      runningSessions: sessions,
       totalHistorical,
     });
   });
 
-  // Instance detail: run record, running instance, parent edge, webhook receipt
-  app.get("/api/dashboard/agents/:name/instances/:id", (c) => {
-    const instanceId = c.req.param("id");
-    const run = statsStore ? statsStore.queryRunByInstanceId(instanceId) : null;
-    const runningInstance = statusTracker.getInstances().find((i) => i.id === instanceId && i.status === "running") || null;
+  // Session detail: run record, running instance, parent edge, webhook receipt
+  app.get("/api/dashboard/agents/:name/sessions/:id", (c) => {
+    const sessionId = c.req.param("id");
+    const run = statsStore ? statsStore.queryRunBySessionId(sessionId) : null;
+    const runningInstance = statusTracker.getSessions().find((i) => i.id === sessionId && i.status === "running") || null;
 
-    let parentEdge: { caller_agent: string; caller_instance: string } | undefined;
+    let parentEdge: { caller_agent: string; caller_session: string } | undefined;
     let webhookReceipt: { source: string; eventSummary?: string; deliveryId?: string } | undefined;
 
     if (statsStore && run) {
       if (run.trigger_type === "agent") {
-        const edge = statsStore.queryCallEdgeByTargetInstance(instanceId);
+        const edge = statsStore.queryCallEdgeByTargetSession(sessionId);
         if (edge) {
-          parentEdge = { caller_agent: edge.caller_agent, caller_instance: edge.caller_instance };
+          parentEdge = { caller_agent: edge.caller_agent, caller_session: edge.caller_session };
         }
       } else if (run.trigger_type === "webhook" && run.webhook_receipt_id) {
         const receipt = statsStore.getWebhookReceipt(run.webhook_receipt_id);
@@ -252,7 +252,7 @@ export function registerDashboardApiRoutes(
       }
     }
 
-    return c.json({ run, runningInstance, parentEdge, webhookReceipt });
+    return c.json({ run, runningSession: runningInstance, parentEdge, webhookReceipt });
   });
 
   // Agent skill markdown
@@ -284,15 +284,15 @@ export function registerDashboardApiRoutes(
     }
   });
 
-  // Trigger detail by instance ID (unified across all trigger types)
-  app.get("/api/dashboard/triggers/:instanceId", (c) => {
-    const instanceId = c.req.param("instanceId");
+  // Trigger detail by session ID (unified across all trigger types)
+  app.get("/api/dashboard/triggers/:sessionId", (c) => {
+    const sessionId = c.req.param("sessionId");
 
-    const run = statsStore?.queryRunByInstanceId(instanceId);
+    const run = statsStore?.queryRunBySessionId(sessionId);
 
     // Fall back to status tracker for running instances not yet in the DB
     if (!run) {
-      const inst = statusTracker.getInstances().find((i) => i.id === instanceId);
+      const inst = statusTracker.getSessions().find((i) => i.id === sessionId);
       if (!inst) return c.json({ trigger: null }, 404);
 
       return c.json({ trigger: toRunningTriggerDetail(inst) });

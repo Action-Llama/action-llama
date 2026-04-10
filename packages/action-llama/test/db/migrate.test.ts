@@ -252,8 +252,8 @@ describe("runMigrations", () => {
     // Create legacy stats.db
     const legacyStats = new Database(join(alDir, "stats.db"));
     legacyStats.exec(`CREATE TABLE webhook_receipts (id INTEGER PRIMARY KEY, delivery_id TEXT, source TEXT, event_summary TEXT, timestamp INTEGER, headers TEXT, body TEXT, matched_agents TEXT, status TEXT, dead_letter_reason TEXT)`);
-    legacyStats.exec(`CREATE TABLE runs (id INTEGER PRIMARY KEY, instance_id TEXT, agent_name TEXT, trigger_type TEXT, trigger_source TEXT, result TEXT, exit_code INTEGER, started_at INTEGER, duration_ms INTEGER, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER, cache_write_tokens INTEGER, total_tokens INTEGER, cost_usd REAL, turn_count INTEGER, error_message TEXT, pre_hook_ms INTEGER, post_hook_ms INTEGER, webhook_receipt_id TEXT)`);
-    legacyStats.exec(`CREATE TABLE call_edges (id INTEGER PRIMARY KEY, caller_agent TEXT, caller_instance TEXT, target_agent TEXT, target_instance TEXT, depth INTEGER, started_at INTEGER, duration_ms INTEGER, status TEXT)`);
+    legacyStats.exec(`CREATE TABLE runs (id INTEGER PRIMARY KEY, session_id TEXT, agent_name TEXT, trigger_type TEXT, trigger_source TEXT, result TEXT, exit_code INTEGER, started_at INTEGER, duration_ms INTEGER, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER, cache_write_tokens INTEGER, total_tokens INTEGER, cost_usd REAL, turn_count INTEGER, error_message TEXT, pre_hook_ms INTEGER, post_hook_ms INTEGER, webhook_receipt_id TEXT)`);
+    legacyStats.exec(`CREATE TABLE call_edges (id INTEGER PRIMARY KEY, caller_agent TEXT, caller_session TEXT, target_agent TEXT, target_session TEXT, depth INTEGER, started_at INTEGER, duration_ms INTEGER, status TEXT)`);
     legacyStats.close();
 
     // Create legacy work-queue.db

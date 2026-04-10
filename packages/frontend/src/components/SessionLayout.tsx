@@ -2,12 +2,12 @@ import { useState, useCallback } from "react";
 import { useParams, Link, Outlet, useLocation } from "react-router-dom";
 import { useQuery } from "../hooks/useQuery";
 import { ResultBadge } from "./Badge";
-import { getInstanceDetail, killInstance } from "../lib/api";
+import { getSessionDetail, killSession } from "../lib/api";
 import type { InstanceDetailData } from "../lib/api";
 import { InstanceContext } from "../hooks/InstanceContext";
 import type { InstanceContextValue } from "../hooks/InstanceContext";
 
-export function InstanceLayout() {
+export function SessionLayout() {
   const { name, id } = useParams<{ name: string; id: string }>();
   const location = useLocation();
   const [killing, setKilling] = useState(false);
@@ -16,7 +16,7 @@ export function InstanceLayout() {
 
   const { data: detail } = useQuery<InstanceDetailData>({
     key: `instance-detail:${name}:${id}`,
-    fetcher: (signal) => getInstanceDetail(name!, id!, signal),
+    fetcher: (signal) => getSessionDetail(name!, id!, signal),
     invalidateOn: ["instance"],
     invalidateAgent: name,
     enabled: !!name && !!id,
@@ -29,7 +29,7 @@ export function InstanceLayout() {
     setKilling(true);
     setActionError(null);
     try {
-      await killInstance(id);
+      await killSession(id);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Action failed");
     } finally {
@@ -39,7 +39,7 @@ export function InstanceLayout() {
 
   if (!name || !id) return null;
 
-  const basePath = `/dashboard/agents/${encodeURIComponent(name)}/instances/${encodeURIComponent(id)}`;
+  const basePath = `/dashboard/agents/${encodeURIComponent(name)}/sessions/${encodeURIComponent(id)}`;
   const isLogs =
     location.pathname === basePath || location.pathname === basePath + "/";
   const isTrigger = location.pathname.endsWith("/trigger");

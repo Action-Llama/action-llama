@@ -16,7 +16,7 @@
  *   - getSchedulerInfo() returns null then set value
  *   - setBaseImageStatus() / getBaseImageStatus() round-trip + null clear
  *   - startBuild() / completeBuild() via AgentLifecycle delegation
- *   - createInstance() returns InstanceLifecycle tied to registered agent
+ *   - createSession() returns SessionLifecycle tied to registered agent
  *   - getAgentLifecycle() returns AgentLifecycle for registered agent
  *   - endRun() with usage accumulates cumulativeUsage across multiple calls
  *   - disableAgent() clears nextRunAt
@@ -476,28 +476,28 @@ describe("status-tracker advanced: uncovered StatusTracker methods (no Docker re
     expect(() => tracker.completeBuild("nonexistent")).not.toThrow();
   });
 
-  // ── createInstance ────────────────────────────────────────────────────────
+  // ── createSession ────────────────────────────────────────────────────────
 
-  it("createInstance returns an InstanceLifecycle for a registered agent", () => {
+  it("createSession returns an SessionLifecycle for a registered agent", () => {
     const tracker = new StatusTracker();
     tracker.registerAgent("inst-creator-agent", 1);
 
-    const lifecycle = tracker.createInstance("inst-001", "inst-creator-agent", "manual");
+    const lifecycle = tracker.createSession("inst-001", "inst-creator-agent", "manual");
     expect(lifecycle).not.toBeNull();
-    expect(lifecycle?.instanceId ?? (lifecycle as unknown as { id: string })?.id ?? "inst-001").toBeTruthy();
+    expect(lifecycle?.sessionId ?? (lifecycle as unknown as { id: string })?.id ?? "inst-001").toBeTruthy();
   });
 
-  it("createInstance returns null for unknown agent", () => {
+  it("createSession returns null for unknown agent", () => {
     const tracker = new StatusTracker();
-    const lifecycle = tracker.createInstance("inst-002", "nonexistent", "manual");
+    const lifecycle = tracker.createSession("inst-002", "nonexistent", "manual");
     expect(lifecycle).toBeNull();
   });
 
-  it("createInstance result can be started and completed without throwing", () => {
+  it("createSession result can be started and completed without throwing", () => {
     const tracker = new StatusTracker();
     tracker.registerAgent("lifecycle-agent", 1);
 
-    const lc = tracker.createInstance("inst-003", "lifecycle-agent", "webhook");
+    const lc = tracker.createSession("inst-003", "lifecycle-agent", "webhook");
     expect(lc).not.toBeNull();
     if (lc) {
       expect(() => lc.start()).not.toThrow();

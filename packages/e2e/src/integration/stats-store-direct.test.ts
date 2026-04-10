@@ -14,7 +14,7 @@
  *   - queryGlobalSummary() — aggregated stats (totalRuns/okRuns/errorRuns/tokens)
  *   - recordCallEdge() + updateCallEdge() + queryCallGraph() — call graph edges
  *   - recordWebhookReceipt() + getWebhookDetailsBatch() — batch webhook lookups
- *   - updateRunSummary() + queryRunByInstanceId() — run summary update
+ *   - updateRunSummary() + queryRunBySessionId() — run summary update
  *   - queryRuns() — runs with since/agent/limit filters
  *   - prune() — deletes old records, returns change counts
  *
@@ -48,7 +48,7 @@ function makeTempDbPath(): string {
 
 function makeRun(overrides: Record<string, unknown> = {}) {
   return {
-    instanceId: randomUUID(),
+    sessionId: randomUUID(),
     agentName: "test-agent",
     triggerType: "manual",
     result: "completed",
@@ -188,7 +188,7 @@ describe("integration: stats/store.ts StatsStore query methods (no Docker requir
     const store = new StatsStore(makeTempDbPath());
     const id = store.recordCallEdge({
       callerAgent: "caller",
-      callerInstance: randomUUID(),
+      callerSession: randomUUID(),
       targetAgent: "callee",
       depth: 1,
       startedAt: Date.now(),
@@ -203,7 +203,7 @@ describe("integration: stats/store.ts StatsStore query methods (no Docker requir
     const targetInstance = randomUUID();
     const id = store.recordCallEdge({
       callerAgent: "caller",
-      callerInstance: randomUUID(),
+      callerSession: randomUUID(),
       targetAgent: "callee",
       depth: 1,
       startedAt: Date.now(),
@@ -211,8 +211,8 @@ describe("integration: stats/store.ts StatsStore query methods (no Docker requir
 
     store.updateCallEdge(id, { durationMs: 5000, status: "completed", targetInstance });
 
-    // Verify via queryCallEdgeByTargetInstance
-    const edge = store.queryCallEdgeByTargetInstance(targetInstance);
+    // Verify via queryCallEdgeByTargetSession
+    const edge = store.queryCallEdgeByTargetSession(targetInstance);
     expect(edge).toBeDefined();
     expect(edge.duration_ms).toBe(5000);
     expect(edge.status).toBe("completed");
@@ -233,12 +233,12 @@ describe("integration: stats/store.ts StatsStore query methods (no Docker requir
     const now = Date.now();
 
     // Three edges from orchestrator → worker
-    store.recordCallEdge({ callerAgent: "orchestrator", callerInstance: randomUUID(), targetAgent: "worker", depth: 1, startedAt: now, durationMs: 1000 });
-    store.recordCallEdge({ callerAgent: "orchestrator", callerInstance: randomUUID(), targetAgent: "worker", depth: 1, startedAt: now, durationMs: 2000 });
-    store.recordCallEdge({ callerAgent: "orchestrator", callerInstance: randomUUID(), targetAgent: "worker", depth: 1, startedAt: now, durationMs: 3000 });
+    store.recordCallEdge({ callerAgent: "orchestrator", callerSession: randomUUID(), targetAgent: "worker", depth: 1, startedAt: now, durationMs: 1000 });
+    store.recordCallEdge({ callerAgent: "orchestrator", callerSession: randomUUID(), targetAgent: "worker", depth: 1, startedAt: now, durationMs: 2000 });
+    store.recordCallEdge({ callerAgent: "orchestrator", callerSession: randomUUID(), targetAgent: "worker", depth: 1, startedAt: now, durationMs: 3000 });
 
     // One edge from orchestrator → reporter
-    store.recordCallEdge({ callerAgent: "orchestrator", callerInstance: randomUUID(), targetAgent: "reporter", depth: 1, startedAt: now });
+    store.recordCallEdge({ callerAgent: "orchestrator", callerSession: randomUUID(), targetAgent: "reporter", depth: 1, startedAt: now });
 
     const graph = store.queryCallGraph();
     expect(graph.length).toBe(2);
@@ -259,8 +259,8 @@ describe("integration: stats/store.ts StatsStore query methods (no Docker requir
     const store = new StatsStore(makeTempDbPath());
     const now = Date.now();
 
-    store.recordCallEdge({ callerAgent: "a", callerInstance: randomUUID(), targetAgent: "b", depth: 1, startedAt: now - 100_000 });
-    store.recordCallEdge({ callerAgent: "a", callerInstance: randomUUID(), targetAgent: "b", depth: 1, startedAt: now });
+    store.recordCallEdge({ callerAgent: "a", callerSession: randomUUID(), targetAgent: "b", depth: 1, startedAt: now - 100_000 });
+    store.recordCallEdge({ callerAgent: "a", callerSession: randomUUID(), targetAgent: "b", depth: 1, startedAt: now });
 
     const filtered = store.queryCallGraph({ since: now - 5_000 });
     expect(filtered.length).toBe(1);
@@ -341,23 +341,23 @@ describe("integration: stats/store.ts StatsStore query methods (no Docker requir
 
   it("updateRunSummary stores summary text on the run record", () => {
     const store = new StatsStore(makeTempDbPath());
-    const instanceId = randomUUID();
-    store.recordRun(makeRun({ instanceId }));
+    const sessionId = randomUUID();
+    store.recordRun(makeRun({ sessionId }));
 
     // Before update — summary column may be null/undefined
-    const before = store.queryRunByInstanceId(instanceId);
+    const before = store.queryRunBySessionId(sessionId);
     expect(before).toBeDefined();
     expect(before.summary ?? null).toBeNull();
 
-    store.updateRunSummary(instanceId, "The agent completed the task successfully.");
+    store.updateRunSummary(sessionId, "The agent completed the task successfully.");
 
-    const after = store.queryRunByInstanceId(instanceId);
+    const after = store.queryRunBySessionId(sessionId);
     expect(after.summary).toBe("The agent completed the task successfully.");
 
     store.close();
   });
 
-  it("updateRunSummary no-ops gracefully for unknown instanceId", () => {
+  it("updateRunSummary no-ops gracefully for unknown sessionId", () => {
     const store = new StatsStore(makeTempDbPath());
     // Should not throw
     expect(() => store.updateRunSummary(randomUUID(), "summary text")).not.toThrow();
@@ -430,8 +430,8 @@ describe("integration: stats/store.ts StatsStore query methods (no Docker requir
     store.recordRun(makeRun({ startedAt: old }));
     store.recordRun(makeRun({ startedAt: now }));
 
-    store.recordCallEdge({ callerAgent: "a", callerInstance: randomUUID(), targetAgent: "b", depth: 1, startedAt: old });
-    store.recordCallEdge({ callerAgent: "a", callerInstance: randomUUID(), targetAgent: "b", depth: 1, startedAt: now });
+    store.recordCallEdge({ callerAgent: "a", callerSession: randomUUID(), targetAgent: "b", depth: 1, startedAt: old });
+    store.recordCallEdge({ callerAgent: "a", callerSession: randomUUID(), targetAgent: "b", depth: 1, startedAt: now });
 
     store.recordWebhookReceipt({ id: randomUUID(), source: "github", timestamp: old, matchedAgents: 1, status: "processed" });
     store.recordWebhookReceipt({ id: randomUUID(), source: "github", timestamp: now, matchedAgents: 1, status: "processed" });

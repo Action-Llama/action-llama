@@ -6,13 +6,13 @@ import { formatLogEntry as formatShared } from "../../shared/log-format.js";
 import type { LogEntry as SharedLogEntry, FormattedLogLine, LogPrefix } from "../../shared/log-format.js";
 
 /**
- * Detect if a string looks like an instance ID (agent-name + 8-char hex suffix).
- * Returns { agent, instanceSuffix } if it matches, or null if it's a plain agent name.
+ * Detect if a string looks like a session ID (agent-name + 8-char hex suffix).
+ * Returns { agent, sessionSuffix } if it matches, or null if it's a plain agent name.
  */
-function parseInstanceId(value: string): { agent: string; instanceSuffix: string } | null {
+function parseSessionId(value: string): { agent: string; sessionSuffix: string } | null {
   const match = value.match(/^(.+)-([0-9a-f]{8})$/);
   if (!match) return null;
-  return { agent: match[1], instanceSuffix: match[2] };
+  return { agent: match[1], sessionSuffix: match[2] };
 }
 
 // ── ANSI helpers ──────────────────────────────────────────────────────────────
@@ -385,11 +385,11 @@ export async function execute(
 
   // Auto-detect if the positional agent arg is a full instance ID (e.g. "dev-a1b2c3d4")
   let resolvedAgent = agent;
-  let instanceSuffix: string | undefined;
-  const parsed = parseInstanceId(agent);
+  let sessionSuffix: string | undefined;
+  const parsed = parseSessionId(agent);
   if (parsed) {
     resolvedAgent = parsed.agent;
-    instanceSuffix = parsed.instanceSuffix;
+    sessionSuffix = parsed.sessionSuffix;
   }
 
   const n = parseInt(opts.lines, 10);
@@ -416,7 +416,7 @@ export async function execute(
   let apiPath: string;
   if (resolvedAgent === "scheduler") {
     apiPath = "/api/logs/scheduler";
-  } else if (instanceSuffix !== undefined) {
+  } else if (sessionSuffix !== undefined) {
     apiPath = `/api/logs/agents/${encodeURIComponent(resolvedAgent)}/${encodeURIComponent(agent)}`;
   } else {
     apiPath = `/api/logs/agents/${encodeURIComponent(resolvedAgent)}`;
@@ -507,9 +507,9 @@ export async function execute(
     }
 
     // When instance / --after / --before / --grep are specified, wrap the formatter
-    const instanceFilter = instanceSuffix !== undefined ? `${resolvedAgent}-${instanceSuffix}` : undefined;
+    const sessionFilter = sessionSuffix !== undefined ? `${resolvedAgent}-${sessionSuffix}` : undefined;
     const filteredFmt: Formatter = (entry) => {
-      if (instanceFilter && entry.instance !== instanceFilter) return null;
+      if (sessionFilter && entry.instance !== sessionFilter) return null;
       if (afterTs !== undefined && entry.time <= afterTs) return null;
       if (beforeTs !== undefined && entry.time >= beforeTs) return null;
       if (grepRe && !grepRe.test(JSON.stringify(entry))) return null;

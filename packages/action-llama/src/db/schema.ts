@@ -48,7 +48,7 @@ export const runsTable = sqliteTable(
   "runs",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
-    instanceId: text("instance_id").notNull(),
+    sessionId: text("session_id").notNull(),
     agentName: text("agent_name").notNull(),
     triggerType: text("trigger_type").notNull(),
     triggerSource: text("trigger_source"),
@@ -116,9 +116,9 @@ export const callEdgesTable = sqliteTable(
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     callerAgent: text("caller_agent").notNull(),
-    callerInstance: text("caller_instance").notNull(),
+    callerSession: text("caller_session").notNull(),
     targetAgent: text("target_agent").notNull(),
-    targetInstance: text("target_instance"),
+    targetSession: text("target_session"),
     depth: integer("depth").notNull().default(0),
     startedAt: integer("started_at").notNull(),
     durationMs: integer("duration_ms"),
@@ -127,7 +127,7 @@ export const callEdgesTable = sqliteTable(
   (t) => [
     index("idx_calls_caller").on(t.callerAgent, t.startedAt),
     index("idx_calls_target").on(t.targetAgent, t.startedAt),
-    index("idx_calls_target_instance").on(t.targetInstance),
+    index("idx_calls_target_session").on(t.targetSession),
   ]
 );
 

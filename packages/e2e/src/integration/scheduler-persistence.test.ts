@@ -199,7 +199,7 @@ describe("integration: scheduler/persistence.ts createPersistence() (no Docker r
     // Step 1: Create persistence and record a run
     const result1 = await createPersistence(projectPath, {}, logger1);
     result1.statsStore!.recordRun({
-      instanceId: "test-123",
+      sessionId: "test-123",
       agentName: "prune-agent",
       triggerType: "manual",
       result: "success",

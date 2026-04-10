@@ -38,7 +38,7 @@ const TODAY = new Date().toISOString().slice(0, 10);
 const AGENT_NAME = "fwd-cursor-agent";
 
 /** Create a pino-format log line. */
-function pinoLine(msg: string, time: number, instanceId?: string): string {
+function pinoLine(msg: string, time: number, sessionId?: string): string {
   return JSON.stringify({
     level: 30,
     time,
@@ -46,7 +46,7 @@ function pinoLine(msg: string, time: number, instanceId?: string): string {
     name: AGENT_NAME,
     pid: 1,
     hostname: "localhost",
-    ...(instanceId ? { instance: instanceId } : {}),
+    ...(sessionId ? { instance: sessionId } : {}),
   });
 }
 

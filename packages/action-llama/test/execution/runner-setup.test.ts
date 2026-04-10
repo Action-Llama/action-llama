@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Mock the transport-runner
 vi.mock("../../src/agents/transport-runner.js", () => ({
   TransportAgentRunner: vi.fn().mockImplementation(function (this: any) {
-    this.instanceId = "mock-runner";
+    this.sessionId = "mock-runner";
     this.isRunning = false;
     this.run = vi.fn().mockResolvedValue({ result: "completed", triggers: [] });
   }),

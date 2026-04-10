@@ -120,9 +120,9 @@ describe.skipIf(!DOCKER)("integration: control API", { timeout: 180_000 }, () =>
     expect(res.status).toBe(404);
   });
 
-  it("kill specific instance by instanceId via POST /control/kill/:instanceId", async () => {
-    // When triggering an agent, the API returns an instanceId. This instanceId
-    // can be used to kill exactly that instance via POST /control/kill/:instanceId.
+  it("kill specific instance by sessionId via POST /control/kill/:sessionId", async () => {
+    // When triggering an agent, the API returns an sessionId. This sessionId
+    // can be used to kill exactly that instance via POST /control/kill/:sessionId.
     harness = await IntegrationHarness.create({
       agents: [
         {
@@ -130,7 +130,7 @@ describe.skipIf(!DOCKER)("integration: control API", { timeout: 180_000 }, () =>
           schedule: "0 0 31 2 *",
           testScript: [
             "#!/bin/sh",
-            // Long-running agent to give us time to kill it by instanceId
+            // Long-running agent to give us time to kill it by sessionId
             "sleep 300",
             "exit 0",
           ].join("\n"),
@@ -140,19 +140,19 @@ describe.skipIf(!DOCKER)("integration: control API", { timeout: 180_000 }, () =>
 
     await harness.start();
 
-    // Trigger the agent and capture the instanceId from the response
+    // Trigger the agent and capture the sessionId from the response
     const triggerRes = await harness.controlAPI("POST", "/trigger/specific-kill-agent");
     expect(triggerRes.ok).toBe(true);
     const triggerBody = await triggerRes.json();
     expect(triggerBody.success).toBe(true);
-    const instanceId = triggerBody.instanceId as string;
-    expect(instanceId).toBeTruthy();
+    const sessionId = triggerBody.sessionId as string;
+    expect(sessionId).toBeTruthy();
 
     // Wait for the container to be running
     await harness.waitForRunning("specific-kill-agent");
 
-    // Kill by specific instanceId
-    const killRes = await harness.controlAPI("POST", `/kill/${instanceId}`);
+    // Kill by specific sessionId
+    const killRes = await harness.controlAPI("POST", `/kill/${sessionId}`);
     expect(killRes.ok).toBe(true);
     const killBody = await killRes.json();
     expect(killBody.success).toBe(true);
@@ -188,7 +188,7 @@ describe.skipIf(!DOCKER)("integration: control API", { timeout: 180_000 }, () =>
     expect(body.error).toContain("nonexistent-agent-xyz");
   });
 
-  it("kill nonexistent instanceId returns 404", async () => {
+  it("kill nonexistent sessionId returns 404", async () => {
     harness = await IntegrationHarness.create({
       agents: [
         {
@@ -278,8 +278,8 @@ describe.skipIf(!DOCKER)("integration: control API", { timeout: 180_000 }, () =>
     expect(triggerRes.ok).toBe(true);
     const triggerBody = await triggerRes.json();
     expect(triggerBody.success).toBe(true);
-    // The response should include an instanceId
-    expect(triggerBody.instanceId).toBeTruthy();
+    // The response should include an sessionId
+    expect(triggerBody.sessionId).toBeTruthy();
 
     // Wait for the run to complete — test-script verifies the PROMPT contains our marker
     const run = await harness.waitForRunResult("prompt-agent", 120_000);

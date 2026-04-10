@@ -1,10 +1,10 @@
 /**
  * Integration tests: log summary API — DB-persisted summary cache path.
  *
- * When POST /api/logs/agents/:name/:instanceId/summarize is called with no
+ * When POST /api/logs/agents/:name/:sessionId/summarize is called with no
  * custom parameters (no ?lines, ?after, ?before, ?grep, no body prompt):
  *   1. The endpoint first checks the in-memory summaryCache Map (cache hit → return immediately)
- *   2. If not in memory, it checks statsStore.queryRunByInstanceId(instanceId) for a DB-persisted
+ *   2. If not in memory, it checks statsStore.queryRunBySessionId(sessionId) for a DB-persisted
  *      summary (if run.summary is non-null, that is returned with cached: true)
  *   3. Only if neither cache has a result does it read log files and call the LLM
  *
@@ -24,13 +24,13 @@
  *   1. Run with DB-persisted summary → POST returns { summary, cached: true }
  *   2. Run with null summary → DB cache miss; falls through to log files
  *      (returns "No log entries found" since no log file exists, cached: false)
- *   3. Unknown instanceId → queryRunByInstanceId() returns undefined → DB cache miss;
+ *   3. Unknown sessionId → queryRunBySessionId() returns undefined → DB cache miss;
  *      falls through to log files → "No log entries found"
  *   4. Run with DB summary + custom prompt in body → cache skipped → log files read
  *      → "No log entries found" (log files absent), cached: false
  *
  * Covers:
- *   - control/routes/log-summary.ts: summaryCache miss → statsStore.queryRunByInstanceId (line 86)
+ *   - control/routes/log-summary.ts: summaryCache miss → statsStore.queryRunBySessionId (line 86)
  *   - control/routes/log-summary.ts: run.summary non-null → return cached: true (lines 87-90)
  *   - control/routes/log-summary.ts: run.summary null → DB cache miss → fall through (lines 86-91)
  *   - control/routes/log-summary.ts: customPrompt → skip cache check → fall through (line 74)
@@ -95,7 +95,7 @@ describe(
      */
     function summarize(
       agentName: string,
-      instanceId: string,
+      sessionId: string,
       opts: { body?: Record<string, string>; query?: Record<string, string> } = {},
     ): Promise<Response> {
       const params = opts.query ? "?" + new URLSearchParams(opts.query).toString() : "";
@@ -106,7 +106,7 @@ describe(
         headers["Content-Type"] = "application/json";
       }
       return fetch(
-        `http://127.0.0.1:${harness.gatewayPort}/api/logs/agents/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}/summarize${params}`,
+        `http://127.0.0.1:${harness.gatewayPort}/api/logs/agents/${encodeURIComponent(agentName)}/${encodeURIComponent(sessionId)}/summarize${params}`,
         {
           method: "POST",
           headers,
@@ -122,7 +122,7 @@ describe(
         await startHarness();
         if (!gatewayAccessible) return;
 
-        const instanceId = `inst-${randomUUID().slice(0, 8)}`;
+        const sessionId = `inst-${randomUUID().slice(0, 8)}`;
         const expectedSummary = "Agent fetched user data and wrote report successfully.";
 
         // Write a run record with a pre-set summary directly to the DB
@@ -130,20 +130,20 @@ describe(
         const store = new StatsStore(dbPath);
         try {
           store.recordRun({
-            instanceId,
+            sessionId,
             agentName: "summary-cache-agent",
             triggerType: "manual",
             result: "completed",
             startedAt: Date.now() - 5000,
             durationMs: 4500,
           });
-          store.updateRunSummary(instanceId, expectedSummary);
+          store.updateRunSummary(sessionId, expectedSummary);
         } finally {
           store.close();
         }
 
         // Call summarize endpoint with no custom params — should hit DB cache
-        const res = await summarize("summary-cache-agent", instanceId);
+        const res = await summarize("summary-cache-agent", sessionId);
         expect(res.status).toBe(200);
 
         const body = await res.json() as { summary: string; cached: boolean };
@@ -158,14 +158,14 @@ describe(
         await startHarness();
         if (!gatewayAccessible) return;
 
-        const instanceId = `inst-${randomUUID().slice(0, 8)}`;
+        const sessionId = `inst-${randomUUID().slice(0, 8)}`;
 
         // Write a run record WITHOUT a summary (summary field stays null)
         const dbPath = `${harness.projectPath}/.al/action-llama.db`;
         const store = new StatsStore(dbPath);
         try {
           store.recordRun({
-            instanceId,
+            sessionId,
             agentName: "summary-cache-agent",
             triggerType: "manual",
             result: "completed",
@@ -179,7 +179,7 @@ describe(
 
         // With null summary, DB cache misses; falls through to log files.
         // Since there are no log files for this agent, returns "No log entries found"
-        const res = await summarize("summary-cache-agent", instanceId);
+        const res = await summarize("summary-cache-agent", sessionId);
         expect(res.status).toBe(200);
 
         const body = await res.json() as { summary: string; cached: boolean };
@@ -189,14 +189,14 @@ describe(
     );
 
     it(
-      "unknown instanceId → queryRunByInstanceId returns undefined → 'No log entries found'",
+      "unknown sessionId → queryRunBySessionId returns undefined → 'No log entries found'",
       async () => {
         await startHarness();
         if (!gatewayAccessible) return;
 
         const unknownInstanceId = `inst-${randomUUID().slice(0, 8)}-unknown`;
 
-        // No run record for this instanceId — queryRunByInstanceId returns undefined
+        // No run record for this sessionId — queryRunBySessionId returns undefined
         const res = await summarize("summary-cache-agent", unknownInstanceId);
         expect(res.status).toBe(200);
 
@@ -212,7 +212,7 @@ describe(
         await startHarness();
         if (!gatewayAccessible) return;
 
-        const instanceId = `inst-${randomUUID().slice(0, 8)}`;
+        const sessionId = `inst-${randomUUID().slice(0, 8)}`;
         const storedSummary = "Cached summary that should NOT be returned.";
 
         // Write a run with a stored summary
@@ -220,21 +220,21 @@ describe(
         const store = new StatsStore(dbPath);
         try {
           store.recordRun({
-            instanceId,
+            sessionId,
             agentName: "summary-cache-agent",
             triggerType: "manual",
             result: "completed",
             startedAt: Date.now() - 4000,
             durationMs: 3500,
           });
-          store.updateRunSummary(instanceId, storedSummary);
+          store.updateRunSummary(sessionId, storedSummary);
         } finally {
           store.close();
         }
 
         // With a custom prompt, cache is bypassed — falls through to log files
         // Since no log files exist, returns "No log entries found"
-        const res = await summarize("summary-cache-agent", instanceId, {
+        const res = await summarize("summary-cache-agent", sessionId, {
           body: { prompt: "What did the agent accomplish?" },
         });
         expect(res.status).toBe(200);

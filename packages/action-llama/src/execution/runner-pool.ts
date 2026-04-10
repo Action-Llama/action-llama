@@ -1,13 +1,13 @@
 /**
- * RunnerPool manages multiple instances of the same agent for parallel execution.
+ * RunnerPool manages multiple sessions of the same agent for parallel execution.
  * It provides load balancing across available runners and handles queuing when all are busy.
  */
 
 export interface PoolRunner {
   isRunning: boolean;
-  instanceId: string;
+  sessionId: string;
   abort?(): void;
-  run(prompt: string, triggerInfo?: { type: 'schedule' | 'manual' | 'webhook' | 'agent'; source?: string }, instanceId?: string): Promise<any>;
+  run(prompt: string, triggerInfo?: { type: 'schedule' | 'manual' | 'webhook' | 'agent'; source?: string }, sessionId?: string): Promise<any>;
 }
 
 export class RunnerPool {
@@ -102,17 +102,17 @@ export class RunnerPool {
   }
 
   /**
-   * Kill a specific instance by its instanceId
+   * Kill a specific session by its sessionId
    */
-  killInstance(id: string): boolean {
-    const runner = this.runners.find(r => r.instanceId === id && r.isRunning);
+  killSession(id: string): boolean {
+    const runner = this.runners.find(r => r.sessionId === id && r.isRunning);
     if (!runner) return false;
     if (runner.abort) runner.abort();
     return true;
   }
 
   /**
-   * Kill all running instances in this pool.
+   * Kill all running sessions in this pool.
    * Returns the number of runners that were aborted.
    */
   killAll(): number {

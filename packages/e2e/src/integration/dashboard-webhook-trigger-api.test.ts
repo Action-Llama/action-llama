@@ -3,8 +3,8 @@
  *
  * When an agent is triggered by a webhook, the stats store records a webhook
  * receipt. The dashboard API uses this to enrich:
- *   - GET /api/dashboard/agents/:name/instances/:id  — includes webhookReceipt
- *   - GET /api/dashboard/triggers/:instanceId        — includes webhook field with source/eventSummary
+ *   - GET /api/dashboard/agents/:name/sessions/:id  — includes webhookReceipt
+ *   - GET /api/dashboard/triggers/:sessionId        — includes webhook field with source/eventSummary
  *
  * Tests:
  *   1. Instance detail shows webhookReceipt when run was triggered by webhook.
@@ -66,21 +66,21 @@ describe.skipIf(!DOCKER)(
       const run = await harness.waitForRunResult("webhook-detail-agent", 120_000);
       expect(run.result).toBe("completed");
 
-      // Find the run's instanceId from stats
+      // Find the run's sessionId from stats
       const runsRes = await gatewayFetch(harness, "/api/stats/agents/webhook-detail-agent/runs");
       expect(runsRes.ok).toBe(true);
       const runsBody = (await runsRes.json()) as { runs: Array<Record<string, unknown>>; total: number };
       expect(runsBody.total).toBeGreaterThanOrEqual(1);
 
       const agentRun = runsBody.runs[0]!;
-      const instanceId = (agentRun.instanceId ?? agentRun.instance_id) as string | undefined;
-      expect(instanceId).toBeDefined();
-      if (!instanceId) return;
+      const sessionId = (agentRun.sessionId ?? agentRun.instance_id) as string | undefined;
+      expect(sessionId).toBeDefined();
+      if (!sessionId) return;
 
       // Fetch the dashboard instance detail
       const detailRes = await gatewayFetch(
         harness,
-        `/api/dashboard/agents/webhook-detail-agent/instances/${instanceId}`,
+        `/api/dashboard/agents/webhook-detail-agent/sessions/${sessionId}`,
       );
       expect(detailRes.ok).toBe(true);
       const detailBody = (await detailRes.json()) as {
@@ -102,8 +102,8 @@ describe.skipIf(!DOCKER)(
       expect(detailBody.parentEdge).toBeUndefined();
     });
 
-    it("dashboard triggers/:instanceId shows webhook field for webhook-triggered run", async () => {
-      // GET /api/dashboard/triggers/:instanceId for a webhook-triggered run should
+    it("dashboard triggers/:sessionId shows webhook field for webhook-triggered run", async () => {
+      // GET /api/dashboard/triggers/:sessionId for a webhook-triggered run should
       // include a `webhook` field with receiptId, source, eventSummary, etc.
       harness = await IntegrationHarness.create({
         agents: [
@@ -133,23 +133,23 @@ describe.skipIf(!DOCKER)(
       const run = await harness.waitForRunResult("webhook-trigger-api-agent", 120_000);
       expect(run.result).toBe("completed");
 
-      // Get instanceId
+      // Get sessionId
       const runsRes = await gatewayFetch(harness, "/api/stats/agents/webhook-trigger-api-agent/runs");
       expect(runsRes.ok).toBe(true);
       const runsBody = (await runsRes.json()) as { runs: Array<Record<string, unknown>>; total: number };
       expect(runsBody.total).toBeGreaterThanOrEqual(1);
 
       const agentRun = runsBody.runs[0]!;
-      const instanceId = (agentRun.instanceId ?? agentRun.instance_id) as string | undefined;
-      expect(instanceId).toBeDefined();
-      if (!instanceId) return;
+      const sessionId = (agentRun.sessionId ?? agentRun.instance_id) as string | undefined;
+      expect(sessionId).toBeDefined();
+      if (!sessionId) return;
 
       // Fetch trigger details from the dashboard endpoint
-      const triggerRes = await gatewayFetch(harness, `/api/dashboard/triggers/${instanceId}`);
+      const triggerRes = await gatewayFetch(harness, `/api/dashboard/triggers/${sessionId}`);
       expect(triggerRes.ok).toBe(true);
       const triggerBody = (await triggerRes.json()) as {
         trigger: {
-          instanceId: string;
+          sessionId: string;
           agentName: string;
           triggerType: string;
           webhook?: {

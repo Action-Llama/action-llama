@@ -132,7 +132,7 @@ vi.mock("../../src/execution/runner-setup.js", async (importOriginal) => {
       const runnerPools: Record<string, any> = {};
       const actualScales: Record<string, number> = {};
       const createRunner = () => ({
-        instanceId: "mock-instance-id",
+        sessionId: "mock-instance-id",
         get isRunning() { return mockIsRunning; },
         run: mockRun,
       });

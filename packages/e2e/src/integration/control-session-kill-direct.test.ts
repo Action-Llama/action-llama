@@ -1,19 +1,19 @@
 /**
- * Integration tests: control/routes/control.ts POST /control/kill/:instanceId and
+ * Integration tests: control/routes/control.ts POST /control/kill/:sessionId and
  * POST /control/stop success/404 paths — no Docker required.
  *
  * Covers the remaining branches:
- *   - POST /control/kill/:instanceId — killInstance returns true → 200 success
- *   - POST /control/kill/:instanceId — killInstance returns false → 404 not found
+ *   - POST /control/kill/:sessionId — killSession returns true → 200 success
+ *   - POST /control/kill/:sessionId — killSession returns false → 404 not found
  *   - POST /control/stop — stopScheduler provided → 200 { success: true }
- *   - GET /control/instances — without statusTracker → 503
+ *   - GET /control/sessions — without statusTracker → 503
  *   - GET /control/status — without statusTracker → 503
  *
  * Covers:
- *   - control/routes/control.ts: POST /control/kill/:instanceId → 200 (success)
- *   - control/routes/control.ts: POST /control/kill/:instanceId → 404 (not found)
+ *   - control/routes/control.ts: POST /control/kill/:sessionId → 200 (success)
+ *   - control/routes/control.ts: POST /control/kill/:sessionId → 404 (not found)
  *   - control/routes/control.ts: POST /control/stop → 200 (success)
- *   - control/routes/control.ts: GET /control/instances → 503 (no statusTracker)
+ *   - control/routes/control.ts: GET /control/sessions → 503 (no statusTracker)
  *   - control/routes/control.ts: GET /control/status → 503 (no statusTracker)
  */
 
@@ -41,11 +41,11 @@ describe(
   () => {
     // ── kill instance success ──────────────────────────────────────────────────
 
-    it("POST /control/kill/:instanceId → 200 success when killInstance returns true", async () => {
+    it("POST /control/kill/:sessionId → 200 success when killSession returns true", async () => {
       const app = new Hono();
-      const killInstance = vi.fn(async () => true);
+      const killSession = vi.fn(async () => true);
       registerControlRoutes(app, {
-        killInstance,
+        killSession,
         killAgent: vi.fn(async () => null),
         pauseScheduler: vi.fn(async () => {}),
         resumeScheduler: vi.fn(async () => {}),
@@ -61,11 +61,11 @@ describe(
 
     // ── kill instance 404 ─────────────────────────────────────────────────────
 
-    it("POST /control/kill/:instanceId → 404 when killInstance returns false", async () => {
+    it("POST /control/kill/:sessionId → 404 when killSession returns false", async () => {
       const app = new Hono();
-      const killInstance = vi.fn(async () => false);
+      const killSession = vi.fn(async () => false);
       registerControlRoutes(app, {
-        killInstance,
+        killSession,
         killAgent: vi.fn(async () => null),
         pauseScheduler: vi.fn(async () => {}),
         resumeScheduler: vi.fn(async () => {}),
@@ -84,7 +84,7 @@ describe(
       const app = new Hono();
       const stopScheduler = vi.fn(async () => {});
       registerControlRoutes(app, {
-        killInstance: vi.fn(async () => false),
+        killSession: vi.fn(async () => false),
         killAgent: vi.fn(async () => null),
         pauseScheduler: vi.fn(async () => {}),
         resumeScheduler: vi.fn(async () => {}),
@@ -98,12 +98,12 @@ describe(
       expect(body.success).toBe(true);
     });
 
-    // ── GET /control/instances — no statusTracker → 503 ───────────────────────
+    // ── GET /control/sessions — no statusTracker → 503 ───────────────────────
 
-    it("GET /control/instances → 503 when no statusTracker provided", async () => {
+    it("GET /control/sessions → 503 when no statusTracker provided", async () => {
       const app = new Hono();
       registerControlRoutes(app, {
-        killInstance: vi.fn(async () => false),
+        killSession: vi.fn(async () => false),
         killAgent: vi.fn(async () => null),
         pauseScheduler: vi.fn(async () => {}),
         resumeScheduler: vi.fn(async () => {}),
@@ -111,7 +111,7 @@ describe(
         // No statusTracker
       });
 
-      const res = await app.request("/control/instances");
+      const res = await app.request("/control/sessions");
       expect(res.status).toBe(503);
     });
 
@@ -120,7 +120,7 @@ describe(
     it("GET /control/status → 503 when no statusTracker provided", async () => {
       const app = new Hono();
       registerControlRoutes(app, {
-        killInstance: vi.fn(async () => false),
+        killSession: vi.fn(async () => false),
         killAgent: vi.fn(async () => null),
         pauseScheduler: vi.fn(async () => {}),
         resumeScheduler: vi.fn(async () => {}),

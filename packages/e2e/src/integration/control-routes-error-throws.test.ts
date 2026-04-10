@@ -41,7 +41,7 @@ function makeLogger() {
 
 function makeBaseDeps(overrides?: Record<string, unknown>) {
   return {
-    killInstance: vi.fn(async () => false),
+    killSession: vi.fn(async () => false),
     killAgent: vi.fn(async () => null),
     pauseScheduler: vi.fn(async () => {}),
     resumeScheduler: vi.fn(async () => {}),

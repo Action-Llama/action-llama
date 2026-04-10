@@ -3,13 +3,13 @@
  *
  * These endpoints are used by the React dashboard SPA to show details
  * for a specific agent run instance:
- *   GET /api/dashboard/agents/:name/instances/:id — run detail + trigger context
- *   GET /api/dashboard/triggers/:instanceId       — trigger detail with source info
+ *   GET /api/dashboard/agents/:name/sessions/:id — run detail + trigger context
+ *   GET /api/dashboard/triggers/:sessionId       — trigger detail with source info
  *
  * Covers: control/routes/dashboard-api.ts
- *   - GET /api/dashboard/agents/:name/instances/:id
- *   - GET /api/dashboard/triggers/:instanceId (manual trigger path)
- *   - GET /api/dashboard/triggers/:instanceId 404 for unknown instanceId
+ *   - GET /api/dashboard/agents/:name/sessions/:id
+ *   - GET /api/dashboard/triggers/:sessionId (manual trigger path)
+ *   - GET /api/dashboard/triggers/:sessionId 404 for unknown sessionId
  */
 import { describe, it, expect, afterEach } from "vitest";
 import { IntegrationHarness, isDockerAvailable } from "./harness.js";
@@ -31,14 +31,14 @@ describe.skipIf(!DOCKER)("integration: dashboard instance detail API", { timeout
   }
 
   /**
-   * Extract instanceId from a run object returned by the stats API.
-   * Handles both camelCase (instanceId) and snake_case (instance_id) field names.
+   * Extract sessionId from a run object returned by the stats API.
+   * Handles both camelCase (sessionId) and snake_case (session_id) field names.
    */
-  function extractInstanceId(run: Record<string, unknown>): string | undefined {
-    return (run.instanceId ?? run.instance_id) as string | undefined;
+  function extractSessionId(run: Record<string, unknown>): string | undefined {
+    return (run.sessionId ?? run.session_id) as string | undefined;
   }
 
-  it("GET /api/dashboard/agents/:name/instances/:id returns run details for a completed instance", async () => {
+  it("GET /api/dashboard/agents/:name/sessions/:id returns run details for a completed instance", async () => {
     harness = await IntegrationHarness.create({
       agents: [
         {
@@ -55,7 +55,7 @@ describe.skipIf(!DOCKER)("integration: dashboard instance detail API", { timeout
     await harness.triggerAgent("instance-detail-agent");
     await harness.waitForRunResult("instance-detail-agent");
 
-    // Get all runs to find an instanceId
+    // Get all runs to find an sessionId
     const runsRes = await gatewayFetch(
       harness,
       "/api/stats/agents/instance-detail-agent/runs",
@@ -64,14 +64,14 @@ describe.skipIf(!DOCKER)("integration: dashboard instance detail API", { timeout
     const runsBody = (await runsRes.json()) as { runs: Array<Record<string, unknown>>; total: number };
     expect(runsBody.total).toBeGreaterThanOrEqual(1);
 
-    const instanceId = extractInstanceId(runsBody.runs[0]!);
-    expect(instanceId).toBeDefined();
-    if (!instanceId) return;
+    const sessionId = extractSessionId(runsBody.runs[0]!);
+    expect(sessionId).toBeDefined();
+    if (!sessionId) return;
 
     // Fetch the instance detail from the dashboard endpoint
     const detailRes = await gatewayFetch(
       harness,
-      `/api/dashboard/agents/instance-detail-agent/instances/${instanceId}`,
+      `/api/dashboard/agents/instance-detail-agent/sessions/${sessionId}`,
     );
     expect(detailRes.ok).toBe(true);
     const detailBody = (await detailRes.json()) as {
@@ -86,8 +86,8 @@ describe.skipIf(!DOCKER)("integration: dashboard instance detail API", { timeout
 
     // Verify core fields exist (handles both camelCase and snake_case)
     if (detailBody.run) {
-      const runInstanceId = extractInstanceId(detailBody.run);
-      expect(runInstanceId).toBe(instanceId);
+      const runSessionId = extractSessionId(detailBody.run);
+      expect(runSessionId).toBe(sessionId);
 
       // result should be "completed"
       expect(detailBody.run.result).toBe("completed");
@@ -102,7 +102,7 @@ describe.skipIf(!DOCKER)("integration: dashboard instance detail API", { timeout
     expect(detailBody.webhookReceipt).toBeUndefined();
   });
 
-  it("GET /api/dashboard/triggers/:instanceId returns trigger details for a manual run", async () => {
+  it("GET /api/dashboard/triggers/:sessionId returns trigger details for a manual run", async () => {
     harness = await IntegrationHarness.create({
       agents: [
         {
@@ -119,7 +119,7 @@ describe.skipIf(!DOCKER)("integration: dashboard instance detail API", { timeout
     await harness.triggerAgent("trigger-detail-agent");
     await harness.waitForRunResult("trigger-detail-agent");
 
-    // Get runs to find the instanceId
+    // Get runs to find the sessionId
     const runsRes = await gatewayFetch(
       harness,
       "/api/stats/agents/trigger-detail-agent/runs",
@@ -128,19 +128,19 @@ describe.skipIf(!DOCKER)("integration: dashboard instance detail API", { timeout
     const runsBody = (await runsRes.json()) as { runs: Array<Record<string, unknown>>; total: number };
     expect(runsBody.total).toBeGreaterThanOrEqual(1);
 
-    const instanceId = extractInstanceId(runsBody.runs[0]!);
-    expect(instanceId).toBeDefined();
-    if (!instanceId) return;
+    const sessionId = extractSessionId(runsBody.runs[0]!);
+    expect(sessionId).toBeDefined();
+    if (!sessionId) return;
 
     // Fetch trigger details from the dashboard endpoint
     const triggerRes = await gatewayFetch(
       harness,
-      `/api/dashboard/triggers/${instanceId}`,
+      `/api/dashboard/triggers/${sessionId}`,
     );
     expect(triggerRes.ok).toBe(true);
     const triggerBody = (await triggerRes.json()) as {
       trigger: {
-        instanceId: string;
+        sessionId: string;
         agentName: string;
         triggerType: string;
         triggerSource: string | null;
@@ -157,7 +157,7 @@ describe.skipIf(!DOCKER)("integration: dashboard instance detail API", { timeout
     }
   });
 
-  it("GET /api/dashboard/triggers/:instanceId returns 404 for unknown instanceId", async () => {
+  it("GET /api/dashboard/triggers/:sessionId returns 404 for unknown sessionId", async () => {
     harness = await IntegrationHarness.create({
       agents: [
         {
@@ -180,7 +180,7 @@ describe.skipIf(!DOCKER)("integration: dashboard instance detail API", { timeout
     expect(body.trigger).toBeNull();
   });
 
-  it("GET /api/dashboard/agents/:name/instances/:id returns null run for unknown instanceId", async () => {
+  it("GET /api/dashboard/agents/:name/sessions/:id returns null run for unknown sessionId", async () => {
     harness = await IntegrationHarness.create({
       agents: [
         {
@@ -193,10 +193,10 @@ describe.skipIf(!DOCKER)("integration: dashboard instance detail API", { timeout
 
     await harness.start({ webUI: true });
 
-    // Fetch with a nonexistent instanceId — should return run: null
+    // Fetch with a nonexistent sessionId — should return run: null
     const detailRes = await gatewayFetch(
       harness,
-      "/api/dashboard/agents/instance-null-agent/instances/nonexistent-xyz",
+      "/api/dashboard/agents/instance-null-agent/sessions/nonexistent-xyz",
     );
     expect(detailRes.ok).toBe(true);
     const body = (await detailRes.json()) as {

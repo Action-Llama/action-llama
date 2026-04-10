@@ -172,14 +172,14 @@ export class LegacyMigrator {
         await statsStream.append(createEvent(
           EventTypes.RUN_STARTED,
           {
-            instanceId: run.instance_id,
+            sessionId: run.session_id,
             agentName: run.agent_name,
             triggerType: run.trigger_type,
             triggerSource: run.trigger_source,
           },
           {
             source: "migrator",
-            correlationId: run.instance_id,
+            correlationId: run.session_id,
             tags: ["migration", "stats"],
           }
         ));
@@ -189,7 +189,7 @@ export class LegacyMigrator {
         await statsStream.append(createEvent(
           eventType,
           {
-            instanceId: run.instance_id,
+            sessionId: run.session_id,
             agentName: run.agent_name,
             result: run.result,
             exitCode: run.exit_code,
@@ -207,7 +207,7 @@ export class LegacyMigrator {
           },
           {
             source: "migrator",
-            correlationId: run.instance_id,
+            correlationId: run.session_id,
             tags: ["migration", "stats"],
           }
         ));
@@ -238,14 +238,14 @@ export class LegacyMigrator {
           EventTypes.CALL_INITIATED,
           {
             callerAgent: call.caller_agent,
-            callerInstance: call.caller_instance,
+            callerSession: call.caller_session,
             targetAgent: call.target_agent,
-            targetInstance: call.target_instance,
+            targetSession: call.target_session,
             depth: call.depth,
           },
           {
             source: "migrator",
-            correlationId: call.caller_instance,
+            correlationId: call.caller_session,
             tags: ["migration", "stats"],
           }
         ));
@@ -257,16 +257,16 @@ export class LegacyMigrator {
             eventType,
             {
               callerAgent: call.caller_agent,
-              callerInstance: call.caller_instance,
+              callerSession: call.caller_session,
               targetAgent: call.target_agent,
-              targetInstance: call.target_instance,
+              targetSession: call.target_session,
               depth: call.depth,
               durationMs: call.duration_ms,
               status: call.status,
             },
             {
               source: "migrator",
-              correlationId: call.caller_instance,
+              correlationId: call.caller_session,
               tags: ["migration", "stats"],
             }
           ));

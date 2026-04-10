@@ -75,7 +75,7 @@ function createPopulatedDb(projectPath: string) {
   const store = new StatsStore(dbPath);
 
   store.recordRun({
-    instanceId: randomUUID(),
+    sessionId: randomUUID(),
     agentName: "agent-alpha",
     triggerType: "manual",
     result: "completed",
@@ -91,7 +91,7 @@ function createPopulatedDb(projectPath: string) {
   });
 
   store.recordRun({
-    instanceId: randomUUID(),
+    sessionId: randomUUID(),
     agentName: "agent-beta",
     triggerType: "webhook",
     result: "error",
@@ -373,7 +373,7 @@ describe(
       const store = new StatsStore(statsDbPath(projectDir));
       const edgeId = store.recordCallEdge({
         callerAgent: "agent-alpha",
-        callerInstance: randomUUID(),
+        callerSession: randomUUID(),
         targetAgent: "agent-beta",
         startedAt: Date.now() - 1_000,
         callDepth: 1,
@@ -381,7 +381,7 @@ describe(
       store.updateCallEdge(edgeId, {
         status: "completed",
         durationMs: 500,
-        targetInstance: randomUUID(),
+        targetSession: randomUUID(),
       });
       store.close();
 
@@ -401,7 +401,7 @@ describe(
       const store = new StatsStore(statsDbPath(projectDir));
       const edgeId = store.recordCallEdge({
         callerAgent: "agent-alpha",
-        callerInstance: randomUUID(),
+        callerSession: randomUUID(),
         targetAgent: "agent-beta",
         startedAt: Date.now() - 1_000,
         callDepth: 1,

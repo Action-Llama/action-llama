@@ -97,7 +97,7 @@ function makeLogger() {
 function makeIdleRunner() {
   return {
     isRunning: false,
-    instanceId: `runner-${Math.random().toString(36).slice(2)}`,
+    sessionId: `runner-${Math.random().toString(36).slice(2)}`,
     run: vi.fn(async () => ({ result: "completed", returnValue: undefined, exitCode: 0 })),
     abort: vi.fn(),
     setImage: vi.fn(),

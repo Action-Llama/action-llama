@@ -12,7 +12,7 @@
  * Test scenarios:
  *   1. GET /api/stats/agents/:name/runs — empty store → { runs:[], total:0, page:1, limit:10 }
  *   2. GET /api/stats/agents/:name/runs?page=2&limit=5 — page/limit params reflected
- *   3. GET /api/stats/agents/:name/runs/:instanceId — unknown ID → { run: null }
+ *   3. GET /api/stats/agents/:name/runs/:sessionId — unknown ID → { run: null }
  *   4. GET /api/stats/triggers — empty → { rows:[], total:0 }
  *   5. GET /api/stats/jobs — empty → { jobs:[], total:0, totalPending:0 }
  *   6. GET /api/stats/webhooks/:receiptId — unknown → { receipt: null }
@@ -22,7 +22,7 @@
  *   - control/routes/stats.ts: triggers endpoint empty path
  *   - control/routes/stats.ts: jobs endpoint empty path
  *   - control/routes/stats.ts: webhooks receipt 404 path
- *   - control/routes/stats.ts: runs/:instanceId null path (queryRunByInstanceId)
+ *   - control/routes/stats.ts: runs/:sessionId null path (queryRunBySessionId)
  */
 
 import { describe, it, expect, afterEach } from "vitest";
@@ -109,7 +109,7 @@ describe(
       expect(body.limit).toBe(5);
     });
 
-    it("GET /api/stats/agents/:name/runs/:instanceId returns { run: null } for unknown ID", async () => {
+    it("GET /api/stats/agents/:name/runs/:sessionId returns { run: null } for unknown ID", async () => {
       await startHarness();
       if (!gatewayAccessible) return;
 

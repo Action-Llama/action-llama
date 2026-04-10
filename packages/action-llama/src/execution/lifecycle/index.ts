@@ -1,7 +1,7 @@
 import { EventEmitter } from "events";
 
-// Instance states for individual agent runs
-export type InstanceState = "queued" | "running" | "waiting" | "completed" | "error" | "killed";
+// Session states for individual agent runs
+export type SessionState = "queued" | "running" | "waiting" | "completed" | "error" | "killed";
 
 // Agent states for agent type-level state
 export type AgentState = "idle" | "running" | "waiting" | "building" | "error";
@@ -13,9 +13,9 @@ export interface StateTransitionEvent<T extends string> {
   timestamp: Date;
 }
 
-// Instance-specific events
-export interface InstanceTransitionEvent extends StateTransitionEvent<InstanceState> {
-  instanceId: string;
+// Session-specific events
+export interface SessionTransitionEvent extends StateTransitionEvent<SessionState> {
+  sessionId: string;
   agentName: string;
 }
 
@@ -25,7 +25,7 @@ export interface AgentTransitionEvent extends StateTransitionEvent<AgentState> {
 }
 
 // Validation for valid state transitions
-const VALID_INSTANCE_TRANSITIONS: Record<InstanceState, InstanceState[]> = {
+const VALID_SESSION_TRANSITIONS: Record<SessionState, SessionState[]> = {
   queued: ["running", "killed"], // can start running or be killed while queued
   running: ["waiting", "completed", "error", "killed"], // can wait, complete, error, or be killed
   waiting: ["running", "error", "killed"], // can resume, timeout (error), or be killed
@@ -129,8 +129,8 @@ export abstract class BaseStateMachine<T extends string> extends EventEmitter {
 /**
  * Get the valid instance state transitions map
  */
-export function getValidInstanceTransitions(): Record<InstanceState, InstanceState[]> {
-  return { ...VALID_INSTANCE_TRANSITIONS };
+export function getValidSessionTransitions(): Record<SessionState, SessionState[]> {
+  return { ...VALID_SESSION_TRANSITIONS };
 }
 
 /**
@@ -143,8 +143,8 @@ export function getValidAgentTransitions(): Record<AgentState, AgentState[]> {
 /**
  * Check if an instance state is terminal (no further transitions allowed)
  */
-export function isTerminalInstanceState(state: InstanceState): boolean {
-  return VALID_INSTANCE_TRANSITIONS[state].length === 0;
+export function isTerminalSessionState(state: SessionState): boolean {
+  return VALID_SESSION_TRANSITIONS[state].length === 0;
 }
 
 /**

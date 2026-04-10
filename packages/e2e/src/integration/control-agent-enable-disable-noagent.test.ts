@@ -17,7 +17,7 @@
  *   4. POST /control/agents/:name/enable for nonexistent agent → 404
  *   5. POST /control/agents/:name/pause (alias for disable) → 200
  *   6. POST /control/agents/:name/resume (alias for enable) → 200
- *   7. POST /control/kill/:instanceId for nonexistent instanceId → 404
+ *   7. POST /control/kill/:sessionId for nonexistent sessionId → 404
  *   8. POST /control/agents/:name/kill for nonexistent agent → 404
  *   9. POST /control/agents/:name/enable without auth → 401
  *
@@ -26,11 +26,11 @@
  *   - control/routes/control.ts: POST /control/agents/:name/enable (success + 404)
  *   - control/routes/control.ts: POST /control/agents/:name/pause (success path)
  *   - control/routes/control.ts: POST /control/agents/:name/resume (success path)
- *   - control/routes/control.ts: POST /control/kill/:instanceId → 404 (instance not found)
+ *   - control/routes/control.ts: POST /control/kill/:sessionId → 404 (instance not found)
  *   - control/routes/control.ts: POST /control/agents/:name/kill → 404 (pool not found)
  *   - scheduler/gateway-setup.ts: enableAgent() — statusTracker.enableAgent() call
  *   - scheduler/gateway-setup.ts: disableAgent() — statusTracker.disableAgent() call
- *   - scheduler/gateway-setup.ts: killInstance() — empty pool loop → false → 404
+ *   - scheduler/gateway-setup.ts: killSession() — empty pool loop → false → 404
  *   - scheduler/gateway-setup.ts: killAgent() — null pool → null → 404
  */
 
@@ -183,11 +183,11 @@ describe(
 
     // ── kill routes ───────────────────────────────────────────────────────────
 
-    it("POST /control/kill/:instanceId for nonexistent instance returns 404", async () => {
+    it("POST /control/kill/:sessionId for nonexistent instance returns 404", async () => {
       await startHarnessWithWebUI();
       if (!gatewayAccessible) return;
 
-      // Without Docker, no containers are running, so any instanceId is not found
+      // Without Docker, no containers are running, so any sessionId is not found
       const res = await controlPost("/control/kill/nonexistent-instance-id-xyz");
       expect(res.status).toBe(404);
 

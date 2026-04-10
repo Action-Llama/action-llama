@@ -29,14 +29,14 @@ export class StatsStoreAdapter {
     await this.statsStream.appendTyped(
       EventTypes.RUN_STARTED,
       {
-        instanceId: run.instanceId,
+        sessionId: run.sessionId,
         agentName: run.agentName,
         triggerType: run.triggerType,
         triggerSource: run.triggerSource,
       },
       {
         source: "stats-adapter",
-        correlationId: run.instanceId,
+        correlationId: run.sessionId,
         actor: run.agentName,
       }
     );
@@ -46,7 +46,7 @@ export class StatsStoreAdapter {
     await this.statsStream.appendTyped(
       eventType,
       {
-        instanceId: run.instanceId,
+        sessionId: run.sessionId,
         agentName: run.agentName,
         result: run.result,
         exitCode: run.exitCode,
@@ -64,7 +64,7 @@ export class StatsStoreAdapter {
       },
       {
         source: "stats-adapter",
-        correlationId: run.instanceId,
+        correlationId: run.sessionId,
         actor: run.agentName,
       }
     );
@@ -88,14 +88,14 @@ export class StatsStoreAdapter {
       {
         callId,
         callerAgent: edge.callerAgent,
-        callerInstance: edge.callerInstance,
+        callerSession: edge.callerSession,
         targetAgent: edge.targetAgent,
-        targetInstance: edge.targetInstance,
+        targetSession: edge.targetSession,
         depth: edge.depth,
       },
       {
         source: "stats-adapter",
-        correlationId: edge.callerInstance,
+        correlationId: edge.callerSession,
         actor: edge.callerAgent,
       }
     );
@@ -108,23 +108,23 @@ export class StatsStoreAdapter {
         {
           callId,
           callerAgent: edge.callerAgent,
-          callerInstance: edge.callerInstance,
+          callerSession: edge.callerSession,
           targetAgent: edge.targetAgent,
-          targetInstance: edge.targetInstance,
+          targetSession: edge.targetSession,
           depth: edge.depth,
           durationMs: edge.durationMs,
           status: edge.status,
         },
         {
           source: "stats-adapter",
-          correlationId: edge.callerInstance,
+          correlationId: edge.callerSession,
           actor: edge.callerAgent,
         }
       );
     }
   }
 
-  updateCallEdge(id: number, updates: { durationMs?: number; status?: string; targetInstance?: string }): void {
+  updateCallEdge(id: number, updates: { durationMs?: number; status?: string; targetSession?: string }): void {
     // This is tricky since we need to find the original call and update it
     // For now, we'll just record a completion event with the call ID
     this.updateCallEdgeAsync(id, updates).catch(error => {
@@ -132,7 +132,7 @@ export class StatsStoreAdapter {
     });
   }
 
-  private async updateCallEdgeAsync(id: number, updates: { durationMs?: number; status?: string; targetInstance?: string }): Promise<void> {
+  private async updateCallEdgeAsync(id: number, updates: { durationMs?: number; status?: string; targetSession?: string }): Promise<void> {
     if (updates.durationMs !== undefined) {
       const eventType = updates.status === "error" ? EventTypes.CALL_FAILED : EventTypes.CALL_COMPLETED;
       await this.statsStream.appendTyped(
@@ -141,7 +141,7 @@ export class StatsStoreAdapter {
           callId: id,
           durationMs: updates.durationMs,
           status: updates.status,
-          targetInstance: updates.targetInstance,
+          targetSession: updates.targetSession,
         },
         {
           source: "stats-adapter",
@@ -167,10 +167,10 @@ export class StatsStoreAdapter {
     return result[0]?.count || 0;
   }
 
-  async queryRunByInstanceId(instanceId: string): Promise<any | undefined> {
+  async queryRunBySessionId(sessionId: string): Promise<any | undefined> {
     const result = await this.persistence.query.sql(
       `SELECT * FROM runs WHERE instance_id = ? LIMIT 1`,
-      [instanceId]
+      [sessionId]
     );
     return result[0];
   }

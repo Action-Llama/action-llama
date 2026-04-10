@@ -23,7 +23,7 @@ export interface SchedulerToolsOpts {
   /** Dispatch a call to a target agent. Returns { ok, reason? }. */
   dispatchCall: (entry: {
     callerAgent: string;
-    callerInstanceId: string;
+    callerSessionId: string;
     targetAgent: string;
     context: string;
     depth: number;
@@ -34,7 +34,7 @@ export interface SchedulerToolsOpts {
   /** Name of the agent these tools belong to. */
   agentName: string;
   /** Instance ID used as the lock holder and call caller. */
-  instanceId: string;
+  sessionId: string;
   /** Current trigger depth (for subagent calls). */
   depth: number;
   /** Callback invoked when the agent calls return_value. */
@@ -86,7 +86,7 @@ function createAcquireLockTool(opts: SchedulerToolsOpts) {
     promptSnippet: "acquire_lock — acquire a distributed lock on a resource",
     parameters: AcquireLockParams,
     async execute(_toolCallId, params) {
-      const result = opts.lockStore.acquire(params.resource_key, opts.instanceId, params.ttl_seconds);
+      const result = opts.lockStore.acquire(params.resource_key, opts.sessionId, params.ttl_seconds);
       if (result.ok) {
         opts.logger.info({ resource: params.resource_key }, "lock acquired");
         return textResult(`Lock acquired on ${params.resource_key}`);
@@ -114,7 +114,7 @@ function createReleaseLockTool(opts: SchedulerToolsOpts) {
     promptSnippet: "release_lock — release a previously acquired lock",
     parameters: ReleaseLockParams,
     async execute(_toolCallId, params) {
-      const result = opts.lockStore.release(params.resource_key, opts.instanceId);
+      const result = opts.lockStore.release(params.resource_key, opts.sessionId);
       if (result.ok) {
         opts.logger.info({ resource: params.resource_key }, "lock released");
         return textResult(`Lock released on ${params.resource_key}`);
@@ -146,7 +146,7 @@ function createCallAgentTool(opts: SchedulerToolsOpts) {
       // Create a call entry in the call store
       const entry = opts.callStore.create({
         callerAgent: opts.agentName,
-        callerInstanceId: opts.instanceId,
+        callerSessionId: opts.sessionId,
         targetAgent: params.target_agent,
         context: params.context,
         depth: opts.depth,
@@ -155,7 +155,7 @@ function createCallAgentTool(opts: SchedulerToolsOpts) {
       // Dispatch through the scheduler
       const result = opts.dispatchCall({
         callerAgent: opts.agentName,
-        callerInstanceId: opts.instanceId,
+        callerSessionId: opts.sessionId,
         targetAgent: params.target_agent,
         context: params.context,
         depth: opts.depth,
@@ -188,7 +188,7 @@ function createCheckCallTool(opts: SchedulerToolsOpts) {
     promptSnippet: "check_call — poll the result of a previous call_agent",
     parameters: CheckCallParams,
     async execute(_toolCallId, params) {
-      const result = opts.callStore.check(params.call_id, opts.instanceId);
+      const result = opts.callStore.check(params.call_id, opts.sessionId);
       if (!result) {
         return textResult(`Call ${params.call_id} not found or not owned by this agent.`);
       }

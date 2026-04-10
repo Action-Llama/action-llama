@@ -90,9 +90,9 @@ describe.skipIf(!DOCKER)(
       expect(page2Body.jobs.length).toBeGreaterThanOrEqual(0);
       expect(page2Body.total).toBe(allBody.total);
 
-      // Pages 1 and 2 must contain different entries (different instanceIds)
-      const p1Ids = new Set(page1Body.jobs.map((j: any) => j.instanceId));
-      const p2Ids = new Set(page2Body.jobs.map((j: any) => j.instanceId));
+      // Pages 1 and 2 must contain different entries (different sessionIds)
+      const p1Ids = new Set(page1Body.jobs.map((j: any) => j.sessionId));
+      const p2Ids = new Set(page2Body.jobs.map((j: any) => j.sessionId));
       const overlap = [...p1Ids].filter((id) => p2Ids.has(id));
       expect(overlap).toHaveLength(0);
     });

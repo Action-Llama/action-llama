@@ -7,20 +7,20 @@
  * Docker or network access.
  *
  * Test scenarios (no Docker required):
- *   1. constructor sets instanceId from agentConfig.name
+ *   1. constructor sets sessionId from agentConfig.name
  *   2. constructor sets isRunning to false initially
  *   3. constructor sets containerName to undefined initially
  *   4. setImage() updates the image field (verified by setRuntime round-trip pattern)
- *   5. setAgentConfig() updates the agent config (name reflected in instanceId-like behavior)
+ *   5. setAgentConfig() updates the agent config (name reflected in sessionId-like behavior)
  *   6. setRuntime() swaps the runtime reference
  *   7. abort() on idle runner: does not throw (no _containerName, so skip kill)
  *   8. isRunning getter returns false before any run is started
  *   9. containerName getter returns undefined before any container is launched
  *  10. forwardLogLine (private) via abort() path: abort() sets _aborting=true without crash
- *  11. Two runners have independent state (separate instanceId, separate isRunning)
+ *  11. Two runners have independent state (separate sessionId, separate isRunning)
  *  12. setImage() called multiple times: last value wins (no error)
  *  13. abort() called when already aborting: no crash (idempotent-ish)
- *  14. agentConfig.name used as instanceId in constructor
+ *  14. agentConfig.name used as sessionId in constructor
  *  15. logger is accepted from the constructor (pino-compatible mock)
  *
  * Covers:
@@ -31,7 +31,7 @@
  *   - agents/container-runner.ts: setAgentConfig() setter
  *   - agents/container-runner.ts: setRuntime() setter
  *   - agents/container-runner.ts: abort() when idle (no container to kill)
- *   - agents/container-runner.ts: instanceId public field
+ *   - agents/container-runner.ts: sessionId public field
  */
 
 import { describe, it, expect } from "vitest";
@@ -131,9 +131,9 @@ function makeRunner(agentName = "test-agent", image = "test-image:latest") {
 describe("integration: ContainerAgentRunner (no Docker required)", { timeout: 30_000 }, () => {
 
   describe("constructor", () => {
-    it("sets instanceId from agentConfig.name", () => {
+    it("sets sessionId from agentConfig.name", () => {
       const { runner } = makeRunner("my-special-agent");
-      expect(runner.instanceId).toBe("my-special-agent");
+      expect(runner.sessionId).toBe("my-special-agent");
     });
 
     it("initializes isRunning to false", () => {
@@ -154,8 +154,8 @@ describe("integration: ContainerAgentRunner (no Docker required)", { timeout: 30
       const mockTracker = {
         startRun: () => {},
         endRun: () => {},
-        registerInstance: () => {},
-        completeInstance: () => {},
+        registerSession: () => {},
+        completeSession: () => {},
         addLogLine: () => {},
         setAgentError: () => {},
         setTaskUrl: () => {},
@@ -358,25 +358,25 @@ describe("integration: ContainerAgentRunner (no Docker required)", { timeout: 30
     });
   });
 
-  // ── instanceId public field ───────────────────────────────────────────────
+  // ── sessionId public field ───────────────────────────────────────────────
 
-  describe("instanceId", () => {
+  describe("sessionId", () => {
     it("is a string", () => {
       const { runner } = makeRunner("agent-foo");
-      expect(typeof runner.instanceId).toBe("string");
+      expect(typeof runner.sessionId).toBe("string");
     });
 
     it("matches the agentConfig.name passed to the constructor", () => {
       const { runner } = makeRunner("my-test-agent");
-      expect(runner.instanceId).toBe("my-test-agent");
+      expect(runner.sessionId).toBe("my-test-agent");
     });
 
     it("is unique per instance when different names are used", () => {
       const { runner: r1 } = makeRunner("agent-alpha");
       const { runner: r2 } = makeRunner("agent-beta");
-      expect(r1.instanceId).toBe("agent-alpha");
-      expect(r2.instanceId).toBe("agent-beta");
-      expect(r1.instanceId).not.toBe(r2.instanceId);
+      expect(r1.sessionId).toBe("agent-alpha");
+      expect(r2.sessionId).toBe("agent-beta");
+      expect(r1.sessionId).not.toBe(r2.sessionId);
     });
   });
 

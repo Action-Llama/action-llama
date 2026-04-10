@@ -1,9 +1,9 @@
 CREATE TABLE `call_edges` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`caller_agent` text NOT NULL,
-	`caller_instance` text NOT NULL,
+	`caller_session` text NOT NULL,
 	`target_agent` text NOT NULL,
-	`target_instance` text,
+	`target_session` text,
 	`depth` integer DEFAULT 0 NOT NULL,
 	`started_at` integer NOT NULL,
 	`duration_ms` integer,
@@ -12,7 +12,7 @@ CREATE TABLE `call_edges` (
 --> statement-breakpoint
 CREATE INDEX `idx_calls_caller` ON `call_edges` (`caller_agent`,`started_at`);--> statement-breakpoint
 CREATE INDEX `idx_calls_target` ON `call_edges` (`target_agent`,`started_at`);--> statement-breakpoint
-CREATE INDEX `idx_calls_target_instance` ON `call_edges` (`target_instance`);--> statement-breakpoint
+CREATE INDEX `idx_calls_target_session` ON `call_edges` (`target_session`);--> statement-breakpoint
 CREATE TABLE `events` (
 	`id` text PRIMARY KEY NOT NULL,
 	`stream` text NOT NULL,
@@ -50,7 +50,7 @@ CREATE TABLE `queue` (
 CREATE INDEX `idx_queue_name` ON `queue` (`name`);--> statement-breakpoint
 CREATE TABLE `runs` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
-	`instance_id` text NOT NULL,
+	`session_id` text NOT NULL,
 	`agent_name` text NOT NULL,
 	`trigger_type` text NOT NULL,
 	`trigger_source` text,

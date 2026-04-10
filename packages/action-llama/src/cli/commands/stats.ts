@@ -119,7 +119,7 @@ export async function execute(opts: {
         console.log("-".repeat(cols.instance + cols.trigger + cols.result + cols.duration + cols.tokens + cols.cost + cols.started));
 
         for (const run of runs) {
-          const instanceShort = run.instance_id.length > 18 ? `...${run.instance_id.slice(-15)}` : run.instance_id;
+          const instanceShort = run.session_id.length > 18 ? `...${run.session_id.slice(-15)}` : run.session_id;
           const started = new Date(run.started_at).toISOString().slice(0, 19).replace("T", " ");
           console.log(
             instanceShort.padEnd(cols.instance) +

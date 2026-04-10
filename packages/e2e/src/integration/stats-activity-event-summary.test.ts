@@ -65,7 +65,7 @@ function makeWebhookReceipt(overrides: Record<string, unknown> = {}) {
 
 function makeRun(overrides: Record<string, unknown> = {}) {
   return {
-    instanceId: randomUUID(),
+    sessionId: randomUUID(),
     agentName: "test-agent",
     triggerType: "webhook",
     triggerSource: "github",

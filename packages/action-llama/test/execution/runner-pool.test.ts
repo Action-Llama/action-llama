@@ -3,7 +3,7 @@ import { RunnerPool } from "../../src/execution/runner-pool.js";
 
 interface MockRunner {
   isRunning: boolean;
-  instanceId: string;
+  sessionId: string;
   run: Function;
   abort?: Function;
 }
@@ -15,9 +15,9 @@ describe("RunnerPool", () => {
   let runner3: MockRunner;
 
   beforeEach(() => {
-    runner1 = { isRunning: false, instanceId: "agent-aabbcc01", run: vi.fn() };
-    runner2 = { isRunning: false, instanceId: "agent-aabbcc02", run: vi.fn() };
-    runner3 = { isRunning: false, instanceId: "agent-aabbcc03", run: vi.fn() };
+    runner1 = { isRunning: false, sessionId: "agent-aabbcc01", run: vi.fn() };
+    runner2 = { isRunning: false, sessionId: "agent-aabbcc02", run: vi.fn() };
+    runner3 = { isRunning: false, sessionId: "agent-aabbcc03", run: vi.fn() };
   });
 
   describe("constructor", () => {
@@ -211,26 +211,26 @@ describe("RunnerPool", () => {
     });
   });
 
-  describe("killInstance", () => {
-    it("finds and aborts a running runner by instanceId", () => {
+  describe("killSession", () => {
+    it("finds and aborts a running runner by sessionId", () => {
       runner2.isRunning = true;
       runner2.abort = vi.fn();
       pool = new RunnerPool([runner1, runner2, runner3]);
 
-      expect(pool.killInstance("agent-aabbcc02")).toBe(true);
+      expect(pool.killSession("agent-aabbcc02")).toBe(true);
       expect(runner2.abort).toHaveBeenCalled();
     });
 
-    it("returns false for unknown instanceId", () => {
+    it("returns false for unknown sessionId", () => {
       pool = new RunnerPool([runner1, runner2]);
-      expect(pool.killInstance("nonexistent")).toBe(false);
+      expect(pool.killSession("nonexistent")).toBe(false);
     });
 
     it("returns false when runner exists but is not running", () => {
       runner1.abort = vi.fn();
       pool = new RunnerPool([runner1]);
 
-      expect(pool.killInstance("agent-aabbcc01")).toBe(false);
+      expect(pool.killSession("agent-aabbcc01")).toBe(false);
       expect(runner1.abort).not.toHaveBeenCalled();
     });
 
@@ -239,7 +239,7 @@ describe("RunnerPool", () => {
       // no abort method
       pool = new RunnerPool([runner1]);
 
-      expect(pool.killInstance("agent-aabbcc01")).toBe(true);
+      expect(pool.killSession("agent-aabbcc01")).toBe(true);
     });
   });
 

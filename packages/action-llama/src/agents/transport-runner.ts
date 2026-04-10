@@ -50,7 +50,7 @@ import { withSpan } from "../telemetry/index.js";
 import { SpanKind } from "@opentelemetry/api";
 import type { SchedulerToolsOpts } from "./scheduler-tools.js";
 import { createSchedulerTools } from "./scheduler-tools.js";
-import type { WaitFilter, WaitingRegistry, WaitingInstance } from "../execution/waiting-registry.js";
+import type { WaitFilter, WaitingRegistry, WaitingSession } from "../execution/waiting-registry.js";
 import { DEFAULT_WAIT_TIMEOUT } from "../shared/constants.js";
 
 const MAX_MODEL_PASSES = 3;
@@ -71,11 +71,11 @@ export interface TransportAgentRunnerOpts {
   /** Provider API keys (provider name → key). */
   providerKeys?: Map<string, string>;
   /** Scheduler tools dependencies. When provided, agents get lock/call/status tools. */
-  schedulerToolsDeps?: Omit<SchedulerToolsOpts, "agentName" | "instanceId" | "depth" | "onReturnValue">;
+  schedulerToolsDeps?: Omit<SchedulerToolsOpts, "agentName" | "sessionId" | "depth" | "onReturnValue">;
   /** Waiting registry for suspend/resume support. */
   waitingRegistry?: WaitingRegistry;
   /** Callback when instance transitions to/from waiting state. */
-  onWaitStateChange?: (instanceId: string, state: "waiting" | "resumed") => void;
+  onWaitStateChange?: (sessionId: string, state: "waiting" | "resumed") => void;
   /** Prompt skills to include in the system prompt (locking, subagents, etc.). */
   skills?: PromptSkills;
 }
@@ -90,7 +90,7 @@ export class TransportAgentRunner implements PoolRunner {
   private _turnTextBuffer = "";
   private _turnThinkingBuffer = "";
 
-  public instanceId: string;
+  public sessionId: string;
   /** Trigger depth for subagent call tracking. Set by the scheduler before run(). */
   public depth = 0;
 
@@ -103,9 +103,9 @@ export class TransportAgentRunner implements PoolRunner {
   private baseImage: string;
   private projectPath: string;
   private providerKeys: Map<string, string>;
-  private schedulerToolsDeps?: Omit<SchedulerToolsOpts, "agentName" | "instanceId" | "depth" | "onReturnValue">;
+  private schedulerToolsDeps?: Omit<SchedulerToolsOpts, "agentName" | "sessionId" | "depth" | "onReturnValue">;
   private waitingRegistry?: WaitingRegistry;
-  private onWaitStateChange?: (instanceId: string, state: "waiting" | "resumed") => void;
+  private onWaitStateChange?: (sessionId: string, state: "waiting" | "resumed") => void;
   private skills?: PromptSkills;
 
   constructor(opts: TransportAgentRunnerOpts) {
@@ -122,7 +122,7 @@ export class TransportAgentRunner implements PoolRunner {
     this.waitingRegistry = opts.waitingRegistry;
     this.onWaitStateChange = opts.onWaitStateChange;
     this.skills = opts.skills;
-    this.instanceId = opts.agentConfig.name;
+    this.sessionId = opts.agentConfig.name;
   }
 
   get isRunning(): boolean {
@@ -173,7 +173,7 @@ export class TransportAgentRunner implements PoolRunner {
   async run(
     prompt: string,
     triggerInfo?: { type: 'schedule' | 'manual' | 'webhook' | 'agent'; source?: string },
-    instanceId?: string,
+    sessionId?: string,
   ): Promise<RunOutcome> {
     if (this._running) {
       this.logger.warn(`${this.agentConfig.name} is already running, skipping`);
@@ -182,8 +182,8 @@ export class TransportAgentRunner implements PoolRunner {
 
     this._running = true;
     this._aborting = false;
-    this.instanceId = instanceId ?? `${this.agentConfig.name}-${randomBytes(4).toString("hex")}`;
-    this.logger = this.baseLogger.child({ instance: this.instanceId });
+    this.sessionId = sessionId ?? `${this.agentConfig.name}-${randomBytes(4).toString("hex")}`;
+    this.logger = this.baseLogger.child({ instance: this.sessionId });
 
     try {
       return await withSpan(
@@ -191,7 +191,7 @@ export class TransportAgentRunner implements PoolRunner {
         async (span) => {
           span.setAttributes({
             "agent.name": this.agentConfig.name,
-            "agent.run_id": this.instanceId,
+            "agent.run_id": this.sessionId,
             "agent.trigger_type": triggerInfo?.type || "manual",
             "agent.trigger_source": triggerInfo?.source || "",
             "agent.model_provider": this.agentConfig.models[0]?.provider,
@@ -229,8 +229,8 @@ export class TransportAgentRunner implements PoolRunner {
         : triggerInfo.type)
       : undefined;
     this.statusTracker?.startRun(this.agentConfig.name, runReason);
-    this.statusTracker?.registerInstance({
-      id: this.instanceId,
+    this.statusTracker?.registerSession({
+      id: this.sessionId,
       agentName: this.agentConfig.name,
       status: "running",
       startedAt: new Date(),
@@ -238,7 +238,7 @@ export class TransportAgentRunner implements PoolRunner {
     });
 
     this.logger.info(`Starting ${this.agentConfig.name} transport run`);
-    this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} started (${runReason ?? "manual"})`);
+    this.statusTracker?.addLogLine(this.agentConfig.name, `${this.sessionId} started (${runReason ?? "manual"})`);
 
     // ── Timeout — kill the entire run if it exceeds the configured limit ──
     const timeoutSeconds = this.agentConfig.timeout ?? this.globalConfig.local?.timeout ?? DEFAULT_AGENT_TIMEOUT;
@@ -324,14 +324,14 @@ export class TransportAgentRunner implements PoolRunner {
 
       const elapsed = Date.now() - runStartTime;
       const instanceStatus = this._aborting ? "killed" as const : runError ? "error" as const : "completed" as const;
-      this.statusTracker?.completeInstance(this.instanceId, instanceStatus);
+      this.statusTracker?.completeSession(this.sessionId, instanceStatus);
       this.statusTracker?.endRun(this.agentConfig.name, elapsed, runError, tokenUsage);
 
       const elapsedStr = (elapsed / 1000).toFixed(1);
       const turnInfo = tokenUsage?.turnCount != null ? `, ${tokenUsage.turnCount} turns` : "";
       const costInfo = tokenUsage?.cost != null ? `, $${tokenUsage.cost.toFixed(4)}` : "";
       const errInfo = runError ? ` — ${runError.slice(0, 100)}` : "";
-      this.statusTracker?.addLogLine(this.agentConfig.name, `${this.instanceId} ${runResult} (${elapsedStr}s${turnInfo}${costInfo})${errInfo}`);
+      this.statusTracker?.addLogLine(this.agentConfig.name, `${this.sessionId} ${runResult} (${elapsedStr}s${turnInfo}${costInfo})${errInfo}`);
 
       this.logger.info({
         result: runResult,
@@ -406,17 +406,17 @@ export class TransportAgentRunner implements PoolRunner {
     }
 
     // Notify status tracker
-    this.statusTracker?.setInstanceWaiting(this.instanceId);
-    this.onWaitStateChange?.(this.instanceId, "waiting");
+    this.statusTracker?.setSessionWaiting(this.sessionId);
+    this.onWaitStateChange?.(this.sessionId, "waiting");
 
     return new Promise<any>((resolve, reject) => {
-      const entry: WaitingInstance = {
-        instanceId: this.instanceId,
+      const entry: WaitingSession = {
+        sessionId: this.sessionId,
         agentName: this.agentConfig.name,
         filter,
         deadline,
         registeredAt: Date.now(),
-        runId: this._containerName ?? this.instanceId,
+        runId: this._containerName ?? this.sessionId,
         runtimeType,
         cwd: CONTAINER_CWD,
         resolve: async (payload: any) => {
@@ -431,7 +431,7 @@ export class TransportAgentRunner implements PoolRunner {
         reject: (err: Error) => {
           // Timeout or kill — still need to clean up
           this._suspended = false;
-          this.onWaitStateChange?.(this.instanceId, "resumed");
+          this.onWaitStateChange?.(this.sessionId, "resumed");
           reject(err);
         },
       };
@@ -463,8 +463,8 @@ export class TransportAgentRunner implements PoolRunner {
     await transport.connect();
     this._suspended = false;
 
-    this.statusTracker?.resumeInstance(this.instanceId);
-    this.onWaitStateChange?.(this.instanceId, "resumed");
+    this.statusTracker?.resumeSession(this.sessionId);
+    this.onWaitStateChange?.(this.sessionId, "resumed");
     this.logger.info("transport reconnected after wait resume");
   }
 
@@ -699,7 +699,7 @@ export class TransportAgentRunner implements PoolRunner {
       ? createSchedulerTools({
           ...this.schedulerToolsDeps,
           agentName: this.agentConfig.name,
-          instanceId: this.instanceId,
+          sessionId: this.sessionId,
           depth: this.depth,
           onReturnValue: (value) => { capturedReturnValue = value; },
           onWait: this.waitingRegistry ? (filter, timeoutMs) => this._handleWait(filter, timeoutMs, transport) : undefined,

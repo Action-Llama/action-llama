@@ -21,8 +21,8 @@
  *   9. fail() transitions to "error" with errorMessage
  *  10. fail() returns false for already-completed entry
  *  11. fail() returns false for already-errored entry
- *  12. check() returns status/returnValue/errorMessage for correct callerInstanceId
- *  13. check() returns null for wrong callerInstanceId
+ *  12. check() returns status/returnValue/errorMessage for correct callerSessionId
+ *  13. check() returns null for wrong callerSessionId
  *  14. check() returns null for unknown callId
  *  15. get() returns the full CallEntry by callId
  *  16. get() returns undefined for unknown callId
@@ -56,7 +56,7 @@ describe("integration: CallStore (no Docker required)", () => {
       store = new CallStore(3600); // large sweep interval — no spurious sweeps
       const entry = store.create({
         callerAgent: "caller-agent",
-        callerInstanceId: "caller-inst-001",
+        callerSessionId: "caller-inst-001",
         targetAgent: "target-agent",
         context: JSON.stringify({ key: "value" }),
         depth: 1,
@@ -64,7 +64,7 @@ describe("integration: CallStore (no Docker required)", () => {
       expect(typeof entry.callId).toBe("string");
       expect(entry.callId.length).toBeGreaterThan(0);
       expect(entry.callerAgent).toBe("caller-agent");
-      expect(entry.callerInstanceId).toBe("caller-inst-001");
+      expect(entry.callerSessionId).toBe("caller-inst-001");
       expect(entry.targetAgent).toBe("target-agent");
       expect(entry.context).toBe(JSON.stringify({ key: "value" }));
       expect(entry.status).toBe("pending");
@@ -77,8 +77,8 @@ describe("integration: CallStore (no Docker required)", () => {
 
     it("returns a new unique callId for each create() call", () => {
       store = new CallStore(3600);
-      const e1 = store.create({ callerAgent: "a", callerInstanceId: "i1", targetAgent: "b", context: "", depth: 0 });
-      const e2 = store.create({ callerAgent: "a", callerInstanceId: "i1", targetAgent: "b", context: "", depth: 0 });
+      const e1 = store.create({ callerAgent: "a", callerSessionId: "i1", targetAgent: "b", context: "", depth: 0 });
+      const e2 = store.create({ callerAgent: "a", callerSessionId: "i1", targetAgent: "b", context: "", depth: 0 });
       expect(e1.callId).not.toBe(e2.callId);
     });
   });
@@ -88,7 +88,7 @@ describe("integration: CallStore (no Docker required)", () => {
   describe("setRunning()", () => {
     it("transitions status from 'pending' to 'running', returns true", () => {
       store = new CallStore(3600);
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "i", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "i", targetAgent: "b", context: "", depth: 0 });
       const result = store.setRunning(entry.callId);
       expect(result).toBe(true);
       expect(store.get(entry.callId)!.status).toBe("running");
@@ -96,7 +96,7 @@ describe("integration: CallStore (no Docker required)", () => {
 
     it("returns false for an already-running entry", () => {
       store = new CallStore(3600);
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "i", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "i", targetAgent: "b", context: "", depth: 0 });
       store.setRunning(entry.callId); // first call
       const result = store.setRunning(entry.callId); // second call
       expect(result).toBe(false);
@@ -114,7 +114,7 @@ describe("integration: CallStore (no Docker required)", () => {
   describe("complete()", () => {
     it("transitions pending entry to 'completed' with returnValue", () => {
       store = new CallStore(3600);
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "i", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "i", targetAgent: "b", context: "", depth: 0 });
       const result = store.complete(entry.callId, "done");
       expect(result).toBe(true);
       const updated = store.get(entry.callId)!;
@@ -125,7 +125,7 @@ describe("integration: CallStore (no Docker required)", () => {
 
     it("transitions running entry to 'completed'", () => {
       store = new CallStore(3600);
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "i", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "i", targetAgent: "b", context: "", depth: 0 });
       store.setRunning(entry.callId);
       const result = store.complete(entry.callId, "result");
       expect(result).toBe(true);
@@ -134,14 +134,14 @@ describe("integration: CallStore (no Docker required)", () => {
 
     it("allows completing without a returnValue (undefined)", () => {
       store = new CallStore(3600);
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "i", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "i", targetAgent: "b", context: "", depth: 0 });
       store.complete(entry.callId);
       expect(store.get(entry.callId)!.returnValue).toBeUndefined();
     });
 
     it("returns false for an already-completed entry", () => {
       store = new CallStore(3600);
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "i", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "i", targetAgent: "b", context: "", depth: 0 });
       store.complete(entry.callId, "done");
       const result = store.complete(entry.callId, "done again");
       expect(result).toBe(false);
@@ -153,7 +153,7 @@ describe("integration: CallStore (no Docker required)", () => {
   describe("fail()", () => {
     it("transitions pending entry to 'error' with errorMessage", () => {
       store = new CallStore(3600);
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "i", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "i", targetAgent: "b", context: "", depth: 0 });
       const result = store.fail(entry.callId, "something went wrong");
       expect(result).toBe(true);
       const updated = store.get(entry.callId)!;
@@ -164,7 +164,7 @@ describe("integration: CallStore (no Docker required)", () => {
 
     it("transitions running entry to 'error'", () => {
       store = new CallStore(3600);
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "i", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "i", targetAgent: "b", context: "", depth: 0 });
       store.setRunning(entry.callId);
       const result = store.fail(entry.callId, "timeout");
       expect(result).toBe(true);
@@ -173,7 +173,7 @@ describe("integration: CallStore (no Docker required)", () => {
 
     it("returns false for an already-completed entry", () => {
       store = new CallStore(3600);
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "i", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "i", targetAgent: "b", context: "", depth: 0 });
       store.complete(entry.callId, "done");
       const result = store.fail(entry.callId, "too late");
       expect(result).toBe(false);
@@ -181,7 +181,7 @@ describe("integration: CallStore (no Docker required)", () => {
 
     it("returns false for an already-errored entry", () => {
       store = new CallStore(3600);
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "i", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "i", targetAgent: "b", context: "", depth: 0 });
       store.fail(entry.callId, "error 1");
       const result = store.fail(entry.callId, "error 2");
       expect(result).toBe(false);
@@ -191,9 +191,9 @@ describe("integration: CallStore (no Docker required)", () => {
   // ── check() ──────────────────────────────────────────────────────────────
 
   describe("check()", () => {
-    it("returns status/returnValue for the correct callerInstanceId", () => {
+    it("returns status/returnValue for the correct callerSessionId", () => {
       store = new CallStore(3600);
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "caller-id-123", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "caller-id-123", targetAgent: "b", context: "", depth: 0 });
       store.complete(entry.callId, "my-result");
       const result = store.check(entry.callId, "caller-id-123");
       expect(result).not.toBeNull();
@@ -201,9 +201,9 @@ describe("integration: CallStore (no Docker required)", () => {
       expect(result!.returnValue).toBe("my-result");
     });
 
-    it("returns null for a wrong callerInstanceId", () => {
+    it("returns null for a wrong callerSessionId", () => {
       store = new CallStore(3600);
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "caller-id-abc", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "caller-id-abc", targetAgent: "b", context: "", depth: 0 });
       const result = store.check(entry.callId, "wrong-caller-id");
       expect(result).toBeNull();
     });
@@ -216,7 +216,7 @@ describe("integration: CallStore (no Docker required)", () => {
 
     it("includes errorMessage in check result for failed calls", () => {
       store = new CallStore(3600);
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "caller-xyz", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "caller-xyz", targetAgent: "b", context: "", depth: 0 });
       store.fail(entry.callId, "target crashed");
       const result = store.check(entry.callId, "caller-xyz");
       expect(result!.status).toBe("error");
@@ -229,7 +229,7 @@ describe("integration: CallStore (no Docker required)", () => {
   describe("get()", () => {
     it("returns the full CallEntry by callId", () => {
       store = new CallStore(3600);
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "i", targetAgent: "b", context: "ctx", depth: 2 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "i", targetAgent: "b", context: "ctx", depth: 2 });
       const fetched = store.get(entry.callId);
       expect(fetched).not.toBeUndefined();
       expect(fetched!.callId).toBe(entry.callId);
@@ -245,10 +245,10 @@ describe("integration: CallStore (no Docker required)", () => {
   // ── failAllByCaller() ────────────────────────────────────────────────────
 
   describe("failAllByCaller()", () => {
-    it("fails all pending and running calls from a given callerInstanceId", () => {
+    it("fails all pending and running calls from a given callerSessionId", () => {
       store = new CallStore(3600);
-      const e1 = store.create({ callerAgent: "a", callerInstanceId: "caller-A", targetAgent: "b", context: "", depth: 0 });
-      const e2 = store.create({ callerAgent: "a", callerInstanceId: "caller-A", targetAgent: "c", context: "", depth: 0 });
+      const e1 = store.create({ callerAgent: "a", callerSessionId: "caller-A", targetAgent: "b", context: "", depth: 0 });
+      const e2 = store.create({ callerAgent: "a", callerSessionId: "caller-A", targetAgent: "c", context: "", depth: 0 });
       store.setRunning(e2.callId); // e1 pending, e2 running
       const count = store.failAllByCaller("caller-A");
       expect(count).toBe(2);
@@ -257,10 +257,10 @@ describe("integration: CallStore (no Docker required)", () => {
       expect(store.get(e2.callId)!.status).toBe("error");
     });
 
-    it("does not affect calls from a different callerInstanceId", () => {
+    it("does not affect calls from a different callerSessionId", () => {
       store = new CallStore(3600);
-      const e1 = store.create({ callerAgent: "a", callerInstanceId: "caller-X", targetAgent: "b", context: "", depth: 0 });
-      const e2 = store.create({ callerAgent: "a", callerInstanceId: "caller-Y", targetAgent: "b", context: "", depth: 0 });
+      const e1 = store.create({ callerAgent: "a", callerSessionId: "caller-X", targetAgent: "b", context: "", depth: 0 });
+      const e2 = store.create({ callerAgent: "a", callerSessionId: "caller-Y", targetAgent: "b", context: "", depth: 0 });
       store.failAllByCaller("caller-X");
       // caller-Y's entry should remain pending
       expect(store.get(e2.callId)!.status).toBe("pending");
@@ -270,7 +270,7 @@ describe("integration: CallStore (no Docker required)", () => {
 
     it("skips already-completed entries and returns 0 for them", () => {
       store = new CallStore(3600);
-      const e1 = store.create({ callerAgent: "a", callerInstanceId: "caller-C", targetAgent: "b", context: "", depth: 0 });
+      const e1 = store.create({ callerAgent: "a", callerSessionId: "caller-C", targetAgent: "b", context: "", depth: 0 });
       store.complete(e1.callId, "done");
       const count = store.failAllByCaller("caller-C");
       expect(count).toBe(0); // completed entry is skipped
@@ -289,7 +289,7 @@ describe("integration: CallStore (no Docker required)", () => {
   describe("dispose()", () => {
     it("clears the internal map so get() returns undefined", () => {
       store = new CallStore(3600);
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "i", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "i", targetAgent: "b", context: "", depth: 0 });
       expect(store.get(entry.callId)).toBeDefined();
       store.dispose();
       expect(store.get(entry.callId)).toBeUndefined();

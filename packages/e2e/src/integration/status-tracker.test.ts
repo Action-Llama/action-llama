@@ -11,7 +11,7 @@
  * Covers:
  *   - tui/status-tracker.ts: StatusTracker.registerAgent, unregisterAgent,
  *     enableAgent, disableAgent, isAgentEnabled, setPaused, isPaused,
- *     registerInstance, getInstances, unregisterInstance, completeInstance,
+ *     registerSession, getSessions, unregisterSession, completeSession,
  *     startRun, endRun, getAllAgents, getInvalidationVersion,
  *     getInvalidationsSince, updateAgentScale, getAgentScale
  *   - tui/status-tracker.ts: buildTriggerLabels() — schedule/webhook/
@@ -199,12 +199,12 @@ describe("status-tracker: StatusTracker", { timeout: 10_000 }, () => {
     expect(tracker.isPaused()).toBe(false);
   });
 
-  it("getInstances returns empty array when no instances registered", () => {
+  it("getSessions returns empty array when no instances registered", () => {
     const tracker = new StatusTracker();
-    expect(tracker.getInstances()).toEqual([]);
+    expect(tracker.getSessions()).toEqual([]);
   });
 
-  it("registerInstance makes instance visible via getInstances()", () => {
+  it("registerSession makes instance visible via getSessions()", () => {
     const tracker = new StatusTracker();
     tracker.registerAgent("run-agent", 1);
     const instance = {
@@ -214,17 +214,17 @@ describe("status-tracker: StatusTracker", { timeout: 10_000 }, () => {
       status: "running" as const,
       trigger: "manual",
     };
-    tracker.registerInstance(instance);
+    tracker.registerSession(instance);
 
-    const instances = tracker.getInstances();
+    const instances = tracker.getSessions();
     expect(instances).toHaveLength(1);
     expect(instances[0].id).toBe("inst-1");
   });
 
-  it("unregisterInstance removes the instance", () => {
+  it("unregisterSession removes the instance", () => {
     const tracker = new StatusTracker();
     tracker.registerAgent("run-agent2", 1);
-    tracker.registerInstance({
+    tracker.registerSession({
       id: "inst-2",
       agentName: "run-agent2",
       startedAt: new Date(),
@@ -232,8 +232,8 @@ describe("status-tracker: StatusTracker", { timeout: 10_000 }, () => {
       trigger: "manual",
     });
 
-    tracker.unregisterInstance("inst-2");
-    expect(tracker.getInstances()).toHaveLength(0);
+    tracker.unregisterSession("inst-2");
+    expect(tracker.getSessions()).toHaveLength(0);
   });
 
   it("getInvalidationVersion increments after state changes", () => {

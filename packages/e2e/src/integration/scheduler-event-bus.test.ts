@@ -34,7 +34,7 @@ describe("scheduler-event-bus: SchedulerEventBus", { timeout: 30_000 }, () => {
 
     bus.emit("run:start", {
       agentName: "my-agent",
-      instanceId: "inst-1",
+      sessionId: "inst-1",
       trigger: "manual",
     });
 
@@ -49,8 +49,8 @@ describe("scheduler-event-bus: SchedulerEventBus", { timeout: 30_000 }, () => {
       received.push(`${data.agentName}:${data.result}`);
     });
 
-    bus.emit("run:end", { agentName: "agent-a", instanceId: "i1", result: "completed" });
-    bus.emit("run:end", { agentName: "agent-b", instanceId: "i2", result: "error" });
+    bus.emit("run:end", { agentName: "agent-a", sessionId: "i1", result: "completed" });
+    bus.emit("run:end", { agentName: "agent-b", sessionId: "i2", result: "error" });
 
     expect(received).toEqual(["agent-a:completed", "agent-b:error"]);
   });
@@ -61,8 +61,8 @@ describe("scheduler-event-bus: SchedulerEventBus", { timeout: 30_000 }, () => {
 
     bus.once("run:start", () => { count++; });
 
-    bus.emit("run:start", { agentName: "agent-c", instanceId: "i3", trigger: "schedule" });
-    bus.emit("run:start", { agentName: "agent-c", instanceId: "i4", trigger: "schedule" });
+    bus.emit("run:start", { agentName: "agent-c", sessionId: "i3", trigger: "schedule" });
+    bus.emit("run:start", { agentName: "agent-c", sessionId: "i4", trigger: "schedule" });
 
     // Should only fire once
     expect(count).toBe(1);
@@ -75,11 +75,11 @@ describe("scheduler-event-bus: SchedulerEventBus", { timeout: 30_000 }, () => {
     const handler = () => { count++; };
     bus.on("run:start", handler);
 
-    bus.emit("run:start", { agentName: "agent-d", instanceId: "i5", trigger: "manual" });
+    bus.emit("run:start", { agentName: "agent-d", sessionId: "i5", trigger: "manual" });
     expect(count).toBe(1);
 
     bus.off("run:start", handler);
-    bus.emit("run:start", { agentName: "agent-d", instanceId: "i6", trigger: "manual" });
+    bus.emit("run:start", { agentName: "agent-d", sessionId: "i6", trigger: "manual" });
 
     // Should not fire after off()
     expect(count).toBe(1);
@@ -94,8 +94,8 @@ describe("scheduler-event-bus: SchedulerEventBus", { timeout: 30_000 }, () => {
 
     bus.removeAllListeners();
 
-    bus.emit("run:start", { agentName: "agent-e", instanceId: "i7", trigger: "manual" });
-    bus.emit("run:end", { agentName: "agent-e", instanceId: "i7", result: "completed" });
+    bus.emit("run:start", { agentName: "agent-e", sessionId: "i7", trigger: "manual" });
+    bus.emit("run:end", { agentName: "agent-e", sessionId: "i7", result: "completed" });
 
     expect(count).toBe(0);
   });
@@ -107,7 +107,7 @@ describe("scheduler-event-bus: SchedulerEventBus", { timeout: 30_000 }, () => {
 
     // Emit after a tick to simulate async behavior
     setTimeout(() => {
-      bus.emit("run:start", { agentName: "wait-agent", instanceId: "wi1", trigger: "manual" });
+      bus.emit("run:start", { agentName: "wait-agent", sessionId: "wi1", trigger: "manual" });
     }, 10);
 
     const data = await waitPromise;
@@ -124,9 +124,9 @@ describe("scheduler-event-bus: SchedulerEventBus", { timeout: 30_000 }, () => {
 
     setTimeout(() => {
       // This should be filtered out by the predicate
-      bus.emit("run:end", { agentName: "other-agent", instanceId: "oi1", result: "completed" });
+      bus.emit("run:end", { agentName: "other-agent", sessionId: "oi1", result: "completed" });
       // This should match
-      bus.emit("run:end", { agentName: "target-agent", instanceId: "ti1", result: "completed" });
+      bus.emit("run:end", { agentName: "target-agent", sessionId: "ti1", result: "completed" });
     }, 10);
 
     const data = await waitPromise;
@@ -148,7 +148,7 @@ describe("scheduler-event-bus: SchedulerEventBus", { timeout: 30_000 }, () => {
 
     bus.emit("lock", {
       agentName: "lock-agent",
-      instanceId: "li1",
+      sessionId: "li1",
       resourceKey: "github://repo/1",
       action: "acquire",
       ok: true,
@@ -156,7 +156,7 @@ describe("scheduler-event-bus: SchedulerEventBus", { timeout: 30_000 }, () => {
     });
     bus.emit("lock", {
       agentName: "lock-agent",
-      instanceId: "li1",
+      sessionId: "li1",
       resourceKey: "github://repo/2",
       action: "release",
       ok: true,
@@ -174,14 +174,14 @@ describe("scheduler-event-bus: SchedulerEventBus", { timeout: 30_000 }, () => {
 
     const collector = bus.collect("run:start");
 
-    bus.emit("run:start", { agentName: "c-agent", instanceId: "c1", trigger: "schedule" });
+    bus.emit("run:start", { agentName: "c-agent", sessionId: "c1", trigger: "schedule" });
     const events = collector.stop();
 
     // Emit after stop — should not be in results
-    bus.emit("run:start", { agentName: "c-agent", instanceId: "c2", trigger: "schedule" });
+    bus.emit("run:start", { agentName: "c-agent", sessionId: "c2", trigger: "schedule" });
 
     expect(events).toHaveLength(1);
-    expect(events[0].instanceId).toBe("c1");
+    expect(events[0].sessionId).toBe("c1");
   });
 
   it("multiple event types can be listened to independently", () => {
@@ -189,12 +189,12 @@ describe("scheduler-event-bus: SchedulerEventBus", { timeout: 30_000 }, () => {
     const startEvents: string[] = [];
     const endEvents: string[] = [];
 
-    bus.on("run:start", (d) => startEvents.push(d.instanceId));
-    bus.on("run:end", (d) => endEvents.push(d.instanceId));
+    bus.on("run:start", (d) => startEvents.push(d.sessionId));
+    bus.on("run:end", (d) => endEvents.push(d.sessionId));
 
-    bus.emit("run:start", { agentName: "multi-agent", instanceId: "m1", trigger: "manual" });
-    bus.emit("run:end", { agentName: "multi-agent", instanceId: "m1", result: "completed" });
-    bus.emit("run:start", { agentName: "multi-agent", instanceId: "m2", trigger: "schedule" });
+    bus.emit("run:start", { agentName: "multi-agent", sessionId: "m1", trigger: "manual" });
+    bus.emit("run:end", { agentName: "multi-agent", sessionId: "m1", result: "completed" });
+    bus.emit("run:start", { agentName: "multi-agent", sessionId: "m2", trigger: "schedule" });
 
     expect(startEvents).toEqual(["m1", "m2"]);
     expect(endEvents).toEqual(["m1"]);

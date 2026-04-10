@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { WaitingRegistry, matchDotPath, type WaitingInstance, type WaitFilter } from "../../src/execution/waiting-registry.js";
+import { WaitingRegistry, matchDotPath, type WaitingSession, type WaitFilter } from "../../src/execution/waiting-registry.js";
 import type { WebhookContext } from "../../src/webhooks/types.js";
 
 function makeWebhookContext(overrides: Partial<WebhookContext> = {}): WebhookContext {
@@ -14,9 +14,9 @@ function makeWebhookContext(overrides: Partial<WebhookContext> = {}): WebhookCon
   };
 }
 
-function makeWaitingInstance(overrides: Partial<WaitingInstance> = {}): WaitingInstance {
+function makeWaitingSession(overrides: Partial<WaitingSession> = {}): WaitingSession {
   return {
-    instanceId: `inst-${Math.random().toString(36).slice(2, 8)}`,
+    sessionId: `inst-${Math.random().toString(36).slice(2, 8)}`,
     agentName: "test-agent",
     filter: { type: "webhook" },
     deadline: Date.now() + 60_000,
@@ -63,14 +63,14 @@ describe("WaitingRegistry", () => {
   afterEach(() => {
     // Clean up any registered timers
     for (const entry of registry.getAll()) {
-      registry.remove(entry.instanceId);
+      registry.remove(entry.sessionId);
     }
     vi.useRealTimers();
   });
 
   describe("register", () => {
     it("adds an entry", () => {
-      const entry = makeWaitingInstance();
+      const entry = makeWaitingSession();
       registry.register(entry);
       expect(registry.count()).toBe(1);
       expect(registry.getAll()).toHaveLength(1);
@@ -78,7 +78,7 @@ describe("WaitingRegistry", () => {
 
     it("rejects immediately if already expired", () => {
       const reject = vi.fn();
-      const entry = makeWaitingInstance({
+      const entry = makeWaitingSession({
         deadline: Date.now() - 1000,
         reject,
       });
@@ -89,7 +89,7 @@ describe("WaitingRegistry", () => {
 
     it("times out after deadline", () => {
       const reject = vi.fn();
-      const entry = makeWaitingInstance({
+      const entry = makeWaitingSession({
         deadline: Date.now() + 5000,
         reject,
       });
@@ -106,7 +106,7 @@ describe("WaitingRegistry", () => {
   describe("matchWebhook", () => {
     it("matches a broad webhook filter", () => {
       const resolve = vi.fn();
-      registry.register(makeWaitingInstance({
+      registry.register(makeWaitingSession({
         agentName: "my-agent",
         filter: { type: "webhook" },
         resolve,
@@ -121,7 +121,7 @@ describe("WaitingRegistry", () => {
     });
 
     it("matches by source", () => {
-      registry.register(makeWaitingInstance({
+      registry.register(makeWaitingSession({
         agentName: "my-agent",
         filter: { type: "webhook", source: "github" },
       }));
@@ -131,7 +131,7 @@ describe("WaitingRegistry", () => {
     });
 
     it("matches by event", () => {
-      registry.register(makeWaitingInstance({
+      registry.register(makeWaitingSession({
         agentName: "my-agent",
         filter: { type: "webhook", event: "pull_request" },
       }));
@@ -141,7 +141,7 @@ describe("WaitingRegistry", () => {
     });
 
     it("matches by dot-path predicates", () => {
-      registry.register(makeWaitingInstance({
+      registry.register(makeWaitingSession({
         agentName: "my-agent",
         filter: { type: "webhook", match: { action: "closed", repo: "owner/repo" } },
       }));
@@ -151,7 +151,7 @@ describe("WaitingRegistry", () => {
     });
 
     it("returns null for wrong agent name", () => {
-      registry.register(makeWaitingInstance({
+      registry.register(makeWaitingSession({
         agentName: "other-agent",
         filter: { type: "webhook" },
       }));
@@ -160,14 +160,14 @@ describe("WaitingRegistry", () => {
     });
 
     it("uses FIFO ordering", () => {
-      const first = makeWaitingInstance({
-        instanceId: "first",
+      const first = makeWaitingSession({
+        sessionId: "first",
         agentName: "my-agent",
         filter: { type: "webhook" },
         registeredAt: 1000,
       });
-      const second = makeWaitingInstance({
-        instanceId: "second",
+      const second = makeWaitingSession({
+        sessionId: "second",
         agentName: "my-agent",
         filter: { type: "webhook" },
         registeredAt: 2000,
@@ -176,12 +176,12 @@ describe("WaitingRegistry", () => {
       registry.register(first);
 
       const match = registry.matchWebhook("my-agent", makeWebhookContext());
-      expect(match!.instanceId).toBe("first");
+      expect(match!.sessionId).toBe("first");
       expect(registry.count()).toBe(1);
     });
 
     it("skips non-webhook filters", () => {
-      registry.register(makeWaitingInstance({
+      registry.register(makeWaitingSession({
         agentName: "my-agent",
         filter: { type: "agent-trigger" },
       }));
@@ -192,7 +192,7 @@ describe("WaitingRegistry", () => {
 
   describe("matchAgentTrigger", () => {
     it("matches a broad agent-trigger filter", () => {
-      registry.register(makeWaitingInstance({
+      registry.register(makeWaitingSession({
         agentName: "target-agent",
         filter: { type: "agent-trigger" },
       }));
@@ -203,7 +203,7 @@ describe("WaitingRegistry", () => {
     });
 
     it("matches by sourceAgent", () => {
-      registry.register(makeWaitingInstance({
+      registry.register(makeWaitingSession({
         agentName: "target-agent",
         filter: { type: "agent-trigger", sourceAgent: "specific-agent" },
       }));
@@ -213,7 +213,7 @@ describe("WaitingRegistry", () => {
     });
 
     it("skips non-agent-trigger filters", () => {
-      registry.register(makeWaitingInstance({
+      registry.register(makeWaitingSession({
         agentName: "my-agent",
         filter: { type: "webhook" },
       }));
@@ -223,25 +223,25 @@ describe("WaitingRegistry", () => {
   });
 
   describe("remove", () => {
-    it("removes an entry by instanceId", () => {
-      const entry = makeWaitingInstance({ instanceId: "test-id" });
+    it("removes an entry by sessionId", () => {
+      const entry = makeWaitingSession({ sessionId: "test-id" });
       registry.register(entry);
       expect(registry.count()).toBe(1);
 
       const removed = registry.remove("test-id");
       expect(removed).not.toBeNull();
-      expect(removed!.instanceId).toBe("test-id");
+      expect(removed!.sessionId).toBe("test-id");
       expect(registry.count()).toBe(0);
     });
 
-    it("returns null for non-existent instanceId", () => {
+    it("returns null for non-existent sessionId", () => {
       expect(registry.remove("nonexistent")).toBeNull();
     });
 
     it("clears the timeout timer on removal", () => {
       const reject = vi.fn();
-      const entry = makeWaitingInstance({
-        instanceId: "timed",
+      const entry = makeWaitingSession({
+        sessionId: "timed",
         deadline: Date.now() + 10_000,
         reject,
       });
@@ -255,9 +255,9 @@ describe("WaitingRegistry", () => {
 
   describe("getByAgent", () => {
     it("filters by agent name", () => {
-      registry.register(makeWaitingInstance({ agentName: "a", instanceId: "i1" }));
-      registry.register(makeWaitingInstance({ agentName: "b", instanceId: "i2" }));
-      registry.register(makeWaitingInstance({ agentName: "a", instanceId: "i3" }));
+      registry.register(makeWaitingSession({ agentName: "a", sessionId: "i1" }));
+      registry.register(makeWaitingSession({ agentName: "b", sessionId: "i2" }));
+      registry.register(makeWaitingSession({ agentName: "a", sessionId: "i3" }));
 
       expect(registry.getByAgent("a")).toHaveLength(2);
       expect(registry.getByAgent("b")).toHaveLength(1);
@@ -291,8 +291,8 @@ describe("WaitingRegistry", () => {
         },
       } as any;
 
-      const entry = makeWaitingInstance({
-        instanceId: "persist-test",
+      const entry = makeWaitingSession({
+        sessionId: "persist-test",
         agentName: "test-agent",
         filter: { type: "webhook", source: "github", event: "push" },
         deadline: Date.now() + 30_000,
@@ -306,11 +306,11 @@ describe("WaitingRegistry", () => {
       expect(rehydrated.count()).toBe(1);
 
       const entries = rehydrated.getAll();
-      expect(entries[0].instanceId).toBe("persist-test");
+      expect(entries[0].sessionId).toBe("persist-test");
       expect(entries[0].filter).toEqual({ type: "webhook", source: "github", event: "push" });
 
       // Clean up
-      for (const e of rehydrated.getAll()) rehydrated.remove(e.instanceId);
+      for (const e of rehydrated.getAll()) rehydrated.remove(e.sessionId);
     });
 
     it("skips expired entries on rehydrate", async () => {
@@ -338,8 +338,8 @@ describe("WaitingRegistry", () => {
       } as any;
 
       // Manually insert an expired entry
-      kvData.set("waiting-instances:expired-test", {
-        instanceId: "expired-test",
+      kvData.set("waiting-sessions:expired-test", {
+        sessionId: "expired-test",
         agentName: "test-agent",
         filter: { type: "webhook" },
         deadline: Date.now() - 1000, // already expired

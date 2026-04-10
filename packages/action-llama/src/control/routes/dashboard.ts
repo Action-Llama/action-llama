@@ -41,10 +41,10 @@ export function registerDashboardDataRoutes(
         const agents = statusTracker.getAllAgents();
         const info = statusTracker.getSchedulerInfo();
         const recentLogs = statusTracker.getRecentLogs(20);
-        const instances = statusTracker.getInstances();
+        const sessions = statusTracker.getSessions();
         const { signals: invalidated, version } = statusTracker.getInvalidationsSince(lastVersion);
         lastVersion = version;
-        const payload: Record<string, unknown> = { agents, schedulerInfo: info, recentLogs, instances };
+        const payload: Record<string, unknown> = { agents, schedulerInfo: info, recentLogs, sessions };
         if (invalidated.length > 0) {
           payload.invalidated = invalidated;
         }

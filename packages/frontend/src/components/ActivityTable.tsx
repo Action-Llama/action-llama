@@ -56,7 +56,7 @@ function triggerLabel(row: ActivityRow): string {
 /** Whether a row can have a summary generated */
 function canGenerateSummary(row: ActivityRow): boolean {
   return (
-    !!(row.agentName && row.instanceId) &&
+    !!(row.agentName && row.sessionId) &&
     row.result !== "pending" &&
     row.result !== "running" &&
     row.result !== "dead-letter"
@@ -77,7 +77,7 @@ const ActivityRowItem = memo(function ActivityRowItem({ row, agentNames }: Activ
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
 
-  const instanceId = row.instanceId ?? "";
+  const sessionId = row.sessionId ?? "";
   const isDeadLetter = row.result === "dead-letter";
   const badge = triggerLabel(row);
   const effectiveSummary = localSummary ?? row.summary ?? null;
@@ -85,11 +85,11 @@ const ActivityRowItem = memo(function ActivityRowItem({ row, agentNames }: Activ
   const isExpanded = !isCollapsed;
 
   const handleSummarize = useCallback(async () => {
-    if (!row.agentName || !instanceId) return;
+    if (!row.agentName || !sessionId) return;
     setIsLoading(true);
     setError(null);
     try {
-      const result = await summarizeLogs(row.agentName, instanceId);
+      const result = await summarizeLogs(row.agentName, sessionId);
       if (result.summary) setLocalSummary(result.summary);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to generate summary";
@@ -97,13 +97,13 @@ const ActivityRowItem = memo(function ActivityRowItem({ row, agentNames }: Activ
     } finally {
       setIsLoading(false);
     }
-  }, [row.agentName, instanceId]);
+  }, [row.agentName, sessionId]);
   const toggleExpanded = useCallback(() => setIsCollapsed((prev) => !prev), []);
   const toggleMobileExpanded = useCallback(() => setIsMobileExpanded((prev) => !prev), []);
 
   // Build trigger badge element (optionally wrapped in a link)
-  const detailPath = row.instanceId
-    ? `/dashboard/triggers/${encodeURIComponent(row.instanceId)}`
+  const detailPath = row.sessionId
+    ? `/dashboard/triggers/${encodeURIComponent(row.sessionId)}`
     : row.webhookReceiptId
       ? `/dashboard/webhooks/${encodeURIComponent(row.webhookReceiptId)}`
       : null;
@@ -125,16 +125,16 @@ const ActivityRowItem = memo(function ActivityRowItem({ row, agentNames }: Activ
   );
 
   // Agent instance ID element — large, colored, bold
-  const agentEl = !isDeadLetter && row.agentName && row.instanceId ? (
+  const agentEl = !isDeadLetter && row.agentName && row.sessionId ? (
     <Link
-      to={`/dashboard/agents/${encodeURIComponent(row.agentName)}/instances/${encodeURIComponent(row.instanceId)}`}
+      to={`/dashboard/agents/${encodeURIComponent(row.agentName)}/sessions/${encodeURIComponent(row.sessionId)}`}
       className="font-medium hover:underline truncate block"
     >
       <span
         className="agent-color-text truncate text-sm md:text-base"
         style={agentHueStyle(row.agentName, agentNames)}
       >
-        {row.instanceId}
+        {row.sessionId}
       </span>
     </Link>
   ) : !isDeadLetter && row.agentName ? (
@@ -341,7 +341,7 @@ export function ActivityTable({
             )}
             {virtualItems.map((virtualRow) => (
               <ActivityRowItem
-                key={rows[virtualRow.index].instanceId ?? `${rows[virtualRow.index].ts}-${virtualRow.index}`}
+                key={rows[virtualRow.index].sessionId ?? `${rows[virtualRow.index].ts}-${virtualRow.index}`}
                 row={rows[virtualRow.index]}
                 index={virtualRow.index}
                 agentNames={agentNames}

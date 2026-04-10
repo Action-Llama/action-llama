@@ -18,7 +18,7 @@ export async function execute(target: string, opts: { project: string; env?: str
       path: `/control/agents/${encodeURIComponent(target)}/kill`,
     });
 
-    // If agent not found, fall back to instance ID
+    // If agent not found, fall back to session ID
     if (response.status === 404) {
       response = await gatewayFetch({
         ...fetchOpts,

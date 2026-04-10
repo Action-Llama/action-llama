@@ -144,7 +144,7 @@ describe("stats execute — per-agent detail view", () => {
     ]);
     mockQueryRuns.mockReturnValue([
       {
-        instance_id: "inst-abc-12345",
+        session_id: "inst-abc-12345",
         trigger_type: "cron",
         result: "ok",
         duration_ms: 60000,
@@ -164,7 +164,7 @@ describe("stats execute — per-agent detail view", () => {
 
   it("outputs JSON with summary and runs when --json flag set", async () => {
     mockQueryAgentSummary.mockReturnValue([{ agentName: "dev", totalRuns: 1 }]);
-    mockQueryRuns.mockReturnValue([{ instance_id: "inst-1", trigger_type: "cron", result: "ok", duration_ms: 100, total_tokens: 50, cost_usd: 0.001, started_at: 1234567890 }]);
+    mockQueryRuns.mockReturnValue([{ session_id: "inst-1", trigger_type: "cron", result: "ok", duration_ms: 100, total_tokens: 50, cost_usd: 0.001, started_at: 1234567890 }]);
 
     const output = await captureLog(() => execute({ ...BASE_OPTS, agent: "dev", json: true }));
     const parsed = JSON.parse(output);
@@ -354,7 +354,7 @@ describe("stats execute — edge cases for call graph and per-agent views", () =
   it("outputs null summary in JSON when per-agent summary not found (summaries[0] || null path)", async () => {
     // JSON mode with empty summaries → summaries[0] is undefined → || null path
     mockQueryAgentSummary.mockReturnValue([]);
-    mockQueryRuns.mockReturnValue([{ instance_id: "inst-1", trigger_type: "cron", result: "ok", duration_ms: 100, total_tokens: 50, cost_usd: 0.001, started_at: 1234567890 }]);
+    mockQueryRuns.mockReturnValue([{ session_id: "inst-1", trigger_type: "cron", result: "ok", duration_ms: 100, total_tokens: 50, cost_usd: 0.001, started_at: 1234567890 }]);
 
     const output = await captureLog(() => execute({ ...BASE_OPTS, agent: "missing-agent", json: true }));
     const parsed = JSON.parse(output);
@@ -390,7 +390,7 @@ describe("stats execute — edge cases for call graph and per-agent views", () =
   });
 });
 
-describe("stats execute — per-agent run table instance_id truncation", () => {
+describe("stats execute — per-agent run table session_id truncation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockExistsSync.mockReturnValue(true);
@@ -400,7 +400,7 @@ describe("stats execute — per-agent run table instance_id truncation", () => {
     expect(mockClose).toHaveBeenCalledOnce();
   });
 
-  it("truncates instance_id longer than 18 characters with ellipsis prefix", async () => {
+  it("truncates session_id longer than 18 characters with ellipsis prefix", async () => {
     mockQueryAgentSummary.mockReturnValue([
       {
         agentName: "dev",
@@ -414,11 +414,11 @@ describe("stats execute — per-agent run table instance_id truncation", () => {
         avgPostHookMs: null,
       },
     ]);
-    // instance_id that is exactly 19 chars — triggers the > 18 truncation branch
+    // session_id that is exactly 19 chars — triggers the > 18 truncation branch
     const longInstanceId = "inst-very-long-12345"; // 20 chars
     mockQueryRuns.mockReturnValue([
       {
-        instance_id: longInstanceId,
+        session_id: longInstanceId,
         trigger_type: "cron",
         result: "ok",
         duration_ms: 5000,
@@ -433,11 +433,11 @@ describe("stats execute — per-agent run table instance_id truncation", () => {
     expect(output).toContain("...");
     // The last 15 chars of "inst-very-long-12345" = "very-long-12345"
     expect(output).toContain("very-long-12345");
-    // Full instance_id should NOT appear
+    // Full session_id should NOT appear
     expect(output).not.toContain("inst-very-long-12345");
   });
 
-  it("does not truncate instance_id of exactly 18 characters", async () => {
+  it("does not truncate session_id of exactly 18 characters", async () => {
     mockQueryAgentSummary.mockReturnValue([
       {
         agentName: "dev",
@@ -454,7 +454,7 @@ describe("stats execute — per-agent run table instance_id truncation", () => {
     const exactInstance = "inst-exactly-18chr"; // 18 chars exactly
     mockQueryRuns.mockReturnValue([
       {
-        instance_id: exactInstance,
+        session_id: exactInstance,
         trigger_type: "cron",
         result: "ok",
         duration_ms: 5000,
@@ -465,7 +465,7 @@ describe("stats execute — per-agent run table instance_id truncation", () => {
     ]);
 
     const output = await captureLog(() => execute({ ...BASE_OPTS, agent: "dev" }));
-    // Should show full instance_id without truncation
+    // Should show full session_id without truncation
     expect(output).toContain("inst-exactly-18chr");
   });
 });

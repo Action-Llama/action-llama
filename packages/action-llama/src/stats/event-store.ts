@@ -27,7 +27,7 @@ export class EventSourcedStatsStore {
     await this.statsStream.appendTyped(
       EventTypes.RUN_STARTED,
       {
-        instanceId: run.instanceId,
+        sessionId: run.sessionId,
         agentName: run.agentName,
         triggerType: run.triggerType,
         triggerSource: run.triggerSource,
@@ -35,7 +35,7 @@ export class EventSourcedStatsStore {
       },
       {
         source: "stats-store",
-        correlationId: run.instanceId,
+        correlationId: run.sessionId,
         actor: run.agentName,
       }
     );
@@ -45,7 +45,7 @@ export class EventSourcedStatsStore {
     await this.statsStream.appendTyped(
       eventType,
       {
-        instanceId: run.instanceId,
+        sessionId: run.sessionId,
         agentName: run.agentName,
         result: run.result,
         exitCode: run.exitCode,
@@ -64,7 +64,7 @@ export class EventSourcedStatsStore {
       },
       {
         source: "stats-store",
-        correlationId: run.instanceId,
+        correlationId: run.sessionId,
         actor: run.agentName,
       }
     );
@@ -81,15 +81,15 @@ export class EventSourcedStatsStore {
       {
         callId,
         callerAgent: edge.callerAgent,
-        callerInstance: edge.callerInstance,
+        callerSession: edge.callerSession,
         targetAgent: edge.targetAgent,
-        targetInstance: edge.targetInstance,
+        targetSession: edge.targetSession,
         depth: edge.depth,
         startedAt: edge.startedAt,
       },
       {
         source: "stats-store",
-        correlationId: edge.callerInstance,
+        correlationId: edge.callerSession,
         actor: edge.callerAgent,
       }
     );
@@ -102,9 +102,9 @@ export class EventSourcedStatsStore {
         {
           callId,
           callerAgent: edge.callerAgent,
-          callerInstance: edge.callerInstance,
+          callerSession: edge.callerSession,
           targetAgent: edge.targetAgent,
-          targetInstance: edge.targetInstance,
+          targetSession: edge.targetSession,
           depth: edge.depth,
           startedAt: edge.startedAt,
           durationMs: edge.durationMs,
@@ -112,7 +112,7 @@ export class EventSourcedStatsStore {
         },
         {
           source: "stats-store",
-          correlationId: edge.callerInstance,
+          correlationId: edge.callerSession,
           actor: edge.callerAgent,
         }
       );
@@ -121,7 +121,7 @@ export class EventSourcedStatsStore {
     return callId;
   }
 
-  async updateCallEdge(id: number, updates: { durationMs?: number; status?: string; targetInstance?: string }): Promise<void> {
+  async updateCallEdge(id: number, updates: { durationMs?: number; status?: string; targetSession?: string }): Promise<void> {
     if (updates.durationMs !== undefined) {
       const eventType = updates.status === "error" ? EventTypes.CALL_FAILED : EventTypes.CALL_COMPLETED;
       await this.statsStream.appendTyped(
@@ -130,7 +130,7 @@ export class EventSourcedStatsStore {
           callId: id,
           durationMs: updates.durationMs,
           status: updates.status,
-          targetInstance: updates.targetInstance,
+          targetSession: updates.targetSession,
         },
         {
           source: "stats-store",
@@ -152,8 +152,8 @@ export class EventSourcedStatsStore {
     
     for await (const event of this.statsStream.replayType(EventTypes.RUN_STARTED, query.since)) {
       if (query.agent && event.data.agentName !== query.agent) continue;
-      runStartEvents.set(event.data.instanceId, {
-        instance_id: event.data.instanceId,
+      runStartEvents.set(event.data.sessionId, {
+        session_id: event.data.sessionId,
         agent_name: event.data.agentName,
         trigger_type: event.data.triggerType,
         trigger_source: event.data.triggerSource,
@@ -167,7 +167,7 @@ export class EventSourcedStatsStore {
       from: query.since,
       limit: query.limit || 100,
     })) {
-      const startData = runStartEvents.get(event.data.instanceId);
+      const startData = runStartEvents.get(event.data.sessionId);
       if (!startData) continue;
       if (query.agent && event.data.agentName !== query.agent) continue;
       
@@ -195,7 +195,7 @@ export class EventSourcedStatsStore {
       from: query.since,
       limit: query.limit || 100,
     })) {
-      const startData = runStartEvents.get(event.data.instanceId);
+      const startData = runStartEvents.get(event.data.sessionId);
       if (!startData) continue;
       if (query.agent && event.data.agentName !== query.agent) continue;
       

@@ -3,7 +3,7 @@ import { ResultBadge } from "../components/Badge";
 import { fmtDur, fmtCost, fmtTokens, fmtDateTime } from "../lib/format";
 import { InstanceContext } from "../hooks/InstanceContext";
 
-export function InstanceTelemetryPage() {
+export function SessionTelemetryPage() {
   const ctx = useContext(InstanceContext);
 
   if (!ctx) return null;

@@ -4,7 +4,7 @@
  * These endpoints provide unified views of agent execution history:
  *   GET /api/stats/jobs          — completed/running/errored jobs (no dead letters)
  *   GET /api/stats/activity      — unified activity feed (all events including dead letters)
- *   GET /api/stats/agents/:name/runs/:instanceId — single run details
+ *   GET /api/stats/agents/:name/runs/:sessionId — single run details
  *
  * Covers: stats API endpoints not yet tested individually.
  */
@@ -144,7 +144,7 @@ describe.skipIf(!DOCKER)("integration: stats jobs and activity API", { timeout: 
     expect(allBody.total).toBeGreaterThanOrEqual(1);
   });
 
-  it("stats/agents/:name/runs/:instanceId returns single run details", async () => {
+  it("stats/agents/:name/runs/:sessionId returns single run details", async () => {
     harness = await IntegrationHarness.create({
       agents: [
         {
@@ -160,31 +160,31 @@ describe.skipIf(!DOCKER)("integration: stats jobs and activity API", { timeout: 
     await harness.triggerAgent("instance-stats-agent");
     await harness.waitForRunResult("instance-stats-agent");
 
-    // Get all runs to find an instanceId
+    // Get all runs to find an sessionId
     const runsRes = await statsAPI(harness, "/api/stats/agents/instance-stats-agent/runs");
     expect(runsRes.ok).toBe(true);
     const runsBody = await runsRes.json();
     expect(runsBody.total).toBeGreaterThanOrEqual(1);
 
-    const instanceId = runsBody.runs[0]?.instanceId;
-    if (instanceId) {
-      // Fetch the specific run by instanceId
+    const sessionId = runsBody.runs[0]?.sessionId;
+    if (sessionId) {
+      // Fetch the specific run by sessionId
       const runRes = await statsAPI(
         harness,
-        `/api/stats/agents/instance-stats-agent/runs/${instanceId}`,
+        `/api/stats/agents/instance-stats-agent/runs/${sessionId}`,
       );
       expect(runRes.ok).toBe(true);
       const runBody = await runRes.json();
       expect(runBody).toHaveProperty("run");
       if (runBody.run) {
-        expect(runBody.run.instanceId).toBe(instanceId);
+        expect(runBody.run.sessionId).toBe(sessionId);
         expect(runBody.run.agentName).toBe("instance-stats-agent");
       }
     }
   });
 
-  it("stats/agents/:name/runs/:instanceId returns { run: null } for unknown instanceId", async () => {
-    // When no run exists for the given instanceId, the endpoint returns
+  it("stats/agents/:name/runs/:sessionId returns { run: null } for unknown sessionId", async () => {
+    // When no run exists for the given sessionId, the endpoint returns
     // { run: null } with HTTP 200 (not 404 — it is a presence-check endpoint).
     harness = await IntegrationHarness.create({
       agents: [

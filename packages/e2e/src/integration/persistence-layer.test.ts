@@ -302,7 +302,7 @@ describe("integration: persistence/event-store.ts helpers (no Docker required)",
     const stream = store.events.stream("wrapper-stream");
     const wrapper = new EventStreamWrapper(stream);
 
-    await wrapper.appendTyped(EventTypes.RUN_STARTED, { instanceId: "i-001", agentName: "agent" }, {
+    await wrapper.appendTyped(EventTypes.RUN_STARTED, { sessionId: "i-001", agentName: "agent" }, {
       source: "test",
       correlationId: "corr-001",
     });
@@ -313,7 +313,7 @@ describe("integration: persistence/event-store.ts helpers (no Docker required)",
     }
     expect(events.length).toBe(1);
     expect(events[0].type).toBe(EventTypes.RUN_STARTED);
-    expect(events[0].data.instanceId).toBe("i-001");
+    expect(events[0].data.sessionId).toBe("i-001");
     expect(events[0].metadata?.correlationId).toBe("corr-001");
 
     await store.close();

@@ -16,7 +16,7 @@ async function handleLogRequest(
   projectPath: string,
   prefix: string,
   query: Record<string, string | undefined>,
-  instanceFilter?: string,
+  sessionFilter?: string,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const { lines, cursor, after, before, grep, minLevel } = parseQueryParams(query);
   const backCursorParam = query.back_cursor;
@@ -52,7 +52,7 @@ async function handleLogRequest(
       const remaining = lines - collected.length;
       const startPos = (i === startIdx) ? parsed.offsets[0] : undefined;
       const { entries, scanStoppedAt } = await readLastEntries(
-        allFiles[i], remaining, undefined, undefined, instanceFilter, grepRe, startPos, effectiveLevel,
+        allFiles[i], remaining, undefined, undefined, sessionFilter, grepRe, startPos, effectiveLevel,
       );
       collected.unshift(...entries);
       newBackDate = dateFromLogFile(allFiles[i]);
@@ -76,7 +76,7 @@ async function handleLogRequest(
 
     const { entries, newDate, newOffset } = await readEntriesForwardMultiFile(
       projectPath, prefix, parsed.date, parsed.offsets[0] || 0, lines,
-      after, before, instanceFilter, grepRe, effectiveLevel,
+      after, before, sessionFilter, grepRe, effectiveLevel,
     );
     const newCursor = encodeCursor(newDate, [newOffset]);
     return { status: 200, body: { entries, cursor: newCursor, backCursor: null, hasMore: entries.length >= lines } };
@@ -86,7 +86,7 @@ async function handleLogRequest(
   if (files.length === 0) return { status: 200, body: { entries: [], cursor: null, backCursor: null, hasMore: false } };
 
   const { entries, latestFile, byteOffset, backCursorDate, backCursorOffset } = await readLastEntriesMultiFile(
-    files, lines, after, before, instanceFilter, grepRe, effectiveLevel,
+    files, lines, after, before, sessionFilter, grepRe, effectiveLevel,
   );
   const date = latestFile ? dateFromLogFile(latestFile) || "" : "";
   const resCursor = encodeCursor(date, [byteOffset]);
@@ -109,13 +109,13 @@ export function registerLogRoutes(app: Hono, projectPath: string): void {
     return c.json(body, status as any);
   });
 
-  // ── Specific instance logs (filter by instance field) ─────────────────
-  app.get("/api/logs/agents/:name/:instanceId", async (c) => {
+  // ── Specific session logs (filter by instance field) ─────────────────
+  app.get("/api/logs/agents/:name/:sessionId", async (c) => {
     const name = c.req.param("name");
-    const instanceId = c.req.param("instanceId");
+    const sessionId = c.req.param("sessionId");
     if (!SAFE_AGENT_NAME.test(name)) return c.json({ error: "Invalid agent name" }, 400);
-    if (!SAFE_AGENT_NAME.test(instanceId)) return c.json({ error: "Invalid instance ID" }, 400);
-    const { status, body } = await handleLogRequest(projectPath, name, c.req.query(), instanceId);
+    if (!SAFE_AGENT_NAME.test(sessionId)) return c.json({ error: "Invalid session ID" }, 400);
+    const { status, body } = await handleLogRequest(projectPath, name, c.req.query(), sessionId);
     return c.json(body, status as any);
   });
 }

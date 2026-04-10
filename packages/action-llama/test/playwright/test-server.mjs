@@ -16,7 +16,7 @@ const API_KEY = "pw-test-key-12345";
 const logger = pino({ level: "silent" });
 const statusTracker = new StatusTracker();
 
-/** Maps instanceId → { agentName, lifecycle } for kill operations. */
+/** Maps sessionId → { agentName, lifecycle } for kill operations. */
 const activeInstances = new Map();
 let triggerCount = 0;
 
@@ -49,16 +49,16 @@ await startGateway({
       if (!agent) return `Agent "${name}" not found`;
 
       triggerCount++;
-      const instanceId = `${name}-pw-${triggerCount}`;
+      const sessionId = `${name}-pw-${triggerCount}`;
 
       // Simulate the real execution flow:
       // 1. Create instance lifecycle and start it
-      const lifecycle = statusTracker.createInstance(instanceId, name, "manual");
+      const lifecycle = statusTracker.createSession(sessionId, name, "manual");
       lifecycle?.start();
 
-      // 2. Register the instance so getInstances() returns it
-      statusTracker.registerInstance({
-        id: instanceId,
+      // 2. Register the instance so getSessions() returns it
+      statusTracker.registerSession({
+        id: sessionId,
         agentName: name,
         status: "running",
         startedAt: new Date(),
@@ -66,7 +66,7 @@ await startGateway({
       });
 
       // 3. Track for kill operations
-      activeInstances.set(instanceId, { agentName: name, lifecycle });
+      activeInstances.set(sessionId, { agentName: name, lifecycle });
 
       // 4. Runner calls startRun (authoritative source for runningCount)
       statusTracker.startRun(name, "manual trigger");
@@ -74,17 +74,17 @@ await startGateway({
       return true;
     },
 
-    killInstance: async (instanceId) => {
-      const info = activeInstances.get(instanceId);
+    killSession: async (sessionId) => {
+      const info = activeInstances.get(sessionId);
       if (!info) return false;
 
       if (info.lifecycle && !info.lifecycle.isTerminal()) {
         info.lifecycle.kill();
       }
       statusTracker.endRun(info.agentName, 0);
-      statusTracker.completeInstance(instanceId, "killed");
-      statusTracker.unregisterInstance(instanceId);
-      activeInstances.delete(instanceId);
+      statusTracker.completeSession(sessionId, "killed");
+      statusTracker.unregisterSession(sessionId);
+      activeInstances.delete(sessionId);
       return true;
     },
 
@@ -96,8 +96,8 @@ await startGateway({
             info.lifecycle.kill();
           }
           statusTracker.endRun(name, 0);
-          statusTracker.completeInstance(id, "killed");
-          statusTracker.unregisterInstance(id);
+          statusTracker.completeSession(id, "killed");
+          statusTracker.unregisterSession(id);
           activeInstances.delete(id);
           killed++;
         }

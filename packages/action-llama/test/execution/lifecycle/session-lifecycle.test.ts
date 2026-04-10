@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { InstanceLifecycle } from "../../../src/execution/lifecycle/instance-lifecycle.js";
-import { isTerminalInstanceState, isTerminalAgentState } from "../../../src/execution/lifecycle/index.js";
+import { SessionLifecycle } from "../../../src/execution/lifecycle/session-lifecycle.js";
+import { isTerminalSessionState, isTerminalAgentState } from "../../../src/execution/lifecycle/index.js";
 
-describe("InstanceLifecycle", () => {
-  let instance: InstanceLifecycle;
-  const instanceId = "test-instance-123";
+describe("SessionLifecycle", () => {
+  let instance: SessionLifecycle;
+  const sessionId = "test-instance-123";
   const agentName = "test-agent";
   const trigger = "schedule";
 
   beforeEach(() => {
-    instance = new InstanceLifecycle(instanceId, agentName, trigger);
+    instance = new SessionLifecycle(sessionId, agentName, trigger);
   });
 
   describe("initialization", () => {
@@ -22,7 +22,7 @@ describe("InstanceLifecycle", () => {
 
     it("should store instance information correctly", () => {
       const info = instance.getInfo();
-      expect(info.instanceId).toBe(instanceId);
+      expect(info.sessionId).toBe(sessionId);
       expect(info.agentName).toBe(agentName);
       expect(info.trigger).toBe(trigger);
       expect(info.startedAt).toBeNull();
@@ -41,7 +41,7 @@ describe("InstanceLifecycle", () => {
   describe("valid state transitions", () => {
     it("should transition from queued to running via start()", () => {
       const spy = vi.fn();
-      instance.on("instance:start", spy);
+      instance.on("session:start", spy);
 
       instance.start();
 
@@ -49,7 +49,7 @@ describe("InstanceLifecycle", () => {
       expect(instance.isRunning()).toBe(true);
       expect(instance.isQueued()).toBe(false);
       expect(spy).toHaveBeenCalledWith({
-        instanceId,
+        sessionId,
         agentName,
         trigger,
         fromState: "queued",
@@ -64,7 +64,7 @@ describe("InstanceLifecycle", () => {
     it("should transition from running to completed via complete()", () => {
       instance.start();
       const spy = vi.fn();
-      instance.on("instance:complete", spy);
+      instance.on("session:complete", spy);
 
       instance.complete();
 
@@ -72,7 +72,7 @@ describe("InstanceLifecycle", () => {
       expect(instance.isTerminal()).toBe(true);
       expect(instance.durationMs).toBeGreaterThanOrEqual(0);
       expect(spy).toHaveBeenCalledWith({
-        instanceId,
+        sessionId,
         agentName,
         durationMs: expect.any(Number),
         fromState: "running",
@@ -84,7 +84,7 @@ describe("InstanceLifecycle", () => {
     it("should transition from running to error via fail()", () => {
       instance.start();
       const spy = vi.fn();
-      instance.on("instance:error", spy);
+      instance.on("session:error", spy);
       const error = "Test error message";
 
       instance.fail(error);
@@ -93,7 +93,7 @@ describe("InstanceLifecycle", () => {
       expect(instance.isTerminal()).toBe(true);
       expect(instance.getInfo().error).toBe(error);
       expect(spy).toHaveBeenCalledWith({
-        instanceId,
+        sessionId,
         agentName,
         error,
         durationMs: expect.any(Number),
@@ -105,7 +105,7 @@ describe("InstanceLifecycle", () => {
 
     it("should transition from queued to killed via kill()", () => {
       const spy = vi.fn();
-      instance.on("instance:kill", spy);
+      instance.on("session:kill", spy);
       const reason = "User requested";
 
       instance.kill(reason);
@@ -113,7 +113,7 @@ describe("InstanceLifecycle", () => {
       expect(instance.getState()).toBe("killed");
       expect(instance.isTerminal()).toBe(true);
       expect(spy).toHaveBeenCalledWith({
-        instanceId,
+        sessionId,
         agentName,
         reason,
         durationMs: undefined,
@@ -126,7 +126,7 @@ describe("InstanceLifecycle", () => {
     it("should transition from running to killed via kill()", () => {
       instance.start();
       const spy = vi.fn();
-      instance.on("instance:kill", spy);
+      instance.on("session:kill", spy);
 
       instance.kill();
 
@@ -134,7 +134,7 @@ describe("InstanceLifecycle", () => {
       expect(instance.isTerminal()).toBe(true);
       expect(instance.durationMs).toBeGreaterThanOrEqual(0);
       expect(spy).toHaveBeenCalledWith({
-        instanceId,
+        sessionId,
         agentName,
         reason: undefined,
         durationMs: expect.any(Number),
@@ -148,13 +148,13 @@ describe("InstanceLifecycle", () => {
   describe("invalid state transitions", () => {
     it("should throw error when calling complete() on non-running instance", () => {
       expect(() => instance.complete()).toThrow(
-        "Cannot complete instance in state 'queued'. Must be 'running'."
+        "Cannot complete session in state 'queued'. Must be 'running'."
       );
     });
 
     it("should throw error when calling fail() on non-running instance", () => {
       expect(() => instance.fail("error")).toThrow(
-        "Cannot fail instance in state 'queued'. Must be 'running' or 'waiting'."
+        "Cannot fail session in state 'queued'. Must be 'running' or 'waiting'."
       );
     });
 
@@ -163,7 +163,7 @@ describe("InstanceLifecycle", () => {
       instance.complete();
       
       expect(() => instance.kill()).toThrow(
-        "Cannot kill instance in terminal state 'completed'."
+        "Cannot kill session in terminal state 'completed'."
       );
     });
 
@@ -185,7 +185,7 @@ describe("InstanceLifecycle", () => {
       instance.start();
 
       expect(transitionSpy).toHaveBeenCalledWith({
-        instanceId,
+        sessionId,
         agentName,
         trigger,
         fromState: "queued",
@@ -246,16 +246,16 @@ describe("InstanceLifecycle", () => {
   });
 });
 
-describe("isTerminalInstanceState", () => {
+describe("isTerminalSessionState", () => {
   it("returns false for non-terminal states", () => {
-    expect(isTerminalInstanceState("queued")).toBe(false);
-    expect(isTerminalInstanceState("running")).toBe(false);
+    expect(isTerminalSessionState("queued")).toBe(false);
+    expect(isTerminalSessionState("running")).toBe(false);
   });
 
   it("returns true for terminal states", () => {
-    expect(isTerminalInstanceState("completed")).toBe(true);
-    expect(isTerminalInstanceState("error")).toBe(true);
-    expect(isTerminalInstanceState("killed")).toBe(true);
+    expect(isTerminalSessionState("completed")).toBe(true);
+    expect(isTerminalSessionState("error")).toBe(true);
+    expect(isTerminalSessionState("killed")).toBe(true);
   });
 });
 
@@ -268,14 +268,14 @@ describe("isTerminalAgentState", () => {
   });
 });
 
-describe("InstanceLifecycle class getters", () => {
+describe("SessionLifecycle class getters", () => {
   it("agentName getter returns the agent name", () => {
-    const lifecycle = new InstanceLifecycle("inst-1", "my-agent", "schedule");
+    const lifecycle = new SessionLifecycle("inst-1", "my-agent", "schedule");
     expect(lifecycle.agentName).toBe("my-agent");
   });
 
   it("trigger getter returns the trigger string", () => {
-    const lifecycle = new InstanceLifecycle("inst-2", "my-agent", "webhook");
+    const lifecycle = new SessionLifecycle("inst-2", "my-agent", "webhook");
     expect(lifecycle.trigger).toBe("webhook");
   });
 });

@@ -12,7 +12,7 @@ function makeLogger() {
 }
 
 function makeRunner(id = "runner-01") {
-  return { isRunning: false, instanceId: id, run: vi.fn() } as any;
+  return { isRunning: false, sessionId: id, run: vi.fn() } as any;
 }
 
 function makePool(availableRunner: any | null = null, size = 1, runningJobCount = 0) {

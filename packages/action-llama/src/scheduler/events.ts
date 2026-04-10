@@ -10,13 +10,13 @@ import { EventEmitter } from "events";
 
 export interface RunStartEvent {
   agentName: string;
-  instanceId: string;
+  sessionId: string;
   trigger: string;
 }
 
 export interface RunEndEvent {
   agentName: string;
-  instanceId: string;
+  sessionId: string;
   result: string;
   exitCode?: number;
   error?: string;
@@ -24,7 +24,7 @@ export interface RunEndEvent {
 
 export interface LockEvent {
   agentName: string;
-  instanceId: string;
+  sessionId: string;
   resourceKey: string;
   action: "acquire" | "release" | "heartbeat";
   ok: boolean;
@@ -42,7 +42,7 @@ export interface CallEvent {
 
 export interface SignalEvent {
   agentName: string;
-  instanceId: string;
+  sessionId: string;
   signal: "rerun" | "status" | "trigger" | "return";
 }
 

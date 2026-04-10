@@ -82,20 +82,20 @@ export async function setupGateway(opts: {
     controlDeps: {
       statusTracker,
       logger,
-      killInstance: async (instanceId: string) => {
+      killSession: async (sessionId: string) => {
         for (const pool of Object.values(state.runnerPools)) {
-          if (pool.killInstance(instanceId)) return true;
+          if (pool.killSession(sessionId)) return true;
         }
         // Check waiting registry for suspended instances
         if (waitingRegistry) {
-          const entry = waitingRegistry.remove(instanceId);
+          const entry = waitingRegistry.remove(sessionId);
           if (entry) {
             entry.reject?.(new Error("Killed by user"));
             if (entry.runtimeType === "container" && entry.runId) {
               try { execFileSync("docker", ["unpause", entry.runId], { stdio: "pipe", timeout: 5000 }); } catch {}
               try { execFileSync("docker", ["kill", entry.runId], { stdio: "pipe", timeout: 5000 }); } catch {}
             }
-            statusTracker?.completeInstance(instanceId, 'killed');
+            statusTracker?.completeSession(sessionId, 'killed');
             return true;
           }
         }
@@ -105,21 +105,21 @@ export async function setupGateway(opts: {
         const pool = state.runnerPools[name];
         if (!pool && (!waitingRegistry || waitingRegistry.getByAgent(name).length === 0)) return null;
         let killed = pool ? pool.killAll() : 0;
-        // Also kill waiting instances for this agent
+        // Also kill waiting sessions for this agent
         if (waitingRegistry) {
           const waitingInstances = waitingRegistry.getByAgent(name);
           for (const entry of waitingInstances) {
-            waitingRegistry.remove(entry.instanceId);
+            waitingRegistry.remove(entry.sessionId);
             entry.reject?.(new Error("Killed by user"));
             if (entry.runtimeType === "container" && entry.runId) {
               try { execFileSync("docker", ["unpause", entry.runId], { stdio: "pipe", timeout: 5000 }); } catch {}
               try { execFileSync("docker", ["kill", entry.runId], { stdio: "pipe", timeout: 5000 }); } catch {}
             }
-            statusTracker?.completeInstance(entry.instanceId, 'killed');
+            statusTracker?.completeSession(entry.sessionId, 'killed');
             killed++;
           }
         }
-        logger.info({ agent: name, killed }, "kill all instances requested via control API");
+        logger.info({ agent: name, killed }, "kill all sessions requested via control API");
         return { killed };
       },
       pauseScheduler: async () => {
@@ -136,7 +136,7 @@ export async function setupGateway(opts: {
         statusTracker?.setPaused(false);
         logger.info("Scheduler resumed via control API");
       },
-      triggerAgent: async (name: string, prompt?: string): Promise<{ instanceId: string } | string> => {
+      triggerAgent: async (name: string, prompt?: string): Promise<{ sessionId: string } | string> => {
         const config = agentConfigs.find((a) => a.name === name);
         if (!config) return `Agent "${name}" not found`;
 
@@ -146,9 +146,9 @@ export async function setupGateway(opts: {
           if (!state.workQueue) return "Scheduler is not ready";
           const { dropped } = state.workQueue.enqueue(name, { type: 'manual', prompt });
           if (dropped) logger.warn({ agent: name }, "queue full, oldest event dropped");
-          const instanceId = `${name}-${randomBytes(4).toString("hex")}`;
-          logger.info({ agent: name, hasPrompt: !!prompt, instanceId, queued: true }, "manual trigger queued (agents building)");
-          return { instanceId };
+          const sessionId = `${name}-${randomBytes(4).toString("hex")}`;
+          logger.info({ agent: name, hasPrompt: !!prompt, sessionId, queued: true }, "manual trigger queued (agents building)");
+          return { sessionId };
         }
 
         const result = dispatchOrQueue(name, { type: 'manual', prompt }, {
@@ -158,18 +158,18 @@ export async function setupGateway(opts: {
         });
 
         if (result.action === "dispatched") {
-          const instanceId = `${name}-${randomBytes(4).toString("hex")}`;
-          logger.info({ agent: name, hasPrompt: !!prompt, instanceId }, "manual trigger via control API");
-          runWithReruns(result.runner, config, 0, state.schedulerCtx, 'manual', prompt, instanceId).catch((err) => {
+          const sessionId = `${name}-${randomBytes(4).toString("hex")}`;
+          logger.info({ agent: name, hasPrompt: !!prompt, sessionId }, "manual trigger via control API");
+          runWithReruns(result.runner, config, 0, state.schedulerCtx, 'manual', prompt, sessionId).catch((err) => {
             logger.error({ err, agent: name }, "manual trigger run failed");
           });
-          return { instanceId };
+          return { sessionId };
         }
         if (result.action === "queued") {
-          const instanceId = `${name}-${randomBytes(4).toString("hex")}`;
+          const sessionId = `${name}-${randomBytes(4).toString("hex")}`;
           if (result.dropped) logger.warn({ agent: name }, "queue full, oldest event dropped");
-          logger.info({ agent: name, hasPrompt: !!prompt, instanceId, queued: true }, "manual trigger queued (all runners busy)");
-          return { instanceId };
+          logger.info({ agent: name, hasPrompt: !!prompt, sessionId, queued: true }, "manual trigger queued (all runners busy)");
+          return { sessionId };
         }
         return `Agent "${name}" has no available runners (all busy)`;
       },

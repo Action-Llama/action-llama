@@ -176,7 +176,7 @@ describe("mcp/server.ts — startMcpServer and tool handlers", () => {
         agents: [
           { name: "dev", state: "idle", running: 0, queued: 0, schedule: "*/5 * * * *" },
         ],
-        instances: [
+        sessions: [
           { id: "abc123", agent: "dev", startedAt: "2025-01-01T00:00:00Z" },
         ],
       });
@@ -816,7 +816,7 @@ describe("mcp/server.ts — startMcpServer and tool handlers", () => {
   // ─── al_agents with live status enrichment ──────────────────────────────
 
   describe("al_agents with live status", () => {
-    it("enriches specific agent with live running instances", async () => {
+    it("enriches specific agent with live running sessions", async () => {
       makeGatewayOk({
         agents: [{ name: "dev", state: "running", running: 2 }],
       });
@@ -1039,7 +1039,7 @@ describe("mcp/server.ts — startMcpServer and tool handlers", () => {
       }
     });
 
-    it("omits Running instances line when live.running is undefined for specific agent", async () => {
+    it("omits Running sessions line when live.running is undefined for specific agent", async () => {
       // Covers the false branch of `if (live.running !== undefined)` in al_agents
       // when gateway status exists but has no running count
       makeGatewayOk({
@@ -1049,7 +1049,7 @@ describe("mcp/server.ts — startMcpServer and tool handlers", () => {
       const result = await registeredTools.get("al_agents")!({ name: "dev" });
       const text = result.content[0].text;
       expect(text).toContain("Live state: running");
-      expect(text).not.toContain("Running instances:");
+      expect(text).not.toContain("Running sessions:");
     });
   });
 

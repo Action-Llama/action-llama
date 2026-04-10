@@ -26,7 +26,7 @@ function makeOpts(overrides: Partial<SchedulerToolsOpts> = {}): SchedulerToolsOp
       child: vi.fn().mockReturnThis(),
     } as any,
     agentName: "test-agent",
-    instanceId: "test-instance",
+    sessionId: "test-instance",
     depth: 0,
     onReturnValue: vi.fn(),
     ...overrides,

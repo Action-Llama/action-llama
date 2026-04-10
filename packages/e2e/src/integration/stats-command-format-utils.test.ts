@@ -87,7 +87,7 @@ describe(
     it("formatDuration shows '500ms' for 500ms run (in per-agent view)", async () => {
       const store = new StatsStore(statsDbPath(projectDir));
       store.recordRun({
-        instanceId: randomUUID(),
+        sessionId: randomUUID(),
         agentName: "fast-agent",
         triggerType: "manual",
         result: "completed",
@@ -110,7 +110,7 @@ describe(
     it("formatDuration shows '1ms' for 1ms run", async () => {
       const store = new StatsStore(statsDbPath(projectDir));
       store.recordRun({
-        instanceId: randomUUID(),
+        sessionId: randomUUID(),
         agentName: "tiny-agent",
         triggerType: "manual",
         result: "completed",
@@ -135,7 +135,7 @@ describe(
     it("formatDuration shows '1m30s' for 90000ms run", async () => {
       const store = new StatsStore(statsDbPath(projectDir));
       store.recordRun({
-        instanceId: randomUUID(),
+        sessionId: randomUUID(),
         agentName: "medium-agent",
         triggerType: "schedule",
         result: "completed",
@@ -160,7 +160,7 @@ describe(
     it("formatDuration shows '2m' for 120000ms run", async () => {
       const store = new StatsStore(statsDbPath(projectDir));
       store.recordRun({
-        instanceId: randomUUID(),
+        sessionId: randomUUID(),
         agentName: "exact-min-agent",
         triggerType: "schedule",
         result: "completed",
@@ -187,7 +187,7 @@ describe(
     it("formatTokens shows '5.0K' for 5000 tokens (in global summary)", async () => {
       const store = new StatsStore(statsDbPath(projectDir));
       store.recordRun({
-        instanceId: randomUUID(),
+        sessionId: randomUUID(),
         agentName: "k-tokens-agent",
         triggerType: "manual",
         result: "completed",
@@ -210,7 +210,7 @@ describe(
     it("formatTokens shows '1.5K' for 1500 tokens", async () => {
       const store = new StatsStore(statsDbPath(projectDir));
       store.recordRun({
-        instanceId: randomUUID(),
+        sessionId: randomUUID(),
         agentName: "k-tokens-agent2",
         triggerType: "manual",
         result: "completed",
@@ -235,7 +235,7 @@ describe(
     it("formatTokens shows '1.5M' for 1500000 tokens (in global summary)", async () => {
       const store = new StatsStore(statsDbPath(projectDir));
       store.recordRun({
-        instanceId: randomUUID(),
+        sessionId: randomUUID(),
         agentName: "m-tokens-agent",
         triggerType: "schedule",
         result: "completed",
@@ -258,7 +258,7 @@ describe(
     it("formatTokens shows '2.0M' for exactly 2000000 tokens", async () => {
       const store = new StatsStore(statsDbPath(projectDir));
       store.recordRun({
-        instanceId: randomUUID(),
+        sessionId: randomUUID(),
         agentName: "m-tokens-agent2",
         triggerType: "schedule",
         result: "completed",
@@ -284,7 +284,7 @@ describe(
       const longInstanceId = "very-long-instance-id-exceeds-18-chars-abcdef12345";
       const store = new StatsStore(statsDbPath(projectDir));
       store.recordRun({
-        instanceId: longInstanceId,
+        sessionId: longInstanceId,
         agentName: "trunc-run-agent",
         triggerType: "manual",
         result: "completed",
@@ -310,7 +310,7 @@ describe(
       const shortInstanceId = "inst-short-12"; // ≤ 18 chars
       const store = new StatsStore(statsDbPath(projectDir));
       store.recordRun({
-        instanceId: shortInstanceId,
+        sessionId: shortInstanceId,
         agentName: "no-trunc-agent",
         triggerType: "manual",
         result: "completed",

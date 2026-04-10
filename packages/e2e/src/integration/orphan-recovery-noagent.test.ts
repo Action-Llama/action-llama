@@ -62,7 +62,7 @@ function makeRuntime(overrides: Record<string, any> = {}) {
 async function makeGateway(opts: { withStaleEntry?: boolean } = {}) {
   const containerRegistry = new ContainerRegistry(); // no StateStore → in-memory
   const lockStore = new LockStore(undefined, undefined, undefined, {
-    isHolderAlive: (instanceId: string) => containerRegistry.hasInstance(instanceId),
+    isHolderAlive: (sessionId: string) => containerRegistry.hasInstance(sessionId),
   });
   await lockStore.init();
 
@@ -71,7 +71,7 @@ async function makeGateway(opts: { withStaleEntry?: boolean } = {}) {
     await containerRegistry.register("stale-secret-123", {
       containerName: "stale-container",
       agentName: "stale-agent",
-      instanceId: "stale-instance-001",
+      sessionId: "stale-instance-001",
     });
   }
 
@@ -216,12 +216,12 @@ describe("integration: recoverOrphanContainers() — no Docker required", { time
     await containerRegistry.register("stale-secret-A", {
       containerName: "stale-container-A",
       agentName: "agent-alpha",
-      instanceId: "inst-alpha-001",
+      sessionId: "inst-alpha-001",
     });
     await containerRegistry.register("stale-secret-B", {
       containerName: "stale-container-B",
       agentName: "agent-beta",
-      instanceId: "inst-beta-001",
+      sessionId: "inst-beta-001",
     });
 
     expect(containerRegistry.listAll()).toHaveLength(2);

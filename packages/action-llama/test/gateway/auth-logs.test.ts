@@ -35,7 +35,7 @@ describe("Gateway log endpoints authentication", () => {
         getAllAgents: () => [],
         getSchedulerInfo: () => ({}),
         getRecentLogs: () => [],
-        getInstances: () => [],
+        getSessions: () => [],
         on: vi.fn(),
         removeListener: vi.fn(),
       } as any, // Mock status tracker
@@ -78,7 +78,7 @@ describe("Gateway log endpoints authentication", () => {
     expect(res2.status).toBe(200);
   });
 
-  it("should protect /api/logs/agents/:name/:instanceId endpoint", async () => {
+  it("should protect /api/logs/agents/:name/:sessionId endpoint", async () => {
     const addr = gateway.server.address() as any;
     const baseUrl = `http://localhost:${addr.port}`;
 

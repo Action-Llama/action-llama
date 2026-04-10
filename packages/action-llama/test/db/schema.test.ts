@@ -58,7 +58,7 @@ describe("Drizzle schema", () => {
     const client = (db as any).$client;
     const cols = client.pragma("table_info(runs)").map((c: any) => c.name);
     expect(cols).toContain("id");
-    expect(cols).toContain("instance_id");
+    expect(cols).toContain("session_id");
     expect(cols).toContain("agent_name");
     expect(cols).toContain("webhook_receipt_id");
     client.close();

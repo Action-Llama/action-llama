@@ -18,7 +18,7 @@ function prettyJson(raw: string | null | undefined): string {
   }
 }
 
-export function InstanceTriggerPage() {
+export function SessionTriggerPage() {
   const ctx = useContext(InstanceContext);
   const { agents } = useStatusStream();
   const agentNames = agents.map((a) => a.name);
@@ -126,7 +126,7 @@ export function InstanceTriggerPage() {
               Instance
             </span>
             <span className="font-mono text-xs text-slate-700 dark:text-slate-300">
-              {trigger.instanceId}
+              {trigger.sessionId}
             </span>
           </div>
           <div className="px-4 py-3 grid grid-cols-[8rem_1fr] gap-x-4 items-center">
@@ -301,7 +301,7 @@ export function InstanceTriggerPage() {
                       Caller Instance
                     </span>
                     <Link
-                      to={`/dashboard/agents/${encodeURIComponent(trigger.callerAgent)}/instances/${encodeURIComponent(trigger.callerInstance)}`}
+                      to={`/dashboard/agents/${encodeURIComponent(trigger.callerAgent)}/sessions/${encodeURIComponent(trigger.callerInstance)}`}
                       className="font-mono text-xs text-blue-600 dark:text-blue-400 hover:underline"
                     >
                       {shortId(trigger.callerInstance)}

@@ -1,10 +1,10 @@
-import type { AgentStatus, SchedulerInfo, LogLine, AgentInstance, InvalidationSignal } from "./api";
+import type { AgentStatus, SchedulerInfo, LogLine, AgentSession, InvalidationSignal } from "./api";
 
 export interface SSEMessage {
   agents?: AgentStatus[];
   schedulerInfo?: SchedulerInfo | null;
   recentLogs?: LogLine[];
-  instances?: AgentInstance[];
+  sessions?: AgentSession[];
   invalidated?: InvalidationSignal[];
 }
 

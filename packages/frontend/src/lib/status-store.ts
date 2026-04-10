@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { AgentStatus, SchedulerInfo, LogLine, AgentInstance, InvalidationSignal } from "./api";
+import type { AgentStatus, SchedulerInfo, LogLine, AgentSession, InvalidationSignal } from "./api";
 import { SSEConnection } from "./sse";
 import { dispatchSignals } from "./signal-bus";
 
@@ -7,7 +7,7 @@ export interface StatusSnapshot {
   agents: AgentStatus[];
   schedulerInfo: SchedulerInfo | null;
   recentLogs: LogLine[];
-  instances: AgentInstance[];
+  sessions: AgentSession[];
   connected: boolean;
 }
 
@@ -16,7 +16,7 @@ let snapshot: StatusSnapshot = {
   agents: [],
   schedulerInfo: null,
   recentLogs: [],
-  instances: [],
+  sessions: [],
   connected: false,
 };
 let listeners = new Set<() => void>();
@@ -54,7 +54,7 @@ export function initSSE(): () => void {
         agents: msg.agents ?? snapshot.agents,
         schedulerInfo: msg.schedulerInfo !== undefined ? msg.schedulerInfo : snapshot.schedulerInfo,
         recentLogs: msg.recentLogs ?? snapshot.recentLogs,
-        instances: msg.instances ?? snapshot.instances,
+        sessions: msg.sessions ?? snapshot.sessions,
         connected: snapshot.connected,
       };
       snapshot = next;
@@ -99,8 +99,8 @@ export function useRecentLogs(): LogLine[] {
   return useSyncExternalStore(subscribe, () => getSnapshot().recentLogs);
 }
 
-export function useInstances(): AgentInstance[] {
-  return useSyncExternalStore(subscribe, () => getSnapshot().instances);
+export function useSessions(): AgentSession[] {
+  return useSyncExternalStore(subscribe, () => getSnapshot().sessions);
 }
 
 export function useConnected(): boolean {

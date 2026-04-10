@@ -1,9 +1,9 @@
 /**
- * WaitingRegistry — tracks agent instances that are suspended mid-conversation,
+ * WaitingRegistry — tracks agent sessions that are suspended mid-conversation,
  * waiting for a specific trigger (webhook or agent-trigger) to resume.
  *
- * Instances are matched FIFO within each agent. The registry is the single source
- * of truth for all waiting instances and handles matching, timeout cleanup, and
+ * Sessions are matched FIFO within each agent. The registry is the single source
+ * of truth for all waiting sessions and handles matching, timeout cleanup, and
  * persistence to the KV store for restart recovery.
  */
 
@@ -18,8 +18,8 @@ export type WaitFilter =
 
 // ── Waiting instance ─────────────────────────────────────────
 
-export interface WaitingInstance {
-  instanceId: string;
+export interface WaitingSession {
+  sessionId: string;
   agentName: string;
   filter: WaitFilter;
   deadline: number;          // epoch ms
@@ -33,9 +33,9 @@ export interface WaitingInstance {
   timeoutTimer?: ReturnType<typeof setTimeout>;
 }
 
-/** Serializable subset of WaitingInstance for persistence. */
-interface PersistedWaitingInstance {
-  instanceId: string;
+/** Serializable subset of WaitingSession for persistence. */
+interface PersistedWaitingSession {
+  sessionId: string;
   agentName: string;
   filter: WaitFilter;
   deadline: number;
@@ -63,15 +63,15 @@ export function matchDotPath(obj: any, key: string, value: string): boolean {
 
 // ── Registry ─────────────────────────────────────────────────
 
-const KV_NAMESPACE = "waiting-instances";
+const KV_NAMESPACE = "waiting-sessions";
 
 export class WaitingRegistry {
-  private entries = new Map<string, WaitingInstance>();
+  private entries = new Map<string, WaitingSession>();
 
   /**
-   * Register a waiting instance. Starts its timeout timer.
+   * Register a waiting session. Starts its timeout timer.
    */
-  register(entry: WaitingInstance): void {
+  register(entry: WaitingSession): void {
     // Start timeout timer
     const remaining = entry.deadline - Date.now();
     if (remaining <= 0) {
@@ -81,21 +81,21 @@ export class WaitingRegistry {
     }
 
     entry.timeoutTimer = setTimeout(() => {
-      const removed = this.remove(entry.instanceId);
+      const removed = this.remove(entry.sessionId);
       if (removed) {
         removed.reject?.(new Error("Wait timeout expired"));
       }
     }, remaining);
     entry.timeoutTimer.unref?.();
 
-    this.entries.set(entry.instanceId, entry);
+    this.entries.set(entry.sessionId, entry);
   }
 
   /**
-   * Find and remove a matching waiting instance for a webhook trigger (FIFO).
+   * Find and remove a matching waiting session for a webhook trigger (FIFO).
    * Returns null if no match found.
    */
-  matchWebhook(agentName: string, context: WebhookContext): WaitingInstance | null {
+  matchWebhook(agentName: string, context: WebhookContext): WaitingSession | null {
     // Find all entries for this agent, sorted by registeredAt (FIFO)
     const candidates = this.getByAgent(agentName)
       .filter((e) => e.filter.type === "webhook")
@@ -123,17 +123,17 @@ export class WaitingRegistry {
       }
 
       // Match found — remove from registry and clear timeout
-      return this._removeAndCleanup(entry.instanceId);
+      return this._removeAndCleanup(entry.sessionId);
     }
 
     return null;
   }
 
   /**
-   * Find and remove a matching waiting instance for an agent trigger (FIFO).
+   * Find and remove a matching waiting session for an agent trigger (FIFO).
    * Returns null if no match found.
    */
-  matchAgentTrigger(agentName: string, sourceAgent: string): WaitingInstance | null {
+  matchAgentTrigger(agentName: string, sourceAgent: string): WaitingSession | null {
     const candidates = this.getByAgent(agentName)
       .filter((e) => e.filter.type === "agent-trigger")
       .sort((a, b) => a.registeredAt - b.registeredAt);
@@ -144,50 +144,50 @@ export class WaitingRegistry {
       // If sourceAgent is specified, it must match
       if (filter.sourceAgent && filter.sourceAgent !== sourceAgent) continue;
 
-      return this._removeAndCleanup(entry.instanceId);
+      return this._removeAndCleanup(entry.sessionId);
     }
 
     return null;
   }
 
   /**
-   * Remove a waiting instance by ID (for timeout/kill).
+   * Remove a waiting session by ID (for timeout/kill).
    */
-  remove(instanceId: string): WaitingInstance | null {
-    return this._removeAndCleanup(instanceId);
+  remove(sessionId: string): WaitingSession | null {
+    return this._removeAndCleanup(sessionId);
   }
 
   /**
-   * Get all waiting instances for a specific agent.
+   * Get all waiting sessions for a specific agent.
    */
-  getByAgent(agentName: string): WaitingInstance[] {
+  getByAgent(agentName: string): WaitingSession[] {
     return Array.from(this.entries.values()).filter((e) => e.agentName === agentName);
   }
 
   /**
-   * Get all waiting instances.
+   * Get all waiting sessions.
    */
-  getAll(): WaitingInstance[] {
+  getAll(): WaitingSession[] {
     return Array.from(this.entries.values());
   }
 
   /**
-   * Get the total number of waiting instances.
+   * Get the total number of waiting sessions.
    */
   count(): number {
     return this.entries.size;
   }
 
   /**
-   * Persist all waiting instances to the KV store.
+   * Persist all waiting sessions to the KV store.
    */
   async persist(store: PersistenceStore): Promise<void> {
     // Clear existing entries
     await store.kv.deleteAll(KV_NAMESPACE);
 
     for (const entry of this.entries.values()) {
-      const persisted: PersistedWaitingInstance = {
-        instanceId: entry.instanceId,
+      const persisted: PersistedWaitingSession = {
+        sessionId: entry.sessionId,
         agentName: entry.agentName,
         filter: entry.filter,
         deadline: entry.deadline,
@@ -196,38 +196,38 @@ export class WaitingRegistry {
         runtimeType: entry.runtimeType,
         cwd: entry.cwd,
       };
-      await store.kv.set(KV_NAMESPACE, entry.instanceId, persisted);
+      await store.kv.set(KV_NAMESPACE, entry.sessionId, persisted);
     }
   }
 
   /**
-   * Rehydrate waiting instances from the KV store.
+   * Rehydrate waiting sessions from the KV store.
    * Returns a new registry with loaded entries (no in-memory resolve/reject callbacks).
    */
   static async rehydrate(store: PersistenceStore): Promise<WaitingRegistry> {
     const registry = new WaitingRegistry();
-    const entries = await store.kv.list<PersistedWaitingInstance>(KV_NAMESPACE);
+    const entries = await store.kv.list<PersistedWaitingSession>(KV_NAMESPACE);
     const now = Date.now();
 
     for (const { value } of entries) {
       // Skip expired entries
       if (value.deadline <= now) {
-        await store.kv.delete(KV_NAMESPACE, value.instanceId);
+        await store.kv.delete(KV_NAMESPACE, value.sessionId);
         continue;
       }
 
-      const entry: WaitingInstance = {
+      const entry: WaitingSession = {
         ...value,
-        // No resolve/reject — cold restart instances get new runners on match
+        // No resolve/reject — cold restart sessions get new runners on match
       };
 
       // Start timeout timer for remaining time
       entry.timeoutTimer = setTimeout(() => {
-        registry.remove(entry.instanceId);
+        registry.remove(entry.sessionId);
       }, entry.deadline - now);
       entry.timeoutTimer.unref?.();
 
-      registry.entries.set(entry.instanceId, entry);
+      registry.entries.set(entry.sessionId, entry);
     }
 
     return registry;
@@ -236,11 +236,11 @@ export class WaitingRegistry {
   /**
    * Remove an entry and clean up its timeout timer.
    */
-  private _removeAndCleanup(instanceId: string): WaitingInstance | null {
-    const entry = this.entries.get(instanceId);
+  private _removeAndCleanup(sessionId: string): WaitingSession | null {
+    const entry = this.entries.get(sessionId);
     if (!entry) return null;
 
-    this.entries.delete(instanceId);
+    this.entries.delete(sessionId);
     if (entry.timeoutTimer) {
       clearTimeout(entry.timeoutTimer);
       entry.timeoutTimer = undefined;

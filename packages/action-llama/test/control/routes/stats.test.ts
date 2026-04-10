@@ -12,7 +12,7 @@ function mockStatsStore() {
   const stats = {
     queryRunsByAgentPaginated: vi.fn().mockReturnValue([]),
     countRunsByAgent: vi.fn().mockReturnValue(0),
-    queryRunByInstanceId: vi.fn().mockReturnValue(undefined),
+    queryRunBySessionId: vi.fn().mockReturnValue(undefined),
     getWebhookReceipt: vi.fn().mockReturnValue(undefined),
     getWebhookSourcesBatch: vi.fn().mockReturnValue({}),
     getWebhookDetailsBatch: vi.fn().mockReturnValue({}),
@@ -28,7 +28,7 @@ function mockStatsStore() {
 
 function mockStatusTracker(instances: any[] = [], agents: any[] = []) {
   return {
-    getInstances: vi.fn().mockReturnValue(instances),
+    getSessions: vi.fn().mockReturnValue(instances),
     getAllAgents: vi.fn().mockReturnValue(agents),
     isPaused: vi.fn().mockReturnValue(false),
   } as any;
@@ -43,7 +43,7 @@ function createApp(statsStore?: any, statusTracker?: any, controlDeps?: any) {
 describe("stats routes", () => {
   it("returns paginated runs for an agent", async () => {
     const stats = mockStatsStore();
-    stats.queryRunsByAgentPaginated.mockReturnValue([{ instance_id: "abc" }]);
+    stats.queryRunsByAgentPaginated.mockReturnValue([{ session_id: "abc" }]);
     stats.countRunsByAgent.mockReturnValue(1);
     const app = createApp(stats);
 
@@ -83,14 +83,14 @@ describe("stats routes", () => {
 
   it("returns single run by instance ID", async () => {
     const stats = mockStatsStore();
-    stats.queryRunByInstanceId.mockReturnValue({ instance_id: "abc", result: "completed" });
+    stats.queryRunBySessionId.mockReturnValue({ session_id: "abc", result: "completed" });
     const app = createApp(stats);
 
     const res = await app.request("/api/stats/agents/reporter/runs/abc");
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data.run.instance_id).toBe("abc");
-    expect(stats.queryRunByInstanceId).toHaveBeenCalledWith("abc");
+    expect(data.run.session_id).toBe("abc");
+    expect(stats.queryRunBySessionId).toHaveBeenCalledWith("abc");
   });
 
   it("returns null for missing instance", async () => {
@@ -173,7 +173,7 @@ describe("stats routes", () => {
 
     it("returns triggers from the stats store", async () => {
       const stats = mockStatsStore();
-      const trigger = { ts: 1000, triggerType: "schedule", agentName: "reporter", instanceId: "i1", result: "completed" };
+      const trigger = { ts: 1000, triggerType: "schedule", agentName: "reporter", sessionId: "i1", result: "completed" };
       stats.queryTriggerHistory.mockReturnValue([trigger]);
       stats.countTriggerHistory.mockReturnValue(1);
       const app = createApp(stats);
@@ -225,10 +225,10 @@ describe("stats routes", () => {
       );
     });
 
-    it("merges running instances from statusTracker into first page results", async () => {
+    it("merges running sessions from statusTracker into first page results", async () => {
       const stats = mockStatsStore();
       stats.queryTriggerHistory.mockReturnValue([
-        { ts: 500, triggerType: "schedule", agentName: "reporter", instanceId: "i1", result: "completed" },
+        { ts: 500, triggerType: "schedule", agentName: "reporter", sessionId: "i1", result: "completed" },
       ]);
       stats.countTriggerHistory.mockReturnValue(1);
 
@@ -252,12 +252,12 @@ describe("stats routes", () => {
 
       const running = data.triggers.find((t: any) => t.result === "running");
       expect(running).toBeDefined();
-      expect(running.instanceId).toBe("inst-running");
+      expect(running.sessionId).toBe("inst-running");
       expect(running.triggerType).toBe("manual");
       expect(running.triggerSource).toBe("user");
     });
 
-    it("does not merge running instances when offset > 0", async () => {
+    it("does not merge running sessions when offset > 0", async () => {
       const stats = mockStatsStore();
       stats.queryTriggerHistory.mockReturnValue([]);
       stats.countTriggerHistory.mockReturnValue(0);
@@ -270,12 +270,12 @@ describe("stats routes", () => {
       const res = await app.request("/api/stats/triggers?offset=10");
       const data = await res.json();
 
-      // Running instances should NOT be merged when offset > 0
+      // Running sessions should NOT be merged when offset > 0
       expect(data.triggers).toHaveLength(0);
       expect(data.total).toBe(0);
     });
 
-    it("filters running instances by agent when agent param is provided", async () => {
+    it("filters running sessions by agent when agent param is provided", async () => {
       const stats = mockStatsStore();
       stats.queryTriggerHistory.mockReturnValue([]);
       stats.countTriggerHistory.mockReturnValue(0);
@@ -291,7 +291,7 @@ describe("stats routes", () => {
       const data = await res.json();
 
       expect(data.triggers).toHaveLength(1);
-      expect(data.triggers[0].instanceId).toBe("inst-1");
+      expect(data.triggers[0].sessionId).toBe("inst-1");
     });
 
     it("handles trigger without colon separator (no triggerSource)", async () => {
@@ -311,7 +311,7 @@ describe("stats routes", () => {
       expect(data.triggers[0].triggerSource).toBeNull();
     });
 
-    it("filters running instances by triggerType when triggerType param is provided", async () => {
+    it("filters running sessions by triggerType when triggerType param is provided", async () => {
       const stats = mockStatsStore();
       stats.queryTriggerHistory.mockReturnValue([]);
       stats.countTriggerHistory.mockReturnValue(0);
@@ -327,7 +327,7 @@ describe("stats routes", () => {
       const data = await res.json();
 
       expect(data.triggers).toHaveLength(1);
-      expect(data.triggers[0].instanceId).toBe("inst-1");
+      expect(data.triggers[0].sessionId).toBe("inst-1");
       expect(data.triggers[0].triggerType).toBe("schedule");
     });
 
@@ -360,7 +360,7 @@ describe("stats routes", () => {
 
     it("returns jobs from the stats store", async () => {
       const stats = mockStatsStore();
-      const job = { ts: 1000, triggerType: "schedule", agentName: "reporter", instanceId: "j1", result: "completed" };
+      const job = { ts: 1000, triggerType: "schedule", agentName: "reporter", sessionId: "j1", result: "completed" };
       stats.queryTriggerHistory.mockReturnValue([job]);
       stats.countTriggerHistory.mockReturnValue(1);
       const app = createApp(stats);
@@ -388,9 +388,9 @@ describe("stats routes", () => {
       expect(stats.countTriggerHistory).toHaveBeenCalledWith(9999, false, "reporter");
     });
 
-    it("merges unique running instances from statusTracker on first page", async () => {
+    it("merges unique running sessions from statusTracker on first page", async () => {
       const stats = mockStatsStore();
-      const existingJob = { ts: 500, triggerType: "schedule", agentName: "reporter", instanceId: "existing-id", result: "completed" };
+      const existingJob = { ts: 500, triggerType: "schedule", agentName: "reporter", sessionId: "existing-id", result: "completed" };
       stats.queryTriggerHistory.mockReturnValue([existingJob]);
       stats.countTriggerHistory.mockReturnValue(1);
 
@@ -407,14 +407,14 @@ describe("stats routes", () => {
       // existing-id is in runs already, so only new-running-id is added
       expect(data.jobs).toHaveLength(2);
       expect(data.total).toBe(2);
-      const runningJob = data.jobs.find((j: any) => j.instanceId === "new-running-id");
+      const runningJob = data.jobs.find((j: any) => j.sessionId === "new-running-id");
       expect(runningJob).toBeDefined();
       expect(runningJob.result).toBe("running");
       expect(runningJob.triggerType).toBe("manual");
       expect(runningJob.triggerSource).toBe("user");
     });
 
-    it("does not merge running instances when offset > 0", async () => {
+    it("does not merge running sessions when offset > 0", async () => {
       const stats = mockStatsStore();
       stats.queryTriggerHistory.mockReturnValue([]);
       stats.countTriggerHistory.mockReturnValue(0);
@@ -430,7 +430,7 @@ describe("stats routes", () => {
       expect(data.total).toBe(0);
     });
 
-    it("filters running instances by agent when agent param is provided", async () => {
+    it("filters running sessions by agent when agent param is provided", async () => {
       const stats = mockStatsStore();
       stats.queryTriggerHistory.mockReturnValue([]);
       stats.countTriggerHistory.mockReturnValue(0);
@@ -446,7 +446,7 @@ describe("stats routes", () => {
       const data = await res.json();
 
       expect(data.jobs).toHaveLength(1);
-      expect(data.jobs[0].instanceId).toBe("inst-1");
+      expect(data.jobs[0].sessionId).toBe("inst-1");
     });
 
     it("reports pending counts from statusTracker agents", async () => {
@@ -527,8 +527,8 @@ describe("stats routes", () => {
 
     it("returns rows from the stats store including dead letters", async () => {
       const stats = mockStatsStore();
-      const completedRow = { ts: 1000, triggerType: "schedule", agentName: "reporter", instanceId: "i1", result: "completed", webhookReceiptId: null, deadLetterReason: null };
-      const deadLetterRow = { ts: 500, triggerType: "webhook", agentName: null, instanceId: null, result: "dead-letter", webhookReceiptId: "r1", deadLetterReason: "no_match" };
+      const completedRow = { ts: 1000, triggerType: "schedule", agentName: "reporter", sessionId: "i1", result: "completed", webhookReceiptId: null, deadLetterReason: null };
+      const deadLetterRow = { ts: 500, triggerType: "webhook", agentName: null, sessionId: null, result: "dead-letter", webhookReceiptId: "r1", deadLetterReason: "no_match" };
       stats.queryActivityRowsWithTotal.mockReturnValue({ rows: [completedRow, deadLetterRow], total: 2 });
       const app = createApp(stats);
 
@@ -543,11 +543,11 @@ describe("stats routes", () => {
       );
     });
 
-    it("merges running instances from statusTracker", async () => {
+    it("merges running sessions from statusTracker", async () => {
       const stats = mockStatsStore();
       stats.queryActivityRowsWithTotal.mockReturnValue({
         rows: [
-          { ts: 500, triggerType: "schedule", agentName: "reporter", instanceId: "i1", result: "completed" },
+          { ts: 500, triggerType: "schedule", agentName: "reporter", sessionId: "i1", result: "completed" },
         ],
         total: 1,
       });
@@ -563,7 +563,7 @@ describe("stats routes", () => {
       expect(data.rows).toHaveLength(2);
       const running = data.rows.find((r: any) => r.result === "running");
       expect(running).toBeDefined();
-      expect(running.instanceId).toBe("inst-running");
+      expect(running.sessionId).toBe("inst-running");
       expect(running.triggerType).toBe("webhook");
       expect(running.triggerSource).toBe("github");
     });
@@ -594,7 +594,7 @@ describe("stats routes", () => {
       expect(pending).toBeDefined();
       expect(pending.triggerType).toBe("webhook");
       expect(pending.triggerSource).toBe("github");
-      expect(pending.instanceId).toBeNull();
+      expect(pending.sessionId).toBeNull();
       expect(pending.agentName).toBe("reporter");
     });
 
@@ -657,7 +657,7 @@ describe("stats routes", () => {
       // With status=dead-letter, queryActivityRowsWithTotal is called with dbStatuses=['dead-letter']
       stats.queryActivityRowsWithTotal.mockReturnValue({
         rows: [
-          { ts: 500, triggerType: "webhook", agentName: null, instanceId: null, result: "dead-letter", webhookReceiptId: "r1", deadLetterReason: "no_match" },
+          { ts: 500, triggerType: "webhook", agentName: null, sessionId: null, result: "dead-letter", webhookReceiptId: "r1", deadLetterReason: "no_match" },
         ],
         total: 1,
       });
@@ -678,7 +678,7 @@ describe("stats routes", () => {
       const stats = mockStatsStore();
       stats.queryActivityRowsWithTotal.mockReturnValue({
         rows: [
-          { ts: 1000, triggerType: "schedule", agentName: "reporter", instanceId: "i1", result: "completed" },
+          { ts: 1000, triggerType: "schedule", agentName: "reporter", sessionId: "i1", result: "completed" },
         ],
         total: 1,
       });
@@ -695,8 +695,8 @@ describe("stats routes", () => {
       const stats = mockStatsStore();
       stats.queryActivityRowsWithTotal.mockReturnValue({
         rows: [
-          { ts: 1000, triggerType: "schedule", agentName: "reporter", instanceId: "i1", result: "completed" },
-          { ts: 300, triggerType: "webhook", agentName: "reporter", instanceId: "i2", result: "error" },
+          { ts: 1000, triggerType: "schedule", agentName: "reporter", sessionId: "i1", result: "completed" },
+          { ts: 300, triggerType: "webhook", agentName: "reporter", sessionId: "i2", result: "error" },
         ],
         total: 2,
       });
@@ -722,8 +722,8 @@ describe("stats routes", () => {
       const stats = mockStatsStore();
       stats.queryActivityRowsWithTotal.mockReturnValue({
         rows: [
-          { ts: 5000, triggerType: "schedule", agentName: "reporter", instanceId: "i-completed", result: "completed" },
-          { ts: 1000, triggerType: "webhook", agentName: "reporter", instanceId: "i-error", result: "error" },
+          { ts: 5000, triggerType: "schedule", agentName: "reporter", sessionId: "i-completed", result: "completed" },
+          { ts: 1000, triggerType: "webhook", agentName: "reporter", sessionId: "i-error", result: "error" },
         ],
         total: 2,
       });
@@ -757,8 +757,8 @@ describe("stats routes", () => {
       // With offset=1, limit=2, no mem rows: DB is queried with offset=1, limit=2
       stats.queryActivityRowsWithTotal.mockReturnValue({
         rows: [
-          { ts: 2000, result: "completed", triggerType: "schedule", agentName: "a", instanceId: "i2" },
-          { ts: 1000, result: "completed", triggerType: "schedule", agentName: "a", instanceId: "i3" },
+          { ts: 2000, result: "completed", triggerType: "schedule", agentName: "a", sessionId: "i2" },
+          { ts: 1000, result: "completed", triggerType: "schedule", agentName: "a", sessionId: "i3" },
         ],
         total: 3,
       });
@@ -770,14 +770,14 @@ describe("stats routes", () => {
 
       expect(data.total).toBe(3);
       expect(data.rows).toHaveLength(2);
-      expect(data.rows[0].instanceId).toBe("i2");
+      expect(data.rows[0].sessionId).toBe("i2");
       // Verify DB was called with correct SQL-level pagination
       expect(stats.queryActivityRowsWithTotal).toHaveBeenCalledWith(
         expect.objectContaining({ limit: 2, offset: 1 })
       );
     });
 
-    it("filters out non-running instances from statusTracker in activity endpoint", async () => {
+    it("filters out non-running sessions from statusTracker in activity endpoint", async () => {
       const stats = mockStatsStore();
       stats.queryActivityRowsWithTotal.mockReturnValue({ rows: [], total: 0 });
 
@@ -794,7 +794,7 @@ describe("stats routes", () => {
       // Only the running instance should be merged in
       const runningRows = data.rows.filter((r: any) => r.result === "running");
       expect(runningRows).toHaveLength(1);
-      expect(runningRows[0].instanceId).toBe("r1");
+      expect(runningRows[0].sessionId).toBe("r1");
     });
 
     it("filters workQueue items by agent when agent param is provided", async () => {
@@ -929,7 +929,7 @@ describe("stats routes", () => {
   });
 
   describe("GET /api/stats/triggers - non-running instance filter", () => {
-    it("filters out non-running instances from statusTracker in triggers endpoint", async () => {
+    it("filters out non-running sessions from statusTracker in triggers endpoint", async () => {
       const stats = mockStatsStore();
       stats.queryTriggerHistory.mockReturnValue([]);
       stats.countTriggerHistory.mockReturnValue(0);
@@ -946,12 +946,12 @@ describe("stats routes", () => {
       // Only the running instance should be merged in
       const runningItems = data.triggers.filter((t: any) => t.result === "running");
       expect(runningItems).toHaveLength(1);
-      expect(runningItems[0].instanceId).toBe("r1");
+      expect(runningItems[0].sessionId).toBe("r1");
     });
   });
 
   describe("GET /api/stats/jobs - non-running instance filter", () => {
-    it("filters out non-running instances from statusTracker in jobs endpoint", async () => {
+    it("filters out non-running sessions from statusTracker in jobs endpoint", async () => {
       const stats = mockStatsStore();
       stats.queryTriggerHistory.mockReturnValue([]);
       stats.countTriggerHistory.mockReturnValue(0);
@@ -968,10 +968,10 @@ describe("stats routes", () => {
       // Only the running instance should be merged in
       const runningJobs = data.jobs.filter((j: any) => j.result === "running");
       expect(runningJobs).toHaveLength(1);
-      expect(runningJobs[0].instanceId).toBe("j1");
+      expect(runningJobs[0].sessionId).toBe("j1");
     });
 
-    it("includes all running instances regardless of trigger type in jobs endpoint", async () => {
+    it("includes all running sessions regardless of trigger type in jobs endpoint", async () => {
       const stats = mockStatsStore();
       stats.queryTriggerHistory.mockReturnValue([]);
       stats.countTriggerHistory.mockReturnValue(0);
@@ -985,14 +985,14 @@ describe("stats routes", () => {
       const res = await app.request("/api/stats/jobs");
       const data = await res.json();
 
-      // Both running instances should be included since jobs doesn't filter by triggerType
+      // Both running sessions should be included since jobs doesn't filter by triggerType
       const runningJobs = data.jobs.filter((j: any) => j.result === "running");
       expect(runningJobs).toHaveLength(2);
     });
   });
 
   describe("GET /api/stats/activity — filter coverage for uncovered paths", () => {
-    it("filters running instances by agentName in activity endpoint (L171)", async () => {
+    it("filters running sessions by agentName in activity endpoint (L171)", async () => {
       const stats = mockStatsStore();
       stats.queryActivityRowsWithTotal.mockReturnValue({ rows: [], total: 0 });
 
@@ -1011,7 +1011,7 @@ describe("stats routes", () => {
       expect(runningRows.every((r: any) => r.agentName === "reporter")).toBe(true);
     });
 
-    it("filters running instances by triggerType in activity endpoint (L172-175)", async () => {
+    it("filters running sessions by triggerType in activity endpoint (L172-175)", async () => {
       const stats = mockStatsStore();
       stats.queryActivityRowsWithTotal.mockReturnValue({ rows: [], total: 0 });
 
@@ -1040,7 +1040,7 @@ describe("stats routes", () => {
             triggerType: "webhook",
             triggerSource: "github",  // enriched from webhook_receipts.source
             agentName: "reporter",
-            instanceId: "i-wh",
+            sessionId: "i-wh",
             result: "completed",
             webhookReceiptId: "receipt-1",
             deadLetterReason: null,
@@ -1055,7 +1055,7 @@ describe("stats routes", () => {
       expect(res.status).toBe(200);
       const data = await res.json();
 
-      const webhookRow = data.rows.find((r: any) => r.instanceId === "i-wh");
+      const webhookRow = data.rows.find((r: any) => r.sessionId === "i-wh");
       expect(webhookRow).toBeDefined();
       // triggerSource should be set from the database enrichment
       expect(webhookRow.triggerSource).toBe("github");
@@ -1073,7 +1073,7 @@ describe("stats routes", () => {
             triggerType: "webhook",
             triggerSource: "github",  // enriched from webhook_receipts.source
             agentName: "reporter",
-            instanceId: "i-wh2",
+            sessionId: "i-wh2",
             result: "completed",
             webhookReceiptId: "receipt-2",
             deadLetterReason: null,
@@ -1088,7 +1088,7 @@ describe("stats routes", () => {
       expect(res.status).toBe(200);
       const data = await res.json();
 
-      const webhookRow = data.rows.find((r: any) => r.instanceId === "i-wh2");
+      const webhookRow = data.rows.find((r: any) => r.sessionId === "i-wh2");
       expect(webhookRow).toBeDefined();
       expect(webhookRow.triggerSource).toBe("github");
       // eventSummary should NOT be set since it equals source
@@ -1127,7 +1127,7 @@ describe("stats routes", () => {
       const stats = mockStatsStore();
       stats.queryActivityRowsWithTotal.mockReturnValue({
         rows: [
-          { ts: 1000, triggerType: "schedule", agentName: "reporter", instanceId: "i1", result: "completed" },
+          { ts: 1000, triggerType: "schedule", agentName: "reporter", sessionId: "i1", result: "completed" },
         ],
         total: 1,
       });
@@ -1178,7 +1178,7 @@ describe("stats routes", () => {
 
   describe("GET /api/stats/activity — dbLimit=0 path (page filled by memory rows)", () => {
     it("falls into else branch and calls countActivityRows to get total when page is all memory rows", async () => {
-      // Set up 3 running instances so they fill the in-memory rows
+      // Set up 3 running sessions so they fill the in-memory rows
       const instances = [
         { id: "run-1", agentName: "reporter", status: "running", trigger: "schedule", startedAt: new Date(3000).toISOString() },
         { id: "run-2", agentName: "reporter", status: "running", trigger: "schedule", startedAt: new Date(2000).toISOString() },

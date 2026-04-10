@@ -114,7 +114,7 @@ describe("integration: gateway/routes/system.ts registerSystemRoutes() (no Docke
     const mockStatusTracker = {
       getAgentInfos: vi.fn(() => []),
       getSchedulerInfo: vi.fn(() => null),
-      getAllInstances: vi.fn(() => []),
+      getAllSessions: vi.fn(() => []),
     };
 
     registerSystemRoutes(app, {

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "../hooks/useQuery";
-import { useAgents, useInstances } from "../hooks/StatusStreamContext";
+import { useAgents, useSessions } from "../hooks/StatusStreamContext";
 import { TriggerTypeBadge, ResultBadge } from "../components/Badge";
 import { getJobs } from "../lib/api";
 import type { JobRow } from "../lib/api";
@@ -16,7 +16,7 @@ export function JobsPage() {
 
   const [offset, setOffset] = useState(0);
   const agents = useAgents();
-  const instances = useInstances();
+  const sessions = useSessions();
   const agentNames = agents.map((a) => a.name);
 
   const { data, isLoading } = useQuery<{ jobs: JobRow[]; total: number; pending: Record<string, number>; totalPending: number }>({
@@ -53,7 +53,7 @@ export function JobsPage() {
   const mergedJobs = useMemo(() => {
     // Only include running instances on the first page
     if (offset > 0) return jobs;
-    const running: JobRow[] = instances
+    const running: JobRow[] = sessions
       .filter((inst) => {
         if (inst.status !== "running") return false;
         if (agentFilter && inst.agentName !== agentFilter) return false;
@@ -66,18 +66,18 @@ export function JobsPage() {
           triggerType: sep > -1 ? inst.trigger.slice(0, sep) : inst.trigger,
           triggerSource: sep > -1 ? inst.trigger.slice(sep + 1).trim() : null,
           agentName: inst.agentName,
-          instanceId: inst.id,
+          sessionId: inst.id,
           result: "running",
           webhookReceiptId: null,
           deadLetterReason: null,
         };
       });
-    const apiIds = new Set(jobs.map((j) => j.instanceId));
-    const unique = running.filter((r) => !apiIds.has(r.instanceId));
+    const apiIds = new Set(jobs.map((j) => j.sessionId));
+    const unique = running.filter((r) => !apiIds.has(r.sessionId));
     return [...unique, ...jobs].sort((a, b) => b.ts - a.ts);
-  }, [instances, jobs, offset, agentFilter]);
+  }, [sessions, jobs, offset, agentFilter]);
 
-  const runningCount = instances.filter((i) => {
+  const runningCount = sessions.filter((i) => {
     if (i.status !== "running") return false;
     if (agentFilter && i.agentName !== agentFilter) return false;
     return true;
@@ -166,13 +166,13 @@ export function JobsPage() {
                           </span>
                         )}
                       </div>
-                      {j.instanceId && (
+                      {j.sessionId && (
                         <Link
-                          to={`/dashboard/triggers/${encodeURIComponent(j.instanceId)}`}
+                          to={`/dashboard/triggers/${encodeURIComponent(j.sessionId)}`}
                           className="font-mono text-xs text-blue-600 dark:text-blue-400 hover:underline"
-                          title={j.instanceId}
+                          title={j.sessionId}
                         >
-                          {shortId(j.instanceId)}
+                          {shortId(j.sessionId)}
                         </Link>
                       )}
                     </div>
@@ -180,8 +180,8 @@ export function JobsPage() {
                   <td className="px-4 py-2.5">
                     {j.agentName ? (
                       <Link
-                        to={j.instanceId
-                          ? `/dashboard/agents/${encodeURIComponent(j.agentName)}/instances/${encodeURIComponent(j.instanceId)}`
+                        to={j.sessionId
+                          ? `/dashboard/agents/${encodeURIComponent(j.agentName)}/sessions/${encodeURIComponent(j.sessionId)}`
                           : `/dashboard/agents/${encodeURIComponent(j.agentName)}`}
                         className="hover:underline text-xs flex items-center gap-1.5"
                       >

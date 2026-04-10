@@ -13,7 +13,7 @@ async function login(page: Page) {
 
 /** Reset server state to idle via control APIs. */
 async function resetState(request: APIRequestContext) {
-  // Kill any running instances
+  // Kill any running sessions
   await Promise.all([
     request.post("/control/agents/single-agent/kill", { headers: AUTH }),
     request.post("/control/agents/scaled-agent/kill", { headers: AUTH }),
@@ -270,11 +270,11 @@ test.describe("Agent detail", () => {
     await expect(page.locator("#history-body")).toContainText("No run history", { timeout: 5000 });
   });
 
-  test("running instances section hidden when no instances", async ({ page }) => {
+  test("running sessions section hidden when no instances", async ({ page }) => {
     await expect(page.locator("#running-section")).toBeHidden();
   });
 
-  test("running instances section appears after trigger", async ({ page }) => {
+  test("running sessions section appears after trigger", async ({ page }) => {
     await page.click("button:has-text('Run')");
     await expect(page.locator("#running-section")).toBeVisible({ timeout: 5000 });
     await expect(page.locator("#running-instances")).toBeVisible();

@@ -53,7 +53,7 @@ function makeTempDbPath(): string {
 
 function makeRun(overrides: Record<string, unknown> = {}) {
   return {
-    instanceId: randomUUID(),
+    sessionId: randomUUID(),
     agentName: "test-agent",
     triggerType: "manual",
     result: "completed",
@@ -78,13 +78,13 @@ describe("stats/store.ts queryActivityRowsWithTotal() (no Docker required)", { t
 
   it("single run returned with correct fields", () => {
     const store = new StatsStore(makeTempDbPath());
-    const instanceId = randomUUID();
-    store.recordRun(makeRun({ instanceId, agentName: "my-agent", triggerType: "schedule", result: "completed" }));
+    const sessionId = randomUUID();
+    store.recordRun(makeRun({ sessionId, agentName: "my-agent", triggerType: "schedule", result: "completed" }));
 
     const { rows, total } = store.queryActivityRowsWithTotal({ limit: 50, offset: 0, includeDeadLetters: false });
     expect(total).toBe(1);
     expect(rows).toHaveLength(1);
-    expect(rows[0].instanceId).toBe(instanceId);
+    expect(rows[0].sessionId).toBe(sessionId);
     expect(rows[0].agentName).toBe("my-agent");
     expect(rows[0].triggerType).toBe("schedule");
     expect(rows[0].result).toBe("completed");
@@ -214,9 +214,9 @@ describe("stats/store.ts queryActivityRowsWithTotal() (no Docker required)", { t
 
   it("summary field is propagated in rows", () => {
     const store = new StatsStore(makeTempDbPath());
-    const instanceId = randomUUID();
-    store.recordRun(makeRun({ instanceId }));
-    store.updateRunSummary(instanceId, "Agent completed successfully");
+    const sessionId = randomUUID();
+    store.recordRun(makeRun({ sessionId }));
+    store.updateRunSummary(sessionId, "Agent completed successfully");
 
     const { rows } = store.queryActivityRowsWithTotal({ limit: 50, offset: 0, includeDeadLetters: false });
     expect(rows).toHaveLength(1);

@@ -202,7 +202,7 @@ describe("TransportAgentRunner", () => {
     expect(typeof runner.run).toBe("function");
     expect(typeof runner.abort).toBe("function");
     expect(typeof runner.isRunning).toBe("boolean");
-    expect(typeof runner.instanceId).toBe("string");
+    expect(typeof runner.sessionId).toBe("string");
   });
 
   it("provisions a container and connects transport", async () => {
@@ -411,7 +411,7 @@ describe("TransportAgentRunner", () => {
     expect(outcome.result).toBe("completed");
   });
 
-  it("generates unique instance IDs", async () => {
+  it("generates unique session IDs", async () => {
     const runner = new TransportAgentRunner({
       globalConfig: makeGlobalConfig(),
       agentConfig: makeAgentConfig(),
@@ -422,10 +422,10 @@ describe("TransportAgentRunner", () => {
     });
 
     await runner.run("Test 1");
-    const id1 = runner.instanceId;
+    const id1 = runner.sessionId;
 
     await runner.run("Test 2");
-    const id2 = runner.instanceId;
+    const id2 = runner.sessionId;
 
     expect(id1).not.toBe(id2);
     expect(id1).toMatch(/^test-agent-/);

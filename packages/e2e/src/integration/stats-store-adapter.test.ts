@@ -11,7 +11,7 @@
  *   - updateCallEdge(id, updates) — fire-and-forget edge update
  *   - queryRunsByAgentPaginated(agent, limit, offset) — paginated runs
  *   - countRunsByAgent(agent) — count runs for agent
- *   - queryRunByInstanceId(instanceId) — lookup by instance
+ *   - queryRunBySessionId(sessionId) — lookup by instance
  *   - queryRuns(query)       — general run query
  *   - queryAgentSummary(query) — per-agent aggregated stats
  *   - queryGlobalSummary(since) — overall aggregated stats
@@ -34,7 +34,7 @@
  *   - shared/persistence/adapters/stats-store.ts: queryRuns() with since filter → []
  *   - shared/persistence/adapters/stats-store.ts: queryRunsByAgentPaginated() → []
  *   - shared/persistence/adapters/stats-store.ts: countRunsByAgent() → 0
- *   - shared/persistence/adapters/stats-store.ts: queryRunByInstanceId() → undefined
+ *   - shared/persistence/adapters/stats-store.ts: queryRunBySessionId() → undefined
  *   - shared/persistence/adapters/stats-store.ts: queryAgentSummary() empty → []
  *   - shared/persistence/adapters/stats-store.ts: queryGlobalSummary() empty → zero-or-null counts
  *   - shared/persistence/adapters/stats-store.ts: queryCallGraph() empty → []
@@ -73,7 +73,7 @@ afterAll(() => {
 
 function makeRunRecord(overrides: Record<string, any> = {}) {
   return {
-    instanceId: "inst-" + Math.random().toString(36).slice(2, 10),
+    sessionId: "inst-" + Math.random().toString(36).slice(2, 10),
     agentName: "test-agent",
     triggerType: "schedule",
     triggerSource: undefined,
@@ -95,9 +95,9 @@ function makeRunRecord(overrides: Record<string, any> = {}) {
 function makeCallEdgeRecord(overrides: Record<string, any> = {}) {
   return {
     callerAgent: "caller-agent",
-    callerInstance: "caller-inst-001",
+    callerSession: "caller-inst-001",
     targetAgent: "target-agent",
-    targetInstance: "target-inst-001",
+    targetSession: "target-inst-001",
     depth: 1,
     startedAt: Date.now() - 3000,
     ...overrides,
@@ -172,8 +172,8 @@ describe("integration: StatsStoreAdapter (no Docker required)", { timeout: 15_00
     expect(count).toBe(0);
   });
 
-  it("queryRunByInstanceId() returns undefined for unknown instanceId", async () => {
-    const result = await adapter.queryRunByInstanceId("nonexistent-inst-id");
+  it("queryRunBySessionId() returns undefined for unknown sessionId", async () => {
+    const result = await adapter.queryRunBySessionId("nonexistent-inst-id");
     expect(result).toBeUndefined();
   });
 

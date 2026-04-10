@@ -262,9 +262,9 @@ describe("StatusTracker", () => {
     expect(agent.lastError).toBe("Session failed");
   });
 
-  it("createInstance + startRun does not double-count runningCount (scale > 1)", () => {
-    // Regression: lifecycle event listeners in createInstance() used to set
-    // agent.runningCount = lifecycle.runningInstanceCount, but the runner
+  it("createSession + startRun does not double-count runningCount (scale > 1)", () => {
+    // Regression: lifecycle event listeners in createSession() used to set
+    // agent.runningCount = lifecycle.runningSessionCount, but the runner
     // also calls startRun() which increments runningCount. For scale=2 agents
     // this caused the dashboard to show "running 2/2" when only 1 instance
     // was actually started.
@@ -273,11 +273,11 @@ describe("StatusTracker", () => {
 
     // Simulate the real execution flow:
     // 1. runWithReruns creates an instance lifecycle
-    const instanceLifecycle = tracker.createInstance("dev-abc123", "dev", "schedule");
-    expect(instanceLifecycle).not.toBeNull();
+    const sessionLifecycle = tracker.createSession("dev-abc123", "dev", "schedule");
+    expect(sessionLifecycle).not.toBeNull();
 
-    // 2. executeRun calls instanceLifecycle.start()
-    instanceLifecycle!.start();
+    // 2. executeRun calls sessionLifecycle.start()
+    sessionLifecycle!.start();
 
     // 3. runner.run() internally calls statusTracker.startRun()
     tracker.startRun("dev");
@@ -288,18 +288,18 @@ describe("StatusTracker", () => {
     expect(agent.state).toBe("running");
   });
 
-  it("createInstance + endRun correctly reaches zero for scale > 1", () => {
+  it("createSession + endRun correctly reaches zero for scale > 1", () => {
     const tracker = new StatusTracker();
     tracker.registerAgent("dev", 2);
 
     // Start a run through both paths
-    const instanceLifecycle = tracker.createInstance("dev-abc123", "dev", "schedule");
-    instanceLifecycle!.start();
+    const sessionLifecycle = tracker.createSession("dev-abc123", "dev", "schedule");
+    sessionLifecycle!.start();
     tracker.startRun("dev");
 
     // End the run through both paths (runner endRun first, then lifecycle complete)
     tracker.endRun("dev", 5000);
-    instanceLifecycle!.complete();
+    sessionLifecycle!.complete();
 
     const agent = tracker.getAllAgents()[0];
     expect(agent.runningCount).toBe(0);
@@ -456,16 +456,16 @@ describe("StatusTracker", () => {
     expect(configSignals).toHaveLength(1);
   });
 
-  it("completeInstance emits instance and runs signals", () => {
+  it("completeSession emits instance and runs signals", () => {
     const tracker = new StatusTracker();
     tracker.registerAgent("dev");
-    tracker.registerInstance({ id: "inst-1", agentName: "dev", status: "running", startedAt: new Date().toISOString(), trigger: "schedule" } as any);
+    tracker.registerSession({ id: "inst-1", agentName: "dev", status: "running", startedAt: new Date().toISOString(), trigger: "schedule" } as any);
     tracker.flushInvalidations(); // clear
 
-    tracker.completeInstance("inst-1", "completed");
+    tracker.completeSession("inst-1", "completed");
 
     const signals = tracker.flushInvalidations();
-    expect(signals).toContainEqual({ type: "instance", agent: "dev", instanceId: "inst-1" });
+    expect(signals).toContainEqual({ type: "instance", agent: "dev", sessionId: "inst-1" });
     expect(signals).toContainEqual({ type: "runs", agent: "dev" });
   });
 
@@ -481,7 +481,7 @@ describe("StatusTracker", () => {
 
   it("startRun allows runningCount to exceed scale (no clamping)", () => {
     // During scale transitions or race conditions, runningCount should reflect
-    // the actual number of running instances — not be capped at scale.
+    // the actual number of running sessions — not be capped at scale.
     const tracker = new StatusTracker();
     tracker.registerAgent("dev", 2);
 
@@ -531,12 +531,12 @@ describe("StatusTracker", () => {
     tracker.registerAgent("dev", 2);
 
     // Start first instance
-    const instance1 = tracker.createInstance("dev-001", "dev", "schedule");
+    const instance1 = tracker.createSession("dev-001", "dev", "schedule");
     instance1!.start();
     tracker.startRun("dev");
 
     // Start second instance
-    const instance2 = tracker.createInstance("dev-002", "dev", "webhook:push");
+    const instance2 = tracker.createSession("dev-002", "dev", "webhook:push");
     instance2!.start();
     tracker.startRun("dev");
 
@@ -653,11 +653,11 @@ describe("StatusTracker", () => {
 
   // ── instance lifecycle ────────────────────────────────────────────────────
 
-  it("registerInstance and unregisterInstance track instances", () => {
+  it("registerSession and unregisterSession track instances", () => {
     const tracker = new StatusTracker();
     tracker.registerAgent("dev");
 
-    tracker.registerInstance({
+    tracker.registerSession({
       id: "dev-abc123",
       agentName: "dev",
       status: "running",
@@ -665,11 +665,11 @@ describe("StatusTracker", () => {
       trigger: "schedule",
     });
 
-    expect(tracker.getInstances()).toHaveLength(1);
-    expect(tracker.getInstances()[0].id).toBe("dev-abc123");
+    expect(tracker.getSessions()).toHaveLength(1);
+    expect(tracker.getSessions()[0].id).toBe("dev-abc123");
 
-    tracker.unregisterInstance("dev-abc123");
-    expect(tracker.getInstances()).toHaveLength(0);
+    tracker.unregisterSession("dev-abc123");
+    expect(tracker.getSessions()).toHaveLength(0);
   });
 
   // ── setPaused / isPaused ──────────────────────────────────────────────────
@@ -825,9 +825,9 @@ describe("StatusTracker", () => {
     expect(tracker.getAllAgents()).toHaveLength(0);
   });
 
-  it("completeInstance is safe for unknown instance id", () => {
+  it("completeSession is safe for unknown instance id", () => {
     const tracker = new StatusTracker();
-    expect(() => tracker.completeInstance("nonexistent-instance", "completed")).not.toThrow();
+    expect(() => tracker.completeSession("nonexistent-instance", "completed")).not.toThrow();
   });
 
   it("updateAgentScale is safe for unknown agent", () => {
@@ -836,9 +836,9 @@ describe("StatusTracker", () => {
     expect(tracker.getAllAgents()).toHaveLength(0);
   });
 
-  it("createInstance returns null for unknown agent", () => {
+  it("createSession returns null for unknown agent", () => {
     const tracker = new StatusTracker();
-    const result = tracker.createInstance("inst-1", "nonexistent", "schedule");
+    const result = tracker.createSession("inst-1", "nonexistent", "schedule");
     expect(result).toBeNull();
   });
 
@@ -890,38 +890,38 @@ describe("StatusTracker", () => {
     expect(listener).toHaveBeenCalled();
   });
 
-  // ── instance lifecycle event handlers in createInstance ──────────────────
+  // ── instance lifecycle event handlers in createSession ──────────────────
 
-  it("instance:error event on InstanceLifecycle emits tracker update", () => {
+  it("session:error event on SessionLifecycle emits tracker update", () => {
     const tracker = new StatusTracker();
     tracker.registerAgent("dev");
 
-    const instanceLifecycle = tracker.createInstance("dev-err1", "dev", "schedule");
-    expect(instanceLifecycle).not.toBeNull();
+    const sessionLifecycle = tracker.createSession("dev-err1", "dev", "schedule");
+    expect(sessionLifecycle).not.toBeNull();
 
-    instanceLifecycle!.start();
+    sessionLifecycle!.start();
 
     const listener = vi.fn();
     tracker.on("update", listener);
     listener.mockClear();
 
-    instanceLifecycle!.fail("container exited with code 1");
+    sessionLifecycle!.fail("container exited with code 1");
 
     expect(listener).toHaveBeenCalled();
   });
 
-  it("instance:kill event on InstanceLifecycle emits tracker update", () => {
+  it("session:kill event on SessionLifecycle emits tracker update", () => {
     const tracker = new StatusTracker();
     tracker.registerAgent("dev");
 
-    const instanceLifecycle = tracker.createInstance("dev-kill1", "dev", "schedule");
-    expect(instanceLifecycle).not.toBeNull();
+    const sessionLifecycle = tracker.createSession("dev-kill1", "dev", "schedule");
+    expect(sessionLifecycle).not.toBeNull();
 
     const listener = vi.fn();
     tracker.on("update", listener);
     listener.mockClear();
 
-    instanceLifecycle!.kill("shutting down");
+    sessionLifecycle!.kill("shutting down");
 
     expect(listener).toHaveBeenCalled();
   });

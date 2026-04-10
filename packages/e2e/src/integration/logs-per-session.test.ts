@@ -1,13 +1,13 @@
 /**
  * Integration test: verify the per-instance log API endpoint.
  *
- * The GET /api/logs/agents/:name/:instanceId endpoint returns log entries
+ * The GET /api/logs/agents/:name/:sessionId endpoint returns log entries
  * filtered to a specific run instance. This is used by the dashboard UI to
  * show logs for a specific run.
  *
  * Covers:
- *   - control/routes/logs.ts: GET /api/logs/agents/:name/:instanceId
- *   - instanceFilter parameter in readEntriesForward / readLastEntries
+ *   - control/routes/logs.ts: GET /api/logs/agents/:name/:sessionId
+ *   - sessionFilter parameter in readEntriesForward / readLastEntries
  *   - 400 for invalid agent name or instance ID pattern
  */
 import { describe, it, expect, afterEach } from "vitest";
@@ -28,7 +28,7 @@ describe.skipIf(!DOCKER)("integration: per-instance log API", { timeout: 180_000
     });
   }
 
-  it("GET /api/logs/agents/:name/:instanceId returns log entries for a specific run", async () => {
+  it("GET /api/logs/agents/:name/:sessionId returns log entries for a specific run", async () => {
     harness = await IntegrationHarness.create({
       agents: [
         {
@@ -45,7 +45,7 @@ describe.skipIf(!DOCKER)("integration: per-instance log API", { timeout: 180_000
 
     await harness.start();
 
-    // Listen for the run:end event to capture the instanceId.
+    // Listen for the run:end event to capture the sessionId.
     const runEndPromise = harness.events.waitFor(
       "run:end",
       (e) => e.agentName === "instance-log-agent",
@@ -58,11 +58,11 @@ describe.skipIf(!DOCKER)("integration: per-instance log API", { timeout: 180_000
     // Wait a bit for logs to be flushed to disk.
     await new Promise((r) => setTimeout(r, 500));
 
-    const instanceId = runEndEvent.instanceId;
-    expect(instanceId).toBeTruthy();
+    const sessionId = runEndEvent.sessionId;
+    expect(sessionId).toBeTruthy();
 
     // Fetch per-instance logs.
-    const res = await logsAPI(harness, `/api/logs/agents/instance-log-agent/${instanceId}`);
+    const res = await logsAPI(harness, `/api/logs/agents/instance-log-agent/${sessionId}`);
     expect(res.status).toBe(200);
 
     const body = await res.json() as { entries: unknown[]; cursor: string | null; hasMore: boolean };
@@ -71,7 +71,7 @@ describe.skipIf(!DOCKER)("integration: per-instance log API", { timeout: 180_000
     expect(typeof body.hasMore).toBe("boolean");
   });
 
-  it("GET /api/logs/agents/:name/:instanceId returns empty entries for unknown instanceId", async () => {
+  it("GET /api/logs/agents/:name/:sessionId returns empty entries for unknown sessionId", async () => {
     harness = await IntegrationHarness.create({
       agents: [
         {
@@ -89,7 +89,7 @@ describe.skipIf(!DOCKER)("integration: per-instance log API", { timeout: 180_000
     await harness.waitForRunResult("instance-log-empty-agent", 120_000);
     await new Promise((r) => setTimeout(r, 500));
 
-    // Query with an instanceId that doesn't match any run entries.
+    // Query with an sessionId that doesn't match any run entries.
     const unknownInstanceId = "nonexistent-instance-abc123";
     const res = await logsAPI(harness, `/api/logs/agents/instance-log-empty-agent/${unknownInstanceId}`);
 
@@ -101,7 +101,7 @@ describe.skipIf(!DOCKER)("integration: per-instance log API", { timeout: 180_000
     expect(body.entries.length).toBe(0);
   });
 
-  it("GET /api/logs/agents/:name/:instanceId returns 400 for invalid instance ID", async () => {
+  it("GET /api/logs/agents/:name/:sessionId returns 400 for invalid instance ID", async () => {
     harness = await IntegrationHarness.create({
       agents: [
         {
@@ -122,7 +122,7 @@ describe.skipIf(!DOCKER)("integration: per-instance log API", { timeout: 180_000
     expect([400, 404]).toContain(res.status);
   });
 
-  it("GET /api/logs/agents/:name/:instanceId returns 400 for invalid agent name", async () => {
+  it("GET /api/logs/agents/:name/:sessionId returns 400 for invalid agent name", async () => {
     harness = await IntegrationHarness.create({
       agents: [
         {
@@ -143,7 +143,7 @@ describe.skipIf(!DOCKER)("integration: per-instance log API", { timeout: 180_000
     expect([400, 404]).toContain(res.status);
   });
 
-  it("GET /api/logs/agents/:name/:instanceId with ?grep=invalid returns 400", async () => {
+  it("GET /api/logs/agents/:name/:sessionId with ?grep=invalid returns 400", async () => {
     // The per-instance logs endpoint validates ?grep regex just like the agent and
     // scheduler logs endpoints. An invalid regex should return 400.
     harness = await IntegrationHarness.create({
@@ -171,7 +171,7 @@ describe.skipIf(!DOCKER)("integration: per-instance log API", { timeout: 180_000
     expect(body.error).toContain("grep");
   });
 
-  it("GET /api/logs/agents/:name/:instanceId with ?grep filters entries", async () => {
+  it("GET /api/logs/agents/:name/:sessionId with ?grep filters entries", async () => {
     // The per-instance logs endpoint should filter log entries by the ?grep regex
     // pattern, similar to the agent-level logs endpoint.
     harness = await IntegrationHarness.create({
@@ -195,12 +195,12 @@ describe.skipIf(!DOCKER)("integration: per-instance log API", { timeout: 180_000
     const runEndPromise = harness.events.waitFor("run:end", (e) => e.agentName === "instance-grep-filter-agent", 120_000);
     await harness.triggerAgent("instance-grep-filter-agent");
     const runEnd = await runEndPromise;
-    const instanceId = runEnd.instanceId;
+    const sessionId = runEnd.sessionId;
 
     await new Promise((r) => setTimeout(r, 500));
 
     // Without grep — should return entries
-    const allRes = await logsAPI(harness, `/api/logs/agents/instance-grep-filter-agent/${instanceId}`);
+    const allRes = await logsAPI(harness, `/api/logs/agents/instance-grep-filter-agent/${sessionId}`);
     expect(allRes.status).toBe(200);
     const allBody = await allRes.json() as { entries: any[] };
     expect(allBody.entries.length).toBeGreaterThanOrEqual(0);
@@ -208,7 +208,7 @@ describe.skipIf(!DOCKER)("integration: per-instance log API", { timeout: 180_000
     // With grep matching specific text — should return only matching entries (or empty if format differs)
     const grepRes = await logsAPI(
       harness,
-      `/api/logs/agents/instance-grep-filter-agent/${instanceId}?grep=MATCH-THIS-LINE`,
+      `/api/logs/agents/instance-grep-filter-agent/${sessionId}?grep=MATCH-THIS-LINE`,
     );
     expect(grepRes.status).toBe(200);
     // The endpoint should return valid JSON with entries array

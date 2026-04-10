@@ -15,8 +15,8 @@
  *   3. register(): overwrites existing registration for same secret
  *   4. unregister(): removes from cache, get() returns undefined
  *   5. unregister(): is a no-op for unknown secret
- *   6. hasInstance(): returns true when instanceId exists
- *   7. hasInstance(): returns false when instanceId not registered
+ *   6. hasInstance(): returns true when sessionId exists
+ *   7. hasInstance(): returns false when sessionId not registered
  *   8. listAll(): returns all registrations as array
  *   9. listAll(): returns empty array when no registrations
  *  10. findByContainerName(): returns {secret, reg} for known container name
@@ -38,11 +38,11 @@ const { ContainerRegistry } = await import(
   "/tmp/repo/packages/action-llama/dist/execution/container-registry.js"
 );
 
-function makeReg(overrides?: Partial<{ containerName: string; agentName: string; instanceId: string }>) {
+function makeReg(overrides?: Partial<{ containerName: string; agentName: string; sessionId: string }>) {
   return {
     containerName: overrides?.containerName ?? "al-my-agent-abc123",
     agentName: overrides?.agentName ?? "my-agent",
-    instanceId: overrides?.instanceId ?? "my-agent-1",
+    sessionId: overrides?.sessionId ?? "my-agent-1",
   };
 }
 
@@ -65,17 +65,17 @@ describe("integration: ContainerRegistry (no Docker required)", () => {
     expect(found).toBeDefined();
     expect(found!.containerName).toBe(reg.containerName);
     expect(found!.agentName).toBe(reg.agentName);
-    expect(found!.instanceId).toBe(reg.instanceId);
+    expect(found!.sessionId).toBe(reg.sessionId);
   });
 
   it("register() overwrites an existing registration for the same secret", async () => {
     const registry = new ContainerRegistry();
-    const reg1 = makeReg({ agentName: "agent-1", instanceId: "agent-1-run1" });
-    const reg2 = makeReg({ agentName: "agent-1", instanceId: "agent-1-run2" });
+    const reg1 = makeReg({ agentName: "agent-1", sessionId: "agent-1-run1" });
+    const reg2 = makeReg({ agentName: "agent-1", sessionId: "agent-1-run2" });
     await registry.register("secret-shared", reg1);
     await registry.register("secret-shared", reg2);
     const found = registry.get("secret-shared");
-    expect(found!.instanceId).toBe("agent-1-run2");
+    expect(found!.sessionId).toBe("agent-1-run2");
   });
 
   // ── unregister() ──────────────────────────────────────────────────────────
@@ -95,15 +95,15 @@ describe("integration: ContainerRegistry (no Docker required)", () => {
 
   // ── hasInstance() ─────────────────────────────────────────────────────────
 
-  it("hasInstance() returns true when instanceId is registered", async () => {
+  it("hasInstance() returns true when sessionId is registered", async () => {
     const registry = new ContainerRegistry();
-    await registry.register("secret-has", makeReg({ instanceId: "my-agent-42" }));
+    await registry.register("secret-has", makeReg({ sessionId: "my-agent-42" }));
     expect(registry.hasInstance("my-agent-42")).toBe(true);
   });
 
-  it("hasInstance() returns false when instanceId is not registered", async () => {
+  it("hasInstance() returns false when sessionId is not registered", async () => {
     const registry = new ContainerRegistry();
-    await registry.register("secret-other", makeReg({ instanceId: "other-instance-99" }));
+    await registry.register("secret-other", makeReg({ sessionId: "other-instance-99" }));
     expect(registry.hasInstance("nonexistent-instance")).toBe(false);
   });
 
@@ -116,13 +116,13 @@ describe("integration: ContainerRegistry (no Docker required)", () => {
 
   it("listAll() returns all registrations as an array", async () => {
     const registry = new ContainerRegistry();
-    await registry.register("secret-1", makeReg({ agentName: "agent-a", instanceId: "inst-1" }));
-    await registry.register("secret-2", makeReg({ agentName: "agent-b", instanceId: "inst-2" }));
+    await registry.register("secret-1", makeReg({ agentName: "agent-a", sessionId: "inst-1" }));
+    await registry.register("secret-2", makeReg({ agentName: "agent-b", sessionId: "inst-2" }));
     const all = registry.listAll();
     expect(all.length).toBe(2);
-    const instanceIds = all.map((r: { instanceId: string }) => r.instanceId);
-    expect(instanceIds).toContain("inst-1");
-    expect(instanceIds).toContain("inst-2");
+    const sessionIds = all.map((r: { sessionId: string }) => r.sessionId);
+    expect(sessionIds).toContain("inst-1");
+    expect(sessionIds).toContain("inst-2");
   });
 
   it("listAll() returns empty array for empty registry", () => {
@@ -139,7 +139,7 @@ describe("integration: ContainerRegistry (no Docker required)", () => {
     const found = registry.findByContainerName("al-my-agent-unique-xyz");
     expect(found).toBeDefined();
     expect(found!.secret).toBe("secret-xyz");
-    expect(found!.reg.instanceId).toBe(reg.instanceId);
+    expect(found!.reg.sessionId).toBe(reg.sessionId);
   });
 
   it("findByContainerName() returns undefined for unknown container name", async () => {
@@ -158,8 +158,8 @@ describe("integration: ContainerRegistry (no Docker required)", () => {
 
   it("clear() removes all registrations from the cache", async () => {
     const registry = new ContainerRegistry();
-    await registry.register("secret-a", makeReg({ instanceId: "inst-a" }));
-    await registry.register("secret-b", makeReg({ instanceId: "inst-b" }));
+    await registry.register("secret-a", makeReg({ sessionId: "inst-a" }));
+    await registry.register("secret-b", makeReg({ sessionId: "inst-b" }));
     await registry.clear();
     expect(registry.size).toBe(0);
     expect(registry.listAll()).toEqual([]);
@@ -181,9 +181,9 @@ describe("integration: ContainerRegistry (no Docker required)", () => {
   it("size increases on register and decreases on unregister", async () => {
     const registry = new ContainerRegistry();
     expect(registry.size).toBe(0);
-    await registry.register("s1", makeReg({ instanceId: "i1" }));
+    await registry.register("s1", makeReg({ sessionId: "i1" }));
     expect(registry.size).toBe(1);
-    await registry.register("s2", makeReg({ instanceId: "i2" }));
+    await registry.register("s2", makeReg({ sessionId: "i2" }));
     expect(registry.size).toBe(2);
     await registry.unregister("s1");
     expect(registry.size).toBe(1);
@@ -197,7 +197,7 @@ describe("integration: ContainerRegistry (no Docker required)", () => {
     const registry = new ContainerRegistry();
     const agents = ["alpha", "beta", "gamma"];
     for (const name of agents) {
-      await registry.register(`secret-${name}`, makeReg({ agentName: name, instanceId: `${name}-1` }));
+      await registry.register(`secret-${name}`, makeReg({ agentName: name, sessionId: `${name}-1` }));
     }
     expect(registry.size).toBe(3);
     for (const name of agents) {

@@ -269,14 +269,14 @@ EOF`,
       // The dashboard should show the command from the tool call, while still
       // hiding the raw tool output from the tool result line.
       const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-      const instanceId = "inst-browser-redact-test";
+      const sessionId = "inst-browser-redact-test";
       const logDir = "/home/testuser/test-project/.al/logs";
       const logFile = `${logDir}/echo-agent-${today}.log`;
       const toolCallEntry = JSON.stringify({
         level: 30,
         time: Date.now() - 500,
         msg: "conversation.tool_call",
-        instance: instanceId,
+        instance: sessionId,
         tool: "bash",
         cmd: "echo hello-world-cmd-visible",
       });
@@ -284,7 +284,7 @@ EOF`,
         level: 30,
         time: Date.now(),
         msg: "conversation.tool_result",
-        instance: instanceId,
+        instance: sessionId,
         tool: "bash",
         cmd: "echo hello-world-cmd-visible",
         isError: false,
@@ -295,7 +295,7 @@ EOF`,
         level: 30,
         time: Date.now() - 1000,
         msg: "Agent started",
-        instance: instanceId,
+        instance: sessionId,
       });
 
       await context.executeInContainer(container, [
@@ -310,7 +310,7 @@ EOF`,
       await page.click('button[type="submit"]');
       await page.waitForURL("**/dashboard", { timeout: 10000 });
 
-      await page.goto(`${baseURL}/dashboard/agents/echo-agent/instances/${instanceId}`);
+      await page.goto(`${baseURL}/dashboard/agents/echo-agent/sessions/${sessionId}`);
 
       // Wait for log entries to load (wait for actual log content, not just the page frame)
       await page.waitForFunction(

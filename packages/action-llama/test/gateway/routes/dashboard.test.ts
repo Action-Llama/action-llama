@@ -44,7 +44,7 @@ const mockStatusTracker = {
   getAllAgents: vi.fn().mockReturnValue([]),
   getSchedulerInfo: vi.fn().mockReturnValue(null),
   getRecentLogs: vi.fn().mockReturnValue([]),
-  getInstances: vi.fn().mockReturnValue([]),
+  getSessions: vi.fn().mockReturnValue([]),
   on: vi.fn(),
   removeListener: vi.fn(),
 } as any;

@@ -18,7 +18,7 @@ function prettyJson(raw: string | null | undefined): string {
 }
 
 export function TriggerDetailPage() {
-  const { instanceId } = useParams<{ instanceId: string }>();
+  const { sessionId } = useParams<{ sessionId: string }>();
   const { agents } = useStatusStream();
   const agentNames = agents.map((a) => a.name);
 
@@ -28,11 +28,11 @@ export function TriggerDetailPage() {
   const [replaying, setReplaying] = useState(false);
 
   useEffect(() => {
-    if (!instanceId) return;
-    getTriggerDetail(instanceId)
+    if (!sessionId) return;
+    getTriggerDetail(sessionId)
       .then((data) => setTrigger(data.trigger))
       .catch(() => setTrigger(null));
-  }, [instanceId]);
+  }, [sessionId]);
 
   const handleReplay = useCallback(async () => {
     if (!trigger?.webhook?.receiptId) return;
@@ -49,7 +49,7 @@ export function TriggerDetailPage() {
     }
   }, [trigger]);
 
-  if (!instanceId) return null;
+  if (!sessionId) return null;
 
   if (trigger === undefined) {
     return (
@@ -94,7 +94,7 @@ export function TriggerDetailPage() {
           </Link>
           <div>
             <h1 className="text-xl font-bold text-slate-900 dark:text-white font-mono">
-              {trigger.instanceId}
+              {trigger.sessionId}
             </h1>
             <div className="text-xs text-slate-500 dark:text-slate-400">Trigger Detail</div>
           </div>
@@ -143,10 +143,10 @@ export function TriggerDetailPage() {
           <div className="px-4 py-3 grid grid-cols-[8rem_1fr] gap-x-4 items-center">
             <span className="text-xs text-slate-500 dark:text-slate-400">Instance</span>
             <Link
-              to={`/dashboard/agents/${encodeURIComponent(trigger.agentName)}/instances/${encodeURIComponent(trigger.instanceId)}`}
+              to={`/dashboard/agents/${encodeURIComponent(trigger.agentName)}/sessions/${encodeURIComponent(trigger.sessionId)}`}
               className="font-mono text-xs text-blue-600 dark:text-blue-400 hover:underline"
             >
-              {trigger.instanceId}
+              {trigger.sessionId}
             </Link>
           </div>
           <div className="px-4 py-3 grid grid-cols-[8rem_1fr] gap-x-4 items-center">
@@ -271,7 +271,7 @@ export function TriggerDetailPage() {
                   <div className="px-4 py-3 grid grid-cols-[8rem_1fr] gap-x-4 items-center">
                     <span className="text-xs text-slate-500 dark:text-slate-400">Caller Instance</span>
                     <Link
-                      to={`/dashboard/agents/${encodeURIComponent(trigger.callerAgent)}/instances/${encodeURIComponent(trigger.callerInstance)}`}
+                      to={`/dashboard/agents/${encodeURIComponent(trigger.callerAgent)}/sessions/${encodeURIComponent(trigger.callerInstance)}`}
                       className="font-mono text-xs text-blue-600 dark:text-blue-400 hover:underline"
                     >
                       {shortId(trigger.callerInstance)}
@@ -346,7 +346,7 @@ export function TriggerDetailPage() {
       {/* Link to instance detail */}
       <div className="flex justify-end">
         <Link
-          to={`/dashboard/agents/${encodeURIComponent(trigger.agentName)}/instances/${encodeURIComponent(trigger.instanceId)}`}
+          to={`/dashboard/agents/${encodeURIComponent(trigger.agentName)}/sessions/${encodeURIComponent(trigger.sessionId)}`}
           className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
         >
           View run details →

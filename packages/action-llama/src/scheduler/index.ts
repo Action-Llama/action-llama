@@ -95,10 +95,10 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
         webhookSources,
         onTrigger: (config, context) => {
           // Check waiting registry first — resume a suspended instance if possible
-          const waitingInstance = waitingRegistry.matchWebhook(config.name, context);
-          if (waitingInstance) {
-            logger.info({ agent: config.name, event: context.event, instanceId: waitingInstance.instanceId }, "resuming waiting instance via webhook");
-            waitingInstance.resolve?.(context);
+          const waitingSession = waitingRegistry.matchWebhook(config.name, context);
+          if (waitingSession) {
+            logger.info({ agent: config.name, event: context.event, sessionId: waitingSession.sessionId }, "resuming waiting session via webhook");
+            waitingSession.resolve?.(context);
             return true;
           }
 

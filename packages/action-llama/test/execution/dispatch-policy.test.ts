@@ -8,7 +8,7 @@ type TestItem = { id: string };
 
 function makeRunner(overrides: Partial<PoolRunner> = {}): PoolRunner {
   return {
-    instanceId: overrides.instanceId ?? "test-runner",
+    sessionId: overrides.sessionId ?? "test-runner",
     isRunning: overrides.isRunning ?? false,
     run: overrides.run ?? vi.fn().mockResolvedValue({ result: "completed", triggers: [] }),
   };
@@ -20,7 +20,7 @@ function makePool(availableRunner?: PoolRunner, size = 1): RunnerPool {
     runningJobCount: availableRunner ? 0 : 1,
     getAvailableRunner: vi.fn().mockReturnValue(availableRunner ?? null),
     getAllAvailableRunners: vi.fn().mockReturnValue(availableRunner ? [availableRunner] : []),
-    killInstance: vi.fn(),
+    killSession: vi.fn(),
     killAll: vi.fn(),
   } as unknown as RunnerPool;
 }

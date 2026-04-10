@@ -5,8 +5,8 @@
  * require a live (mock) gateway response:
  *
  *   1. printAgentConfig() with webhooks — shows "Webhooks:" section and filter details
- *   2. printLocalInstances() — "Running Instances" table with headers
- *   3. printLocalInstances() — instance ID truncated when > 20 chars
+ *   2. printLocalSessions() — "Running Instances" table with headers
+ *   3. printLocalSessions() — instance ID truncated when > 20 chars
  *   4. execute() with live schedulerInfo — shows "Scheduler:" section
  *   5. execute() with live schedulerInfo — shows paused=true as "PAUSED"
  *   6. execute() with disabled agent (enabled:false) — table row shows "PAUSED"
@@ -20,8 +20,8 @@
  *
  * Covers:
  *   - cli/commands/status.ts: printAgentConfig() — webhooks section + filter display
- *   - cli/commands/status.ts: printLocalInstances() — headers + row display
- *   - cli/commands/status.ts: printLocalInstances() — instanceId > 20 chars truncated
+ *   - cli/commands/status.ts: printLocalSessions() — headers + row display
+ *   - cli/commands/status.ts: printLocalSessions() — sessionId > 20 chars truncated
  *   - cli/commands/status.ts: execute() with schedulerInfo — "Scheduler:" section rendered
  *   - cli/commands/status.ts: execute() with schedulerInfo.paused=true — "PAUSED"
  *   - cli/commands/status.ts: execute() with disabled agent — "PAUSED" in table
@@ -360,7 +360,7 @@ describe(
       expect(allOutput).toContain("PAUSED");
     });
 
-    // ── Live gateway: printLocalInstances ─────────────────────────────────────
+    // ── Live gateway: printLocalSessions ─────────────────────────────────────
 
     it("shows 'Running Instances:' when gateway returns running instances", async () => {
       const now = new Date().toISOString();
@@ -388,7 +388,7 @@ describe(
       expect(allOutput).toContain("Running Instances:");
     });
 
-    it("printLocalInstances shows AGENT, INSTANCE ID, STATUS column headers", async () => {
+    it("printLocalSessions shows AGENT, SESSION ID, STATUS column headers", async () => {
       const now = new Date().toISOString();
       mockServer = await startMockGateway({
         scheduler: { paused: false, mode: "docker", gatewayPort: null },
@@ -412,11 +412,11 @@ describe(
       );
       const allOutput = logs.join("\n");
       expect(allOutput).toContain("AGENT");
-      expect(allOutput).toContain("INSTANCE ID");
+      expect(allOutput).toContain("SESSION ID");
       expect(allOutput).toContain("STATUS");
     });
 
-    it("printLocalInstances shows agent name and instance ID in row", async () => {
+    it("printLocalSessions shows agent name and instance ID in row", async () => {
       const now = new Date().toISOString();
       mockServer = await startMockGateway({
         scheduler: { paused: false, mode: "docker", gatewayPort: null },
@@ -443,7 +443,7 @@ describe(
       expect(allOutput).toContain("abc-inst-001");
     });
 
-    it("printLocalInstances truncates instance ID > 20 chars with '...' prefix", async () => {
+    it("printLocalSessions truncates instance ID > 20 chars with '...' prefix", async () => {
       const now = new Date().toISOString();
       const longId = "this-is-a-very-long-instance-id-exceeding-20-chars-abc123";
       mockServer = await startMockGateway({

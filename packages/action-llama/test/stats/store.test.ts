@@ -16,7 +16,7 @@ describe("StatsStore", () => {
 
   function makeRun(overrides: Partial<RunRecord> = {}): RunRecord {
     return {
-      instanceId: "agent-abc123",
+      sessionId: "agent-abc123",
       agentName: "reporter",
       triggerType: "schedule",
       result: "completed",
@@ -48,7 +48,7 @@ describe("StatsStore", () => {
     const rows = store.queryRuns({ since: 0 });
     expect(rows).toHaveLength(1);
     expect(rows[0].agent_name).toBe("reporter");
-    expect(rows[0].instance_id).toBe("agent-abc123");
+    expect(rows[0].session_id).toBe("agent-abc123");
     expect(rows[0].trigger_type).toBe("schedule");
     expect(rows[0].result).toBe("completed");
     expect(rows[0].total_tokens).toBe(1800);
@@ -129,7 +129,7 @@ describe("StatsStore", () => {
     const now = Date.now();
     const id = store.recordCallEdge({
       callerAgent: "orchestrator",
-      callerInstance: "orch-abc",
+      callerSession: "orch-abc",
       targetAgent: "reviewer",
       depth: 1,
       startedAt: now,
@@ -138,7 +138,7 @@ describe("StatsStore", () => {
     expect(typeof id).toBe("number");
     expect(id).toBeGreaterThan(0);
 
-    store.updateCallEdge(id, { durationMs: 45000, status: "completed", targetInstance: "rev-xyz" });
+    store.updateCallEdge(id, { durationMs: 45000, status: "completed", targetSession: "rev-xyz" });
 
     const edges = store.queryCallGraph({ since: 0 });
     expect(edges).toHaveLength(1);
@@ -155,7 +155,7 @@ describe("StatsStore", () => {
     for (let i = 0; i < 5; i++) {
       const id = store.recordCallEdge({
         callerAgent: "orchestrator",
-        callerInstance: `orch-${i}`,
+        callerSession: `orch-${i}`,
         targetAgent: "reviewer",
         depth: 1,
         startedAt: now,
@@ -180,14 +180,14 @@ describe("StatsStore", () => {
     store.recordRun(makeRun({ startedAt: now }));
     store.recordCallEdge({
       callerAgent: "a",
-      callerInstance: "a-1",
+      callerSession: "a-1",
       targetAgent: "b",
       depth: 1,
       startedAt: oldTime,
     });
     store.recordCallEdge({
       callerAgent: "a",
-      callerInstance: "a-2",
+      callerSession: "a-2",
       targetAgent: "b",
       depth: 1,
       startedAt: now,
@@ -248,19 +248,19 @@ describe("StatsStore", () => {
     const store = createStore();
     const now = Date.now();
     for (let i = 0; i < 15; i++) {
-      store.recordRun(makeRun({ agentName: "reporter", startedAt: now - i * 1000, instanceId: `reporter-${i}` }));
+      store.recordRun(makeRun({ agentName: "reporter", startedAt: now - i * 1000, sessionId: `reporter-${i}` }));
     }
     store.recordRun(makeRun({ agentName: "reviewer", startedAt: now }));
 
     // Page 1
     const page1 = store.queryRunsByAgentPaginated("reporter", 5, 0);
     expect(page1).toHaveLength(5);
-    expect(page1[0].instance_id).toBe("reporter-0"); // most recent first
+    expect(page1[0].session_id).toBe("reporter-0"); // most recent first
 
     // Page 2
     const page2 = store.queryRunsByAgentPaginated("reporter", 5, 5);
     expect(page2).toHaveLength(5);
-    expect(page2[0].instance_id).toBe("reporter-5");
+    expect(page2[0].session_id).toBe("reporter-5");
 
     // Page 4 (partial)
     const page4 = store.queryRunsByAgentPaginated("reporter", 5, 15);
@@ -283,14 +283,14 @@ describe("StatsStore", () => {
 
   it("queries single run by instance ID", () => {
     const store = createStore();
-    store.recordRun(makeRun({ instanceId: "reporter-abc123", agentName: "reporter" }));
-    store.recordRun(makeRun({ instanceId: "reviewer-xyz789", agentName: "reviewer" }));
+    store.recordRun(makeRun({ sessionId: "reporter-abc123", agentName: "reporter" }));
+    store.recordRun(makeRun({ sessionId: "reviewer-xyz789", agentName: "reviewer" }));
 
-    const run = store.queryRunByInstanceId("reporter-abc123");
+    const run = store.queryRunBySessionId("reporter-abc123");
     expect(run).toBeDefined();
     expect(run.agent_name).toBe("reporter");
 
-    const missing = store.queryRunByInstanceId("nonexistent");
+    const missing = store.queryRunBySessionId("nonexistent");
     expect(missing).toBeUndefined();
     store.close();
   });
@@ -470,26 +470,26 @@ describe("StatsStore", () => {
     const now = Date.now();
     const edgeId = store.recordCallEdge({
       callerAgent: "orchestrator",
-      callerInstance: "orch-abc",
+      callerSession: "orch-abc",
       targetAgent: "reviewer",
       depth: 1,
       startedAt: now,
       status: "pending",
     });
-    store.updateCallEdge(edgeId, { targetInstance: "rev-xyz", status: "completed", durationMs: 5000 });
+    store.updateCallEdge(edgeId, { targetSession: "rev-xyz", status: "completed", durationMs: 5000 });
 
-    const edge = store.queryCallEdgeByTargetInstance("rev-xyz");
+    const edge = store.queryCallEdgeByTargetSession("rev-xyz");
     expect(edge).toBeDefined();
     expect(edge!.caller_agent).toBe("orchestrator");
-    expect(edge!.caller_instance).toBe("orch-abc");
+    expect(edge!.caller_session).toBe("orch-abc");
     expect(edge!.target_agent).toBe("reviewer");
-    expect(edge!.target_instance).toBe("rev-xyz");
+    expect(edge!.target_session).toBe("rev-xyz");
     store.close();
   });
 
-  it("queryCallEdgeByTargetInstance returns undefined for missing target", () => {
+  it("queryCallEdgeByTargetSession returns undefined for missing target", () => {
     const store = createStore();
-    const result = store.queryCallEdgeByTargetInstance("nonexistent");
+    const result = store.queryCallEdgeByTargetSession("nonexistent");
     expect(result).toBeUndefined();
     store.close();
   });
@@ -754,10 +754,10 @@ describe("StatsStore", () => {
   describe("updateRunSummary", () => {
     it("updates the summary field for an existing run", () => {
       const store = createStore();
-      store.recordRun(makeRun({ instanceId: "sum-run-1", agentName: "reporter" }));
+      store.recordRun(makeRun({ sessionId: "sum-run-1", agentName: "reporter" }));
       store.updateRunSummary("sum-run-1", "Agent completed the task successfully.");
 
-      const row = store.queryRunByInstanceId("sum-run-1");
+      const row = store.queryRunBySessionId("sum-run-1");
       expect(row).toBeDefined();
       expect(row.summary).toBe("Agent completed the task successfully.");
       store.close();
@@ -765,12 +765,12 @@ describe("StatsStore", () => {
 
     it("does not affect other runs when updating summary", () => {
       const store = createStore();
-      store.recordRun(makeRun({ instanceId: "sum-run-a", agentName: "reporter" }));
-      store.recordRun(makeRun({ instanceId: "sum-run-b", agentName: "reporter" }));
+      store.recordRun(makeRun({ sessionId: "sum-run-a", agentName: "reporter" }));
+      store.recordRun(makeRun({ sessionId: "sum-run-b", agentName: "reporter" }));
       store.updateRunSummary("sum-run-a", "Summary for A");
 
-      const rowA = store.queryRunByInstanceId("sum-run-a");
-      const rowB = store.queryRunByInstanceId("sum-run-b");
+      const rowA = store.queryRunBySessionId("sum-run-a");
+      const rowB = store.queryRunBySessionId("sum-run-b");
       expect(rowA.summary).toBe("Summary for A");
       expect(rowB.summary).toBeNull();
       store.close();
@@ -778,11 +778,11 @@ describe("StatsStore", () => {
 
     it("overwrites a previously set summary", () => {
       const store = createStore();
-      store.recordRun(makeRun({ instanceId: "sum-run-2", agentName: "reporter" }));
+      store.recordRun(makeRun({ sessionId: "sum-run-2", agentName: "reporter" }));
       store.updateRunSummary("sum-run-2", "First summary");
       store.updateRunSummary("sum-run-2", "Updated summary");
 
-      const row = store.queryRunByInstanceId("sum-run-2");
+      const row = store.queryRunBySessionId("sum-run-2");
       expect(row.summary).toBe("Updated summary");
       store.close();
     });
@@ -889,7 +889,7 @@ describe("StatsStore", () => {
       const store = createStore();
       const now = Date.now();
       for (let i = 0; i < 5; i++) {
-        store.recordRun(makeRun({ agentName: "reporter", startedAt: now - i * 1000, instanceId: `act-run-${i}` }));
+        store.recordRun(makeRun({ agentName: "reporter", startedAt: now - i * 1000, sessionId: `act-run-${i}` }));
       }
 
       const page1 = store.queryActivityRows({ limit: 2, offset: 0, includeDeadLetters: false });
@@ -898,7 +898,7 @@ describe("StatsStore", () => {
       const page2 = store.queryActivityRows({ limit: 2, offset: 2, includeDeadLetters: false });
       expect(page2).toHaveLength(2);
       // Pages should not overlap
-      expect(page1[0].instanceId).not.toBe(page2[0].instanceId);
+      expect(page1[0].sessionId).not.toBe(page2[0].sessionId);
       store.close();
     });
 
@@ -1057,7 +1057,7 @@ describe("StatsStore", () => {
       const store = createStore();
       const now = Date.now();
       for (let i = 0; i < 5; i++) {
-        store.recordRun(makeRun({ agentName: "reporter", startedAt: now - i * 1000, instanceId: `wt-run-${i}` }));
+        store.recordRun(makeRun({ agentName: "reporter", startedAt: now - i * 1000, sessionId: `wt-run-${i}` }));
       }
 
       const result = store.queryActivityRowsWithTotal({ limit: 2, offset: 0, includeDeadLetters: false });
@@ -1149,7 +1149,7 @@ describe("StatsStore", () => {
       const store = createStore();
       const now = Date.now();
       for (let i = 0; i < 6; i++) {
-        store.recordRun(makeRun({ agentName: "reporter", startedAt: now - i * 1000, instanceId: `pg-run-${i}` }));
+        store.recordRun(makeRun({ agentName: "reporter", startedAt: now - i * 1000, sessionId: `pg-run-${i}` }));
       }
 
       const page1 = store.queryActivityRowsWithTotal({ limit: 3, offset: 0, includeDeadLetters: false });
@@ -1161,8 +1161,8 @@ describe("StatsStore", () => {
       expect(page2.total).toBe(6);
 
       // Pages should not overlap
-      const page1Ids = page1.rows.map(r => r.instanceId);
-      const page2Ids = page2.rows.map(r => r.instanceId);
+      const page1Ids = page1.rows.map(r => r.sessionId);
+      const page2Ids = page2.rows.map(r => r.sessionId);
       expect(page1Ids.some(id => page2Ids.includes(id))).toBe(false);
       store.close();
     });

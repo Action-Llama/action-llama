@@ -74,7 +74,7 @@ describe(
     it("global summary shows AVG PRE and AVG POST column headers", async () => {
       const store = new StatsStore(statsDbPath(projectDir));
       store.recordRun({
-        instanceId: randomUUID(),
+        sessionId: randomUUID(),
         agentName: "test-agent",
         triggerType: "manual",
         result: "completed",
@@ -98,7 +98,7 @@ describe(
     it("when preHookMs is set → AVG PRE shows formatted duration (not em dash)", async () => {
       const store = new StatsStore(statsDbPath(projectDir));
       store.recordRun({
-        instanceId: randomUUID(),
+        sessionId: randomUUID(),
         agentName: "hooked-agent",
         triggerType: "schedule",
         result: "completed",
@@ -127,7 +127,7 @@ describe(
     it("when postHookMs is set → AVG POST shows formatted duration (not em dash)", async () => {
       const store = new StatsStore(statsDbPath(projectDir));
       store.recordRun({
-        instanceId: randomUUID(),
+        sessionId: randomUUID(),
         agentName: "post-hooked-agent",
         triggerType: "schedule",
         result: "completed",
@@ -151,7 +151,7 @@ describe(
     it("when preHookMs is NOT set → AVG PRE column shows em dash", async () => {
       const store = new StatsStore(statsDbPath(projectDir));
       store.recordRun({
-        instanceId: randomUUID(),
+        sessionId: randomUUID(),
         agentName: "no-hook-agent",
         triggerType: "manual",
         result: "completed",
@@ -176,7 +176,7 @@ describe(
     it("run with both preHookMs and postHookMs set shows both durations", async () => {
       const store = new StatsStore(statsDbPath(projectDir));
       store.recordRun({
-        instanceId: randomUUID(),
+        sessionId: randomUUID(),
         agentName: "both-hooks-agent",
         triggerType: "schedule",
         result: "completed",

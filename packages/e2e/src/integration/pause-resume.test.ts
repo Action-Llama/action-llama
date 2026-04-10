@@ -56,7 +56,7 @@ describe.skipIf(!DOCKER)("integration: scheduler pause and resume", { timeout: 1
     const triggerBody = await triggerRes.json();
     // The trigger may be rejected or return a paused message
     expect(triggerBody.error || triggerBody.message || triggerBody.success === false ||
-      triggerBody.instanceId).toBeTruthy();
+      triggerBody.sessionId).toBeTruthy();
 
     // Resume the scheduler
     const resumeRes = await harness.controlAPI("POST", "/resume");

@@ -5,7 +5,7 @@ import { RunDropdown } from "./RunDropdown";
 import { RunModal } from "./RunModal";
 import {
   triggerAgent,
-  killAgentInstances,
+  killAgentSessions,
   getAgentDetail,
   enableAgent,
   disableAgent,
@@ -82,9 +82,9 @@ export function AgentLayout() {
               onQuickRun={async () => {
                 try {
                   const result = await triggerAgent(name, undefined);
-                  if (result?.instanceId) {
+                  if (result?.sessionId) {
                     navigate(
-                      `/dashboard/agents/${encodeURIComponent(name)}/instances/${encodeURIComponent(result.instanceId)}`
+                      `/dashboard/agents/${encodeURIComponent(name)}/sessions/${encodeURIComponent(result.sessionId)}`
                     );
                   }
                 } catch (err) {
@@ -101,7 +101,7 @@ export function AgentLayout() {
                 setKillingAll(true);
                 setActionError(null);
                 try {
-                  await killAgentInstances(name);
+                  await killAgentSessions(name);
                 } catch (err) {
                   setActionError(
                     err instanceof Error ? err.message : "Action failed"
@@ -199,9 +199,9 @@ export function AgentLayout() {
           onRun={async (prompt) => {
             try {
               const result = await triggerAgent(name, prompt);
-              if (result?.instanceId) {
+              if (result?.sessionId) {
                 navigate(
-                  `/dashboard/agents/${encodeURIComponent(name)}/instances/${encodeURIComponent(result.instanceId)}`
+                  `/dashboard/agents/${encodeURIComponent(name)}/sessions/${encodeURIComponent(result.sessionId)}`
                 );
               }
             } catch (err) {

@@ -91,9 +91,9 @@ describe(
       // Write a run record directly to the DB (same file the gateway uses)
       const dbPath = `${harness.projectPath}/.al/action-llama.db`;
       const store = new StatsStore(dbPath);
-      const instanceId = `summary-test-agent-${randomUUID().slice(0, 8)}`;
+      const sessionId = `summary-test-agent-${randomUUID().slice(0, 8)}`;
       store.recordRun({
-        instanceId,
+        sessionId,
         agentName: "summary-test-agent",
         triggerType: "manual",
         result: "completed",
@@ -109,7 +109,7 @@ describe(
       expect(body.rows.length).toBeGreaterThanOrEqual(1);
 
       // Find the row we just inserted
-      const row = body.rows.find((r) => r.instanceId === instanceId);
+      const row = body.rows.find((r) => r.sessionId === sessionId);
       expect(row).toBeDefined();
       if (row) {
         // summary column should be null when not set
@@ -123,9 +123,9 @@ describe(
 
       const dbPath = `${harness.projectPath}/.al/action-llama.db`;
       const store = new StatsStore(dbPath);
-      const instanceId = `summary-test-agent-${randomUUID().slice(0, 8)}`;
+      const sessionId = `summary-test-agent-${randomUUID().slice(0, 8)}`;
       store.recordRun({
-        instanceId,
+        sessionId,
         agentName: "summary-test-agent",
         triggerType: "schedule",
         result: "completed",
@@ -136,7 +136,7 @@ describe(
 
       // Apply a summary — exercises the updateRunSummary() SQL path
       const summaryText = "The agent successfully processed all items.";
-      store.updateRunSummary(instanceId, summaryText);
+      store.updateRunSummary(sessionId, summaryText);
       store.close();
 
       const res = await activityGet("?status=completed");
@@ -145,7 +145,7 @@ describe(
       expect(body.rows.length).toBeGreaterThanOrEqual(1);
 
       // Find the row we just inserted
-      const row = body.rows.find((r) => r.instanceId === instanceId);
+      const row = body.rows.find((r) => r.sessionId === sessionId);
       expect(row).toBeDefined();
       if (row) {
         expect(row.summary).toBe(summaryText);
@@ -164,7 +164,7 @@ describe(
       const idNoSummary = `summary-test-agent-${randomUUID().slice(0, 8)}`;
 
       store.recordRun({
-        instanceId: idWithSummary,
+        sessionId: idWithSummary,
         agentName: "summary-test-agent",
         triggerType: "manual",
         result: "completed",
@@ -175,7 +175,7 @@ describe(
       store.updateRunSummary(idWithSummary, "Run with a summary.");
 
       store.recordRun({
-        instanceId: idNoSummary,
+        sessionId: idNoSummary,
         agentName: "summary-test-agent",
         triggerType: "manual",
         result: "completed",
@@ -191,8 +191,8 @@ describe(
       const body = (await res.json()) as { rows: Array<Record<string, unknown>>; total: number };
       expect(body.rows.length).toBeGreaterThanOrEqual(2);
 
-      const rowWith = body.rows.find((r) => r.instanceId === idWithSummary);
-      const rowWithout = body.rows.find((r) => r.instanceId === idNoSummary);
+      const rowWith = body.rows.find((r) => r.sessionId === idWithSummary);
+      const rowWithout = body.rows.find((r) => r.sessionId === idNoSummary);
 
       expect(rowWith).toBeDefined();
       expect(rowWithout).toBeDefined();

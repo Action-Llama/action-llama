@@ -4,11 +4,11 @@ import type { Logger } from "../../shared/logger.js";
 
 export interface ControlRoutesDeps {
   statusTracker?: StatusTracker;
-  killInstance: (instanceId: string) => Promise<boolean>;
+  killSession: (sessionId: string) => Promise<boolean>;
   killAgent: (name: string) => Promise<{ killed: number } | null>;
   pauseScheduler: () => Promise<void>;
   resumeScheduler: () => Promise<void>;
-  triggerAgent?: (name: string, prompt?: string) => Promise<{ instanceId: string } | string>;
+  triggerAgent?: (name: string, prompt?: string) => Promise<{ sessionId: string } | string>;
   enableAgent?: (name: string) => Promise<boolean>;
   disableAgent?: (name: string) => Promise<boolean>;
   stopScheduler?: () => Promise<void>;
@@ -22,36 +22,36 @@ export interface ControlRoutesDeps {
 }
 
 export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps) {
-  const { statusTracker, killInstance, pauseScheduler, resumeScheduler, logger } = deps;
+  const { statusTracker, killSession, pauseScheduler, resumeScheduler, logger } = deps;
 
-  // GET /control/instances - List running instances
-  app.get("/control/instances", async (c) => {
+  // GET /control/sessions - List running instances
+  app.get("/control/sessions", async (c) => {
     if (!statusTracker) {
       return c.json({ error: "Status tracker not available" }, 503);
     }
     
-    const instances = statusTracker.getInstances();
-    return c.json({ instances });
+    const sessions = statusTracker.getSessions();
+    return c.json({ sessions });
   });
 
-  // POST /control/kill/:instanceId - Kill a specific instance
-  app.post("/control/kill/:instanceId", async (c) => {
-    const instanceId = c.req.param("instanceId");
-    logger?.info({ instanceId }, "control: kill instance requested");
+  // POST /control/kill/:sessionId - Kill a specific instance
+  app.post("/control/kill/:sessionId", async (c) => {
+    const sessionId = c.req.param("sessionId");
+    logger?.info({ sessionId }, "control: kill session requested");
 
     try {
-      const success = await killInstance(instanceId);
+      const success = await killSession(sessionId);
       if (success) {
-        logger?.info({ instanceId }, "control: instance killed");
-        return c.json({ success: true, message: `Instance ${instanceId} killed` });
+        logger?.info({ sessionId }, "control: session killed");
+        return c.json({ success: true, message: `Session ${sessionId} killed` });
       } else {
-        logger?.warn({ instanceId }, "control: instance not found");
-        return c.json({ error: `Instance ${instanceId} not found` }, 404);
+        logger?.warn({ sessionId }, "control: session not found");
+        return c.json({ error: `Session ${sessionId} not found` }, 404);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logger?.error({ instanceId, err: message }, "control: kill instance failed");
-      return c.json({ error: `Failed to kill instance: ${message}` }, 500);
+      logger?.error({ sessionId, err: message }, "control: kill instance failed");
+      return c.json({ error: `Failed to kill session: ${message}` }, 500);
     }
   });
 
@@ -110,8 +110,8 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps) {
     }
     try {
       const result = await deps.triggerAgent(name, prompt);
-      if (typeof result === "object" && result.instanceId) {
-        return c.json({ success: true, message: `Agent ${name} triggered`, instanceId: result.instanceId });
+      if (typeof result === "object" && result.sessionId) {
+        return c.json({ success: true, message: `Agent ${name} triggered`, sessionId: result.sessionId });
       } else if (typeof result === "string") {
         logger?.warn({ agent: name, reason: result }, "control: trigger rejected");
         const status = result.includes("not found") ? 404 : 409;
@@ -224,8 +224,8 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps) {
         logger?.warn({ agent: name }, "control: agent not found");
         return c.json({ error: `Agent ${name} not found` }, 404);
       }
-      logger?.info({ agent: name, killed: result.killed }, "control: agent instances killed");
-      return c.json({ success: true, message: `Killed ${result.killed} instance(s) of ${name}`, killed: result.killed });
+      logger?.info({ agent: name, killed: result.killed }, "control: agent sessions killed");
+      return c.json({ success: true, message: `Killed ${result.killed} session(s) of ${name}`, killed: result.killed });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger?.error({ agent: name, err: message }, "control: kill agent failed");
@@ -240,7 +240,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps) {
     }
 
     const schedulerInfo = statusTracker.getSchedulerInfo();
-    const instances = statusTracker.getInstances();
+    const sessions = statusTracker.getSessions();
     const agents = statusTracker.getAllAgents();
 
     const queueSizes: Record<string, number> = {};
@@ -252,9 +252,9 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps) {
 
     return c.json({
       scheduler: schedulerInfo,
-      instances,
+      sessions,
       agents,
-      running: instances.length,
+      running: sessions.length,
       queueSizes,
     });
   });

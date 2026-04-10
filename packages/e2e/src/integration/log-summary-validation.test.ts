@@ -1,5 +1,5 @@
 /**
- * Integration tests: POST /api/logs/agents/:name/:instanceId/summarize
+ * Integration tests: POST /api/logs/agents/:name/:sessionId/summarize
  * validation error paths — no Docker required.
  *
  * The log summarization endpoint (registered in Phase 3 via registerDashboardRoutes)
@@ -48,12 +48,12 @@ describe(
     function summarize(
       h: IntegrationHarness,
       agentName: string,
-      instanceId: string,
+      sessionId: string,
       query?: Record<string, string>,
     ): Promise<Response> {
       const params = query ? "?" + new URLSearchParams(query).toString() : "";
       return fetch(
-        `http://127.0.0.1:${h.gatewayPort}/api/logs/agents/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}/summarize${params}`,
+        `http://127.0.0.1:${h.gatewayPort}/api/logs/agents/${encodeURIComponent(agentName)}/${encodeURIComponent(sessionId)}/summarize${params}`,
         {
           method: "POST",
           headers: {

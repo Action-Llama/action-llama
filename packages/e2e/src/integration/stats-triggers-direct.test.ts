@@ -62,9 +62,9 @@ describe(
       tracker.registerAgent("trig-agent", 1);
       const store = makeTmpStore();
 
-      const instanceId = randomUUID();
-      tracker.registerInstance({
-        id: instanceId,
+      const sessionId = randomUUID();
+      tracker.registerSession({
+        id: sessionId,
         agentName: "trig-agent",
         status: "running",
         startedAt: new Date(),
@@ -75,8 +75,8 @@ describe(
       const res = await app.request("/api/stats/triggers");
       expect(res.status).toBe(200);
 
-      const body = await res.json() as { triggers: Array<{ instanceId: string; result: string }> };
-      const row = body.triggers.find((t) => t.instanceId === instanceId);
+      const body = await res.json() as { triggers: Array<{ sessionId: string; result: string }> };
+      const row = body.triggers.find((t) => t.sessionId === sessionId);
       expect(row).toBeDefined();
       expect(row!.result).toBe("running");
     });
@@ -89,14 +89,14 @@ describe(
       const manualId = randomUUID();
       const scheduleId = randomUUID();
 
-      tracker.registerInstance({
+      tracker.registerSession({
         id: manualId,
         agentName: "trig-filter-agent",
         status: "running",
         startedAt: new Date(),
         trigger: "manual",
       });
-      tracker.registerInstance({
+      tracker.registerSession({
         id: scheduleId,
         agentName: "trig-filter-agent",
         status: "running",
@@ -108,9 +108,9 @@ describe(
       const res = await app.request("/api/stats/triggers?triggerType=manual");
       expect(res.status).toBe(200);
 
-      const body = await res.json() as { triggers: Array<{ instanceId: string }> };
-      expect(body.triggers.find((t) => t.instanceId === manualId)).toBeDefined();
-      expect(body.triggers.find((t) => t.instanceId === scheduleId)).toBeUndefined();
+      const body = await res.json() as { triggers: Array<{ sessionId: string }> };
+      expect(body.triggers.find((t) => t.sessionId === manualId)).toBeDefined();
+      expect(body.triggers.find((t) => t.sessionId === scheduleId)).toBeUndefined();
     });
 
     it("agentFilter applied to running instances in triggers", async () => {
@@ -122,16 +122,16 @@ describe(
       const alphaId = randomUUID();
       const betaId = randomUUID();
 
-      tracker.registerInstance({ id: alphaId, agentName: "agent-alpha", status: "running", startedAt: new Date(), trigger: "manual" });
-      tracker.registerInstance({ id: betaId, agentName: "agent-beta", status: "running", startedAt: new Date(), trigger: "manual" });
+      tracker.registerSession({ id: alphaId, agentName: "agent-alpha", status: "running", startedAt: new Date(), trigger: "manual" });
+      tracker.registerSession({ id: betaId, agentName: "agent-beta", status: "running", startedAt: new Date(), trigger: "manual" });
 
       const app = makeApp(store, tracker);
       const res = await app.request("/api/stats/triggers?agent=agent-alpha");
       expect(res.status).toBe(200);
 
-      const body = await res.json() as { triggers: Array<{ instanceId: string }> };
-      expect(body.triggers.find((t) => t.instanceId === alphaId)).toBeDefined();
-      expect(body.triggers.find((t) => t.instanceId === betaId)).toBeUndefined();
+      const body = await res.json() as { triggers: Array<{ sessionId: string }> };
+      expect(body.triggers.find((t) => t.sessionId === alphaId)).toBeDefined();
+      expect(body.triggers.find((t) => t.sessionId === betaId)).toBeUndefined();
     });
 
     it("offset>0 skips running instance merge in triggers", async () => {
@@ -139,9 +139,9 @@ describe(
       tracker.registerAgent("offset-trig-agent", 1);
       const store = makeTmpStore();
 
-      const instanceId = randomUUID();
-      tracker.registerInstance({
-        id: instanceId,
+      const sessionId = randomUUID();
+      tracker.registerSession({
+        id: sessionId,
         agentName: "offset-trig-agent",
         status: "running",
         startedAt: new Date(),
@@ -152,8 +152,8 @@ describe(
       const res = await app.request("/api/stats/triggers?offset=50");
       expect(res.status).toBe(200);
 
-      const body = await res.json() as { triggers: Array<{ instanceId: string }> };
-      expect(body.triggers.find((t) => t.instanceId === instanceId)).toBeUndefined();
+      const body = await res.json() as { triggers: Array<{ sessionId: string }> };
+      expect(body.triggers.find((t) => t.sessionId === sessionId)).toBeUndefined();
     });
   },
 );

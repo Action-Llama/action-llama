@@ -185,7 +185,7 @@ describe("integration: EventSourcedStatsStore (stats/event-store.ts) — no Dock
 
     const now = Date.now();
     await store.recordRun({
-      instanceId: "inst-001",
+      sessionId: "inst-001",
       agentName: "test-agent",
       triggerType: "manual",
       triggerSource: undefined,
@@ -208,7 +208,7 @@ describe("integration: EventSourcedStatsStore (stats/event-store.ts) — no Dock
     const runs = await store.queryRuns({ agent: "test-agent" });
     expect(runs.length).toBeGreaterThan(0);
     // Find our specific run
-    const run = runs.find((r: any) => r.instance_id === "inst-001");
+    const run = runs.find((r: any) => r.session_id === "inst-001");
     expect(run).toBeDefined();
     expect(run.agent_name).toBe("test-agent");
     expect(run.trigger_type).toBe("manual");
@@ -221,7 +221,7 @@ describe("integration: EventSourcedStatsStore (stats/event-store.ts) — no Dock
 
     const now = Date.now();
     await store.recordRun({
-      instanceId: "inst-err-001",
+      sessionId: "inst-err-001",
       agentName: "err-agent",
       triggerType: "schedule",
       triggerSource: undefined,
@@ -243,7 +243,7 @@ describe("integration: EventSourcedStatsStore (stats/event-store.ts) — no Dock
 
     const runs = await store.queryRuns({ agent: "err-agent" });
     expect(runs.length).toBeGreaterThan(0);
-    const run = runs.find((r: any) => r.instance_id === "inst-err-001");
+    const run = runs.find((r: any) => r.session_id === "inst-err-001");
     expect(run).toBeDefined();
     expect(run.result).toBe("error");
     await store.close();
@@ -257,7 +257,7 @@ describe("integration: EventSourcedStatsStore (stats/event-store.ts) — no Dock
     // Record 3 runs
     for (let i = 0; i < 3; i++) {
       await store.recordRun({
-        instanceId: `agg-inst-${i}`,
+        sessionId: `agg-inst-${i}`,
         agentName: "agg-agent",
         triggerType: "manual",
         triggerSource: undefined,
@@ -295,9 +295,9 @@ describe("integration: EventSourcedStatsStore (stats/event-store.ts) — no Dock
     // Record two call edges between same pair
     await store.recordCallEdge({
       callerAgent: "agent-a",
-      callerInstance: "caller-inst-1",
+      callerSession: "caller-inst-1",
       targetAgent: "agent-b",
-      targetInstance: "target-inst-1",
+      targetSession: "target-inst-1",
       depth: 1,
       startedAt: Date.now(),
       durationMs: 500,
@@ -306,9 +306,9 @@ describe("integration: EventSourcedStatsStore (stats/event-store.ts) — no Dock
 
     await store.recordCallEdge({
       callerAgent: "agent-a",
-      callerInstance: "caller-inst-2",
+      callerSession: "caller-inst-2",
       targetAgent: "agent-b",
-      targetInstance: "target-inst-2",
+      targetSession: "target-inst-2",
       depth: 1,
       startedAt: Date.now(),
       durationMs: 300,
@@ -332,7 +332,7 @@ describe("integration: EventSourcedStatsStore (stats/event-store.ts) — no Dock
 
     const now = Date.now();
     await store.recordRun({
-      instanceId: "no-filter-inst-a",
+      sessionId: "no-filter-inst-a",
       agentName: "agent-x",
       triggerType: "manual",
       triggerSource: undefined,
@@ -353,7 +353,7 @@ describe("integration: EventSourcedStatsStore (stats/event-store.ts) — no Dock
     });
 
     await store.recordRun({
-      instanceId: "no-filter-inst-b",
+      sessionId: "no-filter-inst-b",
       agentName: "agent-y",
       triggerType: "schedule",
       triggerSource: undefined,
@@ -374,7 +374,7 @@ describe("integration: EventSourcedStatsStore (stats/event-store.ts) — no Dock
     });
 
     const runs = await store.queryRuns();
-    const runIds = runs.map((r: any) => r.instance_id);
+    const runIds = runs.map((r: any) => r.session_id);
     expect(runIds).toContain("no-filter-inst-a");
     expect(runIds).toContain("no-filter-inst-b");
     await store.close();
@@ -386,7 +386,7 @@ describe("integration: EventSourcedStatsStore (stats/event-store.ts) — no Dock
 
     const now = Date.now();
     await store.recordRun({
-      instanceId: "snap-inst-1",
+      sessionId: "snap-inst-1",
       agentName: "snap-agent",
       triggerType: "manual",
       triggerSource: undefined,

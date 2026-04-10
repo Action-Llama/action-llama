@@ -15,7 +15,7 @@ describe("status summary", () => {
     expect(output).toContain("AGENT");
     expect(output).toContain("TRIGGER");
     expect(output).toContain("STATUS");
-    expect(output).toContain("INSTANCES");
+    expect(output).toContain("SESSIONS");
     expect(output).toContain("QUEUE");
     // Agents appear in the table
     expect(output).toContain("dev");
@@ -266,7 +266,7 @@ describe("status printAgentConfig — repos filter and scale/timeout", () => {
   });
 });
 
-describe("status with running instances from gateway", () => {
+describe("status with running sessions from gateway", () => {
   let tmpDir: string;
   let fetchSpy: any;
 
@@ -279,7 +279,7 @@ describe("status with running instances from gateway", () => {
     vi.restoreAllMocks();
   });
 
-  it("shows running instances table in summary view", async () => {
+  it("shows running sessions table in summary view", async () => {
     tmpDir = makeTmpProject({
       agents: [{ name: "dev" }],
     });
@@ -306,8 +306,8 @@ describe("status with running instances from gateway", () => {
     fetchSpy.mockResolvedValueOnce({ ok: false }); // /locks/status
 
     const output = await captureLog(() => execute({ project: tmpDir }));
-    expect(output).toContain("Instances:");
-    expect(output).toContain("INSTANCE ID");
+    expect(output).toContain("Sessions:");
+    expect(output).toContain("SESSION ID");
     expect(output).toContain("dev");
     expect(output).toContain("running");
     expect(output).toContain("manual");
@@ -333,7 +333,7 @@ describe("status with running instances from gateway", () => {
     expect(output).toContain("Status: PAUSED");
   });
 
-  it("shows running instances for specific agent in per-agent detail", async () => {
+  it("shows running sessions for specific agent in per-agent detail", async () => {
     tmpDir = makeTmpProject();
 
     const now = Date.now();
@@ -359,7 +359,7 @@ describe("status with running instances from gateway", () => {
 
     const output = await captureLog(() => execute({ project: tmpDir, agent: "dev" }));
     expect(output).toContain("Agent: dev");
-    expect(output).toContain("Instances:");
+    expect(output).toContain("Sessions:");
     expect(output).toContain("dev");
     expect(output).toContain("running");
   });
@@ -389,7 +389,7 @@ describe("status with running instances from gateway", () => {
     const output = await captureLog(() => execute({ project: tmpDir }));
     expect(output).toContain("Runtime: docker");
     expect(output).toContain("Gateway: http://localhost:9090");
-    expect(output).toContain("No running instances.");
+    expect(output).toContain("No running sessions.");
   });
 
   it("shows truncated instance ID when ID is long", async () => {

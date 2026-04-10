@@ -54,7 +54,7 @@ function makeTempDbPath(): string {
 
 function makeRun(overrides: Record<string, unknown> = {}) {
   return {
-    instanceId: randomUUID(),
+    sessionId: randomUUID(),
     agentName: "agent-a",
     triggerType: "manual",
     result: "completed",
@@ -126,7 +126,7 @@ describe("integration: StatsStore.queryRunsByAgentPaginated() (no Docker require
     for (let i = 0; i < 4; i++) {
       const id = randomUUID();
       ids.push(id);
-      store.recordRun(makeRun({ agentName: "paged-agent", instanceId: id, startedAt: Date.now() + i }));
+      store.recordRun(makeRun({ agentName: "paged-agent", sessionId: id, startedAt: Date.now() + i }));
     }
 
     const page1 = store.queryRunsByAgentPaginated("paged-agent", 2, 0);
@@ -136,8 +136,8 @@ describe("integration: StatsStore.queryRunsByAgentPaginated() (no Docker require
     expect(page2).toHaveLength(2);
 
     // No duplicates between pages
-    const page1Ids = new Set(page1.map((r: any) => r.instance_id));
-    const page2Ids = new Set(page2.map((r: any) => r.instance_id));
+    const page1Ids = new Set(page1.map((r: any) => r.session_id));
+    const page2Ids = new Set(page2.map((r: any) => r.session_id));
     for (const id of page2Ids) {
       expect(page1Ids.has(id)).toBe(false);
     }
@@ -147,9 +147,9 @@ describe("integration: StatsStore.queryRunsByAgentPaginated() (no Docker require
   it("returns rows ordered by started_at DESC (newest first)", () => {
     const store = new StatsStore(makeTempDbPath());
     const base = Date.now();
-    store.recordRun(makeRun({ agentName: "sorted-agent", instanceId: "id-1", startedAt: base + 1000 }));
-    store.recordRun(makeRun({ agentName: "sorted-agent", instanceId: "id-2", startedAt: base + 2000 }));
-    store.recordRun(makeRun({ agentName: "sorted-agent", instanceId: "id-3", startedAt: base + 3000 }));
+    store.recordRun(makeRun({ agentName: "sorted-agent", sessionId: "id-1", startedAt: base + 1000 }));
+    store.recordRun(makeRun({ agentName: "sorted-agent", sessionId: "id-2", startedAt: base + 2000 }));
+    store.recordRun(makeRun({ agentName: "sorted-agent", sessionId: "id-3", startedAt: base + 3000 }));
 
     const rows = store.queryRunsByAgentPaginated("sorted-agent", 10, 0);
     expect(rows).toHaveLength(3);
@@ -299,9 +299,9 @@ describe("integration: StatsStore.queryTriggerHistory() (no Docker required)", {
     expect(page2.length).toBe(2);
 
     // No overlap
-    const page1Ids = new Set(page1.map((r: any) => r.instanceId));
+    const page1Ids = new Set(page1.map((r: any) => r.sessionId));
     for (const row of page2) {
-      expect(page1Ids.has(row.instanceId)).toBe(false);
+      expect(page1Ids.has(row.sessionId)).toBe(false);
     }
     store.close();
   });

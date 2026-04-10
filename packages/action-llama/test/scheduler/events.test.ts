@@ -13,27 +13,27 @@ describe("SchedulerEventBus", () => {
       const received: unknown[] = [];
       bus.on("run:start", (data) => received.push(data));
 
-      bus.emit("run:start", { agentName: "agent1", instanceId: "id1", trigger: "cron" });
+      bus.emit("run:start", { agentName: "agent1", sessionId: "id1", trigger: "cron" });
 
       expect(received).toHaveLength(1);
-      expect(received[0]).toEqual({ agentName: "agent1", instanceId: "id1", trigger: "cron" });
+      expect(received[0]).toEqual({ agentName: "agent1", sessionId: "id1", trigger: "cron" });
     });
 
     it("delivers run:end event to listener", () => {
       const received: unknown[] = [];
       bus.on("run:end", (data) => received.push(data));
 
-      bus.emit("run:end", { agentName: "agent1", instanceId: "id1", result: "success", exitCode: 0 });
+      bus.emit("run:end", { agentName: "agent1", sessionId: "id1", result: "success", exitCode: 0 });
 
       expect(received).toHaveLength(1);
-      expect(received[0]).toEqual({ agentName: "agent1", instanceId: "id1", result: "success", exitCode: 0 });
+      expect(received[0]).toEqual({ agentName: "agent1", sessionId: "id1", result: "success", exitCode: 0 });
     });
 
     it("delivers lock event with all fields", () => {
       const received: unknown[] = [];
       bus.on("lock", (data) => received.push(data));
 
-      bus.emit("lock", { agentName: "agent1", instanceId: "id1", resourceKey: "res://key", action: "acquire", ok: true, status: 200 });
+      bus.emit("lock", { agentName: "agent1", sessionId: "id1", resourceKey: "res://key", action: "acquire", ok: true, status: 200 });
 
       expect(received).toHaveLength(1);
       expect(received[0]).toMatchObject({ agentName: "agent1", action: "acquire", ok: true });
@@ -53,10 +53,10 @@ describe("SchedulerEventBus", () => {
       const received: unknown[] = [];
       bus.on("signal", (data) => received.push(data));
 
-      bus.emit("signal", { agentName: "agent1", instanceId: "id1", signal: "rerun" });
+      bus.emit("signal", { agentName: "agent1", sessionId: "id1", signal: "rerun" });
 
       expect(received).toHaveLength(1);
-      expect(received[0]).toEqual({ agentName: "agent1", instanceId: "id1", signal: "rerun" });
+      expect(received[0]).toEqual({ agentName: "agent1", sessionId: "id1", signal: "rerun" });
     });
 
     it("delivers webhook:received event to listener", () => {
@@ -84,7 +84,7 @@ describe("SchedulerEventBus", () => {
       bus.on("run:start", () => results.push(1));
       bus.on("run:start", () => results.push(2));
 
-      bus.emit("run:start", { agentName: "a", instanceId: "i", trigger: "manual" });
+      bus.emit("run:start", { agentName: "a", sessionId: "i", trigger: "manual" });
 
       expect(results).toEqual([1, 2]);
     });
@@ -100,8 +100,8 @@ describe("SchedulerEventBus", () => {
       const received: unknown[] = [];
       bus.once("run:start", (data) => received.push(data));
 
-      bus.emit("run:start", { agentName: "a1", instanceId: "i1", trigger: "cron" });
-      bus.emit("run:start", { agentName: "a2", instanceId: "i2", trigger: "cron" });
+      bus.emit("run:start", { agentName: "a1", sessionId: "i1", trigger: "cron" });
+      bus.emit("run:start", { agentName: "a2", sessionId: "i2", trigger: "cron" });
 
       expect(received).toHaveLength(1);
       expect(received[0]).toMatchObject({ agentName: "a1" });
@@ -120,7 +120,7 @@ describe("SchedulerEventBus", () => {
       bus.on("run:start", listener as any);
       bus.off("run:start", listener as any);
 
-      bus.emit("run:start", { agentName: "a", instanceId: "i", trigger: "cron" });
+      bus.emit("run:start", { agentName: "a", sessionId: "i", trigger: "cron" });
 
       expect(received).toHaveLength(0);
     });
@@ -135,7 +135,7 @@ describe("SchedulerEventBus", () => {
       bus.on("run:start", listener2 as any);
       bus.off("run:start", listener1 as any);
 
-      bus.emit("run:start", { agentName: "a", instanceId: "i", trigger: "cron" });
+      bus.emit("run:start", { agentName: "a", sessionId: "i", trigger: "cron" });
 
       expect(received1).toHaveLength(0);
       expect(received2).toHaveLength(1);
@@ -157,8 +157,8 @@ describe("SchedulerEventBus", () => {
 
       bus.removeAllListeners();
 
-      bus.emit("run:start", { agentName: "a", instanceId: "i", trigger: "cron" });
-      bus.emit("run:end", { agentName: "a", instanceId: "i", result: "ok" });
+      bus.emit("run:start", { agentName: "a", sessionId: "i", trigger: "cron" });
+      bus.emit("run:end", { agentName: "a", sessionId: "i", result: "ok" });
 
       expect(received).toHaveLength(0);
     });
@@ -168,17 +168,17 @@ describe("SchedulerEventBus", () => {
     it("resolves when the matching event is emitted", async () => {
       const promise = bus.waitFor("run:start");
 
-      bus.emit("run:start", { agentName: "agent1", instanceId: "id1", trigger: "cron" });
+      bus.emit("run:start", { agentName: "agent1", sessionId: "id1", trigger: "cron" });
 
       const result = await promise;
-      expect(result).toEqual({ agentName: "agent1", instanceId: "id1", trigger: "cron" });
+      expect(result).toEqual({ agentName: "agent1", sessionId: "id1", trigger: "cron" });
     });
 
     it("resolves only when predicate matches", async () => {
       const promise = bus.waitFor("run:start", (data) => data.agentName === "agent2");
 
-      bus.emit("run:start", { agentName: "agent1", instanceId: "id1", trigger: "cron" });
-      bus.emit("run:start", { agentName: "agent2", instanceId: "id2", trigger: "cron" });
+      bus.emit("run:start", { agentName: "agent1", sessionId: "id1", trigger: "cron" });
+      bus.emit("run:start", { agentName: "agent2", sessionId: "id2", trigger: "cron" });
 
       const result = await promise;
       expect(result.agentName).toBe("agent2");
@@ -195,14 +195,14 @@ describe("SchedulerEventBus", () => {
       await expect(promise).rejects.toThrow();
 
       // After timeout, emitting should not cause errors
-      expect(() => bus.emit("run:start", { agentName: "a", instanceId: "i", trigger: "cron" })).not.toThrow();
+      expect(() => bus.emit("run:start", { agentName: "a", sessionId: "i", trigger: "cron" })).not.toThrow();
     });
 
     it("cleans up timeout after event fires", async () => {
       vi.useFakeTimers();
       const promise = bus.waitFor("run:start", undefined, 5000);
 
-      bus.emit("run:start", { agentName: "a", instanceId: "i", trigger: "cron" });
+      bus.emit("run:start", { agentName: "a", sessionId: "i", trigger: "cron" });
       await promise;
 
       // Should not throw after advancing time (timer was cleared)
@@ -215,8 +215,8 @@ describe("SchedulerEventBus", () => {
     it("collects events emitted after calling collect()", () => {
       const handle = bus.collect("run:start");
 
-      bus.emit("run:start", { agentName: "a1", instanceId: "i1", trigger: "cron" });
-      bus.emit("run:start", { agentName: "a2", instanceId: "i2", trigger: "manual" });
+      bus.emit("run:start", { agentName: "a1", sessionId: "i1", trigger: "cron" });
+      bus.emit("run:start", { agentName: "a2", sessionId: "i2", trigger: "manual" });
 
       const results = handle.stop();
       expect(results).toHaveLength(2);
@@ -227,10 +227,10 @@ describe("SchedulerEventBus", () => {
     it("stops collecting after stop() is called", () => {
       const handle = bus.collect("run:start");
 
-      bus.emit("run:start", { agentName: "a1", instanceId: "i1", trigger: "cron" });
+      bus.emit("run:start", { agentName: "a1", sessionId: "i1", trigger: "cron" });
       const results = handle.stop();
 
-      bus.emit("run:start", { agentName: "a2", instanceId: "i2", trigger: "manual" });
+      bus.emit("run:start", { agentName: "a2", sessionId: "i2", trigger: "manual" });
 
       expect(results).toHaveLength(1);
     });
@@ -244,8 +244,8 @@ describe("SchedulerEventBus", () => {
     it("collects lock events with full details", () => {
       const handle = bus.collect("lock");
 
-      bus.emit("lock", { agentName: "a", instanceId: "i", resourceKey: "res://r", action: "acquire", ok: true, status: 200 });
-      bus.emit("lock", { agentName: "a", instanceId: "i", resourceKey: "res://r", action: "release", ok: true, status: 200 });
+      bus.emit("lock", { agentName: "a", sessionId: "i", resourceKey: "res://r", action: "acquire", ok: true, status: 200 });
+      bus.emit("lock", { agentName: "a", sessionId: "i", resourceKey: "res://r", action: "release", ok: true, status: 200 });
 
       const results = handle.stop();
       expect(results).toHaveLength(2);
@@ -254,10 +254,10 @@ describe("SchedulerEventBus", () => {
     });
 
     it("does not collect events that were emitted before calling collect()", () => {
-      bus.emit("run:start", { agentName: "before", instanceId: "i0", trigger: "cron" });
+      bus.emit("run:start", { agentName: "before", sessionId: "i0", trigger: "cron" });
 
       const handle = bus.collect("run:start");
-      bus.emit("run:start", { agentName: "after", instanceId: "i1", trigger: "cron" });
+      bus.emit("run:start", { agentName: "after", sessionId: "i1", trigger: "cron" });
 
       const results = handle.stop();
       expect(results).toHaveLength(1);

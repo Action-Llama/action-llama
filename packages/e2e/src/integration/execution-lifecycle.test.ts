@@ -6,26 +6,26 @@
  * coverage. All types and functions are pure (no network, no Docker).
  *
  * Exported items tested:
- *   - InstanceState type: "queued" | "running" | "completed" | "error" | "killed"
+ *   - SessionState type: "queued" | "running" | "completed" | "error" | "killed"
  *   - AgentState type: "idle" | "running" | "building" | "error"
  *   - BaseStateMachine<T>: base class with validation logic
- *   - getValidInstanceTransitions(): returns VALID_INSTANCE_TRANSITIONS map
+ *   - getValidSessionTransitions(): returns VALID_SESSION_TRANSITIONS map
  *   - getValidAgentTransitions(): returns VALID_AGENT_TRANSITIONS map
- *   - isTerminalInstanceState(state): true if terminal (completed/error/killed)
+ *   - isTerminalSessionState(state): true if terminal (completed/error/killed)
  *   - isTerminalAgentState(state): true if terminal (none — all agent states allow transitions)
  *
  * Test scenarios (no Docker required):
- *   1. getValidInstanceTransitions returns the full transition map
+ *   1. getValidSessionTransitions returns the full transition map
  *   2. getValidAgentTransitions returns the full transition map
- *   3. isTerminalInstanceState: completed/error/killed → true
- *   4. isTerminalInstanceState: queued/running → false
+ *   3. isTerminalSessionState: completed/error/killed → true
+ *   4. isTerminalSessionState: queued/running → false
  *   5. isTerminalAgentState: all agent states have transitions → false for all
  *   6. BaseStateMachine.getState() returns initial state
  *   7. BaseStateMachine.canTransitionTo(): valid transition → true
  *   8. BaseStateMachine.canTransitionTo(): invalid transition → false
  *   9. BaseStateMachine.transition(): valid transition emits 'transition' event
  *  10. BaseStateMachine.transition(): invalid transition throws with message
- *  11. Concrete subclass using InstanceState transitions
+ *  11. Concrete subclass using SessionState transitions
  *  12. forceTransition(): transitions without validation check
  *
  * Covers:
@@ -36,9 +36,9 @@ import { describe, it, expect } from "vitest";
 
 const {
   BaseStateMachine,
-  getValidInstanceTransitions,
+  getValidSessionTransitions,
   getValidAgentTransitions,
-  isTerminalInstanceState,
+  isTerminalSessionState,
   isTerminalAgentState,
 } = await import(
   /* @vite-ignore */
@@ -48,37 +48,37 @@ const {
 // Minimal concrete subclass to test BaseStateMachine
 class TestInstanceMachine extends BaseStateMachine {
   constructor() {
-    super("queued", getValidInstanceTransitions());
+    super("queued", getValidSessionTransitions());
   }
 
-  transitionToRunning(instanceId: string) {
-    this.transition("running", "instance:running", { instanceId });
+  transitionToRunning(sessionId: string) {
+    this.transition("running", "session:running", { sessionId });
   }
 
-  transitionToCompleted(instanceId: string) {
-    this.transition("completed", "instance:completed", { instanceId });
+  transitionToCompleted(sessionId: string) {
+    this.transition("completed", "session:completed", { sessionId });
   }
 
-  transitionToError(instanceId: string) {
-    this.transition("error", "instance:error", { instanceId });
+  transitionToError(sessionId: string) {
+    this.transition("error", "session:error", { sessionId });
   }
 
-  transitionToKilled(instanceId: string) {
-    this.transition("killed", "instance:killed", { instanceId });
+  transitionToKilled(sessionId: string) {
+    this.transition("killed", "session:killed", { sessionId });
   }
 
-  forceToError(instanceId: string) {
-    this.forceTransition("error", "instance:force-error", { instanceId });
+  forceToError(sessionId: string) {
+    this.forceTransition("error", "session:force-error", { sessionId });
   }
 }
 
 describe("integration: execution/lifecycle/index.ts (no Docker required)", () => {
 
-  // ── getValidInstanceTransitions ───────────────────────────────────────────
+  // ── getValidSessionTransitions ───────────────────────────────────────────
 
-  describe("getValidInstanceTransitions()", () => {
+  describe("getValidSessionTransitions()", () => {
     it("returns the valid instance state transitions map", () => {
-      const transitions = getValidInstanceTransitions();
+      const transitions = getValidSessionTransitions();
       expect(typeof transitions).toBe("object");
       expect(Array.isArray(transitions.queued)).toBe(true);
       expect(Array.isArray(transitions.running)).toBe(true);
@@ -88,36 +88,36 @@ describe("integration: execution/lifecycle/index.ts (no Docker required)", () =>
     });
 
     it("queued can transition to running or killed", () => {
-      const transitions = getValidInstanceTransitions();
+      const transitions = getValidSessionTransitions();
       expect(transitions.queued).toContain("running");
       expect(transitions.queued).toContain("killed");
     });
 
     it("running can transition to completed, error, or killed", () => {
-      const transitions = getValidInstanceTransitions();
+      const transitions = getValidSessionTransitions();
       expect(transitions.running).toContain("completed");
       expect(transitions.running).toContain("error");
       expect(transitions.running).toContain("killed");
     });
 
     it("completed has no valid transitions (terminal)", () => {
-      const transitions = getValidInstanceTransitions();
+      const transitions = getValidSessionTransitions();
       expect(transitions.completed).toEqual([]);
     });
 
     it("error has no valid transitions (terminal)", () => {
-      const transitions = getValidInstanceTransitions();
+      const transitions = getValidSessionTransitions();
       expect(transitions.error).toEqual([]);
     });
 
     it("killed has no valid transitions (terminal)", () => {
-      const transitions = getValidInstanceTransitions();
+      const transitions = getValidSessionTransitions();
       expect(transitions.killed).toEqual([]);
     });
 
     it("returns a copy — modifying it does not affect the module", () => {
-      const t1 = getValidInstanceTransitions();
-      const t2 = getValidInstanceTransitions();
+      const t1 = getValidSessionTransitions();
+      const t2 = getValidSessionTransitions();
       expect(t1).not.toBe(t2); // different object instances
     });
   });
@@ -149,27 +149,27 @@ describe("integration: execution/lifecycle/index.ts (no Docker required)", () =>
     });
   });
 
-  // ── isTerminalInstanceState ───────────────────────────────────────────────
+  // ── isTerminalSessionState ───────────────────────────────────────────────
 
-  describe("isTerminalInstanceState()", () => {
+  describe("isTerminalSessionState()", () => {
     it("returns true for 'completed' (terminal)", () => {
-      expect(isTerminalInstanceState("completed")).toBe(true);
+      expect(isTerminalSessionState("completed")).toBe(true);
     });
 
     it("returns true for 'error' (terminal)", () => {
-      expect(isTerminalInstanceState("error")).toBe(true);
+      expect(isTerminalSessionState("error")).toBe(true);
     });
 
     it("returns true for 'killed' (terminal)", () => {
-      expect(isTerminalInstanceState("killed")).toBe(true);
+      expect(isTerminalSessionState("killed")).toBe(true);
     });
 
     it("returns false for 'queued' (non-terminal)", () => {
-      expect(isTerminalInstanceState("queued")).toBe(false);
+      expect(isTerminalSessionState("queued")).toBe(false);
     });
 
     it("returns false for 'running' (non-terminal)", () => {
-      expect(isTerminalInstanceState("running")).toBe(false);
+      expect(isTerminalSessionState("running")).toBe(false);
     });
   });
 
@@ -216,13 +216,13 @@ describe("integration: execution/lifecycle/index.ts (no Docker required)", () =>
       expect(event.fromState).toBe("queued");
       expect(event.toState).toBe("running");
       expect(event.timestamp instanceof Date).toBe(true);
-      expect(event.instanceId).toBe("inst-1");
+      expect(event.sessionId).toBe("inst-1");
     });
 
     it("transition() also emits the specific event type", () => {
       const machine = new TestInstanceMachine();
       const runningEvents: unknown[] = [];
-      machine.on("instance:running", (e) => runningEvents.push(e));
+      machine.on("session:running", (e) => runningEvents.push(e));
 
       machine.transitionToRunning("inst-2");
 

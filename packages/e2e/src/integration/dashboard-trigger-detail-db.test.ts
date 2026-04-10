@@ -1,7 +1,7 @@
 /**
  * Integration tests: control/routes/dashboard-api.ts toTriggerDetail() DB-backed path — no Docker required.
  *
- * The GET /api/dashboard/triggers/:instanceId endpoint has two branches:
+ * The GET /api/dashboard/triggers/:sessionId endpoint has two branches:
  *   1. Instance is currently running in StatusTracker → toRunningTriggerDetail() [already tested]
  *   2. Instance is found in StatsStore DB → toTriggerDetail() [THIS FILE]
  *
@@ -20,10 +20,10 @@
  *   - control/routes/dashboard-api.ts: toTriggerDetail() — webhook type receipt not found → base only
  *   - control/routes/dashboard-api.ts: toTriggerDetail() — agent type with call edge → callerAgent/callDepth
  *   - control/routes/dashboard-api.ts: toTriggerDetail() — agent type without call edge → base only
- *   - control/routes/dashboard-api.ts: GET /api/dashboard/triggers/:instanceId — unknown instanceId → 404
- *   - control/routes/dashboard-api.ts: GET /api/dashboard/triggers/:instanceId — triggerContext preserved
- *   - stats/store.ts: queryRunByInstanceId() — found and not found
- *   - stats/store.ts: queryCallEdgeByTargetInstance() — agent trigger enrichment
+ *   - control/routes/dashboard-api.ts: GET /api/dashboard/triggers/:sessionId — unknown sessionId → 404
+ *   - control/routes/dashboard-api.ts: GET /api/dashboard/triggers/:sessionId — triggerContext preserved
+ *   - stats/store.ts: queryRunBySessionId() — found and not found
+ *   - stats/store.ts: queryCallEdgeByTargetSession() — agent trigger enrichment
  */
 
 import { describe, it, expect } from "vitest";
@@ -82,9 +82,9 @@ describe(
   "integration: control/routes/dashboard-api.ts toTriggerDetail() DB-backed path (no Docker required)",
   { timeout: 20_000 },
   () => {
-    // ── 404 path — unknown instanceId ────────────────────────────────────────
+    // ── 404 path — unknown sessionId ────────────────────────────────────────
 
-    it("returns 404 { trigger: null } when instanceId not in DB and not running", async () => {
+    it("returns 404 { trigger: null } when sessionId not in DB and not running", async () => {
       const tracker = makeTracker();
       const { store } = makeTmpDb();
       const app = makeApp(tracker, store);
@@ -108,11 +108,11 @@ describe(
     it("toTriggerDetail() returns base fields for manual trigger type", async () => {
       const tracker = makeTracker("my-agent");
       const { store } = makeTmpDb();
-      const instanceId = randomUUID();
+      const sessionId = randomUUID();
       const now = Date.now();
 
       store.recordRun({
-        instanceId,
+        sessionId,
         agentName: "my-agent",
         triggerType: "manual",
         result: "completed",
@@ -121,12 +121,12 @@ describe(
       });
 
       const app = makeApp(tracker, store);
-      const res = await app.request(`/api/dashboard/triggers/${instanceId}`);
+      const res = await app.request(`/api/dashboard/triggers/${sessionId}`);
       expect(res.status).toBe(200);
 
       const body = await res.json() as { trigger: Record<string, unknown> };
       expect(body.trigger).toBeDefined();
-      expect(body.trigger.instanceId).toBe(instanceId);
+      expect(body.trigger.sessionId).toBe(sessionId);
       expect(body.trigger.agentName).toBe("my-agent");
       expect(body.trigger.triggerType).toBe("manual");
       expect(body.trigger.triggerSource).toBeNull();
@@ -142,10 +142,10 @@ describe(
     it("toTriggerDetail() returns base fields for schedule trigger type", async () => {
       const tracker = makeTracker("sched-agent");
       const { store } = makeTmpDb();
-      const instanceId = randomUUID();
+      const sessionId = randomUUID();
 
       store.recordRun({
-        instanceId,
+        sessionId,
         agentName: "sched-agent",
         triggerType: "schedule",
         result: "completed",
@@ -154,7 +154,7 @@ describe(
       });
 
       const app = makeApp(tracker, store);
-      const res = await app.request(`/api/dashboard/triggers/${instanceId}`);
+      const res = await app.request(`/api/dashboard/triggers/${sessionId}`);
       expect(res.status).toBe(200);
 
       const body = await res.json() as { trigger: Record<string, unknown> };
@@ -169,10 +169,10 @@ describe(
     it("toTriggerDetail() preserves triggerSource and triggerContext from DB run", async () => {
       const tracker = makeTracker("context-agent");
       const { store } = makeTmpDb();
-      const instanceId = randomUUID();
+      const sessionId = randomUUID();
 
       store.recordRun({
-        instanceId,
+        sessionId,
         agentName: "context-agent",
         triggerType: "webhook",
         triggerSource: "github",
@@ -182,7 +182,7 @@ describe(
       });
 
       const app = makeApp(tracker, store);
-      const res = await app.request(`/api/dashboard/triggers/${instanceId}`);
+      const res = await app.request(`/api/dashboard/triggers/${sessionId}`);
       expect(res.status).toBe(200);
 
       const body = await res.json() as { trigger: Record<string, unknown> };
@@ -195,7 +195,7 @@ describe(
     it("toTriggerDetail() enriches with webhook fields when trigger_type=webhook and receipt found", async () => {
       const tracker = makeTracker("webhook-agent");
       const { store } = makeTmpDb();
-      const instanceId = randomUUID();
+      const sessionId = randomUUID();
       const receiptId = randomUUID();
       const now = Date.now();
 
@@ -214,7 +214,7 @@ describe(
 
       // Record a run linked to this receipt
       store.recordRun({
-        instanceId,
+        sessionId,
         agentName: "webhook-agent",
         triggerType: "webhook",
         triggerSource: "github",
@@ -225,7 +225,7 @@ describe(
       });
 
       const app = makeApp(tracker, store);
-      const res = await app.request(`/api/dashboard/triggers/${instanceId}`);
+      const res = await app.request(`/api/dashboard/triggers/${sessionId}`);
       expect(res.status).toBe(200);
 
       const body = await res.json() as { trigger: Record<string, unknown> };
@@ -246,12 +246,12 @@ describe(
     it("toTriggerDetail() returns base only when webhook_receipt_id present but receipt not found", async () => {
       const tracker = makeTracker("webhook-no-receipt");
       const { store } = makeTmpDb();
-      const instanceId = randomUUID();
+      const sessionId = randomUUID();
       const missingReceiptId = randomUUID();
 
       // Run references a receipt that doesn't exist in the DB
       store.recordRun({
-        instanceId,
+        sessionId,
         agentName: "webhook-no-receipt",
         triggerType: "webhook",
         triggerSource: "github",
@@ -262,7 +262,7 @@ describe(
       });
 
       const app = makeApp(tracker, store);
-      const res = await app.request(`/api/dashboard/triggers/${instanceId}`);
+      const res = await app.request(`/api/dashboard/triggers/${sessionId}`);
       expect(res.status).toBe(200);
 
       const body = await res.json() as { trigger: Record<string, unknown> };
@@ -278,15 +278,15 @@ describe(
       const tracker = makeTracker("callee-agent");
       const { store } = makeTmpDb();
       const targetInstanceId = randomUUID();
-      const callerInstanceId = randomUUID();
+      const callerSessionId = randomUUID();
       const now = Date.now();
 
       // Record a call edge (caller → target)
       store.recordCallEdge({
         callerAgent: "caller-agent",
-        callerInstance: callerInstanceId,
+        callerSession: callerSessionId,
         targetAgent: "callee-agent",
-        targetInstance: targetInstanceId,
+        targetSession: targetInstanceId,
         depth: 2,
         startedAt: now,
         status: "completed",
@@ -294,7 +294,7 @@ describe(
 
       // Record the target run
       store.recordRun({
-        instanceId: targetInstanceId,
+        sessionId: targetInstanceId,
         agentName: "callee-agent",
         triggerType: "agent",
         triggerSource: "caller-agent",
@@ -310,7 +310,7 @@ describe(
       const body = await res.json() as { trigger: Record<string, unknown> };
       expect(body.trigger.triggerType).toBe("agent");
       expect(body.trigger.callerAgent).toBe("caller-agent");
-      expect(body.trigger.callerInstance).toBe(callerInstanceId);
+      expect(body.trigger.callerInstance).toBe(callerSessionId);
       expect(body.trigger.callDepth).toBe(2);
       // No webhook enrichment
       expect(body.trigger.webhook).toBeUndefined();
@@ -319,11 +319,11 @@ describe(
     it("toTriggerDetail() returns base only when trigger_type=agent but no call edge found", async () => {
       const tracker = makeTracker("callee-no-edge");
       const { store } = makeTmpDb();
-      const instanceId = randomUUID();
+      const sessionId = randomUUID();
 
       // Run with agent trigger but no matching call edge
       store.recordRun({
-        instanceId,
+        sessionId,
         agentName: "callee-no-edge",
         triggerType: "agent",
         triggerSource: "some-caller",
@@ -333,7 +333,7 @@ describe(
       });
 
       const app = makeApp(tracker, store);
-      const res = await app.request(`/api/dashboard/triggers/${instanceId}`);
+      const res = await app.request(`/api/dashboard/triggers/${sessionId}`);
       expect(res.status).toBe(200);
 
       const body = await res.json() as { trigger: Record<string, unknown> };
@@ -347,15 +347,15 @@ describe(
     // ── DB path takes priority over running-instance lookup ───────────────────
 
     it("uses DB run when statsStore is provided, even if instance is also running in tracker", async () => {
-      // This tests the code path ordering: statsStore?.queryRunByInstanceId is checked first
+      // This tests the code path ordering: statsStore?.queryRunBySessionId is checked first
       const tracker = makeTracker("priority-agent");
       const { store } = makeTmpDb();
-      const instanceId = randomUUID();
+      const sessionId = randomUUID();
       const now = Date.now();
 
       // Register as running in tracker
-      tracker.registerInstance({
-        id: instanceId,
+      tracker.registerSession({
+        id: sessionId,
         agentName: "priority-agent",
         status: "running",
         startedAt: new Date(now),
@@ -364,7 +364,7 @@ describe(
 
       // Also write to DB with manual trigger type
       store.recordRun({
-        instanceId,
+        sessionId,
         agentName: "priority-agent",
         triggerType: "manual",
         result: "completed",
@@ -373,12 +373,12 @@ describe(
       });
 
       const app = makeApp(tracker, store);
-      const res = await app.request(`/api/dashboard/triggers/${instanceId}`);
+      const res = await app.request(`/api/dashboard/triggers/${sessionId}`);
       expect(res.status).toBe(200);
 
       const body = await res.json() as { trigger: Record<string, unknown> };
       // DB path is used when run found, regardless of running status
-      // The code does `const run = statsStore?.queryRunByInstanceId(...)` then checks if run is falsy
+      // The code does `const run = statsStore?.queryRunBySessionId(...)` then checks if run is falsy
       // Since run is found, it returns toTriggerDetail (which yields "manual")
       expect(body.trigger.triggerType).toBe("manual");
     });

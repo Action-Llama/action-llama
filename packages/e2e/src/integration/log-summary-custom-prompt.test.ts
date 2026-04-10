@@ -1,5 +1,5 @@
 /**
- * Integration tests: POST /api/logs/agents/:name/:instanceId/summarize
+ * Integration tests: POST /api/logs/agents/:name/:sessionId/summarize
  * — custom prompt body parameter and no-models error path (no Docker required).
  *
  * The log summarization endpoint (log-summary.ts, added in ff37d00) was extended
@@ -40,7 +40,7 @@ import { IntegrationHarness } from "./harness.js";
 const TODAY = new Date().toISOString().slice(0, 10);
 
 /** Create a minimal pino-format log line. */
-function pinoLine(msg: string, instanceId: string, extraFields?: Record<string, unknown>): string {
+function pinoLine(msg: string, sessionId: string, extraFields?: Record<string, unknown>): string {
   return JSON.stringify({
     level: 30,
     time: Date.now(),
@@ -48,7 +48,7 @@ function pinoLine(msg: string, instanceId: string, extraFields?: Record<string, 
     name: "test-agent",
     pid: 1,
     hostname: "localhost",
-    instance: instanceId,
+    instance: sessionId,
     ...extraFields,
   });
 }
@@ -72,11 +72,11 @@ describe(
     function summarize(
       h: IntegrationHarness,
       agentName: string,
-      instanceId: string,
+      sessionId: string,
       body?: Record<string, unknown>,
     ): Promise<Response> {
       return fetch(
-        `http://127.0.0.1:${h.gatewayPort}/api/logs/agents/${agentName}/${instanceId}/summarize`,
+        `http://127.0.0.1:${h.gatewayPort}/api/logs/agents/${agentName}/${sessionId}/summarize`,
         {
           method: "POST",
           headers: {
@@ -166,12 +166,12 @@ describe(
 
     it("returns 500 'No models configured' when config.toml has empty [models] table and logs exist", async () => {
       const agentName = "cust-prompt-nomodels";
-      const instanceId = "test-instance-abc";
+      const sessionId = "test-instance-abc";
 
       // Write a real log entry so the endpoint proceeds past the "no entries" check.
       await setupHarness({
         agentName,
-        logLines: [pinoLine("agent started", instanceId)],
+        logLines: [pinoLine("agent started", sessionId)],
       });
       if (!gatewayAccessible) return;
 
@@ -182,7 +182,7 @@ describe(
         `[gateway]\nport = ${harness.gatewayPort}\n\n[models]\n`,
       );
 
-      const res = await summarize(harness, agentName, instanceId, {
+      const res = await summarize(harness, agentName, sessionId, {
         prompt: "Summarize what happened.",
       });
       expect(res.status).toBe(500);
@@ -193,15 +193,15 @@ describe(
 
     it("custom prompt with log entries and a real model reaches LLM call → 500 (fake key)", async () => {
       const agentName = "cust-prompt-llfail";
-      const instanceId = "inst-abc-123";
+      const sessionId = "inst-abc-123";
 
       // Write a log entry with extra fields (exercises the rich-log-formatting path
       // added in c5876cc — uses JSON.stringify(rest) instead of just e.msg).
       await setupHarness({
         agentName,
         logLines: [
-          pinoLine("tool call: bash", instanceId, { tool: "bash", command: "ls -la" }),
-          pinoLine("agent finished", instanceId),
+          pinoLine("tool call: bash", sessionId, { tool: "bash", command: "ls -la" }),
+          pinoLine("agent finished", sessionId),
         ],
       });
       if (!gatewayAccessible) return;
@@ -209,7 +209,7 @@ describe(
       // customPrompt is set → cache check is bypassed.
       // Log entries exist → model is resolved → LLM call happens.
       // Fake API key causes LLM call to fail → 500.
-      const res = await summarize(harness, agentName, instanceId, {
+      const res = await summarize(harness, agentName, sessionId, {
         prompt: "Was there an error?",
       });
       // LLM call must fail with fake key (anthropic rejects "sk-test-fake-key")

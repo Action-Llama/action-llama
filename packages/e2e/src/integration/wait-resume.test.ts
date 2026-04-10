@@ -40,7 +40,7 @@ const { dispatchTriggers } = await import(
 
 function makeWaitingEntry(overrides: Record<string, any> = {}) {
   return {
-    instanceId: `inst-${Math.random().toString(36).slice(2, 8)}`,
+    sessionId: `inst-${Math.random().toString(36).slice(2, 8)}`,
     agentName: "test-agent",
     filter: { type: "webhook" as const },
     deadline: Date.now() + 60_000,
@@ -213,13 +213,13 @@ describe("integration: wait/resume — webhook resolves waiting instance (no Doc
   it("FIFO ordering — first registered instance is matched first", () => {
     const registry = new WaitingRegistry();
     const entry1 = makeWaitingEntry({
-      instanceId: "first",
+      sessionId: "first",
       agentName: "agent",
       filter: { type: "webhook", event: "deploy" },
       registeredAt: Date.now() - 1000,
     });
     const entry2 = makeWaitingEntry({
-      instanceId: "second",
+      sessionId: "second",
       agentName: "agent",
       filter: { type: "webhook", event: "deploy" },
       registeredAt: Date.now(),
@@ -232,12 +232,12 @@ describe("integration: wait/resume — webhook resolves waiting instance (no Doc
     const context = makeWebhookContext({ event: "deploy" });
     const match = registry.matchWebhook("agent", context);
 
-    expect(match!.instanceId).toBe("first");
+    expect(match!.sessionId).toBe("first");
     expect(registry.count()).toBe(1);
 
     // Second webhook matches the remaining instance
     const match2 = registry.matchWebhook("agent", context);
-    expect(match2!.instanceId).toBe("second");
+    expect(match2!.sessionId).toBe("second");
     expect(registry.count()).toBe(0);
   });
 

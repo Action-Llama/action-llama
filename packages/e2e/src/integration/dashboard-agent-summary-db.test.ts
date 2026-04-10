@@ -84,7 +84,7 @@ describe(
       const now = Date.now();
 
       store.recordRun({
-        instanceId: randomUUID(),
+        sessionId: randomUUID(),
         agentName: "my-agent",
         triggerType: "manual",
         result: "completed",
@@ -94,7 +94,7 @@ describe(
         costUsd: 0.01,
       });
       store.recordRun({
-        instanceId: randomUUID(),
+        sessionId: randomUUID(),
         agentName: "my-agent",
         triggerType: "schedule",
         result: "completed",
@@ -132,7 +132,7 @@ describe(
       // Insert 3 runs
       for (let i = 0; i < 3; i++) {
         store.recordRun({
-          instanceId: randomUUID(),
+          sessionId: randomUUID(),
           agentName: "count-agent",
           triggerType: "manual",
           result: "completed",
@@ -172,7 +172,7 @@ describe(
       const store = makeTmpStore();
       // Insert runs for a different agent
       store.recordRun({
-        instanceId: randomUUID(),
+        sessionId: randomUUID(),
         agentName: "other-agent",
         triggerType: "manual",
         result: "completed",
@@ -234,14 +234,14 @@ Agent for testing.
       const instanceYId = randomUUID();
 
       // Register instances for both agents
-      tracker.registerInstance({
+      tracker.registerSession({
         id: instanceXId,
         agentName: "agent-x",
         status: "running",
         startedAt: new Date(),
         trigger: "manual",
       });
-      tracker.registerInstance({
+      tracker.registerSession({
         id: instanceYId,
         agentName: "agent-y",
         status: "running",

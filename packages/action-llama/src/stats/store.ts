@@ -5,7 +5,7 @@ import { runsTable, webhookReceiptsTable, callEdgesTable } from "../db/schema.js
 import type { AppDb } from "../db/connection.js";
 
 export interface RunRecord {
-  instanceId: string;
+  sessionId: string;
   agentName: string;
   triggerType: string;
   triggerSource?: string;
@@ -42,7 +42,7 @@ export interface WebhookReceipt {
 
 export interface TriggerHistoryRow {
   ts: number;
-  instanceId: string | null;
+  sessionId: string | null;
   agentName: string | null;
   triggerType: string;
   triggerSource: string | null;
@@ -55,9 +55,9 @@ export interface TriggerHistoryRow {
 
 export interface CallEdgeRecord {
   callerAgent: string;
-  callerInstance: string;
+  callerSession: string;
   targetAgent: string;
-  targetInstance?: string;
+  targetSession?: string;
   depth: number;
   startedAt: number;
   durationMs?: number;
@@ -114,7 +114,7 @@ export class StatsStore {
 
   recordRun(run: RunRecord): void {
     this.db.insert(runsTable).values({
-      instanceId: run.instanceId,
+      sessionId: run.sessionId,
       agentName: run.agentName,
       triggerType: run.triggerType,
       triggerSource: run.triggerSource ?? null,
@@ -140,9 +140,9 @@ export class StatsStore {
   recordCallEdge(edge: CallEdgeRecord): number {
     const result = this.db.insert(callEdgesTable).values({
       callerAgent: edge.callerAgent,
-      callerInstance: edge.callerInstance,
+      callerSession: edge.callerSession,
       targetAgent: edge.targetAgent,
-      targetInstance: edge.targetInstance ?? null,
+      targetSession: edge.targetSession ?? null,
       depth: edge.depth,
       startedAt: edge.startedAt,
       durationMs: edge.durationMs ?? null,
@@ -151,13 +151,13 @@ export class StatsStore {
     return Number(result.lastInsertRowid);
   }
 
-  updateCallEdge(id: number, updates: { durationMs?: number; status?: string; targetInstance?: string }): void {
+  updateCallEdge(id: number, updates: { durationMs?: number; status?: string; targetSession?: string }): void {
     this.db.update(callEdgesTable)
       .set({
         durationMs: updates.durationMs ?? undefined,
         status: updates.status ?? undefined,
-        targetInstance: updates.targetInstance
-          ? updates.targetInstance
+        targetSession: updates.targetSession
+          ? updates.targetSession
           : undefined,
       })
       .where(eq(callEdgesTable.id, id))
@@ -177,22 +177,22 @@ export class StatsStore {
     return row?.count ?? 0;
   }
 
-  queryRunByInstanceId(instanceId: string): any | undefined {
+  queryRunBySessionId(sessionId: string): any | undefined {
     return (this.db as any).$client
-      .prepare("SELECT * FROM runs WHERE instance_id = ? LIMIT 1")
-      .get(instanceId) as any;
+      .prepare("SELECT * FROM runs WHERE session_id = ? LIMIT 1")
+      .get(sessionId) as any;
   }
 
-  updateRunSummary(instanceId: string, summary: string): void {
+  updateRunSummary(sessionId: string, summary: string): void {
     (this.db as any).$client
-      .prepare("UPDATE runs SET summary = ? WHERE instance_id = ?")
-      .run(summary, instanceId);
+      .prepare("UPDATE runs SET summary = ? WHERE session_id = ?")
+      .run(summary, sessionId);
   }
 
-  queryCallEdgeByTargetInstance(targetInstance: string): { caller_agent: string; caller_instance: string; target_agent: string; target_instance: string; depth: number; started_at: number; duration_ms: number | null; status: string } | undefined {
+  queryCallEdgeByTargetSession(targetSession: string): { caller_agent: string; caller_session: string; target_agent: string; target_session: string; depth: number; started_at: number; duration_ms: number | null; status: string } | undefined {
     return (this.db as any).$client
-      .prepare("SELECT * FROM call_edges WHERE target_instance = ? LIMIT 1")
-      .get(targetInstance) as any;
+      .prepare("SELECT * FROM call_edges WHERE target_session = ? LIMIT 1")
+      .get(targetSession) as any;
   }
 
   queryRuns(query: RunQuery = {}): any[] {
@@ -345,7 +345,7 @@ export class StatsStore {
 
     if (agentName && triggerType) {
       return client.prepare(`
-        SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
+        SELECT started_at AS ts, session_id AS sessionId, agent_name AS agentName,
                trigger_type AS triggerType, trigger_source AS triggerSource,
                result, webhook_receipt_id AS webhookReceiptId,
                NULL AS deadLetterReason
@@ -355,7 +355,7 @@ export class StatsStore {
     }
     if (agentName) {
       return client.prepare(`
-        SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
+        SELECT started_at AS ts, session_id AS sessionId, agent_name AS agentName,
                trigger_type AS triggerType, trigger_source AS triggerSource,
                result, webhook_receipt_id AS webhookReceiptId,
                NULL AS deadLetterReason
@@ -366,13 +366,13 @@ export class StatsStore {
     if (triggerType) {
       if (includeDeadLetters && triggerType === "webhook") {
         return client.prepare(`
-          SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
+          SELECT started_at AS ts, session_id AS sessionId, agent_name AS agentName,
                  trigger_type AS triggerType, trigger_source AS triggerSource,
                  result, webhook_receipt_id AS webhookReceiptId,
                  NULL AS deadLetterReason
           FROM runs WHERE started_at > ? AND trigger_type = ?
           UNION ALL
-          SELECT timestamp AS ts, NULL AS instanceId, NULL AS agentName,
+          SELECT timestamp AS ts, NULL AS sessionId, NULL AS agentName,
                  'webhook' AS triggerType, source AS triggerSource,
                  'dead-letter' AS result, id AS webhookReceiptId,
                  dead_letter_reason AS deadLetterReason
@@ -381,7 +381,7 @@ export class StatsStore {
         `).all(since, triggerType, since, limit, offset) as TriggerHistoryRow[];
       }
       return client.prepare(`
-        SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
+        SELECT started_at AS ts, session_id AS sessionId, agent_name AS agentName,
                trigger_type AS triggerType, trigger_source AS triggerSource,
                result, webhook_receipt_id AS webhookReceiptId,
                NULL AS deadLetterReason
@@ -391,13 +391,13 @@ export class StatsStore {
     }
     if (includeDeadLetters) {
       return client.prepare(`
-        SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
+        SELECT started_at AS ts, session_id AS sessionId, agent_name AS agentName,
                trigger_type AS triggerType, trigger_source AS triggerSource,
                result, webhook_receipt_id AS webhookReceiptId,
                NULL AS deadLetterReason
         FROM runs WHERE started_at > ?
         UNION ALL
-        SELECT timestamp AS ts, NULL AS instanceId, NULL AS agentName,
+        SELECT timestamp AS ts, NULL AS sessionId, NULL AS agentName,
                'webhook' AS triggerType, source AS triggerSource,
                'dead-letter' AS result, id AS webhookReceiptId,
                dead_letter_reason AS deadLetterReason
@@ -406,7 +406,7 @@ export class StatsStore {
       `).all(since, since, limit, offset) as TriggerHistoryRow[];
     }
     return client.prepare(`
-      SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
+      SELECT started_at AS ts, session_id AS sessionId, agent_name AS agentName,
              trigger_type AS triggerType, trigger_source AS triggerSource,
              result, webhook_receipt_id AS webhookReceiptId,
              NULL AS deadLetterReason
@@ -506,7 +506,7 @@ export class StatsStore {
 
 
     const runsSelect = `
-      SELECT r.started_at AS ts, r.instance_id AS instanceId, r.agent_name AS agentName,
+      SELECT r.started_at AS ts, r.session_id AS sessionId, r.agent_name AS agentName,
              r.trigger_type AS triggerType, COALESCE(r.trigger_source, wr.source) AS triggerSource,
              r.result, r.webhook_receipt_id AS webhookReceiptId,
              NULL AS deadLetterReason, r.summary,
@@ -517,7 +517,7 @@ export class StatsStore {
     `;
 
     const dlSelect = `
-      SELECT timestamp AS ts, NULL AS instanceId, NULL AS agentName,
+      SELECT timestamp AS ts, NULL AS sessionId, NULL AS agentName,
              'webhook' AS triggerType, source AS triggerSource,
              'dead-letter' AS result, id AS webhookReceiptId,
              dead_letter_reason AS deadLetterReason, NULL AS summary,
@@ -641,7 +641,7 @@ export class StatsStore {
 
     const runsWhereClause = runsWhere.length > 0 ? `WHERE ${runsWhere.join(" AND ")}` : "";
     const runsSelect = `
-      SELECT started_at AS ts, instance_id AS instanceId, agent_name AS agentName,
+      SELECT started_at AS ts, session_id AS sessionId, agent_name AS agentName,
              trigger_type AS triggerType, trigger_source AS triggerSource,
              result, webhook_receipt_id AS webhookReceiptId,
              NULL AS deadLetterReason, summary
@@ -649,7 +649,7 @@ export class StatsStore {
     `;
 
     const dlSelect = `
-      SELECT timestamp AS ts, NULL AS instanceId, NULL AS agentName,
+      SELECT timestamp AS ts, NULL AS sessionId, NULL AS agentName,
              'webhook' AS triggerType, source AS triggerSource,
              'dead-letter' AS result, id AS webhookReceiptId,
              dead_letter_reason AS deadLetterReason, NULL AS summary
@@ -666,7 +666,7 @@ export class StatsStore {
           UNION ALL
           ${dlSelect}
         )
-        SELECT a.ts, a.instanceId, a.agentName, a.triggerType,
+        SELECT a.ts, a.sessionId, a.agentName, a.triggerType,
                CASE WHEN a.triggerType = 'webhook' AND wr.source IS NOT NULL AND a.result != 'dead-letter'
                     THEN wr.source ELSE a.triggerSource END AS triggerSource,
                a.result, a.webhookReceiptId, a.deadLetterReason, a.summary,
@@ -688,7 +688,7 @@ export class StatsStore {
         WITH activity AS (
           ${runsSelect}
         )
-        SELECT a.ts, a.instanceId, a.agentName, a.triggerType,
+        SELECT a.ts, a.sessionId, a.agentName, a.triggerType,
                CASE WHEN a.triggerType = 'webhook' AND wr.source IS NOT NULL
                     THEN wr.source ELSE a.triggerSource END AS triggerSource,
                a.result, a.webhookReceiptId, a.deadLetterReason, a.summary,
@@ -709,7 +709,7 @@ export class StatsStore {
         WITH activity AS (
           ${dlSelect}
         )
-        SELECT a.ts, a.instanceId, a.agentName, a.triggerType, a.triggerSource,
+        SELECT a.ts, a.sessionId, a.agentName, a.triggerType, a.triggerSource,
                a.result, a.webhookReceiptId, a.deadLetterReason, a.summary,
                NULL AS eventSummary,
                COUNT(*) OVER() AS _total

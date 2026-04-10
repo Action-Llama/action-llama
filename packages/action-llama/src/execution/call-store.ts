@@ -6,7 +6,7 @@ export type CallStatus = "pending" | "running" | "completed" | "error";
 export interface CallEntry {
   callId: string;
   callerAgent: string;
-  callerInstanceId: string;
+  callerSessionId: string;
   targetAgent: string;
   context: string;
   status: CallStatus;
@@ -41,7 +41,7 @@ export class CallStore {
 
   create(opts: {
     callerAgent: string;
-    callerInstanceId: string;
+    callerSessionId: string;
     targetAgent: string;
     context: string;
     depth: number;
@@ -49,7 +49,7 @@ export class CallStore {
     const entry: CallEntry = {
       callId: randomUUID(),
       callerAgent: opts.callerAgent,
-      callerInstanceId: opts.callerInstanceId,
+      callerSessionId: opts.callerSessionId,
       targetAgent: opts.targetAgent,
       context: opts.context,
       status: "pending",
@@ -89,10 +89,10 @@ export class CallStore {
     return true;
   }
 
-  check(callId: string, callerInstanceId: string): { status: CallStatus; returnValue?: string; errorMessage?: string } | null {
+  check(callId: string, callerSessionId: string): { status: CallStatus; returnValue?: string; errorMessage?: string } | null {
     const entry = this.calls.get(callId);
     if (!entry) return null;
-    if (entry.callerInstanceId !== callerInstanceId) return null;
+    if (entry.callerSessionId !== callerSessionId) return null;
     return {
       status: entry.status,
       returnValue: entry.returnValue,
@@ -104,10 +104,10 @@ export class CallStore {
     return this.calls.get(callId);
   }
 
-  failAllByCaller(callerInstanceId: string): number {
+  failAllByCaller(callerSessionId: string): number {
     let count = 0;
     for (const entry of this.calls.values()) {
-      if (entry.callerInstanceId === callerInstanceId && (entry.status === "pending" || entry.status === "running")) {
+      if (entry.callerSessionId === callerSessionId && (entry.status === "pending" || entry.status === "running")) {
         entry.status = "error";
         entry.errorMessage = "caller container exited";
         entry.completedAt = Date.now();

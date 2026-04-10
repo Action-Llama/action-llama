@@ -1,7 +1,7 @@
 import { useContext, useEffect, useState, useCallback, useRef } from "react";
 import { useQuery } from "../hooks/useQuery";
 import { usePolling } from "../hooks/usePolling";
-import { getInstanceLogs, getLocks, summarizeLogs } from "../lib/api";
+import { getSessionLogs, getLocks, summarizeLogs } from "../lib/api";
 import type { LogEntry } from "../lib/api";
 import { InstanceContext } from "../hooks/InstanceContext";
 import { formatLogEntry as formatShared } from "../lib/log-format";
@@ -48,7 +48,7 @@ function formatLogEntry(
 
 const DEBUG_STORAGE_KEY = "al-logs-debug";
 
-export function InstanceLogsPage() {
+export function SessionLogsPage() {
   const ctx = useContext(InstanceContext);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [following, setFollowing] = useState(true);
@@ -125,7 +125,7 @@ export function InstanceLogsPage() {
         cursorRef.current ? { cursor: cursorRef.current } : undefined,
       );
       try {
-        const d = await getInstanceLogs(name, id, params, signal);
+        const d = await getSessionLogs(name, id, params, signal);
         setConnected(true);
         if (d.entries.length > 0) {
           // Save backCursor on first load BEFORE setting cursorRef
@@ -178,7 +178,7 @@ export function InstanceLogsPage() {
         lines: String(OLDER_BATCH_SIZE),
         back_cursor: backCursorRef.current,
       });
-      const d = await getInstanceLogs(name, id, params);
+      const d = await getSessionLogs(name, id, params);
       if (d.entries.length > 0) {
         // Preserve scroll position: measure scrollHeight before prepend
         const el = logContainerRef.current;
@@ -223,7 +223,7 @@ export function InstanceLogsPage() {
             lines: String(OLDER_BATCH_SIZE),
             back_cursor: backCursorRef.current,
           });
-          const d = await getInstanceLogs(name, id, params);
+          const d = await getSessionLogs(name, id, params);
           if (cancelled) break;
 
           if (d.entries.length === 0) {

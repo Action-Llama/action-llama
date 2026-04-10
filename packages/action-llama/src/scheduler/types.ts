@@ -13,14 +13,14 @@ export interface WebhookEvent {
   source: string;
 }
 
-import type { InstanceLifecycle } from "../execution/lifecycle/instance-lifecycle.js";
+import type { SessionLifecycle } from "../execution/lifecycle/session-lifecycle.js";
 
-export interface AgentInstance {
+export interface AgentSession {
   id: string;
   agentName: string;
   status: 'running' | 'waiting' | 'completed' | 'error' | 'killed';
   startedAt: Date;
   trigger: string;
   runner?: any; // Reference to the actual runner instance
-  lifecycle?: InstanceLifecycle; // Lifecycle state machine for this instance
+  lifecycle?: SessionLifecycle; // Lifecycle state machine for this instance
 }

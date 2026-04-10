@@ -33,7 +33,7 @@ export interface RunnerSetupOpts {
   projectPath: string;
   logger: Logger;
   /** Scheduler tools dependencies for lock/call/status tools. */
-  schedulerToolsDeps?: Omit<SchedulerToolsOpts, "agentName" | "instanceId" | "depth" | "onReturnValue">;
+  schedulerToolsDeps?: Omit<SchedulerToolsOpts, "agentName" | "sessionId" | "depth" | "onReturnValue">;
   /** Waiting registry for wait/resume support. */
   waitingRegistry?: WaitingRegistry;
   /** Prompt skills to include in the system prompt (locking, subagents, etc.). */

@@ -3,7 +3,7 @@
  *
  * These tests verify that:
  * - GET /api/stats/agents/:name/runs returns paginated run records with correct schema
- * - GET /api/stats/agents/:name/runs/:instanceId returns { run: null } for unknown IDs
+ * - GET /api/stats/agents/:name/runs/:sessionId returns { run: null } for unknown IDs
  * - GET /api/stats/webhooks/:receiptId returns a stored dead-letter webhook receipt
  * - GET /api/stats/triggers?all=1 includes dead-letter entries immediately after dispatch
  * - Trigger history totals increase after each webhook delivery
@@ -221,7 +221,7 @@ EOF`,
     expect(Array.isArray(body.runs)).toBe(true);
   });
 
-  it("GET /api/stats/agents/:name/runs/:instanceId returns { run: null } for unknown ID", async () => {
+  it("GET /api/stats/agents/:name/runs/:sessionId returns { run: null } for unknown ID", async () => {
     const res = await curl(
       context,
       container,

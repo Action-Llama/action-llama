@@ -22,11 +22,38 @@ export function defaultMigrationsFolder(): string {
 }
 
 /**
+ * Conditionally rename columns that were renamed from instance→session.
+ * This is a no-op if the columns have already been renamed (e.g., fresh DB created
+ * after migration 0000 was updated to use session_id directly).
+ */
+function applyInstanceToSessionRenames(client: any): void {
+  // Check if the old column names exist; if so, rename them
+  const runsColumns: { name: string }[] = client.pragma("table_info(runs)");
+  if (runsColumns.some((c) => c.name === "instance_id")) {
+    client.exec("ALTER TABLE `runs` RENAME COLUMN `instance_id` TO `session_id`");
+  }
+
+  const edgeColumns: { name: string }[] = client.pragma("table_info(call_edges)");
+  if (edgeColumns.some((c) => c.name === "caller_instance")) {
+    client.exec("ALTER TABLE `call_edges` RENAME COLUMN `caller_instance` TO `caller_session`");
+  }
+  if (edgeColumns.some((c) => c.name === "target_instance")) {
+    client.exec("ALTER TABLE `call_edges` RENAME COLUMN `target_instance` TO `target_session`");
+    client.exec("DROP INDEX IF EXISTS `idx_calls_target_instance`");
+    client.exec("CREATE INDEX IF NOT EXISTS `idx_calls_target_session` ON `call_edges` (`target_session`)");
+  }
+}
+
+/**
  * Run Drizzle migrations on an existing AppDb instance.
  * Useful for standalone stores that create their own connections.
  */
 export function applyMigrations(db: AppDb, migrationsFolder?: string): void {
   const folder = migrationsFolder ?? defaultMigrationsFolder();
+  const client = (db as any).$client;
+  // Apply the column renames before running drizzle migrations so that
+  // migration 0004 (which is a no-op SELECT 1) runs cleanly on both old and new DBs.
+  applyInstanceToSessionRenames(client);
   migrate(db, { migrationsFolder: folder });
 }
 
@@ -45,6 +72,9 @@ export function runMigrations(dbPath: string, migrationsFolder?: string): AppDb 
 
   // Open/create the consolidated DB
   const db = createDb(dbPath);
+
+  // Apply column renames from instance→session before drizzle migrations
+  applyInstanceToSessionRenames((db as any).$client);
 
   // Run Drizzle migrations (idempotent — only applies pending ones)
   const folder = migrationsFolder ?? defaultMigrationsFolder();
@@ -163,9 +193,9 @@ function migrateLegacyStats(client: any, legacyPath: string): void {
       FROM legacy_stats.webhook_receipts
     `);
 
-    // Migrate runs
+    // Migrate runs (legacy DB has instance_id, new DB has session_id)
     client.exec(`
-      INSERT OR IGNORE INTO runs (id, instance_id, agent_name, trigger_type, trigger_source, result, exit_code, started_at, duration_ms, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, total_tokens, cost_usd, turn_count, error_message, pre_hook_ms, post_hook_ms, webhook_receipt_id)
+      INSERT OR IGNORE INTO runs (id, session_id, agent_name, trigger_type, trigger_source, result, exit_code, started_at, duration_ms, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, total_tokens, cost_usd, turn_count, error_message, pre_hook_ms, post_hook_ms, webhook_receipt_id)
       SELECT id, instance_id, agent_name, trigger_type, trigger_source, result, exit_code, started_at, duration_ms,
              COALESCE(input_tokens, 0), COALESCE(output_tokens, 0), COALESCE(cache_read_tokens, 0), COALESCE(cache_write_tokens, 0),
              COALESCE(total_tokens, 0), COALESCE(cost_usd, 0), COALESCE(turn_count, 0),
@@ -173,9 +203,9 @@ function migrateLegacyStats(client: any, legacyPath: string): void {
       FROM legacy_stats.runs
     `);
 
-    // Migrate call_edges
+    // Migrate call_edges (legacy DB has caller_instance/target_instance, new DB has caller_session/target_session)
     client.exec(`
-      INSERT OR IGNORE INTO call_edges (id, caller_agent, caller_instance, target_agent, target_instance, depth, started_at, duration_ms, status)
+      INSERT OR IGNORE INTO call_edges (id, caller_agent, caller_session, target_agent, target_session, depth, started_at, duration_ms, status)
       SELECT id, caller_agent, caller_instance, target_agent, target_instance, depth, started_at, duration_ms, status
       FROM legacy_stats.call_edges
     `);

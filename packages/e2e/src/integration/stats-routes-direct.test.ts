@@ -10,8 +10,8 @@
  * Routes tested with populated data:
  *   1. GET /api/stats/agents/:name/runs — populated store → runs[] + total
  *   2. GET /api/stats/agents/:name/runs?page=2&limit=1 — pagination params reflected
- *   3. GET /api/stats/agents/:name/runs/:instanceId — known instanceId → run object
- *   4. GET /api/stats/agents/:name/runs/:instanceId — unknown instanceId → { run: null }
+ *   3. GET /api/stats/agents/:name/runs/:sessionId — known sessionId → run object
+ *   4. GET /api/stats/agents/:name/runs/:sessionId — unknown sessionId → { run: null }
  *   5. GET /api/stats/webhooks/:receiptId — known receipt → receipt object
  *   6. GET /api/stats/webhooks/:receiptId — unknown ID → 404 { receipt: null }
  *   7. GET /api/stats/triggers — populated store → triggers[] + total
@@ -23,8 +23,8 @@
  * Covers:
  *   - control/routes/stats.ts: GET /api/stats/agents/:name/runs — runs + total with data
  *   - control/routes/stats.ts: GET /api/stats/agents/:name/runs — page/limit reflected
- *   - control/routes/stats.ts: GET /api/stats/agents/:name/runs/:instanceId — found
- *   - control/routes/stats.ts: GET /api/stats/agents/:name/runs/:instanceId — null
+ *   - control/routes/stats.ts: GET /api/stats/agents/:name/runs/:sessionId — found
+ *   - control/routes/stats.ts: GET /api/stats/agents/:name/runs/:sessionId — null
  *   - control/routes/stats.ts: GET /api/stats/webhooks/:receiptId — found
  *   - control/routes/stats.ts: GET /api/stats/webhooks/:receiptId — 404 not found
  *   - control/routes/stats.ts: GET /api/stats/triggers — triggers + total with data
@@ -68,7 +68,7 @@ function makeTempDbPath(): string {
 
 function makeRun(overrides: Record<string, unknown> = {}) {
   return {
-    instanceId: randomUUID(),
+    sessionId: randomUUID(),
     agentName: "agent-a",
     triggerType: "manual",
     result: "completed",
@@ -111,10 +111,10 @@ describe("integration: registerStatsRoutes() with populated StatsStore (no Docke
 
   it("GET /api/stats/agents/:name/runs returns runs and total for populated agent", async () => {
     const store = new StatsStore(makeTempDbPath());
-    const instanceId1 = randomUUID();
-    const instanceId2 = randomUUID();
-    store.recordRun(makeRun({ agentName: "my-agent", instanceId: instanceId1 }));
-    store.recordRun(makeRun({ agentName: "my-agent", instanceId: instanceId2 }));
+    const sessionId1 = randomUUID();
+    const sessionId2 = randomUUID();
+    store.recordRun(makeRun({ agentName: "my-agent", sessionId: sessionId1 }));
+    store.recordRun(makeRun({ agentName: "my-agent", sessionId: sessionId2 }));
     store.recordRun(makeRun({ agentName: "other-agent" }));
 
     const app = makeApp(store);
@@ -174,27 +174,27 @@ describe("integration: registerStatsRoutes() with populated StatsStore (no Docke
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // GET /api/stats/agents/:name/runs/:instanceId
+  // GET /api/stats/agents/:name/runs/:sessionId
   // ─────────────────────────────────────────────────────────────────────────────
 
-  it("GET /api/stats/agents/:name/runs/:instanceId returns run for known instanceId", async () => {
+  it("GET /api/stats/agents/:name/runs/:sessionId returns run for known sessionId", async () => {
     const store = new StatsStore(makeTempDbPath());
-    const instanceId = randomUUID();
-    store.recordRun(makeRun({ agentName: "run-detail-agent", instanceId, triggerType: "schedule" }));
+    const sessionId = randomUUID();
+    store.recordRun(makeRun({ agentName: "run-detail-agent", sessionId, triggerType: "schedule" }));
 
     const app = makeApp(store);
-    const res = await app.request(`/api/stats/agents/run-detail-agent/runs/${instanceId}`);
+    const res = await app.request(`/api/stats/agents/run-detail-agent/runs/${sessionId}`);
     expect(res.status).toBe(200);
     const body = await res.json() as any;
 
     expect(body.run).not.toBeNull();
-    expect(body.run.instance_id).toBe(instanceId);
+    expect(body.run.instance_id).toBe(sessionId);
     expect(body.run.agent_name).toBe("run-detail-agent");
     expect(body.run.trigger_type).toBe("schedule");
     store.close();
   });
 
-  it("GET /api/stats/agents/:name/runs/:instanceId returns null for unknown instanceId", async () => {
+  it("GET /api/stats/agents/:name/runs/:sessionId returns null for unknown sessionId", async () => {
     const store = new StatsStore(makeTempDbPath());
     const app = makeApp(store);
     const res = await app.request(`/api/stats/agents/any-agent/runs/${randomUUID()}`);

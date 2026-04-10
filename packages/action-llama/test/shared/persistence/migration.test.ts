@@ -410,7 +410,7 @@ describe("LegacyMigrator.migrateStatsStore — with actual run and call data", (
     const migrator = new LegacyMigrator(store);
 
     const mockRun = {
-      instance_id: "inst-1",
+      session_id: "inst-1",
       agent_name: "test-agent",
       trigger_type: "schedule",
       trigger_source: null,
@@ -446,7 +446,7 @@ describe("LegacyMigrator.migrateStatsStore — with actual run and call data", (
 
     const runStarted = statsEvents.find((e) => e.type === "run.started");
     expect(runStarted).toBeDefined();
-    expect(runStarted.data.instanceId).toBe("inst-1");
+    expect(runStarted.data.sessionId).toBe("inst-1");
     expect(runStarted.data.agentName).toBe("test-agent");
 
     const runCompleted = statsEvents.find((e) => e.type === "run.completed");
@@ -461,7 +461,7 @@ describe("LegacyMigrator.migrateStatsStore — with actual run and call data", (
     const migrator = new LegacyMigrator(store);
 
     const mockRun = {
-      instance_id: "inst-fail",
+      session_id: "inst-fail",
       agent_name: "failing-agent",
       trigger_type: "manual",
       trigger_source: null,
@@ -508,9 +508,9 @@ describe("LegacyMigrator.migrateStatsStore — with actual run and call data", (
 
     const mockCall = {
       caller_agent: "agent-a",
-      caller_instance: "inst-a-1",
+      caller_session: "inst-a-1",
       target_agent: "agent-b",
-      target_instance: "inst-b-1",
+      target_session: "inst-b-1",
       depth: 1,
       duration_ms: 800,
       status: "completed",
@@ -548,9 +548,9 @@ describe("LegacyMigrator.migrateStatsStore — with actual run and call data", (
 
     const mockCall = {
       caller_agent: "agent-a",
-      caller_instance: "inst-a-1",
+      caller_session: "inst-a-1",
       target_agent: "agent-b",
-      target_instance: "inst-b-1",
+      target_session: "inst-b-1",
       depth: 1,
       duration_ms: 300,
       status: "error",
@@ -583,9 +583,9 @@ describe("LegacyMigrator.migrateStatsStore — with actual run and call data", (
 
     const mockCall = {
       caller_agent: "agent-a",
-      caller_instance: "inst-a-1",
+      caller_session: "inst-a-1",
       target_agent: "agent-b",
-      target_instance: "inst-b-1",
+      target_session: "inst-b-1",
       depth: 1,
       duration_ms: null,
       status: null,
@@ -622,7 +622,7 @@ describe("LegacyMigrator.migrateStatsStore — with actual run and call data", (
 
     vi.spyOn(store, "query", "get").mockReturnValue({
       sql: vi.fn().mockImplementation(async (q: string) => {
-        if (q.includes("runs")) return [{ instance_id: "r1", agent_name: "a", trigger_type: "schedule", trigger_source: null, result: "completed", exit_code: 0, duration_ms: 100, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, total_tokens: 0, cost_usd: 0, turn_count: 1, error_message: null, pre_hook_ms: null, post_hook_ms: null }];
+        if (q.includes("runs")) return [{ session_id: "r1", agent_name: "a", trigger_type: "schedule", trigger_source: null, result: "completed", exit_code: 0, duration_ms: 100, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, total_tokens: 0, cost_usd: 0, turn_count: 1, error_message: null, pre_hook_ms: null, post_hook_ms: null }];
         if (q.includes("call_edges")) return [];
         return [];
       }),
@@ -722,7 +722,7 @@ describe("LegacyMigrator.migrateStatsStore — 100-item progress for runs", () =
 
     // Create 100 run records
     const runs = Array.from({ length: 100 }, (_, i) => ({
-      instance_id: `inst-${i}`,
+      session_id: `inst-${i}`,
       agent_name: "test-agent",
       trigger_type: "schedule",
       trigger_source: null,
@@ -770,9 +770,9 @@ describe("LegacyMigrator.migrateStatsStore — 100-item progress for call edges"
     // Create 100 call edge records
     const callEdges = Array.from({ length: 100 }, (_, i) => ({
       call_id: `call-${i}`,
-      caller_instance_id: `caller-${i}`,
+      caller_session_id: `caller-${i}`,
       callee_agent_name: "callee-agent",
-      callee_instance_id: `callee-inst-${i}`,
+      callee_session_id: `callee-inst-${i}`,
       status: "completed",
       duration_ms: 500,
       started_at: Date.now() - 1000 * i,

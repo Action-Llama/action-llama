@@ -62,17 +62,17 @@ describe(
   () => {
     // ── DB rows deduplicated against running instances ─────────────────────────
 
-    it("DB row with same instanceId as running instance is deduplicated", async () => {
+    it("DB row with same sessionId as running instance is deduplicated", async () => {
       const tracker = new StatusTracker();
       tracker.registerAgent("dedup-agent", 1);
       const store = makeTmpStore();
 
-      const instanceId = randomUUID();
+      const sessionId = randomUUID();
       const now = Date.now();
 
       // Instance is "completed" in DB (e.g. just finished)
       store.recordRun({
-        instanceId,
+        sessionId,
         agentName: "dedup-agent",
         triggerType: "manual",
         result: "completed",
@@ -81,8 +81,8 @@ describe(
       });
 
       // But also registered as "running" in tracker (race condition — just finished but tracker not updated)
-      tracker.registerInstance({
-        id: instanceId,
+      tracker.registerSession({
+        id: sessionId,
         agentName: "dedup-agent",
         status: "running",
         startedAt: new Date(now - 1000),
@@ -94,9 +94,9 @@ describe(
       const res = await app.request("/api/stats/activity?status=all");
       expect(res.status).toBe(200);
 
-      const body = await res.json() as { rows: Array<{ instanceId: string; result: string }> };
+      const body = await res.json() as { rows: Array<{ sessionId: string; result: string }> };
       // The instance should appear only once (deduplicated)
-      const matching = body.rows.filter((r) => r.instanceId === instanceId);
+      const matching = body.rows.filter((r) => r.sessionId === sessionId);
       expect(matching).toHaveLength(1);
       // The mem row (running) takes precedence over the DB row (completed)
       expect(matching[0].result).toBe("running");
@@ -115,7 +115,7 @@ describe(
 
       // Record a completed run in DB
       store.recordRun({
-        instanceId: completedId,
+        sessionId: completedId,
         agentName: "combined-agent",
         triggerType: "manual",
         result: "completed",
@@ -124,7 +124,7 @@ describe(
       });
 
       // Register a different instance as running
-      tracker.registerInstance({
+      tracker.registerSession({
         id: runningId,
         agentName: "combined-agent",
         status: "running",
@@ -136,10 +136,10 @@ describe(
       const res = await app.request("/api/stats/activity");
       expect(res.status).toBe(200);
 
-      const body = await res.json() as { rows: Array<{ instanceId: string; result: string }>; total: number };
+      const body = await res.json() as { rows: Array<{ sessionId: string; result: string }>; total: number };
       // Should have both the running and completed rows
-      const completed = body.rows.find((r) => r.instanceId === completedId);
-      const running = body.rows.find((r) => r.instanceId === runningId);
+      const completed = body.rows.find((r) => r.sessionId === completedId);
+      const running = body.rows.find((r) => r.sessionId === runningId);
       expect(completed).toBeDefined();
       expect(running).toBeDefined();
       expect(completed!.result).toBe("completed");
@@ -158,7 +158,7 @@ describe(
       // 3 completed runs in DB
       for (let i = 0; i < 3; i++) {
         store.recordRun({
-          instanceId: randomUUID(),
+          sessionId: randomUUID(),
           agentName: "total-agent",
           triggerType: "manual",
           result: "completed",
@@ -168,7 +168,7 @@ describe(
       }
 
       // 1 running instance in tracker
-      tracker.registerInstance({
+      tracker.registerSession({
         id: randomUUID(),
         agentName: "total-agent",
         status: "running",
@@ -196,7 +196,7 @@ describe(
       const runningId = randomUUID();
 
       store.recordRun({
-        instanceId: completedId,
+        sessionId: completedId,
         agentName: "completed-only",
         triggerType: "manual",
         result: "completed",
@@ -204,7 +204,7 @@ describe(
         durationMs: 200,
       });
 
-      tracker.registerInstance({
+      tracker.registerSession({
         id: runningId,
         agentName: "completed-only",
         status: "running",
@@ -216,10 +216,10 @@ describe(
       const res = await app.request("/api/stats/activity?status=completed");
       expect(res.status).toBe(200);
 
-      const body = await res.json() as { rows: Array<{ instanceId: string }> };
+      const body = await res.json() as { rows: Array<{ sessionId: string }> };
       // Only completed DB row should appear
-      expect(body.rows.find((r) => r.instanceId === completedId)).toBeDefined();
-      expect(body.rows.find((r) => r.instanceId === runningId)).toBeUndefined();
+      expect(body.rows.find((r) => r.sessionId === completedId)).toBeDefined();
+      expect(body.rows.find((r) => r.sessionId === runningId)).toBeUndefined();
     });
   },
 );

@@ -23,7 +23,7 @@ function mockStatusTracker() {
       paused: false,
     }),
     getRecentLogs: () => [],
-    getInstances: () => [],
+    getSessions: () => [],
     flushInvalidations: () => [],
     getInvalidationsSince: () => ({ signals: [], version: 0 }),
     getInvalidationVersion: () => 0,
@@ -339,8 +339,8 @@ describe("registerDashboardApiRoutes — extended coverage", () => {
     return {
       queryAgentSummary: vi.fn().mockReturnValue([]),
       countRunsByAgent: vi.fn().mockReturnValue(0),
-      queryRunByInstanceId: vi.fn().mockReturnValue(null),
-      queryCallEdgeByTargetInstance: vi.fn().mockReturnValue(null),
+      queryRunBySessionId: vi.fn().mockReturnValue(null),
+      queryCallEdgeByTargetSession: vi.fn().mockReturnValue(null),
       getWebhookReceipt: vi.fn().mockReturnValue(null),
     } as any;
   }
@@ -352,7 +352,7 @@ describe("registerDashboardApiRoutes — extended coverage", () => {
       ]),
       getSchedulerInfo: vi.fn().mockReturnValue({ projectName: "my-project", gatewayPort: 3000, webhooksActive: false }),
       getRecentLogs: vi.fn().mockReturnValue([]),
-      getInstances: vi.fn().mockReturnValue(instances),
+      getSessions: vi.fn().mockReturnValue(instances),
     } as any;
   }
 
@@ -385,7 +385,7 @@ describe("registerDashboardApiRoutes — extended coverage", () => {
     expect(data.totalHistorical).toBe(0);
   });
 
-  it("GET /api/dashboard/agents/:name includes running instances", async () => {
+  it("GET /api/dashboard/agents/:name includes running sessions", async () => {
     const instances = [
       { id: "inst-1", agentName: "test-agent", status: "running" },
       { id: "inst-2", agentName: "other-agent", status: "running" },
@@ -395,78 +395,78 @@ describe("registerDashboardApiRoutes — extended coverage", () => {
     const res = await app.request("/api/dashboard/agents/test-agent");
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data.runningInstances).toHaveLength(1);
-    expect(data.runningInstances[0].id).toBe("inst-1");
+    expect(data.runningSessions).toHaveLength(1);
+    expect(data.runningSessions[0].id).toBe("inst-1");
   });
 
-  it("GET /api/dashboard/agents/:name/instances/:id returns null run and no running instance", async () => {
+  it("GET /api/dashboard/agents/:name/sessions/:id returns null run and no running instance", async () => {
     const stats = makeStatsStore();
     const app = createApp(stats);
 
-    const res = await app.request("/api/dashboard/agents/test-agent/instances/nonexistent");
+    const res = await app.request("/api/dashboard/agents/test-agent/sessions/nonexistent");
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.run).toBeNull();
-    expect(data.runningInstance).toBeNull();
+    expect(data.runningSession).toBeNull();
     expect(data.parentEdge).toBeUndefined();
     expect(data.webhookReceipt).toBeUndefined();
   });
 
-  it("GET /api/dashboard/agents/:name/instances/:id returns running instance", async () => {
+  it("GET /api/dashboard/agents/:name/sessions/:id returns running instance", async () => {
     const instances = [{ id: "inst-1", agentName: "test-agent", status: "running" }];
     const app = createApp(undefined, undefined, instances);
 
-    const res = await app.request("/api/dashboard/agents/test-agent/instances/inst-1");
+    const res = await app.request("/api/dashboard/agents/test-agent/sessions/inst-1");
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data.runningInstance.id).toBe("inst-1");
+    expect(data.runningSession.id).toBe("inst-1");
   });
 
-  it("GET /api/dashboard/agents/:name/instances/:id returns null runningInstance for completed instance", async () => {
+  it("GET /api/dashboard/agents/:name/sessions/:id returns null runningInstance for completed instance", async () => {
     const instances = [{ id: "inst-1", agentName: "test-agent", status: "completed" }];
     const app = createApp(undefined, undefined, instances);
 
-    const res = await app.request("/api/dashboard/agents/test-agent/instances/inst-1");
+    const res = await app.request("/api/dashboard/agents/test-agent/sessions/inst-1");
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data.runningInstance).toBeNull();
+    expect(data.runningSession).toBeNull();
   });
 
-  it("GET /api/dashboard/agents/:name/instances/:id returns null runningInstance for errored instance", async () => {
+  it("GET /api/dashboard/agents/:name/sessions/:id returns null runningInstance for errored instance", async () => {
     const instances = [{ id: "inst-1", agentName: "test-agent", status: "error" }];
     const app = createApp(undefined, undefined, instances);
 
-    const res = await app.request("/api/dashboard/agents/test-agent/instances/inst-1");
+    const res = await app.request("/api/dashboard/agents/test-agent/sessions/inst-1");
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data.runningInstance).toBeNull();
+    expect(data.runningSession).toBeNull();
   });
 
-  it("GET /api/dashboard/agents/:name/instances/:id includes parent edge for agent-triggered runs", async () => {
+  it("GET /api/dashboard/agents/:name/sessions/:id includes parent edge for agent-triggered runs", async () => {
     const stats = makeStatsStore();
-    stats.queryRunByInstanceId.mockReturnValue({
-      instance_id: "child-inst",
+    stats.queryRunBySessionId.mockReturnValue({
+      session_id: "child-inst",
       trigger_type: "agent",
     });
-    stats.queryCallEdgeByTargetInstance.mockReturnValue({
+    stats.queryCallEdgeByTargetSession.mockReturnValue({
       caller_agent: "orchestrator",
-      caller_instance: "parent-inst",
+      caller_session: "parent-inst",
     });
     const app = createApp(stats);
 
-    const res = await app.request("/api/dashboard/agents/test-agent/instances/child-inst");
+    const res = await app.request("/api/dashboard/agents/test-agent/sessions/child-inst");
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.parentEdge).toMatchObject({
       caller_agent: "orchestrator",
-      caller_instance: "parent-inst",
+      caller_session: "parent-inst",
     });
   });
 
-  it("GET /api/dashboard/agents/:name/instances/:id includes webhook receipt for webhook-triggered runs", async () => {
+  it("GET /api/dashboard/agents/:name/sessions/:id includes webhook receipt for webhook-triggered runs", async () => {
     const stats = makeStatsStore();
-    stats.queryRunByInstanceId.mockReturnValue({
-      instance_id: "webhook-inst",
+    stats.queryRunBySessionId.mockReturnValue({
+      session_id: "webhook-inst",
       trigger_type: "webhook",
       webhook_receipt_id: "receipt-123",
     });
@@ -477,7 +477,7 @@ describe("registerDashboardApiRoutes — extended coverage", () => {
     });
     const app = createApp(stats);
 
-    const res = await app.request("/api/dashboard/agents/test-agent/instances/webhook-inst");
+    const res = await app.request("/api/dashboard/agents/test-agent/sessions/webhook-inst");
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.webhookReceipt).toMatchObject({
@@ -578,7 +578,7 @@ describe("registerDashboardApiRoutes — extended coverage", () => {
     expect(data).toHaveProperty("agentConfig");
   });
 
-  it("GET /api/dashboard/triggers/:instanceId returns 404 when no statsStore", async () => {
+  it("GET /api/dashboard/triggers/:sessionId returns 404 when no statsStore", async () => {
     const tracker = makeStatusTracker();
     const app = new Hono();
     registerDashboardApiRoutes(app, tracker);
@@ -589,7 +589,7 @@ describe("registerDashboardApiRoutes — extended coverage", () => {
     expect(data.trigger).toBeNull();
   });
 
-  it("GET /api/dashboard/triggers/:instanceId returns 404 when run not found", async () => {
+  it("GET /api/dashboard/triggers/:sessionId returns 404 when run not found", async () => {
     const stats = makeStatsStore();
     const tracker = makeStatusTracker();
     const app = new Hono();
@@ -601,10 +601,10 @@ describe("registerDashboardApiRoutes — extended coverage", () => {
     expect(data.trigger).toBeNull();
   });
 
-  it("GET /api/dashboard/triggers/:instanceId falls back to running instance from status tracker", async () => {
+  it("GET /api/dashboard/triggers/:sessionId falls back to running instance from status tracker", async () => {
     const stats = makeStatsStore();
     // Run not in DB yet (still running)
-    stats.queryRunByInstanceId.mockReturnValue(undefined);
+    stats.queryRunBySessionId.mockReturnValue(undefined);
 
     const runningInstances = [
       { id: "running-inst-1", agentName: "my-agent", status: "running", startedAt: "2025-01-15T10:00:00Z", trigger: "webhook:github" },
@@ -617,7 +617,7 @@ describe("registerDashboardApiRoutes — extended coverage", () => {
     expect(res.status).toBe(200);
     const data = await res.json() as any;
     expect(data.trigger).toEqual({
-      instanceId: "running-inst-1",
+      sessionId: "running-inst-1",
       agentName: "my-agent",
       triggerType: "webhook",
       triggerSource: "github",
@@ -626,7 +626,7 @@ describe("registerDashboardApiRoutes — extended coverage", () => {
     });
   });
 
-  it("GET /api/dashboard/triggers/:instanceId falls back to running instance without statsStore", async () => {
+  it("GET /api/dashboard/triggers/:sessionId falls back to running instance without statsStore", async () => {
     const runningInstances = [
       { id: "inst-abc", agentName: "bot", status: "running", startedAt: "2025-01-15T12:00:00Z", trigger: "manual" },
     ];
@@ -637,15 +637,15 @@ describe("registerDashboardApiRoutes — extended coverage", () => {
     const res = await app.request("/api/dashboard/triggers/inst-abc");
     expect(res.status).toBe(200);
     const data = await res.json() as any;
-    expect(data.trigger.instanceId).toBe("inst-abc");
+    expect(data.trigger.sessionId).toBe("inst-abc");
     expect(data.trigger.triggerType).toBe("manual");
     expect(data.trigger.triggerSource).toBeNull();
   });
 
-  it("GET /api/dashboard/triggers/:instanceId returns trigger data for schedule run", async () => {
+  it("GET /api/dashboard/triggers/:sessionId returns trigger data for schedule run", async () => {
     const stats = makeStatsStore();
-    stats.queryRunByInstanceId.mockReturnValue({
-      instance_id: "inst-1",
+    stats.queryRunBySessionId.mockReturnValue({
+      session_id: "inst-1",
       agent_name: "reporter",
       trigger_type: "schedule",
       trigger_source: "nightly",
@@ -660,17 +660,17 @@ describe("registerDashboardApiRoutes — extended coverage", () => {
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.trigger).toMatchObject({
-      instanceId: "inst-1",
+      sessionId: "inst-1",
       agentName: "reporter",
       triggerType: "schedule",
       triggerSource: "nightly",
     });
   });
 
-  it("GET /api/dashboard/triggers/:instanceId enriches with webhook receipt data", async () => {
+  it("GET /api/dashboard/triggers/:sessionId enriches with webhook receipt data", async () => {
     const stats = makeStatsStore();
-    stats.queryRunByInstanceId.mockReturnValue({
-      instance_id: "inst-wh",
+    stats.queryRunBySessionId.mockReturnValue({
+      session_id: "inst-wh",
       agent_name: "reporter",
       trigger_type: "webhook",
       trigger_source: "github",
@@ -706,19 +706,19 @@ describe("registerDashboardApiRoutes — extended coverage", () => {
     });
   });
 
-  it("GET /api/dashboard/triggers/:instanceId enriches with caller info for agent-triggered runs", async () => {
+  it("GET /api/dashboard/triggers/:sessionId enriches with caller info for agent-triggered runs", async () => {
     const stats = makeStatsStore();
-    stats.queryRunByInstanceId.mockReturnValue({
-      instance_id: "child-inst",
+    stats.queryRunBySessionId.mockReturnValue({
+      session_id: "child-inst",
       agent_name: "worker",
       trigger_type: "agent",
       trigger_source: null,
       trigger_context: null,
       started_at: 1000000,
     });
-    stats.queryCallEdgeByTargetInstance.mockReturnValue({
+    stats.queryCallEdgeByTargetSession.mockReturnValue({
       caller_agent: "orchestrator",
-      caller_instance: "parent-inst",
+      caller_session: "parent-inst",
       depth: 2,
     });
     const tracker = makeStatusTracker();
@@ -729,7 +729,7 @@ describe("registerDashboardApiRoutes — extended coverage", () => {
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.trigger.callerAgent).toBe("orchestrator");
-    expect(data.trigger.callerInstance).toBe("parent-inst");
+    expect(data.trigger.callerSession).toBe("parent-inst");
     expect(data.trigger.callDepth).toBe(2);
   });
 });
@@ -783,7 +783,7 @@ describe("dashboard data routes — SSE throttle and cleanup coverage", () => {
         paused: false,
       }),
       getRecentLogs: () => [],
-      getInstances: () => [],
+      getSessions: () => [],
       flushInvalidations: () => [],
       getInvalidationsSince: () => ({ signals: [], version: 0 }),
       getInvalidationVersion: () => 0,

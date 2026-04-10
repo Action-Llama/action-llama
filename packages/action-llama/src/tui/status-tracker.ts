@@ -1,9 +1,9 @@
 import { EventEmitter } from "events";
-import type { AgentInstance } from "../scheduler/types.js";
+import type { AgentSession } from "../scheduler/types.js";
 import type { TokenUsage } from "../shared/usage.js";
 import { addTokenUsage, zeroTokenUsage } from "../shared/usage.js";
 import { AgentLifecycle } from "../execution/lifecycle/agent-lifecycle.js";
-import { InstanceLifecycle } from "../execution/lifecycle/instance-lifecycle.js";
+import { SessionLifecycle } from "../execution/lifecycle/session-lifecycle.js";
 import type { AgentConfig } from "../shared/config/types.js";
 
 /**
@@ -79,7 +79,7 @@ export interface LogLine {
 export interface InvalidationSignal {
   type: "runs" | "triggers" | "stats" | "instance" | "config";
   agent?: string;
-  instanceId?: string;
+  sessionId?: string;
 }
 
 export class StatusTracker extends EventEmitter {
@@ -89,7 +89,7 @@ export class StatusTracker extends EventEmitter {
   private recentLogs: LogLine[] = [];
   private maxLogs = 100;
   private _baseImageStatus: string | null = null;
-  private instances: Map<string, AgentInstance> = new Map();
+  private instances: Map<string, AgentSession> = new Map();
   private invalidationVersion = 0;
   private invalidationLog: Array<{ version: number; signal: InvalidationSignal }> = [];
 
@@ -103,7 +103,7 @@ export class StatusTracker extends EventEmitter {
     const signals: InvalidationSignal[] = [];
     for (const entry of this.invalidationLog) {
       if (entry.version <= sinceVersion) continue;
-      const key = `${entry.signal.type}:${entry.signal.agent ?? ""}:${entry.signal.instanceId ?? ""}`;
+      const key = `${entry.signal.type}:${entry.signal.agent ?? ""}:${entry.signal.sessionId ?? ""}`;
       if (!seen.has(key)) {
         seen.add(key);
         signals.push(entry.signal);
@@ -133,8 +133,8 @@ export class StatusTracker extends EventEmitter {
     this.agentLifecycles.set(name, lifecycle);
     
     // Listen to lifecycle events to update UI
-    lifecycle.on("agent:instance-start", () => this.emit("update"));
-    lifecycle.on("agent:instance-end", () => this.emit("update"));
+    lifecycle.on("agent:session-start", () => this.emit("update"));
+    lifecycle.on("agent:session-end", () => this.emit("update"));
     lifecycle.on("agent:build-start", () => this.emit("update"));
     lifecycle.on("agent:build-complete", () => this.emit("update"));
     lifecycle.on("agent:error", () => this.emit("update"));
@@ -233,7 +233,7 @@ export class StatusTracker extends EventEmitter {
       agent.state = "idle";
       agent.runReason = null;
     }
-    // If still running instances, keep state as "running"
+    // If still running sessions, keep state as "running"
     this.invalidate({ type: "runs", agent: name });
     this.invalidate({ type: "stats", agent: name });
     this.emit("update");
@@ -364,25 +364,25 @@ export class StatusTracker extends EventEmitter {
   }
 
   /**
-   * Register a running agent instance
+   * Register a running agent session
    */
-  registerInstance(instance: AgentInstance): void {
+  registerSession(instance: AgentSession): void {
     this.instances.set(instance.id, instance);
     this.emit("update");
   }
 
   /**
-   * Unregister an agent instance (remove completely)
+   * Unregister an agent session (remove completely)
    */
-  unregisterInstance(id: string): void {
+  unregisterSession(id: string): void {
     this.instances.delete(id);
     this.emit("update");
   }
 
   /**
-   * Mark an instance as waiting for a trigger
+   * Mark a session as waiting for a trigger
    */
-  setInstanceWaiting(id: string): void {
+  setSessionWaiting(id: string): void {
     const inst = this.instances.get(id);
     if (!inst) return;
     inst.status = "waiting";
@@ -395,14 +395,14 @@ export class StatusTracker extends EventEmitter {
         agent.state = "waiting";
       }
     }
-    this.invalidate({ type: "instance", agent: inst.agentName, instanceId: id });
+    this.invalidate({ type: "instance", agent: inst.agentName, sessionId: id });
     this.emit("update");
   }
 
   /**
-   * Resume a waiting instance
+   * Resume a waiting session
    */
-  resumeInstance(id: string): void {
+  resumeSession(id: string): void {
     const inst = this.instances.get(id);
     if (!inst) return;
     inst.status = "running";
@@ -413,17 +413,17 @@ export class StatusTracker extends EventEmitter {
       agent.runningCount += 1;
       agent.state = "running";
     }
-    this.invalidate({ type: "instance", agent: inst.agentName, instanceId: id });
+    this.invalidate({ type: "instance", agent: inst.agentName, sessionId: id });
     this.emit("update");
   }
 
   /**
-   * Update an instance's status (e.g. running -> completed)
+   * Update a session's status (e.g. running -> completed)
    */
-  completeInstance(id: string, status: 'completed' | 'error' | 'killed'): void {
+  completeSession(id: string, status: 'completed' | 'error' | 'killed'): void {
     const inst = this.instances.get(id);
     if (!inst) return;
-    // If instance was waiting, decrement waitingCount instead of runningCount
+    // If session was waiting, decrement waitingCount instead of runningCount
     if (inst.status === "waiting") {
       const agent = this.agents.get(inst.agentName);
       if (agent) {
@@ -431,15 +431,15 @@ export class StatusTracker extends EventEmitter {
       }
     }
     inst.status = status;
-    this.invalidate({ type: "instance", agent: inst.agentName, instanceId: id });
+    this.invalidate({ type: "instance", agent: inst.agentName, sessionId: id });
     this.invalidate({ type: "runs", agent: inst.agentName });
     this.emit("update");
   }
 
   /**
-   * Get all running instances
+   * Get all running sessions
    */
-  getInstances(): AgentInstance[] {
+  getSessions(): AgentSession[] {
     return Array.from(this.instances.values());
   }
 
@@ -516,37 +516,37 @@ export class StatusTracker extends EventEmitter {
   }
 
   /**
-   * Create a new instance with lifecycle tracking
+   * Create a new session with lifecycle tracking
    */
-  createInstance(instanceId: string, agentName: string, trigger: string): InstanceLifecycle | null {
+  createSession(sessionId: string, agentName: string, trigger: string): SessionLifecycle | null {
     const lifecycle = this.agentLifecycles.get(agentName);
     if (!lifecycle) return null;
 
-    const instanceLifecycle = new InstanceLifecycle(instanceId, agentName, trigger);
-    lifecycle.addInstance(instanceLifecycle);
+    const sessionLifecycle = new SessionLifecycle(sessionId, agentName, trigger);
+    lifecycle.addSession(sessionLifecycle);
 
     // Listen to instance events to update the UI.
     // Note: We do NOT update agent.runningCount or agent.state here because
     // the runners' startRun()/endRun() calls are the authoritative source for
     // those fields. Updating both would double-count (the lifecycle increments
-    // on instance:start, and startRun() also increments — for scale>1 agents
+    // on session:start, and startRun() also increments — for scale>1 agents
     // this caused "running 2/2" when only 1 instance was actually started).
-    instanceLifecycle.on("instance:start", () => {
+    sessionLifecycle.on("session:start", () => {
       this.emit("update");
     });
 
-    instanceLifecycle.on("instance:complete", () => {
+    sessionLifecycle.on("session:complete", () => {
       this.emit("update");
     });
 
-    instanceLifecycle.on("instance:error", () => {
+    sessionLifecycle.on("session:error", () => {
       this.emit("update");
     });
 
-    instanceLifecycle.on("instance:kill", () => {
+    sessionLifecycle.on("session:kill", () => {
       this.emit("update");
     });
 
-    return instanceLifecycle;
+    return sessionLifecycle;
   }
 }

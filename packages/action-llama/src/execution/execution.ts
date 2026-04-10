@@ -13,7 +13,7 @@ import type { SchedulerEventBus } from "../scheduler/events.js";
 import type { CallStore } from "./call-store.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import type { StatsStore } from "../stats/index.js";
-import type { InstanceLifecycle } from "./lifecycle/instance-lifecycle.js";
+import type { SessionLifecycle } from "./lifecycle/session-lifecycle.js";
 import type { WaitingRegistry } from "./waiting-registry.js";
 
 export const DEFAULT_MAX_RERUNS = 10;
@@ -83,24 +83,24 @@ export async function executeRun(
   runner: PoolRunner, prompt: string,
   triggerInfo: { type: 'schedule' | 'manual' | 'webhook' | 'agent'; source?: string; receiptId?: string; context?: string },
   agentName: string, depth: number, ctx: SchedulerContext,
-  instanceLifecycle?: InstanceLifecycle,
-  instanceId?: string
+  sessionLifecycle?: SessionLifecycle,
+  sessionId?: string
 ): Promise<{ result: string; triggers: Array<{ agent: string; context: string }>; returnValue?: string }> {
   const startedAt = Date.now();
 
   // Start instance lifecycle if provided
-  instanceLifecycle?.start();
+  sessionLifecycle?.start();
 
   ctx.events?.emit("run:start", {
     agentName,
-    instanceId: runner.instanceId,
+    sessionId: runner.sessionId,
     trigger: triggerInfo.source ? `${triggerInfo.type}:${triggerInfo.source}` : triggerInfo.type,
   });
 
   let outcome: any;
   let error: string | undefined;
   try {
-    outcome = await runner.run(prompt, triggerInfo, instanceId);
+    outcome = await runner.run(prompt, triggerInfo, sessionId);
     error = outcome.exitReason;
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
@@ -109,20 +109,20 @@ export async function executeRun(
 
   const durationMs = Date.now() - startedAt;
   const triggers = outcome.triggers ?? [];
-  if (triggers.length > 0) dispatchTriggers(triggers, agentName, depth, ctx, runner.instanceId);
+  if (triggers.length > 0) dispatchTriggers(triggers, agentName, depth, ctx, runner.sessionId);
 
   // Update instance lifecycle based on outcome
-  if (instanceLifecycle) {
+  if (sessionLifecycle) {
     if (error) {
-      instanceLifecycle.fail(error);
+      sessionLifecycle.fail(error);
     } else {
-      instanceLifecycle.complete();
+      sessionLifecycle.complete();
     }
   }
 
   ctx.events?.emit("run:end", {
     agentName,
-    instanceId: runner.instanceId,
+    sessionId: runner.sessionId,
     result: outcome.result,
     exitCode: outcome.exitCode,
     error: outcome.exitReason,
@@ -132,7 +132,7 @@ export async function executeRun(
   if (ctx.statsStore) {
     try {
       ctx.statsStore.recordRun({
-        instanceId: runner.instanceId,
+        sessionId: runner.sessionId,
         agentName,
         triggerType: triggerInfo.type,
         triggerSource: triggerInfo.source,
@@ -165,7 +165,7 @@ export async function executeRun(
 export function dispatchTriggers(
   triggers: Array<{ agent: string; context: string }>,
   sourceAgent: string, depth: number, ctx: SchedulerContext,
-  callerInstanceId?: string,
+  callerSessionId?: string,
 ): void {
   for (const { agent, context } of triggers) {
     if (agent === sourceAgent) {
@@ -184,10 +184,10 @@ export function dispatchTriggers(
 
     // Check waiting registry first — resume a suspended instance if possible
     if (ctx.waitingRegistry) {
-      const waitingInstance = ctx.waitingRegistry.matchAgentTrigger(agent, sourceAgent);
-      if (waitingInstance) {
-        ctx.logger.info({ source: sourceAgent, target: agent, instanceId: waitingInstance.instanceId }, "resuming waiting instance via agent trigger");
-        waitingInstance.resolve?.({ type: "agent-trigger", sourceAgent, context });
+      const waitingSession = ctx.waitingRegistry.matchAgentTrigger(agent, sourceAgent);
+      if (waitingSession) {
+        ctx.logger.info({ source: sourceAgent, target: agent, sessionId: waitingSession.sessionId }, "resuming waiting session via agent trigger");
+        waitingSession.resolve?.({ type: "agent-trigger", sourceAgent, context });
         continue;
       }
     }
@@ -196,11 +196,11 @@ export function dispatchTriggers(
 
     // Record call edge
     let callEdgeId: number | undefined;
-    if (ctx.statsStore && callerInstanceId) {
+    if (ctx.statsStore && callerSessionId) {
       try {
         callEdgeId = ctx.statsStore.recordCallEdge({
           callerAgent: sourceAgent,
-          callerInstance: callerInstanceId,
+          callerSession: callerSessionId,
           targetAgent: agent,
           depth: depth + 1,
           startedAt: Date.now(),
@@ -240,18 +240,18 @@ export function dispatchTriggers(
     const edgeStartedAt = Date.now();
     
     // Create instance lifecycle for triggered run (if supported)
-    const instanceLifecycle = ctx.statusTracker?.createInstance ? 
-      ctx.statusTracker.createInstance(dispatchedRunner.instanceId, agent, `agent:${sourceAgent}`) || undefined :
+    const sessionLifecycle = ctx.statusTracker?.createSession ? 
+      ctx.statusTracker.createSession(dispatchedRunner.sessionId, agent, `agent:${sourceAgent}`) || undefined :
       undefined;
     
-    executeRun(dispatchedRunner, prompt, { type: 'agent', source: sourceAgent, context }, agent, depth + 1, ctx, instanceLifecycle)
+    executeRun(dispatchedRunner, prompt, { type: 'agent', source: sourceAgent, context }, agent, depth + 1, ctx, sessionLifecycle)
       .then((outcome) => {
         if (callEdgeId != null && ctx.statsStore) {
           try {
             ctx.statsStore.updateCallEdge(callEdgeId, {
               durationMs: Date.now() - edgeStartedAt,
               status: outcome.result === "error" ? "error" : "completed",
-              targetInstance: dispatchedRunner.instanceId,
+              targetSession: dispatchedRunner.sessionId,
             });
           } catch { /* best-effort */ }
         }
@@ -302,12 +302,12 @@ function fireQueuedItem(
     ctx.logger.info({ agent: agentConfig.name, event: work.context.event, ageMs }, "draining queued webhook");
     
     // Create instance lifecycle for webhook run (if supported)
-    const instanceLifecycle = ctx.statusTracker?.createInstance ? 
-      ctx.statusTracker.createInstance(runner.instanceId, agentConfig.name, `webhook:${work.context.source}`) || undefined :
+    const sessionLifecycle = ctx.statusTracker?.createSession ? 
+      ctx.statusTracker.createSession(runner.sessionId, agentConfig.name, `webhook:${work.context.source}`) || undefined :
       undefined;
     
     const prompt = makeWebhookPrompt(agentConfig, work.context, ctx);
-    executeRun(runner, prompt, { type: 'webhook', source: work.context.source, receiptId: work.context.receiptId }, agentConfig.name, 0, ctx, instanceLifecycle)
+    executeRun(runner, prompt, { type: 'webhook', source: work.context.source, receiptId: work.context.receiptId }, agentConfig.name, 0, ctx, sessionLifecycle)
       .then(() => drainQueues(ctx))
       // Defensive: executeRun() wraps all errors, and drainQueues() doesn't throw.
       // This catch is unlikely to trigger, but remains for safety if those functions change.
@@ -318,13 +318,13 @@ function fireQueuedItem(
     ctx.logger.info({ source: work.sourceAgent, target: agentConfig.name, depth: work.depth, ageMs }, "draining queued trigger");
     
     // Create instance lifecycle for agent trigger run (if supported)
-    const instanceLifecycle = ctx.statusTracker?.createInstance ? 
-      ctx.statusTracker.createInstance(runner.instanceId, agentConfig.name, `agent:${work.sourceAgent}`) || undefined :
+    const sessionLifecycle = ctx.statusTracker?.createSession ? 
+      ctx.statusTracker.createSession(runner.sessionId, agentConfig.name, `agent:${work.sourceAgent}`) || undefined :
       undefined;
     
     const prompt = makeTriggeredPrompt(agentConfig, work.sourceAgent, work.context, ctx);
     if (work.callId) ctx.callStore?.setRunning(work.callId);
-    executeRun(runner, prompt, { type: 'agent', source: work.sourceAgent, context: work.context }, agentConfig.name, work.depth + 1, ctx, instanceLifecycle)
+    executeRun(runner, prompt, { type: 'agent', source: work.sourceAgent, context: work.context }, agentConfig.name, work.depth + 1, ctx, sessionLifecycle)
       .then(({ result, returnValue }) => {
         if (work.callId) {
           if (result === "completed" || result === "rerun") ctx.callStore?.complete(work.callId, returnValue);
@@ -358,15 +358,15 @@ function fireQueuedItem(
 
 export async function runWithReruns(
   runner: PoolRunner, agentConfig: AgentConfig, depth: number, ctx: SchedulerContext,
-  trigger: 'schedule' | 'manual' = 'schedule', prompt?: string, instanceId?: string
+  trigger: 'schedule' | 'manual' = 'schedule', prompt?: string, sessionId?: string
 ): Promise<void> {
   const isManual = trigger === 'manual';
   const triggerType = trigger;
   const triggerLabel = trigger;
 
   // Create instance lifecycle for this run (if supported)
-  const instanceLifecycle = ctx.statusTracker?.createInstance ?
-    ctx.statusTracker.createInstance(runner.instanceId, agentConfig.name, triggerLabel) || undefined :
+  const sessionLifecycle = ctx.statusTracker?.createSession ?
+    ctx.statusTracker.createSession(runner.sessionId, agentConfig.name, triggerLabel) || undefined :
     undefined;
 
   const initialPrompt = isManual
@@ -374,7 +374,7 @@ export async function runWithReruns(
     : makeScheduledPrompt(agentConfig, ctx);
 
   let { result } = await executeRun(
-    runner, initialPrompt, { type: triggerType, source: prompt ? 'user-prompt' : undefined, context: prompt }, agentConfig.name, depth, ctx, instanceLifecycle, instanceId
+    runner, initialPrompt, { type: triggerType, source: prompt ? 'user-prompt' : undefined, context: prompt }, agentConfig.name, depth, ctx, sessionLifecycle, sessionId
   );
 
   let reruns = 0;
@@ -387,8 +387,8 @@ export async function runWithReruns(
     ctx.logger.info({ rerun: reruns, maxReruns: ctx.maxReruns }, `${agentConfig.name} requested rerun`);
     
     // Create new instance lifecycle for rerun (if supported)
-    const rerunInstanceLifecycle = ctx.statusTracker?.createInstance ?
-      ctx.statusTracker.createInstance(runner.instanceId, agentConfig.name, `${triggerLabel}:rerun-${reruns}`) || undefined :
+    const rerunSessionLifecycle = ctx.statusTracker?.createSession ?
+      ctx.statusTracker.createSession(runner.sessionId, agentConfig.name, `${triggerLabel}:rerun-${reruns}`) || undefined :
       undefined;
 
     const rerunPrompt = isManual
@@ -397,7 +397,7 @@ export async function runWithReruns(
 
     ({ result } = await executeRun(
       runner, rerunPrompt,
-      { type: triggerType, source: `rerun ${reruns}/${ctx.maxReruns}` }, agentConfig.name, depth, ctx, rerunInstanceLifecycle
+      { type: triggerType, source: `rerun ${reruns}/${ctx.maxReruns}` }, agentConfig.name, depth, ctx, rerunSessionLifecycle
     ));
   }
 

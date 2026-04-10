@@ -126,7 +126,7 @@ describe("log summary route", () => {
     );
     expect(res.status).toBe(400);
     const data = await res.json();
-    expect(data.error).toMatch(/Invalid instance ID/);
+    expect(data.error).toMatch(/Invalid session ID/);
   });
 
   it("returns no-entries message when no log file exists", async () => {
@@ -190,11 +190,11 @@ describe("log summary route", () => {
 
   it("calls model and returns summary for matching log entries", async () => {
     createMinimalAgentProject(tmpDir, "my-agent");
-    const instanceId = "inst-abc";
+    const sessionId = "inst-abc";
     const lines = [
-      pinoLine(30, 1710700000000, "Agent started", { instance: instanceId }),
-      pinoLine(30, 1710700001000, "Running task", { instance: instanceId }),
-      pinoLine(30, 1710700002000, "Task complete", { instance: instanceId }),
+      pinoLine(30, 1710700000000, "Agent started", { instance: sessionId }),
+      pinoLine(30, 1710700001000, "Running task", { instance: sessionId }),
+      pinoLine(30, 1710700002000, "Task complete", { instance: sessionId }),
     ];
     writeFileSync(
       join(logsPath, "my-agent-2024-03-18.log"),
@@ -210,7 +210,7 @@ describe("log summary route", () => {
 
     const app = createTestApp(tmpDir);
     const res = await app.request(
-      `/api/logs/agents/my-agent/${instanceId}/summarize`,
+      `/api/logs/agents/my-agent/${sessionId}/summarize`,
       { method: "POST" },
     );
     expect(res.status).toBe(200);
@@ -222,9 +222,9 @@ describe("log summary route", () => {
 
   it("caches summary for completed runs and persists to DB", async () => {
     createMinimalAgentProject(tmpDir, "my-agent");
-    const instanceId = "inst-completed";
+    const sessionId = "inst-completed";
     const lines = [
-      pinoLine(30, 1710700000000, "Done", { instance: instanceId }),
+      pinoLine(30, 1710700000000, "Done", { instance: sessionId }),
     ];
     writeFileSync(
       join(logsPath, "my-agent-2024-03-18.log"),
@@ -239,8 +239,8 @@ describe("log summary route", () => {
 
     // Provide a statsStore that returns a completed run
     const statsStore = {
-      queryRunByInstanceId: vi.fn().mockReturnValue({
-        instanceId,
+      queryRunBySessionId: vi.fn().mockReturnValue({
+        sessionId,
         result: "ok",
         agentName: "my-agent",
       }),
@@ -251,7 +251,7 @@ describe("log summary route", () => {
 
     // First call — should call the LLM
     const res1 = await app.request(
-      `/api/logs/agents/my-agent/${instanceId}/summarize`,
+      `/api/logs/agents/my-agent/${sessionId}/summarize`,
       { method: "POST" },
     );
     expect(res1.status).toBe(200);
@@ -261,11 +261,11 @@ describe("log summary route", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
 
     // Verify summary was persisted to DB
-    expect(statsStore.updateRunSummary).toHaveBeenCalledWith(instanceId, "The agent completed.");
+    expect(statsStore.updateRunSummary).toHaveBeenCalledWith(sessionId, "The agent completed.");
 
     // Second call — should be served from cache
     const res2 = await app.request(
-      `/api/logs/agents/my-agent/${instanceId}/summarize`,
+      `/api/logs/agents/my-agent/${sessionId}/summarize`,
       { method: "POST" },
     );
     expect(res2.status).toBe(200);
@@ -278,9 +278,9 @@ describe("log summary route", () => {
 
   it("returns DB-persisted summary as cached without calling the LLM", async () => {
     createMinimalAgentProject(tmpDir, "my-agent");
-    const instanceId = "inst-db-cached";
+    const sessionId = "inst-db-cached";
     const lines = [
-      pinoLine(30, 1710700000000, "Done", { instance: instanceId }),
+      pinoLine(30, 1710700000000, "Done", { instance: sessionId }),
     ];
     writeFileSync(
       join(logsPath, "my-agent-2024-03-18.log"),
@@ -292,8 +292,8 @@ describe("log summary route", () => {
 
     // statsStore returns a run with a pre-existing summary from DB
     const statsStore = {
-      queryRunByInstanceId: vi.fn().mockReturnValue({
-        instanceId,
+      queryRunBySessionId: vi.fn().mockReturnValue({
+        sessionId,
         result: "completed",
         agentName: "my-agent",
         summary: "Pre-existing DB summary.",
@@ -304,7 +304,7 @@ describe("log summary route", () => {
     const app = createTestApp(tmpDir, statsStore);
 
     const res = await app.request(
-      `/api/logs/agents/my-agent/${instanceId}/summarize`,
+      `/api/logs/agents/my-agent/${sessionId}/summarize`,
       { method: "POST" },
     );
     expect(res.status).toBe(200);
@@ -317,9 +317,9 @@ describe("log summary route", () => {
 
   it("does not cache for in-progress runs", async () => {
     createMinimalAgentProject(tmpDir, "my-agent");
-    const instanceId = "inst-running";
+    const sessionId = "inst-running";
     const lines = [
-      pinoLine(30, 1710700000000, "Still going", { instance: instanceId }),
+      pinoLine(30, 1710700000000, "Still going", { instance: sessionId }),
     ];
     writeFileSync(
       join(logsPath, "my-agent-2024-03-18.log"),
@@ -334,13 +334,13 @@ describe("log summary route", () => {
 
     // statsStore returns null (run not in DB yet = in-progress)
     const statsStore = {
-      queryRunByInstanceId: vi.fn().mockReturnValue(null),
+      queryRunBySessionId: vi.fn().mockReturnValue(null),
     } as any;
 
     const app = createTestApp(tmpDir, statsStore);
 
     const res1 = await app.request(
-      `/api/logs/agents/my-agent/${instanceId}/summarize`,
+      `/api/logs/agents/my-agent/${sessionId}/summarize`,
       { method: "POST" },
     );
     expect(res1.status).toBe(200);
@@ -348,7 +348,7 @@ describe("log summary route", () => {
     expect(data1.cached).toBe(false);
 
     const res2 = await app.request(
-      `/api/logs/agents/my-agent/${instanceId}/summarize`,
+      `/api/logs/agents/my-agent/${sessionId}/summarize`,
       { method: "POST" },
     );
     expect(res2.status).toBe(200);
@@ -360,9 +360,9 @@ describe("log summary route", () => {
 
   it("returns 400 for invalid grep regex pattern", async () => {
     createMinimalAgentProject(tmpDir, "my-agent");
-    const instanceId = "inst-grep";
+    const sessionId = "inst-grep";
     const lines = [
-      pinoLine(30, 1710700000000, "msg", { instance: instanceId }),
+      pinoLine(30, 1710700000000, "msg", { instance: sessionId }),
     ];
     writeFileSync(
       join(logsPath, "my-agent-2024-03-18.log"),
@@ -371,7 +371,7 @@ describe("log summary route", () => {
 
     const app = createTestApp(tmpDir);
     const res = await app.request(
-      `/api/logs/agents/my-agent/${instanceId}/summarize?grep=%5B`,
+      `/api/logs/agents/my-agent/${sessionId}/summarize?grep=%5B`,
       { method: "POST" },
     );
     expect(res.status).toBe(400);
@@ -381,9 +381,9 @@ describe("log summary route", () => {
 
   it("clamps lines param to MAX_LINES when it exceeds the limit", async () => {
     createMinimalAgentProject(tmpDir, "my-agent");
-    const instanceId = "inst-lines";
+    const sessionId = "inst-lines";
     const logLines = [
-      pinoLine(30, 1710700000000, "step 1", { instance: instanceId }),
+      pinoLine(30, 1710700000000, "step 1", { instance: sessionId }),
     ];
     writeFileSync(
       join(logsPath, "my-agent-2024-03-18.log"),
@@ -399,7 +399,7 @@ describe("log summary route", () => {
     const app = createTestApp(tmpDir);
     // lines=99999 far exceeds MAX_LINES (2000), should be clamped and still work
     const res = await app.request(
-      `/api/logs/agents/my-agent/${instanceId}/summarize?lines=99999`,
+      `/api/logs/agents/my-agent/${sessionId}/summarize?lines=99999`,
       { method: "POST" },
     );
     expect(res.status).toBe(200);
@@ -415,9 +415,9 @@ describe("log summary route", () => {
       `# no models defined\n`,
     );
 
-    const instanceId = "inst-nomodel";
+    const sessionId = "inst-nomodel";
     const logLines = [
-      pinoLine(30, 1710700000000, "running", { instance: instanceId }),
+      pinoLine(30, 1710700000000, "running", { instance: sessionId }),
     ];
     writeFileSync(
       join(logsPath, `${agentName}-2024-03-18.log`),
@@ -426,7 +426,7 @@ describe("log summary route", () => {
 
     const app = createTestApp(tmpDir);
     const res = await app.request(
-      `/api/logs/agents/${agentName}/${instanceId}/summarize`,
+      `/api/logs/agents/${agentName}/${sessionId}/summarize`,
       { method: "POST" },
     );
     expect(res.status).toBe(500);
@@ -442,9 +442,9 @@ describe("log summary route", () => {
       models: {},
     } as any);
 
-    const instanceId = "inst-empty-models-check";
+    const sessionId = "inst-empty-models-check";
     const logLines = [
-      pinoLine(30, 1710700000000, "running", { instance: instanceId }),
+      pinoLine(30, 1710700000000, "running", { instance: sessionId }),
     ];
     writeFileSync(
       join(logsPath, "my-agent-2024-03-18.log"),
@@ -453,7 +453,7 @@ describe("log summary route", () => {
 
     const app = createTestApp(tmpDir);
     const res = await app.request(
-      `/api/logs/agents/my-agent/${instanceId}/summarize`,
+      `/api/logs/agents/my-agent/${sessionId}/summarize`,
       { method: "POST" },
     );
     expect(res.status).toBe(500);
@@ -463,9 +463,9 @@ describe("log summary route", () => {
 
   it("returns 500 when the LLM call fails", async () => {
     createMinimalAgentProject(tmpDir, "my-agent");
-    const instanceId = "inst-llm-fail";
+    const sessionId = "inst-llm-fail";
     const logLines = [
-      pinoLine(30, 1710700000000, "something happened", { instance: instanceId }),
+      pinoLine(30, 1710700000000, "something happened", { instance: sessionId }),
     ];
     writeFileSync(
       join(logsPath, "my-agent-2024-03-18.log"),
@@ -482,7 +482,7 @@ describe("log summary route", () => {
 
     const app = createTestApp(tmpDir);
     const res = await app.request(
-      `/api/logs/agents/my-agent/${instanceId}/summarize`,
+      `/api/logs/agents/my-agent/${sessionId}/summarize`,
       { method: "POST" },
     );
     expect(res.status).toBe(500);
@@ -563,7 +563,7 @@ describe("log summary route", () => {
       { method: "POST" },
     );
     expect(mockLogger.error).toHaveBeenCalledWith(
-      expect.objectContaining({ agent: "my-agent", instanceId: "inst-log-err3" }),
+      expect.objectContaining({ agent: "my-agent", sessionId: "inst-log-err3" }),
       expect.stringContaining("Failed to generate summary"),
     );
   });
@@ -586,9 +586,9 @@ describe("log summary route", () => {
       `[models.main]\nprovider = "anthropic"\nmodel = "claude-3-5-sonnet-20241022"\nauthType = "api_key"\n`,
     );
 
-    const instanceId = "inst-anthropic";
+    const sessionId = "inst-anthropic";
     const logLines = [
-      pinoLine(30, 1710700000000, "claude ran", { instance: instanceId }),
+      pinoLine(30, 1710700000000, "claude ran", { instance: sessionId }),
     ];
     writeFileSync(
       join(logsPath, `${agentName}-2024-03-18.log`),
@@ -613,7 +613,7 @@ describe("log summary route", () => {
 
     const app = createTestApp(tmpDir);
     const res = await app.request(
-      `/api/logs/agents/${agentName}/${instanceId}/summarize`,
+      `/api/logs/agents/${agentName}/${sessionId}/summarize`,
       { method: "POST" },
     );
     expect(res.status).toBe(200);
@@ -640,9 +640,9 @@ describe("log summary route", () => {
       `[models.main]\nprovider = "openrouter"\nmodel = "meta-llama/llama-3-8b-instruct"\nauthType = "api_key"\nbaseUrl = "https://openrouter.ai/api/v1"\n`,
     );
 
-    const instanceId = "inst-custom";
+    const sessionId = "inst-custom";
     const logLines = [
-      pinoLine(30, 1710700000000, "custom ran", { instance: instanceId }),
+      pinoLine(30, 1710700000000, "custom ran", { instance: sessionId }),
     ];
     writeFileSync(
       join(logsPath, `${agentName}-2024-03-18.log`),
@@ -658,7 +658,7 @@ describe("log summary route", () => {
 
     const app = createTestApp(tmpDir);
     const res = await app.request(
-      `/api/logs/agents/${agentName}/${instanceId}/summarize`,
+      `/api/logs/agents/${agentName}/${sessionId}/summarize`,
       { method: "POST" },
     );
     expect(res.status).toBe(200);
@@ -678,9 +678,9 @@ describe("log summary route", () => {
     } as any);
 
     createMinimalAgentProject(tmpDir, "my-agent");
-    const instanceId = "inst-cred-fail";
+    const sessionId = "inst-cred-fail";
     const logLines = [
-      pinoLine(30, 1710700000000, "step 1", { instance: instanceId }),
+      pinoLine(30, 1710700000000, "step 1", { instance: sessionId }),
     ];
     writeFileSync(
       join(logsPath, "my-agent-2024-03-20.log"),
@@ -689,7 +689,7 @@ describe("log summary route", () => {
 
     const app = createTestApp(tmpDir);
     const res = await app.request(
-      `/api/logs/agents/my-agent/${instanceId}/summarize`,
+      `/api/logs/agents/my-agent/${sessionId}/summarize`,
       { method: "POST" },
     );
     // When no credential source can provide a key, return 500 with actionable message
@@ -701,11 +701,11 @@ describe("log summary route", () => {
 
   it("applies grep filter to log entries before summarizing", async () => {
     createMinimalAgentProject(tmpDir, "my-agent");
-    const instanceId = "inst-grep-ok";
+    const sessionId = "inst-grep-ok";
     const logLines = [
-      pinoLine(30, 1710700000000, "error occurred", { instance: instanceId }),
-      pinoLine(30, 1710700001000, "normal log", { instance: instanceId }),
-      pinoLine(30, 1710700002000, "another error", { instance: instanceId }),
+      pinoLine(30, 1710700000000, "error occurred", { instance: sessionId }),
+      pinoLine(30, 1710700001000, "normal log", { instance: sessionId }),
+      pinoLine(30, 1710700002000, "another error", { instance: sessionId }),
     ];
     writeFileSync(
       join(logsPath, "my-agent-2024-03-19.log"),
@@ -720,7 +720,7 @@ describe("log summary route", () => {
 
     const app = createTestApp(tmpDir);
     const res = await app.request(
-      `/api/logs/agents/my-agent/${instanceId}/summarize?grep=error`,
+      `/api/logs/agents/my-agent/${sessionId}/summarize?grep=error`,
       { method: "POST" },
     );
     expect(res.status).toBe(200);
@@ -732,9 +732,9 @@ describe("log summary route", () => {
 
   it("uses custom prompt from POST body when provided", async () => {
     createMinimalAgentProject(tmpDir, "my-agent");
-    const instanceId = "inst-custom-prompt";
+    const sessionId = "inst-custom-prompt";
     const logLines = [
-      pinoLine(30, 1710700000000, "Agent did something", { instance: instanceId }),
+      pinoLine(30, 1710700000000, "Agent did something", { instance: sessionId }),
     ];
     writeFileSync(
       join(logsPath, "my-agent-2024-03-18.log"),
@@ -749,7 +749,7 @@ describe("log summary route", () => {
 
     const app = createTestApp(tmpDir);
     const res = await app.request(
-      `/api/logs/agents/my-agent/${instanceId}/summarize`,
+      `/api/logs/agents/my-agent/${sessionId}/summarize`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -781,9 +781,9 @@ describe("log summary route", () => {
       `[models.main]\nprovider = "anthropic"\nmodel = "claude-3-5-sonnet-20241022"\nauthType = "pi_auth"\n`,
     );
 
-    const instanceId = "inst-pi-auth";
+    const sessionId = "inst-pi-auth";
     const logLines = [
-      pinoLine(30, 1710700000000, "pi auth ran", { instance: instanceId }),
+      pinoLine(30, 1710700000000, "pi auth ran", { instance: sessionId }),
     ];
     writeFileSync(
       join(logsPath, `${agentName}-2024-03-18.log`),
@@ -807,7 +807,7 @@ describe("log summary route", () => {
 
     const app = createTestApp(tmpDir);
     const res = await app.request(
-      `/api/logs/agents/${agentName}/${instanceId}/summarize`,
+      `/api/logs/agents/${agentName}/${sessionId}/summarize`,
       { method: "POST" },
     );
     expect(res.status).toBe(200);
@@ -832,8 +832,8 @@ describe("log summary route", () => {
       `[models.main]\nprovider = "anthropic"\nmodel = "claude-3-sonnet"\nauthType = "pi_auth"\n`,
     );
 
-    const instanceId = "inst-pi-auth-fail";
-    const logLines = [pinoLine(30, 1710700000000, "step", { instance: instanceId })];
+    const sessionId = "inst-pi-auth-fail";
+    const logLines = [pinoLine(30, 1710700000000, "step", { instance: sessionId })];
     writeFileSync(
       join(logsPath, `${agentName}-2024-03-18.log`),
       logLines.join("\n") + "\n",
@@ -841,7 +841,7 @@ describe("log summary route", () => {
 
     const app = createTestApp(tmpDir);
     const res = await app.request(
-      `/api/logs/agents/${agentName}/${instanceId}/summarize`,
+      `/api/logs/agents/${agentName}/${sessionId}/summarize`,
       { method: "POST" },
     );
     // AuthStorage.getApiKey() failure returns 500
@@ -853,17 +853,17 @@ describe("log summary route", () => {
 
   it("truncates tool-result payload to short excerpt while preserving metadata", async () => {
     createMinimalAgentProject(tmpDir, "my-agent");
-    const instanceId = "inst-redact-tool";
+    const sessionId = "inst-redact-tool";
     // Pad result so the marker is beyond the 150-char excerpt cutoff
     const padding = "x".repeat(160);
     const logLines = [
-      pinoLine(30, 1710700000000, "Agent started", { instance: instanceId }),
+      pinoLine(30, 1710700000000, "Agent started", { instance: sessionId }),
       // conversation.tool_result with large output — only first 150 chars kept as excerpt
       JSON.stringify({
         level: 30,
         time: 1710700001000,
         msg: "conversation.tool_result",
-        instance: instanceId,
+        instance: sessionId,
         tool: "bash",
         cmd: "cat /etc/hosts",
         isError: false,
@@ -876,14 +876,14 @@ describe("log summary route", () => {
         level: 50,
         time: 1710700002000,
         msg: "conversation.tool_result",
-        instance: instanceId,
+        instance: sessionId,
         tool: "bash",
         cmd: "rm -rf /tmp/bad",
         isError: true,
         resultText: `${padding}LONG_ERROR_PAYLOAD_MARKER`,
         result: `${padding}LONG_ERROR_PAYLOAD_MARKER`,
       }),
-      pinoLine(30, 1710700003000, "Agent finished", { instance: instanceId }),
+      pinoLine(30, 1710700003000, "Agent finished", { instance: sessionId }),
     ];
     writeFileSync(
       join(logsPath, "my-agent-2024-03-18.log"),
@@ -898,7 +898,7 @@ describe("log summary route", () => {
 
     const app = createTestApp(tmpDir);
     const res = await app.request(
-      `/api/logs/agents/my-agent/${instanceId}/summarize`,
+      `/api/logs/agents/my-agent/${sessionId}/summarize`,
       { method: "POST" },
     );
     expect(res.status).toBe(200);
@@ -934,14 +934,14 @@ describe("log summary route", () => {
 
   it("includes extra log fields as JSON in log text when entry has fields beyond msg/level/time/instance", async () => {
     createMinimalAgentProject(tmpDir, "my-agent");
-    const instanceId = "inst-extra-fields";
+    const sessionId = "inst-extra-fields";
     // Log entry has extra field 'err' beyond msg/level/time/instance
     const logLines = [
       JSON.stringify({
         level: 50,
         time: 1710700000000,
         msg: "Something failed",
-        instance: instanceId,
+        instance: sessionId,
         err: { message: "ENOENT: no such file" },
         tool: "bash",
       }),
@@ -959,7 +959,7 @@ describe("log summary route", () => {
 
     const app = createTestApp(tmpDir);
     const res = await app.request(
-      `/api/logs/agents/my-agent/${instanceId}/summarize`,
+      `/api/logs/agents/my-agent/${sessionId}/summarize`,
       { method: "POST" },
     );
     expect(res.status).toBe(200);

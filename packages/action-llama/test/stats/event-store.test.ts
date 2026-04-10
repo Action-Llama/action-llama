@@ -10,7 +10,7 @@ import { createEvent, EventTypes } from "../../src/shared/persistence/event-stor
 
 function makeRun(overrides: Partial<RunRecord> = {}): RunRecord {
   return {
-    instanceId: `run-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    sessionId: `run-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     agentName: "dev",
     triggerType: "schedule",
     result: "completed",
@@ -30,9 +30,9 @@ function makeRun(overrides: Partial<RunRecord> = {}): RunRecord {
 function makeCallEdge(overrides: Partial<CallEdgeRecord> = {}): CallEdgeRecord {
   return {
     callerAgent: "orchestrator",
-    callerInstance: `inst-${Date.now()}`,
+    callerSession: `inst-${Date.now()}`,
     targetAgent: "worker",
-    targetInstance: `inst-${Date.now() + 1}`,
+    targetSession: `inst-${Date.now() + 1}`,
     depth: 1,
     startedAt: Date.now(),
     ...overrides,
@@ -133,9 +133,9 @@ describe("EventSourcedStatsStore", () => {
     });
 
     it("respects the limit parameter", async () => {
-      await store.recordRun(makeRun({ agentName: "dev", result: "completed", instanceId: "run-1" }));
-      await store.recordRun(makeRun({ agentName: "dev", result: "completed", instanceId: "run-2" }));
-      await store.recordRun(makeRun({ agentName: "dev", result: "completed", instanceId: "run-3" }));
+      await store.recordRun(makeRun({ agentName: "dev", result: "completed", sessionId: "run-1" }));
+      await store.recordRun(makeRun({ agentName: "dev", result: "completed", sessionId: "run-2" }));
+      await store.recordRun(makeRun({ agentName: "dev", result: "completed", sessionId: "run-3" }));
 
       const limited = await store.queryRuns({ limit: 2 });
       expect(limited.length).toBeLessThanOrEqual(2);
@@ -352,11 +352,11 @@ describe("EventSourcedStatsStore", () => {
 
   describe("queryRuns with failed runs", () => {
     it("includes error runs in queryRuns results", async () => {
-      const instanceId = `error-run-${Date.now()}`;
-      await store.recordRun(makeRun({ instanceId, agentName: "dev", result: "error", errorMessage: "OOM" }));
+      const sessionId = `error-run-${Date.now()}`;
+      await store.recordRun(makeRun({ sessionId, agentName: "dev", result: "error", errorMessage: "OOM" }));
 
       const runs = await store.queryRuns({ agent: "dev" });
-      const errorRun = runs.find((r: any) => r.instance_id === instanceId);
+      const errorRun = runs.find((r: any) => r.session_id === sessionId);
       expect(errorRun).toBeDefined();
       expect(errorRun!.result).toBe("error");
       expect(errorRun!.error_message).toBe("OOM");
@@ -561,11 +561,11 @@ describe("EventSourcedStatsStore", () => {
       // Create a scenario where a RUN_STARTED event is for "dev" but the paired
       // RUN_COMPLETED event has agentName "reviewer" — simulating inconsistent data.
       // The filter at line 172 should skip the completion event.
-      const instanceId = `inconsistent-completed-${Date.now()}`;
+      const sessionId = `inconsistent-completed-${Date.now()}`;
 
       await persistence.events.stream("stats").append(
         createEvent(EventTypes.RUN_STARTED, {
-          instanceId,
+          sessionId,
           agentName: "dev",
           triggerType: "manual",
           triggerSource: null,
@@ -575,7 +575,7 @@ describe("EventSourcedStatsStore", () => {
 
       await persistence.events.stream("stats").append(
         createEvent(EventTypes.RUN_COMPLETED, {
-          instanceId,
+          sessionId,
           agentName: "reviewer", // different agent — inconsistent!
           result: "completed",
           exitCode: 0,
@@ -599,7 +599,7 @@ describe("EventSourcedStatsStore", () => {
       const runs = await store.queryRuns({ agent: "dev" });
 
       // The inconsistent instance should not appear in the results
-      const inconsistentRun = runs.find((r: any) => r.instance_id === instanceId);
+      const inconsistentRun = runs.find((r: any) => r.session_id === sessionId);
       expect(inconsistentRun).toBeUndefined();
       expect(Array.isArray(runs)).toBe(true);
     });
@@ -607,11 +607,11 @@ describe("EventSourcedStatsStore", () => {
     it("skips RUN_FAILED event when its agentName differs from query.agent (inconsistent data)", async () => {
       // Same scenario but with a RUN_FAILED event having a mismatched agent.
       // The filter at line 200 should skip the failure event.
-      const instanceId = `inconsistent-failed-${Date.now()}`;
+      const sessionId = `inconsistent-failed-${Date.now()}`;
 
       await persistence.events.stream("stats").append(
         createEvent(EventTypes.RUN_STARTED, {
-          instanceId,
+          sessionId,
           agentName: "dev",
           triggerType: "manual",
           triggerSource: null,
@@ -621,7 +621,7 @@ describe("EventSourcedStatsStore", () => {
 
       await persistence.events.stream("stats").append(
         createEvent(EventTypes.RUN_FAILED, {
-          instanceId,
+          sessionId,
           agentName: "reviewer", // different agent — inconsistent!
           result: "error",
           exitCode: 1,
@@ -645,7 +645,7 @@ describe("EventSourcedStatsStore", () => {
       const runs = await store.queryRuns({ agent: "dev" });
 
       // The inconsistent instance should not appear
-      const inconsistentRun = runs.find((r: any) => r.instance_id === instanceId);
+      const inconsistentRun = runs.find((r: any) => r.session_id === sessionId);
       expect(inconsistentRun).toBeUndefined();
       expect(Array.isArray(runs)).toBe(true);
     });

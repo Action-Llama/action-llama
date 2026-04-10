@@ -33,7 +33,7 @@ function makeCallStore() {
     create: vi.fn(() => ({
       callId: "call-123",
       callerAgent: "agent-a",
-      callerInstanceId: "inst-a",
+      callerSessionId: "inst-a",
       targetAgent: "agent-b",
       context: "do something",
       status: "pending",
@@ -55,8 +55,8 @@ function makeStatusTracker() {
     startRun: vi.fn(),
     endRun: vi.fn(),
     addLogLine: vi.fn(),
-    registerInstance: vi.fn(),
-    completeInstance: vi.fn(),
+    registerSession: vi.fn(),
+    completeSession: vi.fn(),
     isPaused: vi.fn(() => false),
   } as any;
 }
@@ -69,7 +69,7 @@ function makeOpts(overrides?: any) {
     statusTracker: makeStatusTracker(),
     logger: makeLogger(),
     agentName: "test-agent",
-    instanceId: "test-agent-abc123",
+    sessionId: "test-agent-abc123",
     depth: 0,
     onReturnValue: vi.fn(),
     ...overrides,
@@ -223,7 +223,7 @@ describe("Scheduler Tools", () => {
 
       expect(opts.callStore.create).toHaveBeenCalledWith({
         callerAgent: "test-agent",
-        callerInstanceId: "test-agent-abc123",
+        callerSessionId: "test-agent-abc123",
         targetAgent: "agent-b",
         context: "review the PR",
         depth: 0,

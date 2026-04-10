@@ -197,7 +197,7 @@ describe("setupGateway", () => {
 
   });
 
-  describe("controlDeps.killInstance", () => {
+  describe("controlDeps.killSession", () => {
     it("returns false when no pools are registered", async () => {
       const gatewayResult = makeGatewayResult();
       const state = makeSchedulerState({ runnerPools: {} });
@@ -206,24 +206,24 @@ describe("setupGateway", () => {
       await setupGateway(opts);
 
       const { controlDeps } = mockStartGateway.mock.calls[0][0];
-      const result = await controlDeps.killInstance("instance-1");
+      const result = await controlDeps.killSession("instance-1");
       expect(result).toBe(false);
     });
 
     it("delegates to pools and returns true when one kills the instance", async () => {
       const gatewayResult = makeGatewayResult();
-      const pool1 = { killInstance: vi.fn().mockReturnValue(false) };
-      const pool2 = { killInstance: vi.fn().mockReturnValue(true) };
+      const pool1 = { killSession: vi.fn().mockReturnValue(false) };
+      const pool2 = { killSession: vi.fn().mockReturnValue(true) };
       const state = makeSchedulerState({ runnerPools: { dev: pool1, reviewer: pool2 } });
       const opts = makeBaseOpts(state, gatewayResult);
 
       await setupGateway(opts);
 
       const { controlDeps } = mockStartGateway.mock.calls[0][0];
-      const result = await controlDeps.killInstance("instance-abc");
+      const result = await controlDeps.killSession("instance-abc");
       expect(result).toBe(true);
-      expect(pool1.killInstance).toHaveBeenCalledWith("instance-abc");
-      expect(pool2.killInstance).toHaveBeenCalledWith("instance-abc");
+      expect(pool1.killSession).toHaveBeenCalledWith("instance-abc");
+      expect(pool2.killSession).toHaveBeenCalledWith("instance-abc");
     });
   });
 
@@ -332,8 +332,8 @@ describe("setupGateway", () => {
       const { controlDeps } = mockStartGateway.mock.calls[0][0];
       const result = await controlDeps.triggerAgent("dev");
 
-      expect(result).toHaveProperty("instanceId");
-      expect((result as any).instanceId).toMatch(/^dev-[0-9a-f]{8}$/);
+      expect(result).toHaveProperty("sessionId");
+      expect((result as any).sessionId).toMatch(/^dev-[0-9a-f]{8}$/);
       expect(mockWorkQueue.enqueue).toHaveBeenCalledWith("dev", { type: 'manual', prompt: undefined });
     });
 
@@ -351,8 +351,8 @@ describe("setupGateway", () => {
       const { controlDeps } = mockStartGateway.mock.calls[0][0];
       const result = await controlDeps.triggerAgent("dev", "do something");
 
-      expect(result).toHaveProperty("instanceId");
-      expect((result as any).instanceId).toMatch(/^dev-[0-9a-f]{8}$/);
+      expect(result).toHaveProperty("sessionId");
+      expect((result as any).sessionId).toMatch(/^dev-[0-9a-f]{8}$/);
       expect(mockWorkQueue.enqueue).toHaveBeenCalledWith("dev", { type: 'manual', prompt: "do something" });
     });
 
@@ -371,7 +371,7 @@ describe("setupGateway", () => {
       expect(result).toBe("Scheduler is not ready");
     });
 
-    it("triggers agent run and returns instanceId", async () => {
+    it("triggers agent run and returns sessionId", async () => {
       const { runWithReruns } = await import("../../src/execution/execution.js");
 
       const gatewayResult = makeGatewayResult();
@@ -387,8 +387,8 @@ describe("setupGateway", () => {
       const { controlDeps } = mockStartGateway.mock.calls[0][0];
       const result = await controlDeps.triggerAgent("dev", "do something");
 
-      expect(result).toHaveProperty("instanceId");
-      expect((result as any).instanceId).toMatch(/^dev-[0-9a-f]{8}$/);
+      expect(result).toHaveProperty("sessionId");
+      expect((result as any).sessionId).toMatch(/^dev-[0-9a-f]{8}$/);
       expect(runWithReruns).toHaveBeenCalledWith(
         mockRunner,
         expect.objectContaining({ name: "dev" }),
@@ -656,7 +656,7 @@ describe("setupGateway", () => {
       const { controlDeps } = mockStartGateway.mock.calls[0][0];
       const result = await controlDeps.triggerAgent("dev", "test prompt");
 
-      expect(result).toHaveProperty("instanceId");
+      expect(result).toHaveProperty("sessionId");
       expect(logger.warn).toHaveBeenCalledWith(
         expect.objectContaining({ agent: "dev" }),
         "queue full, oldest event dropped",
@@ -677,7 +677,7 @@ describe("setupGateway", () => {
       const { controlDeps } = mockStartGateway.mock.calls[0][0];
       const result = await controlDeps.triggerAgent("dev", "do something");
 
-      expect(result).toHaveProperty("instanceId");
+      expect(result).toHaveProperty("sessionId");
       expect(logger.warn).toHaveBeenCalledWith(
         expect.objectContaining({ agent: "dev" }),
         "queue full, oldest event dropped",
@@ -702,7 +702,7 @@ describe("setupGateway", () => {
       const { controlDeps } = mockStartGateway.mock.calls[0][0];
       const result = await controlDeps.triggerAgent("dev", "do something");
 
-      expect(result).toHaveProperty("instanceId");
+      expect(result).toHaveProperty("sessionId");
       // Give time for the async error to propagate
       await new Promise((r) => setTimeout(r, 50));
       expect(logger.error).toHaveBeenCalledWith(

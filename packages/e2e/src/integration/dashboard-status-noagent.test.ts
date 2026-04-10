@@ -3,16 +3,16 @@
  *
  * Tests dashboard API endpoints that are available without Docker (webUI=true):
  *   1. GET /api/dashboard/status — returns agents, scheduler info, recent logs
- *   2. GET /api/dashboard/triggers/:instanceId — 404 for unknown instance
- *   3. GET /api/dashboard/agents/:name/instances/:id — null for unknown instance
+ *   2. GET /api/dashboard/triggers/:sessionId — 404 for unknown instance
+ *   3. GET /api/dashboard/agents/:name/sessions/:id — null for unknown instance
  *
  * These complement the Docker-required tests in dashboard-instance-api.test.ts,
  * providing coverage in environments without Docker.
  *
  * Covers:
  *   - control/routes/dashboard-api.ts: GET /api/dashboard/status
- *   - control/routes/dashboard-api.ts: GET /api/dashboard/triggers/:instanceId → 404
- *   - control/routes/dashboard-api.ts: GET /api/dashboard/agents/:name/instances/:id → null
+ *   - control/routes/dashboard-api.ts: GET /api/dashboard/triggers/:sessionId → 404
+ *   - control/routes/dashboard-api.ts: GET /api/dashboard/agents/:name/sessions/:id → null
  */
 
 import { describe, it, expect, afterEach } from "vitest";
@@ -90,7 +90,7 @@ describe(
       expect(Array.isArray(body.recentLogs)).toBe(true);
     });
 
-    it("GET /api/dashboard/triggers/:instanceId returns 404 for unknown instance", async () => {
+    it("GET /api/dashboard/triggers/:sessionId returns 404 for unknown instance", async () => {
       await startHarnessWithWebUI();
       if (!gatewayAccessible) return;
 
@@ -101,12 +101,12 @@ describe(
       expect(body.trigger).toBeNull();
     });
 
-    it("GET /api/dashboard/agents/:name/instances/:id returns null for unknown instanceId", async () => {
+    it("GET /api/dashboard/agents/:name/sessions/:id returns null for unknown sessionId", async () => {
       await startHarnessWithWebUI();
       if (!gatewayAccessible) return;
 
       const res = await dashGet(
-        "/api/dashboard/agents/dash-status-agent/instances/unknown-id-xyz-456",
+        "/api/dashboard/agents/dash-status-agent/sessions/unknown-id-xyz-456",
       );
       expect(res.status).toBe(200);
 

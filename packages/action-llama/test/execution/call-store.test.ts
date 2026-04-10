@@ -16,7 +16,7 @@ describe("CallStore", () => {
     it("creates an entry with pending status", () => {
       const entry = store.create({
         callerAgent: "dev",
-        callerInstanceId: "dev(1)",
+        callerSessionId: "dev(1)",
         targetAgent: "researcher",
         context: "find competitors",
         depth: 0,
@@ -30,22 +30,22 @@ describe("CallStore", () => {
     });
 
     it("generates unique call IDs", () => {
-      const e1 = store.create({ callerAgent: "a", callerInstanceId: "a", targetAgent: "b", context: "", depth: 0 });
-      const e2 = store.create({ callerAgent: "a", callerInstanceId: "a", targetAgent: "b", context: "", depth: 0 });
+      const e1 = store.create({ callerAgent: "a", callerSessionId: "a", targetAgent: "b", context: "", depth: 0 });
+      const e2 = store.create({ callerAgent: "a", callerSessionId: "a", targetAgent: "b", context: "", depth: 0 });
       expect(e1.callId).not.toBe(e2.callId);
     });
   });
 
   describe("setRunning", () => {
     it("transitions from pending to running", () => {
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "a", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "a", targetAgent: "b", context: "", depth: 0 });
       expect(store.setRunning(entry.callId)).toBe(true);
       const result = store.check(entry.callId, "a");
       expect(result?.status).toBe("running");
     });
 
     it("fails for non-pending entries", () => {
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "a", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "a", targetAgent: "b", context: "", depth: 0 });
       store.setRunning(entry.callId);
       expect(store.setRunning(entry.callId)).toBe(false);
     });
@@ -57,7 +57,7 @@ describe("CallStore", () => {
 
   describe("complete", () => {
     it("transitions to completed with return value", () => {
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "a", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "a", targetAgent: "b", context: "", depth: 0 });
       store.setRunning(entry.callId);
       expect(store.complete(entry.callId, "result data")).toBe(true);
       const result = store.check(entry.callId, "a");
@@ -66,7 +66,7 @@ describe("CallStore", () => {
     });
 
     it("works without return value", () => {
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "a", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "a", targetAgent: "b", context: "", depth: 0 });
       store.setRunning(entry.callId);
       expect(store.complete(entry.callId)).toBe(true);
       const result = store.check(entry.callId, "a");
@@ -75,12 +75,12 @@ describe("CallStore", () => {
     });
 
     it("can complete directly from pending", () => {
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "a", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "a", targetAgent: "b", context: "", depth: 0 });
       expect(store.complete(entry.callId, "fast result")).toBe(true);
     });
 
     it("fails for already completed entries", () => {
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "a", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "a", targetAgent: "b", context: "", depth: 0 });
       store.complete(entry.callId);
       expect(store.complete(entry.callId)).toBe(false);
     });
@@ -88,7 +88,7 @@ describe("CallStore", () => {
 
   describe("fail", () => {
     it("transitions to error with message", () => {
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "a", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "a", targetAgent: "b", context: "", depth: 0 });
       store.setRunning(entry.callId);
       expect(store.fail(entry.callId, "something broke")).toBe(true);
       const result = store.check(entry.callId, "a");
@@ -97,7 +97,7 @@ describe("CallStore", () => {
     });
 
     it("fails for already terminal entries", () => {
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "a", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "a", targetAgent: "b", context: "", depth: 0 });
       store.fail(entry.callId, "err");
       expect(store.fail(entry.callId, "err2")).toBe(false);
     });
@@ -109,12 +109,12 @@ describe("CallStore", () => {
     });
 
     it("returns null when caller does not match", () => {
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "a(1)", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "a(1)", targetAgent: "b", context: "", depth: 0 });
       expect(store.check(entry.callId, "wrong-caller")).toBeNull();
     });
 
     it("returns status for matching caller", () => {
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "a(1)", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "a(1)", targetAgent: "b", context: "", depth: 0 });
       const result = store.check(entry.callId, "a(1)");
       expect(result).toEqual({ status: "pending", returnValue: undefined, errorMessage: undefined });
     });
@@ -122,8 +122,8 @@ describe("CallStore", () => {
 
   describe("failAllByCaller", () => {
     it("fails all pending/running calls from a caller", () => {
-      const e1 = store.create({ callerAgent: "a", callerInstanceId: "a(1)", targetAgent: "b", context: "", depth: 0 });
-      const e2 = store.create({ callerAgent: "a", callerInstanceId: "a(1)", targetAgent: "c", context: "", depth: 0 });
+      const e1 = store.create({ callerAgent: "a", callerSessionId: "a(1)", targetAgent: "b", context: "", depth: 0 });
+      const e2 = store.create({ callerAgent: "a", callerSessionId: "a(1)", targetAgent: "c", context: "", depth: 0 });
       store.setRunning(e2.callId);
 
       const count = store.failAllByCaller("a(1)");
@@ -135,9 +135,9 @@ describe("CallStore", () => {
     });
 
     it("does not fail completed calls", () => {
-      const e1 = store.create({ callerAgent: "a", callerInstanceId: "a(1)", targetAgent: "b", context: "", depth: 0 });
+      const e1 = store.create({ callerAgent: "a", callerSessionId: "a(1)", targetAgent: "b", context: "", depth: 0 });
       store.complete(e1.callId, "done");
-      const e2 = store.create({ callerAgent: "a", callerInstanceId: "a(1)", targetAgent: "c", context: "", depth: 0 });
+      const e2 = store.create({ callerAgent: "a", callerSessionId: "a(1)", targetAgent: "c", context: "", depth: 0 });
 
       const count = store.failAllByCaller("a(1)");
       expect(count).toBe(1);
@@ -146,8 +146,8 @@ describe("CallStore", () => {
     });
 
     it("does not affect other callers", () => {
-      store.create({ callerAgent: "a", callerInstanceId: "a(1)", targetAgent: "b", context: "", depth: 0 });
-      const e2 = store.create({ callerAgent: "x", callerInstanceId: "x(1)", targetAgent: "b", context: "", depth: 0 });
+      store.create({ callerAgent: "a", callerSessionId: "a(1)", targetAgent: "b", context: "", depth: 0 });
+      const e2 = store.create({ callerAgent: "x", callerSessionId: "x(1)", targetAgent: "b", context: "", depth: 0 });
 
       store.failAllByCaller("a(1)");
       expect(store.check(e2.callId, "x(1)")?.status).toBe("pending");
@@ -163,7 +163,7 @@ describe("CallStore", () => {
       vi.useFakeTimers();
       try {
         const shortStore = new CallStore(1); // 1 second sweep
-        const entry = shortStore.create({ callerAgent: "a", callerInstanceId: "a", targetAgent: "b", context: "", depth: 0 });
+        const entry = shortStore.create({ callerAgent: "a", callerSessionId: "a", targetAgent: "b", context: "", depth: 0 });
         shortStore.complete(entry.callId, "done");
 
         // Advance past 10 min terminal TTL
@@ -180,7 +180,7 @@ describe("CallStore", () => {
       vi.useFakeTimers();
       try {
         const shortStore = new CallStore(1);
-        const entry = shortStore.create({ callerAgent: "a", callerInstanceId: "a", targetAgent: "b", context: "", depth: 0 });
+        const entry = shortStore.create({ callerAgent: "a", callerSessionId: "a", targetAgent: "b", context: "", depth: 0 });
         shortStore.setRunning(entry.callId);
 
         // Advance past 2 hour active TTL
@@ -198,7 +198,7 @@ describe("CallStore", () => {
 
   describe("dispose", () => {
     it("clears all entries", () => {
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "a", targetAgent: "b", context: "", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "a", targetAgent: "b", context: "", depth: 0 });
       store.dispose();
       expect(store.check(entry.callId, "a")).toBeNull();
     });
@@ -206,7 +206,7 @@ describe("CallStore", () => {
 
   describe("get", () => {
     it("returns the call entry by callId", () => {
-      const entry = store.create({ callerAgent: "a", callerInstanceId: "a", targetAgent: "b", context: "ctx", depth: 0 });
+      const entry = store.create({ callerAgent: "a", callerSessionId: "a", targetAgent: "b", context: "ctx", depth: 0 });
       const result = store.get(entry.callId);
       expect(result).toBeDefined();
       expect(result?.callId).toBe(entry.callId);
@@ -226,7 +226,7 @@ describe("CallStore", () => {
       const callEntry = {
         callId: persistedCallId,
         callerAgent: "agent-x",
-        callerInstanceId: "agent-x",
+        callerSessionId: "agent-x",
         targetAgent: "agent-y",
         context: "some context",
         depth: 0,

@@ -2,7 +2,7 @@ import { resolve } from "path";
 import { discoverAgents, loadAgentConfig, loadGlobalConfig } from "../../shared/config.js";
 import { gatewayFetch, gatewayJson } from "../gateway-client.js";
 import { resolveEnvironmentName } from "../../shared/environment.js";
-import type { AgentInstance } from "../../scheduler/types.js";
+import type { AgentSession } from "../../scheduler/types.js";
 import type { AgentConfig } from "../../shared/config.js";
 
 /** Concise trigger types for the summary table. */
@@ -15,31 +15,31 @@ function formatTriggerShort(config: AgentConfig): string {
 
 /** Print the unified agents summary table. */
 function printAgentsTable(
-  rows: Array<{ config: AgentConfig; status: string; instanceCount: number; waitingCount: number; paused: boolean; queueSize: number }>,
+  rows: Array<{ config: AgentConfig; status: string; sessionCount: number; waitingCount: number; paused: boolean; queueSize: number }>,
 ): void {
-  const cols = { agent: 16, trigger: 16, status: 12, instances: 12, queue: 8 };
+  const cols = { agent: 16, trigger: 16, status: 12, sessions: 12, queue: 8 };
   console.log(
     "AGENT".padEnd(cols.agent) +
     "TRIGGER".padEnd(cols.trigger) +
     "STATUS".padEnd(cols.status) +
-    "INSTANCES".padEnd(cols.instances) +
+    "SESSIONS".padEnd(cols.sessions) +
     "QUEUE"
   );
-  console.log("-".repeat(cols.agent + cols.trigger + cols.status + cols.instances + cols.queue));
+  console.log("-".repeat(cols.agent + cols.trigger + cols.status + cols.sessions + cols.queue));
 
-  for (const { config, status, instanceCount, waitingCount, paused, queueSize } of rows) {
+  for (const { config, status, sessionCount, waitingCount, paused, queueSize } of rows) {
     const trigger = formatTriggerShort(config);
     const statusStr = paused ? "PAUSED" : status;
     const parts: string[] = [];
-    if (instanceCount > 0) parts.push(`${instanceCount} running`);
+    if (sessionCount > 0) parts.push(`${sessionCount} running`);
     if (waitingCount > 0) parts.push(`${waitingCount} waiting`);
-    const instanceStr = parts.length > 0 ? parts.join(", ") : "0";
+    const sessionStr = parts.length > 0 ? parts.join(", ") : "0";
 
     console.log(
       config.name.padEnd(cols.agent) +
       trigger.padEnd(cols.trigger) +
       statusStr.padEnd(cols.status) +
-      instanceStr.padEnd(cols.instances) +
+      sessionStr.padEnd(cols.sessions) +
       String(queueSize)
     );
   }
@@ -64,31 +64,31 @@ function printAgentConfig(config: AgentConfig): void {
   if (config.timeout) console.log(`  Timeout: ${config.timeout}s`);
 }
 
-/** Print local running instances table. */
-function printLocalInstances(instances: AgentInstance[]): void {
+/** Print local running sessions table. */
+function printLocalSessions(instances: AgentSession[]): void {
   if (instances.length === 0) return;
 
-  console.log("Instances:");
-  const cols = { agent: 16, instance: 24, status: 12, trigger: 20, started: 20 };
+  console.log("Sessions:");
+  const cols = { agent: 16, session: 24, status: 12, trigger: 20, started: 20 };
   console.log(
     "AGENT".padEnd(cols.agent) +
-    "INSTANCE ID".padEnd(cols.instance) +
+    "SESSION ID".padEnd(cols.session) +
     "STATUS".padEnd(cols.status) +
     "TRIGGER".padEnd(cols.trigger) +
     "STARTED"
   );
-  console.log("-".repeat(cols.agent + cols.instance + cols.status + cols.trigger + cols.started));
+  console.log("-".repeat(cols.agent + cols.session + cols.status + cols.trigger + cols.started));
 
-  for (const instance of instances) {
-    const instanceIdShort = instance.id.length > 20 ?
-      `...${instance.id.slice(-17)}` : instance.id;
+  for (const session of instances) {
+    const sessionIdShort = session.id.length > 20 ?
+      `...${session.id.slice(-17)}` : session.id;
 
     console.log(
-      instance.agentName.padEnd(cols.agent) +
-      instanceIdShort.padEnd(cols.instance) +
-      instance.status.padEnd(cols.status) +
-      (instance.trigger || "-").padEnd(cols.trigger) +
-      new Date(instance.startedAt).toISOString().slice(0, 19).replace('T', ' ')
+      session.agentName.padEnd(cols.agent) +
+      sessionIdShort.padEnd(cols.session) +
+      session.status.padEnd(cols.status) +
+      (session.trigger || "-").padEnd(cols.trigger) +
+      new Date(session.startedAt).toISOString().slice(0, 19).replace('T', ' ')
     );
   }
 }
@@ -100,7 +100,7 @@ export async function execute(opts: { project: string; env?: string; agent?: str
   const isRemote = !!envName;
 
   let schedulerInfo = null;
-  let instances: AgentInstance[] = [];
+  let instances: AgentSession[] = [];
   let agentStatuses: Array<{ name: string; enabled: boolean }> = [];
   let queueSizes: Record<string, number> = {};
 
@@ -109,7 +109,7 @@ export async function execute(opts: { project: string; env?: string; agent?: str
     if (response.ok) {
       const data = await gatewayJson(response);
       schedulerInfo = data.scheduler;
-      instances = data.instances || [];
+      instances = data.sessions || data.instances || [];
       agentStatuses = data.agents || [];
       queueSizes = data.queueSizes || {};
     } else if (isRemote) {
@@ -132,7 +132,7 @@ export async function execute(opts: { project: string; env?: string; agent?: str
   // --- Per-agent detail view ---
   if (opts.agent) {
     const config = loadAgentConfig(projectPath, opts.agent);
-    const agentInstances = instances.filter(i => i.agentName === opts.agent);
+    const agentInstances = instances.filter((i: AgentSession) => i.agentName === opts.agent);
     const agentStatus = agentStatuses.find(a => a.name === opts.agent);
 
     console.log(`Agent: ${opts.agent}`);
@@ -140,7 +140,7 @@ export async function execute(opts: { project: string; env?: string; agent?: str
     console.log("");
     printAgentConfig(config);
     console.log("");
-    printLocalInstances(agentInstances);
+    printLocalSessions(agentInstances);
     return;
   }
 
@@ -161,11 +161,11 @@ export async function execute(opts: { project: string; env?: string; agent?: str
     console.log("");
   }
 
-  const instanceCounts = new Map<string, number>();
+  const sessionCounts = new Map<string, number>();
   const waitingCounts = new Map<string, number>();
   for (const inst of instances) {
     if (inst.status === 'running') {
-      instanceCounts.set(inst.agentName, (instanceCounts.get(inst.agentName) || 0) + 1);
+      sessionCounts.set(inst.agentName, (sessionCounts.get(inst.agentName) || 0) + 1);
     } else if (inst.status === 'waiting') {
       waitingCounts.set(inst.agentName, (waitingCounts.get(inst.agentName) || 0) + 1);
     }
@@ -175,7 +175,7 @@ export async function execute(opts: { project: string; env?: string; agent?: str
   const agentRows = agentNames.map(name => {
     const config = loadAgentConfig(projectPath, name);
     const agentStatus = agentStatuses.find(a => a.name === name);
-    const count = instanceCounts.get(name) || 0;
+    const count = sessionCounts.get(name) || 0;
     const waiting = waitingCounts.get(name) || 0;
     const paused = agentStatus ? !agentStatus.enabled : false;
     if (config.description) {
@@ -184,7 +184,7 @@ export async function execute(opts: { project: string; env?: string; agent?: str
     return {
       config,
       status: count > 0 ? "Running" : waiting > 0 ? "Waiting" : "Idle",
-      instanceCount: count,
+      sessionCount: count,
       waitingCount: waiting,
       paused,
       queueSize: queueSizes[name] || 0,
@@ -194,10 +194,10 @@ export async function execute(opts: { project: string; env?: string; agent?: str
   console.log("");
 
   if (instances.length > 0) {
-    printLocalInstances(instances);
+    printLocalSessions(instances);
     console.log("");
   } else if (schedulerInfo) {
-    console.log("No running instances.\n");
+    console.log("No running sessions.\n");
   }
 
   // Fetch and display lock information

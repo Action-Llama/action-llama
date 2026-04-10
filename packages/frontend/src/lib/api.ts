@@ -108,7 +108,7 @@ export interface LogLine {
 export interface InvalidationSignal {
   type: "runs" | "triggers" | "stats" | "instance" | "config";
   agent?: string;
-  instanceId?: string;
+  sessionId?: string;
 }
 
 export interface DashboardStatus {
@@ -117,7 +117,7 @@ export interface DashboardStatus {
   recentLogs: LogLine[];
 }
 
-export interface AgentInstance {
+export interface AgentSession {
   id: string;
   agentName: string;
   status: string;
@@ -130,7 +130,7 @@ export interface TriggerHistoryRow {
   triggerType: string;
   triggerSource?: string;
   agentName?: string;
-  instanceId?: string;
+  sessionId?: string;
   result: string;
   webhookReceiptId?: string;
   deadLetterReason?: string | null;
@@ -141,7 +141,7 @@ export interface JobRow {
   triggerType: string;
   triggerSource?: string | null;
   agentName?: string | null;
-  instanceId?: string | null;
+  sessionId?: string | null;
   result: string;
   webhookReceiptId?: string | null;
   deadLetterReason?: string | null;
@@ -154,7 +154,7 @@ export interface ActivityRow {
   /** Webhook event detail, e.g. "issues opened", "push" */
   eventSummary?: string | null;
   agentName?: string | null;
-  instanceId?: string | null;
+  sessionId?: string | null;
   /** "pending" | "running" | "completed" | "rerun" | "error" | "dead-letter" */
   result: string;
   webhookReceiptId?: string | null;
@@ -164,7 +164,7 @@ export interface ActivityRow {
 }
 
 export interface TriggerDetailData {
-  instanceId: string;
+  sessionId: string;
   agentName: string;
   triggerType: string;
   triggerSource?: string | null;
@@ -260,13 +260,13 @@ export interface AgentDetailData {
   agent: AgentStatus | null;
   agentConfig: AgentConfig | null;
   summary: AgentSummary | null;
-  runningInstances: AgentInstance[];
+  runningSessions: AgentSession[];
   totalHistorical: number;
 }
 
 export interface InstanceDetailData {
   run: RunRecord | null;
-  runningInstance: AgentInstance | null;
+  runningSession: AgentSession | null;
   parentEdge?: { caller_agent: string; caller_instance: string };
   webhookReceipt?: { source: string; eventSummary?: string; deliveryId?: string };
 }
@@ -359,17 +359,17 @@ export function getActivity(
   return fetchJSON(url, signal ? { signal } : undefined);
 }
 
-export function getTriggerDetail(instanceId: string, signal?: AbortSignal): Promise<{ trigger: TriggerDetailData | null }> {
-  return fetchJSON(`/api/dashboard/triggers/${encodeURIComponent(instanceId)}`, signal ? { signal } : undefined);
+export function getTriggerDetail(sessionId: string, signal?: AbortSignal): Promise<{ trigger: TriggerDetailData | null }> {
+  return fetchJSON(`/api/dashboard/triggers/${encodeURIComponent(sessionId)}`, signal ? { signal } : undefined);
 }
 
-export function getInstanceDetail(
+export function getSessionDetail(
   name: string,
-  instanceId: string,
+  sessionId: string,
   signal?: AbortSignal,
 ): Promise<InstanceDetailData> {
   return fetchJSON(
-    `/api/dashboard/agents/${encodeURIComponent(name)}/instances/${encodeURIComponent(instanceId)}`,
+    `/api/dashboard/agents/${encodeURIComponent(name)}/sessions/${encodeURIComponent(sessionId)}`,
     signal ? { signal } : undefined,
   );
 }
@@ -420,34 +420,34 @@ export function getAgentLogs(
   );
 }
 
-export function getInstanceLogs(
+export function getSessionLogs(
   name: string,
-  instanceId: string,
+  sessionId: string,
   params: Record<string, string>,
   signal?: AbortSignal,
 ): Promise<{ entries: LogEntry[]; cursor: string | null; backCursor: string | null; hasMore: boolean }> {
   const qs = new URLSearchParams(params).toString();
   return fetchJSON(
-    `/api/logs/agents/${encodeURIComponent(name)}/${encodeURIComponent(instanceId)}${qs ? `?${qs}` : ""}`,
+    `/api/logs/agents/${encodeURIComponent(name)}/${encodeURIComponent(sessionId)}${qs ? `?${qs}` : ""}`,
     signal ? { signal } : undefined,
   );
 }
 
 // --- Control operations ---
 
-export function triggerAgent(name: string, prompt?: string): Promise<{ success: boolean; message?: string; instanceId?: string }> {
-  return ctrlPost<{ success: boolean; message?: string; instanceId?: string }>(
+export function triggerAgent(name: string, prompt?: string): Promise<{ success: boolean; message?: string; sessionId?: string }> {
+  return ctrlPost<{ success: boolean; message?: string; sessionId?: string }>(
     `/control/trigger/${encodeURIComponent(name)}`,
     prompt ? { prompt } : undefined,
   );
 }
 
-export function killAgentInstances(name: string) {
+export function killAgentSessions(name: string) {
   return ctrlPost(`/control/agents/${encodeURIComponent(name)}/kill`);
 }
 
-export function killInstance(instanceId: string) {
-  return ctrlPost(`/control/kill/${encodeURIComponent(instanceId)}`);
+export function killSession(sessionId: string) {
+  return ctrlPost(`/control/kill/${encodeURIComponent(sessionId)}`);
 }
 
 export function enableAgent(name: string) {
@@ -492,12 +492,12 @@ export async function logout(): Promise<void> {
 
 export function summarizeLogs(
   name: string,
-  instanceId: string,
+  sessionId: string,
   prompt?: string,
   signal?: AbortSignal,
 ): Promise<{ summary: string; cached?: boolean; error?: string }> {
   return fetchJSON(
-    `/api/logs/agents/${encodeURIComponent(name)}/${encodeURIComponent(instanceId)}/summarize`,
+    `/api/logs/agents/${encodeURIComponent(name)}/${encodeURIComponent(sessionId)}/summarize`,
     {
       method: "POST",
       ...(prompt ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt }) } : {}),

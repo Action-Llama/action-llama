@@ -17,9 +17,9 @@
  * the API is accessible without Docker.
  *
  * Covers:
- *   - control/routes/logs.ts: handleLogRequest — back_cursor branch + instanceFilter propagation
+ *   - control/routes/logs.ts: handleLogRequest — back_cursor branch + sessionFilter propagation
  *   - control/routes/logs.ts: handleLogRequest — cursorFileIdx === -1 fallback to most-recent file
- *   - control/routes/log-helpers.ts: readLastEntries startPosition + instanceFilter combined
+ *   - control/routes/log-helpers.ts: readLastEntries startPosition + sessionFilter combined
  */
 
 import { describe, it, expect, afterEach } from "vitest";
@@ -41,7 +41,7 @@ function pinoLine(
   msg: string,
   time: number,
   agentName: string,
-  instanceId?: string,
+  sessionId?: string,
 ): string {
   return JSON.stringify({
     level: 30,
@@ -50,7 +50,7 @@ function pinoLine(
     name: agentName,
     pid: 1,
     hostname: "localhost",
-    ...(instanceId ? { instance: instanceId } : {}),
+    ...(sessionId ? { instance: sessionId } : {}),
   });
 }
 
@@ -72,12 +72,12 @@ describe(
     function instanceLogsAPI(
       h: IntegrationHarness,
       agentName: string,
-      instanceId: string,
+      sessionId: string,
       query?: Record<string, string>,
     ): Promise<Response> {
       const params = query ? "?" + new URLSearchParams(query).toString() : "";
       return fetch(
-        `http://127.0.0.1:${h.gatewayPort}/api/logs/agents/${agentName}/${instanceId}${params}`,
+        `http://127.0.0.1:${h.gatewayPort}/api/logs/agents/${agentName}/${sessionId}${params}`,
         {
           headers: { Authorization: `Bearer ${h.apiKey}` },
           signal: AbortSignal.timeout(5_000),
@@ -138,7 +138,7 @@ describe(
 
     it("back_cursor with per-instance log endpoint only returns entries for that instance", async () => {
       // Two instances writing to the same log file. The instance-specific endpoint
-      // (/:name/:instanceId) filters entries by instance ID. When a back_cursor is
+      // (/:name/:sessionId) filters entries by instance ID. When a back_cursor is
       // used with that endpoint, the filter must still be applied.
       const AGENT_NAME = "bc-instance-filter-agent";
       const INSTANCE_A = "instance-aaa-123";
@@ -151,13 +151,13 @@ describe(
       const entries: string[] = [];
       const baseTime = 1_700_000_000_000;
       for (let i = 0; i < 80; i++) {
-        const instanceId = i % 2 === 0 ? INSTANCE_A : INSTANCE_B;
+        const sessionId = i % 2 === 0 ? INSTANCE_A : INSTANCE_B;
         entries.push(
           pinoLine(
             `msg-${String(i).padStart(3, "0")} ${"z".repeat(60)}`,
             baseTime + i * 1000,
             AGENT_NAME,
-            instanceId,
+            sessionId,
           ),
         );
       }

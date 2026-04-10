@@ -220,7 +220,7 @@ describe("log API routes", () => {
 
   // ── Instance logs ───────────────────────────────────────────────────────
 
-  describe("GET /api/logs/agents/:name/:instanceId", () => {
+  describe("GET /api/logs/agents/:name/:sessionId", () => {
     it("returns entries for specific instance filtered by instance field", async () => {
       const lines = [
         pinoLine(30, 1710700001000, "inst1-msg", { instance: "dev-aa11bb22" }),
@@ -265,7 +265,7 @@ describe("log API routes", () => {
       const res = await app.request("/api/logs/agents/dev/AB-CD!");
       expect(res.status).toBe(400);
       const data = await res.json();
-      expect(data.error).toBe("Invalid instance ID");
+      expect(data.error).toBe("Invalid session ID");
     });
 
     it("supports cursor pagination with instance filtering", async () => {
@@ -669,7 +669,7 @@ describe("log API routes", () => {
   });
 
   describe("additional uncovered paths", () => {
-    it("returns 400 for invalid agent name in /:name/:instanceId route", async () => {
+    it("returns 400 for invalid agent name in /:name/:sessionId route", async () => {
       const app = createTestApp(tmpDir);
       // Invalid name (contains uppercase) in the instance-specific route
       const res = await app.request("/api/logs/agents/INVALID!/dev-aa11bb22");
@@ -781,9 +781,9 @@ describe("log API routes", () => {
       expect(data.entries.every((e: any) => e.time > 1710700005000)).toBe(true);
     });
 
-    it("skips entries where instance does not match in forward read via cursor at offset 0 (covers instanceFilter branch)", async () => {
+    it("skips entries where instance does not match in forward read via cursor at offset 0 (covers sessionFilter branch)", async () => {
       // Instance filtering is used in agent-instance log routes.
-      // To cover `if (instanceFilter && entry.instance !== instanceFilter) continue;`
+      // To cover `if (sessionFilter && entry.instance !== sessionFilter) continue;`
       // we use the agent-instance route with entries that have different instance values.
       // The log file must follow the naming pattern: <agentName>-<date>.log
       const logLines = [
@@ -798,9 +798,9 @@ describe("log API routes", () => {
       const cursor = Buffer.from("2024-03-18:0").toString("base64url");
 
       const app = createTestApp(tmpDir);
-      // instanceId "myagent1" (all lowercase, matches SAFE_AGENT_NAME) is used as instanceFilter
+      // sessionId "myagent1" (all lowercase, matches SAFE_AGENT_NAME) is used as sessionFilter
       // We request the agent-instance route: /api/logs/agents/myagent/myagent1
-      // Entries with instance !== "myagent1" will be skipped by the instanceFilter branch
+      // Entries with instance !== "myagent1" will be skipped by the sessionFilter branch
       const res = await app.request(
         `/api/logs/agents/myagent/myagent1?cursor=${encodeURIComponent(cursor)}`
       );

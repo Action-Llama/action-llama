@@ -17,7 +17,7 @@
  *
  * Test scenarios:
  *   1. GET /api/stats/triggers with statusTracker returns { triggers:[], total:0 }
- *      shape (running merge path exercises statusTracker.getInstances())
+ *      shape (running merge path exercises statusTracker.getSessions())
  *   2. GET /api/stats/jobs with statusTracker returns { jobs:[], total:0,
  *      pending:{}, totalPending:0, limit:50, offset:0 } shape
  *   3. GET /api/stats/jobs?offset=1 skips the running instances merge

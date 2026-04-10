@@ -215,11 +215,11 @@ export async function startMcpServer(opts: {
         }
       }
 
-      if (d.instances && Array.isArray(d.instances) && d.instances.length > 0) {
+      if (d.sessions && Array.isArray(d.sessions) && d.sessions.length > 0) {
         lines.push("");
-        lines.push("Running instances:");
-        for (const inst of d.instances) {
-          lines.push(`  ${inst.id || inst.instanceId}: ${inst.agent} (started ${inst.startedAt || "unknown"})`);
+        lines.push("Running sessions:");
+        for (const inst of d.sessions) {
+          lines.push(`  ${inst.id || inst.sessionId}: ${inst.agent} (started ${inst.startedAt || "unknown"})`);
         }
       }
 

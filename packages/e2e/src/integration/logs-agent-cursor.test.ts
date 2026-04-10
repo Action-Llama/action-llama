@@ -12,7 +12,7 @@
  *   3. Invalid cursor returns 400
  *
  * Also verifies the per-instance log cursor path:
- *   GET /api/logs/agents/:name/:instanceId?cursor=<token>
+ *   GET /api/logs/agents/:name/:sessionId?cursor=<token>
  *
  * Covers: control/routes/logs.ts — cursor branch for agent logs +
  *         log-helpers.ts readEntriesForward().
@@ -109,7 +109,7 @@ describe.skipIf(!DOCKER)(
 
       await harness.start();
 
-      // Run the agent and capture the instanceId
+      // Run the agent and capture the sessionId
       const runEndPromise = harness.events.waitFor(
         "run:end",
         (e) => e.agentName === "cursor-instance-agent",
@@ -117,22 +117,22 @@ describe.skipIf(!DOCKER)(
       );
       await harness.triggerAgent("cursor-instance-agent");
       const runEnd = await runEndPromise;
-      const instanceId = runEnd.instanceId;
+      const sessionId = runEnd.sessionId;
 
       // Wait for log flush
       await new Promise((r) => setTimeout(r, 500));
 
       // First request: no cursor → backward read
-      const res1 = await logsAPI(harness, `/api/logs/agents/cursor-instance-agent/${instanceId}`);
+      const res1 = await logsAPI(harness, `/api/logs/agents/cursor-instance-agent/${sessionId}`);
       expect(res1.status).toBe(200);
       const body1 = (await res1.json()) as { entries: unknown[]; cursor: string | null };
       expect(typeof body1.cursor).toBe("string");
 
-      // Second request: with cursor → forward read (readEntriesForward with instanceId filter)
+      // Second request: with cursor → forward read (readEntriesForward with sessionId filter)
       const cursor = encodeURIComponent(body1.cursor || "");
       const res2 = await logsAPI(
         harness,
-        `/api/logs/agents/cursor-instance-agent/${instanceId}?cursor=${cursor}`,
+        `/api/logs/agents/cursor-instance-agent/${sessionId}?cursor=${cursor}`,
       );
       expect(res2.status).toBe(200);
       const body2 = (await res2.json()) as { entries: unknown[]; cursor: string | null };

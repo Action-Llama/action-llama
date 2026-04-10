@@ -1,12 +1,12 @@
 import {
   BaseStateMachine,
-  type InstanceState,
-  type InstanceTransitionEvent,
-  getValidInstanceTransitions,
+  type SessionState,
+  type SessionTransitionEvent,
+  getValidSessionTransitions,
 } from "./index.js";
 
-export interface InstanceInfo {
-  instanceId: string;
+export interface SessionInfo {
+  sessionId: string;
   agentName: string;
   startedAt: Date | null;
   endedAt: Date | null;
@@ -14,34 +14,34 @@ export interface InstanceInfo {
   error?: string;
 }
 
-export interface InstanceStartEvent extends InstanceTransitionEvent {
+export interface SessionStartEvent extends SessionTransitionEvent {
   trigger: string;
 }
 
-export interface InstanceCompleteEvent extends InstanceTransitionEvent {
+export interface SessionCompleteEvent extends SessionTransitionEvent {
   durationMs: number;
 }
 
-export interface InstanceErrorEvent extends InstanceTransitionEvent {
+export interface SessionErrorEvent extends SessionTransitionEvent {
   error: string;
   durationMs: number;
 }
 
-export interface InstanceWaitEvent extends InstanceTransitionEvent {
+export interface SessionWaitEvent extends SessionTransitionEvent {
   filter: Record<string, unknown>;
 }
 
-export interface InstanceResumeEvent extends InstanceTransitionEvent {
+export interface SessionResumeEvent extends SessionTransitionEvent {
   triggerPayload?: unknown;
 }
 
-export interface InstanceKillEvent extends InstanceTransitionEvent {
+export interface SessionKillEvent extends SessionTransitionEvent {
   reason?: string;
   durationMs?: number;
 }
 
 /**
- * InstanceLifecycle manages the state of a single agent instance run.
+ * SessionLifecycle manages the state of a single agent instance run.
  * 
  * State transitions:
  * - queued → running (via start())
@@ -54,13 +54,13 @@ export interface InstanceKillEvent extends InstanceTransitionEvent {
  * - waiting → error (timeout)
  * - waiting → killed (via kill())
  */
-export class InstanceLifecycle extends BaseStateMachine<InstanceState> {
-  private info: InstanceInfo;
+export class SessionLifecycle extends BaseStateMachine<SessionState> {
+  private info: SessionInfo;
 
-  constructor(instanceId: string, agentName: string, trigger: string) {
-    super("queued", getValidInstanceTransitions());
+  constructor(sessionId: string, agentName: string, trigger: string) {
+    super("queued", getValidSessionTransitions());
     this.info = {
-      instanceId,
+      sessionId,
       agentName,
       startedAt: null,
       endedAt: null,
@@ -71,15 +71,15 @@ export class InstanceLifecycle extends BaseStateMachine<InstanceState> {
   /**
    * Get instance information
    */
-  getInfo(): Readonly<InstanceInfo> {
+  getInfo(): Readonly<SessionInfo> {
     return { ...this.info };
   }
 
   /**
    * Get instance ID
    */
-  get instanceId(): string {
-    return this.info.instanceId;
+  get sessionId(): string {
+    return this.info.sessionId;
   }
 
   /**
@@ -109,11 +109,11 @@ export class InstanceLifecycle extends BaseStateMachine<InstanceState> {
    */
   start(): void {
     this.info.startedAt = new Date();
-    this.transition<InstanceStartEvent>(
+    this.transition<SessionStartEvent>(
       "running",
-      "instance:start",
+      "session:start",
       {
-        instanceId: this.info.instanceId,
+        sessionId: this.info.sessionId,
         agentName: this.info.agentName,
         trigger: this.info.trigger,
       }
@@ -125,17 +125,17 @@ export class InstanceLifecycle extends BaseStateMachine<InstanceState> {
    */
   complete(): void {
     if (this.currentState !== "running") {
-      throw new Error(`Cannot complete instance in state '${this.currentState}'. Must be 'running'.`);
+      throw new Error(`Cannot complete session in state '${this.currentState}'. Must be 'running'.`);
     }
     
     this.info.endedAt = new Date();
     const durationMs = this.durationMs!;
 
-    this.transition<InstanceCompleteEvent>(
+    this.transition<SessionCompleteEvent>(
       "completed",
-      "instance:complete",
+      "session:complete",
       {
-        instanceId: this.info.instanceId,
+        sessionId: this.info.sessionId,
         agentName: this.info.agentName,
         durationMs,
       }
@@ -151,11 +151,11 @@ export class InstanceLifecycle extends BaseStateMachine<InstanceState> {
       throw new Error(`Cannot wait in state '${this.currentState}'. Must be 'running'.`);
     }
 
-    this.transition<InstanceWaitEvent>(
+    this.transition<SessionWaitEvent>(
       "waiting",
-      "instance:wait",
+      "session:wait",
       {
-        instanceId: this.info.instanceId,
+        sessionId: this.info.sessionId,
         agentName: this.info.agentName,
         filter,
       }
@@ -168,14 +168,14 @@ export class InstanceLifecycle extends BaseStateMachine<InstanceState> {
    */
   resume(triggerPayload?: unknown): void {
     if (this.currentState !== "waiting") {
-      throw new Error(`Cannot resume instance in state '${this.currentState}'. Must be 'waiting'.`);
+      throw new Error(`Cannot resume session in state '${this.currentState}'. Must be 'waiting'.`);
     }
 
-    this.transition<InstanceResumeEvent>(
+    this.transition<SessionResumeEvent>(
       "running",
-      "instance:resume",
+      "session:resume",
       {
-        instanceId: this.info.instanceId,
+        sessionId: this.info.sessionId,
         agentName: this.info.agentName,
         triggerPayload,
       }
@@ -188,18 +188,18 @@ export class InstanceLifecycle extends BaseStateMachine<InstanceState> {
    */
   fail(error: string): void {
     if (this.currentState !== "running" && this.currentState !== "waiting") {
-      throw new Error(`Cannot fail instance in state '${this.currentState}'. Must be 'running' or 'waiting'.`);
+      throw new Error(`Cannot fail session in state '${this.currentState}'. Must be 'running' or 'waiting'.`);
     }
 
     this.info.endedAt = new Date();
     this.info.error = error;
     const durationMs = this.durationMs!;
 
-    this.transition<InstanceErrorEvent>(
+    this.transition<SessionErrorEvent>(
       "error",
-      "instance:error",
+      "session:error",
       {
-        instanceId: this.info.instanceId,
+        sessionId: this.info.sessionId,
         agentName: this.info.agentName,
         error,
         durationMs,
@@ -212,10 +212,10 @@ export class InstanceLifecycle extends BaseStateMachine<InstanceState> {
    * @param reason Optional reason for killing
    */
   kill(reason?: string): void {
-    const validKillStates: InstanceState[] = ["queued", "running", "waiting"];
+    const validKillStates: SessionState[] = ["queued", "running", "waiting"];
     if (!validKillStates.includes(this.currentState)) {
       throw new Error(
-        `Cannot kill instance in terminal state '${this.currentState}'. ` +
+        `Cannot kill session in terminal state '${this.currentState}'. ` +
         `Can only kill from: ${validKillStates.join(', ')}`
       );
     }
@@ -228,11 +228,11 @@ export class InstanceLifecycle extends BaseStateMachine<InstanceState> {
     // Only calculate duration if the instance was actually started
     const durationMs = this.info.startedAt ? this.durationMs ?? undefined : undefined;
 
-    this.transition<InstanceKillEvent>(
+    this.transition<SessionKillEvent>(
       "killed",
-      "instance:kill",
+      "session:kill",
       {
-        instanceId: this.info.instanceId,
+        sessionId: this.info.sessionId,
         agentName: this.info.agentName,
         reason,
         durationMs,
@@ -241,28 +241,28 @@ export class InstanceLifecycle extends BaseStateMachine<InstanceState> {
   }
 
   /**
-   * Check if the instance is in a terminal state
+   * Check if the session is in a terminal state
    */
   isTerminal(): boolean {
     return ["completed", "error", "killed"].includes(this.currentState);
   }
 
   /**
-   * Check if the instance is currently running
+   * Check if the session is currently running
    */
   isRunning(): boolean {
     return this.currentState === "running";
   }
 
   /**
-   * Check if the instance is waiting for a trigger
+   * Check if the session is waiting for a trigger
    */
   isWaiting(): boolean {
     return this.currentState === "waiting";
   }
 
   /**
-   * Check if the instance is queued
+   * Check if the session is queued
    */
   isQueued(): boolean {
     return this.currentState === "queued";

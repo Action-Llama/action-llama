@@ -169,7 +169,7 @@ describe(
     it("gateway returns 200 → logs the message from response", async () => {
       const server: Server = createServer((_req, res) => {
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ message: "Agent my-agent triggered", instanceId: "inst-123" }));
+        res.end(JSON.stringify({ message: "Agent my-agent triggered", sessionId: "inst-123" }));
       });
 
       await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -189,7 +189,7 @@ describe(
     it("gateway returns 200 without message field → logs undefined (no error)", async () => {
       const server: Server = createServer((_req, res) => {
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ success: true, instanceId: "inst-456" }));
+        res.end(JSON.stringify({ success: true, sessionId: "inst-456" }));
       });
 
       await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

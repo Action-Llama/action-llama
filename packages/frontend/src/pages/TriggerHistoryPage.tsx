@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "../hooks/useQuery";
-import { useAgents, useInstances } from "../hooks/StatusStreamContext";
+import { useAgents, useSessions } from "../hooks/StatusStreamContext";
 import { TriggerTypeBadge, ResultBadge } from "../components/Badge";
 import { getTriggerHistory } from "../lib/api";
 import type { TriggerHistoryRow } from "../lib/api";
@@ -18,7 +18,7 @@ export function TriggerHistoryPage() {
   const [offset, setOffset] = useState(0);
   const [showDeadLetters, setShowDeadLetters] = useState(false);
   const agents = useAgents();
-  const instances = useInstances();
+  const sessions = useSessions();
   const agentNames = agents.map((a) => a.name);
 
   const { data, isLoading } = useQuery<{ triggers: TriggerHistoryRow[]; total: number }>({
@@ -53,7 +53,7 @@ export function TriggerHistoryPage() {
   const mergedTriggers = useMemo(() => {
     // Only include running instances on the first page
     if (offset > 0) return triggers;
-    const running: TriggerHistoryRow[] = instances
+    const running: TriggerHistoryRow[] = sessions
       .filter((inst) => {
         if (inst.status !== "running") return false;
         if (agentFilter && inst.agentName !== agentFilter) return false;
@@ -71,16 +71,16 @@ export function TriggerHistoryPage() {
           triggerType: sep > -1 ? inst.trigger.slice(0, sep) : inst.trigger,
           triggerSource: sep > -1 ? inst.trigger.slice(sep + 1).trim() : undefined,
           agentName: inst.agentName,
-          instanceId: inst.id,
+          sessionId: inst.id,
           result: "running",
         };
       });
-    const apiIds = new Set(triggers.map((t) => t.instanceId));
-    const unique = running.filter((r) => !apiIds.has(r.instanceId));
+    const apiIds = new Set(triggers.map((t) => t.sessionId));
+    const unique = running.filter((r) => !apiIds.has(r.sessionId));
     return [...unique, ...triggers].sort((a, b) => b.ts - a.ts);
-  }, [instances, triggers, offset, agentFilter, triggerTypeFilter]);
+  }, [sessions, triggers, offset, agentFilter, triggerTypeFilter]);
 
-  const runningCount = instances.filter((i) => {
+  const runningCount = sessions.filter((i) => {
     if (i.status !== "running") return false;
     if (agentFilter && i.agentName !== agentFilter) return false;
     if (triggerTypeFilter) {
@@ -204,12 +204,12 @@ export function TriggerHistoryPage() {
                     )}
                   </td>
                   <td className="px-4 py-2.5">
-                    {t.instanceId && t.agentName ? (
+                    {t.sessionId && t.agentName ? (
                       <Link
-                        to={`/dashboard/agents/${encodeURIComponent(t.agentName)}/instances/${encodeURIComponent(t.instanceId)}`}
+                        to={`/dashboard/agents/${encodeURIComponent(t.agentName)}/sessions/${encodeURIComponent(t.sessionId)}`}
                         className="font-mono text-xs text-blue-600 dark:text-blue-400 hover:underline"
                       >
-                        {shortId(t.instanceId)}
+                        {shortId(t.sessionId)}
                       </Link>
                     ) : (
                       <span className="text-slate-400 text-xs">{"\u2014"}</span>

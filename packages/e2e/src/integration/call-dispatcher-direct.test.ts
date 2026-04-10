@@ -60,7 +60,7 @@ function makeCallEntry(overrides: Record<string, any> = {}) {
     callerAgent: "caller-agent",
     targetAgent: "target-agent",
     callId: "call-" + Math.random().toString(36).slice(2),
-    callerInstanceId: "inst-001",
+    callerSessionId: "inst-001",
     depth: 0,
     context: "some task context",
     ...overrides,
@@ -84,7 +84,7 @@ function makeGateway(callStore?: any) {
 function makeMockRunner(isRunning = false) {
   return {
     isRunning,
-    instanceId: "runner-" + Math.random().toString(36).slice(2),
+    sessionId: "runner-" + Math.random().toString(36).slice(2),
     run: vi.fn(async () => ({ result: "completed", returnValue: undefined, triggers: [] })),
     abort: vi.fn(),
   };
@@ -228,7 +228,7 @@ describe("integration: wireCallDispatcher() validation branches (no Docker requi
 
     const callEntry = callStore.create({
       callerAgent: "caller-agent",
-      callerInstanceId: "inst-001",
+      callerSessionId: "inst-001",
       targetAgent: "target-agent",
       context: "do something",
       depth: 0,
@@ -238,7 +238,7 @@ describe("integration: wireCallDispatcher() validation branches (no Docker requi
       callerAgent: "caller-agent",
       targetAgent: "target-agent",
       callId: callEntry.callId,
-      callerInstanceId: "inst-001",
+      callerSessionId: "inst-001",
       depth: 0,
       context: "do something",
     });
@@ -272,7 +272,7 @@ describe("integration: wireCallDispatcher() validation branches (no Docker requi
 
     const callEntry = callStore.create({
       callerAgent: "caller-agent",
-      callerInstanceId: "inst-001",
+      callerSessionId: "inst-001",
       targetAgent: "target-agent",
       context: "do something",
       depth: 0,
@@ -282,7 +282,7 @@ describe("integration: wireCallDispatcher() validation branches (no Docker requi
       callerAgent: "caller-agent",
       targetAgent: "target-agent",
       callId: callEntry.callId,
-      callerInstanceId: "inst-001",
+      callerSessionId: "inst-001",
       depth: 0,
       context: "do something",
     });

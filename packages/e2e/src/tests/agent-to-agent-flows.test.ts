@@ -2,11 +2,11 @@
  * E2E tests for agent-to-agent communication via the control trigger API.
  *
  * These tests verify that:
- * - POST /control/trigger/:name successfully enqueues an agent run and returns instanceId
+ * - POST /control/trigger/:name successfully enqueues an agent run and returns sessionId
  * - A second agent can be triggered independently in the same scheduler session
  * - Triggering a non-existent agent returns a 404-like error response
  * - Triggering an agent with a custom prompt is accepted
- * - GET /control/instances lists actively running (or recently started) instances
+ * - GET /control/sessions lists actively running (or recently started) instances
  *
  * The pattern simulates one agent calling `curl -X POST $GATEWAY_URL/control/trigger/<name>`
  * to kick off another agent — the core agent-to-agent communication mechanism.
@@ -148,7 +148,7 @@ You are agent-b. You were triggered by agent-a. Perform your task and exit.`,
 
   // -- Control Trigger Tests ------------------------------------------------
 
-  it("POST /control/trigger/:name triggers agent-a and returns instanceId", async () => {
+  it("POST /control/trigger/:name triggers agent-a and returns sessionId", async () => {
     const res = await curl(
       context,
       container,
@@ -156,10 +156,10 @@ You are agent-b. You were triggered by agent-a. Perform your task and exit.`,
     );
 
     const body = JSON.parse(res);
-    // Expect a successful trigger with an instanceId
+    // Expect a successful trigger with an sessionId
     expect(body.success).toBe(true);
-    expect(typeof body.instanceId).toBe("string");
-    expect(body.instanceId).toContain("agent-a");
+    expect(typeof body.sessionId).toBe("string");
+    expect(body.sessionId).toContain("agent-a");
     expect(body.message).toContain("agent-a");
   });
 
@@ -173,8 +173,8 @@ You are agent-b. You were triggered by agent-a. Perform your task and exit.`,
     const body = JSON.parse(res);
     // agent-b should also be triggerable independently (as agent-a would do)
     expect(body.success).toBe(true);
-    expect(typeof body.instanceId).toBe("string");
-    expect(body.instanceId).toContain("agent-b");
+    expect(typeof body.sessionId).toBe("string");
+    expect(body.sessionId).toContain("agent-b");
     expect(body.message).toContain("agent-b");
   });
 
@@ -204,8 +204,8 @@ You are agent-b. You were triggered by agent-a. Perform your task and exit.`,
     const body = JSON.parse(rawBody);
     if (statusCode === "200") {
       expect(body.success).toBe(true);
-      expect(typeof body.instanceId).toBe("string");
-      expect(body.instanceId).toContain("agent-b");
+      expect(typeof body.sessionId).toBe("string");
+      expect(body.sessionId).toContain("agent-b");
     } else {
       // 409: runner busy — verify the error message is meaningful
       expect(typeof body.error).toBe("string");
@@ -225,13 +225,13 @@ You are agent-b. You were triggered by agent-a. Perform your task and exit.`,
     expect(statusCode.trim()).toBe("404");
   });
 
-  it("GET /control/instances lists instances after triggers", async () => {
+  it("GET /control/sessions lists instances after triggers", async () => {
     // After triggering agents, the instances list should reflect started runs
     // (even if they complete/fail quickly due to missing LLM credentials)
     const res = await curl(
       context,
       container,
-      `http://localhost:${GATEWAY_PORT}/control/instances`,
+      `http://localhost:${GATEWAY_PORT}/control/sessions`,
     );
 
     const body = JSON.parse(res);
@@ -259,8 +259,8 @@ You are agent-b. You were triggered by agent-a. Perform your task and exit.`,
     // The trigger should succeed — this is the core agent-to-agent communication path
     // (or return 409 if runners are busy from earlier tests in this describe block)
     if (body.success) {
-      expect(body.instanceId).toContain("agent-b");
-      expect(typeof body.instanceId).toBe("string");
+      expect(body.sessionId).toContain("agent-b");
+      expect(typeof body.sessionId).toBe("string");
     } else {
       // Runner busy (409) is an acceptable outcome given the previous tests
       expect(typeof body.error).toBe("string");

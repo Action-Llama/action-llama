@@ -282,7 +282,7 @@ describe("integration: control/routes/logs.ts registerLogRoutes() — no Docker 
     expect(body.error).toMatch(/invalid instance id/i);
   });
 
-  it("GET /api/logs/agents/:name/:instanceId — filters by instance field", async () => {
+  it("GET /api/logs/agents/:name/:sessionId — filters by instance field", async () => {
     const lines = [
       pinoLine("instance-a run", 30, { instance: "inst-a" }),
       pinoLine("instance-b run", 30, { instance: "inst-b" }),
@@ -299,7 +299,7 @@ describe("integration: control/routes/logs.ts registerLogRoutes() — no Docker 
     expect(msgs).not.toContain("instance-b run");
   });
 
-  it("GET /api/logs/agents/:name/:instanceId — no matching entries returns []", async () => {
+  it("GET /api/logs/agents/:name/:sessionId — no matching entries returns []", async () => {
     const lines = [
       pinoLine("instance-b run", 30, { instance: "inst-b" }),
     ];

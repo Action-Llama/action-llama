@@ -224,7 +224,7 @@ describe("Gateway controlDeps routes", () => {
 
   beforeAll(async () => {
     const controlDeps = {
-      killInstance: vi.fn(async () => false),
+      killSession: vi.fn(async () => false),
       killAgent: vi.fn(async () => ({ killed: 0 })),
       pauseScheduler: vi.fn(async () => {}),
       resumeScheduler: vi.fn(async () => {}),
@@ -245,7 +245,7 @@ describe("Gateway controlDeps routes", () => {
   it("registers control routes when controlDeps is provided", async () => {
     const addr = gateway.server.address() as any;
     // Control routes require auth, so 401 confirms the route was registered
-    const res = await fetch(`http://localhost:${addr.port}/control/instances`);
+    const res = await fetch(`http://localhost:${addr.port}/control/sessions`);
     expect(res.status).toBe(401);
   });
 });

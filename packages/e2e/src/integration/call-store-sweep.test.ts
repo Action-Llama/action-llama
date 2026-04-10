@@ -61,7 +61,7 @@ describe(
       store = new CallStore(0.001); // 1ms sweep interval
       const entry = store.create({
         callerAgent: "caller",
-        callerInstanceId: "inst-01",
+        callerSessionId: "inst-01",
         targetAgent: "target",
         context: "{}",
         depth: 1,
@@ -83,7 +83,7 @@ describe(
       store = new CallStore(0.001); // 1ms sweep interval
       const entry = store.create({
         callerAgent: "caller",
-        callerInstanceId: "inst-02",
+        callerSessionId: "inst-02",
         targetAgent: "target",
         context: "{}",
         depth: 1,
@@ -101,7 +101,7 @@ describe(
       store = new CallStore(0.001); // 1ms sweep interval
       const entry = store.create({
         callerAgent: "caller",
-        callerInstanceId: "inst-03",
+        callerSessionId: "inst-03",
         targetAgent: "target",
         context: "{}",
         depth: 1,
@@ -124,7 +124,7 @@ describe(
       store = new CallStore(0.001); // 1ms sweep interval
       const entry = store.create({
         callerAgent: "caller",
-        callerInstanceId: "inst-04",
+        callerSessionId: "inst-04",
         targetAgent: "target",
         context: "{}",
         depth: 1,
@@ -147,7 +147,7 @@ describe(
       store = new CallStore(0.001); // 1ms sweep interval
       const entry = store.create({
         callerAgent: "caller",
-        callerInstanceId: "inst-05",
+        callerSessionId: "inst-05",
         targetAgent: "target",
         context: "{}",
         depth: 1,
