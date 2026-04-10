@@ -25,8 +25,8 @@
     "access": "public"
   },
   "scripts": {
-    "build": "node --experimental-strip-types src/build-docs.ts && tsc",
-    "build:docs": "node --experimental-strip-types src/build-docs.ts",
+    "build": "node src/build-docs.js && tsc",
+    "build:docs": "node src/build-docs.js",
     "test": "vitest run --config vitest.config.ts"
   }
 }
