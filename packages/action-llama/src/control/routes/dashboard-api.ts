@@ -44,9 +44,10 @@ export function registerAuthApiRoutes(
       }
       const isLocalhost = !hostname || hostname === "127.0.0.1" || hostname === "localhost";
       const securePart = isLocalhost ? "" : "; Secure";
+      const maxAge = 30 * 24 * 60 * 60; // 30 days
       return c.json({ success: true }, {
         headers: {
-          "Set-Cookie": `al_session=${sessionValue}; HttpOnly; SameSite=Strict; Path=/${securePart}`,
+          "Set-Cookie": `al_session=${sessionValue}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${securePart}`,
         },
       });
     }

@@ -3,7 +3,7 @@ import type { StateStore } from "../shared/state-store.js";
 import type { Session } from "./types.js";
 
 const NS = "sessions";
-const DEFAULT_TTL_SECONDS = 24 * 60 * 60; // 24 hours
+const DEFAULT_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days
 
 export class SessionStore {
   private store: StateStore;
