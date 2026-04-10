@@ -278,7 +278,7 @@ describe("CLI entry point", () => {
 
     try {
       // Point argv[1] at the build-docs module path so the CLI condition is true.
-      process.argv[1] = resolve(__dirname, "../src/build-docs.ts");
+      process.argv[1] = resolve(__dirname, "../src/build-docs.js");
       // Point argv[2] at a directory that definitely has no docs.json.
       process.argv[2] = "/tmp/no-docs-json-" + Math.random().toString(36).slice(2);
       process.argv.length = 3;
@@ -330,7 +330,7 @@ describe("CLI entry point", () => {
       }
 
       // Point argv at the CLI module and our temp dirs
-      process.argv[1] = resolve(__dirname, "../src/build-docs.ts");
+      process.argv[1] = resolve(__dirname, "../src/build-docs.js");
       process.argv[2] = tmpDocsDir;
       process.argv[3] = tmpOutputDir;
       process.argv.length = 4;
