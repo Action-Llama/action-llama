@@ -50,8 +50,8 @@ describe("logs command — gateway path", () => {
   describe("non-follow mode", () => {
     it("fetches and displays entries from the gateway", async () => {
       const entries = [
-        makePinoEntry({ msg: "bash", cmd: "gh issue list" }),
-        makePinoEntry({ msg: "run completed" }),
+        makePinoEntry({ msg: "[tool]", toolName: "bash", summary: "gh issue list" }),
+        makePinoEntry({ msg: "run outcome", result: "completed" }),
       ];
       mockGatewayFetch.mockResolvedValueOnce(makeGatewayResponse(entries));
 
@@ -61,8 +61,8 @@ describe("logs command — gateway path", () => {
       await execute("dev", { project: tmpDir, lines: "50" });
       console.log = origLog;
 
-      expect(output.some((l) => l.includes("$ gh issue list"))).toBe(true);
-      expect(output.some((l) => l.includes("Run completed"))).toBe(true);
+      expect(output.some((l) => l.includes("bash") && l.includes("gh issue list"))).toBe(true);
+      expect(output.some((l) => l.includes("completed"))).toBe(true);
     });
 
     it("shows 'No log entries found' when gateway returns empty entries", async () => {
@@ -85,7 +85,7 @@ describe("logs command — gateway path", () => {
       const date = new Date().toISOString().slice(0, 10);
       const logFile = resolve(tmpDir, ".al", "logs", `dev-${date}.log`);
       writeFileSync(logFile, JSON.stringify({
-        level: 30, time: Date.now(), msg: "bash", cmd: "echo fallback", name: "dev", pid: 1, hostname: "h",
+        level: 30, time: Date.now(), msg: "[tool]", toolName: "bash", summary: "echo fallback", name: "dev", pid: 1, hostname: "h",
       }) + "\n");
 
       const output: string[] = [];
@@ -132,8 +132,8 @@ describe("logs command — gateway path", () => {
 
     it("includes run header for run-start entries from gateway", async () => {
       const entries = [
-        makePinoEntry({ msg: "Starting dev run (schedule)", container: "al-dev-abc1", name: "dev" }),
-        makePinoEntry({ msg: "assistant", text: "Working on it." }),
+        makePinoEntry({ msg: "Starting dev transport run (schedule)", name: "dev" }),
+        makePinoEntry({ msg: "[text]", text: "Working on it." }),
       ];
       mockGatewayFetch.mockResolvedValueOnce(makeGatewayResponse(entries));
 
@@ -143,9 +143,9 @@ describe("logs command — gateway path", () => {
       await execute("dev", { project: tmpDir, lines: "50" });
       console.log = origLog;
 
-      // Header + Starting + assistant
+      // Header + Starting + text
       expect(output.some((l) => l.includes("──"))).toBe(true);
-      expect(output.some((l) => l.includes("Starting dev run"))).toBe(true);
+      expect(output.some((l) => l.includes("Starting dev transport run"))).toBe(true);
       expect(output.some((l) => l.includes("Working on it."))).toBe(true);
     });
 
@@ -168,7 +168,7 @@ describe("logs command — gateway path", () => {
     it("works with --all mode from gateway (shows debug entries)", async () => {
       const entries = [
         makePinoEntry({ msg: "tool done", level: 20, tool: "bash" }),
-        makePinoEntry({ msg: "run completed" }),
+        makePinoEntry({ msg: "run outcome", result: "completed" }),
       ];
       mockGatewayFetch.mockResolvedValueOnce(makeGatewayResponse(entries));
 
@@ -179,8 +179,8 @@ describe("logs command — gateway path", () => {
       console.log = origLog;
 
       // Both entries should appear in --all mode
-      expect(output.some((l) => l.includes("✓ bash"))).toBe(true);
-      expect(output.some((l) => l.includes("Run completed"))).toBe(true);
+      expect(output.some((l) => l.includes("tool done"))).toBe(true);
+      expect(output.some((l) => l.includes("completed"))).toBe(true);
     });
   });
 
@@ -266,8 +266,8 @@ describe("logs command — gateway path", () => {
 
     it("fetches and displays initial entries in follow mode, then exits cleanly on SIGINT", async () => {
       const entries = [
-        makePinoEntry({ msg: "bash", cmd: "git push origin main" }),
-        makePinoEntry({ msg: "run completed" }),
+        makePinoEntry({ msg: "[tool]", toolName: "bash", summary: "git push origin main" }),
+        makePinoEntry({ msg: "run outcome", result: "completed" }),
       ];
       mockGatewayFetch.mockResolvedValueOnce(makeGatewayResponse(entries, "cursor-abc"));
 
@@ -286,7 +286,7 @@ describe("logs command — gateway path", () => {
 
       // Initial entries must have been displayed
       expect(output.some((l) => l.includes("git push origin main"))).toBe(true);
-      expect(output.some((l) => l.includes("Run completed"))).toBe(true);
+      expect(output.some((l) => l.includes("completed"))).toBe(true);
 
       // SIGINT handler must have been registered
       expect(capturedSigintHandler).toBeDefined();
@@ -297,8 +297,8 @@ describe("logs command — gateway path", () => {
     });
 
     it("polls for new entries every second using the cursor from the previous response", async () => {
-      const initialEntries = [makePinoEntry({ msg: "bash", cmd: "npm test" })];
-      const pollEntries = [makePinoEntry({ msg: "bash", cmd: "npm run build" })];
+      const initialEntries = [makePinoEntry({ msg: "[tool]", toolName: "bash", summary: "npm test" })];
+      const pollEntries = [makePinoEntry({ msg: "[tool]", toolName: "bash", summary: "npm run build" })];
 
       mockGatewayFetch
         .mockResolvedValueOnce(makeGatewayResponse(initialEntries, "cursor-1"))
@@ -331,9 +331,9 @@ describe("logs command — gateway path", () => {
     });
 
     it("updates the cursor after each successful poll", async () => {
-      const entries1 = [makePinoEntry({ msg: "bash", cmd: "step-1" })];
-      const entries2 = [makePinoEntry({ msg: "bash", cmd: "step-2" })];
-      const entries3 = [makePinoEntry({ msg: "bash", cmd: "step-3" })];
+      const entries1 = [makePinoEntry({ msg: "[tool]", toolName: "bash", summary: "step-1" })];
+      const entries2 = [makePinoEntry({ msg: "[tool]", toolName: "bash", summary: "step-2" })];
+      const entries3 = [makePinoEntry({ msg: "[tool]", toolName: "bash", summary: "step-3" })];
 
       mockGatewayFetch
         .mockResolvedValueOnce(makeGatewayResponse(entries1, "cur-1"))
@@ -367,7 +367,7 @@ describe("logs command — gateway path", () => {
     });
 
     it("silently retries on poll network failure without crashing", async () => {
-      const initialEntries = [makePinoEntry({ msg: "bash", cmd: "echo start" })];
+      const initialEntries = [makePinoEntry({ msg: "[tool]", toolName: "bash", summary: "echo start" })];
 
       mockGatewayFetch
         .mockResolvedValueOnce(makeGatewayResponse(initialEntries, "cursor-x"))
@@ -433,9 +433,9 @@ describe("logs command — gateway path", () => {
 
     it("applies client-side grep filtering on entries returned by gateway", async () => {
       const entries = [
-        makePinoEntry({ msg: "bash", cmd: "deploy to prod" }),
-        makePinoEntry({ msg: "bash", cmd: "echo hello" }),
-        makePinoEntry({ msg: "bash", cmd: "deploy to staging" }),
+        makePinoEntry({ msg: "[tool]", toolName: "bash", summary: "deploy to prod" }),
+        makePinoEntry({ msg: "[tool]", toolName: "bash", summary: "echo hello" }),
+        makePinoEntry({ msg: "[tool]", toolName: "bash", summary: "deploy to staging" }),
       ];
       mockGatewayFetch.mockResolvedValueOnce(makeGatewayResponse(entries));
 
@@ -451,7 +451,7 @@ describe("logs command — gateway path", () => {
 
     it("shows 'No log entries found' when grep filters out all entries", async () => {
       const entries = [
-        makePinoEntry({ msg: "bash", cmd: "echo hello" }),
+        makePinoEntry({ msg: "[tool]", toolName: "bash", summary: "echo hello" }),
       ];
       mockGatewayFetch.mockResolvedValueOnce(makeGatewayResponse(entries));
 

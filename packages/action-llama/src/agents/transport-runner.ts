@@ -82,6 +82,8 @@ export class TransportAgentRunner implements PoolRunner {
   private _transport: Transport | null = null;
   private _containerName: string | null = null;
   private _session: any = null;
+  private _turnTextBuffer = "";
+  private _turnThinkingBuffer = "";
 
   public instanceId: string;
   /** Trigger depth for subagent call tracking. Set by the scheduler before run(). */
@@ -476,7 +478,7 @@ export class TransportAgentRunner implements PoolRunner {
           sshOptions: rt.ssh_options,
         });
         await transport.connect();
-        this.logger.info({ host: rt.host, user: rt.user }, "SSH transport connected");
+        this.logger.debug({ host: rt.host, user: rt.user }, "SSH transport connected");
         return transport;
       }
 
@@ -489,7 +491,7 @@ export class TransportAgentRunner implements PoolRunner {
           cwd: rt.cwd,
         });
         await transport.connect();
-        this.logger.info({ user }, "Host-user transport connected");
+        this.logger.debug({ user }, "Host-user transport connected");
         return transport;
       }
 
@@ -502,7 +504,7 @@ export class TransportAgentRunner implements PoolRunner {
           cwd: CONTAINER_CWD,
         });
         await transport.connect();
-        this.logger.info({ container: containerName }, "Docker transport connected");
+        this.logger.debug({ container: containerName }, "Docker transport connected");
         return transport;
       }
     }
@@ -524,7 +526,7 @@ export class TransportAgentRunner implements PoolRunner {
       this.projectPath,
       this.baseImage,
       (msg) => {
-        this.logger.info(msg);
+        this.logger.debug(msg);
         this.statusTracker?.addLogLine(this.agentConfig.name, msg);
       },
     );
@@ -554,7 +556,7 @@ export class TransportAgentRunner implements PoolRunner {
       encoding: "utf-8",
     });
 
-    this.logger.info({ container: containerName }, "container provisioned");
+    this.logger.debug({ container: containerName }, "container provisioned");
     return containerName;
   }
 
@@ -569,7 +571,7 @@ export class TransportAgentRunner implements PoolRunner {
       });
     } catch {
       // Image not found locally — try to pull
-      this.logger.info({ image }, "image not found locally, pulling...");
+      this.logger.debug({ image }, "image not found locally, pulling...");
       try {
         execFileSync("docker", ["pull", image], {
           timeout: 120_000,
@@ -637,7 +639,7 @@ export class TransportAgentRunner implements PoolRunner {
       await transport.exec(`rm -rf ${credBase} 2>/dev/null; mkdir -p ${credBase}`);
       await transport.writeFiles(credFiles);
       await transport.exec(`find ${credBase} -type f -exec chmod 400 {} +`);
-      this.logger.info({ count: credFiles.size, credBase }, "credentials staged via transport");
+      this.logger.debug({ count: credFiles.size, credBase }, "credentials staged via transport");
     }
 
     return providerKeys;
@@ -738,7 +740,7 @@ export class TransportAgentRunner implements PoolRunner {
           llmModel = getModel(modelConfig.provider as any, modelConfig.model as any);
         }
 
-        this.logger.info({
+        this.logger.debug({
           model: modelConfig.model,
           thinking: modelConfig.thinkingLevel,
           baseUrl: modelConfig.baseUrl,
@@ -771,6 +773,7 @@ export class TransportAgentRunner implements PoolRunner {
           }, "about to call session.prompt()");
 
           await session.prompt(prompt);
+          this.flushTurnBuffers();
 
           const allMessages = session.state?.messages ?? [];
           const lastMsg = allMessages[allMessages.length - 1] as any;
@@ -840,40 +843,43 @@ export class TransportAgentRunner implements PoolRunner {
    */
   private subscribeToEvents(session: any): void {
     session.subscribe((event: any) => {
-      // Log all event types at debug level
       this.logger.debug({ eventType: event.type }, "session event");
 
       if (event.type === "tool_execution_start") {
-        const cmd = String(event.args?.command || "");
-        this.logger.debug({
-          toolName: event.toolName,
-          toolCallId: event.toolCallId,
-          command: cmd || undefined,
-        }, "tool started");
+        const toolName = String(event.toolName || "unknown");
+        const summary = toolName === "bash"
+          ? String(event.args?.command || "").slice(0, 200)
+          : JSON.stringify(event.args ?? {}).slice(0, 200);
+        this.logger.info({ toolName, summary }, "[tool]");
       }
 
       if (event.type === "tool_execution_end") {
+        const toolName = String(event.toolName || "unknown");
         const resultStr = typeof event.result === "string"
           ? event.result
           : JSON.stringify(event.result);
 
         if (event.isError) {
-          const cmdPrefix = event.args?.command ? `$ ${String(event.args.command).slice(0, 80)} — ` : "";
-          const errorSummary = `${cmdPrefix}${resultStr.slice(0, 200)}`;
+          const errorSummary = resultStr.slice(0, 200);
           this.statusTracker?.setAgentError(this.agentConfig.name, errorSummary);
-          this.logger.warn({
-            toolName: event.toolName,
-            toolCallId: event.toolCallId,
-            error: errorSummary,
-          }, "tool error");
+          this.logger.warn({ toolName, error: errorSummary }, "[error]");
+        } else {
+          this.logger.info({ toolName, summary: resultStr.slice(0, 200) }, "[result]");
         }
+      }
 
-        this.logger.debug({
-          toolName: event.toolName,
-          toolCallId: event.toolCallId,
-          isError: !!event.isError,
-          resultLength: resultStr.length,
-        }, "tool ended");
+      if (event.type === "text") {
+        const text = String(event.text ?? event.content ?? "");
+        if (text) this._turnTextBuffer += text;
+      }
+
+      if (event.type === "thinking") {
+        const text = String(event.text ?? event.content ?? "");
+        if (text) this._turnThinkingBuffer += text;
+      }
+
+      if (event.type === "turn_end") {
+        this.flushTurnBuffers();
       }
 
       if (event.type === "error") {
@@ -881,23 +887,21 @@ export class TransportAgentRunner implements PoolRunner {
         const errorMsg = err?.errorMessage
           || (typeof err === "string" ? err : null)
           || JSON.stringify(event);
-        this.logger.error({ error: errorMsg }, "session error");
+        this.logger.error({ error: String(errorMsg).slice(0, 300) }, "[error]");
         this.statusTracker?.setAgentError(this.agentConfig.name, String(errorMsg).slice(0, 200));
       }
-
-      // Context usage tracking
-      if (event.type === "turn_end") {
-        try {
-          const ctx = session.getContextUsage?.();
-          if (ctx && ctx.percent != null) {
-            this.logger.info({
-              contextPercent: Math.round(ctx.percent * 10) / 10,
-              contextWindow: ctx.contextWindow,
-              contextTokens: ctx.tokens,
-            }, "context-usage");
-          }
-        } catch { /* context usage not available */ }
-      }
     });
+  }
+
+  /** Flush accumulated text/thinking buffers to the logger. */
+  private flushTurnBuffers(): void {
+    if (this._turnThinkingBuffer) {
+      this.logger.info({ text: this._turnThinkingBuffer.slice(0, 500) }, "[thinking]");
+      this._turnThinkingBuffer = "";
+    }
+    if (this._turnTextBuffer) {
+      this.logger.info({ text: this._turnTextBuffer.slice(0, 500) }, "[text]");
+      this._turnTextBuffer = "";
+    }
   }
 }

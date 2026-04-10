@@ -7,6 +7,10 @@
     ".": {
       "types": "./dist/types.d.ts",
       "default": "./dist/types.js"
+    },
+    "./log-format": {
+      "types": "./dist/log-format.d.ts",
+      "default": "./dist/log-format.js"
     }
   },
   "scripts": {

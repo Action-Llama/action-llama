@@ -4,64 +4,58 @@ import { usePolling } from "../hooks/usePolling";
 import { getInstanceLogs, getLocks, summarizeLogs } from "../lib/api";
 import type { LogEntry } from "../lib/api";
 import { InstanceContext } from "../hooks/InstanceContext";
+import { formatLogEntry as formatShared } from "@action-llama/shared/log-format";
+import type { LogPrefix } from "@action-llama/shared/log-format";
 
-function formatLogEntry(entry: LogEntry): {
-  text: string;
-  className: string;
-} {
-  const msg = entry.msg || "";
-  if (entry.text && (msg.includes("assistant") || msg.includes("response") || msg === "conversation.message")) {
-    return {
-      text: entry.text,
-      className: "text-white font-bold",
-    };
-  }
-  if (msg === "conversation.tool_result") {
-    const prefix = entry.tool ? `${entry.tool}` : "tool";
-    const statusLine = entry.isError ? `${prefix} error output hidden` : `${prefix} result hidden`;
-    if (entry.isError) {
-      return {
-        text: statusLine,
-        className: "text-red-400 whitespace-pre-wrap",
-      };
-    }
-    return {
-      text: statusLine,
-      className: "text-slate-300 whitespace-pre-wrap",
-    };
-  }
-  if (entry.cmd || msg.includes("bash") || msg.includes("command") || (msg === "conversation.tool_call" && entry.tool === "bash")) {
-    return {
-      text: entry.cmd ? `$ ${entry.cmd}` : msg,
-      className: "text-cyan-400",
-    };
-  }
-  if (entry.tool || msg.includes("tool")) {
-    return {
-      text: entry.tool ? `[tool] ${entry.tool}: ${entry.result ?? ""}` : msg,
-      className: "text-blue-400",
-    };
-  }
-  if (msg === "conversation.event") {
-    return {
-      text: `${entry.eventType || "event"}${entry.role ? ` role=${entry.role}` : ""}${entry.stopReason ? ` stop=${entry.stopReason}` : ""}`,
-      className: "text-slate-500",
-    };
-  }
-  if (entry.level >= 50 || entry.err) {
-    return { text: msg, className: "text-red-400" };
-  }
-  if (entry.level >= 40) {
-    return { text: msg, className: "text-yellow-400" };
-  }
-  return { text: msg, className: "text-slate-300" };
+const PREFIX_STYLES: Record<LogPrefix, string> = {
+  tool: "text-cyan-400",
+  result: "text-slate-400",
+  error: "text-red-400",
+  thinking: "text-blue-400 italic",
+  text: "text-white font-bold",
+  run: "text-purple-400 font-semibold",
+  warn: "text-yellow-400",
+  debug: "text-slate-600",
+};
+
+const PREFIX_ICONS: Record<LogPrefix, string> = {
+  tool: "▸",
+  result: "↳",
+  error: "✗",
+  thinking: "💭",
+  text: "▶",
+  run: "●",
+  warn: "⚠",
+  debug: "·",
+};
+
+function formatLogEntry(
+  entry: LogEntry,
+  showDebug: boolean,
+): { text: string; className: string } | null {
+  const formatted = formatShared(entry, showDebug);
+  if (!formatted) return null;
+
+  const icon = PREFIX_ICONS[formatted.prefix];
+  const className = PREFIX_STYLES[formatted.prefix];
+  const label = formatted.label ? `${formatted.label}: ` : "";
+
+  return {
+    text: `${icon} ${label}${formatted.body}`,
+    className,
+  };
 }
+
+const DEBUG_STORAGE_KEY = "al-logs-debug";
 
 export function InstanceLogsPage() {
   const ctx = useContext(InstanceContext);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [following, setFollowing] = useState(true);
   const [connected, setConnected] = useState(false);
+  const [showDebug, setShowDebug] = useState(() => {
+    try { return localStorage.getItem(DEBUG_STORAGE_KEY) === "1"; } catch { return false; }
+  });
   const cursorRef = useRef<string | null>(null);
   const backCursorRef = useRef<string | null>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
@@ -79,6 +73,15 @@ export function InstanceLogsPage() {
   const [summaryText, setSummaryText] = useState<string | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+
+  // Persist debug toggle
+  const toggleDebug = useCallback(() => {
+    setShowDebug((prev) => {
+      const next = !prev;
+      try { localStorage.setItem(DEBUG_STORAGE_KEY, next ? "1" : "0"); } catch {}
+      return next;
+    });
+  }, []);
 
   // Poll locks
   const { data: locksData } = useQuery<{
@@ -98,12 +101,29 @@ export function InstanceLogsPage() {
     (l) => l.holder === id || (!l.holder && l.agentName === name),
   );
 
+  // Build query params with level filter
+  const buildParams = useCallback((extra?: Record<string, string>) => {
+    const params: Record<string, string> = { lines: "200" };
+    if (!showDebug) params.level = "info";
+    else params.level = "debug";
+    return { ...params, ...extra };
+  }, [showDebug]);
+
+  // Reset logs when debug toggle changes
+  useEffect(() => {
+    setLogs([]);
+    cursorRef.current = null;
+    backCursorRef.current = null;
+    setHasOlderLogs(true);
+  }, [showDebug]);
+
   // Poll logs (slower when not running)
   usePolling(
     async (signal) => {
       if (!name || !id) return;
-      const params: Record<string, string> = { lines: "200" };
-      if (cursorRef.current) params.cursor = cursorRef.current;
+      const params = buildParams(
+        cursorRef.current ? { cursor: cursorRef.current } : undefined,
+      );
       try {
         const d = await getInstanceLogs(name, id, params, signal);
         setConnected(true);
@@ -121,7 +141,7 @@ export function InstanceLogsPage() {
       }
     },
     { intervalMs: isRunning ? 3000 : 10000, enabled: !!name && !!id && !!ctx },
-    [name, id, isRunning],
+    [name, id, isRunning, showDebug],
   );
 
   // Scroll follow
@@ -154,10 +174,10 @@ export function InstanceLogsPage() {
     if (!backCursorRef.current) { setHasOlderLogs(false); return; }
     setLoadingOlder(true);
     try {
-      const params: Record<string, string> = {
+      const params = buildParams({
         lines: String(OLDER_BATCH_SIZE),
         back_cursor: backCursorRef.current,
-      };
+      });
       const d = await getInstanceLogs(name, id, params);
       if (d.entries.length > 0) {
         // Preserve scroll position: measure scrollHeight before prepend
@@ -184,7 +204,7 @@ export function InstanceLogsPage() {
     } finally {
       setLoadingOlder(false);
     }
-  }, [name, id, loadingOlder, hasOlderLogs, logs, backfilling]);
+  }, [name, id, loadingOlder, hasOlderLogs, logs, backfilling, buildParams]);
 
   // Auto-backfill all older logs for completed instances
   useEffect(() => {
@@ -199,10 +219,10 @@ export function InstanceLogsPage() {
     (async () => {
       try {
         while (!cancelled && backCursorRef.current) {
-          const params: Record<string, string> = {
+          const params = buildParams({
             lines: String(OLDER_BATCH_SIZE),
             back_cursor: backCursorRef.current,
-          };
+          });
           const d = await getInstanceLogs(name, id, params);
           if (cancelled) break;
 
@@ -231,7 +251,7 @@ export function InstanceLogsPage() {
           }
         }
       } catch {
-        // Silently stop — user can click "↑ Load older logs" to retry
+        // Silently stop — user can click "Load older logs" to retry
       } finally {
         if (!cancelled) {
           setBackfilling(false);
@@ -309,6 +329,17 @@ export function InstanceLogsPage() {
             >
               {connected ? "Connected" : "Disconnected"}
             </span>
+            <button
+              onClick={toggleDebug}
+              className={`px-2 py-1 text-xs rounded transition-colors ${
+                showDebug
+                  ? "bg-amber-600 text-white"
+                  : "bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+              }`}
+              title="Show debug-level log entries"
+            >
+              Debug
+            </button>
             <button
               onClick={handleSummarize}
               disabled={summaryLoading || logs.length === 0}
@@ -416,13 +447,14 @@ export function InstanceLogsPage() {
             )}
             {logs.length > 0 ? (
               logs.map((entry, i) => {
-                const { text, className } = formatLogEntry(entry);
+                const formatted = formatLogEntry(entry, showDebug);
+                if (!formatted) return null;
                 return (
                   <div key={i} className="text-xs font-mono leading-5">
                     <span className="text-slate-600">
                       {new Date(entry.time).toLocaleTimeString()}
                     </span>{" "}
-                    <span className={className}>{text}</span>
+                    <span className={formatted.className}>{formatted.text}</span>
                   </div>
                 );
               })
