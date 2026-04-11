@@ -171,17 +171,23 @@ describe("host-user runtime", { timeout: 300_000 }, () => {
     const result = await controlRequest("POST", "/control/pause", SCHEDULER_PORT, API_KEY);
     expect(result.status).toBe(200);
 
+    // Brief pause for the status tracker to reflect the new state
+    await new Promise((r) => setTimeout(r, 200));
+
     // Verify paused state
     const status = await controlRequest("GET", "/control/status", SCHEDULER_PORT, API_KEY);
-    expect(status.data.scheduler.paused).toBe(true);
+    expect(status.data?.scheduler?.paused).toBe(true);
   });
 
   it("al resume restarts scheduling", async () => {
     const result = await controlRequest("POST", "/control/resume", SCHEDULER_PORT, API_KEY);
     expect(result.status).toBe(200);
 
+    // Brief pause for the status tracker to reflect the new state
+    await new Promise((r) => setTimeout(r, 200));
+
     const status = await controlRequest("GET", "/control/status", SCHEDULER_PORT, API_KEY);
-    expect(status.data.scheduler.paused).toBe(false);
+    expect(status.data?.scheduler?.paused).toBe(false);
   });
 
   it("pause/resume single agent via control API", async () => {
@@ -234,7 +240,7 @@ describe("host-user runtime", { timeout: 300_000 }, () => {
     let sessionId: string | undefined;
     while (Date.now() < deadline) {
       const status = await controlRequest("GET", "/control/status", SCHEDULER_PORT, API_KEY);
-      const instances = status.data?.instances ?? [];
+      const instances = status.data?.sessions ?? [];
       if (instances.length > 0) {
         sessionId = instances[0].id;
         break;
@@ -256,7 +262,7 @@ describe("host-user runtime", { timeout: 300_000 }, () => {
     // Verify it stopped
     await new Promise((r) => setTimeout(r, 2_000));
     const status = await controlRequest("GET", "/control/status", SCHEDULER_PORT, API_KEY);
-    const runningInstances = (status.data?.instances ?? []).filter(
+    const runningInstances = (status.data?.sessions ?? []).filter(
       (i: any) => i.agentName === "echo-agent" && i.status === "running",
     );
     expect(runningInstances.length).toBe(0);

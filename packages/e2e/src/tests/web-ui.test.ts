@@ -164,7 +164,7 @@ describe("web-ui", { timeout: 300_000 }, () => {
       let runCompleted = false;
       while (Date.now() < deadline) {
         const status = await controlRequest("GET", "/control/status", SCHEDULER_PORT, API_KEY);
-        const instances = status.data?.instances ?? [];
+        const instances = status.data?.sessions ?? [];
         if (mockServer.getRequests().length >= 2 && instances.length === 0) {
           runCompleted = true;
           break;
@@ -181,16 +181,18 @@ describe("web-ui", { timeout: 300_000 }, () => {
       const result = await controlRequest("POST", "/control/pause", SCHEDULER_PORT, API_KEY);
       expect(result.status).toBe(200);
 
+      await new Promise((r) => setTimeout(r, 200));
       const status = await controlRequest("GET", "/control/status", SCHEDULER_PORT, API_KEY);
-      expect(status.data.paused).toBe(true);
+      expect(status.data?.scheduler?.paused).toBe(true);
     });
 
     it("POST /control/resume returns 200 and scheduler is unpaused", async () => {
       const result = await controlRequest("POST", "/control/resume", SCHEDULER_PORT, API_KEY);
       expect(result.status).toBe(200);
 
+      await new Promise((r) => setTimeout(r, 200));
       const status = await controlRequest("GET", "/control/status", SCHEDULER_PORT, API_KEY);
-      expect(status.data.paused).toBe(false);
+      expect(status.data?.scheduler?.paused).toBe(false);
     });
 
     it("POST /control/agents/:name/disable returns 200", async () => {
@@ -213,19 +215,19 @@ describe("web-ui", { timeout: 300_000 }, () => {
       expect(result.status).toBe(200);
     });
 
-    it("GET /control/instances lists running instances", async () => {
+    it("GET /control/sessions lists running sessions", async () => {
       // Enqueue a slow response to keep the agent busy
       mockServer.enqueueToolCall("bash", { command: "sleep 30" });
 
       // Trigger agent
       await controlRequest("POST", "/control/trigger/echo-agent", SCHEDULER_PORT, API_KEY);
 
-      // Wait for the agent instance to appear
+      // Wait for the agent session to appear
       const deadline = Date.now() + 15_000;
       let instances: any[] = [];
       while (Date.now() < deadline) {
         const status = await controlRequest("GET", "/control/status", SCHEDULER_PORT, API_KEY);
-        instances = status.data?.instances ?? [];
+        instances = status.data?.sessions ?? [];
         if (instances.length > 0) break;
         await new Promise((r) => setTimeout(r, 200));
       }

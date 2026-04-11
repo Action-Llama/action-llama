@@ -64,6 +64,13 @@ describe("container runtime", { timeout: 300_000 }, () => {
     // Write gateway API key credential
     project.writeCredential("gateway_api_key", "default", "key", API_KEY);
 
+    // Patch config.toml with gateway port so `al status` can find the scheduler
+    const { readFileSync, writeFileSync } = await import("fs");
+    const { resolve } = await import("path");
+    const cfgPath = resolve(project.dir, "config.toml");
+    const cfgContent = readFileSync(cfgPath, "utf-8");
+    writeFileSync(cfgPath, cfgContent + `\n[gateway]\nport = ${SCHEDULER_PORT}\n`);
+
     // Start scheduler
     scheduler = alSpawn(
       ["start", "--headless", "--web-ui", "--port", String(SCHEDULER_PORT)],
@@ -111,7 +118,7 @@ describe("container runtime", { timeout: 300_000 }, () => {
     let runCompleted = false;
     while (Date.now() < deadline) {
       const status = await controlRequest("GET", "/control/status", SCHEDULER_PORT, API_KEY);
-      const instances = status.data?.instances ?? [];
+      const instances = status.data?.sessions ?? [];
       // If no running instances and we've seen at least one request, the run is done
       if (mockServer.getRequests().length >= 2 && instances.length === 0) {
         runCompleted = true;

@@ -94,6 +94,8 @@ export class MockLLMServer {
   private _port = 0;
   private responseQueue: MockResponse[] = [];
   private _requests: ReceivedRequest[] = [];
+  /** Default response used when the queue is empty. */
+  private _autoRespond: MockResponse | null = null;
 
   get port(): number {
     return this._port;
@@ -133,7 +135,15 @@ export class MockLLMServer {
     return [...this._requests];
   }
 
-  /** Reset state — clear queue and request history. */
+  /**
+   * Set a default auto-response used when the queue is empty.
+   * Pass null to disable auto-respond (returns 500 on empty queue).
+   */
+  setAutoRespond(response: MockResponse | null): void {
+    this._autoRespond = response;
+  }
+
+  /** Reset state — clear queue and request history. Does not clear autoRespond. */
   reset(): void {
     this.responseQueue = [];
     this._requests = [];
@@ -196,8 +206,8 @@ export class MockLLMServer {
         timestamp: Date.now(),
       });
 
-      // Dequeue next response
-      const response = this.responseQueue.shift();
+      // Dequeue next response, falling back to auto-respond if queue is empty
+      const response = this.responseQueue.shift() ?? this._autoRespond;
       if (!response) {
         emitErrorResponse(res, 500, "MockLLMServer: response queue is empty — no response enqueued for this request");
         return;

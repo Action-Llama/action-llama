@@ -3,7 +3,7 @@
  *
  * When the scheduler is started without webUI=true, the status tracker is not
  * created. In this case:
- *   - GET /control/instances returns 503 (status tracker not available)
+ *   - GET /control/sessions returns 503 (status tracker not available)
  *   - GET /control/status returns 503 (status tracker not available)
  *
  * These tests work without Docker because:
@@ -13,15 +13,15 @@
  *   4. Phase 4 (Docker) may fail — the gateway remains accessible regardless
  *
  * Also tests:
- *   - GET /control/instances with statusTracker available (webUI:true, empty list)
+ *   - GET /control/sessions with statusTracker available (webUI:true, empty list)
  *   - Control API is protected by Bearer auth when API key is set
  *
  * These complement the Docker-required tests in control-instances.test.ts.
  *
  * Covers:
- *   - control/routes/control.ts: GET /control/instances — no statusTracker → 503
+ *   - control/routes/control.ts: GET /control/sessions — no statusTracker → 503
  *   - control/routes/control.ts: GET /control/status — no statusTracker → 503
- *   - control/routes/control.ts: GET /control/instances — with tracker → empty list
+ *   - control/routes/control.ts: GET /control/sessions — with tracker → empty list
  */
 
 import { describe, it, expect, afterEach } from "vitest";
@@ -72,12 +72,12 @@ describe(
       });
     }
 
-    it("GET /control/instances returns 503 when no status tracker is available (webUI=false)", async () => {
+    it("GET /control/sessions returns 503 when no status tracker is available (webUI=false)", async () => {
       // Default start: no webUI → no statusTracker → 503 for tracker-dependent endpoints
       await startHarness();
       if (!gatewayAccessible) return;
 
-      const res = await controlGet("/control/instances");
+      const res = await controlGet("/control/sessions");
       expect(res.status).toBe(503);
       const body = (await res.json()) as { error: string };
       expect(body.error).toMatch(/status tracker not available/i);
@@ -91,26 +91,26 @@ describe(
       expect(res.status).toBe(503);
     });
 
-    it("GET /control/instances with webUI=true returns empty instances list", async () => {
+    it("GET /control/sessions with webUI=true returns empty sessions list", async () => {
       // With webUI=true, statusTracker is created and control routes return real data
       await startHarness({ webUI: true });
       if (!gatewayAccessible) return;
 
-      const res = await controlGet("/control/instances");
+      const res = await controlGet("/control/sessions");
       expect(res.status).toBe(200);
 
-      const body = (await res.json()) as { instances: unknown[] };
-      expect(Array.isArray(body.instances)).toBe(true);
+      const body = (await res.json()) as { sessions: unknown[] };
+      expect(Array.isArray(body.sessions)).toBe(true);
       // No Docker = no running containers → empty list
-      expect(body.instances).toHaveLength(0);
+      expect(body.sessions).toHaveLength(0);
     });
 
-    it("GET /control/instances returns 401 without auth header", async () => {
+    it("GET /control/sessions returns 401 without auth header", async () => {
       await startHarness();
       if (!gatewayAccessible) return;
 
       const res = await fetch(
-        `http://127.0.0.1:${harness.gatewayPort}/control/instances`,
+        `http://127.0.0.1:${harness.gatewayPort}/control/sessions`,
         { signal: AbortSignal.timeout(5_000) },
       );
       expect(res.status).toBe(401);

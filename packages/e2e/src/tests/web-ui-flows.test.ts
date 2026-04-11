@@ -161,7 +161,7 @@ describe("Web UI Flows", { timeout: 300000 }, () => {
     expect(payload).toHaveProperty("agents");
     expect(payload).toHaveProperty("schedulerInfo");
     expect(payload).toHaveProperty("recentLogs");
-    expect(payload).toHaveProperty("instances");
+    expect(payload).toHaveProperty("sessions");
     expect(Array.isArray(payload.agents)).toBe(true);
 
     // Our test agent should be in the list

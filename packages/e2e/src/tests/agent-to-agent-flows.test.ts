@@ -235,8 +235,8 @@ You are agent-b. You were triggered by agent-a. Perform your task and exit.`,
     );
 
     const body = JSON.parse(res);
-    expect(body).toHaveProperty("instances");
-    expect(Array.isArray(body.instances)).toBe(true);
+    expect(body).toHaveProperty("sessions");
+    expect(Array.isArray(body.sessions)).toBe(true);
     // Instances may be empty if the agent run completed before this check,
     // but the endpoint must respond without error
   });

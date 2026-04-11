@@ -81,21 +81,21 @@ describe(
 
       const body = (await res.json()) as {
         scheduler: unknown;
-        instances: unknown[];
+        sessions: unknown[];
         agents: Array<{ name: string }>;
         running: number;
         queueSizes: Record<string, number>;
       };
 
       // Response must include all required fields
-      expect(body).toHaveProperty("instances");
+      expect(body).toHaveProperty("sessions");
       expect(body).toHaveProperty("agents");
       expect(body).toHaveProperty("running");
       expect(body).toHaveProperty("queueSizes");
 
-      // Instances and running count are 0 without Docker
-      expect(Array.isArray(body.instances)).toBe(true);
-      expect(body.instances).toHaveLength(0);
+      // Sessions and running count are 0 without Docker
+      expect(Array.isArray(body.sessions)).toBe(true);
+      expect(body.sessions).toHaveLength(0);
       expect(body.running).toBe(0);
 
       // Agents should include the registered agent (registered in Phase 1)

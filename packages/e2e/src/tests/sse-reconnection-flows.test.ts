@@ -152,7 +152,7 @@ describe("Dashboard SSE Reconnection", { timeout: 300000 }, () => {
     expect(payload).toHaveProperty("agents");
     expect(payload).toHaveProperty("schedulerInfo");
     expect(payload).toHaveProperty("recentLogs");
-    expect(payload).toHaveProperty("instances");
+    expect(payload).toHaveProperty("sessions");
     expect(Array.isArray(payload.agents)).toBe(true);
 
     const agentNames = (payload.agents as Array<{ name: string }>).map((a) => a.name);

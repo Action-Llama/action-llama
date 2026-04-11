@@ -9,7 +9,7 @@
  * GET /control/queue endpoint (which uses the work queue directly).
  *
  * Covers:
- *   - control/routes/control.ts: GET /control/instances (503 path)
+ *   - control/routes/control.ts: GET /control/sessions (503 path)
  *   - control/routes/control.ts: GET /control/status (503 path)
  *   - The 503 response shape { error: "..." }
  */
@@ -25,7 +25,7 @@ describe.skipIf(!DOCKER)("integration: control API status tracker unavailable pa
     if (harness) await harness.shutdown();
   });
 
-  it("GET /control/instances returns 503 when no status tracker is available", async () => {
+  it("GET /control/sessions returns 503 when no status tracker is available", async () => {
     harness = await IntegrationHarness.create({
       agents: [
         {
@@ -42,8 +42,8 @@ describe.skipIf(!DOCKER)("integration: control API status tracker unavailable pa
     await harness.triggerAgent("ctrl-instances-agent");
     await harness.waitForRunResult("ctrl-instances-agent", 120_000);
 
-    // GET /control/instances — requires statusTracker, should return 503
-    const res = await harness.controlAPI("GET", "/instances");
+    // GET /control/sessions — requires statusTracker, should return 503
+    const res = await harness.controlAPI("GET", "/sessions");
     expect(res.status).toBe(503);
     const body = await res.json() as { error: string };
     expect(body.error).toBeTruthy();

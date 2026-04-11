@@ -19,6 +19,7 @@ import { FilesystemBackend } from "@action-llama/action-llama/internals/filesyst
 import type { RunCompleteEvent } from "@action-llama/action-llama/internals/execution";
 import type { SchedulerEventBus, SchedulerEventMap } from "@action-llama/action-llama/internals/scheduler-events";
 import { makeAgentConfig, makeModel } from "./helpers.js";
+import { MockLLMServer } from "../helpers/mock-llm-server.js";
 
 export interface HarnessAgent {
   name: string;
@@ -83,6 +84,9 @@ export class IntegrationHarness {
   private _scheduler: Awaited<ReturnType<typeof import("@action-llama/action-llama/internals/scheduler").startScheduler>> | null = null;
   readonly apiKey: string;
 
+  /** Mock LLM server — intercepts all LLM calls so tests run without real API keys. */
+  readonly mockLLM: MockLLMServer;
+
   /** The event bus from the scheduler — exposed so tests can subscribe. */
   private _events: SchedulerEventBus | null = null;
 
@@ -91,11 +95,12 @@ export class IntegrationHarness {
   /** Listeners waiting for a specific agent's run to complete. */
   private _runWaiters: Map<string, Array<(event: RunCompleteEvent) => void>> = new Map();
 
-  private constructor(projectPath: string, gatewayPort: number, credentialDir: string, apiKey: string) {
+  private constructor(projectPath: string, gatewayPort: number, credentialDir: string, apiKey: string, mockLLM: MockLLMServer) {
     this.projectPath = projectPath;
     this.gatewayPort = gatewayPort;
     this.credentialDir = credentialDir;
     this.apiKey = apiKey;
+    this.mockLLM = mockLLM;
   }
 
   static async create(opts: HarnessOptions): Promise<IntegrationHarness> {
@@ -103,6 +108,13 @@ export class IntegrationHarness {
     const credentialDir = mkdtempSync(join(tmpdir(), "al-creds-"));
     const gatewayPort = await getAvailablePort();
     const apiKey = "test-api-key-" + Math.random().toString(36).slice(2);
+
+    // Start mock LLM server — intercepts all LLM API calls so agents complete
+    // successfully without real API keys (transport runner supports baseUrl for
+    // OpenAI-compatible endpoints, which this mock server implements).
+    const mockLLM = new MockLLMServer();
+    await mockLLM.start();
+    mockLLM.setAutoRespond({ type: "text", text: "Task completed." });
 
     // Set up credential stubs
     const credTypes = [
@@ -132,12 +144,24 @@ export class IntegrationHarness {
       }
     }
 
-    // Write config.toml (with named model definitions)
+    // Write config.toml (with named model definitions).
+    // Inject baseUrl into every model so LLM calls go to the MockLLMServer.
+    // Tests that override model fields (e.g. authType) still get the mock baseUrl.
+    const defaultModels: GlobalConfig["models"] = { sonnet: makeModel({ baseUrl: mockLLM.baseUrl }) };
+    const mergedModels: GlobalConfig["models"] = opts.globalConfig?.models
+      ? Object.fromEntries(
+          Object.entries(opts.globalConfig.models).map(([k, m]) => [
+            k,
+            { ...m, baseUrl: m.baseUrl ?? mockLLM.baseUrl },
+          ])
+        )
+      : defaultModels;
     const globalConfig: GlobalConfig = {
-      models: { sonnet: makeModel() },
-      gateway: { port: gatewayPort },
       webhooks: Object.keys(webhookSources).length > 0 ? webhookSources : undefined,
       ...opts.globalConfig,
+      // Always use the mock model config and harness gateway port.
+      models: mergedModels,
+      gateway: { port: gatewayPort },
     };
 
     // Set up each agent
@@ -192,7 +216,7 @@ export class IntegrationHarness {
       stringifyTOML(globalConfig as Record<string, unknown>)
     );
 
-    const harness = new IntegrationHarness(projectPath, gatewayPort, credentialDir, apiKey);
+    const harness = new IntegrationHarness(projectPath, gatewayPort, credentialDir, apiKey, mockLLM);
     return harness;
   }
 
@@ -447,6 +471,9 @@ export class IntegrationHarness {
       this._events = null;
     }
 
+    // Stop mock LLM server
+    await this.mockLLM.stop();
+
     // Reset credential backend
     resetDefaultBackend();
   }
@@ -477,6 +504,9 @@ export class IntegrationHarness {
       this._events.removeAllListeners();
       this._events = null;
     }
+
+    // Stop mock LLM server
+    await this.mockLLM.stop();
 
     // Reset credential backend so start() can re-initialise
     resetDefaultBackend();
