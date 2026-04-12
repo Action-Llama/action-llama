@@ -7,5 +7,3 @@
  */
 
 export { enforceProjectScaleCap, syncTrackerScales } from "./scale-reconciliation.js";
-export { tryRunOrEnqueue } from "./try-run-or-enqueue.js";
-export type { TryRunOrEnqueueResult } from "./try-run-or-enqueue.js";

@@ -1,4 +1,3 @@
-import type { Extension } from "./types.js";
 import { ExtensionRegistry, globalRegistry } from "./registry.js";
 
 /**
@@ -73,28 +72,3 @@ async function loadCredentialExtensions(registry: ExtensionRegistry): Promise<vo
   }
 }
 
-/**
- * Check if an object is a valid extension
- */
-export function isExtension(obj: any): obj is Extension {
-  return (
-    obj !== null &&
-    obj !== undefined &&
-    typeof obj === "object" &&
-    "metadata" in obj &&
-    "init" in obj &&
-    "shutdown" in obj &&
-    typeof obj.init === "function" &&
-    typeof obj.shutdown === "function" &&
-    obj.metadata &&
-    typeof obj.metadata.name === "string" &&
-    typeof obj.metadata.type === "string"
-  );
-}
-
-/**
- * Get the global extension registry
- */
-export function getGlobalRegistry(): ExtensionRegistry {
-  return globalRegistry;
-}

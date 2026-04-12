@@ -15,9 +15,6 @@ vi.mock("../../../src/shared/paths.js", () => ({
 
 let tmpDir: string;
 
-// Import the real FilesystemBackend to use in tests
-import { FilesystemBackend } from "../../../src/shared/filesystem-backend.js";
-import { setDefaultBackend } from "../../../src/shared/credentials.js";
 
 // Mock the credential registry
 vi.mock("../../../src/credentials/registry.js", () => ({
@@ -73,7 +70,6 @@ describe("creds ls", () => {
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "al-creds-"));
     (globalThis as any).__AL_TEST_TMPDIR = tmpDir;
-    setDefaultBackend(new FilesystemBackend(tmpDir));
     consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
   });
 
@@ -149,7 +145,6 @@ describe("creds add", () => {
     vi.clearAllMocks();
     tmpDir = mkdtempSync(join(tmpdir(), "al-creds-"));
     (globalThis as any).__AL_TEST_TMPDIR = tmpDir;
-    setDefaultBackend(new FilesystemBackend(tmpDir));
     consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
   });
 
@@ -222,7 +217,6 @@ describe("creds rm", () => {
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "al-creds-"));
     (globalThis as any).__AL_TEST_TMPDIR = tmpDir;
-    setDefaultBackend(new FilesystemBackend(tmpDir));
     consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
   });
 
@@ -302,7 +296,6 @@ describe("creds types", () => {
 
     tmpDir = mkdtempSync(join(tmpdir(), "al-creds-types-"));
     (globalThis as any).__AL_TEST_TMPDIR = tmpDir;
-    setDefaultBackend(new FilesystemBackend(tmpDir));
 
     await types();
 
@@ -357,7 +350,6 @@ describe("creds ls — additional edge cases", () => {
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "al-creds-edge-"));
     (globalThis as any).__AL_TEST_TMPDIR = tmpDir;
-    setDefaultBackend(new FilesystemBackend(tmpDir));
     consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
   });
 

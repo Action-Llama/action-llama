@@ -186,19 +186,3 @@ export function buildWebhookSuffix(context: WebhookContext): string {
   return `<webhook-trigger>\n${webhookBlock}\n</webhook-trigger>\n\nA webhook event just fired. Review the trigger context above and take appropriate action.`;
 }
 
-export function buildScheduledPrompt(agentConfig: AgentConfig, skills?: PromptSkills): string {
-  return `${buildPromptSkeleton(agentConfig, skills)}\n\n${buildScheduledSuffix()}`;
-}
-
-export function buildManualPrompt(agentConfig: AgentConfig, skills?: PromptSkills, prompt?: string): string {
-  const suffix = prompt ? buildUserPromptSuffix(prompt) : buildManualSuffix();
-  return `${buildPromptSkeleton(agentConfig, skills)}\n\n${suffix}`;
-}
-
-export function buildCalledPrompt(agentConfig: AgentConfig, callerAgent: string, context: string, skills?: PromptSkills): string {
-  return `${buildPromptSkeleton(agentConfig, skills)}\n\n${buildCalledSuffix(callerAgent, context)}`;
-}
-
-export function buildWebhookPrompt(agentConfig: AgentConfig, context: WebhookContext, skills?: PromptSkills): string {
-  return `${buildPromptSkeleton(agentConfig, skills)}\n\n${buildWebhookSuffix(context)}`;
-}

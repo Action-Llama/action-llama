@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { loadBuiltinExtensions, isExtension, getGlobalRegistry } from "../../src/extensions/loader.js";
+import { loadBuiltinExtensions } from "../../src/extensions/loader.js";
 import { globalRegistry } from "../../src/extensions/registry.js";
 
 // Mock the imports to avoid loading actual extensions during tests
@@ -56,34 +56,6 @@ describe("Extension Loader", () => {
     vi.clearAllMocks();
     // Clear the global registry before each test
     Object.assign(globalRegistry, new (globalRegistry.constructor as any)());
-  });
-
-  describe("isExtension", () => {
-    it("should identify valid extensions", () => {
-      const validExtension = {
-        metadata: {
-          name: "test",
-          type: "webhook",
-          version: "1.0.0",
-          description: "Test extension"
-        },
-        init: async () => {},
-        shutdown: async () => {}
-      };
-
-      expect(isExtension(validExtension)).toBe(true);
-    });
-
-    it("should reject invalid objects", () => {
-      expect(isExtension(null)).toBe(false);
-      expect(isExtension(undefined)).toBe(false);
-      expect(isExtension({})).toBe(false);
-      expect(isExtension({ metadata: {} })).toBe(false);
-      expect(isExtension({
-        metadata: { name: "test" },
-        init: "not a function"
-      })).toBe(false);
-    });
   });
 
   describe("loadBuiltinExtensions", () => {
@@ -169,20 +141,6 @@ describe("Extension Loader", () => {
       } finally {
         warnSpy.mockRestore();
       }
-    });
-  });
-
-  describe("getGlobalRegistry", () => {
-    it("returns the global registry instance", () => {
-      const registry = getGlobalRegistry();
-      expect(registry).toBeDefined();
-      expect(typeof registry.register).toBe("function");
-      expect(typeof registry.get).toBe("function");
-    });
-
-    it("returns the same reference as globalRegistry", () => {
-      const registry = getGlobalRegistry();
-      expect(registry).toBe(globalRegistry);
     });
   });
 

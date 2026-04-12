@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "fs";
-import { resolve, relative, join } from "path";
+import { resolve } from "path";
 import { parse as parseTOML, stringify as stringifyTOML } from "smol-toml";
 import { ConfigError } from "../errors.js";
 import { parseFrontmatter } from "../frontmatter.js";
@@ -132,37 +132,6 @@ export function loadAgentBody(projectPath: string, agentName: string): string {
       { cause: err },
     );
   }
-}
-
-/**
- * Load all files from `<projectPath>/shared/` recursively.
- * Returns a map of relative paths (prefixed with `shared/`) to file contents.
- * Returns an empty object if the directory doesn't exist.
- */
-export function loadSharedFiles(projectPath: string): Record<string, string> {
-  const sharedDir = resolve(projectPath, "shared");
-  if (!existsSync(sharedDir) || !statSync(sharedDir).isDirectory()) {
-    return {};
-  }
-
-  const result: Record<string, string> = {};
-
-  function walk(dir: string): void {
-    for (const entry of readdirSync(dir)) {
-      if (entry.startsWith(".")) continue;
-      const fullPath = resolve(dir, entry);
-      const stat = statSync(fullPath);
-      if (stat.isDirectory()) {
-        walk(fullPath);
-      } else if (stat.isFile()) {
-        const relPath = join("shared", relative(sharedDir, fullPath));
-        result[relPath] = readFileSync(fullPath, "utf-8");
-      }
-    }
-  }
-
-  walk(sharedDir);
-  return result;
 }
 
 export function discoverAgents(projectPath: string): string[] {

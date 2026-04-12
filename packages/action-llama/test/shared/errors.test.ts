@@ -4,7 +4,6 @@ import {
   CredentialError,
   AgentError,
   UNRECOVERABLE_PATTERNS,
-  isUnrecoverableError,
   UNRECOVERABLE_THRESHOLD,
 } from "../../src/shared/errors.js";
 
@@ -42,33 +41,6 @@ describe("custom error classes", () => {
     const cred = new CredentialError("b");
     expect(config instanceof CredentialError).toBe(false);
     expect(cred instanceof ConfigError).toBe(false);
-  });
-});
-
-describe("isUnrecoverableError", () => {
-  it("detects permission denied", () => {
-    expect(isUnrecoverableError("fatal: Permission denied (publickey)")).toBe(true);
-  });
-
-  it("detects bad credentials", () => {
-    expect(isUnrecoverableError("Error: Bad credentials")).toBe(true);
-  });
-
-  it("detects resource not accessible", () => {
-    expect(isUnrecoverableError("Resource not accessible by personal access token")).toBe(true);
-  });
-
-  it("is case insensitive", () => {
-    expect(isUnrecoverableError("PERMISSION DENIED")).toBe(true);
-  });
-
-  it("returns false for recoverable errors", () => {
-    expect(isUnrecoverableError("network timeout")).toBe(false);
-    expect(isUnrecoverableError("rate limit exceeded")).toBe(false);
-  });
-
-  it("returns false for empty string", () => {
-    expect(isUnrecoverableError("")).toBe(false);
   });
 });
 

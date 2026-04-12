@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
+import { stringify as stringifyTOML } from "smol-toml";
 import {
   writeEnvToml,
   loadEnvToml,
-  writeEnvironmentConfig,
   environmentPath,
 } from "../../../src/shared/environment.js";
 
@@ -90,7 +90,9 @@ describe("env list", () => {
     const envName = `test-list-${Date.now()}`;
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    writeEnvironmentConfig(envName, { gateway: { url: "http://localhost:3000" } });
+    const envFilePath = environmentPath(envName);
+    mkdirSync(resolve(envFilePath, ".."), { recursive: true });
+    writeFileSync(envFilePath, stringifyTOML({ gateway: { url: "http://localhost:3000" } }));
 
     try {
       await list();
@@ -116,7 +118,9 @@ describe("env show", () => {
   });
 
   it("logs environment name, file path, and content", async () => {
-    writeEnvironmentConfig(testEnvName, { gateway: { url: "http://9.8.7.6:3000" } });
+    const envFilePath = environmentPath(testEnvName);
+    mkdirSync(resolve(envFilePath, ".."), { recursive: true });
+    writeFileSync(envFilePath, stringifyTOML({ gateway: { url: "http://9.8.7.6:3000" } }));
 
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 

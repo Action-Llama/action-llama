@@ -1,7 +1,6 @@
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from "fs";
 import { execSync } from "child_process";
 import { resolve } from "path";
-import { fileURLToPath } from "url";
 import { stringify as stringifyTOML } from "smol-toml";
 import { stringify as stringifyYAML } from "yaml";
 import type { GlobalConfig, AgentConfig } from "../shared/config.js";
@@ -9,17 +8,6 @@ import { writeCredentialField, writeCredentialFields } from "../shared/credentia
 import { CONSTANTS, VERSION } from "../shared/constants.js";
 
 export { writeCredentialField, writeCredentialFields };
-
-/**
- * Resolve the package root directory.
- * This module lives at src/setup/scaffold.ts (or dist/setup/scaffold.js),
- * so the package root is two directories up.
- */
-export function resolvePackageRoot(): string {
-  const thisFile = fileURLToPath(import.meta.url);
-  return resolve(thisFile, "..", "..", "..");
-}
-
 
 export interface ScaffoldAgent {
   name: string;

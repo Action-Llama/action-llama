@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { VERSION, GIT_SHA, imageTags, CONSTANTS } from "../../src/shared/constants.js";
+import { VERSION, GIT_SHA, CONSTANTS } from "../../src/shared/constants.js";
 
 // Hoisted mocks for fs and child_process so we can re-evaluate constants.js in isolation
 const { mockReadFileSync, mockExecFileSync } = vi.hoisted(() => ({
@@ -36,21 +36,6 @@ describe("GIT_SHA", () => {
   it("is a non-empty string", () => {
     expect(typeof GIT_SHA).toBe("string");
     expect(GIT_SHA.length).toBeGreaterThan(0);
-  });
-});
-
-describe("imageTags", () => {
-  it("returns an array with primary tag (git SHA), version tag, and latest", () => {
-    const tags = imageTags("my-image");
-    expect(tags).toHaveLength(3);
-    expect(tags[0]).toMatch(/^my-image:/);
-    expect(tags[1]).toBe(`my-image:${VERSION}`);
-    expect(tags[2]).toBe("my-image:latest");
-  });
-
-  it("primary tag contains the GIT_SHA", () => {
-    const tags = imageTags("al-agent");
-    expect(tags[0]).toBe(`al-agent:${GIT_SHA}`);
   });
 });
 

@@ -12,9 +12,7 @@ import {
   requireCredentialRef,
   resolveAgentCredentials,
   getDefaultBackend,
-  resetDefaultBackend,
   sanitizeEnvPart,
-  setDefaultBackend,
   listCredentialInstances,
 } from "../../src/shared/credentials.js";
 import { CREDENTIALS_DIR } from "../../src/shared/paths.js";
@@ -151,30 +149,6 @@ describe("credentials", () => {
       expect(backend).toBeDefined();
       expect(typeof backend.exists).toBe("function");
       expect(typeof backend.read).toBe("function");
-    });
-  });
-
-  describe("resetDefaultBackend", () => {
-    it("resets the backend to a new FilesystemBackend", () => {
-      const mockBackend = {
-        exists: async () => true,
-        read: async () => "mock",
-        readAll: async () => ({}),
-        write: async () => {},
-        writeAll: async () => {},
-        listInstances: async () => [],
-        list: async () => [],
-      };
-
-      setDefaultBackend(mockBackend as any);
-      expect(getDefaultBackend()).toBe(mockBackend);
-
-      resetDefaultBackend();
-
-      // After reset, it should be a different backend (FilesystemBackend)
-      const restoredBackend = getDefaultBackend();
-      expect(restoredBackend).not.toBe(mockBackend);
-      expect(typeof restoredBackend.exists).toBe("function");
     });
   });
 

@@ -13,19 +13,6 @@ export const IMPLICIT_CREDENTIAL_REFS = new Set([
 ]);
 
 /**
- * Convert credential refs to relative file paths within the credentials directory.
- * Example: "github_token:default" -> "github_token/default"
- */
-export function credentialRefsToRelativePaths(refs: Set<string>): string[] {
-  const paths: string[] = [];
-  for (const ref of refs) {
-    const [type, instance] = ref.split(":");
-    paths.push(`${type}/${instance || "default"}`);
-  }
-  return paths;
-}
-
-/**
  * Collect all credential refs needed by agents in the project,
  * including webhook secret credentials derived from global webhook sources.
  */

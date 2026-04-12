@@ -5,7 +5,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   LegacyMigrator,
-  migrateFromLegacy,
   type MigrationProgress,
 } from "../../../src/shared/persistence/migration.js";
 import {
@@ -310,66 +309,6 @@ describe("LegacyMigrator.migrateAll", () => {
     const completedEvent = events.find((e) => e.type === "migration.completed");
     expect(completedEvent.data.timestamp).toBeGreaterThanOrEqual(before);
     expect(completedEvent.data.timestamp).toBeLessThanOrEqual(after);
-  });
-});
-
-// ─── migrateFromLegacy ─────────────────────────────────────────────────────
-
-describe("migrateFromLegacy", () => {
-  it("completes without error when no legacy stores are provided", async () => {
-    const store = await createPersistenceStore({ type: "memory" });
-    try {
-      await expect(migrateFromLegacy(store)).resolves.not.toThrow();
-    } finally {
-      await store.close();
-    }
-  });
-
-  it("logs migration progress to console.log", async () => {
-    const store = await createPersistenceStore({ type: "memory" });
-    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-
-    try {
-      await migrateFromLegacy(store);
-      expect(consoleSpy).toHaveBeenCalled();
-      const firstCallArg = consoleSpy.mock.calls[0][0] as string;
-      expect(firstCallArg).toMatch(/^Migration:/);
-      expect(firstCallArg).toMatch(/\d+%/);
-    } finally {
-      consoleSpy.mockRestore();
-      await store.close();
-    }
-  });
-
-  it("migrates state store data when a legacy state store is provided", async () => {
-    const store = await createPersistenceStore({ type: "memory" });
-    const legacyStore = makeMockStateStore({
-      sessions: [{ key: "session-1", value: { userId: "u1" } }],
-    });
-
-    try {
-      await migrateFromLegacy(store, legacyStore);
-      const value = await store.kv.get("sessions", "session-1");
-      expect(value).toEqual({ userId: "u1" });
-    } finally {
-      await store.close();
-    }
-  });
-
-  it("respects options passed through to the migrator", async () => {
-    const store = await createPersistenceStore({ type: "memory" });
-    const legacyStore = makeMockStateStore({
-      locks: [{ key: "lock-x", value: { holder: "a" } }],
-    });
-
-    try {
-      await migrateFromLegacy(store, legacyStore, undefined, {
-        preserveOriginal: false,
-      });
-      expect(legacyStore.deleteAll).toHaveBeenCalledWith("locks");
-    } finally {
-      await store.close();
-    }
   });
 });
 

@@ -7,7 +7,7 @@ vi.mock("../../src/shared/config.js", () => ({
   loadAgentConfig: (...args: any[]) => mockLoadAgentConfig(...args),
 }));
 
-import { collectCredentialRefs, credentialRefsToRelativePaths, WEBHOOK_SECRET_TYPES, IMPLICIT_CREDENTIAL_REFS } from "../../src/shared/credential-refs.js";
+import { collectCredentialRefs, WEBHOOK_SECRET_TYPES, IMPLICIT_CREDENTIAL_REFS } from "../../src/shared/credential-refs.js";
 
 describe("collectCredentialRefs", () => {
   beforeEach(() => {
@@ -83,23 +83,6 @@ describe("collectCredentialRefs", () => {
 
     const refs = collectCredentialRefs("/tmp/project", {});
     expect(refs.size).toBe(1); // github_token (deduped)
-  });
-});
-
-describe("credentialRefsToRelativePaths", () => {
-  it("converts refs to relative paths", () => {
-    const refs = new Set(["github_token:default", "github_token:MyOrg", "slack_token"]);
-    const paths = credentialRefsToRelativePaths(refs);
-    expect(paths).toContain("github_token/default");
-    expect(paths).toContain("github_token/MyOrg");
-    expect(paths).toContain("slack_token/default");
-    expect(paths).toHaveLength(3);
-  });
-
-  it("handles empty set", () => {
-    const refs = new Set<string>();
-    const paths = credentialRefsToRelativePaths(refs);
-    expect(paths).toEqual([]);
   });
 });
 

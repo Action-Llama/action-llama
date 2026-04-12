@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, readdirSync, mkdirSync, writeFileSync } from "fs";
+import { readFileSync, existsSync, readdirSync, writeFileSync } from "fs";
 import { resolve, basename } from "path";
 import { parse as parseTOML, stringify as stringifyTOML } from "smol-toml";
 import { ENVIRONMENTS_DIR } from "./paths.js";
@@ -114,33 +114,10 @@ export function listEnvironments(): string[] {
 }
 
 /**
- * Validate that an environment name is suitable for use as a cloud resource name.
- * Must be lowercase alphanumeric + hyphens, no leading/trailing hyphens, max 50 chars
- * (leaving room for the "action-llama-" prefix within the 63-char hostname limit).
- */
-export function validateEnvironmentName(name: string): string | true {
-  if (!name) return "Name is required";
-  if (name.length > 50) return "Name must be 50 characters or fewer";
-  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(name)) {
-    return "Name must be lowercase alphanumeric with optional hyphens (no leading/trailing hyphens)";
-  }
-  return true;
-}
-
-/**
  * Check if a named environment exists.
  */
 export function environmentExists(name: string): boolean {
   return existsSync(resolve(ENVIRONMENTS_DIR, `${name}.toml`));
-}
-
-/**
- * Create a new environment file with the given config.
- */
-export function writeEnvironmentConfig(name: string, config: EnvironmentConfig): void {
-  mkdirSync(ENVIRONMENTS_DIR, { recursive: true });
-  const envPath = resolve(ENVIRONMENTS_DIR, `${name}.toml`);
-  writeFileSync(envPath, stringifyTOML(config as Record<string, unknown>) + "\n");
 }
 
 /**

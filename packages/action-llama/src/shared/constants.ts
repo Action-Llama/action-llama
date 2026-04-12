@@ -34,14 +34,6 @@ const GIT_SHA = getGitSha();
 
 export { VERSION, GIT_SHA };
 
-/**
- * Return all tags for an image name: git-sha (primary), semver, and latest.
- * The first element is the primary tag used for builds and deployments.
- */
-export function imageTags(name: string): [primary: string, ...aliases: string[]] {
-  return [`${name}:${GIT_SHA}`, `${name}:${VERSION}`, `${name}:latest`];
-}
-
 /** Default agent container timeout in seconds (1 hour). */
 export const DEFAULT_AGENT_TIMEOUT = 3600;
 

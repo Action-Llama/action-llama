@@ -42,9 +42,4 @@ export const UNRECOVERABLE_PATTERNS = [
   "denied to ",
 ];
 
-export function isUnrecoverableError(text: string): boolean {
-  const lower = text.toLowerCase();
-  return UNRECOVERABLE_PATTERNS.some((p) => lower.includes(p));
-}
-
 export const UNRECOVERABLE_THRESHOLD = 3;

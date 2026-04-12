@@ -392,21 +392,3 @@ export class LegacyMigrator {
   }
 }
 
-/**
- * Helper function to run migration with console progress reporting.
- */
-export async function migrateFromLegacy(
-  newStore: PersistenceStore,
-  legacyStateStore?: StateStore,
-  legacyStatsStore?: StatsStore,
-  options: Omit<MigrationOptions, 'onProgress'> = {}
-): Promise<void> {
-  const migrator = new LegacyMigrator(newStore);
-  
-  await migrator.migrateAll(legacyStateStore, legacyStatsStore, {
-    ...options,
-    onProgress: (progress) => {
-      console.log(`Migration: ${progress.step} (${progress.percentage}%)`);
-    },
-  });
-}

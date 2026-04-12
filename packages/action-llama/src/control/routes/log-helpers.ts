@@ -36,7 +36,7 @@ export function decodeCursor(cursor: string): { date: string; offsets: number[] 
 
 // ── File discovery ────────────────────────────────────────────────────────────
 
-export function logsDir(projectPath: string): string {
+function logsDir(projectPath: string): string {
   return resolve(projectPath, ".al", "logs");
 }
 
@@ -64,7 +64,7 @@ export function dateFromLogFile(filePath: string): string | null {
 
 // ── File reading ──────────────────────────────────────────────────────────────
 
-export function parseLine(line: string): LogEntry | null {
+function parseLine(line: string): LogEntry | null {
   if (!line.trim()) return null;
   try {
     const obj = JSON.parse(line);
