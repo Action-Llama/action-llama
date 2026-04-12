@@ -3,15 +3,12 @@
 import type { GlobalConfig } from "../shared/config.js";
 import type { Logger } from "../shared/logger.js";
 import { loadBuiltinExtensions } from "../extensions/loader.js";
-import { initTelemetry } from "../telemetry/index.js";
 
-export interface DependencyResult {
-  telemetry: any | undefined;
-}
+export interface DependencyResult {}
 
 /**
- * Load external dependencies: model-provider extensions and telemetry.
- * Both are non-fatal — failures log warnings and continue.
+ * Load external dependencies: extensions.
+ * Non-fatal — failures log warnings and continue.
  */
 export async function loadDependencies(
   globalConfig: GlobalConfig,
@@ -24,17 +21,5 @@ export async function loadDependencies(
     logger.warn({ error: error.message }, "Failed to load extensions");
   }
 
-  // Initialize telemetry if enabled
-  let telemetry: any;
-  if (globalConfig.telemetry?.enabled) {
-    try {
-      telemetry = initTelemetry(globalConfig.telemetry);
-      await telemetry.init();
-      logger.info("Telemetry initialized successfully");
-    } catch (error: any) {
-      logger.warn({ error: error.message }, "Failed to initialize telemetry");
-    }
-  }
-
-  return { telemetry };
+  return {};
 }

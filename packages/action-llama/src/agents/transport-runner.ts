@@ -45,8 +45,6 @@ import type { Transport } from "@action-llama/pi-remote";
 import { parseCredentialRef, getDefaultBackend } from "../shared/credentials.js";
 import { parseFrontmatter } from "../shared/frontmatter.js";
 import { buildAgentSystemPrompt, type PromptSkills } from "./prompt.js";
-import { withSpan } from "../telemetry/index.js";
-import { SpanKind } from "@opentelemetry/api";
 import type { SchedulerToolsOpts } from "./scheduler-tools.js";
 import { createSchedulerTools } from "./scheduler-tools.js";
 import type { WaitFilter, WaitingRegistry, WaitingSession } from "../execution/waiting-registry.js";
@@ -184,24 +182,7 @@ export class TransportAgentRunner implements PoolRunner {
     this.logger = this.baseLogger.child({ instance: this.sessionId });
 
     try {
-      return await withSpan(
-        "transport_agent.run",
-        async (span) => {
-          span.setAttributes({
-            "agent.name": this.agentConfig.name,
-            "agent.run_id": this.sessionId,
-            "agent.trigger_type": triggerInfo?.type || "manual",
-            "agent.trigger_source": triggerInfo?.source || "",
-            "agent.model_provider": this.agentConfig.models[0]?.provider,
-            "agent.model_name": this.agentConfig.models[0]?.model,
-            "execution.environment": "transport",
-          });
-
-          return this.runInternal(prompt, triggerInfo, span);
-        },
-        {},
-        SpanKind.INTERNAL,
-      );
+      return await this.runInternal(prompt, triggerInfo);
     } catch (err: any) {
       this._running = false;
       this.logger.error({ err }, "transport run setup failed");
@@ -212,7 +193,6 @@ export class TransportAgentRunner implements PoolRunner {
   private async runInternal(
     prompt: string,
     triggerInfo?: { type: 'schedule' | 'manual' | 'webhook' | 'agent'; source?: string },
-    parentSpan?: any,
   ): Promise<RunOutcome> {
     const runStartTime = Date.now();
     let runResult: RunResult = "error";
@@ -343,25 +323,6 @@ export class TransportAgentRunner implements PoolRunner {
         cost: tokenUsage?.cost,
         error: runError,
       }, "run outcome");
-
-      if (parentSpan) {
-        parentSpan.setAttributes({
-          "execution.result": runResult,
-          "execution.has_return_value": !!returnValue,
-        });
-        if (tokenUsage) {
-          parentSpan.setAttributes({
-            "llm.token.input": tokenUsage.inputTokens,
-            "llm.token.output": tokenUsage.outputTokens,
-            "llm.token.total": tokenUsage.totalTokens,
-            "llm.cost.total": tokenUsage.cost,
-            "llm.turns": tokenUsage.turnCount,
-          });
-        }
-        if (runResult === "error") {
-          parentSpan.recordException(new Error(`Transport execution failed: ${runError || "Unknown error"}`));
-        }
-      }
 
       this._running = false;
     }

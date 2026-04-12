@@ -810,28 +810,6 @@ describe("pushToServer — additional coverage paths", () => {
     mockLoadGlobalConfig.mockReturnValue({});
   });
 
-  it("includes telemetry in remote .env.toml when globalConfig.telemetry is set", async () => {
-    mockSshExec.mockResolvedValue("ok"); // health check succeeds
-    const sshCalls: Array<[any, string]> = [];
-    mockSshExec.mockImplementation((_ssh: any, cmd: string) => {
-      sshCalls.push([_ssh, cmd]);
-      return Promise.resolve("ok");
-    });
-
-    await pushToServer({
-      projectPath: "/tmp/project",
-      serverConfig: { host: "h" },
-      globalConfig: { telemetry: { enabled: true, provider: "otel", endpoint: "http://otel:4317" } } as any,
-      envName: "my-server",
-    });
-
-    // Verify the .env.toml write command included telemetry
-    const tomlWrite = sshCalls.find(([, cmd]) => cmd.includes(".env.toml") && cmd.includes("cat >") || cmd.includes("[telemetry]"));
-    // The telemetry section should appear in the heredoc being written
-    const heredocCall = sshCalls.find(([, cmd]) => cmd.includes("telemetry") && cmd.includes("enabled"));
-    expect(heredocCall).toBeDefined();
-  });
-
   it("reads existing remote .env.toml and preserves agent overrides", async () => {
     const sshCalls: Array<[any, string]> = [];
     mockSshExec.mockImplementation((_ssh: any, cmd: string) => {

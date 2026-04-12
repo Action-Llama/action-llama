@@ -3,7 +3,6 @@ import type {
   ExtensionType,
   CredentialTypeDefinition,
   WebhookExtension,
-  TelemetryExtension,
   RuntimeExtension,
   CredentialExtension
 } from "./types.js";
@@ -16,7 +15,7 @@ export class ExtensionRegistry {
   constructor(credentialChecker?: (type: string, instance?: string) => Promise<boolean>) {
     this.credentialChecker = credentialChecker;
     // Initialize maps for each extension type
-    for (const type of ["webhook", "telemetry", "runtime", "credential"] as ExtensionType[]) {
+    for (const type of ["webhook", "runtime", "model", "credential"] as ExtensionType[]) {
       this.extensions.set(type, new Map());
     }
   }
@@ -71,10 +70,6 @@ export class ExtensionRegistry {
     return this.get<WebhookExtension>("webhook", name);
   }
 
-  getTelemetryExtension(name: string): TelemetryExtension | undefined {
-    return this.get<TelemetryExtension>("telemetry", name);
-  }
-
   getRuntimeExtension(name: string): RuntimeExtension | undefined {
     return this.get<RuntimeExtension>("runtime", name);
   }
@@ -85,10 +80,6 @@ export class ExtensionRegistry {
 
   getAllWebhookExtensions(): WebhookExtension[] {
     return this.getAll<WebhookExtension>("webhook");
-  }
-
-  getAllTelemetryExtensions(): TelemetryExtension[] {
-    return this.getAll<TelemetryExtension>("telemetry");
   }
 
   getAllRuntimeExtensions(): RuntimeExtension[] {

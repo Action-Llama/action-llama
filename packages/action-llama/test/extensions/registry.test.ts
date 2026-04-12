@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { ExtensionRegistry } from "../../src/extensions/registry.js";
 import type {
   Extension,
-  TelemetryExtension,
   WebhookExtension,
   RuntimeExtension,
   CredentialExtension,
@@ -74,7 +73,7 @@ describe("ExtensionRegistry", () => {
           name: "test",
           version: "1.0.0",
           description: "Test extension",
-          type: "telemetry",
+          type: "webhook",
           requiredCredentials: [
             { type: "api_key", description: "API key" }
           ]
@@ -96,7 +95,7 @@ describe("ExtensionRegistry", () => {
           name: "test",
           version: "1.0.0",
           description: "Test extension",
-          type: "telemetry",
+          type: "webhook",
           requiredCredentials: [
             { type: "api_key", description: "API key", optional: true }
           ]
@@ -226,7 +225,7 @@ describe("ExtensionRegistry", () => {
           name: "test2",
           version: "1.0.0",
           description: "Test extension 2",
-          type: "telemetry"
+          type: "runtime"
         },
         init: vi.fn().mockResolvedValue(undefined),
         shutdown: vi.fn().mockResolvedValue(undefined)
@@ -260,7 +259,7 @@ describe("ExtensionRegistry", () => {
           name: "test2",
           version: "2.0.0",
           description: "Test extension 2",
-          type: "telemetry"
+          type: "runtime"
         },
         init: vi.fn().mockResolvedValue(undefined),
         shutdown: vi.fn().mockResolvedValue(undefined)
@@ -278,7 +277,7 @@ describe("ExtensionRegistry", () => {
         description: "Test extension 1"
       });
       expect(list).toContainEqual({
-        type: "telemetry",
+        type: "runtime",
         name: "test2",
         version: "2.0.0",
         description: "Test extension 2"
@@ -287,7 +286,7 @@ describe("ExtensionRegistry", () => {
   });
 
   describe("type-specific getters", () => {
-    function makeExtension(type: "webhook" | "telemetry" | "runtime" | "credential", name: string): Extension {
+    function makeExtension(type: "webhook" | "runtime" | "model" | "credential", name: string): Extension {
       return {
         metadata: { name, type, version: "1.0.0", description: `${type}/${name}` },
         init: vi.fn().mockResolvedValue(undefined),
@@ -301,14 +300,6 @@ describe("ExtensionRegistry", () => {
       const found = registry.getWebhookExtension("my-webhook");
       expect(found).toBe(ext);
       expect(registry.getWebhookExtension("nonexistent")).toBeUndefined();
-    });
-
-    it("getTelemetryExtension returns registered telemetry extension", async () => {
-      const ext = makeExtension("telemetry", "otel");
-      await registry.register(ext);
-      const found = registry.getTelemetryExtension("otel");
-      expect(found).toBe(ext);
-      expect(registry.getTelemetryExtension("nonexistent")).toBeUndefined();
     });
 
     it("getRuntimeExtension returns registered runtime extension", async () => {
@@ -325,13 +316,6 @@ describe("ExtensionRegistry", () => {
       const found = registry.getCredentialExtension("file");
       expect(found).toBe(ext);
       expect(registry.getCredentialExtension("nonexistent")).toBeUndefined();
-    });
-
-    it("getAllTelemetryExtensions returns all telemetry extensions", async () => {
-      await registry.register(makeExtension("telemetry", "otel"));
-      const all = registry.getAllTelemetryExtensions();
-      expect(all).toHaveLength(1);
-      expect(all[0].metadata.name).toBe("otel");
     });
 
     it("getAllRuntimeExtensions returns all runtime extensions", async () => {

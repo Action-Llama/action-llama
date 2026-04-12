@@ -14,8 +14,6 @@ export async function loadBuiltinExtensions(
     // Load webhook provider extensions
     await loadWebhookExtensions(registry);
 
-    // Load telemetry provider extensions
-    await loadTelemetryExtensions(registry);
 
     // Load runtime provider extensions
     await loadRuntimeExtensions(registry);
@@ -53,17 +51,6 @@ async function loadWebhookExtensions(registry: ExtensionRegistry): Promise<void>
   } catch (error) {
     console.warn("Failed to load webhook extensions:", error);
     // Don't fail the entire loading process for webhook extensions
-  }
-}
-
-async function loadTelemetryExtensions(registry: ExtensionRegistry): Promise<void> {
-  try {
-    // Load OTel extension (will be implemented next)
-    const { otelExtension } = await import("../telemetry/providers/otel.js");
-    await registry.register(otelExtension);
-  } catch (error) {
-    console.warn("Failed to load telemetry extensions:", error);
-    // Don't fail the entire loading process for optional telemetry
   }
 }
 

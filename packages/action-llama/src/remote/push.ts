@@ -457,10 +457,6 @@ async function writeEnvAndSymlink(
   const remoteEnv: Record<string, unknown> = {
     gateway: { ...globalConfig.gateway, port: gatewayPort },
   };
-  if (globalConfig.telemetry) {
-    remoteEnv.telemetry = globalConfig.telemetry;
-  }
-
   // Merge [agents] overrides: read existing remote .env.toml, overlay local values
   let remoteAgents: Record<string, unknown> = {};
   try {

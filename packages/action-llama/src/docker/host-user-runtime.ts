@@ -340,7 +340,7 @@ export class HostUserRuntime implements Runtime {
       sudoArgs.push("-g", this.groups[0]);
     }
     sudoArgs.push(
-      "--preserve-env=AL_CREDENTIALS_PATH,AL_WORK_DIR,AL_INSTANCE_ID,PROMPT,GATEWAY_URL,SHUTDOWN_SECRET,OTEL_TRACE_PARENT,OTEL_EXPORTER_OTLP_ENDPOINT,PATH,HOME",
+      "--preserve-env=AL_CREDENTIALS_PATH,AL_WORK_DIR,AL_INSTANCE_ID,PROMPT,GATEWAY_URL,SHUTDOWN_SECRET,PATH,HOME",
       alBin, "_run-agent", opts.agentName,
       "--project", process.cwd(),
     );

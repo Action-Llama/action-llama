@@ -5,7 +5,6 @@ export type {
   ExtensionMetadata,
   ExtensionConfig,
   WebhookExtension,
-  TelemetryExtension,
   RuntimeExtension,
   CredentialExtension,
   CredentialRequirement,

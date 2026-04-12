@@ -1,9 +1,8 @@
 import type { WebhookProvider } from "../webhooks/types.js";
-import type { TelemetryProvider } from "../telemetry/types.js";
 import type { Runtime } from "../docker/runtime.js";
 
 // Extension types
-export type ExtensionType = "webhook" | "telemetry" | "runtime" | "credential";
+export type ExtensionType = "webhook" | "runtime" | "model" | "credential";
 
 // Credential requirement interface
 export interface CredentialRequirement {
@@ -48,11 +47,6 @@ export interface ExtensionConfig {
 export interface WebhookExtension extends Extension {
   metadata: ExtensionMetadata & { type: "webhook" };
   provider: WebhookProvider;
-}
-
-export interface TelemetryExtension extends Extension {
-  metadata: ExtensionMetadata & { type: "telemetry" };
-  provider: TelemetryProvider;
 }
 
 export interface RuntimeExtension extends Extension {

@@ -53,14 +53,6 @@ workQueueSize = 100         # Max queued work items (webhooks + calls) per agent
 scale = 10                  # Project-wide max concurrent runners across all agents (default: unlimited)
 defaultWaitTimeout = 1800   # Default timeout for wait_for_trigger in seconds (default: 1800 / 30 min)
 historyRetentionDays = 14   # Days to retain run history and webhook receipts (default: 14)
-
-# Telemetry settings
-[telemetry]
-enabled = true
-provider = "otel"
-endpoint = "https://telemetry.example.com/v1"
-serviceName = "action-llama"
-samplingRate = 0.5
 ```
 
 ## Field Reference
@@ -191,19 +183,6 @@ events = ["issues"]
 ```
 
 See [Webhooks](/reference/webhooks) for setup instructions and filter fields per provider.
-
-### `[telemetry]` — Observability
-
-Optional OpenTelemetry integration.
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `enabled` | boolean | `false` | Enable or disable telemetry collection |
-| `provider` | string | `"none"` | Telemetry provider: `"otel"` or `"none"` |
-| `endpoint` | string | — | OpenTelemetry collector endpoint URL (required when `provider = "otel"`) |
-| `serviceName` | string | — | Service name reported to the collector |
-| `headers` | table | — | Additional HTTP headers sent with telemetry requests (e.g. auth tokens) |
-| `samplingRate` | number | — | Sampling rate between `0.0` (none) and `1.0` (all traces) |
 
 ## Minimal Examples
 

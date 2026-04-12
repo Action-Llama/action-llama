@@ -38,7 +38,7 @@ const MODEL_CONFIG_SCHEMA: ConfigSchema = {
 const GLOBAL_CONFIG_SCHEMA: ConfigSchema = {
   required: new Set(),
   optional: new Set([
-    "models", "harness", "local", "gateway", "webhooks", "telemetry",
+    "models", "harness", "local", "gateway", "webhooks",
     "projectName", "maxReruns", "maxCallDepth", "maxTriggerDepth",
     "webhookQueueSize", "workQueueSize", "resourceLockTimeout", "scale",
     "defaultAgentScale", "historyRetentionDays"
@@ -57,11 +57,6 @@ const GLOBAL_CONFIG_SCHEMA: ConfigSchema = {
     gateway: {
       required: new Set(),
       optional: new Set(["port", "url"]),
-      nested: {}
-    },
-    telemetry: {
-      required: new Set(),
-      optional: new Set(["enabled", "provider", "endpoint", "serviceName", "headers", "samplingRate"]),
       nested: {}
     },
   }
