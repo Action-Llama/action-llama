@@ -36,7 +36,6 @@
     "./internals/execution": "./dist/execution/execution.js",
     "./internals/scheduler-events": "./dist/scheduler/events.js",
     "./internals/status-tracker": "./dist/tui/status-tracker.js",
-    "./internals/docker-exec-transport": "./dist/transport/docker-exec.js",
     "./internals/docker-image": "./dist/docker/image.js",
     "./internals/constants": "./dist/shared/constants.js",
     "./internals/waiting-registry": "./dist/execution/waiting-registry.js",

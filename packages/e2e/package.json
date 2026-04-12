@@ -12,6 +12,9 @@
     "test:coverage": "AL_COVERAGE=1 vitest run",
     "test:local": "docker-compose up --build --abort-on-container-exit"
   },
+  "dependencies": {
+    "@action-llama/pi-remote": "*"
+  },
   "devDependencies": {
     "@action-llama/action-llama": "*",
     "@types/node": "^22.0.0",

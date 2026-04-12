@@ -30,7 +30,7 @@ describe.skipIf(!DOCKER)("integration: transport sh shell compatibility", { time
   });
 
   it("connects and executes commands on Alpine (no bash)", async () => {
-    const { DockerExecTransport } = await import("@action-llama/action-llama/internals/docker-exec-transport");
+    const { DockerExecTransport } = await import("@action-llama/pi-remote");
 
     // Provision a bare Alpine container (no bash installed)
     containerName = `al-test-sh-${Date.now()}`;
@@ -94,7 +94,7 @@ describe.skipIf(!DOCKER)("integration: transport sh shell compatibility", { time
   });
 
   it("handles multi-line output correctly with sh", async () => {
-    const { DockerExecTransport } = await import("@action-llama/action-llama/internals/docker-exec-transport");
+    const { DockerExecTransport } = await import("@action-llama/pi-remote");
 
     containerName = `al-test-sh-multiline-${Date.now()}`;
     execFileSync("docker", [
