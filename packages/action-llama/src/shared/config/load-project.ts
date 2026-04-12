@@ -67,14 +67,6 @@ export function loadGlobalConfig(projectPath: string, envName?: string): GlobalC
     config = deepMerge(config, envConfig);
   }
 
-  // Set default telemetry config if not provided
-  if (!config.telemetry) {
-    config.telemetry = {
-      enabled: false,
-      provider: "none",
-    };
-  }
-
   // projectName is .env.toml-only — not deep-merged from config.toml or environment files
   if (projectName) {
     config.projectName = projectName;

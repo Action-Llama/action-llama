@@ -730,31 +730,5 @@ describe("setupGateway", () => {
       expect(isAgentEnabled).toHaveBeenCalled();
     });
 
-    it("calls stateStore.close and telemetry.shutdown when provided", async () => {
-      const processExitSpy = vi.spyOn(process, "exit").mockImplementation((_code?: any) => undefined as never);
-
-      try {
-        const gatewayResult = makeGatewayResult();
-        const stateStore = { close: vi.fn().mockResolvedValue(undefined) };
-        const telemetry = { shutdown: vi.fn().mockResolvedValue(undefined) };
-        const state = makeSchedulerState();
-        const opts = {
-          ...makeBaseOpts(state, gatewayResult),
-          stateStore: stateStore as any,
-          telemetry,
-        };
-
-        await setupGateway(opts);
-
-        const { controlDeps } = mockStartGateway.mock.calls[0][0];
-        await controlDeps.stopScheduler();
-
-        expect(stateStore.close).toHaveBeenCalledOnce();
-        expect(telemetry.shutdown).toHaveBeenCalledOnce();
-        expect(processExitSpy).toHaveBeenCalledWith(0);
-      } finally {
-        processExitSpy.mockRestore();
-      }
-    });
   });
 });

@@ -40,7 +40,6 @@ export async function setupGateway(opts: {
   stateStore?: StateStore;
   statsStore?: StatsStore;
   events: SchedulerEventBus;
-  telemetry?: any;
   waitingRegistry?: WaitingRegistry;
   statusTracker?: StatusTracker;
   attachManager?: SessionAttachManager;
@@ -50,7 +49,7 @@ export async function setupGateway(opts: {
 }): Promise<GatewaySetupResult> {
   const {
     projectPath, globalConfig, state, agentConfigs,
-    webhookRegistry, webhookSecrets, webhookConfigs, stateStore, statsStore, events, telemetry,
+    webhookRegistry, webhookSecrets, webhookConfigs, stateStore, statsStore, events,
     waitingRegistry, statusTracker, attachManager, webUI, expose, logger,
   } = opts;
 
@@ -199,9 +198,6 @@ export async function setupGateway(opts: {
         for (const job of state.cronJobs) job.stop();
         await gateway.close();
         if (stateStore) await stateStore.close();
-        if (telemetry) {
-          try { await telemetry.shutdown(); } catch {}
-        }
         process.exit(0);
       },
       updateProjectScale: async (scale: number) => {

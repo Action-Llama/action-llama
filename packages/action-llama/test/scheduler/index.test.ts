@@ -112,17 +112,6 @@ vi.mock("../../src/extensions/loader.js", () => ({
 }));
 
 
-// Mock telemetry
-const mockTelemetryInit = vi.fn().mockResolvedValue(undefined);
-const mockTelemetryShutdown = vi.fn().mockResolvedValue(undefined);
-const mockInitTelemetry = vi.fn().mockReturnValue({
-  init: mockTelemetryInit,
-  shutdown: mockTelemetryShutdown,
-});
-vi.mock("../../src/telemetry/index.js", () => ({
-  initTelemetry: (...args: any[]) => mockInitTelemetry(...args),
-}));
-
 // Mock image building (no Docker needed for unit tests)
 vi.mock("../../src/docker/image.js", () => ({
   ensureProjectBaseImage: vi.fn(async (_path: string, baseImage: string) => baseImage),
@@ -609,67 +598,6 @@ describe("startScheduler", () => {
       expect(fast.timeout).toBe(300);
       expect(slow.timeout).toBe(1800);
       expect(dflt.timeout).toBeUndefined();
-    });
-  });
-
-  describe("telemetry initialization", () => {
-    function setupTelemetryProject(dir: string) {
-      const globalConfig = {
-        telemetry: {
-          enabled: true,
-          provider: "otel",
-          endpoint: "http://localhost:4317",
-          serviceName: "action-llama-test",
-        },
-        models: {
-          sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium", authType: "api_key" },
-        },
-      };
-      writeFileSync(resolve(dir, "config.toml"), stringifyTOML(globalConfig as Record<string, unknown>));
-
-      const agentDir = resolve(dir, "agents", "dev");
-      mkdirSync(agentDir, { recursive: true });
-      writeAgentConfig(agentDir, {
-        name: "dev",
-        credentials: ["github_token"],
-        models: ["sonnet"],
-        schedule: "*/5 * * * *",
-      });
-      mkdirSync(resolve(dir, ".al", "state", "dev"), { recursive: true });
-    }
-
-    beforeEach(() => {
-      vi.clearAllMocks();
-      cronCallbacks.length = 0;
-      mockIsRunning = false;
-      mockRunnerSessionCounter = 0;
-      tmpDir = mkdtempSync(join(tmpdir(), "al-sched-telemetry-"));
-      setupTelemetryProject(tmpDir);
-    });
-
-    it("initializes telemetry when telemetry.enabled is true in config", async () => {
-      await startScheduler(tmpDir);
-
-      // initTelemetry should have been called with the telemetry config
-      expect(mockInitTelemetry).toHaveBeenCalledWith(
-        expect.objectContaining({ enabled: true, provider: "otel" })
-      );
-      // telemetry.init() should have been called
-      expect(mockTelemetryInit).toHaveBeenCalledTimes(1);
-      // Telemetry initialized log
-      expect(mockLoggerInfo).toHaveBeenCalledWith("Telemetry initialized successfully");
-    });
-
-    it("logs warning when telemetry init fails", async () => {
-      mockTelemetryInit.mockRejectedValueOnce(new Error("otel init failed"));
-
-      await startScheduler(tmpDir);
-
-      // Should warn about telemetry failure
-      expect(mockLoggerWarn).toHaveBeenCalledWith(
-        expect.objectContaining({ error: "otel init failed" }),
-        "Failed to initialize telemetry"
-      );
     });
   });
 

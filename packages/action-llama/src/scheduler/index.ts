@@ -31,8 +31,8 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   const globalConfig = globalConfigOverride || loadGlobalConfig(projectPath);
 
-  // === Phase 1: Load dependencies (extensions + telemetry) ===
-  const { telemetry } = await loadDependencies(globalConfig, logger);
+  // === Phase 1: Load dependencies (extensions) ===
+  await loadDependencies(globalConfig, logger);
 
   // Discover agents and validate config
   const validated = await validateAndDiscover(projectPath, globalConfig, logger);
@@ -85,7 +85,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   const { gateway, gatewayPort } = await setupGateway({
     projectPath, globalConfig, state, agentConfigs,
-    webhookRegistry, webhookSecrets, webhookConfigs: webhookSources, stateStore, statsStore, events, telemetry,
+    webhookRegistry, webhookSecrets, webhookConfigs: webhookSources, stateStore, statsStore, events,
     waitingRegistry, statusTracker, attachManager, webUI, expose, logger,
   });
 
@@ -324,7 +324,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
 
   // Graceful shutdown
   registerShutdownHandlers({
-    logger, schedulerCtx, cronJobs, gateway, stateStore, statsStore, sharedDb, telemetry, watcherHandle,
+    logger, schedulerCtx, cronJobs, gateway, stateStore, statsStore, sharedDb, watcherHandle,
   });
 
   return { cronJobs, runnerPools, gateway, webhookRegistry, webhookUrls, statusTracker, schedulerCtx, events };

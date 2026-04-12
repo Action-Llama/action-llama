@@ -8,7 +8,6 @@ export { resolveFrontendDist } from "./frontend.js";
 
 import type { GatewayOptions, GatewayServer } from "./types.js";
 import { createGatewayStores } from "./stores.js";
-import { applyTelemetryMiddleware } from "./middleware/telemetry.js";
 import { applyRequestLoggingMiddleware } from "./middleware/request-logging.js";
 import { applyAuthMiddleware } from "./middleware/auth.js";
 import { registerSystemRoutes } from "./routes/system.js";
@@ -27,8 +26,7 @@ export async function startGateway(opts: GatewayOptions): Promise<GatewayServer>
     stateStore: opts.stateStore,
   });
 
-  // 2. Apply middleware (order matters: telemetry → logging)
-  applyTelemetryMiddleware(app);
+  // 2. Apply middleware
   applyRequestLoggingMiddleware(app, opts.logger);
 
   // 3. Apply auth (if API key configured)

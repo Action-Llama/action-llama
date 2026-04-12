@@ -4,8 +4,6 @@ import { readFileSync } from "fs";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { withCommand } from "./with-command.js";
-import { initTelemetry, getTelemetry } from "../telemetry/index.js";
-import { loadGlobalConfig } from "../shared/config.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(resolve(__dirname, "../../package.json"), "utf-8"));
@@ -16,35 +14,6 @@ program
   .name("al")
   .description("Action Llama — automated development agents")
   .version(pkg.version);
-
-// Initialize telemetry based on project config if available
-function initializeTelemetryForProject(projectPath: string = ".") {
-  try {
-    const globalConfig = loadGlobalConfig(projectPath);
-    if (globalConfig.telemetry?.enabled) {
-      const telemetry = initTelemetry(globalConfig.telemetry);
-      telemetry.init().catch((error) => {
-        // Silent fail to avoid disrupting CLI operation
-        console.debug("Failed to initialize telemetry:", error);
-      });
-
-      // Ensure telemetry shutdown on process exit
-      const gracefulShutdown = async () => {
-        try {
-          await telemetry.shutdown();
-        } catch (error) {
-          console.debug("Error during telemetry shutdown:", error);
-        }
-      };
-
-      process.on("SIGINT", gracefulShutdown);
-      process.on("SIGTERM", gracefulShutdown);
-      process.on("beforeExit", gracefulShutdown);
-    }
-  } catch (error) {
-    // Ignore config loading errors - may not be in a project directory
-  }
-}
 
 // --- User-facing commands ---
 
@@ -83,7 +52,6 @@ program
   .option("-e, --expose", "bind gateway to 0.0.0.0 (public) while keeping local mode features")
   .option("--port <number>", "override gateway port", parseInt)
   .action(withCommand(async (opts) => {
-    initializeTelemetryForProject(opts.project);
     const { execute } = await import("./commands/start.js");
     await execute(opts);
   }));

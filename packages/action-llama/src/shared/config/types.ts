@@ -71,22 +71,12 @@ export interface WebhookSourceConfig {
   [credentialType: string]: string | boolean | undefined;
 }
 
-export interface TelemetryConfig {
-  enabled: boolean;
-  provider: "otel" | "none";
-  endpoint?: string;
-  serviceName?: string;
-  headers?: Record<string, string>;
-  samplingRate?: number;
-}
-
 export interface GlobalConfig {
   models?: Record<string, ModelConfig>;
   harness?: HarnessConfig;
   local?: LocalConfig;
   gateway?: GatewayConfig;
   webhooks?: Record<string, WebhookSourceConfig>;
-  telemetry?: TelemetryConfig;
   projectName?: string;
   maxReruns?: number;
   maxCallDepth?: number;

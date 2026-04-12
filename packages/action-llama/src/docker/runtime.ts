@@ -1,5 +1,3 @@
-import type { TelemetryConfig } from "../shared/config.js";
-
 export interface RuntimeLaunchOpts {
   image: string;
   agentName: string;
@@ -8,7 +6,6 @@ export interface RuntimeLaunchOpts {
   memory?: string;
   cpus?: number;
   serviceAccount?: string;
-  telemetry?: TelemetryConfig;
 }
 
 /** Opaque credential payload — each runtime produces and consumes its own variant. */

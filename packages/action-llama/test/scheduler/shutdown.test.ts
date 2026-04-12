@@ -182,48 +182,6 @@ describe("registerShutdownHandlers", () => {
     expect(statsStore.close).toHaveBeenCalledOnce();
   });
 
-  it("shuts down telemetry if provided", async () => {
-    const ctx = makeSchedulerCtx();
-    const logger = makeLogger();
-    const telemetry = { shutdown: vi.fn().mockResolvedValue(undefined) };
-
-    registerShutdownHandlers({
-      logger,
-      schedulerCtx: ctx,
-      cronJobs: [],
-      telemetry,
-      watcherHandle: { stop: vi.fn() },
-    });
-
-    await originalListeners["SIGINT"][0]();
-
-    expect(telemetry.shutdown).toHaveBeenCalledOnce();
-    expect(logger.info).toHaveBeenCalledWith("Telemetry shutdown completed");
-  });
-
-  it("logs warning when telemetry shutdown throws", async () => {
-    const ctx = makeSchedulerCtx();
-    const logger = makeLogger();
-    const telemetry = { shutdown: vi.fn().mockRejectedValue(new Error("telemetry error")) };
-
-    registerShutdownHandlers({
-      logger,
-      schedulerCtx: ctx,
-      cronJobs: [],
-      telemetry,
-      watcherHandle: { stop: vi.fn() },
-    });
-
-    await originalListeners["SIGINT"][0]();
-
-    expect(logger.warn).toHaveBeenCalledWith(
-      { error: "telemetry error" },
-      "Error during telemetry shutdown"
-    );
-    // Process should still exit even when telemetry fails
-    expect(processExitSpy).toHaveBeenCalledWith(0);
-  });
-
   it("logs completion message after stopping cron jobs", async () => {
     const ctx = makeSchedulerCtx();
     const logger = makeLogger();

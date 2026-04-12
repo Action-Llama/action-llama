@@ -19,11 +19,10 @@ export function registerShutdownHandlers(deps: {
   stateStore?: StateStore;
   statsStore?: StatsStore;
   sharedDb?: AppDb;
-  telemetry?: any;
   watcherHandle: { stop: () => void };
   runtime?: Runtime;
 }): void {
-  const { logger, schedulerCtx, cronJobs, gateway, stateStore, statsStore, sharedDb, telemetry, watcherHandle, runtime } = deps;
+  const { logger, schedulerCtx, cronJobs, gateway, stateStore, statsStore, sharedDb, watcherHandle, runtime } = deps;
 
   const shutdown = async () => {
     logger.info("Shutting down scheduler...");
@@ -48,16 +47,6 @@ export function registerShutdownHandlers(deps: {
       try {
         (sharedDb as any).$client.close();
       } catch {}
-    }
-
-    // Shutdown telemetry
-    if (telemetry) {
-      try {
-        await telemetry.shutdown();
-        logger.info("Telemetry shutdown completed");
-      } catch (error: any) {
-        logger.warn({ error: error.message }, "Error during telemetry shutdown");
-      }
     }
 
     // Terminate running agent processes (HostUserRuntime child processes)

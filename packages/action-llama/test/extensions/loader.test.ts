@@ -36,15 +36,6 @@ vi.mock("../../src/webhooks/providers/index.js", () => ({
   }
 }));
 
-vi.mock("../../src/telemetry/providers/otel.js", () => ({
-  otelExtension: {
-    metadata: { name: "otel", type: "telemetry", version: "1.0.0", description: "OTel provider" },
-    provider: {},
-    init: vi.fn().mockResolvedValue(undefined),
-    shutdown: vi.fn().mockResolvedValue(undefined)
-  }
-}));
-
 vi.mock("../../src/docker/providers/index.js", () => ({
   localDockerExtension: {
     metadata: { name: "local", type: "runtime", version: "1.0.0", description: "Local Docker" },
@@ -220,22 +211,6 @@ describe("Extension Loader", () => {
         } else {
           process.env.VAULT_ADDR = originalVaultAddr;
         }
-      }
-    });
-
-    it("catches telemetry extension load failure and warns", async () => {
-      const { otelExtension } = await import("../../src/telemetry/providers/otel.js");
-
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-      vi.mocked(otelExtension.init).mockRejectedValueOnce(new Error("otel unavailable"));
-      try {
-        await expect(loadBuiltinExtensions()).resolves.not.toThrow();
-        expect(warnSpy).toHaveBeenCalledWith(
-          expect.stringContaining("telemetry"),
-          expect.any(Error),
-        );
-      } finally {
-        warnSpy.mockRestore();
       }
     });
 

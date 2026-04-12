@@ -8,17 +8,6 @@ vi.mock("../../src/extensions/loader.js", () => ({
   getGlobalRegistry: () => ({}),
 }));
 
-// Mock telemetry
-const mockTelemetryInit = vi.fn().mockResolvedValue(undefined);
-const mockTelemetryShutdown = vi.fn().mockResolvedValue(undefined);
-const mockInitTelemetry = vi.fn().mockReturnValue({
-  init: mockTelemetryInit,
-  shutdown: mockTelemetryShutdown,
-});
-vi.mock("../../src/telemetry/index.js", () => ({
-  initTelemetry: (...args: any[]) => mockInitTelemetry(...args),
-}));
-
 import { loadDependencies } from "../../src/scheduler/dependencies.js";
 
 function makeLogger() {
@@ -85,62 +74,4 @@ describe("loadDependencies", () => {
     expect(result).toBeDefined(); // does not throw
   });
 
-  it("initializes telemetry when globalConfig.telemetry.enabled is true", async () => {
-    const globalConfig = {
-      telemetry: {
-        enabled: true,
-        provider: "otel",
-        endpoint: "http://localhost:4317",
-        serviceName: "test",
-      },
-    } as any;
-    const logger = makeLogger();
-
-    const result = await loadDependencies(globalConfig, logger);
-
-    expect(mockInitTelemetry).toHaveBeenCalledWith(
-      expect.objectContaining({ enabled: true, provider: "otel" })
-    );
-    expect(mockTelemetryInit).toHaveBeenCalledTimes(1);
-    expect(logger.info).toHaveBeenCalledWith("Telemetry initialized successfully");
-    expect(result.telemetry).toBeDefined();
-  });
-
-  it("returns undefined telemetry when globalConfig.telemetry.enabled is false", async () => {
-    const globalConfig = {
-      telemetry: { enabled: false },
-    } as any;
-    const logger = makeLogger();
-
-    const result = await loadDependencies(globalConfig, logger);
-
-    expect(mockInitTelemetry).not.toHaveBeenCalled();
-    expect(result.telemetry).toBeUndefined();
-  });
-
-  it("returns undefined telemetry when telemetry config is absent", async () => {
-    const globalConfig = {} as any;
-    const logger = makeLogger();
-
-    const result = await loadDependencies(globalConfig, logger);
-
-    expect(mockInitTelemetry).not.toHaveBeenCalled();
-    expect(result.telemetry).toBeUndefined();
-  });
-
-  it("logs warning and continues when telemetry init throws", async () => {
-    mockTelemetryInit.mockRejectedValueOnce(new Error("otel init failed"));
-    const globalConfig = {
-      telemetry: { enabled: true, provider: "otel" },
-    } as any;
-    const logger = makeLogger();
-
-    const result = await loadDependencies(globalConfig, logger);
-
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ error: "otel init failed" }),
-      "Failed to initialize telemetry"
-    );
-    expect(result).toBeDefined(); // does not throw
-  });
 });
