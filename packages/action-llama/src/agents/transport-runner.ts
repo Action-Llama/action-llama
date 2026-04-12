@@ -34,7 +34,6 @@ import { sessionStatsToUsage } from "../shared/usage.js";
 import type { RunResult, RunOutcome } from "./types.js";
 import type { PoolRunner } from "../execution/runner-pool.js";
 import { DEFAULT_AGENT_TIMEOUT } from "../shared/constants.js";
-import { ModelCircuitBreaker, selectAvailableModels, isRateLimitError } from "./model-fallback.js";
 import {
   DockerExecTransport,
   SshTransport,
@@ -53,16 +52,12 @@ import { createSchedulerTools } from "./scheduler-tools.js";
 import type { WaitFilter, WaitingRegistry, WaitingSession } from "../execution/waiting-registry.js";
 import { DEFAULT_WAIT_TIMEOUT } from "../shared/constants.js";
 
-const MAX_MODEL_PASSES = 3;
-const DEFAULT_BACKOFF_MS = 30_000;
-const MAX_BACKOFF_MS = 300_000;
 const CONTAINER_CWD = "/tmp";
 
 export interface TransportAgentRunnerOpts {
   globalConfig: GlobalConfig;
   agentConfig: AgentConfig;
   logger: Logger;
-  circuitBreaker: ModelCircuitBreaker;
   statusTracker?: StatusTracker;
   /** Base Docker image to use for provisioning containers. */
   baseImage: string;
@@ -98,7 +93,6 @@ export class TransportAgentRunner implements PoolRunner {
   private agentConfig: AgentConfig;
   private baseLogger: Logger;
   private logger: Logger;
-  private circuitBreaker: ModelCircuitBreaker;
   private statusTracker?: StatusTracker;
   private baseImage: string;
   private projectPath: string;
@@ -113,7 +107,6 @@ export class TransportAgentRunner implements PoolRunner {
     this.agentConfig = opts.agentConfig;
     this.baseLogger = opts.logger;
     this.logger = opts.logger;
-    this.circuitBreaker = opts.circuitBreaker;
     this.statusTracker = opts.statusTracker;
     this.baseImage = opts.baseImage;
     this.projectPath = opts.projectPath;
@@ -714,146 +707,112 @@ export class TransportAgentRunner implements PoolRunner {
         })
       : undefined;
 
-    let anyModelSucceeded = false;
+    for (const modelConfig of models) {
+      if (this._aborting) {
+        return { result: "error", error: "Aborted" };
+      }
 
-    for (let pass = 0; pass <= MAX_MODEL_PASSES; pass++) {
-      const availableModels = selectAvailableModels(models, this.circuitBreaker);
-      let modelSucceeded = false;
+      const authStorage = AuthStorage.create();
+      const providerKey = providerKeys.get(modelConfig.provider);
+      if (providerKey) {
+        authStorage.setRuntimeApiKey(modelConfig.provider, providerKey);
+      }
 
-      for (const modelConfig of availableModels) {
-        if (this._aborting) {
-          return { result: "error", error: "Aborted" };
-        }
-
-        const authStorage = AuthStorage.create();
-        const providerKey = providerKeys.get(modelConfig.provider);
+      // Resolve model — either from built-in registry or custom provider with baseUrl
+      let llmModel;
+      let customModelRegistry: ModelRegistry | undefined;
+      if (modelConfig.baseUrl) {
+        // Create a model registry with the custom provider registered
+        customModelRegistry = ModelRegistry.inMemory(authStorage);
+        const providerName = `custom_${modelConfig.provider}`;
+        // Register API key under custom provider name too
         if (providerKey) {
-          authStorage.setRuntimeApiKey(modelConfig.provider, providerKey);
+          authStorage.setRuntimeApiKey(providerName, providerKey);
         }
-
-        // Resolve model — either from built-in registry or custom provider with baseUrl
-        let llmModel;
-        let customModelRegistry: ModelRegistry | undefined;
-        if (modelConfig.baseUrl) {
-          // Create a model registry with the custom provider registered
-          customModelRegistry = ModelRegistry.inMemory(authStorage);
-          const providerName = `custom_${modelConfig.provider}`;
-          // Register API key under custom provider name too
-          if (providerKey) {
-            authStorage.setRuntimeApiKey(providerName, providerKey);
-          }
-          customModelRegistry.registerProvider(providerName, {
-            baseUrl: modelConfig.baseUrl,
-            apiKey: providerKey || "dummy-key",
-            models: [{
-              id: modelConfig.model,
-              name: modelConfig.model,
-              api: "openai-completions" as any,
-              reasoning: false,
-              input: ["text" as const],
-              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-              contextWindow: 128000,
-              maxTokens: 16384,
-            }],
-          });
-          llmModel = customModelRegistry.find(providerName, modelConfig.model);
-          if (!llmModel) {
-            throw new Error(`Failed to register custom model ${modelConfig.provider}/${modelConfig.model} at ${modelConfig.baseUrl}`);
-          }
-        } else {
-          llmModel = getModel(modelConfig.provider as any, modelConfig.model as any);
-        }
-
-        this.logger.debug({
-          model: modelConfig.model,
-          thinking: modelConfig.thinkingLevel,
+        customModelRegistry.registerProvider(providerName, {
           baseUrl: modelConfig.baseUrl,
-        }, "creating Pi session with transport tools");
-
-        const { session } = await createAgentSession({
-          cwd: CONTAINER_CWD,
-          model: llmModel,
-          modelRegistry: customModelRegistry,
-          thinkingLevel: modelConfig.thinkingLevel,
-          authStorage,
-          resourceLoader,
-          tools,
-          customTools,
-          sessionManager: SessionManager.inMemory(),
-          settingsManager,
+          apiKey: providerKey || "dummy-key",
+          models: [{
+            id: modelConfig.model,
+            name: modelConfig.model,
+            api: "openai-completions" as any,
+            reasoning: false,
+            input: ["text" as const],
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 128000,
+            maxTokens: 16384,
+          }],
         });
-
-        this._session = session;
-
-        // Subscribe to events for logging and status tracking
-        this.subscribeToEvents(session);
-
-        try {
-          const state = session.state;
-          this.logger.debug({
-            promptLength: prompt.length,
-            model: state?.model ? { id: state.model.id, provider: state.model.provider, api: state.model.api, baseUrl: state.model.baseUrl } : "NO MODEL",
-            toolCount: state?.tools?.length ?? 0,
-          }, "about to call session.prompt()");
-
-          await session.prompt(prompt);
-          this.flushTurnBuffers();
-
-          const allMessages = session.state?.messages ?? [];
-          const lastMsg = allMessages[allMessages.length - 1] as any;
-          const sessionErrorMessage = lastMsg?.errorMessage ?? session.state?.errorMessage;
-
-          // Get usage stats (logged later in "run outcome")
-          const sessionStats = session.getSessionStats();
-          const usage: TokenUsage = sessionStatsToUsage(sessionStats);
-
-          session.dispose();
-          this._session = null;
-
-          if (lastMsg?.stopReason === "error") {
-            const errorMsg = String(sessionErrorMessage ?? "unknown session error");
-            this.logger.error("session.prompt() completed with error: %s", errorMsg);
-            return { result: "error", error: errorMsg, usage };
-          }
-
-          this.circuitBreaker.recordSuccess(modelConfig.provider, modelConfig.model);
-          modelSucceeded = true;
-          anyModelSucceeded = true;
-
-          return { result: "completed", usage, returnValue: capturedReturnValue };
-        } catch (promptErr: any) {
-          const msg = String(promptErr?.message || promptErr || "");
-          if (isRateLimitError(msg)) {
-            this.circuitBreaker.recordFailure(modelConfig.provider, modelConfig.model);
-            this.logger.warn({
-              provider: modelConfig.provider,
-              model: modelConfig.model,
-            }, "rate limited, trying next model");
-            session.dispose();
-            this._session = null;
-            continue;
-          }
-          session.dispose();
-          this._session = null;
-          return { result: "error", error: msg };
+        llmModel = customModelRegistry.find(providerName, modelConfig.model);
+        if (!llmModel) {
+          throw new Error(`Failed to register custom model ${modelConfig.provider}/${modelConfig.model} at ${modelConfig.baseUrl}`);
         }
+      } else {
+        llmModel = getModel(modelConfig.provider as any, modelConfig.model as any);
       }
 
-      if (modelSucceeded) break;
+      this.logger.debug({
+        model: modelConfig.model,
+        thinking: modelConfig.thinkingLevel,
+        baseUrl: modelConfig.baseUrl,
+      }, "creating Pi session with transport tools");
 
-      if (pass < MAX_MODEL_PASSES) {
-        const delayMs = Math.min(DEFAULT_BACKOFF_MS * Math.pow(2, pass), MAX_BACKOFF_MS);
-        this.logger.warn({ pass: pass + 1, delayMs }, "all models exhausted, backing off");
-        await new Promise((r) => setTimeout(r, delayMs));
+      const { session } = await createAgentSession({
+        cwd: CONTAINER_CWD,
+        model: llmModel,
+        modelRegistry: customModelRegistry,
+        thinkingLevel: modelConfig.thinkingLevel,
+        authStorage,
+        resourceLoader,
+        tools,
+        customTools,
+        sessionManager: SessionManager.inMemory(),
+        settingsManager,
+      });
+
+      this._session = session;
+
+      // Subscribe to events for logging and status tracking
+      this.subscribeToEvents(session);
+
+      try {
+        const state = session.state;
+        this.logger.debug({
+          promptLength: prompt.length,
+          model: state?.model ? { id: state.model.id, provider: state.model.provider, api: state.model.api, baseUrl: state.model.baseUrl } : "NO MODEL",
+          toolCount: state?.tools?.length ?? 0,
+        }, "about to call session.prompt()");
+
+        await session.prompt(prompt);
+        this.flushTurnBuffers();
+
+        const allMessages = session.state?.messages ?? [];
+        const lastMsg = allMessages[allMessages.length - 1] as any;
+        const sessionErrorMessage = lastMsg?.errorMessage ?? session.state?.errorMessage;
+
+        // Get usage stats (logged later in "run outcome")
+        const sessionStats = session.getSessionStats();
+        const usage: TokenUsage = sessionStatsToUsage(sessionStats);
+
+        session.dispose();
+        this._session = null;
+
+        if (lastMsg?.stopReason === "error") {
+          const errorMsg = String(sessionErrorMessage ?? "unknown session error");
+          this.logger.error("session.prompt() completed with error: %s", errorMsg);
+          return { result: "error", error: errorMsg, usage };
+        }
+
+        return { result: "completed", usage, returnValue: capturedReturnValue };
+      } catch (promptErr: any) {
+        const msg = String(promptErr?.message || promptErr || "");
+        session.dispose();
+        this._session = null;
+        return { result: "error", error: msg };
       }
     }
 
-    if (!anyModelSucceeded) {
-      this.logger.error("all models exhausted across all retry passes");
-      return { result: "error", error: "All models exhausted — rate limited across all retries" };
-    }
-
-    return { result: "completed" };
+    return { result: "error", error: "No models configured" };
   }
 
   /**

@@ -9,14 +9,6 @@ vi.mock("../../src/agents/transport-runner.js", () => ({
   }),
 }));
 
-// Mock model fallback
-vi.mock("../../src/agents/model-fallback.js", () => ({
-  ModelCircuitBreaker: vi.fn().mockImplementation(function (this: any) {
-    this.recordSuccess = vi.fn();
-    this.recordFailure = vi.fn();
-  }),
-}));
-
 import { createRunnerPools } from "../../src/execution/runner-setup.js";
 import { StatusTracker } from "../../src/tui/status-tracker.js";
 import type { GlobalConfig, AgentConfig } from "../../src/shared/config.js";

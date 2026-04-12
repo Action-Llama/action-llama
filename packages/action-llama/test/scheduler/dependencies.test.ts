@@ -36,7 +36,7 @@ describe("loadDependencies", () => {
     vi.clearAllMocks();
   });
 
-  it("calls loadBuiltinExtensions with providers from globalConfig.models", async () => {
+  it("calls loadBuiltinExtensions with models in config", async () => {
     const globalConfig = {
       models: {
         sonnet: { provider: "anthropic", model: "claude-sonnet-4-20250514", authType: "api_key" },
@@ -47,19 +47,16 @@ describe("loadDependencies", () => {
 
     await loadDependencies(globalConfig, logger);
 
-    expect(mockLoadBuiltinExtensions).toHaveBeenCalledWith(
-      undefined,
-      new Set(["anthropic", "openai"])
-    );
+    expect(mockLoadBuiltinExtensions).toHaveBeenCalledWith();
   });
 
-  it("calls loadBuiltinExtensions with undefined providers when no models in config", async () => {
+  it("calls loadBuiltinExtensions with no models in config", async () => {
     const globalConfig = {} as any;
     const logger = makeLogger();
 
     await loadDependencies(globalConfig, logger);
 
-    expect(mockLoadBuiltinExtensions).toHaveBeenCalledWith(undefined, undefined);
+    expect(mockLoadBuiltinExtensions).toHaveBeenCalledWith();
   });
 
   it("logs success when loadBuiltinExtensions resolves", async () => {

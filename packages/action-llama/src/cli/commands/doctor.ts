@@ -10,6 +10,7 @@ import { resolveWebhookSource, validateTriggerFields, KNOWN_PROVIDER_TYPES, PROV
 import { collectCredentialRefs } from "../../shared/credential-refs.js";
 import { parseFrontmatter } from "../../shared/frontmatter.js";
 import { parse as parseTOML } from "smol-toml";
+import { getModel } from "@mariozechner/pi-ai";
 import {
   validateGlobalConfig,
   validateAgentConfig as validateAgentConfigEnhanced,
@@ -145,12 +146,24 @@ export async function execute(opts: { project: string; env?: string; checkOnly?:
           validationErrors.push(
             `Agent "${name}" references model "${modelRef}" which is not defined in config.toml. Available: ${available}`
           );
+          continue;
         }
-      }
 
-      // Validate pi_auth is not used (incompatible with container mode)
-      for (const modelRef of runtime.models ?? []) {
         const mc = availableModels[modelRef];
+
+        // For built-in models (no baseUrl), validate the provider/model exists in Pi
+        if (mc && !mc.baseUrl) {
+          try {
+            getModel(mc.provider as any, mc.model as any);
+          } catch {
+            validationErrors.push(
+              `Agent "${name}" model "${modelRef}" specifies unknown provider/model "${mc.provider}/${mc.model}". ` +
+              `Check available models with Pi.`
+            );
+          }
+        }
+
+        // Validate pi_auth is not used (incompatible with container mode)
         if (mc?.authType === "pi_auth") {
           validationErrors.push(
             `Agent "${name}" uses pi_auth (model "${mc.model}") which is not supported in container mode. ` +

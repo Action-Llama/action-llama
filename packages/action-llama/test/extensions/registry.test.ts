@@ -5,7 +5,6 @@ import type {
   TelemetryExtension,
   WebhookExtension,
   RuntimeExtension,
-  ModelExtension,
   CredentialExtension,
 } from "../../src/extensions/types.js";
 
@@ -288,7 +287,7 @@ describe("ExtensionRegistry", () => {
   });
 
   describe("type-specific getters", () => {
-    function makeExtension(type: "webhook" | "telemetry" | "runtime" | "model" | "credential", name: string): Extension {
+    function makeExtension(type: "webhook" | "telemetry" | "runtime" | "credential", name: string): Extension {
       return {
         metadata: { name, type, version: "1.0.0", description: `${type}/${name}` },
         init: vi.fn().mockResolvedValue(undefined),
@@ -320,14 +319,6 @@ describe("ExtensionRegistry", () => {
       expect(registry.getRuntimeExtension("nonexistent")).toBeUndefined();
     });
 
-    it("getModelExtension returns registered model extension", async () => {
-      const ext = makeExtension("model", "openai");
-      await registry.register(ext);
-      const found = registry.getModelExtension("openai");
-      expect(found).toBe(ext);
-      expect(registry.getModelExtension("nonexistent")).toBeUndefined();
-    });
-
     it("getCredentialExtension returns registered credential extension", async () => {
       const ext = makeExtension("credential", "file");
       await registry.register(ext);
@@ -350,13 +341,6 @@ describe("ExtensionRegistry", () => {
       expect(all).toHaveLength(2);
       expect(all.map(e => e.metadata.name)).toContain("local");
       expect(all.map(e => e.metadata.name)).toContain("ssh");
-    });
-
-    it("getAllModelExtensions returns all model extensions", async () => {
-      await registry.register(makeExtension("model", "anthropic"));
-      const all = registry.getAllModelExtensions();
-      expect(all).toHaveLength(1);
-      expect(all[0].metadata.name).toBe("anthropic");
     });
 
     it("getAllCredentialExtensions returns all credential extensions", async () => {

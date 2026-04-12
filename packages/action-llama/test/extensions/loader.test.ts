@@ -60,27 +60,6 @@ vi.mock("../../src/docker/providers/index.js", () => ({
   }
 }));
 
-vi.mock("../../src/models/providers/index.js", () => ({
-  openAIModelExtension: {
-    metadata: { name: "openai", type: "model", version: "1.0.0", description: "OpenAI provider" },
-    provider: {},
-    init: vi.fn().mockResolvedValue(undefined),
-    shutdown: vi.fn().mockResolvedValue(undefined)
-  },
-  anthropicModelExtension: {
-    metadata: { name: "anthropic", type: "model", version: "1.0.0", description: "Anthropic provider" },
-    provider: {},
-    init: vi.fn().mockResolvedValue(undefined),
-    shutdown: vi.fn().mockResolvedValue(undefined)
-  },
-  customModelExtension: {
-    metadata: { name: "custom", type: "model", version: "1.0.0", description: "Custom provider" },
-    provider: {},
-    init: vi.fn().mockResolvedValue(undefined),
-    shutdown: vi.fn().mockResolvedValue(undefined)
-  }
-}));
-
 vi.mock("../../src/credentials/providers/index.js", () => ({
   fileCredentialExtension: {
     metadata: { name: "file", type: "credential", version: "1.0.0", description: "File provider" },
@@ -159,29 +138,6 @@ describe("Extension Loader", () => {
       }
     });
 
-    it("should only load model extensions for specified providers", async () => {
-      const { openAIModelExtension, anthropicModelExtension, customModelExtension } =
-        await import("../../src/models/providers/index.js");
-
-      // Only request "anthropic" provider
-      await loadBuiltinExtensions(undefined, new Set(["anthropic"]));
-
-      expect(anthropicModelExtension.init).toHaveBeenCalled();
-      expect(openAIModelExtension.init).not.toHaveBeenCalled();
-      expect(customModelExtension.init).not.toHaveBeenCalled();
-    });
-
-    it("should load all model extensions when no providers specified", async () => {
-      const { openAIModelExtension, anthropicModelExtension, customModelExtension } =
-        await import("../../src/models/providers/index.js");
-
-      await loadBuiltinExtensions();
-
-      expect(openAIModelExtension.init).toHaveBeenCalled();
-      expect(anthropicModelExtension.init).toHaveBeenCalled();
-      expect(customModelExtension.init).toHaveBeenCalled();
-    });
-
     it("should register vault extension when VAULT_ADDR is set", async () => {
       const { vaultCredentialExtension } = await import("../../src/credentials/providers/index.js");
 
@@ -248,22 +204,6 @@ describe("Extension Loader", () => {
         await expect(loadBuiltinExtensions()).resolves.not.toThrow();
         expect(warnSpy).toHaveBeenCalledWith(
           expect.stringContaining("runtime"),
-          expect.any(Error),
-        );
-      } finally {
-        warnSpy.mockRestore();
-      }
-    });
-
-    it("catches model extension load failure and warns", async () => {
-      const { openAIModelExtension } = await import("../../src/models/providers/index.js");
-
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-      vi.mocked(openAIModelExtension.init).mockRejectedValueOnce(new Error("openai unavailable"));
-      try {
-        await expect(loadBuiltinExtensions()).resolves.not.toThrow();
-        expect(warnSpy).toHaveBeenCalledWith(
-          expect.stringContaining("model"),
           expect.any(Error),
         );
       } finally {

@@ -7,11 +7,9 @@ export type {
   WebhookExtension,
   TelemetryExtension,
   RuntimeExtension,
-  ModelExtension,
   CredentialExtension,
   CredentialRequirement,
   CredentialTypeDefinition,
-  ModelProvider,
   CredentialProvider
 } from "./types.js";
 

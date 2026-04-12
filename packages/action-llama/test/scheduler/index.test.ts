@@ -22,17 +22,6 @@ vi.mock("../../src/agents/transport-runner.js", () => ({
   }),
 }));
 
-// Mock ModelCircuitBreaker (imported by runner-setup.ts)
-vi.mock("../../src/agents/model-fallback.js", () => ({
-  ModelCircuitBreaker: vi.fn().mockImplementation(function (this: any) {
-    this.recordSuccess = vi.fn();
-    this.recordFailure = vi.fn();
-    this.isOpen = vi.fn().mockReturnValue(false);
-  }),
-  selectAvailableModels: vi.fn().mockImplementation((models: any[]) => models),
-  isRateLimitError: vi.fn().mockReturnValue(false),
-}));
-
 // Mock credentials
 vi.mock("../../src/shared/credentials.js", () => ({
   loadCredentialField: () => "fake-token",
