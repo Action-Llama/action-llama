@@ -3,9 +3,7 @@ import { resolve, basename } from "path";
 import { parse as parseTOML, stringify as stringifyTOML } from "smol-toml";
 import { ENVIRONMENTS_DIR } from "./paths.js";
 import { ConfigError } from "./errors.js";
-import type { ServerConfig } from "./server.js";
 export interface EnvironmentConfig {
-  server?: ServerConfig;
   gateway?: { url?: string; port?: number };
 }
 

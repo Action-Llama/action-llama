@@ -198,20 +198,6 @@ authType = "api_key"
 
 Everything else uses defaults: Docker enabled, 4GB memory, 2 CPUs, 15min timeout, gateway on port 8080.
 
-### VPS production (environment file)
-
-Server configuration lives in an environment file (`~/.action-llama/environments/<name>.toml`), not in `config.toml`. See [VPS Deployment](/concepts/vps-deployment) for full setup.
-
-```toml
-# ~/.action-llama/environments/production.toml
-[server]
-host = "5.6.7.8"
-user = "root"
-keyPath = "~/.ssh/id_rsa"
-basePath = "/opt/action-llama"
-expose = true
-```
-
 ### Cloud Run Jobs runtime (environment file)
 
 To run agents as Cloud Run Jobs instead of local Docker containers, add a `[cloud]` section to your environment file. The scheduler still runs wherever you host it; only agent execution is offloaded to GCP.

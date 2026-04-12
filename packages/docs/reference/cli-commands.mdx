@@ -33,7 +33,7 @@ al doctor -E production
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
-| `-E, --env <name>` | Environment name — pushes credentials to server and reconciles IAM |
+| `-E, --env <name>` | Environment name — validate configuration |
 | `--strict` | Treat unknown config fields as errors instead of warnings |
 
 ## `al run <agent>`
@@ -60,7 +60,7 @@ Starts the scheduler. Runs all agents on their configured schedules and listens 
 ```bash
 al start
 al start -w                   # Enable web dashboard
-al start -e                   # VPS deployment: expose gateway publicly
+al start -e                   # Expose gateway publicly
 al start --port 3000          # Custom gateway port
 al start -H                   # Headless (no TUI)
 ```
@@ -134,7 +134,6 @@ al logs                       # Scheduler logs
 al logs <agent>               # Agent logs
 al logs <agent> -f            # Follow mode
 al logs <agent> -d 2025-01-15 # Specific date
-al env logs production -f     # Server system logs via SSH
 ```
 
 ## `al stats [agent]`
@@ -226,44 +225,7 @@ Start the scheduler with `al start` to enable these features.
 
 The agent's SKILL.md is loaded as reference context but is **not** auto-executed — you drive the session interactively.
 
-## `al push [agent]`
-
-Deploy your project to a server over SSH. Requires a `[server]` section in your environment file. See [VPS Deployment](/concepts/vps-deployment) for how it works under the hood.
-
-```bash
-al push -E production                    # Full project push
-al push dev -E production                # Push only the dev agent (hot-reloaded)
-al push --dry-run -E production          # Preview what would be synced
-al push --creds-only -E production       # Sync only credentials
-```
-
-Without an agent name, pushes the entire project and can restart the remote service. With an agent name, pushes only that agent's files and credentials — the running scheduler detects the change and hot-reloads the agent without a full restart.
-
-| Option | Description |
-|--------|-------------|
-| `[agent]` | Agent name — push only this agent (hot-reloaded, no restart) |
-| `-p, --project <dir>` | Project directory (default: `.`) |
-| `-E, --env <name>` | Environment with `[server]` config |
-| `--dry-run` | Show what would be synced without making changes |
-| `--no-creds` | Skip credential sync |
-| `--creds-only` | Sync only credentials (skip project files) |
-| `--files-only` | Sync only project files (skip credentials) |
-| `-a, --all` | Sync project files, credentials, and restart service |
-| `--force-install` | Force `npm install` even if dependencies appear unchanged |
-
 ## Environment Commands
-
-### `al env init <name>`
-
-Create a new environment configuration file at `~/.action-llama/environments/<name>.toml`.
-
-```bash
-al env init production --type server
-```
-
-| Option | Description |
-|--------|-------------|
-| `--type <type>` | Environment type: `server` |
 
 ### `al env list`
 
@@ -293,50 +255,6 @@ al env set                   # Unbind project from any environment
 | Option | Description |
 |--------|-------------|
 | `-p, --project <dir>` | Project directory (default: `.`) |
-
-### `al env check <name>`
-
-Verify that an environment is provisioned and configured correctly. Checks SSH connectivity, Docker availability, and server readiness.
-
-```bash
-al env check production
-```
-
-### `al env prov [name]`
-
-Provision a new VPS and save it as an environment. Supports Vultr and Hetzner. If the name is omitted, you'll be prompted for one. See [Deploying to a VPS](/guides/deploying-to-vps) for a walkthrough.
-
-```bash
-al env prov production
-```
-
-### `al env deprov <name>`
-
-Tear down a provisioned environment. Stops containers, cleans up remote credentials, optionally deletes DNS records, and optionally deletes the VPS instance if it was provisioned via `al env prov`.
-
-```bash
-al env deprov staging
-```
-
-| Option | Description |
-|--------|-------------|
-| `-p, --project <dir>` | Project directory (default: `.`) |
-
-### `al env logs [name]`
-
-View server system logs (systemd journal) via SSH. If the name is omitted, uses the project's bound environment.
-
-```bash
-al env logs production
-al env logs production -n 200     # Last 200 lines
-al env logs production -f          # Follow mode
-```
-
-| Option | Description |
-|--------|-------------|
-| `-p, --project <dir>` | Project directory (default: `.`) |
-| `-n, --lines <N>` | Number of log lines (default: 50) |
-| `-f, --follow` | Tail mode — watch for new entries |
 
 ## Credential Commands
 

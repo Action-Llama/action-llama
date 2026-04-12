@@ -154,36 +154,11 @@ program
     await execute(name, opts);
   }));
 
-program
-  .command("push")
-  .description("Deploy project to a self-hosted server via SSH")
-  .argument("[agent]", "agent name — push only this agent (hot-reloaded, no restart)")
-  .option("-p, --project <dir>", "project directory", ".")
-  .option("-E, --env <name>", "use named environment with [server] config")
-  .option("-H, --headless", "non-interactive mode (no credential prompts, for CI/deploy environments)")
-  .option("--dry-run", "show what would be synced without making changes")
-  .option("--skip-creds", "skip credential sync")
-  .option("--force-install", "force npm install even if dependencies appear unchanged")
-  .action(withCommand(async (agent: string | undefined, opts) => {
-    const { execute } = await import("./commands/push.js");
-    await execute({ ...opts, agent, skipCreds: opts.skipCreds ?? false });
-  }));
-
 // --- Environment management ---
 
 const envCmd = program
   .command("env")
   .description("Manage deployment environments");
-
-envCmd
-  .command("init")
-  .description("Create a new environment configuration file")
-  .argument("<name>", "environment name (e.g. prod, staging)")
-  .requiredOption("-t, --type <type>", "environment type: server")
-  .action(withCommand(async (name: string, opts: { type: string }) => {
-    const { init } = await import("./commands/env.js");
-    await init(name, opts.type);
-  }));
 
 envCmd
   .command("list")
@@ -210,46 +185,6 @@ envCmd
   .action(withCommand(async (name: string | undefined, opts: { project: string }) => {
     const { set } = await import("./commands/env.js");
     await set(name, opts);
-  }));
-
-envCmd
-  .command("check")
-  .description("Verify environment is provisioned correctly")
-  .argument("<name>", "environment name")
-  .action(withCommand(async (name: string) => {
-    const { check } = await import("./commands/env.js");
-    await check(name);
-  }));
-
-envCmd
-  .command("prov")
-  .description("Provision a new VPS and save as an environment")
-  .argument("[name]", "environment name (prompted if omitted)")
-  .action(withCommand(async (name: string | undefined) => {
-    const { prov } = await import("./commands/env.js");
-    await prov(name);
-  }));
-
-envCmd
-  .command("deprov")
-  .description("Tear down a provisioned environment and delete its config")
-  .argument("<name>", "environment name")
-  .option("-p, --project <dir>", "project directory", ".")
-  .action(withCommand(async (name: string, opts: { project: string }) => {
-    const { deprov } = await import("./commands/env.js");
-    await deprov(name, opts);
-  }));
-
-envCmd
-  .command("logs")
-  .description("View server system logs for an environment")
-  .argument("[name]", "environment name (defaults to configured environment)")
-  .option("-p, --project <dir>", "project directory", ".")
-  .option("-n, --lines <N>", "number of recent log lines to show", "50")
-  .option("-f, --follow", "follow log output in real-time")
-  .action(withCommand(async (name: string | undefined, opts: { project: string; lines: string; follow?: boolean }) => {
-    const { logs } = await import("./commands/env.js");
-    await logs(name, opts);
   }));
 
 // --- Credential management ---

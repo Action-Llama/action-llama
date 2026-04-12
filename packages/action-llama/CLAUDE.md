@@ -65,11 +65,9 @@ Config uses a three-layer merge system for portable projects:
 
 Merge order: `config.toml` -> `.env.toml` -> environment file (later values win, deep merge).
 
-`[cloud]` and `[server]` must be in an environment file (Layer 3) — placing `[cloud]` in `config.toml` is an error. `[cloud]` and `[server]` are mutually exclusive within an environment.
+`[cloud]` must be in an environment file (Layer 3) — placing `[cloud]` in `config.toml` is an error.
 
-Cloud mode is auto-detected from the merged config (presence of `[cloud]` section). Server mode uses `al push` with `[server]`. The `-E`/`--env <name>` flag or `AL_ENV` env var selects an environment explicitly.
-
-Environment types (for `al env init <name> --type <type>`): `server`.
+Cloud mode is auto-detected from the merged config (presence of `[cloud]` section). The `-E`/`--env <name>` flag or `AL_ENV` env var selects an environment explicitly.
 
 ## Stats & Trigger History
 
