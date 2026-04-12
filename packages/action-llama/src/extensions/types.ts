@@ -1,8 +1,7 @@
 import type { WebhookProvider } from "../webhooks/types.js";
-import type { Runtime } from "../docker/runtime.js";
 
 // Extension types
-export type ExtensionType = "webhook" | "runtime" | "model" | "credential";
+export type ExtensionType = "webhook" | "credential";
 
 // Credential requirement interface
 export interface CredentialRequirement {
@@ -49,27 +48,22 @@ export interface WebhookExtension extends Extension {
   provider: WebhookProvider;
 }
 
-export interface RuntimeExtension extends Extension {
-  metadata: ExtensionMetadata & { type: "runtime" };
-  provider: Runtime;
-}
-
 // Credential provider interface placeholder
 export interface CredentialProvider {
   name: string;
-  
+
   // List available credentials of a given type
   list(type: string): Promise<string[]>;
-  
+
   // Retrieve credential values
   get(type: string, instance?: string): Promise<Record<string, string> | null>;
-  
+
   // Store new credentials
   store(type: string, instance: string, values: Record<string, string>): Promise<void>;
-  
+
   // Delete credentials
   remove(type: string, instance: string): Promise<void>;
-  
+
   // Health check
   isAvailable(): Promise<boolean>;
 }

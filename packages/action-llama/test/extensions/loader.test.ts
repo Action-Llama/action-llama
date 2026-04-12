@@ -36,21 +36,6 @@ vi.mock("../../src/webhooks/providers/index.js", () => ({
   }
 }));
 
-vi.mock("../../src/docker/providers/index.js", () => ({
-  localDockerExtension: {
-    metadata: { name: "local", type: "runtime", version: "1.0.0", description: "Local Docker" },
-    provider: {},
-    init: vi.fn().mockResolvedValue(undefined),
-    shutdown: vi.fn().mockResolvedValue(undefined)
-  },
-  sshDockerExtension: {
-    metadata: { name: "ssh", type: "runtime", version: "1.0.0", description: "SSH Docker" },
-    provider: {},
-    init: vi.fn().mockResolvedValue(undefined),
-    shutdown: vi.fn().mockResolvedValue(undefined)
-  }
-}));
-
 vi.mock("../../src/credentials/providers/index.js", () => ({
   fileCredentialExtension: {
     metadata: { name: "file", type: "credential", version: "1.0.0", description: "File provider" },
@@ -94,7 +79,7 @@ describe("Extension Loader", () => {
       expect(isExtension(undefined)).toBe(false);
       expect(isExtension({})).toBe(false);
       expect(isExtension({ metadata: {} })).toBe(false);
-      expect(isExtension({ 
+      expect(isExtension({
         metadata: { name: "test" },
         init: "not a function"
       })).toBe(false);
@@ -167,22 +152,6 @@ describe("Extension Loader", () => {
         } else {
           process.env.VAULT_ADDR = originalVaultAddr;
         }
-      }
-    });
-
-    it("catches runtime extension load failure and warns", async () => {
-      const { localDockerExtension } = await import("../../src/docker/providers/index.js");
-
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-      vi.mocked(localDockerExtension.init).mockRejectedValueOnce(new Error("docker unavailable"));
-      try {
-        await expect(loadBuiltinExtensions()).resolves.not.toThrow();
-        expect(warnSpy).toHaveBeenCalledWith(
-          expect.stringContaining("runtime"),
-          expect.any(Error),
-        );
-      } finally {
-        warnSpy.mockRestore();
       }
     });
 

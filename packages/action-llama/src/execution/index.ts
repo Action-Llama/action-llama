@@ -11,6 +11,5 @@ export {
 } from "./execution.js";
 export type { SchedulerContext, WorkItem, RunCompleteEvent } from "./execution.js";
 export { createRunnerPools } from "./runner-setup.js";
-export { createContainerRuntime } from "./runtime-factory.js";
 export { dispatchOrQueue } from "./dispatch-policy.js";
 export type { DispatchResult, DispatchOptions } from "./dispatch-policy.js";

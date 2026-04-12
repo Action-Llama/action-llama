@@ -14,17 +14,13 @@ export async function loadBuiltinExtensions(
     // Load webhook provider extensions
     await loadWebhookExtensions(registry);
 
-
-    // Load runtime provider extensions
-    await loadRuntimeExtensions(registry);
-
     // Load credential provider extensions
     await loadCredentialExtensions(registry);
 
     // Replace the global registry's internals with the new one
     // This is a temporary approach until we refactor the singleton pattern
     Object.assign(globalRegistry, registry);
-    
+
   } catch (error) {
     console.error("Failed to load built-in extensions:", error);
     throw error;
@@ -41,7 +37,7 @@ async function loadWebhookExtensions(registry: ExtensionRegistry): Promise<void>
       slackWebhookExtension,
       testWebhookExtension
     } = await import("../webhooks/providers/index.js");
-    
+
     await registry.register(githubWebhookExtension);
     await registry.register(linearWebhookExtension);
     await registry.register(mintlifyWebhookExtension);
@@ -54,25 +50,13 @@ async function loadWebhookExtensions(registry: ExtensionRegistry): Promise<void>
   }
 }
 
-async function loadRuntimeExtensions(registry: ExtensionRegistry): Promise<void> {
-  try {
-    const { localDockerExtension, sshDockerExtension } = await import("../docker/providers/index.js");
-    
-    await registry.register(localDockerExtension);
-    await registry.register(sshDockerExtension);
-  } catch (error) {
-    console.warn("Failed to load runtime extensions:", error);
-    // Don't fail for runtime extensions since local docker is the default
-  }
-}
-
 async function loadCredentialExtensions(registry: ExtensionRegistry): Promise<void> {
   try {
     const {
       fileCredentialExtension,
       vaultCredentialExtension
     } = await import("../credentials/providers/index.js");
-    
+
     await registry.register(fileCredentialExtension);
 
     // Only register Vault extension if Vault is configured

@@ -20,17 +20,12 @@ import xTwitterApi from "./x-twitter-api.js";
 import xTwitterUserOauth1 from "./x-twitter-user-oauth1.js";
 import xTwitterUserOauth2 from "./x-twitter-user-oauth2.js";
 import bugsnagToken from "./bugsnag-token.js";
-import vultrApiKey from "./vultr-api-key.js";
-import hetznerApiKey from "./hetzner-api-key.js";
-import vpsSsh from "./vps-ssh.js";
-import cloudflareApiToken from "./cloudflare-api-token.js";
 import redditOAuth from "./reddit-oauth.js";
 import mintlifyToken from "./mintlify-token.js";
 import mintlifyWebhookSecret from "./mintlify-webhook-secret.js";
 import discordBot from "./discord-bot.js";
 import slackBotToken from "./slack-bot-token.js";
 import slackSigningSecret from "./slack-signing-secret.js";
-import gcpServiceAccount from "./gcp-service-account.js";
 export const builtinCredentials: Record<string, CredentialDefinition> = {
   "github_token": githubToken,
   "anthropic_key": anthropicKey,
@@ -53,15 +48,10 @@ export const builtinCredentials: Record<string, CredentialDefinition> = {
   "x_twitter_user_oauth1": xTwitterUserOauth1,
   "x_twitter_user_oauth2": xTwitterUserOauth2,
   "bugsnag_token": bugsnagToken,
-  "vultr_api_key": vultrApiKey,
-  "hetzner_api_key": hetznerApiKey,
-  "vps_ssh": vpsSsh,
-  "cloudflare_api_token": cloudflareApiToken,
   "reddit_oauth": redditOAuth,
   "mintlify_token": mintlifyToken,
   "mintlify_webhook_secret": mintlifyWebhookSecret,
   "discord_bot": discordBot,
   "slack_bot_token": slackBotToken,
   "slack_signing_secret": slackSigningSecret,
-  "gcp_service_account": gcpServiceAccount,
 };

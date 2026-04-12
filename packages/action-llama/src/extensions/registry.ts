@@ -3,7 +3,6 @@ import type {
   ExtensionType,
   CredentialTypeDefinition,
   WebhookExtension,
-  RuntimeExtension,
   CredentialExtension
 } from "./types.js";
 
@@ -15,7 +14,7 @@ export class ExtensionRegistry {
   constructor(credentialChecker?: (type: string, instance?: string) => Promise<boolean>) {
     this.credentialChecker = credentialChecker;
     // Initialize maps for each extension type
-    for (const type of ["webhook", "runtime", "model", "credential"] as ExtensionType[]) {
+    for (const type of ["webhook", "credential"] as ExtensionType[]) {
       this.extensions.set(type, new Map());
     }
   }
@@ -46,7 +45,7 @@ export class ExtensionRegistry {
     if (!typeMap) {
       throw new Error(`Invalid extension type: ${type}`);
     }
-    
+
     if (typeMap.has(name)) {
       throw new Error(`Extension ${type}/${name} already registered`);
     }
@@ -70,20 +69,12 @@ export class ExtensionRegistry {
     return this.get<WebhookExtension>("webhook", name);
   }
 
-  getRuntimeExtension(name: string): RuntimeExtension | undefined {
-    return this.get<RuntimeExtension>("runtime", name);
-  }
-
   getCredentialExtension(name: string): CredentialExtension | undefined {
     return this.get<CredentialExtension>("credential", name);
   }
 
   getAllWebhookExtensions(): WebhookExtension[] {
     return this.getAll<WebhookExtension>("webhook");
-  }
-
-  getAllRuntimeExtensions(): RuntimeExtension[] {
-    return this.getAll<RuntimeExtension>("runtime");
   }
 
   getAllCredentialExtensions(): CredentialExtension[] {
@@ -128,7 +119,7 @@ export class ExtensionRegistry {
   // List all registered extensions
   list(): Array<{ type: ExtensionType; name: string; version: string; description: string }> {
     const result: Array<{ type: ExtensionType; name: string; version: string; description: string }> = [];
-    
+
     for (const [type, typeMap] of this.extensions.entries()) {
       for (const extension of typeMap.values()) {
         result.push({

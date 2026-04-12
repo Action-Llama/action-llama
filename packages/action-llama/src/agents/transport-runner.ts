@@ -488,20 +488,9 @@ export class TransportAgentRunner implements PoolRunner {
     const containerName = `al-${this.agentConfig.name}-${runId}`;
     const memory = this.globalConfig.local?.memory || "4g";
 
-    // Build agent-specific image if a Dockerfile exists, otherwise use base
-    const { ensureAgentImage } = await import("../docker/image.js");
-    const image = await ensureAgentImage(
-      this.agentConfig.name,
-      this.projectPath,
-      this.baseImage,
-      (msg) => {
-        this.logger.debug(msg);
-        this.statusTracker?.addLogLine(this.agentConfig.name, msg);
-      },
-    );
-
-    // Ensure the image is available locally
-    this.ensureImageAvailable(image);
+    // Ensure the image is available locally (pull if not present)
+    this.ensureImageAvailable(this.baseImage);
+    const image = this.baseImage;
 
     const args = [
       "run", "-d",

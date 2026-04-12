@@ -3,7 +3,6 @@ import { ExtensionRegistry } from "../../src/extensions/registry.js";
 import type {
   Extension,
   WebhookExtension,
-  RuntimeExtension,
   CredentialExtension,
 } from "../../src/extensions/types.js";
 
@@ -59,7 +58,7 @@ describe("ExtensionRegistry", () => {
       };
 
       await registry.register(extension1);
-      
+
       await expect(registry.register(extension2)).rejects.toThrow(
         "Extension webhook/test already registered"
       );
@@ -223,9 +222,9 @@ describe("ExtensionRegistry", () => {
       const extension2: Extension = {
         metadata: {
           name: "test2",
-          version: "1.0.0",
+          version: "2.0.0",
           description: "Test extension 2",
-          type: "runtime"
+          type: "credential"
         },
         init: vi.fn().mockResolvedValue(undefined),
         shutdown: vi.fn().mockResolvedValue(undefined)
@@ -259,7 +258,7 @@ describe("ExtensionRegistry", () => {
           name: "test2",
           version: "2.0.0",
           description: "Test extension 2",
-          type: "runtime"
+          type: "credential"
         },
         init: vi.fn().mockResolvedValue(undefined),
         shutdown: vi.fn().mockResolvedValue(undefined)
@@ -277,7 +276,7 @@ describe("ExtensionRegistry", () => {
         description: "Test extension 1"
       });
       expect(list).toContainEqual({
-        type: "runtime",
+        type: "credential",
         name: "test2",
         version: "2.0.0",
         description: "Test extension 2"
@@ -286,7 +285,7 @@ describe("ExtensionRegistry", () => {
   });
 
   describe("type-specific getters", () => {
-    function makeExtension(type: "webhook" | "runtime" | "model" | "credential", name: string): Extension {
+    function makeExtension(type: "webhook" | "credential", name: string): Extension {
       return {
         metadata: { name, type, version: "1.0.0", description: `${type}/${name}` },
         init: vi.fn().mockResolvedValue(undefined),
@@ -302,29 +301,12 @@ describe("ExtensionRegistry", () => {
       expect(registry.getWebhookExtension("nonexistent")).toBeUndefined();
     });
 
-    it("getRuntimeExtension returns registered runtime extension", async () => {
-      const ext = makeExtension("runtime", "local");
-      await registry.register(ext);
-      const found = registry.getRuntimeExtension("local");
-      expect(found).toBe(ext);
-      expect(registry.getRuntimeExtension("nonexistent")).toBeUndefined();
-    });
-
     it("getCredentialExtension returns registered credential extension", async () => {
       const ext = makeExtension("credential", "file");
       await registry.register(ext);
       const found = registry.getCredentialExtension("file");
       expect(found).toBe(ext);
       expect(registry.getCredentialExtension("nonexistent")).toBeUndefined();
-    });
-
-    it("getAllRuntimeExtensions returns all runtime extensions", async () => {
-      await registry.register(makeExtension("runtime", "local"));
-      await registry.register(makeExtension("runtime", "ssh"));
-      const all = registry.getAllRuntimeExtensions();
-      expect(all).toHaveLength(2);
-      expect(all.map(e => e.metadata.name)).toContain("local");
-      expect(all.map(e => e.metadata.name)).toContain("ssh");
     });
 
     it("getAllCredentialExtensions returns all credential extensions", async () => {
@@ -382,8 +364,6 @@ describe("ExtensionRegistry", () => {
         registry.unregister("unknown-type" as any, "nonexistent")
       ).resolves.not.toThrow();
     });
-
-
 
     it("required credential with instance name includes instance in error message", async () => {
       mockCredentialChecker.mockResolvedValue(false);

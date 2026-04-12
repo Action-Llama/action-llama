@@ -5,7 +5,6 @@ import { createLogger, createFileOnlyLogger } from "../shared/logger.js";
 import type { StatusTracker } from "../tui/status-tracker.js";
 import { buildTriggerLabels } from "../tui/status-tracker.js";
 import { CONSTANTS } from "../shared/constants.js";
-import { createContainerRuntime } from "../execution/runtime-factory.js";
 import { setupWebhookRegistry, registerWebhookBindings } from "../events/webhook-setup.js";
 import type { WorkItem, SchedulerContext } from "../execution/execution.js";
 import { drainQueues, makeWebhookPrompt, executeRun, runWithReruns } from "../execution/execution.js";
@@ -154,18 +153,6 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     process.exit(1);
   }
 
-  // Build project base image if a customized Dockerfile exists
-  const { ensureProjectBaseImage } = await import("../docker/image.js");
-  const effectiveBaseImage = await ensureProjectBaseImage(
-    projectPath,
-    baseImage,
-    (msg) => {
-      statusTracker?.setBaseImageStatus(msg);
-      logger.info(msg);
-    },
-  );
-  statusTracker?.setBaseImageStatus(null);
-
   // Create scheduler tools dependencies (lock/call stores from the gateway)
   const lockStore = gateway.lockStore;
   const callStore = gateway.callStore;
@@ -238,7 +225,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
   // Create runner pools with transport-backed runners
   const { runnerPools, createRunner, actualScales } = await createRunnerPools({
     globalConfig, agentConfigs,
-    baseImage: effectiveBaseImage, statusTracker, mkLogger, projectPath, logger,
+    baseImage: baseImage, statusTracker, mkLogger, projectPath, logger,
     schedulerToolsDeps, waitingRegistry,
     skills: { locking: true },
   });
@@ -318,7 +305,7 @@ export async function startScheduler(projectPath: string, globalConfigOverride?:
     runnerPools, agentConfigs,
     cronJobs, schedulerCtx,
     webhookRegistry, webhookSources, statusTracker,
-    logger, timezone, baseImage: effectiveBaseImage, createRunner,
+    logger, timezone, baseImage: baseImage, createRunner,
   });
   logger.info("Watching agents/ for changes (hot reload enabled)");
 

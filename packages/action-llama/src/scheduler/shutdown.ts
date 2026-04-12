@@ -9,7 +9,6 @@ import type { Logger } from "../shared/logger.js";
 import type { SchedulerContext } from "../execution/execution.js";
 import type { StatsStore } from "../stats/index.js";
 import type { AppDb } from "../db/connection.js";
-import type { Runtime } from "../docker/runtime.js";
 
 export function registerShutdownHandlers(deps: {
   logger: Logger;
@@ -20,9 +19,8 @@ export function registerShutdownHandlers(deps: {
   statsStore?: StatsStore;
   sharedDb?: AppDb;
   watcherHandle: { stop: () => void };
-  runtime?: Runtime;
 }): void {
-  const { logger, schedulerCtx, cronJobs, gateway, stateStore, statsStore, sharedDb, watcherHandle, runtime } = deps;
+  const { logger, schedulerCtx, cronJobs, gateway, stateStore, statsStore, sharedDb, watcherHandle } = deps;
 
   const shutdown = async () => {
     logger.info("Shutting down scheduler...");
@@ -47,13 +45,6 @@ export function registerShutdownHandlers(deps: {
       try {
         (sharedDb as any).$client.close();
       } catch {}
-    }
-
-    // Terminate running agent processes (HostUserRuntime child processes)
-    if (runtime && typeof (runtime as any).shutdown === "function") {
-      try {
-        await (runtime as any).shutdown();
-      } catch { /* best effort */ }
     }
 
     logger.info("All cron jobs stopped");
