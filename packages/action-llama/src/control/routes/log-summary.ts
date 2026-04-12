@@ -2,11 +2,9 @@ import type { Hono } from "hono";
 import { loadGlobalConfig } from "../../shared/config.js";
 import { loadCredentialField } from "../../shared/credentials.js";
 import type { ModelConfig } from "../../shared/config/types.js";
-import type { ModelProvider, ChatMessage } from "../../models/types.js";
-import { OpenAIProvider } from "../../models/providers/openai.js";
-import { AnthropicProvider } from "../../models/providers/anthropic.js";
-import { CustomProvider } from "../../models/providers/custom.js";
 import { AuthStorage } from "@mariozechner/pi-coding-agent";
+
+type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
 import type { StatsStore } from "../../stats/store.js";
 import type { Logger } from "../../shared/logger.js";
 import {
@@ -21,15 +19,52 @@ const summaryCache = new Map<string, string>();
 
 const DEFAULT_SUMMARY_LINES = 500;
 
-function createProvider(model: ModelConfig, apiKey: string): ModelProvider {
-  switch (model.provider) {
-    case "anthropic":
-      return new AnthropicProvider({ ...model, apiKey });
-    case "openai":
-      return new OpenAIProvider({ ...model, apiKey });
-    default:
-      // custom/openrouter/groq/etc. all use OpenAI-compatible API
-      return new CustomProvider({ ...model, apiKey });
+async function callChatApi(
+  provider: string,
+  baseUrl: string | undefined,
+  model: string,
+  apiKey: string,
+  messages: ChatMessage[],
+  maxTokens: number,
+): Promise<string> {
+  if (provider === "anthropic") {
+    const url = (baseUrl ?? "https://api.anthropic.com") + "/v1/messages";
+    const systemMessages = messages.filter(m => m.role === "system");
+    const chatMessages = messages.filter(m => m.role !== "system");
+    const body: Record<string, unknown> = {
+      model,
+      messages: chatMessages,
+      max_tokens: maxTokens,
+    };
+    if (systemMessages.length > 0) {
+      body.system = systemMessages.map(m => m.content).join("\n\n");
+    }
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error(`Anthropic API error: ${response.status}`);
+    const data = await response.json() as any;
+    return data.content?.[0]?.text ?? "";
+  } else {
+    // OpenAI-compatible (openai, groq, openrouter, custom, etc.)
+    const url = (baseUrl ?? "https://api.openai.com") + "/v1/chat/completions";
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ model, messages, max_tokens: maxTokens }),
+    });
+    if (!response.ok) throw new Error(`${provider} API error: ${response.status}`);
+    const data = await response.json() as any;
+    return data.choices?.[0]?.message?.content ?? "";
   }
 }
 
@@ -226,9 +261,7 @@ export function registerLogSummaryRoutes(
     // Call model
     let summary: string;
     try {
-      const provider = createProvider(model, apiKey);
-      const response = await provider.chat(messages, { max_tokens: 300 });
-      summary = response.content;
+      summary = await callChatApi(model.provider, model.baseUrl, model.model, apiKey, messages, 300);
     } catch (err) {
       const msg = `Failed to generate summary: ${err instanceof Error ? err.message : String(err)}`;
       logger?.error({ agent: name, sessionId, err }, msg);

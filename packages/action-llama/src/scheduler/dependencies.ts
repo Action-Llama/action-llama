@@ -17,13 +17,8 @@ export async function loadDependencies(
   globalConfig: GlobalConfig,
   logger: Logger,
 ): Promise<DependencyResult> {
-  // Only load model extensions for providers actually referenced in config
-  const usedProviders = globalConfig.models
-    ? new Set(Object.values(globalConfig.models).map(m => m.provider))
-    : undefined;
-
   try {
-    await loadBuiltinExtensions(undefined, usedProviders);
+    await loadBuiltinExtensions();
     logger.info("Extensions loaded successfully");
   } catch (error: any) {
     logger.warn({ error: error.message }, "Failed to load extensions");

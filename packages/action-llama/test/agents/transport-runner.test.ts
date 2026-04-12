@@ -135,16 +135,6 @@ vi.mock("../../src/shared/usage.js", () => ({
   }),
 }));
 
-// Mock model fallback
-vi.mock("../../src/agents/model-fallback.js", () => ({
-  ModelCircuitBreaker: vi.fn().mockImplementation(() => ({
-    recordSuccess: vi.fn(),
-    recordFailure: vi.fn(),
-  })),
-  selectAvailableModels: (models: any[]) => models,
-  isRateLimitError: (msg: string) => msg.includes("rate limit") || msg.includes("429"),
-}));
-
 // Import after mocks
 const { TransportAgentRunner } = await import("../../src/agents/transport-runner.js");
 const { DefaultResourceLoader } = await import("@mariozechner/pi-coding-agent");
@@ -195,7 +185,6 @@ describe("TransportAgentRunner", () => {
       globalConfig: makeGlobalConfig(),
       agentConfig: makeAgentConfig(),
       logger: makeLogger(),
-      circuitBreaker: { recordSuccess: vi.fn(), recordFailure: vi.fn() } as any,
       baseImage: "al-base:latest",
       projectPath: "/project",
     });
@@ -211,7 +200,6 @@ describe("TransportAgentRunner", () => {
       globalConfig: makeGlobalConfig(),
       agentConfig: makeAgentConfig(),
       logger: makeLogger(),
-      circuitBreaker: { recordSuccess: vi.fn(), recordFailure: vi.fn() } as any,
       baseImage: "al-base:latest",
       projectPath: "/project",
     });
@@ -239,7 +227,6 @@ describe("TransportAgentRunner", () => {
         credentials: ["github_token"],
       }),
       logger: makeLogger(),
-      circuitBreaker: { recordSuccess: vi.fn(), recordFailure: vi.fn() } as any,
       baseImage: "al-base:latest",
       projectPath: "/project",
     });
@@ -256,7 +243,6 @@ describe("TransportAgentRunner", () => {
       globalConfig: makeGlobalConfig(),
       agentConfig: makeAgentConfig(),
       logger: makeLogger(),
-      circuitBreaker: { recordSuccess: vi.fn(), recordFailure: vi.fn() } as any,
       baseImage: "al-base:latest",
       projectPath: "/project",
     });
@@ -281,7 +267,6 @@ describe("TransportAgentRunner", () => {
       globalConfig: makeGlobalConfig(),
       agentConfig: makeAgentConfig(),
       logger: makeLogger(),
-      circuitBreaker: { recordSuccess: vi.fn(), recordFailure: vi.fn() } as any,
       baseImage: "al-base:latest",
       projectPath: "/project",
     });
@@ -305,7 +290,6 @@ describe("TransportAgentRunner", () => {
       globalConfig: makeGlobalConfig(),
       agentConfig: makeAgentConfig(),
       logger: makeLogger(),
-      circuitBreaker: { recordSuccess: vi.fn(), recordFailure: vi.fn() } as any,
       baseImage: "al-base:latest",
       projectPath: "/project",
     });
@@ -331,7 +315,6 @@ describe("TransportAgentRunner", () => {
       globalConfig: makeGlobalConfig(),
       agentConfig: makeAgentConfig(),
       logger: makeLogger(),
-      circuitBreaker: { recordSuccess: vi.fn(), recordFailure: vi.fn() } as any,
       baseImage: "al-base:latest",
       projectPath: "/project",
     });
@@ -355,7 +338,6 @@ describe("TransportAgentRunner", () => {
       globalConfig: makeGlobalConfig(),
       agentConfig: makeAgentConfig(),
       logger: makeLogger(),
-      circuitBreaker: { recordSuccess: vi.fn(), recordFailure: vi.fn() } as any,
       baseImage: "al-base:latest",
       projectPath: "/project",
     });
@@ -378,7 +360,6 @@ describe("TransportAgentRunner", () => {
         },
       }),
       logger: makeLogger(),
-      circuitBreaker: { recordSuccess: vi.fn(), recordFailure: vi.fn() } as any,
       baseImage: "al-base:latest",
       projectPath: "/project",
     });
@@ -389,27 +370,23 @@ describe("TransportAgentRunner", () => {
     expect(mockExec).toHaveBeenCalledWith("echo done");
   });
 
-  it("handles rate limiting with model fallback", async () => {
-    mockPrompt
-      .mockRejectedValueOnce(new Error("rate limit exceeded (429)"))
-      .mockResolvedValueOnce(undefined);
+  it("returns error immediately on session failure (no retry)", async () => {
+    mockPrompt.mockRejectedValueOnce(new Error("rate limit exceeded (429)"));
 
     const runner = new TransportAgentRunner({
       globalConfig: makeGlobalConfig(),
       agentConfig: makeAgentConfig({
         models: [
           { provider: "anthropic", model: "claude-sonnet-4-20250514", thinkingLevel: "medium" },
-          { provider: "anthropic", model: "claude-haiku-3-5-20241022", thinkingLevel: "none" as any },
         ] as ModelConfig[],
       }),
       logger: makeLogger(),
-      circuitBreaker: { recordSuccess: vi.fn(), recordFailure: vi.fn() } as any,
       baseImage: "al-base:latest",
       projectPath: "/project",
     });
 
     const outcome = await runner.run("Test prompt");
-    expect(outcome.result).toBe("completed");
+    expect(outcome.result).toBe("error");
   });
 
   it("generates unique session IDs", async () => {
@@ -417,7 +394,6 @@ describe("TransportAgentRunner", () => {
       globalConfig: makeGlobalConfig(),
       agentConfig: makeAgentConfig(),
       logger: makeLogger(),
-      circuitBreaker: { recordSuccess: vi.fn(), recordFailure: vi.fn() } as any,
       baseImage: "al-base:latest",
       projectPath: "/project",
     });
@@ -438,7 +414,6 @@ describe("TransportAgentRunner", () => {
       globalConfig: makeGlobalConfig(),
       agentConfig: makeAgentConfig(),
       logger: makeLogger(),
-      circuitBreaker: { recordSuccess: vi.fn(), recordFailure: vi.fn() } as any,
       baseImage: "al-base:latest",
       projectPath: "/my/project",
     });
@@ -455,7 +430,6 @@ describe("TransportAgentRunner", () => {
       globalConfig: makeGlobalConfig(),
       agentConfig: makeAgentConfig(),
       logger: makeLogger(),
-      circuitBreaker: { recordSuccess: vi.fn(), recordFailure: vi.fn() } as any,
       baseImage: "al-base:latest",
       projectPath: "/project",
     });

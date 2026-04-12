@@ -12,7 +12,6 @@ import { createLogger, createFileOnlyLogger } from "../shared/logger.js";
 import { RunnerPool, type PoolRunner } from "./runner-pool.js";
 import { enforceProjectScaleCap } from "../scheduler/policies/index.js";
 import { TransportAgentRunner, type TransportAgentRunnerOpts } from "../agents/transport-runner.js";
-import { ModelCircuitBreaker } from "../agents/model-fallback.js";
 import type { SchedulerToolsOpts } from "../agents/scheduler-tools.js";
 import type { WaitingRegistry } from "./waiting-registry.js";
 import type { PromptSkills } from "../agents/prompt.js";
@@ -47,14 +46,11 @@ export async function createRunnerPools(opts: RunnerSetupOpts): Promise<RunnerSe
     schedulerToolsDeps, waitingRegistry, skills,
   } = opts;
 
-  const circuitBreaker = new ModelCircuitBreaker();
-
   const createRunner = (agentConfig: AgentConfig): PoolRunner => {
     return new TransportAgentRunner({
       globalConfig,
       agentConfig,
       logger: mkLogger(projectPath, agentConfig.name),
-      circuitBreaker,
       statusTracker,
       baseImage,
       projectPath,

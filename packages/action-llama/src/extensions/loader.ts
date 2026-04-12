@@ -6,23 +6,19 @@ import { ExtensionRegistry, globalRegistry } from "./registry.js";
  */
 export async function loadBuiltinExtensions(
   credentialChecker?: (type: string, instance?: string) => Promise<boolean>,
-  modelProviders?: Set<string>,
 ): Promise<void> {
   // Create a new registry with credential checking
   const registry = new ExtensionRegistry(credentialChecker);
-  
+
   try {
     // Load webhook provider extensions
     await loadWebhookExtensions(registry);
-    
+
     // Load telemetry provider extensions
     await loadTelemetryExtensions(registry);
-    
+
     // Load runtime provider extensions
     await loadRuntimeExtensions(registry);
-    
-    // Load model provider extensions
-    await loadModelExtensions(registry, modelProviders);
 
     // Load credential provider extensions
     await loadCredentialExtensions(registry);
@@ -80,25 +76,6 @@ async function loadRuntimeExtensions(registry: ExtensionRegistry): Promise<void>
   } catch (error) {
     console.warn("Failed to load runtime extensions:", error);
     // Don't fail for runtime extensions since local docker is the default
-  }
-}
-
-async function loadModelExtensions(registry: ExtensionRegistry, modelProviders?: Set<string>): Promise<void> {
-  try {
-    const {
-      openAIModelExtension,
-      anthropicModelExtension,
-      customModelExtension
-    } = await import("../models/providers/index.js");
-
-    const extensions = [openAIModelExtension, anthropicModelExtension, customModelExtension];
-    for (const ext of extensions) {
-      if (modelProviders && !modelProviders.has(ext.metadata.name)) continue;
-      await registry.register(ext);
-    }
-  } catch (error) {
-    console.warn("Failed to load model extensions:", error);
-    // Don't fail the entire loading process for model extensions
   }
 }
 
